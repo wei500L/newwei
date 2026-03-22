@@ -48,15 +48,16 @@ import { Crawl4aiHealthCard } from "@/app/(app)/crawl/components/Crawl4aiHealthC
 import { CreateCrawlTaskDrawer } from "@/app/(app)/crawl/components/CreateCrawlTaskDrawer";
 import type { CreateCrawlTaskFormValues } from "@/app/(app)/crawl/types";
 import { createApiClient } from "@/lib/api-client";
+import { captureClientError } from "@/lib/client-telemetry";
 import { applyAutoBrowserHeadersToCrawlOptions } from "@/lib/crawl-browser-headers";
 import { normalizeHeadlessModeFormValues } from "@/lib/crawl-headless-mode";
-import { captureClientError } from "@/lib/client-telemetry";
 import {
   buildNewsSourceCloudflarePresetValues,
   buildNewsSourceReutersCfPresetValues,
 } from "@/lib/crawl-presets";
 import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { resolveRssAdaptiveListUiModel } from "@/lib/news-source-rss-adaptive-ui";
 import {
   buildSeedConfigFromFormValues,
   type SeedSchedulerRuntimeSettings,
@@ -68,7 +69,51 @@ import {
   readSeedFormValuesFromConfig,
   shouldShowCrawlSettingsForSeedMode,
 } from "@/lib/news-source-seed";
-import { resolveRssAdaptiveListUiModel } from "@/lib/news-source-rss-adaptive-ui";
+
+interface NewsSourceApiRecord {
+  id: string;
+  name: string;
+  url: string;
+  siteType: string;
+  language?: string | null;
+  crawlTemplateId?: string | null;
+  workflowId?: string | null;
+  workflowVersionId?: string | null;
+  workflowBindingMode?: "published" | "pinned";
+  group?: string | null;
+  frequencySeconds: number;
+  priority: number;
+  isActive: boolean;
+  lastRunAt?: string | null;
+  lastSuccessAt?: string | null;
+  lastFailureAt?: string | null;
+  consecutiveFailures?: number | null;
+  circuitOpenUntil?: string | null;
+  nextRunAt?: string | null;
+  config?: Record<string, unknown> | null;
+  opsSummary?: {
+    latestJob?: NewsSourceRecord["latestJob"];
+    latestCrawlTask?: NewsSourceRecord["latestCrawlTask"];
+    latestArticle?: NewsSourceRecord["latestArticle"];
+    stats24h?: NewsSourceRecord["stats24h"];
+    runtime?: {
+      crawlTaskQueuedCount: number;
+      crawlTaskRunningCount: number;
+      backpressureUntil?: string | null;
+      backpressurePendingJobs?: number | null;
+      backpressureThreshold?: number | null;
+      backpressureCount24h: number;
+      rssAdaptiveState?: unknown;
+    };
+  };
+}
+
+interface NewsSourceListResponse {
+  sources: NewsSourceApiRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
 
 interface NewsSourceRecord {
   id: string;
@@ -130,6 +175,48 @@ interface NewsSourceRecord {
   };
 }
 
+function mapNewsSourceRecord(record: NewsSourceApiRecord): NewsSourceRecord {
+  const runtime = record.opsSummary?.runtime;
+  return {
+    id: record.id,
+    name: record.name,
+    url: record.url,
+    siteType: record.siteType,
+    language: record.language ?? null,
+    crawlTemplateId: record.crawlTemplateId ?? null,
+    workflowId: record.workflowId ?? null,
+    workflowVersionId: record.workflowVersionId ?? null,
+    workflowBindingMode: record.workflowBindingMode,
+    group: record.group ?? null,
+    frequencySeconds: record.frequencySeconds,
+    priority: record.priority,
+    isActive: record.isActive,
+    lastRunAt: record.lastRunAt ?? null,
+    lastSuccessAt: record.lastSuccessAt ?? null,
+    lastFailureAt: record.lastFailureAt ?? null,
+    consecutiveFailures: record.consecutiveFailures ?? 0,
+    circuitOpenUntil: record.circuitOpenUntil ?? null,
+    nextRunAt: record.nextRunAt ?? null,
+    backpressureUntil: runtime?.backpressureUntil ?? null,
+    backpressurePendingJobs: runtime?.backpressurePendingJobs ?? null,
+    backpressureThreshold: runtime?.backpressureThreshold ?? null,
+    rssAdaptiveState: runtime?.rssAdaptiveState,
+    config: record.config ?? null,
+    latestJob: record.opsSummary?.latestJob ?? null,
+    latestCrawlTask: record.opsSummary?.latestCrawlTask ?? null,
+    latestArticle: record.opsSummary?.latestArticle ?? null,
+    crawlTaskQueuedCount: runtime?.crawlTaskQueuedCount ?? 0,
+    crawlTaskRunningCount: runtime?.crawlTaskRunningCount ?? 0,
+    backpressureCount24h: runtime?.backpressureCount24h ?? 0,
+    stats24h: record.opsSummary?.stats24h ?? {
+      completed: 0,
+      failed: 0,
+      successRate: null,
+      avgDurationMs: null,
+    },
+  };
+}
+
 interface CrawlTemplateRecord {
   id: string;
   name: string;
@@ -164,7 +251,7 @@ interface NewsSourcePreviewDeepError {
 interface NewsSourcePreviewDeepFailureStats {
   total24h: number;
   streak: number;
-  byCode: Array<{ code: string; count: number }>;
+  byCode: { code: string; count: number }[];
   lastFailureAt?: string | null;
   lastCode?: string | null;
   lastMessage?: string | null;
@@ -341,9 +428,9 @@ interface NewsSourceOpmlImportReport {
     skipped: number;
     failed: number;
   };
-  created: Array<{ id: string; name: string; url: string }>;
-  skipped: Array<{ name: string; url: string; reason: string }>;
-  failed: Array<{ name: string; url: string; error: string }>;
+  created: { id: string; name: string; url: string }[];
+  skipped: { name: string; url: string; reason: string }[];
+  failed: { name: string; url: string; error: string }[];
 }
 
 type NewsSourceOpmlMode = "preset" | "upload";
@@ -713,7 +800,7 @@ const getSeedMode = (
 };
 
 const resolveScheduleDeliveryMode = (
-  targets: Array<Pick<NewsSourceRecord, "config">>,
+  targets: Pick<NewsSourceRecord, "config">[],
 ): "crawl4ai" | "rss" | "mixed" => {
   let hasRss = false;
   let hasCrawl4ai = false;
@@ -954,11 +1041,18 @@ export function NewsSourcesContent() {
   const [saving, setSaving] = useState(false);
   const [creatingFromTaskDrawer, setCreatingFromTaskDrawer] = useState(false);
   const [sources, setSources] = useState<NewsSourceRecord[]>([]);
+  const [sourceTotal, setSourceTotal] = useState(0);
+  const [sourcePage, setSourcePage] = useState(1);
+  const [sourcePageSize, setSourcePageSize] = useState(10);
+  const [sourceIndex, setSourceIndex] = useState<
+    Record<string, NewsSourceRecord>
+  >({});
   const [templates, setTemplates] = useState<CrawlTemplateRecord[]>([]);
   const [workflowOptions, setWorkflowOptions] = useState<
-    Array<{ label: string; value: string }>
+    { label: string; value: string }[]
   >([]);
-  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
   const [opmlModalOpen, setOpmlModalOpen] = useState(false);
@@ -1049,13 +1143,16 @@ export function NewsSourcesContent() {
   const pendingRefreshRef = useRef<{ silent: boolean } | null>(null);
   const seedModeRef = useRef<NewsSourceFormValues["seedMode"]>("sitemap");
 
-  const selectedSourceIdSet = useMemo(
-    () => new Set(selectedSourceIds),
-    [selectedSourceIds],
-  );
   const selectedSources = useMemo(
-    () => sources.filter((source) => selectedSourceIdSet.has(source.id)),
-    [selectedSourceIdSet, sources],
+    () =>
+      selectedSourceIds
+        .map((id) => sourceIndex[id])
+        .filter((source): source is NewsSourceRecord => Boolean(source)),
+    [selectedSourceIds, sourceIndex],
+  );
+  const visibleSourceIdSet = useMemo(
+    () => new Set(sources.map((source) => source.id)),
+    [sources],
   );
   const watchedSeedEnabled = Form.useWatch("seedEnabled", form);
   const watchedSeedMode = Form.useWatch("seedMode", form);
@@ -1174,7 +1271,7 @@ export function NewsSourcesContent() {
       }
       return best;
     };
-    const alerts: Array<{
+    const alerts: {
       key:
         | "softFailure"
         | "truncated"
@@ -1186,7 +1283,7 @@ export function NewsSourcesContent() {
       threshold: number;
       overallRate: number;
       extremeSource?: { sourceId: string; rate: number } | null;
-    }> = [];
+    }[] = [];
     const pushHighAlert = (
       key:
         | "softFailure"
@@ -1283,15 +1380,48 @@ export function NewsSourcesContent() {
   }, [liveRefreshSources]);
 
   const loadSources = useCallback(
-    async (options?: { silent?: boolean }): Promise<boolean> => {
+    async (options?: {
+      silent?: boolean;
+      page?: number;
+      pageSize?: number;
+      search?: string;
+    }): Promise<boolean> => {
       const silent = options?.silent === true;
+      const page = options?.page ?? sourcePage;
+      const pageSize = options?.pageSize ?? sourcePageSize;
+      const search = options?.search ?? searchQuery;
       if (!silent) {
         setLoading(true);
       }
       try {
-        const response =
-          await apiClient.get<NewsSourceRecord[]>("admin/news-sources");
-        setSources(response.data ?? []);
+        const response = await apiClient.get<NewsSourceListResponse>(
+          "admin/news-sources",
+          {
+            params: {
+              page,
+              pageSize,
+              search: search || undefined,
+            },
+          },
+        );
+        const payload = response.data ?? {
+          sources: [],
+          total: 0,
+          page,
+          pageSize,
+        };
+        const nextSources = (payload.sources ?? []).map(mapNewsSourceRecord);
+        setSources(nextSources);
+        setSourceIndex((prev) => {
+          const next = { ...prev };
+          for (const source of nextSources) {
+            next[source.id] = source;
+          }
+          return next;
+        });
+        setSourceTotal(payload.total ?? 0);
+        setSourcePage(payload.page ?? page);
+        setSourcePageSize(payload.pageSize ?? pageSize);
         return true;
       } catch (error) {
         captureClientError("Failed to load news sources", error);
@@ -1309,7 +1439,7 @@ export function NewsSourcesContent() {
         }
       }
     },
-    [apiClient, messageApi, t],
+    [apiClient, messageApi, searchQuery, sourcePage, sourcePageSize, t],
   );
 
   const loadTemplates = useCallback(async () => {
@@ -1325,7 +1455,7 @@ export function NewsSourcesContent() {
 
   const loadWorkflowOptions = useCallback(async () => {
     try {
-      const response = await apiClient.get<Array<{ id: string; name: string }>>(
+      const response = await apiClient.get<{ id: string; name: string }[]>(
         "admin/crawl-frontier/workflows",
       );
       setWorkflowOptions(
@@ -1495,7 +1625,6 @@ export function NewsSourcesContent() {
 
   useEffect(() => {
     if (canView) {
-      void refreshAll();
       void loadTemplates();
       void loadWorkflowOptions();
       void loadGroups();
@@ -1510,8 +1639,29 @@ export function NewsSourcesContent() {
     loadWorkflowOptions,
     loadGroups,
     loadSeedSchedulerSettings,
-    refreshAll,
   ]);
+
+  useEffect(() => {
+    if (!canView) {
+      return;
+    }
+    void refreshAll();
+  }, [canView, refreshAll]);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      const nextSearchQuery = searchInput.trim();
+      setSearchQuery((previousSearchQuery) => {
+        if (previousSearchQuery === nextSearchQuery) {
+          return previousSearchQuery;
+        }
+        setSourcePage(1);
+        return nextSearchQuery;
+      });
+    }, 300);
+
+    return () => window.clearTimeout(id);
+  }, [searchInput]);
 
   useEffect(() => {
     if (modalOpen && canManage) {
@@ -1665,17 +1815,27 @@ export function NewsSourcesContent() {
       const event = typeof record.event === "string" ? record.event : "EVENT";
       const jobId = typeof record.jobId === "string" ? record.jobId : "";
       const orgId = typeof record.orgId === "string" ? record.orgId : "";
+      const sourceId =
+        typeof record.sourceId === "string" ? record.sourceId : undefined;
       const timestamp =
         typeof record.timestamp === "string"
           ? record.timestamp
           : new Date().toISOString();
 
-      setLiveLastEvent({ orgId, source, event, jobId, timestamp });
+      setLiveLastEvent({ orgId, source, event, jobId, sourceId, timestamp });
       setLiveEventCount((prev) => prev + 1);
       setLiveEventCountsBySource((prev) => ({
         ...prev,
         [source]: (prev[source] ?? 0) + 1,
       }));
+
+      const isPageScopedSource = source === "pipeline" || source === "crawl";
+      if (
+        isPageScopedSource &&
+        (!sourceId || !visibleSourceIdSet.has(sourceId))
+      ) {
+        return;
+      }
 
       if (event !== "PROGRESS" && liveRefreshSourcesRef.current[source]) {
         scheduleLiveRefresh();
@@ -1704,7 +1864,14 @@ export function NewsSourcesContent() {
       }
       pendingRefreshRef.current = null;
     };
-  }, [canView, liveUpdatesEnabled, scheduleLiveRefresh, session?.accessToken]);
+  }, [
+    canView,
+    liveUpdatesEnabled,
+    refreshAll,
+    scheduleLiveRefresh,
+    session?.accessToken,
+    visibleSourceIdSet,
+  ]);
 
   useEffect(() => {
     if (!modalOpen) {
@@ -1718,24 +1885,6 @@ export function NewsSourcesContent() {
       group: modalFormValues.group ?? undefined,
     });
   }, [form, modalFormValues, modalOpen]);
-
-  const filteredSources = useMemo(() => {
-    if (!search.trim()) {
-      return sources;
-    }
-    const needle = search.trim().toLowerCase();
-    return sources.filter((source) => {
-      const haystack = [
-        source.name,
-        source.url,
-        source.siteType,
-        source.language ?? "",
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(needle);
-    });
-  }, [search, sources]);
 
   const resolveRssAdaptiveObservability = useCallback(
     (record: NewsSourceRecord) =>
@@ -5556,27 +5705,39 @@ export function NewsSourcesContent() {
               defaultValue: "Search by name or URL",
             })}
             allowClear
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
           />
           <Table
             rowKey="id"
             loading={loading}
             tableLayout="fixed"
             columns={columns}
-            dataSource={filteredSources}
+            dataSource={sources}
             scroll={{ x: 2400 }}
             rowSelection={
               canManage
                 ? {
+                    preserveSelectedRowKeys: true,
                     selectedRowKeys: selectedSourceIds,
                     onChange: (keys) => setSelectedSourceIds(keys as string[]),
                   }
                 : undefined
             }
             pagination={{
-              pageSize: screens.md ? 10 : 5,
+              current: sourcePage,
+              pageSize: sourcePageSize,
+              total: sourceTotal,
+              showTotal: (total) =>
+                t("common.totalCount", {
+                  defaultValue: "Total {{count}}",
+                  count: total,
+                }),
               showSizeChanger: screens.md,
+              onChange: (page, pageSize) => {
+                setSourcePage(page);
+                setSourcePageSize(pageSize);
+              },
             }}
           />
         </Space>

@@ -8,6 +8,7 @@ import { toBullmqConnection } from "../config/redis-connection";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { StorageModule } from "../storage/storage.module";
+import { ObservabilitySnapshotService } from "../observability/observability-snapshot.service";
 
 import { CrawlAdaptiveConcurrencyService } from "./crawl-adaptive-concurrency.service";
 import { CrawlCleanupOutboxService } from "./crawl-cleanup-outbox.service";
@@ -52,7 +53,7 @@ import {
   CRAWL_QUEUE_LEGACY,
   CRAWL_QUEUE_NAME,
   CRAWL_QUEUE_NORMAL,
-  CRAWL_QUEUE_NORMAL_NAME
+  CRAWL_QUEUE_NORMAL_NAME,
 } from "./crawl.constants";
 import { CrawlController } from "./crawl.controller";
 import { CrawlQueueProcessor } from "./crawl.processor";
@@ -61,6 +62,7 @@ import { Crawl4aiQualityController } from "./crawl4ai-quality.controller";
 import { Crawl4aiQueueController } from "./crawl4ai-queue.controller";
 import { Crawl4aiClient } from "./crawl4ai.client";
 import { NewsSourceOpmlService } from "./news-source-opml.service";
+import { NewsSourceOpsSnapshotService } from "./news-source-ops-snapshot.service";
 import { NewsSourceController } from "./news-source.controller";
 import { NewsSourceService } from "./news-source.service";
 import { JsCodeAuditService } from "./services/js-code-audit.service";
@@ -79,12 +81,12 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
           timeout: cfg.timeoutMs,
           headers: cfg.apiKey
             ? {
-                "x-api-key": cfg.apiKey
+                "x-api-key": cfg.apiKey,
               }
-            : undefined
+            : undefined,
         };
-      }
-    })
+      },
+    }),
   ],
   controllers: [
     CrawlController,
@@ -94,7 +96,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlFrontierController,
     CrawlStrategyController,
     Crawl4aiQueueController,
-    Crawl4aiQualityController
+    Crawl4aiQualityController,
   ],
   providers: [
     CrawlSettingsService,
@@ -114,8 +116,10 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlResultService,
     CrawlMediaAssetService,
     CrawlQualityMetricsService,
+    ObservabilitySnapshotService,
     CrawlQualityStrategyService,
     NewsSourceOpmlService,
+    NewsSourceOpsSnapshotService,
     NewsSourceService,
     CrawlTemplateService,
     CrawlCleanupOutboxService,
@@ -138,13 +142,13 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
             removeOnFail: false,
             backoff: {
               type: "exponential",
-              delay: env.crawl4aiConfig.retryBackoffMs
-            }
-          }
+              delay: env.crawl4aiConfig.retryBackoffMs,
+            },
+          },
         });
         cleanup.track(queue);
         return queue;
-      }
+      },
     },
     {
       provide: CRAWL_QUEUE_HOT,
@@ -158,13 +162,13 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
             removeOnFail: false,
             backoff: {
               type: "exponential",
-              delay: env.crawl4aiConfig.retryBackoffMs
-            }
-          }
+              delay: env.crawl4aiConfig.retryBackoffMs,
+            },
+          },
         });
         cleanup.track(queue);
         return queue;
-      }
+      },
     },
     {
       provide: CRAWL_QUEUE_NORMAL,
@@ -178,13 +182,13 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
             removeOnFail: false,
             backoff: {
               type: "exponential",
-              delay: env.crawl4aiConfig.retryBackoffMs
-            }
-          }
+              delay: env.crawl4aiConfig.retryBackoffMs,
+            },
+          },
         });
         cleanup.track(queue);
         return queue;
-      }
+      },
     },
     {
       provide: CRAWL_QUEUE_LLM_JUDGE,
@@ -198,13 +202,13 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
             removeOnFail: false,
             backoff: {
               type: "exponential",
-              delay: env.crawl4aiConfig.retryBackoffMs
-            }
-          }
+              delay: env.crawl4aiConfig.retryBackoffMs,
+            },
+          },
         });
         cleanup.track(queue);
         return queue;
-      }
+      },
     },
     {
       provide: CRAWL_QUEUE_LLM_LEARN,
@@ -218,67 +222,67 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
             removeOnFail: false,
             backoff: {
               type: "exponential",
-              delay: env.crawl4aiConfig.retryBackoffMs
-            }
-          }
+              delay: env.crawl4aiConfig.retryBackoffMs,
+            },
+          },
         });
         cleanup.track(queue);
         return queue;
-      }
+      },
     },
     {
       provide: CRAWL_QUEUE_EVENTS_HOT,
       inject: [EnvService, CrawlQueueCleanupService],
       useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
         const events = new QueueEvents(CRAWL_QUEUE_HOT_NAME, {
-          connection: toBullmqConnection(env.redisConfig)
+          connection: toBullmqConnection(env.redisConfig),
         });
         cleanup.track(events);
         return events;
-      }
+      },
     },
     {
       provide: CRAWL_QUEUE_EVENTS_NORMAL,
       inject: [EnvService, CrawlQueueCleanupService],
       useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
         const events = new QueueEvents(CRAWL_QUEUE_NORMAL_NAME, {
-          connection: toBullmqConnection(env.redisConfig)
+          connection: toBullmqConnection(env.redisConfig),
         });
         cleanup.track(events);
         return events;
-      }
+      },
     },
     {
       provide: CRAWL_QUEUE_EVENTS_LEGACY,
       inject: [EnvService, CrawlQueueCleanupService],
       useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
         const events = new QueueEvents(CRAWL_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig)
+          connection: toBullmqConnection(env.redisConfig),
         });
         cleanup.track(events);
         return events;
-      }
+      },
     },
     {
       provide: getQueueToken(CRAWL_QUEUE_HOT_NAME),
-      useExisting: CRAWL_QUEUE_HOT
+      useExisting: CRAWL_QUEUE_HOT,
     },
     {
       provide: getQueueToken(CRAWL_QUEUE_NORMAL_NAME),
-      useExisting: CRAWL_QUEUE_NORMAL
+      useExisting: CRAWL_QUEUE_NORMAL,
     },
     {
       provide: getQueueToken(CRAWL_QUEUE_NAME),
-      useExisting: CRAWL_QUEUE_LEGACY
+      useExisting: CRAWL_QUEUE_LEGACY,
     },
     {
       provide: getQueueToken(CRAWL_QUEUE_LLM_JUDGE_NAME),
-      useExisting: CRAWL_QUEUE_LLM_JUDGE
+      useExisting: CRAWL_QUEUE_LLM_JUDGE,
     },
     {
       provide: getQueueToken(CRAWL_QUEUE_LLM_LEARN_NAME),
-      useExisting: CRAWL_QUEUE_LLM_LEARN
-    }
+      useExisting: CRAWL_QUEUE_LLM_LEARN,
+    },
   ],
   exports: [
     CrawlSettingsService,
@@ -293,6 +297,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlResultService,
     CrawlMetadataService,
     Crawl4aiClient,
+    NewsSourceOpsSnapshotService,
     CrawlQueueEventPublisher,
     CrawlAdaptiveConcurrencyService,
     CRAWL_QUEUE,
@@ -309,7 +314,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     getQueueToken(CRAWL_QUEUE_NORMAL_NAME),
     getQueueToken(CRAWL_QUEUE_NAME),
     getQueueToken(CRAWL_QUEUE_LLM_JUDGE_NAME),
-    getQueueToken(CRAWL_QUEUE_LLM_LEARN_NAME)
-  ]
+    getQueueToken(CRAWL_QUEUE_LLM_LEARN_NAME),
+  ],
 })
 export class CrawlModule {}

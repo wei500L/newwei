@@ -13,12 +13,25 @@ import {
   IsUrl,
   Max,
   MaxLength,
-  Min
+  Min,
 } from "class-validator";
 
 const WORKFLOW_BINDING_MODES = ["published", "pinned"] as const;
 
 export class ListNewsSourceDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  pageSize?: number;
+
   @IsOptional()
   @IsString()
   @MaxLength(200)

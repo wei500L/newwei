@@ -116,6 +116,10 @@ interface PaginatedResponse<TItem> {
   items: TItem[];
 }
 
+interface PaginatedTaskLogResponse extends PaginatedResponse<TaskLogRecord> {
+  summary: TaskLogsSummary;
+}
+
 interface TaskQueryState {
   queue: string;
   jobId: string;
@@ -181,7 +185,11 @@ const AUDIT_QUERY_KEYS = [
   "auditPageSize",
 ] as const;
 
-function clampPositiveInt(value: string | null, fallback: number, max = 100): number {
+function clampPositiveInt(
+  value: string | null,
+  fallback: number,
+  max = 100,
+): number {
   const parsed = value ? Number(value) : Number.NaN;
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return fallback;
@@ -189,7 +197,10 @@ function clampPositiveInt(value: string | null, fallback: number, max = 100): nu
   return Math.min(max, Math.floor(parsed));
 }
 
-function parseDateRange(startRaw: string | null, endRaw: string | null): DateRangeValue {
+function parseDateRange(
+  startRaw: string | null,
+  endRaw: string | null,
+): DateRangeValue {
   if (!startRaw || !endRaw) {
     return null;
   }
@@ -221,42 +232,72 @@ function serializeDateRange(
   };
 }
 
-function parseTaskQueryState(searchParams: Pick<URLSearchParams, "get">): TaskQueryState {
+function parseTaskQueryState(
+  searchParams: Pick<URLSearchParams, "get">,
+): TaskQueryState {
   const status = searchParams.get("taskStatus");
   return {
     queue: searchParams.get("taskQueue") ?? "",
     jobId: searchParams.get("taskJobId") ?? "",
     stage: searchParams.get("taskStage") ?? "",
     status:
-      status === "pending" || status === "processing" || status === "completed" || status === "failed"
+      status === "pending" ||
+      status === "processing" ||
+      status === "completed" ||
+      status === "failed"
         ? status
         : "all",
-    dateRange: parseDateRange(searchParams.get("taskStart"), searchParams.get("taskEnd")),
+    dateRange: parseDateRange(
+      searchParams.get("taskStart"),
+      searchParams.get("taskEnd"),
+    ),
     page: clampPositiveInt(searchParams.get("taskPage"), DEFAULT_PAGE),
-    pageSize: clampPositiveInt(searchParams.get("taskPageSize"), DEFAULT_PAGE_SIZE),
+    pageSize: clampPositiveInt(
+      searchParams.get("taskPageSize"),
+      DEFAULT_PAGE_SIZE,
+    ),
   };
 }
 
-function parseErrorsQueryState(searchParams: Pick<URLSearchParams, "get">): ErrorsQueryState {
+function parseErrorsQueryState(
+  searchParams: Pick<URLSearchParams, "get">,
+): ErrorsQueryState {
   const kind = searchParams.get("errorKind");
   return {
-    kind: kind === "http" || kind === "graphql" || kind === "unknown" ? kind : "all",
+    kind:
+      kind === "http" || kind === "graphql" || kind === "unknown"
+        ? kind
+        : "all",
     operationName: searchParams.get("errorOperationName") ?? "",
     messageContains: searchParams.get("errorMessageContains") ?? "",
-    dateRange: parseDateRange(searchParams.get("errorStart"), searchParams.get("errorEnd")),
+    dateRange: parseDateRange(
+      searchParams.get("errorStart"),
+      searchParams.get("errorEnd"),
+    ),
     page: clampPositiveInt(searchParams.get("errorPage"), DEFAULT_PAGE),
-    pageSize: clampPositiveInt(searchParams.get("errorPageSize"), DEFAULT_PAGE_SIZE),
+    pageSize: clampPositiveInt(
+      searchParams.get("errorPageSize"),
+      DEFAULT_PAGE_SIZE,
+    ),
   };
 }
 
-function parseAuditQueryState(searchParams: Pick<URLSearchParams, "get">): AuditQueryState {
+function parseAuditQueryState(
+  searchParams: Pick<URLSearchParams, "get">,
+): AuditQueryState {
   return {
     search: searchParams.get("auditSearch") ?? "",
     resource: searchParams.get("auditResource") ?? "",
     action: searchParams.get("auditAction") ?? "",
-    dateRange: parseDateRange(searchParams.get("auditStart"), searchParams.get("auditEnd")),
+    dateRange: parseDateRange(
+      searchParams.get("auditStart"),
+      searchParams.get("auditEnd"),
+    ),
     page: clampPositiveInt(searchParams.get("auditPage"), DEFAULT_PAGE),
-    pageSize: clampPositiveInt(searchParams.get("auditPageSize"), DEFAULT_PAGE_SIZE),
+    pageSize: clampPositiveInt(
+      searchParams.get("auditPageSize"),
+      DEFAULT_PAGE_SIZE,
+    ),
   };
 }
 
@@ -269,7 +310,9 @@ function getLocation(record: ExceptionEvent, emptyLabel: string) {
 
   if (record.kind === "graphql") {
     const operation = record.operation ?? "";
-    const operationName = record.operationName ? ` (${record.operationName})` : "";
+    const operationName = record.operationName
+      ? ` (${record.operationName})`
+      : "";
     return `${operation}${operationName}`.trim() || emptyLabel;
   }
 
@@ -288,12 +331,21 @@ function formatJson(value: unknown, fallback: string) {
   }
 }
 
-function renderKind(kind: ErrorKind, t: (key: string, options?: Record<string, unknown>) => string) {
+function renderKind(
+  kind: ErrorKind,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) {
   if (kind === "http") {
-    return <Tag color="blue">{t("errors.kinds.http", { defaultValue: "HTTP" })}</Tag>;
+    return (
+      <Tag color="blue">{t("errors.kinds.http", { defaultValue: "HTTP" })}</Tag>
+    );
   }
   if (kind === "graphql") {
-    return <Tag color="purple">{t("errors.kinds.graphql", { defaultValue: "GraphQL" })}</Tag>;
+    return (
+      <Tag color="purple">
+        {t("errors.kinds.graphql", { defaultValue: "GraphQL" })}
+      </Tag>
+    );
   }
   return <Tag>{t("errors.kinds.unknown", { defaultValue: "Unknown" })}</Tag>;
 }
@@ -315,12 +367,22 @@ export function AdminLogsContent() {
   );
 
   const activeTab = resolveAdminLogsTabId(searchParams.get("tab"));
-  const taskQuery = useMemo(() => parseTaskQueryState(searchParams), [searchParams]);
-  const errorsQuery = useMemo(() => parseErrorsQueryState(searchParams), [searchParams]);
-  const auditQuery = useMemo(() => parseAuditQueryState(searchParams), [searchParams]);
+  const taskQuery = useMemo(
+    () => parseTaskQueryState(searchParams),
+    [searchParams],
+  );
+  const errorsQuery = useMemo(
+    () => parseErrorsQueryState(searchParams),
+    [searchParams],
+  );
+  const auditQuery = useMemo(
+    () => parseAuditQueryState(searchParams),
+    [searchParams],
+  );
 
   const [taskFilters, setTaskFilters] = useState<TaskQueryState>(taskQuery);
-  const [errorsFilters, setErrorsFilters] = useState<ErrorsQueryState>(errorsQuery);
+  const [errorsFilters, setErrorsFilters] =
+    useState<ErrorsQueryState>(errorsQuery);
   const [auditFilters, setAuditFilters] = useState<AuditQueryState>(auditQuery);
   const [taskRows, setTaskRows] = useState<PaginatedResponse<TaskLogRecord>>({
     page: 1,
@@ -332,15 +394,21 @@ export function AdminLogsContent() {
   const [taskLoading, setTaskLoading] = useState(false);
   const [taskErrorMessage, setTaskErrorMessage] = useState<string | null>(null);
   const [taskRefreshNonce, setTaskRefreshNonce] = useState(0);
-  const [errorRows, setErrorRows] = useState<PaginatedResponse<ExceptionEvent>>({
-    page: 1,
-    pageSize: DEFAULT_PAGE_SIZE,
-    total: 0,
-    items: [],
-  });
-  const [errorSummary, setErrorSummary] = useState<ExceptionEventStats | null>(null);
+  const [errorRows, setErrorRows] = useState<PaginatedResponse<ExceptionEvent>>(
+    {
+      page: 1,
+      pageSize: DEFAULT_PAGE_SIZE,
+      total: 0,
+      items: [],
+    },
+  );
+  const [errorSummary, setErrorSummary] = useState<ExceptionEventStats | null>(
+    null,
+  );
   const [errorsLoading, setErrorsLoading] = useState(false);
-  const [errorsErrorMessage, setErrorsErrorMessage] = useState<string | null>(null);
+  const [errorsErrorMessage, setErrorsErrorMessage] = useState<string | null>(
+    null,
+  );
   const [errorsRefreshNonce, setErrorsRefreshNonce] = useState(0);
   const [auditRows, setAuditRows] = useState<PaginatedResponse<AuditLogEntry>>({
     page: 1,
@@ -349,7 +417,9 @@ export function AdminLogsContent() {
     items: [],
   });
   const [auditLoading, setAuditLoading] = useState(false);
-  const [auditErrorMessage, setAuditErrorMessage] = useState<string | null>(null);
+  const [auditErrorMessage, setAuditErrorMessage] = useState<string | null>(
+    null,
+  );
   const [auditRefreshNonce, setAuditRefreshNonce] = useState(0);
   const [detailState, setDetailState] = useState<DetailState | null>(null);
 
@@ -389,7 +459,11 @@ export function AdminLogsContent() {
       }
 
       const search = nextSearchParams.toString();
-      router.replace(search.length > 0 ? `${pathname ?? "/admin/logs"}?${search}` : pathname ?? "/admin/logs");
+      router.replace(
+        search.length > 0
+          ? `${pathname ?? "/admin/logs"}?${search}`
+          : (pathname ?? "/admin/logs"),
+      );
     },
     [pathname, router, searchParams],
   );
@@ -413,7 +487,9 @@ export function AdminLogsContent() {
       params.status = taskQuery.status;
     }
     if (taskQuery.dateRange) {
-      params.start = toUtcIsoString(dayjs(taskQuery.dateRange[0]).startOf("day"));
+      params.start = toUtcIsoString(
+        dayjs(taskQuery.dateRange[0]).startOf("day"),
+      );
       params.end = toUtcIsoString(dayjs(taskQuery.dateRange[1]).endOf("day"));
     }
 
@@ -436,7 +512,9 @@ export function AdminLogsContent() {
       params.messageContains = errorsQuery.messageContains.trim();
     }
     if (errorsQuery.dateRange) {
-      params.start = toUtcIsoString(dayjs(errorsQuery.dateRange[0]).startOf("day"));
+      params.start = toUtcIsoString(
+        dayjs(errorsQuery.dateRange[0]).startOf("day"),
+      );
       params.end = toUtcIsoString(dayjs(errorsQuery.dateRange[1]).endOf("day"));
     }
 
@@ -459,7 +537,9 @@ export function AdminLogsContent() {
       params.action = auditQuery.action.trim();
     }
     if (auditQuery.dateRange) {
-      params.start = toUtcIsoString(dayjs(auditQuery.dateRange[0]).startOf("day"));
+      params.start = toUtcIsoString(
+        dayjs(auditQuery.dateRange[0]).startOf("day"),
+      );
       params.end = toUtcIsoString(dayjs(auditQuery.dateRange[1]).endOf("day"));
     }
 
@@ -470,21 +550,22 @@ export function AdminLogsContent() {
     setTaskLoading(true);
     setTaskErrorMessage(null);
     try {
-      const summaryParams = { ...taskApiParams };
-      delete summaryParams.page;
-      delete summaryParams.pageSize;
-
-      const [listResponse, summaryResponse] = await Promise.all([
-        apiClient.get<PaginatedResponse<TaskLogRecord>>("admin/logs/task", {
+      const response = await apiClient.get<PaginatedTaskLogResponse>(
+        "admin/logs/task",
+        {
           params: taskApiParams,
-        }),
-        apiClient.get<TaskLogsSummary>("admin/logs/task/summary", {
-          params: summaryParams,
-        }),
-      ]);
+        },
+      );
 
-      setTaskRows(listResponse.data ?? { page: 1, pageSize: DEFAULT_PAGE_SIZE, total: 0, items: [] });
-      setTaskSummary(summaryResponse.data ?? null);
+      setTaskRows(
+        response.data ?? {
+          page: 1,
+          pageSize: DEFAULT_PAGE_SIZE,
+          total: 0,
+          items: [],
+        },
+      );
+      setTaskSummary(response.data?.summary ?? null);
     } catch (error) {
       captureClientError("Failed to load unified task logs", error);
       setTaskErrorMessage(
@@ -515,7 +596,14 @@ export function AdminLogsContent() {
         }),
       ]);
 
-      setErrorRows(listResponse.data ?? { page: 1, pageSize: DEFAULT_PAGE_SIZE, total: 0, items: [] });
+      setErrorRows(
+        listResponse.data ?? {
+          page: 1,
+          pageSize: DEFAULT_PAGE_SIZE,
+          total: 0,
+          items: [],
+        },
+      );
       setErrorSummary(summaryResponse.data ?? null);
     } catch (error) {
       captureClientError("Failed to load unified error logs", error);
@@ -534,10 +622,20 @@ export function AdminLogsContent() {
     setAuditLoading(true);
     setAuditErrorMessage(null);
     try {
-      const response = await apiClient.get<PaginatedResponse<AuditLogEntry>>("admin/logs/audit", {
-        params: auditApiParams,
-      });
-      setAuditRows(response.data ?? { page: 1, pageSize: DEFAULT_PAGE_SIZE, total: 0, items: [] });
+      const response = await apiClient.get<PaginatedResponse<AuditLogEntry>>(
+        "admin/logs/audit",
+        {
+          params: auditApiParams,
+        },
+      );
+      setAuditRows(
+        response.data ?? {
+          page: 1,
+          pageSize: DEFAULT_PAGE_SIZE,
+          total: 0,
+          items: [],
+        },
+      );
     } catch (error) {
       captureClientError("Failed to load unified audit logs", error);
       setAuditErrorMessage(
@@ -576,7 +674,9 @@ export function AdminLogsContent() {
   };
 
   const errorCountsByKind = useMemo(() => {
-    const map = new Map(errorSummary?.byKind?.map((item) => [item.kind, item.count]));
+    const map = new Map(
+      errorSummary?.byKind?.map((item) => [item.kind, item.count]),
+    );
     return {
       total: errorSummary?.total ?? 0,
       http: map.get("http") ?? 0,
@@ -619,14 +719,20 @@ export function AdminLogsContent() {
         dataIndex: "status",
         key: "status",
         width: 120,
-        render: (value: TaskLogStatus) => <Tag color={taskStatusColors[value]}>{value}</Tag>,
+        render: (value: TaskLogStatus) => (
+          <Tag color={taskStatusColors[value]}>{value}</Tag>
+        ),
       },
       {
-        title: t("quality.taskLogs.columns.message", { defaultValue: "Message" }),
+        title: t("quality.taskLogs.columns.message", {
+          defaultValue: "Message",
+        }),
         dataIndex: "message",
         key: "message",
         render: (value: string | null | undefined) => (
-          <Typography.Text ellipsis={{ tooltip: value ?? "-" }}>{value ?? "-"}</Typography.Text>
+          <Typography.Text ellipsis={{ tooltip: value ?? "-" }}>
+            {value ?? "-"}
+          </Typography.Text>
         ),
       },
       {
@@ -645,7 +751,10 @@ export function AdminLogsContent() {
         key: "actions",
         width: 100,
         render: (_, record) => (
-          <Button type="link" onClick={() => setDetailState({ tab: "task", record })}>
+          <Button
+            type="link"
+            onClick={() => setDetailState({ tab: "task", record })}
+          >
             {t("common.view", { defaultValue: "View" })}
           </Button>
         ),
@@ -681,7 +790,8 @@ export function AdminLogsContent() {
         dataIndex: "statusCode",
         key: "statusCode",
         width: 100,
-        render: (value?: number) => (typeof value === "number" ? String(value) : t("common.emptyValue")),
+        render: (value?: number) =>
+          typeof value === "number" ? String(value) : t("common.emptyValue"),
       },
       {
         title: t("errors.columns.traceId", { defaultValue: "Trace ID" }),
@@ -700,14 +810,20 @@ export function AdminLogsContent() {
       {
         title: t("errors.columns.location", { defaultValue: "Location" }),
         key: "location",
-        render: (_, record) => <Typography.Text>{getLocation(record, t("common.emptyValue"))}</Typography.Text>,
+        render: (_, record) => (
+          <Typography.Text>
+            {getLocation(record, t("common.emptyValue"))}
+          </Typography.Text>
+        ),
       },
       {
         title: t("errors.columns.message", { defaultValue: "Message" }),
         dataIndex: "message",
         key: "message",
         render: (value: string) => (
-          <Typography.Text ellipsis={{ tooltip: value || t("common.emptyValue") }}>
+          <Typography.Text
+            ellipsis={{ tooltip: value || t("common.emptyValue") }}
+          >
             {value || t("common.emptyValue")}
           </Typography.Text>
         ),
@@ -717,7 +833,10 @@ export function AdminLogsContent() {
         key: "actions",
         width: 100,
         render: (_, record) => (
-          <Button type="link" onClick={() => setDetailState({ tab: "errors", record })}>
+          <Button
+            type="link"
+            onClick={() => setDetailState({ tab: "errors", record })}
+          >
             {t("common.view", { defaultValue: "View" })}
           </Button>
         ),
@@ -745,7 +864,9 @@ export function AdminLogsContent() {
         key: "actorId",
         width: 200,
         render: (value: string | null | undefined) => (
-          <Typography.Text code>{value ?? t("auditLogs.systemActor", { defaultValue: "System" })}</Typography.Text>
+          <Typography.Text code>
+            {value ?? t("auditLogs.systemActor", { defaultValue: "System" })}
+          </Typography.Text>
         ),
       },
       {
@@ -767,14 +888,17 @@ export function AdminLogsContent() {
         dataIndex: "ipAddress",
         key: "ipAddress",
         width: 160,
-        render: (value: string | null | undefined) => value ?? t("common.emptyValue"),
+        render: (value: string | null | undefined) =>
+          value ?? t("common.emptyValue"),
       },
       {
         title: t("auditLogs.columns.metadata", { defaultValue: "Metadata" }),
         dataIndex: "metadata",
         key: "metadata",
         render: (value: unknown) => (
-          <Typography.Text ellipsis={{ tooltip: formatJson(value, t("common.emptyValue")) }}>
+          <Typography.Text
+            ellipsis={{ tooltip: formatJson(value, t("common.emptyValue")) }}
+          >
             {formatJson(value, t("common.emptyValue"))}
           </Typography.Text>
         ),
@@ -784,7 +908,10 @@ export function AdminLogsContent() {
         key: "actions",
         width: 100,
         render: (_, record) => (
-          <Button type="link" onClick={() => setDetailState({ tab: "audit", record })}>
+          <Button
+            type="link"
+            onClick={() => setDetailState({ tab: "audit", record })}
+          >
             {t("common.view", { defaultValue: "View" })}
           </Button>
         ),
@@ -921,7 +1048,9 @@ export function AdminLogsContent() {
 
   if (status === "loading") {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
+      <div
+        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
+      >
         <Spin size="large" />
       </div>
     );
@@ -929,7 +1058,10 @@ export function AdminLogsContent() {
 
   if (!canView) {
     return (
-      <Card className="content-card" title={t("adminLogs.title", { defaultValue: "Logs" })}>
+      <Card
+        className="content-card"
+        title={t("adminLogs.title", { defaultValue: "Logs" })}
+      >
         <Alert
           type="warning"
           message={t("settings.adminOnly.title")}
@@ -948,7 +1080,8 @@ export function AdminLogsContent() {
           </Typography.Title>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
             {t("adminLogs.description", {
-              defaultValue: "Inspect task execution, application errors, and governance activity from one workspace.",
+              defaultValue:
+                "Inspect task execution, application errors, and governance activity from one workspace.",
             })}
           </Typography.Paragraph>
         </Space>
@@ -971,47 +1104,94 @@ export function AdminLogsContent() {
               key: "task",
               label: t("adminLogs.tabs.task", { defaultValue: "Task Logs" }),
               children: (
-                <Space direction="vertical" size="large" style={{ width: "100%" }}>
+                <Space
+                  direction="vertical"
+                  size="large"
+                  style={{ width: "100%" }}
+                >
                   <Space wrap size="middle">
                     <Input
                       value={taskFilters.queue}
                       onChange={(event) =>
-                        setTaskFilters((previous) => ({ ...previous, queue: event.target.value }))
+                        setTaskFilters((previous) => ({
+                          ...previous,
+                          queue: event.target.value,
+                        }))
                       }
-                      placeholder={t("quality.taskLogs.filters.queue", { defaultValue: "Queue (optional)" })}
+                      placeholder={t("quality.taskLogs.filters.queue", {
+                        defaultValue: "Queue (optional)",
+                      })}
                       style={{ width: 180 }}
                       allowClear
                     />
                     <Input
                       value={taskFilters.jobId}
                       onChange={(event) =>
-                        setTaskFilters((previous) => ({ ...previous, jobId: event.target.value }))
+                        setTaskFilters((previous) => ({
+                          ...previous,
+                          jobId: event.target.value,
+                        }))
                       }
-                      placeholder={t("adminLogs.task.filters.jobId", { defaultValue: "Job ID (optional)" })}
+                      placeholder={t("adminLogs.task.filters.jobId", {
+                        defaultValue: "Job ID (optional)",
+                      })}
                       style={{ width: 220 }}
                       allowClear
                     />
                     <Input
                       value={taskFilters.stage}
                       onChange={(event) =>
-                        setTaskFilters((previous) => ({ ...previous, stage: event.target.value }))
+                        setTaskFilters((previous) => ({
+                          ...previous,
+                          stage: event.target.value,
+                        }))
                       }
-                      placeholder={t("quality.taskLogs.filters.stage", { defaultValue: "Stage (optional)" })}
+                      placeholder={t("quality.taskLogs.filters.stage", {
+                        defaultValue: "Stage (optional)",
+                      })}
                       style={{ width: 180 }}
                       allowClear
                     />
                     <Select
                       value={taskFilters.status}
                       onChange={(value) =>
-                        setTaskFilters((previous) => ({ ...previous, status: value }))
+                        setTaskFilters((previous) => ({
+                          ...previous,
+                          status: value,
+                        }))
                       }
                       style={{ width: 180 }}
                       options={[
-                        { value: "all", label: t("quality.taskLogs.filters.statusAll", { defaultValue: "All statuses" }) },
-                        { value: "failed", label: t("quality.taskLogs.status.failed", { defaultValue: "failed" }) },
-                        { value: "processing", label: t("quality.taskLogs.status.processing", { defaultValue: "processing" }) },
-                        { value: "pending", label: t("quality.taskLogs.status.pending", { defaultValue: "pending" }) },
-                        { value: "completed", label: t("quality.taskLogs.status.completed", { defaultValue: "completed" }) },
+                        {
+                          value: "all",
+                          label: t("quality.taskLogs.filters.statusAll", {
+                            defaultValue: "All statuses",
+                          }),
+                        },
+                        {
+                          value: "failed",
+                          label: t("quality.taskLogs.status.failed", {
+                            defaultValue: "failed",
+                          }),
+                        },
+                        {
+                          value: "processing",
+                          label: t("quality.taskLogs.status.processing", {
+                            defaultValue: "processing",
+                          }),
+                        },
+                        {
+                          value: "pending",
+                          label: t("quality.taskLogs.status.pending", {
+                            defaultValue: "pending",
+                          }),
+                        },
+                        {
+                          value: "completed",
+                          label: t("quality.taskLogs.status.completed", {
+                            defaultValue: "completed",
+                          }),
+                        },
                       ]}
                     />
                     <RangePicker
@@ -1030,42 +1210,64 @@ export function AdminLogsContent() {
                     <Button type="primary" onClick={applyTaskFilters}>
                       {t("common.search", { defaultValue: "Search" })}
                     </Button>
-                    <Button onClick={resetTaskFilters}>{t("common.reset", { defaultValue: "Reset" })}</Button>
-                    <Button onClick={() => setTaskRefreshNonce((value) => value + 1)} loading={taskLoading}>
+                    <Button onClick={resetTaskFilters}>
+                      {t("common.reset", { defaultValue: "Reset" })}
+                    </Button>
+                    <Button
+                      onClick={() => setTaskRefreshNonce((value) => value + 1)}
+                      loading={taskLoading}
+                    >
                       {t("common.refresh", { defaultValue: "Refresh" })}
                     </Button>
                   </Space>
 
                   {taskSummary ? (
-                    <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                    <Space
+                      direction="vertical"
+                      size="middle"
+                      style={{ width: "100%" }}
+                    >
                       <Row gutter={[16, 16]}>
                         <Col xs={12} md={4}>
                           <Statistic
-                            title={t("quality.taskLogs.summary.totals.total", { defaultValue: "Total logs" })}
+                            title={t("quality.taskLogs.summary.totals.total", {
+                              defaultValue: "Total logs",
+                            })}
                             value={taskSummary.totals.total}
                           />
                         </Col>
                         <Col xs={12} md={4}>
                           <Statistic
-                            title={t("quality.taskLogs.summary.totals.pending", { defaultValue: "Pending" })}
+                            title={t(
+                              "quality.taskLogs.summary.totals.pending",
+                              { defaultValue: "Pending" },
+                            )}
                             value={taskSummary.totals.pending}
                           />
                         </Col>
                         <Col xs={12} md={4}>
                           <Statistic
-                            title={t("quality.taskLogs.summary.totals.processing", { defaultValue: "Processing" })}
+                            title={t(
+                              "quality.taskLogs.summary.totals.processing",
+                              { defaultValue: "Processing" },
+                            )}
                             value={taskSummary.totals.processing}
                           />
                         </Col>
                         <Col xs={12} md={4}>
                           <Statistic
-                            title={t("quality.taskLogs.summary.totals.completed", { defaultValue: "Completed" })}
+                            title={t(
+                              "quality.taskLogs.summary.totals.completed",
+                              { defaultValue: "Completed" },
+                            )}
                             value={taskSummary.totals.completed}
                           />
                         </Col>
                         <Col xs={12} md={4}>
                           <Statistic
-                            title={t("quality.taskLogs.summary.totals.failed", { defaultValue: "Failed" })}
+                            title={t("quality.taskLogs.summary.totals.failed", {
+                              defaultValue: "Failed",
+                            })}
                             value={taskSummary.totals.failed}
                             valueStyle={
                               taskSummary.totals.failed > 0
@@ -1076,40 +1278,58 @@ export function AdminLogsContent() {
                         </Col>
                       </Row>
                       <Table
-                        rowKey={(row) => `${row.queue}:${row.stage}:${row.errorName}`}
+                        rowKey={(row) =>
+                          `${row.queue}:${row.stage}:${row.errorName}`
+                        }
                         size="small"
                         pagination={{ pageSize: 5, showSizeChanger: false }}
                         columns={[
                           {
-                            title: t("quality.taskLogs.summary.columns.queue", { defaultValue: "Queue" }),
+                            title: t("quality.taskLogs.summary.columns.queue", {
+                              defaultValue: "Queue",
+                            }),
                             dataIndex: "queue",
                             key: "queue",
                             render: (value: string) => <Tag>{value}</Tag>,
                           },
                           {
-                            title: t("quality.taskLogs.summary.columns.stage", { defaultValue: "Stage" }),
+                            title: t("quality.taskLogs.summary.columns.stage", {
+                              defaultValue: "Stage",
+                            }),
                             dataIndex: "stage",
                             key: "stage",
                             render: (value: string) => <Tag>{value}</Tag>,
                           },
                           {
-                            title: t("quality.taskLogs.summary.columns.error", { defaultValue: "Error" }),
+                            title: t("quality.taskLogs.summary.columns.error", {
+                              defaultValue: "Error",
+                            }),
                             dataIndex: "errorName",
                             key: "errorName",
-                            render: (value: string) => <Tag color="red">{value}</Tag>,
+                            render: (value: string) => (
+                              <Tag color="red">{value}</Tag>
+                            ),
                           },
                           {
-                            title: t("quality.taskLogs.summary.columns.count", { defaultValue: "Count" }),
+                            title: t("quality.taskLogs.summary.columns.count", {
+                              defaultValue: "Count",
+                            }),
                             dataIndex: "count",
                             key: "count",
                             width: 120,
                           },
                           {
-                            title: t("quality.taskLogs.summary.columns.sample", { defaultValue: "Sample" }),
+                            title: t(
+                              "quality.taskLogs.summary.columns.sample",
+                              { defaultValue: "Sample" },
+                            ),
                             dataIndex: "sampleMessage",
                             key: "sampleMessage",
                             render: (value: string | null) => (
-                              <Typography.Text type="secondary" ellipsis={{ tooltip: value ?? "-" }}>
+                              <Typography.Text
+                                type="secondary"
+                                ellipsis={{ tooltip: value ?? "-" }}
+                              >
                                 {value ?? "-"}
                               </Typography.Text>
                             ),
@@ -1118,14 +1338,17 @@ export function AdminLogsContent() {
                         dataSource={taskSummary.topErrors}
                         locale={{
                           emptyText: t("adminLogs.task.summary.empty", {
-                            defaultValue: "No top errors for the current filter.",
+                            defaultValue:
+                              "No top errors for the current filter.",
                           }),
                         }}
                       />
                     </Space>
                   ) : null}
 
-                  {taskErrorMessage ? <Alert type="error" message={taskErrorMessage} showIcon /> : null}
+                  {taskErrorMessage ? (
+                    <Alert type="error" message={taskErrorMessage} showIcon />
+                  ) : null}
                   <Table
                     rowKey="id"
                     loading={taskLoading}
@@ -1133,7 +1356,15 @@ export function AdminLogsContent() {
                     dataSource={taskRows.items}
                     pagination={taskPagination}
                     scroll={{ x: 1200 }}
-                    locale={{ emptyText: <Empty description={t("common.empty", { defaultValue: "No data" })} /> }}
+                    locale={{
+                      emptyText: (
+                        <Empty
+                          description={t("common.empty", {
+                            defaultValue: "No data",
+                          })}
+                        />
+                      ),
+                    }}
                   />
                 </Space>
               ),
@@ -1142,36 +1373,73 @@ export function AdminLogsContent() {
               key: "errors",
               label: t("adminLogs.tabs.errors", { defaultValue: "Errors" }),
               children: (
-                <Space direction="vertical" size="large" style={{ width: "100%" }}>
+                <Space
+                  direction="vertical"
+                  size="large"
+                  style={{ width: "100%" }}
+                >
                   <Space wrap size="middle">
                     <Select
                       value={errorsFilters.kind}
                       onChange={(value) =>
-                        setErrorsFilters((previous) => ({ ...previous, kind: value }))
+                        setErrorsFilters((previous) => ({
+                          ...previous,
+                          kind: value,
+                        }))
                       }
                       style={{ width: 180 }}
                       options={[
-                        { value: "all", label: t("errors.filters.kindAll", { defaultValue: "All kinds" }) },
-                        { value: "http", label: t("errors.kinds.http", { defaultValue: "HTTP" }) },
-                        { value: "graphql", label: t("errors.kinds.graphql", { defaultValue: "GraphQL" }) },
-                        { value: "unknown", label: t("errors.kinds.unknown", { defaultValue: "Unknown" }) },
+                        {
+                          value: "all",
+                          label: t("errors.filters.kindAll", {
+                            defaultValue: "All kinds",
+                          }),
+                        },
+                        {
+                          value: "http",
+                          label: t("errors.kinds.http", {
+                            defaultValue: "HTTP",
+                          }),
+                        },
+                        {
+                          value: "graphql",
+                          label: t("errors.kinds.graphql", {
+                            defaultValue: "GraphQL",
+                          }),
+                        },
+                        {
+                          value: "unknown",
+                          label: t("errors.kinds.unknown", {
+                            defaultValue: "Unknown",
+                          }),
+                        },
                       ]}
                     />
                     <Input
                       value={errorsFilters.operationName}
                       onChange={(event) =>
-                        setErrorsFilters((previous) => ({ ...previous, operationName: event.target.value }))
+                        setErrorsFilters((previous) => ({
+                          ...previous,
+                          operationName: event.target.value,
+                        }))
                       }
-                      placeholder={t("adminLogs.errors.filters.operationName", { defaultValue: "Operation name" })}
+                      placeholder={t("adminLogs.errors.filters.operationName", {
+                        defaultValue: "Operation name",
+                      })}
                       style={{ width: 220 }}
                       allowClear
                     />
                     <Input
                       value={errorsFilters.messageContains}
                       onChange={(event) =>
-                        setErrorsFilters((previous) => ({ ...previous, messageContains: event.target.value }))
+                        setErrorsFilters((previous) => ({
+                          ...previous,
+                          messageContains: event.target.value,
+                        }))
                       }
-                      placeholder={t("adminLogs.errors.filters.message", { defaultValue: "Message contains" })}
+                      placeholder={t("adminLogs.errors.filters.message", {
+                        defaultValue: "Message contains",
+                      })}
                       style={{ width: 220 }}
                       allowClear
                     />
@@ -1191,26 +1459,57 @@ export function AdminLogsContent() {
                     <Button type="primary" onClick={applyErrorsFilters}>
                       {t("common.search", { defaultValue: "Search" })}
                     </Button>
-                    <Button onClick={resetErrorsFilters}>{t("common.reset", { defaultValue: "Reset" })}</Button>
-                    <Button onClick={() => setErrorsRefreshNonce((value) => value + 1)} loading={errorsLoading}>
+                    <Button onClick={resetErrorsFilters}>
+                      {t("common.reset", { defaultValue: "Reset" })}
+                    </Button>
+                    <Button
+                      onClick={() =>
+                        setErrorsRefreshNonce((value) => value + 1)
+                      }
+                      loading={errorsLoading}
+                    >
                       {t("common.refresh", { defaultValue: "Refresh" })}
                     </Button>
                   </Space>
 
                   {errorSummary ? (
-                    <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                    <Space
+                      direction="vertical"
+                      size="middle"
+                      style={{ width: "100%" }}
+                    >
                       <Row gutter={[16, 16]}>
                         <Col xs={12} md={6}>
-                          <Statistic title={t("errors.stats.total", { defaultValue: "Total" })} value={errorCountsByKind.total} />
+                          <Statistic
+                            title={t("errors.stats.total", {
+                              defaultValue: "Total",
+                            })}
+                            value={errorCountsByKind.total}
+                          />
                         </Col>
                         <Col xs={12} md={6}>
-                          <Statistic title={t("errors.stats.http", { defaultValue: "HTTP" })} value={errorCountsByKind.http} />
+                          <Statistic
+                            title={t("errors.stats.http", {
+                              defaultValue: "HTTP",
+                            })}
+                            value={errorCountsByKind.http}
+                          />
                         </Col>
                         <Col xs={12} md={6}>
-                          <Statistic title={t("errors.stats.graphql", { defaultValue: "GraphQL" })} value={errorCountsByKind.graphql} />
+                          <Statistic
+                            title={t("errors.stats.graphql", {
+                              defaultValue: "GraphQL",
+                            })}
+                            value={errorCountsByKind.graphql}
+                          />
                         </Col>
                         <Col xs={12} md={6}>
-                          <Statistic title={t("errors.stats.unknown", { defaultValue: "Unknown" })} value={errorCountsByKind.unknown} />
+                          <Statistic
+                            title={t("errors.stats.unknown", {
+                              defaultValue: "Unknown",
+                            })}
+                            value={errorCountsByKind.unknown}
+                          />
                         </Col>
                       </Row>
                       <Table
@@ -1219,7 +1518,9 @@ export function AdminLogsContent() {
                         pagination={false}
                         columns={[
                           {
-                            title: t("errors.stats.date", { defaultValue: "Date" }),
+                            title: t("errors.stats.date", {
+                              defaultValue: "Date",
+                            }),
                             dataIndex: "date",
                             key: "date",
                             render: (value: string) =>
@@ -1230,20 +1531,26 @@ export function AdminLogsContent() {
                               }),
                           },
                           {
-                            title: t("errors.stats.count", { defaultValue: "Count" }),
+                            title: t("errors.stats.count", {
+                              defaultValue: "Count",
+                            }),
                             dataIndex: "count",
                             key: "count",
                           },
                         ]}
                         dataSource={errorSummary.byDay}
                         locale={{
-                          emptyText: t("errors.stats.empty", { defaultValue: "No error statistics." }),
+                          emptyText: t("errors.stats.empty", {
+                            defaultValue: "No error statistics.",
+                          }),
                         }}
                       />
                     </Space>
                   ) : null}
 
-                  {errorsErrorMessage ? <Alert type="error" message={errorsErrorMessage} showIcon /> : null}
+                  {errorsErrorMessage ? (
+                    <Alert type="error" message={errorsErrorMessage} showIcon />
+                  ) : null}
                   <Table
                     rowKey="id"
                     loading={errorsLoading}
@@ -1251,7 +1558,15 @@ export function AdminLogsContent() {
                     dataSource={errorRows.items}
                     pagination={errorsPagination}
                     scroll={{ x: 1200 }}
-                    locale={{ emptyText: <Empty description={t("common.empty", { defaultValue: "No data" })} /> }}
+                    locale={{
+                      emptyText: (
+                        <Empty
+                          description={t("common.empty", {
+                            defaultValue: "No data",
+                          })}
+                        />
+                      ),
+                    }}
                   />
                 </Space>
               ),
@@ -1260,32 +1575,51 @@ export function AdminLogsContent() {
               key: "audit",
               label: t("adminLogs.tabs.audit", { defaultValue: "Audit" }),
               children: (
-                <Space direction="vertical" size="large" style={{ width: "100%" }}>
+                <Space
+                  direction="vertical"
+                  size="large"
+                  style={{ width: "100%" }}
+                >
                   <Space wrap size="middle">
                     <Input
                       value={auditFilters.search}
                       onChange={(event) =>
-                        setAuditFilters((previous) => ({ ...previous, search: event.target.value }))
+                        setAuditFilters((previous) => ({
+                          ...previous,
+                          search: event.target.value,
+                        }))
                       }
-                      placeholder={t("auditLogs.searchPlaceholder", { defaultValue: "Search logs" })}
+                      placeholder={t("auditLogs.searchPlaceholder", {
+                        defaultValue: "Search logs",
+                      })}
                       style={{ width: 220 }}
                       allowClear
                     />
                     <Input
                       value={auditFilters.resource}
                       onChange={(event) =>
-                        setAuditFilters((previous) => ({ ...previous, resource: event.target.value }))
+                        setAuditFilters((previous) => ({
+                          ...previous,
+                          resource: event.target.value,
+                        }))
                       }
-                      placeholder={t("adminLogs.audit.filters.resource", { defaultValue: "Resource" })}
+                      placeholder={t("adminLogs.audit.filters.resource", {
+                        defaultValue: "Resource",
+                      })}
                       style={{ width: 180 }}
                       allowClear
                     />
                     <Input
                       value={auditFilters.action}
                       onChange={(event) =>
-                        setAuditFilters((previous) => ({ ...previous, action: event.target.value }))
+                        setAuditFilters((previous) => ({
+                          ...previous,
+                          action: event.target.value,
+                        }))
                       }
-                      placeholder={t("adminLogs.audit.filters.action", { defaultValue: "Action" })}
+                      placeholder={t("adminLogs.audit.filters.action", {
+                        defaultValue: "Action",
+                      })}
                       style={{ width: 180 }}
                       allowClear
                     />
@@ -1305,13 +1639,20 @@ export function AdminLogsContent() {
                     <Button type="primary" onClick={applyAuditFilters}>
                       {t("common.search", { defaultValue: "Search" })}
                     </Button>
-                    <Button onClick={resetAuditFilters}>{t("common.reset", { defaultValue: "Reset" })}</Button>
-                    <Button onClick={() => setAuditRefreshNonce((value) => value + 1)} loading={auditLoading}>
+                    <Button onClick={resetAuditFilters}>
+                      {t("common.reset", { defaultValue: "Reset" })}
+                    </Button>
+                    <Button
+                      onClick={() => setAuditRefreshNonce((value) => value + 1)}
+                      loading={auditLoading}
+                    >
                       {t("common.refresh", { defaultValue: "Refresh" })}
                     </Button>
                   </Space>
 
-                  {auditErrorMessage ? <Alert type="error" message={auditErrorMessage} showIcon /> : null}
+                  {auditErrorMessage ? (
+                    <Alert type="error" message={auditErrorMessage} showIcon />
+                  ) : null}
                   <Table
                     rowKey="id"
                     loading={auditLoading}
@@ -1319,7 +1660,15 @@ export function AdminLogsContent() {
                     dataSource={auditRows.items}
                     pagination={auditPagination}
                     scroll={{ x: 1200 }}
-                    locale={{ emptyText: <Empty description={t("common.empty", { defaultValue: "No data" })} /> }}
+                    locale={{
+                      emptyText: (
+                        <Empty
+                          description={t("common.empty", {
+                            defaultValue: "No data",
+                          })}
+                        />
+                      ),
+                    }}
                   />
                 </Space>
               ),
@@ -1334,30 +1683,58 @@ export function AdminLogsContent() {
         width={720}
         title={
           detailState?.tab === "task"
-            ? t("adminLogs.task.detail.title", { defaultValue: "Task log details" })
+            ? t("adminLogs.task.detail.title", {
+                defaultValue: "Task log details",
+              })
             : detailState?.tab === "errors"
-              ? t("adminLogs.errors.detail.title", { defaultValue: "Error event details" })
-              : t("adminLogs.audit.detail.title", { defaultValue: "Audit log details" })
+              ? t("adminLogs.errors.detail.title", {
+                  defaultValue: "Error event details",
+                })
+              : t("adminLogs.audit.detail.title", {
+                  defaultValue: "Audit log details",
+                })
         }
       >
         {detailState?.tab === "task" ? (
           <Space direction="vertical" size="large" style={{ width: "100%" }}>
             <Descriptions column={1} bordered size="small">
-              <Descriptions.Item label={t("quality.taskLogs.columns.queue", { defaultValue: "Queue" })}>
+              <Descriptions.Item
+                label={t("quality.taskLogs.columns.queue", {
+                  defaultValue: "Queue",
+                })}
+              >
                 {detailState.record.queue}
               </Descriptions.Item>
-              <Descriptions.Item label={t("quality.taskLogs.columns.stage", { defaultValue: "Stage" })}>
+              <Descriptions.Item
+                label={t("quality.taskLogs.columns.stage", {
+                  defaultValue: "Stage",
+                })}
+              >
                 {detailState.record.stage}
               </Descriptions.Item>
-              <Descriptions.Item label={t("quality.taskLogs.columns.status", { defaultValue: "Status" })}>
-                <Tag color={taskStatusColors[detailState.record.status]}>{detailState.record.status}</Tag>
+              <Descriptions.Item
+                label={t("quality.taskLogs.columns.status", {
+                  defaultValue: "Status",
+                })}
+              >
+                <Tag color={taskStatusColors[detailState.record.status]}>
+                  {detailState.record.status}
+                </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label={t("quality.taskLogs.columns.jobId", { defaultValue: "Job" })}>
+              <Descriptions.Item
+                label={t("quality.taskLogs.columns.jobId", {
+                  defaultValue: "Job",
+                })}
+              >
                 <Typography.Text code copyable>
                   {detailState.record.jobId}
                 </Typography.Text>
               </Descriptions.Item>
-              <Descriptions.Item label={t("quality.taskLogs.columns.time", { defaultValue: "Time" })}>
+              <Descriptions.Item
+                label={t("quality.taskLogs.columns.time", {
+                  defaultValue: "Time",
+                })}
+              >
                 {detailState.record.createdAt
                   ? formatDateTime(detailState.record.createdAt, locale, {
                       dateStyle: "full",
@@ -1365,7 +1742,11 @@ export function AdminLogsContent() {
                     })
                   : t("common.emptyValue")}
               </Descriptions.Item>
-              <Descriptions.Item label={t("adminLogs.task.detail.updatedAt", { defaultValue: "Updated At" })}>
+              <Descriptions.Item
+                label={t("adminLogs.task.detail.updatedAt", {
+                  defaultValue: "Updated At",
+                })}
+              >
                 {detailState.record.updatedAt
                   ? formatDateTime(detailState.record.updatedAt, locale, {
                       dateStyle: "full",
@@ -1373,7 +1754,11 @@ export function AdminLogsContent() {
                     })
                   : t("common.emptyValue")}
               </Descriptions.Item>
-              <Descriptions.Item label={t("quality.taskLogs.columns.message", { defaultValue: "Message" })}>
+              <Descriptions.Item
+                label={t("quality.taskLogs.columns.message", {
+                  defaultValue: "Message",
+                })}
+              >
                 <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
                   {detailState.record.message ?? t("common.emptyValue")}
                 </Typography.Text>
@@ -1383,7 +1768,13 @@ export function AdminLogsContent() {
               <Typography.Title level={5}>
                 {t("adminLogs.task.detail.data", { defaultValue: "Data" })}
               </Typography.Title>
-              <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}
+              >
                 {formatJson(detailState.record.data, t("common.emptyValue"))}
               </pre>
             </div>
@@ -1391,7 +1782,13 @@ export function AdminLogsContent() {
               <Typography.Title level={5}>
                 {t("adminLogs.task.detail.error", { defaultValue: "Error" })}
               </Typography.Title>
-              <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}
+              >
                 {formatJson(detailState.record.error, t("common.emptyValue"))}
               </pre>
             </div>
@@ -1401,16 +1798,24 @@ export function AdminLogsContent() {
         {detailState?.tab === "errors" ? (
           <Space direction="vertical" size="large" style={{ width: "100%" }}>
             <Descriptions column={1} bordered size="small">
-              <Descriptions.Item label={t("errors.columns.kind", { defaultValue: "Kind" })}>
+              <Descriptions.Item
+                label={t("errors.columns.kind", { defaultValue: "Kind" })}
+              >
                 {renderKind(detailState.record.kind, t)}
               </Descriptions.Item>
-              <Descriptions.Item label={t("errors.columns.time", { defaultValue: "Time" })}>
+              <Descriptions.Item
+                label={t("errors.columns.time", { defaultValue: "Time" })}
+              >
                 {formatDateTime(detailState.record.timestamp, locale, {
                   dateStyle: "full",
                   timeStyle: "long",
                 })}
               </Descriptions.Item>
-              <Descriptions.Item label={t("errors.columns.traceId", { defaultValue: "Trace ID" })}>
+              <Descriptions.Item
+                label={t("errors.columns.traceId", {
+                  defaultValue: "Trace ID",
+                })}
+              >
                 {detailState.record.traceId ? (
                   <Typography.Text code copyable>
                     {detailState.record.traceId}
@@ -1419,13 +1824,25 @@ export function AdminLogsContent() {
                   t("common.emptyValue")
                 )}
               </Descriptions.Item>
-              <Descriptions.Item label={t("errors.columns.location", { defaultValue: "Location" })}>
+              <Descriptions.Item
+                label={t("errors.columns.location", {
+                  defaultValue: "Location",
+                })}
+              >
                 {getLocation(detailState.record, t("common.emptyValue"))}
               </Descriptions.Item>
-              <Descriptions.Item label={t("errors.columns.message", { defaultValue: "Message" })}>
-                <Typography.Text style={{ whiteSpace: "pre-wrap" }}>{detailState.record.message}</Typography.Text>
+              <Descriptions.Item
+                label={t("errors.columns.message", { defaultValue: "Message" })}
+              >
+                <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
+                  {detailState.record.message}
+                </Typography.Text>
               </Descriptions.Item>
-              <Descriptions.Item label={t("adminLogs.errors.detail.errorName", { defaultValue: "Error Name" })}>
+              <Descriptions.Item
+                label={t("adminLogs.errors.detail.errorName", {
+                  defaultValue: "Error Name",
+                })}
+              >
                 {detailState.record.errorName ?? t("common.emptyValue")}
               </Descriptions.Item>
             </Descriptions>
@@ -1433,8 +1850,17 @@ export function AdminLogsContent() {
               <Typography.Title level={5}>
                 {t("adminLogs.errors.detail.stack", { defaultValue: "Stack" })}
               </Typography.Title>
-              <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                {detailState.record.stack ?? t("errors.noStack", { defaultValue: "No stack trace available." })}
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}
+              >
+                {detailState.record.stack ??
+                  t("errors.noStack", {
+                    defaultValue: "No stack trace available.",
+                  })}
               </pre>
             </div>
           </Space>
@@ -1443,24 +1869,41 @@ export function AdminLogsContent() {
         {detailState?.tab === "audit" ? (
           <Space direction="vertical" size="large" style={{ width: "100%" }}>
             <Descriptions column={1} bordered size="small">
-              <Descriptions.Item label={t("auditLogs.columns.time", { defaultValue: "Time" })}>
+              <Descriptions.Item
+                label={t("auditLogs.columns.time", { defaultValue: "Time" })}
+              >
                 {formatDateTime(detailState.record.createdAt, locale, {
                   dateStyle: "full",
                   timeStyle: "long",
                 })}
               </Descriptions.Item>
-              <Descriptions.Item label={t("auditLogs.columns.actor", { defaultValue: "Actor" })}>
+              <Descriptions.Item
+                label={t("auditLogs.columns.actor", { defaultValue: "Actor" })}
+              >
                 <Typography.Text code>
-                  {detailState.record.actorId ?? t("auditLogs.systemActor", { defaultValue: "System" })}
+                  {detailState.record.actorId ??
+                    t("auditLogs.systemActor", { defaultValue: "System" })}
                 </Typography.Text>
               </Descriptions.Item>
-              <Descriptions.Item label={t("auditLogs.columns.resource", { defaultValue: "Resource" })}>
+              <Descriptions.Item
+                label={t("auditLogs.columns.resource", {
+                  defaultValue: "Resource",
+                })}
+              >
                 <Tag>{detailState.record.resource}</Tag>
               </Descriptions.Item>
-              <Descriptions.Item label={t("auditLogs.columns.action", { defaultValue: "Action" })}>
+              <Descriptions.Item
+                label={t("auditLogs.columns.action", {
+                  defaultValue: "Action",
+                })}
+              >
                 <Tag color="blue">{detailState.record.action}</Tag>
               </Descriptions.Item>
-              <Descriptions.Item label={t("auditLogs.columns.ipAddress", { defaultValue: "IP Address" })}>
+              <Descriptions.Item
+                label={t("auditLogs.columns.ipAddress", {
+                  defaultValue: "IP Address",
+                })}
+              >
                 {detailState.record.ipAddress ?? t("common.emptyValue")}
               </Descriptions.Item>
             </Descriptions>
@@ -1468,8 +1911,17 @@ export function AdminLogsContent() {
               <Typography.Title level={5}>
                 {t("auditLogs.columns.metadata", { defaultValue: "Metadata" })}
               </Typography.Title>
-              <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                {formatJson(detailState.record.metadata, t("common.emptyValue"))}
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}
+              >
+                {formatJson(
+                  detailState.record.metadata,
+                  t("common.emptyValue"),
+                )}
               </pre>
             </div>
           </Space>

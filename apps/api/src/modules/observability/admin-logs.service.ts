@@ -44,6 +44,11 @@ export interface PaginatedResult<TItem> {
   items: TItem[];
 }
 
+export interface PaginatedTaskLogResult
+  extends PaginatedResult<TaskLogListItem> {
+  summary: TaskLogSummary;
+}
+
 export interface TaskLogListItem {
   id: string;
   queue: string;
@@ -74,6 +79,12 @@ export interface TaskLogSummary {
     sampleMessage: string | null;
     count: number;
   }[];
+}
+
+export interface QualityTaskLogOverview {
+  sinceMinutes: number;
+  items: TaskLogListItem[];
+  summary: TaskLogSummary;
 }
 
 export interface AuditLogListItem {
@@ -145,13 +156,19 @@ function redactDeep(value: unknown, depth = 0): unknown {
   return value;
 }
 
-function normalizePagination(input?: PaginationInput): Required<PaginationInput> {
+function normalizePagination(
+  input?: PaginationInput,
+): Required<PaginationInput> {
   const page =
-    typeof input?.page === "number" && Number.isFinite(input.page) && input.page > 0
+    typeof input?.page === "number" &&
+    Number.isFinite(input.page) &&
+    input.page > 0
       ? Math.floor(input.page)
       : DEFAULT_PAGE;
   const pageSize =
-    typeof input?.pageSize === "number" && Number.isFinite(input.pageSize) && input.pageSize > 0
+    typeof input?.pageSize === "number" &&
+    Number.isFinite(input.pageSize) &&
+    input.pageSize > 0
       ? Math.min(MAX_PAGE_SIZE, Math.floor(input.pageSize))
       : DEFAULT_PAGE_SIZE;
 
@@ -181,7 +198,9 @@ export class AdminLogsService {
     private readonly exceptionEvents: ExceptionEventsService,
   ) {}
 
-  private buildTaskLogWhere(filters: TaskLogListFilters): Record<string, unknown> {
+  private buildTaskLogWhere(
+    filters: TaskLogListFilters,
+  ): Record<string, unknown> {
     const where: Record<string, unknown> = { orgId: filters.orgId };
 
     if (filters.queue) {
@@ -208,12 +227,17 @@ export class AdminLogsService {
 
   private mapTaskLog(log: Record<string, unknown>): TaskLogListItem {
     const messageValue =
-      typeof log.message === "string" ? redactSensitiveFields(log.message) : log.message;
+      typeof log.message === "string"
+        ? redactSensitiveFields(log.message)
+        : log.message;
     const rawId = log._id;
     const id =
       rawId && typeof rawId === "object" && "toString" in rawId
         ? (rawId as { toString(): string }).toString()
-        : String(rawId ?? `${log.queue ?? "queue"}:${log.jobId ?? "job"}:${log.stage ?? "stage"}`);
+        : String(
+            rawId ??
+              `${log.queue ?? "queue"}:${log.jobId ?? "job"}:${log.stage ?? "stage"}`,
+          );
 
     return {
       id,
@@ -222,7 +246,9 @@ export class AdminLogsService {
       orgId: String(log.orgId ?? ""),
       stage: String(log.stage ?? ""),
       status: String(log.status ?? "pending") as TaskLogStatus,
-      ...(messageValue !== undefined ? { message: (messageValue as string | null | undefined) ?? null } : {}),
+      ...(messageValue !== undefined
+        ? { message: (messageValue as string | null | undefined) ?? null }
+        : {}),
       data: redactDeep(log.data),
       error: redactDeep(log.error),
       createdAt: serializeDate(log.createdAt),
@@ -233,68 +259,184 @@ export class AdminLogsService {
   async listTaskLogs(
     filters: TaskLogListFilters,
     pagination?: PaginationInput,
-  ): Promise<PaginatedResult<TaskLogListItem>> {
+  ): Promise<PaginatedTaskLogResult> {
     const { page, pageSize } = normalizePagination(pagination);
     const where = this.buildTaskLogWhere(filters);
-    const skip = (page - 1) * pageSize;
-
-    const [total, logs] = await Promise.all([
-      TaskLogModel.countDocuments(where),
-      TaskLogModel.find(where).sort({ createdAt: -1 }).skip(skip).limit(pageSize).lean(),
-    ]);
+    const result = await this.runTaskLogAggregate({
+      where,
+      page,
+      pageSize,
+      includeTopErrors: !filters.status || filters.status === "failed",
+    });
 
     return {
       page,
       pageSize,
-      total,
-      items: logs.map((log) => this.mapTaskLog(log as unknown as Record<string, unknown>)),
+      total: result.total,
+      items: result.items,
+      summary: result.summary,
     };
   }
 
-  async summarizeTaskLogs(filters: TaskLogListFilters): Promise<TaskLogSummary> {
+  async summarizeTaskLogs(
+    filters: TaskLogListFilters,
+  ): Promise<TaskLogSummary> {
     const where = this.buildTaskLogWhere(filters);
+    const result = await this.runTaskLogAggregate({
+      where,
+      includeItems: false,
+      includeTotal: false,
+      includeTopErrors: !filters.status || filters.status === "failed",
+    });
+    return result.summary;
+  }
 
-    const statusAggPromise = TaskLogModel.aggregate([
-      { $match: where },
-      { $group: { _id: "$status", count: { $sum: 1 } } },
-    ]);
+  async getQualityTaskLogsOverview(
+    orgId: string,
+    options?: { sinceMinutes?: number; limit?: number },
+  ): Promise<QualityTaskLogOverview> {
+    const sinceMinutesRaw =
+      typeof options?.sinceMinutes === "number" &&
+      Number.isFinite(options.sinceMinutes)
+        ? Math.floor(options.sinceMinutes)
+        : 60;
+    const sinceMinutes = Math.max(1, Math.min(24 * 60, sinceMinutesRaw));
+    const limitRaw =
+      typeof options?.limit === "number" && Number.isFinite(options.limit)
+        ? Math.floor(options.limit)
+        : 10;
+    const limit = Math.max(1, Math.min(200, limitRaw));
+    const since = new Date(Date.now() - sinceMinutes * 60 * 1000);
+    const result = await this.runTaskLogAggregate({
+      where: {
+        orgId,
+        createdAt: { $gte: since },
+      },
+      itemsMatch: {
+        status: "failed",
+      },
+      itemLimit: limit,
+      includeTotal: false,
+      includeTopErrors: true,
+    });
 
-    const stageAggPromise = TaskLogModel.aggregate([
-      { $match: where },
-      { $group: { _id: "$stage", count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-      { $limit: 50 },
-    ]);
+    return {
+      sinceMinutes,
+      items: result.items,
+      summary: result.summary,
+    };
+  }
 
-    const includeTopErrors = !filters.status || filters.status === "failed";
-    const errorAggPromise = includeTopErrors
-      ? TaskLogModel.aggregate([
-          { $match: { ...where, status: "failed" } },
-          {
-            $project: {
-              queue: 1,
-              stage: 1,
-              errorName: { $ifNull: ["$error.name", "unknown"] },
-              errorMessage: { $ifNull: ["$error.message", "$message"] },
-            },
+  private async runTaskLogAggregate(input: {
+    where: Record<string, unknown>;
+    page?: number;
+    pageSize?: number;
+    itemLimit?: number;
+    includeItems?: boolean;
+    includeTotal?: boolean;
+    includeTopErrors?: boolean;
+    itemsMatch?: Record<string, unknown>;
+  }): Promise<{
+    total: number;
+    items: TaskLogListItem[];
+    summary: TaskLogSummary;
+  }> {
+    const includeItems = input.includeItems !== false;
+    const includeTotal = input.includeTotal !== false;
+    const includeTopErrors = input.includeTopErrors !== false;
+    const facets: Record<string, Record<string, unknown>[]> = {
+      statusAgg: [{ $group: { _id: "$status", count: { $sum: 1 } } }],
+      stageAgg: [
+        { $group: { _id: "$stage", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 50 },
+      ],
+    };
+
+    if (includeItems) {
+      const itemsPipeline: Record<string, unknown>[] = [];
+      if (input.itemsMatch && Object.keys(input.itemsMatch).length > 0) {
+        itemsPipeline.push({ $match: input.itemsMatch });
+      }
+      itemsPipeline.push({ $sort: { createdAt: -1 } });
+      if (
+        typeof input.page === "number" &&
+        Number.isFinite(input.page) &&
+        typeof input.pageSize === "number" &&
+        Number.isFinite(input.pageSize)
+      ) {
+        const skip = Math.max(0, (input.page - 1) * input.pageSize);
+        itemsPipeline.push({ $skip: skip });
+        itemsPipeline.push({ $limit: input.pageSize });
+      } else if (
+        typeof input.itemLimit === "number" &&
+        Number.isFinite(input.itemLimit)
+      ) {
+        itemsPipeline.push({
+          $limit: Math.max(1, Math.floor(input.itemLimit)),
+        });
+      }
+      facets.items = itemsPipeline;
+    }
+
+    if (includeTotal) {
+      facets.total = [{ $count: "count" }];
+    }
+
+    if (includeTopErrors) {
+      facets.errorAgg = [
+        { $match: { status: "failed" } },
+        {
+          $project: {
+            queue: 1,
+            stage: 1,
+            errorName: { $ifNull: ["$error.name", "unknown"] },
+            errorMessage: { $ifNull: ["$error.message", "$message"] },
           },
-          {
-            $group: {
-              _id: { queue: "$queue", stage: "$stage", errorName: "$errorName" },
-              count: { $sum: 1 },
-              sampleMessage: { $first: "$errorMessage" },
-            },
+        },
+        {
+          $group: {
+            _id: { queue: "$queue", stage: "$stage", errorName: "$errorName" },
+            count: { $sum: 1 },
+            sampleMessage: { $first: "$errorMessage" },
           },
-          { $sort: { count: -1 } },
-          { $limit: 25 },
-        ])
-      : Promise.resolve([]);
+        },
+        { $sort: { count: -1 } },
+        { $limit: 25 },
+      ];
+    }
 
-    const [statusAgg, stageAgg, errorAgg] = await Promise.all([
-      statusAggPromise,
-      stageAggPromise,
-      errorAggPromise,
-    ]);
+    const [aggregated] = await TaskLogModel.aggregate<{
+      items?: Record<string, unknown>[];
+      total?: Array<{ count?: number }>;
+      statusAgg?: Array<{ _id?: unknown; count?: unknown }>;
+      stageAgg?: Array<{ _id?: unknown; count?: unknown }>;
+      errorAgg?: Array<{
+        _id?: { queue?: unknown; stage?: unknown; errorName?: unknown };
+        sampleMessage?: unknown;
+        count?: unknown;
+      }>;
+    }>([{ $match: input.where }, { $facet: facets as never }]);
+    const items = Array.isArray(aggregated?.items)
+      ? aggregated.items.map((log: Record<string, unknown>) =>
+          this.mapTaskLog(log as Record<string, unknown>),
+        )
+      : [];
+    const statusAgg = Array.isArray(aggregated?.statusAgg)
+      ? aggregated.statusAgg
+      : [];
+    const stageAgg = Array.isArray(aggregated?.stageAgg)
+      ? aggregated.stageAgg
+      : [];
+    const errorAgg = Array.isArray(aggregated?.errorAgg)
+      ? aggregated.errorAgg
+      : [];
+    const total =
+      includeTotal &&
+      Array.isArray(aggregated?.total) &&
+      aggregated.total.length > 0
+        ? Number(aggregated.total[0]?.count ?? 0)
+        : 0;
 
     const totals = {
       total: 0,
@@ -314,18 +456,32 @@ export class AdminLogsService {
     }
 
     return {
-      totals,
-      byStage: stageAgg.map((entry) => ({
-        stage: String(entry._id ?? "unknown"),
-        count: Number(entry.count ?? 0),
-      })),
-      topErrors: errorAgg.map((entry) => ({
-        queue: String(entry._id?.queue ?? "unknown"),
-        stage: String(entry._id?.stage ?? "unknown"),
-        errorName: redactSensitiveFields(String(entry._id?.errorName ?? "unknown")),
-        sampleMessage: entry.sampleMessage ? redactSensitiveFields(String(entry.sampleMessage)) : null,
-        count: Number(entry.count ?? 0),
-      })),
+      total,
+      items,
+      summary: {
+        totals,
+        byStage: stageAgg.map((entry: { _id?: unknown; count?: unknown }) => ({
+          stage: String(entry._id ?? "unknown"),
+          count: Number(entry.count ?? 0),
+        })),
+        topErrors: errorAgg.map(
+          (entry: {
+            _id?: { queue?: unknown; stage?: unknown; errorName?: unknown };
+            sampleMessage?: unknown;
+            count?: unknown;
+          }) => ({
+            queue: String(entry._id?.queue ?? "unknown"),
+            stage: String(entry._id?.stage ?? "unknown"),
+            errorName: redactSensitiveFields(
+              String(entry._id?.errorName ?? "unknown"),
+            ),
+            sampleMessage: entry.sampleMessage
+              ? redactSensitiveFields(String(entry.sampleMessage))
+              : null,
+            count: Number(entry.count ?? 0),
+          }),
+        ),
+      },
     };
   }
 

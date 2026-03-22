@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -11,7 +20,12 @@ import {
   ScheduleNewsSourceDto,
   UpdateNewsSourceDto,
 } from "./dto/news-source.dto";
-import { BatchUpdateNewsSourceFrequencyDto, BatchUpdateNewsSourceGroupDto, BatchUpdateNewsSourceActiveDto, BatchDeleteNewsSourcesDto } from "./dto/news-source-batch.dto";
+import {
+  BatchUpdateNewsSourceFrequencyDto,
+  BatchUpdateNewsSourceGroupDto,
+  BatchUpdateNewsSourceActiveDto,
+  BatchDeleteNewsSourcesDto,
+} from "./dto/news-source-batch.dto";
 import { ImportNewsSourcesFromOpmlDto } from "./dto/import-opml.dto";
 import { PreviewNewsSourceOpmlDto } from "./dto/preview-opml.dto";
 import { NewsSourceOpmlService } from "./news-source-opml.service";
@@ -28,13 +42,25 @@ export class NewsSourceController {
 
   @Get()
   @Permissions("crawl.read")
-  async list(@CurrentUser() user: AuthenticatedUser, @Query() query: ListNewsSourceDto) {
+  async list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListNewsSourceDto,
+  ) {
     return this.newsSources.listSources(user.orgId, query);
+  }
+
+  @Get("options")
+  @Permissions("crawl.read")
+  async listOptions(@CurrentUser() user: AuthenticatedUser) {
+    return this.newsSources.listSourceOptions(user.orgId);
   }
 
   @Post()
   @Permissions("crawl.write")
-  async create(@CurrentUser() user: AuthenticatedUser, @Body() body: CreateNewsSourceDto) {
+  async create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: CreateNewsSourceDto,
+  ) {
     return this.newsSources.createSource(user.orgId, body);
   }
 
@@ -42,9 +68,12 @@ export class NewsSourceController {
   @Permissions("crawl.write")
   async batchUpdateFrequency(
     @CurrentUser() user: AuthenticatedUser,
-    @Body() body: BatchUpdateNewsSourceFrequencyDto
+    @Body() body: BatchUpdateNewsSourceFrequencyDto,
   ) {
-    return this.newsSources.updateFrequencyForAll(user.orgId, body.frequencySeconds);
+    return this.newsSources.updateFrequencyForAll(
+      user.orgId,
+      body.frequencySeconds,
+    );
   }
 
   @Get("opml-presets")
@@ -119,14 +148,17 @@ export class NewsSourceController {
   async update(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id") id: string,
-    @Body() body: UpdateNewsSourceDto
+    @Body() body: UpdateNewsSourceDto,
   ) {
     return this.newsSources.updateSource(user.orgId, id, body);
   }
 
   @Delete(":id")
   @Permissions("crawl.write")
-  async remove(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+  async remove(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+  ) {
     return this.newsSources.deleteSource(user.orgId, id);
   }
 
@@ -141,14 +173,17 @@ export class NewsSourceController {
   async schedule(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id") id: string,
-    @Body() body: ScheduleNewsSourceDto
+    @Body() body: ScheduleNewsSourceDto,
   ) {
     return this.newsSources.schedule(user.orgId, id, body);
   }
 
   @Get(":id/preview")
   @Permissions("crawl.read")
-  async preview(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+  async preview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+  ) {
     return this.newsSources.preview(user.orgId, id);
   }
 }

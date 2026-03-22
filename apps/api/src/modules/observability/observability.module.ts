@@ -32,10 +32,13 @@ import { InternalExceptionEventsController } from "./internal-exception-events.c
 import { NewsSourceQualityController } from "./news-source-quality.controller";
 import { NewsSourceQualityService } from "./news-source-quality.service";
 import { OpsGateway } from "./ops.gateway";
+import { ObservabilitySnapshotService } from "./observability-snapshot.service";
 import { PipelineQualityController } from "./pipeline-quality.controller";
 import { PipelineQualityService } from "./pipeline-quality.service";
 import { PipelineRecoveryController } from "./pipeline-recovery.controller";
 import { PipelineRecoveryService } from "./pipeline-recovery.service";
+import { QualityOverviewController } from "./quality-overview.controller";
+import { QualityOverviewService } from "./quality-overview.service";
 import { QualityGateway } from "./quality.gateway";
 import { TaskLogsController } from "./task-logs.controller";
 
@@ -57,14 +60,16 @@ import { TaskLogsController } from "./task-logs.controller";
     ClientExceptionEventsController,
     InternalExceptionEventsController,
     ClassificationQualityController,
+    QualityOverviewController,
     PipelineQualityController,
     NewsSourceQualityController,
     PipelineRecoveryController,
-    TaskLogsController
+    TaskLogsController,
   ],
   providers: [
     ExceptionEventsService,
     AdminLogsService,
+    ObservabilitySnapshotService,
     ClassificationQualityService,
     ClassificationQualityProcessor,
     ClassificationQualityQueueCleanupService,
@@ -98,16 +103,18 @@ import { TaskLogsController } from "./task-logs.controller";
     },
     PipelineQualityService,
     NewsSourceQualityService,
+    QualityOverviewService,
     PipelineRecoveryService,
     QualityGateway,
-    OpsGateway
+    OpsGateway,
   ],
   exports: [
     ExceptionEventsService,
+    ObservabilitySnapshotService,
     ClassificationQualityService,
     PipelineQualityService,
     NewsSourceQualityService,
-    PipelineRecoveryService
-  ]
+    PipelineRecoveryService,
+  ],
 })
 export class ObservabilityModule {}

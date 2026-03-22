@@ -1,13 +1,22 @@
 import { createLogger } from "@modular/utils";
 import { OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway, WebSocketServer } from "@nestjs/websockets";
+import {
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  WebSocketGateway,
+  WebSocketServer,
+} from "@nestjs/websockets";
 import { verify } from "jsonwebtoken";
 import { Server, Socket } from "socket.io";
 
 import { AnalysisQueueEventPublisher } from "../analysis/analysis-queue-event.publisher";
 import { AlertsQueueEventPublisher } from "../alerts/alerts-queue-event.publisher";
 import { AccessTokenBlacklistService } from "../auth/access-token-blacklist.service";
-import { AuthService, type AuthenticatedUser, type JwtPayload } from "../auth/auth.service";
+import {
+  AuthService,
+  type AuthenticatedUser,
+  type JwtPayload,
+} from "../auth/auth.service";
 import { AssistantQueueEventPublisher } from "../assistant/assistant-queue-event.publisher";
 import { EnvService } from "../config/config.service";
 import { CrawlQueueEventPublisher } from "../crawl/crawl-queue-event.publisher";
@@ -35,10 +44,16 @@ interface OpsLiveEventPayload {
   namespace: "ops",
   cors: {
     origin: true,
-    credentials: true
-  }
+    credentials: true,
+  },
 })
-export class OpsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
+export class OpsGateway
+  implements
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnModuleInit,
+    OnModuleDestroy
+{
   @WebSocketServer()
   server!: Server;
 
@@ -59,63 +74,74 @@ export class OpsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
     private readonly assistantEvents: AssistantQueueEventPublisher,
     private readonly alertsEvents: AlertsQueueEventPublisher,
     private readonly sessions: UserSessionManager,
-    private readonly connectionRateLimiter: WsConnectionRateLimiterService
+    private readonly connectionRateLimiter: WsConnectionRateLimiterService,
   ) {}
 
   onModuleInit() {
-    this.unsubscribePipeline = this.queueEvents.registerListener((orgId, payload) => {
-      this.broadcast(orgId, {
-        source: "pipeline",
-        event: payload.event,
-        jobId: payload.jobId,
-        data: payload.data,
-        timestamp: payload.timestamp,
-        pipelineJobId: payload.pipelineJobId,
-        sourceId: payload.sourceId,
-        rawItemId: payload.rawItemId,
-        itemMetaId: payload.itemMetaId,
-        processedItemId: payload.processedItemId
-      });
-    });
-    this.unsubscribeCrawl = this.crawlEvents.registerListener((orgId, payload) => {
-      this.broadcast(orgId, {
-        source: "crawl",
-        event: payload.event,
-        jobId: payload.jobId,
-        data: payload.data,
-        timestamp: payload.timestamp,
-        taskId: payload.taskId,
-        priorityClass: payload.priorityClass,
-        sourcePriority: payload.sourcePriority
-      });
-    });
-    this.unsubscribeAnalysis = this.analysisEvents.registerListener((orgId, payload) => {
-      this.broadcast(orgId, {
-        source: "analysis",
-        event: payload.event,
-        jobId: payload.jobId,
-        data: payload.data,
-        timestamp: payload.timestamp
-      });
-    });
-    this.unsubscribeAssistant = this.assistantEvents.registerListener((orgId, payload) => {
-      this.broadcast(orgId, {
-        source: "assistant",
-        event: payload.event,
-        jobId: payload.jobId,
-        data: payload.data,
-        timestamp: payload.timestamp
-      });
-    });
-    this.unsubscribeAlerts = this.alertsEvents.registerListener((orgId, payload) => {
-      this.broadcast(orgId, {
-        source: "alerts",
-        event: payload.event,
-        jobId: payload.jobId,
-        data: payload.data,
-        timestamp: payload.timestamp
-      });
-    });
+    this.unsubscribePipeline = this.queueEvents.registerListener(
+      (orgId, payload) => {
+        this.broadcast(orgId, {
+          source: "pipeline",
+          event: payload.event,
+          jobId: payload.jobId,
+          data: payload.data,
+          timestamp: payload.timestamp,
+          pipelineJobId: payload.pipelineJobId,
+          sourceId: payload.sourceId,
+          rawItemId: payload.rawItemId,
+          itemMetaId: payload.itemMetaId,
+          processedItemId: payload.processedItemId,
+        });
+      },
+    );
+    this.unsubscribeCrawl = this.crawlEvents.registerListener(
+      (orgId, payload) => {
+        this.broadcast(orgId, {
+          source: "crawl",
+          event: payload.event,
+          jobId: payload.jobId,
+          data: payload.data,
+          timestamp: payload.timestamp,
+          sourceId: payload.sourceId,
+          taskId: payload.taskId,
+          priorityClass: payload.priorityClass,
+          sourcePriority: payload.sourcePriority,
+        });
+      },
+    );
+    this.unsubscribeAnalysis = this.analysisEvents.registerListener(
+      (orgId, payload) => {
+        this.broadcast(orgId, {
+          source: "analysis",
+          event: payload.event,
+          jobId: payload.jobId,
+          data: payload.data,
+          timestamp: payload.timestamp,
+        });
+      },
+    );
+    this.unsubscribeAssistant = this.assistantEvents.registerListener(
+      (orgId, payload) => {
+        this.broadcast(orgId, {
+          source: "assistant",
+          event: payload.event,
+          jobId: payload.jobId,
+          data: payload.data,
+          timestamp: payload.timestamp,
+        });
+      },
+    );
+    this.unsubscribeAlerts = this.alertsEvents.registerListener(
+      (orgId, payload) => {
+        this.broadcast(orgId, {
+          source: "alerts",
+          event: payload.event,
+          jobId: payload.jobId,
+          data: payload.data,
+          timestamp: payload.timestamp,
+        });
+      },
+    );
   }
 
   async onModuleDestroy() {
@@ -144,18 +170,33 @@ export class OpsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
   async handleConnection(client: Socket) {
     const ip = this.extractClientIp(client);
     try {
-      const rateLimitResult = await this.connectionRateLimiter.checkConnectionRateLimit(ip ?? "");
+      const rateLimitResult =
+        await this.connectionRateLimiter.checkConnectionRateLimit(ip ?? "");
       if (!rateLimitResult.allowed) {
-        this.logger.warn({ socketId: client.id, ip }, "WebSocket connection rate limited");
-        client.emit("ops:error", { message: "Rate limit exceeded", retryAfterMs: rateLimitResult.retryAfterMs });
+        this.logger.warn(
+          { socketId: client.id, ip },
+          "WebSocket connection rate limited",
+        );
+        client.emit("ops:error", {
+          message: "Rate limit exceeded",
+          retryAfterMs: rateLimitResult.retryAfterMs,
+        });
         client.disconnect(true);
         return;
       }
 
-      const backoffDelay = await this.connectionRateLimiter.getBackoffDelay(ip ?? "");
+      const backoffDelay = await this.connectionRateLimiter.getBackoffDelay(
+        ip ?? "",
+      );
       if (backoffDelay > 0) {
-        this.logger.warn({ socketId: client.id, ip, backoffDelay }, "WebSocket connection in backoff period");
-        client.emit("ops:error", { message: "Too many failed attempts", retryAfterMs: backoffDelay });
+        this.logger.warn(
+          { socketId: client.id, ip, backoffDelay },
+          "WebSocket connection in backoff period",
+        );
+        client.emit("ops:error", {
+          message: "Too many failed attempts",
+          retryAfterMs: backoffDelay,
+        });
         client.disconnect(true);
         return;
       }
@@ -167,8 +208,13 @@ export class OpsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
       const token = this.extractToken(client);
       const payload = this.verifyToken(token);
       await this.ensureNotRevoked(payload);
-      const profile = await this.authService.getUserProfile(payload.sub, payload.orgId);
-      const hasPermission = profile.permissions.includes("crawl.read") || profile.permissions.includes("crawl.write");
+      const profile = await this.authService.getUserProfile(
+        payload.sub,
+        payload.orgId,
+      );
+      const hasPermission =
+        profile.permissions.includes("crawl.read") ||
+        profile.permissions.includes("crawl.write");
       if (!hasPermission) {
         throw new Error("Insufficient permissions");
       }
@@ -178,22 +224,39 @@ export class OpsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
       client.data.user = profile;
       client.data.clientIp = ip;
 
-      const { userConnections } = await this.sessions.register(this.server, client, {
-        userId: profile.id,
+      const { userConnections } = await this.sessions.register(
+        this.server,
+        client,
+        {
+          userId: profile.id,
+          orgId: profile.orgId,
+          ip,
+        },
+      );
+      client.emit("ops:connected", {
         orgId: profile.orgId,
-        ip
+        userId: profile.id,
       });
-      client.emit("ops:connected", { orgId: profile.orgId, userId: profile.id });
       this.logger.info(
-        { socketId: client.id, orgId: profile.orgId, userId: profile.id, ip, userConnections },
-        "Ops socket connected"
+        {
+          socketId: client.id,
+          orgId: profile.orgId,
+          userId: profile.id,
+          ip,
+          userConnections,
+        },
+        "Ops socket connected",
       );
     } catch (error) {
       await this.connectionRateLimiter.recordFailedAuth(ip ?? "");
       this.sessions.unregister(client);
       this.logger.warn(
-        { socketId: client.id, ip, error: error instanceof Error ? error.message : String(error) },
-        "Ops socket authentication failed"
+        {
+          socketId: client.id,
+          ip,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "Ops socket authentication failed",
       );
       client.emit("ops:error", { message: "Unauthorized" });
       client.disconnect(true);
@@ -204,8 +267,13 @@ export class OpsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
     const profile = client.data?.user as AuthenticatedUser | undefined;
     this.sessions.unregister(client);
     this.logger.info(
-      { socketId: client.id, userId: profile?.id, orgId: profile?.orgId, ip: client.data?.clientIp },
-      "Ops socket disconnected"
+      {
+        socketId: client.id,
+        userId: profile?.id,
+        orgId: profile?.orgId,
+        ip: client.data?.clientIp,
+      },
+      "Ops socket disconnected",
     );
   }
 
@@ -213,7 +281,7 @@ export class OpsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
     const jwtConfig = this.env.jwtConfig;
     const decoded = verify(token, jwtConfig.secret, {
       audience: jwtConfig.audience,
-      issuer: jwtConfig.issuer
+      issuer: jwtConfig.issuer,
     });
 
     if (!decoded || typeof decoded === "string") {
@@ -228,7 +296,9 @@ export class OpsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
       throw new Error("Invalid token payload");
     }
     const permissions = Array.isArray(payload.permissions)
-      ? payload.permissions.filter((entry): entry is string => typeof entry === "string")
+      ? payload.permissions.filter(
+          (entry): entry is string => typeof entry === "string",
+        )
       : [];
 
     return {
@@ -237,7 +307,7 @@ export class OpsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
       permissions,
       jti: typeof payload.jti === "string" ? payload.jti : undefined,
       exp: typeof payload.exp === "number" ? payload.exp : undefined,
-      iat: typeof payload.iat === "number" ? payload.iat : undefined
+      iat: typeof payload.iat === "number" ? payload.iat : undefined,
     };
   }
 
@@ -260,7 +330,11 @@ export class OpsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
     if (typeof queryToken === "string" && queryToken.length > 0) {
       return queryToken;
     }
-    if (Array.isArray(queryToken) && queryToken.length > 0 && typeof queryToken[0] === "string") {
+    if (
+      Array.isArray(queryToken) &&
+      queryToken.length > 0 &&
+      typeof queryToken[0] === "string"
+    ) {
       return queryToken[0];
     }
 
@@ -289,7 +363,8 @@ export class OpsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
   }
 
   private extractOrigin(client: Socket) {
-    const originHeader = client.handshake.headers.origin ?? client.handshake.headers.referer;
+    const originHeader =
+      client.handshake.headers.origin ?? client.handshake.headers.referer;
     const raw = Array.isArray(originHeader) ? originHeader[0] : originHeader;
     if (!raw) {
       return undefined;
@@ -328,14 +403,21 @@ export class OpsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
     if (!this.server) {
       return;
     }
-    this.server.to(this.sessions.orgRoom(orgId)).emit("ops:event", { orgId, ...payload });
+    this.server
+      .to(this.sessions.orgRoom(orgId))
+      .emit("ops:event", { orgId, ...payload });
   }
 
   private extractClientIp(client: Socket) {
     const forwardedHeader = client.handshake.headers["x-forwarded-for"];
-    const forwarded = Array.isArray(forwardedHeader) ? forwardedHeader[0] : forwardedHeader;
+    const forwarded = Array.isArray(forwardedHeader)
+      ? forwardedHeader[0]
+      : forwardedHeader;
     const ipFromForwarded = forwarded?.split(",")[0]?.trim();
-    const address = typeof client.handshake.address === "string" ? client.handshake.address : undefined;
+    const address =
+      typeof client.handshake.address === "string"
+        ? client.handshake.address
+        : undefined;
     const detectedIp = ipFromForwarded || address;
     return detectedIp ? detectedIp.replace(/^::ffff:/, "") : undefined;
   }

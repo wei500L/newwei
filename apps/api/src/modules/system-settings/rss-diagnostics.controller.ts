@@ -18,16 +18,29 @@ interface RssBackfillRequestBody {
 export class RssDiagnosticsController {
   constructor(private readonly diagnostics: RssDiagnosticsService) {}
 
+  @Get("overview")
+  @Permissions("settings.manage")
+  async getOverview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("windowDays") windowDaysRaw: string | undefined,
+    @Query("lookbackHours") lookbackHoursRaw: string | undefined,
+  ) {
+    return this.diagnostics.getOverview(user.orgId, {
+      windowDays: this.parseNumber(windowDaysRaw),
+      lookbackHours: this.parseNumber(lookbackHoursRaw),
+    });
+  }
+
   @Get("chain")
   @Permissions("settings.manage")
   async getChainSummary(
     @CurrentUser() user: AuthenticatedUser,
     @Query("windowDays") windowDaysRaw: string | undefined,
-    @Query("lookbackHours") lookbackHoursRaw: string | undefined
+    @Query("lookbackHours") lookbackHoursRaw: string | undefined,
   ) {
     return this.diagnostics.getChainSummary(user.orgId, {
       windowDays: this.parseNumber(windowDaysRaw),
-      lookbackHours: this.parseNumber(lookbackHoursRaw)
+      lookbackHours: this.parseNumber(lookbackHoursRaw),
     });
   }
 
@@ -36,11 +49,11 @@ export class RssDiagnosticsController {
   async getSourceDetails(
     @CurrentUser() user: AuthenticatedUser,
     @Query("windowDays") windowDaysRaw: string | undefined,
-    @Query("lookbackHours") lookbackHoursRaw: string | undefined
+    @Query("lookbackHours") lookbackHoursRaw: string | undefined,
   ) {
     return this.diagnostics.listSourceDetails(user.orgId, {
       windowDays: this.parseNumber(windowDaysRaw),
-      lookbackHours: this.parseNumber(lookbackHoursRaw)
+      lookbackHours: this.parseNumber(lookbackHoursRaw),
     });
   }
 
@@ -48,11 +61,11 @@ export class RssDiagnosticsController {
   @Permissions("settings.manage")
   async backfillSourceId(
     @CurrentUser() user: AuthenticatedUser,
-    @Body() body: RssBackfillRequestBody | undefined
+    @Body() body: RssBackfillRequestBody | undefined,
   ) {
     return this.diagnostics.backfillProcessedItemSourceId(user.orgId, {
       dryRun: body?.dryRun,
-      limit: body?.limit
+      limit: body?.limit,
     });
   }
 

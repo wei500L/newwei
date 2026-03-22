@@ -7,6 +7,7 @@ import {
 import {
   Injectable,
   NotFoundException,
+  Optional,
   type OnModuleInit,
 } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
@@ -29,6 +30,7 @@ import {
   type CrawlDiscoveryTimestampSource,
 } from "../crawl/crawl-metadata.service";
 import { CrawlQueueService } from "../crawl/crawl-queue.service";
+import { NewsSourceOpsSnapshotService } from "../crawl/news-source-ops-snapshot.service";
 import { CrawlStrategyWorkflowService } from "../crawl/crawl-strategy-workflow.service";
 import { CrawlTaskService } from "../crawl/crawl-task.service";
 import { CRAWL_HOT_PRIORITY_THRESHOLD } from "../crawl/crawl.constants";
@@ -229,6 +231,8 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     private readonly crawlTaskService: CrawlTaskService,
     private readonly notifications: NotificationsService,
     private readonly schedulerSettings: NewsSourceSchedulerSettingsService,
+    @Optional()
+    private readonly newsSourceOpsSnapshots?: NewsSourceOpsSnapshotService,
   ) {}
 
   async onModuleInit() {
@@ -324,17 +328,27 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           await this.cache
             .del(`news-source:backpressure:${source.id}`)
             .catch(() => undefined);
+          await this.newsSourceOpsSnapshots?.setBackpressureState(
+            source.id,
+            null,
+          );
 
           const activeCutoff = new Date(
             now.getTime() - schedulerConfig.inFlightLookbackMs,
           );
-          const workflowOverlay = await this.workflows.compileNewsSourceOverlay({
-            orgId: source.orgId,
-            workflowId: source.workflowId,
-            workflowVersionId: source.workflowVersionId,
-            workflowBindingMode: source.workflowBindingMode,
-          });
-          seedConfig = this.normalizeSeedConfig(source, undefined, workflowOverlay);
+          const workflowOverlay = await this.workflows.compileNewsSourceOverlay(
+            {
+              orgId: source.orgId,
+              workflowId: source.workflowId,
+              workflowVersionId: source.workflowVersionId,
+              workflowBindingMode: source.workflowBindingMode,
+            },
+          );
+          seedConfig = this.normalizeSeedConfig(
+            source,
+            undefined,
+            workflowOverlay,
+          );
           let runtimeSettings = DEFAULT_SEED_RUNTIME_SETTINGS;
           if (seedConfig) {
             runtimeSettings = await this.resolveSeedRuntimeSettings();
@@ -661,8 +675,8 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                 const existingTask = await tx.crawlTask.findFirst({
                   where: {
                     orgId: source.orgId,
+                    newsSourceId: source.id,
                     targetUrl: job.url,
-                    displayName: { startsWith: displayNamePrefix },
                   },
                   select: { id: true },
                 });
@@ -672,6 +686,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                   const updatedTask = await tx.crawlTask.update({
                     where: { id: existingTask.id },
                     data: {
+                      newsSourceId: source.id,
                       displayName,
                       status: "pending",
                       concurrency: 1,
@@ -687,6 +702,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                     data: {
                       orgId: source.orgId,
                       createdById: triggeredById,
+                      newsSourceId: source.id,
                       targetUrl: job.url,
                       displayName,
                       status: "pending",
@@ -729,12 +745,21 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                 {
                   priorityClass: crawlPriorityClass,
                   sourcePriority: source.priority,
+                  sourceId: source.id,
                 },
               );
               await this.prisma.crawlTask.updateMany({
                 where: { id: crawlTaskId },
                 data: { status: "queued" },
               });
+              await this.newsSourceOpsSnapshots?.syncQueueCounts(
+                source.orgId,
+                source.id,
+              );
+              await this.newsSourceOpsSnapshots?.refreshSnapshotForSource(
+                source.orgId,
+                source.id,
+              );
             } catch (queueError) {
               enqueueFailures += 1;
               logger.error(
@@ -770,6 +795,14 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                   },
                 }),
               ]);
+              await this.newsSourceOpsSnapshots?.syncQueueCounts(
+                source.orgId,
+                source.id,
+              );
+              await this.newsSourceOpsSnapshots?.refreshSnapshotForSource(
+                source.orgId,
+                source.id,
+              );
             }
           }
           const totalSkippedCount = skippedCount + rssSkippedNoBodyCount;
@@ -830,7 +863,6 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       throw new NotFoundException("News source not found");
     }
 
-    const prefix = `NewsSource:${source.id}:`;
     const queuedTaskIds = await this.crawlQueue.listQueuedTaskIds();
     if (queuedTaskIds.size === 0) {
       return {
@@ -845,7 +877,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       where: {
         orgId,
         id: { in: Array.from(queuedTaskIds) },
-        displayName: { startsWith: prefix },
+        newsSourceId: source.id,
       },
       select: { id: true },
     });
@@ -862,6 +894,11 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           lastError: `Canceled by ${triggeredById}`,
         },
       });
+      await this.newsSourceOpsSnapshots?.syncQueueCounts(orgId, source.id);
+      await this.newsSourceOpsSnapshots?.refreshSnapshotForSource(
+        orgId,
+        source.id,
+      );
     }
 
     return {
@@ -898,6 +935,11 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         completedAt: new Date(),
       },
     });
+
+    await this.newsSourceOpsSnapshots?.refreshSnapshotForSource(
+      orgId,
+      source.id,
+    );
 
     return {
       sourceId: source.id,
@@ -959,6 +1001,13 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         ip,
         actorPermissions,
       );
+      if (retried) {
+        await this.newsSourceOpsSnapshots?.syncQueueCounts(orgId, source.id);
+        await this.newsSourceOpsSnapshots?.refreshSnapshotForSource(
+          orgId,
+          source.id,
+        );
+      }
       return {
         sourceId: source.id,
         retryType: "crawl" as const,
@@ -1028,6 +1077,10 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       sourceName: source.name ?? undefined,
       pipelineJobId: latestJob.id,
     });
+    await this.newsSourceOpsSnapshots?.refreshSnapshotForSource(
+      orgId,
+      source.id,
+    );
     return {
       sourceId: source.id,
       retryType: "pipeline" as const,
@@ -2460,13 +2513,11 @@ export class NewsSourceSchedulerService implements OnModuleInit {
 
   private mergeWorkflowSourceConfig(
     config: Record<string, unknown> | null,
-    overlay?:
-      | {
-          crawlOptions?: Record<string, unknown>;
-          seed?: Record<string, unknown>;
-          keywords?: string[];
-        }
-      | null,
+    overlay?: {
+      crawlOptions?: Record<string, unknown>;
+      seed?: Record<string, unknown>;
+      keywords?: string[];
+    } | null,
   ) {
     if (!overlay) {
       return config;
@@ -2478,16 +2529,16 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         : {}),
       crawlOptions: {
         ...((config?.crawlOptions &&
-          typeof config.crawlOptions === "object" &&
-          !Array.isArray(config.crawlOptions)
+        typeof config.crawlOptions === "object" &&
+        !Array.isArray(config.crawlOptions)
           ? (config.crawlOptions as Record<string, unknown>)
           : {}) ?? {}),
         ...(overlay.crawlOptions ?? {}),
       },
       seed: {
         ...((config?.seed &&
-          typeof config.seed === "object" &&
-          !Array.isArray(config.seed)
+        typeof config.seed === "object" &&
+        !Array.isArray(config.seed)
           ? (config.seed as Record<string, unknown>)
           : {}) ?? {}),
         ...(overlay.seed ?? {}),
@@ -3217,6 +3268,11 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       state,
       RSS_ADAPTIVE_STATE_TTL_SECONDS,
     );
+    await this.newsSourceOpsSnapshots?.setRssAdaptiveState(sourceId, {
+      outcomes: state.outcomes,
+      consecutiveNoHit: state.consecutiveNoHit,
+      updatedAt: state.updatedAt,
+    });
   }
 
   private shouldUseRssAdaptive(
@@ -3931,6 +3987,17 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                 ),
               ),
             );
+            await Promise.allSettled(
+              sourcesToDelay.map(
+                (source) =>
+                  this.newsSourceOpsSnapshots?.setBackpressureState(source.id, {
+                    until: rescheduleAt.toISOString(),
+                    pendingJobs,
+                    threshold: maxPending,
+                    observedAt: now,
+                  }) ?? Promise.resolve(),
+              ),
+            );
 
             const countTtlSeconds = 24 * 60 * 60;
             await Promise.allSettled(
@@ -4068,6 +4135,9 @@ export class NewsSourceSchedulerService implements OnModuleInit {
 
       void this.cache
         .del(`news-source:backpressure:${source.id}`)
+        .catch(() => undefined);
+      void this.newsSourceOpsSnapshots
+        ?.setBackpressureState(source.id, null)
         .catch(() => undefined);
 
       const activeCutoff = new Date(
@@ -4488,8 +4558,8 @@ export class NewsSourceSchedulerService implements OnModuleInit {
               const existingTask = await tx.crawlTask.findFirst({
                 where: {
                   orgId: source.orgId,
+                  newsSourceId: source.id,
                   targetUrl: job.url,
-                  displayName: { startsWith: displayNamePrefix },
                 },
                 select: { id: true },
               });
@@ -4499,6 +4569,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                 const updatedTask = await tx.crawlTask.update({
                   where: { id: existingTask.id },
                   data: {
+                    newsSourceId: source.id,
                     displayName,
                     status: "pending",
                     concurrency: 1,
@@ -4514,6 +4585,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                   data: {
                     orgId: source.orgId,
                     createdById: crawlActorId,
+                    newsSourceId: source.id,
                     targetUrl: job.url,
                     displayName,
                     status: "pending",
@@ -4554,12 +4626,21 @@ export class NewsSourceSchedulerService implements OnModuleInit {
               {
                 priorityClass: crawlPriorityClass,
                 sourcePriority: source.priority,
+                sourceId: source.id,
               },
             );
             await this.prisma.crawlTask.updateMany({
               where: { id: crawlTaskId },
               data: { status: "queued" },
             });
+            await this.newsSourceOpsSnapshots?.syncQueueCounts(
+              source.orgId,
+              source.id,
+            );
+            await this.newsSourceOpsSnapshots?.refreshSnapshotForSource(
+              source.orgId,
+              source.id,
+            );
             enqueuedThisTick += 1;
           } catch (queueError) {
             logger.error(
@@ -4595,6 +4676,14 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                 },
               }),
             ]);
+            await this.newsSourceOpsSnapshots?.syncQueueCounts(
+              source.orgId,
+              source.id,
+            );
+            await this.newsSourceOpsSnapshots?.refreshSnapshotForSource(
+              source.orgId,
+              source.id,
+            );
           }
         }
         if (rssSkippedNoBodyCount > 0) {

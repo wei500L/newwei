@@ -27,16 +27,21 @@ function mockTaskLogFindByStage(logs: {
   preflight?: unknown[];
   dedupe?: unknown[];
 }) {
-  mockedTaskLogFind.mockImplementation((query?: { stage?: string }) => {
-    const stage = query?.stage;
-    const docs =
-      stage === "expansion"
-        ? logs.expansion ?? []
-        : stage === "preflight"
-          ? logs.preflight ?? []
-          : stage === "dedupe"
-            ? logs.dedupe ?? []
-            : [];
+  mockedTaskLogFind.mockImplementation(() => {
+    const docs = [
+      ...(logs.expansion ?? []).map((entry) => ({
+        stage: "expansion",
+        ...((entry ?? {}) as object),
+      })),
+      ...(logs.preflight ?? []).map((entry) => ({
+        stage: "preflight",
+        ...((entry ?? {}) as object),
+      })),
+      ...(logs.dedupe ?? []).map((entry) => ({
+        stage: "dedupe",
+        ...((entry ?? {}) as object),
+      })),
+    ];
     return {
       select: jest.fn().mockReturnValue({
         lean: jest.fn().mockResolvedValue(docs),
@@ -60,15 +65,24 @@ describe("CrawlQualityMetricsService", () => {
     mockTaskLogFindByStage(logs);
     const prisma = {
       crawlTask: {
-        findMany: jest.fn().mockResolvedValue([
-          { id: "task-1", displayName: null, config: null },
-        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { id: "task-1", displayName: null, config: null },
+          ]),
       },
       alertRule: {
         findMany: jest.fn().mockResolvedValue(logs.alertRules ?? []),
       },
     } as any;
-    return new CrawlQualityMetricsService(prisma);
+    const snapshots = {
+      getOrCreate: jest.fn(
+        async ({ loader }: { loader: () => Promise<unknown> }) => ({
+          payload: await loader(),
+        }),
+      ),
+    } as any;
+    return new CrawlQualityMetricsService(prisma, snapshots);
   }
 
   function createServiceWithLogs(expansionLogs: unknown[]) {

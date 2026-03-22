@@ -8,7 +8,7 @@ import {
   CRAWL_QUEUE_HOT,
   CRAWL_QUEUE_HOT_NAME,
   CRAWL_QUEUE_NORMAL,
-  CRAWL_QUEUE_NORMAL_NAME
+  CRAWL_QUEUE_NORMAL_NAME,
 } from "./crawl.constants";
 import type { CrawlJobData, CrawlPriorityClass } from "./crawl.types";
 
@@ -18,15 +18,20 @@ export interface CrawlQueueEventPayload {
   queueName?: string;
   data?: Record<string, unknown>;
   timestamp: string;
+  sourceId?: string;
   taskId?: string;
   priorityClass?: CrawlPriorityClass;
   sourcePriority?: number;
 }
 
-export type CrawlQueueEventListener = (orgId: string, payload: CrawlQueueEventPayload) => Promise<void> | void;
+export type CrawlQueueEventListener = (
+  orgId: string,
+  payload: CrawlQueueEventPayload,
+) => Promise<void> | void;
 
 interface CrawlJobContext {
   orgId: string;
+  sourceId?: string;
   taskId?: string;
   priorityClass?: CrawlPriorityClass;
   sourcePriority?: number;
@@ -39,10 +44,34 @@ interface OrgCacheEntry extends CrawlJobContext {
 interface EventBinding {
   events: QueueEvents;
   handlers: {
-    active: ({ jobId, prev }: { jobId: string; prev?: string | null }) => Promise<void>;
-    progress: ({ jobId, data }: { jobId: string; data?: unknown }) => Promise<void>;
-    completed: ({ jobId, returnvalue }: { jobId: string; returnvalue?: unknown }) => Promise<void>;
-    failed: ({ jobId, failedReason }: { jobId: string; failedReason?: string }) => Promise<void>;
+    active: ({
+      jobId,
+      prev,
+    }: {
+      jobId: string;
+      prev?: string | null;
+    }) => Promise<void>;
+    progress: ({
+      jobId,
+      data,
+    }: {
+      jobId: string;
+      data?: unknown;
+    }) => Promise<void>;
+    completed: ({
+      jobId,
+      returnvalue,
+    }: {
+      jobId: string;
+      returnvalue?: unknown;
+    }) => Promise<void>;
+    failed: ({
+      jobId,
+      failedReason,
+    }: {
+      jobId: string;
+      failedReason?: string;
+    }) => Promise<void>;
   };
 }
 
@@ -56,12 +85,18 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
 
   constructor(
     @Inject(CRAWL_QUEUE_EVENTS_HOT) private readonly hotEvents: QueueEvents,
-    @Inject(CRAWL_QUEUE_EVENTS_NORMAL) private readonly normalEvents: QueueEvents,
+    @Inject(CRAWL_QUEUE_EVENTS_NORMAL)
+    private readonly normalEvents: QueueEvents,
     @Inject(CRAWL_QUEUE_HOT) private readonly hotQueue: Queue<CrawlJobData>,
-    @Inject(CRAWL_QUEUE_NORMAL) private readonly normalQueue: Queue<CrawlJobData>
+    @Inject(CRAWL_QUEUE_NORMAL)
+    private readonly normalQueue: Queue<CrawlJobData>,
   ) {
     this.bindQueue(this.hotEvents, this.hotQueue, CRAWL_QUEUE_HOT_NAME);
-    this.bindQueue(this.normalEvents, this.normalQueue, CRAWL_QUEUE_NORMAL_NAME);
+    this.bindQueue(
+      this.normalEvents,
+      this.normalQueue,
+      CRAWL_QUEUE_NORMAL_NAME,
+    );
   }
 
   registerListener(listener: CrawlQueueEventListener) {
@@ -69,12 +104,34 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
     return () => this.listeners.delete(listener);
   }
 
-  private bindQueue(events: QueueEvents, queue: Queue<CrawlJobData>, queueName: string) {
-    const active = async ({ jobId, prev }: { jobId: string; prev?: string | null }) => {
-      await this.emit(queue, queueName, jobId, "ACTIVE", prev ? { prev } : undefined);
+  private bindQueue(
+    events: QueueEvents,
+    queue: Queue<CrawlJobData>,
+    queueName: string,
+  ) {
+    const active = async ({
+      jobId,
+      prev,
+    }: {
+      jobId: string;
+      prev?: string | null;
+    }) => {
+      await this.emit(
+        queue,
+        queueName,
+        jobId,
+        "ACTIVE",
+        prev ? { prev } : undefined,
+      );
     };
 
-    const progress = async ({ jobId, data }: { jobId: string; data?: unknown }) => {
+    const progress = async ({
+      jobId,
+      data,
+    }: {
+      jobId: string;
+      data?: unknown;
+    }) => {
       const progressData =
         data && typeof data === "object"
           ? (data as Record<string, unknown>)
@@ -86,13 +143,15 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
 
     const completed = async ({
       jobId,
-      returnvalue
+      returnvalue,
     }: {
       jobId: string;
       returnvalue?: unknown;
     }) => {
       const completedData =
-        returnvalue && typeof returnvalue === "object" && !Array.isArray(returnvalue)
+        returnvalue &&
+        typeof returnvalue === "object" &&
+        !Array.isArray(returnvalue)
           ? (returnvalue as Record<string, unknown>)
           : returnvalue !== undefined
             ? { returnvalue }
@@ -102,12 +161,18 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
 
     const failed = async ({
       jobId,
-      failedReason
+      failedReason,
     }: {
       jobId: string;
       failedReason?: string;
     }) => {
-      await this.emit(queue, queueName, jobId, "FAILED", failedReason ? { reason: failedReason } : undefined);
+      await this.emit(
+        queue,
+        queueName,
+        jobId,
+        "FAILED",
+        failedReason ? { reason: failedReason } : undefined,
+      );
     };
 
     events.on("active", active);
@@ -121,8 +186,8 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
         active,
         progress,
         completed,
-        failed
-      }
+        failed,
+      },
     });
   }
 
@@ -131,12 +196,15 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
     queueName: string,
     jobId: string,
     event: string,
-    data?: Record<string, unknown>
+    data?: Record<string, unknown>,
   ) {
     try {
       const context = await this.resolveJobContext(queue, queueName, jobId);
       if (!context?.orgId) {
-        this.logger.debug({ queueName, jobId, event }, "Skipping crawl queue event without org context");
+        this.logger.debug(
+          { queueName, jobId, event },
+          "Skipping crawl queue event without org context",
+        );
         return;
       }
       const orgId = context.orgId;
@@ -147,16 +215,22 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
         queueName,
         data,
         timestamp: new Date().toISOString(),
+        ...(context.sourceId ? { sourceId: context.sourceId } : {}),
         ...(context.taskId ? { taskId: context.taskId } : {}),
-        ...(context.priorityClass ? { priorityClass: context.priorityClass } : {}),
+        ...(context.priorityClass
+          ? { priorityClass: context.priorityClass }
+          : {}),
         ...(typeof context.sourcePriority === "number"
           ? { sourcePriority: context.sourcePriority }
-          : {})
+          : {}),
       };
 
       await this.dispatchToListeners(orgId, payload);
     } catch (error) {
-      this.logger.error({ queueName, jobId, event, error }, "Failed to publish crawl queue event");
+      this.logger.error(
+        { queueName, jobId, event, error },
+        "Failed to publish crawl queue event",
+      );
     }
   }
 
@@ -167,7 +241,7 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
   private async resolveJobContext(
     queue: Queue<CrawlJobData>,
     queueName: string,
-    jobId: string
+    jobId: string,
   ): Promise<CrawlJobContext | null> {
     const cacheKey = this.cacheKey(queueName, jobId);
     const cached = this.getCachedJobContext(cacheKey);
@@ -179,7 +253,10 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
         return context;
       }
     } catch (error) {
-      this.logger.debug({ queueName, jobId, error }, "Failed to resolve crawl queue orgId from job");
+      this.logger.debug(
+        { queueName, jobId, error },
+        "Failed to resolve crawl queue orgId from job",
+      );
     }
 
     return cached;
@@ -201,15 +278,17 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
         ? priorityClassRaw
         : undefined;
     const sourcePriority =
-      typeof record.sourcePriority === "number" && Number.isFinite(record.sourcePriority)
+      typeof record.sourcePriority === "number" &&
+      Number.isFinite(record.sourcePriority)
         ? Math.round(record.sourcePriority)
         : undefined;
 
     return {
       orgId,
+      sourceId: this.readStringField(record.sourceId),
       taskId: this.readStringField(record.taskId),
       priorityClass,
-      sourcePriority
+      sourcePriority,
     };
   }
 
@@ -222,7 +301,10 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
   }
 
   private setCachedJobContext(cacheKey: string, context: CrawlJobContext) {
-    this.orgCache.set(cacheKey, { ...context, expiresAt: Date.now() + this.orgCacheTtlMs });
+    this.orgCache.set(cacheKey, {
+      ...context,
+      expiresAt: Date.now() + this.orgCacheTtlMs,
+    });
   }
 
   private getCachedJobContext(cacheKey: string): CrawlJobContext | null {
@@ -238,12 +320,18 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
     return context;
   }
 
-  private async dispatchToListeners(orgId: string, payload: CrawlQueueEventPayload) {
+  private async dispatchToListeners(
+    orgId: string,
+    payload: CrawlQueueEventPayload,
+  ) {
     for (const listener of this.listeners) {
       try {
         await listener(orgId, payload);
       } catch (error) {
-        this.logger.error({ orgId, error }, "Crawl queue event listener failed");
+        this.logger.error(
+          { orgId, error },
+          "Crawl queue event listener failed",
+        );
       }
     }
   }

@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import { NewsSourceType, PipelineJobStatus, Prisma } from "@prisma/client";
 
@@ -28,6 +29,11 @@ import {
   type DeepDiscoveryFailureState,
   type DeepDiscoveryFailureStats24h,
 } from "./deep-discovery-failure";
+import {
+  NewsSourceOpsSnapshotService,
+  type NewsSourceListRuntimeState,
+  type NewsSourceOpsSummary,
+} from "./news-source-ops-snapshot.service";
 import { resolveQueryParamAllowlist } from "./url-fingerprint";
 import {
   CreateNewsSourceDto,
@@ -128,6 +134,50 @@ export interface NewsSourcePreviewDeepFailureStats {
   circuitOpenUntil?: string | null;
 }
 
+export interface ListNewsSourceResponse {
+  sources: Array<
+    Prisma.NewsSourceGetPayload<{
+      select: {
+        id: true;
+        name: true;
+        url: true;
+        siteType: true;
+        language: true;
+        crawlTemplateId: true;
+        workflowId: true;
+        workflowVersionId: true;
+        workflowBindingMode: true;
+        group: true;
+        frequencySeconds: true;
+        priority: true;
+        isActive: true;
+        lastRunAt: true;
+        lastSuccessAt: true;
+        lastFailureAt: true;
+        consecutiveFailures: true;
+        circuitOpenUntil: true;
+        nextRunAt: true;
+        config: true;
+      };
+    }> & {
+      opsSummary: NewsSourceOpsSummary & {
+        runtime: {
+          crawlTaskQueuedCount: number;
+          crawlTaskRunningCount: number;
+          backpressureUntil: string | null;
+          backpressurePendingJobs: number | null;
+          backpressureThreshold: number | null;
+          backpressureCount24h: number;
+          rssAdaptiveState: NewsSourceListRuntimeState["rssAdaptiveState"];
+        };
+      };
+    }
+  >;
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 @Injectable()
 export class NewsSourceService {
   constructor(
@@ -136,10 +186,35 @@ export class NewsSourceService {
     private readonly workflows: CrawlStrategyWorkflowService,
     private readonly env: EnvService,
     private readonly cache: CacheService,
+    @Optional()
+    private readonly opsSnapshots?: NewsSourceOpsSnapshotService,
   ) {}
 
-  async listSources(orgId: string, query?: ListNewsSourceDto) {
+  async listSourceOptions(orgId: string) {
+    return this.prisma.newsSource.findMany({
+      where: { orgId },
+      orderBy: [{ name: "asc" }, { url: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        url: true,
+      },
+    });
+  }
+
+  async listSources(
+    orgId: string,
+    query?: ListNewsSourceDto,
+  ): Promise<ListNewsSourceResponse> {
     const where: Prisma.NewsSourceWhereInput = { orgId };
+    const page =
+      typeof query?.page === "number" && Number.isFinite(query.page)
+        ? Math.max(1, Math.floor(query.page))
+        : 1;
+    const pageSize =
+      typeof query?.pageSize === "number" && Number.isFinite(query.pageSize)
+        ? Math.max(1, Math.min(50, Math.floor(query.pageSize)))
+        : 10;
     const search = query?.search?.trim();
     if (search) {
       where.OR = [
@@ -151,278 +226,150 @@ export class NewsSourceService {
       where.group = query.group.trim() || null;
     }
 
-    const sources = await this.prisma.newsSource.findMany({
-      where,
-      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-      include: {
-        jobs: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-          select: {
-            id: true,
-            status: true,
-            url: true,
-            createdAt: true,
-            startedAt: true,
-            completedAt: true,
-            error: true,
-            metadata: true,
-          },
+    const [sources, total] = await Promise.all([
+      this.prisma.newsSource.findMany({
+        where,
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          name: true,
+          url: true,
+          siteType: true,
+          language: true,
+          crawlTemplateId: true,
+          workflowId: true,
+          workflowVersionId: true,
+          workflowBindingMode: true,
+          group: true,
+          frequencySeconds: true,
+          priority: true,
+          isActive: true,
+          lastRunAt: true,
+          lastSuccessAt: true,
+          lastFailureAt: true,
+          consecutiveFailures: true,
+          circuitOpenUntil: true,
+          nextRunAt: true,
+          config: true,
         },
-        articles: {
-          orderBy: { crawlAt: "desc" },
-          take: 1,
-          select: { id: true, url: true, crawlAt: true, titleGuess: true },
-        },
-      },
-    });
+      }),
+      this.prisma.newsSource.count({ where }),
+    ]);
 
-    const isRecord = (value: unknown): value is Record<string, unknown> =>
-      Boolean(value) && typeof value === "object" && !Array.isArray(value);
-
-    const crawlTaskIds = Array.from(
-      new Set(
-        sources
-          .map((source) => source.jobs?.[0]?.metadata)
-          .map((metadata) => (isRecord(metadata) ? metadata.crawlTaskId : null))
-          .filter(
-            (id): id is string => typeof id === "string" && id.length > 0,
-          ),
-      ),
+    const sourceIds = sources.map((source) => source.id);
+    const runtimeBySourceId = this.opsSnapshots
+      ? await this.opsSnapshots.readRuntimeStates(sourceIds)
+      : new Map<string, NewsSourceListRuntimeState>();
+    const snapshotBySourceId = await this.readSnapshotBySourceId(
+      orgId,
+      sourceIds,
     );
 
-    const crawlTasks =
-      crawlTaskIds.length > 0
-        ? await this.prisma.crawlTask.findMany({
-            where: { orgId, id: { in: crawlTaskIds } },
-            select: {
-              id: true,
-              status: true,
-              lastError: true,
-              lastRunAt: true,
-              lastSuccessAt: true,
-              lastResultAt: true,
+    return {
+      sources: sources.map((source) => {
+        const summary =
+          snapshotBySourceId.get(source.id) ?? this.createEmptyOpsSummary();
+        const runtime = runtimeBySourceId.get(source.id) ?? {
+          crawlTaskQueuedCount: 0,
+          crawlTaskRunningCount: 0,
+          backpressureUntil: null,
+          backpressurePendingJobs: null,
+          backpressureThreshold: null,
+          backpressureHitTimestamps: [],
+          rssAdaptiveState: null,
+        };
+
+        return {
+          ...source,
+          opsSummary: {
+            ...summary,
+            runtime: {
+              crawlTaskQueuedCount: runtime.crawlTaskQueuedCount,
+              crawlTaskRunningCount: runtime.crawlTaskRunningCount,
+              backpressureUntil: runtime.backpressureUntil,
+              backpressurePendingJobs: runtime.backpressurePendingJobs,
+              backpressureThreshold: runtime.backpressureThreshold,
+              backpressureCount24h: runtime.backpressureHitTimestamps.length,
+              rssAdaptiveState: runtime.rssAdaptiveState,
             },
-          })
-        : [];
+          },
+        };
+      }),
+      total,
+      page,
+      pageSize,
+    };
+  }
 
-    const crawlTaskById = new Map(crawlTasks.map((task) => [task.id, task]));
+  private async readSnapshotBySourceId(orgId: string, sourceIds: string[]) {
+    const snapshotBySourceId = new Map<string, NewsSourceOpsSummary>();
+    if (sourceIds.length === 0) {
+      return snapshotBySourceId;
+    }
 
-    const sourceIdSet = new Set(sources.map((source) => source.id));
-    const activeNewsSourceCrawlTasks = await this.prisma.crawlTask.findMany({
-      where: {
-        orgId,
-        status: { in: ["queued", "running"] },
-        displayName: { startsWith: "NewsSource:" },
+    const snapshots = await this.prisma.newsSourceOpsSnapshot.findMany({
+      where: { orgId, sourceId: { in: sourceIds } },
+      select: {
+        sourceId: true,
+        latestJob: true,
+        latestCrawlTask: true,
+        latestArticle: true,
+        stats24h: true,
       },
-      select: { status: true, displayName: true },
     });
 
-    const queueCountsBySourceId = new Map<
-      string,
-      { queued: number; running: number }
-    >();
-    const extractSourceIdFromDisplayName = (displayName: string) => {
-      const match = /^NewsSource:([^:]+):/.exec(displayName);
-      return match?.[1] ?? null;
-    };
-    for (const task of activeNewsSourceCrawlTasks) {
-      const displayName = task.displayName;
-      if (typeof displayName !== "string" || displayName.length === 0) {
-        continue;
-      }
-      const sourceId = extractSourceIdFromDisplayName(displayName);
-      if (!sourceId || !sourceIdSet.has(sourceId)) {
-        continue;
-      }
-      const entry = queueCountsBySourceId.get(sourceId) ?? {
-        queued: 0,
-        running: 0,
-      };
-      if (task.status === "queued") {
-        entry.queued += 1;
-      } else if (task.status === "running") {
-        entry.running += 1;
-      }
-      queueCountsBySourceId.set(sourceId, entry);
+    for (const snapshot of snapshots) {
+      snapshotBySourceId.set(
+        snapshot.sourceId,
+        this.opsSnapshots?.normalizeSnapshotRecord(snapshot) ??
+          this.createEmptyOpsSummary(),
+      );
     }
 
-    const backpressureKeys = sources.map(
-      (source) => `news-source:backpressure:${source.id}`,
+    const missingSourceIds = sourceIds.filter(
+      (sourceId) => !snapshotBySourceId.has(sourceId),
     );
-    const backpressureEntries = await this.cache.getMany<{
-      until?: unknown;
-      pendingJobs?: unknown;
-      threshold?: unknown;
-    }>(backpressureKeys);
-    const backpressureUntilBySourceId = new Map<string, string>();
-    const backpressurePendingJobsBySourceId = new Map<string, number>();
-    const backpressureThresholdBySourceId = new Map<string, number>();
-    for (const [index, entry] of backpressureEntries.entries()) {
-      const until = entry?.until;
-      if (typeof until !== "string" || until.length === 0) {
-        continue;
-      }
-
-      const id = sources[index]?.id;
-      if (typeof id !== "string" || id.length === 0) {
-        continue;
-      }
-
-      backpressureUntilBySourceId.set(id, until);
-
-      const pendingJobs = entry?.pendingJobs;
-      if (typeof pendingJobs === "number" && Number.isFinite(pendingJobs)) {
-        backpressurePendingJobsBySourceId.set(id, pendingJobs);
-      }
-
-      const threshold = entry?.threshold;
-      if (typeof threshold === "number" && Number.isFinite(threshold)) {
-        backpressureThresholdBySourceId.set(id, threshold);
-      }
-    }
-
-    const backpressureCountKeys = sources.map(
-      (source) => `news-source:backpressure-count:${source.id}`,
-    );
-    const backpressureCounts = await this.cache.getMany<number>(
-      backpressureCountKeys,
-    );
-    const backpressureCountBySourceId = new Map<string, number>();
-    for (const [index, value] of backpressureCounts.entries()) {
-      const id = sources[index]?.id;
-      if (typeof id === "string" && id.length > 0) {
-        backpressureCountBySourceId.set(
-          id,
-          typeof value === "number" ? value : 0,
+    if (missingSourceIds.length > 0 && this.opsSnapshots) {
+      await this.opsSnapshots.refreshSnapshotsForSources(
+        orgId,
+        missingSourceIds,
+      );
+      const refreshedSnapshots =
+        await this.prisma.newsSourceOpsSnapshot.findMany({
+          where: { orgId, sourceId: { in: missingSourceIds } },
+          select: {
+            sourceId: true,
+            latestJob: true,
+            latestCrawlTask: true,
+            latestArticle: true,
+            stats24h: true,
+          },
+        });
+      for (const snapshot of refreshedSnapshots) {
+        snapshotBySourceId.set(
+          snapshot.sourceId,
+          this.opsSnapshots.normalizeSnapshotRecord(snapshot),
         );
       }
     }
 
-    const rssAdaptiveStateKeys = sources.map(
-      (source) => `news-source:rss-adaptive:${source.id}`,
-    );
-    const rssAdaptiveStateValues =
-      await this.cache.getMany<unknown>(rssAdaptiveStateKeys);
-    const rssAdaptiveStateBySourceId = new Map<
-      string,
-      {
-        outcomes: boolean[];
-        consecutiveNoHit: number;
-        updatedAt: string;
-      } | null
-    >();
-    for (const [index, value] of rssAdaptiveStateValues.entries()) {
-      const id = sources[index]?.id;
-      if (typeof id !== "string" || id.length === 0) {
-        continue;
-      }
-      rssAdaptiveStateBySourceId.set(id, this.normalizeRssAdaptiveState(value));
-    }
+    return snapshotBySourceId;
+  }
 
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const pipelineJobs24h =
-      sources.length > 0
-        ? await this.prisma.pipelineJob.findMany({
-            where: {
-              orgId,
-              sourceId: { in: sources.map((source) => source.id) },
-              createdAt: { gte: since },
-            },
-            select: {
-              sourceId: true,
-              status: true,
-              startedAt: true,
-              completedAt: true,
-            },
-          })
-        : [];
-
-    const statsBySourceId = new Map<
-      string,
-      {
-        completed: number;
-        failed: number;
-        durationSumMs: number;
-        durationCount: number;
-      }
-    >();
-    for (const job of pipelineJobs24h) {
-      const sourceId = job.sourceId;
-      if (!sourceId) {
-        continue;
-      }
-      const entry = statsBySourceId.get(sourceId) ?? {
+  private createEmptyOpsSummary(): NewsSourceOpsSummary {
+    return {
+      latestJob: null,
+      latestCrawlTask: null,
+      latestArticle: null,
+      stats24h: {
         completed: 0,
         failed: 0,
-        durationSumMs: 0,
-        durationCount: 0,
-      };
-      if (job.status === PipelineJobStatus.completed) {
-        entry.completed += 1;
-      } else if (job.status === PipelineJobStatus.failed) {
-        entry.failed += 1;
-      }
-      if (job.startedAt && job.completedAt) {
-        entry.durationSumMs +=
-          job.completedAt.getTime() - job.startedAt.getTime();
-        entry.durationCount += 1;
-      }
-      statsBySourceId.set(sourceId, entry);
-    }
-
-    return sources.map((source) => {
-      const { jobs, articles, ...rest } = source;
-      const latestJob = jobs?.[0] ?? null;
-      const latestArticle = articles?.[0] ?? null;
-      const crawlTaskId = isRecord(latestJob?.metadata)
-        ? latestJob?.metadata.crawlTaskId
-        : null;
-      const latestCrawlTask =
-        typeof crawlTaskId === "string" && crawlTaskId.length > 0
-          ? (crawlTaskById.get(crawlTaskId) ?? null)
-          : null;
-      const crawlTaskQueueCounts = queueCountsBySourceId.get(source.id) ?? {
-        queued: 0,
-        running: 0,
-      };
-      const backpressureUntil =
-        backpressureUntilBySourceId.get(source.id) ?? null;
-      const backpressurePendingJobs =
-        backpressurePendingJobsBySourceId.get(source.id) ?? null;
-      const backpressureThreshold =
-        backpressureThresholdBySourceId.get(source.id) ?? null;
-      const backpressureCount24h =
-        backpressureCountBySourceId.get(source.id) ?? 0;
-      const stats = statsBySourceId.get(source.id) ?? null;
-      const totalFinished = stats ? stats.completed + stats.failed : 0;
-      const successRate =
-        totalFinished > 0 ? stats!.completed / totalFinished : null;
-      const avgDurationMs =
-        stats && stats.durationCount > 0
-          ? stats.durationSumMs / stats.durationCount
-          : null;
-
-      return {
-        ...rest,
-        latestJob,
-        latestCrawlTask,
-        latestArticle,
-        crawlTaskQueuedCount: crawlTaskQueueCounts.queued,
-        crawlTaskRunningCount: crawlTaskQueueCounts.running,
-        backpressureUntil,
-        backpressurePendingJobs,
-        backpressureThreshold,
-        backpressureCount24h,
-        rssAdaptiveState: rssAdaptiveStateBySourceId.get(source.id) ?? null,
-        stats24h: {
-          completed: stats?.completed ?? 0,
-          failed: stats?.failed ?? 0,
-          successRate,
-          avgDurationMs,
-        },
-      };
-    });
+        successRate: null,
+        avgDurationMs: null,
+      },
+    };
   }
 
   async createSource(orgId: string, input: CreateNewsSourceDto) {
@@ -1190,13 +1137,11 @@ export class NewsSourceService {
 
   private mergeWorkflowSourceConfig(
     config: Record<string, unknown> | null,
-    overlay:
-      | {
-          crawlOptions?: Record<string, unknown>;
-          seed?: Record<string, unknown>;
-          keywords?: string[];
-        }
-      | null,
+    overlay: {
+      crawlOptions?: Record<string, unknown>;
+      seed?: Record<string, unknown>;
+      keywords?: string[];
+    } | null,
   ) {
     if (!overlay) {
       return config;
@@ -1208,16 +1153,16 @@ export class NewsSourceService {
         : {}),
       crawlOptions: {
         ...((config?.crawlOptions &&
-          typeof config.crawlOptions === "object" &&
-          !Array.isArray(config.crawlOptions)
+        typeof config.crawlOptions === "object" &&
+        !Array.isArray(config.crawlOptions)
           ? (config.crawlOptions as Record<string, unknown>)
           : {}) ?? {}),
         ...(overlay.crawlOptions ?? {}),
       },
       seed: {
         ...((config?.seed &&
-          typeof config.seed === "object" &&
-          !Array.isArray(config.seed)
+        typeof config.seed === "object" &&
+        !Array.isArray(config.seed)
           ? (config.seed as Record<string, unknown>)
           : {}) ?? {}),
         ...(overlay.seed ?? {}),

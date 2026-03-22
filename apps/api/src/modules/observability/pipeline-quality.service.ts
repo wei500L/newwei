@@ -1,9 +1,15 @@
 import { ProcessedItemModel, TaskLogModel } from "@modular/mongo";
 import { Injectable } from "@nestjs/common";
-import { MongoOutboxStatus, MongoOutboxType } from "@prisma/client";
+import {
+  MongoOutboxStatus,
+  MongoOutboxType,
+  ObservabilitySnapshotScope,
+} from "@prisma/client";
 
 import { PrismaService } from "../config/prisma.service";
 import { ITEM_PIPELINE_QUEUE_NAME } from "../queue/queue.constants";
+
+import { ObservabilitySnapshotService } from "./observability-snapshot.service";
 
 export interface PipelineQualitySummary {
   windowMinutes: number;
@@ -53,8 +59,12 @@ export interface PipelineQualitySummary {
 export class PipelineQualityService {
   private readonly outboxStaleLockMs = 5 * 60_000;
   private readonly maxLatencySamples = 5_000;
+  private readonly summaryTtlSeconds = 60;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly snapshots: ObservabilitySnapshotService,
+  ) {}
 
   private percentile(sorted: number[], pct: number): number | null {
     if (sorted.length === 0) {
@@ -72,9 +82,9 @@ export class PipelineQualityService {
         orgId,
         createdAt: { $gte: since },
         status: "completed",
-        ingestedAt: { $type: "date" }
+        ingestedAt: { $type: "date" },
       },
-      { createdAt: 1, ingestedAt: 1 }
+      { createdAt: 1, ingestedAt: 1 },
     )
       .sort({ createdAt: -1 })
       .limit(this.maxLatencySamples)
@@ -99,7 +109,7 @@ export class PipelineQualityService {
         p50Ms: null,
         p90Ms: null,
         p99Ms: null,
-        maxMs: null
+        maxMs: null,
       };
     }
 
@@ -114,39 +124,114 @@ export class PipelineQualityService {
       p50Ms: this.percentile(latencies, 0.5),
       p90Ms: this.percentile(latencies, 0.9),
       p99Ms: this.percentile(latencies, 0.99),
-      maxMs
+      maxMs,
     };
   }
 
-  async summary(orgId: string, windowMinutes = 60): Promise<PipelineQualitySummary> {
-    const normalizedWindow = Math.max(5, Math.min(60 * 24 * 14, Math.floor(windowMinutes)));
+  async summary(
+    orgId: string,
+    windowMinutes = 60,
+  ): Promise<PipelineQualitySummary> {
+    const normalizedWindow = Math.max(
+      5,
+      Math.min(60 * 24 * 14, Math.floor(windowMinutes)),
+    );
+    const snapshot = await this.snapshots.getOrCreate<PipelineQualitySummary>({
+      orgId,
+      scope: ObservabilitySnapshotScope.quality_pipeline,
+      variantKey: `windowMinutes:${normalizedWindow}`,
+      ttlSeconds: this.summaryTtlSeconds,
+      loader: async () => this.buildSummary(orgId, normalizedWindow),
+    });
+    return snapshot.payload;
+  }
+
+  private async buildSummary(
+    orgId: string,
+    normalizedWindow: number,
+  ): Promise<PipelineQualitySummary> {
     const since = new Date(Date.now() - normalizedWindow * 60 * 1000);
     const now = new Date();
     const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
 
-    const [statusAgg, latencyAgg, failureAgg, llmAgg, outboxStatusAgg, outboxStaleProcessing, outboxOldest, ingestionLatency] = await Promise.all([
+    const [
+      processedAggResult,
+      failureAgg,
+      outboxStatusAgg,
+      outboxStaleProcessing,
+      outboxOldest,
+      ingestionLatency,
+    ] = await Promise.all([
       ProcessedItemModel.aggregate([
         { $match: { orgId, createdAt: { $gte: since } } },
         {
-          $group: {
-            _id: "$status",
-            count: { $sum: 1 },
-          },
-        },
-      ]),
-      ProcessedItemModel.aggregate([
-        {
-          $match: {
-            orgId,
-            createdAt: { $gte: since },
-            status: "completed",
-            "llm.latencyMs": { $type: "number" },
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            avgLatencyMs: { $avg: "$llm.latencyMs" },
+          $facet: {
+            statusAgg: [
+              {
+                $group: {
+                  _id: "$status",
+                  count: { $sum: 1 },
+                },
+              },
+            ],
+            latencyAgg: [
+              {
+                $match: {
+                  status: "completed",
+                  "llm.latencyMs": { $type: "number" },
+                },
+              },
+              {
+                $group: {
+                  _id: null,
+                  avgLatencyMs: { $avg: "$llm.latencyMs" },
+                },
+              },
+            ],
+            llmAgg: [
+              {
+                $match: {
+                  status: "completed",
+                },
+              },
+              {
+                $project: {
+                  model: { $ifNull: ["$llm.model", "unknown"] },
+                  latencyMs: {
+                    $cond: [
+                      { $eq: [{ $type: "$llm.latencyMs" }, "number"] },
+                      "$llm.latencyMs",
+                      null,
+                    ],
+                  },
+                  costUsd: {
+                    $cond: [
+                      { $eq: [{ $type: "$llm.costUsd" }, "number"] },
+                      "$llm.costUsd",
+                      null,
+                    ],
+                  },
+                  totalTokens: {
+                    $cond: [
+                      { $eq: [{ $type: "$llm.totalTokens" }, "number"] },
+                      "$llm.totalTokens",
+                      null,
+                    ],
+                  },
+                },
+              },
+              {
+                $group: {
+                  _id: "$model",
+                  count: { $sum: 1 },
+                  avgLatencyMs: { $avg: "$latencyMs" },
+                  avgCostUsd: { $avg: "$costUsd" },
+                  avgTotalTokens: { $avg: "$totalTokens" },
+                },
+              },
+              { $sort: { count: -1 } },
+              { $limit: 10 },
+            ],
           },
         },
       ]),
@@ -174,72 +259,44 @@ export class PipelineQualityService {
         { $sort: { count: -1 } },
         { $limit: 20 },
       ]),
-      ProcessedItemModel.aggregate([
-        {
-          $match: {
-            orgId,
-            createdAt: { $gte: since },
-            status: "completed"
-          }
-        },
-        {
-          $project: {
-            model: { $ifNull: ["$llm.model", "unknown"] },
-            latencyMs: {
-              $cond: [
-                { $eq: [{ $type: "$llm.latencyMs" }, "number"] },
-                "$llm.latencyMs",
-                null
-              ]
-            },
-            costUsd: {
-              $cond: [
-                { $eq: [{ $type: "$llm.costUsd" }, "number"] },
-                "$llm.costUsd",
-                null
-              ]
-            },
-            totalTokens: {
-              $cond: [
-                { $eq: [{ $type: "$llm.totalTokens" }, "number"] },
-                "$llm.totalTokens",
-                null
-              ]
-            }
-          }
-        },
-        {
-          $group: {
-            _id: "$model",
-            count: { $sum: 1 },
-            avgLatencyMs: { $avg: "$latencyMs" },
-            avgCostUsd: { $avg: "$costUsd" },
-            avgTotalTokens: { $avg: "$totalTokens" }
-          }
-        },
-        { $sort: { count: -1 } },
-        { $limit: 10 }
-      ]),
       this.prisma.mongoOutbox.groupBy({
         by: ["status"],
         where: { orgId, type: MongoOutboxType.processed_item },
-        _count: { _all: true }
+        _count: { _all: true },
       }),
       this.prisma.mongoOutbox.count({
         where: {
           orgId,
           type: MongoOutboxType.processed_item,
           status: MongoOutboxStatus.processing,
-          lockedAt: { lt: staleLockCutoff }
-        }
+          lockedAt: { lt: staleLockCutoff },
+        },
       }),
       this.prisma.mongoOutbox.findFirst({
         where: { orgId, type: MongoOutboxType.processed_item },
         orderBy: { createdAt: "asc" },
-        select: { createdAt: true }
+        select: { createdAt: true },
       }),
-      this.computeIngestionLatency(orgId, since)
+      this.computeIngestionLatency(orgId, since),
     ]);
+    const processedAgg = Array.isArray(processedAggResult)
+      ? (processedAggResult[0] ?? {})
+      : {};
+    const statusAgg = Array.isArray(processedAgg.statusAgg)
+      ? (processedAgg.statusAgg as Array<{ _id?: unknown; count?: unknown }>)
+      : [];
+    const latencyAgg = Array.isArray(processedAgg.latencyAgg)
+      ? (processedAgg.latencyAgg as Array<{ avgLatencyMs?: number }>)
+      : [];
+    const llmAgg = Array.isArray(processedAgg.llmAgg)
+      ? (processedAgg.llmAgg as Array<{
+          _id?: unknown;
+          count?: unknown;
+          avgLatencyMs?: number;
+          avgCostUsd?: number;
+          avgTotalTokens?: number;
+        }>)
+      : [];
 
     const totals = {
       total: 0,
@@ -260,9 +317,11 @@ export class PipelineQualityService {
 
     const completed = totals.completed ?? 0;
     const successRate = totals.total > 0 ? completed / totals.total : null;
+    const averageLatencyCandidate = latencyAgg[0]?.avgLatencyMs;
     const averageLatencyMs =
-      latencyAgg.length > 0 && Number.isFinite(latencyAgg[0].avgLatencyMs)
-        ? Math.round(latencyAgg[0].avgLatencyMs)
+      typeof averageLatencyCandidate === "number" &&
+      Number.isFinite(averageLatencyCandidate)
+        ? Math.round(averageLatencyCandidate)
         : null;
 
     const failureTypes = failureAgg.map((entry) => ({
@@ -271,20 +330,38 @@ export class PipelineQualityService {
       count: Number(entry.count ?? 0),
     }));
 
-    const llmModels = llmAgg.map((entry) => ({
-      model: String(entry._id ?? "unknown"),
-      count: Number(entry.count ?? 0),
-      avgLatencyMs: Number.isFinite(entry.avgLatencyMs) ? Math.round(entry.avgLatencyMs) : null,
-      avgCostUsd: Number.isFinite(entry.avgCostUsd) ? Math.round(entry.avgCostUsd * 1000) / 1000 : null,
-      avgTotalTokens: Number.isFinite(entry.avgTotalTokens) ? Math.round(entry.avgTotalTokens) : null
-    }));
+    const llmModels = llmAgg.map((entry) => {
+      const avgLatencyMs =
+        typeof entry.avgLatencyMs === "number" &&
+        Number.isFinite(entry.avgLatencyMs)
+          ? Math.round(entry.avgLatencyMs)
+          : null;
+      const avgCostUsd =
+        typeof entry.avgCostUsd === "number" &&
+        Number.isFinite(entry.avgCostUsd)
+          ? Math.round(entry.avgCostUsd * 1000) / 1000
+          : null;
+      const avgTotalTokens =
+        typeof entry.avgTotalTokens === "number" &&
+        Number.isFinite(entry.avgTotalTokens)
+          ? Math.round(entry.avgTotalTokens)
+          : null;
+
+      return {
+        model: String(entry._id ?? "unknown"),
+        count: Number(entry.count ?? 0),
+        avgLatencyMs,
+        avgCostUsd,
+        avgTotalTokens,
+      };
+    });
 
     const outboxTotals = {
       total: 0,
       pending: 0,
       processing: 0,
       failed: 0,
-      staleProcessing: outboxStaleProcessing
+      staleProcessing: outboxStaleProcessing,
     };
     for (const entry of outboxStatusAgg) {
       const status = entry.status;
@@ -298,9 +375,14 @@ export class PipelineQualityService {
         outboxTotals.failed = count;
       }
     }
-    const oldestCreatedAt = outboxOldest?.createdAt ? outboxOldest.createdAt.toISOString() : null;
+    const oldestCreatedAt = outboxOldest?.createdAt
+      ? outboxOldest.createdAt.toISOString()
+      : null;
     const oldestAgeMinutes = outboxOldest?.createdAt
-      ? Math.max(0, Math.round((Date.now() - outboxOldest.createdAt.getTime()) / 60_000))
+      ? Math.max(
+          0,
+          Math.round((Date.now() - outboxOldest.createdAt.getTime()) / 60_000),
+        )
       : null;
 
     return {
@@ -314,8 +396,8 @@ export class PipelineQualityService {
       outbox: {
         totals: outboxTotals,
         oldestCreatedAt,
-        oldestAgeMinutes
-      }
+        oldestAgeMinutes,
+      },
     };
   }
 }

@@ -3,9 +3,26 @@ import { ProcessedItemModel } from "@modular/mongo";
 import { NewsPipelineService } from "../news-pipeline.service";
 import { NewsPromptBuilder } from "../news-prompt.builder";
 
+jest.mock(
+  "@modular/vector-client",
+  () => ({
+    VectorBadResponseError: class VectorBadResponseError extends Error {},
+    VectorClient: class VectorClient {
+      search = jest.fn();
+      upsert = jest.fn();
+    },
+    VectorServiceUnavailableError: class VectorServiceUnavailableError extends Error {},
+    VectorUnauthorizedError: class VectorUnauthorizedError extends Error {},
+  }),
+  { virtual: true },
+);
+
 jest.mock("@modular/mongo", () => ({
   CrawlResultContentModel: {
     findById: jest.fn(),
+  },
+  ItemReadModelModel: {
+    updateOne: jest.fn(),
   },
   RawItemModel: {
     findById: jest.fn(),
@@ -124,6 +141,7 @@ describe("NewsPipelineService classification backfill", () => {
       prisma,
       crawlExecution,
       undefined,
+      undefined,
       classifier as any,
     );
 
@@ -187,6 +205,7 @@ describe("NewsPipelineService classification backfill", () => {
       dedupeSettings,
       prisma,
       crawlExecution,
+      undefined,
       undefined,
       classifier as any,
     );

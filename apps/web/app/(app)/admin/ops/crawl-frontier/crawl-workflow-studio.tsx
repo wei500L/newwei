@@ -1,6 +1,19 @@
 "use client";
 
 import {
+  addEdge,
+  Background,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  ReactFlowProvider,
+  useEdgesState,
+  useNodesState,
+  type Connection,
+  type Edge,
+  type Node,
+} from "@xyflow/react";
+import {
   Alert,
   Button,
   Card,
@@ -23,24 +36,12 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import {
-  addEdge,
-  Background,
-  Controls,
-  MiniMap,
-  ReactFlow,
-  ReactFlowProvider,
-  useEdgesState,
-  useNodesState,
-  type Connection,
-  type Edge,
-  type Node,
-} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { createApiClient } from "@/lib/api-client";
+
 import {
   buildWorkflowCandidateTraceChain,
   buildWorkflowCandidateTraceSummary,
@@ -73,20 +74,20 @@ interface WorkflowDefinition {
     tags?: string[];
   };
   settings: WorkflowSettings;
-  nodes: Array<{
+  nodes: {
     id: string;
     type: WorkflowNodeType;
     label: string;
     position: { x: number; y: number };
     config: AnyRecord;
-  }>;
-  edges: Array<{
+  }[];
+  edges: {
     id: string;
     source: string;
     target: string;
     sourceHandle?: string | null;
     targetHandle?: string | null;
-  }>;
+  }[];
 }
 
 interface WorkflowRecord {
@@ -171,7 +172,7 @@ interface WorkflowTrialResult {
     versionId: string;
     version: number;
   };
-  steps: Array<{
+  steps: {
     nodeId: string;
     nodeType: WorkflowNodeType;
     label: string;
@@ -182,15 +183,15 @@ interface WorkflowTrialResult {
     rejectedCount: number;
     sampleUrls: string[];
     error?: string | null;
-  }>;
+  }[];
   candidates: WorkflowCandidate[];
   selectedCandidates: WorkflowCandidate[];
-  parameterSources: Array<{
+  parameterSources: {
     key: string;
     source: string;
     value: unknown;
-  }>;
-  systemEvents: Array<{
+  }[];
+  systemEvents: {
     level: WorkflowRunEvent["level"];
     eventType: string;
     message: string;
@@ -202,7 +203,7 @@ interface WorkflowTrialResult {
     rescuedCount?: number | null;
     details?: AnyRecord;
     timestamp: string;
-  }>;
+  }[];
 }
 
 interface WorkflowBindingOption {
@@ -231,7 +232,9 @@ function parseObject(value: string) {
   return parsed as AnyRecord;
 }
 
-function nodeToCanvasNode(definitionNode: WorkflowDefinition["nodes"][number]): Node {
+function nodeToCanvasNode(
+  definitionNode: WorkflowDefinition["nodes"][number],
+): Node {
   return {
     id: definitionNode.id,
     type: "default",
@@ -322,17 +325,22 @@ function WorkflowStudioInner({
   const [trialLoading, setTrialLoading] = useState(false);
   const [workflows, setWorkflows] = useState<WorkflowRecord[]>([]);
   const [nodeSchemas, setNodeSchemas] = useState<WorkflowNodeSchema[]>([]);
-  const [profileOptions, setProfileOptions] = useState<WorkflowBindingOption[]>([]);
-  const [newsSourceOptions, setNewsSourceOptions] = useState<WorkflowBindingOption[]>(
+  const [profileOptions, setProfileOptions] = useState<WorkflowBindingOption[]>(
     [],
   );
-  const [frontierRuns, setFrontierRuns] = useState<LinkedFrontierRunRecord[]>([]);
+  const [newsSourceOptions, setNewsSourceOptions] = useState<
+    WorkflowBindingOption[]
+  >([]);
+  const [frontierRuns, setFrontierRuns] = useState<LinkedFrontierRunRecord[]>(
+    [],
+  );
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>();
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
-  const [trialResult, setTrialResult] = useState<WorkflowTrialResult | null>(null);
-  const [candidateDrawer, setCandidateDrawer] = useState<WorkflowCandidate | null>(
+  const [trialResult, setTrialResult] = useState<WorkflowTrialResult | null>(
     null,
   );
+  const [candidateDrawer, setCandidateDrawer] =
+    useState<WorkflowCandidate | null>(null);
   const [compareLeftVersionId, setCompareLeftVersionId] = useState<string>();
   const [compareRightVersionId, setCompareRightVersionId] = useState<string>();
   const [compareLoading, setCompareLoading] = useState(false);
@@ -353,14 +361,17 @@ function WorkflowStudioInner({
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   const selectedWorkflow = useMemo(
-    () => workflows.find((workflow) => workflow.id === selectedWorkflowId) ?? null,
+    () =>
+      workflows.find((workflow) => workflow.id === selectedWorkflowId) ?? null,
     [selectedWorkflowId, workflows],
   );
   const linkedFrontierRuns = useMemo(
     () =>
       frontierRuns.filter((run) => {
         const metadata =
-          run.metadata && typeof run.metadata === "object" && !Array.isArray(run.metadata)
+          run.metadata &&
+          typeof run.metadata === "object" &&
+          !Array.isArray(run.metadata)
             ? (run.metadata as AnyRecord)
             : null;
         return metadata?.workflowId === selectedWorkflowId;
@@ -373,8 +384,9 @@ function WorkflowStudioInner({
   );
   const selectedNodeSchema = useMemo(
     () =>
-      nodeSchemas.find((schema) => schema.type === selectedNodeDefinition?.type) ??
-      null,
+      nodeSchemas.find(
+        (schema) => schema.type === selectedNodeDefinition?.type,
+      ) ?? null,
     [nodeSchemas, selectedNodeDefinition?.type],
   );
   const compareSummary = useMemo(
@@ -406,20 +418,19 @@ function WorkflowStudioInner({
         profileResponse,
         sourceResponse,
         frontierRunResponse,
-      ] =
-        await Promise.all([
-          apiClient.get<WorkflowRecord[]>("admin/crawl-frontier/workflows"),
-          apiClient.get<WorkflowNodeSchema[]>(
-            "admin/crawl-frontier/workflows/node-schemas",
-          ),
-          apiClient.get<Array<{ id: string; name: string; matchHost: string }>>(
-            "admin/crawl-frontier/profiles",
-          ),
-          apiClient.get<Array<{ id: string; name: string; url: string }>>(
-            "admin/news-sources",
-          ),
-          apiClient.get<LinkedFrontierRunRecord[]>("admin/crawl-frontier/runs"),
-        ]);
+      ] = await Promise.all([
+        apiClient.get<WorkflowRecord[]>("admin/crawl-frontier/workflows"),
+        apiClient.get<WorkflowNodeSchema[]>(
+          "admin/crawl-frontier/workflows/node-schemas",
+        ),
+        apiClient.get<{ id: string; name: string; matchHost: string }[]>(
+          "admin/crawl-frontier/profiles",
+        ),
+        apiClient.get<{ id: string; name: string; url: string }[]>(
+          "admin/news-sources/options",
+        ),
+        apiClient.get<LinkedFrontierRunRecord[]>("admin/crawl-frontier/runs"),
+      ]);
       const workflowItems = workflowResponse.data ?? [];
       setWorkflows(workflowItems);
       setNodeSchemas(schemaResponse.data ?? []);
@@ -535,7 +546,11 @@ function WorkflowStudioInner({
   );
 
   const updateNodeDefinition = useCallback(
-    (updater: (node: WorkflowDefinition["nodes"][number]) => WorkflowDefinition["nodes"][number]) => {
+    (
+      updater: (
+        node: WorkflowDefinition["nodes"][number],
+      ) => WorkflowDefinition["nodes"][number],
+    ) => {
       if (!definition || !selectedNodeId) return;
       const nextDefinition = {
         ...definition,
@@ -624,39 +639,42 @@ function WorkflowStudioInner({
     }
   }, [apiClient, loadData, messageApi]);
 
-  const runTrial = useCallback(async (workflowVersionId?: string, successLabel?: string) => {
-    if (!apiClient || !selectedWorkflow) return;
-    setTrialLoading(true);
-    try {
-      await saveDraft();
-      const response = await apiClient.post<WorkflowTrialResult>(
-        `admin/crawl-frontier/workflows/${selectedWorkflow.id}/trial-run`,
-        {
-          workflowVersionId: workflowVersionId || undefined,
-          seedUrl: trialSeedUrl.trim() || undefined,
-          profileId: trialProfileId || undefined,
-          newsSourceId: trialNewsSourceId || undefined,
-          maxCandidates: trialMaxCandidates,
-        },
-      );
-      setTrialResult(response.data ?? null);
-      messageApi.success(successLabel ?? "Workflow trial run completed");
-    } catch (error) {
-      console.warn("Failed to trial run crawl workflow", error);
-      messageApi.error("Failed to trial run workflow");
-    } finally {
-      setTrialLoading(false);
-    }
-  }, [
-    apiClient,
-    messageApi,
-    saveDraft,
-    selectedWorkflow,
-    trialMaxCandidates,
-    trialNewsSourceId,
-    trialProfileId,
-    trialSeedUrl,
-  ]);
+  const runTrial = useCallback(
+    async (workflowVersionId?: string, successLabel?: string) => {
+      if (!apiClient || !selectedWorkflow) return;
+      setTrialLoading(true);
+      try {
+        await saveDraft();
+        const response = await apiClient.post<WorkflowTrialResult>(
+          `admin/crawl-frontier/workflows/${selectedWorkflow.id}/trial-run`,
+          {
+            workflowVersionId: workflowVersionId || undefined,
+            seedUrl: trialSeedUrl.trim() || undefined,
+            profileId: trialProfileId || undefined,
+            newsSourceId: trialNewsSourceId || undefined,
+            maxCandidates: trialMaxCandidates,
+          },
+        );
+        setTrialResult(response.data ?? null);
+        messageApi.success(successLabel ?? "Workflow trial run completed");
+      } catch (error) {
+        console.warn("Failed to trial run crawl workflow", error);
+        messageApi.error("Failed to trial run workflow");
+      } finally {
+        setTrialLoading(false);
+      }
+    },
+    [
+      apiClient,
+      messageApi,
+      saveDraft,
+      selectedWorkflow,
+      trialMaxCandidates,
+      trialNewsSourceId,
+      trialProfileId,
+      trialSeedUrl,
+    ],
+  );
 
   const loadCompare = useCallback(async () => {
     if (!apiClient || !compareLeftVersionId || !compareRightVersionId) return;
@@ -712,7 +730,10 @@ function WorkflowStudioInner({
             <Typography.Text strong ellipsis={{ tooltip: record.url }}>
               {record.title || record.url}
             </Typography.Text>
-            <Typography.Text type="secondary" ellipsis={{ tooltip: record.url }}>
+            <Typography.Text
+              type="secondary"
+              ellipsis={{ tooltip: record.url }}
+            >
               {record.url}
             </Typography.Text>
           </Space>
@@ -783,16 +804,35 @@ function WorkflowStudioInner({
         title="Workflow Strategy Studio"
         extra={
           <Space wrap>
-            <Button onClick={() => void createWorkflow()} loading={saving} disabled={!canManage}>
+            <Button
+              onClick={() => void createWorkflow()}
+              loading={saving}
+              disabled={!canManage}
+            >
               New Workflow
             </Button>
-            <Button onClick={() => void saveDraft()} loading={saving} disabled={!canManage || !selectedWorkflow}>
+            <Button
+              onClick={() => void saveDraft()}
+              loading={saving}
+              disabled={!canManage || !selectedWorkflow}
+            >
               Save Draft
             </Button>
-            <Button type="primary" onClick={() => void publishWorkflow()} loading={publishing} disabled={!canManage || !selectedWorkflow}>
+            <Button
+              type="primary"
+              onClick={() => void publishWorkflow()}
+              loading={publishing}
+              disabled={!canManage || !selectedWorkflow}
+            >
               Publish
             </Button>
-            <Button type="primary" ghost onClick={() => void runTrial()} loading={trialLoading} disabled={!selectedWorkflow}>
+            <Button
+              type="primary"
+              ghost
+              onClick={() => void runTrial()}
+              loading={trialLoading}
+              disabled={!selectedWorkflow}
+            >
               Trial Run
             </Button>
             {trialResult ? (
@@ -807,14 +847,24 @@ function WorkflowStudioInner({
         }
       >
         {loading ? (
-          <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
+          <div
+            style={{ display: "flex", justifyContent: "center", padding: 48 }}
+          >
             <Spin />
           </div>
         ) : (
           <Row gutter={[16, 16]} align="stretch">
             <Col xs={24} xl={5}>
-              <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-                <Card size="small" title="Workflows" bodyStyle={{ padding: 12 }}>
+              <Space
+                direction="vertical"
+                size="middle"
+                style={{ width: "100%" }}
+              >
+                <Card
+                  size="small"
+                  title="Workflows"
+                  bodyStyle={{ padding: 12 }}
+                >
                   <Select
                     showSearch
                     value={selectedWorkflowId}
@@ -826,7 +876,11 @@ function WorkflowStudioInner({
                     }))}
                     placeholder="Select workflow"
                   />
-                  <Space direction="vertical" size={8} style={{ width: "100%", marginTop: 12 }}>
+                  <Space
+                    direction="vertical"
+                    size={8}
+                    style={{ width: "100%", marginTop: 12 }}
+                  >
                     {selectedWorkflow ? (
                       <>
                         <Input
@@ -861,37 +915,54 @@ function WorkflowStudioInner({
                         />
                       </>
                     ) : (
-                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Select or create a workflow" />
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description="Select or create a workflow"
+                      />
                     )}
                   </Space>
                 </Card>
-                <Card size="small" title="Version Compare" bodyStyle={{ padding: 12 }}>
-                  <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                <Card
+                  size="small"
+                  title="Version Compare"
+                  bodyStyle={{ padding: 12 }}
+                >
+                  <Space
+                    direction="vertical"
+                    size={10}
+                    style={{ width: "100%" }}
+                  >
                     <Select
                       allowClear
                       placeholder="Left version"
                       value={compareLeftVersionId}
                       onChange={setCompareLeftVersionId}
-                      options={(selectedWorkflow?.versions ?? []).map((version) => ({
-                        label: `v${version.version} · ${version.name}`,
-                        value: version.id,
-                      }))}
+                      options={(selectedWorkflow?.versions ?? []).map(
+                        (version) => ({
+                          label: `v${version.version} · ${version.name}`,
+                          value: version.id,
+                        }),
+                      )}
                     />
                     <Select
                       allowClear
                       placeholder="Right version"
                       value={compareRightVersionId}
                       onChange={setCompareRightVersionId}
-                      options={(selectedWorkflow?.versions ?? []).map((version) => ({
-                        label: `v${version.version} · ${version.name}`,
-                        value: version.id,
-                      }))}
+                      options={(selectedWorkflow?.versions ?? []).map(
+                        (version) => ({
+                          label: `v${version.version} · ${version.name}`,
+                          value: version.id,
+                        }),
+                      )}
                     />
                     <Space wrap>
                       <Button
                         onClick={() => void loadCompare()}
                         loading={compareLoading}
-                        disabled={!compareLeftVersionId || !compareRightVersionId}
+                        disabled={
+                          !compareLeftVersionId || !compareRightVersionId
+                        }
                       >
                         Compare Versions
                       </Button>
@@ -923,7 +994,11 @@ function WorkflowStudioInner({
                       </Button>
                     </Space>
                     {compareSummary ? (
-                      <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                      <Space
+                        direction="vertical"
+                        size={10}
+                        style={{ width: "100%" }}
+                      >
                         <Descriptions size="small" column={1} bordered>
                           <Descriptions.Item label="Node delta">
                             {compareSummary.nodeCountDelta}
@@ -945,13 +1020,26 @@ function WorkflowStudioInner({
                             {`${compareSummary.profileImpactCount} profiles / ${compareSummary.newsSourceImpactCount} news sources`}
                           </Descriptions.Item>
                         </Descriptions>
-                        {(compareResult!.definitionDiff.settings ?? []).length > 0 ? (
+                        {(compareResult!.definitionDiff.settings ?? []).length >
+                        0 ? (
                           <Card size="small" title="Settings Diff">
-                            <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                              {(compareResult!.definitionDiff.settings ?? []).map((entry) => (
+                            <Space
+                              direction="vertical"
+                              size={8}
+                              style={{ width: "100%" }}
+                            >
+                              {(
+                                compareResult!.definitionDiff.settings ?? []
+                              ).map((entry) => (
                                 <Card key={entry.key} size="small">
-                                  <Space direction="vertical" size={4} style={{ width: "100%" }}>
-                                    <Typography.Text strong>{entry.key}</Typography.Text>
+                                  <Space
+                                    direction="vertical"
+                                    size={4}
+                                    style={{ width: "100%" }}
+                                  >
+                                    <Typography.Text strong>
+                                      {entry.key}
+                                    </Typography.Text>
                                     <Typography.Text type="secondary">
                                       {`${JSON.stringify(entry.left)} -> ${JSON.stringify(entry.right)}`}
                                     </Typography.Text>
@@ -962,32 +1050,52 @@ function WorkflowStudioInner({
                           </Card>
                         ) : null}
                         <Card size="small" title="Node Diff">
-                          <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                            {(compareResult!.definitionDiff.nodes?.added ?? []).map((node) => (
+                          <Space
+                            direction="vertical"
+                            size={8}
+                            style={{ width: "100%" }}
+                          >
+                            {(
+                              compareResult!.definitionDiff.nodes?.added ?? []
+                            ).map((node) => (
                               <Card key={`added-${node.id}`} size="small">
                                 <Space wrap size={[6, 6]}>
                                   <Tag color="green">added</Tag>
                                   <Tag>{node.type}</Tag>
-                                  <Typography.Text strong>{node.label}</Typography.Text>
+                                  <Typography.Text strong>
+                                    {node.label}
+                                  </Typography.Text>
                                 </Space>
                               </Card>
                             ))}
-                            {(compareResult!.definitionDiff.nodes?.removed ?? []).map((node) => (
+                            {(
+                              compareResult!.definitionDiff.nodes?.removed ?? []
+                            ).map((node) => (
                               <Card key={`removed-${node.id}`} size="small">
                                 <Space wrap size={[6, 6]}>
                                   <Tag color="red">removed</Tag>
                                   <Tag>{node.type}</Tag>
-                                  <Typography.Text strong>{node.label}</Typography.Text>
+                                  <Typography.Text strong>
+                                    {node.label}
+                                  </Typography.Text>
                                 </Space>
                               </Card>
                             ))}
-                            {(compareResult!.definitionDiff.nodes?.changed ?? []).map((node) => (
+                            {(
+                              compareResult!.definitionDiff.nodes?.changed ?? []
+                            ).map((node) => (
                               <Card key={`changed-${node.id}`} size="small">
-                                <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                                <Space
+                                  direction="vertical"
+                                  size={4}
+                                  style={{ width: "100%" }}
+                                >
                                   <Space wrap size={[6, 6]}>
                                     <Tag color="gold">changed</Tag>
                                     <Tag>{node.right.type}</Tag>
-                                    <Typography.Text strong>{node.right.label}</Typography.Text>
+                                    <Typography.Text strong>
+                                      {node.right.label}
+                                    </Typography.Text>
                                   </Space>
                                   <Typography.Text type="secondary">
                                     {`fields: ${node.changedFields.join(", ")}`}
@@ -995,9 +1103,12 @@ function WorkflowStudioInner({
                                 </Space>
                               </Card>
                             ))}
-                            {(compareResult!.definitionDiff.nodes?.added.length ?? 0) === 0 &&
-                            (compareResult!.definitionDiff.nodes?.removed.length ?? 0) === 0 &&
-                            (compareResult!.definitionDiff.nodes?.changed.length ?? 0) === 0 ? (
+                            {(compareResult!.definitionDiff.nodes?.added
+                              .length ?? 0) === 0 &&
+                            (compareResult!.definitionDiff.nodes?.removed
+                              .length ?? 0) === 0 &&
+                            (compareResult!.definitionDiff.nodes?.changed
+                              .length ?? 0) === 0 ? (
                               <Typography.Text type="secondary">
                                 No node-level differences detected.
                               </Typography.Text>
@@ -1005,19 +1116,32 @@ function WorkflowStudioInner({
                           </Space>
                         </Card>
                         <Card size="small" title="Edge Diff">
-                          <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                            {(compareResult!.definitionDiff.edges?.added ?? []).map((edge) => (
+                          <Space
+                            direction="vertical"
+                            size={8}
+                            style={{ width: "100%" }}
+                          >
+                            {(
+                              compareResult!.definitionDiff.edges?.added ?? []
+                            ).map((edge) => (
                               <Typography.Text key={`edge-added-${edge.id}`}>
                                 {`+ ${edge.source} -> ${edge.target}`}
                               </Typography.Text>
                             ))}
-                            {(compareResult!.definitionDiff.edges?.removed ?? []).map((edge) => (
-                              <Typography.Text key={`edge-removed-${edge.id}`} type="secondary">
+                            {(
+                              compareResult!.definitionDiff.edges?.removed ?? []
+                            ).map((edge) => (
+                              <Typography.Text
+                                key={`edge-removed-${edge.id}`}
+                                type="secondary"
+                              >
                                 {`- ${edge.source} -> ${edge.target}`}
                               </Typography.Text>
                             ))}
-                            {(compareResult!.definitionDiff.edges?.added.length ?? 0) === 0 &&
-                            (compareResult!.definitionDiff.edges?.removed.length ?? 0) === 0 ? (
+                            {(compareResult!.definitionDiff.edges?.added
+                              .length ?? 0) === 0 &&
+                            (compareResult!.definitionDiff.edges?.removed
+                              .length ?? 0) === 0 ? (
                               <Typography.Text type="secondary">
                                 No edge-level differences detected.
                               </Typography.Text>
@@ -1026,7 +1150,11 @@ function WorkflowStudioInner({
                         </Card>
                         {compareResult!.bindingImpact ? (
                           <Card size="small" title="Binding Impact">
-                            <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                            <Space
+                              direction="vertical"
+                              size={10}
+                              style={{ width: "100%" }}
+                            >
                               <Descriptions size="small" column={1} bordered>
                                 <Descriptions.Item label="Profiles">
                                   {`${compareResult!.bindingImpact.profiles.total} total · ${compareResult!.bindingImpact.profiles.followingPublishedCount} following published`}
@@ -1035,41 +1163,74 @@ function WorkflowStudioInner({
                                   {`${compareResult!.bindingImpact.newsSources.total} total · ${compareResult!.bindingImpact.newsSources.followingPublishedCount} following published`}
                                 </Descriptions.Item>
                               </Descriptions>
-                              <Space direction="vertical" size={6} style={{ width: "100%" }}>
-                                {compareResult!.bindingImpact.profiles.items.slice(0, 4).map((entry) => (
-                                  <Card key={`profile-impact-${entry.id}`} size="small">
-                                    <Space direction="vertical" size={4} style={{ width: "100%" }}>
-                                      <Space wrap size={[6, 6]}>
-                                        <Tag color="geekblue">profile</Tag>
-                                        <Tag>{entry.workflowBindingMode}</Tag>
-                                        <Tag color="cyan">{entry.appliesTo}</Tag>
-                                      </Space>
-                                      <Typography.Text strong>{entry.name}</Typography.Text>
-                                      {entry.matchHost ? (
-                                        <Typography.Text type="secondary">
-                                          {entry.matchHost}
+                              <Space
+                                direction="vertical"
+                                size={6}
+                                style={{ width: "100%" }}
+                              >
+                                {compareResult!.bindingImpact.profiles.items
+                                  .slice(0, 4)
+                                  .map((entry) => (
+                                    <Card
+                                      key={`profile-impact-${entry.id}`}
+                                      size="small"
+                                    >
+                                      <Space
+                                        direction="vertical"
+                                        size={4}
+                                        style={{ width: "100%" }}
+                                      >
+                                        <Space wrap size={[6, 6]}>
+                                          <Tag color="geekblue">profile</Tag>
+                                          <Tag>{entry.workflowBindingMode}</Tag>
+                                          <Tag color="cyan">
+                                            {entry.appliesTo}
+                                          </Tag>
+                                        </Space>
+                                        <Typography.Text strong>
+                                          {entry.name}
                                         </Typography.Text>
-                                      ) : null}
-                                    </Space>
-                                  </Card>
-                                ))}
-                                {compareResult!.bindingImpact.newsSources.items.slice(0, 4).map((entry) => (
-                                  <Card key={`news-impact-${entry.id}`} size="small">
-                                    <Space direction="vertical" size={4} style={{ width: "100%" }}>
-                                      <Space wrap size={[6, 6]}>
-                                        <Tag color="purple">news source</Tag>
-                                        <Tag>{entry.workflowBindingMode}</Tag>
-                                        <Tag color="cyan">{entry.appliesTo}</Tag>
+                                        {entry.matchHost ? (
+                                          <Typography.Text type="secondary">
+                                            {entry.matchHost}
+                                          </Typography.Text>
+                                        ) : null}
                                       </Space>
-                                      <Typography.Text strong>{entry.name}</Typography.Text>
-                                      {entry.url ? (
-                                        <Typography.Text type="secondary" ellipsis={{ tooltip: entry.url }}>
-                                          {entry.url}
+                                    </Card>
+                                  ))}
+                                {compareResult!.bindingImpact.newsSources.items
+                                  .slice(0, 4)
+                                  .map((entry) => (
+                                    <Card
+                                      key={`news-impact-${entry.id}`}
+                                      size="small"
+                                    >
+                                      <Space
+                                        direction="vertical"
+                                        size={4}
+                                        style={{ width: "100%" }}
+                                      >
+                                        <Space wrap size={[6, 6]}>
+                                          <Tag color="purple">news source</Tag>
+                                          <Tag>{entry.workflowBindingMode}</Tag>
+                                          <Tag color="cyan">
+                                            {entry.appliesTo}
+                                          </Tag>
+                                        </Space>
+                                        <Typography.Text strong>
+                                          {entry.name}
                                         </Typography.Text>
-                                      ) : null}
-                                    </Space>
-                                  </Card>
-                                ))}
+                                        {entry.url ? (
+                                          <Typography.Text
+                                            type="secondary"
+                                            ellipsis={{ tooltip: entry.url }}
+                                          >
+                                            {entry.url}
+                                          </Typography.Text>
+                                        ) : null}
+                                      </Space>
+                                    </Card>
+                                  ))}
                               </Space>
                             </Space>
                           </Card>
@@ -1082,19 +1243,35 @@ function WorkflowStudioInner({
                     )}
                   </Space>
                 </Card>
-                <Card size="small" title="Node Palette" bodyStyle={{ padding: 12 }}>
+                <Card
+                  size="small"
+                  title="Node Palette"
+                  bodyStyle={{ padding: 12 }}
+                >
                   <Space wrap size={[8, 8]}>
                     {nodeSchemas.map((schema) => (
                       <Tooltip key={schema.type} title={schema.description}>
-                        <Button size="small" onClick={() => addNode(schema)} disabled={!selectedWorkflow}>
+                        <Button
+                          size="small"
+                          onClick={() => addNode(schema)}
+                          disabled={!selectedWorkflow}
+                        >
                           {schema.displayName}
                         </Button>
                       </Tooltip>
                     ))}
                   </Space>
                 </Card>
-                <Card size="small" title="Trial Run" bodyStyle={{ padding: 12 }}>
-                  <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                <Card
+                  size="small"
+                  title="Trial Run"
+                  bodyStyle={{ padding: 12 }}
+                >
+                  <Space
+                    direction="vertical"
+                    size={10}
+                    style={{ width: "100%" }}
+                  >
                     <Input
                       value={trialSeedUrl}
                       onChange={(event) => setTrialSeedUrl(event.target.value)}
@@ -1120,7 +1297,9 @@ function WorkflowStudioInner({
                       min={1}
                       max={500}
                       value={trialMaxCandidates}
-                      onChange={(value) => setTrialMaxCandidates(Number(value) || 100)}
+                      onChange={(value) =>
+                        setTrialMaxCandidates(Number(value) || 100)
+                      }
                       style={{ width: "100%" }}
                     />
                     <Alert
@@ -1130,11 +1309,20 @@ function WorkflowStudioInner({
                     />
                   </Space>
                 </Card>
-                <Card size="small" title="Linked Frontier Runs" bodyStyle={{ padding: 12 }}>
-                  <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                <Card
+                  size="small"
+                  title="Linked Frontier Runs"
+                  bodyStyle={{ padding: 12 }}
+                >
+                  <Space
+                    direction="vertical"
+                    size={8}
+                    style={{ width: "100%" }}
+                  >
                     {linkedFrontierRuns.length === 0 ? (
                       <Typography.Text type="secondary">
-                        No production frontier runs are currently linked to this workflow.
+                        No production frontier runs are currently linked to this
+                        workflow.
                       </Typography.Text>
                     ) : (
                       linkedFrontierRuns.slice(0, 6).map((run) => (
@@ -1144,14 +1332,26 @@ function WorkflowStudioInner({
                             size={4}
                             style={{ width: "100%" }}
                           >
-                            <Typography.Text ellipsis={{ tooltip: run.seedUrl }}>
+                            <Typography.Text
+                              ellipsis={{ tooltip: run.seedUrl }}
+                            >
                               {run.seedUrl}
                             </Typography.Text>
                             <Space wrap size={[6, 6]}>
-                              <Tag color={run.status === "completed" ? "green" : run.status === "failed" ? "red" : "blue"}>
+                              <Tag
+                                color={
+                                  run.status === "completed"
+                                    ? "green"
+                                    : run.status === "failed"
+                                      ? "red"
+                                      : "blue"
+                                }
+                              >
                                 {run.status}
                               </Tag>
-                              {run.workflowRunId ? <Tag color="geekblue">trace</Tag> : null}
+                              {run.workflowRunId ? (
+                                <Tag color="geekblue">trace</Tag>
+                              ) : null}
                             </Space>
                             <Typography.Text type="secondary">
                               {new Date(run.createdAt).toLocaleString()}
@@ -1189,19 +1389,41 @@ function WorkflowStudioInner({
                     <Controls />
                   </ReactFlow>
                 ) : (
-                  <div style={{ height: 720, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div
+                    style={{
+                      height: 720,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
                     <Empty description="Create a workflow to start editing" />
                   </div>
                 )}
               </Card>
             </Col>
             <Col xs={24} xl={7}>
-              <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-                <Card size="small" title="Inspector" bodyStyle={{ padding: 12 }}>
+              <Space
+                direction="vertical"
+                size="middle"
+                style={{ width: "100%" }}
+              >
+                <Card
+                  size="small"
+                  title="Inspector"
+                  bodyStyle={{ padding: 12 }}
+                >
                   {!selectedNodeDefinition || !selectedNodeSchema ? (
-                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Select a node to inspect" />
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="Select a node to inspect"
+                    />
                   ) : (
-                    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                    <Space
+                      direction="vertical"
+                      size={10}
+                      style={{ width: "100%" }}
+                    >
                       <Input
                         value={selectedNodeDefinition.label}
                         onChange={(event) =>
@@ -1212,136 +1434,199 @@ function WorkflowStudioInner({
                         }
                         placeholder="Node label"
                       />
-                      {Object.entries(selectedNodeSchema.configSchema.properties ?? {}).map(
-                        ([key, property]) => {
-                          const value = selectedNodeDefinition.config[key];
-                          if (property.enum?.length) {
-                            return (
-                              <div key={key}>
-                                <Typography.Text type="secondary">{key}</Typography.Text>
-                                <Select
-                                  value={typeof value === "string" ? value : property.default}
-                                  onChange={(nextValue) =>
-                                    updateNodeDefinition((node) => ({
-                                      ...node,
-                                      config: { ...node.config, [key]: nextValue },
-                                    }))
-                                  }
-                                  style={{ width: "100%", marginTop: 4 }}
-                                  options={property.enum.map((entry) => ({
-                                    label: entry,
-                                    value: entry,
-                                  }))}
-                                />
-                              </div>
-                            );
-                          }
-                          if (property.type === "boolean") {
-                            return (
-                              <div key={key}>
-                                <Typography.Text type="secondary">{key}</Typography.Text>
-                                <Select
-                                  value={value === true ? "true" : value === false ? "false" : String(property.default ?? "false")}
-                                  onChange={(nextValue) =>
-                                    updateNodeDefinition((node) => ({
-                                      ...node,
-                                      config: { ...node.config, [key]: nextValue === "true" },
-                                    }))
-                                  }
-                                  style={{ width: "100%", marginTop: 4 }}
-                                  options={[
-                                    { label: "true", value: "true" },
-                                    { label: "false", value: "false" },
-                                  ]}
-                                />
-                              </div>
-                            );
-                          }
-                          if (property.type === "number") {
-                            return (
-                              <div key={key}>
-                                <Typography.Text type="secondary">{key}</Typography.Text>
-                                <InputNumber
-                                  value={typeof value === "number" ? value : Number(property.default ?? 0)}
-                                  min={property.minimum}
-                                  max={property.maximum}
-                                  onChange={(nextValue) =>
-                                    updateNodeDefinition((node) => ({
-                                      ...node,
-                                      config: {
-                                        ...node.config,
-                                        [key]: typeof nextValue === "number" ? nextValue : Number(property.default ?? 0),
-                                      },
-                                    }))
-                                  }
-                                  style={{ width: "100%", marginTop: 4 }}
-                                />
-                              </div>
-                            );
-                          }
-                          if (property.type === "array" && property.items?.type === "string") {
-                            return (
-                              <div key={key}>
-                                <Typography.Text type="secondary">{key}</Typography.Text>
-                                <Select
-                                  mode="tags"
-                                  value={Array.isArray(value) ? (value as string[]) : []}
-                                  onChange={(nextValue) =>
-                                    updateNodeDefinition((node) => ({
-                                      ...node,
-                                      config: { ...node.config, [key]: nextValue },
-                                    }))
-                                  }
-                                  style={{ width: "100%", marginTop: 4 }}
-                                  tokenSeparators={[","]}
-                                />
-                              </div>
-                            );
-                          }
-                          if (property.type === "object" || property.properties) {
-                            return (
-                              <div key={key}>
-                                <Typography.Text type="secondary">{key}</Typography.Text>
-                                <Input.TextArea
-                                  rows={5}
-                                  value={stringify(value ?? property.default ?? {})}
-                                  onChange={(event) => {
-                                    try {
-                                      const parsed = parseObject(event.target.value);
-                                      updateNodeDefinition((node) => ({
-                                        ...node,
-                                        config: { ...node.config, [key]: parsed },
-                                      }));
-                                    } catch {
-                                      return;
-                                    }
-                                  }}
-                                  style={{ marginTop: 4, fontFamily: "monospace" }}
-                                />
-                              </div>
-                            );
-                          }
+                      {Object.entries(
+                        selectedNodeSchema.configSchema.properties ?? {},
+                      ).map(([key, property]) => {
+                        const value = selectedNodeDefinition.config[key];
+                        if (property.enum?.length) {
                           return (
                             <div key={key}>
-                              <Typography.Text type="secondary">{key}</Typography.Text>
-                              <Input
-                                value={typeof value === "string" ? value : String(property.default ?? "")}
-                                onChange={(event) =>
+                              <Typography.Text type="secondary">
+                                {key}
+                              </Typography.Text>
+                              <Select
+                                value={
+                                  typeof value === "string"
+                                    ? value
+                                    : property.default
+                                }
+                                onChange={(nextValue) =>
                                   updateNodeDefinition((node) => ({
                                     ...node,
-                                    config: { ...node.config, [key]: event.target.value },
+                                    config: {
+                                      ...node.config,
+                                      [key]: nextValue,
+                                    },
                                   }))
                                 }
-                                style={{ marginTop: 4 }}
+                                style={{ width: "100%", marginTop: 4 }}
+                                options={property.enum.map((entry) => ({
+                                  label: entry,
+                                  value: entry,
+                                }))}
                               />
                             </div>
                           );
-                        },
-                      )}
+                        }
+                        if (property.type === "boolean") {
+                          return (
+                            <div key={key}>
+                              <Typography.Text type="secondary">
+                                {key}
+                              </Typography.Text>
+                              <Select
+                                value={
+                                  value === true
+                                    ? "true"
+                                    : value === false
+                                      ? "false"
+                                      : String(property.default ?? "false")
+                                }
+                                onChange={(nextValue) =>
+                                  updateNodeDefinition((node) => ({
+                                    ...node,
+                                    config: {
+                                      ...node.config,
+                                      [key]: nextValue === "true",
+                                    },
+                                  }))
+                                }
+                                style={{ width: "100%", marginTop: 4 }}
+                                options={[
+                                  { label: "true", value: "true" },
+                                  { label: "false", value: "false" },
+                                ]}
+                              />
+                            </div>
+                          );
+                        }
+                        if (property.type === "number") {
+                          return (
+                            <div key={key}>
+                              <Typography.Text type="secondary">
+                                {key}
+                              </Typography.Text>
+                              <InputNumber
+                                value={
+                                  typeof value === "number"
+                                    ? value
+                                    : Number(property.default ?? 0)
+                                }
+                                min={property.minimum}
+                                max={property.maximum}
+                                onChange={(nextValue) =>
+                                  updateNodeDefinition((node) => ({
+                                    ...node,
+                                    config: {
+                                      ...node.config,
+                                      [key]:
+                                        typeof nextValue === "number"
+                                          ? nextValue
+                                          : Number(property.default ?? 0),
+                                    },
+                                  }))
+                                }
+                                style={{ width: "100%", marginTop: 4 }}
+                              />
+                            </div>
+                          );
+                        }
+                        if (
+                          property.type === "array" &&
+                          property.items?.type === "string"
+                        ) {
+                          return (
+                            <div key={key}>
+                              <Typography.Text type="secondary">
+                                {key}
+                              </Typography.Text>
+                              <Select
+                                mode="tags"
+                                value={
+                                  Array.isArray(value)
+                                    ? (value as string[])
+                                    : []
+                                }
+                                onChange={(nextValue) =>
+                                  updateNodeDefinition((node) => ({
+                                    ...node,
+                                    config: {
+                                      ...node.config,
+                                      [key]: nextValue,
+                                    },
+                                  }))
+                                }
+                                style={{ width: "100%", marginTop: 4 }}
+                                tokenSeparators={[","]}
+                              />
+                            </div>
+                          );
+                        }
+                        if (property.type === "object" || property.properties) {
+                          return (
+                            <div key={key}>
+                              <Typography.Text type="secondary">
+                                {key}
+                              </Typography.Text>
+                              <Input.TextArea
+                                rows={5}
+                                value={stringify(
+                                  value ?? property.default ?? {},
+                                )}
+                                onChange={(event) => {
+                                  try {
+                                    const parsed = parseObject(
+                                      event.target.value,
+                                    );
+                                    updateNodeDefinition((node) => ({
+                                      ...node,
+                                      config: { ...node.config, [key]: parsed },
+                                    }));
+                                  } catch {
+                                    return;
+                                  }
+                                }}
+                                style={{
+                                  marginTop: 4,
+                                  fontFamily: "monospace",
+                                }}
+                              />
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={key}>
+                            <Typography.Text type="secondary">
+                              {key}
+                            </Typography.Text>
+                            <Input
+                              value={
+                                typeof value === "string"
+                                  ? value
+                                  : String(property.default ?? "")
+                              }
+                              onChange={(event) =>
+                                updateNodeDefinition((node) => ({
+                                  ...node,
+                                  config: {
+                                    ...node.config,
+                                    [key]: event.target.value,
+                                  },
+                                }))
+                              }
+                              style={{ marginTop: 4 }}
+                            />
+                          </div>
+                        );
+                      })}
                     </Space>
                   )}
                 </Card>
-                <Card size="small" title="Workflow Settings" bodyStyle={{ padding: 12 }}>
+                <Card
+                  size="small"
+                  title="Workflow Settings"
+                  bodyStyle={{ padding: 12 }}
+                >
                   {definition ? (
                     <Form layout="vertical">
                       <Row gutter={[12, 0]}>
@@ -1362,10 +1647,12 @@ function WorkflowStudioInner({
                                     : current,
                                 )
                               }
-                              options={["layered", "native", "hybrid"].map((value) => ({
-                                label: value,
-                                value,
-                              }))}
+                              options={["layered", "native", "hybrid"].map(
+                                (value) => ({
+                                  label: value,
+                                  value,
+                                }),
+                              )}
                             />
                           </Form.Item>
                         </Col>
@@ -1444,7 +1731,10 @@ function WorkflowStudioInner({
                       </Row>
                     </Form>
                   ) : (
-                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No workflow selected" />
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="No workflow selected"
+                    />
                   )}
                 </Card>
               </Space>
@@ -1462,7 +1752,10 @@ function WorkflowStudioInner({
               <Col xs={24} md={8}>
                 <Card size="small">
                   <Typography.Text type="secondary">Workflow</Typography.Text>
-                  <Typography.Title level={5} style={{ marginTop: 8, marginBottom: 0 }}>
+                  <Typography.Title
+                    level={5}
+                    style={{ marginTop: 8, marginBottom: 0 }}
+                  >
                     {trialResult.workflow.name}
                   </Typography.Title>
                   <Typography.Text type="secondary">
@@ -1473,7 +1766,10 @@ function WorkflowStudioInner({
               <Col xs={24} md={8}>
                 <Card size="small">
                   <Typography.Text type="secondary">Candidates</Typography.Text>
-                  <Typography.Title level={5} style={{ marginTop: 8, marginBottom: 0 }}>
+                  <Typography.Title
+                    level={5}
+                    style={{ marginTop: 8, marginBottom: 0 }}
+                  >
                     {trialResult.candidates.length}
                   </Typography.Title>
                 </Card>
@@ -1481,7 +1777,10 @@ function WorkflowStudioInner({
               <Col xs={24} md={8}>
                 <Card size="small">
                   <Typography.Text type="secondary">Selected</Typography.Text>
-                  <Typography.Title level={5} style={{ marginTop: 8, marginBottom: 0 }}>
+                  <Typography.Title
+                    level={5}
+                    style={{ marginTop: 8, marginBottom: 0 }}
+                  >
                     {trialResult.selectedCandidates.length}
                   </Typography.Title>
                 </Card>
@@ -1490,12 +1789,32 @@ function WorkflowStudioInner({
             <Row gutter={[16, 16]}>
               <Col xs={24} xl={9}>
                 <Card size="small" title="Step Timeline">
-                  <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                  <Space
+                    direction="vertical"
+                    size={10}
+                    style={{ width: "100%" }}
+                  >
                     {trialResult.steps.map((step) => (
-                      <Card key={step.nodeId} size="small" style={{ background: "#fffdf8" }}>
-                        <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                      <Card
+                        key={step.nodeId}
+                        size="small"
+                        style={{ background: "#fffdf8" }}
+                      >
+                        <Space
+                          direction="vertical"
+                          size={4}
+                          style={{ width: "100%" }}
+                        >
                           <Space wrap size={[6, 6]}>
-                            <Tag color={step.status === "completed" ? "green" : step.status === "failed" ? "red" : "default"}>
+                            <Tag
+                              color={
+                                step.status === "completed"
+                                  ? "green"
+                                  : step.status === "failed"
+                                    ? "red"
+                                    : "default"
+                              }
+                            >
                               {step.status}
                             </Tag>
                             <Tag>{step.nodeType}</Tag>
@@ -1505,7 +1824,9 @@ function WorkflowStudioInner({
                           <Typography.Text type="secondary">
                             {formatWorkflowStepSummary(step)}
                           </Typography.Text>
-                          {step.error ? <Alert type="error" showIcon message={step.error} /> : null}
+                          {step.error ? (
+                            <Alert type="error" showIcon message={step.error} />
+                          ) : null}
                         </Space>
                       </Card>
                     ))}
@@ -1513,7 +1834,11 @@ function WorkflowStudioInner({
                 </Card>
               </Col>
               <Col xs={24} xl={15}>
-                <Space direction="vertical" size="large" style={{ width: "100%" }}>
+                <Space
+                  direction="vertical"
+                  size="large"
+                  style={{ width: "100%" }}
+                >
                   <Card size="small" title="Candidate Flow">
                     <Table
                       rowKey="id"
@@ -1524,15 +1849,26 @@ function WorkflowStudioInner({
                     />
                   </Card>
                   <Card size="small" title="System Events">
-                    <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                    <Space
+                      direction="vertical"
+                      size="middle"
+                      style={{ width: "100%" }}
+                    >
                       {trialResult.systemEvents.length === 0 ? (
                         <Typography.Text type="secondary">
                           No system events were recorded during this run.
                         </Typography.Text>
                       ) : (
                         trialResult.systemEvents.map((event, index) => (
-                          <Card key={`${event.eventType}-${index}`} size="small">
-                            <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                          <Card
+                            key={`${event.eventType}-${index}`}
+                            size="small"
+                          >
+                            <Space
+                              direction="vertical"
+                              size={4}
+                              style={{ width: "100%" }}
+                            >
                               <Space wrap size={[6, 6]}>
                                 <Tag
                                   color={
@@ -1546,18 +1882,26 @@ function WorkflowStudioInner({
                                   {event.level}
                                 </Tag>
                                 <Tag>{event.eventType}</Tag>
-                                {event.nodeType ? <Tag>{event.nodeType}</Tag> : null}
-                                {event.nodeId ? <Tag>{`node:${event.nodeId}`}</Tag> : null}
+                                {event.nodeType ? (
+                                  <Tag>{event.nodeType}</Tag>
+                                ) : null}
+                                {event.nodeId ? (
+                                  <Tag>{`node:${event.nodeId}`}</Tag>
+                                ) : null}
                                 {event.triggerReason ? (
-                                  <Tag color="purple">{event.triggerReason}</Tag>
+                                  <Tag color="purple">
+                                    {event.triggerReason}
+                                  </Tag>
                                 ) : null}
                               </Space>
                               <Typography.Text>{event.message}</Typography.Text>
                               <Typography.Text type="secondary">
                                 {new Date(event.timestamp).toLocaleString()}
                               </Typography.Text>
-                              {(event.beforeCount !== null && event.beforeCount !== undefined) ||
-                              (event.afterCount !== null && event.afterCount !== undefined) ? (
+                              {(event.beforeCount !== null &&
+                                event.beforeCount !== undefined) ||
+                              (event.afterCount !== null &&
+                                event.afterCount !== undefined) ? (
                                 <Space wrap size={[4, 4]}>
                                   <Tag color="blue">{`before:${event.beforeCount ?? 0}`}</Tag>
                                   <Tag color="geekblue">{`after:${event.afterCount ?? 0}`}</Tag>
@@ -1613,22 +1957,40 @@ function WorkflowStudioInner({
           <Space direction="vertical" size="large" style={{ width: "100%" }}>
             <Card size="small">
               <Space direction="vertical" size={4} style={{ width: "100%" }}>
-                <Typography.Text strong>{candidateDrawer.title || candidateDrawer.url}</Typography.Text>
-                <Typography.Text type="secondary">{candidateDrawer.url}</Typography.Text>
+                <Typography.Text strong>
+                  {candidateDrawer.title || candidateDrawer.url}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  {candidateDrawer.url}
+                </Typography.Text>
                 <Space wrap size={[4, 4]}>
-                  <Tag color={candidateDrawer.status === "selected" ? "green" : candidateDrawer.status === "rejected" ? "red" : "blue"}>
+                  <Tag
+                    color={
+                      candidateDrawer.status === "selected"
+                        ? "green"
+                        : candidateDrawer.status === "rejected"
+                          ? "red"
+                          : "blue"
+                    }
+                  >
                     {candidateDrawer.status}
                   </Tag>
                   <Tag>{`source:${candidateDrawer.sourceNodeId}`}</Tag>
-                  {candidateDrawer.pageType ? <Tag>{candidateDrawer.pageType}</Tag> : null}
-                  {candidateDrawer.rejectedReason ? <Tag color="red">{candidateDrawer.rejectedReason}</Tag> : null}
+                  {candidateDrawer.pageType ? (
+                    <Tag>{candidateDrawer.pageType}</Tag>
+                  ) : null}
+                  {candidateDrawer.rejectedReason ? (
+                    <Tag color="red">{candidateDrawer.rejectedReason}</Tag>
+                  ) : null}
                 </Space>
               </Space>
             </Card>
             <Card size="small" title="Trace Summary">
               {(() => {
-                const summary = buildWorkflowCandidateTraceSummary(candidateDrawer);
-                const traceChain = buildWorkflowCandidateTraceChain(candidateDrawer);
+                const summary =
+                  buildWorkflowCandidateTraceSummary(candidateDrawer);
+                const traceChain =
+                  buildWorkflowCandidateTraceChain(candidateDrawer);
                 return (
                   <Descriptions size="small" column={2} bordered>
                     <Descriptions.Item label="Total score delta">
@@ -1678,127 +2040,150 @@ function WorkflowStudioInner({
               })()}
             </Card>
             <Card size="small" title="Trace">
-              <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-                {buildWorkflowCandidateTraceChain(candidateDrawer).map((step) => {
-                  const entry = step.entry;
-                  const diffRows = buildWorkflowTraceEntryDiffRows(entry);
-                  return (
-                  <Card key={step.key} size="small">
-                    <Space direction="vertical" size={4} style={{ width: "100%" }}>
-                      <Space wrap size={[6, 6]}>
-                        <Tag>{entry.nodeType}</Tag>
-                        <Tag
-                          color={
-                            step.status === "selected"
-                              ? "green"
-                              : step.status === "rejected"
-                                ? "red"
-                                : "blue"
-                          }
+              <Space
+                direction="vertical"
+                size="middle"
+                style={{ width: "100%" }}
+              >
+                {buildWorkflowCandidateTraceChain(candidateDrawer).map(
+                  (step) => {
+                    const entry = step.entry;
+                    const diffRows = buildWorkflowTraceEntryDiffRows(entry);
+                    return (
+                      <Card key={step.key} size="small">
+                        <Space
+                          direction="vertical"
+                          size={4}
+                          style={{ width: "100%" }}
                         >
-                          {entry.action}
-                        </Tag>
-                        {step.rejectedReason ? (
-                          <Tag color="red">{step.rejectedReason}</Tag>
-                        ) : null}
-                        <Typography.Text type="secondary">
-                          {new Date(entry.timestamp).toLocaleString()}
-                        </Typography.Text>
-                      </Space>
-                      <Typography.Text>{entry.message}</Typography.Text>
-                      {step.deltaSummary.length > 0 ? (
-                        <Space wrap size={[4, 4]}>
-                          {step.deltaSummary.map((delta) => (
-                            <Tag key={`${step.key}-${delta}`} color="cyan">
-                              {delta}
+                          <Space wrap size={[6, 6]}>
+                            <Tag>{entry.nodeType}</Tag>
+                            <Tag
+                              color={
+                                step.status === "selected"
+                                  ? "green"
+                                  : step.status === "rejected"
+                                    ? "red"
+                                    : "blue"
+                              }
+                            >
+                              {entry.action}
                             </Tag>
-                          ))}
+                            {step.rejectedReason ? (
+                              <Tag color="red">{step.rejectedReason}</Tag>
+                            ) : null}
+                            <Typography.Text type="secondary">
+                              {new Date(entry.timestamp).toLocaleString()}
+                            </Typography.Text>
+                          </Space>
+                          <Typography.Text>{entry.message}</Typography.Text>
+                          {step.deltaSummary.length > 0 ? (
+                            <Space wrap size={[4, 4]}>
+                              {step.deltaSummary.map((delta) => (
+                                <Tag key={`${step.key}-${delta}`} color="cyan">
+                                  {delta}
+                                </Tag>
+                              ))}
+                            </Space>
+                          ) : null}
+                          {step.changedFields.length > 0 ? (
+                            <Space wrap size={[4, 4]}>
+                              {step.changedFields.map((field) => (
+                                <Tag key={`${step.key}-${field}`}>{field}</Tag>
+                              ))}
+                            </Space>
+                          ) : null}
+                          {diffRows.length > 0 ? (
+                            <Descriptions size="small" column={1} bordered>
+                              {diffRows.map((diff) => (
+                                <Descriptions.Item
+                                  key={`${step.key}-${diff.field}`}
+                                  label={diff.field}
+                                >
+                                  <Space
+                                    direction="vertical"
+                                    size={2}
+                                    style={{ width: "100%" }}
+                                  >
+                                    <Typography.Text type="secondary">
+                                      {`before: ${diff.beforeValue}`}
+                                    </Typography.Text>
+                                    <Typography.Text>{`after: ${diff.afterValue}`}</Typography.Text>
+                                  </Space>
+                                </Descriptions.Item>
+                              ))}
+                            </Descriptions>
+                          ) : null}
+                          {entry.ruleHits?.length ? (
+                            <Space wrap size={[4, 4]}>
+                              {entry.ruleHits.map((rule) => (
+                                <Tag
+                                  key={`${entry.nodeId}-${rule}`}
+                                  color="orange"
+                                >
+                                  {rule}
+                                </Tag>
+                              ))}
+                            </Space>
+                          ) : null}
+                          <Collapse
+                            size="small"
+                            ghost
+                            items={[
+                              {
+                                key: `${step.key}-snapshots`,
+                                label: "Raw snapshots",
+                                children: (
+                                  <Row gutter={[12, 12]}>
+                                    <Col xs={24} md={12}>
+                                      <Card size="small" title="Before">
+                                        <Typography.Paragraph
+                                          style={{
+                                            marginBottom: 0,
+                                            whiteSpace: "pre-wrap",
+                                            fontFamily: "monospace",
+                                          }}
+                                        >
+                                          {stringify(
+                                            entry.beforeSnapshot ?? {},
+                                          )}
+                                        </Typography.Paragraph>
+                                      </Card>
+                                    </Col>
+                                    <Col xs={24} md={12}>
+                                      <Card size="small" title="After">
+                                        <Typography.Paragraph
+                                          style={{
+                                            marginBottom: 0,
+                                            whiteSpace: "pre-wrap",
+                                            fontFamily: "monospace",
+                                          }}
+                                        >
+                                          {stringify(entry.afterSnapshot ?? {})}
+                                        </Typography.Paragraph>
+                                      </Card>
+                                    </Col>
+                                  </Row>
+                                ),
+                              },
+                            ]}
+                          />
+                          {entry.details ? (
+                            <Typography.Paragraph
+                              style={{
+                                marginBottom: 0,
+                                whiteSpace: "pre-wrap",
+                                fontFamily: "monospace",
+                              }}
+                            >
+                              {stringify(entry.details)}
+                            </Typography.Paragraph>
+                          ) : null}
                         </Space>
-                      ) : null}
-                      {step.changedFields.length > 0 ? (
-                        <Space wrap size={[4, 4]}>
-                          {step.changedFields.map((field) => (
-                            <Tag key={`${step.key}-${field}`}>{field}</Tag>
-                          ))}
-                        </Space>
-                      ) : null}
-                      {diffRows.length > 0 ? (
-                        <Descriptions size="small" column={1} bordered>
-                          {diffRows.map((diff) => (
-                            <Descriptions.Item key={`${step.key}-${diff.field}`} label={diff.field}>
-                              <Space direction="vertical" size={2} style={{ width: "100%" }}>
-                                <Typography.Text type="secondary">
-                                  {`before: ${diff.beforeValue}`}
-                                </Typography.Text>
-                                <Typography.Text>{`after: ${diff.afterValue}`}</Typography.Text>
-                              </Space>
-                            </Descriptions.Item>
-                          ))}
-                        </Descriptions>
-                      ) : null}
-                      {entry.ruleHits?.length ? (
-                        <Space wrap size={[4, 4]}>
-                          {entry.ruleHits.map((rule) => (
-                            <Tag key={`${entry.nodeId}-${rule}`} color="orange">
-                              {rule}
-                            </Tag>
-                          ))}
-                        </Space>
-                      ) : null}
-                      <Collapse
-                        size="small"
-                        ghost
-                        items={[
-                          {
-                            key: `${step.key}-snapshots`,
-                            label: "Raw snapshots",
-                            children: (
-                              <Row gutter={[12, 12]}>
-                                <Col xs={24} md={12}>
-                                  <Card size="small" title="Before">
-                                    <Typography.Paragraph
-                                      style={{
-                                        marginBottom: 0,
-                                        whiteSpace: "pre-wrap",
-                                        fontFamily: "monospace",
-                                      }}
-                                    >
-                                      {stringify(entry.beforeSnapshot ?? {})}
-                                    </Typography.Paragraph>
-                                  </Card>
-                                </Col>
-                                <Col xs={24} md={12}>
-                                  <Card size="small" title="After">
-                                    <Typography.Paragraph
-                                      style={{
-                                        marginBottom: 0,
-                                        whiteSpace: "pre-wrap",
-                                        fontFamily: "monospace",
-                                      }}
-                                    >
-                                      {stringify(entry.afterSnapshot ?? {})}
-                                    </Typography.Paragraph>
-                                  </Card>
-                                </Col>
-                              </Row>
-                            ),
-                          },
-                        ]}
-                      />
-                      {entry.details ? (
-                        <Typography.Paragraph
-                          style={{
-                            marginBottom: 0,
-                            whiteSpace: "pre-wrap",
-                            fontFamily: "monospace",
-                          }}
-                        >
-                          {stringify(entry.details)}
-                        </Typography.Paragraph>
-                      ) : null}
-                    </Space>
-                  </Card>
-                )})}
+                      </Card>
+                    );
+                  },
+                )}
               </Space>
             </Card>
           </Space>

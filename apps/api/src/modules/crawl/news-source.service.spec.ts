@@ -7,6 +7,403 @@ import { Prisma } from "@prisma/client";
 
 import { NewsSourceService } from "./news-source.service";
 
+describe("NewsSourceService.listSources", () => {
+  it("returns a paged list with snapshot and runtime summaries", async () => {
+    const newsSourceFindMany = jest.fn().mockResolvedValue([
+      {
+        id: "source-1",
+        name: "Alpha",
+        url: "https://example.com/alpha",
+        siteType: "general",
+        language: "en",
+        crawlTemplateId: null,
+        workflowId: null,
+        workflowVersionId: null,
+        workflowBindingMode: "published",
+        group: "ops",
+        frequencySeconds: 1800,
+        priority: 2,
+        isActive: true,
+        lastRunAt: null,
+        lastSuccessAt: null,
+        lastFailureAt: null,
+        consecutiveFailures: 0,
+        circuitOpenUntil: null,
+        nextRunAt: null,
+        config: null,
+      },
+      {
+        id: "source-2",
+        name: "Beta",
+        url: "https://example.com/beta",
+        siteType: "finance",
+        language: null,
+        crawlTemplateId: "template-1",
+        workflowId: "workflow-1",
+        workflowVersionId: "workflow-version-1",
+        workflowBindingMode: "pinned",
+        group: null,
+        frequencySeconds: 3600,
+        priority: 1,
+        isActive: false,
+        lastRunAt: null,
+        lastSuccessAt: null,
+        lastFailureAt: null,
+        consecutiveFailures: 2,
+        circuitOpenUntil: null,
+        nextRunAt: null,
+        config: { seed: { enabled: true, mode: "rss" } },
+      },
+    ]);
+    const newsSourceCount = jest.fn().mockResolvedValue(61);
+    const newsSourceOpsSnapshotFindMany = jest
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          sourceId: "source-1",
+          latestJob: {
+            id: "job-1",
+            status: "completed",
+            url: "https://example.com/alpha/article-1",
+            createdAt: "2026-03-22T10:00:00.000Z",
+          },
+          latestCrawlTask: {
+            id: "task-1",
+            status: "running",
+            lastResultAt: "2026-03-22T10:01:00.000Z",
+          },
+          latestArticle: {
+            id: "article-1",
+            url: "https://example.com/alpha/article-1",
+            crawlAt: "2026-03-22T10:02:00.000Z",
+            titleGuess: "Alpha article",
+          },
+          stats24h: {
+            completed: 8,
+            failed: 2,
+            successRate: 0.8,
+            avgDurationMs: 1234,
+          },
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          sourceId: "source-2",
+          latestJob: null,
+          latestCrawlTask: null,
+          latestArticle: null,
+          stats24h: {
+            completed: 0,
+            failed: 1,
+            successRate: 0,
+            avgDurationMs: null,
+          },
+        },
+      ]);
+    const prisma = {
+      newsSource: {
+        findMany: newsSourceFindMany,
+        count: newsSourceCount,
+      },
+      newsSourceOpsSnapshot: {
+        findMany: newsSourceOpsSnapshotFindMany,
+      },
+      crawlTask: {
+        groupBy: jest.fn(),
+      },
+      pipelineJob: {
+        findMany: jest.fn(),
+      },
+      article: {
+        findMany: jest.fn(),
+      },
+    } as any;
+    const metadataService = {} as any;
+    const workflows = {} as any;
+    const env = {} as any;
+    const cache = {} as any;
+    const opsSnapshots = {
+      readRuntimeStates: jest.fn().mockResolvedValue(
+        new Map([
+          [
+            "source-1",
+            {
+              crawlTaskQueuedCount: 2,
+              crawlTaskRunningCount: 1,
+              backpressureUntil: "2026-03-22T10:30:00.000Z",
+              backpressurePendingJobs: 12,
+              backpressureThreshold: 8,
+              backpressureHitTimestamps: [
+                "2026-03-22T09:00:00.000Z",
+                "2026-03-22T10:00:00.000Z",
+              ],
+              rssAdaptiveState: {
+                outcomes: [true, false],
+                consecutiveNoHit: 1,
+                updatedAt: "2026-03-22T10:05:00.000Z",
+              },
+            },
+          ],
+          [
+            "source-2",
+            {
+              crawlTaskQueuedCount: 0,
+              crawlTaskRunningCount: 4,
+              backpressureUntil: null,
+              backpressurePendingJobs: null,
+              backpressureThreshold: null,
+              backpressureHitTimestamps: [],
+              rssAdaptiveState: null,
+            },
+          ],
+        ]),
+      ),
+      refreshSnapshotsForSources: jest.fn().mockResolvedValue(undefined),
+      normalizeSnapshotRecord: jest.fn((record: any) => ({
+        latestJob: record.latestJob ?? null,
+        latestCrawlTask: record.latestCrawlTask ?? null,
+        latestArticle: record.latestArticle ?? null,
+        stats24h: record.stats24h ?? {
+          completed: 0,
+          failed: 0,
+          successRate: null,
+          avgDurationMs: null,
+        },
+      })),
+    } as any;
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+      opsSnapshots,
+    );
+
+    const result = await service.listSources("org-1", {
+      page: 2,
+      pageSize: 100,
+      search: " example ",
+    });
+
+    expect(newsSourceFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          orgId: "org-1",
+          OR: [
+            { name: { contains: "example" } },
+            { url: { contains: "example" } },
+          ],
+        },
+        skip: 50,
+        take: 50,
+      }),
+    );
+    expect(newsSourceCount).toHaveBeenCalledWith({
+      where: {
+        orgId: "org-1",
+        OR: [
+          { name: { contains: "example" } },
+          { url: { contains: "example" } },
+        ],
+      },
+    });
+    expect(opsSnapshots.readRuntimeStates).toHaveBeenCalledWith([
+      "source-1",
+      "source-2",
+    ]);
+    expect(opsSnapshots.refreshSnapshotsForSources).toHaveBeenCalledWith(
+      "org-1",
+      ["source-2"],
+    );
+    expect(result).toMatchObject({
+      total: 61,
+      page: 2,
+      pageSize: 50,
+    });
+    expect(result.sources[0]).toMatchObject({
+      id: "source-1",
+      opsSummary: {
+        latestJob: {
+          id: "job-1",
+        },
+        stats24h: {
+          completed: 8,
+          failed: 2,
+          successRate: 0.8,
+          avgDurationMs: 1234,
+        },
+        runtime: {
+          crawlTaskQueuedCount: 2,
+          crawlTaskRunningCount: 1,
+          backpressureUntil: "2026-03-22T10:30:00.000Z",
+          backpressurePendingJobs: 12,
+          backpressureThreshold: 8,
+          backpressureCount24h: 2,
+          rssAdaptiveState: {
+            outcomes: [true, false],
+            consecutiveNoHit: 1,
+            updatedAt: "2026-03-22T10:05:00.000Z",
+          },
+        },
+      },
+    });
+    expect(result.sources[1]).toMatchObject({
+      id: "source-2",
+      opsSummary: {
+        stats24h: {
+          completed: 0,
+          failed: 1,
+          successRate: 0,
+          avgDurationMs: null,
+        },
+        runtime: {
+          crawlTaskQueuedCount: 0,
+          crawlTaskRunningCount: 4,
+          backpressureUntil: null,
+          backpressurePendingJobs: null,
+          backpressureThreshold: null,
+          backpressureCount24h: 0,
+          rssAdaptiveState: null,
+        },
+      },
+    });
+    expect(prisma.crawlTask.groupBy).not.toHaveBeenCalled();
+    expect(prisma.pipelineJob.findMany).not.toHaveBeenCalled();
+    expect(prisma.article.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns safe defaults when snapshot runtime services are unavailable", async () => {
+    const prisma = {
+      newsSource: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "source-1",
+            name: "Alpha",
+            url: "https://example.com/alpha",
+            siteType: "general",
+            language: null,
+            crawlTemplateId: null,
+            workflowId: null,
+            workflowVersionId: null,
+            workflowBindingMode: "published",
+            group: null,
+            frequencySeconds: 1800,
+            priority: 1,
+            isActive: true,
+            lastRunAt: null,
+            lastSuccessAt: null,
+            lastFailureAt: null,
+            consecutiveFailures: 0,
+            circuitOpenUntil: null,
+            nextRunAt: null,
+            config: null,
+          },
+        ]),
+        count: jest.fn().mockResolvedValue(1),
+      },
+      newsSourceOpsSnapshot: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      crawlTask: {
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
+      pipelineJob: {
+        findMany: jest.fn(),
+      },
+      article: {
+        findMany: jest.fn(),
+      },
+    } as any;
+    const service = new NewsSourceService(
+      prisma,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    const result = await service.listSources("org-1", {
+      page: 1,
+      pageSize: 10,
+    });
+
+    expect(result).toMatchObject({
+      total: 1,
+      page: 1,
+      pageSize: 10,
+      sources: [
+        {
+          id: "source-1",
+          opsSummary: {
+            latestJob: null,
+            latestCrawlTask: null,
+            latestArticle: null,
+            stats24h: {
+              completed: 0,
+              failed: 0,
+              successRate: null,
+              avgDurationMs: null,
+            },
+            runtime: {
+              crawlTaskQueuedCount: 0,
+              crawlTaskRunningCount: 0,
+              backpressureUntil: null,
+              backpressurePendingJobs: null,
+              backpressureThreshold: null,
+              backpressureCount24h: 0,
+              rssAdaptiveState: null,
+            },
+          },
+        },
+      ],
+    });
+    expect(prisma.crawlTask.groupBy).not.toHaveBeenCalled();
+    expect(prisma.pipelineJob.findMany).not.toHaveBeenCalled();
+    expect(prisma.article.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("NewsSourceService.listSourceOptions", () => {
+  it("returns lightweight selector options", async () => {
+    const prisma = {
+      newsSource: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "source-1",
+            name: "Alpha",
+            url: "https://example.com/alpha",
+          },
+        ]),
+      },
+    } as any;
+    const service = new NewsSourceService(
+      prisma,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    await expect(service.listSourceOptions("org-1")).resolves.toEqual([
+      {
+        id: "source-1",
+        name: "Alpha",
+        url: "https://example.com/alpha",
+      },
+    ]);
+    expect(prisma.newsSource.findMany).toHaveBeenCalledWith({
+      where: { orgId: "org-1" },
+      orderBy: [{ name: "asc" }, { url: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        url: true,
+      },
+    });
+  });
+});
+
 describe("NewsSourceService.createSource", () => {
   it("throws ConflictException when URL already exists", async () => {
     const prisma = {

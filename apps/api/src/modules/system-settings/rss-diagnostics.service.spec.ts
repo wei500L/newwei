@@ -11,13 +11,14 @@ const mockRawItemFind = jest.fn();
 jest.mock("@modular/mongo", () => ({
   ProcessedItemModel: {
     find: (...args: unknown[]) => mockProcessedItemFind(...args),
-    countDocuments: (...args: unknown[]) => mockProcessedItemCountDocuments(...args),
+    countDocuments: (...args: unknown[]) =>
+      mockProcessedItemCountDocuments(...args),
     aggregate: (...args: unknown[]) => mockProcessedItemAggregate(...args),
-    bulkWrite: (...args: unknown[]) => mockProcessedItemBulkWrite(...args)
+    bulkWrite: (...args: unknown[]) => mockProcessedItemBulkWrite(...args),
   },
   RawItemModel: {
-    find: (...args: unknown[]) => mockRawItemFind(...args)
-  }
+    find: (...args: unknown[]) => mockRawItemFind(...args),
+  },
 }));
 
 beforeEach(() => {
@@ -33,23 +34,35 @@ describe("RssDiagnosticsService.backfillProcessedItemSourceId", () => {
     mockProcessedItemFind.mockReturnValue({
       sort: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue([])
+      lean: jest.fn().mockResolvedValue([]),
     });
 
     const prisma = {
       itemMeta: { findMany: jest.fn() },
       pipelineJob: { findMany: jest.fn() },
       crawlResult: { findMany: jest.fn() },
-      newsSource: { findMany: jest.fn() }
+      newsSource: { findMany: jest.fn() },
+    };
+    const snapshots = {
+      invalidate: jest.fn().mockResolvedValue(0),
+      getOrCreate: jest.fn(
+        async ({ loader }: { loader: () => Promise<unknown> }) => ({
+          payload: await loader(),
+        }),
+      ),
     };
 
-    const service = new RssDiagnosticsService(prisma as any, {
-      newsSourceSchedulerConfig: { enabled: true }
-    } as any);
+    const service = new RssDiagnosticsService(
+      prisma as any,
+      {
+        newsSourceSchedulerConfig: { enabled: true },
+      } as any,
+      snapshots as any,
+    );
 
     const result = await service.backfillProcessedItemSourceId("org-1", {
       dryRun: true,
-      limit: 100
+      limit: 100,
     });
 
     expect(result).toEqual({
@@ -59,7 +72,7 @@ describe("RssDiagnosticsService.backfillProcessedItemSourceId", () => {
       matched: 0,
       updated: 0,
       unresolved: 0,
-      unresolvedSamples: []
+      unresolvedSamples: [],
     });
   });
 
@@ -75,9 +88,9 @@ describe("RssDiagnosticsService.backfillProcessedItemSourceId", () => {
           _id: processedId,
           rawItemId: rawId,
           itemMetaId: "meta-1",
-          pipelineJobId: null
-        }
-      ])
+          pipelineJobId: null,
+        },
+      ]),
     });
     mockRawItemFind.mockReturnValue({
       lean: jest.fn().mockResolvedValue([
@@ -85,35 +98,51 @@ describe("RssDiagnosticsService.backfillProcessedItemSourceId", () => {
           _id: rawId,
           payload: {
             metadata: {
-              sourceId: "source-1"
-            }
-          }
-        }
-      ])
+              sourceId: "source-1",
+            },
+          },
+        },
+      ]),
     });
 
     const prisma = {
       itemMeta: {
-        findMany: jest.fn().mockResolvedValue([{ id: "meta-1", externalId: "crawlResult:result-1" }])
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { id: "meta-1", externalId: "crawlResult:result-1" },
+          ]),
       },
       pipelineJob: {
-        findMany: jest.fn().mockResolvedValue([])
+        findMany: jest.fn().mockResolvedValue([]),
       },
       crawlResult: {
-        findMany: jest.fn().mockResolvedValue([])
+        findMany: jest.fn().mockResolvedValue([]),
       },
       newsSource: {
-        findMany: jest.fn().mockResolvedValue([{ id: "source-1" }])
-      }
+        findMany: jest.fn().mockResolvedValue([{ id: "source-1" }]),
+      },
+    };
+    const snapshots = {
+      invalidate: jest.fn().mockResolvedValue(0),
+      getOrCreate: jest.fn(
+        async ({ loader }: { loader: () => Promise<unknown> }) => ({
+          payload: await loader(),
+        }),
+      ),
     };
 
-    const service = new RssDiagnosticsService(prisma as any, {
-      newsSourceSchedulerConfig: { enabled: true }
-    } as any);
+    const service = new RssDiagnosticsService(
+      prisma as any,
+      {
+        newsSourceSchedulerConfig: { enabled: true },
+      } as any,
+      snapshots as any,
+    );
 
     const result = await service.backfillProcessedItemSourceId("org-1", {
       dryRun: true,
-      limit: 100
+      limit: 100,
     });
 
     expect(result.scanned).toBe(1);

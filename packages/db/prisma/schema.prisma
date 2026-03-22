@@ -12,99 +12,101 @@ datasource db {
 }
 
 model Org {
-  id          String       @id @default(cuid())
-  name        String
-  slug        String       @unique
-  description String?
-  planTier    String?
+  id                 String   @id @default(cuid())
+  name               String
+  slug               String   @unique
+  description        String?
+  planTier           String?
   subscriptionStatus String?
-  isActive    Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  memberships Membership[]
-  membershipRoles MembershipRole[]
-  roles       Role[]
-  auditLogs   AuditLog[]
-  auditLogOutbox AuditLogOutbox[]
-  items       ItemMeta[]
-  crawlTasks  CrawlTask[]
-  crawlTemplates CrawlTemplate[]
-  crawlSiteProfiles CrawlSiteProfile[]
-  crawlFrontierRuns CrawlFrontierRun[]
-  crawlFrontierNodes CrawlFrontierNode[]
-  crawlStrategyWorkflows CrawlStrategyWorkflow[]
-  crawlStrategyWorkflowRuns CrawlStrategyWorkflowRun[]
-  newsSources NewsSource[]
-  pipelineJobs PipelineJob[]
-  articles    Article[]
-  newsEvents  NewsEvent[]
-  newsEventItems NewsEventItem[]
-  newsEventTimelineEntries NewsEventTimelineEntry[]
-  newsEventIngestionState NewsEventIngestionState?
-  dashboards  Dashboard[]
-  alertRules  AlertRule[]
-  alertChannels AlertNotificationChannel[]
-  mongoOutbox MongoOutbox[]
-  notifications Notification[]
-  knowledgeEntities KnowledgeEntity[]
-  knowledgeEntityAliases KnowledgeEntityAlias[]
-  knowledgeEdges KnowledgeEdge[]
-  knowledgeEdgeEvidences KnowledgeEdgeEvidence[]
-  knowledgeGraphIngestionState KnowledgeGraphIngestionState?
-  articleEntityLinks ArticleEntityLink[]
-  entitySentimentSnapshots EntitySentimentSnapshot[]
-  topicSentimentSnapshots TopicSentimentSnapshot[]
-  newsnowCandidateSnapshots NewsnowCandidateSnapshot[]
+  memberships                          Membership[]
+  membershipRoles                      MembershipRole[]
+  roles                                Role[]
+  auditLogs                            AuditLog[]
+  auditLogOutbox                       AuditLogOutbox[]
+  items                                ItemMeta[]
+  crawlTasks                           CrawlTask[]
+  crawlTemplates                       CrawlTemplate[]
+  crawlSiteProfiles                    CrawlSiteProfile[]
+  crawlFrontierRuns                    CrawlFrontierRun[]
+  crawlFrontierNodes                   CrawlFrontierNode[]
+  crawlStrategyWorkflows               CrawlStrategyWorkflow[]
+  crawlStrategyWorkflowRuns            CrawlStrategyWorkflowRun[]
+  newsSources                          NewsSource[]
+  newsSourceOpsSnapshots               NewsSourceOpsSnapshot[]
+  pipelineJobs                         PipelineJob[]
+  articles                             Article[]
+  newsEvents                           NewsEvent[]
+  newsEventItems                       NewsEventItem[]
+  newsEventTimelineEntries             NewsEventTimelineEntry[]
+  newsEventIngestionState              NewsEventIngestionState?
+  dashboards                           Dashboard[]
+  alertRules                           AlertRule[]
+  alertChannels                        AlertNotificationChannel[]
+  mongoOutbox                          MongoOutbox[]
+  notifications                        Notification[]
+  knowledgeEntities                    KnowledgeEntity[]
+  knowledgeEntityAliases               KnowledgeEntityAlias[]
+  knowledgeEdges                       KnowledgeEdge[]
+  knowledgeEdgeEvidences               KnowledgeEdgeEvidence[]
+  knowledgeGraphIngestionState         KnowledgeGraphIngestionState?
+  articleEntityLinks                   ArticleEntityLink[]
+  entitySentimentSnapshots             EntitySentimentSnapshot[]
+  topicSentimentSnapshots              TopicSentimentSnapshot[]
+  newsnowCandidateSnapshots            NewsnowCandidateSnapshot[]
   newsnowDomesticOpinionIndexSnapshots NewsnowDomesticOpinionIndexSnapshot[]
-  newsIndicatorAssociations NewsIndicatorAssociation[]
+  newsIndicatorAssociations            NewsIndicatorAssociation[]
   newsIndicatorAssociationBacktestRuns NewsIndicatorAssociationBacktestRun[]
-  rssTranslationMetricsDaily RssTranslationMetricsDaily[]
-  userSettings UserSetting[]
-  contentSubscriptionCatalog ContentSubscriptionCatalog[]
-  userContentSubscriptions UserContentSubscription[]
-  situationMonitorMonitors SituationMonitorMonitor[]
-  archiveArticleClassifications ArchiveArticleClassification[]
+  rssTranslationMetricsDaily           RssTranslationMetricsDaily[]
+  observabilitySnapshots               ObservabilitySnapshot[]
+  userSettings                         UserSetting[]
+  contentSubscriptionCatalog           ContentSubscriptionCatalog[]
+  userContentSubscriptions             UserContentSubscription[]
+  situationMonitorMonitors             SituationMonitorMonitor[]
+  archiveArticleClassifications        ArchiveArticleClassification[]
 }
 
 model User {
-  id            String        @id @default(cuid())
-  email         String        @unique
+  id            String    @id @default(cuid())
+  email         String    @unique
   emailVerified DateTime?
-  pendingEmail  String?       @unique
+  pendingEmail  String?   @unique
   passwordHash  String
   firstName     String
   lastName      String
   avatarUrl     String?
-  isActive      Boolean       @default(true)
+  isActive      Boolean   @default(true)
   lastLoginAt   DateTime?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  memberships   Membership[]
-  auditLogs     AuditLog[]
-  refreshTokens  RefreshToken[]
-  crawlTasks     CrawlTask[] @relation("CrawlTaskCreatedBy")
-  dashboardsCreated Dashboard[] @relation("DashboardCreatedBy")
-  alertRulesCreated AlertRule[] @relation("AlertRuleCreatedBy")
-  alertChannelsCreated AlertNotificationChannel[] @relation("AlertChannelCreatedBy")
-  contentSubscriptions UserContentSubscription[]
-  systemSettingsUpdated SystemSetting[] @relation("SystemSettingUpdatedBy")
-  rateLimitPoliciesUpdated RateLimitPolicy[] @relation("RateLimitPolicyUpdatedBy")
-  notifications Notification[]
-  userSettings UserSetting[]
+  memberships              Membership[]
+  auditLogs                AuditLog[]
+  refreshTokens            RefreshToken[]
+  crawlTasks               CrawlTask[]                @relation("CrawlTaskCreatedBy")
+  dashboardsCreated        Dashboard[]                @relation("DashboardCreatedBy")
+  alertRulesCreated        AlertRule[]                @relation("AlertRuleCreatedBy")
+  alertChannelsCreated     AlertNotificationChannel[] @relation("AlertChannelCreatedBy")
+  contentSubscriptions     UserContentSubscription[]
+  systemSettingsUpdated    SystemSetting[]            @relation("SystemSettingUpdatedBy")
+  rateLimitPoliciesUpdated RateLimitPolicy[]          @relation("RateLimitPolicyUpdatedBy")
+  notifications            Notification[]
+  userSettings             UserSetting[]
   situationMonitorMonitors SituationMonitorMonitor[]
 }
 
 model Role {
-  id          String        @id @default(cuid())
-  name        String
-  description String?
-  isSystem    Boolean       @default(false)
-  org         Org           @relation(fields: [orgId], references: [id])
-  orgId       String
-  permissions RolePermission[]
-  memberships Membership[]
+  id              String           @id @default(cuid())
+  name            String
+  description     String?
+  isSystem        Boolean          @default(false)
+  org             Org              @relation(fields: [orgId], references: [id])
+  orgId           String
+  permissions     RolePermission[]
+  memberships     Membership[]
   membershipRoles MembershipRole[]
 
   @@unique([id, orgId])
@@ -119,30 +121,30 @@ model Permission {
 }
 
 model RolePermission {
-  id            String      @id @default(cuid())
-  role          Role        @relation(fields: [roleId], references: [id])
-  roleId        String
-  permission    Permission  @relation(fields: [permissionId], references: [id])
-  permissionId  String
+  id           String     @id @default(cuid())
+  role         Role       @relation(fields: [roleId], references: [id])
+  roleId       String
+  permission   Permission @relation(fields: [permissionId], references: [id])
+  permissionId String
 
   @@unique([roleId, permissionId])
 }
 
 model Membership {
-  id        String @id @default(cuid())
-  user      User   @relation(fields: [userId], references: [id])
+  id        String           @id @default(cuid())
+  user      User             @relation(fields: [userId], references: [id])
   userId    String
-  org       Org    @relation(fields: [orgId], references: [id])
+  org       Org              @relation(fields: [orgId], references: [id])
   orgId     String
-  role      Role   @relation(fields: [roleId, orgId], references: [id, orgId])
+  role      Role             @relation(fields: [roleId, orgId], references: [id, orgId])
   roleId    String
   roles     MembershipRole[]
-  isActive  Boolean @default(true)
-  createdAt DateTime @default(now())
+  isActive  Boolean          @default(true)
+  createdAt DateTime         @default(now())
 
-  @@index([roleId, orgId])
   @@unique([id, orgId])
   @@unique([userId, orgId])
+  @@index([roleId, orgId])
 }
 
 model MembershipRole {
@@ -160,16 +162,16 @@ model MembershipRole {
 }
 
 model AuditLog {
-  id         String   @id @default(cuid())
-  org        Org      @relation(fields: [orgId], references: [id])
-  orgId      String
-  actor      User?    @relation(fields: [actorId], references: [id])
-  actorId    String?
-  resource   String
-  action     String
-  metadata   Json?
-  ipAddress  String?
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  org       Org      @relation(fields: [orgId], references: [id])
+  orgId     String
+  actor     User?    @relation(fields: [actorId], references: [id])
+  actorId   String?
+  resource  String
+  action    String
+  metadata  Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
 
   @@index([orgId, createdAt])
 }
@@ -192,18 +194,18 @@ model AuditLogOutbox {
 }
 
 model ItemMeta {
-  id          String   @id @default(cuid())
-  org         Org      @relation(fields: [orgId], references: [id])
+  id          String    @id @default(cuid())
+  org         Org       @relation(fields: [orgId], references: [id])
   orgId       String
   externalId  String
   name        String
-  status      String   @default("draft")
-  mongoRef    String   // references packages/mongo RawItem document id
-  version     Int      @default(1)
+  status      String    @default("draft")
+  mongoRef    String // references packages/mongo RawItem document id
+  version     Int       @default(1)
   publishedAt DateTime?
-  sortAt      DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  sortAt      DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@unique([orgId, externalId])
   @@index([orgId, name])
@@ -212,83 +214,86 @@ model ItemMeta {
 }
 
 model CrawlTask {
-  id             String           @id @default(cuid())
-  org            Org              @relation(fields: [orgId], references: [id])
-  orgId          String
-  createdBy      User             @relation("CrawlTaskCreatedBy", fields: [createdById], references: [id])
-  createdById    String
-  targetUrl      String
-  displayName    String?
-  status         CrawlTaskStatus  @default(pending)
-  config         Json?
-  timeRangeFrom  DateTime?
-  timeRangeTo    DateTime?
-  concurrency    Int              @default(1)
-  keywords       Json?
-  lastRunAt      DateTime?
-  lastSuccessAt  DateTime?
-  lastResultAt   DateTime?
-  lastCursor     String?
-  lastError      String?          @db.Text
-  runCount       Int              @default(0)
-  lastServerMemoryMb    Float?
-  lastPeakMemoryMb      Float?
-  lastMemoryEfficiency  Float?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  id                   String          @id @default(cuid())
+  org                  Org             @relation(fields: [orgId], references: [id])
+  orgId                String
+  createdBy            User            @relation("CrawlTaskCreatedBy", fields: [createdById], references: [id])
+  createdById          String
+  newsSource           NewsSource?     @relation(fields: [newsSourceId], references: [id], onDelete: SetNull)
+  newsSourceId         String?
+  targetUrl            String
+  displayName          String?
+  status               CrawlTaskStatus @default(pending)
+  config               Json?
+  timeRangeFrom        DateTime?
+  timeRangeTo          DateTime?
+  concurrency          Int             @default(1)
+  keywords             Json?
+  lastRunAt            DateTime?
+  lastSuccessAt        DateTime?
+  lastResultAt         DateTime?
+  lastCursor           String?
+  lastError            String?         @db.Text
+  runCount             Int             @default(0)
+  lastServerMemoryMb   Float?
+  lastPeakMemoryMb     Float?
+  lastMemoryEfficiency Float?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
 
-  results        CrawlResult[]
+  results CrawlResult[]
 
   @@index([orgId, status, updatedAt])
+  @@index([orgId, newsSourceId, status, updatedAt])
 }
 
 model CrawlResult {
-  id                 String     @id @default(cuid())
-  task               CrawlTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  taskId             String
-  orgId              String
-  sourceUrl          String
-  sourceUrlFingerprint String?  @db.VarChar(64)
-  fetchedAt          DateTime
-  markdownRef        String
-  contentHash        String
-  metadata           Json?
-  createdAt          DateTime   @default(now())
-  mediaAssets CrawlMediaAsset[]
+  id                   String            @id @default(cuid())
+  task                 CrawlTask         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId               String
+  orgId                String
+  sourceUrl            String
+  sourceUrlFingerprint String?           @db.VarChar(64)
+  fetchedAt            DateTime
+  markdownRef          String
+  contentHash          String
+  metadata             Json?
+  createdAt            DateTime          @default(now())
+  mediaAssets          CrawlMediaAsset[]
 
+  @@unique([taskId, contentHash])
   @@index([sourceUrl])
   @@index([taskId, fetchedAt])
   @@index([orgId, fetchedAt])
   @@index([orgId, contentHash, fetchedAt])
   @@index([orgId, sourceUrlFingerprint, fetchedAt])
-  @@unique([taskId, contentHash])
 }
 
 model CrawlSiteProfile {
-  id            String                 @id @default(cuid())
-  org           Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  orgId         String
-  name          String
-  description   String?
-  matchHost     String
-  isActive      Boolean                @default(true)
-  executionMode CrawlSiteExecutionMode @default(layered)
-  workflow      CrawlStrategyWorkflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
-  workflowId    String?
-  workflowVersion CrawlStrategyWorkflowVersion? @relation("CrawlSiteProfileWorkflowVersion", fields: [workflowVersionId], references: [id], onDelete: SetNull)
-  workflowVersionId String?
+  id                  String                           @id @default(cuid())
+  org                 Org                              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId               String
+  name                String
+  description         String?
+  matchHost           String
+  isActive            Boolean                          @default(true)
+  executionMode       CrawlSiteExecutionMode           @default(layered)
+  workflow            CrawlStrategyWorkflow?           @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  workflowId          String?
+  workflowVersion     CrawlStrategyWorkflowVersion?    @relation("CrawlSiteProfileWorkflowVersion", fields: [workflowVersionId], references: [id], onDelete: SetNull)
+  workflowVersionId   String?
   workflowBindingMode CrawlStrategyWorkflowBindingMode @default(published)
-  version       Int                    @default(1)
-  config        Json
-  createdById   String
-  updatedById   String?
-  publishedAt   DateTime?
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
+  version             Int                              @default(1)
+  config              Json
+  createdById         String
+  updatedById         String?
+  publishedAt         DateTime?
+  createdAt           DateTime                         @default(now())
+  updatedAt           DateTime                         @updatedAt
 
-  versions      CrawlSiteProfileVersion[]
-  runs          CrawlFrontierRun[]
-  workflowRuns  CrawlStrategyWorkflowRun[]
+  versions     CrawlSiteProfileVersion[]
+  runs         CrawlFrontierRun[]
+  workflowRuns CrawlStrategyWorkflowRun[]
 
   @@unique([orgId, name])
   @@index([orgId, isActive, updatedAt])
@@ -297,57 +302,57 @@ model CrawlSiteProfile {
 }
 
 model CrawlSiteProfileVersion {
-  id            String                 @id @default(cuid())
-  profile       CrawlSiteProfile       @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  profileId     String
-  orgId         String
-  version       Int
-  name          String
-  description   String?
-  matchHost     String
-  isActive      Boolean
-  executionMode CrawlSiteExecutionMode
-  workflowId    String?
-  workflowVersionId String?
+  id                  String                           @id @default(cuid())
+  profile             CrawlSiteProfile                 @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profileId           String
+  orgId               String
+  version             Int
+  name                String
+  description         String?
+  matchHost           String
+  isActive            Boolean
+  executionMode       CrawlSiteExecutionMode
+  workflowId          String?
+  workflowVersionId   String?
   workflowBindingMode CrawlStrategyWorkflowBindingMode @default(published)
-  config        Json
-  createdById   String
-  createdAt     DateTime               @default(now())
+  config              Json
+  createdById         String
+  createdAt           DateTime                         @default(now())
 
   @@unique([profileId, version])
   @@index([orgId, createdAt])
 }
 
 model CrawlFrontierRun {
-  id             String                 @id @default(cuid())
-  org            Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id             String                    @id @default(cuid())
+  org            Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   orgId          String
-  profile        CrawlSiteProfile?      @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  profile        CrawlSiteProfile?         @relation(fields: [profileId], references: [id], onDelete: SetNull)
   profileId      String?
   workflowRun    CrawlStrategyWorkflowRun? @relation("CrawlFrontierRunWorkflowRun", fields: [workflowRunId], references: [id], onDelete: SetNull)
-  workflowRunId  String?                @unique
+  workflowRunId  String?                   @unique
   seedUrl        String
   crawlTaskId    String?
-  executionMode  CrawlSiteExecutionMode @default(layered)
-  status         CrawlFrontierRunStatus @default(pending)
-  maxDepth       Int                    @default(3)
-  maxPages       Int                    @default(60)
+  executionMode  CrawlSiteExecutionMode    @default(layered)
+  status         CrawlFrontierRunStatus    @default(pending)
+  maxDepth       Int                       @default(3)
+  maxPages       Int                       @default(60)
   keywords       Json?
-  pageCount      Int                    @default(0)
-  nodeCount      Int                    @default(0)
-  articleCount   Int                    @default(0)
-  failedCount    Int                    @default(0)
-  duplicateCount Int                    @default(0)
+  pageCount      Int                       @default(0)
+  nodeCount      Int                       @default(0)
+  articleCount   Int                       @default(0)
+  failedCount    Int                       @default(0)
+  duplicateCount Int                       @default(0)
   nativeRunId    String?
-  lastError      String?                @db.Text
+  lastError      String?                   @db.Text
   metadata       Json?
   createdById    String
   startedAt      DateTime?
   finishedAt     DateTime?
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
 
-  nodes          CrawlFrontierNode[]
+  nodes CrawlFrontierNode[]
 
   @@index([orgId, status, createdAt])
   @@index([orgId, profileId, createdAt])
@@ -367,71 +372,71 @@ model CrawlStrategyWorkflow {
   createdAt          DateTime                      @default(now())
   updatedAt          DateTime                      @updatedAt
 
-  versions           CrawlStrategyWorkflowVersion[] @relation("CrawlStrategyWorkflowVersions")
-  runs               CrawlStrategyWorkflowRun[]
-  profiles           CrawlSiteProfile[]
-  newsSources        NewsSource[]
+  versions    CrawlStrategyWorkflowVersion[] @relation("CrawlStrategyWorkflowVersions")
+  runs        CrawlStrategyWorkflowRun[]
+  profiles    CrawlSiteProfile[]
+  newsSources NewsSource[]
 
   @@unique([orgId, name])
   @@index([orgId, updatedAt])
 }
 
 model CrawlStrategyWorkflowVersion {
-  id                String                        @id @default(cuid())
-  workflow          CrawlStrategyWorkflow         @relation("CrawlStrategyWorkflowVersions", fields: [workflowId], references: [id], onDelete: Cascade)
-  workflowId        String
-  orgId             String
-  version           Int
-  name              String
-  description       String?
-  definition        Json
-  createdById       String
-  createdAt         DateTime                      @default(now())
+  id          String                @id @default(cuid())
+  workflow    CrawlStrategyWorkflow @relation("CrawlStrategyWorkflowVersions", fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowId  String
+  orgId       String
+  version     Int
+  name        String
+  description String?
+  definition  Json
+  createdById String
+  createdAt   DateTime              @default(now())
 
-  publishedBy       CrawlStrategyWorkflow[]       @relation("CrawlStrategyWorkflowPublishedVersion")
-  runs              CrawlStrategyWorkflowRun[]
-  boundProfiles     CrawlSiteProfile[]            @relation("CrawlSiteProfileWorkflowVersion")
-  boundNewsSources  NewsSource[]                  @relation("NewsSourceWorkflowVersion")
+  publishedBy      CrawlStrategyWorkflow[]    @relation("CrawlStrategyWorkflowPublishedVersion")
+  runs             CrawlStrategyWorkflowRun[]
+  boundProfiles    CrawlSiteProfile[]         @relation("CrawlSiteProfileWorkflowVersion")
+  boundNewsSources NewsSource[]               @relation("NewsSourceWorkflowVersion")
 
   @@unique([workflowId, version])
   @@index([orgId, createdAt])
 }
 
 model CrawlStrategyWorkflowRun {
-  id                String                        @id @default(cuid())
-  org               Org                           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id                String                         @id @default(cuid())
+  org               Org                            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   orgId             String
-  workflow          CrawlStrategyWorkflow?        @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  workflow          CrawlStrategyWorkflow?         @relation(fields: [workflowId], references: [id], onDelete: SetNull)
   workflowId        String?
-  workflowVersion   CrawlStrategyWorkflowVersion? @relation(fields: [workflowVersionId], references: [id], onDelete: SetNull)
+  workflowVersion   CrawlStrategyWorkflowVersion?  @relation(fields: [workflowVersionId], references: [id], onDelete: SetNull)
   workflowVersionId String?
-  workflowOrigin    String                        @default("bound")
-  profile           CrawlSiteProfile?             @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  workflowOrigin    String                         @default("bound")
+  profile           CrawlSiteProfile?              @relation(fields: [profileId], references: [id], onDelete: SetNull)
   profileId         String?
-  newsSource        NewsSource?                   @relation(fields: [newsSourceId], references: [id], onDelete: SetNull)
+  newsSource        NewsSource?                    @relation(fields: [newsSourceId], references: [id], onDelete: SetNull)
   newsSourceId      String?
   status            CrawlStrategyWorkflowRunStatus @default(pending)
-  runKind           String                        @default("trial")
+  runKind           String                         @default("trial")
   input             Json?
   output            Json?
   graphSnapshot     Json?
   stepResults       Json?
   candidates        Json?
   parameterSources  Json?
-  error             String?                       @db.Text
-  stepCount         Int                           @default(0)
-  candidateCount    Int                           @default(0)
-  selectedCount     Int                           @default(0)
+  error             String?                        @db.Text
+  stepCount         Int                            @default(0)
+  candidateCount    Int                            @default(0)
+  selectedCount     Int                            @default(0)
   createdById       String
   startedAt         DateTime?
   finishedAt        DateTime?
-  createdAt         DateTime                      @default(now())
-  updatedAt         DateTime                      @updatedAt
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
 
-  frontierRun       CrawlFrontierRun?             @relation("CrawlFrontierRunWorkflowRun")
-  steps             CrawlStrategyWorkflowRunStep[]
-  candidatesDetail  CrawlStrategyWorkflowRunCandidate[]
-  events            CrawlStrategyWorkflowRunEvent[]
+  frontierRun      CrawlFrontierRun?                   @relation("CrawlFrontierRunWorkflowRun")
+  steps            CrawlStrategyWorkflowRunStep[]
+  candidatesDetail CrawlStrategyWorkflowRunCandidate[]
+  events           CrawlStrategyWorkflowRunEvent[]
 
   @@index([orgId, createdAt])
   @@index([workflowId, createdAt])
@@ -441,43 +446,43 @@ model CrawlStrategyWorkflowRun {
 }
 
 model CrawlStrategyWorkflowRunStep {
-  id            String                     @id @default(cuid())
-  run           CrawlStrategyWorkflowRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
-  runId         String
-  stepKey       String
-  sequence      Int                        @default(0)
+  id             String                   @id @default(cuid())
+  run            CrawlStrategyWorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId          String
+  stepKey        String
+  sequence       Int                      @default(0)
   workflowNodeId String?
-  nodeType      String
-  label         String
-  status        String
-  startedAt     DateTime?
-  finishedAt    DateTime?
-  durationMs    Int?
-  inputCount    Int                        @default(0)
-  outputCount   Int                        @default(0)
-  rejectedCount Int                        @default(0)
-  sampleUrls    Json?
-  metrics       Json?
-  error         String?                    @db.Text
-  metadata      Json?
-  createdAt     DateTime                   @default(now())
-  updatedAt     DateTime                   @updatedAt
+  nodeType       String
+  label          String
+  status         String
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  durationMs     Int?
+  inputCount     Int                      @default(0)
+  outputCount    Int                      @default(0)
+  rejectedCount  Int                      @default(0)
+  sampleUrls     Json?
+  metrics        Json?
+  error          String?                  @db.Text
+  metadata       Json?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
 
   @@unique([runId, stepKey])
   @@index([runId, sequence])
 }
 
 model CrawlStrategyWorkflowRunCandidate {
-  id               String                           @id @default(cuid())
-  run              CrawlStrategyWorkflowRun         @relation(fields: [runId], references: [id], onDelete: Cascade)
+  id               String                   @id @default(cuid())
+  run              CrawlStrategyWorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   runId            String
   candidateKey     String
   externalId       String?
   sourceNodeId     String?
   sourceNodeType   String?
-  url              String                           @db.Text
+  url              String                   @db.Text
   title            String?
-  description      String?                          @db.Text
+  description      String?                  @db.Text
   author           String?
   pageType         String?
   relevanceScore   Float?
@@ -491,11 +496,11 @@ model CrawlStrategyWorkflowRunCandidate {
   rejectedByNodeId String?
   rejectedReason   String?
   metadata         Json?
-  traceCount       Int                              @default(0)
-  createdAt        DateTime                         @default(now())
-  updatedAt        DateTime                         @updatedAt
+  traceCount       Int                      @default(0)
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
 
-  traces           CrawlStrategyWorkflowRunCandidateTrace[]
+  traces CrawlStrategyWorkflowRunCandidateTrace[]
 
   @@unique([runId, candidateKey])
   @@index([runId, status, updatedAt])
@@ -503,15 +508,15 @@ model CrawlStrategyWorkflowRunCandidate {
 }
 
 model CrawlStrategyWorkflowRunCandidateTrace {
-  id             String                           @id @default(cuid())
+  id             String                            @id @default(cuid())
   candidate      CrawlStrategyWorkflowRunCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   candidateId    String
-  sequence       Int                              @default(0)
-  timestamp      DateTime                         @default(now())
+  sequence       Int                               @default(0)
+  timestamp      DateTime                          @default(now())
   nodeId         String
   nodeType       String
   action         String
-  message        String                           @db.Text
+  message        String                            @db.Text
   accepted       Boolean?
   scoreDelta     Float?
   freshnessDelta Float?
@@ -525,54 +530,54 @@ model CrawlStrategyWorkflowRunCandidateTrace {
 }
 
 model CrawlStrategyWorkflowRunEvent {
-  id            String                     @id @default(cuid())
-  run           CrawlStrategyWorkflowRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  id            String                   @id @default(cuid())
+  run           CrawlStrategyWorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   runId         String
-  sequence      Int                        @default(0)
+  sequence      Int                      @default(0)
   level         String
   eventType     String
   nodeId        String?
   nodeType      String?
-  message       String                     @db.Text
+  message       String                   @db.Text
   triggerReason String?
   beforeCount   Int?
   afterCount    Int?
   rescuedCount  Int?
   details       Json?
-  createdAt     DateTime                   @default(now())
+  createdAt     DateTime                 @default(now())
 
   @@index([runId, sequence])
   @@index([runId, createdAt])
 }
 
 model CrawlFrontierNode {
-  id              String                   @id @default(cuid())
-  run             CrawlFrontierRun         @relation(fields: [runId], references: [id], onDelete: Cascade)
+  id              String                  @id @default(cuid())
+  run             CrawlFrontierRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
   runId           String
-  parent          CrawlFrontierNode?       @relation("CrawlFrontierNodeToParent", fields: [parentNodeId], references: [id], onDelete: SetNull)
+  parent          CrawlFrontierNode?      @relation("CrawlFrontierNodeToParent", fields: [parentNodeId], references: [id], onDelete: SetNull)
   parentNodeId    String?
-  children        CrawlFrontierNode[]      @relation("CrawlFrontierNodeToParent")
-  org             Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  children        CrawlFrontierNode[]     @relation("CrawlFrontierNodeToParent")
+  org             Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   orgId           String
   url             String
   canonicalUrl    String?
-  urlFingerprint  String?                  @db.VarChar(64)
+  urlFingerprint  String?                 @db.VarChar(64)
   pageType        CrawlFrontierPageType
   depth           Int
-  queueClass      CrawlQueueClass          @default(normal)
-  status          CrawlFrontierNodeStatus  @default(pending)
+  queueClass      CrawlQueueClass         @default(normal)
+  status          CrawlFrontierNodeStatus @default(pending)
   score           Float?
   freshnessScore  Float?
-  attempts        Int                      @default(0)
+  attempts        Int                     @default(0)
   queuedAt        DateTime?
   crawledAt       DateTime?
   crawlResultId   String?
   rejectionReason String?
-  lastError       String?                  @db.Text
+  lastError       String?                 @db.Text
   metadata        Json?
-  discoveredAt    DateTime                 @default(now())
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
+  discoveredAt    DateTime                @default(now())
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
 
   @@index([runId, status, depth])
   @@index([orgId, pageType, status])
@@ -581,28 +586,28 @@ model CrawlFrontierNode {
 }
 
 model CrawlMediaAsset {
-  id        String                    @id @default(cuid())
-  result    CrawlResult               @relation(fields: [resultId], references: [id], onDelete: Cascade)
-  resultId  String
-  orgId     String
-  taskId    String
-  provider  CrawlImageStorageProvider @default(mysql)
-  kind      String
-  sourceUrl String
-  bytes     Int
+  id          String                    @id @default(cuid())
+  result      CrawlResult               @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  resultId    String
+  orgId       String
+  taskId      String
+  provider    CrawlImageStorageProvider @default(mysql)
+  kind        String
+  sourceUrl   String
+  bytes       Int
   contentType String?
-  blobData  Bytes?
-  storageKey String?
-  width     Int?
-  height    Int?
-  alt       String?
-  title     String?
-  desc      String?                   @db.Text
-  poster    String?
-  format    String?
-  metadata  Json?
-  createdAt DateTime                  @default(now())
-  updatedAt DateTime                  @updatedAt
+  blobData    Bytes?
+  storageKey  String?
+  width       Int?
+  height      Int?
+  alt         String?
+  title       String?
+  desc        String?                   @db.Text
+  poster      String?
+  format      String?
+  metadata    Json?
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
 
   @@index([orgId, resultId])
   @@index([orgId, taskId, createdAt])
@@ -676,14 +681,14 @@ model UserContentSubscription {
 }
 
 model SituationMonitorMonitor {
-  id                   String                     @id @default(cuid())
-  org                  Org                        @relation(fields: [orgId], references: [id])
+  id                   String                      @id @default(cuid())
+  org                  Org                         @relation(fields: [orgId], references: [id])
   orgId                String
-  user                 User                       @relation(fields: [userId], references: [id])
+  user                 User                        @relation(fields: [userId], references: [id])
   userId               String
   kind                 SituationMonitorMonitorKind @default(manual)
   name                 String
-  enabled              Boolean                    @default(true)
+  enabled              Boolean                     @default(true)
   color                String?
   rawKeywords          Json
   approvedTopics       Json
@@ -698,8 +703,8 @@ model SituationMonitorMonitor {
   queryEmbeddingModel  String?
   queryEmbeddingVector Json?
   lastResolvedAt       DateTime?
-  createdAt            DateTime                   @default(now())
-  updatedAt            DateTime                   @updatedAt
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
 
   @@index([orgId, userId, kind, updatedAt])
   @@index([orgId, userId, createdAt])
@@ -824,66 +829,84 @@ model CrawlTemplate {
 }
 
 model NewsSource {
-  id               String          @id @default(cuid())
-  org              Org             @relation(fields: [orgId], references: [id])
-  orgId            String
-  name             String
-  url              String
-  siteType         NewsSourceType  @default(general)
-  language         String?
-  crawlTemplate    CrawlTemplate?  @relation(fields: [crawlTemplateId], references: [id], onDelete: SetNull)
-  crawlTemplateId  String?
-  workflow         CrawlStrategyWorkflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
-  workflowId       String?
-  workflowVersion  CrawlStrategyWorkflowVersion? @relation("NewsSourceWorkflowVersion", fields: [workflowVersionId], references: [id], onDelete: SetNull)
-  workflowVersionId String?
+  id                  String                           @id @default(cuid())
+  org                 Org                              @relation(fields: [orgId], references: [id])
+  orgId               String
+  name                String
+  url                 String
+  siteType            NewsSourceType                   @default(general)
+  language            String?
+  crawlTemplate       CrawlTemplate?                   @relation(fields: [crawlTemplateId], references: [id], onDelete: SetNull)
+  crawlTemplateId     String?
+  workflow            CrawlStrategyWorkflow?           @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  workflowId          String?
+  workflowVersion     CrawlStrategyWorkflowVersion?    @relation("NewsSourceWorkflowVersion", fields: [workflowVersionId], references: [id], onDelete: SetNull)
+  workflowVersionId   String?
   workflowBindingMode CrawlStrategyWorkflowBindingMode @default(published)
-  frequencySeconds Int             @default(3600)
-  priority         Int             @default(0)
-  isActive         Boolean         @default(true)
-  config           Json?
-  group            String?
-  lastRunAt        DateTime?
-  lastSuccessAt    DateTime?
-  lastFailureAt    DateTime?
-  consecutiveFailures Int          @default(0)
-  circuitOpenUntil DateTime?
-  nextRunAt        DateTime?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  frequencySeconds    Int                              @default(3600)
+  priority            Int                              @default(0)
+  isActive            Boolean                          @default(true)
+  config              Json?
+  group               String?
+  lastRunAt           DateTime?
+  lastSuccessAt       DateTime?
+  lastFailureAt       DateTime?
+  consecutiveFailures Int                              @default(0)
+  circuitOpenUntil    DateTime?
+  nextRunAt           DateTime?
+  createdAt           DateTime                         @default(now())
+  updatedAt           DateTime                         @updatedAt
 
-  jobs     PipelineJob[]
-  articles Article[]
+  jobs         PipelineJob[]
+  articles     Article[]
+  crawlTasks   CrawlTask[]
+  opsSnapshot  NewsSourceOpsSnapshot?
   workflowRuns CrawlStrategyWorkflowRun[]
 
-  @@index([isActive, nextRunAt])
   @@unique([orgId, url])
+  @@index([isActive, nextRunAt])
   @@index([orgId, group])
   @@index([orgId, workflowId, updatedAt])
 }
 
+model NewsSourceOpsSnapshot {
+  id              String     @id @default(cuid())
+  org             Org        @relation(fields: [orgId], references: [id])
+  orgId           String
+  source          NewsSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  sourceId        String     @unique
+  latestJob       Json?
+  latestCrawlTask Json?
+  latestArticle   Json?
+  stats24h        Json?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([orgId, updatedAt])
+}
+
 model PipelineJob {
-  id           String            @id @default(cuid())
-  org          Org               @relation(fields: [orgId], references: [id])
-  orgId        String
-  source       NewsSource?       @relation(fields: [sourceId], references: [id])
-  sourceId     String?
-  url          String
-  urlFingerprint String?         @db.VarChar(64)
-  priority     Int               @default(0)
-  status       PipelineJobStatus @default(pending)
-  queueName    String            @default("crawl-queue")
-  scheduledFor DateTime?
-  startedAt    DateTime?
-  completedAt  DateTime?
-  attempts     Int               @default(0)
-  error        String?           @db.Text
-  crawlRunId   String?
-  article      Article?          @relation(fields: [articleId], references: [id])
-  articleId    String?
-  metadata     Json?
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id             String            @id @default(cuid())
+  org            Org               @relation(fields: [orgId], references: [id])
+  orgId          String
+  source         NewsSource?       @relation(fields: [sourceId], references: [id])
+  sourceId       String?
+  url            String
+  urlFingerprint String?           @db.VarChar(64)
+  priority       Int               @default(0)
+  status         PipelineJobStatus @default(pending)
+  queueName      String            @default("crawl-queue")
+  scheduledFor   DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  attempts       Int               @default(0)
+  error          String?           @db.Text
+  crawlRunId     String?
+  article        Article?          @relation(fields: [articleId], references: [id])
+  articleId      String?
+  metadata       Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
 
   @@index([orgId, status])
   @@index([queueName, status])
@@ -892,29 +915,29 @@ model PipelineJob {
 }
 
 model Article {
-  id          String        @id @default(cuid())
-  org         Org           @relation(fields: [orgId], references: [id])
-  orgId       String
-  source      NewsSource?   @relation(fields: [sourceId], references: [id])
-  sourceId    String?
-  url         String        @db.VarChar(512)
-  urlFingerprint String?    @db.VarChar(64)
-  sourceLabel String?
-  language    String?
-  titleGuess  String?
-  crawlAt     DateTime
-  contentHash String        @unique
-  markdownRef String?
-  version     Int           @default(1)
-  metadata    Json?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id             String      @id @default(cuid())
+  org            Org         @relation(fields: [orgId], references: [id])
+  orgId          String
+  source         NewsSource? @relation(fields: [sourceId], references: [id])
+  sourceId       String?
+  url            String      @db.VarChar(512)
+  urlFingerprint String?     @db.VarChar(64)
+  sourceLabel    String?
+  language       String?
+  titleGuess     String?
+  crawlAt        DateTime
+  contentHash    String      @unique
+  markdownRef    String?
+  version        Int         @default(1)
+  metadata       Json?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
-  jobs      PipelineJob[]
-  processed ProcessedArticle?
+  jobs                   PipelineJob[]
+  processed              ProcessedArticle?
   knowledgeEdgeEvidences KnowledgeEdgeEvidence[]
-  entityLinks ArticleEntityLink[]
-  archiveClassification ArchiveArticleClassification?
+  entityLinks            ArticleEntityLink[]
+  archiveClassification  ArchiveArticleClassification?
 
   @@unique([url, contentHash])
   @@index([orgId, sourceId, crawlAt])
@@ -922,9 +945,9 @@ model Article {
 }
 
 model ProcessedArticle {
-  id                 String   @id @default(cuid())
-  article            Article  @relation(fields: [articleId], references: [id])
-  articleId          String   @unique
+  id                 String                 @id @default(cuid())
+  article            Article                @relation(fields: [articleId], references: [id])
+  articleId          String                 @unique
   status             ProcessedArticleStatus @default(completed)
   title              String?
   subtitle           String?
@@ -933,7 +956,7 @@ model ProcessedArticle {
   publishedAt        DateTime?
   category           String?
   topics             Json?
-  summary            String? @db.Text
+  summary            String?                @db.Text
   keyPoints          Json?
   entities           Json?
   kgRelations        Json?
@@ -949,39 +972,39 @@ model ProcessedArticle {
   totalTokens        Int?
   costUsd            Float?
   latencyMs          Int?
-  createdAt          DateTime @default(now())
-  processedAt        DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime               @default(now())
+  processedAt        DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 
-  newsEventItems     NewsEventItem[]
-  representativeOfNewsEvents NewsEvent[] @relation("NewsEventRepresentative")
-  archiveClassification ArchiveArticleClassification?
+  newsEventItems             NewsEventItem[]
+  representativeOfNewsEvents NewsEvent[]                   @relation("NewsEventRepresentative")
+  archiveClassification      ArchiveArticleClassification?
 
   @@fulltext([title, summary])
 }
 
 model ArchiveArticleClassification {
-  id                 String           @id @default(cuid())
-  org                Org              @relation(fields: [orgId], references: [id])
-  orgId              String
-  article            Article          @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  articleId          String           @unique
-  processedArticle   ProcessedArticle @relation(fields: [processedArticleId], references: [id], onDelete: Cascade)
-  processedArticleId String           @unique
-  region             String
-  vertical           String
-  ruleScores         Json
-  embeddingScores    Json
-  rerankScores       Json
-  fusedScores        Json
-  classificationTextHash String
+  id                        String           @id @default(cuid())
+  org                       Org              @relation(fields: [orgId], references: [id])
+  orgId                     String
+  article                   Article          @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleId                 String           @unique
+  processedArticle          ProcessedArticle @relation(fields: [processedArticleId], references: [id], onDelete: Cascade)
+  processedArticleId        String           @unique
+  region                    String
+  vertical                  String
+  ruleScores                Json
+  embeddingScores           Json
+  rerankScores              Json
+  fusedScores               Json
+  classificationTextHash    String
   classificationTextVersion String
-  taxonomyVersion    String
-  pipelineVersion    String
-  embeddingModel     String
-  rerankModel        String
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  taxonomyVersion           String
+  pipelineVersion           String
+  embeddingModel            String
+  rerankModel               String
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
 
   @@index([orgId, updatedAt])
   @@index([orgId, region, updatedAt])
@@ -1004,17 +1027,17 @@ model ArchiveVerticalAnchorEmbedding {
 }
 
 model ArticleEntityLink {
-  id         String               @id @default(cuid())
-  org        Org                  @relation(fields: [orgId], references: [id])
+  id         String                @id @default(cuid())
+  org        Org                   @relation(fields: [orgId], references: [id])
   orgId      String
-  article    Article              @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  article    Article               @relation(fields: [articleId], references: [id], onDelete: Cascade)
   articleId  String
-  entity     KnowledgeEntity      @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  entity     KnowledgeEntity       @relation(fields: [entityId], references: [id], onDelete: Cascade)
   entityId   String
   mention    String?
   confidence Float?
   source     KnowledgeRecordSource @default(llm)
-  createdAt  DateTime             @default(now())
+  createdAt  DateTime              @default(now())
 
   @@unique([orgId, articleId, entityId])
   @@index([orgId, entityId, createdAt])
@@ -1022,26 +1045,26 @@ model ArticleEntityLink {
 }
 
 model NewsEvent {
-  id          String         @id @default(cuid())
-  org         Org            @relation(fields: [orgId], references: [id])
-  orgId       String
-  status      NewsEventStatus @default(active)
-  language    String?
-  primaryTopic String?
-  primaryEntity String?
-  title       String?
-  summary     String? @db.Text
-  startAt     DateTime
-  lastAt      DateTime
-  representativeProcessedArticle ProcessedArticle? @relation("NewsEventRepresentative", fields: [representativeProcessedArticleId], references: [id])
+  id                               String            @id @default(cuid())
+  org                              Org               @relation(fields: [orgId], references: [id])
+  orgId                            String
+  status                           NewsEventStatus   @default(active)
+  language                         String?
+  primaryTopic                     String?
+  primaryEntity                    String?
+  title                            String?
+  summary                          String?           @db.Text
+  startAt                          DateTime
+  lastAt                           DateTime
+  representativeProcessedArticle   ProcessedArticle? @relation("NewsEventRepresentative", fields: [representativeProcessedArticleId], references: [id])
   representativeProcessedArticleId String?
-  representativeProcessedItemId String?
-  metadata    Json?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  representativeProcessedItemId    String?
+  metadata                         Json?
+  createdAt                        DateTime          @default(now())
+  updatedAt                        DateTime          @updatedAt
 
-  items       NewsEventItem[]
-  timeline    NewsEventTimelineEntry[]
+  items    NewsEventItem[]
+  timeline NewsEventTimelineEntry[]
 
   @@index([orgId, lastAt])
   @@index([orgId, status, lastAt])
@@ -1050,17 +1073,17 @@ model NewsEvent {
 }
 
 model NewsEventItem {
-  id               String                 @id @default(cuid())
-  org              Org                    @relation(fields: [orgId], references: [id])
-  orgId            String
-  event            NewsEvent              @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  eventId          String
-  processedArticle ProcessedArticle       @relation(fields: [processedArticleId], references: [id], onDelete: Cascade)
+  id                 String                    @id @default(cuid())
+  org                Org                       @relation(fields: [orgId], references: [id])
+  orgId              String
+  event              NewsEvent                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId            String
+  processedArticle   ProcessedArticle          @relation(fields: [processedArticleId], references: [id], onDelete: Cascade)
   processedArticleId String
-  processedItemId  String?
-  similarity       Float?
-  assignedBy       NewsEventAssignmentMethod @default(overlap)
-  createdAt        DateTime               @default(now())
+  processedItemId    String?
+  similarity         Float?
+  assignedBy         NewsEventAssignmentMethod @default(overlap)
+  createdAt          DateTime                  @default(now())
 
   @@unique([orgId, processedArticleId])
   @@index([orgId, eventId, createdAt])
@@ -1069,102 +1092,102 @@ model NewsEventItem {
 }
 
 model NewsEventTimelineEntry {
-  id                 String      @id @default(cuid())
-  org                Org         @relation(fields: [orgId], references: [id])
-  orgId              String
-  event              NewsEvent   @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  eventId            String
-  bucketStart        DateTime
-  title              String?
-  summary            String? @db.Text
-  keyPoints          Json?
+  id                   String    @id @default(cuid())
+  org                  Org       @relation(fields: [orgId], references: [id])
+  orgId                String
+  event                NewsEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId              String
+  bucketStart          DateTime
+  title                String?
+  summary              String?   @db.Text
+  keyPoints            Json?
   referencedArticleIds Json?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   @@unique([eventId, bucketStart])
   @@index([orgId, bucketStart])
 }
 
 model NewsEventIngestionState {
-  id                   String   @id @default(cuid())
-  org                  Org      @relation(fields: [orgId], references: [id])
-  orgId                String   @unique
-  lastProcessedAt      DateTime?
+  id                     String    @id @default(cuid())
+  org                    Org       @relation(fields: [orgId], references: [id])
+  orgId                  String    @unique
+  lastProcessedAt        DateTime?
   lastProcessedArticleId String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 }
 
 model MongoOutbox {
-  id          String             @id @default(cuid())
-  org         Org                @relation(fields: [orgId], references: [id])
+  id          String            @id @default(cuid())
+  org         Org               @relation(fields: [orgId], references: [id])
   orgId       String
-  type        MongoOutboxType    @default(processed_item)
+  type        MongoOutboxType   @default(processed_item)
   payload     Json
-  status      MongoOutboxStatus  @default(pending)
-  attempts    Int                @default(0)
+  status      MongoOutboxStatus @default(pending)
+  attempts    Int               @default(0)
   lastError   String?
-  availableAt DateTime           @default(now())
+  availableAt DateTime          @default(now())
   lockedAt    DateTime?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 
   @@index([status, availableAt])
   @@index([orgId, status])
 }
 
 model Dashboard {
-  id          String            @id @default(cuid())
-  org         Org               @relation(fields: [orgId], references: [id])
+  id          String   @id @default(cuid())
+  org         Org      @relation(fields: [orgId], references: [id])
   orgId       String
   name        String
   slug        String
   description String?
   theme       String?
   config      Json?
-  createdBy   User?             @relation("DashboardCreatedBy", fields: [createdById], references: [id])
+  createdBy   User?    @relation("DashboardCreatedBy", fields: [createdById], references: [id])
   createdById String?
-  version     Int               @default(1)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  widgets     DashboardWidget[]
+  widgets DashboardWidget[]
 
   @@unique([orgId, slug])
 }
 
 model DashboardWidget {
-  id           String               @id @default(cuid())
-  dashboard    Dashboard            @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
-  dashboardId  String
-  title        String?
-  type         DashboardWidgetType
-  dataSource   String
-  dataConfig   Json?
-  layoutX      Int
-  layoutY      Int
-  layoutW      Int
-  layoutH      Int
-  sortOrder    Int                  @default(0)
-  options      Json?
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  id          String              @id @default(cuid())
+  dashboard   Dashboard           @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+  dashboardId String
+  title       String?
+  type        DashboardWidgetType
+  dataSource  String
+  dataConfig  Json?
+  layoutX     Int
+  layoutY     Int
+  layoutW     Int
+  layoutH     Int
+  sortOrder   Int                 @default(0)
+  options     Json?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
 }
 
 model Notification {
-  id        String            @id @default(cuid())
-  org       Org               @relation(fields: [orgId], references: [id])
+  id        String           @id @default(cuid())
+  org       Org              @relation(fields: [orgId], references: [id])
   orgId     String
-  user      User?             @relation(fields: [userId], references: [id])
+  user      User?            @relation(fields: [userId], references: [id])
   userId    String?
   type      NotificationType
   title     String
   body      String?
   data      Json?
   readAt    DateTime?
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
 
   @@index([orgId, createdAt])
   @@index([userId, createdAt])
@@ -1192,94 +1215,94 @@ enum NotificationType {
 }
 
 model AlertNotificationChannel {
-  id          String               @id @default(cuid())
-  org         Org                  @relation(fields: [orgId], references: [id])
+  id          String           @id @default(cuid())
+  org         Org              @relation(fields: [orgId], references: [id])
   orgId       String
   type        AlertChannelType
   name        String
   target      String
   config      Json?
-  isActive    Boolean              @default(true)
-  createdBy   User?                @relation("AlertChannelCreatedBy", fields: [createdById], references: [id])
+  isActive    Boolean          @default(true)
+  createdBy   User?            @relation("AlertChannelCreatedBy", fields: [createdById], references: [id])
   createdById String?
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
-  deliveries  AlertDelivery[]
-  ruleLinks   AlertRuleChannel[]
+  deliveries AlertDelivery[]
+  ruleLinks  AlertRuleChannel[]
 
   @@index([orgId, type])
 }
 
 model AlertRule {
-  id               String           @id @default(cuid())
-  org              Org              @relation(fields: [orgId], references: [id])
+  id               String              @id @default(cuid())
+  org              Org                 @relation(fields: [orgId], references: [id])
   orgId            String
   name             String
   description      String?
-  severity         AlertSeverity    @default(medium)
-  status           AlertStatus      @default(active)
+  severity         AlertSeverity       @default(medium)
+  status           AlertStatus         @default(active)
   metricProvider   AlertMetricProvider @default(economic_data)
-  dataItem         EconomicDataItem? @relation(fields: [dataItemId], references: [id])
+  dataItem         EconomicDataItem?   @relation(fields: [dataItemId], references: [id])
   dataItemId       String?
   metricSlug       String
   operator         AlertOperator
-  thresholdValue   Decimal?         @db.Decimal(38, 12)
-  thresholdLower   Decimal?         @db.Decimal(38, 12)
-  thresholdUpper   Decimal?         @db.Decimal(38, 12)
-  changeWindowMin  Int?             // rolling window in minutes
-  cooldownSeconds  Int              @default(3600)
-  checkIntervalSec Int              @default(300)
+  thresholdValue   Decimal?            @db.Decimal(38, 12)
+  thresholdLower   Decimal?            @db.Decimal(38, 12)
+  thresholdUpper   Decimal?            @db.Decimal(38, 12)
+  changeWindowMin  Int? // rolling window in minutes
+  cooldownSeconds  Int                 @default(3600)
+  checkIntervalSec Int                 @default(300)
   lastTriggeredAt  DateTime?
   metadata         Json?
-  createdBy        User?            @relation("AlertRuleCreatedBy", fields: [createdById], references: [id])
+  createdBy        User?               @relation("AlertRuleCreatedBy", fields: [createdById], references: [id])
   createdById      String?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
 
-  events           AlertEvent[]
-  channels         AlertRuleChannel[]
+  events   AlertEvent[]
+  channels AlertRuleChannel[]
 
   @@index([orgId, status, severity])
 }
 
 model AlertEvent {
-  id             String              @id @default(cuid())
-  rule           AlertRule           @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-  ruleId         String
-  triggeredAt    DateTime
-  metricValue    Decimal             @db.Decimal(38, 12)
-  changePercent  Float?
-  severity       AlertSeverity
-  status         AlertEventStatus    @default(pending)
-  message        String?
-  context        Json?
-  createdAt      DateTime            @default(now())
+  id            String           @id @default(cuid())
+  rule          AlertRule        @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  ruleId        String
+  triggeredAt   DateTime
+  metricValue   Decimal          @db.Decimal(38, 12)
+  changePercent Float?
+  severity      AlertSeverity
+  status        AlertEventStatus @default(pending)
+  message       String?
+  context       Json?
+  createdAt     DateTime         @default(now())
 
-  deliveries     AlertDelivery[]
+  deliveries AlertDelivery[]
 }
 
 model AlertDelivery {
-  id             String                  @id @default(cuid())
-  event          AlertEvent              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  id             String                    @id @default(cuid())
+  event          AlertEvent                @relation(fields: [eventId], references: [id], onDelete: Cascade)
   eventId        String
   channel        AlertNotificationChannel? @relation(fields: [channelId], references: [id])
   channelId      String?
   channelType    AlertChannelType
   targetSnapshot Json?
-  status         AlertDeliveryStatus     @default(pending)
+  status         AlertDeliveryStatus       @default(pending)
   error          String?
   sentAt         DateTime?
-  createdAt      DateTime                @default(now())
+  createdAt      DateTime                  @default(now())
 }
 
 model AlertRuleChannel {
-  id         String                   @id @default(cuid())
-  rule       AlertRule                @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-  ruleId     String
-  channel    AlertNotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  channelId  String
-  createdAt  DateTime                 @default(now())
+  id        String                   @id @default(cuid())
+  rule      AlertRule                @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  ruleId    String
+  channel   AlertNotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  channelId String
+  createdAt DateTime                 @default(now())
 
   @@unique([ruleId, channelId])
 }
@@ -1396,15 +1419,15 @@ enum NewsEventAssignmentMethod {
 }
 
 model RefreshToken {
-  id          String   @id @default(cuid())
-  user        User     @relation(fields: [userId], references: [id])
-  userId      String
-  tokenHash   String
-  expiresAt   DateTime
-  createdAt   DateTime @default(now())
-  revokedAt   DateTime?
-  ipAddress   String?
-  userAgent   String?
+  id        String    @id @default(cuid())
+  user      User      @relation(fields: [userId], references: [id])
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+  ipAddress String?
+  userAgent String?
 
   @@index([userId])
 }
@@ -1436,46 +1459,46 @@ enum EconomicDataRunStatus {
 }
 
 model EconomicCategory {
-  id          String                  @id @default(cuid())
-  key         String                  @unique
+  id          String                     @id @default(cuid())
+  key         String                     @unique
   label       String
   description String?
-  createdAt   DateTime                @default(now())
-  updatedAt   DateTime                @updatedAt
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
   items       EconomicDataItemCategory[]
 }
 
 model EconomicDataItem {
-  id               String                     @id @default(cuid())
-  slug             String                     @unique
-  displayName      String
-  groupLabel       String?
-  description      String?
-  sourceFunction   String
-  sourceEndpoint   String
-  sourceDocUrl     String?
-  valueType        EconomicDataValueType      @default(price)
-  defaultUnit      String?
-  defaultFrequency EconomicDataFrequency      @default(daily)
-  responseAdapter  String?
-  isActive         Boolean                    @default(true)
-  metadata         Json?
-  createdAt        DateTime                   @default(now())
-  updatedAt        DateTime                   @updatedAt
-  dataPoints       EconomicDataPoint[]
-  fetchConfig      EconomicDataFetchConfig?
-  categories       EconomicDataItemCategory[]
-  alertRules       AlertRule[]
+  id                        String                     @id @default(cuid())
+  slug                      String                     @unique
+  displayName               String
+  groupLabel                String?
+  description               String?
+  sourceFunction            String
+  sourceEndpoint            String
+  sourceDocUrl              String?
+  valueType                 EconomicDataValueType      @default(price)
+  defaultUnit               String?
+  defaultFrequency          EconomicDataFrequency      @default(daily)
+  responseAdapter           String?
+  isActive                  Boolean                    @default(true)
+  metadata                  Json?
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  dataPoints                EconomicDataPoint[]
+  fetchConfig               EconomicDataFetchConfig?
+  categories                EconomicDataItemCategory[]
+  alertRules                AlertRule[]
   newsIndicatorAssociations NewsIndicatorAssociation[]
 }
 
 model EconomicDataItemCategory {
-  id          String               @id @default(cuid())
-  item        EconomicDataItem     @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  itemId      String
-  category    EconomicCategory     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  categoryId  String
-  createdAt   DateTime             @default(now())
+  id         String           @id @default(cuid())
+  item       EconomicDataItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId     String
+  category   EconomicCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryId String
+  createdAt  DateTime         @default(now())
 
   @@unique([itemId, categoryId])
 }
@@ -1492,41 +1515,41 @@ model EconomicDataPoint {
   sourceMeta  Json?
   createdAt   DateTime              @default(now())
 
-  @@index([itemId, recordedAt])
   @@unique([itemId, recordedAt, sourceField])
+  @@index([itemId, recordedAt])
 }
 
 model EconomicDataFetchConfig {
-  id           String                @id @default(cuid())
-  item         EconomicDataItem      @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  itemId       String                @unique
-  frequency    EconomicDataFrequency
-  repeatCron   String?
-  isEnabled    Boolean               @default(true)
-  lastRunAt    DateTime?
-  lastStatus   EconomicDataRunStatus?
-  lastError    String?
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
+  id         String                 @id @default(cuid())
+  item       EconomicDataItem       @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId     String                 @unique
+  frequency  EconomicDataFrequency
+  repeatCron String?
+  isEnabled  Boolean                @default(true)
+  lastRunAt  DateTime?
+  lastStatus EconomicDataRunStatus?
+  lastError  String?
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
 }
 
 model EntitySentimentSnapshot {
-  id            String   @id @default(cuid())
-  org           Org      @relation(fields: [orgId], references: [id])
-  orgId         String
-  entityName    String
-  entityType    String   @default("")
-  bucketStart   DateTime
-  totalDocs     Int
-  negativeDocs  Int
-  positiveDocs  Int
-  neutralDocs   Int
-  scoreSum      Int
-  avgScore      Float
-  negativeRatio Float
+  id                       String   @id @default(cuid())
+  org                      Org      @relation(fields: [orgId], references: [id])
+  orgId                    String
+  entityName               String
+  entityType               String   @default("")
+  bucketStart              DateTime
+  totalDocs                Int
+  negativeDocs             Int
+  positiveDocs             Int
+  neutralDocs              Int
+  scoreSum                 Int
+  avgScore                 Float
+  negativeRatio            Float
   evidenceProcessedItemIds Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
   @@unique([orgId, entityName, entityType, bucketStart], map: "EntitySentimentSnapshot_org_entity_type_bucket_uq")
   @@index([orgId, bucketStart])
@@ -1534,21 +1557,21 @@ model EntitySentimentSnapshot {
 }
 
 model TopicSentimentSnapshot {
-  id            String   @id @default(cuid())
-  org           Org      @relation(fields: [orgId], references: [id])
-  orgId         String
-  topic         String
-  bucketStart   DateTime
-  totalDocs     Int
-  negativeDocs  Int
-  positiveDocs  Int
-  neutralDocs   Int
-  scoreSum      Int
-  avgScore      Float
-  negativeRatio Float
+  id                       String   @id @default(cuid())
+  org                      Org      @relation(fields: [orgId], references: [id])
+  orgId                    String
+  topic                    String
+  bucketStart              DateTime
+  totalDocs                Int
+  negativeDocs             Int
+  positiveDocs             Int
+  neutralDocs              Int
+  scoreSum                 Int
+  avgScore                 Float
+  negativeRatio            Float
   evidenceProcessedItemIds Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
   @@unique([orgId, topic, bucketStart])
   @@index([orgId, bucketStart])
@@ -1556,30 +1579,30 @@ model TopicSentimentSnapshot {
 }
 
 model NewsnowCandidateSnapshot {
-  id                 String   @id @default(cuid())
-  org                Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  orgId              String
-  bucketStart        DateTime
-  candidateHash      String
-  label              String
-  summary            String?  @db.Text
-  themes             Json?
-  keywords           Json?
-  entities           Json?
-  sourceIds          Json?
-  sourceCount        Int
-  itemCount          Int
-  heatScore          Float
-  freshnessScore     Float
-  candidateScore     Float
-  authorityScore     Float
-  domesticSourceCount Int     @default(0)
-  domesticItemCount  Int      @default(0)
-  domesticRatio      Float    @default(0)
-  isDomestic         Boolean  @default(false)
-  sentimentPressure  Float    @default(0)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  org                 Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId               String
+  bucketStart         DateTime
+  candidateHash       String
+  label               String
+  summary             String?  @db.Text
+  themes              Json?
+  keywords            Json?
+  entities            Json?
+  sourceIds           Json?
+  sourceCount         Int
+  itemCount           Int
+  heatScore           Float
+  freshnessScore      Float
+  candidateScore      Float
+  authorityScore      Float
+  domesticSourceCount Int      @default(0)
+  domesticItemCount   Int      @default(0)
+  domesticRatio       Float    @default(0)
+  isDomestic          Boolean  @default(false)
+  sentimentPressure   Float    @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@unique([orgId, bucketStart, candidateHash], map: "NewsnowCandidateSnapshot_org_bucket_hash_uq")
   @@index([orgId, bucketStart], map: "NewsnowCandidateSnapshot_org_bucket_idx")
@@ -1624,14 +1647,14 @@ enum NewsIndicatorBacktestStatus {
 }
 
 model NewsIndicatorAssociation {
-  id              String                   @id @default(cuid())
-  org             Org                      @relation(fields: [orgId], references: [id])
+  id              String                     @id @default(cuid())
+  org             Org                        @relation(fields: [orgId], references: [id])
   orgId           String
   scopeType       NewsIndicatorScopeType
   scopeKey        String
-  scopeKeyType    String                   @default("")
+  scopeKeyType    String                     @default("")
   featureMetric   NewsIndicatorFeatureMetric
-  indicatorItem   EconomicDataItem         @relation(fields: [indicatorItemId], references: [id], onDelete: Cascade)
+  indicatorItem   EconomicDataItem           @relation(fields: [indicatorItemId], references: [id], onDelete: Cascade)
   indicatorItemId String
   windowDays      Int
   lagDays         Int
@@ -1642,10 +1665,10 @@ model NewsIndicatorAssociation {
   analyzedEndAt   DateTime
   metadata        Json?
   lastEvaluatedAt DateTime
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
 
-  backtests       NewsIndicatorAssociationBacktestRun[]
+  backtests NewsIndicatorAssociationBacktestRun[]
 
   @@unique([orgId, scopeType, scopeKey, scopeKeyType, featureMetric, indicatorItemId], map: "NewsIndicatorAssociation_org_scope_feature_item_uq")
   @@index([orgId, indicatorItemId, lastEvaluatedAt], map: "NewsIndicatorAssociation_org_item_eval_idx")
@@ -1653,43 +1676,68 @@ model NewsIndicatorAssociation {
 }
 
 model NewsIndicatorAssociationBacktestRun {
-  id             String                    @id @default(cuid())
-  org            Org                       @relation(fields: [orgId], references: [id])
-  orgId          String
-  association    NewsIndicatorAssociation  @relation(fields: [associationId], references: [id], onDelete: Cascade)
-  associationId  String
-  status         NewsIndicatorBacktestStatus @default(pending)
-  windowStart    DateTime
-  windowEnd      DateTime
-  config         Json?
-  metrics        Json?
-  error          String?
-  createdAt      DateTime                  @default(now())
-  updatedAt      DateTime                  @updatedAt
+  id            String                      @id @default(cuid())
+  org           Org                         @relation(fields: [orgId], references: [id])
+  orgId         String
+  association   NewsIndicatorAssociation    @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  associationId String
+  status        NewsIndicatorBacktestStatus @default(pending)
+  windowStart   DateTime
+  windowEnd     DateTime
+  config        Json?
+  metrics       Json?
+  error         String?
+  createdAt     DateTime                    @default(now())
+  updatedAt     DateTime                    @updatedAt
 
   @@index([associationId, createdAt])
   @@index([orgId, createdAt])
 }
 
-model RssTranslationMetricsDaily {
-  id              String   @id @default(cuid())
-  org             Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+enum ObservabilitySnapshotScope {
+  quality_pipeline
+  quality_news_sources
+  rss_diagnostics
+  crawl_quality_metrics
+}
+
+model ObservabilitySnapshot {
+  id              String                     @id @default(cuid())
+  org             Org                        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   orgId           String
-  date            DateTime
-  provider        String
-  targetLanguage  String
-  requestCount    Int      @default(0)
-  itemCount       Int      @default(0)
-  textCount       Int      @default(0)
-  cacheHitCount   Int      @default(0)
-  cacheMissCount  Int      @default(0)
-  translatedCount Int      @default(0)
-  failureCount    Int      @default(0)
-  skipTooLongCount Int     @default(0)
-  totalLatencyMs  Int      @default(0)
-  maxLatencyMs    Int      @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  scope           ObservabilitySnapshotScope
+  variantKey      String
+  payload         Json
+  generatedAt     DateTime
+  expiresAt       DateTime
+  lastRequestedAt DateTime
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+
+  @@unique([orgId, scope, variantKey], map: "ObservabilitySnapshot_org_scope_variant_uq")
+  @@index([orgId, scope, expiresAt], map: "ObservabilitySnapshot_org_scope_expires_idx")
+  @@index([orgId, lastRequestedAt], map: "ObservabilitySnapshot_org_lastRequested_idx")
+}
+
+model RssTranslationMetricsDaily {
+  id               String   @id @default(cuid())
+  org              Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId            String
+  date             DateTime
+  provider         String
+  targetLanguage   String
+  requestCount     Int      @default(0)
+  itemCount        Int      @default(0)
+  textCount        Int      @default(0)
+  cacheHitCount    Int      @default(0)
+  cacheMissCount   Int      @default(0)
+  translatedCount  Int      @default(0)
+  failureCount     Int      @default(0)
+  skipTooLongCount Int      @default(0)
+  totalLatencyMs   Int      @default(0)
+  maxLatencyMs     Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@unique([orgId, date, provider, targetLanguage], map: "RssTransMetricsDaily_org_date_provider_lang_uq")
   @@index([orgId, date])
@@ -1726,19 +1774,19 @@ enum KnowledgeRecordSource {
 }
 
 model KnowledgeEntity {
-  id            String            @id @default(cuid())
-  org           Org               @relation(fields: [orgId], references: [id])
+  id            String              @id @default(cuid())
+  org           Org                 @relation(fields: [orgId], references: [id])
   orgId         String
   type          KnowledgeEntityType
   canonicalName String
   normalizedKey String
   properties    Json?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
-  aliases  KnowledgeEntityAlias[]
-  outgoing KnowledgeEdge[]        @relation("KnowledgeEdgeFrom")
-  incoming KnowledgeEdge[]        @relation("KnowledgeEdgeTo")
+  aliases      KnowledgeEntityAlias[]
+  outgoing     KnowledgeEdge[]        @relation("KnowledgeEdgeFrom")
+  incoming     KnowledgeEdge[]        @relation("KnowledgeEdgeTo")
   articleLinks ArticleEntityLink[]
 
   @@unique([orgId, type, normalizedKey])
@@ -1747,15 +1795,15 @@ model KnowledgeEntity {
 }
 
 model KnowledgeEntityAlias {
-  id              String               @id @default(cuid())
-  org             Org                  @relation(fields: [orgId], references: [id])
+  id              String                @id @default(cuid())
+  org             Org                   @relation(fields: [orgId], references: [id])
   orgId           String
-  entity          KnowledgeEntity      @relation(fields: [entityId], references: [id])
+  entity          KnowledgeEntity       @relation(fields: [entityId], references: [id])
   entityId        String
   alias           String
   normalizedAlias String
   source          KnowledgeRecordSource @default(llm)
-  createdAt       DateTime             @default(now())
+  createdAt       DateTime              @default(now())
 
   @@unique([entityId, normalizedAlias])
   @@index([orgId, normalizedAlias])
@@ -1763,21 +1811,21 @@ model KnowledgeEntityAlias {
 }
 
 model KnowledgeEdge {
-  id           String               @id @default(cuid())
-  org          Org                  @relation(fields: [orgId], references: [id])
+  id           String                @id @default(cuid())
+  org          Org                   @relation(fields: [orgId], references: [id])
   orgId        String
   type         KnowledgeRelationType
-  fromEntity   KnowledgeEntity      @relation("KnowledgeEdgeFrom", fields: [fromEntityId], references: [id])
+  fromEntity   KnowledgeEntity       @relation("KnowledgeEdgeFrom", fields: [fromEntityId], references: [id])
   fromEntityId String
-  toEntity     KnowledgeEntity      @relation("KnowledgeEdgeTo", fields: [toEntityId], references: [id])
+  toEntity     KnowledgeEntity       @relation("KnowledgeEdgeTo", fields: [toEntityId], references: [id])
   toEntityId   String
-  weight       Float                @default(1)
-  confidence   Float                @default(0.5)
+  weight       Float                 @default(1)
+  confidence   Float                 @default(0.5)
   properties   Json?
-  firstSeenAt  DateTime             @default(now())
-  lastSeenAt   DateTime             @default(now())
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  firstSeenAt  DateTime              @default(now())
+  lastSeenAt   DateTime              @default(now())
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
 
   evidences KnowledgeEdgeEvidence[]
 
@@ -1788,28 +1836,28 @@ model KnowledgeEdge {
 }
 
 model KnowledgeEdgeEvidence {
-  id              String          @id @default(cuid())
-  org             Org             @relation(fields: [orgId], references: [id])
-  orgId           String
-  edge            KnowledgeEdge   @relation(fields: [edgeId], references: [id])
-  edgeId          String
-  article         Article         @relation(fields: [articleId], references: [id])
-  articleId       String
+  id               String        @id @default(cuid())
+  org              Org           @relation(fields: [orgId], references: [id])
+  orgId            String
+  edge             KnowledgeEdge @relation(fields: [edgeId], references: [id])
+  edgeId           String
+  article          Article       @relation(fields: [articleId], references: [id])
+  articleId        String
   extractorVersion String?
-  confidence      Float?
-  evidence        Json?
-  createdAt       DateTime        @default(now())
+  confidence       Float?
+  evidence         Json?
+  createdAt        DateTime      @default(now())
 
   @@unique([edgeId, articleId])
   @@index([orgId, articleId])
 }
 
 model KnowledgeGraphIngestionState {
-  id                   String   @id @default(cuid())
-  org                  Org      @relation(fields: [orgId], references: [id])
-  orgId                String   @unique
-  lastProcessedAt       DateTime?
+  id                     String    @id @default(cuid())
+  org                    Org       @relation(fields: [orgId], references: [id])
+  orgId                  String    @unique
+  lastProcessedAt        DateTime?
   lastProcessedArticleId String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 }

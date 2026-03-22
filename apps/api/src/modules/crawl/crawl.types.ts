@@ -19,10 +19,7 @@ export type CrawlSeedDiscoveryMode =
   | "common_paths"
   | "sitemap_only"
   | "disabled";
-export type CrawlLlmAssistRecallMode =
-  | "high_recall"
-  | "balanced"
-  | "low_cost";
+export type CrawlLlmAssistRecallMode = "high_recall" | "balanced" | "low_cost";
 export type CrawlLlmAssistShadowRole = "active" | "shadow";
 export type CrawlLlmAssistShadowState =
   | "candidate"
@@ -48,6 +45,7 @@ export type CrawlFrontierNodeStatus =
 export interface CrawlJobData {
   taskId: string;
   orgId: string;
+  sourceId?: string;
   triggeredById?: string;
   traceId?: string;
   memoryPressureRequeues?: number;
@@ -468,7 +466,10 @@ export interface CrawlDetailExpansionOptions {
 
 export type CrawlUrlMatchMode = "glob" | "regex" | "substring" | "prefix";
 
-export type CrawlMarkdownContentSource = "raw_html" | "cleaned_html" | "fit_html";
+export type CrawlMarkdownContentSource =
+  | "raw_html"
+  | "cleaned_html"
+  | "fit_html";
 
 export interface CrawlProxyConfig {
   server: string;
@@ -490,7 +491,11 @@ export interface CrawlBrowserCookie {
 
 export type CrawlUserAgentMode = "random";
 
-export type CrawlWaitUntil = "domcontentloaded" | "load" | "networkidle" | "commit";
+export type CrawlWaitUntil =
+  | "domcontentloaded"
+  | "load"
+  | "networkidle"
+  | "commit";
 
 export interface CrawlUserAgentGeneratorConfig {
   platform?: "windows" | "macos" | "linux" | "android" | "ios";
@@ -577,7 +582,9 @@ export interface CrawlBm25MarkdownFilter {
   language?: string;
 }
 
-export type CrawlMarkdownFilter = CrawlPruningMarkdownFilter | CrawlBm25MarkdownFilter;
+export type CrawlMarkdownFilter =
+  | CrawlPruningMarkdownFilter
+  | CrawlBm25MarkdownFilter;
 
 export interface CrawlMarkdownStrategy {
   type: string;
@@ -589,7 +596,10 @@ export interface CrawlTableExtractionStrategy {
   params?: Record<string, unknown>;
 }
 
-export type CrawlVirtualScrollMode = "container_height" | "page_height" | "viewport";
+export type CrawlVirtualScrollMode =
+  | "container_height"
+  | "page_height"
+  | "viewport";
 export type CrawlVirtualScrollBy = CrawlVirtualScrollMode | number;
 
 export interface CrawlVirtualScrollConfig {

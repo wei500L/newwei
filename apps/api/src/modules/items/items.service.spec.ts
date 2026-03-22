@@ -7,6 +7,20 @@ import { ItemsService } from "./items.service";
 const mockProcessedItemAggregate = jest.fn();
 const mockProcessedItemFind = jest.fn();
 
+jest.mock(
+  "@modular/vector-client",
+  () => ({
+    VectorBadResponseError: class VectorBadResponseError extends Error {},
+    VectorClient: class VectorClient {
+      search = jest.fn();
+      upsert = jest.fn();
+    },
+    VectorServiceUnavailableError: class VectorServiceUnavailableError extends Error {},
+    VectorUnauthorizedError: class VectorUnauthorizedError extends Error {},
+  }),
+  { virtual: true }
+);
+
 jest.mock("@modular/mongo", () => ({
   RawItemModel: {
     create: jest.fn()

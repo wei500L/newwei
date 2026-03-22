@@ -5,6 +5,23 @@ import { ItemsOrderBy, ItemsRankingMode } from "../dto/item.input";
 
 import { ItemsResolver } from "./items.resolver";
 
+jest.mock(
+  "@modular/vector-client",
+  () => ({
+    VectorBadResponseError: class VectorBadResponseError extends Error {},
+    VectorClient: class VectorClient {
+      search = jest.fn();
+      upsert = jest.fn();
+    },
+    VectorServiceUnavailableError: class VectorServiceUnavailableError extends Error {},
+    VectorUnauthorizedError: class VectorUnauthorizedError extends Error {},
+  }),
+  { virtual: true }
+);
+
+const createEmptyReadModelLoader = () =>
+  new DataLoader(async (keys: readonly string[]) => keys.map(() => null));
+
 describe("ItemsResolver.processed", () => {
   const resolver = new ItemsResolver({} as any);
 
@@ -24,7 +41,11 @@ describe("ItemsResolver.processed", () => {
       }))
     );
 
-    const result = await resolver.processed({ metaId: "meta-1" } as any, loader as any);
+    const result = await resolver.processed(
+      { metaId: "meta-1" } as any,
+      createEmptyReadModelLoader() as any,
+      loader as any
+    );
     expect(result?.result).toBeDefined();
     expect(JSON.parse(result!.result!)).toMatchObject({ title: "Hello" });
     expect(result?.resultJson).toMatchObject({ title: "Hello" });
@@ -38,7 +59,11 @@ describe("ItemsResolver.processed", () => {
       }))
     );
 
-    const result = await resolver.processed({ metaId: "meta-1" } as any, loader as any);
+    const result = await resolver.processed(
+      { metaId: "meta-1" } as any,
+      createEmptyReadModelLoader() as any,
+      loader as any
+    );
     expect(JSON.parse(result!.result!)).toMatchObject({ title: "Object Result", topics: ["t1"] });
     expect(result?.resultJson).toMatchObject({ title: "Object Result", topics: ["t1"] });
   });
@@ -51,7 +76,11 @@ describe("ItemsResolver.processed", () => {
       }))
     );
 
-    const result = await resolver.processed({ metaId: "meta-1" } as any, loader as any);
+    const result = await resolver.processed(
+      { metaId: "meta-1" } as any,
+      createEmptyReadModelLoader() as any,
+      loader as any
+    );
     expect(result?.result).toBeUndefined();
     expect(result?.resultJson).toBeNull();
   });
@@ -77,7 +106,14 @@ describe("ItemsResolver time fields", () => {
     };
     const resolver = new ItemsResolver(itemsService as any);
 
-    const result = await resolver.items({ user: { orgId: "org-1" } } as any, { first: 1 } as any);
+    const result = await resolver.items(
+      { user: { orgId: "org-1" } } as any,
+      { first: 1 } as any,
+      {
+        fieldNodes: [{ selectionSet: { selections: [] } }],
+        fragments: {}
+      } as any
+    );
     expect(result.edges[0].node.ingestedAt).toEqual(result.edges[0].node.createdAt);
   });
 
@@ -97,6 +133,7 @@ describe("ItemsResolver time fields", () => {
 
     const publishedAt = await resolver.publishedAt(
       { metaId: "meta-1" } as any,
+      createEmptyReadModelLoader() as any,
       processedLoader as any,
       rawLoader as any
     );
@@ -120,6 +157,7 @@ describe("ItemsResolver time fields", () => {
 
     const publishedAt = await resolver.publishedAt(
       { metaId: "meta-1" } as any,
+      createEmptyReadModelLoader() as any,
       processedLoader as any,
       rawLoader as any
     );
@@ -134,6 +172,7 @@ describe("ItemsResolver time fields", () => {
 
     const publishedAt = await resolver.publishedAt(
       { metaId: "meta-1", publishedAt: "2024-02-01T12:34:56.000Z" } as any,
+      createEmptyReadModelLoader() as any,
       processedLoader as any,
       rawLoader as any
     );
@@ -156,6 +195,7 @@ describe("ItemsResolver time fields", () => {
 
     const publishedAt = await resolver.publishedAt(
       { metaId: "meta-1" } as any,
+      createEmptyReadModelLoader() as any,
       processedLoader as any,
       rawLoader as any
     );
@@ -194,7 +234,11 @@ describe("ItemsResolver preview fields", () => {
       }))
     );
 
-    const preview = await resolver.processedPreview({ metaId: "meta-1" } as any, processedLoader as any);
+    const preview = await resolver.processedPreview(
+      { metaId: "meta-1" } as any,
+      createEmptyReadModelLoader() as any,
+      processedLoader as any
+    );
     expect(preview?.title).toBe("LLM headline");
     expect(preview?.language).toBe("zh-CN");
     expect(preview?.summary).toBe("Hello");
@@ -240,6 +284,7 @@ describe("ItemsResolver preview fields", () => {
 
     const preview = await resolver.processedPreview(
       { metaId: "meta-1" } as any,
+      createEmptyReadModelLoader() as any,
       processedLoader as any
     );
 
@@ -288,7 +333,11 @@ describe("ItemsResolver preview fields", () => {
       }))
     );
 
-    const preview = await resolver.rawPreview({ metaId: "meta-1" } as any, rawLoader as any);
+    const preview = await resolver.rawPreview(
+      { metaId: "meta-1" } as any,
+      createEmptyReadModelLoader() as any,
+      rawLoader as any
+    );
     expect(preview).toMatchObject({
       url: "https://example.com",
       sourceName: "Example Source",
@@ -333,7 +382,11 @@ describe("ItemsResolver preview fields", () => {
       }))
     );
 
-    const preview = await resolver.rawPreview({ metaId: "meta-1" } as any, rawLoader as any);
+    const preview = await resolver.rawPreview(
+      { metaId: "meta-1" } as any,
+      createEmptyReadModelLoader() as any,
+      rawLoader as any
+    );
     expect(preview).toMatchObject({
       url: "https://example.com",
       sourceName: "Example Source",
@@ -357,7 +410,11 @@ describe("ItemsResolver pagination", () => {
     await expect(
       resolver.items(
         { user: { orgId: "org-1" } } as any,
-        { first: 10, after: "cursor", page: 1 } as any
+        { first: 10, after: "cursor", page: 1 } as any,
+        {
+          fieldNodes: [{ selectionSet: { selections: [] } }],
+          fragments: {}
+        } as any
       )
     ).rejects.toThrow(BadRequestException);
   });
@@ -394,7 +451,11 @@ describe("ItemsResolver pagination", () => {
 
     const result = await resolver.items(
       { user: { orgId: "org-1" } } as any,
-      { first: 10, page: 2, orderBy: ItemsOrderBy.CREATED_DESC } as any
+      { first: 10, page: 2, orderBy: ItemsOrderBy.CREATED_DESC } as any,
+      {
+        fieldNodes: [{ selectionSet: { selections: [] } }],
+        fragments: {}
+      } as any
     );
 
     expect(itemsService.list).toHaveBeenCalledWith(
@@ -404,7 +465,8 @@ describe("ItemsResolver pagination", () => {
       undefined,
       undefined,
       "CREATED_DESC",
-      "RECENCY"
+      "RECENCY",
+      undefined
     );
     expect(itemsService.listWithCursor).not.toHaveBeenCalled();
     expect(result.totalCount).toBe(25);
@@ -437,7 +499,11 @@ describe("ItemsResolver pagination", () => {
 
     const result = await resolver.items(
       { user: { orgId: "org-1" } } as any,
-      { first: 10, page: 1, orderBy: ItemsOrderBy.PUBLISHED_DESC } as any
+      { first: 10, page: 1, orderBy: ItemsOrderBy.PUBLISHED_DESC } as any,
+      {
+        fieldNodes: [{ selectionSet: { selections: [] } }],
+        fragments: {}
+      } as any
     );
 
     expect(itemsService.list).toHaveBeenCalledWith(
@@ -447,7 +513,8 @@ describe("ItemsResolver pagination", () => {
       undefined,
       undefined,
       "PUBLISHED_DESC",
-      "RECENCY"
+      "RECENCY",
+      undefined
     );
 
     const cursor = result.edges[0]?.cursor;
@@ -472,7 +539,11 @@ describe("ItemsResolver pagination", () => {
 
     await resolver.items(
       { user: { orgId: "org-1" } } as any,
-      { first: 10, page: 1, search: "fed rate", orderBy: ItemsOrderBy.CREATED_DESC } as any
+      { first: 10, page: 1, search: "fed rate", orderBy: ItemsOrderBy.CREATED_DESC } as any,
+      {
+        fieldNodes: [{ selectionSet: { selections: [] } }],
+        fragments: {}
+      } as any
     );
 
     expect(itemsService.list).toHaveBeenCalledWith(
@@ -482,7 +553,46 @@ describe("ItemsResolver pagination", () => {
       "fed rate",
       undefined,
       "CREATED_DESC",
-      ItemsRankingMode.RELEVANCE
+      ItemsRankingMode.RELEVANCE,
+      undefined
+    );
+  });
+
+  it("skips cursor totalCount unless selected in the GraphQL query", async () => {
+    const itemsService = {
+      listWithCursor: jest.fn().mockResolvedValue({
+        items: [],
+        hasNextPage: false,
+        totalCount: 0
+      })
+    };
+    const resolver = new ItemsResolver(itemsService as any);
+
+    await resolver.items(
+      { user: { orgId: "org-1", id: "user-1" } } as any,
+      { first: 10, orderBy: ItemsOrderBy.CREATED_DESC } as any,
+      {
+        fieldNodes: [
+          {
+            selectionSet: {
+              selections: [{ kind: "Field", name: { value: "edges" } }]
+            }
+          }
+        ],
+        fragments: {}
+      } as any
+    );
+
+    expect(itemsService.listWithCursor).toHaveBeenCalledWith(
+      "org-1",
+      10,
+      undefined,
+      undefined,
+      undefined,
+      "CREATED_DESC",
+      "RECENCY",
+      "user-1",
+      false
     );
   });
 });

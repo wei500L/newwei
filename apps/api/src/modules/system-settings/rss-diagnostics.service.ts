@@ -1,10 +1,15 @@
 import { ProcessedItemModel, RawItemModel } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
-import { PipelineJobStatus, Prisma } from "@prisma/client";
+import {
+  ObservabilitySnapshotScope,
+  PipelineJobStatus,
+  Prisma,
+} from "@prisma/client";
 import { Types } from "mongoose";
 
 import { PipelineStageStatus } from "../../common/pipeline-status";
+import { ObservabilitySnapshotService } from "../observability/observability-snapshot.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
@@ -146,24 +151,71 @@ export interface RssSourceIdBackfillResponse {
   unresolvedSamples: BackfillUnresolvedSample[];
 }
 
+export interface RssDiagnosticsOverviewResponse {
+  generatedAt: string;
+  chain: RssDiagnosticsChainResponse;
+  sources: RssDiagnosticsSourceRow[];
+}
+
 @Injectable()
 export class RssDiagnosticsService {
+  private readonly snapshotTtlSeconds = 60;
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly env: EnvService
+    private readonly env: EnvService,
+    private readonly snapshots: ObservabilitySnapshotService,
   ) {}
 
   async getChainSummary(
     orgId: string,
-    options?: { windowDays?: number; lookbackHours?: number }
+    options?: { windowDays?: number; lookbackHours?: number },
   ): Promise<RssDiagnosticsChainResponse> {
-    const windowDays = this.clampInt(options?.windowDays, 1, MAX_WINDOW_DAYS, DEFAULT_WINDOW_DAYS);
+    const overview = await this.getOverview(orgId, options);
+    return overview.chain;
+  }
+
+  async listSourceDetails(
+    orgId: string,
+    options?: { windowDays?: number; lookbackHours?: number },
+  ): Promise<RssDiagnosticsSourceRow[]> {
+    const overview = await this.getOverview(orgId, options);
+    return overview.sources;
+  }
+
+  async getOverview(
+    orgId: string,
+    options?: { windowDays?: number; lookbackHours?: number },
+  ): Promise<RssDiagnosticsOverviewResponse> {
+    const windowDays = this.clampInt(
+      options?.windowDays,
+      1,
+      MAX_WINDOW_DAYS,
+      DEFAULT_WINDOW_DAYS,
+    );
     const lookbackHours = this.clampInt(
       options?.lookbackHours,
       1,
       MAX_LOOKBACK_HOURS,
-      DEFAULT_LOOKBACK_HOURS
+      DEFAULT_LOOKBACK_HOURS,
     );
+    const snapshot =
+      await this.snapshots.getOrCreate<RssDiagnosticsOverviewResponse>({
+        orgId,
+        scope: ObservabilitySnapshotScope.rss_diagnostics,
+        variantKey: `windowDays:${windowDays}:lookbackHours:${lookbackHours}`,
+        ttlSeconds: this.snapshotTtlSeconds,
+        loader: async () =>
+          this.buildOverview(orgId, windowDays, lookbackHours),
+      });
+    return snapshot.payload;
+  }
+
+  private async buildOverview(
+    orgId: string,
+    windowDays: number,
+    lookbackHours: number,
+  ): Promise<RssDiagnosticsOverviewResponse> {
     const now = new Date();
     const sinceWindow = new Date(now.getTime() - windowDays * DAY_MS);
     const sinceLookback = new Date(now.getTime() - lookbackHours * HOUR_MS);
@@ -179,104 +231,173 @@ export class RssDiagnosticsService {
       processedMissingSourceId,
       articleTotal,
       articleMissingSourceId,
-      pipelineStatusRows,
-      latestPipelineJob,
+      pipelineRows,
+      latestJobs,
       crawlTaskStatusRows,
       latestCrawlTask,
       crawlResultTotal,
       crawlResultMissingMarkdown,
-      latestCrawlResult
+      latestCrawlResult,
     ] = await Promise.all([
       this.getProcessedStatsBySource(orgId, sourceIds, sinceWindow),
       this.getArticleStatsBySource(orgId, sourceIds, sinceWindow),
       ProcessedItemModel.countDocuments({
         orgId,
         status: PipelineStageStatus.Completed,
-        createdAt: { $gte: sinceLookback }
+        createdAt: { $gte: sinceLookback },
       }),
       ProcessedItemModel.countDocuments({
         orgId,
         status: PipelineStageStatus.Completed,
         createdAt: { $gte: sinceLookback },
-        $or: [{ sourceId: null }, { sourceId: "" }, { sourceId: { $exists: false } }]
+        $or: [
+          { sourceId: null },
+          { sourceId: "" },
+          { sourceId: { $exists: false } },
+        ],
       }),
       this.prisma.article.count({
-        where: { orgId, crawlAt: { gte: sinceLookback } }
+        where: { orgId, crawlAt: { gte: sinceLookback } },
       }),
       this.prisma.article.count({
         where: {
           orgId,
           crawlAt: { gte: sinceLookback },
-          sourceId: null
-        }
+          sourceId: null,
+        },
       }),
       sourceIds.length > 0
         ? this.prisma.pipelineJob.groupBy({
-            by: ["status"],
+            by: ["sourceId", "status"],
             where: {
               orgId,
               sourceId: { in: sourceIds },
-              createdAt: { gte: sinceLookback }
+              createdAt: { gte: sinceLookback },
             },
-            _count: { _all: true }
+            _count: { _all: true },
           })
         : Promise.resolve([]),
       sourceIds.length > 0
-        ? this.prisma.pipelineJob.findFirst({
+        ? this.prisma.pipelineJob.findMany({
             where: {
               orgId,
-              sourceId: { in: sourceIds }
+              sourceId: { in: sourceIds },
             },
             orderBy: { createdAt: "desc" },
-            select: { createdAt: true }
+            select: { sourceId: true, status: true, createdAt: true },
+            take: Math.max(200, sourceIds.length * 3),
           })
-        : Promise.resolve(null),
+        : Promise.resolve([]),
       this.prisma.crawlTask.groupBy({
         by: ["status"],
         where: {
           orgId,
           displayName: { startsWith: "NewsSource:" },
-          updatedAt: { gte: sinceLookback }
+          updatedAt: { gte: sinceLookback },
         },
-        _count: { _all: true }
+        _count: { _all: true },
       }),
       this.prisma.crawlTask.findFirst({
         where: {
           orgId,
-          displayName: { startsWith: "NewsSource:" }
+          displayName: { startsWith: "NewsSource:" },
         },
         orderBy: { updatedAt: "desc" },
-        select: { updatedAt: true }
-      }),
-      this.prisma.crawlResult.count({
-        where: {
-          fetchedAt: { gte: sinceLookback },
-          task: { orgId, displayName: { startsWith: "NewsSource:" } }
-        }
+        select: { updatedAt: true },
       }),
       this.prisma.crawlResult.count({
         where: {
           fetchedAt: { gte: sinceLookback },
           task: { orgId, displayName: { startsWith: "NewsSource:" } },
-          markdownRef: ""
-        }
+        },
+      }),
+      this.prisma.crawlResult.count({
+        where: {
+          fetchedAt: { gte: sinceLookback },
+          task: { orgId, displayName: { startsWith: "NewsSource:" } },
+          markdownRef: "",
+        },
       }),
       this.prisma.crawlResult.findFirst({
         where: {
-          task: { orgId, displayName: { startsWith: "NewsSource:" } }
+          task: { orgId, displayName: { startsWith: "NewsSource:" } },
         },
         orderBy: { fetchedAt: "desc" },
-        select: { fetchedAt: true }
-      })
+        select: { fetchedAt: true },
+      }),
     ]);
 
-    const visibility = this.computeVisibility(rssSources, processedStats, articleStats);
-    const pipelineCounts = this.pipelineCountsFromRows(pipelineStatusRows);
-    const crawlTaskCounts = this.crawlTaskCountsFromRows(crawlTaskStatusRows);
+    const jobsBySource = new Map<string, SourceLookbackPipelineStats>();
+    const pipelineStatusTotals = new Map<PipelineJobStatus, number>();
+    for (const row of pipelineRows) {
+      const sourceId =
+        typeof row.sourceId === "string" ? row.sourceId.trim() : "";
+      const value = Math.max(0, Number(row._count?._all ?? 0));
+      pipelineStatusTotals.set(
+        row.status,
+        (pipelineStatusTotals.get(row.status) ?? 0) + value,
+      );
+      if (!sourceId) {
+        continue;
+      }
+      const current = jobsBySource.get(sourceId) ?? {
+        queued: 0,
+        running: 0,
+        completed: 0,
+        failed: 0,
+      };
+      if (
+        row.status === PipelineJobStatus.queued ||
+        row.status === PipelineJobStatus.pending
+      ) {
+        current.queued += value;
+      } else if (
+        row.status === PipelineJobStatus.running ||
+        row.status === PipelineJobStatus.delayed
+      ) {
+        current.running += value;
+      } else if (row.status === PipelineJobStatus.completed) {
+        current.completed += value;
+      } else if (row.status === PipelineJobStatus.failed) {
+        current.failed += value;
+      }
+      jobsBySource.set(sourceId, current);
+    }
 
+    const latestJobBySource = new Map<
+      string,
+      { status: string; createdAt: Date }
+    >();
+    for (const row of latestJobs) {
+      const sourceId =
+        typeof row.sourceId === "string" ? row.sourceId.trim() : "";
+      if (!sourceId || latestJobBySource.has(sourceId)) {
+        continue;
+      }
+      latestJobBySource.set(sourceId, {
+        status: row.status,
+        createdAt: row.createdAt,
+      });
+    }
+
+    const visibility = this.computeVisibility(
+      rssSources,
+      processedStats,
+      articleStats,
+    );
+    const pipelineCounts = this.pipelineCountsFromRows(
+      Array.from(pipelineStatusTotals.entries()).map(([status, count]) => ({
+        status,
+        _count: { _all: count },
+      })),
+    );
+    const crawlTaskCounts = this.crawlTaskCountsFromRows(crawlTaskStatusRows);
     const processedMissingRate =
-      processedCompletedTotal > 0 ? processedMissingSourceId / processedCompletedTotal : 0;
-    const articleMissingRate = articleTotal > 0 ? articleMissingSourceId / articleTotal : 0;
+      processedCompletedTotal > 0
+        ? processedMissingSourceId / processedCompletedTotal
+        : 0;
+    const articleMissingRate =
+      articleTotal > 0 ? articleMissingSourceId / articleTotal : 0;
 
     const recommendations: string[] = [];
     if (!schedulerEnabled) {
@@ -295,147 +416,25 @@ export class RssDiagnosticsService {
       recommendations.push("crawl_results_missing_markdown_ref_detected");
     }
 
-    return {
-      generatedAt: now.toISOString(),
-      windowDays,
-      lookbackHours,
-      schedulerEnabled,
-      sources: {
-        rssTotal: rssSources.length,
-        rssActive: rssSources.filter((source) => source.isActive).length,
-        seedEnabled: rssSources.filter((source) => source.seedEnabled).length,
-        missingFeedUrl: rssSources.filter((source) => !source.feedUrl).length
-      },
-      visibility,
-      processedCoverage: {
-        completedTotal: processedCompletedTotal,
-        missingSourceId: processedMissingSourceId,
-        missingRate: processedMissingRate
-      },
-      articleCoverage: {
-        total: articleTotal,
-        missingSourceId: articleMissingSourceId,
-        missingRate: articleMissingRate
-      },
-      pipelineJobs: {
-        total: pipelineCounts.total,
-        queued: pipelineCounts.queued,
-        running: pipelineCounts.running,
-        completed: pipelineCounts.completed,
-        failed: pipelineCounts.failed,
-        latestCreatedAt: latestPipelineJob?.createdAt?.toISOString() ?? null
-      },
-      crawlTasks: {
-        total: crawlTaskCounts.total,
-        queued: crawlTaskCounts.queued,
-        running: crawlTaskCounts.running,
-        completed: crawlTaskCounts.completed,
-        failed: crawlTaskCounts.failed,
-        latestUpdatedAt: latestCrawlTask?.updatedAt?.toISOString() ?? null
-      },
-      crawlResults: {
-        total: crawlResultTotal,
-        missingMarkdownRef: crawlResultMissingMarkdown,
-        latestFetchedAt: latestCrawlResult?.fetchedAt?.toISOString() ?? null
-      },
-      recommendations
-    };
-  }
-
-  async listSourceDetails(
-    orgId: string,
-    options?: { windowDays?: number; lookbackHours?: number }
-  ): Promise<RssDiagnosticsSourceRow[]> {
-    const windowDays = this.clampInt(options?.windowDays, 1, MAX_WINDOW_DAYS, DEFAULT_WINDOW_DAYS);
-    const lookbackHours = this.clampInt(
-      options?.lookbackHours,
-      1,
-      MAX_LOOKBACK_HOURS,
-      DEFAULT_LOOKBACK_HOURS
-    );
-    const now = new Date();
-    const sinceWindow = new Date(now.getTime() - windowDays * DAY_MS);
-    const sinceLookback = new Date(now.getTime() - lookbackHours * HOUR_MS);
-
-    const rssSources = await this.loadRssSources(orgId);
-    if (rssSources.length === 0) {
-      return [];
-    }
-
-    const sourceIds = rssSources.map((source) => source.id);
-    const [processedStats, articleStats, pipelineRows, latestJobs] = await Promise.all([
-      this.getProcessedStatsBySource(orgId, sourceIds, sinceWindow),
-      this.getArticleStatsBySource(orgId, sourceIds, sinceWindow),
-      this.prisma.pipelineJob.groupBy({
-        by: ["sourceId", "status"],
-        where: {
-          orgId,
-          sourceId: { in: sourceIds },
-          createdAt: { gte: sinceLookback }
-        },
-        _count: { _all: true }
-      }),
-      this.prisma.pipelineJob.findMany({
-        where: {
-          orgId,
-          sourceId: { in: sourceIds }
-        },
-        orderBy: { createdAt: "desc" },
-        select: { sourceId: true, status: true, createdAt: true },
-        take: Math.max(200, sourceIds.length * 3)
-      })
-    ]);
-
-    const jobsBySource = new Map<string, SourceLookbackPipelineStats>();
-    for (const row of pipelineRows) {
-      const sourceId = typeof row.sourceId === "string" ? row.sourceId.trim() : "";
-      if (!sourceId) {
-        continue;
-      }
-      const current = jobsBySource.get(sourceId) ?? {
-        queued: 0,
-        running: 0,
-        completed: 0,
-        failed: 0
-      };
-      const value = Math.max(0, Number(row._count?._all ?? 0));
-      if (row.status === PipelineJobStatus.queued || row.status === PipelineJobStatus.pending) {
-        current.queued += value;
-      } else if (row.status === PipelineJobStatus.running || row.status === PipelineJobStatus.delayed) {
-        current.running += value;
-      } else if (row.status === PipelineJobStatus.completed) {
-        current.completed += value;
-      } else if (row.status === PipelineJobStatus.failed) {
-        current.failed += value;
-      }
-      jobsBySource.set(sourceId, current);
-    }
-
-    const latestJobBySource = new Map<string, { status: string; createdAt: Date }>();
-    for (const row of latestJobs) {
-      const sourceId = typeof row.sourceId === "string" ? row.sourceId.trim() : "";
-      if (!sourceId || latestJobBySource.has(sourceId)) {
-        continue;
-      }
-      latestJobBySource.set(sourceId, {
-        status: row.status,
-        createdAt: row.createdAt
-      });
-    }
-
-    return rssSources
+    const sources = rssSources
       .map<RssDiagnosticsSourceRow>((source) => {
-        const processed = processedStats.get(source.id) ?? { itemCountWindow: 0, latestItemAt: null };
-        const article = articleStats.get(source.id) ?? { itemCountWindow: 0, latestItemAt: null };
+        const processed = processedStats.get(source.id) ?? {
+          itemCountWindow: 0,
+          latestItemAt: null,
+        };
+        const article = articleStats.get(source.id) ?? {
+          itemCountWindow: 0,
+          latestItemAt: null,
+        };
         const jobs24h = jobsBySource.get(source.id) ?? {
           queued: 0,
           running: 0,
           completed: 0,
-          failed: 0
+          failed: 0,
         };
         const latestJob = latestJobBySource.get(source.id);
 
-        const visibility: RssDiagnosticsSourceRow["visibility"] =
+        const sourceVisibility: RssDiagnosticsSourceRow["visibility"] =
           processed.itemCountWindow > 0
             ? "processed"
             : article.itemCountWindow > 0
@@ -449,9 +448,9 @@ export class RssDiagnosticsService {
         if (!source.feedUrl) {
           issues.push("feed_url_missing");
         }
-        if (visibility === "none") {
+        if (sourceVisibility === "none") {
           issues.push("no_recent_items");
-        } else if (visibility === "article_fallback") {
+        } else if (sourceVisibility === "article_fallback") {
           issues.push("processed_source_link_missing");
         }
         if ((source.consecutiveFailures ?? 0) > 0) {
@@ -467,17 +466,21 @@ export class RssDiagnosticsService {
           feedUrl: source.feedUrl,
           seedEnabled: source.seedEnabled,
           itemCountByProcessed: processed.itemCountWindow,
-          latestByProcessed: processed.latestItemAt ? processed.latestItemAt.toISOString() : null,
+          latestByProcessed: processed.latestItemAt
+            ? processed.latestItemAt.toISOString()
+            : null,
           itemCountByArticle: article.itemCountWindow,
-          latestByArticle: article.latestItemAt ? article.latestItemAt.toISOString() : null,
-          visibility,
+          latestByArticle: article.latestItemAt
+            ? article.latestItemAt.toISOString()
+            : null,
+          visibility: sourceVisibility,
           jobs24h,
           lastJobStatus: latestJob?.status ?? null,
           lastJobCreatedAt: latestJob?.createdAt?.toISOString() ?? null,
           lastFailureAt: source.lastFailureAt?.toISOString() ?? null,
           consecutiveFailures: source.consecutiveFailures,
           circuitOpenUntil: source.circuitOpenUntil?.toISOString() ?? null,
-          issues
+          issues,
         };
       })
       .sort((left, right) => {
@@ -489,27 +492,89 @@ export class RssDiagnosticsService {
         }
         return left.name.localeCompare(right.name);
       });
+
+    const generatedAt = now.toISOString();
+    const chain: RssDiagnosticsChainResponse = {
+      generatedAt,
+      windowDays,
+      lookbackHours,
+      schedulerEnabled,
+      sources: {
+        rssTotal: rssSources.length,
+        rssActive: rssSources.filter((source) => source.isActive).length,
+        seedEnabled: rssSources.filter((source) => source.seedEnabled).length,
+        missingFeedUrl: rssSources.filter((source) => !source.feedUrl).length,
+      },
+      visibility,
+      processedCoverage: {
+        completedTotal: processedCompletedTotal,
+        missingSourceId: processedMissingSourceId,
+        missingRate: processedMissingRate,
+      },
+      articleCoverage: {
+        total: articleTotal,
+        missingSourceId: articleMissingSourceId,
+        missingRate: articleMissingRate,
+      },
+      pipelineJobs: {
+        total: pipelineCounts.total,
+        queued: pipelineCounts.queued,
+        running: pipelineCounts.running,
+        completed: pipelineCounts.completed,
+        failed: pipelineCounts.failed,
+        latestCreatedAt: latestJobs[0]?.createdAt?.toISOString() ?? null,
+      },
+      crawlTasks: {
+        total: crawlTaskCounts.total,
+        queued: crawlTaskCounts.queued,
+        running: crawlTaskCounts.running,
+        completed: crawlTaskCounts.completed,
+        failed: crawlTaskCounts.failed,
+        latestUpdatedAt: latestCrawlTask?.updatedAt?.toISOString() ?? null,
+      },
+      crawlResults: {
+        total: crawlResultTotal,
+        missingMarkdownRef: crawlResultMissingMarkdown,
+        latestFetchedAt: latestCrawlResult?.fetchedAt?.toISOString() ?? null,
+      },
+      recommendations,
+    };
+
+    return {
+      generatedAt,
+      chain,
+      sources,
+    };
   }
 
   async backfillProcessedItemSourceId(
     orgId: string,
-    options?: { dryRun?: boolean; limit?: number }
+    options?: { dryRun?: boolean; limit?: number },
   ): Promise<RssSourceIdBackfillResponse> {
     const dryRun = options?.dryRun !== false;
-    const limit = this.clampInt(options?.limit, 1, MAX_BACKFILL_LIMIT, DEFAULT_BACKFILL_LIMIT);
+    const limit = this.clampInt(
+      options?.limit,
+      1,
+      MAX_BACKFILL_LIMIT,
+      DEFAULT_BACKFILL_LIMIT,
+    );
 
     const processedRows = await ProcessedItemModel.find(
       {
         orgId,
         status: PipelineStageStatus.Completed,
-        $or: [{ sourceId: null }, { sourceId: "" }, { sourceId: { $exists: false } }]
+        $or: [
+          { sourceId: null },
+          { sourceId: "" },
+          { sourceId: { $exists: false } },
+        ],
       },
       {
         _id: 1,
         rawItemId: 1,
         itemMetaId: 1,
-        pipelineJobId: 1
-      }
+        pipelineJobId: 1,
+      },
     )
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -526,7 +591,7 @@ export class RssDiagnosticsService {
         matched: 0,
         updated: 0,
         unresolved: 0,
-        unresolvedSamples: []
+        unresolvedSamples: [],
       };
     }
 
@@ -539,7 +604,7 @@ export class RssDiagnosticsService {
       rawObjectIds.length > 0
         ? await RawItemModel.find(
             { _id: { $in: rawObjectIds } },
-            { payload: 1 }
+            { payload: 1 },
           ).lean()
         : [];
     const rawById = new Map<
@@ -560,24 +625,28 @@ export class RssDiagnosticsService {
       rawById.set(id, {
         sourceId: this.normalizeString(metadata?.sourceId),
         pipelineJobId: this.normalizeString(metadata?.pipelineJobId),
-        crawlResultId: this.normalizeString(metadata?.crawlResultId)
+        crawlResultId: this.normalizeString(metadata?.crawlResultId),
       });
     }
 
-    const itemMetaIds = Array.from(new Set(normalizedCandidates.map((row) => row.itemMetaId)));
+    const itemMetaIds = Array.from(
+      new Set(normalizedCandidates.map((row) => row.itemMetaId)),
+    );
     const itemMetas =
       itemMetaIds.length > 0
         ? await this.prisma.itemMeta.findMany({
             where: {
               orgId,
-              id: { in: itemMetaIds }
+              id: { in: itemMetaIds },
             },
-            select: { id: true, externalId: true }
+            select: { id: true, externalId: true },
           })
         : [];
     const fallbackCrawlResultIdByItemMetaId = new Map<string, string>();
     for (const row of itemMetas) {
-      const crawlResultId = this.extractCrawlResultIdFromExternalId(row.externalId);
+      const crawlResultId = this.extractCrawlResultIdFromExternalId(
+        row.externalId,
+      );
       if (crawlResultId) {
         fallbackCrawlResultIdByItemMetaId.set(row.id, crawlResultId);
       }
@@ -594,7 +663,9 @@ export class RssDiagnosticsService {
       if (raw?.crawlResultId) {
         candidate.crawlResultId = raw.crawlResultId;
       } else {
-        candidate.fallbackCrawlResultId = fallbackCrawlResultIdByItemMetaId.get(candidate.itemMetaId);
+        candidate.fallbackCrawlResultId = fallbackCrawlResultIdByItemMetaId.get(
+          candidate.itemMetaId,
+        );
       }
     }
 
@@ -602,20 +673,20 @@ export class RssDiagnosticsService {
       new Set(
         normalizedCandidates
           .flatMap((row) => [row.pipelineJobId, row.rawPipelineJobId])
-          .filter((id): id is string => Boolean(id && id.trim().length > 0))
-      )
+          .filter((id): id is string => Boolean(id && id.trim().length > 0)),
+      ),
     );
     const pipelineJobs =
       pipelineJobIds.length > 0
         ? await this.prisma.pipelineJob.findMany({
             where: {
               orgId,
-              id: { in: pipelineJobIds }
+              id: { in: pipelineJobIds },
             },
             select: {
               id: true,
-              sourceId: true
-            }
+              sourceId: true,
+            },
           })
         : [];
     const sourceIdByPipelineJobId = new Map<string, string>();
@@ -631,20 +702,20 @@ export class RssDiagnosticsService {
       new Set(
         normalizedCandidates
           .flatMap((row) => [row.crawlResultId, row.fallbackCrawlResultId])
-          .filter((id): id is string => Boolean(id && id.trim().length > 0))
-      )
+          .filter((id): id is string => Boolean(id && id.trim().length > 0)),
+      ),
     );
     const crawlResults =
       crawlResultIds.length > 0
         ? await this.prisma.crawlResult.findMany({
             where: {
               id: { in: crawlResultIds },
-              task: { orgId }
+              task: { orgId },
             },
             select: {
               id: true,
-              task: { select: { config: true } }
-            }
+              task: { select: { config: true } },
+            },
           })
         : [];
     const sourceIdByCrawlResultId = new Map<string, string>();
@@ -661,21 +732,27 @@ export class RssDiagnosticsService {
         normalizedCandidates
           .flatMap((row) => [
             row.rawSourceId,
-            row.pipelineJobId ? sourceIdByPipelineJobId.get(row.pipelineJobId) : undefined,
-            row.rawPipelineJobId ? sourceIdByPipelineJobId.get(row.rawPipelineJobId) : undefined,
-            row.crawlResultId ? sourceIdByCrawlResultId.get(row.crawlResultId) : undefined,
+            row.pipelineJobId
+              ? sourceIdByPipelineJobId.get(row.pipelineJobId)
+              : undefined,
+            row.rawPipelineJobId
+              ? sourceIdByPipelineJobId.get(row.rawPipelineJobId)
+              : undefined,
+            row.crawlResultId
+              ? sourceIdByCrawlResultId.get(row.crawlResultId)
+              : undefined,
             row.fallbackCrawlResultId
               ? sourceIdByCrawlResultId.get(row.fallbackCrawlResultId)
-              : undefined
+              : undefined,
           ])
-          .filter((id): id is string => Boolean(id && id.trim().length > 0))
-      )
+          .filter((id): id is string => Boolean(id && id.trim().length > 0)),
+      ),
     );
     const validSources =
       candidateSourceIds.length > 0
         ? await this.prisma.newsSource.findMany({
             where: { orgId, id: { in: candidateSourceIds } },
-            select: { id: true }
+            select: { id: true },
           })
         : [];
     const validSourceIdSet = new Set(validSources.map((row) => row.id));
@@ -713,7 +790,7 @@ export class RssDiagnosticsService {
           unresolvedSamples.push({
             processedItemId: candidate.processedItemId,
             itemMetaId: candidate.itemMetaId,
-            reason: "source_not_resolved"
+            reason: "source_not_resolved",
           });
         }
         continue;
@@ -723,16 +800,18 @@ export class RssDiagnosticsService {
           unresolvedSamples.push({
             processedItemId: candidate.processedItemId,
             itemMetaId: candidate.itemMetaId,
-            reason: "resolved_source_not_in_org"
+            reason: "resolved_source_not_in_org",
           });
         }
         continue;
       }
 
-      const pipelineJobId = this.normalizeString(candidate.pipelineJobId) ?? this.normalizeString(candidate.rawPipelineJobId);
+      const pipelineJobId =
+        this.normalizeString(candidate.pipelineJobId) ??
+        this.normalizeString(candidate.rawPipelineJobId);
       const updateSet: Record<string, unknown> = {
         sourceId: resolvedSourceId,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       };
       if (pipelineJobId) {
         updateSet.pipelineJobId = pipelineJobId;
@@ -742,20 +821,33 @@ export class RssDiagnosticsService {
           filter: {
             _id: new Types.ObjectId(candidate.processedItemId),
             orgId,
-            $or: [{ sourceId: null }, { sourceId: "" }, { sourceId: { $exists: false } }]
+            $or: [
+              { sourceId: null },
+              { sourceId: "" },
+              { sourceId: { $exists: false } },
+            ],
           },
-          update: { $set: updateSet }
-        }
+          update: { $set: updateSet },
+        },
       });
     }
 
     let updated = 0;
     if (!dryRun && updateOperations.length > 0) {
       try {
-        const bulkResult = await ProcessedItemModel.bulkWrite(updateOperations, {
-          ordered: false
-        });
-        updated = Number((bulkResult as { modifiedCount?: number }).modifiedCount ?? 0);
+        const bulkResult = await ProcessedItemModel.bulkWrite(
+          updateOperations,
+          {
+            ordered: false,
+          },
+        );
+        updated = Number(
+          (bulkResult as { modifiedCount?: number }).modifiedCount ?? 0,
+        );
+        await this.snapshots.invalidate(
+          orgId,
+          ObservabilitySnapshotScope.rss_diagnostics,
+        );
       } catch (error) {
         logger.error({ error, orgId }, "Failed to run RSS sourceId backfill");
         throw error;
@@ -770,7 +862,7 @@ export class RssDiagnosticsService {
       matched,
       updated: dryRun ? 0 : updated,
       unresolved: Math.max(0, normalizedCandidates.length - matched),
-      unresolvedSamples
+      unresolvedSamples,
     };
   }
 
@@ -788,9 +880,13 @@ export class RssDiagnosticsService {
         lastSuccessAt: true,
         lastFailureAt: true,
         consecutiveFailures: true,
-        circuitOpenUntil: true
+        circuitOpenUntil: true,
       },
-      orderBy: [{ priority: "desc" }, { updatedAt: "desc" }, { createdAt: "desc" }]
+      orderBy: [
+        { priority: "desc" },
+        { updatedAt: "desc" },
+        { createdAt: "desc" },
+      ],
     });
 
     const rows: RssSourceConfigRow[] = [];
@@ -800,7 +896,8 @@ export class RssDiagnosticsService {
         continue;
       }
       const siteUrl = source.url.trim();
-      const feedUrl = this.normalizeString(seed.feedUrl) ?? (siteUrl ? siteUrl : null);
+      const feedUrl =
+        this.normalizeString(seed.feedUrl) ?? (siteUrl ? siteUrl : null);
       rows.push({
         id: source.id,
         name: source.name,
@@ -813,7 +910,7 @@ export class RssDiagnosticsService {
         lastSuccessAt: source.lastSuccessAt,
         lastFailureAt: source.lastFailureAt,
         consecutiveFailures: Math.max(0, source.consecutiveFailures ?? 0),
-        circuitOpenUntil: source.circuitOpenUntil
+        circuitOpenUntil: source.circuitOpenUntil,
       });
     }
     return rows;
@@ -822,7 +919,7 @@ export class RssDiagnosticsService {
   private async getProcessedStatsBySource(
     orgId: string,
     sourceIds: string[],
-    since: Date
+    since: Date,
   ): Promise<Map<string, SourceWindowStats>> {
     if (sourceIds.length === 0) {
       return new Map();
@@ -838,16 +935,16 @@ export class RssDiagnosticsService {
           orgId,
           status: PipelineStageStatus.Completed,
           sourceId: { $in: sourceIds },
-          createdAt: { $gte: since }
-        }
+          createdAt: { $gte: since },
+        },
       },
       {
         $group: {
           _id: "$sourceId",
           itemCountWindow: { $sum: 1 },
-          latestItemAt: { $max: "$createdAt" }
-        }
-      }
+          latestItemAt: { $max: "$createdAt" },
+        },
+      },
     ]);
 
     const mapped = new Map<string, SourceWindowStats>();
@@ -858,7 +955,7 @@ export class RssDiagnosticsService {
       }
       mapped.set(sourceId, {
         itemCountWindow: Math.max(0, Number(row.itemCountWindow ?? 0)),
-        latestItemAt: row.latestItemAt ?? null
+        latestItemAt: row.latestItemAt ?? null,
       });
     }
     return mapped;
@@ -867,7 +964,7 @@ export class RssDiagnosticsService {
   private async getArticleStatsBySource(
     orgId: string,
     sourceIds: string[],
-    since: Date
+    since: Date,
   ): Promise<Map<string, SourceWindowStats>> {
     if (sourceIds.length === 0) {
       return new Map();
@@ -878,10 +975,10 @@ export class RssDiagnosticsService {
       where: {
         orgId,
         sourceId: { in: sourceIds },
-        crawlAt: { gte: since }
+        crawlAt: { gte: since },
       },
       _count: { _all: true },
-      _max: { crawlAt: true }
+      _max: { crawlAt: true },
     });
 
     const mapped = new Map<string, SourceWindowStats>();
@@ -892,7 +989,7 @@ export class RssDiagnosticsService {
       }
       mapped.set(sourceId, {
         itemCountWindow: Math.max(0, Number(row._count?._all ?? 0)),
-        latestItemAt: row._max?.crawlAt ?? null
+        latestItemAt: row._max?.crawlAt ?? null,
       });
     }
     return mapped;
@@ -901,14 +998,15 @@ export class RssDiagnosticsService {
   private computeVisibility(
     rssSources: RssSourceConfigRow[],
     processedStats: Map<string, SourceWindowStats>,
-    articleStats: Map<string, SourceWindowStats>
+    articleStats: Map<string, SourceWindowStats>,
   ) {
     let visibleByProcessed = 0;
     let visibleByArticleFallback = 0;
     let hiddenSources = 0;
 
     for (const source of rssSources) {
-      const processedCount = processedStats.get(source.id)?.itemCountWindow ?? 0;
+      const processedCount =
+        processedStats.get(source.id)?.itemCountWindow ?? 0;
       const articleCount = articleStats.get(source.id)?.itemCountWindow ?? 0;
       if (processedCount > 0) {
         visibleByProcessed += 1;
@@ -922,12 +1020,12 @@ export class RssDiagnosticsService {
     return {
       visibleByProcessed,
       visibleByArticleFallback,
-      hiddenSources
+      hiddenSources,
     };
   }
 
   private pipelineCountsFromRows(
-    rows: { status: PipelineJobStatus; _count: { _all: number } }[]
+    rows: { status: PipelineJobStatus; _count: { _all: number } }[],
   ) {
     let queued = 0;
     let running = 0;
@@ -935,9 +1033,15 @@ export class RssDiagnosticsService {
     let failed = 0;
     for (const row of rows) {
       const value = Math.max(0, Number(row._count?._all ?? 0));
-      if (row.status === PipelineJobStatus.queued || row.status === PipelineJobStatus.pending) {
+      if (
+        row.status === PipelineJobStatus.queued ||
+        row.status === PipelineJobStatus.pending
+      ) {
         queued += value;
-      } else if (row.status === PipelineJobStatus.running || row.status === PipelineJobStatus.delayed) {
+      } else if (
+        row.status === PipelineJobStatus.running ||
+        row.status === PipelineJobStatus.delayed
+      ) {
         running += value;
       } else if (row.status === PipelineJobStatus.completed) {
         completed += value;
@@ -950,11 +1054,13 @@ export class RssDiagnosticsService {
       queued,
       running,
       completed,
-      failed
+      failed,
     };
   }
 
-  private crawlTaskCountsFromRows(rows: { status: string; _count: { _all: number } }[]) {
+  private crawlTaskCountsFromRows(
+    rows: { status: string; _count: { _all: number } }[],
+  ) {
     let queued = 0;
     let running = 0;
     let completed = 0;
@@ -976,7 +1082,7 @@ export class RssDiagnosticsService {
       queued,
       running,
       completed,
-      failed
+      failed,
     };
   }
 
@@ -998,7 +1104,7 @@ export class RssDiagnosticsService {
       processedItemId,
       rawItemId,
       itemMetaId,
-      pipelineJobId: this.normalizeString(row?.pipelineJobId)
+      pipelineJobId: this.normalizeString(row?.pipelineJobId),
     };
   }
 
@@ -1016,7 +1122,9 @@ export class RssDiagnosticsService {
     return this.normalizeString(metadata?.sourceId);
   }
 
-  private extractCrawlResultIdFromExternalId(externalId: string): string | undefined {
+  private extractCrawlResultIdFromExternalId(
+    externalId: string,
+  ): string | undefined {
     const raw = externalId.trim();
     if (!raw) {
       return undefined;
@@ -1040,11 +1148,14 @@ export class RssDiagnosticsService {
       return null;
     }
     const modeRaw = this.normalizeString(seed.mode)?.toLowerCase();
-    const mode = modeRaw === "rss" || modeRaw === "list" || modeRaw === "deep" ? modeRaw : "sitemap";
+    const mode =
+      modeRaw === "rss" || modeRaw === "list" || modeRaw === "deep"
+        ? modeRaw
+        : "sitemap";
     return {
       enabled: seed.enabled === true,
       mode,
-      feedUrl: this.normalizeString(seed.feedUrl)
+      feedUrl: this.normalizeString(seed.feedUrl),
     };
   }
 
@@ -1072,7 +1183,9 @@ export class RssDiagnosticsService {
       return value.toHexString();
     }
     if (value && typeof value === "object" && "toString" in value) {
-      const text = String((value as { toString: () => string }).toString()).trim();
+      const text = String(
+        (value as { toString: () => string }).toString(),
+      ).trim();
       return text.length > 0 ? text : undefined;
     }
     return undefined;
@@ -1082,7 +1195,7 @@ export class RssDiagnosticsService {
     value: number | undefined,
     min: number,
     max: number,
-    fallback: number
+    fallback: number,
   ): number {
     if (!Number.isFinite(value)) {
       return fallback;

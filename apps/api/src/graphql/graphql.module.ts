@@ -52,6 +52,7 @@ import { RbacModule } from "../modules/rbac/rbac.module";
 import { SentimentModule } from "../modules/sentiment/sentiment.module";
 
 import { GraphqlRateLimitGuard } from "./guards/graphql-rate-limit.guard";
+import { ItemReadModelLoader } from "./loaders/item-read-model.loader";
 import { ItemMetaLoader } from "./loaders/item-meta.loader";
 import { ProcessedItemEventIdLoader } from "./loaders/processed-item-event-id.loader";
 import { ProcessedItemPreviewLoader } from "./loaders/processed-item-preview.loader";
@@ -299,6 +300,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
     OrgResolver,
     UserLoader,
     RoleLoader,
+    ItemReadModelLoader,
     ItemMetaLoader,
     RawItemLoader,
     RawItemPreviewLoader,

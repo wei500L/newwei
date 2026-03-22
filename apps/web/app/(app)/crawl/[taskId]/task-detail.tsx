@@ -76,7 +76,7 @@ const itemStatusColors: Record<string, string> = {
 type TaskLogStatus = "pending" | "processing" | "completed" | "failed";
 
 interface TaskLogRecord {
-  _id?: string;
+  id: string;
   queue: string;
   jobId: string;
   orgId: string;
@@ -85,8 +85,8 @@ interface TaskLogRecord {
   message?: string | null;
   data?: unknown;
   error?: unknown;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 interface ExpansionQualitySummary {
@@ -886,7 +886,13 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return;
     }
     stopPolling();
-  }, [canView, opsLiveStatus, shouldTrackInFlightTask, startPolling, stopPolling]);
+  }, [
+    canView,
+    opsLiveStatus,
+    shouldTrackInFlightTask,
+    startPolling,
+    stopPolling,
+  ]);
 
   useEffect(() => {
     if (!canViewTaskLogs || !canView || status !== "authenticated") {
@@ -2898,19 +2904,26 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                       type="warning"
                       showIcon
                       style={{ marginTop: 8 }}
-                      message={t("crawl.detail.expansion.urlPathFallbackMessage", {
-                        defaultValue:
-                          "{{count}}/{{total}} candidates fell back to url-path publish confidence",
-                        count: expansionHeadSignalFallbackHint.fallbackCount,
-                        total: expansionHeadSignalFallbackHint.totalCandidates,
-                      })}
+                      message={t(
+                        "crawl.detail.expansion.urlPathFallbackMessage",
+                        {
+                          defaultValue:
+                            "{{count}}/{{total}} candidates fell back to url-path publish confidence",
+                          count: expansionHeadSignalFallbackHint.fallbackCount,
+                          total:
+                            expansionHeadSignalFallbackHint.totalCandidates,
+                        },
+                      )}
                       description={t(
                         "crawl.detail.expansion.urlPathFallbackDescription",
                         {
                           defaultValue:
                             "URL-path fallback keeps crawl running (non-blocking), but can reduce publish-time confidence quality. Current fallback ratio: {{ratio}}%.",
                           ratio: Number(
-                            (expansionHeadSignalFallbackHint.fallbackRatio * 100).toFixed(1),
+                            (
+                              expansionHeadSignalFallbackHint.fallbackRatio *
+                              100
+                            ).toFixed(1),
                           ),
                         },
                       )}
@@ -3265,10 +3278,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           ) : null}
           <Table
             size="small"
-            rowKey={(record) =>
-              record._id ??
-              `${record.queue}-${record.jobId}-${record.stage}-${record.createdAt}-${record.updatedAt}`
-            }
+            rowKey={(record) => record.id}
             columns={taskLogColumns}
             dataSource={taskLogs}
             pagination={false}

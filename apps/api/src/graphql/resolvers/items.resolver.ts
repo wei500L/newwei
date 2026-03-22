@@ -3,6 +3,7 @@ import { BadRequestException, Optional, UseGuards } from "@nestjs/common";
 import {
   Args,
   Context,
+  Info,
   Mutation,
   Parent,
   Query,
@@ -11,6 +12,7 @@ import {
   Int,
 } from "@nestjs/graphql";
 import type DataLoader from "dataloader";
+import type { GraphQLResolveInfo, SelectionNode } from "graphql";
 import { Loader } from "nestjs-dataloader";
 
 import { PermissionsAll } from "../../common/decorators/permissions.decorator";
@@ -29,6 +31,7 @@ import {
   TranslateRssItemsInput
 } from "../dto/item.input";
 import type { GqlRequest } from "../graphql.types";
+import { ItemReadModelLoader } from "../loaders/item-read-model.loader";
 import { ItemMetaLoader } from "../loaders/item-meta.loader";
 import type { ProcessedItemPreviewDoc } from "../loaders/processed-item-preview.loader";
 import { ProcessedItemPreviewLoader } from "../loaders/processed-item-preview.loader";
@@ -60,6 +63,14 @@ import {
 import { PageInfo } from "../models/page-info.model";
 import { normalizeProcessedResult } from "../utils/normalize-processed-result";
 import { ItemsRssTranslationService } from "../../modules/items/items-rss-translation.service";
+import {
+  itemReadModelPublishedAt,
+  itemReadModelToMetaGraph,
+  itemReadModelToProcessedGraph,
+  itemReadModelToProcessedPreviewGraph,
+  itemReadModelToRawGraph,
+  itemReadModelToRawPreviewGraph,
+} from "../../modules/items/item-read-model.utils";
 
 interface ItemsCursorPayload {
   id: string;
@@ -118,6 +129,68 @@ function normalizeIsoDateTimeString(value: unknown): string | null {
   }
   const parsed = parseDateTime(trimmed);
   return parsed ? parsed.toISOString() : null;
+}
+
+function selectionContainsField(
+  selections: readonly SelectionNode[] | undefined,
+  fieldName: string,
+  fragments?: GraphQLResolveInfo["fragments"],
+  visitedFragmentNames: Set<string> = new Set(),
+): boolean {
+  if (!selections || selections.length === 0) {
+    return false;
+  }
+  for (const selection of selections) {
+    if (selection.kind === "Field") {
+      if (selection.name.value === fieldName) {
+        return true;
+      }
+      if (selection.selectionSet && selectionContainsField(selection.selectionSet.selections, fieldName)) {
+        return true;
+      }
+      continue;
+    }
+    if (selection.kind === "InlineFragment") {
+      if (
+        selectionContainsField(
+          selection.selectionSet.selections,
+          fieldName,
+          fragments,
+          visitedFragmentNames,
+        )
+      ) {
+        return true;
+      }
+      continue;
+    }
+    if (selection.kind === "FragmentSpread") {
+      const fragmentName = selection.name.value;
+      if (visitedFragmentNames.has(fragmentName)) {
+        continue;
+      }
+      const fragment = fragments?.[fragmentName];
+      if (!fragment) {
+        continue;
+      }
+      visitedFragmentNames.add(fragmentName);
+      if (
+        selectionContainsField(
+          fragment.selectionSet.selections,
+          fieldName,
+          fragments,
+          visitedFragmentNames,
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function queryRequestsTotalCount(info?: GraphQLResolveInfo): boolean {
+  const rootSelections = info?.fieldNodes?.flatMap((node) => node.selectionSet?.selections ?? []) ?? [];
+  return selectionContainsField(rootSelections, "totalCount", info?.fragments);
 }
 
 function resolvePublishedAtFromProcessedResult(result: unknown): string | null {
@@ -321,7 +394,8 @@ export class ItemsResolver {
   @Query(() => ItemConnection)
   async items(
     @Context("req") req: GqlRequest,
-    @Args() args: ItemsQueryArgs
+    @Args() args: ItemsQueryArgs,
+    @Info() info: GraphQLResolveInfo,
   ): Promise<ItemConnection> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
@@ -379,6 +453,7 @@ export class ItemsResolver {
     }
 
     const cursor = decodeCursor(args.after);
+    const includeTotalCount = queryRequestsTotalCount(info);
     const { items, hasNextPage, totalCount } = await this.itemsService.listWithCursor(
       requester.orgId,
       args.first,
@@ -387,7 +462,8 @@ export class ItemsResolver {
       args.filters,
       orderBy,
       rankingMode,
-      requester.id
+      requester.id,
+      includeTotalCount
     );
 
     const edges: ItemEdge[] = items.map((item) => {
@@ -533,12 +609,8 @@ export class ItemsResolver {
       throw new BadRequestException("Unauthenticated");
     }
 
-    const data = await this.itemsService.get(requester.orgId, id);
-    if (!data) {
-      return null;
-    }
-
-    return this.toItemModel(data.itemMeta);
+    const meta = await this.itemsService.getItemMeta(requester.orgId, id);
+    return this.toItemModel(meta);
   }
 
   @HasPermission("items.write")
@@ -628,8 +700,13 @@ export class ItemsResolver {
   @ResolveField(() => ItemMetaModel)
   async meta(
     @Parent() item: ItemModel,
+    @Loader(ItemReadModelLoader) itemReadModelLoader: DataLoader<string, any>,
     @Loader(ItemMetaLoader) itemMetaLoader: DataLoader<string, ItemMetaModel | null>
   ) {
+    const readModel = await itemReadModelLoader.load(item.metaId);
+    if (readModel) {
+      return itemReadModelToMetaGraph(readModel);
+    }
     const meta = await itemMetaLoader.load(item.metaId);
     if (!meta) {
       throw new BadRequestException("Item metadata not found");
@@ -648,6 +725,8 @@ export class ItemsResolver {
   @ResolveField(() => String, { nullable: true })
   async publishedAt(
     @Parent() item: ItemModel,
+    @Loader(ItemReadModelLoader)
+    itemReadModelLoader: DataLoader<string, any>,
     @Loader(ProcessedItemPreviewLoader)
     processedLoader: DataLoader<string, ProcessedItemPreviewDoc | null>,
     @Loader(RawItemPreviewLoader) rawLoader: DataLoader<string, RawItemPreviewDoc | null>
@@ -655,6 +734,11 @@ export class ItemsResolver {
     const fromMeta = normalizeNonEmptyString(item.publishedAt);
     if (fromMeta) {
       return fromMeta;
+    }
+
+    const readModel = await itemReadModelLoader.load(item.metaId);
+    if (readModel) {
+      return itemReadModelPublishedAt(readModel);
     }
 
     const processed = await processedLoader.load(item.metaId);
@@ -672,8 +756,13 @@ export class ItemsResolver {
   @ResolveField(() => RawItemPreviewModelGraph, { nullable: true })
   async rawPreview(
     @Parent() item: ItemModel,
+    @Loader(ItemReadModelLoader) itemReadModelLoader: DataLoader<string, any>,
     @Loader(RawItemPreviewLoader) rawLoader: DataLoader<string, RawItemPreviewDoc | null>
   ): Promise<RawItemPreviewModelGraph | null> {
+    const readModel = await itemReadModelLoader.load(item.metaId);
+    if (readModel) {
+      return itemReadModelToRawPreviewGraph(readModel);
+    }
     const raw = await rawLoader.load(item.metaId);
     if (!raw) {
       return null;
@@ -722,9 +811,15 @@ export class ItemsResolver {
   @ResolveField(() => ProcessedItemPreviewModelGraph, { nullable: true })
   async processedPreview(
     @Parent() item: ItemModel,
+    @Loader(ItemReadModelLoader)
+    itemReadModelLoader: DataLoader<string, any>,
     @Loader(ProcessedItemPreviewLoader)
     processedLoader: DataLoader<string, ProcessedItemPreviewDoc | null>
   ): Promise<ProcessedItemPreviewModelGraph | null> {
+    const readModel = await itemReadModelLoader.load(item.metaId);
+    if (readModel) {
+      return itemReadModelToProcessedPreviewGraph(readModel);
+    }
     const processed = await processedLoader.load(item.metaId);
     if (!processed) {
       return null;
@@ -780,8 +875,13 @@ export class ItemsResolver {
   @ResolveField(() => RawItemModelGraph, { nullable: true })
   async raw(
     @Parent() item: ItemModel,
+    @Loader(ItemReadModelLoader) itemReadModelLoader: DataLoader<string, any>,
     @Loader(RawItemLoader) rawLoader: DataLoader<string, RawItemDoc | null>
   ): Promise<RawItemModelGraph | null> {
+    const readModel = await itemReadModelLoader.load(item.metaId);
+    if (readModel) {
+      return itemReadModelToRawGraph(readModel);
+    }
     const raw = await rawLoader.load(item.metaId);
     if (!raw) {
       return null;
@@ -795,8 +895,13 @@ export class ItemsResolver {
   @ResolveField(() => ProcessedItemModelGraph, { nullable: true })
   async processed(
     @Parent() item: ItemModel,
+    @Loader(ItemReadModelLoader) itemReadModelLoader: DataLoader<string, any>,
     @Loader(ProcessedItemLoader) processedLoader: DataLoader<string, ProcessedItemDoc | null>
   ): Promise<ProcessedItemModelGraph | null> {
+    const readModel = await itemReadModelLoader.load(item.metaId);
+    if (readModel) {
+      return itemReadModelToProcessedGraph(readModel);
+    }
     const processed = await processedLoader.load(item.metaId);
     if (!processed) {
       return null;

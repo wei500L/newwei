@@ -36,12 +36,20 @@ describe("PipelineQualityService", () => {
         findFirst: jest.fn().mockResolvedValue(null),
       },
     } as any;
+    const snapshots = {
+      getOrCreate: jest.fn(
+        async ({ loader }: { loader: () => Promise<unknown> }) => ({
+          payload: await loader(),
+        }),
+      ),
+    } as any;
 
-    const service = new PipelineQualityService(prisma);
+    const service = new PipelineQualityService(prisma, snapshots);
 
     await service.summary("org-1", 60);
 
-    const pipeline = (TaskLogModel.aggregate as jest.Mock).mock.calls[0]?.[0] as any[];
+    const pipeline = (TaskLogModel.aggregate as jest.Mock).mock
+      .calls[0]?.[0] as any[];
     expect(Array.isArray(pipeline)).toBe(true);
     expect(pipeline[0]?.$match?.orgId).toBe("org-1");
     expect(pipeline[0]?.$match?.queue).toBe(ITEM_PIPELINE_QUEUE_NAME);
@@ -49,4 +57,3 @@ describe("PipelineQualityService", () => {
     expect(pipeline[0]?.$match?.createdAt?.$gte).toBeInstanceOf(Date);
   });
 });
-

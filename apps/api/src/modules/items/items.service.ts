@@ -1,5 +1,10 @@
 import { createLogger } from "@modular/utils";
-import { RawItemModel, ProcessedItemModel } from "@modular/mongo";
+import {
+  RawItemModel,
+  ProcessedItemModel,
+  ItemReadModelModel,
+  type ItemReadModel,
+} from "@modular/mongo";
 import type { MongoConnection } from "@modular/mongo";
 import {
   BadRequestException,
@@ -30,6 +35,11 @@ import { buildUserNewsBehaviorHashKey } from "../user-news-behavior/user-news-be
 import { VectorClientService } from "../vector/vector-client.service";
 
 import { CreateItemDto } from "./dto/create-item.dto";
+import {
+  type ItemReadModelProcessedSnapshotInput,
+  type ItemReadModelRawSnapshotInput,
+  buildItemReadModelPatch,
+} from "./item-read-model.utils";
 import { UpdateItemDto } from "./dto/update-item.dto";
 
 
@@ -121,7 +131,20 @@ export interface ItemsCursorPayload {
   offset?: number;
 }
 
-type ItemMetaRow = Prisma.ItemMetaGetPayload<Record<string, never>>;
+export interface ItemMetaRow {
+  id: string;
+  orgId: string;
+  externalId: string;
+  name: string;
+  status: string;
+  mongoRef: string;
+  version: number;
+  publishedAt: Date | null;
+  sortAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 type ItemListRow = ItemMetaRow & { relevanceScore?: number; rankOffset?: number };
 
 interface ItemPersonalizationProfile {
@@ -266,6 +289,416 @@ export class ItemsService {
     void this._mongo; // Ensure Mongo connection provider is instantiated.
   }
 
+  private isReadModelEnabled() {
+    return Boolean((this.env as { itemsReadModelEnabled?: boolean } | undefined)?.itemsReadModelEnabled);
+  }
+
+  private isVectorHardFailEnabled() {
+    return Boolean(
+      (this.env as { itemsVectorHardFailEnabled?: boolean } | undefined)?.itemsVectorHardFailEnabled,
+    );
+  }
+
+  private itemMetaRowFromReadModel(doc: ItemReadModel): ItemMetaRow {
+    return {
+      id: doc.meta.id,
+      orgId: doc.orgId,
+      externalId: doc.meta.externalId,
+      name: doc.meta.name,
+      status: doc.meta.status,
+      mongoRef: doc.meta.mongoRef,
+      version: doc.meta.version,
+      publishedAt: doc.meta.publishedAt ?? null,
+      sortAt: doc.meta.sortAt ?? doc.meta.createdAt,
+      createdAt: doc.meta.createdAt,
+      updatedAt: doc.meta.updatedAt,
+    };
+  }
+
+  private toRawReadModelSnapshot(rawDoc: unknown): ItemReadModelRawSnapshotInput | null {
+    if (!rawDoc || typeof rawDoc !== "object") {
+      return null;
+    }
+    const record = rawDoc as {
+      _id?: { toString(): string };
+      id?: string;
+      itemMetaId?: unknown;
+      source?: unknown;
+      payload?: unknown;
+      createdAt?: unknown;
+      updatedAt?: unknown;
+    };
+    const id =
+      typeof record.id === "string" && record.id.trim().length > 0
+        ? record.id.trim()
+        : typeof record._id?.toString === "function"
+          ? record._id.toString()
+          : "";
+    const itemMetaId =
+      typeof record.itemMetaId === "string" && record.itemMetaId.trim().length > 0
+        ? record.itemMetaId.trim()
+        : "";
+    const createdAt = record.createdAt instanceof Date ? record.createdAt : null;
+    const updatedAt = record.updatedAt instanceof Date ? record.updatedAt : createdAt;
+    if (!id || !itemMetaId || !createdAt || !updatedAt) {
+      return null;
+    }
+    return {
+      id,
+      itemMetaId,
+      source: typeof record.source === "string" ? record.source : null,
+      payload:
+        record.payload && typeof record.payload === "object" && !Array.isArray(record.payload)
+          ? (record.payload as Record<string, unknown>)
+          : {},
+      createdAt,
+      updatedAt,
+    };
+  }
+
+  private toProcessedReadModelSnapshot(
+    processedDoc: unknown,
+  ): ItemReadModelProcessedSnapshotInput | null {
+    if (!processedDoc || typeof processedDoc !== "object") {
+      return null;
+    }
+    const record = processedDoc as {
+      _id?: { toString(): string };
+      id?: string;
+      itemMetaId?: unknown;
+      rawItemId?: unknown;
+      pipelineJobId?: unknown;
+      sourceId?: unknown;
+      status?: unknown;
+      error?: unknown;
+      tags?: unknown;
+      result?: unknown;
+      duplicateOf?: unknown;
+      duplicateSimilarity?: unknown;
+      summaryEmbedding?: unknown;
+      summaryEmbeddingModel?: unknown;
+      llm?: unknown;
+      createdAt?: unknown;
+      updatedAt?: unknown;
+    };
+    const id =
+      typeof record.id === "string" && record.id.trim().length > 0
+        ? record.id.trim()
+        : typeof record._id?.toString === "function"
+          ? record._id.toString()
+          : "";
+    const itemMetaId =
+      typeof record.itemMetaId === "string" && record.itemMetaId.trim().length > 0
+        ? record.itemMetaId.trim()
+        : "";
+    const status = typeof record.status === "string" ? record.status : "";
+    const createdAt = record.createdAt instanceof Date ? record.createdAt : null;
+    const updatedAt = record.updatedAt instanceof Date ? record.updatedAt : createdAt;
+    if (!id || !itemMetaId || !status || !createdAt || !updatedAt) {
+      return null;
+    }
+    const rawItemId =
+      typeof record.rawItemId === "string"
+        ? record.rawItemId.trim()
+        : typeof (record.rawItemId as { toString?: () => string } | undefined)?.toString === "function"
+          ? (record.rawItemId as { toString(): string }).toString()
+          : "";
+    const duplicateOf =
+      typeof record.duplicateOf === "string"
+        ? record.duplicateOf.trim()
+        : typeof (record.duplicateOf as { toString?: () => string } | undefined)?.toString === "function"
+          ? (record.duplicateOf as { toString(): string }).toString()
+          : "";
+    const summaryEmbeddingDimensions = Array.isArray(record.summaryEmbedding)
+      ? record.summaryEmbedding.length
+      : null;
+    const errorRaw =
+      record.error && typeof record.error === "object" && !Array.isArray(record.error)
+        ? (record.error as { message?: unknown; name?: unknown })
+        : null;
+    return {
+      id,
+      itemMetaId,
+      rawItemId: rawItemId || null,
+      pipelineJobId: typeof record.pipelineJobId === "string" ? record.pipelineJobId.trim() : null,
+      sourceId: typeof record.sourceId === "string" ? record.sourceId.trim() : null,
+      status,
+      error: errorRaw
+        ? {
+            message:
+              typeof errorRaw.message === "string" && errorRaw.message.trim().length > 0
+                ? errorRaw.message
+                : "Unknown error",
+            name: typeof errorRaw.name === "string" ? errorRaw.name : null,
+          }
+        : null,
+      tags: Array.isArray(record.tags)
+        ? record.tags
+            .map((tag) => (typeof tag === "string" ? tag.trim() : ""))
+            .filter((tag): tag is string => Boolean(tag))
+        : [],
+      result:
+        typeof record.result === "string" ||
+        (record.result && typeof record.result === "object" && !Array.isArray(record.result))
+          ? (record.result as string | Record<string, unknown>)
+          : null,
+      duplicateOf: duplicateOf || null,
+      duplicateSimilarity:
+        typeof record.duplicateSimilarity === "number" && Number.isFinite(record.duplicateSimilarity)
+          ? record.duplicateSimilarity
+          : null,
+      summaryEmbeddingModel:
+        typeof record.summaryEmbeddingModel === "string" ? record.summaryEmbeddingModel.trim() : null,
+      summaryEmbeddingDimensions,
+      llm:
+        record.llm && typeof record.llm === "object" && !Array.isArray(record.llm)
+          ? (record.llm as ItemReadModelProcessedSnapshotInput["llm"])
+          : null,
+      createdAt,
+      updatedAt,
+    };
+  }
+
+  private extractSourceIdFromTaskConfig(config: unknown): string | undefined {
+    if (!config || typeof config !== "object" || Array.isArray(config)) {
+      return undefined;
+    }
+    const record = config as Record<string, unknown>;
+    const direct =
+      typeof record.sourceId === "string" && record.sourceId.trim().length > 0
+        ? record.sourceId.trim()
+        : undefined;
+    if (direct) {
+      return direct;
+    }
+    const itemPayload =
+      record.itemPayload && typeof record.itemPayload === "object" && !Array.isArray(record.itemPayload)
+        ? (record.itemPayload as Record<string, unknown>)
+        : null;
+    const metadata =
+      itemPayload?.metadata && typeof itemPayload.metadata === "object" && !Array.isArray(itemPayload.metadata)
+        ? (itemPayload.metadata as Record<string, unknown>)
+        : null;
+    return typeof metadata?.sourceId === "string" && metadata.sourceId.trim().length > 0
+      ? metadata.sourceId.trim()
+      : undefined;
+  }
+
+  private extractCrawlResultIdFromExternalId(externalId: string): string | undefined {
+    const raw = externalId.trim();
+    if (!raw) {
+      return undefined;
+    }
+    const prefixes = ["crawlResult:", "crawl:"];
+    for (const prefix of prefixes) {
+      if (raw.startsWith(prefix)) {
+        const candidate = raw.slice(prefix.length).trim();
+        if (candidate) {
+          return candidate;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  private extractRawMetadata(payload?: Record<string, unknown> | null) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return null;
+    }
+    const metadata =
+      payload.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata)
+        ? (payload.metadata as Record<string, unknown>)
+        : null;
+    return metadata;
+  }
+
+  private async resolveReadModelSourceId(input: {
+    orgId: string;
+    meta: ItemMetaRow;
+    raw?: ItemReadModelRawSnapshotInput | null;
+    processed?: ItemReadModelProcessedSnapshotInput | null;
+  }) {
+    const directProcessed =
+      typeof input.processed?.sourceId === "string" && input.processed.sourceId.trim().length > 0
+        ? input.processed.sourceId.trim()
+        : undefined;
+    if (directProcessed) {
+      return directProcessed;
+    }
+
+    const rawMetadata = this.extractRawMetadata(input.raw?.payload ?? null);
+    const rawSourceId =
+      typeof rawMetadata?.sourceId === "string" && rawMetadata.sourceId.trim().length > 0
+        ? rawMetadata.sourceId.trim()
+        : undefined;
+    if (rawSourceId) {
+      return rawSourceId;
+    }
+
+    const pipelineJobIdCandidates = [
+      input.processed?.pipelineJobId,
+      typeof rawMetadata?.pipelineJobId === "string" ? rawMetadata.pipelineJobId.trim() : undefined,
+    ].filter((value): value is string => Boolean(value && value.trim().length > 0));
+    if (pipelineJobIdCandidates.length > 0) {
+      const pipelineJob = await this.prisma.pipelineJob.findFirst({
+        where: {
+          orgId: input.orgId,
+          id: { in: pipelineJobIdCandidates },
+          sourceId: { not: null },
+        },
+        select: { sourceId: true },
+      });
+      if (typeof pipelineJob?.sourceId === "string" && pipelineJob.sourceId.trim().length > 0) {
+        return pipelineJob.sourceId.trim();
+      }
+    }
+
+    const crawlResultCandidates = [
+      typeof rawMetadata?.crawlResultId === "string" ? rawMetadata.crawlResultId.trim() : undefined,
+      this.extractCrawlResultIdFromExternalId(input.meta.externalId),
+    ].filter((value): value is string => Boolean(value && value.trim().length > 0));
+    if (crawlResultCandidates.length > 0) {
+      const crawlResult = await this.prisma.crawlResult.findFirst({
+        where: {
+          id: { in: crawlResultCandidates },
+          task: { orgId: input.orgId },
+        },
+        select: {
+          task: {
+            select: {
+              config: true,
+            },
+          },
+        },
+      });
+      const sourceId = this.extractSourceIdFromTaskConfig(crawlResult?.task.config);
+      if (sourceId) {
+        return sourceId;
+      }
+    }
+
+    return undefined;
+  }
+
+  private async upsertItemReadModel(input: {
+    meta: ItemMetaRow;
+    raw?: ItemReadModelRawSnapshotInput | null;
+    processed?: ItemReadModelProcessedSnapshotInput | null;
+    sourceId?: string | null;
+  }) {
+    const patch = buildItemReadModelPatch({
+      meta: input.meta,
+      raw: input.raw ?? undefined,
+      processed: input.processed ?? undefined,
+      sourceId: input.sourceId ?? undefined,
+    });
+    await ItemReadModelModel.updateOne(
+      { orgId: input.meta.orgId, itemMetaId: input.meta.id },
+      { $set: patch },
+      { upsert: true },
+    );
+  }
+
+  private async loadItemReadModel(orgId: string, itemMetaId: string, hydrateMissing = true) {
+    let doc = (await ItemReadModelModel.findOne({ orgId, itemMetaId }).lean()) as ItemReadModel | null;
+    if (doc || !hydrateMissing) {
+      return doc;
+    }
+    await this.hydrateItemReadModel(orgId, itemMetaId);
+    doc = (await ItemReadModelModel.findOne({ orgId, itemMetaId }).lean()) as ItemReadModel | null;
+    return doc;
+  }
+
+  private async hydrateItemReadModel(orgId: string, itemMetaId: string) {
+    const metaRow = await this.prisma.itemMeta.findFirst({
+      where: { id: itemMetaId, orgId },
+    });
+    if (!metaRow) {
+      return null;
+    }
+    const meta: ItemMetaRow = {
+      id: metaRow.id,
+      orgId: metaRow.orgId,
+      externalId: metaRow.externalId,
+      name: metaRow.name,
+      status: metaRow.status,
+      mongoRef: metaRow.mongoRef,
+      version: metaRow.version,
+      publishedAt: metaRow.publishedAt ?? null,
+      sortAt: metaRow.sortAt ?? metaRow.createdAt,
+      createdAt: metaRow.createdAt,
+      updatedAt: metaRow.updatedAt,
+    };
+
+    const [rawDoc, processedDoc] = await Promise.all([
+      meta.mongoRef
+        ? RawItemModel.findById(meta.mongoRef).lean()
+        : RawItemModel.findOne({ itemMetaId }).sort({ createdAt: -1 }).lean(),
+      ProcessedItemModel.findOne({ itemMetaId }).sort({ createdAt: -1 }).lean(),
+    ]);
+    const raw = this.toRawReadModelSnapshot(rawDoc);
+    const processed = this.toProcessedReadModelSnapshot(processedDoc);
+    const sourceId = await this.resolveReadModelSourceId({
+      orgId,
+      meta,
+      raw,
+      processed,
+    });
+    await this.upsertItemReadModel({ meta, raw, processed, sourceId });
+    return this.loadItemReadModel(orgId, itemMetaId, false);
+  }
+
+  private async loadItemReadModelsByIds(orgId: string, ids: string[]) {
+    if (ids.length === 0) {
+      return new Map<string, ItemReadModel>();
+    }
+    const docs = (await ItemReadModelModel.find({
+      orgId,
+      itemMetaId: { $in: ids },
+    }).lean()) as ItemReadModel[];
+    const byId = new Map<string, ItemReadModel>();
+    for (const doc of docs) {
+      if (!doc?.itemMetaId || byId.has(doc.itemMetaId)) {
+        continue;
+      }
+      byId.set(doc.itemMetaId, doc);
+    }
+    const missing = ids.filter((id) => !byId.has(id));
+    for (const id of missing) {
+      const hydrated = await this.hydrateItemReadModel(orgId, id);
+      if (hydrated?.itemMetaId) {
+        byId.set(hydrated.itemMetaId, hydrated);
+      }
+    }
+    return byId;
+  }
+
+  async backfillReadModels(
+    orgId: string,
+    options?: { take?: number; afterId?: string },
+  ): Promise<{ processed: number; nextAfterId: string | null }> {
+    const take = Math.min(Math.max(options?.take ?? 200, 1), 1000);
+    const afterId = typeof options?.afterId === "string" ? options.afterId.trim() : "";
+    const rows = await this.prisma.itemMeta.findMany({
+      where: {
+        orgId,
+        ...(afterId ? { id: { gt: afterId } } : {}),
+      },
+      select: { id: true },
+      orderBy: { id: "asc" },
+      take,
+    });
+
+    for (const row of rows) {
+      await this.hydrateItemReadModel(orgId, row.id);
+    }
+
+    return {
+      processed: rows.length,
+      nextAfterId: rows.at(-1)?.id ?? null,
+    };
+  }
+
   async create(orgId: string, userId: string, dto: CreateItemDto) {
     const externalId = dto.externalId;
     const existing = await this.prisma.itemMeta.findFirst({
@@ -294,6 +727,7 @@ export class ItemsService {
             throw error;
           }
         }
+        await this.hydrateItemReadModel(orgId, existing.id);
       }
       return {
         ...existing,
@@ -344,6 +778,7 @@ export class ItemsService {
       ).catch(() => undefined);
 
       await this.queueService.enqueueItem(orgId, created.itemMeta.id, created.rawItem.id);
+      await this.hydrateItemReadModel(orgId, created.itemMeta.id);
 
       return {
         ...created.itemMeta,
@@ -529,6 +964,7 @@ export class ItemsService {
           throw error;
         }
       }
+      await this.hydrateItemReadModel(orgId, existing.id);
       return existing;
     }
 
@@ -593,6 +1029,7 @@ export class ItemsService {
           throw error;
         }
       }
+      await this.hydrateItemReadModel(orgId, created.itemMeta.id);
 
       return created.itemMeta;
     } catch (error) {
@@ -660,6 +1097,34 @@ export class ItemsService {
     }
 
     const effectiveOrderBy = orderBy === "PERSONALIZED" ? "CREATED_DESC" : orderBy;
+
+    if (this.isReadModelEnabled()) {
+      const match = scopedIds
+        ? {
+            $and: [this.buildReadModelBaseMatch(orgId), { itemMetaId: { $in: scopedIds } }],
+          }
+        : this.buildReadModelBaseMatch(orgId);
+      const sort: Record<string, 1 | -1> =
+        effectiveOrderBy === "PUBLISHED_DESC"
+          ? { sortAt: -1, itemMetaId: -1 }
+          : { createdAt: -1, itemMetaId: -1 };
+      const [docs, total] = await Promise.all([
+        ItemReadModelModel.find(match)
+          .sort(sort)
+          .skip(skip)
+          .limit(take)
+          .lean(),
+        ItemReadModelModel.countDocuments(match),
+      ]);
+
+      return {
+        items: (docs as ItemReadModel[]).map((doc) => this.itemMetaRowFromReadModel(doc)),
+        total,
+        page: safePage,
+        pageSize: take,
+      };
+    }
+
     const orderField = effectiveOrderBy === "PUBLISHED_DESC" ? "sortAt" : "createdAt";
     const orderByClause: Prisma.ItemMetaOrderByWithRelationInput[] =
       orderField === "sortAt"
@@ -693,6 +1158,7 @@ export class ItemsService {
     orderBy: ItemsOrderBy = "CREATED_DESC",
     rankingMode: ItemsRankingMode = "RECENCY",
     userId?: string,
+    includeTotalCount = true,
   ) {
     const take = Math.min(Math.max(first, 1), MAX_CURSOR_PAGE_SIZE);
     const { search: normalizedSearch, filters: legacyFilters } = this.parseSearchPayload(search);
@@ -731,6 +1197,87 @@ export class ItemsService {
     }
 
     const effectiveOrderBy = orderBy === "PERSONALIZED" ? "CREATED_DESC" : orderBy;
+
+    if (this.isReadModelEnabled()) {
+      const cursorId = cursor?.id;
+      if (scopedIds) {
+        const scopedSet = new Set(scopedIds);
+        if (cursorId && !scopedSet.has(cursorId)) {
+          return {
+            items: [],
+            hasNextPage: false,
+            totalCount: includeTotalCount ? scopedIds.length : 0,
+          };
+        }
+      }
+
+      const orderField = effectiveOrderBy === "PUBLISHED_DESC" ? "sortAt" : "createdAt";
+      let cursorTimestamp: Date | null = null;
+      if (cursorId) {
+        const timestampString = orderField === "sortAt" ? cursor?.sortAt : cursor?.createdAt;
+        if (timestampString) {
+          const parsed = new Date(timestampString);
+          if (Number.isFinite(parsed.valueOf())) {
+            cursorTimestamp = parsed;
+          }
+        }
+
+        if (!cursorTimestamp) {
+          const cursorRow = (await ItemReadModelModel.findOne(
+            { orgId, itemMetaId: cursorId },
+            { createdAt: 1, sortAt: 1 },
+          ).lean()) as { createdAt?: Date; sortAt?: Date } | null;
+          if (!cursorRow) {
+            return {
+              items: [],
+              hasNextPage: false,
+              totalCount: includeTotalCount ? scopedIds?.length ?? 0 : 0,
+            };
+          }
+          cursorTimestamp = orderField === "sortAt" ? cursorRow.sortAt ?? null : cursorRow.createdAt ?? null;
+        }
+      }
+
+      const baseMatch = scopedIds
+        ? {
+            $and: [this.buildReadModelBaseMatch(orgId), { itemMetaId: { $in: scopedIds } }],
+          }
+        : this.buildReadModelBaseMatch(orgId);
+      const paginationMatch =
+        cursorTimestamp && cursorId
+          ? orderField === "sortAt"
+            ? {
+                $or: [
+                  { sortAt: { $lt: cursorTimestamp } },
+                  { sortAt: cursorTimestamp, itemMetaId: { $lt: cursorId } },
+                ],
+              }
+            : {
+                $or: [
+                  { createdAt: { $lt: cursorTimestamp } },
+                  { createdAt: cursorTimestamp, itemMetaId: { $lt: cursorId } },
+                ],
+              }
+          : null;
+      const match = paginationMatch ? { $and: [baseMatch, paginationMatch] } : baseMatch;
+      const sort: Record<string, 1 | -1> =
+        orderField === "sortAt"
+          ? { sortAt: -1, itemMetaId: -1 }
+          : { createdAt: -1, itemMetaId: -1 };
+
+      const docs = (await ItemReadModelModel.find(match)
+        .sort(sort)
+        .limit(take + 1)
+        .lean()) as ItemReadModel[];
+      const hasNextPage = docs.length > take;
+      const totalCount = includeTotalCount ? await ItemReadModelModel.countDocuments(baseMatch) : 0;
+
+      return {
+        items: docs.slice(0, take).map((doc) => this.itemMetaRowFromReadModel(doc)),
+        hasNextPage,
+        totalCount,
+      };
+    }
 
     const cursorId = cursor?.id;
     if (scopedIds) {
@@ -836,13 +1383,10 @@ export class ItemsService {
     }
 
     const picked = ranked.slice(offset, offset + input.pageSize);
-    const rows = await this.prisma.itemMeta.findMany({
-      where: {
-        orgId: input.orgId,
-        id: { in: picked.map((entry) => entry.id) },
-      },
-    });
-    const rowById = new Map(rows.map((row) => [row.id, row] as const));
+    const rowById = await this.fetchItemMetaRowsByIds(
+      input.orgId,
+      picked.map((entry) => entry.id),
+    );
 
     const items: ItemListRow[] = [];
     for (const entry of picked) {
@@ -908,13 +1452,10 @@ export class ItemsService {
     const hasNextPage = window.length > input.first || offset + input.first < total;
     const picked = hasNextPage ? window.slice(0, input.first) : window;
 
-    const rows = await this.prisma.itemMeta.findMany({
-      where: {
-        orgId: input.orgId,
-        id: { in: picked.map((entry) => entry.id) },
-      },
-    });
-    const rowById = new Map(rows.map((row) => [row.id, row] as const));
+    const rowById = await this.fetchItemMetaRowsByIds(
+      input.orgId,
+      picked.map((entry) => entry.id),
+    );
 
     const items: ItemListRow[] = [];
     for (const entry of picked) {
@@ -941,7 +1482,11 @@ export class ItemsService {
     where: Prisma.ItemMetaWhereInput;
     requiredCount: number;
   }): Promise<{ total: number; ranked: RankedItem[] }> {
-    const rawTotal = await this.prisma.itemMeta.count({ where: input.where });
+    const rawTotal = this.isReadModelEnabled()
+      ? await ItemReadModelModel.countDocuments(
+          this.buildReadModelMatchFromItemMetaWhere(input.orgId, input.where),
+        )
+      : await this.prisma.itemMeta.count({ where: input.where });
     if (rawTotal <= 0) {
       return { total: 0, ranked: [] };
     }
@@ -959,22 +1504,49 @@ export class ItemsService {
     let ranked: RankedItem[] = [];
 
     while (true) {
-      const candidates = await this.prisma.itemMeta.findMany({
-        where: input.where,
-        select: {
-          id: true,
-          createdAt: true,
-          sortAt: true,
-        },
-        orderBy: [{ sortAt: "desc" }, { id: "desc" }],
-        take: candidateTake,
-      });
+      const candidates = this.isReadModelEnabled()
+        ? ((await ItemReadModelModel.find(
+            this.buildReadModelMatchFromItemMetaWhere(input.orgId, input.where),
+            {
+              itemMetaId: 1,
+              createdAt: 1,
+              sortAt: 1,
+            },
+          )
+            .sort({ sortAt: -1, itemMetaId: -1 })
+            .limit(candidateTake)
+            .lean()) as Array<{ itemMetaId?: string; createdAt?: Date; sortAt?: Date }>)
+        : await this.prisma.itemMeta.findMany({
+            where: input.where,
+            select: {
+              id: true,
+              createdAt: true,
+              sortAt: true,
+            },
+            orderBy: [{ sortAt: "desc" }, { id: "desc" }],
+            take: candidateTake,
+          });
 
-      const normalizedCandidates: PersonalizedCandidateRow[] = candidates.map((candidate) => ({
-        id: candidate.id,
-        createdAt: candidate.createdAt,
-        sortAt: candidate.sortAt ?? candidate.createdAt,
-      }));
+      const normalizedCandidates: PersonalizedCandidateRow[] = candidates
+        .map((candidate) => {
+          const id =
+            "id" in candidate && typeof candidate.id === "string"
+              ? candidate.id
+              : typeof (candidate as { itemMetaId?: unknown }).itemMetaId === "string"
+                ? ((candidate as { itemMetaId: string }).itemMetaId ?? "").trim()
+                : "";
+          const createdAt = candidate.createdAt instanceof Date ? candidate.createdAt : null;
+          if (!id || !createdAt) {
+            return null;
+          }
+          const sortAt = candidate.sortAt instanceof Date ? candidate.sortAt : createdAt;
+          return {
+            id,
+            createdAt,
+            sortAt,
+          } satisfies PersonalizedCandidateRow;
+        })
+        .filter((candidate): candidate is PersonalizedCandidateRow => Boolean(candidate));
       ranked = await this.rankPersonalizedCandidates({
         orgId: input.orgId,
         candidates: normalizedCandidates,
@@ -983,7 +1555,7 @@ export class ItemsService {
 
       if (
         ranked.length >= targetCount ||
-        candidates.length >= total ||
+        normalizedCandidates.length >= total ||
         candidateTake >= PERSONALIZED_CANDIDATE_MAX
       ) {
         break;
@@ -1090,6 +1662,69 @@ export class ItemsService {
   private async loadCandidateFeatures(orgId: string, itemMetaIds: string[]) {
     if (itemMetaIds.length === 0) {
       return new Map<string, ItemCandidateFeatures>();
+    }
+
+    if (this.isReadModelEnabled()) {
+      const docsById = await this.loadItemReadModelsByIds(orgId, itemMetaIds);
+      const out = new Map<string, ItemCandidateFeatures>();
+      const processedItemIdsForEvents = new Set<string>();
+      const processedItemIdByMetaId = new Map<string, string>();
+
+      for (const itemMetaId of itemMetaIds) {
+        const doc = docsById.get(itemMetaId);
+        if (!doc) {
+          continue;
+        }
+        const processedItemId =
+          doc.processed?.id && typeof doc.processed.id === "string" ? doc.processed.id.trim() : "";
+        if (processedItemId) {
+          processedItemIdsForEvents.add(processedItemId);
+          processedItemIdByMetaId.set(itemMetaId, processedItemId);
+        }
+        out.set(itemMetaId, {
+          source: this.normalizePreferenceKey(doc.sourceId ?? doc.sourceName ?? null),
+          domain: this.normalizePreferenceKey(doc.domain ?? null),
+          topics: (doc.topicKeys ?? []).slice(0, 10),
+          entities: (doc.entityKeys ?? []).slice(0, 10),
+          eventIds: [],
+        });
+      }
+
+      if (processedItemIdsForEvents.size > 0) {
+        const eventRows = await this.prisma.newsEventItem.findMany({
+          where: {
+            orgId,
+            processedItemId: { in: Array.from(processedItemIdsForEvents) },
+          },
+          select: { processedItemId: true, eventId: true },
+          orderBy: { createdAt: "desc" },
+        });
+        const eventIdsByProcessedItemId = new Map<string, string[]>();
+        for (const row of eventRows) {
+          const processedItemId = this.normalizeBehaviorId(row.processedItemId);
+          const eventId = this.normalizeBehaviorId(row.eventId);
+          if (!processedItemId || !eventId) {
+            continue;
+          }
+          const bucket = eventIdsByProcessedItemId.get(processedItemId) ?? [];
+          if (!bucket.includes(eventId)) {
+            bucket.push(eventId);
+          }
+          if (bucket.length > 8) {
+            bucket.length = 8;
+          }
+          eventIdsByProcessedItemId.set(processedItemId, bucket);
+        }
+        for (const [itemMetaId, processedItemId] of processedItemIdByMetaId.entries()) {
+          const feature = out.get(itemMetaId);
+          if (!feature) {
+            continue;
+          }
+          feature.eventIds = eventIdsByProcessedItemId.get(processedItemId) ?? [];
+        }
+      }
+
+      return out;
     }
 
     const [docs, rawDocs] = await Promise.all([
@@ -1691,6 +2326,89 @@ export class ItemsService {
       return { regions: [], topics: [], sentiments: [], contentTypes: [] };
     }
 
+    if (this.isReadModelEnabled()) {
+      const match = scopedIds
+        ? {
+            $and: [this.buildReadModelBaseMatch(orgId), { itemMetaId: { $in: scopedIds } }],
+          }
+        : this.buildReadModelBaseMatch(orgId);
+      const docs = (await ItemReadModelModel.find(
+        match,
+        {
+          region: 1,
+          location: 1,
+          topics: 1,
+          entities: 1,
+          sentiment: 1,
+          contentType: 1,
+          tags: 1,
+        },
+      ).lean()) as Array<{
+        region?: string | null;
+        location?: string | null;
+        topics?: string[];
+        entities?: string[];
+        sentiment?: string | null;
+        contentType?: string | null;
+        tags?: string[];
+      }>;
+
+      const regionCounts = new Map<string, number>();
+      const topicCounts = new Map<string, number>();
+      const sentimentCounts = new Map<string, number>();
+      const contentTypeCounts = new Map<string, number>();
+      const allowedSentiments = new Set(["positive", "neutral", "negative"]);
+      const allowedContentTypes = new Set(["news_fact", "opinion", "analysis", "mixed"]);
+
+      for (const doc of docs) {
+        const regionValue =
+          typeof doc.location === "string" && doc.location.trim().length > 0
+            ? doc.location.trim()
+            : typeof doc.region === "string" && doc.region.trim().length > 0
+              ? doc.region.trim()
+              : null;
+        if (regionValue) {
+          this.incrementFacetCount(regionCounts, regionValue);
+        }
+
+        const topicSet = new Set<string>();
+        (Array.isArray(doc.topics) ? doc.topics : []).forEach((topic) => {
+          if (typeof topic === "string" && topic.trim()) {
+            topicSet.add(topic.trim());
+          }
+        });
+        (Array.isArray(doc.entities) ? doc.entities : []).forEach((entity) => {
+          if (typeof entity === "string" && entity.trim()) {
+            topicSet.add(entity.trim());
+          }
+        });
+        (Array.isArray(doc.tags) ? doc.tags : []).forEach((tag) => {
+          if (typeof tag === "string" && tag.trim()) {
+            topicSet.add(tag.trim());
+          }
+        });
+        topicSet.forEach((topic) => this.incrementFacetCount(topicCounts, topic));
+
+        const sentiment = typeof doc.sentiment === "string" ? doc.sentiment.trim().toLowerCase() : "";
+        if (allowedSentiments.has(sentiment)) {
+          this.incrementFacetCount(sentimentCounts, sentiment);
+        }
+
+        const contentType =
+          typeof doc.contentType === "string" ? doc.contentType.trim().toLowerCase() : "";
+        if (allowedContentTypes.has(contentType)) {
+          this.incrementFacetCount(contentTypeCounts, contentType);
+        }
+      }
+
+      return {
+        regions: this.buildFacetOptions(regionCounts),
+        topics: this.buildFacetOptions(topicCounts),
+        sentiments: this.buildFacetOptions(sentimentCounts),
+        contentTypes: this.buildFacetOptions(contentTypeCounts),
+      };
+    }
+
     const records = await this.listLatestProcessedSnapshots(
       orgId,
       scopedIds ?? undefined,
@@ -2183,6 +2901,47 @@ export class ItemsService {
   }
 
   async get(orgId: string, id: string) {
+    if (this.isReadModelEnabled()) {
+      const readModel = await this.loadItemReadModel(orgId, id);
+      if (!readModel) {
+        throw new NotFoundException("Item not found");
+      }
+
+      return {
+        itemMeta: this.itemMetaRowFromReadModel(readModel),
+        rawItem: readModel.raw
+          ? {
+              id: readModel.raw.id,
+              itemMetaId: readModel.raw.itemMetaId,
+              payload: readModel.raw.payload,
+              source: readModel.raw.source,
+              createdAt: readModel.raw.createdAt,
+              updatedAt: readModel.raw.updatedAt,
+            }
+          : null,
+        processed: readModel.processed
+          ? {
+              id: readModel.processed.id,
+              itemMetaId: readModel.processed.itemMetaId,
+              rawItemId: readModel.processed.rawItemId,
+              pipelineJobId: readModel.processed.pipelineJobId,
+              sourceId: readModel.processed.sourceId,
+              status: readModel.processed.status,
+              error: readModel.processed.error,
+              tags: readModel.processed.tags ?? [],
+              result: readModel.processed.result,
+              duplicateOf: readModel.processed.duplicateOf,
+              duplicateSimilarity: readModel.processed.duplicateSimilarity,
+              llm: readModel.processed.llm,
+              summaryEmbeddingModel: readModel.processed.summaryEmbeddingModel,
+              summaryEmbeddingDimensions: readModel.processed.summaryEmbeddingDimensions,
+              createdAt: readModel.processed.createdAt,
+              updatedAt: readModel.processed.updatedAt,
+            }
+          : null,
+      };
+    }
+
     const itemMeta = await this.prisma.itemMeta.findFirst({
       where: { id, orgId }
     });
@@ -2199,6 +2958,36 @@ export class ItemsService {
       itemMeta,
       rawItem,
       processed
+    };
+  }
+
+  async getItemMeta(orgId: string, id: string): Promise<ItemMetaRow> {
+    if (this.isReadModelEnabled()) {
+      const readModel = await this.loadItemReadModel(orgId, id);
+      if (!readModel) {
+        throw new NotFoundException("Item not found");
+      }
+      return this.itemMetaRowFromReadModel(readModel);
+    }
+
+    const itemMeta = await this.prisma.itemMeta.findFirst({
+      where: { id, orgId },
+    });
+    if (!itemMeta) {
+      throw new NotFoundException("Item not found");
+    }
+    return {
+      id: itemMeta.id,
+      orgId: itemMeta.orgId,
+      externalId: itemMeta.externalId,
+      name: itemMeta.name,
+      status: itemMeta.status,
+      mongoRef: itemMeta.mongoRef,
+      version: itemMeta.version,
+      publishedAt: itemMeta.publishedAt ?? null,
+      sortAt: itemMeta.sortAt ?? itemMeta.createdAt,
+      createdAt: itemMeta.createdAt,
+      updatedAt: itemMeta.updatedAt,
     };
   }
 
@@ -2247,6 +3036,7 @@ export class ItemsService {
     if (enqueueRef) {
       await this.queueService.enqueueItem(orgId, existing.id, enqueueRef);
     }
+    await this.hydrateItemReadModel(orgId, existing.id);
 
 	    void writeAuditLogBestEffort(
 	      this.prisma,
@@ -2957,6 +3747,146 @@ export class ItemsService {
     return `${ITEMS_VECTOR_SEARCH_PREFIX}${orgId}:${hash}`;
   }
 
+  private buildReadModelBaseMatch(orgId: string): Record<string, unknown> {
+    return {
+      orgId,
+      status: { $ne: ItemStatus.Duplicate },
+    };
+  }
+
+  private buildReadModelMatchFromItemMetaWhere(
+    orgId: string,
+    where: Prisma.ItemMetaWhereInput,
+  ): Record<string, unknown> {
+    const baseMatch = this.buildReadModelBaseMatch(orgId);
+    const conditions: Record<string, unknown>[] = [baseMatch];
+    const record = where as Record<string, unknown>;
+    const idFilter =
+      record.id && typeof record.id === "object" && !Array.isArray(record.id)
+        ? (record.id as Record<string, unknown>)
+        : null;
+    if (typeof record.id === "string" && record.id.trim().length > 0) {
+      conditions.push({ itemMetaId: record.id.trim() });
+    } else if (idFilter?.in && Array.isArray(idFilter.in) && idFilter.in.length > 0) {
+      conditions.push({
+        itemMetaId: {
+          $in: idFilter.in.filter((value): value is string => typeof value === "string" && value.trim().length > 0),
+        },
+      });
+    }
+    return conditions.length === 1 ? baseMatch : { $and: conditions };
+  }
+
+  private buildReadModelMatch(orgId: string, filters?: ItemFilters): Record<string, unknown> {
+    const baseMatch = this.buildReadModelBaseMatch(orgId);
+    const conditions: Record<string, unknown>[] = [baseMatch];
+    const normalizedFilters = filters ? this.normalizeFilters(filters) ?? filters : undefined;
+    if (!normalizedFilters) {
+      return baseMatch;
+    }
+
+    if (normalizedFilters.sourceIds?.length) {
+      conditions.push({ sourceId: { $in: normalizedFilters.sourceIds } });
+    }
+    if (normalizedFilters.regions?.length) {
+      const values = normalizedFilters.regions.map((value) => value.trim().toLowerCase()).filter(Boolean);
+      if (values.length > 0) {
+        conditions.push({
+          $or: [{ regionKey: { $in: values } }, { locationKey: { $in: values } }],
+        });
+      }
+    }
+    if (normalizedFilters.topics?.length) {
+      const values = normalizedFilters.topics.map((value) => value.trim().toLowerCase()).filter(Boolean);
+      if (values.length > 0) {
+        conditions.push({
+          $or: [{ topicKeys: { $in: values } }, { entityKeys: { $in: values } }],
+        });
+      }
+    }
+    if (normalizedFilters.sentiments?.length) {
+      const values = normalizedFilters.sentiments.map((value) => value.trim().toLowerCase()).filter(Boolean);
+      if (values.length > 0) {
+        conditions.push({ sentiment: { $in: values } });
+      }
+    }
+    if (normalizedFilters.contentTypes?.length) {
+      const values = normalizedFilters.contentTypes.map((value) => value.trim().toLowerCase()).filter(Boolean);
+      if (values.length > 0) {
+        conditions.push({ contentType: { $in: values } });
+      }
+    }
+    if (normalizedFilters.excludeDuplicates) {
+      conditions.push({
+        $or: [{ duplicateOf: null }, { duplicateOf: { $exists: false } }],
+      });
+    }
+    if (normalizedFilters.dateRange?.start || normalizedFilters.dateRange?.end) {
+      const sortAt: Record<string, Date> = {};
+      if (normalizedFilters.dateRange.start) {
+        sortAt.$gte = normalizedFilters.dateRange.start;
+      }
+      if (normalizedFilters.dateRange.end) {
+        sortAt.$lte = normalizedFilters.dateRange.end;
+      }
+      conditions.push({ sortAt });
+    }
+
+    return conditions.length === 1 ? baseMatch : { $and: conditions };
+  }
+
+  private async resolveReadModelSearchIds(orgId: string, strategy: SearchStrategy) {
+    if (strategy.type === "none") {
+      return [];
+    }
+
+    if (strategy.type === "fulltext") {
+      const docs = (await ItemReadModelModel.find(
+        {
+          $and: [this.buildReadModelBaseMatch(orgId), { $text: { $search: strategy.query } }],
+        },
+        {
+          itemMetaId: 1,
+          score: { $meta: "textScore" },
+        },
+      )
+        .sort({ score: { $meta: "textScore" }, sortAt: -1, itemMetaId: -1 })
+        .limit(MAX_SEARCH_MATCHES)
+        .lean()) as Array<{ itemMetaId?: string }>;
+      return this.dedupeItemMetaIds(
+        docs.map((doc) => (typeof doc.itemMetaId === "string" ? doc.itemMetaId : "")),
+      );
+    }
+
+    const regex = new RegExp(`^${this.escapeRegex(strategy.term.trim().toLowerCase())}`, "i");
+    const docs = (await ItemReadModelModel.find(
+      {
+        $and: [
+          this.buildReadModelBaseMatch(orgId),
+          {
+            $or: [
+              { titleLower: regex },
+              { externalIdLower: regex },
+              { sourceNameLower: regex },
+              { topicKeys: regex },
+              { entityKeys: regex },
+              { regionKey: regex },
+              { locationKey: regex },
+            ],
+          },
+        ],
+      },
+      { itemMetaId: 1 },
+    )
+      .sort({ sortAt: -1, itemMetaId: -1 })
+      .limit(MAX_SEARCH_MATCHES)
+      .lean()) as Array<{ itemMetaId?: string }>;
+
+    return this.dedupeItemMetaIds(
+      docs.map((doc) => (typeof doc.itemMetaId === "string" ? doc.itemMetaId : "")),
+    );
+  }
+
   private async resolveVectorSearchIds(orgId: string, search: string): Promise<string[]> {
     const embeddingModel = await this.liteLlm.getEmbeddingModel();
     if (!embeddingModel) {
@@ -3021,9 +3951,21 @@ export class ItemsService {
             }
             return ids;
           }
+        } else if (this.isVectorHardFailEnabled()) {
+          throw new ServiceUnavailableException({
+            code: "VECTOR_SEARCH_UNAVAILABLE",
+            message: "Vector search unavailable: failed to query vector index.",
+          });
         } else if (!(await vectorClient.fallbackToMongoEnabled())) {
           return [];
         }
+      }
+
+      if (this.isVectorHardFailEnabled()) {
+        throw new ServiceUnavailableException({
+          code: "VECTOR_SEARCH_UNAVAILABLE",
+          message: "Vector search unavailable: local fallback disabled.",
+        });
       }
 
       const cutoff = new Date(Date.now() - lookbackMs);
@@ -3095,6 +4037,21 @@ export class ItemsService {
   }
 
   private async resolveSearchIds(orgId: string, search: string) {
+    if (this.isReadModelEnabled()) {
+      const strategy = this.resolveSearchStrategy(search);
+      if (strategy.type === "none") {
+        return [];
+      }
+      const [lexicalIds, vectorIds] = await Promise.all([
+        this.resolveReadModelSearchIds(orgId, strategy),
+        this.resolveVectorSearchIds(orgId, search),
+      ]);
+      return this.rankSearchCandidateIds({
+        meta: lexicalIds,
+        vector: vectorIds,
+      });
+    }
+
     const strategy = this.resolveSearchStrategy(search);
     if (strategy.type === "none") {
       return [];
@@ -3116,6 +4073,17 @@ export class ItemsService {
   }
 
   private async resolveFilterIds(orgId: string, filters: ItemFilters) {
+    if (this.isReadModelEnabled()) {
+      const match = this.buildReadModelMatch(orgId, filters);
+      const docs = (await ItemReadModelModel.find(match, { itemMetaId: 1 })
+        .sort({ sortAt: -1, itemMetaId: -1 })
+        .limit(MAX_SEARCH_MATCHES)
+        .lean()) as Array<{ itemMetaId?: string }>;
+      return this.dedupeItemMetaIds(
+        docs.map((doc) => (typeof doc.itemMetaId === "string" ? doc.itemMetaId : "")),
+      );
+    }
+
     const pipeline: PipelineStage[] = [
       {
         $match: {
@@ -3297,6 +4265,41 @@ export class ItemsService {
   }
 
   private async resolveSourceSuggestionCounts(orgId: string, normalizedPrefix: string) {
+    if (this.isReadModelEnabled()) {
+      const regex = new RegExp(this.escapeRegex(normalizedPrefix), "i");
+      const rows = (await ItemReadModelModel.aggregate<{
+        _id: string;
+        sourceName: string;
+        count: number;
+      }>([
+        {
+          $match: {
+            orgId,
+            status: { $ne: ItemStatus.Duplicate },
+            sourceNameLower: regex,
+          },
+        },
+        {
+          $group: {
+            _id: "$sourceNameLower",
+            sourceName: { $first: "$sourceName" },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { count: -1, sourceName: 1 } },
+        { $limit: SEARCH_SUGGESTIONS_MAX_SOURCE_SCAN },
+      ])) as Array<{ sourceName?: string; count?: number }>;
+      return new Map(
+        rows
+          .map((row) => {
+            const source = typeof row.sourceName === "string" ? row.sourceName.trim() : "";
+            const count = typeof row.count === "number" ? row.count : 0;
+            return source ? ([source, count] as const) : null;
+          })
+          .filter((entry): entry is readonly [string, number] => Boolean(entry)),
+      );
+    }
+
     const snapshot = await this.cache.wrap(
       `${ITEMS_SOURCE_SUGGESTIONS_PREFIX}${orgId}:v1`,
       SOURCE_SUGGESTIONS_CACHE_TTL_SECONDS,
@@ -3374,6 +4377,81 @@ export class ItemsService {
     }
 
     const topIds = vectorIds.slice(0, SEARCH_SUGGESTIONS_MAX_SEMANTIC_IDS);
+    if (this.isReadModelEnabled()) {
+      const docsById = await this.loadItemReadModelsByIds(orgId, topIds);
+      const tokens = this.tokenizeSearch(normalizedQuery, MONGO_MIN_TOKEN_LENGTH);
+      const scored = new Map<
+        string,
+        { type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT"; value: string; score: number }
+      >();
+
+      for (let index = 0; index < topIds.length; index += 1) {
+        const itemMetaId = topIds[index];
+        if (!itemMetaId) {
+          continue;
+        }
+        const doc = docsById.get(itemMetaId);
+        if (!doc) {
+          continue;
+        }
+        const rankScore = 140 - (index / Math.max(1, topIds.length)) * 80;
+        this.pushSemanticSuggestions(
+          scored,
+          Array.isArray(doc.topics) ? doc.topics.slice(0, 10) : [],
+          "TOPIC",
+          normalizedQuery,
+          tokens,
+          rankScore,
+        );
+        const regions = [
+          typeof doc.location === "string" && doc.location.trim().length > 0 ? doc.location : null,
+          typeof doc.region === "string" && doc.region.trim().length > 0 ? doc.region : null,
+        ].filter((value): value is string => Boolean(value));
+        this.pushSemanticSuggestions(
+          scored,
+          regions,
+          "REGION",
+          normalizedQuery,
+          tokens,
+          rankScore * 0.92,
+        );
+        const sources = [
+          typeof doc.sourceName === "string" && doc.sourceName.trim().length > 0 ? doc.sourceName : null,
+          typeof doc.sourceId === "string" && doc.sourceId.trim().length > 0 ? doc.sourceId : null,
+        ].filter((value): value is string => Boolean(value));
+        this.pushSemanticSuggestions(
+          scored,
+          sources,
+          "SOURCE",
+          normalizedQuery,
+          tokens,
+          rankScore * 0.88,
+        );
+        const sentiments =
+          typeof doc.sentiment === "string" && doc.sentiment.trim().length > 0 ? [doc.sentiment] : [];
+        this.pushSemanticSuggestions(
+          scored,
+          sentiments,
+          "SENTIMENT",
+          normalizedQuery,
+          tokens,
+          rankScore * 0.8,
+        );
+      }
+
+      return Array.from(scored.values())
+        .sort((left, right) => {
+          if (right.score !== left.score) {
+            return right.score - left.score;
+          }
+          if (left.type !== right.type) {
+            return left.type.localeCompare(right.type);
+          }
+          return left.value.localeCompare(right.value);
+        })
+        .slice(0, limit);
+    }
+
     const processedDocs = await ProcessedItemModel.find(
       {
         orgId,
@@ -3820,6 +4898,101 @@ export class ItemsService {
     }
 
     const existingIds = limitedIds.filter((id) => rowsById.has(id));
+    if (this.isReadModelEnabled()) {
+      const docsById = await this.loadItemReadModelsByIds(orgId, existingIds);
+      const candidates: {
+        id: string;
+        document: string;
+        lexicalScore: number;
+        recencyScore: number;
+        sourceTrustScore: number;
+        qualityScore: number;
+        sortAt: Date;
+      }[] = [];
+      for (const id of existingIds) {
+        const row = rowsById.get(id);
+        const doc = docsById.get(id);
+        if (!row || !doc) {
+          continue;
+        }
+        const title = doc.title || row.name;
+        const summary = typeof doc.summary === "string" ? doc.summary : null;
+        const topics = Array.isArray(doc.topics) ? doc.topics.slice(0, 5) : [];
+        const entities = Array.isArray(doc.entities) ? doc.entities.slice(0, 5) : [];
+        const source =
+          typeof doc.sourceName === "string" && doc.sourceName.trim().length > 0
+            ? doc.sourceName
+            : typeof doc.sourceId === "string" && doc.sourceId.trim().length > 0
+              ? doc.sourceId
+              : null;
+        const qualityScore =
+          typeof doc.qualityScore === "number" && Number.isFinite(doc.qualityScore)
+            ? this.clamp01(doc.qualityScore)
+            : 0.5;
+        const document = [
+          title,
+          summary,
+          topics.length > 0 ? `Topics: ${topics.join(", ")}` : null,
+          entities.length > 0 ? `Entities: ${entities.join(", ")}` : null,
+        ]
+          .filter((entry): entry is string => Boolean(entry && entry.trim().length > 0))
+          .join("\n");
+        const lexicalScore = this.computeLexicalScore(search, document);
+        const recencyScore = this.computeRecencyScore(row.sortAt, rankingCfg.recencyHalfLifeHours);
+        const sourceTrustScore = this.computeSourceTrustScore(source);
+        candidates.push({
+          id,
+          document,
+          lexicalScore,
+          recencyScore,
+          sourceTrustScore,
+          qualityScore,
+          sortAt: row.sortAt,
+        });
+      }
+      if (candidates.length === 0) {
+        return [];
+      }
+
+      const preRanked = [...candidates].sort((a, b) => {
+        const scoreA = a.lexicalScore * 0.7 + a.recencyScore * 0.3;
+        const scoreB = b.lexicalScore * 0.7 + b.recencyScore * 0.3;
+        if (scoreB !== scoreA) {
+          return scoreB - scoreA;
+        }
+        return b.sortAt.getTime() - a.sortAt.getTime();
+      });
+      const rerankCandidates = preRanked.slice(0, rerankMax);
+      const rerankScoreById = await this.tryRerankCandidates({
+        orgId,
+        query: search,
+        candidates: rerankCandidates,
+        timeoutMs: rankingCfg.rerankTimeoutMs,
+      });
+
+      return candidates
+        .map((candidate) => {
+          const baseRelevance = rerankScoreById?.get(candidate.id) ?? candidate.lexicalScore;
+          const finalScore =
+            DEFAULT_WEIGHT_RERANK * this.clamp01(baseRelevance) +
+            DEFAULT_WEIGHT_RECENCY * candidate.recencyScore +
+            DEFAULT_WEIGHT_SOURCE_TRUST * candidate.sourceTrustScore +
+            DEFAULT_WEIGHT_QUALITY * candidate.qualityScore;
+          return { id: candidate.id, score: this.clamp01(finalScore), sortAt: candidate.sortAt };
+        })
+        .sort((a, b) => {
+          if (b.score !== a.score) {
+            return b.score - a.score;
+          }
+          const timeDiff = b.sortAt.getTime() - a.sortAt.getTime();
+          if (timeDiff !== 0) {
+            return timeDiff;
+          }
+          return a.id.localeCompare(b.id);
+        })
+        .map((entry) => ({ id: entry.id, score: entry.score }));
+    }
+
     const processedDocs = await ProcessedItemModel.find(
       {
         orgId,
@@ -4010,13 +5183,41 @@ export class ItemsService {
     if (ids.length === 0) {
       return new Map<string, ItemMetaRow>();
     }
+    if (this.isReadModelEnabled()) {
+      const docsById = await this.loadItemReadModelsByIds(orgId, ids);
+      return new Map(
+        ids
+          .map((id) => {
+            const doc = docsById.get(id);
+            return doc ? ([id, this.itemMetaRowFromReadModel(doc)] as const) : null;
+          })
+          .filter((entry): entry is readonly [string, ItemMetaRow] => Boolean(entry)),
+      );
+    }
     const rows = await this.prisma.itemMeta.findMany({
       where: {
         ...this.buildBaseWhere(orgId),
         id: { in: ids }
       }
     });
-    return new Map(rows.map((row) => [row.id, row]));
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          id: row.id,
+          orgId: row.orgId,
+          externalId: row.externalId,
+          name: row.name,
+          status: row.status,
+          mongoRef: row.mongoRef,
+          version: row.version,
+          publishedAt: row.publishedAt ?? null,
+          sortAt: row.sortAt ?? row.createdAt,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+        } satisfies ItemMetaRow,
+      ]),
+    );
   }
 
   private normalizeResultRecord(value: unknown): Record<string, unknown> {

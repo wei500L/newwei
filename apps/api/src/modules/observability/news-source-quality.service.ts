@@ -1,7 +1,9 @@
 import { Injectable } from "@nestjs/common";
-import { PipelineJobStatus } from "@prisma/client";
+import { ObservabilitySnapshotScope, PipelineJobStatus } from "@prisma/client";
 
 import { PrismaService } from "../config/prisma.service";
+
+import { ObservabilitySnapshotService } from "./observability-snapshot.service";
 
 export interface NewsSourceQualitySummary {
   windowHours: number;
@@ -25,17 +27,46 @@ export interface NewsSourceQualitySummary {
 
 @Injectable()
 export class NewsSourceQualityService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly summaryTtlSeconds = 60;
 
-  async summary(orgId: string, windowHours = 24): Promise<NewsSourceQualitySummary> {
-    const normalizedWindow = Math.max(1, Math.min(24 * 14, Math.floor(windowHours)));
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly snapshots: ObservabilitySnapshotService,
+  ) {}
+
+  async summary(
+    orgId: string,
+    windowHours = 24,
+  ): Promise<NewsSourceQualitySummary> {
+    const normalizedWindow = Math.max(
+      1,
+      Math.min(24 * 14, Math.floor(windowHours)),
+    );
+    const snapshot = await this.snapshots.getOrCreate<NewsSourceQualitySummary>(
+      {
+        orgId,
+        scope: ObservabilitySnapshotScope.quality_news_sources,
+        variantKey: `windowHours:${normalizedWindow}`,
+        ttlSeconds: this.summaryTtlSeconds,
+        loader: async () => this.buildSummary(orgId, normalizedWindow),
+      },
+    );
+    return snapshot.payload;
+  }
+
+  private async buildSummary(
+    orgId: string,
+    normalizedWindow: number,
+  ): Promise<NewsSourceQualitySummary> {
     const now = new Date();
     const since = new Date(now.getTime() - normalizedWindow * 60 * 60 * 1000);
 
     const [total, active, failing, circuitOpen, failures] = await Promise.all([
       this.prisma.newsSource.count({ where: { orgId } }),
       this.prisma.newsSource.count({ where: { orgId, isActive: true } }),
-      this.prisma.newsSource.count({ where: { orgId, consecutiveFailures: { gt: 0 } } }),
+      this.prisma.newsSource.count({
+        where: { orgId, consecutiveFailures: { gt: 0 } },
+      }),
       this.prisma.newsSource.count({
         where: { orgId, isActive: true, circuitOpenUntil: { gt: now } },
       }),
@@ -91,13 +122,20 @@ export class NewsSourceQualityService {
           url: source.url,
           failedJobs: entry._count?.id ?? 0,
           consecutiveFailures: source.consecutiveFailures,
-          lastFailureAt: source.lastFailureAt ? source.lastFailureAt.toISOString() : null,
-          circuitOpenUntil: source.circuitOpenUntil ? source.circuitOpenUntil.toISOString() : null,
+          lastFailureAt: source.lastFailureAt
+            ? source.lastFailureAt.toISOString()
+            : null,
+          circuitOpenUntil: source.circuitOpenUntil
+            ? source.circuitOpenUntil.toISOString()
+            : null,
           nextRunAt: source.nextRunAt ? source.nextRunAt.toISOString() : null,
         };
       })
       .filter(
-        (entry): entry is NewsSourceQualitySummary["topFailingSources"][number] => Boolean(entry),
+        (
+          entry,
+        ): entry is NewsSourceQualitySummary["topFailingSources"][number] =>
+          Boolean(entry),
       );
 
     return {
