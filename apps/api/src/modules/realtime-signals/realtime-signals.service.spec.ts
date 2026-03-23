@@ -1106,7 +1106,9 @@ describe("RealtimeSignalsService scheduler lock", () => {
 describe("RealtimeSignalsService runtime diagnostics", () => {
   const buildService = () => {
     const prisma = {
-      $queryRaw: jest.fn(),
+      processedArticleTermHourly: {
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
       processedArticle: {
         count: jest.fn(),
         findFirst: jest.fn(),
@@ -1149,7 +1151,6 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
     settings.getSettingsSource.mockRejectedValue(new Error("db down"));
     prisma.processedArticle.count.mockRejectedValue(new Error("db down"));
     prisma.processedArticle.findFirst.mockRejectedValue(new Error("db down"));
-    prisma.$queryRaw.mockRejectedValue(new Error("db down"));
     jest.spyOn(service as any, "getMongoMarkerReadiness").mockResolvedValue({
       recentProcessedItems: 3,
       recentProcessedItemsWithLocation: 2,
@@ -1194,9 +1195,10 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
   it("excludes blank prisma locations from marker readiness counts", async () => {
     const { service, prisma } = buildService();
     const processedAt = new Date("2026-03-12T10:00:00.000Z");
-    prisma.processedArticle.count.mockResolvedValue(4);
+    prisma.processedArticle.count
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(0);
     prisma.processedArticle.findFirst.mockResolvedValue({ processedAt });
-    prisma.$queryRaw.mockResolvedValue([{ count: BigInt(0) }]);
     jest.spyOn(service as any, "getMongoMarkerReadiness").mockResolvedValue({
       recentProcessedItems: 0,
       recentProcessedItemsWithLocation: 0,
@@ -1204,7 +1206,7 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
 
     const result = await (service as any).getMarkerReadiness("org-1");
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.processedArticle.count).toHaveBeenCalledTimes(2);
     expect(result).toEqual({
       windowHours: 24 * 7,
       recentProcessedArticles: 4,
@@ -1274,7 +1276,6 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
     const { service, cache, prisma } = buildService();
     prisma.processedArticle.count.mockResolvedValue(0);
     prisma.processedArticle.findFirst.mockResolvedValue(null);
-    prisma.$queryRaw.mockResolvedValue([{ count: BigInt(0) }]);
     jest.spyOn(service as any, "getMongoMarkerReadiness").mockResolvedValue({
       recentProcessedItems: 0,
       recentProcessedItemsWithLocation: 0,
@@ -1331,7 +1332,6 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
     const { service, cache, prisma } = buildService();
     prisma.processedArticle.count.mockResolvedValue(0);
     prisma.processedArticle.findFirst.mockResolvedValue(null);
-    prisma.$queryRaw.mockResolvedValue([{ count: BigInt(0) }]);
     jest.spyOn(service as any, "getMongoMarkerReadiness").mockResolvedValue({
       recentProcessedItems: 0,
       recentProcessedItemsWithLocation: 0,

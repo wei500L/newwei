@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -3584,6 +3586,7 @@ export type EconomicDataQuery = { __typename?: 'Query', getEconomicData: Array<{
 export type EconomicDataWithInsightsQueryVariables = Exact<{
   category: Scalars['String']['input'];
   timeRange: DateRangeInput;
+  granularity?: InputMaybe<TimeGranularity>;
 }>;
 
 
@@ -5379,8 +5382,12 @@ export type EconomicDataLazyQueryHookResult = ReturnType<typeof useEconomicDataL
 export type EconomicDataSuspenseQueryHookResult = ReturnType<typeof useEconomicDataSuspenseQuery>;
 export type EconomicDataQueryResult = Apollo.QueryResult<EconomicDataQuery, EconomicDataQueryVariables>;
 export const EconomicDataWithInsightsDocument = gql`
-    query EconomicDataWithInsights($category: String!, $timeRange: DateRangeInput!) {
-  getEconomicDataWithInsights(category: $category, timeRange: $timeRange) {
+    query EconomicDataWithInsights($category: String!, $timeRange: DateRangeInput!, $granularity: TimeGranularity) {
+  getEconomicDataWithInsights(
+    category: $category
+    timeRange: $timeRange
+    granularity: $granularity
+  ) {
     points {
       timestamp
       effectiveGranularity
@@ -5431,6 +5438,7 @@ export const EconomicDataWithInsightsDocument = gql`
  *   variables: {
  *      category: // value for 'category'
  *      timeRange: // value for 'timeRange'
+ *      granularity: // value for 'granularity'
  *   },
  * });
  */

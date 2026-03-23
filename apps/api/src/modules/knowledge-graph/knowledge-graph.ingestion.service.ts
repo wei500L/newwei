@@ -115,7 +115,7 @@ export class KnowledgeGraphIngestionService {
 
     const where: Prisma.ProcessedArticleWhereInput = {
       status: "completed",
-      article: { orgId },
+      orgId,
       ...(state.lastProcessedAt
         ? {
             OR: [

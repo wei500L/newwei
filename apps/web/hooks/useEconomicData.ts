@@ -189,6 +189,25 @@ export function deriveEconomicFreshness(points: readonly EconomicFreshnessPoint[
 
 export function useEconomicData({ category, pollInterval }: EconomicSeriesOptions) {
   const { start, end } = useDashboardRangeStore();
+  const resolveRequestedGranularity = (
+    windowStart: Date,
+    windowEnd: Date
+  ): TimeGranularity => {
+    const diffMs = Math.max(0, windowEnd.getTime() - windowStart.getTime());
+    const minuteMs = 60 * 1000;
+    const hourMs = 60 * minuteMs;
+    const dayMs = 24 * hourMs;
+    const diffDays = Math.max(1, Math.round(diffMs / dayMs));
+
+    if (diffMs <= 6 * hourMs) return TimeGranularity.Minute;
+    if (diffMs <= 2 * dayMs) return TimeGranularity.Hour;
+    if (diffDays > 1095) return TimeGranularity.Year;
+    if (diffDays > 365) return TimeGranularity.Quarter;
+    if (diffDays > 120) return TimeGranularity.Month;
+    if (diffDays > 45) return TimeGranularity.Week;
+    return TimeGranularity.Day;
+  };
+  const requestedGranularity = resolveRequestedGranularity(start, end);
   const {
     data,
     previousData,
@@ -202,7 +221,8 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
       timeRange: {
         start: start.toISOString(),
         end: end.toISOString()
-      }
+      },
+      granularity: requestedGranularity
     },
     pollInterval,
     notifyOnNetworkStatusChange: true

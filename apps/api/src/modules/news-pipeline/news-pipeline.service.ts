@@ -24,6 +24,13 @@ import { z } from "zod";
 
 import { extractFirstJson, safeJsonParseFromText } from "../../common/llm-json";
 import { ItemStatus } from "../../common/pipeline-status";
+import {
+  alignUtcHourStart,
+  extractProcessedArticleTerms,
+  normalizeProcessedArticleLocation,
+  normalizeProcessedArticleSource,
+  resolveProcessedArticleEventAt,
+} from "../../common/processed-article-indexing";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
 import { CrawlExecutionService } from "../crawl/crawl-execution.service";
@@ -3526,17 +3533,29 @@ export class NewsPipelineService implements OnModuleDestroy {
         });
       }
 
-      await tx.processedArticle.upsert({
+      const publishedAt =
+        this.parseDate(options.cleaned.published_at) ??
+        this.parseDate(options.article.publishedAt);
+      const normalizedLocation = normalizeProcessedArticleLocation(
+        options.cleaned.location,
+      );
+      const processedSource =
+        options.cleaned.source ?? options.payload.sourceName ?? null;
+      const eventAt = resolveProcessedArticleEventAt({
+        publishedAt,
+        crawlAt,
+      });
+
+      const processedArticleRecord = await tx.processedArticle.upsert({
         where: { articleId: articleRecord.id },
         update: {
+          orgId: options.orgId,
           status: ProcessedArticleStatus.completed,
           title: options.cleaned.title ?? null,
           subtitle: options.cleaned.subtitle ?? null,
           author: options.cleaned.author ?? null,
-          source: options.cleaned.source ?? options.payload.sourceName ?? null,
-          publishedAt:
-            this.parseDate(options.cleaned.published_at) ??
-            this.parseDate(options.article.publishedAt),
+          source: processedSource,
+          publishedAt,
           category: options.cleaned.category ?? null,
           topics: options.cleaned.topics ?? [],
           summary: options.cleaned.summary ?? null,
@@ -3553,23 +3572,24 @@ export class NewsPipelineService implements OnModuleDestroy {
             null,
           language:
             options.cleaned.language ?? options.payload.language ?? null,
-          location: options.cleaned.location ?? null,
+          location: normalizedLocation,
           promptTokens: options.llm.promptTokens ?? null,
           completionTokens: options.llm.completionTokens ?? null,
           totalTokens: options.llm.totalTokens ?? null,
           costUsd: options.llm.costUsd ?? null,
           latencyMs: options.llm.latencyMs ?? null,
+          eventAt,
+          hasLocation: normalizedLocation !== null,
         },
         create: {
+          orgId: options.orgId,
           articleId: articleRecord.id,
           status: ProcessedArticleStatus.completed,
           title: options.cleaned.title ?? null,
           subtitle: options.cleaned.subtitle ?? null,
           author: options.cleaned.author ?? null,
-          source: options.cleaned.source ?? options.payload.sourceName ?? null,
-          publishedAt:
-            this.parseDate(options.cleaned.published_at) ??
-            this.parseDate(options.article.publishedAt),
+          source: processedSource,
+          publishedAt,
           category: options.cleaned.category ?? null,
           topics: options.cleaned.topics ?? [],
           summary: options.cleaned.summary ?? null,
@@ -3586,14 +3606,45 @@ export class NewsPipelineService implements OnModuleDestroy {
             null,
           language:
             options.cleaned.language ?? options.payload.language ?? null,
-          location: options.cleaned.location ?? null,
+          location: normalizedLocation,
           promptTokens: options.llm.promptTokens ?? null,
           completionTokens: options.llm.completionTokens ?? null,
           totalTokens: options.llm.totalTokens ?? null,
           costUsd: options.llm.costUsd ?? null,
           latencyMs: options.llm.latencyMs ?? null,
+          eventAt,
+          hasLocation: normalizedLocation !== null,
+        },
+        select: {
+          id: true,
         },
       });
+
+      await tx.processedArticleTermHourly.deleteMany({
+        where: {
+          processedArticleId: processedArticleRecord.id,
+        },
+      });
+
+      const extractedTerms = extractProcessedArticleTerms({
+        title: options.cleaned.title ?? null,
+        summary: options.cleaned.summary ?? null,
+        topics: options.cleaned.topics ?? [],
+      });
+      if (extractedTerms.length > 0) {
+        const bucketStart = alignUtcHourStart(eventAt);
+        const source = normalizeProcessedArticleSource(processedSource);
+        await tx.processedArticleTermHourly.createMany({
+          data: extractedTerms.map((term) => ({
+            orgId: options.orgId,
+            processedArticleId: processedArticleRecord.id,
+            bucketStart,
+            term,
+            source,
+            articleCount: 1,
+          })),
+        });
+      }
     } catch (error) {
       this.logger.warn(
         { error, contentHash: options.contentHash },

@@ -112,7 +112,7 @@ export class NewsEventsIngestionService {
 
     const where: Prisma.ProcessedArticleWhereInput = {
       status: ProcessedArticleStatus.completed,
-      article: { orgId },
+      orgId,
       ...(state.lastProcessedAt
         ? {
             OR: [

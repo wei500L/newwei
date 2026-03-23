@@ -2,6 +2,14 @@ import { CrawlMediaAssetService } from "../crawl-media-asset.service";
 
 describe("CrawlMediaAssetService", () => {
   const prisma = {
+    runInTransaction: jest.fn(),
+    crawlMediaBlob: {
+      findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
     crawlMediaAsset: {
       create: jest.fn(),
       findMany: jest.fn(),
@@ -30,6 +38,14 @@ describe("CrawlMediaAssetService", () => {
     storageSettings.getStorageConfig.mockResolvedValue({
       presignedUrlTtlSeconds: 300
     });
+    prisma.crawlMediaBlob.findUnique.mockResolvedValue(null);
+    prisma.crawlMediaBlob.create.mockResolvedValue({ id: "blob-1" });
+    prisma.runInTransaction.mockImplementation(async (runner: (tx: any) => Promise<unknown>) =>
+      runner({
+        crawlMediaBlob: prisma.crawlMediaBlob,
+        crawlMediaAsset: prisma.crawlMediaAsset
+      })
+    );
   });
 
   it("stores media as mysql blob and returns signed preview URLs", async () => {
@@ -48,11 +64,22 @@ describe("CrawlMediaAssetService", () => {
       contentType: "image/png"
     });
 
+    expect(prisma.crawlMediaBlob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          orgId: "org-1",
+          refCount: 1,
+          blobData: payload
+        }),
+        select: { id: true }
+      })
+    );
     expect(prisma.crawlMediaAsset.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           provider: "mysql",
-          blobData: payload,
+          blobId: "blob-1",
+          blobData: null,
           storageKey: null
         })
       })
@@ -327,7 +354,8 @@ describe("CrawlMediaAssetService", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       orgId: "org-1",
-      taskId: "task-1"
+      taskId: "task-1",
+      blob: null
     });
     storage.createObjectReadUrl.mockResolvedValue("https://signed.example.com/file.svg");
 

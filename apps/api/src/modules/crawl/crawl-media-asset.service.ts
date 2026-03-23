@@ -1,10 +1,15 @@
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
-import type {
+import {
   CrawlImageStorageProvider as PrismaCrawlImageStorageProvider,
   Prisma
 } from "@prisma/client";
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
 
 import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
 import { toPrismaJsonValue } from "../../common/prisma-json";
@@ -212,14 +217,7 @@ export class CrawlMediaAssetService {
     }
 
     try {
-      await this.prisma.crawlMediaAsset.create({
-        data: {
-          ...baseCreate,
-          provider: "mysql",
-          blobData: normalizedInput.data,
-          storageKey: null
-        }
-      });
+      await this.storeMysqlAsset(normalizedInput, baseCreate);
     } catch (error) {
       logger.error(
         {
@@ -288,6 +286,7 @@ export class CrawlMediaAssetService {
       where: { resultId },
       select: {
         id: true,
+        blobId: true,
         storageKey: true,
         provider: true,
         orgId: true,
@@ -316,8 +315,45 @@ export class CrawlMediaAssetService {
       }
     }
 
-    await this.prisma.crawlMediaAsset.deleteMany({
-      where: { resultId }
+    const mysqlBlobRefCounts = new Map<string, number>();
+    for (const record of records) {
+      if (record.provider !== "mysql" || !record.blobId) {
+        continue;
+      }
+      mysqlBlobRefCounts.set(
+        record.blobId,
+        (mysqlBlobRefCounts.get(record.blobId) ?? 0) + 1,
+      );
+    }
+
+    await this.prisma.runInTransaction(async (tx) => {
+      await tx.crawlMediaAsset.deleteMany({
+        where: { resultId }
+      });
+
+      for (const [blobId, refCount] of mysqlBlobRefCounts.entries()) {
+        const blob = await tx.crawlMediaBlob.findUnique({
+          where: { id: blobId },
+          select: { refCount: true }
+        });
+        if (!blob) {
+          continue;
+        }
+        if (blob.refCount <= refCount) {
+          await tx.crawlMediaBlob.delete({
+            where: { id: blobId }
+          });
+          continue;
+        }
+        await tx.crawlMediaBlob.update({
+          where: { id: blobId },
+          data: {
+            refCount: {
+              decrement: refCount
+            }
+          }
+        });
+      }
     });
   }
 
@@ -366,6 +402,13 @@ export class CrawlMediaAssetService {
       where: {
         id: assetId,
         orgId: accessScope.orgId
+      },
+      include: {
+        blob: {
+          select: {
+            blobData: true
+          }
+        }
       }
     });
     if (!record) {
@@ -382,7 +425,11 @@ export class CrawlMediaAssetService {
     );
 
     if (record.provider === "mysql") {
-      const blob = record.blobData ? Buffer.from(record.blobData) : null;
+      const blob = record.blob?.blobData
+        ? Buffer.from(record.blob.blobData)
+        : record.blobData
+          ? Buffer.from(record.blobData)
+          : null;
       if (!blob || blob.length === 0) {
         logger.error(
           {
@@ -433,6 +480,98 @@ export class CrawlMediaAssetService {
       fileName,
       redirectUrl
     };
+  }
+
+  private async storeMysqlAsset(
+    input: PersistCrawlMediaAssetInput,
+    baseCreate: ReturnType<CrawlMediaAssetService["buildCreateData"]>,
+  ) {
+    const sha256 = createHash("sha256").update(input.data).digest("hex");
+    await this.prisma.runInTransaction(async (tx) => {
+      let blobId: string | null = null;
+      const existingBlob = await tx.crawlMediaBlob.findUnique({
+        where: {
+          orgId_sha256: {
+            orgId: input.orgId,
+            sha256
+          }
+        },
+        select: {
+          id: true
+        }
+      });
+
+      if (existingBlob) {
+        blobId = existingBlob.id;
+        await tx.crawlMediaBlob.update({
+          where: {
+            id: existingBlob.id
+          },
+          data: {
+            refCount: {
+              increment: 1
+            }
+          }
+        });
+      } else {
+        try {
+          const createdBlob = await tx.crawlMediaBlob.create({
+            data: {
+              orgId: input.orgId,
+              sha256,
+              bytes: input.bytes,
+              contentType: input.contentType,
+              blobData: input.data,
+              refCount: 1
+            },
+            select: {
+              id: true
+            }
+          });
+          blobId = createdBlob.id;
+        } catch (error) {
+          if (!this.isUniqueConstraintError(error)) {
+            throw error;
+          }
+          const racedBlob = await tx.crawlMediaBlob.findUniqueOrThrow({
+            where: {
+              orgId_sha256: {
+                orgId: input.orgId,
+                sha256
+              }
+            },
+            select: {
+              id: true
+            }
+          });
+          blobId = racedBlob.id;
+          await tx.crawlMediaBlob.update({
+            where: {
+              id: racedBlob.id
+            },
+            data: {
+              refCount: {
+                increment: 1
+              }
+            }
+          });
+        }
+      }
+
+      await tx.crawlMediaAsset.create({
+        data: {
+          ...baseCreate,
+          provider: "mysql",
+          blobId,
+          blobData: null,
+          storageKey: null
+        }
+      });
+    });
+  }
+
+  private isUniqueConstraintError(error: unknown) {
+    return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
   }
 
   private buildCreateData(input: PersistCrawlMediaAssetInput, provider: CrawlImageStorageProvider) {

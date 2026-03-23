@@ -39,6 +39,7 @@ model Org {
   newsSourceOpsSnapshots               NewsSourceOpsSnapshot[]
   pipelineJobs                         PipelineJob[]
   articles                             Article[]
+  processedArticles                    ProcessedArticle[]
   newsEvents                           NewsEvent[]
   newsEventItems                       NewsEventItem[]
   newsEventTimelineEntries             NewsEventTimelineEntry[]
@@ -67,6 +68,8 @@ model Org {
   userContentSubscriptions             UserContentSubscription[]
   situationMonitorMonitors             SituationMonitorMonitor[]
   archiveArticleClassifications        ArchiveArticleClassification[]
+  processedArticleTermHourly           ProcessedArticleTermHourly[]
+  crawlMediaBlobs                      CrawlMediaBlob[]
 }
 
 model User {
@@ -632,6 +635,8 @@ model CrawlMediaAsset {
   resultId    String
   orgId       String
   taskId      String
+  blob        CrawlMediaBlob?           @relation(fields: [blobId], references: [id], onDelete: SetNull)
+  blobId      String?
   provider    CrawlImageStorageProvider @default(mysql)
   kind        String
   sourceUrl   String
@@ -653,6 +658,24 @@ model CrawlMediaAsset {
   @@index([orgId, resultId])
   @@index([orgId, taskId, createdAt])
   @@index([resultId, createdAt])
+  @@index([blobId])
+}
+
+model CrawlMediaBlob {
+  id          String            @id @default(cuid())
+  org         Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId       String
+  sha256      String            @db.VarChar(64)
+  bytes       Int
+  contentType String?
+  blobData    Bytes
+  refCount    Int               @default(1)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  assets      CrawlMediaAsset[]
+
+  @@unique([orgId, sha256])
+  @@index([orgId, updatedAt])
 }
 
 model SystemSetting {
@@ -981,12 +1004,15 @@ model Article {
   archiveClassification  ArchiveArticleClassification?
 
   @@unique([url, contentHash])
+  @@index([orgId, crawlAt])
   @@index([orgId, sourceId, crawlAt])
   @@index([orgId, urlFingerprint, crawlAt])
 }
 
 model ProcessedArticle {
   id                 String                 @id @default(cuid())
+  org                Org                    @relation(fields: [orgId], references: [id])
+  orgId              String
   article            Article                @relation(fields: [articleId], references: [id])
   articleId          String                 @unique
   status             ProcessedArticleStatus @default(completed)
@@ -1013,6 +1039,8 @@ model ProcessedArticle {
   totalTokens        Int?
   costUsd            Float?
   latencyMs          Int?
+  eventAt            DateTime
+  hasLocation        Boolean                @default(false)
   createdAt          DateTime               @default(now())
   processedAt        DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
@@ -1020,8 +1048,30 @@ model ProcessedArticle {
   newsEventItems             NewsEventItem[]
   representativeOfNewsEvents NewsEvent[]                   @relation("NewsEventRepresentative")
   archiveClassification      ArchiveArticleClassification?
+  termBuckets                ProcessedArticleTermHourly[]
 
+  @@index([orgId, status, processedAt, articleId])
+  @@index([orgId, status, eventAt, articleId])
+  @@index([orgId, status, hasLocation, eventAt, articleId])
   @@fulltext([title, summary])
+}
+
+model ProcessedArticleTermHourly {
+  id                 String           @id @default(cuid())
+  org                Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId              String
+  processedArticle   ProcessedArticle @relation(fields: [processedArticleId], references: [id], onDelete: Cascade)
+  processedArticleId String
+  bucketStart        DateTime
+  term               String
+  source             String
+  articleCount       Int              @default(1)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@unique([processedArticleId, term, source])
+  @@index([orgId, bucketStart, term])
+  @@index([orgId, bucketStart, source])
 }
 
 model ArchiveArticleClassification {
@@ -1544,6 +1594,7 @@ model EconomicDataItemCategory {
   createdAt  DateTime         @default(now())
 
   @@unique([itemId, categoryId])
+  @@index([categoryId, itemId])
 }
 
 model EconomicDataPoint {
@@ -1560,6 +1611,7 @@ model EconomicDataPoint {
 
   @@unique([itemId, recordedAt, sourceField])
   @@index([itemId, recordedAt])
+  @@index([itemId, sourceField, recordedAt])
 }
 
 model EconomicDataFetchConfig {

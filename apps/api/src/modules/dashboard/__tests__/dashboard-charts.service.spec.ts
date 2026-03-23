@@ -31,6 +31,7 @@ jest.mock("@modular/mongo", () => ({
 const createCache = () => ({
   get: jest.fn(),
   set: jest.fn(),
+  wrap: jest.fn(async (_key: string, _ttlSeconds: number, loader: () => Promise<unknown>) => loader()),
 });
 
 const createRealtimeSignalsStore = (
@@ -82,7 +83,7 @@ describe("DashboardChartsService", () => {
     expect(range.end.toISOString()).toBe("2026-03-03T08:45:30.123Z");
   });
 
-  it("filters war map news markers by publishedAt priority (falls back to crawlAt when publishedAt is null)", async () => {
+  it("filters war map news markers by orgId/eventAt on the processed article read model", async () => {
     const prisma = {
       processedArticle: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -108,32 +109,19 @@ describe("DashboardChartsService", () => {
     expect(prisma.processedArticle.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
+          orgId: "org-1",
           status: ProcessedArticleStatus.completed,
-          OR: expect.arrayContaining([
-            expect.objectContaining({
-              publishedAt: expect.objectContaining({
-                gte: range.start,
-                lte: range.end,
-              }),
-              article: { orgId: "org-1" },
-            }),
-            expect.objectContaining({
-              publishedAt: null,
-              article: expect.objectContaining({
-                orgId: "org-1",
-                crawlAt: expect.objectContaining({
-                  gte: range.start,
-                  lte: range.end,
-                }),
-              }),
-            }),
-          ]),
+          hasLocation: true,
+          eventAt: {
+            gte: range.start,
+            lte: range.end,
+          },
         }),
       }),
     );
   });
 
-  it("filters war map events by publishedAt priority (falls back to crawlAt when publishedAt is null)", async () => {
+  it("filters war map events by orgId/eventAt on the processed article read model", async () => {
     const prisma = {
       alertEvent: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -162,26 +150,13 @@ describe("DashboardChartsService", () => {
     expect(prisma.processedArticle.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
+          orgId: "org-1",
           status: ProcessedArticleStatus.completed,
-          OR: expect.arrayContaining([
-            expect.objectContaining({
-              publishedAt: expect.objectContaining({
-                gte: range.start,
-                lte: range.end,
-              }),
-              article: { orgId: "org-1" },
-            }),
-            expect.objectContaining({
-              publishedAt: null,
-              article: expect.objectContaining({
-                orgId: "org-1",
-                crawlAt: expect.objectContaining({
-                  gte: range.start,
-                  lte: range.end,
-                }),
-              }),
-            }),
-          ]),
+          hasLocation: true,
+          eventAt: {
+            gte: range.start,
+            lte: range.end,
+          },
         }),
       }),
     );

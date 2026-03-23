@@ -41,6 +41,10 @@ export function TimeRangeControls({ appliedGranularity, appliedGranularityRange 
   const { range, start, end, setRange, setCustomRange } = useDashboardRangeStore();
   const backendGranularityEnabled =
     typeof appliedGranularity !== "undefined" || typeof appliedGranularityRange !== "undefined";
+  const backendGranularityUnknown =
+    appliedGranularity === UiTimeGranularity.Unknown ||
+    appliedGranularityRange?.finest === UiTimeGranularity.Unknown ||
+    appliedGranularityRange?.coarsest === UiTimeGranularity.Unknown;
   const resolvedAppliedGranularity =
     appliedGranularity && appliedGranularity !== UiTimeGranularity.Unknown
       ? appliedGranularity
@@ -71,13 +75,13 @@ export function TimeRangeControls({ appliedGranularity, appliedGranularityRange 
   const aggregationColor =
     resolvedAppliedGranularity || hasMixedGranularity
       ? "geekblue"
-      : backendGranularityEnabled
+      : backendGranularityEnabled && !backendGranularityUnknown
         ? "processing"
         : "default";
   const aggregationText =
     resolvedAppliedGranularity || hasMixedGranularity
       ? `${aggregationLabel}: ${appliedGranularityDisplayLabel}`
-      : backendGranularityEnabled
+      : backendGranularityEnabled && !backendGranularityUnknown
         ? `${aggregationLabel}: ${t("common.loading", { defaultValue: "Loading..." })}`
         : `${aggregationLabel}: ${t("common.notAvailable", { defaultValue: "Not available" })}`;
 
@@ -86,9 +90,13 @@ export function TimeRangeControls({ appliedGranularity, appliedGranularityRange 
       ? t("dashboard.timeRange.aggregationHintBackend", {
           defaultValue: "Aggregation is reported by the backend."
         })
-      : t("dashboard.timeRange.aggregationHintPending", {
-          defaultValue: "Waiting for backend to report aggregation granularity."
-        })
+      : backendGranularityUnknown
+        ? t("dashboard.timeRange.aggregationHintUnavailable", {
+            defaultValue: "No aggregation granularity is available for the current data window."
+          })
+        : t("dashboard.timeRange.aggregationHintPending", {
+            defaultValue: "Waiting for backend to report aggregation granularity."
+          })
     : t("dashboard.timeRange.aggregationHintUnavailable", {
         defaultValue: "This view does not report aggregation granularity."
       });

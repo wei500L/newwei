@@ -52,7 +52,15 @@ describe("DashboardChartsService.getSpacetimeGeoHeatmap", () => {
       })
     } as any;
 
-    const service = new DashboardChartsService(prisma, geocoding, { get: jest.fn(), set: jest.fn() } as any);
+    const service = new DashboardChartsService(
+      prisma,
+      geocoding,
+      {
+        get: jest.fn(),
+        set: jest.fn(),
+        wrap: jest.fn(async (_key: string, _ttlSeconds: number, loader: () => Promise<unknown>) => loader()),
+      } as any,
+    );
 
     const result = await service.getSpacetimeGeoHeatmap(
       {

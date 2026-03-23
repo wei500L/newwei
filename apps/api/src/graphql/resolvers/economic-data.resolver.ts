@@ -213,12 +213,32 @@ export class EconomicDataResolver {
   ): Promise<EconomicDataWithInsightsModel> {
     const start = new Date(timeRange.start);
     const end = new Date(timeRange.end);
-    const points = await this.akshareService.getDataByCategory(category, start, end, granularity);
+    const resolvedGranularity = granularity ?? this.resolveDefaultGranularityForRange(start, end);
+    const baseGranularity = granularity
+      ? null
+      : this.parseGranularity(await this.akshareService.getCategoryBaseGranularity(category));
+    const appliedGranularity = baseGranularity
+      ? this.coarsestTimeGranularity(resolvedGranularity, baseGranularity)
+      : resolvedGranularity;
+    const skipGranularityValidation = Boolean(!granularity && baseGranularity);
+    const points = skipGranularityValidation
+      ? await this.akshareService.getDataByCategory(
+          category,
+          start,
+          end,
+          appliedGranularity,
+          undefined,
+          { skipGranularityValidation: true }
+        )
+      : await this.akshareService.getDataByCategory(category, start, end, appliedGranularity);
     const dataPoints = Array.isArray(points) ? points : points.data;
 
     const mappedPoints = dataPoints.map((point) => ({
       timestamp: point.recordedAt,
-      effectiveGranularity: this.resolveEffectiveGranularity(granularity, point.item?.defaultFrequency),
+      effectiveGranularity: this.resolveEffectiveGranularity(
+        appliedGranularity,
+        point.item?.defaultFrequency
+      ),
       value: Number(point.value),
       unit: point.unit,
       sourceField: point.sourceField,

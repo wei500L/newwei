@@ -16,6 +16,10 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { ProcessedArticleStatus } from "@prisma/client";
 import type Redis from "ioredis";
 
+import {
+  extractProcessedArticleTerms,
+  normalizeProcessedArticleSource,
+} from "../../common/processed-article-indexing";
 import { CacheService } from "../cache/cache.service";
 import { REDIS_CLIENT } from "../cache/cache.tokens";
 import { EnvService } from "../config/config.service";
@@ -2971,63 +2975,39 @@ export class RealtimeSignalsService {
     const recentStart = new Date(Date.now() - 2 * 60 * 60 * 1_000);
     const baselineStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1_000);
 
-    const [recentArticles, baselineArticles] = await Promise.all([
-      this.prisma.processedArticle.findMany({
+    const [recentTermRows, baselineTermRows] = await Promise.all([
+      this.prisma.processedArticleTermHourly.groupBy({
         where: {
-          status: ProcessedArticleStatus.completed,
-          article: { orgId },
-          processedAt: { gte: recentStart },
+          orgId,
+          bucketStart: { gte: recentStart },
         },
-        select: {
-          title: true,
-          summary: true,
-          source: true,
-          topics: true,
+        by: ["term", "source"],
+        _sum: {
+          articleCount: true,
         },
-        orderBy: { processedAt: "desc" },
-        take: 1_500,
       }),
-      this.prisma.processedArticle.findMany({
+      this.prisma.processedArticleTermHourly.groupBy({
         where: {
-          status: ProcessedArticleStatus.completed,
-          article: { orgId },
-          processedAt: { gte: baselineStart, lt: recentStart },
+          orgId,
+          bucketStart: { gte: baselineStart, lt: recentStart },
         },
-        select: {
-          title: true,
-          summary: true,
-          source: true,
-          topics: true,
+        by: ["term"],
+        _sum: {
+          articleCount: true,
         },
-        orderBy: { processedAt: "desc" },
-        take: 5_000,
       }),
     ]);
 
-    const recentCounts = new Map<
-      string,
-      { count: number; sources: Set<string> }
-    >();
-    const baselineCounts = new Map<string, number>();
-
-    for (const article of recentArticles) {
-      const source = this.normalizeSource(article.source);
-      for (const term of this.extractTermsFromArticle(article)) {
-        const entry = recentCounts.get(term) ?? {
-          count: 0,
-          sources: new Set(),
-        };
-        entry.count += 1;
-        entry.sources.add(source);
-        recentCounts.set(term, entry);
-      }
-    }
-
-    for (const article of baselineArticles) {
-      for (const term of this.extractTermsFromArticle(article)) {
-        baselineCounts.set(term, (baselineCounts.get(term) ?? 0) + 1);
-      }
-    }
+    const fallbackCounts =
+      recentTermRows.length === 0 && baselineTermRows.length === 0
+        ? await this.loadKeywordSpikeFallbackCounts(orgId, recentStart, baselineStart)
+        : null;
+    const recentCounts =
+      fallbackCounts?.recentCounts ??
+      this.buildRecentTermCountsFromBuckets(recentTermRows);
+    const baselineCounts =
+      fallbackCounts?.baselineCounts ??
+      this.buildBaselineTermCountsFromBuckets(baselineTermRows);
 
     const spikes: {
       id: string;
@@ -3079,8 +3059,18 @@ export class RealtimeSignalsService {
         value: topSpikes.length,
         context: {
           source: "internal",
-          recentArticleCount: recentArticles.length,
-          baselineArticleCount: baselineArticles.length,
+          recentArticleCount:
+            fallbackCounts?.recentArticleCount ??
+            recentTermRows.reduce(
+              (total, row) => total + (row._sum.articleCount ?? 0),
+              0,
+            ),
+          baselineArticleCount:
+            fallbackCounts?.baselineArticleCount ??
+            baselineTermRows.reduce(
+              (total, row) => total + (row._sum.articleCount ?? 0),
+              0,
+            ),
           spikes: topSpikes,
         },
       },
@@ -3320,12 +3310,32 @@ export class RealtimeSignalsService {
     }
     const since = new Date(Date.now() - 24 * 60 * 60 * 1_000);
     const searchTokens = tokens.slice(0, 3);
+    const rows = await this.prisma.processedArticleTermHourly.groupBy({
+      where: {
+        orgId,
+        bucketStart: { gte: since },
+        term: { in: searchTokens },
+      },
+      by: ["term"],
+      _sum: {
+        articleCount: true,
+      },
+    });
+
+    const groupedCount = rows.reduce(
+      (maxCount, row) => Math.max(maxCount, row._sum.articleCount ?? 0),
+      0,
+    );
+    if (groupedCount > 0) {
+      return groupedCount;
+    }
+
     let total = 0;
     for (const token of searchTokens) {
       const count = await this.prisma.processedArticle.count({
         where: {
           status: ProcessedArticleStatus.completed,
-          article: { orgId },
+          orgId,
           processedAt: { gte: since },
           OR: [
             { title: { contains: token } },
@@ -3336,6 +3346,123 @@ export class RealtimeSignalsService {
       total = Math.max(total, count);
     }
     return total;
+  }
+
+  private buildRecentTermCountsFromBuckets(
+    rows: Array<{
+      term: string;
+      source: string;
+      _sum: { articleCount: number | null };
+    }>,
+  ) {
+    const recentCounts = new Map<
+      string,
+      { count: number; sources: Set<string> }
+    >();
+    for (const row of rows) {
+      const term = row.term.trim();
+      if (!term) {
+        continue;
+      }
+      const source = row.source.trim() || "unknown";
+      const count = row._sum.articleCount ?? 0;
+      const entry = recentCounts.get(term) ?? {
+        count: 0,
+        sources: new Set(),
+      };
+      entry.count += count;
+      entry.sources.add(source);
+      recentCounts.set(term, entry);
+    }
+    return recentCounts;
+  }
+
+  private buildBaselineTermCountsFromBuckets(
+    rows: Array<{
+      term: string;
+      _sum: { articleCount: number | null };
+    }>,
+  ) {
+    const baselineCounts = new Map<string, number>();
+    for (const row of rows) {
+      const term = row.term.trim();
+      if (!term) {
+        continue;
+      }
+      baselineCounts.set(term, (baselineCounts.get(term) ?? 0) + (row._sum.articleCount ?? 0));
+    }
+    return baselineCounts;
+  }
+
+  private async loadKeywordSpikeFallbackCounts(
+    orgId: string,
+    recentStart: Date,
+    baselineStart: Date,
+  ) {
+    const [recentArticles, baselineArticles] = await Promise.all([
+      this.prisma.processedArticle.findMany({
+        where: {
+          status: ProcessedArticleStatus.completed,
+          orgId,
+          processedAt: { gte: recentStart },
+        },
+        select: {
+          title: true,
+          summary: true,
+          source: true,
+          topics: true,
+        },
+        orderBy: { processedAt: "desc" },
+        take: 1_500,
+      }),
+      this.prisma.processedArticle.findMany({
+        where: {
+          status: ProcessedArticleStatus.completed,
+          orgId,
+          processedAt: { gte: baselineStart, lt: recentStart },
+        },
+        select: {
+          title: true,
+          summary: true,
+          source: true,
+          topics: true,
+        },
+        orderBy: { processedAt: "desc" },
+        take: 5_000,
+      }),
+    ]);
+
+    const recentCounts = new Map<
+      string,
+      { count: number; sources: Set<string> }
+    >();
+    const baselineCounts = new Map<string, number>();
+
+    for (const article of recentArticles) {
+      const source = normalizeProcessedArticleSource(article.source);
+      for (const term of extractProcessedArticleTerms(article)) {
+        const entry = recentCounts.get(term) ?? {
+          count: 0,
+          sources: new Set(),
+        };
+        entry.count += 1;
+        entry.sources.add(source);
+        recentCounts.set(term, entry);
+      }
+    }
+
+    for (const article of baselineArticles) {
+      for (const term of extractProcessedArticleTerms(article)) {
+        baselineCounts.set(term, (baselineCounts.get(term) ?? 0) + 1);
+      }
+    }
+
+    return {
+      recentCounts,
+      baselineCounts,
+      recentArticleCount: recentArticles.length,
+      baselineArticleCount: baselineArticles.length,
+    };
   }
 
   private extractTopicTokens(title: string) {
@@ -3618,7 +3745,7 @@ export class RealtimeSignalsService {
           this.prisma.processedArticle.count({
             where: {
               status: ProcessedArticleStatus.completed,
-              article: { orgId },
+              orgId,
               processedAt: { gte: since },
             },
           }),
@@ -3626,7 +3753,7 @@ export class RealtimeSignalsService {
           this.prisma.processedArticle.findFirst({
             where: {
               status: ProcessedArticleStatus.completed,
-              article: { orgId },
+              orgId,
             },
             orderBy: { processedAt: "desc" },
             select: { processedAt: true },
@@ -3669,21 +3796,14 @@ export class RealtimeSignalsService {
     orgId: string,
     since: Date,
   ): Promise<number> {
-    const rows = await this.prisma.$queryRaw<Array<{ count: bigint | number }>>`
-      SELECT COUNT(*) AS count
-      FROM \`ProcessedArticle\` pa
-      INNER JOIN \`Article\` a ON a.id = pa.articleId
-      WHERE a.orgId = ${orgId}
-        AND pa.status = ${ProcessedArticleStatus.completed}
-        AND pa.processedAt >= ${since}
-        AND pa.location IS NOT NULL
-        AND CHAR_LENGTH(TRIM(pa.location)) > 0
-    `;
-    const count = rows[0]?.count;
-    if (typeof count === "bigint") {
-      return Number(count);
-    }
-    return this.toFiniteNumber(count) ?? 0;
+    return this.prisma.processedArticle.count({
+      where: {
+        orgId,
+        status: ProcessedArticleStatus.completed,
+        processedAt: { gte: since },
+        hasLocation: true,
+      },
+    });
   }
 
   private async getMongoMarkerReadiness(
@@ -5153,49 +5273,6 @@ export class RealtimeSignalsService {
       return normalized;
     }
     return extractCountryCodeFromText(value) ?? undefined;
-  }
-
-  private normalizeSource(value: unknown) {
-    const normalized = this.normalizeString(value);
-    return normalized ?? "unknown";
-  }
-
-  private extractTermsFromArticle(article: {
-    title?: string | null;
-    summary?: string | null;
-    topics?: unknown;
-  }) {
-    const terms = new Set<string>();
-    const pushTokens = (text: string | null | undefined) => {
-      if (!text) {
-        return;
-      }
-      for (const token of text.toLowerCase().split(/[^a-z0-9]+/g)) {
-        const term = token.trim();
-        if (term.length < 4 || SIMPLE_STOPWORDS.has(term)) {
-          continue;
-        }
-        terms.add(term);
-      }
-    };
-
-    pushTokens(article.title ?? undefined);
-    pushTokens(article.summary ?? undefined);
-    if (Array.isArray(article.topics)) {
-      for (const topic of article.topics) {
-        if (typeof topic === "string") {
-          pushTokens(topic);
-          continue;
-        }
-        if (topic && typeof topic === "object") {
-          const record = topic as Record<string, unknown>;
-          pushTokens(this.normalizeString(record.name) ?? undefined);
-          pushTokens(this.normalizeString(record.label) ?? undefined);
-        }
-      }
-    }
-
-    return Array.from(terms);
   }
 
   private buildAisHeaders(runtime: RealtimeSignalsRuntimeConfig) {

@@ -257,7 +257,11 @@ describe("NewsPipelineService", () => {
   const prisma: any = {
     processedArticle: {
       findFirst: jest.fn().mockResolvedValue(null),
-      upsert: jest.fn().mockResolvedValue(null),
+      upsert: jest.fn().mockResolvedValue({ id: "processed-article-1" }),
+    },
+    processedArticleTermHourly: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      createMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     article: {
       upsert: jest.fn().mockResolvedValue({ id: "article-1" }),
@@ -298,6 +302,7 @@ describe("NewsPipelineService", () => {
     cb({
       article: prisma.article,
       processedArticle: prisma.processedArticle,
+      processedArticleTermHourly: prisma.processedArticleTermHourly,
       mongoOutbox,
     }),
   );
@@ -344,11 +349,14 @@ describe("NewsPipelineService", () => {
     liteLlm.embedding.mockImplementation(async () => buildEmbeddingResponse());
     (prisma.processedArticle.findFirst as jest.Mock).mockResolvedValue(null);
     (prisma.article.upsert as jest.Mock).mockResolvedValue({ id: "article-1" });
-    (prisma.processedArticle.upsert as jest.Mock).mockResolvedValue(null);
+    (prisma.processedArticle.upsert as jest.Mock).mockResolvedValue({
+      id: "processed-article-1",
+    });
     prisma.runInTransaction.mockImplementation(async (cb: any) =>
       cb({
         article: prisma.article,
         processedArticle: prisma.processedArticle,
+        processedArticleTermHourly: prisma.processedArticleTermHourly,
         mongoOutbox,
       }),
     );

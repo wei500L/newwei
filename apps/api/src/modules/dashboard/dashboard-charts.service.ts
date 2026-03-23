@@ -33,7 +33,11 @@ import {
   Injectable,
   InternalServerErrorException,
 } from "@nestjs/common";
-import { AlertSeverity, ProcessedArticleStatus } from "@prisma/client";
+import {
+  AlertSeverity,
+  Prisma,
+  ProcessedArticleStatus,
+} from "@prisma/client";
 import { createHash } from "node:crypto";
 
 import { CacheService } from "../cache/cache.service";
@@ -107,6 +111,7 @@ const DEFAULT_SPACETIME_PROPAGATION_PREDECESSORS = 8;
 const SPACETIME_GEO_CLUSTER_STEP_DEG = 0.5;
 const SPACETIME_GEO_HEAT_HALF_LIFE_DAYS = 7;
 const SPACETIME_GEO_SNAPSHOT_TTL_SECONDS = 60 * 60;
+const DASHBOARD_SHARED_QUERY_TTL_SECONDS = 10;
 const PREFERRED_SOURCE_FIELDS = [
   "close",
   "收盘价",
@@ -896,6 +901,50 @@ export class DashboardChartsService {
     } catch {
       return false;
     }
+  }
+
+  private buildDashboardQueryCacheKey(scope: string, payload: unknown) {
+    const hash = createHash("sha1")
+      .update(JSON.stringify(payload))
+      .digest("hex");
+    return `dashboard:query:${scope}:${hash}`;
+  }
+
+  private async loadSharedDashboardQuery<T>(
+    scope: string,
+    payload: unknown,
+    loader: () => Promise<T>,
+  ): Promise<T> {
+    return this.cache.wrap(
+      this.buildDashboardQueryCacheKey(scope, payload),
+      DASHBOARD_SHARED_QUERY_TTL_SECONDS,
+      loader,
+      {
+        lockTtlMs: 5_000,
+        retryDelayMs: 50,
+        maxWaitMs: 5_000,
+      },
+    );
+  }
+
+  private buildProcessedArticleRangeWhere(
+    orgId: string,
+    range: DateRange,
+    options: {
+      requireLocation?: boolean;
+      extra?: Prisma.ProcessedArticleWhereInput;
+    } = {},
+  ): Prisma.ProcessedArticleWhereInput {
+    return {
+      orgId,
+      status: ProcessedArticleStatus.completed,
+      eventAt: {
+        gte: range.start,
+        lte: range.end,
+      },
+      ...(options.requireLocation ? { hasLocation: true } : {}),
+      ...(options.extra ?? {}),
+    };
   }
 
   private parseWarMapDate(value: unknown): Date | undefined {
@@ -3021,43 +3070,23 @@ export class DashboardChartsService {
         },
         orderBy: { triggeredAt: "desc" },
       }),
-      this.prisma.processedArticle.findMany({
-        where: {
-          status: ProcessedArticleStatus.completed,
-          location: { not: null },
-          OR: [
-            {
-              publishedAt: {
-                gte: range.start,
-                lte: range.end,
-              },
-              article: { orgId },
-            },
-            {
-              publishedAt: null,
-              article: {
-                orgId,
-                crawlAt: {
-                  gte: range.start,
-                  lte: range.end,
-                },
-              },
-            },
-          ],
-        },
-        select: {
-          location: true,
-          processedAt: true,
-          publishedAt: true,
-          article: {
+      this.loadSharedDashboardQuery(
+        "war-map-events",
+        { orgId, range },
+        async () =>
+          this.prisma.processedArticle.findMany({
+            where: this.buildProcessedArticleRangeWhere(orgId, range, {
+              requireLocation: true,
+            }),
             select: {
-              crawlAt: true,
+              location: true,
+              processedAt: true,
+              eventAt: true,
             },
-          },
-        },
-        orderBy: { processedAt: "desc" },
-        take: 2500,
-      }),
+            orderBy: [{ eventAt: "desc" }, { articleId: "desc" }],
+            take: 2500,
+          }),
+      ),
     ]);
 
     let mongoFallbackRecords: WarMapMongoLocationRecord[] = [];
@@ -3143,8 +3172,7 @@ export class DashboardChartsService {
         latestAt: undefined,
       };
       entry.newsCount += 1;
-      const latestAt =
-        record.publishedAt ?? record.article.crawlAt ?? record.processedAt;
+      const latestAt = record.eventAt ?? record.processedAt;
       entry.latestAt =
         !entry.latestAt || latestAt > entry.latestAt
           ? latestAt
@@ -3269,48 +3297,34 @@ export class DashboardChartsService {
     options: WarMapNewsMarkersOptions = {},
   ): Promise<WarMapNewsMarkersResponse> {
     const geoIndex = this.getGeoIndex();
-    const prismaRecords = await this.prisma.processedArticle.findMany({
-      where: {
-        status: ProcessedArticleStatus.completed,
-        location: { not: null },
-        OR: [
-          {
-            publishedAt: {
-              gte: range.start,
-              lte: range.end,
-            },
-            article: { orgId },
-          },
-          {
-            publishedAt: null,
+    const prismaRecords = await this.loadSharedDashboardQuery(
+      "war-map-news-markers",
+      { orgId, range },
+      async () =>
+        this.prisma.processedArticle.findMany({
+          where: this.buildProcessedArticleRangeWhere(orgId, range, {
+            requireLocation: true,
+          }),
+          select: {
+            id: true,
+            title: true,
+            location: true,
+            publishedAt: true,
+            eventAt: true,
+            processedAt: true,
+            entities: true,
             article: {
-              orgId,
-              crawlAt: {
-                gte: range.start,
-                lte: range.end,
+              select: {
+                url: true,
+                crawlAt: true,
+                titleGuess: true,
               },
             },
           },
-        ],
-      },
-      select: {
-        id: true,
-        title: true,
-        location: true,
-        publishedAt: true,
-        processedAt: true,
-        entities: true,
-        article: {
-          select: {
-            url: true,
-            crawlAt: true,
-            titleGuess: true,
-          },
-        },
-      },
-      orderBy: { processedAt: "desc" },
-      take: MAX_WAR_MAP_NEWS_MARKERS,
-    });
+          orderBy: [{ eventAt: "desc" }, { articleId: "desc" }],
+          take: MAX_WAR_MAP_NEWS_MARKERS,
+        }),
+    );
 
     let records: WarMapSourceNewsRecord[] = prismaRecords.map((record) => ({
       id: record.id,
@@ -3318,7 +3332,7 @@ export class DashboardChartsService {
       location: typeof record.location === "string" ? record.location : "",
       entities: record.entities,
       url: record.article.url ?? null,
-      publishedAt: record.publishedAt ?? undefined,
+      publishedAt: record.publishedAt ?? record.eventAt ?? undefined,
       processedAt: record.processedAt ?? undefined,
       crawlAt: record.article.crawlAt ?? undefined,
       titleGuess: record.article.titleGuess ?? null,
@@ -3489,54 +3503,34 @@ export class DashboardChartsService {
     const eventId =
       typeof options.eventId === "string" ? options.eventId.trim() : "";
     const includeBuckets = options.includeBuckets === true;
-    const records = await this.prisma.processedArticle.findMany({
-      where: {
-        status: ProcessedArticleStatus.completed,
-        location: { not: null },
-        ...(eventId
-          ? {
-              newsEventItems: {
-                some: {
-                  orgId,
-                  eventId,
-                },
-              },
-            }
-          : {}),
-        OR: [
-          {
-            publishedAt: {
-              gte: range.start,
-              lte: range.end,
-            },
-            article: { orgId },
-          },
-          {
-            publishedAt: null,
-            article: {
-              orgId,
-              crawlAt: {
-                gte: range.start,
-                lte: range.end,
-              },
-            },
-          },
-        ],
-      },
-      select: {
-        location: true,
-        cleanedMarkdownRef: true,
-        publishedAt: true,
-        processedAt: true,
-        article: {
+    const records = await this.loadSharedDashboardQuery(
+      "spacetime-geo-heatmap",
+      { orgId, range, eventId, includeBuckets },
+      async () =>
+        this.prisma.processedArticle.findMany({
+          where: this.buildProcessedArticleRangeWhere(orgId, range, {
+            requireLocation: true,
+            extra: eventId
+              ? {
+                  newsEventItems: {
+                    some: {
+                      orgId,
+                      eventId,
+                    },
+                  },
+                }
+              : undefined,
+          }),
           select: {
-            crawlAt: true,
+            location: true,
+            cleanedMarkdownRef: true,
+            eventAt: true,
+            processedAt: true,
           },
-        },
-      },
-      orderBy: { processedAt: "desc" },
-      take: MAX_SPACETIME_GEO_RECORDS,
-    });
+          orderBy: [{ eventAt: "desc" }, { articleId: "desc" }],
+          take: MAX_SPACETIME_GEO_RECORDS,
+        }),
+    );
 
     if (records.length === 0) {
       return { points: [] };
@@ -3638,8 +3632,7 @@ export class DashboardChartsService {
         continue;
       }
       const candidate = normalizeLocationCandidate(rawLocation);
-      const ts =
-        record.publishedAt ?? record.article.crawlAt ?? record.processedAt;
+      const ts = record.eventAt ?? record.processedAt;
       const ageMs = Math.max(0, nowMs - ts.getTime());
       const weight = Math.exp(-ageMs / halfLifeMs);
 
@@ -3978,10 +3971,12 @@ export class DashboardChartsService {
       : range.end;
 
     const records = await this.prisma.processedArticle.findMany({
-      where: {
-        status: ProcessedArticleStatus.completed,
-        location: { not: null },
-        ...(eventId
+      where: this.buildProcessedArticleRangeWhere(orgId, {
+        start: effectiveStart,
+        end: effectiveEnd,
+      }, {
+        requireLocation: true,
+        extra: eventId
           ? {
               newsEventItems: {
                 some: {
@@ -3990,33 +3985,15 @@ export class DashboardChartsService {
                 },
               },
             }
-          : {}),
-        OR: [
-          {
-            publishedAt: {
-              gte: effectiveStart,
-              lte: effectiveEnd,
-            },
-            article: { orgId },
-          },
-          {
-            publishedAt: null,
-            article: {
-              orgId,
-              crawlAt: {
-                gte: effectiveStart,
-                lte: effectiveEnd,
-              },
-            },
-          },
-        ],
-      },
+          : undefined,
+      }),
       select: {
         id: true,
         title: true,
         location: true,
         cleanedMarkdownRef: true,
         publishedAt: true,
+        eventAt: true,
         processedAt: true,
         article: {
           select: {
@@ -4026,7 +4003,7 @@ export class DashboardChartsService {
           },
         },
       },
-      orderBy: { processedAt: "desc" },
+      orderBy: [{ eventAt: "desc" }, { articleId: "desc" }],
       take: MAX_SPACETIME_GEO_RECORDS,
     });
 
@@ -4040,7 +4017,7 @@ export class DashboardChartsService {
     }
 
     const resolveTimestamp = (record: (typeof records)[number]) =>
-      record.publishedAt ?? record.article.crawlAt ?? record.processedAt;
+      record.eventAt ?? record.article.crawlAt ?? record.processedAt;
 
     const sortedRecords = [...records].sort(
       (a, b) => resolveTimestamp(b).getTime() - resolveTimestamp(a).getTime(),
@@ -4540,25 +4517,11 @@ export class DashboardChartsService {
         eventId,
         processedArticle: {
           status: ProcessedArticleStatus.completed,
-          OR: [
-            {
-              publishedAt: {
-                gte: range.start,
-                lte: range.end,
-              },
-              article: { orgId },
-            },
-            {
-              publishedAt: null,
-              article: {
-                orgId,
-                crawlAt: {
-                  gte: range.start,
-                  lte: range.end,
-                },
-              },
-            },
-          ],
+          orgId,
+          eventAt: {
+            gte: range.start,
+            lte: range.end,
+          },
         },
       },
       select: {
@@ -4942,25 +4905,11 @@ export class DashboardChartsService {
         eventId,
         processedArticle: {
           status: ProcessedArticleStatus.completed,
-          OR: [
-            {
-              publishedAt: {
-                gte: range.start,
-                lte: range.end,
-              },
-              article: { orgId },
-            },
-            {
-              publishedAt: null,
-              article: {
-                orgId,
-                crawlAt: {
-                  gte: range.start,
-                  lte: range.end,
-                },
-              },
-            },
-          ],
+          orgId,
+          eventAt: {
+            gte: range.start,
+            lte: range.end,
+          },
         },
       },
       select: {

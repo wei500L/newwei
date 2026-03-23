@@ -115,6 +115,7 @@ interface PipelineProcessedArticleRow {
   language: string | null;
   location: string | null;
   publishedAt: Date | null;
+  eventAt: Date;
   processedAt: Date;
   cleanedMarkdownRef: string | null;
   article: {
@@ -833,17 +834,8 @@ export class NewsnowDomesticOpinionIndexService {
     const rows = (await this.prisma.processedArticle.findMany({
       where: {
         status: 'completed',
-        article: { orgId },
-        OR: [
-          { publishedAt: { gte: since } },
-          {
-            publishedAt: null,
-            article: {
-              orgId,
-              crawlAt: { gte: since },
-            },
-          },
-        ],
+        orgId,
+        eventAt: { gte: since },
       },
       select: {
         id: true,
@@ -855,6 +847,7 @@ export class NewsnowDomesticOpinionIndexService {
         language: true,
         location: true,
         publishedAt: true,
+        eventAt: true,
         processedAt: true,
         cleanedMarkdownRef: true,
         article: {
@@ -869,7 +862,7 @@ export class NewsnowDomesticOpinionIndexService {
           },
         },
       },
-      orderBy: [{ processedAt: 'desc' }, { id: 'desc' }],
+      orderBy: [{ eventAt: 'desc' }, { id: 'desc' }],
     })) as PipelineProcessedArticleRow[];
 
     if (rows.length === 0) {
@@ -887,7 +880,7 @@ export class NewsnowDomesticOpinionIndexService {
     const buckets = new Map<number, PipelineBucketAccumulator>();
 
     for (const row of rows) {
-      const eventAt = row.publishedAt ?? row.article.crawlAt ?? row.processedAt;
+      const eventAt = row.eventAt ?? row.publishedAt ?? row.article.crawlAt ?? row.processedAt;
       if (!(eventAt instanceof Date) || Number.isNaN(eventAt.getTime())) {
         continue;
       }
