@@ -86,6 +86,12 @@ const EMPTY_REJECTED_SUGGESTIONS: SituationMonitorRejectedSuggestions = {
   lexicalTerms: [],
 };
 
+function stopSituationMonitorInteractiveEvent(event: {
+  stopPropagation: () => void;
+}) {
+  event.stopPropagation();
+}
+
 function normalizeName(value: unknown) {
   return typeof value === "string" ? value.trim().slice(0, 64) : "";
 }
@@ -797,6 +803,11 @@ export function SituationMonitorMonitorsPanel({
       ),
     [preview?.suggestedLexicalTerms, selectedSuggestions.lexicalTerms, t],
   );
+  const interactiveControlProps = {
+    "data-sm-interactive": true,
+    onPointerDown: stopSituationMonitorInteractiveEvent,
+    onMouseDown: stopSituationMonitorInteractiveEvent,
+  } as const;
 
   if (!session?.accessToken) {
     return (
@@ -826,11 +837,17 @@ export function SituationMonitorMonitorsPanel({
           <Button
             size="small"
             loading={monitorsFetching}
+            {...interactiveControlProps}
             onClick={() => void refetchMonitors()}
           >
             {t("common.refresh", { defaultValue: "Refresh" })}
           </Button>
-          <Button size="small" icon={<PlusOutlined />} onClick={openCreate}>
+          <Button
+            size="small"
+            icon={<PlusOutlined />}
+            {...interactiveControlProps}
+            onClick={openCreate}
+          >
             {t("situationMonitor.monitors.add", { defaultValue: "Add" })}
           </Button>
         </Space>
@@ -892,6 +909,7 @@ export function SituationMonitorMonitorsPanel({
                           <Button
                             size="small"
                             icon={<EditOutlined />}
+                            {...interactiveControlProps}
                             onClick={() => openEdit(monitor)}
                           >
                             {t("common.edit", { defaultValue: "Edit" })}
@@ -912,13 +930,14 @@ export function SituationMonitorMonitorsPanel({
                               })}
                               onConfirm={() => void handleDelete(monitor.id)}
                             >
-                              <Button
-                                danger
-                                size="small"
-                                icon={<DeleteOutlined />}
-                              >
-                                {t("common.delete", { defaultValue: "Delete" })}
-                              </Button>
+                                <Button
+                                  danger
+                                  size="small"
+                                  icon={<DeleteOutlined />}
+                                  {...interactiveControlProps}
+                                >
+                                  {t("common.delete", { defaultValue: "Delete" })}
+                                </Button>
                             </Popconfirm>
                           ) : null}
                         </Space>,
@@ -1099,6 +1118,7 @@ export function SituationMonitorMonitorsPanel({
                                   size="small"
                                   type="text"
                                   icon={<FileSearchOutlined />}
+                                  {...interactiveControlProps}
                                   aria-label={t(
                                     "situationMonitor.headlines.openItem",
                                     {

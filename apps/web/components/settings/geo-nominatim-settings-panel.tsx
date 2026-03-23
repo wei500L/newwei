@@ -56,6 +56,7 @@ export function GeoNominatimSettingsPanel() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<GeoNominatimGeocodeResult | null>(null);
+  const [testAttempted, setTestAttempted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [testErrorMessage, setTestErrorMessage] = useState<string | null>(null);
 
@@ -122,6 +123,7 @@ export function GeoNominatimSettingsPanel() {
 
   const handleTest = async (values: GeoNominatimTestFormValues) => {
     setTesting(true);
+    setTestAttempted(false);
     setTestErrorMessage(null);
     setTestResult(null);
     try {
@@ -134,8 +136,19 @@ export function GeoNominatimSettingsPanel() {
       );
       const result = response.data?.result ?? null;
       setTestResult(result);
+      setTestAttempted(true);
       if (!result) {
-        messageApi.info(t("systemSettings.geoNominatim.test.noResult"));
+        messageApi.info(
+          t("systemSettings.geoNominatim.test.noResult", {
+            defaultValue: "No geocoding result was returned for this query.",
+          }),
+        );
+      } else {
+        messageApi.success(
+          t("systemSettings.geoNominatim.test.success", {
+            defaultValue: "Geocoding test completed.",
+          }),
+        );
       }
     } catch (error) {
       captureClientError("Failed to test Nominatim geocoding", error);
@@ -198,7 +211,12 @@ export function GeoNominatimSettingsPanel() {
         </Space>
       </Space>
 
-      <Form layout="vertical" form={form} onFinish={handleSubmit}>
+      <Form
+        name="geo-nominatim-settings"
+        layout="vertical"
+        form={form}
+        onFinish={handleSubmit}
+      >
         <Form.Item
           label={t("systemSettings.geoNominatim.fields.userAgent")}
           name="userAgent"
@@ -233,7 +251,23 @@ export function GeoNominatimSettingsPanel() {
         <Alert type="error" showIcon message={testErrorMessage} style={{ marginBottom: "1rem" }} />
       ) : null}
 
-      <Form layout="inline" form={testForm} onFinish={handleTest}>
+      {testAttempted && !testErrorMessage && !testResult ? (
+        <Alert
+          type="info"
+          showIcon
+          message={t("systemSettings.geoNominatim.test.noResult", {
+            defaultValue: "No geocoding result was returned for this query.",
+          })}
+          style={{ marginBottom: "1rem" }}
+        />
+      ) : null}
+
+      <Form
+        name="geo-nominatim-test"
+        layout="inline"
+        form={testForm}
+        onFinish={handleTest}
+      >
         <Form.Item
           name="query"
           rules={[{ required: true, message: t("systemSettings.geoNominatim.test.validation.query") }]}

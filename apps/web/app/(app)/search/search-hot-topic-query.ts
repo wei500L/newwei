@@ -9,7 +9,7 @@ const PRESERVED_QUERY_KEYS = [
 
 export function buildHotTopicQueryString(
   currentParams: URLSearchParams,
-  topic: string
+  topic: string,
 ): string {
   const trimmedTopic = topic.trim();
   if (!trimmedTopic) {
@@ -26,4 +26,20 @@ export function buildHotTopicQueryString(
   }
   next.set("q", trimmedTopic);
   return next.toString();
+}
+
+export function buildGuidedSearchHref(
+  pathname: string,
+  currentParams: URLSearchParams,
+  topic: string,
+): string {
+  const queryString = buildHotTopicQueryString(currentParams, topic);
+  return queryString ? `${pathname}?${queryString}` : pathname;
+}
+
+export function shouldResetStaleSearchQuery(
+  query: string,
+  searchInput: string,
+): boolean {
+  return query.trim().length > 0 && searchInput.trim().length === 0;
 }

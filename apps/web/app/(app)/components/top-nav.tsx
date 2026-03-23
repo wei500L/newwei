@@ -12,7 +12,6 @@ import {
 } from "@ant-design/icons";
 import { Button, Drawer, Dropdown, Popover, Skeleton } from "antd";
 import type { MenuProps } from "antd";
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,6 +19,7 @@ import { useTranslation } from "react-i18next";
 
 import { buildActionRailNavConfig } from "./action-rail";
 import { resolveActiveItemKey } from "./action-rail-routing";
+import { navigateDrawerItem } from "./top-nav-drawer-navigation";
 import {
   alignDensityModeToBase,
   downgradeDensityModeForBase,
@@ -313,6 +313,16 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
     t,
   ]);
 
+  const handleDrawerNavigate = useCallback(
+    (path?: string) => {
+      navigateDrawerItem(path, {
+        push: (nextPath) => router.push(nextPath),
+        closeDrawer: () => setMobileNavOpen(false),
+      });
+    },
+    [router],
+  );
+
   return (
     <div className="fixed top-0 left-0 right-0 z-50 flex flex-col">
       {/* Ticker Tape Layer */}
@@ -519,14 +529,14 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
             {mainNavItems.map((item) => {
               const isActive = item.key === activeKey;
               return (
-                <Link
+                <button
                   key={item.key}
-                  href={item.path ?? "#"}
-                  onClick={() => setMobileNavOpen(false)}
+                  type="button"
+                  onClick={() => handleDrawerNavigate(item.path)}
                   aria-label={item.label}
                   aria-current={isActive ? "page" : undefined}
                   className={`
-                    flex items-center gap-3 rounded-xl px-3 py-2 transition-all duration-200
+                    flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-all duration-200
                     ${isActive
                       ? "bg-[var(--primary)] text-white shadow-sm"
                       : "text-slate-700 hover:text-[var(--primary)] hover:bg-slate-50"
@@ -535,7 +545,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
                 >
                   <span className="text-lg">{item.icon}</span>
                   <span className="font-medium">{item.label}</span>
-                </Link>
+                </button>
               );
             })}
           </div>
@@ -549,14 +559,14 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
                 {adminNavItems.map((item) => {
                   const isActive = item.key === activeKey;
                   return (
-                    <Link
+                    <button
                       key={item.key}
-                      href={item.path ?? "#"}
-                      onClick={() => setMobileNavOpen(false)}
+                      type="button"
+                      onClick={() => handleDrawerNavigate(item.path)}
                       aria-label={item.label}
                       aria-current={isActive ? "page" : undefined}
                       className={`
-                        flex items-center gap-3 rounded-xl px-3 py-2 transition-all duration-200
+                        flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-all duration-200
                         ${isActive
                           ? "bg-[var(--primary)] text-white shadow-sm"
                           : "text-slate-700 hover:text-[var(--primary)] hover:bg-slate-50"
@@ -565,7 +575,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
                     >
                       <span className="text-lg">{item.icon}</span>
                       <span className="font-medium">{item.label}</span>
-                    </Link>
+                    </button>
                   );
                 })}
               </div>

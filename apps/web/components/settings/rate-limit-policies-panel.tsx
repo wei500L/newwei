@@ -264,7 +264,7 @@ export function RateLimitPoliciesPanel() {
           <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
             {t("settings.rateLimitPolicies.description")}
           </Typography.Paragraph>
-          <Button type="primary" onClick={openCreate}>
+          <Button type="primary" htmlType="button" onClick={openCreate}>
             {t("settings.rateLimitPolicies.actions.new")}
           </Button>
         </div>
@@ -337,6 +337,7 @@ export function RateLimitPoliciesPanel() {
       )}
 
       <Form<RateLimitPolicyFormValues>
+        name="rate-limit-policy-create"
         form={createForm}
         layout="vertical"
         onFinish={handleCreate}
@@ -407,6 +408,7 @@ export function RateLimitPoliciesPanel() {
       </Form>
 
       <Form<RateLimitPolicyFormValues>
+        name="rate-limit-policy-edit"
         form={editForm}
         layout="vertical"
         onFinish={handleEdit}

@@ -1,6 +1,7 @@
 'use client';
 
 import { Alert, Card, Select, Spin, Tag, Typography } from 'antd';
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useMemo, type PropsWithChildren } from 'react';
@@ -17,19 +18,19 @@ import {
 function NavButton({
   active,
   description,
+  href,
   label,
-  onClick,
 }: {
   active: boolean;
   description: string;
+  href: string;
   label: string;
-  onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`settings-nav-button w-full rounded-2xl px-4 py-3 text-left ${
+    <Link
+      href={href}
+      aria-current={active ? 'page' : undefined}
+      className={`settings-nav-button block w-full rounded-2xl px-4 py-3 text-left no-underline ${
         active ? 'settings-nav-button--active' : ''
       }`}
     >
@@ -37,7 +38,7 @@ function NavButton({
       <div className="settings-nav-button__description mt-1 text-xs leading-5">
         {description}
       </div>
-    </button>
+    </Link>
   );
 }
 
@@ -144,6 +145,7 @@ export function AdminSettingsWorkspaceLayout({
             <div className="mt-5 flex flex-col gap-2">
               <NavButton
                 active={activePageId === null}
+                href="/admin/settings"
                 label={t('adminSettings.workspace.overview', {
                   defaultValue: 'Overview',
                 })}
@@ -151,17 +153,16 @@ export function AdminSettingsWorkspaceLayout({
                   defaultValue:
                     'See available domains, common shortcuts, and quick entry points.',
                 })}
-                onClick={() => router.push('/admin/settings')}
               />
               {visiblePages.map((page) => (
                 <NavButton
                   key={page.id}
                   active={activePageId === page.id}
+                  href={resolveAdminSettingsPagePath(page.id)}
                   label={t(page.titleKey, { defaultValue: page.defaultTitle })}
                   description={t(getAdminSettingsPageDescriptionKey(page.id), {
                     defaultValue: page.defaultDescription,
                   })}
-                  onClick={() => router.push(resolveAdminSettingsPagePath(page.id))}
                 />
               ))}
             </div>

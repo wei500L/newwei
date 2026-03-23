@@ -45,7 +45,10 @@ import {
   formatSelectedDateParam,
   parseDateParamUtc,
 } from "../events-archive/events-archive-helpers";
-import { buildHotTopicQueryString } from "./search-hot-topic-query";
+import {
+  buildGuidedSearchHref,
+  shouldResetStaleSearchQuery,
+} from "./search-hot-topic-query";
 
 const SEARCH_GUIDANCE_HISTORY_LIMIT = 8;
 const QUERY_TAG_MAX_LENGTH = 28;
@@ -432,7 +435,7 @@ export function SearchContent() {
   }, [mode, query]);
 
   useEffect(() => {
-    if (searchInput.trim().length > 0 || query.length === 0) {
+    if (!shouldResetStaleSearchQuery(query, searchInput)) {
       return;
     }
     const next = new URLSearchParams(searchParams.toString());
@@ -462,11 +465,18 @@ export function SearchContent() {
 
   const executeGuidedSearch = useCallback(
     (keyword: string) => {
-      const nextQuery = buildHotTopicQueryString(
-        new URLSearchParams(searchParams.toString()),
-        keyword,
+      const trimmedKeyword = keyword.trim();
+      if (!trimmedKeyword) {
+        return;
+      }
+      setSearchInput(trimmedKeyword);
+      router.push(
+        buildGuidedSearchHref(
+          pathname,
+          new URLSearchParams(searchParams.toString()),
+          trimmedKeyword,
+        ),
       );
-      router.push(nextQuery ? `${pathname}?${nextQuery}` : pathname);
     },
     [pathname, router, searchParams],
   );

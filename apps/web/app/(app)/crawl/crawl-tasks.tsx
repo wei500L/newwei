@@ -32,7 +32,6 @@ import {
   Switch,
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -960,9 +959,13 @@ export function CrawlTasksView() {
       fixed: "right",
       render: (_, record) => (
         <Space size={4}>
-          <Link href={`/admin/ops/crawl-tasks/${record.id}`}>
+          <Button
+            size="small"
+            type="link"
+            onClick={() => openTaskDetail(record.id)}
+          >
             {t("common.view")}
-          </Link>
+          </Button>
           {canManage ? (
             <Button
               size="small"
@@ -1024,6 +1027,10 @@ export function CrawlTasksView() {
     } catch (error: unknown) {
       message.error((error as Error).message ?? t("crawl.task.retryFailed"));
     }
+  };
+
+  const openTaskDetail = (taskId: string) => {
+    router.push(`/admin/ops/crawl-tasks/${taskId}`);
   };
 
   const handlePauseQueue = async () => {
@@ -2423,12 +2430,14 @@ export function CrawlTasksView() {
               return (
                 <List.Item
                   actions={[
-                    <Link
+                    <Button
                       key="view"
-                      href={`/admin/ops/crawl-tasks/${record.id}`}
+                      size="small"
+                      type="link"
+                      onClick={() => openTaskDetail(record.id)}
                     >
                       {t("common.view")}
-                    </Link>,
+                    </Button>,
                     canManage ? (
                       <Button
                         key="retry"

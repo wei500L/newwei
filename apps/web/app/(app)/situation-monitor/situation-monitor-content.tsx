@@ -1,9 +1,11 @@
 "use client";
 
 import {
+  DownOutlined,
   DragOutlined,
   FileSearchOutlined,
   InfoCircleOutlined,
+  RightOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
 import {
@@ -25,7 +27,7 @@ import {
   Tag,
   Typography,
 } from "antd";
-import type { ColumnsType } from "antd/es/table";
+import type { ColumnsType, TableProps } from "antd/es/table";
 import dynamic from "next/dynamic";
 import { useSession } from "next-auth/react";
 import {
@@ -35,6 +37,7 @@ import {
   useRef,
   useState,
   type ComponentType,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
 import type { Layout } from "react-grid-layout";
 import { useTranslation } from "react-i18next";
@@ -144,6 +147,14 @@ const TELEGRAM_TOPIC_PRESETS = [
   "cyber",
   "other",
 ] as const;
+
+const SITUATION_MONITOR_INTERACTIVE_SELECTOR = "[data-sm-interactive]";
+
+function stopSituationMonitorInteractiveEvent(event: {
+  stopPropagation: () => void;
+}) {
+  event.stopPropagation();
+}
 
 interface HeadlineRef {
   title: string;
@@ -2080,6 +2091,13 @@ export function SituationMonitorContent() {
     | PredictiveSignal;
 
   const correlationExpandable = useMemo(() => {
+    const expandRowLabel = t("common.expand", {
+      defaultValue: "Expand",
+    });
+    const collapseRowLabel = t("common.collapse", {
+      defaultValue: "Collapse",
+    });
+
     return {
       rowExpandable: (record: CorrelationRow) => {
         const boosted = record.learning?.boostedTokens?.length ?? 0;
@@ -2088,6 +2106,42 @@ export function SituationMonitorContent() {
         const fp = record.feedback?.falsePositive ?? 0;
         const fn = record.feedback?.falseNegative ?? 0;
         return boosted > 0 || blocked > 0 || suppressed > 0 || fp > 0 || fn > 0;
+      },
+      expandIcon: ({ expanded, onExpand, record }: {
+        expanded: boolean;
+        onExpand: (record: CorrelationRow, event: ReactMouseEvent<HTMLElement>) => void;
+        record: CorrelationRow;
+      }) => {
+        if (!record) {
+          return null;
+        }
+
+        const canExpand =
+          (record.learning?.boostedTokens?.length ?? 0) > 0 ||
+          (record.learning?.blockedTokens?.length ?? 0) > 0 ||
+          (record.learning?.suppressedCount ?? 0) > 0 ||
+          (record.feedback?.falsePositive ?? 0) > 0 ||
+          (record.feedback?.falseNegative ?? 0) > 0;
+
+        if (!canExpand) {
+          return <span aria-hidden className="inline-block w-7" />;
+        }
+
+        return (
+          <Button
+            data-sm-interactive
+            type="text"
+            size="small"
+            icon={expanded ? <DownOutlined /> : <RightOutlined />}
+            aria-label={`${expanded ? collapseRowLabel : expandRowLabel} row`}
+            onPointerDown={stopSituationMonitorInteractiveEvent}
+            onMouseDown={stopSituationMonitorInteractiveEvent}
+            onClick={(event) => {
+              stopSituationMonitorInteractiveEvent(event);
+              onExpand(record, event);
+            }}
+          />
+        );
       },
       expandedRowRender: (record: CorrelationRow) => {
         const fpCount = record.feedback?.falsePositive ?? 0;
@@ -2426,8 +2480,40 @@ export function SituationMonitorContent() {
   ];
 
   const narrativeExpandable = useMemo(() => {
+    const expandRowLabel = t("common.expand", {
+      defaultValue: "Expand",
+    });
+    const collapseRowLabel = t("common.collapse", {
+      defaultValue: "Collapse",
+    });
+
     return {
       rowExpandable: (record: NarrativeData) => Boolean(record.model),
+      expandIcon: ({ expanded, onExpand, record }: {
+        expanded: boolean;
+        onExpand: (record: NarrativeData, event: ReactMouseEvent<HTMLElement>) => void;
+        record: NarrativeData;
+      }) => {
+        if (!record?.model) {
+          return <span aria-hidden className="inline-block w-7" />;
+        }
+
+        return (
+          <Button
+            data-sm-interactive
+            type="text"
+            size="small"
+            icon={expanded ? <DownOutlined /> : <RightOutlined />}
+            aria-label={`${expanded ? collapseRowLabel : expandRowLabel} row`}
+            onPointerDown={stopSituationMonitorInteractiveEvent}
+            onMouseDown={stopSituationMonitorInteractiveEvent}
+            onClick={(event) => {
+              stopSituationMonitorInteractiveEvent(event);
+              onExpand(record, event);
+            }}
+          />
+        );
+      },
       expandedRowRender: (record: NarrativeData) => {
         const model = record.model;
         if (!model) return null;
@@ -4676,7 +4762,9 @@ export function SituationMonitorContent() {
             rowKey="id"
             size="small"
             columns={emergingColumns}
-            expandable={correlationExpandable}
+            expandable={
+              correlationExpandable as TableProps<EmergingPattern>["expandable"]
+            }
             dataSource={data?.correlation?.emergingPatterns ?? []}
             pagination={{
               pageSize: screens.lg ? 6 : 4,
@@ -4694,7 +4782,9 @@ export function SituationMonitorContent() {
             rowKey="id"
             size="small"
             columns={crossSourceColumns}
-            expandable={correlationExpandable}
+            expandable={
+              correlationExpandable as TableProps<CrossSourceCorrelation>["expandable"]
+            }
             dataSource={data?.correlation?.crossSourceCorrelations ?? []}
             pagination={{
               pageSize: screens.lg ? 6 : 4,
@@ -4712,7 +4802,9 @@ export function SituationMonitorContent() {
             rowKey="id"
             size="small"
             columns={momentumColumns}
-            expandable={correlationExpandable}
+            expandable={
+              correlationExpandable as TableProps<MomentumSignal>["expandable"]
+            }
             dataSource={data?.correlation?.momentumSignals ?? []}
             pagination={{
               pageSize: screens.lg ? 6 : 4,
@@ -4730,7 +4822,9 @@ export function SituationMonitorContent() {
             rowKey="id"
             size="small"
             columns={predictiveColumns}
-            expandable={correlationExpandable}
+            expandable={
+              correlationExpandable as TableProps<PredictiveSignal>["expandable"]
+            }
             dataSource={data?.correlation?.predictiveSignals ?? []}
             pagination={{
               pageSize: screens.lg ? 6 : 4,
@@ -5650,7 +5744,7 @@ export function SituationMonitorContent() {
           isDraggable={canEditLayout}
           margin={gridMargin}
           draggableHandle=".ant-card-head"
-          draggableCancel=".ant-btn,.ant-select,.ant-select-selector,.ant-switch,a,button,input,textarea,[role='button']"
+          draggableCancel={`${SITUATION_MONITOR_INTERACTIVE_SELECTOR},.ant-btn,.ant-select,.ant-select-selector,.ant-switch,a,button,input,textarea,[role='button']`}
           onBreakpointChange={(nextBreakpoint: string) =>
             handleGridBreakpointChange(nextBreakpoint)
           }

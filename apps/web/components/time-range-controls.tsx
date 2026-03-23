@@ -34,17 +34,23 @@ export interface TimeRangeControlsProps {
    * display a "Mixed" aggregation label with the finest/coarsest range.
    */
   appliedGranularityRange?: { finest: UiTimeGranularity; coarsest: UiTimeGranularity } | null;
+
+  /**
+   * Reflects whether the current page is still waiting on the backend response that will resolve
+   * aggregation metadata.
+   */
+  loading?: boolean;
 }
 
-export function TimeRangeControls({ appliedGranularity, appliedGranularityRange }: TimeRangeControlsProps) {
+export function TimeRangeControls({
+  appliedGranularity,
+  appliedGranularityRange,
+  loading = false,
+}: TimeRangeControlsProps) {
   const { t } = useTranslation();
   const { range, start, end, setRange, setCustomRange } = useDashboardRangeStore();
   const backendGranularityEnabled =
     typeof appliedGranularity !== "undefined" || typeof appliedGranularityRange !== "undefined";
-  const backendGranularityUnknown =
-    appliedGranularity === UiTimeGranularity.Unknown ||
-    appliedGranularityRange?.finest === UiTimeGranularity.Unknown ||
-    appliedGranularityRange?.coarsest === UiTimeGranularity.Unknown;
   const resolvedAppliedGranularity =
     appliedGranularity && appliedGranularity !== UiTimeGranularity.Unknown
       ? appliedGranularity
@@ -72,30 +78,33 @@ export function TimeRangeControls({ appliedGranularity, appliedGranularityRange 
     : appliedGranularityLabel;
 
   const aggregationLabel = t("dashboard.timeRange.aggregation", { defaultValue: "Aggregation" });
+  const hasResolvedGranularity = Boolean(resolvedAppliedGranularity || hasMixedGranularity);
+  const showAggregationLoading =
+    loading && backendGranularityEnabled && !hasResolvedGranularity;
   const aggregationColor =
-    resolvedAppliedGranularity || hasMixedGranularity
+    hasResolvedGranularity
       ? "geekblue"
-      : backendGranularityEnabled && !backendGranularityUnknown
+      : showAggregationLoading
         ? "processing"
         : "default";
   const aggregationText =
-    resolvedAppliedGranularity || hasMixedGranularity
+    hasResolvedGranularity
       ? `${aggregationLabel}: ${appliedGranularityDisplayLabel}`
-      : backendGranularityEnabled && !backendGranularityUnknown
+      : showAggregationLoading
         ? `${aggregationLabel}: ${t("common.loading", { defaultValue: "Loading..." })}`
         : `${aggregationLabel}: ${t("common.notAvailable", { defaultValue: "Not available" })}`;
 
   const aggregationHint = backendGranularityEnabled
-    ? resolvedAppliedGranularity || hasMixedGranularity
+    ? hasResolvedGranularity
       ? t("dashboard.timeRange.aggregationHintBackend", {
           defaultValue: "Aggregation is reported by the backend."
         })
-      : backendGranularityUnknown
-        ? t("dashboard.timeRange.aggregationHintUnavailable", {
-            defaultValue: "No aggregation granularity is available for the current data window."
-          })
-        : t("dashboard.timeRange.aggregationHintPending", {
+      : showAggregationLoading
+        ? t("dashboard.timeRange.aggregationHintPending", {
             defaultValue: "Waiting for backend to report aggregation granularity."
+          })
+        : t("dashboard.timeRange.aggregationHintUnavailable", {
+            defaultValue: "No aggregation granularity is available for the current data window."
           })
     : t("dashboard.timeRange.aggregationHintUnavailable", {
         defaultValue: "This view does not report aggregation granularity."

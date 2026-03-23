@@ -1,7 +1,7 @@
 "use client";
 
 import { SearchOutlined, WarningOutlined } from "@ant-design/icons";
-import { gql, useMutation } from "@apollo/client";
+import { gql, type FetchResult, useMutation } from "@apollo/client";
 import {
   Alert,
   App,
@@ -41,6 +41,7 @@ import {
   useIngestCrawlTaskResultsToItemsMutation,
   useRetryCrawlTaskMutation,
   useUpdateCrawlTaskIngestToItemsMutation,
+  type IngestCrawlTaskResultsToItemsMutation,
   type CrawlTaskStatus,
 } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
@@ -127,6 +128,7 @@ const limitOptions = [
 ];
 
 const LOCAL_PROXY_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+const BACKFILL_BATCH_TIMEOUT_MS = 15_000;
 
 const markdownPreviewStyle: CSSProperties = {
   maxWidth: "100%",
@@ -135,6 +137,33 @@ const markdownPreviewStyle: CSSProperties = {
   overflowWrap: "anywhere",
   wordBreak: "break-word",
 };
+
+interface BackfillNotice {
+  type: "info" | "success" | "warning" | "error";
+  message: string;
+  description?: string;
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
 
 function isLocalhostProxyUrl(value: string): boolean {
   const trimmed = value.trim();
@@ -785,6 +814,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   );
   const taskLogsLoadingRef = useRef(false);
   const [taskLogs, setTaskLogs] = useState<TaskLogRecord[]>([]);
+  const [expandedTaskLogKeys, setExpandedTaskLogKeys] = useState<string[]>([]);
   const [taskLogsLoading, setTaskLogsLoading] = useState(false);
   const [taskLogsError, setTaskLogsError] = useState<string | null>(null);
   const opsSocketRef = useRef<Socket | null>(null);
@@ -810,8 +840,12 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
   const [updateIngestToItems, { loading: updatingIngest }] =
     useUpdateCrawlTaskIngestToItemsMutation();
-  const [ingestCrawlTaskResultsToItems, { loading: backfilling }] =
+  const [ingestCrawlTaskResultsToItems] =
     useIngestCrawlTaskResultsToItemsMutation();
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillNotice, setBackfillNotice] = useState<BackfillNotice | null>(
+    null,
+  );
   const [ingestingResultId, setIngestingResultId] = useState<string | null>(
     null,
   );
@@ -900,6 +934,19 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
     void loadTaskLogs();
   }, [canView, canViewTaskLogs, loadTaskLogs, status]);
+
+  useEffect(() => {
+    setExpandedTaskLogKeys((current) => {
+      const next = current.filter((key) =>
+        taskLogs.some((log) => log.id === key),
+      );
+      return next.length === current.length ? current : next;
+    });
+  }, [taskLogs]);
+
+  useEffect(() => {
+    setExpandedTaskLogKeys([]);
+  }, [taskId]);
 
   const task = data?.crawlTask ?? null;
   const config = useMemo(() => {
@@ -2223,15 +2270,33 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (!task || !canCreateItem) {
       return;
     }
+    if ((task.results?.length ?? 0) === 0 && !task.lastResultAt) {
+      const notice: BackfillNotice = {
+        type: "info",
+        message: t("crawl.detail.backfill.emptyTitle", {
+          defaultValue: "No results to backfill yet.",
+        }),
+        description: t("crawl.detail.backfill.emptyDescription", {
+          defaultValue:
+            "This task has no crawl results yet, so nothing can be sent to Items.",
+        }),
+      };
+      setBackfillNotice(notice);
+      message.info(notice.message);
+      return;
+    }
 
     const messageKey = `crawl-backfill-${task.id}`;
     const batchLimit = 50;
     const maxBatches = 20;
     let after: string | null = null;
+    let scannedTotal = 0;
     let ingestedTotal = 0;
     let skippedTotal = 0;
     let failedTotal = 0;
 
+    setBackfillRunning(true);
+    setBackfillNotice(null);
     message.loading({
       key: messageKey,
       duration: 0,
@@ -2242,19 +2307,31 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
 
     try {
       for (let batchIndex = 0; batchIndex < maxBatches; batchIndex += 1) {
-        const response = await ingestCrawlTaskResultsToItems({
-          variables: {
-            taskId: task.id,
-            after,
-            limit: batchLimit,
-            onlyMissing: true,
-          },
-        });
-        const summary = response.data?.ingestCrawlTaskResultsToItems;
+        const response: FetchResult<IngestCrawlTaskResultsToItemsMutation> =
+          await withTimeout(
+            ingestCrawlTaskResultsToItems({
+              variables: {
+                taskId: task.id,
+                after,
+                limit: batchLimit,
+                onlyMissing: true,
+              },
+            }),
+            BACKFILL_BATCH_TIMEOUT_MS,
+            t("crawl.detail.backfill.timeout", {
+              defaultValue:
+                "Backfill request timed out. Please try again after refreshing the task.",
+            }),
+          );
+        const summary:
+          | IngestCrawlTaskResultsToItemsMutation["ingestCrawlTaskResultsToItems"]
+          | null
+          | undefined = response.data?.ingestCrawlTaskResultsToItems;
         if (!summary) {
           break;
         }
 
+        scannedTotal += summary.scanned;
         ingestedTotal += summary.ingested;
         skippedTotal += summary.skippedExisting;
         failedTotal += summary.failed;
@@ -2277,28 +2354,105 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         }
       }
 
-      message.success({
-        key: messageKey,
-        content: t("crawl.detail.backfill.done", {
-          defaultValue: "Queued for processing. Refreshing...",
-        }),
+      const summaryDescription = t("crawl.detail.backfill.summary", {
+        defaultValue:
+          "{{ingested}} ingested, {{skipped}} skipped, {{failed}} failed across {{scanned}} scanned results.",
+        ingested: ingestedTotal,
+        skipped: skippedTotal,
+        failed: failedTotal,
+        scanned: scannedTotal,
       });
+      let notice: BackfillNotice;
+      if (scannedTotal === 0) {
+        notice = {
+          type: "info",
+          message: t("crawl.detail.backfill.emptyTitle", {
+            defaultValue: "No results to backfill yet.",
+          }),
+          description: t("crawl.detail.backfill.emptyDescription", {
+            defaultValue:
+              "This task has no crawl results yet, so nothing can be sent to Items.",
+          }),
+        };
+        message.info({
+          key: messageKey,
+          content: notice.message,
+        });
+      } else if (ingestedTotal === 0 && failedTotal === 0) {
+        notice = {
+          type: "info",
+          message: t("crawl.detail.backfill.noMissingTitle", {
+            defaultValue: "All crawl results are already in Items.",
+          }),
+          description: summaryDescription,
+        };
+        message.info({
+          key: messageKey,
+          content: notice.message,
+        });
+      } else if (failedTotal > 0) {
+        notice = {
+          type: ingestedTotal > 0 ? "warning" : "error",
+          message: t("crawl.detail.backfill.partialTitle", {
+            defaultValue: "Backfill finished with failures.",
+          }),
+          description: summaryDescription,
+        };
+        if (notice.type === "error") {
+          message.error({
+            key: messageKey,
+            content: notice.message,
+          });
+        } else {
+          message.warning({
+            key: messageKey,
+            content: notice.message,
+          });
+        }
+      } else {
+        notice = {
+          type: "success",
+          message: t("crawl.detail.backfill.done", {
+            defaultValue: "Queued missing results for Items.",
+          }),
+          description: summaryDescription,
+        };
+        message.success({
+          key: messageKey,
+          content: notice.message,
+        });
+      }
+      setBackfillNotice(notice);
       await refetch();
     } catch (error) {
+      const description =
+        error instanceof Error
+          ? error.message
+          : t("common.operationFailed", {
+              defaultValue: "Operation failed.",
+            });
+      setBackfillNotice({
+        type: "error",
+        message: t("crawl.detail.backfill.failedTitle", {
+          defaultValue: "Backfill failed.",
+        }),
+        description,
+      });
       message.error({
         key: messageKey,
-        content:
-          error instanceof Error
-            ? error.message
-            : t("common.operationFailed", {
-                defaultValue: "Operation failed.",
-              }),
+        content: description,
       });
+    } finally {
+      setBackfillRunning(false);
     }
   };
 
   const handleBackfillToItems = () => {
     if (!task || !canCreateItem) {
+      return;
+    }
+    if ((task.results?.length ?? 0) === 0 && !task.lastResultAt) {
+      void runBackfillToItems();
       return;
     }
 
@@ -2405,6 +2559,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const ingestToItemsEnabled = Boolean(config?.ingestToItems);
   const adjustViewportEnabled = Boolean(config?.adjustViewportToContent);
   const managedBrowserEnabled = Boolean(config?.useManagedBrowser);
+  const backfillUnavailable = results.length === 0 && !task.lastResultAt;
 
   return (
     <div className="content-card">
@@ -2421,16 +2576,38 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           </Button>
         ) : null}
         {canCreateItem ? (
-          <Button onClick={handleBackfillToItems} loading={backfilling}>
+          <Button
+            onClick={handleBackfillToItems}
+            loading={backfillRunning}
+            disabled={backfillUnavailable}
+          >
             {t("crawl.detail.backfill.button", {
               defaultValue: "Backfill to Items",
             })}
           </Button>
         ) : null}
+        {canCreateItem && backfillUnavailable ? (
+          <Typography.Text type="secondary">
+            {t("crawl.detail.backfill.emptyHint", {
+              defaultValue: "No crawl results available yet.",
+            })}
+          </Typography.Text>
+        ) : null}
         <Typography.Link href={task.targetUrl} target="_blank" rel="noreferrer">
           {t("crawl.detail.openSource")}
         </Typography.Link>
       </Space>
+      {backfillNotice ? (
+        <Alert
+          type={backfillNotice.type}
+          showIcon
+          closable
+          style={{ marginBottom: 16 }}
+          message={backfillNotice.message}
+          description={backfillNotice.description}
+          onClose={() => setBackfillNotice(null)}
+        />
+      ) : null}
       {task.lastError ? (
         <Alert
           type={
@@ -3285,6 +3462,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             loading={taskLogsLoading}
             locale={{ emptyText: t("common.empty") }}
             expandable={{
+              expandedRowKeys: expandedTaskLogKeys,
+              onExpandedRowsChange: (expandedRows) =>
+                setExpandedTaskLogKeys(expandedRows.map((key) => String(key))),
+              expandRowByClick: true,
               rowExpandable: (record) => Boolean(record.data || record.error),
               expandedRowRender: (record) => (
                 <pre

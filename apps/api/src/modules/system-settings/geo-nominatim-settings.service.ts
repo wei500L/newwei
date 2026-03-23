@@ -1,3 +1,4 @@
+import { isEmail } from "class-validator";
 import { Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 
@@ -126,8 +127,9 @@ export class GeoNominatimSettingsService {
   private applyFallback(overrides: GeoNominatimOverrides): GeoNominatimSettings {
     const fallbackUserAgent =
       this.env.get<string>("GEO_NOMINATIM_USER_AGENT", { infer: true }) ?? "modular-api";
-    const fallbackEmail =
-      this.env.get<string | undefined>("GEO_NOMINATIM_EMAIL", { infer: true }) ?? null;
+    const fallbackEmail = this.normalizeEmail(
+      this.env.get<string | undefined>("GEO_NOMINATIM_EMAIL", { infer: true }) ?? null,
+    );
 
     return {
       userAgent: overrides.userAgent,
@@ -156,11 +158,13 @@ export class GeoNominatimSettingsService {
       return null;
     }
     const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
+    if (trimmed.length === 0) {
+      return null;
+    }
+    return isEmail(trimmed) ? trimmed : null;
   }
 
   private toPrismaJson(value: unknown): Prisma.InputJsonValue {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 }
-

@@ -1,5 +1,6 @@
 import { NetworkStatus } from "@apollo/client";
 import { useMemo } from "react";
+import { useSession } from "next-auth/react";
 
 import { useDashboardRangeStore } from "@/store/time-range";
 import type { ChartDataState } from "@/lib/chart-data-state";
@@ -26,6 +27,8 @@ export interface EconomicSeriesOptions {
   category: string;
   pollInterval?: number;
 }
+
+const ECONOMIC_DATA_PERMISSION = "economicdata.read";
 
 export type EconomicSeriesInsight = EconomicSeriesInsightModel;
 
@@ -189,6 +192,11 @@ export function deriveEconomicFreshness(points: readonly EconomicFreshnessPoint[
 
 export function useEconomicData({ category, pollInterval }: EconomicSeriesOptions) {
   const { start, end } = useDashboardRangeStore();
+  const { data: session, status: sessionStatus } = useSession();
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canQuery =
+    sessionStatus === "authenticated" &&
+    permissions.includes(ECONOMIC_DATA_PERMISSION);
   const resolveRequestedGranularity = (
     windowStart: Date,
     windowEnd: Date
@@ -208,6 +216,17 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     return TimeGranularity.Day;
   };
   const requestedGranularity = resolveRequestedGranularity(start, end);
+  const variables = useMemo(
+    () => ({
+      category,
+      timeRange: {
+        start: start.toISOString(),
+        end: end.toISOString()
+      },
+      granularity: requestedGranularity
+    }),
+    [category, end, requestedGranularity, start]
+  );
   const {
     data,
     previousData,
@@ -215,31 +234,35 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     error,
     refetch,
     networkStatus,
-  } = useEconomicDataWithInsightsQuery({
-    variables: {
-      category,
-      timeRange: {
-        start: start.toISOString(),
-        end: end.toISOString()
-      },
-      granularity: requestedGranularity
-    },
-    pollInterval,
-    notifyOnNetworkStatusChange: true
-  });
-  const resolvedData = resolveEconomicQueryData({
-    data,
-    previousData,
-    networkStatus
-  });
+  } = useEconomicDataWithInsightsQuery(
+    canQuery
+      ? {
+          variables,
+          pollInterval,
+          notifyOnNetworkStatusChange: true
+        }
+      : {
+          skip: true,
+          notifyOnNetworkStatusChange: true
+        }
+  );
+  const resolvedData = canQuery
+    ? resolveEconomicQueryData({
+        data,
+        previousData,
+        networkStatus
+      })
+    : null;
   const points = resolvedData?.getEconomicDataWithInsights?.points ?? [];
   const insights = resolvedData?.getEconomicDataWithInsights?.insights ?? [];
   const hasData = points.length > 0;
   const loading =
-    networkStatus === NetworkStatus.setVariables ||
-    (!resolvedData &&
-      (queryLoading || networkStatus === NetworkStatus.loading));
-  const refreshing = isEconomicQueryRefreshing(networkStatus);
+    sessionStatus === "loading" ||
+    (canQuery &&
+      (networkStatus === NetworkStatus.setVariables ||
+        (!resolvedData &&
+          (queryLoading || networkStatus === NetworkStatus.loading))));
+  const refreshing = canQuery && isEconomicQueryRefreshing(networkStatus);
 
   const grouped: EconomicSeriesMap = useMemo(() => {
     const map: EconomicSeriesMap = {};

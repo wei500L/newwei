@@ -5279,6 +5279,7 @@
       "name": "Role name",
       "nameRequired": "Role name is required",
       "nameReserved": "Admin is reserved for the protected system role",
+      "validationFailed": "Fill in the required role fields before creating it",
       "namePlaceholder": "Enter role name",
       "description": "Description",
       "descriptionPlaceholder": "Summarize what this role is for",

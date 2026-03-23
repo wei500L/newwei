@@ -60,6 +60,7 @@ export function KnowledgeGraphReviewPanel() {
   const [reviewStatus, setReviewStatus] = useState<"approved" | "rejected" | "corrected">("approved");
   const [reviewNote, setReviewNote] = useState<string>("");
   const [correctedDraft, setCorrectedDraft] = useState<string>("");
+  const [quickReviewingId, setQuickReviewingId] = useState<string | null>(null);
 
   const { data, loading, error, refetch } = useKnowledgeGraphEvidenceReviewQueueQuery({
     variables: {
@@ -96,6 +97,60 @@ export function KnowledgeGraphReviewPanel() {
     setReviewOpen(true);
   }, []);
 
+  const resetReviewDraft = useCallback(() => {
+    setReviewOpen(false);
+    setReviewTarget(null);
+    setReviewStatus("approved");
+    setReviewNote("");
+    setCorrectedDraft("");
+  }, []);
+
+  const applyReview = useCallback(
+    async (input: {
+      target: ReviewRow;
+      status: "approved" | "rejected" | "corrected";
+      note?: string | null;
+      correctedRelation?: unknown | null;
+      closeModal?: boolean;
+      quick?: boolean;
+    }) => {
+      if (input.quick) {
+        setQuickReviewingId(input.target.id);
+      }
+
+      try {
+        await reviewEvidence({
+          variables: {
+            input: {
+              evidenceId: input.target.id,
+              status: input.status,
+              note: input.note ?? null,
+              correctedRelation:
+                input.correctedRelation === undefined
+                  ? null
+                  : input.correctedRelation,
+            },
+          },
+        });
+        if (input.closeModal) {
+          resetReviewDraft();
+        }
+        await refetch();
+        messageApi.success(t("settings.knowledgeGraphReview.messages.saved"));
+      } catch (error) {
+        captureClientError("Failed to review knowledge graph evidence", error);
+        messageApi.error(t("settings.knowledgeGraphReview.messages.saveFailed"));
+      } finally {
+        if (input.quick) {
+          setQuickReviewingId((current) =>
+            current === input.target.id ? null : current,
+          );
+        }
+      }
+    },
+    [messageApi, refetch, resetReviewDraft, reviewEvidence, t],
+  );
+
   const submitReview = async () => {
     if (!reviewTarget) {
       return;
@@ -116,24 +171,13 @@ export function KnowledgeGraphReviewPanel() {
       }
     }
 
-    try {
-      await reviewEvidence({
-        variables: {
-          input: {
-            evidenceId: reviewTarget.id,
-            status: reviewStatus,
-            note: reviewNote.trim().length > 0 ? reviewNote.trim() : null,
-            correctedRelation
-          }
-        }
-      });
-      setReviewOpen(false);
-      await refetch();
-      messageApi.success(t("settings.knowledgeGraphReview.messages.saved"));
-    } catch (error) {
-      captureClientError("Failed to review knowledge graph evidence", error);
-      messageApi.error(t("settings.knowledgeGraphReview.messages.saveFailed"));
-    }
+    await applyReview({
+      target: reviewTarget,
+      status: reviewStatus,
+      note: reviewNote.trim().length > 0 ? reviewNote.trim() : null,
+      correctedRelation,
+      closeModal: true,
+    });
   };
 
   const detailsEvidence = detailsRow?.evidence ?? null;
@@ -242,7 +286,7 @@ export function KnowledgeGraphReviewPanel() {
         key: "actions",
         render: (_: unknown, row: ReviewRow) => {
           const reviewedStatus = readNestedString(row.evidence, ["review", "status"]);
-          const disabled = saving || loading || Boolean(reviewedStatus);
+          const disabled = saving || loading || Boolean(reviewedStatus) || Boolean(quickReviewingId);
 
           return (
             <Space>
@@ -250,9 +294,15 @@ export function KnowledgeGraphReviewPanel() {
                 type="primary"
                 size="small"
                 disabled={disabled}
+                loading={quickReviewingId === row.id}
                 onClick={(evt) => {
                   evt.stopPropagation();
-                  openReview(row, "approved");
+                  void applyReview({
+                    target: row,
+                    status: "approved",
+                    closeModal: false,
+                    quick: true,
+                  });
                 }}
               >
                 {t("settings.knowledgeGraphReview.actions.approve")}
@@ -283,7 +333,7 @@ export function KnowledgeGraphReviewPanel() {
         }
       }
     ],
-    [loading, openReview, saving, t]
+    [applyReview, loading, openReview, quickReviewingId, saving, t]
   );
 
   return (
@@ -462,12 +512,13 @@ export function KnowledgeGraphReviewPanel() {
 
       <Modal
         open={reviewOpen}
-        onCancel={() => setReviewOpen(false)}
+        onCancel={resetReviewDraft}
         okText={t("common.saveChanges")}
         okButtonProps={{ loading: saving }}
         onOk={submitReview}
         title={t("settings.knowledgeGraphReview.review.title")}
         width={720}
+        destroyOnHidden
       >
         {reviewTarget ? (
           <>
@@ -475,7 +526,7 @@ export function KnowledgeGraphReviewPanel() {
               {reviewTarget.edge.fromEntity.name} - {reviewTarget.edge.type} {"->"} {reviewTarget.edge.toEntity.name}
             </Typography.Paragraph>
 
-            <Form layout="vertical">
+            <Form layout="vertical" name="knowledge-graph-review-form">
               <Form.Item label={t("settings.knowledgeGraphReview.review.fields.note")}>
                 <Input.TextArea
                   rows={3}

@@ -21,6 +21,8 @@ import {
   Tag,
   Typography,
 } from "antd";
+import type { FormProps } from "antd";
+import type { Dayjs } from "dayjs";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
@@ -29,6 +31,7 @@ import { useTranslation } from "react-i18next";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { ContentSubscriptionsTab } from "./content-subscriptions-tab";
 import {
+  AlertChannelType,
   NotificationType,
   useAlertEventsQuery,
   useAlertRulesQuery,
@@ -58,6 +61,18 @@ const typeColor: Record<NotificationType, string> = {
   [NotificationType.AlertTriggered]: "orange",
   [NotificationType.System]: "geekblue",
 };
+
+const CHANNEL_MODAL_FORM_ID = "subscriptions-channel-form";
+
+interface ChannelFormValues {
+  id?: string;
+  name: string;
+  type: AlertChannelType.Email | AlertChannelType.Webhook;
+  target: string;
+  isActive?: boolean;
+  muteUntil?: Dayjs | null;
+  notifyIntervalSeconds?: number | null;
+}
 
 const buildThresholdSummary = (
   operator: string | null | undefined,
@@ -397,7 +412,7 @@ export default function SubscriptionsPage() {
       if (channelModalMode === "create") {
         channelForm.setFieldsValue({
           name: "",
-          type: "webhook",
+          type: AlertChannelType.Webhook,
           target: "",
           isActive: true,
           muteUntil: null,
@@ -598,7 +613,13 @@ export default function SubscriptionsPage() {
     );
   };
 
-  const handleSubmitChannel = async (values: any) => {
+  const closeChannelModal = () => {
+    setChannelModalOpen(false);
+    setActiveChannelId(null);
+    channelForm.resetFields();
+  };
+
+  const handleSubmitChannel = async (values: ChannelFormValues) => {
     const config = toRecord(activeChannel?.config) ?? {};
     const nextConfig: Record<string, unknown> = { ...config };
     if (values.muteUntil) {
@@ -642,6 +663,14 @@ export default function SubscriptionsPage() {
           }),
         );
       } else {
+        if (!values.id) {
+          message.error(
+            t("subscriptions.channelMissingId", {
+              defaultValue: "Channel id is missing. Reopen the dialog and try again.",
+            }),
+          );
+          return;
+        }
         await updateChannel({
           variables: {
             input: {
@@ -659,7 +688,7 @@ export default function SubscriptionsPage() {
           }),
         );
       }
-      setChannelModalOpen(false);
+      closeChannelModal();
       await refetchChannels();
     } catch (error) {
       message.error(
@@ -667,6 +696,21 @@ export default function SubscriptionsPage() {
       );
     }
   };
+
+  const handleChannelSubmitFailed: FormProps<ChannelFormValues>["onFinishFailed"] =
+    ({ errorFields }) => {
+      const firstError = errorFields[0];
+      if (firstError) {
+        channelForm.scrollToField(firstError.name, {
+          block: "center",
+        });
+      }
+      message.warning(
+        t("subscriptions.channelValidationFailed", {
+          defaultValue: "Fill in the required fields before saving.",
+        }),
+      );
+    };
 
   const handleDeleteChannel = async (channelId: string) => {
     try {
@@ -1289,25 +1333,30 @@ export default function SubscriptionsPage() {
         ]}
       />
 
-      <Form
-        form={channelForm}
-        autoComplete="off"
-        layout="vertical"
-        onFinish={handleSubmitChannel}
-        component={false}
+      <Modal
+        title={
+          channelModalMode === "create"
+            ? t("subscriptions.addChannel", { defaultValue: "Add channel" })
+            : t("subscriptions.editChannel", { defaultValue: "Edit channel" })
+        }
+        open={channelModalOpen}
+        onCancel={closeChannelModal}
+        okText={t("common.save")}
+        cancelText={t("common.cancel", { defaultValue: "Cancel" })}
+        okButtonProps={{
+          htmlType: "submit",
+          form: CHANNEL_MODAL_FORM_ID,
+        }}
+        confirmLoading={creatingChannel || updatingChannel}
+        destroyOnHidden
       >
-        <Modal
-          title={
-            channelModalMode === "create"
-              ? t("subscriptions.addChannel", { defaultValue: "Add channel" })
-              : t("subscriptions.editChannel", { defaultValue: "Edit channel" })
-          }
-          open={channelModalOpen}
-          onCancel={() => setChannelModalOpen(false)}
-          okText={t("common.save")}
-          onOk={() => channelForm.submit()}
-          confirmLoading={creatingChannel || updatingChannel}
-          destroyOnHidden
+        <Form
+          id={CHANNEL_MODAL_FORM_ID}
+          form={channelForm}
+          autoComplete="off"
+          layout="vertical"
+          onFinish={handleSubmitChannel}
+          onFinishFailed={handleChannelSubmitFailed}
         >
           <Form.Item name="id" hidden>
             <Input type="hidden" />
@@ -1315,14 +1364,28 @@ export default function SubscriptionsPage() {
           <Form.Item
             label={t("alerts.channels.fields.name", { defaultValue: "Name" })}
             name="name"
-            rules={[{ required: true }]}
+            rules={[
+              {
+                required: true,
+                message: t("alerts.channels.validation.nameRequired", {
+                  defaultValue: "Enter a channel name.",
+                }),
+              },
+            ]}
           >
             <Input autoComplete="off" />
           </Form.Item>
           <Form.Item
             label={t("alerts.channels.fields.type", { defaultValue: "Type" })}
             name="type"
-            rules={[{ required: true }]}
+            rules={[
+              {
+                required: true,
+                message: t("alerts.channels.validation.typeRequired", {
+                  defaultValue: "Select a channel type.",
+                }),
+              },
+            ]}
           >
             <Select
               disabled={channelModalMode === "edit"}
@@ -1347,7 +1410,14 @@ export default function SubscriptionsPage() {
               defaultValue: "Target",
             })}
             name="target"
-            rules={[{ required: true }]}
+            rules={[
+              {
+                required: true,
+                message: t("alerts.channels.validation.targetRequired", {
+                  defaultValue: "Enter a delivery target.",
+                }),
+              },
+            ]}
           >
             <Input autoComplete="off" />
           </Form.Item>
@@ -1418,8 +1488,8 @@ export default function SubscriptionsPage() {
               ]}
             />
           </Form.Item>
-        </Modal>
-      </Form>
+        </Form>
+      </Modal>
 
       <Form
         form={ruleForm}

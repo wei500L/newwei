@@ -1,6 +1,10 @@
 "use client";
 
-import { InfoCircleOutlined, SearchOutlined } from "@ant-design/icons";
+import {
+  CloseCircleOutlined,
+  InfoCircleOutlined,
+  SearchOutlined,
+} from "@ant-design/icons";
 import { gql, useMutation, useQuery } from "@apollo/client";
 import {
   Alert,
@@ -63,6 +67,7 @@ import { useDebounceValue } from "@/lib/use-debounce-value";
 import { FacetedSearch, type FilterState } from "./components/faceted-search";
 import { NewsCard } from "./components/news-card";
 import { type ItemViewType, ViewSwitcher } from "./components/view-switcher";
+import { resolveAvailableSentiments } from "./item-facets";
 import {
   countItemsFilterDimensions,
   resolveItemsViewLayoutState,
@@ -1787,17 +1792,14 @@ export function ItemsView({
     return Array.from(new Set(fallback));
   }, [facetsData, pageData]);
 
-  const availableSentiments = useMemo(() => {
-    const sentiments = facetsData?.itemFacets?.sentiments;
-    if (!sentiments || sentiments.length === 0) {
-      return [];
-    }
-    const allowed = new Set(["positive", "neutral", "negative"]);
-    const values = sentiments
-      .map((sentiment) => sentiment.value.trim().toLowerCase())
-      .filter((value) => value.length > 0 && allowed.has(value));
-    return Array.from(new Set(values));
-  }, [facetsData]);
+  const availableSentiments = useMemo(
+    () =>
+      resolveAvailableSentiments(
+        facetsData?.itemFacets?.sentiments.map((sentiment) => sentiment.value),
+        filters.sentiments,
+      ),
+    [facetsData, filters.sentiments],
+  );
 
   const availableContentTypes = useMemo(() => {
     const facetContentTypes = facetsData?.itemFacets?.contentTypes;
@@ -1818,14 +1820,26 @@ export function ItemsView({
   }, [facetsData, pageData]);
 
   useEffect(() => {
-    if (availableSentiments.length > 0) {
+    const selected = normalizeFilterList(filters.sentiments, {
+      lowerCase: true,
+    });
+    if (!selected || selected.length === 0 || availableSentiments.length === 0) {
       return;
     }
-    if (!filters.sentiments || filters.sentiments.length === 0) {
+
+    const allowed = new Set(availableSentiments);
+    const validSelections = selected.filter((value) => allowed.has(value));
+    if (validSelections.length === selected.length) {
       return;
     }
-    handleFilterChange({ ...filters, sentiments: undefined });
-  }, [availableSentiments.length, filters, handleFilterChange]);
+
+    handleFilterChange({
+      ...filters,
+      ...(validSelections.length > 0
+        ? { sentiments: validSelections }
+        : { sentiments: undefined }),
+    });
+  }, [availableSentiments, filters, handleFilterChange]);
 
   useEffect(() => {
     const selected = normalizeContentTypeList(filters.contentTypes);
@@ -1928,13 +1942,27 @@ export function ItemsView({
     handlePaginationChange(pager.current ?? 1, pager.pageSize);
   };
 
+  const handleClearSearch = useCallback(() => {
+    setSearchInput("");
+    setSearch("");
+    setPage(1);
+    setQueryParams({
+      q: null,
+      page: 1,
+    });
+  }, [setQueryParams]);
+
   const handleSearch = (value: string) => {
     const nextValue = value.trim();
+    if (!nextValue) {
+      handleClearSearch();
+      return;
+    }
     setSearchInput(nextValue);
     setSearch(nextValue);
     setPage(1);
     setQueryParams({
-      q: nextValue || null,
+      q: nextValue,
       page: 1,
     });
   };
@@ -2385,12 +2413,11 @@ export function ItemsView({
                     placeholder={t("items.search.placeholder")}
                     value={searchInput}
                     onChange={(value) => {
-                      setSearchInput(value);
                       if (!value) {
-                        setSearch("");
-                        setPage(1);
-                        setQueryParams({ q: null, page: 1 });
+                        handleClearSearch();
+                        return;
                       }
+                      setSearchInput(value);
                     }}
                     onSearch={(query) => handleSearch(query)}
                     navigateOnSearch={false}
@@ -2402,19 +2429,24 @@ export function ItemsView({
                       id="items-search"
                       name="itemsSearch"
                       placeholder={t("items.search.placeholder")}
-                      allowClear
                       value={searchInput}
                       onChange={(event) => {
                         const value = event.target.value;
-                        setSearchInput(value);
                         if (!value) {
-                          setSearch("");
-                          setPage(1);
-                          setQueryParams({ q: null, page: 1 });
+                          handleClearSearch();
+                          return;
                         }
+                        setSearchInput(value);
                       }}
                       onPressEnter={() => handleSearch(searchInput)}
                     />
+                    {(searchInput.length > 0 || search.length > 0) ? (
+                      <Button
+                        icon={<CloseCircleOutlined />}
+                        aria-label={t("common.clear", { defaultValue: "Clear" })}
+                        onClick={handleClearSearch}
+                      />
+                    ) : null}
                     <Button
                       icon={<SearchOutlined />}
                       aria-label={t("items.search.placeholder")}

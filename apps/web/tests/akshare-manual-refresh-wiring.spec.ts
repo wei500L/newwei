@@ -23,6 +23,17 @@ describe('akshare manual refresh wiring', () => {
     expect(source).toContain('manualRefresh.summary.title');
   });
 
+  it('refreshes provider fetch-config status alongside gateway status checks', () => {
+    const source = read('components/settings/akshare-gateway-settings-panel.tsx');
+
+    expect(source).toContain('const handleRefreshStatus = useCallback(async () => {');
+    expect(source).toContain('canManageEconomicData ? refetchFetchConfigs() : Promise.resolve()');
+    expect(source).toContain('fetchProviderSecretStatus()');
+    expect(source).toContain('selectedPreset ? refetchPresetStatus() : Promise.resolve()');
+    expect(source).toContain('onClick={() => void handleRefreshStatus()}');
+    expect(source).toContain('void refetchFetchConfigs();');
+  });
+
   it('defines dedicated GraphQL documents for preset refresh and status', () => {
     const documentSource = read('graphql/economicData.graphql');
 

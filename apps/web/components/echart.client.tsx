@@ -13,6 +13,10 @@ import {
   sanitizeFilename,
   yieldToMain,
 } from "@/lib/data-export";
+import {
+  hasRenderableContainerSize,
+  useRenderableContainer,
+} from "@/lib/map/use-renderable-container";
 
 type Installer = Parameters<typeof echarts.use>[0];
 
@@ -414,6 +418,10 @@ export function DashboardChart({
   const [isInView, setIsInView] = useState(!lazy);
   const [shouldInit, setShouldInit] = useState(!lazy);
   const [ready, setReady] = useState(false);
+  const renderableContainerReady = useRenderableContainer(
+    ref,
+    shouldInit && isInView,
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -467,10 +475,12 @@ export function DashboardChart({
 
   useEffect(() => {
     const dom = ref.current;
-    if (!dom || !shouldInit) return;
+    if (!dom || !shouldInit || !renderableContainerReady) return;
 
     let cancelled = false;
     let handleResize: (() => void) | undefined;
+    let resizeObserver: ResizeObserver | undefined;
+    let resizeFrameId: number | null = null;
     const initPromise = (async () => {
       await ensureRenderer(renderer);
       if (cancelled) return;
@@ -645,12 +655,35 @@ export function DashboardChart({
 
       handleResize = () => {
         try {
+          if (!hasRenderableContainerSize(dom)) {
+            return;
+          }
           chartRef.current?.resize();
         } catch {
           // noop: avoid bubbling resize-time chart exceptions from other panels
         }
       };
       window.addEventListener("resize", handleResize);
+      if (typeof ResizeObserver !== "undefined") {
+        resizeObserver = new ResizeObserver(() => {
+          if (
+            typeof window !== "undefined" &&
+            typeof window.requestAnimationFrame === "function"
+          ) {
+            if (resizeFrameId !== null) {
+              window.cancelAnimationFrame(resizeFrameId);
+            }
+            resizeFrameId = window.requestAnimationFrame(() => {
+              resizeFrameId = null;
+              handleResize?.();
+            });
+            return;
+          }
+          handleResize?.();
+        });
+        resizeObserver.observe(dom);
+      }
+      handleResize();
 
       return chart;
     })();
@@ -661,6 +694,14 @@ export function DashboardChart({
       cancelled = true;
       initPromise
         .then((chart) => {
+          if (
+            resizeFrameId !== null &&
+            typeof window !== "undefined" &&
+            typeof window.cancelAnimationFrame === "function"
+          ) {
+            window.cancelAnimationFrame(resizeFrameId);
+          }
+          resizeObserver?.disconnect();
           if (handleResize) {
             window.removeEventListener("resize", handleResize);
           }
@@ -670,7 +711,7 @@ export function DashboardChart({
         .catch(() => undefined);
       initPromiseRef.current = null;
     };
-  }, [renderer, group, theme, shouldInit]);
+  }, [group, renderableContainerReady, renderer, shouldInit, theme]);
 
   useEffect(() => {
     if (!shouldInit || !isInView) return;

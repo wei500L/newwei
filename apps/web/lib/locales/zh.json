@@ -5279,6 +5279,7 @@
       "name": "角色名称",
       "nameRequired": "请填写角色名称",
       "nameReserved": "admin 为受保护的系统角色名称",
+      "validationFailed": "请先补全角色必填字段后再创建",
       "namePlaceholder": "请输入角色名称",
       "description": "说明",
       "descriptionPlaceholder": "简要说明该角色的职责范围",

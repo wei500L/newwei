@@ -8,6 +8,7 @@ import {
   Divider,
   Form,
   InputNumber,
+  Modal,
   Popconfirm,
   Select,
   Space,
@@ -371,6 +372,23 @@ export function NewsnowPersonalizationSettingsPanel() {
     }
   }, [apiClient, loadBehaviorProfile, messageApi, t]);
 
+  const confirmClearBehaviorProfile = useCallback(() => {
+    Modal.confirm({
+      title: t(
+        'systemSettings.newsnowPersonalization.behaviorProfile.clearConfirmTitle',
+      ),
+      content: t(
+        'systemSettings.newsnowPersonalization.behaviorProfile.clearConfirmDescription',
+      ),
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        await handleClearBehaviorProfile();
+      },
+    });
+  }, [handleClearBehaviorProfile, t]);
+
   useEffect(() => {
     void loadSettings();
     void loadMetrics();
@@ -659,21 +677,15 @@ export function NewsnowPersonalizationSettingsPanel() {
           >
             {t('common.refresh')}
           </Button>
-          <Popconfirm
-            title={t(
-              'systemSettings.newsnowPersonalization.behaviorProfile.clearConfirmTitle',
-            )}
-            description={t(
-              'systemSettings.newsnowPersonalization.behaviorProfile.clearConfirmDescription',
-            )}
-            okText={t('common.confirm')}
-            cancelText={t('common.cancel')}
-            onConfirm={() => handleClearBehaviorProfile()}
+          <Button
+            size="small"
+            danger
+            htmlType="button"
+            loading={clearingBehaviorProfile}
+            onClick={confirmClearBehaviorProfile}
           >
-            <Button size="small" danger loading={clearingBehaviorProfile}>
-              {t('systemSettings.newsnowPersonalization.behaviorProfile.clearAction')}
-            </Button>
-          </Popconfirm>
+            {t('systemSettings.newsnowPersonalization.behaviorProfile.clearAction')}
+          </Button>
         </Space>
       </Space>
 
@@ -743,7 +755,12 @@ export function NewsnowPersonalizationSettingsPanel() {
         })}
       </div>
 
-      <Form layout="vertical" form={form} onFinish={handleSubmit}>
+      <Form
+        name="newsnow-personalization-settings"
+        layout="vertical"
+        form={form}
+        onFinish={handleSubmit}
+      >
         <Alert
           type={normalizedWeightRatios ? 'info' : 'warning'}
           showIcon

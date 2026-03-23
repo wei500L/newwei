@@ -254,6 +254,7 @@ export default function EconomicAlertPage() {
       <div style={{ marginBottom: 16 }}>
         <Typography.Title level={4}>{t("dashboard.economicAlert.title")}</Typography.Title>
         <TimeRangeControls
+          loading={loading}
           appliedGranularity={appliedGranularity}
           appliedGranularityRange={appliedGranularityRange}
         />

@@ -620,6 +620,21 @@ export function EventDetail({ eventId }: { eventId: string }) {
   );
   const selectedMarkdownFallbackUsed =
     selectedMarkdownSource === "crawl_fallback";
+  const topic = event?.primaryTopic?.trim() ?? "";
+  const entity = event?.primaryEntity?.trim() ?? "";
+
+  useEffect(() => {
+    if (!event?.id) {
+      return;
+    }
+    void trackUserNewsBehavior({
+      type: "view",
+      eventId: event.id,
+      ...(topic ? { topics: [topic] } : {}),
+      ...(entity ? { entities: [entity] } : {}),
+      ...(representativeUrl ? { url: representativeUrl } : {}),
+    });
+  }, [entity, event?.id, representativeUrl, topic]);
 
   if (loading && !event) {
     return (
@@ -657,10 +672,8 @@ export function EventDetail({ eventId }: { eventId: string }) {
 
   const title = event.title?.trim()
     ? event.title.trim()
-    : event.primaryEntity?.trim() || event.primaryTopic?.trim() || event.id;
+    : entity || topic || event.id;
   const language = event.language?.trim() ?? "";
-  const topic = event.primaryTopic?.trim() ?? "";
-  const entity = event.primaryEntity?.trim() ?? "";
   const statusLabel = t(`pages.events.status.${event.status}`, {
     defaultValue: event.status,
   });
@@ -713,10 +726,6 @@ export function EventDetail({ eventId }: { eventId: string }) {
       ...(input.url ? { url: input.url } : {}),
     });
   };
-
-  useEffect(() => {
-    trackEventBehavior({ type: "view", url: representativeUrl ?? null });
-  }, [entity, event.id, representativeUrl, topic]);
 
   const startRelative = formatRelativeTime(event.startAt, locale, { timeZone });
   const lastRelative = formatRelativeTime(event.lastAt, locale, { timeZone });

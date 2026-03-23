@@ -37,6 +37,12 @@ const DEFAULT_PROXY_PROBE_STATE: Record<ProxiedHlsChannel, ProxyProbeState> = {
   cnbc: "unknown",
 };
 
+function stopSituationMonitorInteractiveEvent(event: {
+  stopPropagation: () => void;
+}) {
+  event.stopPropagation();
+}
+
 function buildYoutubeEmbedUrl(videoId: string): string {
   const params = new URLSearchParams({
     autoplay: "1",
@@ -530,6 +536,12 @@ export function SituationMonitorLiveNewsPanel() {
     }));
   }, [region]);
 
+  const interactiveControlProps = {
+    "data-sm-interactive": true,
+    onPointerDown: stopSituationMonitorInteractiveEvent,
+    onMouseDown: stopSituationMonitorInteractiveEvent,
+  } as const;
+
   return (
     <div ref={rootRef} className="h-full">
       <Card
@@ -554,7 +566,12 @@ export function SituationMonitorLiveNewsPanel() {
               defaultValue: "Manage visible channels and drag to reorder.",
             })}
           >
-            <Button size="small" icon={<SettingOutlined />} onClick={() => setManageOpen(true)}>
+            <Button
+              size="small"
+              icon={<SettingOutlined />}
+              {...interactiveControlProps}
+              onClick={() => setManageOpen(true)}
+            >
               {t("situationMonitor.liveNews.manage", { defaultValue: "Manage" })}
             </Button>
           </Tooltip>

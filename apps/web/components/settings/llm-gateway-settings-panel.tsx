@@ -4877,7 +4877,7 @@ export function LlmGatewaySettingsPanel() {
         ) : null}
 
         <Space wrap>
-          <Button type="primary" onClick={openCreate}>
+          <Button type="primary" htmlType="button" onClick={openCreate}>
             {t("settings.llmGateway.actions.new")}
           </Button>
           <Button onClick={() => void loadSettings()} loading={loading}>
@@ -4903,6 +4903,7 @@ export function LlmGatewaySettingsPanel() {
           setCreateOpen(false);
         }}
         width={screens.md ? 720 : "100%"}
+        destroyOnHidden
         footer={[
           <Button
             key="test"
@@ -4936,7 +4937,12 @@ export function LlmGatewaySettingsPanel() {
           </Button>,
         ]}
       >
-        <Form form={createForm} layout="vertical" onFinish={handleCreate}>
+        <Form
+          name="llm-gateway-create"
+          form={createForm}
+          layout="vertical"
+          onFinish={handleCreate}
+        >
           <Form.Item
             label={t("settings.llmGateway.fields.name")}
             name="name"
@@ -5252,6 +5258,7 @@ export function LlmGatewaySettingsPanel() {
           setEditing(null);
         }}
         width={screens.md ? 720 : "100%"}
+        destroyOnHidden
         footer={[
           <Button
             key="test"
@@ -5287,7 +5294,12 @@ export function LlmGatewaySettingsPanel() {
           </Button>,
         ]}
       >
-        <Form form={editForm} layout="vertical" onFinish={handleUpdate}>
+        <Form
+          name="llm-gateway-edit"
+          form={editForm}
+          layout="vertical"
+          onFinish={handleUpdate}
+        >
           <Form.Item
             label={t("settings.llmGateway.fields.name")}
             name="name"
@@ -5617,6 +5629,7 @@ export function LlmGatewaySettingsPanel() {
         open={Boolean(testProfile)}
         onCancel={closeTest}
         width={screens.md ? 720 : "100%"}
+        destroyOnHidden
         footer={[
           <Button
             key="models"
@@ -5645,6 +5658,7 @@ export function LlmGatewaySettingsPanel() {
         ]}
       >
         <Form
+          name="llm-gateway-test"
           form={testForm}
           layout="vertical"
           onFinish={(values) => {
@@ -5887,6 +5901,7 @@ export function LlmGatewaySettingsPanel() {
         open={Boolean(proxyLbTestProfile)}
         onCancel={closeProxyLbTest}
         width={screens.md ? 720 : "100%"}
+        destroyOnHidden
         footer={[
           <Button key="close" onClick={closeProxyLbTest}>
             {t("common.close")}
@@ -5909,6 +5924,7 @@ export function LlmGatewaySettingsPanel() {
         ]}
       >
         <Form
+          name="llm-gateway-proxy-lb-test"
           form={proxyLbTestForm}
           layout="vertical"
           onFinish={(values) => {
@@ -6007,6 +6023,7 @@ export function LlmGatewaySettingsPanel() {
           setProxyGovernanceErrorMessage(null);
         }}
         width={screens.md ? 680 : "100%"}
+        destroyOnHidden
         footer={[
           <Button
             key="close"
@@ -6568,6 +6585,7 @@ export function LlmGatewaySettingsPanel() {
             </Card>
 
             <Form
+              name="llm-gateway-proxy-governance"
               form={proxyGovernanceForm}
               layout="vertical"
               onFinish={(values) => {
@@ -6697,6 +6715,7 @@ export function LlmGatewaySettingsPanel() {
           setProxyLbErrorMessage(null);
         }}
         width={screens.md ? 720 : "100%"}
+        destroyOnHidden
         footer={[
           <Button key="close" onClick={() => setProxyLbOpen(false)}>
             {t("common.close")}
@@ -6796,6 +6815,7 @@ export function LlmGatewaySettingsPanel() {
             ) : null}
 
             <Form
+              name="llm-gateway-proxy-load-balancing"
               form={proxyLbForm}
               layout="vertical"
               onFinish={(values) => {

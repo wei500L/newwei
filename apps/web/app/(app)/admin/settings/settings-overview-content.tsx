@@ -2,7 +2,6 @@
 
 import { ArrowRightOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Col, Empty, Row, Space, Tag, Typography } from 'antd';
-import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -78,6 +77,11 @@ export function AdminSettingsOverviewContent() {
         ) : (
           <Row gutter={[16, 16]}>
             {featuredLinks.map((item) => {
+              const href = buildAdminSettingsHref({
+                page: item.page,
+                panel: item.panel,
+              });
+
               return (
                 <Col key={`${item.page}:${item.panel}`} xs={24} md={12}>
                   <Card className="content-card h-full">
@@ -99,14 +103,12 @@ export function AdminSettingsOverviewContent() {
                           })}
                         </Typography.Paragraph>
                       </div>
-                      <Link href={buildAdminSettingsHref({ page: item.page, panel: item.panel })}>
-                        <Button type="link" className="!px-0">
-                          {t('adminSettings.workspace.open', {
-                            defaultValue: 'Open',
-                          })}
-                          <ArrowRightOutlined />
-                        </Button>
-                      </Link>
+                      <Button type="link" className="!px-0" href={href}>
+                        {t('adminSettings.workspace.open', {
+                          defaultValue: 'Open',
+                        })}
+                        <ArrowRightOutlined />
+                      </Button>
                     </Space>
                   </Card>
                 </Col>
@@ -124,6 +126,8 @@ export function AdminSettingsOverviewContent() {
         </Typography.Title>
         <Row gutter={[16, 16]}>
           {pageCards.map(({ page, panels }) => {
+            const href = buildAdminSettingsHref({ page: page.id });
+
             return (
               <Col key={page.id} xs={24} md={12} xl={8}>
                 <Card className="content-card h-full">
@@ -148,13 +152,11 @@ export function AdminSettingsOverviewContent() {
                         </Tag>
                       ))}
                     </div>
-                    <Link href={buildAdminSettingsHref({ page: page.id })}>
-                      <Button type="primary">
-                        {t('adminSettings.workspace.enterDomain', {
-                          defaultValue: 'Open domain',
-                        })}
-                      </Button>
-                    </Link>
+                    <Button type="primary" href={href}>
+                      {t('adminSettings.workspace.enterDomain', {
+                        defaultValue: 'Open domain',
+                      })}
+                    </Button>
                   </Space>
                 </Card>
               </Col>

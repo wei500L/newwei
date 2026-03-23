@@ -11,14 +11,13 @@ import { HasPermission } from "../decorators/has-permission.decorator";
 import { AlertChannelInput, UpdateAlertChannelInput, UpdateAlertEventStatusInput, UpsertAlertRuleInput } from "../dto/alert.input";
 import type { GqlRequest } from "../graphql.types";
 import { AlertChannelModel, AlertEventModel, AlertEventReplayModel, AlertRuleModel, AlertRuleTuningSuggestionModel } from "../models/alert.model";
-
-const normalizeRequiredMetricSlug = (value: unknown): string =>
-  typeof value === "string" ? value.trim() : "";
-
-const normalizeOptionalMetricSlug = (value: unknown): string | undefined => {
-  const normalized = normalizeRequiredMetricSlug(value);
-  return normalized || undefined;
-};
+import {
+  normalizeOptionalMetricSlug,
+  normalizeRequiredMetricSlug,
+  serializeAlertEvent,
+  serializeAlertEventPayload,
+  serializeOptionalFiniteNumber,
+} from "./alerts.serialization";
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -62,9 +61,9 @@ export class AlertsResolver {
       metricProvider: rule.metricProvider,
       metricSlug: normalizeRequiredMetricSlug(rule.metricSlug),
       operator: rule.operator,
-      thresholdValue: rule.thresholdValue ? Number(rule.thresholdValue) : null,
-      thresholdLower: rule.thresholdLower ? Number(rule.thresholdLower) : null,
-      thresholdUpper: rule.thresholdUpper ? Number(rule.thresholdUpper) : null,
+      thresholdValue: serializeOptionalFiniteNumber(rule.thresholdValue),
+      thresholdLower: serializeOptionalFiniteNumber(rule.thresholdLower),
+      thresholdUpper: serializeOptionalFiniteNumber(rule.thresholdUpper),
       changeWindowMin: rule.changeWindowMin,
       cooldownSeconds: rule.cooldownSeconds,
       checkIntervalSec: rule.checkIntervalSec,
@@ -98,48 +97,7 @@ export class AlertsResolver {
       throw new ForbiddenException("Unauthenticated");
     }
     const events = await this.alerts.listEvents(requester.orgId, limit ?? 50, metricSlug);
-    return events.map((event) => ({
-      id: event.id,
-      triggeredAt: event.triggeredAt,
-      metricValue: Number(event.metricValue),
-      changePercent: event.changePercent ?? undefined,
-      severity: event.severity,
-      status: event.status,
-      message: event.message ?? undefined,
-      ruleId: event.ruleId,
-      ruleName: event.rule?.name ?? undefined,
-      metricProvider: event.rule?.metricProvider ?? undefined,
-      metricSlug: normalizeOptionalMetricSlug(event.rule?.metricSlug),
-      operator: event.rule?.operator ?? undefined,
-      thresholdValue: event.rule?.thresholdValue ? Number(event.rule.thresholdValue) : null,
-      thresholdLower: event.rule?.thresholdLower ? Number(event.rule.thresholdLower) : null,
-      thresholdUpper: event.rule?.thresholdUpper ? Number(event.rule.thresholdUpper) : null,
-      changeWindowMin: event.rule?.changeWindowMin ?? null,
-      context: event.context as Record<string, unknown> | null,
-      deliveries:
-        event.deliveries?.map((delivery) => {
-          const snapshot =
-            delivery.targetSnapshot && typeof delivery.targetSnapshot === "object" && !Array.isArray(delivery.targetSnapshot)
-              ? (delivery.targetSnapshot as Record<string, unknown>)
-              : null;
-          const snapshotTarget =
-            typeof snapshot?.target === "string"
-              ? snapshot.target
-              : typeof snapshot?.userId === "string"
-                ? snapshot.userId
-                : undefined;
-          const snapshotName = typeof snapshot?.name === "string" ? snapshot.name : undefined;
-          return {
-            id: delivery.id,
-            status: delivery.status,
-            error: delivery.error ?? undefined,
-            sentAt: delivery.sentAt ?? undefined,
-            channelType: delivery.channelType,
-            channelName: delivery.channel?.name ?? snapshotName ?? (delivery.channelType === "in_app" ? "In-app" : undefined),
-            target: delivery.channel?.target ?? snapshotTarget
-          };
-        }) ?? []
-    }));
+    return events.map((event) => serializeAlertEvent(event));
   }
 
   @HasPermission("alerts.read")
@@ -195,9 +153,9 @@ export class AlertsResolver {
       metricProvider: updated.metricProvider,
       metricSlug: normalizeRequiredMetricSlug(updated.metricSlug),
       operator: updated.operator,
-      thresholdValue: updated.thresholdValue ? Number(updated.thresholdValue) : null,
-      thresholdLower: updated.thresholdLower ? Number(updated.thresholdLower) : null,
-      thresholdUpper: updated.thresholdUpper ? Number(updated.thresholdUpper) : null,
+      thresholdValue: serializeOptionalFiniteNumber(updated.thresholdValue),
+      thresholdLower: serializeOptionalFiniteNumber(updated.thresholdLower),
+      thresholdUpper: serializeOptionalFiniteNumber(updated.thresholdUpper),
       changeWindowMin: updated.changeWindowMin,
       cooldownSeconds: updated.cooldownSeconds,
       checkIntervalSec: updated.checkIntervalSec,
@@ -303,71 +261,13 @@ export class AlertsResolver {
       throw new ForbiddenException("Unauthenticated");
     }
     const event = await this.alerts.updateEventStatus(requester.orgId, input.eventId, input.status, input.note, requester.id);
-    return {
-      id: event.id,
-      triggeredAt: event.triggeredAt,
-      metricValue: Number(event.metricValue),
-      changePercent: event.changePercent ?? undefined,
-      severity: event.severity,
-      status: event.status,
-      message: event.message ?? undefined,
-      ruleId: event.ruleId,
-      ruleName: event.rule?.name ?? undefined,
-      metricProvider: event.rule?.metricProvider ?? undefined,
-      metricSlug: normalizeOptionalMetricSlug(event.rule?.metricSlug),
-      operator: event.rule?.operator ?? undefined,
-      thresholdValue: event.rule?.thresholdValue ? Number(event.rule.thresholdValue) : null,
-      thresholdLower: event.rule?.thresholdLower ? Number(event.rule.thresholdLower) : null,
-      thresholdUpper: event.rule?.thresholdUpper ? Number(event.rule.thresholdUpper) : null,
-      changeWindowMin: event.rule?.changeWindowMin ?? null,
-      context: event.context as Record<string, unknown> | null,
-      deliveries:
-        event.deliveries?.map((delivery) => {
-          const snapshot =
-            delivery.targetSnapshot && typeof delivery.targetSnapshot === "object" && !Array.isArray(delivery.targetSnapshot)
-              ? (delivery.targetSnapshot as Record<string, unknown>)
-              : null;
-          const snapshotTarget =
-            typeof snapshot?.target === "string"
-              ? snapshot.target
-              : typeof snapshot?.userId === "string"
-                ? snapshot.userId
-                : undefined;
-          const snapshotName = typeof snapshot?.name === "string" ? snapshot.name : undefined;
-          return {
-            id: delivery.id,
-            status: delivery.status,
-            error: delivery.error ?? undefined,
-            sentAt: delivery.sentAt ?? undefined,
-            channelType: delivery.channelType,
-            channelName: delivery.channel?.name ?? snapshotName ?? (delivery.channelType === "in_app" ? "In-app" : undefined),
-            target: delivery.channel?.target ?? snapshotTarget
-          };
-        }) ?? []
-    };
+    return serializeAlertEvent(event);
   }
 
   @HasPermission("alerts.read")
   @Subscription(() => AlertEventModel, {
     name: "alertEvents",
-    resolve: (payload: AlertEventPayload) => {
-      const triggeredAt = payload.event.triggeredAt instanceof Date ? payload.event.triggeredAt : new Date(payload.event.triggeredAt);
-      return {
-        id: payload.event.id,
-        triggeredAt,
-        metricValue: payload.event.metricValue,
-        changePercent: payload.event.changePercent ?? null,
-        severity: payload.event.severity,
-        status: payload.event.status,
-        message: payload.event.message ?? undefined,
-        ruleId: payload.event.ruleId ?? undefined,
-        ruleName: payload.event.ruleName ?? undefined,
-        metricProvider: payload.event.metricProvider ?? undefined,
-        metricSlug: normalizeOptionalMetricSlug(payload.event.metricSlug),
-        context: payload.event.context ?? null,
-        deliveries: []
-      };
-    }
+    resolve: (payload: AlertEventPayload) => serializeAlertEventPayload(payload)
   })
   alertEventsSubscription(@Context("req") req: GqlRequest) {
     const requester = req?.user as AuthenticatedUser | undefined;

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { buildHotTopicQueryString } from "@/app/(app)/search/search-hot-topic-query";
+import {
+  buildGuidedSearchHref,
+  buildHotTopicQueryString,
+  shouldResetStaleSearchQuery,
+} from "@/app/(app)/search/search-hot-topic-query";
 import { resolveSuggestionRequestPlan } from "@/components/enhanced-search-box-utils";
 import { parseSearchHistory } from "@/lib/search-history";
 
@@ -59,6 +63,24 @@ describe("hot topic query building", () => {
   it("returns empty query when topic is blank", () => {
     const current = new URLSearchParams("ranking=recency&pageSize=20");
     expect(buildHotTopicQueryString(current, "   ")).toBe("");
+  });
+
+  it("builds a navigable guided-search href from the current route", () => {
+    const current = new URLSearchParams("mode=headlines&ranking=relevance");
+    expect(buildGuidedSearchHref("/search", current, "OpenAI")).toBe(
+      "/search?mode=headlines&ranking=relevance&q=OpenAI",
+    );
+  });
+});
+
+describe("guided search reset guard", () => {
+  it("does not clear a query that already updated the search input", () => {
+    expect(shouldResetStaleSearchQuery("OpenAI", "OpenAI")).toBe(false);
+  });
+
+  it("clears only stale query state with an empty local input", () => {
+    expect(shouldResetStaleSearchQuery("OpenAI", "")).toBe(true);
+    expect(shouldResetStaleSearchQuery("", "")).toBe(false);
   });
 });
 

@@ -76,6 +76,7 @@ const EMPTY_SETTINGS: RuntimeSecretsResponse = {
 const SOURCE_ID_PATTERN = /^[a-z0-9_-]+$/i;
 const SECRET_KEY_PATTERN = /^[a-zA-Z0-9._:-]+$/;
 const MAX_SECRET_VALUE_LENGTH = 8192;
+const UNASSIGNED_SOURCE_GROUP_KEY = '__draft__';
 
 const ERROR_CODE_I18N_KEY: Record<string, string> = {
   NEWS_SOURCE_RUNTIME_SECRETS_INVALID:
@@ -335,14 +336,11 @@ export function NewsSourceRuntimeSecretsPanel() {
 
   const focusRow = useCallback(
     (rowKey: string, sourceId?: string) => {
-      if (sourceId) {
-        const normalizedSourceId = normalizeSourceId(sourceId);
-        setExpandedSourceIds((current) =>
-          current.includes(normalizedSourceId)
-            ? current
-            : [...current, normalizedSourceId],
-        );
-      }
+      const normalizedSourceId = normalizeSourceId(sourceId ?? '');
+      const groupKey = normalizedSourceId || UNASSIGNED_SOURCE_GROUP_KEY;
+      setExpandedSourceIds((current) =>
+        current.includes(groupKey) ? current : [...current, groupKey],
+      );
       setHighlightedRowKey(rowKey);
       window.setTimeout(() => {
         setHighlightedRowKey((current) => (current === rowKey ? null : current));
@@ -387,8 +385,10 @@ export function NewsSourceRuntimeSecretsPanel() {
   );
 
   const handleAddRow = useCallback(() => {
-    setRows((prev) => [...prev, createDraftRow()]);
-  }, [createDraftRow]);
+    const nextRow = createDraftRow();
+    setRows((prev) => [...prev, nextRow]);
+    focusRow(nextRow.rowKey, nextRow.sourceId);
+  }, [createDraftRow, focusRow]);
 
   const handleQuickAddSource = useCallback(
     (sourceId: string) => {
@@ -492,23 +492,29 @@ export function NewsSourceRuntimeSecretsPanel() {
     const groups = new Map<
       string,
       {
+        groupKey: string;
         sourceId: string;
         metadata?: NewsAggregatorSourceMetadata;
         rows: SecretRow[];
+        isDraftGroup: boolean;
       }
     >();
 
     visibleRows.forEach((row) => {
-      const sourceId = normalizeSourceId(row.sourceId) || row.sourceId;
-      const existing = groups.get(sourceId);
+      const sourceId = normalizeSourceId(row.sourceId);
+      const isDraftGroup = sourceId.length === 0;
+      const groupKey = isDraftGroup ? UNASSIGNED_SOURCE_GROUP_KEY : sourceId;
+      const existing = groups.get(groupKey);
       if (existing) {
         existing.rows.push(row);
         return;
       }
-      groups.set(sourceId, {
+      groups.set(groupKey, {
+        groupKey,
         sourceId,
-        metadata: sourceCatalog[sourceId],
+        metadata: sourceId ? sourceCatalog[sourceId] : undefined,
         rows: [row],
+        isDraftGroup,
       });
     });
 
@@ -521,6 +527,9 @@ export function NewsSourceRuntimeSecretsPanel() {
         requirementLevel: getRuntimeSecretRequirementLevel(group.metadata),
       }))
       .sort((left, right) => {
+        if (left.isDraftGroup !== right.isDraftGroup) {
+          return left.isDraftGroup ? -1 : 1;
+        }
         const leftName = left.metadata?.name?.trim() || left.sourceId;
         const rightName = right.metadata?.name?.trim() || right.sourceId;
         return leftName.localeCompare(rightName);
@@ -528,7 +537,7 @@ export function NewsSourceRuntimeSecretsPanel() {
   }, [sourceCatalog, visibleRows]);
 
   useEffect(() => {
-    const visibleSourceIds = groupedVisibleRows.map((group) => group.sourceId);
+    const visibleSourceIds = groupedVisibleRows.map((group) => group.groupKey);
     setExpandedSourceIds((current) => {
       const result = resolveExpandedRuntimeSecretSourceIds({
         currentExpandedSourceIds: current,
@@ -1083,15 +1092,25 @@ export function NewsSourceRuntimeSecretsPanel() {
               setExpandedSourceIds(normalized.filter((key) => key.length > 0));
             }}
             items={groupedVisibleRows.map((group) => {
-              const sourceName = group.metadata?.name?.trim() || group.sourceId;
+              const sourceName = group.isDraftGroup
+                ? t('systemSettings.newsSourceRuntimeSecrets.groups.unassignedDrafts', {
+                    defaultValue: 'Draft entries',
+                  })
+                : group.metadata?.name?.trim() || group.sourceId;
               const requirementColor =
-                group.requirementLevel === 'required'
+                group.isDraftGroup
+                  ? 'gold'
+                  : group.requirementLevel === 'required'
                   ? 'red'
                   : group.requirementLevel === 'optional'
                     ? 'blue'
                     : 'default';
               const requirementLabel =
-                group.requirementLevel === 'required'
+                group.isDraftGroup
+                  ? t('systemSettings.newsSourceRuntimeSecrets.status.draft', {
+                      defaultValue: 'Draft',
+                    })
+                  : group.requirementLevel === 'required'
                   ? t('systemSettings.newsSourceRuntimeSecrets.sections.required', {
                       defaultValue: 'Required secrets',
                     })
@@ -1102,11 +1121,13 @@ export function NewsSourceRuntimeSecretsPanel() {
                     : t('systemSettings.newsSourceRuntimeSecrets.status.notStored');
 
               return {
-                key: group.sourceId,
+                key: group.groupKey,
                 label: (
                   <Space wrap>
                     <Typography.Text strong>{sourceName}</Typography.Text>
-                    <Typography.Text type="secondary">{group.sourceId}</Typography.Text>
+                    {!group.isDraftGroup ? (
+                      <Typography.Text type="secondary">{group.sourceId}</Typography.Text>
+                    ) : null}
                     <Tag color={requirementColor}>{requirementLabel}</Tag>
                     <Tag>
                       {t('systemSettings.newsSourceRuntimeSecrets.groups.totalCount', {

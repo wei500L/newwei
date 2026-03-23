@@ -2,8 +2,8 @@
 
 import { BookOutlined, ClockCircleOutlined, InfoCircleOutlined, ShareAltOutlined } from "@ant-design/icons";
 import { Button, Card, Popover, Space, Tag, Tooltip, Typography } from "antd";
-import { useRouter } from "next/navigation";
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import Link from "next/link";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
@@ -68,7 +68,6 @@ function estimateReadingTime(summary?: string): number {
 
 export function NewsCard({ item, variant = "default", density = "compact" }: NewsCardProps) {
   const { t, i18n } = useTranslation();
-  const router = useRouter();
   const locale = resolveLocale(i18n.language);
 
   const isReaderVariant = variant === "reader";
@@ -118,16 +117,14 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
   const thumbnailUrl = safeHttpUrl(item.thumbnail);
   const originalUrl = safeHttpUrl(item.url);
   const readingTime = estimateReadingTime(summaryText);
+  const itemHref = `/items/${item.id}`;
+  const readModeHref = `/read/items/${item.id}`;
+  const primaryItemId = typeof item.duplicateOf === "string" ? item.duplicateOf.trim() : "";
+  const primaryItemHref = primaryItemId ? `/items/${primaryItemId}` : null;
+  const eventHref = item.eventId ? `/events/${item.eventId}` : null;
   const cardRef = useRef<HTMLDivElement | null>(null);
   const viewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasTrackedViewRef = useRef(false);
-
-  const handleActivate = (event: KeyboardEvent<HTMLElement>, action: () => void) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      action();
-    }
-  };
 
   const handleOpenItem = () => {
     void trackUserNewsBehavior({
@@ -138,11 +135,6 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
       entities: item.entities,
       url: originalUrl ?? undefined
     });
-    router.push(`/items/${item.id}`);
-  };
-
-  const handleOpenReadMode = () => {
-    router.push(`/read/items/${item.id}`);
   };
 
   const handleOpenEvent = () => {
@@ -156,24 +148,21 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
         entities: item.entities,
         url: originalUrl ?? undefined
       });
-      router.push(`/events/${item.eventId}`);
     }
   };
 
   const handleOpenPrimaryItem = () => {
-    const primaryId = typeof item.duplicateOf === "string" ? item.duplicateOf.trim() : "";
-    if (!primaryId) {
+    if (!primaryItemId) {
       return;
     }
     void trackUserNewsBehavior({
       type: "open_item",
-      itemId: primaryId,
+      itemId: primaryItemId,
       source: item.source,
       topics: item.topics,
       entities: item.entities,
       url: originalUrl ?? undefined
     });
-    router.push(`/items/${primaryId}`);
   };
 
   useEffect(() => {
@@ -263,11 +252,12 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
           {t("items.duplicate.of", { defaultValue: "Duplicate of" })}: {item.duplicateOf}
         </div>
       ) : null}
-      {item.duplicateOf ? (
+      {primaryItemHref ? (
         <Button
           type="link"
           size="small"
           className="self-start px-0"
+          href={primaryItemHref}
           onClick={handleOpenPrimaryItem}
         >
           {t("items.duplicate.viewPrimary", { defaultValue: "查看主稿" })}
@@ -310,13 +300,11 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
           lineHeight: isReaderVariant ? 1.45 : 1.4,
           marginBottom: isReaderVariant ? 10 : 8
         }}
-        className="cursor-pointer hover:text-blue-500 transition-colors"
-        role="button"
-        tabIndex={0}
-        onClick={handleOpenItem}
-        onKeyDown={(event) => handleActivate(event, handleOpenItem)}
+        className="hover:text-blue-500 transition-colors"
       >
-        {item.title}
+        <Link href={itemHref} className="text-inherit" onClick={handleOpenItem}>
+          {item.title}
+        </Link>
       </Title>
 
       {summaryText ? (
@@ -330,18 +318,13 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
         </Paragraph>
       ) : null}
 
-      {item.eventId ? (
+      {eventHref ? (
         <div className="mb-3">
-          <Tag
-            color="geekblue"
-            className="cursor-pointer"
-            onClick={handleOpenEvent}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(event) => handleActivate(event, handleOpenEvent)}
-          >
-            {t("items.partOfEvent", { defaultValue: "Part of event" })}
-          </Tag>
+          <Link href={eventHref} className="inline-block" onClick={handleOpenEvent}>
+            <Tag color="geekblue" className="cursor-pointer">
+              {t("items.partOfEvent", { defaultValue: "Part of event" })}
+            </Tag>
+          </Link>
         </div>
       ) : null}
     </>
@@ -437,12 +420,12 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
 
         <Space size="small" wrap>
           {isReaderVariant ? (
-            <Button type="text" size="small" onClick={handleOpenReadMode}>
+            <Button type="text" size="small" href={readModeHref}>
               {readModeLabel}
             </Button>
           ) : (
             <Tooltip title={readModeLabel}>
-              <Button type="text" size="small" icon={<BookOutlined />} onClick={handleOpenReadMode} />
+              <Button type="text" size="small" icon={<BookOutlined />} href={readModeHref} />
             </Tooltip>
           )}
 
@@ -486,7 +469,7 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
             </Button>
           ) : null}
 
-          <Button type="primary" size="small" onClick={handleOpenItem}>
+          <Button type="primary" size="small" href={itemHref} onClick={handleOpenItem}>
             {openLabel}
           </Button>
         </Space>

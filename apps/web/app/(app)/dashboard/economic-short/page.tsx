@@ -222,6 +222,7 @@ export default function EconomicShortPage() {
       <div style={{ marginBottom: 16 }}>
         <Typography.Title level={4}>{t("dashboard.economicShort.title")}</Typography.Title>
         <TimeRangeControls
+          loading={loading}
           appliedGranularity={appliedGranularity}
           appliedGranularityRange={appliedGranularityRange}
         />

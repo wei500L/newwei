@@ -107,6 +107,7 @@ export default function EconomicLongPage() {
       <div style={{ marginBottom: 16 }}>
         <Typography.Title level={4}>{t("dashboard.economicLong.title")}</Typography.Title>
         <TimeRangeControls
+          loading={loading}
           appliedGranularity={appliedGranularity}
           appliedGranularityRange={appliedGranularityRange}
         />

@@ -3,6 +3,7 @@
 import { gql, useApolloClient, useLazyQuery, useMutation, useQuery } from '@apollo/client';
 import {
   Alert,
+  App,
   Button,
   Card,
   Drawer,
@@ -18,6 +19,7 @@ import {
   Table,
   Tag,
   Typography,
+  type FormProps,
   type TableColumnsType,
 } from 'antd';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -1000,6 +1002,7 @@ function CreateRoleCard({
   onCreate: (values: CreateRoleFormValues) => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const { message: messageApi } = App.useApp();
   const [form] = Form.useForm<CreateRoleFormValues>();
 
   const handleSubmit = async (values: CreateRoleFormValues) => {
@@ -1007,12 +1010,31 @@ function CreateRoleCard({
     form.resetFields();
   };
 
+  const handleFinishFailed: FormProps<CreateRoleFormValues>['onFinishFailed'] = ({
+    errorFields,
+  }) => {
+    const firstError = errorFields[0];
+    if (firstError) {
+      form.scrollToField(firstError.name, {
+        block: 'center',
+      });
+    }
+
+    messageApi.warning(t('settings.roles.validationFailed'));
+  };
+
   return (
     <Card size="small" title={t('settings.roles.createTitle')}>
       <Typography.Paragraph type="secondary" style={{ marginBottom: '1rem' }}>
         {t('settings.roles.createDescription')}
       </Typography.Paragraph>
-      <Form form={form} layout="vertical" onFinish={(values) => void handleSubmit(values)}>
+      <Form
+        form={form}
+        layout="vertical"
+        scrollToFirstError={{ block: 'center' }}
+        onFinish={(values) => void handleSubmit(values)}
+        onFinishFailed={handleFinishFailed}
+      >
         <Form.Item
           label={t('settings.roles.name')}
           name="name"

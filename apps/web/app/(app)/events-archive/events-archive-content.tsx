@@ -369,6 +369,13 @@ export function EventsArchiveContent() {
     Partial<Record<ArchiveVertical, boolean>>
   >({});
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null);
+  const openArchiveDetail = useCallback((processedArticleId: string) => {
+    const normalizedId = processedArticleId.trim();
+    if (!normalizedId) {
+      return;
+    }
+    setSelectedDetailId(normalizedId);
+  }, []);
 
   useEffect(() => {
     setSearchInput(currentSearch);
@@ -1420,7 +1427,33 @@ export function EventsArchiveContent() {
                                   return (
                                     <div
                                       key={item.processedArticleId}
-                                      className="group rounded-2xl border border-slate-200/80 bg-white/78 p-3.5 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.18)] transition-all duration-200 hover:border-slate-300/80 hover:shadow-[0_16px_32px_-24px_rgba(15,23,42,0.24)] dark:border-slate-800/80 dark:bg-slate-900/82 dark:hover:border-slate-700/80"
+                                      className="group cursor-pointer rounded-2xl border border-slate-200/80 bg-white/78 p-3.5 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.18)] transition-all duration-200 hover:border-slate-300/80 hover:shadow-[0_16px_32px_-24px_rgba(15,23,42,0.24)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60 dark:border-slate-800/80 dark:bg-slate-900/82 dark:hover:border-slate-700/80"
+                                      role="button"
+                                      tabIndex={0}
+                                      aria-haspopup="dialog"
+                                      aria-label={t(
+                                        "pages.eventsArchive.detail.open",
+                                        {
+                                          defaultValue: "打开事件详情",
+                                        },
+                                      )}
+                                      onClick={() =>
+                                        openArchiveDetail(
+                                          item.processedArticleId,
+                                        )
+                                      }
+                                      onKeyDown={(event) => {
+                                        if (
+                                          event.key !== "Enter" &&
+                                          event.key !== " "
+                                        ) {
+                                          return;
+                                        }
+                                        event.preventDefault();
+                                        openArchiveDetail(
+                                          item.processedArticleId,
+                                        );
+                                      }}
                                     >
                                       <div className="flex items-start gap-3">
                                         <span
@@ -1510,11 +1543,20 @@ export function EventsArchiveContent() {
                                           size="small"
                                           className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-full border border-transparent transition-colors ${tone.actionClassName}`}
                                           icon={<PlusOutlined />}
-                                          onClick={() =>
-                                            setSelectedDetailId(
+                                          aria-haspopup="dialog"
+                                          aria-label={t(
+                                            "pages.eventsArchive.detail.open",
+                                            {
+                                              defaultValue: "打开事件详情",
+                                            },
+                                          )}
+                                          onClick={(event) => {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            openArchiveDetail(
                                               item.processedArticleId,
-                                            )
-                                          }
+                                            );
+                                          }}
                                         />
                                       </div>
                                     </div>

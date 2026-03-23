@@ -133,6 +133,7 @@ export function AkshareGatewaySettingsPanel() {
   const [loading, setLoading] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
   const [refreshSubmitting, setRefreshSubmitting] = useState(false);
+  const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [statusPolling, setStatusPolling] = useState(false);
   const [selectedPreset, setSelectedPreset] =
     useState<EconomicDashboardRefreshPresetKey>();
@@ -267,6 +268,28 @@ export function AkshareGatewaySettingsPanel() {
     };
   }, [statusPolling]);
 
+  const handleRefreshStatus = useCallback(async () => {
+    setRefreshingStatus(true);
+    setErrorMessage(null);
+    try {
+      await Promise.all([
+        fetchStatus(),
+        canManageEconomicData ? refetchFetchConfigs() : Promise.resolve(),
+        fetchProviderSecretStatus(),
+        selectedPreset ? refetchPresetStatus() : Promise.resolve(),
+      ]);
+    } finally {
+      setRefreshingStatus(false);
+    }
+  }, [
+    canManageEconomicData,
+    fetchProviderSecretStatus,
+    fetchStatus,
+    refetchFetchConfigs,
+    refetchPresetStatus,
+    selectedPreset,
+  ]);
+
   const handleUpgrade = useCallback(() => {
     if (status?.upgradeEnabled === false) {
       const reason =
@@ -390,8 +413,9 @@ export function AkshareGatewaySettingsPanel() {
     const latestRunAt = presetStatus.lastRunAt ?? null;
     if (latestRunAt && latestRunAt !== presetStatusBaselineRef.current) {
       setStatusPolling(false);
+      void refetchFetchConfigs();
     }
-  }, [presetStatus, statusPolling]);
+  }, [presetStatus, refetchFetchConfigs, statusPolling]);
 
   const handleTriggerManualRefresh = useCallback(() => {
     if (!canManageEconomicData) {
@@ -629,7 +653,11 @@ export function AkshareGatewaySettingsPanel() {
           <Button onClick={() => void fetchVersion()} loading={loading}>
             {t("common.refresh")}
           </Button>
-          <Button onClick={() => void fetchStatus()} disabled={loading}>
+          <Button
+            onClick={() => void handleRefreshStatus()}
+            loading={refreshingStatus}
+            disabled={loading}
+          >
             {t("systemSettings.akshare.refreshStatus")}
           </Button>
           <Button

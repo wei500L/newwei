@@ -22,8 +22,8 @@ describe('llm gateway governance admin UI wiring', () => {
       'proxyGovernance.preflight.actions.bindRerank',
     );
     expect(source).toContain('void handleActivate(selectedGovernanceProfile.id);');
-    expect(source).toContain(
-      'void handleActivateEmbedding(selectedGovernanceProfile.id);',
+    expect(source).toMatch(
+      /void handleActivateEmbedding\(\s*selectedGovernanceProfile\.id,?\s*\);/,
     );
     expect(source).toContain(
       'void handleActivateRerank(selectedGovernanceProfile.id);',

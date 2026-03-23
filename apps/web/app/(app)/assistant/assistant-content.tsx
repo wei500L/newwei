@@ -319,6 +319,7 @@ export function AssistantContent() {
   const composerInputRef = useRef<TextAreaRef | null>(null);
   const conversationSessionRef = useRef(0);
   const composerCollapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const quickActionPointerDownRef = useRef(false);
   const shouldAutoScrollRef = useRef(true);
   const previousActiveRunIdRef = useRef<string | null>(null);
 
@@ -435,9 +436,16 @@ export function AssistantContent() {
       const hasDraft = queryDraft.trim().length > 0;
       const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
       const focusInsideComposer = Boolean(activeElement && composerRef.current?.contains(activeElement));
-      if (!hasDraft && !focusInsideComposer) {
+      if (
+        !hasDraft &&
+        !focusInsideComposer &&
+        !reportModalOpen &&
+        !forecastModalOpen &&
+        !quickActionPointerDownRef.current
+      ) {
         setComposerExpanded(false);
       }
+      quickActionPointerDownRef.current = false;
     }, 140);
   };
 
@@ -446,6 +454,15 @@ export function AssistantContent() {
       clearComposerCollapseTimer();
     };
   }, []);
+
+  useEffect(() => {
+    if (!reportModalOpen && !forecastModalOpen) {
+      return;
+    }
+    quickActionPointerDownRef.current = false;
+    clearComposerCollapseTimer();
+    setComposerExpanded(true);
+  }, [forecastModalOpen, reportModalOpen]);
 
   const seriesOptions = useMemo(() => {
     return (suggestionsData?.assistantEconomicSeriesSuggestions ?? []).map((item: SuggestionItem) => ({
@@ -1514,7 +1531,15 @@ export function AssistantContent() {
                         <Button
                           icon={<BarChartOutlined />}
                           className={`${styles.composerActionButton} rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-sky-700 hover:shadow-md dark:border-slate-700/80 dark:bg-slate-900/78 dark:text-slate-200 dark:hover:border-sky-400/50 dark:hover:text-sky-300`}
-                          onClick={() => setReportModalOpen(true)}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            quickActionPointerDownRef.current = true;
+                            expandComposer();
+                          }}
+                          onClick={() => {
+                            quickActionPointerDownRef.current = false;
+                            setReportModalOpen(true);
+                          }}
                           disabled={!canRunAssistant}
                         >
                           {t('assistant.chat.quickReport', { defaultValue: 'Quick Report' })}
@@ -1522,7 +1547,15 @@ export function AssistantContent() {
                         <Button
                           icon={<RobotOutlined />}
                           className={`${styles.composerActionButton} rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-indigo-300 hover:text-indigo-700 hover:shadow-md dark:border-slate-700/80 dark:bg-slate-900/78 dark:text-slate-200 dark:hover:border-indigo-400/50 dark:hover:text-indigo-300`}
-                          onClick={() => setForecastModalOpen(true)}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            quickActionPointerDownRef.current = true;
+                            expandComposer();
+                          }}
+                          onClick={() => {
+                            quickActionPointerDownRef.current = false;
+                            setForecastModalOpen(true);
+                          }}
                           disabled={!canRunAssistant}
                         >
                           {t('assistant.chat.quickForecast', { defaultValue: 'Quick Forecast' })}

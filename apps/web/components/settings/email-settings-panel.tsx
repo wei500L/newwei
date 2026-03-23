@@ -238,6 +238,7 @@ export function EmailSettingsPanel() {
       </Typography.Paragraph>
 
       <Form
+        name="email-auth-code-settings"
         layout="vertical"
         form={authCodeForm}
         onFinish={handleSaveAuthCodeSettings}
@@ -289,7 +290,12 @@ export function EmailSettingsPanel() {
         {t("systemSettings.email.test.title")}
       </Typography.Title>
 
-      <Form layout="vertical" form={form} onFinish={handleSendTest}>
+      <Form
+        name="email-test-settings"
+        layout="vertical"
+        form={form}
+        onFinish={handleSendTest}
+      >
         <Form.Item
           label={t("systemSettings.email.test.fields.to")}
           name="to"

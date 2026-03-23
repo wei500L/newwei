@@ -155,6 +155,7 @@ export default function MilitaryAlertPage() {
       <div style={{ marginBottom: 16 }}>
         <Typography.Title level={4}>{t("dashboard.militaryAlert.title")}</Typography.Title>
         <TimeRangeControls
+          loading={loading}
           appliedGranularity={appliedGranularity}
           appliedGranularityRange={appliedGranularityRange}
         />

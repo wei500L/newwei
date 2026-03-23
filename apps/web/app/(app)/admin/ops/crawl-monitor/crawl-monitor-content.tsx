@@ -1164,6 +1164,18 @@ export function CrawlMonitorContent({
     setDetailModal(null);
   }, []);
 
+  const openRequestDetails = useCallback(
+    (payload: unknown) => {
+      openDetailModal(
+        t("crawl.monitor.details.request", {
+          defaultValue: "Request details",
+        }),
+        payload,
+      );
+    },
+    [openDetailModal, t],
+  );
+
   const handleCopyDetail = useCallback(async () => {
     if (!detailModal) return;
     try {
@@ -1295,6 +1307,22 @@ export function CrawlMonitorContent({
       return true;
     });
   }, [completedFilter, completedRequests]);
+  const activeRequestRows = useMemo(
+    () =>
+      activeRequests.map((item, idx) => ({
+        key: getRequestRowKey(item, String(idx)),
+        item,
+      })),
+    [activeRequests],
+  );
+  const completedRequestRows = useMemo(
+    () =>
+      filteredCompletedRequests.map((item, idx) => ({
+        key: getRequestRowKey(item, String(idx)),
+        item,
+      })),
+    [filteredCompletedRequests],
+  );
   const completedCounts = useMemo(() => {
     let success = 0;
     let error = 0;
@@ -1737,20 +1765,28 @@ export function CrawlMonitorContent({
         <Button
           size="small"
           type="link"
-          onClick={() =>
-            openDetailModal(
-              t("crawl.monitor.details.request", {
-                defaultValue: "Request details",
-              }),
-              record.item,
-            )
-          }
+          aria-haspopup="dialog"
+          aria-label={t("crawl.monitor.details.openRequest", {
+            defaultValue: "Open request details",
+          })}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openRequestDetails(record.item);
+          }}
         >
           {t("common.view", { defaultValue: "View" })}
         </Button>
       ),
     },
   ];
+  const requestRowProps = useCallback(
+    (record: { item: unknown }) => ({
+      onClick: () => openRequestDetails(record.item),
+      style: { cursor: "pointer" },
+    }),
+    [openRequestDetails],
+  );
 
   const browserColumns: ColumnsType<{ key: string; item: unknown }> = [
     {
@@ -2725,10 +2761,8 @@ export function CrawlMonitorContent({
                     <Table
                       size="small"
                       pagination={false}
-                      dataSource={activeRequests.map((item, idx) => ({
-                        key: getRequestRowKey(item, String(idx)),
-                        item,
-                      }))}
+                      dataSource={activeRequestRows}
+                      onRow={requestRowProps}
                       columns={[
                         {
                           title: t("crawl.monitor.requests.columns.endpoint", {
@@ -2811,14 +2845,18 @@ export function CrawlMonitorContent({
                             <Button
                               size="small"
                               type="link"
-                              onClick={() =>
-                                openDetailModal(
-                                  t("crawl.monitor.details.request", {
-                                    defaultValue: "Request details",
-                                  }),
-                                  record.item,
-                                )
-                              }
+                              aria-haspopup="dialog"
+                              aria-label={t(
+                                "crawl.monitor.details.openRequest",
+                                {
+                                  defaultValue: "Open request details",
+                                },
+                              )}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                openRequestDetails(record.item);
+                              }}
                             >
                               {t("common.view", { defaultValue: "View" })}
                             </Button>
@@ -2861,13 +2899,9 @@ export function CrawlMonitorContent({
                     <Table
                       size="small"
                       pagination={{ pageSize: 10 }}
-                      dataSource={filteredCompletedRequests.map(
-                        (item, idx) => ({
-                          key: getRequestRowKey(item, String(idx)),
-                          item,
-                        }),
-                      )}
+                      dataSource={completedRequestRows}
                       columns={completedRequestColumns}
+                      onRow={requestRowProps}
                     />
                   </Card>
                 </Space>

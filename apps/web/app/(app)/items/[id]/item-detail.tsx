@@ -275,6 +275,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   });
   const [showDelayHint, setShowDelayHint] = useState(false);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [activePayloadKeys, setActivePayloadKeys] = useState<string[]>([]);
   const [translationEnabled, setTranslationEnabled] = useState(false);
   const [translationProvider, setTranslationProvider] =
     useState<RssTranslationProvider>("deeplx");
@@ -786,6 +787,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
 
   useEffect(() => {
     setSummaryExpanded(false);
+    setActivePayloadKeys([]);
   }, [itemId]);
 
   useEffect(() => {
@@ -955,6 +957,15 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       ),
     });
   }
+  const availablePayloadKeys = payloadPanels.map((panel) => String(panel.key));
+  const activePayloadPanelKeys = activePayloadKeys.filter((key) =>
+    availablePayloadKeys.includes(key),
+  );
+  const handlePayloadCollapseChange = (keys: string | string[]) => {
+    setActivePayloadKeys(
+      Array.isArray(keys) ? keys.map(String) : [String(keys)],
+    );
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -1801,7 +1812,12 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         })}
       >
         {payloadPanels.length > 0 ? (
-          <Collapse items={payloadPanels} ghost />
+          <Collapse
+            activeKey={activePayloadPanelKeys}
+            onChange={handlePayloadCollapseChange}
+            items={payloadPanels}
+            ghost
+          />
         ) : (
           <ChartEmptyState
             className="h-auto py-6"

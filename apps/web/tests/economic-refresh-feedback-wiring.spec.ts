@@ -13,12 +13,18 @@ describe('economic refresh feedback wiring', () => {
     const source = read('hooks/useEconomicData.ts');
     const queryStateSource = read('lib/economic-query-state.ts');
 
+    expect(source).toContain('const { data: session, status: sessionStatus } = useSession();');
+    expect(source).toContain('const permissions = session?.permissions ?? session?.user?.permissions ?? [];');
+    expect(source).toContain('const canQuery =');
+    expect(source).toContain('const variables = useMemo(');
+    expect(source).toContain('skip: true');
     expect(source).toContain('notifyOnNetworkStatusChange: true');
     expect(source).toContain('resolveEconomicQueryData({');
+    expect(source).toContain('sessionStatus === "loading" ||');
     expect(source).toContain('networkStatus === NetworkStatus.setVariables ||');
-    expect(source).toContain('const refreshing = isEconomicQueryRefreshing(networkStatus);');
+    expect(source).toContain('const refreshing = canQuery && isEconomicQueryRefreshing(networkStatus);');
     expect(source).toContain('refreshing,');
-    expect(queryStateSource).toContain('networkStatus === NetworkStatus.setVariables');
+    expect(queryStateSource).toContain('return data ?? previousData ?? null;');
     expect(queryStateSource).toContain('networkStatus === NetworkStatus.refetch || networkStatus === NetworkStatus.setVariables');
   });
 
@@ -52,6 +58,29 @@ describe('economic refresh feedback wiring', () => {
 
       expect(source).toContain('refreshing,');
       expect(refreshingMatches).toHaveLength(2);
+    }
+  });
+
+  it('passes explicit loading into economic dashboard time range controls', () => {
+    const timeRangeControlsSource = read('components/time-range-controls.tsx');
+
+    expect(timeRangeControlsSource).toContain('loading?: boolean;');
+    expect(timeRangeControlsSource).toContain('showAggregationLoading =');
+    expect(timeRangeControlsSource).toContain('loading && backendGranularityEnabled && !hasResolvedGranularity');
+
+    const pages = [
+      'app/(app)/dashboard/economic-short/page.tsx',
+      'app/(app)/dashboard/economic-medium/page.tsx',
+      'app/(app)/dashboard/economic-long/page.tsx',
+      'app/(app)/dashboard/economic-alert/page.tsx',
+      'app/(app)/dashboard/livelihood-prices/page.tsx',
+      'app/(app)/dashboard/key-monitor/page.tsx',
+      'app/(app)/dashboard/military-alert/page.tsx',
+    ];
+
+    for (const page of pages) {
+      const source = read(page);
+      expect(source).toContain('loading={loading}');
     }
   });
 });
