@@ -217,6 +217,8 @@ interface CrawlQueueOpsStats {
       p95LatencyMs: number | null;
       memoryHeadroom: number | null;
       memorySampleCount: number;
+      latencySampleCount: number;
+      samplingMode: "recent_sample";
     };
   };
 }
@@ -1628,7 +1630,8 @@ export function CrawlTasksView() {
                     </Typography.Text>
                     <Typography.Text type="secondary">
                       {t("crawl.ops.adaptiveMetrics", {
-                        defaultValue: "Adaptive metrics p95/error/headroom",
+                        defaultValue:
+                          "Adaptive sampled metrics p95/error/headroom",
                       })}
                       : {queueStats?.adaptive?.metrics?.p95LatencyMs ?? "-"}ms/
                       {typeof queueStats?.adaptive?.metrics?.errorRate ===
@@ -1646,6 +1649,10 @@ export function CrawlTasksView() {
                               0) * 100
                           ).toFixed(1)}%`
                         : "-"}
+                      {queueStats?.adaptive?.metrics?.samplingMode ===
+                      "recent_sample"
+                        ? ` (${queueStats?.adaptive?.metrics?.latencySampleCount ?? 0} latency samples, ${queueStats?.adaptive?.metrics?.memorySampleCount ?? 0} memory samples)`
+                        : ""}
                     </Typography.Text>
                     {queueStats?.adaptive?.reason ? (
                       <Typography.Text type="secondary">

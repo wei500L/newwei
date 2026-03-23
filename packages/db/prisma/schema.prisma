@@ -193,6 +193,8 @@ model AuditLogOutbox {
   updatedAt   DateTime             @updatedAt
 
   @@index([status, availableAt])
+  @@index([status, availableAt, createdAt])
+  @@index([status, lockedAt, createdAt])
   @@index([orgId, status])
 }
 
@@ -250,6 +252,9 @@ model CrawlTask {
   @@index([orgId, status, updatedAt])
   @@index([orgId, newsSourceId, status, updatedAt])
   @@index([orgId, createdAt], map: "CrawlTask_org_createdAt_idx")
+  @@index([status, updatedAt, id], map: "CrawlTask_status_updatedAt_id_idx")
+  @@index([status, lastRunAt, id], map: "CrawlTask_status_lastRunAt_id_idx")
+  @@index([orgId, updatedAt, id], map: "CrawlTask_org_updatedAt_id_idx")
 }
 
 model CrawlQualityTaskSnapshot {
@@ -1226,7 +1231,10 @@ model MongoOutbox {
   updatedAt   DateTime          @updatedAt
 
   @@index([status, availableAt])
+  @@index([type, status, availableAt, createdAt])
+  @@index([type, status, lockedAt, createdAt])
   @@index([orgId, status])
+  @@index([orgId, type, status])
 }
 
 model Dashboard {

@@ -15,6 +15,15 @@ interface CleanupCrawlResultsOutboxPayload {
   orgId?: string;
 }
 
+interface CleanupOutboxEntryRow {
+  id: string;
+  orgId: string;
+  payload: Prisma.JsonValue | null;
+  status: MongoOutboxStatus;
+  attempts: number | null;
+  createdAt: Date;
+}
+
 @Injectable()
 export class CrawlCleanupOutboxService {
   private readonly outboxBatchSize = 100;
@@ -31,18 +40,7 @@ export class CrawlCleanupOutboxService {
     const now = new Date();
     const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
     try {
-      const entries = await this.prisma.mongoOutbox.findMany({
-        where: {
-          type: MongoOutboxType.cleanup_crawl_results,
-          OR: [
-            { status: MongoOutboxStatus.pending, availableAt: { lte: now } },
-            { status: MongoOutboxStatus.failed, availableAt: { lte: now } },
-            { status: MongoOutboxStatus.processing, lockedAt: { lt: staleLockCutoff } }
-          ]
-        },
-        orderBy: { createdAt: "asc" },
-        take: this.outboxBatchSize
-      });
+      const entries = await this.fetchRetryEntries(now, staleLockCutoff);
 
       for (const entry of entries) {
         const payload = this.parseOutboxPayload(entry.payload);
@@ -55,7 +53,7 @@ export class CrawlCleanupOutboxService {
           continue;
         }
 
-        await this.deliverOutboxPayload(entry.id, entry.orgId, payload.taskId);
+        await this.deliverOutboxPayload(entry.id, entry.status, entry.orgId, payload.taskId);
       }
     } catch (error) {
       logger.warn({ error }, "Failed to process crawl cleanup outbox batch");
@@ -80,8 +78,13 @@ export class CrawlCleanupOutboxService {
     return { type: MongoOutboxType.cleanup_crawl_results, taskId: raw.taskId, orgId };
   }
 
-  private async deliverOutboxPayload(outboxId: string, orgId: string, taskId: string) {
-    const claimed = await this.claimOutboxEntry(outboxId);
+  private async deliverOutboxPayload(
+    outboxId: string,
+    status: MongoOutboxStatus,
+    orgId: string,
+    taskId: string
+  ) {
+    const claimed = await this.claimOutboxEntry(outboxId, status);
     if (!claimed) {
       return;
     }
@@ -96,20 +99,26 @@ export class CrawlCleanupOutboxService {
     }
   }
 
-  private async claimOutboxEntry(outboxId: string) {
+  private async claimOutboxEntry(outboxId: string, status: MongoOutboxStatus) {
     const now = new Date();
     const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
+    const eligibilityWhere =
+      status === MongoOutboxStatus.processing
+        ? {
+            id: outboxId,
+            type: MongoOutboxType.cleanup_crawl_results,
+            status,
+            lockedAt: { lt: staleLockCutoff }
+          }
+        : {
+            id: outboxId,
+            type: MongoOutboxType.cleanup_crawl_results,
+            status,
+            availableAt: { lte: now }
+          };
     return this.prisma.runInTransaction(async (tx) => {
       const updated = await tx.mongoOutbox.updateMany({
-        where: {
-          id: outboxId,
-          type: MongoOutboxType.cleanup_crawl_results,
-          OR: [
-            { status: MongoOutboxStatus.pending, availableAt: { lte: now } },
-            { status: MongoOutboxStatus.failed, availableAt: { lte: now } },
-            { status: MongoOutboxStatus.processing, lockedAt: { lt: staleLockCutoff } }
-          ]
-        },
+        where: eligibilityWhere,
         data: {
           status: MongoOutboxStatus.processing,
           lockedAt: now,
@@ -124,6 +133,65 @@ export class CrawlCleanupOutboxService {
 
       return tx.mongoOutbox.findUnique({ where: { id: outboxId } });
     });
+  }
+
+  private async fetchRetryEntries(now: Date, staleLockCutoff: Date): Promise<CleanupOutboxEntryRow[]> {
+    const [pending, failed, staleProcessing] = await Promise.all([
+      this.findEntriesForRetry({
+        type: MongoOutboxType.cleanup_crawl_results,
+        status: MongoOutboxStatus.pending,
+        availableAt: { lte: now }
+      }),
+      this.findEntriesForRetry({
+        type: MongoOutboxType.cleanup_crawl_results,
+        status: MongoOutboxStatus.failed,
+        availableAt: { lte: now }
+      }),
+      this.findEntriesForRetry({
+        type: MongoOutboxType.cleanup_crawl_results,
+        status: MongoOutboxStatus.processing,
+        lockedAt: { lt: staleLockCutoff }
+      })
+    ]);
+
+    return this.mergeRetryEntries([pending, failed, staleProcessing], this.outboxBatchSize);
+  }
+
+  private findEntriesForRetry(where: Prisma.MongoOutboxWhereInput): Promise<CleanupOutboxEntryRow[]> {
+    return this.prisma.mongoOutbox.findMany({
+      where,
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: this.outboxBatchSize,
+      select: {
+        id: true,
+        orgId: true,
+        payload: true,
+        status: true,
+        attempts: true,
+        createdAt: true
+      }
+    });
+  }
+
+  private mergeRetryEntries(groups: CleanupOutboxEntryRow[][], take: number): CleanupOutboxEntryRow[] {
+    const merged = new Map<string, CleanupOutboxEntryRow>();
+    for (const group of groups) {
+      for (const entry of group) {
+        if (!merged.has(entry.id)) {
+          merged.set(entry.id, entry);
+        }
+      }
+    }
+
+    return Array.from(merged.values())
+      .sort((left, right) => {
+        const createdDelta = left.createdAt.getTime() - right.createdAt.getTime();
+        if (createdDelta !== 0) {
+          return createdDelta;
+        }
+        return left.id.localeCompare(right.id);
+      })
+      .slice(0, take);
   }
 
   private async markOutboxFailure(outboxId: string, attempts: number, error: unknown) {

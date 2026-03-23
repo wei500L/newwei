@@ -93,7 +93,9 @@ describe("Crawl4aiQueueController queue stats", () => {
           errorRate: 0.2,
           p95LatencyMs: 90_000,
           memoryHeadroom: 0.3,
-          memorySampleCount: 5
+          memorySampleCount: 5,
+          latencySampleCount: 5,
+          samplingMode: "recent_sample"
         }
       })
     } as any;

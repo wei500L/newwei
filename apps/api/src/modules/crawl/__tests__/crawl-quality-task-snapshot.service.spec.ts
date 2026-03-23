@@ -1,3 +1,11 @@
+jest.mock("@modular/mongo", () => ({
+  TaskLogModel: {
+    find: jest.fn(),
+  },
+}));
+
+import { TaskLogModel } from "@modular/mongo";
+
 import { CrawlQualityTaskSnapshotService } from "../crawl-quality-task-snapshot.service";
 
 describe("CrawlQualityTaskSnapshotService", () => {
@@ -225,5 +233,53 @@ describe("CrawlQualityTaskSnapshotService", () => {
       orgHashDedupeHitRate: 0.1667,
       preflightFailureRate: 0.5,
     });
+  });
+
+  it("splits crawl task discovery into created and updated branches without duplicate ids", async () => {
+    const { prisma, service } = createService();
+    prisma.crawlTask.findMany
+      .mockResolvedValueOnce([{ id: "task-created" }, { id: "task-shared" }])
+      .mockResolvedValueOnce([{ id: "task-updated" }, { id: "task-shared" }]);
+    prisma.crawlResult.findMany.mockResolvedValue([{ taskId: "task-result" }]);
+
+    const taskLogLean = jest.fn().mockResolvedValue([
+      { jobId: "task-log" },
+      { jobId: "task-shared" },
+    ]);
+    (TaskLogModel.find as jest.Mock).mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: taskLogLean }),
+    });
+
+    const result = await (service as any).discoverRecentlyChangedTaskIds(
+      "org-1",
+      new Date("2026-03-22T10:00:00.000Z"),
+    );
+
+    expect(prisma.crawlTask.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: {
+          orgId: "org-1",
+          createdAt: { gte: new Date("2026-03-22T10:00:00.000Z") },
+        },
+      }),
+    );
+    expect(prisma.crawlTask.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: {
+          orgId: "org-1",
+          createdAt: { lt: new Date("2026-03-22T10:00:00.000Z") },
+          updatedAt: { gte: new Date("2026-03-22T10:00:00.000Z") },
+        },
+      }),
+    );
+    expect(result).toEqual([
+      "task-created",
+      "task-shared",
+      "task-updated",
+      "task-log",
+      "task-result",
+    ]);
   });
 });

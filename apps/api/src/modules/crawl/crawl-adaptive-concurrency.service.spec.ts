@@ -4,6 +4,7 @@ describe("CrawlAdaptiveConcurrencyService", () => {
   const createService = () => {
     const prisma = {
       crawlTask: {
+        count: jest.fn(),
         findMany: jest.fn()
       }
     } as any;
@@ -57,10 +58,10 @@ describe("CrawlAdaptiveConcurrencyService", () => {
       adaptiveErrorRateThreshold: 0.2,
       adaptiveMemoryHeadroomThreshold: 0.12
     });
-    prisma.crawlTask.findMany.mockResolvedValue([]);
-
     await service.adjustConcurrency(new Date("2026-01-01T00:00:00.000Z"));
 
+    expect(prisma.crawlTask.count).not.toHaveBeenCalled();
+    expect(prisma.crawlTask.findMany).not.toHaveBeenCalled();
     expect(crawlSettings.updateMaxConcurrencyInternal).not.toHaveBeenCalled();
     expect(crawlQueue.setGlobalConcurrency).not.toHaveBeenCalled();
     expect(crawlProcessor.setWorkerConcurrency).not.toHaveBeenCalled();
@@ -81,16 +82,17 @@ describe("CrawlAdaptiveConcurrencyService", () => {
       adaptiveMemoryHeadroomThreshold: 0.12
     });
 
+    prisma.crawlTask.count
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(1);
     prisma.crawlTask.findMany.mockResolvedValue([
       {
-        status: "failed",
         lastRunAt: new Date(now.getTime() - 119_000),
         updatedAt: now,
         lastServerMemoryMb: 100,
         lastPeakMemoryMb: 95
       },
       {
-        status: "completed",
         lastRunAt: new Date(now.getTime() - 130_000),
         updatedAt: now,
         lastServerMemoryMb: 100,
@@ -109,7 +111,11 @@ describe("CrawlAdaptiveConcurrencyService", () => {
       "crawl:adaptive-concurrency:state",
       expect.objectContaining({
         lastDecision: "decrease",
-        currentMaxConcurrency: 3
+        currentMaxConcurrency: 3,
+        metrics: expect.objectContaining({
+          latencySampleCount: 2,
+          samplingMode: "recent_sample"
+        })
       }),
       expect.any(Number)
     );
@@ -130,9 +136,11 @@ describe("CrawlAdaptiveConcurrencyService", () => {
       adaptiveMemoryHeadroomThreshold: 0.12
     });
 
+    prisma.crawlTask.count
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1);
     prisma.crawlTask.findMany.mockResolvedValue([
       {
-        status: "failed",
         lastRunAt: new Date(now.getTime() - 130_000),
         updatedAt: now,
         lastServerMemoryMb: 100,
@@ -153,7 +161,9 @@ describe("CrawlAdaptiveConcurrencyService", () => {
         errorRate: 1,
         p95LatencyMs: 130_000,
         memoryHeadroom: 0.05,
-        memorySampleCount: 1
+        memorySampleCount: 1,
+        latencySampleCount: 1,
+        samplingMode: "recent_sample"
       }
     });
 
@@ -195,5 +205,11 @@ describe("CrawlAdaptiveConcurrencyService", () => {
       errorRate: 0.25,
       memoryHeadroom: 0.15
     });
+    expect(status.metrics).toEqual(
+      expect.objectContaining({
+        latencySampleCount: 0,
+        samplingMode: "recent_sample"
+      })
+    );
   });
 });

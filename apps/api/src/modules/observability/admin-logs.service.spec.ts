@@ -22,46 +22,57 @@ describe("AdminLogsService", () => {
     list: jest.fn(),
     stats: jest.fn(),
   } as any;
+  const cacheMock = {
+    wrap: jest.fn().mockImplementation(async (_key: string, _ttl: number, loader: () => Promise<unknown>) => loader()),
+  } as any;
 
   let service: AdminLogsService;
 
   beforeEach(() => {
     jest.resetAllMocks();
-    service = new AdminLogsService(prismaMock, exceptionEvents);
+    cacheMock.wrap = jest.fn().mockImplementation(
+      async (_key: string, _ttl: number, loader: () => Promise<unknown>) => loader(),
+    );
+    service = new AdminLogsService(prismaMock, exceptionEvents, cacheMock);
   });
 
   it("paginates and redacts task log fields", async () => {
-    (TaskLogModel.countDocuments as jest.Mock).mockResolvedValue(3);
-
-    const queryChain = {
-      sort: jest.fn().mockReturnThis(),
-      skip: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue([
-        {
-          _id: { toString: () => "log-1" },
-          queue: "crawl4ai",
-          jobId: "job-1",
-          orgId: "org-1",
-          stage: "execute",
-          status: "failed",
-          message: "Bearer secret-token",
-          data: {
-            headers: {
-              authorization: "Bearer another-secret",
-              traceId: "trace-1",
+    (TaskLogModel.aggregate as jest.Mock).mockResolvedValue([
+      {
+        total: [{ count: 3 }],
+        items: [
+          {
+            _id: { toString: () => "log-1" },
+            queue: "crawl4ai",
+            jobId: "job-1",
+            orgId: "org-1",
+            stage: "execute",
+            status: "failed",
+            message: "Bearer secret-token",
+            data: {
+              headers: {
+                authorization: "Bearer another-secret",
+                traceId: "trace-1",
+              },
             },
+            error: {
+              message: "token=very-secret",
+            },
+            createdAt: new Date("2026-03-15T12:00:00.000Z"),
+            updatedAt: new Date("2026-03-15T12:01:00.000Z"),
           },
-          error: {
-            message: "token=very-secret",
+        ],
+        statusAgg: [{ _id: "failed", count: 3 }],
+        stageAgg: [{ _id: "execute", count: 3 }],
+        errorAgg: [
+          {
+            _id: { queue: "crawl4ai", stage: "execute", errorName: "unknown" },
+            sampleMessage: "Bearer secret-token",
+            count: 3,
           },
-          createdAt: new Date("2026-03-15T12:00:00.000Z"),
-          updatedAt: new Date("2026-03-15T12:01:00.000Z"),
-        },
-      ]),
-    };
-
-    (TaskLogModel.find as jest.Mock).mockReturnValue(queryChain);
+        ],
+      },
+    ]);
 
     const result = await service.listTaskLogs(
       {
@@ -74,12 +85,23 @@ describe("AdminLogsService", () => {
       },
     );
 
-    expect(TaskLogModel.countDocuments).toHaveBeenCalledWith({
-      orgId: "org-1",
-      status: "failed",
-    });
-    expect(queryChain.skip).toHaveBeenCalledWith(2);
-    expect(queryChain.limit).toHaveBeenCalledWith(2);
+    expect(TaskLogModel.aggregate).toHaveBeenCalledWith([
+      expect.objectContaining({
+        $match: {
+          orgId: "org-1",
+          status: "failed",
+        },
+      }),
+      expect.objectContaining({
+        $facet: expect.objectContaining({
+          items: expect.arrayContaining([
+            { $sort: { createdAt: -1 } },
+            { $skip: 2 },
+            { $limit: 2 },
+          ]),
+        }),
+      }),
+    ]);
     expect(result).toMatchObject({
       page: 2,
       pageSize: 2,
@@ -158,5 +180,52 @@ describe("AdminLogsService", () => {
         },
       ],
     });
+  });
+
+  it("caches quality task-log overview responses for a short TTL", async () => {
+    (TaskLogModel.aggregate as jest.Mock).mockResolvedValue([
+      {
+        items: [
+          {
+            _id: { toString: () => "log-1" },
+            queue: "crawl4ai",
+            jobId: "job-1",
+            orgId: "org-1",
+            stage: "execute",
+            status: "failed",
+            message: "boom",
+            createdAt: new Date("2026-03-15T12:00:00.000Z"),
+            updatedAt: new Date("2026-03-15T12:01:00.000Z"),
+          },
+        ],
+        statusAgg: [{ _id: "failed", count: 1 }],
+        stageAgg: [{ _id: "execute", count: 1 }],
+        errorAgg: [
+          {
+            _id: { queue: "crawl4ai", stage: "execute", errorName: "unknown" },
+            sampleMessage: "boom",
+            count: 1,
+          },
+        ],
+      },
+    ]);
+
+    const result = await service.getQualityTaskLogsOverview("org-1", {
+      sinceMinutes: 60,
+      limit: 5,
+    });
+
+    expect(cacheMock.wrap).toHaveBeenCalledWith(
+      "quality:task-logs:overview:org-1:60:5",
+      15,
+      expect.any(Function),
+      expect.objectContaining({
+        lockTtlMs: 2000,
+        retryDelayMs: 50,
+        maxWaitMs: 3000,
+      }),
+    );
+    expect(result.items).toHaveLength(1);
+    expect(result.summary.totals.failed).toBe(1);
   });
 });

@@ -20,11 +20,23 @@ describe("AuditLogOutboxService", () => {
   });
 
   it("marks invalid payloads as dead", async () => {
+    const createdAt = new Date("2026-03-23T00:00:00.000Z");
     const prisma = {
       auditLogOutbox: {
-        findMany: jest.fn().mockResolvedValue([
-          { id: "outbox-1", orgId: "org-1", payload: { nope: true }, attempts: 0 }
-        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([
+            {
+              id: "outbox-1",
+              orgId: "org-1",
+              payload: { nope: true },
+              attempts: 0,
+              status: AuditLogOutboxStatus.pending,
+              createdAt
+            }
+          ])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([]),
         update: jest.fn().mockResolvedValue(undefined)
       }
     } as any;
@@ -56,20 +68,26 @@ describe("AuditLogOutboxService", () => {
       }),
       auditLog: { create: jest.fn().mockRejectedValue(new Error("write failed")) },
       auditLogOutbox: {
-        findMany: jest.fn().mockResolvedValue([
-          {
-            id: "outbox-1",
-            orgId: "org-1",
-            payload: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([
+            {
+              id: "outbox-1",
               orgId: "org-1",
-              actorId: "user-1",
-              resource: "auth",
-              action: "login",
-              createdAt: nowIso
-            },
-            attempts: 0
-          }
-        ]),
+              payload: {
+                orgId: "org-1",
+                actorId: "user-1",
+                resource: "auth",
+                action: "login",
+                createdAt: nowIso
+              },
+              attempts: 0,
+              status: AuditLogOutboxStatus.pending,
+              createdAt: new Date(nowIso)
+            }
+          ])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([]),
         delete: jest.fn(),
         update: jest.fn().mockResolvedValue(undefined)
       }
@@ -125,30 +143,39 @@ describe("AuditLogOutboxService", () => {
         })
       },
       auditLogOutbox: {
-        findMany: jest.fn().mockResolvedValue([
-          {
-            id: "outbox-slow",
-            orgId: "org-1",
-            payload: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([
+            {
+              id: "outbox-slow",
               orgId: "org-1",
-              resource: "slow-resource",
-              action: "create",
-              createdAt: nowIso
-            },
-            attempts: 0
-          },
-          {
-            id: "outbox-fast",
-            orgId: "org-1",
-            payload: {
+              payload: {
+                orgId: "org-1",
+                resource: "slow-resource",
+                action: "create",
+                createdAt: nowIso
+              },
+              attempts: 0,
+              status: AuditLogOutboxStatus.pending,
+              createdAt: new Date("2026-03-23T00:00:00.000Z")
+            }
+          ])
+          .mockResolvedValueOnce([
+            {
+              id: "outbox-fast",
               orgId: "org-1",
-              resource: "fast-resource",
-              action: "create",
-              createdAt: nowIso
-            },
-            attempts: 0
-          }
-        ]),
+              payload: {
+                orgId: "org-1",
+                resource: "fast-resource",
+                action: "create",
+                createdAt: nowIso
+              },
+              attempts: 0,
+              status: AuditLogOutboxStatus.failed,
+              createdAt: new Date("2026-03-23T00:01:00.000Z")
+            }
+          ])
+          .mockResolvedValueOnce([]),
         delete: jest.fn().mockResolvedValue(undefined),
         update: jest.fn().mockResolvedValue(undefined)
       }

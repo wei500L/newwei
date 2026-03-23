@@ -29,6 +29,15 @@ interface NormalizedAuditLogOutboxPayload {
   createdAt: Date;
 }
 
+interface AuditLogOutboxEntryRow {
+  id: string;
+  orgId: string;
+  payload: Prisma.JsonValue;
+  status: AuditLogOutboxStatus;
+  attempts: number | null;
+  createdAt: Date;
+}
+
 @Injectable()
 export class AuditLogOutboxService {
   private readonly outboxBatchSize = 200;
@@ -44,17 +53,7 @@ export class AuditLogOutboxService {
     const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
 
     try {
-      const entries = await this.prisma.auditLogOutbox.findMany({
-        where: {
-          OR: [
-            { status: AuditLogOutboxStatus.pending, availableAt: { lte: now } },
-            { status: AuditLogOutboxStatus.failed, availableAt: { lte: now } },
-            { status: AuditLogOutboxStatus.processing, lockedAt: { lt: staleLockCutoff } }
-          ]
-        },
-        orderBy: { createdAt: "asc" },
-        take: this.outboxBatchSize
-      });
+      const entries = await this.fetchRetryEntries(now, staleLockCutoff);
 
       const results = await settleWithConcurrency(
         entries,
@@ -70,7 +69,7 @@ export class AuditLogOutboxService {
             return;
           }
 
-          await this.deliverOutboxPayload(entry.id, payload);
+          await this.deliverOutboxPayload(entry.id, entry.status, payload);
         }
       );
 
@@ -129,8 +128,12 @@ export class AuditLogOutboxService {
     };
   }
 
-  private async deliverOutboxPayload(outboxId: string, payload: NormalizedAuditLogOutboxPayload) {
-    const claimed = await this.claimOutboxEntry(outboxId);
+  private async deliverOutboxPayload(
+    outboxId: string,
+    status: AuditLogOutboxStatus,
+    payload: NormalizedAuditLogOutboxPayload
+  ) {
+    const claimed = await this.claimOutboxEntry(outboxId, status);
     if (!claimed) {
       return;
     }
@@ -158,20 +161,25 @@ export class AuditLogOutboxService {
     }
   }
 
-  private async claimOutboxEntry(outboxId: string) {
+  private async claimOutboxEntry(outboxId: string, status: AuditLogOutboxStatus) {
     const now = new Date();
     const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
+    const eligibilityWhere =
+      status === AuditLogOutboxStatus.processing
+        ? {
+            id: outboxId,
+            status,
+            lockedAt: { lt: staleLockCutoff }
+          }
+        : {
+            id: outboxId,
+            status,
+            availableAt: { lte: now }
+          };
 
     return this.prisma.runInTransaction(async (tx) => {
       const updated = await tx.auditLogOutbox.updateMany({
-        where: {
-          id: outboxId,
-          OR: [
-            { status: AuditLogOutboxStatus.pending, availableAt: { lte: now } },
-            { status: AuditLogOutboxStatus.failed, availableAt: { lte: now } },
-            { status: AuditLogOutboxStatus.processing, lockedAt: { lt: staleLockCutoff } }
-          ]
-        },
+        where: eligibilityWhere,
         data: {
           status: AuditLogOutboxStatus.processing,
           lockedAt: now,
@@ -186,6 +194,68 @@ export class AuditLogOutboxService {
 
       return tx.auditLogOutbox.findUnique({ where: { id: outboxId } });
     });
+  }
+
+  private async fetchRetryEntries(
+    now: Date,
+    staleLockCutoff: Date
+  ): Promise<AuditLogOutboxEntryRow[]> {
+    const [pending, failed, staleProcessing] = await Promise.all([
+      this.findEntriesForRetry({
+        status: AuditLogOutboxStatus.pending,
+        availableAt: { lte: now }
+      }),
+      this.findEntriesForRetry({
+        status: AuditLogOutboxStatus.failed,
+        availableAt: { lte: now }
+      }),
+      this.findEntriesForRetry({
+        status: AuditLogOutboxStatus.processing,
+        lockedAt: { lt: staleLockCutoff }
+      })
+    ]);
+
+    return this.mergeRetryEntries([pending, failed, staleProcessing], this.outboxBatchSize);
+  }
+
+  private findEntriesForRetry(where: Prisma.AuditLogOutboxWhereInput): Promise<AuditLogOutboxEntryRow[]> {
+    return this.prisma.auditLogOutbox.findMany({
+      where,
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: this.outboxBatchSize,
+      select: {
+        id: true,
+        orgId: true,
+        payload: true,
+        status: true,
+        attempts: true,
+        createdAt: true
+      }
+    });
+  }
+
+  private mergeRetryEntries(
+    groups: AuditLogOutboxEntryRow[][],
+    take: number
+  ): AuditLogOutboxEntryRow[] {
+    const merged = new Map<string, AuditLogOutboxEntryRow>();
+    for (const group of groups) {
+      for (const entry of group) {
+        if (!merged.has(entry.id)) {
+          merged.set(entry.id, entry);
+        }
+      }
+    }
+
+    return Array.from(merged.values())
+      .sort((left, right) => {
+        const createdDelta = left.createdAt.getTime() - right.createdAt.getTime();
+        if (createdDelta !== 0) {
+          return createdDelta;
+        }
+        return left.id.localeCompare(right.id);
+      })
+      .slice(0, take);
   }
 
   private async markOutboxFailure(outboxId: string, attempts: number, error: unknown) {

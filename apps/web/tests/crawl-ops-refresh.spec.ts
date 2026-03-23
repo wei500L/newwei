@@ -1,9 +1,14 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
   getCrawlTaskDetailOpsRefreshDecision,
   getCrawlTasksOpsRefreshDecision,
 } from '../lib/crawl-ops-refresh';
+
+const webRoot = path.resolve(__dirname, '..');
 
 describe('crawl ops refresh decisions', () => {
   it('refreshes the crawl task list and queue stats for crawl terminal events', () => {
@@ -88,5 +93,16 @@ describe('crawl ops refresh decisions', () => {
         { taskId: 'task-1', pipelineJobId: 'pipeline-1' },
       ),
     ).toBeNull();
+  });
+
+  it('shows sampled adaptive queue metrics in the crawl ops UI', () => {
+    const source = fs.readFileSync(
+      path.resolve(webRoot, 'app/(app)/crawl/crawl-tasks.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain('Adaptive sampled metrics p95/error/headroom');
+    expect(source).toContain('latencySampleCount');
+    expect(source).toContain('samplingMode');
   });
 });

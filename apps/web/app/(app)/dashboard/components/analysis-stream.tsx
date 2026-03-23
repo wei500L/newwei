@@ -191,9 +191,13 @@ export function AnalysisStream() {
           </div>
         )}
 
-        {error && (
+        {Boolean(error) && (
            <div className="text-[var(--destructive)]">
-             {error instanceof Error ? error.message : unexpectedErrorLabel}
+             {error instanceof Error
+               ? error.message
+               : typeof error === "string"
+                 ? error
+                 : unexpectedErrorLabel}
            </div>
         )}
 

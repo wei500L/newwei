@@ -13,7 +13,6 @@ import {
   getCurrentTraceId,
   NotificationPresentationKind,
 } from "@modular/utils";
-import { NotificationType } from "@prisma/client";
 import { Queue } from "bullmq";
 import {
   BadRequestException,
@@ -22,11 +21,11 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
+import { NotificationType } from "@prisma/client";
 
 import { writeAuditLogBestEffort } from "../../modules/audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
-import { NewsClassificationQualitySettingsService } from "../news-pipeline/news-classification-quality-settings.service";
 import {
   classifySourceByLabelAndUrl,
   getDefaultNewsEventSourcePolicy,
@@ -34,6 +33,7 @@ import {
   type ClassifiedSourceType,
   type NewsEventSourcePolicy,
 } from "../news-events/news-event-source-classifier";
+import { NewsClassificationQualitySettingsService } from "../news-pipeline/news-classification-quality-settings.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import {
   CLASSIFICATION_QUALITY_QUEUE,
@@ -180,7 +180,7 @@ const SOURCE_ITEMS_LIMIT_MAX = 200;
 const REVIEW_QUEUE_LIMIT_DEFAULT = 50;
 const REVIEW_QUEUE_LIMIT_MAX = 200;
 const SAMPLING_FETCH_LIMIT = 3000;
-const SUMMARY_ITEMS_LIMIT = 10_000;
+const SUMMARY_ITEMS_LIMIT = 3_000;
 const LATENCY_LOGS_LIMIT = 20_000;
 const GATE_LOGS_LIMIT = 20_000;
 const GATE_SETTINGS_KEY_PREFIX = "news_event_settings:";
@@ -2210,7 +2210,7 @@ export class ClassificationQualityService {
   }
 
   private buildCategoryPrefixRegex(prefix: string) {
-    return new RegExp(`^${this.escapeRegExp(prefix)}(?:/|$)`, "i");
+    return new RegExp(`^${this.escapeRegExp(prefix)}(?:/|$)`);
   }
 
   private escapeRegExp(value: string) {

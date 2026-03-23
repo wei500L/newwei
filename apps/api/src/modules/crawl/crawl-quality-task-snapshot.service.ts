@@ -251,11 +251,19 @@ export class CrawlQualityTaskSnapshotService {
   }
 
   private async discoverRecentlyChangedTaskIds(orgId: string, since: Date) {
-    const [tasks, logs, results] = await Promise.all([
+    const [createdTasks, updatedTasks, logs, results] = await Promise.all([
       this.prisma.crawlTask.findMany({
         where: {
           orgId,
-          OR: [{ createdAt: { gte: since } }, { updatedAt: { gte: since } }],
+          createdAt: { gte: since },
+        },
+        select: { id: true },
+      }),
+      this.prisma.crawlTask.findMany({
+        where: {
+          orgId,
+          createdAt: { lt: since },
+          updatedAt: { gte: since },
         },
         select: { id: true },
       }),
@@ -278,7 +286,8 @@ export class CrawlQualityTaskSnapshotService {
 
     return Array.from(
       new Set([
-        ...tasks.map((task) => task.id),
+        ...createdTasks.map((task) => task.id),
+        ...updatedTasks.map((task) => task.id),
         ...logs
           .map((log) => (typeof log.jobId === "string" ? log.jobId.trim() : ""))
           .filter((taskId) => taskId.length > 0),

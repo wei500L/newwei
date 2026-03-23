@@ -290,12 +290,14 @@ export function buildCrossSourceDedupResult(input: {
   const affectedSourceIds = new Set<string>();
   let nextDuplicateGroups = previousCache.duplicateGroups;
 
-  const ensureSourceMetaMutable = (sourceId: string) => {
+  const ensureSourceMetaMutable = (
+    sourceId: string,
+  ): Record<string, CrossSourceItemMeta> => {
     if (!mutatedSourceIds.has(sourceId)) {
       nextBySource[sourceId] = { ...(previousCache.bySource[sourceId] ?? {}) };
       mutatedSourceIds.add(sourceId);
     }
-    return nextBySource[sourceId];
+    return (nextBySource[sourceId] ??= {});
   };
 
   const ensureBucketMutable = (normalizedTitle: string): GroupBucket | null => {

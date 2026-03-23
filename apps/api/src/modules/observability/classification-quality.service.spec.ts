@@ -462,4 +462,65 @@ describe("ClassificationQualityService", () => {
       }),
     );
   });
+
+  it("uses a lowercase anchored prefix regex and the reduced summary sample limit", async () => {
+    const { service, prisma } = createService();
+
+    (ProcessedItemModel.aggregate as jest.Mock).mockResolvedValueOnce([
+      {
+        total: [{ count: 5 }],
+        sampled: [
+          {
+            _id: "processed-1",
+            sourceId: "source-1",
+            createdAt: new Date("2025-01-01T00:00:00.000Z"),
+            result: {
+              category_confidence: 0.45,
+              category_method: "llm-embedding-rerank",
+              category_path: "tech/ai",
+            },
+          },
+        ],
+      },
+    ]);
+    (TaskLogModel.aggregate as jest.Mock)
+      .mockResolvedValueOnce([
+        {
+          total: [{ count: 0 }],
+          sampled: [],
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          total: [{ count: 0 }],
+          sampled: [],
+        },
+      ]);
+    (ClassificationReviewModel.countDocuments as jest.Mock).mockReturnValue({
+      exec: jest.fn().mockResolvedValue(0),
+    });
+    prisma.systemSetting.findUnique.mockResolvedValue(null);
+    prisma.newsSource.findMany.mockResolvedValue([]);
+
+    const summary = await service.getSummary({
+      orgId: "org-1",
+      window: "24h",
+      categoryPrefix: "Tech/AI",
+    });
+
+    const pipeline = (ProcessedItemModel.aggregate as jest.Mock).mock.calls[0]?.[0] as
+      | Record<string, unknown>[]
+      | undefined;
+    const matchStage = pipeline?.[0]?.$match as
+      | { "result.category_path"?: { $regex?: RegExp } }
+      | undefined;
+    const sampledStage = (pipeline?.[1]?.$facet as { sampled?: Record<string, unknown>[] } | undefined)
+      ?.sampled?.find((stage) => "$limit" in stage) as { $limit?: number } | undefined;
+
+    expect(matchStage?.["result.category_path"]?.$regex).toBeInstanceOf(RegExp);
+    expect(matchStage?.["result.category_path"]?.$regex?.source).toBe("^tech\\/ai(?:\\/|$)");
+    expect(matchStage?.["result.category_path"]?.$regex?.flags).toBe("");
+    expect(sampledStage?.$limit).toBe(3000);
+    expect(summary.sampling.classifiedItems.limit).toBe(3000);
+  });
 });

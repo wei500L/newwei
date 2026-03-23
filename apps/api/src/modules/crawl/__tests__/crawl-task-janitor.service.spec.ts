@@ -101,6 +101,7 @@ describe("CrawlTaskJanitorService", () => {
           updatedAt: new Date(Date.now() - 120_000)
         }
       ])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
     prismaMock.crawlTask.updateMany = jest.fn().mockResolvedValue({ count: 1 });
 
@@ -135,6 +136,7 @@ describe("CrawlTaskJanitorService", () => {
     prismaMock.crawlTask.findMany = jest
       .fn()
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         {
           id: "task-2",
@@ -155,6 +157,7 @@ describe("CrawlTaskJanitorService", () => {
     prismaMock.crawlTask.findMany = jest
       .fn()
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         {
           id: "task-3",
@@ -173,6 +176,48 @@ describe("CrawlTaskJanitorService", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           status: "queued"
+        })
+      })
+    );
+  });
+
+  it("merges both stale running query branches and keeps the oldest tasks first", async () => {
+    envMock.crawlTaskJanitorConfig.batchSize = 2;
+    prismaMock.crawlTask.findMany = jest
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "task-2",
+          orgId: "org-1",
+          lastRunAt: new Date("2026-01-01T00:02:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:02:10.000Z")
+        },
+        {
+          id: "task-3",
+          orgId: "org-1",
+          lastRunAt: new Date("2026-01-01T00:03:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:03:10.000Z")
+        }
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "task-1",
+          orgId: "org-1",
+          lastRunAt: null,
+          updatedAt: new Date("2026-01-01T00:01:00.000Z")
+        }
+      ])
+      .mockResolvedValueOnce([]);
+    prismaMock.crawlTask.updateMany = jest.fn().mockResolvedValue({ count: 2 });
+
+    const result = await service.cleanupStaleTasks(new Date("2026-01-01T00:10:00.000Z"));
+
+    expect(result.staleRunning).toBe(2);
+    expect(prismaMock.crawlTask.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: { in: ["task-1", "task-2"] },
+          status: "running"
         })
       })
     );

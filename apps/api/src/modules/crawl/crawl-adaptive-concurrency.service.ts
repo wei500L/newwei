@@ -6,15 +6,16 @@ import { CrawlTaskStatus } from "@prisma/client";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 
-import { CrawlQueueProcessor } from "./crawl.processor";
 import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlSettingsService } from "./crawl-settings.service";
+import { CrawlQueueProcessor } from "./crawl.processor";
 
 const logger = createLogger({ name: "crawl-adaptive-concurrency" });
 const ADAPTIVE_LOCK_KEY = "cron:crawl-adaptive-concurrency";
 const ADAPTIVE_LOCK_TTL_MS = 45_000;
 const ADAPTIVE_STATE_CACHE_KEY = "crawl:adaptive-concurrency:state";
 const ADAPTIVE_STATE_TTL_SECONDS = 7 * 24 * 60 * 60;
+const ADAPTIVE_METRIC_SAMPLE_LIMIT = 200;
 
 interface AdaptiveConcurrencyMetrics {
   taskCount: number;
@@ -23,6 +24,8 @@ interface AdaptiveConcurrencyMetrics {
   p95LatencyMs: number | null;
   memoryHeadroom: number | null;
   memorySampleCount: number;
+  latencySampleCount: number;
+  samplingMode: "recent_sample";
 }
 
 interface AdaptiveConcurrencyState {
@@ -53,6 +56,19 @@ export interface CrawlAdaptiveConcurrencyStatus {
   metrics: AdaptiveConcurrencyMetrics;
 }
 
+function createEmptyAdaptiveMetrics(): AdaptiveConcurrencyMetrics {
+  return {
+    taskCount: 0,
+    failedCount: 0,
+    errorRate: 0,
+    p95LatencyMs: null,
+    memoryHeadroom: null,
+    memorySampleCount: 0,
+    latencySampleCount: 0,
+    samplingMode: "recent_sample"
+  };
+}
+
 @Injectable()
 export class CrawlAdaptiveConcurrencyService {
   constructor(
@@ -78,25 +94,18 @@ export class CrawlAdaptiveConcurrencyService {
       errorRate: settings.adaptiveErrorRateThreshold,
       memoryHeadroom: settings.adaptiveMemoryHeadroomThreshold
     };
+    const enabled = settings.adaptiveConcurrencyEnabled;
 
     return {
-      enabled: settings.adaptiveConcurrencyEnabled,
-      lastDecision: cached?.lastDecision ?? "idle",
-      lastAdjustedAt: cached?.lastAdjustedAt ?? null,
-      reason: cached?.reason ?? null,
+      enabled,
+      lastDecision: enabled ? cached?.lastDecision ?? "idle" : "disabled",
+      lastAdjustedAt: enabled ? cached?.lastAdjustedAt ?? null : null,
+      reason: enabled ? cached?.reason ?? null : "adaptive concurrency is disabled",
       currentMaxConcurrency: settings.maxConcurrency,
       windowMinutes: settings.adaptiveWindowMinutes,
       cooldownMinutes: settings.adaptiveCooldownMinutes,
       thresholds,
-      metrics:
-        cached?.metrics ?? {
-          taskCount: 0,
-          failedCount: 0,
-          errorRate: 0,
-          p95LatencyMs: null,
-          memoryHeadroom: null,
-          memorySampleCount: 0
-        }
+      metrics: enabled ? this.normalizeMetrics(cached?.metrics) : createEmptyAdaptiveMetrics()
     };
   }
 
@@ -107,8 +116,6 @@ export class CrawlAdaptiveConcurrencyService {
       errorRate: settings.adaptiveErrorRateThreshold,
       memoryHeadroom: settings.adaptiveMemoryHeadroomThreshold
     };
-    const metrics = await this.computeMetrics(now, settings.adaptiveWindowMinutes);
-
     if (!settings.adaptiveConcurrencyEnabled) {
       await this.persistState({
         enabled: false,
@@ -117,11 +124,12 @@ export class CrawlAdaptiveConcurrencyService {
         reason: "adaptive concurrency is disabled",
         currentMaxConcurrency: settings.maxConcurrency,
         updatedAt: now.toISOString(),
-        metrics
+        metrics: createEmptyAdaptiveMetrics()
       });
       return;
     }
 
+    const metrics = await this.computeMetrics(now, settings.adaptiveWindowMinutes);
     const reasons: string[] = [];
     if (
       typeof metrics.p95LatencyMs === "number" &&
@@ -232,30 +240,44 @@ export class CrawlAdaptiveConcurrencyService {
 
   private async computeMetrics(now: Date, windowMinutes: number): Promise<AdaptiveConcurrencyMetrics> {
     const from = new Date(now.getTime() - windowMinutes * 60_000);
-    const rows = await this.prisma.crawlTask.findMany({
-      where: {
-        updatedAt: { gte: from },
-        status: { in: [CrawlTaskStatus.completed, CrawlTaskStatus.failed] },
-        lastRunAt: { not: null }
-      },
-      select: {
-        status: true,
-        lastRunAt: true,
-        updatedAt: true,
-        lastServerMemoryMb: true,
-        lastPeakMemoryMb: true
-      }
-    });
+    const baseWhere = {
+      updatedAt: { gte: from },
+      lastRunAt: { not: null }
+    };
+    const terminalStatuses = [CrawlTaskStatus.completed, CrawlTaskStatus.failed];
+    const [taskCount, failedCount, rows] = await Promise.all([
+      this.prisma.crawlTask.count({
+        where: {
+          ...baseWhere,
+          status: { in: terminalStatuses }
+        }
+      }),
+      this.prisma.crawlTask.count({
+        where: {
+          ...baseWhere,
+          status: CrawlTaskStatus.failed
+        }
+      }),
+      this.prisma.crawlTask.findMany({
+        where: {
+          ...baseWhere,
+          status: { in: terminalStatuses }
+        },
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        take: ADAPTIVE_METRIC_SAMPLE_LIMIT,
+        select: {
+          lastRunAt: true,
+          updatedAt: true,
+          lastServerMemoryMb: true,
+          lastPeakMemoryMb: true
+        }
+      })
+    ]);
 
     const latencies: number[] = [];
-    let failedCount = 0;
     const headrooms: number[] = [];
 
     for (const row of rows) {
-      if (row.status === CrawlTaskStatus.failed) {
-        failedCount += 1;
-      }
-
       const startedAt = row.lastRunAt?.getTime();
       const endedAt = row.updatedAt.getTime();
       if (typeof startedAt === "number" && Number.isFinite(startedAt)) {
@@ -276,15 +298,17 @@ export class CrawlAdaptiveConcurrencyService {
     }
 
     return {
-      taskCount: rows.length,
+      taskCount,
       failedCount,
-      errorRate: rows.length > 0 ? failedCount / rows.length : 0,
+      errorRate: taskCount > 0 ? failedCount / taskCount : 0,
       p95LatencyMs: this.computePercentile(latencies, 0.95),
       memoryHeadroom:
         headrooms.length > 0
           ? headrooms.reduce((sum, value) => sum + value, 0) / headrooms.length
           : null,
-      memorySampleCount: headrooms.length
+      memorySampleCount: headrooms.length,
+      latencySampleCount: latencies.length,
+      samplingMode: "recent_sample"
     };
   }
 
@@ -299,5 +323,13 @@ export class CrawlAdaptiveConcurrencyService {
 
   private async persistState(state: AdaptiveConcurrencyState) {
     await this.cache.set(ADAPTIVE_STATE_CACHE_KEY, state, ADAPTIVE_STATE_TTL_SECONDS);
+  }
+
+  private normalizeMetrics(metrics?: Partial<AdaptiveConcurrencyMetrics> | null): AdaptiveConcurrencyMetrics {
+    return {
+      ...createEmptyAdaptiveMetrics(),
+      ...metrics,
+      samplingMode: "recent_sample"
+    };
   }
 }

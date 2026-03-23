@@ -72,15 +72,23 @@ const createEmptyLiveEventCounts = (): Record<LiveEventSource, number> => ({
   alerts: 0,
 });
 
+const createEmptyLiveDirtySources = (): Record<LiveEventSource, boolean> => ({
+  pipeline: false,
+  crawl: false,
+  analysis: false,
+  assistant: false,
+  alerts: false,
+});
+
 const createDefaultLiveRefreshSources = (): Record<
   LiveEventSource,
   boolean
 > => ({
-  pipeline: true,
-  crawl: true,
-  analysis: true,
-  assistant: true,
-  alerts: true,
+  pipeline: false,
+  crawl: false,
+  analysis: false,
+  assistant: false,
+  alerts: false,
 });
 
 interface PipelineQualitySummary {
@@ -447,6 +455,9 @@ export function QualityContent() {
   const [liveEventCountsBySource, setLiveEventCountsBySource] = useState<
     Record<LiveEventSource, number>
   >(() => createEmptyLiveEventCounts());
+  const [liveDirtySources, setLiveDirtySources] = useState<
+    Record<LiveEventSource, boolean>
+  >(() => createEmptyLiveDirtySources());
   const [liveRefreshSources, setLiveRefreshSources] = useState<
     Record<LiveEventSource, boolean>
   >(() => createDefaultLiveRefreshSources());
@@ -456,12 +467,15 @@ export function QualityContent() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const pendingOverviewLoadRef = useRef<{ silent: boolean } | null>(null);
   const pendingClassificationLoadRef = useRef<{ silent: boolean } | null>(null);
-  const activeTabRef = useRef(activeTab);
   const overviewRequestKeyRef = useRef("");
   const classificationRequestKeyRef = useRef("");
   const screens = Grid.useBreakpoint();
   const loading =
     activeTab === "classification" ? classificationLoading : overviewLoading;
+  const dirtyLiveSources = useMemo(
+    () => LIVE_EVENT_SOURCES.filter((source) => liveDirtySources[source]),
+    [liveDirtySources],
+  );
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -504,10 +518,6 @@ export function QualityContent() {
   useEffect(() => {
     liveRefreshSourcesRef.current = liveRefreshSources;
   }, [liveRefreshSources]);
-
-  useEffect(() => {
-    activeTabRef.current = activeTab;
-  }, [activeTab]);
 
   useEffect(() => {
     overviewRequestKeyRef.current = JSON.stringify({
@@ -565,6 +575,7 @@ export function QualityContent() {
         );
         setTaskLogsSummary(overviewResponse.data?.taskLogs?.summary ?? null);
         setOverviewLoaded(true);
+        setLiveDirtySources(createEmptyLiveDirtySources());
         setLastUpdatedAt(
           overviewResponse.data?.generatedAt ?? new Date().toISOString(),
         );
@@ -926,9 +937,9 @@ export function QualityContent() {
     }
     liveRefreshTimerRef.current = window.setTimeout(() => {
       liveRefreshTimerRef.current = null;
-      void load({ silent: true, tab: activeTabRef.current });
+      void loadOverview({ silent: true });
     }, 1200);
-  }, [load]);
+  }, [loadOverview]);
 
   const resetLiveCounters = useCallback(() => {
     setLiveEventCount(0);
@@ -999,8 +1010,19 @@ export function QualityContent() {
         [source]: (prev[source] ?? 0) + 1,
       }));
 
-      if (event !== "PROGRESS" && liveRefreshSourcesRef.current[source]) {
-        scheduleLiveRefresh();
+      if (event !== "PROGRESS") {
+        if (liveRefreshSourcesRef.current[source]) {
+          scheduleLiveRefresh();
+        } else {
+          setLiveDirtySources((prev) =>
+            prev[source]
+              ? prev
+              : {
+                  ...prev,
+                  [source]: true,
+                },
+          );
+        }
       }
     };
 
@@ -1838,12 +1860,16 @@ export function QualityContent() {
               >
                 <Checkbox
                   checked={liveRefreshSources[source]}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const checked = event.target.checked;
                     setLiveRefreshSources((prev) => ({
                       ...prev,
-                      [source]: event.target.checked,
-                    }))
-                  }
+                      [source]: checked,
+                    }));
+                    if (checked && liveDirtySources[source]) {
+                      scheduleLiveRefresh();
+                    }
+                  }}
                 >
                   {source}
                 </Checkbox>
@@ -2014,6 +2040,26 @@ export function QualityContent() {
               time: new Date(lastUpdatedAt).toLocaleString(),
             })}
           </Typography.Text>
+        ) : null}
+
+        {dirtyLiveSources.length > 0 ? (
+          <Alert
+            showIcon
+            type="info"
+            message={t("quality.liveUpdates.stale.title", {
+              defaultValue: "New live events arrived after the last refresh.",
+            })}
+            description={t("quality.liveUpdates.stale.description", {
+              defaultValue:
+                "Overview data is stale for: {{sources}}. Refresh now or enable refresh-on-event for those sources.",
+              sources: dirtyLiveSources.join(", "),
+            })}
+            action={
+              <Button size="small" onClick={() => void load()}>
+                {t("common.refresh", { defaultValue: "Refresh" })}
+              </Button>
+            }
+          />
         ) : null}
 
         <Tabs

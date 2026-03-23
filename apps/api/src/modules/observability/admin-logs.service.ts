@@ -1,8 +1,9 @@
 import { TaskLogModel } from "@modular/mongo";
 import { redactSensitiveFields } from "@modular/utils";
-import { Prisma } from "@prisma/client";
 import { Injectable } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 
+import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 
 import {
@@ -102,6 +103,8 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 const REDACTED = "[REDACTED]";
+const QUALITY_TASK_LOG_OVERVIEW_CACHE_PREFIX = "quality:task-logs:overview:";
+const QUALITY_TASK_LOG_OVERVIEW_TTL_SECONDS = 15;
 
 function isSensitiveKey(key: string) {
   const normalized = key.trim().toLowerCase();
@@ -196,6 +199,7 @@ export class AdminLogsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly exceptionEvents: ExceptionEventsService,
+    private readonly cache: CacheService,
   ) {}
 
   private buildTaskLogWhere(
@@ -307,24 +311,33 @@ export class AdminLogsService {
         : 10;
     const limit = Math.max(1, Math.min(200, limitRaw));
     const since = new Date(Date.now() - sinceMinutes * 60 * 1000);
-    const result = await this.runTaskLogAggregate({
-      where: {
-        orgId,
-        createdAt: { $gte: since },
-      },
-      itemsMatch: {
-        status: "failed",
-      },
-      itemLimit: limit,
-      includeTotal: false,
-      includeTopErrors: true,
-    });
+    const cacheKey = `${QUALITY_TASK_LOG_OVERVIEW_CACHE_PREFIX}${orgId}:${sinceMinutes}:${limit}`;
 
-    return {
-      sinceMinutes,
-      items: result.items,
-      summary: result.summary,
-    };
+    return this.cache.wrap(
+      cacheKey,
+      QUALITY_TASK_LOG_OVERVIEW_TTL_SECONDS,
+      async () => {
+        const result = await this.runTaskLogAggregate({
+          where: {
+            orgId,
+            createdAt: { $gte: since },
+          },
+          itemsMatch: {
+            status: "failed",
+          },
+          itemLimit: limit,
+          includeTotal: false,
+          includeTopErrors: true,
+        });
+
+        return {
+          sinceMinutes,
+          items: result.items,
+          summary: result.summary,
+        };
+      },
+      { lockTtlMs: 2000, retryDelayMs: 50, maxWaitMs: 3000 },
+    );
   }
 
   private async runTaskLogAggregate(input: {
@@ -408,14 +421,14 @@ export class AdminLogsService {
 
     const [aggregated] = await TaskLogModel.aggregate<{
       items?: Record<string, unknown>[];
-      total?: Array<{ count?: number }>;
-      statusAgg?: Array<{ _id?: unknown; count?: unknown }>;
-      stageAgg?: Array<{ _id?: unknown; count?: unknown }>;
-      errorAgg?: Array<{
+      total?: { count?: number }[];
+      statusAgg?: { _id?: unknown; count?: unknown }[];
+      stageAgg?: { _id?: unknown; count?: unknown }[];
+      errorAgg?: {
         _id?: { queue?: unknown; stage?: unknown; errorName?: unknown };
         sampleMessage?: unknown;
         count?: unknown;
-      }>;
+      }[];
     }>([{ $match: input.where }, { $facet: facets as never }]);
     const items = Array.isArray(aggregated?.items)
       ? aggregated.items.map((log: Record<string, unknown>) =>

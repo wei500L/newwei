@@ -79,15 +79,48 @@ export class CrawlTaskJanitorService {
   }
 
   private async findStaleRunningTasks(cutoff: Date, take: number): Promise<StaleTaskRow[]> {
+    const [staleStarted, staleWithoutHeartbeat] = await Promise.all([
+      this.prisma.crawlTask.findMany({
+        where: {
+          status: "running",
+          lastRunAt: { lt: cutoff }
+        },
+        orderBy: [{ lastRunAt: "asc" }, { id: "asc" }],
+        take,
+        select: {
+          id: true,
+          orgId: true,
+          lastRunAt: true,
+          updatedAt: true
+        }
+      }),
+      this.prisma.crawlTask.findMany({
+        where: {
+          status: "running",
+          lastRunAt: null,
+          updatedAt: { lt: cutoff }
+        },
+        orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+        take,
+        select: {
+          id: true,
+          orgId: true,
+          lastRunAt: true,
+          updatedAt: true
+        }
+      })
+    ]);
+
+    return this.mergeStaleTaskRows([staleStarted, staleWithoutHeartbeat], take);
+  }
+
+  private async findStaleQueuedTasks(cutoff: Date, take: number): Promise<StaleTaskRow[]> {
     const tasks = await this.prisma.crawlTask.findMany({
       where: {
-        status: "running",
-        OR: [
-          { lastRunAt: { lt: cutoff } },
-          { lastRunAt: null, updatedAt: { lt: cutoff } }
-        ]
+        status: "queued",
+        updatedAt: { lt: cutoff }
       },
-      orderBy: { updatedAt: "asc" },
+      orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
       take,
       select: {
         id: true,
@@ -99,22 +132,26 @@ export class CrawlTaskJanitorService {
     return tasks;
   }
 
-  private async findStaleQueuedTasks(cutoff: Date, take: number): Promise<StaleTaskRow[]> {
-    const tasks = await this.prisma.crawlTask.findMany({
-      where: {
-        status: "queued",
-        updatedAt: { lt: cutoff }
-      },
-      orderBy: { updatedAt: "asc" },
-      take,
-      select: {
-        id: true,
-        orgId: true,
-        lastRunAt: true,
-        updatedAt: true
+  private mergeStaleTaskRows(groups: StaleTaskRow[][], take: number): StaleTaskRow[] {
+    const merged = new Map<string, StaleTaskRow>();
+    for (const group of groups) {
+      for (const task of group) {
+        if (!merged.has(task.id)) {
+          merged.set(task.id, task);
+        }
       }
-    });
-    return tasks;
+    }
+
+    return Array.from(merged.values())
+      .sort((left, right) => {
+        const leftTime = (left.lastRunAt ?? left.updatedAt).getTime();
+        const rightTime = (right.lastRunAt ?? right.updatedAt).getTime();
+        if (leftTime !== rightTime) {
+          return leftTime - rightTime;
+        }
+        return left.id.localeCompare(right.id);
+      })
+      .slice(0, take);
   }
 
   private async failTasks(kind: "running" | "queued", tasks: StaleTaskRow[], message: string) {
