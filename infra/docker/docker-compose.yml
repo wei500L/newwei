@@ -1,3 +1,9 @@
+x-json-file-logging: &json-file-logging
+  driver: json-file
+  options:
+    max-size: ${DOCKER_LOG_MAX_SIZE:-10m}
+    max-file: ${DOCKER_LOG_MAX_FILE:-3}
+
 services:
   mysql:
     image: mysql:8.4
@@ -10,6 +16,7 @@ services:
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
+    logging: *json-file-logging
     healthcheck:
       test:
         [
@@ -30,6 +37,7 @@ services:
       - "${MONGO_HOST_PORT:-27017}:27017"
     volumes:
       - mongo-data:/data/db
+    logging: *json-file-logging
     healthcheck:
       test:
         [
@@ -55,6 +63,7 @@ services:
     volumes:
       - redis-data:/data
       - ./scripts/redis-entrypoint.sh:/usr/local/bin/redis-entrypoint.sh:ro
+    logging: *json-file-logging
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -72,6 +81,7 @@ services:
       - "5432:5432"
     volumes:
       - litellm-postgres-data:/var/lib/postgresql/data
+    logging: *json-file-logging
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
@@ -85,6 +95,7 @@ services:
       - "6333:6333"
     volumes:
       - qdrant-data:/qdrant/storage
+    logging: *json-file-logging
 
   minio:
     image: ${MINIO_IMAGE:-minio/minio:latest}
@@ -98,6 +109,7 @@ services:
       - "9001:9001"
     volumes:
       - minio-data:/data
+    logging: *json-file-logging
 
   minio-init:
     image: ${MINIO_MC_IMAGE:-minio/mc:latest}
@@ -119,6 +131,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
       S3_BUCKET: ${S3_BUCKET:-modular-avatars}
+    logging: *json-file-logging
 
   akshare:
     build:
@@ -134,6 +147,7 @@ services:
       AKSHARE_ADMIN_TOKEN: ${AKSHARE_ADMIN_TOKEN:-}
     ports:
       - "${AKSHARE_PORT:-8081}:8081"
+    logging: *json-file-logging
     healthcheck:
       test:
         [
@@ -158,6 +172,7 @@ services:
       MODEL_SERVICE_INTERNAL_TOKEN: ${MODEL_SERVICE_INTERNAL_TOKEN:-dev-model-token}
     ports:
       - "${MODEL_SERVICE_PORT:-8090}:8090"
+    logging: *json-file-logging
     healthcheck:
       test:
         [
@@ -208,6 +223,7 @@ services:
     volumes:
       - ../litellm/litellm-config.yaml:/app/config.base.yaml:ro
       - ../litellm/generate-litellm-config.py:/app/generate-litellm-config.py:ro
+    logging: *json-file-logging
     healthcheck:
       test:
         [
@@ -310,6 +326,7 @@ services:
         exec supervisord -c supervisord.conf
     ports:
       - "8082:11235"
+    logging: *json-file-logging
     healthcheck:
       test:
         [
@@ -324,22 +341,26 @@ services:
   ais-relay:
     build:
       context: ../..
-      dockerfile: infra/docker/api.Dockerfile
+      dockerfile: infra/docker/runtime.Dockerfile
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:20}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+        NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change_me_please_replace_32_chars}
+        API_BASE_URL: ${API_BASE_URL:-http://api:4000}
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
     restart: unless-stopped
     working_dir: /workspace
     command: >
       sh -ec "
-      echo '[ais-relay] pnpm install...';
-      pnpm install --filter @modular/ais-relay --frozen-lockfile;
-      echo '[ais-relay] starting dev server...';
-      pnpm --filter @modular/ais-relay run start:dev
+      echo '[ais-relay] starting runtime server...';
+      exec pnpm --filter @modular/ais-relay run start
       "
     env_file:
       - ./.env
     environment:
       PORT: 3004
+      NODE_ENV: production
       HUSKY: "0"
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -349,11 +370,7 @@ services:
       - ${DOCKER_DNS_2:-114.114.114.114}
     ports:
       - "${AIS_RELAY_PORT:-3004}:3004"
-    volumes:
-      - ../..:/workspace
-      - ais-relay-node-modules:/workspace/node_modules
-      - ais-relay-app-ais-relay-node-modules:/workspace/apps/ais-relay/node_modules
-      - ais-relay-pnpm-store:/root/.local/share/pnpm/store
+    logging: *json-file-logging
     healthcheck:
       test:
         [
@@ -370,28 +387,33 @@ services:
   api:
     build:
       context: ../..
-      dockerfile: infra/docker/api.Dockerfile
+      dockerfile: infra/docker/runtime.Dockerfile
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:20}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+        NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change_me_please_replace_32_chars}
+        API_BASE_URL: ${API_BASE_URL:-http://api:4000}
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
+    restart: unless-stopped
     working_dir: /workspace
     command: >
       sh -ec "
-      echo '[api] pnpm install...';
-      pnpm install --unsafe-perm --frozen-lockfile;
-      echo '[api] pnpm rebuild bcrypt...';
-      pnpm rebuild bcrypt --unsafe-perm;
       echo '[api] prisma migrate (deploy) + generate...';
       pnpm --filter db run migrate;
-      echo '[api] starting dev server...';
-      pnpm --filter @modular/api run dev
+      echo '[api] ensuring mongo indexes...';
+      pnpm --filter @modular/api run mongo:indexes;
+      echo '[api] starting runtime server...';
+      exec pnpm --filter @modular/api run start
       "
     env_file:
       - ./.env
     environment:
       PORT: 4000
+      NODE_ENV: production
       CI: "true"
       HUSKY: "0"
-      PRISMA_AUTO_RESOLVE_FAILED_MIGRATIONS: "true"
+      PRISMA_AUTO_RESOLVE_FAILED_MIGRATIONS: "false"
       AKSHARE_ENABLED: ${AKSHARE_ENABLED:-true}
       AKSHARE_HTTP_BASE_URL: ${AKSHARE_HTTP_BASE_URL:-http://akshare:8081}
       MODEL_SERVICE_ENABLED: ${MODEL_SERVICE_ENABLED:-true}
@@ -405,19 +427,7 @@ services:
       - ${DOCKER_DNS_2:-114.114.114.114}
     ports:
       - "4000:4000"
-    volumes:
-      - ../..:/workspace
-      - api-node-modules:/workspace/node_modules
-      - api-app-api-node-modules:/workspace/apps/api/node_modules
-      - api-app-web-node-modules:/workspace/apps/web/node_modules
-      - api-app-vector-node-modules:/workspace/apps/vector/node_modules
-      - api-package-config-node-modules:/workspace/packages/config/node_modules
-      - api-package-db-node-modules:/workspace/packages/db/node_modules
-      - api-package-mongo-node-modules:/workspace/packages/mongo/node_modules
-      - api-package-utils-node-modules:/workspace/packages/utils/node_modules
-      - api-package-vector-client-node-modules:/workspace/packages/vector-client/node_modules
-      - api-infra-scripts-node-modules:/workspace/infra/scripts/node_modules
-      - api-pnpm-store:/root/.local/share/pnpm/store
+    logging: *json-file-logging
     depends_on:
       mysql:
         condition: service_healthy
@@ -439,21 +449,26 @@ services:
   vector:
     build:
       context: ../..
-      dockerfile: infra/docker/api.Dockerfile
+      dockerfile: infra/docker/runtime.Dockerfile
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:20}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+        NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change_me_please_replace_32_chars}
+        API_BASE_URL: ${API_BASE_URL:-http://api:4000}
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
+    restart: unless-stopped
     working_dir: /workspace
     command: >
       sh -ec "
-      echo '[vector] pnpm install...';
-      pnpm install --unsafe-perm --frozen-lockfile;
-      echo '[vector] starting dev server...';
-      pnpm --filter @modular/vector run dev
+      echo '[vector] starting runtime server...';
+      exec pnpm --filter @modular/vector run start
       "
     env_file:
       - ./.env
     environment:
       PORT: 4010
+      NODE_ENV: production
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
       VECTOR_INTERNAL_TOKEN: ${VECTOR_INTERNAL_TOKEN:-dev-token}
       HUSKY: "0"
@@ -465,19 +480,7 @@ services:
       - ${DOCKER_DNS_2:-114.114.114.114}
     ports:
       - "4010:4010"
-    volumes:
-      - ../..:/workspace
-      - vector-node-modules:/workspace/node_modules
-      - vector-app-api-node-modules:/workspace/apps/api/node_modules
-      - vector-app-web-node-modules:/workspace/apps/web/node_modules
-      - vector-app-vector-node-modules:/workspace/apps/vector/node_modules
-      - vector-package-config-node-modules:/workspace/packages/config/node_modules
-      - vector-package-db-node-modules:/workspace/packages/db/node_modules
-      - vector-package-mongo-node-modules:/workspace/packages/mongo/node_modules
-      - vector-package-utils-node-modules:/workspace/packages/utils/node_modules
-      - vector-package-vector-client-node-modules:/workspace/packages/vector-client/node_modules
-      - vector-infra-scripts-node-modules:/workspace/infra/scripts/node_modules
-      - vector-pnpm-store:/root/.local/share/pnpm/store
+    logging: *json-file-logging
     depends_on:
       qdrant:
         condition: service_started
@@ -491,16 +494,18 @@ services:
   web:
     build:
       context: ../..
-      dockerfile: infra/docker/web.Dockerfile
+      dockerfile: infra/docker/runtime.Dockerfile
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:20}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+        NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change_me_please_replace_32_chars}
+        API_BASE_URL: ${API_BASE_URL:-http://api:4000}
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
+    restart: unless-stopped
     working_dir: /workspace
     command: >
       sh -ec "
-      echo '[web] pnpm install...';
-      pnpm install --unsafe-perm --frozen-lockfile;
-      echo '[web] syncing @modular/utils dist...';
-      pnpm --filter @modular/utils exec tsc -p tsconfig.build.json;
       echo '[web] waiting for api...';
       i=0;
       while [ $$i -lt 150 ]; do
@@ -515,35 +520,16 @@ services:
         echo '[web] api not ready after 300s';
         exit 1;
       fi;
-      echo '[web] generating graphql artifacts...';
-      attempt=0;
-      max_attempts=$${WEB_CODEGEN_MAX_ATTEMPTS:-30};
-      until pnpm --filter @modular/web run generate; do
-        attempt=$$((attempt + 1));
-        if [ $$attempt -ge $$max_attempts ]; then
-          echo \"[web] graphql codegen failed after $$max_attempts attempts\";
-          exit 1;
-        fi;
-        echo \"[web] graphql codegen failed, retrying ($$attempt/$$max_attempts) in 2s...\";
-        sleep 2;
-      done;
-      echo '[web] starting dev server...';
-      pnpm --filter @modular/web exec next dev --hostname 0.0.0.0
+      echo '[web] starting runtime server...';
+      exec pnpm --filter @modular/web exec next start --hostname 0.0.0.0 --port 3000
       "
     env_file:
       - ./.env
     environment:
       PORT: 3000
-      NEXT_DIST_DIR: .next-docker
-      CI: "false"
+      NODE_ENV: production
+      CI: "true"
       HUSKY: "0"
-      WATCHPACK_POLLING: ${WEB_WATCHPACK_POLLING:-false}
-      WATCHPACK_POLLING_INTERVAL: ${WEB_WATCHPACK_POLLING_INTERVAL:-1000}
-      CHOKIDAR_USEPOLLING: ${WEB_CHOKIDAR_USEPOLLING:-false}
-      CHOKIDAR_INTERVAL: ${WEB_CHOKIDAR_INTERVAL:-1000}
-      NEXT_ON_DEMAND_MAX_INACTIVE_AGE_MS: ${NEXT_ON_DEMAND_MAX_INACTIVE_AGE_MS:-180000}
-      NEXT_ON_DEMAND_PAGES_BUFFER_LENGTH: ${NEXT_ON_DEMAND_PAGES_BUFFER_LENGTH:-15}
-      GRAPHQL_SCHEMA_URL: ${GRAPHQL_SCHEMA_URL:-http://api:4000/graphql}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -552,20 +538,7 @@ services:
       - ${DOCKER_DNS_2:-114.114.114.114}
     ports:
       - "3000:3000"
-    volumes:
-      - ../..:/workspace
-      - web-node-modules:/workspace/node_modules
-      - web-app-api-node-modules:/workspace/apps/api/node_modules
-      - web-app-web-node-modules:/workspace/apps/web/node_modules
-      - web-app-vector-node-modules:/workspace/apps/vector/node_modules
-      - web-package-config-node-modules:/workspace/packages/config/node_modules
-      - web-package-db-node-modules:/workspace/packages/db/node_modules
-      - web-package-mongo-node-modules:/workspace/packages/mongo/node_modules
-      - web-package-utils-node-modules:/workspace/packages/utils/node_modules
-      - web-package-vector-client-node-modules:/workspace/packages/vector-client/node_modules
-      - web-infra-scripts-node-modules:/workspace/infra/scripts/node_modules
-      - web-pnpm-store:/root/.local/share/pnpm/store
-      - web-next-dist:/workspace/apps/web/.next-docker
+    logging: *json-file-logging
     depends_on:
       api:
         condition: service_healthy
@@ -583,40 +556,3 @@ volumes:
   minio-data:
   qdrant-data:
   litellm-postgres-data:
-  api-node-modules:
-  api-pnpm-store:
-  api-app-api-node-modules:
-  api-app-web-node-modules:
-  api-app-vector-node-modules:
-  api-package-config-node-modules:
-  api-package-db-node-modules:
-  api-package-mongo-node-modules:
-  api-package-utils-node-modules:
-  api-package-vector-client-node-modules:
-  api-infra-scripts-node-modules:
-  vector-node-modules:
-  vector-pnpm-store:
-  vector-app-api-node-modules:
-  vector-app-web-node-modules:
-  vector-app-vector-node-modules:
-  vector-package-config-node-modules:
-  vector-package-db-node-modules:
-  vector-package-mongo-node-modules:
-  vector-package-utils-node-modules:
-  vector-package-vector-client-node-modules:
-  vector-infra-scripts-node-modules:
-  web-node-modules:
-  web-pnpm-store:
-  web-app-api-node-modules:
-  web-app-web-node-modules:
-  web-app-vector-node-modules:
-  web-package-config-node-modules:
-  web-package-db-node-modules:
-  web-package-mongo-node-modules:
-  web-package-utils-node-modules:
-  web-package-vector-client-node-modules:
-  web-infra-scripts-node-modules:
-  web-next-dist:
-  ais-relay-node-modules:
-  ais-relay-app-ais-relay-node-modules:
-  ais-relay-pnpm-store:

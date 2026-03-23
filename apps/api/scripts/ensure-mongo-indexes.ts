@@ -36,8 +36,13 @@ async function main() {
         continue;
       }
       const created = await entry.model.createIndexes();
+      const acknowledgedCount = Array.isArray(created)
+        ? created.length
+        : created && typeof created === "object"
+          ? Object.keys(created).length
+          : 0;
       console.log(
-        `[mongo:indexes] ${entry.label} indexes ensured (${created.length} index specs acknowledged)`,
+        `[mongo:indexes] ${entry.label} indexes ensured (${acknowledgedCount} index specs acknowledged)`,
       );
     }
 

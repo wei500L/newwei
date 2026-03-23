@@ -19,10 +19,18 @@ const onDemandMaxInactiveAgeMs = Number(
 const onDemandPagesBufferLength = Number(
   process.env.NEXT_ON_DEMAND_PAGES_BUFFER_LENGTH ?? 60,
 );
+const skipBuildQualityChecks =
+  process.env.NEXT_BUILD_SKIP_QUALITY_CHECKS === "true";
 
 const nextConfig = {
   reactStrictMode: true,
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
+  eslint: {
+    ignoreDuringBuilds: skipBuildQualityChecks,
+  },
+  typescript: {
+    ignoreBuildErrors: skipBuildQualityChecks,
+  },
   onDemandEntries: {
     maxInactiveAge: Number.isFinite(onDemandMaxInactiveAgeMs)
       ? onDemandMaxInactiveAgeMs
