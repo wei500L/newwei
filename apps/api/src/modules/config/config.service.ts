@@ -998,6 +998,14 @@ export class EnvService extends ConfigService<ApiEnv> {
         this.get<number>("AKSHARE_HTTP_MAX_RETRIES", { infer: true }) ?? 3,
       queueConcurrency:
         this.get<number>("AKSHARE_QUEUE_CONCURRENCY", { infer: true }) ?? 2,
+      scheduleSmoothingEnabled:
+        this.get<boolean>("AKSHARE_SCHEDULE_SMOOTHING_ENABLED", {
+          infer: true,
+        }) ?? false,
+      skipUnchangedLatestPoints:
+        this.get<boolean>("AKSHARE_SKIP_UNCHANGED_LATEST_POINTS", {
+          infer: true,
+        }) ?? false,
     };
   }
 

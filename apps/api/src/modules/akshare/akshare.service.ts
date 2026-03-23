@@ -22,16 +22,28 @@ import {
   EconomicDataRunStatus,
   Prisma,
 } from "@prisma/client";
-import { Queue, type RepeatableJob, type RepeatOptions } from "bullmq";
+import { Queue, type Job, type RepeatableJob, type RepeatOptions } from "bullmq";
 import type Redis from "ioredis";
 import { randomUUID } from "node:crypto";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
-import { REDIS_CLIENT } from "../cache/cache.tokens";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { REDIS_CLIENT } from "../cache/cache.tokens";
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
 import { AKSHARE_QUEUE } from "./akshare.constants";
+import {
+  AkshareDataItemMetadata,
+  AkshareJobPayload,
+  AkshareParserConfig,
+  AksharePayloadFilterConfig,
+  DEFAULT_PAGE_LIMIT,
+  MAX_PAGE_LIMIT,
+  PaginatedResult,
+  PaginationInput,
+  PaginationMeta,
+} from "./akshare.types";
 import { FINANCIAL_DATA_DEFINITIONS } from "./financial-data.definitions";
 import {
   AkshareFinancialDataProviderConfig,
@@ -45,17 +57,6 @@ import {
   FinancialDataSnapshotMetadata,
   FinancialDataVisualizationMetadata,
 } from "./financial-data.types";
-import {
-  AkshareDataItemMetadata,
-  AkshareJobPayload,
-  AkshareParserConfig,
-  AksharePayloadFilterConfig,
-  DEFAULT_PAGE_LIMIT,
-  MAX_PAGE_LIMIT,
-  PaginatedResult,
-  PaginationInput,
-  PaginationMeta,
-} from "./akshare.types";
 import type { ParsedDataPoint } from "./parsers";
 import {
   type FinancialDataProviderCleanup,
@@ -71,6 +72,13 @@ interface UpsertDataPointRow {
   sourceField: string;
   metaJson: string | null;
   estimatedBytes: number;
+}
+
+interface LatestDataPointSnapshotRow {
+  sourceField: string;
+  value: Prisma.Decimal | string | number;
+  unit: string | null;
+  dataType: string;
 }
 
 interface EconomicRefreshTriggerContext {
@@ -135,6 +143,8 @@ export class AkshareService implements OnModuleInit {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     @Optional()
     private readonly providerRegistry?: FinancialDataProviderRegistry,
+    @Optional()
+    private readonly env?: EnvService,
   ) {}
 
   async onModuleInit() {
@@ -994,6 +1004,13 @@ export class AkshareService implements OnModuleInit {
       FinancialDataProviderKind,
       boolean
     >();
+    const availabilityByItemId = new Map<
+      string,
+      {
+        available: boolean;
+        definitionMetadata: FinancialDataDefinitionMetadata;
+      }
+    >();
 
     const resolveAvailability = async (
       item: (typeof configs)[number]["item"],
@@ -1017,72 +1034,113 @@ export class AkshareService implements OnModuleInit {
       return { available, definitionMetadata };
     };
 
+    for (const config of configs) {
+      if (!config.isEnabled) {
+        continue;
+      }
+      const availability = await resolveAvailability(config.item);
+      availabilityByItemId.set(config.itemId, availability);
+      if (!availability.available) {
+        await this.markFetchConfigUnavailable(
+          config.itemId,
+          this.resolveProviderUnavailableError(availability.definitionMetadata),
+        );
+      }
+    }
+
+    const smoothedPatterns = this.buildSmoothedRepeatPatterns(
+      configs.filter(
+        (config) =>
+          config.isEnabled &&
+          !config.repeatCron &&
+          (availabilityByItemId.get(config.itemId)?.available ?? true),
+      ),
+    );
+
     const configByJobName = new Map(
       configs.map((config) => [this.buildJobName(config.itemId), config]),
     );
     for (const job of existingJobs) {
       const config = configByJobName.get(job.name ?? "");
       const availability = config
-        ? await resolveAvailability(config.item)
+        ? availabilityByItemId.get(config.itemId) ??
+          (await resolveAvailability(config.item))
         : null;
       if (!config || !config.isEnabled || !availability?.available) {
         await this.queue.removeRepeatableByKey(job.key);
-        if (config && availability && !availability.available) {
-          await this.markFetchConfigUnavailable(
-            config.itemId,
-            this.resolveProviderUnavailableError(
-              availability.definitionMetadata,
-            ),
-          );
-        }
       }
     }
 
     const existingByName = new Map(
       existingJobs.map((job) => [job.name ?? "", job]),
     );
+    const now = Date.now();
     for (const config of configs) {
       if (!config.isEnabled) {
         continue;
       }
-      const availability = await resolveAvailability(config.item);
+      const availability =
+        availabilityByItemId.get(config.itemId) ??
+        (await resolveAvailability(config.item));
       if (!availability.available) {
-        await this.markFetchConfigUnavailable(
-          config.itemId,
-          this.resolveProviderUnavailableError(availability.definitionMetadata),
-        );
         continue;
       }
       const jobName = this.buildJobName(config.itemId);
       const repeat = this.buildRepeatOptions(
         config.frequency,
         config.repeatCron,
+        smoothedPatterns.get(config.itemId),
       );
       const existing = existingByName.get(jobName);
-      if (existing && this.repeatMatches(existing, repeat)) {
+      const shouldResetOverdueHighFrequencyJob =
+        existing &&
+        this.shouldResetOverdueHighFrequencyJob(
+          config.frequency,
+          config.repeatCron,
+          existing,
+          now,
+        );
+      if (
+        existing &&
+        !shouldResetOverdueHighFrequencyJob &&
+        this.repeatMatches(existing, repeat)
+      ) {
         continue;
       }
       if (existing) {
         await this.queue.removeRepeatableByKey(existing.key);
       }
+      const effectiveRepeat =
+        shouldResetOverdueHighFrequencyJob && repeat.pattern
+          ? {
+              ...repeat,
+              startDate: new Date(now),
+            }
+          : repeat;
       await this.queue.add(
         jobName,
         { dataItemId: config.item.slug },
         {
           removeOnComplete: true,
           removeOnFail: false,
-          repeat,
+          repeat: effectiveRepeat,
         },
       );
     }
+
+    await this.clearStaleHighFrequencyQueuedJobs(configs, now);
   }
 
   private buildRepeatOptions(
     frequency: EconomicDataFrequency,
     cron?: string | null,
+    smoothedPattern?: string | null,
   ): RepeatOptions {
     if (cron) {
       return { pattern: cron };
+    }
+    if (smoothedPattern) {
+      return { pattern: smoothedPattern };
     }
     switch (frequency) {
       case "realtime":
@@ -1098,6 +1156,219 @@ export class AkshareService implements OnModuleInit {
       default:
         return { every: 24 * 60 * 60 * 1000 };
     }
+  }
+
+  private buildSmoothedRepeatPatterns(
+    configs: {
+      itemId: string;
+      frequency: EconomicDataFrequency;
+      repeatCron: string | null;
+      item: { slug: string };
+    }[],
+  ): Map<string, string> {
+    const patterns = new Map<string, string>();
+    if (!this.env?.akshareConfig.scheduleSmoothingEnabled) {
+      return patterns;
+    }
+
+    const configsByFrequency = new Map<
+      EconomicDataFrequency,
+      { itemId: string; slug: string }[]
+    >();
+
+    for (const config of configs) {
+      if (config.repeatCron) {
+        continue;
+      }
+      const existing = configsByFrequency.get(config.frequency) ?? [];
+      existing.push({ itemId: config.itemId, slug: config.item.slug });
+      configsByFrequency.set(config.frequency, existing);
+    }
+
+    for (const [frequency, entries] of configsByFrequency) {
+      const sortedEntries = [...entries].sort((left, right) =>
+        left.slug.localeCompare(right.slug),
+      );
+      const slotCount = this.getRepeatSlotCount(frequency);
+      if (slotCount <= 0) {
+        continue;
+      }
+      for (const [index, entry] of sortedEntries.entries()) {
+        const slot = this.computeDistributedSlot(
+          index,
+          sortedEntries.length,
+          slotCount,
+        );
+        patterns.set(entry.itemId, this.buildPatternForSlot(frequency, slot));
+      }
+    }
+
+    return patterns;
+  }
+
+  private getRepeatSlotCount(frequency: EconomicDataFrequency): number {
+    switch (frequency) {
+      case "realtime":
+        return 30;
+      case "hourly":
+        return 60 * 60;
+      case "daily":
+        return 24 * 60 * 60;
+      case "weekly":
+        return 7 * 24 * 60 * 60;
+      case "monthly":
+        return 28 * 24 * 60 * 60;
+      default:
+        return 0;
+    }
+  }
+
+  private computeDistributedSlot(
+    index: number,
+    total: number,
+    slotCount: number,
+  ): number {
+    if (total <= 1) {
+      return 0;
+    }
+    return Math.min(
+      slotCount - 1,
+      Math.floor(((index + 0.5) * slotCount) / total),
+    );
+  }
+
+  private buildPatternForSlot(
+    frequency: EconomicDataFrequency,
+    slot: number,
+  ): string {
+    switch (frequency) {
+      case "realtime": {
+        return `${slot},${slot + 30} * * * * *`;
+      }
+      case "hourly": {
+        const minute = Math.floor(slot / 60);
+        const second = slot % 60;
+        return `${second} ${minute} * * * *`;
+      }
+      case "daily": {
+        const hour = Math.floor(slot / 3600);
+        const minute = Math.floor((slot % 3600) / 60);
+        const second = slot % 60;
+        return `${second} ${minute} ${hour} * * *`;
+      }
+      case "weekly": {
+        const dayOfWeek = Math.floor(slot / (24 * 60 * 60));
+        const daySlot = slot % (24 * 60 * 60);
+        const hour = Math.floor(daySlot / 3600);
+        const minute = Math.floor((daySlot % 3600) / 60);
+        const second = daySlot % 60;
+        return `${second} ${minute} ${hour} * * ${dayOfWeek}`;
+      }
+      case "monthly": {
+        const dayOfMonth = Math.floor(slot / (24 * 60 * 60)) + 1;
+        const daySlot = slot % (24 * 60 * 60);
+        const hour = Math.floor(daySlot / 3600);
+        const minute = Math.floor((daySlot % 3600) / 60);
+        const second = daySlot % 60;
+        return `${second} ${minute} ${hour} ${dayOfMonth} * *`;
+      }
+      default:
+        return "0 0 1 * *";
+    }
+  }
+
+  private shouldResetOverdueHighFrequencyJob(
+    frequency: EconomicDataFrequency,
+    repeatCron: string | null,
+    existing: RepeatableJob,
+    now: number,
+  ): boolean {
+    if (!this.env?.akshareConfig.scheduleSmoothingEnabled || repeatCron) {
+      return false;
+    }
+    if (
+      frequency !== EconomicDataFrequency.realtime &&
+      frequency !== EconomicDataFrequency.hourly
+    ) {
+      return false;
+    }
+    return typeof existing.next === "number" && existing.next < now;
+  }
+
+  private async clearStaleHighFrequencyQueuedJobs(
+    configs: {
+      itemId: string;
+      frequency: EconomicDataFrequency;
+      repeatCron: string | null;
+      isEnabled: boolean;
+    }[],
+    now: number,
+  ): Promise<void> {
+    if (!this.env?.akshareConfig.scheduleSmoothingEnabled) {
+      return;
+    }
+
+    const highFrequencyJobNames = new Set(
+      configs
+        .filter(
+          (config) =>
+            config.isEnabled &&
+            !config.repeatCron &&
+            (config.frequency === EconomicDataFrequency.realtime ||
+              config.frequency === EconomicDataFrequency.hourly),
+        )
+        .map((config) => this.buildJobName(config.itemId)),
+    );
+
+    if (highFrequencyJobNames.size === 0) {
+      return;
+    }
+
+    let removedCount = 0;
+    const waitingJobs = await this.queue.getJobs(["waiting"], 0, 2000, true);
+    for (const job of waitingJobs) {
+      if (!highFrequencyJobNames.has(job.name)) {
+        continue;
+      }
+      if (!this.shouldRemoveStaleQueuedHighFrequencyJob(job, "waiting", now)) {
+        continue;
+      }
+
+      await job.remove();
+      removedCount += 1;
+    }
+
+    const delayedJobs = await this.queue.getJobs(["delayed"], 0, 2000, true);
+    for (const job of delayedJobs) {
+      if (!highFrequencyJobNames.has(job.name)) {
+        continue;
+      }
+      if (!this.shouldRemoveStaleQueuedHighFrequencyJob(job, "delayed", now)) {
+        continue;
+      }
+
+      await job.remove();
+      removedCount += 1;
+    }
+
+    if (removedCount > 0) {
+      this.logger.log(
+        `Removed ${removedCount} stale queued Akshare high-frequency jobs before worker start`,
+      );
+    }
+  }
+
+  private shouldRemoveStaleQueuedHighFrequencyJob(
+    job: Pick<Job<AkshareJobPayload>, "timestamp" | "delay">,
+    state: "waiting" | "delayed",
+    now: number,
+  ): boolean {
+    if (state === "waiting") {
+      return job.timestamp < now - 1_000;
+    }
+
+    const delay = typeof job.delay === "number" ? job.delay : 0;
+    return job.timestamp + delay < now;
   }
 
   private buildJobName(itemId: string) {
@@ -1293,6 +1564,7 @@ export class AkshareService implements OnModuleInit {
       const storedCount = await this.bulkUpsertDataPoints(
         definition.itemId,
         response.points,
+        definition,
       );
 
       await this.updateFetchStatusByItemId(
@@ -1462,6 +1734,7 @@ export class AkshareService implements OnModuleInit {
   private async bulkUpsertDataPoints(
     itemId: string,
     points: ParsedDataPoint[],
+    definition?: FinancialDataItemConfig,
   ) {
     const deduped = new Map<string, ParsedDataPoint>();
     for (const point of points) {
@@ -1494,9 +1767,14 @@ export class AkshareService implements OnModuleInit {
       return a.sourceField.localeCompare(b.sourceField);
     });
 
-    const rows = sortedPoints
+    let rows = sortedPoints
       .map((point) => this.toUpsertDataPointRow(itemId, point))
       .filter((row): row is UpsertDataPointRow => Boolean(row));
+    rows = await this.filterUnchangedLatestRows(itemId, definition, rows);
+
+    if (rows.length === 0) {
+      return 0;
+    }
 
     let chunk: UpsertDataPointRow[] = [];
     let chunkBytes = 0;
@@ -1517,7 +1795,108 @@ export class AkshareService implements OnModuleInit {
       await this.executeUpsertDataPointChunk(itemId, chunk);
     }
 
-    return deduped.size;
+    return rows.length;
+  }
+
+  private async filterUnchangedLatestRows(
+    itemId: string,
+    definition: FinancialDataItemConfig | undefined,
+    rows: UpsertDataPointRow[],
+  ): Promise<UpsertDataPointRow[]> {
+    if (!this.shouldSkipUnchangedLatestRows(definition) || rows.length === 0) {
+      return rows;
+    }
+
+    const existingBySourceField = await this.loadLatestRowsBySourceField(
+      itemId,
+      Array.from(new Set(rows.map((row) => row.sourceField))),
+    );
+
+    if (existingBySourceField.size === 0) {
+      return rows;
+    }
+
+    return rows.filter((row) => {
+      const existing = existingBySourceField.get(row.sourceField);
+      if (!existing) {
+        return true;
+      }
+
+      return !this.latestRowsMatch(existing, row);
+    });
+  }
+
+  private shouldSkipUnchangedLatestRows(
+    definition?: FinancialDataItemConfig,
+  ): boolean {
+    if (!this.env?.akshareConfig.skipUnchangedLatestPoints || !definition) {
+      return false;
+    }
+
+    if (
+      definition.defaultFrequency !== EconomicDataFrequency.realtime &&
+      definition.defaultFrequency !== EconomicDataFrequency.hourly
+    ) {
+      return false;
+    }
+
+    if (definition.providerConfig.kind !== "akshare") {
+      return false;
+    }
+
+    return (
+      definition.providerConfig.parser.type === "latest" &&
+      !definition.providerConfig.parser.timestampField
+    );
+  }
+
+  private async loadLatestRowsBySourceField(
+    itemId: string,
+    sourceFields: string[],
+  ): Promise<Map<string, LatestDataPointSnapshotRow>> {
+    if (sourceFields.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.prisma.economicDataPoint.findMany({
+      where: {
+        itemId,
+        sourceField: {
+          in: sourceFields,
+        },
+      },
+      orderBy: [{ recordedAt: "desc" }, { id: "desc" }],
+      take: Math.max(sourceFields.length * 8, 64),
+      select: {
+        sourceField: true,
+        value: true,
+        unit: true,
+        dataType: true,
+      },
+    });
+
+    const latestBySourceField = new Map<string, LatestDataPointSnapshotRow>();
+    for (const row of rows) {
+      if (!latestBySourceField.has(row.sourceField)) {
+        latestBySourceField.set(row.sourceField, row);
+      }
+      if (latestBySourceField.size >= sourceFields.length) {
+        break;
+      }
+    }
+
+    return latestBySourceField;
+  }
+
+  private latestRowsMatch(
+    existing: LatestDataPointSnapshotRow,
+    row: UpsertDataPointRow,
+  ): boolean {
+    if (existing.dataType !== row.dataType || existing.unit !== row.unit) {
+      return false;
+    }
+
+    return new Prisma.Decimal(existing.value).equals(row.value);
   }
 
   private async applyProviderCleanup(

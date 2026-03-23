@@ -1,5 +1,10 @@
 import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
-import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  OnApplicationBootstrap,
+  OnModuleDestroy,
+} from "@nestjs/common";
 import { Queue, QueueEvents, Worker } from "bullmq";
 
 import { EnvService } from "../config/config.service";
@@ -11,7 +16,9 @@ import { AkshareJobPayload } from "./akshare.types";
 const logger = createLogger({ name: "akshare-queue" });
 
 @Injectable()
-export class AkshareQueueProcessor implements OnModuleInit, OnModuleDestroy {
+export class AkshareQueueProcessor
+  implements OnApplicationBootstrap, OnModuleDestroy
+{
   private worker?: Worker<AkshareJobPayload>;
 
   constructor(
@@ -21,7 +28,7 @@ export class AkshareQueueProcessor implements OnModuleInit, OnModuleDestroy {
     @Inject(AKSHARE_QUEUE_EVENTS) private readonly events: QueueEvents
   ) {}
 
-  async onModuleInit() {
+  async onApplicationBootstrap() {
     const config = this.env.akshareConfig;
 
     this.worker = new Worker<AkshareJobPayload>(

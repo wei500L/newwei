@@ -80,7 +80,7 @@ describe("AkshareService.getDataByCategory", () => {
     );
 
     expect(Array.isArray(result)).toBe(true);
-    const points = result as Array<{ itemId: string; value: Prisma.Decimal }>;
+    const points = result as { itemId: string; value: Prisma.Decimal }[];
 
     const itemIds = points.map((point) => point.itemId).sort();
     expect(itemIds).toEqual(["item1", "item2"]);
@@ -575,5 +575,309 @@ describe("AkshareService.ensureCatalog", () => {
         }),
       }),
     });
+  });
+});
+
+describe("AkshareService.buildRepeatOptions", () => {
+  it("keeps legacy repeat intervals when schedule smoothing is disabled", () => {
+    const service = new AkshareService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { akshareConfig: { scheduleSmoothingEnabled: false } } as any,
+    );
+
+    expect(
+      (service as any).buildRepeatOptions(EconomicDataFrequency.realtime, null, null),
+    ).toEqual({ every: 30_000 });
+    expect(
+      (service as any).buildRepeatOptions(EconomicDataFrequency.hourly, null, null),
+    ).toEqual({ every: 60 * 60 * 1000 });
+    expect(
+      (service as any).buildRepeatOptions(EconomicDataFrequency.daily, null, null),
+    ).toEqual({ every: 24 * 60 * 60 * 1000 });
+  });
+
+  it("spreads enabled jobs evenly within each frequency bucket when smoothing is enabled", () => {
+    const service = new AkshareService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { akshareConfig: { scheduleSmoothingEnabled: true } } as any,
+    );
+
+    const patterns = (service as any).buildSmoothedRepeatPatterns([
+      {
+        itemId: "rt-1",
+        frequency: EconomicDataFrequency.realtime,
+        repeatCron: null,
+        item: { slug: "alpha" },
+      },
+      {
+        itemId: "rt-2",
+        frequency: EconomicDataFrequency.realtime,
+        repeatCron: null,
+        item: { slug: "beta" },
+      },
+      {
+        itemId: "rt-3",
+        frequency: EconomicDataFrequency.realtime,
+        repeatCron: null,
+        item: { slug: "gamma" },
+      },
+      {
+        itemId: "hr-1",
+        frequency: EconomicDataFrequency.hourly,
+        repeatCron: null,
+        item: { slug: "delta" },
+      },
+      {
+        itemId: "hr-2",
+        frequency: EconomicDataFrequency.hourly,
+        repeatCron: null,
+        item: { slug: "epsilon" },
+      },
+      {
+        itemId: "day-1",
+        frequency: EconomicDataFrequency.daily,
+        repeatCron: null,
+        item: { slug: "eta" },
+      },
+      {
+        itemId: "day-2",
+        frequency: EconomicDataFrequency.daily,
+        repeatCron: null,
+        item: { slug: "zeta" },
+      },
+    ]);
+
+    expect(patterns.get("rt-1")).toBe("5,35 * * * * *");
+    expect(patterns.get("rt-2")).toBe("15,45 * * * * *");
+    expect(patterns.get("rt-3")).toBe("25,55 * * * * *");
+    expect(patterns.get("hr-1")).toBe("0 15 * * * *");
+    expect(patterns.get("hr-2")).toBe("0 45 * * * *");
+    expect(patterns.get("day-1")).toBe("0 0 6 * * *");
+    expect(patterns.get("day-2")).toBe("0 0 18 * * *");
+  });
+
+  it("prefers explicit repeatCron over smoothed defaults", () => {
+    const service = new AkshareService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { akshareConfig: { scheduleSmoothingEnabled: true } } as any,
+    );
+
+    expect(
+      (service as any).buildRepeatOptions(
+        EconomicDataFrequency.realtime,
+        "0,10,20,30,40,50 * * * *",
+        "5,35 * * * * *",
+      ),
+    ).toEqual({ pattern: "0,10,20,30,40,50 * * * *" });
+  });
+
+  it("resets only overdue high-frequency auto jobs when smoothing is enabled", () => {
+    const service = new AkshareService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { akshareConfig: { scheduleSmoothingEnabled: true } } as any,
+    );
+
+    expect(
+      (service as any).shouldResetOverdueHighFrequencyJob(
+        EconomicDataFrequency.realtime,
+        null,
+        { next: 999 } as any,
+        1000,
+      ),
+    ).toBe(true);
+    expect(
+      (service as any).shouldResetOverdueHighFrequencyJob(
+        EconomicDataFrequency.hourly,
+        null,
+        { next: 999 } as any,
+        1000,
+      ),
+    ).toBe(true);
+    expect(
+      (service as any).shouldResetOverdueHighFrequencyJob(
+        EconomicDataFrequency.daily,
+        null,
+        { next: 999 } as any,
+        1000,
+      ),
+    ).toBe(false);
+    expect(
+      (service as any).shouldResetOverdueHighFrequencyJob(
+        EconomicDataFrequency.realtime,
+        "*/5 * * * *",
+        { next: 999 } as any,
+        1000,
+      ),
+    ).toBe(false);
+    expect(
+      (service as any).shouldResetOverdueHighFrequencyJob(
+        EconomicDataFrequency.realtime,
+        null,
+        { next: 1001 } as any,
+        1000,
+      ),
+    ).toBe(false);
+  });
+
+  it("removes only stale queued high-frequency jobs", () => {
+    const service = new AkshareService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { akshareConfig: { scheduleSmoothingEnabled: true } } as any,
+    );
+
+    expect(
+      (service as any).shouldRemoveStaleQueuedHighFrequencyJob(
+        { timestamp: -1, delay: 0 } as any,
+        "waiting",
+        1000,
+      ),
+    ).toBe(true);
+    expect(
+      (service as any).shouldRemoveStaleQueuedHighFrequencyJob(
+        { timestamp: 1000, delay: 0 } as any,
+        "waiting",
+        1000,
+      ),
+    ).toBe(false);
+    expect(
+      (service as any).shouldRemoveStaleQueuedHighFrequencyJob(
+        { timestamp: 900, delay: 50 } as any,
+        "delayed",
+        1000,
+      ),
+    ).toBe(true);
+    expect(
+      (service as any).shouldRemoveStaleQueuedHighFrequencyJob(
+        { timestamp: 950, delay: 100 } as any,
+        "delayed",
+        1000,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("AkshareService.filterUnchangedLatestRows", () => {
+  it("skips unchanged latest rows without provider timestamps when optimization is enabled", async () => {
+    const prisma = {
+      economicDataPoint: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            sourceField: "USD/CNY:buy",
+            value: new Prisma.Decimal("7.2000"),
+            unit: null,
+            dataType: EconomicDataValueType.fx,
+          },
+        ]),
+      },
+    };
+
+    const service = new AkshareService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { akshareConfig: { skipUnchangedLatestPoints: true } } as any,
+    );
+
+    const rows = await (service as any).filterUnchangedLatestRows(
+      "item-1",
+      {
+        defaultFrequency: EconomicDataFrequency.realtime,
+        providerConfig: {
+          kind: "akshare",
+          parser: {
+            type: "latest",
+            valueFields: [],
+          },
+        },
+      },
+      [
+        {
+          sourceField: "USD/CNY:buy",
+          value: new Prisma.Decimal("7.2000"),
+          unit: null,
+          dataType: EconomicDataValueType.fx,
+          recordedAt: new Date("2026-03-23T00:00:00.000Z"),
+          metaJson: null,
+          estimatedBytes: 100,
+        },
+        {
+          sourceField: "USD/CNY:sell",
+          value: new Prisma.Decimal("7.3000"),
+          unit: null,
+          dataType: EconomicDataValueType.fx,
+          recordedAt: new Date("2026-03-23T00:00:00.000Z"),
+          metaJson: null,
+          estimatedBytes: 100,
+        },
+      ],
+    );
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        sourceField: "USD/CNY:sell",
+      }),
+    ]);
+    expect(prisma.economicDataPoint.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps rows when latest parser already carries provider timestamps", async () => {
+    const prisma = {
+      economicDataPoint: {
+        findMany: jest.fn(),
+      },
+    };
+
+    const service = new AkshareService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { akshareConfig: { skipUnchangedLatestPoints: true } } as any,
+    );
+
+    const rows = await (service as any).filterUnchangedLatestRows(
+      "item-1",
+      {
+        defaultFrequency: EconomicDataFrequency.realtime,
+        providerConfig: {
+          kind: "akshare",
+          parser: {
+            type: "latest",
+            timestampField: "更新时间",
+            valueFields: [],
+          },
+        },
+      },
+      [
+        {
+          sourceField: "BTC",
+          value: new Prisma.Decimal("100000"),
+          unit: "USD",
+          dataType: EconomicDataValueType.price,
+          recordedAt: new Date("2026-03-23T00:00:00.000Z"),
+          metaJson: null,
+          estimatedBytes: 100,
+        },
+      ],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(prisma.economicDataPoint.findMany).not.toHaveBeenCalled();
   });
 });

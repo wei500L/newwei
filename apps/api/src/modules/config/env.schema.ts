@@ -307,6 +307,8 @@ export const apiEnvSchema = baseEnvSchema
     AKSHARE_HTTP_MAX_RETRIES: z.coerce.number().int().positive().default(3),
     AKSHARE_ADMIN_TOKEN: z.string().optional(),
     AKSHARE_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(2),
+    AKSHARE_SCHEDULE_SMOOTHING_ENABLED: envBoolean.default(false),
+    AKSHARE_SKIP_UNCHANGED_LATEST_POINTS: envBoolean.default(false),
     SITUATION_MONITOR_GDELT_ENABLED: envBoolean.default(true),
     SITUATION_MONITOR_TRANSLATION_API_ENABLED: envBoolean.default(true),
     SITUATION_MONITOR_TRANSLATION_API_BASE_URL: z
