@@ -1358,3 +1358,82 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
     expect(openskySource?.intervalSec).toBe(1800);
   });
 });
+
+describe("RealtimeSignalsService processed article term coverage", () => {
+  const buildService = () => {
+    const prisma = {
+      processedArticleTermHourly: {
+        findFirst: jest.fn(),
+        groupBy: jest.fn(),
+      },
+      processedArticle: {
+        findMany: jest.fn(),
+        count: jest.fn(),
+      },
+    };
+    const cache = {
+      ...createRealtimeSignalsCache(),
+      wrap: jest.fn(
+        async (
+          _key: string,
+          _ttlSeconds: number,
+          loader: () => Promise<unknown>,
+        ) => loader(),
+      ),
+    };
+    const service = new RealtimeSignalsService(
+      prisma as any,
+      cache as any,
+      {} as any,
+      { realtimeSignalsConfig: envConfig } as any,
+      {} as any,
+      { getRuntimeConfig: jest.fn().mockResolvedValue(runtimeConfig) } as any,
+    );
+    return { service, prisma, cache };
+  };
+
+  it("falls back to direct article scans until the term bucket baseline window is fully covered", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-03-12T12:00:00.000Z"));
+    const { service, prisma } = buildService();
+
+    prisma.processedArticleTermHourly.findFirst.mockResolvedValue({
+      bucketStart: new Date("2026-03-11T00:00:00.000Z"),
+    });
+    prisma.processedArticle.findMany
+      .mockResolvedValueOnce([
+        {
+          title: "Taiwan election update",
+          summary: "Election update from two outlets",
+          source: "Reuters",
+          topics: [],
+        },
+        {
+          title: "Taiwan election update",
+          summary: "Election update from regional desk",
+          source: "AP",
+          topics: [],
+        },
+        {
+          title: "Taiwan election update",
+          summary: "Election update from policy desk",
+          source: "Bloomberg",
+          topics: [],
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const result = await (service as any).fetchKeywordSpikeSignal(
+      "org-1",
+      runtimeConfig,
+    );
+
+    expect(prisma.processedArticleTermHourly.groupBy).not.toHaveBeenCalled();
+    expect(prisma.processedArticle.findMany).toHaveBeenCalledTimes(2);
+    expect(result[0]).toMatchObject({
+      metricSlug: "realtime.keyword_spike.count",
+    });
+    expect(result[0].value).toBeGreaterThan(0);
+
+    jest.useRealTimers();
+  });
+});

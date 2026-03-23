@@ -1011,8 +1011,8 @@ model Article {
 
 model ProcessedArticle {
   id                 String                 @id @default(cuid())
-  org                Org                    @relation(fields: [orgId], references: [id])
-  orgId              String
+  org                Org?                   @relation(fields: [orgId], references: [id])
+  orgId              String?
   article            Article                @relation(fields: [articleId], references: [id])
   articleId          String                 @unique
   status             ProcessedArticleStatus @default(completed)
@@ -1039,7 +1039,7 @@ model ProcessedArticle {
   totalTokens        Int?
   costUsd            Float?
   latencyMs          Int?
-  eventAt            DateTime
+  eventAt            DateTime?
   hasLocation        Boolean                @default(false)
   createdAt          DateTime               @default(now())
   processedAt        DateTime               @default(now())

@@ -31,8 +31,35 @@ jest.mock("@modular/mongo", () => ({
 const createCache = () => ({
   get: jest.fn(),
   set: jest.fn(),
-  wrap: jest.fn(async (_key: string, _ttlSeconds: number, loader: () => Promise<unknown>) => loader()),
+  wrap: jest.fn(
+    async (_key: string, _ttlSeconds: number, loader: () => Promise<unknown>) =>
+      loader(),
+  ),
 });
+
+const createSerializingCache = () => {
+  const store = new Map<string, string>();
+  return {
+    get: jest.fn(),
+    set: jest.fn(),
+    wrap: jest.fn(
+      async (
+        key: string,
+        _ttlSeconds: number,
+        loader: () => Promise<unknown>,
+      ) => {
+        const cached = store.get(key);
+        if (cached) {
+          return JSON.parse(cached);
+        }
+        const value = await loader();
+        const serialized = JSON.stringify(value);
+        store.set(key, serialized);
+        return JSON.parse(serialized);
+      },
+    ),
+  };
+};
 
 const createRealtimeSignalsStore = (
   overrides: Record<string, unknown> = {},
@@ -119,6 +146,56 @@ describe("DashboardChartsService", () => {
         }),
       }),
     );
+  });
+
+  it("does not fabricate publishedAt from eventAt fallback in war map news markers", async () => {
+    const prisma = {
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "marker-1",
+            title: "Fallback headline",
+            location: "Tokyo",
+            publishedAt: null,
+            eventAt: new Date("2026-01-01T12:00:00.000Z"),
+            processedAt: new Date("2026-01-01T12:05:00.000Z"),
+            entities: [],
+            article: {
+              url: "https://example.com/news/1",
+              crawlAt: new Date("2026-01-01T12:01:00.000Z"),
+              titleGuess: null,
+            },
+          },
+        ]),
+      },
+    };
+    const geocoding = {
+      resolveCandidates: jest.fn().mockResolvedValue({
+        lat: 35.6762,
+        lng: 139.6503,
+        displayName: "Tokyo, Japan",
+      }),
+    };
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+    );
+
+    const result = await service.getWarMapNewsMarkers(
+      {
+        start: new Date("2026-01-01T00:00:00.000Z"),
+        end: new Date("2026-01-02T00:00:00.000Z"),
+      },
+      "org-1",
+    );
+
+    expect(result.markers[0]).toMatchObject({
+      id: "marker-1",
+      publishedAt: undefined,
+      ingestedAt: "2026-01-01T12:01:00.000Z",
+    });
+    expect(result.updatedAt).toBe("2026-01-01T12:00:00.000Z");
   });
 
   it("filters war map events by orgId/eventAt on the processed article read model", async () => {

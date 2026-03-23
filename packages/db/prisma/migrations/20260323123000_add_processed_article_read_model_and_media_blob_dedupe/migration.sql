@@ -6,20 +6,6 @@ ALTER TABLE `ProcessedArticle`
     ADD COLUMN `eventAt` DATETIME(3) NULL,
     ADD COLUMN `hasLocation` BOOLEAN NOT NULL DEFAULT false;
 
-UPDATE `ProcessedArticle` pa
-INNER JOIN `Article` a ON a.`id` = pa.`articleId`
-SET
-    pa.`orgId` = a.`orgId`,
-    pa.`eventAt` = COALESCE(pa.`publishedAt`, a.`crawlAt`, pa.`processedAt`),
-    pa.`hasLocation` = CASE
-        WHEN pa.`location` IS NOT NULL AND CHAR_LENGTH(TRIM(pa.`location`)) > 0 THEN true
-        ELSE false
-    END;
-
-ALTER TABLE `ProcessedArticle`
-    MODIFY `orgId` VARCHAR(191) NOT NULL,
-    MODIFY `eventAt` DATETIME(3) NOT NULL;
-
 ALTER TABLE `ProcessedArticle`
     ADD CONSTRAINT `ProcessedArticle_orgId_fkey`
         FOREIGN KEY (`orgId`) REFERENCES `Org`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -83,55 +69,6 @@ ALTER TABLE `CrawlMediaAsset`
 ALTER TABLE `CrawlMediaAsset`
     ADD CONSTRAINT `CrawlMediaAsset_blobId_fkey`
         FOREIGN KEY (`blobId`) REFERENCES `CrawlMediaBlob`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
-INSERT IGNORE INTO `CrawlMediaBlob` (
-    `id`,
-    `orgId`,
-    `sha256`,
-    `bytes`,
-    `contentType`,
-    `blobData`,
-    `refCount`,
-    `createdAt`,
-    `updatedAt`
-)
-SELECT
-    UUID(),
-    cma.`orgId`,
-    SHA2(cma.`blobData`, 256),
-    cma.`bytes`,
-    cma.`contentType`,
-    cma.`blobData`,
-    0,
-    NOW(3),
-    NOW(3)
-FROM `CrawlMediaAsset` cma
-WHERE cma.`provider` = 'mysql'
-  AND cma.`blobData` IS NOT NULL;
-
-UPDATE `CrawlMediaAsset` cma
-INNER JOIN `CrawlMediaBlob` cmb
-    ON cmb.`orgId` = cma.`orgId`
-   AND cmb.`sha256` = SHA2(cma.`blobData`, 256)
-SET cma.`blobId` = cmb.`id`
-WHERE cma.`provider` = 'mysql'
-  AND cma.`blobData` IS NOT NULL;
-
-UPDATE `CrawlMediaBlob` cmb
-INNER JOIN (
-    SELECT `blobId`, COUNT(*) AS `refCount`
-    FROM `CrawlMediaAsset`
-    WHERE `provider` = 'mysql'
-      AND `blobId` IS NOT NULL
-    GROUP BY `blobId`
-) refs
-    ON refs.`blobId` = cmb.`id`
-SET cmb.`refCount` = refs.`refCount`;
-
-UPDATE `CrawlMediaAsset`
-SET `blobData` = NULL
-WHERE `provider` = 'mysql'
-  AND `blobId` IS NOT NULL;
 
 CREATE INDEX `EconomicDataItemCategory_categoryId_itemId_idx`
     ON `EconomicDataItemCategory`(`categoryId`, `itemId`);

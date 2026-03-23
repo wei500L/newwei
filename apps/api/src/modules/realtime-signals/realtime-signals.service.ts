@@ -138,6 +138,7 @@ const OPENSKY_DEFAULT_TOKEN_URL =
   "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
 const OPENSKY_VIEWPORT_CACHE_TTL_SECONDS = 15;
 const OPENSKY_REGION_CACHE_TTL_SECONDS = 60;
+const PROCESSED_ARTICLE_TERM_COVERAGE_TTL_SECONDS = 300;
 const OPENSKY_BUDGET_RETENTION_DAYS = 14;
 const OPENSKY_BUDGET_RECENT_DAYS = 7;
 const OPENSKY_HKT_TIME_ZONE = "Asia/Hong_Kong";
@@ -2974,39 +2975,61 @@ export class RealtimeSignalsService {
   ) {
     const recentStart = new Date(Date.now() - 2 * 60 * 60 * 1_000);
     const baselineStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1_000);
+    const coverageStart =
+      await this.getProcessedArticleTermCoverageStart(orgId);
+    const hasCoverage =
+      coverageStart !== null &&
+      coverageStart.getTime() <= baselineStart.getTime();
 
-    const [recentTermRows, baselineTermRows] = await Promise.all([
-      this.prisma.processedArticleTermHourly.groupBy({
-        where: {
-          orgId,
-          bucketStart: { gte: recentStart },
-        },
-        by: ["term", "source"],
-        _sum: {
-          articleCount: true,
-        },
-      }),
-      this.prisma.processedArticleTermHourly.groupBy({
-        where: {
-          orgId,
-          bucketStart: { gte: baselineStart, lt: recentStart },
-        },
-        by: ["term"],
-        _sum: {
-          articleCount: true,
-        },
-      }),
-    ]);
+    const [recentTermRows, baselineTermRows, fallbackCounts] = hasCoverage
+      ? await Promise.all([
+          this.prisma.processedArticleTermHourly.groupBy({
+            where: {
+              orgId,
+              bucketStart: { gte: recentStart },
+            },
+            by: ["term", "source"],
+            _sum: {
+              articleCount: true,
+            },
+          }),
+          this.prisma.processedArticleTermHourly.groupBy({
+            where: {
+              orgId,
+              bucketStart: { gte: baselineStart, lt: recentStart },
+            },
+            by: ["term"],
+            _sum: {
+              articleCount: true,
+            },
+          }),
+          Promise.resolve(null),
+        ])
+      : await Promise.all([
+          Promise.resolve([]),
+          Promise.resolve([]),
+          this.loadKeywordSpikeFallbackCounts(
+            orgId,
+            recentStart,
+            baselineStart,
+          ),
+        ]);
 
-    const fallbackCounts =
-      recentTermRows.length === 0 && baselineTermRows.length === 0
-        ? await this.loadKeywordSpikeFallbackCounts(orgId, recentStart, baselineStart)
-        : null;
+    const resolvedFallbackCounts =
+      !fallbackCounts &&
+      recentTermRows.length === 0 &&
+      baselineTermRows.length === 0
+        ? await this.loadKeywordSpikeFallbackCounts(
+            orgId,
+            recentStart,
+            baselineStart,
+          )
+        : fallbackCounts;
     const recentCounts =
-      fallbackCounts?.recentCounts ??
+      resolvedFallbackCounts?.recentCounts ??
       this.buildRecentTermCountsFromBuckets(recentTermRows);
     const baselineCounts =
-      fallbackCounts?.baselineCounts ??
+      resolvedFallbackCounts?.baselineCounts ??
       this.buildBaselineTermCountsFromBuckets(baselineTermRows);
 
     const spikes: {
@@ -3060,13 +3083,13 @@ export class RealtimeSignalsService {
         context: {
           source: "internal",
           recentArticleCount:
-            fallbackCounts?.recentArticleCount ??
+            resolvedFallbackCounts?.recentArticleCount ??
             recentTermRows.reduce(
               (total, row) => total + (row._sum.articleCount ?? 0),
               0,
             ),
           baselineArticleCount:
-            fallbackCounts?.baselineArticleCount ??
+            resolvedFallbackCounts?.baselineArticleCount ??
             baselineTermRows.reduce(
               (total, row) => total + (row._sum.articleCount ?? 0),
               0,
@@ -3310,6 +3333,15 @@ export class RealtimeSignalsService {
     }
     const since = new Date(Date.now() - 24 * 60 * 60 * 1_000);
     const searchTokens = tokens.slice(0, 3);
+    const coverageStart =
+      await this.getProcessedArticleTermCoverageStart(orgId);
+    const hasCoverage =
+      coverageStart !== null && coverageStart.getTime() <= since.getTime();
+
+    if (!hasCoverage) {
+      return this.countNewsActivityFallback(orgId, searchTokens, since);
+    }
+
     const rows = await this.prisma.processedArticleTermHourly.groupBy({
       where: {
         orgId,
@@ -3330,6 +3362,35 @@ export class RealtimeSignalsService {
       return groupedCount;
     }
 
+    return this.countNewsActivityFallback(orgId, searchTokens, since);
+  }
+
+  private async getProcessedArticleTermCoverageStart(orgId: string) {
+    const cached = await this.cache.wrap<{ bucketStart: string | null } | null>(
+      `realtime-signals:processed-article-term-coverage:${orgId}`,
+      PROCESSED_ARTICLE_TERM_COVERAGE_TTL_SECONDS,
+      async () => {
+        const row = await this.prisma.processedArticleTermHourly.findFirst({
+          where: { orgId },
+          orderBy: { bucketStart: "asc" },
+          select: { bucketStart: true },
+        });
+        return row ? { bucketStart: row.bucketStart.toISOString() } : null;
+      },
+    );
+
+    if (!cached?.bucketStart) {
+      return null;
+    }
+    const parsed = new Date(cached.bucketStart);
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  }
+
+  private async countNewsActivityFallback(
+    orgId: string,
+    searchTokens: string[],
+    since: Date,
+  ) {
     let total = 0;
     for (const token of searchTokens) {
       const count = await this.prisma.processedArticle.count({
@@ -3389,7 +3450,10 @@ export class RealtimeSignalsService {
       if (!term) {
         continue;
       }
-      baselineCounts.set(term, (baselineCounts.get(term) ?? 0) + (row._sum.articleCount ?? 0));
+      baselineCounts.set(
+        term,
+        (baselineCounts.get(term) ?? 0) + (row._sum.articleCount ?? 0),
+      );
     }
     return baselineCounts;
   }

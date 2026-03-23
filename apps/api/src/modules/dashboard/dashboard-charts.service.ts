@@ -33,11 +33,7 @@ import {
   Injectable,
   InternalServerErrorException,
 } from "@nestjs/common";
-import {
-  AlertSeverity,
-  Prisma,
-  ProcessedArticleStatus,
-} from "@prisma/client";
+import { AlertSeverity, Prisma, ProcessedArticleStatus } from "@prisma/client";
 import { createHash } from "node:crypto";
 
 import { CacheService } from "../cache/cache.service";
@@ -252,6 +248,12 @@ const resolveProcessedItemLookupKeys = (...candidates: unknown[]): string[] => {
   return keys;
 };
 
+const serializeDate = (value: Date | null | undefined): string | null =>
+  value ? value.toISOString() : null;
+
+const deserializeDate = (value: string | null | undefined): Date | null =>
+  value ? new Date(value) : null;
+
 interface DataVizConfig {
   heatmap: { preferredSourceFields?: string[] };
   candlestick: { ohlc?: Partial<Record<OhlcField, string[]>> };
@@ -463,9 +465,52 @@ interface WarMapSourceNewsRecord {
   entities: unknown;
   url?: string | null;
   publishedAt?: Date;
+  sortAt?: Date;
   processedAt?: Date;
   crawlAt?: Date;
   titleGuess?: string | null;
+}
+
+interface SharedWarMapEventArticleRow {
+  location: string | null;
+  processedAt: Date | null;
+  eventAt: Date | null;
+}
+
+interface CachedWarMapEventArticleRow {
+  location: string | null;
+  processedAt: string | null;
+  eventAt: string | null;
+}
+
+interface SharedWarMapNewsMarkerArticleRow {
+  id: string;
+  title: string | null;
+  location: string | null;
+  publishedAt: Date | null;
+  eventAt: Date | null;
+  processedAt: Date | null;
+  entities: Prisma.JsonValue;
+  article: {
+    url: string | null;
+    crawlAt: Date | null;
+    titleGuess: string | null;
+  };
+}
+
+interface CachedWarMapNewsMarkerArticleRow {
+  id: string;
+  title: string | null;
+  location: string | null;
+  publishedAt: string | null;
+  eventAt: string | null;
+  processedAt: string | null;
+  entities: Prisma.JsonValue;
+  article: {
+    url: string | null;
+    crawlAt: string | null;
+    titleGuess: string | null;
+  };
 }
 
 interface WarMapRealtimeLayerSeedPoint {
@@ -507,6 +552,20 @@ export interface SpacetimeGeoHeatmapResponse {
   points: SpacetimeGeoHeatPoint[];
   snapshotId?: string;
   updatedAt?: string;
+}
+
+interface SharedSpacetimeGeoHeatmapRecord {
+  location: string | null;
+  cleanedMarkdownRef: string | null;
+  eventAt: Date | null;
+  processedAt: Date | null;
+}
+
+interface CachedSpacetimeGeoHeatmapRecord {
+  location: string | null;
+  cleanedMarkdownRef: string | null;
+  eventAt: string | null;
+  processedAt: string | null;
 }
 
 interface SpacetimeGeoHeatmapSnapshot {
@@ -910,21 +969,113 @@ export class DashboardChartsService {
     return `dashboard:query:${scope}:${hash}`;
   }
 
-  private async loadSharedDashboardQuery<T>(
+  private async loadSharedDashboardQuery<T, TCached = T>(
     scope: string,
     payload: unknown,
     loader: () => Promise<T>,
+    options?: {
+      serialize?: (value: T) => TCached;
+      deserialize?: (value: TCached) => T;
+    },
   ): Promise<T> {
-    return this.cache.wrap(
+    const cached = await this.cache.wrap(
       this.buildDashboardQueryCacheKey(scope, payload),
       DASHBOARD_SHARED_QUERY_TTL_SECONDS,
-      loader,
+      async () => {
+        const value = await loader();
+        return options?.serialize
+          ? options.serialize(value)
+          : (value as unknown as TCached);
+      },
       {
         lockTtlMs: 5_000,
         retryDelayMs: 50,
         maxWaitMs: 5_000,
       },
     );
+    return options?.deserialize
+      ? options.deserialize(cached)
+      : (cached as unknown as T);
+  }
+
+  private serializeWarMapEventRows(
+    rows: SharedWarMapEventArticleRow[],
+  ): CachedWarMapEventArticleRow[] {
+    return rows.map((row) => ({
+      location: row.location,
+      processedAt: serializeDate(row.processedAt),
+      eventAt: serializeDate(row.eventAt),
+    }));
+  }
+
+  private deserializeWarMapEventRows(
+    rows: CachedWarMapEventArticleRow[],
+  ): SharedWarMapEventArticleRow[] {
+    return rows.map((row) => ({
+      location: row.location,
+      processedAt: deserializeDate(row.processedAt),
+      eventAt: deserializeDate(row.eventAt),
+    }));
+  }
+
+  private serializeWarMapNewsMarkerRows(
+    rows: SharedWarMapNewsMarkerArticleRow[],
+  ): CachedWarMapNewsMarkerArticleRow[] {
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      location: row.location,
+      publishedAt: serializeDate(row.publishedAt),
+      eventAt: serializeDate(row.eventAt),
+      processedAt: serializeDate(row.processedAt),
+      entities: row.entities,
+      article: {
+        url: row.article.url,
+        crawlAt: serializeDate(row.article.crawlAt),
+        titleGuess: row.article.titleGuess,
+      },
+    }));
+  }
+
+  private deserializeWarMapNewsMarkerRows(
+    rows: CachedWarMapNewsMarkerArticleRow[],
+  ): SharedWarMapNewsMarkerArticleRow[] {
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      location: row.location,
+      publishedAt: deserializeDate(row.publishedAt),
+      eventAt: deserializeDate(row.eventAt),
+      processedAt: deserializeDate(row.processedAt),
+      entities: row.entities,
+      article: {
+        url: row.article.url,
+        crawlAt: deserializeDate(row.article.crawlAt),
+        titleGuess: row.article.titleGuess,
+      },
+    }));
+  }
+
+  private serializeSpacetimeGeoHeatmapRows(
+    rows: SharedSpacetimeGeoHeatmapRecord[],
+  ): CachedSpacetimeGeoHeatmapRecord[] {
+    return rows.map((row) => ({
+      location: row.location,
+      cleanedMarkdownRef: row.cleanedMarkdownRef,
+      eventAt: serializeDate(row.eventAt),
+      processedAt: serializeDate(row.processedAt),
+    }));
+  }
+
+  private deserializeSpacetimeGeoHeatmapRows(
+    rows: CachedSpacetimeGeoHeatmapRecord[],
+  ): SharedSpacetimeGeoHeatmapRecord[] {
+    return rows.map((row) => ({
+      location: row.location,
+      cleanedMarkdownRef: row.cleanedMarkdownRef,
+      eventAt: deserializeDate(row.eventAt),
+      processedAt: deserializeDate(row.processedAt),
+    }));
   }
 
   private buildProcessedArticleRangeWhere(
@@ -2736,25 +2887,27 @@ export class DashboardChartsService {
     );
     const title =
       options.kind === "aircraft"
-        ? this.normalizeString(state.callsign) ??
+        ? (this.normalizeString(state.callsign) ??
           this.normalizeString(state.registration) ??
           this.normalizeString(state.icao24)?.toUpperCase() ??
-          objectKey
-        : this.normalizeString(state.name) ??
+          objectKey)
+        : (this.normalizeString(state.name) ??
           (this.normalizeString(state.mmsi)
             ? `MMSI ${state.mmsi}`
-            : objectKey);
+            : objectKey));
     const subtitleParts =
       options.kind === "aircraft"
         ? [
             this.normalizeString(state.displayCategoryZh) ??
               this.normalizeString(state.displayCategory),
-            this.normalizeString(state.roleZh) ?? this.normalizeString(state.role),
+            this.normalizeString(state.roleZh) ??
+              this.normalizeString(state.role),
           ]
         : [
             this.normalizeString(state.shipTypeLabelZh) ??
               this.normalizeString(state.shipTypeLabel),
-            this.normalizeString(state.roleZh) ?? this.normalizeString(state.role),
+            this.normalizeString(state.roleZh) ??
+              this.normalizeString(state.role),
           ];
 
     return {
@@ -2899,7 +3052,8 @@ export class DashboardChartsService {
         `${point.objectKey ?? "transport"}:${point.observedAt ?? ""}`,
       lat: Number(point.lat),
       lng: Number(point.lng),
-      observedAt: this.toIsoString(point.observedAt) ?? new Date().toISOString(),
+      observedAt:
+        this.toIsoString(point.observedAt) ?? new Date().toISOString(),
       ...(this.toIsoString(point.sourceUpdatedAt)
         ? { sourceUpdatedAt: this.toIsoString(point.sourceUpdatedAt) }
         : {}),
@@ -2918,7 +3072,8 @@ export class DashboardChartsService {
   private buildWarMapTransportSummary(trackPoints: Record<string, unknown>[]) {
     const chronological = [...trackPoints].sort(
       (left, right) =>
-        (this.toDateMs(left.observedAt) ?? 0) - (this.toDateMs(right.observedAt) ?? 0),
+        (this.toDateMs(left.observedAt) ?? 0) -
+        (this.toDateMs(right.observedAt) ?? 0),
     );
     let totalDistanceKm = 0;
     let maxSpeed = 0;
@@ -2961,7 +3116,9 @@ export class DashboardChartsService {
         ? { totalDistanceKm: Number(totalDistanceKm.toFixed(1)) }
         : {}),
       ...(maxSpeed > 0 ? { maxSpeed: Math.round(maxSpeed) } : {}),
-      ...(maxAltitudeFt > 0 ? { maxAltitudeFt: Math.round(maxAltitudeFt) } : {}),
+      ...(maxAltitudeFt > 0
+        ? { maxAltitudeFt: Math.round(maxAltitudeFt) }
+        : {}),
       geoCells: Array.from(geoCellCounts.entries())
         .sort((left, right) => right[1] - left[1])
         .slice(0, 10)
@@ -3015,7 +3172,9 @@ export class DashboardChartsService {
     }
     if (typeof value === "string") {
       const parsed = Date.parse(value);
-      return Number.isFinite(parsed) ? new Date(parsed).toISOString() : undefined;
+      return Number.isFinite(parsed)
+        ? new Date(parsed).toISOString()
+        : undefined;
     }
     return undefined;
   }
@@ -3070,7 +3229,10 @@ export class DashboardChartsService {
         },
         orderBy: { triggeredAt: "desc" },
       }),
-      this.loadSharedDashboardQuery(
+      this.loadSharedDashboardQuery<
+        SharedWarMapEventArticleRow[],
+        CachedWarMapEventArticleRow[]
+      >(
         "war-map-events",
         { orgId, range },
         async () =>
@@ -3086,6 +3248,10 @@ export class DashboardChartsService {
             orderBy: [{ eventAt: "desc" }, { articleId: "desc" }],
             take: 2500,
           }),
+        {
+          serialize: (rows) => this.serializeWarMapEventRows(rows),
+          deserialize: (rows) => this.deserializeWarMapEventRows(rows),
+        },
       ),
     ]);
 
@@ -3173,6 +3339,9 @@ export class DashboardChartsService {
       };
       entry.newsCount += 1;
       const latestAt = record.eventAt ?? record.processedAt;
+      if (!latestAt) {
+        continue;
+      }
       entry.latestAt =
         !entry.latestAt || latestAt > entry.latestAt
           ? latestAt
@@ -3297,7 +3466,10 @@ export class DashboardChartsService {
     options: WarMapNewsMarkersOptions = {},
   ): Promise<WarMapNewsMarkersResponse> {
     const geoIndex = this.getGeoIndex();
-    const prismaRecords = await this.loadSharedDashboardQuery(
+    const prismaRecords = await this.loadSharedDashboardQuery<
+      SharedWarMapNewsMarkerArticleRow[],
+      CachedWarMapNewsMarkerArticleRow[]
+    >(
       "war-map-news-markers",
       { orgId, range },
       async () =>
@@ -3324,6 +3496,10 @@ export class DashboardChartsService {
           orderBy: [{ eventAt: "desc" }, { articleId: "desc" }],
           take: MAX_WAR_MAP_NEWS_MARKERS,
         }),
+      {
+        serialize: (rows) => this.serializeWarMapNewsMarkerRows(rows),
+        deserialize: (rows) => this.deserializeWarMapNewsMarkerRows(rows),
+      },
     );
 
     let records: WarMapSourceNewsRecord[] = prismaRecords.map((record) => ({
@@ -3332,7 +3508,13 @@ export class DashboardChartsService {
       location: typeof record.location === "string" ? record.location : "",
       entities: record.entities,
       url: record.article.url ?? null,
-      publishedAt: record.publishedAt ?? record.eventAt ?? undefined,
+      publishedAt: record.publishedAt ?? undefined,
+      sortAt:
+        record.eventAt ??
+        record.publishedAt ??
+        record.article.crawlAt ??
+        record.processedAt ??
+        undefined,
       processedAt: record.processedAt ?? undefined,
       crawlAt: record.article.crawlAt ?? undefined,
       titleGuess: record.article.titleGuess ?? null,
@@ -3352,6 +3534,11 @@ export class DashboardChartsService {
           entities: record.entities,
           url: record.url ?? null,
           publishedAt: record.publishedAt,
+          sortAt:
+            record.publishedAt ??
+            record.sortAt ??
+            record.ingestedAt ??
+            record.createdAt,
           processedAt: record.sortAt ?? record.ingestedAt ?? record.createdAt,
           crawlAt: record.ingestedAt,
           titleGuess: null,
@@ -3430,7 +3617,11 @@ export class DashboardChartsService {
         (record.title ?? record.titleGuess ?? record.url ?? "").trim() ||
         location;
       const latestAt =
-        record.publishedAt ?? record.crawlAt ?? record.processedAt ?? undefined;
+        record.sortAt ??
+        record.publishedAt ??
+        record.crawlAt ??
+        record.processedAt ??
+        undefined;
 
       markers.push({
         id: record.id,
@@ -3503,7 +3694,10 @@ export class DashboardChartsService {
     const eventId =
       typeof options.eventId === "string" ? options.eventId.trim() : "";
     const includeBuckets = options.includeBuckets === true;
-    const records = await this.loadSharedDashboardQuery(
+    const records = await this.loadSharedDashboardQuery<
+      SharedSpacetimeGeoHeatmapRecord[],
+      CachedSpacetimeGeoHeatmapRecord[]
+    >(
       "spacetime-geo-heatmap",
       { orgId, range, eventId, includeBuckets },
       async () =>
@@ -3530,6 +3724,10 @@ export class DashboardChartsService {
           orderBy: [{ eventAt: "desc" }, { articleId: "desc" }],
           take: MAX_SPACETIME_GEO_RECORDS,
         }),
+      {
+        serialize: (rows) => this.serializeSpacetimeGeoHeatmapRows(rows),
+        deserialize: (rows) => this.deserializeSpacetimeGeoHeatmapRows(rows),
+      },
     );
 
     if (records.length === 0) {
@@ -3633,6 +3831,9 @@ export class DashboardChartsService {
       }
       const candidate = normalizeLocationCandidate(rawLocation);
       const ts = record.eventAt ?? record.processedAt;
+      if (!ts) {
+        continue;
+      }
       const ageMs = Math.max(0, nowMs - ts.getTime());
       const weight = Math.exp(-ageMs / halfLifeMs);
 
@@ -3971,22 +4172,26 @@ export class DashboardChartsService {
       : range.end;
 
     const records = await this.prisma.processedArticle.findMany({
-      where: this.buildProcessedArticleRangeWhere(orgId, {
-        start: effectiveStart,
-        end: effectiveEnd,
-      }, {
-        requireLocation: true,
-        extra: eventId
-          ? {
-              newsEventItems: {
-                some: {
-                  orgId,
-                  eventId,
+      where: this.buildProcessedArticleRangeWhere(
+        orgId,
+        {
+          start: effectiveStart,
+          end: effectiveEnd,
+        },
+        {
+          requireLocation: true,
+          extra: eventId
+            ? {
+                newsEventItems: {
+                  some: {
+                    orgId,
+                    eventId,
+                  },
                 },
-              },
-            }
-          : undefined,
-      }),
+              }
+            : undefined,
+        },
+      ),
       select: {
         id: true,
         title: true,
@@ -5554,7 +5759,8 @@ export class DashboardChartsService {
 
     const resultPoints: FinancialCandlestickPoint[] = [];
     let updatedAt: Date | undefined;
-    const incompleteEntries: Array<{ timestamp: string; missing: string[] }> = [];
+    const incompleteEntries: Array<{ timestamp: string; missing: string[] }> =
+      [];
     const latestObservedAt = sorted.at(-1)?.timestamp;
     for (const entry of sorted) {
       const missing: string[] = [];
@@ -5608,7 +5814,9 @@ export class DashboardChartsService {
           ? (sourceFields as Record<string, string>)
           : undefined,
       updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
-      latestObservedAt: latestObservedAt ? latestObservedAt.toISOString() : undefined,
+      latestObservedAt: latestObservedAt
+        ? latestObservedAt.toISOString()
+        : undefined,
       skippedIncompleteCount:
         incompleteEntries.length > 0 ? incompleteEntries.length : undefined,
     };
