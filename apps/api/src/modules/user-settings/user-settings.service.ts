@@ -407,7 +407,7 @@ function normalizeWindowHours(value: unknown): number {
 }
 
 function normalizeScope(value: unknown): SituationMonitorScope {
-  return value === "all" ? "all" : "tagged";
+  return value === "tagged" ? "tagged" : "all";
 }
 
 function normalizeBoolean(value: unknown, fallback: boolean): boolean {
@@ -418,7 +418,7 @@ function normalizeSettings(value: unknown): SituationMonitorSettings {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {
       windowHours: 24,
-      scope: "tagged",
+      scope: "all",
       autoRefresh: true,
       resetLayoutOnPreset: false,
       translateToZh: false,

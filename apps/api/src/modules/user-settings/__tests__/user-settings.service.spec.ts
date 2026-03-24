@@ -77,6 +77,50 @@ describe("UserSettingsService", () => {
     expect(response.monitors?.[0]?.color).toBe("#fff");
   });
 
+  it("defaults situation monitor settings scope to all when missing", async () => {
+    const response = await service.updateSituationMonitorUiSettings("org-1", "user-1", {
+      settings: {
+        windowHours: 24,
+      },
+    });
+
+    expect(response.settings).toEqual({
+      windowHours: 24,
+      scope: "all",
+      autoRefresh: true,
+      resetLayoutOnPreset: false,
+      translateToZh: false,
+    });
+  });
+
+  it("normalizes invalid situation monitor scope to all and preserves tagged", async () => {
+    const invalidResponse = await service.updateSituationMonitorUiSettings("org-1", "user-1", {
+      settings: {
+        windowHours: 6,
+        scope: "unexpected",
+        autoRefresh: false,
+        resetLayoutOnPreset: true,
+        translateToZh: true,
+      },
+    });
+
+    expect(invalidResponse.settings).toEqual({
+      windowHours: 6,
+      scope: "all",
+      autoRefresh: false,
+      resetLayoutOnPreset: true,
+      translateToZh: true,
+    });
+
+    const taggedResponse = await service.updateSituationMonitorUiSettings("org-1", "user-1", {
+      settings: {
+        scope: "tagged",
+      },
+    });
+
+    expect(taggedResponse.settings?.scope).toBe("tagged");
+  });
+
   it("returns null payload when no war map settings exist", async () => {
     const response = await service.getWarMapUiSettings("org-1", "user-1");
     expect(response.settings).toBeNull();

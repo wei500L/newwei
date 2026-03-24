@@ -72,7 +72,7 @@ const defaultSituationMonitorLayout =
 
 const defaultSituationMonitorSettings = {
   windowHours: 24,
-  scope: "tagged",
+  scope: "all",
   autoRefresh: true,
   resetLayoutOnPreset: false,
   translateToZh: false,

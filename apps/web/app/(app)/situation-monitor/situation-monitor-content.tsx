@@ -1088,11 +1088,15 @@ export function SituationMonitorContent() {
   }, [loadOrefSignals]);
 
   const load = useCallback(
-    async (options?: { includeExternal?: boolean }) => {
+    async (options?: {
+      includeExternal?: boolean;
+      scopeOverride?: "tagged" | "all";
+    }) => {
       if (!session?.accessToken) {
         return;
       }
       const includeExternal = options?.includeExternal ?? true;
+      const requestedScope = options?.scopeOverride ?? scope;
       const refreshId = (refreshIdRef.current += 1);
       setRefreshStage("core");
       setError(null);
@@ -1105,7 +1109,7 @@ export function SituationMonitorContent() {
                 windowHours,
                 maxItems: 400,
                 sections: "core",
-                scope,
+                scope: requestedScope,
                 translate: translateToZh ? "zh-CN" : undefined,
               },
             },
@@ -1148,7 +1152,7 @@ export function SituationMonitorContent() {
                 windowHours,
                 maxItems: 400,
                 sections: "external",
-                scope,
+                scope: requestedScope,
                 translate: translateToZh ? "zh-CN" : undefined,
               },
             },
@@ -1198,9 +1202,8 @@ export function SituationMonitorContent() {
         captureClientError("Failed to load situation monitor insights", err);
         if (refreshIdRef.current === refreshId) {
           setError(
-            err instanceof Error
-              ? err.message
-              : "Failed to load situation monitor insights.",
+            extractApiError(err).message ||
+              "Failed to load situation monitor insights.",
           );
         }
       } finally {
@@ -1211,6 +1214,13 @@ export function SituationMonitorContent() {
     },
     [apiClient, scope, session?.accessToken, translateToZh, windowHours],
   );
+
+  const effectiveScope = data?.diagnostics?.effectiveScope ?? scope;
+  const taggedScopeNoResults =
+    !loading &&
+    !error &&
+    effectiveScope === "tagged" &&
+    (data?.analyzedItems ?? 0) === 0;
 
   const submitSignalFeedback = useCallback(
     async (payload: {
@@ -5136,9 +5146,7 @@ export function SituationMonitorContent() {
             ]}
             style={{ width: 160 }}
           />
-          <Tag color="default">
-            {(data?.diagnostics?.effectiveScope ?? scope).toUpperCase()}
-          </Tag>
+          <Tag color="default">{effectiveScope.toUpperCase()}</Tag>
           <Button onClick={() => void load()} loading={loading}>
             {t("common.refresh", { defaultValue: "Refresh" })}
           </Button>
@@ -5340,6 +5348,35 @@ export function SituationMonitorContent() {
       />
 
       {error ? <Alert type="error" showIcon message={error} /> : null}
+      {taggedScopeNoResults ? (
+        <div className="mt-3">
+          <Alert
+            type="warning"
+            showIcon
+            message={t("situationMonitor.scopeRecovery.title", {
+              defaultValue: "Tagged scope found no internal coverage.",
+            })}
+            description={t("situationMonitor.scopeRecovery.description", {
+              defaultValue:
+                "This view is limited to items tagged for situation monitoring. Switch to All items to load broader coverage.",
+            })}
+            action={
+              <Button
+                size="small"
+                type="primary"
+                onClick={() => {
+                  setScope("all");
+                  void load({ scopeOverride: "all" });
+                }}
+              >
+                {t("situationMonitor.scopeRecovery.action", {
+                  defaultValue: "Switch to All items",
+                })}
+              </Button>
+            }
+          />
+        </div>
+      ) : null}
       {feedbackNotice ? (
         <div className="mt-3">
           <Alert

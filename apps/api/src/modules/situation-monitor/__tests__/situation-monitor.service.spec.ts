@@ -66,6 +66,66 @@ describe("SituationMonitorService", () => {
     expect(chain.select).toHaveBeenCalledWith(expect.objectContaining({ ingestedAt: 1 }));
   });
 
+  it("defaults omitted scope to all items in insights loading", async () => {
+    const cache = {
+      get: jest.fn().mockResolvedValue(undefined),
+      set: jest.fn().mockResolvedValue(undefined),
+      wrap: jest.fn(async (_key: string, _ttl: number, factory: () => Promise<unknown>) => await factory()),
+    } as any;
+    const external = {
+      isGdeltEnabled: jest.fn().mockReturnValue(false),
+    } as any;
+    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
+    const realtimeSignals = {
+      getSituationMonitorInsightSnapshot: jest.fn().mockResolvedValue({
+        keywordSpikes: [],
+        predictionLeads: [],
+        pizzint: undefined,
+        tensions: [],
+      }),
+    } as any;
+    const service = new SituationMonitorService(cache, external, {} as any, feedback, realtimeSignals, {} as any);
+    const buildHeadlinesSpy = jest
+      .spyOn(service as any, "buildHeadlinesByCategory")
+      .mockResolvedValue({
+        politics: [],
+        tech: [],
+        finance: [],
+        gov: [],
+        ai: [],
+        intel: [],
+      });
+
+    await service.getInsights("org-1", { sections: ["core"] });
+
+    expect(buildHeadlinesSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "all" }),
+    );
+  });
+
+  it("restricts headline queries to tagged sources when tagged scope is requested", async () => {
+    const chain = createProcessedFindChain([]);
+    processedFindMock.mockReturnValue(chain);
+
+    const cache = {} as any;
+    const external = {} as any;
+    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
+    const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
+
+    await (service as any).buildHeadlinesByCategory({
+      orgId: "org-1",
+      since: new Date("2026-01-01T00:00:00.000Z"),
+      maxItems: 10,
+      maxPerCategory: 5,
+      allowGdeltFallback: false,
+      scope: "tagged",
+      debug: false,
+    });
+
+    const query = processedFindMock.mock.calls[0]?.[0] as any;
+    expect(query?.tags).toBe("situation-monitor");
+  });
+
   it("filters placeholder titles from processed headlines", async () => {
     const processedChain = createProcessedFindChain([
       {

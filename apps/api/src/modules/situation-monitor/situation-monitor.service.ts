@@ -138,7 +138,7 @@ export class SituationMonitorService {
     };
 
     const allowGdeltFallback = options?.gdelt ?? this.external.isGdeltEnabled();
-    const scope = options?.scope === "all" ? ("all" as const) : ("tagged" as const);
+    const scope = options?.scope === "tagged" ? ("tagged" as const) : ("all" as const);
     const debug = Boolean(options?.debug);
     const learningRevRaw = await this.cache.get<number>(`${INSIGHTS_LEARNING_REV_KEY_PREFIX}:${orgId}`);
     const learningRevision = typeof learningRevRaw === "number" && Number.isFinite(learningRevRaw) ? learningRevRaw : 0;
