@@ -14,6 +14,17 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 
+def parse_env_bool(value: Optional[str], default: bool = False) -> bool:
+  if value is None:
+    return default
+  normalized = value.strip().lower()
+  if normalized in {"1", "true", "yes", "on"}:
+    return True
+  if normalized in {"0", "false", "no", "off"}:
+    return False
+  return default
+
+
 def parse_csv(value: str) -> List[str]:
   return [entry.strip() for entry in value.split(",") if entry.strip()]
 
@@ -502,7 +513,12 @@ def main() -> None:
   out_cfg["model_list"] = expanded_model_list
 
   guardrails_cfg = base_cfg.get("guardrails")
-  if guardrails_cfg is not None:
+  assistant_guardrails_enabled = parse_env_bool(
+    os.environ.get("ASSISTANT_GUARDRAILS_ENABLED"),
+    default=True,
+  )
+  guardrails_allowed = assistant_guardrails_enabled and bool(effective_openai_keys)
+  if guardrails_cfg is not None and guardrails_allowed:
     expanded_guardrails, did_expand_guardrails = expand_guardrails(
       guardrails_cfg,
       api_key_overrides,
@@ -511,6 +527,8 @@ def main() -> None:
     if expanded_guardrails:
       out_cfg["guardrails"] = expanded_guardrails
       expanded_any = expanded_any or did_expand_guardrails
+  else:
+    out_cfg.pop("guardrails", None)
 
   if strict_db_mode:
     router_enabled = proxy_lb_enabled and expanded_any

@@ -528,6 +528,7 @@ services:
     environment:
       PORT: 3000
       NODE_ENV: production
+      NODE_OPTIONS: "${WEB_NODE_OPTIONS:---max-old-space-size=8192}"
       CI: "true"
       HUSKY: "0"
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
