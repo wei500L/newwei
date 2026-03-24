@@ -100,6 +100,30 @@ describe("QueueEventPublisher", () => {
         sourceId: "source-2",
       }),
     );
+    expect((publisher as any).orgCache.has("job-2")).toBe(false);
+  });
+
+  it("prunes expired cached job context during later writes", () => {
+    const { publisher } = createContext();
+    const dateNowSpy = jest.spyOn(Date, "now");
+
+    dateNowSpy.mockReturnValue(0);
+    (publisher as any).setCachedJobContext("job-expired", { orgId: "org-old" });
+
+    dateNowSpy.mockReturnValue(550_000);
+    (publisher as any).setCachedJobContext("job-fresh", { orgId: "org-fresh" });
+
+    dateNowSpy.mockReturnValue(610_000);
+    (publisher as any).setCachedJobContext("job-new", { orgId: "org-new" });
+
+    expect((publisher as any).orgCache.has("job-expired")).toBe(false);
+    expect((publisher as any).orgCache.get("job-fresh")).toMatchObject({
+      orgId: "org-fresh",
+    });
+    expect((publisher as any).orgCache.get("job-new")).toMatchObject({
+      orgId: "org-new",
+    });
+    dateNowSpy.mockRestore();
   });
 
   it("unbinds queue event handlers on module destroy", async () => {

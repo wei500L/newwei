@@ -100,6 +100,66 @@ describe("CrawlQueueEventPublisher", () => {
     );
   });
 
+  it("falls back to cached crawl context for terminal events and clears it afterward", async () => {
+    const { publisher, hotHandlers, hotQueue } = createContext();
+    const listener = jest.fn();
+    publisher.registerListener(listener);
+
+    hotQueue.getJob = jest
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          orgId: "org-1",
+          taskId: "task-hot-cache",
+          priorityClass: "hot",
+          sourcePriority: 90,
+        },
+      })
+      .mockResolvedValueOnce(null);
+
+    await hotHandlers.active?.({ jobId: "job-hot-cache", prev: "waiting" });
+    await hotHandlers.failed?.({
+      jobId: "job-hot-cache",
+      failedReason: "boom",
+    });
+
+    expect(listener).toHaveBeenNthCalledWith(
+      2,
+      "org-1",
+      expect.objectContaining({
+        event: "FAILED",
+        jobId: "job-hot-cache",
+        taskId: "task-hot-cache",
+      }),
+    );
+    expect((publisher as any).orgCache.has("crawl4ai-hot:job-hot-cache")).toBe(
+      false,
+    );
+  });
+
+  it("prunes expired crawl job context during later writes", () => {
+    const { publisher } = createContext();
+    const dateNowSpy = jest.spyOn(Date, "now");
+
+    dateNowSpy.mockReturnValue(0);
+    (publisher as any).setCachedJobContext("hot:expired", { orgId: "org-old" });
+
+    dateNowSpy.mockReturnValue(550_000);
+    (publisher as any).setCachedJobContext("hot:fresh", { orgId: "org-fresh" });
+
+    dateNowSpy.mockReturnValue(610_000);
+    (publisher as any).setCachedJobContext("hot:new", { orgId: "org-new" });
+
+    expect((publisher as any).orgCache.has("hot:expired")).toBe(false);
+    expect((publisher as any).orgCache.get("hot:fresh")).toMatchObject({
+      orgId: "org-fresh",
+    });
+    expect((publisher as any).orgCache.get("hot:new")).toMatchObject({
+      orgId: "org-new",
+    });
+    dateNowSpy.mockRestore();
+  });
+
   it("unbinds queue event handlers on module destroy", async () => {
     const { publisher, hotEvents, normalEvents } = createContext();
 

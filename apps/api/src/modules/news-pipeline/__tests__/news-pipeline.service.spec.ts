@@ -1519,7 +1519,7 @@ describe("NewsPipelineService", () => {
     expect(llmCompletedCall).toBeUndefined();
   });
 
-  it("marks invalid outbox payloads as failed without writing Mongo", async () => {
+  it("marks invalid outbox payloads as dead without writing Mongo", async () => {
     const updateSpy = mongoOutbox.update as jest.Mock;
     mongoOutbox.findMany.mockResolvedValueOnce([
       {
@@ -1538,7 +1538,7 @@ describe("NewsPipelineService", () => {
       expect.objectContaining({
         where: { id: "outbox-invalid" },
         data: expect.objectContaining({
-          status: "failed",
+          status: "dead",
           attempts: 3,
           lockedAt: null,
           availableAt: expect.any(Date),
@@ -1546,6 +1546,31 @@ describe("NewsPipelineService", () => {
       }),
     );
     expect(ProcessedItemModel.findOneAndUpdate).not.toHaveBeenCalled();
+    expect((service as any).outboxRetryTimers.size).toBe(0);
+  });
+
+  it("marks queued invalid outbox payloads as dead without scheduling retry", async () => {
+    const updateSpy = mongoOutbox.update as jest.Mock;
+    mongoOutbox.findUnique.mockResolvedValueOnce({
+      id: "outbox-invalid-queued",
+      payload: {},
+      attempts: 4,
+    });
+
+    await (service as any).deliverOutboxFromQueue("outbox-invalid-queued", null);
+
+    expect(updateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "outbox-invalid-queued" },
+        data: expect.objectContaining({
+          status: "dead",
+          attempts: 5,
+          lockedAt: null,
+          availableAt: expect.any(Date),
+        }),
+      }),
+    );
+    expect((service as any).outboxRetryTimers.size).toBe(0);
   });
 
   it("replays stale locked outbox entry to Mongo and deletes it", async () => {
@@ -1765,7 +1790,7 @@ describe("NewsPipelineService", () => {
     expect(updateArgs.$set.llm.promptTokens).toBeNull();
   });
 
-  it("marks outbox delivery failed when vector upsert is required but unavailable", async () => {
+  it("marks outbox delivery failed and schedules retry when vector upsert is required but unavailable", async () => {
     const staleLockedAt = new Date(Date.now() - 10 * 60 * 1000);
     const validPayload = {
       type: "processed_item",
@@ -1871,9 +1896,104 @@ describe("NewsPipelineService", () => {
       string,
       ReturnType<typeof setTimeout>
     >;
+    expect(retryTimers.size).toBe(1);
     for (const timer of retryTimers.values()) {
       clearTimeout(timer);
     }
     retryTimers.clear();
+  });
+
+  it("marks outbox delivery dead after max retry attempts and stops scheduling timers", async () => {
+    const staleLockedAt = new Date(Date.now() - 10 * 60 * 1000);
+    const validPayload = {
+      type: "processed_item",
+      document: {
+        _id: "64b5f0c4f6e4b0495c3f4a10",
+        rawItemId,
+        itemMetaId: "meta-1",
+        orgId: "org-1",
+        status: "completed",
+        tags: ["breaking"],
+        result: {
+          title: "Existing title",
+          subtitle: null,
+          author: "Reporter",
+          source: "Example",
+          published_at: "2024-01-01T00:00:00Z",
+          language: "en",
+          location: "US",
+          category: null,
+          topics: ["news"],
+          summary: "Existing summary",
+          key_points: ["Existing summary"],
+          entities: [{ name: "Reporter", type: "Person", confidence: 0.9 }],
+          cleaned_markdown: "Clean body from cache",
+          removed_noise_types: [],
+          quality_score: 0.9,
+          llm_model: "openai/gpt-4o-mini",
+          llm_prompt_version: "v1",
+        },
+        llm: {
+          model: "openai/gpt-4o-mini",
+          promptVersion: "v1",
+          promptTokens: 10,
+          completionTokens: 5,
+          totalTokens: 15,
+          costUsd: 0.01,
+          latencyMs: 80,
+        },
+        summaryEmbedding: [1, 0, 0],
+        summaryEmbeddingModel: "openai/text-embedding-3-small",
+        error: undefined,
+      },
+    };
+
+    const vectorClient = {
+      upsertOrThrow: jest
+        .fn()
+        .mockRejectedValue(new Error("vector unavailable")),
+    };
+    const serviceWithVector = new NewsPipelineService(
+      liteLlm as any,
+      configService as any,
+      promptBuilder,
+      promptConfigService as any,
+      dedupeSettingsService as any,
+      prisma as any,
+      crawlExecution as any,
+      undefined,
+      vectorClient as any,
+    );
+
+    mongoOutbox.findMany.mockResolvedValueOnce([
+      {
+        id: "outbox-vector-dead",
+        payload: validPayload,
+        status: "processing",
+        attempts: 9,
+        availableAt: new Date(),
+        lockedAt: staleLockedAt,
+      },
+    ]);
+    mongoOutbox.updateMany.mockResolvedValueOnce({ count: 1 });
+    mongoOutbox.findUnique.mockResolvedValueOnce({
+      id: "outbox-vector-dead",
+      attempts: 10,
+    });
+
+    await serviceWithVector.retryPendingOutbox();
+
+    expect(mongoOutbox.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "outbox-vector-dead" },
+        data: expect.objectContaining({
+          status: "dead",
+          attempts: 10,
+          lockedAt: null,
+          availableAt: expect.any(Date),
+        }),
+      }),
+    );
+    expect((serviceWithVector as any).outboxRetryTimers.size).toBe(0);
   });
 });

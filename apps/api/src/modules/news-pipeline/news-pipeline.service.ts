@@ -233,6 +233,7 @@ const LLM_DEDUPE_EARLY_EXIT_SIMILARITY = 0.98;
 export class NewsPipelineService implements OnModuleDestroy {
   private readonly logger = createLogger({ name: "news-pipeline" });
   private readonly outboxRetryBaseDelayMs = 30_000;
+  private readonly outboxMaxAttempts = 10;
   private readonly outboxStaleLockMs = 5 * 60_000;
   private readonly outboxBatchSize = 10;
   private readonly outboxEventEmitter = new EventEmitter();
@@ -3431,7 +3432,7 @@ export class NewsPipelineService implements OnModuleDestroy {
 
     const parsed = this.parseOutboxPayload(entry.payload);
     if (!parsed) {
-      await this.markOutboxFailure(
+      await this.markOutboxDead(
         outboxId,
         (entry.attempts ?? 0) + 1,
         new Error("Invalid outbox payload"),
@@ -4071,13 +4072,18 @@ export class NewsPipelineService implements OnModuleDestroy {
     attempts: number,
     error: unknown,
   ) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (attempts >= this.outboxMaxAttempts) {
+      await this.markOutboxDead(outboxId, attempts, error);
+      return;
+    }
+
     const nextDelay = this.computeBackoffDelay(
       this.outboxRetryBaseDelayMs,
       attempts,
       5,
     );
     const availableAt = new Date(Date.now() + nextDelay);
-    const message = error instanceof Error ? error.message : String(error);
 
     try {
       await this.prisma.mongoOutbox.update({
@@ -4095,6 +4101,33 @@ export class NewsPipelineService implements OnModuleDestroy {
       this.logger.warn(
         { error: updateError, outboxId, message },
         "Failed to update Mongo outbox status after delivery error",
+      );
+    }
+  }
+
+  private async markOutboxDead(
+    outboxId: string,
+    attempts: number,
+    error: unknown,
+  ) {
+    const message = error instanceof Error ? error.message : String(error);
+    this.clearOutboxRetry(outboxId);
+
+    try {
+      await this.prisma.mongoOutbox.update({
+        where: { id: outboxId },
+        data: {
+          status: MongoOutboxStatus.dead,
+          lastError: message,
+          availableAt: new Date(),
+          lockedAt: null,
+          attempts: Math.max(attempts, 1),
+        },
+      });
+    } catch (updateError) {
+      this.logger.warn(
+        { error: updateError, outboxId, message },
+        "Failed to mark Mongo outbox dead",
       );
     }
   }
@@ -4224,7 +4257,7 @@ export class NewsPipelineService implements OnModuleDestroy {
       for (const entry of entries) {
         const payload = this.parseOutboxPayload(entry.payload);
         if (!payload) {
-          await this.markOutboxFailure(
+          await this.markOutboxDead(
             entry.id,
             (entry.attempts ?? 0) + 1,
             new Error("Invalid outbox payload"),

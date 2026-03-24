@@ -124,6 +124,7 @@ interface PipelineQualitySummary {
       pending: number;
       processing: number;
       failed: number;
+      dead: number;
       staleProcessing: number;
     };
     oldestAgeMinutes: number | null;
@@ -2209,6 +2210,18 @@ export function QualityContent() {
                             defaultValue: "Outbox failed",
                           })}
                           : {pipeline.outbox.totals.failed}
+                        </Tag>
+                        <Tag
+                          color={
+                            pipeline.outbox.totals.dead > 0
+                              ? "volcano"
+                              : "default"
+                          }
+                        >
+                          {t("quality.pipeline.outbox.dead", {
+                            defaultValue: "Outbox dead",
+                          })}
+                          : {pipeline.outbox.totals.dead}
                         </Tag>
                         <Tag
                           color={

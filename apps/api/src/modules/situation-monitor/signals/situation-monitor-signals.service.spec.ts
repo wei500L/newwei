@@ -365,4 +365,23 @@ describe('SituationMonitorSignalsService', () => {
 
     expect(triggerChecksSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('disconnects Telegram client during shutdown hooks without leaking poll state', async () => {
+    const { service } = createService();
+    const disconnect = jest.fn().mockResolvedValue(undefined);
+
+    (service as any).telegramState.client = { disconnect };
+    (service as any).telegramState.credentialsFingerprint = 'fingerprint';
+    (service as any).telegramPollInFlight = true;
+    (service as any).telegramPollStartedAt = 123;
+
+    await service.onModuleDestroy();
+    await service.onApplicationShutdown();
+
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect((service as any).telegramState.client).toBeNull();
+    expect((service as any).telegramState.credentialsFingerprint).toBeNull();
+    expect((service as any).telegramPollInFlight).toBe(false);
+    expect((service as any).telegramPollStartedAt).toBe(0);
+  });
 });

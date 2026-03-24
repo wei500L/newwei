@@ -1,5 +1,10 @@
 import { createLogger } from "@modular/utils";
-import { Injectable, OnModuleInit } from "@nestjs/common";
+import {
+  Injectable,
+  OnApplicationShutdown,
+  OnModuleDestroy,
+  OnModuleInit,
+} from "@nestjs/common";
 import {
   AlertMetricProvider,
   AlertOperator,
@@ -97,7 +102,9 @@ interface OrefMetricsSnapshot {
 }
 
 @Injectable()
-export class SituationMonitorSignalsService implements OnModuleInit {
+export class SituationMonitorSignalsService
+  implements OnModuleInit, OnModuleDestroy, OnApplicationShutdown
+{
   private telegramState: TelegramState = {
     client: null,
     channels: [],
@@ -142,6 +149,14 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
   async onModuleInit() {
     await this.restoreCachedState();
+  }
+
+  async onModuleDestroy() {
+    await this.cleanupTelegramRuntime();
+  }
+
+  async onApplicationShutdown() {
+    await this.cleanupTelegramRuntime();
   }
 
   async runJob(jobName: string): Promise<void> {
@@ -628,6 +643,12 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     }
     this.telegramState.client = null;
     this.telegramState.credentialsFingerprint = null;
+  }
+
+  private async cleanupTelegramRuntime() {
+    await this.disconnectTelegramClient();
+    this.telegramPollInFlight = false;
+    this.telegramPollStartedAt = 0;
   }
 
   private loadTelegramChannels(setName: string): TelegramChannelConfig[] {

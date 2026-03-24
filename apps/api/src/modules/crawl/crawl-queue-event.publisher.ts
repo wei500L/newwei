@@ -81,7 +81,9 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
   private readonly logger = createLogger({ name: "crawl-queue-events" });
   private readonly orgCache = new Map<string, OrgCacheEntry>();
   private readonly orgCacheTtlMs = 10 * 60_000;
+  private readonly orgCachePruneIntervalMs = 60_000;
   private readonly bindings: EventBinding[] = [];
+  private lastPruneAt = 0;
 
   constructor(
     @Inject(CRAWL_QUEUE_EVENTS_HOT) private readonly hotEvents: QueueEvents,
@@ -148,6 +150,7 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
       jobId: string;
       returnvalue?: unknown;
     }) => {
+      const cacheKey = this.cacheKey(queueName, jobId);
       const completedData =
         returnvalue &&
         typeof returnvalue === "object" &&
@@ -157,6 +160,7 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
             ? { returnvalue }
             : undefined;
       await this.emit(queue, queueName, jobId, "COMPLETED", completedData);
+      this.deleteCachedJobContext(cacheKey);
     };
 
     const failed = async ({
@@ -166,6 +170,7 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
       jobId: string;
       failedReason?: string;
     }) => {
+      const cacheKey = this.cacheKey(queueName, jobId);
       await this.emit(
         queue,
         queueName,
@@ -173,6 +178,7 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
         "FAILED",
         failedReason ? { reason: failedReason } : undefined,
       );
+      this.deleteCachedJobContext(cacheKey);
     };
 
     events.on("active", active);
@@ -301,23 +307,45 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
   }
 
   private setCachedJobContext(cacheKey: string, context: CrawlJobContext) {
+    const now = Date.now();
+    this.pruneExpiredOrgCacheIfDue(now);
     this.orgCache.set(cacheKey, {
       ...context,
-      expiresAt: Date.now() + this.orgCacheTtlMs,
+      expiresAt: now + this.orgCacheTtlMs,
     });
   }
 
   private getCachedJobContext(cacheKey: string): CrawlJobContext | null {
+    const now = Date.now();
+    this.pruneExpiredOrgCacheIfDue(now);
     const cached = this.orgCache.get(cacheKey);
     if (!cached) {
       return null;
     }
-    if (Date.now() >= cached.expiresAt) {
+    if (now >= cached.expiresAt) {
       this.orgCache.delete(cacheKey);
       return null;
     }
     const { expiresAt: _expiresAt, ...context } = cached;
     return context;
+  }
+
+  private deleteCachedJobContext(cacheKey: string) {
+    this.orgCache.delete(cacheKey);
+  }
+
+  private pruneExpiredOrgCacheIfDue(now: number) {
+    if (now - this.lastPruneAt < this.orgCachePruneIntervalMs) {
+      return;
+    }
+
+    for (const [cacheKey, entry] of this.orgCache) {
+      if (entry.expiresAt <= now) {
+        this.orgCache.delete(cacheKey);
+      }
+    }
+
+    this.lastPruneAt = now;
   }
 
   private async dispatchToListeners(

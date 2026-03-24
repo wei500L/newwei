@@ -94,6 +94,11 @@ export class PipelineMetricProvider implements MetricProvider {
   ): Promise<MetricEvaluation> {
     const now = new Date();
     const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
+    const activeOutboxStatuses = [
+      MongoOutboxStatus.pending,
+      MongoOutboxStatus.failed,
+      MongoOutboxStatus.processing,
+    ];
     const allowedStatuses = Object.values(MongoOutboxStatus);
     const metadata =
       rule.metadata && typeof rule.metadata === "object" && !Array.isArray(rule.metadata)
@@ -113,7 +118,10 @@ export class PipelineMetricProvider implements MetricProvider {
     const slug = rule.metricSlug.trim();
     if (slug === "mongo_outbox.oldest_age_minutes") {
       const oldest = await this.prisma.mongoOutbox.findFirst({
-        where: baseWhere,
+        where: {
+          ...baseWhere,
+          status: { in: activeOutboxStatuses }
+        },
         orderBy: { createdAt: "asc" },
         select: { createdAt: true }
       });
@@ -140,10 +148,11 @@ export class PipelineMetricProvider implements MetricProvider {
     }
 
     const defaultStatusesBySlug: Record<string, MongoOutboxStatus[]> = {
-      "mongo_outbox.backlog": [MongoOutboxStatus.pending, MongoOutboxStatus.failed, MongoOutboxStatus.processing],
+      "mongo_outbox.backlog": activeOutboxStatuses,
       "mongo_outbox.pending": [MongoOutboxStatus.pending],
       "mongo_outbox.failed": [MongoOutboxStatus.failed],
       "mongo_outbox.processing": [MongoOutboxStatus.processing],
+      "mongo_outbox.dead": [MongoOutboxStatus.dead],
     };
 
     const fallbackStatuses = defaultStatusesBySlug[slug] ?? defaultStatusesBySlug["mongo_outbox.backlog"];

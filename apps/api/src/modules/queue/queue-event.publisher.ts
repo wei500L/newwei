@@ -42,6 +42,8 @@ export class QueueEventPublisher implements OnModuleDestroy {
   private readonly logger = createLogger({ name: "queue-events" });
   private readonly orgCache = new Map<string, QueueJobContextCacheEntry>();
   private readonly orgCacheTtlMs = 10 * 60_000;
+  private readonly orgCachePruneIntervalMs = 60_000;
+  private lastPruneAt = 0;
 
   private readonly handleCompleted = async ({
     jobId,
@@ -57,6 +59,7 @@ export class QueueEventPublisher implements OnModuleDestroy {
           ? { returnvalue }
           : undefined;
     await this.emit(jobId, "COMPLETED", completedData);
+    this.deleteCachedJobContext(jobId);
   };
 
   private readonly handleActive = async ({
@@ -93,6 +96,7 @@ export class QueueEventPublisher implements OnModuleDestroy {
     failedReason?: string;
   }) => {
     await this.emit(jobId, "FAILED", failedReason ? { reason: failedReason } : undefined);
+    this.deleteCachedJobContext(jobId);
   };
 
   constructor(
@@ -171,23 +175,45 @@ export class QueueEventPublisher implements OnModuleDestroy {
   }
 
   private setCachedJobContext(jobId: string, context: PipelineQueueJobContext) {
+    const now = Date.now();
+    this.pruneExpiredOrgCacheIfDue(now);
     this.orgCache.set(jobId, {
       ...context,
-      expiresAt: Date.now() + this.orgCacheTtlMs,
+      expiresAt: now + this.orgCacheTtlMs,
     });
   }
 
   private getCachedJobContext(jobId: string): PipelineQueueJobContext | null {
+    const now = Date.now();
+    this.pruneExpiredOrgCacheIfDue(now);
     const cached = this.orgCache.get(jobId);
     if (!cached) {
       return null;
     }
-    if (Date.now() >= cached.expiresAt) {
+    if (now >= cached.expiresAt) {
       this.orgCache.delete(jobId);
       return null;
     }
     const { expiresAt: _expiresAt, ...context } = cached;
     return context;
+  }
+
+  private deleteCachedJobContext(jobId: string) {
+    this.orgCache.delete(jobId);
+  }
+
+  private pruneExpiredOrgCacheIfDue(now: number) {
+    if (now - this.lastPruneAt < this.orgCachePruneIntervalMs) {
+      return;
+    }
+
+    for (const [jobId, entry] of this.orgCache) {
+      if (entry.expiresAt <= now) {
+        this.orgCache.delete(jobId);
+      }
+    }
+
+    this.lastPruneAt = now;
   }
 
   private readStringField(value: unknown) {

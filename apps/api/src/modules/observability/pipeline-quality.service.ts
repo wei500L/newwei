@@ -48,6 +48,7 @@ export interface PipelineQualitySummary {
       pending: number;
       processing: number;
       failed: number;
+      dead: number;
       staleProcessing: number;
     };
     oldestCreatedAt: string | null;
@@ -153,6 +154,11 @@ export class PipelineQualityService {
     const since = new Date(Date.now() - normalizedWindow * 60 * 1000);
     const now = new Date();
     const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
+    const activeOutboxStatuses = [
+      MongoOutboxStatus.pending,
+      MongoOutboxStatus.failed,
+      MongoOutboxStatus.processing,
+    ];
 
     const [
       processedAggResult,
@@ -273,7 +279,11 @@ export class PipelineQualityService {
         },
       }),
       this.prisma.mongoOutbox.findFirst({
-        where: { orgId, type: MongoOutboxType.processed_item },
+        where: {
+          orgId,
+          type: MongoOutboxType.processed_item,
+          status: { in: activeOutboxStatuses },
+        },
         orderBy: { createdAt: "asc" },
         select: { createdAt: true },
       }),
@@ -361,6 +371,7 @@ export class PipelineQualityService {
       pending: 0,
       processing: 0,
       failed: 0,
+      dead: 0,
       staleProcessing: outboxStaleProcessing,
     };
     for (const entry of outboxStatusAgg) {
@@ -373,6 +384,8 @@ export class PipelineQualityService {
         outboxTotals.processing = count;
       } else if (status === MongoOutboxStatus.failed) {
         outboxTotals.failed = count;
+      } else if (status === MongoOutboxStatus.dead) {
+        outboxTotals.dead = count;
       }
     }
     const oldestCreatedAt = outboxOldest?.createdAt

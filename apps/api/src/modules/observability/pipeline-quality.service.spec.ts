@@ -56,4 +56,65 @@ describe("PipelineQualityService", () => {
     expect(pipeline[0]?.$match?.status).toBe("failed");
     expect(pipeline[0]?.$match?.createdAt?.$gte).toBeInstanceOf(Date);
   });
+
+  it("counts dead outbox entries and excludes them from oldest backlog age", async () => {
+    (ProcessedItemModel.aggregate as jest.Mock).mockResolvedValue([
+      {
+        statusAgg: [],
+        latencyAgg: [],
+        llmAgg: [],
+      },
+    ]);
+    (TaskLogModel.aggregate as jest.Mock).mockResolvedValue([]);
+
+    (ProcessedItemModel.find as jest.Mock).mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([]),
+    });
+
+    const prisma = {
+      mongoOutbox: {
+        groupBy: jest.fn().mockResolvedValue([
+          { status: "failed", _count: { _all: 1 } },
+          { status: "dead", _count: { _all: 2 } },
+        ]),
+        count: jest.fn().mockResolvedValue(0),
+        findFirst: jest.fn().mockResolvedValue({
+          createdAt: new Date("2026-03-24T00:00:00.000Z"),
+        }),
+      },
+    } as any;
+    const snapshots = {
+      getOrCreate: jest.fn(
+        async ({ loader }: { loader: () => Promise<unknown> }) => ({
+          payload: await loader(),
+        }),
+      ),
+    } as any;
+
+    const service = new PipelineQualityService(prisma, snapshots);
+    const summary = await service.summary("org-1", 60);
+
+    expect(summary.outbox?.totals).toEqual(
+      expect.objectContaining({
+        total: 3,
+        failed: 1,
+        dead: 2,
+      }),
+    );
+    expect(prisma.mongoOutbox.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: {
+            in: [
+              "pending",
+              "failed",
+              "processing",
+            ],
+          },
+        }),
+      }),
+    );
+  });
 });

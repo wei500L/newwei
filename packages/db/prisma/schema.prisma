@@ -1469,6 +1469,7 @@ enum MongoOutboxStatus {
   pending
   processing
   failed
+  dead
 }
 
 enum AuditLogOutboxStatus {
