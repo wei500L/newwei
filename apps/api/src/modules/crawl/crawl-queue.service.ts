@@ -2,6 +2,7 @@ import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { Inject, Injectable } from "@nestjs/common";
 import { Job, Queue } from "bullmq";
 
+import { CrawlActivityService } from "./crawl-activity.service";
 import { CrawlSettingsService } from "./crawl-settings.service";
 import {
   CRAWL_QUEUE_HOT,
@@ -125,6 +126,7 @@ export class CrawlQueueService {
     @Inject(CRAWL_QUEUE_LLM_LEARN)
     private readonly llmLearnQueue: Queue<CrawlJobData>,
     private readonly crawlSettings: CrawlSettingsService,
+    private readonly activity: CrawlActivityService,
   ) {}
 
   private queueEntries(): QueueEntry[] {
@@ -210,6 +212,7 @@ export class CrawlQueueService {
         priority: jobPriority,
       },
     );
+    await this.activity.markTaskQueued();
   }
 
   async enqueueFrontierNode(options: EnqueueFrontierNodeOptions) {

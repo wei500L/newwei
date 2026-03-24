@@ -1140,7 +1140,11 @@ export function NewsSourcesContent() {
   const liveUiBusyRef = useRef(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const refreshRef = useRef(false);
-  const pendingRefreshRef = useRef<{ silent: boolean } | null>(null);
+  const pendingRefreshRef = useRef<{
+    silent: boolean;
+    includeQueue: boolean;
+    includeQuality: boolean;
+  } | null>(null);
   const seedModeRef = useRef<NewsSourceFormValues["seedMode"]>("sitemap");
 
   const selectedSources = useMemo(
@@ -1592,12 +1596,22 @@ export function NewsSourcesContent() {
   );
 
   const refreshAll = useCallback(
-    async (options?: { silent?: boolean }) => {
+    async (options?: {
+      silent?: boolean;
+      includeQueue?: boolean;
+      includeQuality?: boolean;
+    }) => {
       const silent = options?.silent === true;
+      const includeQueue = options?.includeQueue !== false;
+      const includeQuality = options?.includeQuality !== false;
       if (refreshRef.current) {
         const pending = pendingRefreshRef.current;
         pendingRefreshRef.current = {
           silent: pending ? pending.silent && silent : silent,
+          includeQueue: pending ? pending.includeQueue || includeQueue : includeQueue,
+          includeQuality: pending
+            ? pending.includeQuality || includeQuality
+            : includeQuality,
         };
         return;
       }
@@ -1605,8 +1619,12 @@ export function NewsSourcesContent() {
       try {
         const [sourcesOk] = await Promise.all([
           loadSources({ silent }),
-          loadCrawlQueueStats({ silent }),
-          loadCrawlQualityStats({ silent }),
+          includeQueue
+            ? loadCrawlQueueStats({ silent })
+            : Promise.resolve(undefined),
+          includeQuality
+            ? loadCrawlQualityStats({ silent })
+            : Promise.resolve(undefined),
         ]);
         if (sourcesOk) {
           setLastUpdatedAt(new Date().toISOString());
@@ -1695,7 +1713,11 @@ export function NewsSourcesContent() {
       if (dispatchingSourceIds.size > 0 || opsLoadingSourceIds.size > 0) {
         return;
       }
-      void refreshAll({ silent: true });
+      void refreshAll({
+        silent: true,
+        includeQueue: false,
+        includeQuality: false,
+      });
     }, intervalMs);
     return () => window.clearInterval(id);
   }, [
@@ -1755,7 +1777,11 @@ export function NewsSourcesContent() {
       if (liveUiBusyRef.current) {
         return;
       }
-      void refreshAll({ silent: true });
+      void refreshAll({
+        silent: true,
+        includeQueue: false,
+        includeQuality: false,
+      });
     }, 1200);
   }, [refreshAll]);
 

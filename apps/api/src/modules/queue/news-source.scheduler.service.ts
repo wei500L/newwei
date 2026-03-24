@@ -4105,6 +4105,9 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       ],
       take: batchSize,
     });
+    if (sources.length === 0) {
+      return;
+    }
 
     const maxEnqueuePerTick = Math.max(
       0,

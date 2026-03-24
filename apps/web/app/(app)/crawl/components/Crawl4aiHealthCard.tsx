@@ -262,13 +262,19 @@ function parseRuntimeSnapshot(
 
 export interface Crawl4aiHealthCardProps {
   pollIntervalMs?: number;
+  runtimePollIntervalMs?: number;
   onOpenMonitor?: () => void;
   className?: string;
   style?: CSSProperties;
 }
 
+function isDocumentVisible() {
+  return typeof document === "undefined" || document.visibilityState === "visible";
+}
+
 export function Crawl4aiHealthCard({
-  pollIntervalMs = 10_000,
+  pollIntervalMs = 30_000,
+  runtimePollIntervalMs = 60_000,
   onOpenMonitor,
   className,
   style,
@@ -281,7 +287,9 @@ export function Crawl4aiHealthCard({
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [failureCount, setFailureCount] = useState(0);
-  const inFlightRef = useRef(false);
+  const [documentVisible, setDocumentVisible] = useState(isDocumentVisible);
+  const healthInFlightRef = useRef(false);
+  const runtimeInFlightRef = useRef(false);
 
   const poolTotal = useMemo(() => {
     const permanent = snapshot?.poolPermanent ?? 0;
@@ -393,21 +401,21 @@ export function Crawl4aiHealthCard({
     return null;
   }, [errorInfo, t]);
 
-  const load = useCallback(async () => {
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
-    setRefreshing(true);
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setDocumentVisible(isDocumentVisible());
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  const loadHealth = useCallback(async () => {
+    if (healthInFlightRef.current) return;
+    healthInFlightRef.current = true;
     try {
-      const [healthResult, runtimeResult] = await Promise.allSettled([
-        fetchHealth(),
-        fetchRuntime(),
-      ]);
-
-      if (healthResult.status === "rejected") {
-        throw healthResult.reason;
-      }
-
-      const parsed = parseHealthSnapshot(healthResult.value);
+      const payload = await fetchHealth();
+      const parsed = parseHealthSnapshot(payload);
       if (!parsed) {
         throw new Error("Invalid /monitor/health response");
       }
@@ -415,37 +423,46 @@ export function Crawl4aiHealthCard({
       setStatus("healthy");
       setError(null);
       setFailureCount(0);
-
-      if (runtimeResult.status === "fulfilled") {
-        const parsedRuntime = parseRuntimeSnapshot(runtimeResult.value);
-        if (!parsedRuntime) {
-          setRuntime(null);
-          setRuntimeError("Invalid /api/crawl4ai/runtime response");
-        } else {
-          setRuntime(parsedRuntime);
-          setRuntimeError(null);
-        }
-      } else {
-        setRuntime(null);
-        setRuntimeError(
-          runtimeResult.reason instanceof Error
-            ? runtimeResult.reason.message
-            : String(runtimeResult.reason),
-        );
-      }
     } catch (err) {
       setStatus("unreachable");
       setError(err instanceof Error ? err.message : String(err));
       setFailureCount((prev) => Math.min(prev + 1, 6));
-      setRuntime(null);
-      setRuntimeError(null);
     } finally {
-      setRefreshing(false);
-      inFlightRef.current = false;
+      healthInFlightRef.current = false;
     }
   }, []);
 
-  const effectivePollIntervalMs = useMemo(() => {
+  const loadRuntime = useCallback(async () => {
+    if (runtimeInFlightRef.current) return;
+    runtimeInFlightRef.current = true;
+    try {
+      const payload = await fetchRuntime();
+      const parsedRuntime = parseRuntimeSnapshot(payload);
+      if (!parsedRuntime) {
+        setRuntime(null);
+        setRuntimeError("Invalid /api/crawl4ai/runtime response");
+        return;
+      }
+      setRuntime(parsedRuntime);
+      setRuntimeError(null);
+    } catch (err) {
+      setRuntime(null);
+      setRuntimeError(err instanceof Error ? err.message : String(err));
+    } finally {
+      runtimeInFlightRef.current = false;
+    }
+  }, []);
+
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.allSettled([loadHealth(), loadRuntime()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadHealth, loadRuntime]);
+
+  const effectiveHealthPollIntervalMs = useMemo(() => {
     if (status === "healthy") return pollIntervalMs;
     if (status === "loading") return pollIntervalMs;
     const factor = Math.pow(2, Math.min(5, failureCount));
@@ -453,10 +470,33 @@ export function Crawl4aiHealthCard({
   }, [failureCount, pollIntervalMs, status]);
 
   useEffect(() => {
+    if (!documentVisible) {
+      return;
+    }
     void load();
-    const id = window.setInterval(() => void load(), effectivePollIntervalMs);
+  }, [documentVisible, load]);
+
+  useEffect(() => {
+    if (!documentVisible) {
+      return;
+    }
+    const id = window.setInterval(
+      () => void loadHealth(),
+      effectiveHealthPollIntervalMs,
+    );
     return () => window.clearInterval(id);
-  }, [effectivePollIntervalMs, load]);
+  }, [documentVisible, effectiveHealthPollIntervalMs, loadHealth]);
+
+  useEffect(() => {
+    if (!documentVisible) {
+      return;
+    }
+    const id = window.setInterval(
+      () => void loadRuntime(),
+      runtimePollIntervalMs,
+    );
+    return () => window.clearInterval(id);
+  }, [documentVisible, loadRuntime, runtimePollIntervalMs]);
 
   const statusTag =
     status === "healthy" ? (

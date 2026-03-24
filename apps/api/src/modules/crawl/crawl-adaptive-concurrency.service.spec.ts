@@ -20,6 +20,16 @@ describe("CrawlAdaptiveConcurrencyService", () => {
       updateMaxConcurrencyInternal: jest.fn().mockResolvedValue(undefined)
     } as any;
 
+    const activity = {
+      getState: jest.fn().mockResolvedValue({
+        activeTaskCount: 1,
+        lastEnqueuedAt: null,
+        lastTerminalAt: null,
+        lastLoadedAt: null
+      }),
+      ensureActiveTaskCount: jest.fn().mockResolvedValue(1)
+    } as any;
+
     const crawlQueue = {
       setGlobalConcurrency: jest.fn().mockResolvedValue(undefined)
     } as any;
@@ -32,6 +42,7 @@ describe("CrawlAdaptiveConcurrencyService", () => {
       prisma,
       cache,
       crawlSettings,
+      activity,
       crawlQueue,
       crawlProcessor
     );
@@ -41,6 +52,7 @@ describe("CrawlAdaptiveConcurrencyService", () => {
       prisma,
       cache,
       crawlSettings,
+      activity,
       crawlQueue,
       crawlProcessor
     };
@@ -210,6 +222,40 @@ describe("CrawlAdaptiveConcurrencyService", () => {
         latencySampleCount: 0,
         samplingMode: "recent_sample"
       })
+    );
+  });
+
+  it("skips metric scans when there is no recent crawl activity", async () => {
+    const { service, prisma, cache, crawlSettings, activity } = createService();
+    crawlSettings.getSettings.mockResolvedValue({
+      adaptiveConcurrencyEnabled: true,
+      maxConcurrency: 4,
+      requestTimeoutNormalMs: 120_000,
+      adaptiveWindowMinutes: 15,
+      adaptiveCooldownMinutes: 5,
+      adaptiveLatencyThresholdRatio: 0.85,
+      adaptiveErrorRateThreshold: 0.2,
+      adaptiveMemoryHeadroomThreshold: 0.12
+    });
+    activity.getState.mockResolvedValue({
+      activeTaskCount: 0,
+      lastEnqueuedAt: null,
+      lastTerminalAt: null,
+      lastLoadedAt: null
+    });
+    activity.ensureActiveTaskCount.mockResolvedValue(0);
+
+    await service.adjustConcurrency(new Date("2026-01-01T00:00:00.000Z"));
+
+    expect(prisma.crawlTask.count).not.toHaveBeenCalled();
+    expect(prisma.crawlTask.findMany).not.toHaveBeenCalled();
+    expect(cache.set).toHaveBeenCalledWith(
+      "crawl:adaptive-concurrency:state",
+      expect.objectContaining({
+        lastDecision: "idle",
+        reason: "no recent crawl activity"
+      }),
+      expect.any(Number)
     );
   });
 });

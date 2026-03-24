@@ -11,6 +11,7 @@ import { StorageModule } from "../storage/storage.module";
 import { ObservabilitySnapshotService } from "../observability/observability-snapshot.service";
 
 import { CrawlAdaptiveConcurrencyService } from "./crawl-adaptive-concurrency.service";
+import { CrawlActivityService } from "./crawl-activity.service";
 import { CrawlCleanupOutboxService } from "./crawl-cleanup-outbox.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlFrontierController } from "./crawl-frontier.controller";
@@ -101,6 +102,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
   ],
   providers: [
     CrawlSettingsService,
+    CrawlActivityService,
     CrawlSiteProfileService,
     CrawlStrategyLegacyBridgeService,
     CrawlStrategyLayeredExecutorService,

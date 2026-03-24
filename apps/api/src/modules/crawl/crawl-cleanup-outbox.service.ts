@@ -3,11 +3,14 @@ import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { MongoOutboxStatus, MongoOutboxType, Prisma } from "@prisma/client";
 
+import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 
 import { CrawlResultService } from "./crawl-result.service";
 
 const logger = createLogger({ name: "crawl-cleanup-outbox" });
+const CLEANUP_OUTBOX_LOCK_KEY = "cron:crawl-cleanup-outbox";
+const CLEANUP_OUTBOX_LOCK_TTL_MS = 55_000;
 
 interface CleanupCrawlResultsOutboxPayload {
   type: typeof MongoOutboxType.cleanup_crawl_results;
@@ -33,32 +36,39 @@ export class CrawlCleanupOutboxService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
     private readonly resultService: CrawlResultService
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async retryPendingCleanupOutbox() {
-    const now = new Date();
-    const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
-    try {
-      const entries = await this.fetchRetryEntries(now, staleLockCutoff);
+    await this.cache.withLock(
+      CLEANUP_OUTBOX_LOCK_KEY,
+      CLEANUP_OUTBOX_LOCK_TTL_MS,
+      async () => {
+        const now = new Date();
+        const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
+        try {
+          const entries = await this.fetchRetryEntries(now, staleLockCutoff);
 
-      for (const entry of entries) {
-        const payload = this.parseOutboxPayload(entry.payload);
-        if (!payload || (payload.orgId && payload.orgId !== entry.orgId)) {
-          await this.markOutboxDead(
-            entry.id,
-            (entry.attempts ?? 0) + 1,
-            new Error("Invalid outbox payload")
-          );
-          continue;
+          for (const entry of entries) {
+            const payload = this.parseOutboxPayload(entry.payload);
+            if (!payload || (payload.orgId && payload.orgId !== entry.orgId)) {
+              await this.markOutboxDead(
+                entry.id,
+                (entry.attempts ?? 0) + 1,
+                new Error("Invalid outbox payload")
+              );
+              continue;
+            }
+
+            await this.deliverOutboxPayload(entry.id, entry.status, entry.orgId, payload.taskId);
+          }
+        } catch (error) {
+          logger.warn({ error }, "Failed to process crawl cleanup outbox batch");
         }
-
-        await this.deliverOutboxPayload(entry.id, entry.status, entry.orgId, payload.taskId);
       }
-    } catch (error) {
-      logger.warn({ error }, "Failed to process crawl cleanup outbox batch");
-    }
+    );
   }
 
   private parseOutboxPayload(payload: Prisma.JsonValue | null): CleanupCrawlResultsOutboxPayload | null {

@@ -53,6 +53,7 @@ interface StoredNewsSourceSchedulerSettings {
 const SETTINGS_KEY = "news_source_scheduler_settings";
 const SETTINGS_DESCRIPTION =
   "News source scheduler runtime settings (seed freshness + discovery TTL defaults)";
+const SETTINGS_CACHE_TTL_MS = 30_000;
 const DEFAULT_SEED_FRESHNESS_WINDOW_DAYS = 365;
 const MIN_SEED_FRESHNESS_WINDOW_DAYS = 1;
 const MAX_SEED_FRESHNESS_WINDOW_DAYS = 3_650;
@@ -99,6 +100,14 @@ const INVALID_PERSISTED_SETTINGS_DETAIL =
 @Injectable()
 export class NewsSourceSchedulerSettingsService {
   private readonly logger = createLogger({ name: "news-source-scheduler-settings" });
+  private cachedSettings:
+    | {
+        value: NewsSourceSchedulerSettingsPublic;
+        expiresAt: number;
+      }
+    | null = null;
+  private loadingPromise: Promise<NewsSourceSchedulerSettingsPublic> | null =
+    null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -106,6 +115,30 @@ export class NewsSourceSchedulerSettingsService {
   ) {}
 
   async getSettings(): Promise<NewsSourceSchedulerSettingsPublic> {
+    const cached = this.cachedSettings;
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+    if (this.loadingPromise) {
+      return this.loadingPromise;
+    }
+
+    this.loadingPromise = this.loadSettingsFromStorage()
+      .then((settings) => {
+        this.cachedSettings = {
+          value: settings,
+          expiresAt: Date.now() + SETTINGS_CACHE_TTL_MS,
+        };
+        return settings;
+      })
+      .finally(() => {
+        this.loadingPromise = null;
+      });
+
+    return this.loadingPromise;
+  }
+
+  private async loadSettingsFromStorage(): Promise<NewsSourceSchedulerSettingsPublic> {
     let record: { value: unknown } | null = null;
     try {
       record = await this.prisma.systemSetting.findUnique({
@@ -672,7 +705,7 @@ export class NewsSourceSchedulerSettingsService {
       },
     );
 
-    return {
+    const next: NewsSourceSchedulerSettingsPublic = {
       source: "db",
       seedFreshnessWindowDays: normalizedSeedFreshnessWindowDays,
       seedCacheTtlSecondsSitemapRss: normalizedSeedCacheTtlSecondsSitemapRss,
@@ -697,6 +730,11 @@ export class NewsSourceSchedulerSettingsService {
       rssAdaptiveWarmDiscoveryCacheTtlCapSeconds:
         normalizedRssAdaptiveWarmDiscoveryCacheTtlCapSeconds,
     };
+    this.cachedSettings = {
+      value: next,
+      expiresAt: Date.now() + SETTINGS_CACHE_TTL_MS,
+    };
+    return next;
   }
 
   private toStrictSeedFreshnessWindowDays(value: unknown): number | null {

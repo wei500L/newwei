@@ -8,6 +8,7 @@ import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
+import { CrawlActivityService } from "./crawl-activity.service";
 import { CrawlQueueService } from "./crawl-queue.service";
 import { CRAWL_QUEUE_NAME } from "./crawl.constants";
 
@@ -26,13 +27,18 @@ export class CrawlTaskJanitorService {
     private readonly prisma: PrismaService,
     private readonly env: EnvService,
     private readonly queueService: CrawlQueueService,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
+    private readonly activity: CrawlActivityService
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async cleanupCron() {
     const config = this.env.crawlTaskJanitorConfig;
     if (!config.enabled) {
+      return;
+    }
+    const activeTaskCount = await this.activity.ensureActiveTaskCount();
+    if (activeTaskCount === 0) {
       return;
     }
     await this.cache.withLock("cron:crawl-task-janitor", config.lockTtlMs, async () =>
@@ -170,6 +176,8 @@ export class CrawlTaskJanitorService {
     if (updated.count === 0) {
       return;
     }
+
+    await this.activity.markTasksTerminal(updated.count);
 
     await this.writeAuditLogs(tasks, kind, message);
     await this.writeTaskLogs(tasks, kind, message);

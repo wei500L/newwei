@@ -36,11 +36,16 @@ describe("CrawlQueueService", () => {
     setGlobalConcurrency: jest.fn().mockResolvedValue(undefined)
   });
 
+  const createActivityMock = () => ({
+    markTaskQueued: jest.fn().mockResolvedValue(undefined)
+  });
+
   it("routes enqueueTask to hot queue with source priority", async () => {
     const hotQueue = createQueueMock();
     const normalQueue = createQueueMock();
     const llmJudgeQueue = createQueueMock();
     const llmLearnQueue = createQueueMock();
+    const activity = createActivityMock();
     const settings = {
       getSettings: jest.fn().mockResolvedValue({
         maxRetries: 2,
@@ -54,6 +59,7 @@ describe("CrawlQueueService", () => {
       llmJudgeQueue as any,
       llmLearnQueue as any,
       settings,
+      activity as any,
     );
 
     await service.enqueueTask("task-1", "org-1", "user-1", {
@@ -76,6 +82,7 @@ describe("CrawlQueueService", () => {
     });
     expect(opts.priority).toBe(1);
     expect(opts.deduplication).toEqual({ id: "crawl-task:task-1:hot" });
+    expect(activity.markTaskQueued).toHaveBeenCalledTimes(1);
   });
 
   it("routes enqueueTask to normal queue by default", async () => {
@@ -83,6 +90,7 @@ describe("CrawlQueueService", () => {
     const normalQueue = createQueueMock();
     const llmJudgeQueue = createQueueMock();
     const llmLearnQueue = createQueueMock();
+    const activity = createActivityMock();
     const settings = {
       getSettings: jest.fn().mockResolvedValue({
         maxRetries: 2,
@@ -96,6 +104,7 @@ describe("CrawlQueueService", () => {
       llmJudgeQueue as any,
       llmLearnQueue as any,
       settings,
+      activity as any,
     );
 
     await service.enqueueTask("task-2", "org-1", "user-1");
@@ -107,6 +116,7 @@ describe("CrawlQueueService", () => {
     expect(data.priorityClass).toBe("normal");
     expect(opts.priority).toBeUndefined();
     expect(opts.deduplication).toEqual({ id: "crawl-task:task-2:normal" });
+    expect(activity.markTaskQueued).toHaveBeenCalledTimes(1);
   });
 
   it("removes matching jobs from both queues and ignores lock errors", async () => {
@@ -114,6 +124,7 @@ describe("CrawlQueueService", () => {
     const normalQueue = createQueueMock();
     const llmJudgeQueue = createQueueMock();
     const llmLearnQueue = createQueueMock();
+    const activity = createActivityMock();
     const settings = { getSettings: jest.fn() } as any;
     const service = new CrawlQueueService(
       hotQueue as any,
@@ -121,6 +132,7 @@ describe("CrawlQueueService", () => {
       llmJudgeQueue as any,
       llmLearnQueue as any,
       settings,
+      activity as any,
     );
 
     const lockedJob = {
@@ -159,6 +171,7 @@ describe("CrawlQueueService", () => {
     const normalQueue = createQueueMock();
     const llmJudgeQueue = createQueueMock();
     const llmLearnQueue = createQueueMock();
+    const activity = createActivityMock();
     const settings = {
       getSettings: jest.fn().mockResolvedValue({ maxConcurrency: 3 })
     } as any;
@@ -168,6 +181,7 @@ describe("CrawlQueueService", () => {
       llmJudgeQueue as any,
       llmLearnQueue as any,
       settings,
+      activity as any,
     );
 
     hotQueue.getJobCounts.mockResolvedValue({ waiting: 2, active: 1, delayed: 0, failed: 1, paused: 0 });
@@ -185,6 +199,7 @@ describe("CrawlQueueService", () => {
     const normalQueue = createQueueMock();
     const llmJudgeQueue = createQueueMock();
     const llmLearnQueue = createQueueMock();
+    const activity = createActivityMock();
     hotQueue.getGlobalConcurrency.mockResolvedValue(4);
     normalQueue.getGlobalConcurrency.mockResolvedValue(2);
 
@@ -197,6 +212,7 @@ describe("CrawlQueueService", () => {
       llmJudgeQueue as any,
       llmLearnQueue as any,
       settings,
+      activity as any,
     );
 
     await service.pauseQueue();
@@ -223,6 +239,7 @@ describe("CrawlQueueService", () => {
     const normalQueue = createQueueMock();
     const llmJudgeQueue = createQueueMock();
     const llmLearnQueue = createQueueMock();
+    const activity = createActivityMock();
     const settings = {
       getSettings: jest.fn().mockResolvedValue({
         maxRetries: 2,
@@ -236,6 +253,7 @@ describe("CrawlQueueService", () => {
       llmJudgeQueue as any,
       llmLearnQueue as any,
       settings,
+      activity as any,
     );
 
     await service.enqueueFrontierLlmJudge({

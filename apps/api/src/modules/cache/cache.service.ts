@@ -112,6 +112,17 @@ export class CacheService implements OnModuleDestroy {
     return this.redis.hgetall(key);
   }
 
+  async hset(key: string, values: Record<string, string | number>) {
+    const entries = Object.entries(values);
+    if (entries.length === 0) {
+      return 0;
+    }
+    return this.redis.hset(
+      key,
+      ...entries.flatMap(([field, value]) => [field, String(value)]),
+    );
+  }
+
   async incr(key: string, ttlSeconds: number) {
     const value = await this.redis.incr(key);
     if (value === 1) {

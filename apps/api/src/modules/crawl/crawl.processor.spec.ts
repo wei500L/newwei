@@ -74,6 +74,10 @@ describe("CrawlQueueProcessor", () => {
       runTask: jest.fn()
     } as any;
 
+    const activity = {
+      markTasksTerminal: jest.fn().mockResolvedValue(undefined)
+    } as any;
+
     const crawlFrontierService = {
       processQueuedNode: jest.fn()
     } as any;
@@ -89,6 +93,9 @@ describe("CrawlQueueProcessor", () => {
         connection: { host: "localhost", port: 6379 }
       },
       getJob: jest.fn(),
+      getJobCounts: jest
+        .fn()
+        .mockResolvedValue({ waiting: 0, active: 0, delayed: 0, paused: 0 }),
       setGlobalConcurrency: jest.fn().mockResolvedValue(undefined),
       ...(options.legacyQueueOverrides ?? {})
     } as any;
@@ -145,6 +152,7 @@ describe("CrawlQueueProcessor", () => {
     const processor = new CrawlQueueProcessor(
       env,
       crawlSettings,
+      activity,
       crawlExecutionService,
       crawlFrontierService,
       prisma,
@@ -161,6 +169,7 @@ describe("CrawlQueueProcessor", () => {
     return {
       processor,
       crawlExecutionService,
+      activity,
       crawlFrontierService,
       legacyQueue,
       hotQueue,
@@ -178,7 +187,7 @@ describe("CrawlQueueProcessor", () => {
     workerInstances.length = 0;
   });
 
-  it("creates workers for hot, legacy, and normal queues and forwards timeout tier", async () => {
+  it("creates workers for hot and normal queues by default and forwards timeout tier", async () => {
     const { processor, crawlExecutionService } = createContext({
       requestTimeoutHotMs: 60_000,
       requestTimeoutNormalMs: 120_000
@@ -188,14 +197,12 @@ describe("CrawlQueueProcessor", () => {
     await processor.onModuleInit();
 
     expect((Worker as jest.Mock).mock.calls[0][0]).toBe("crawl4ai-hot");
-    expect((Worker as jest.Mock).mock.calls[1][0]).toBe("crawl4ai");
-    expect((Worker as jest.Mock).mock.calls[2][0]).toBe("crawl4ai-normal");
-    expect((Worker as jest.Mock).mock.calls[3][0]).toBe("frontier-llm-judge");
-    expect((Worker as jest.Mock).mock.calls[4][0]).toBe("frontier-llm-learn");
+    expect((Worker as jest.Mock).mock.calls[1][0]).toBe("crawl4ai-normal");
+    expect((Worker as jest.Mock).mock.calls[2][0]).toBe("frontier-llm-judge");
+    expect((Worker as jest.Mock).mock.calls[3][0]).toBe("frontier-llm-learn");
 
     const hotCallback = (Worker as jest.Mock).mock.calls[0][1] as (job: any) => Promise<unknown>;
-    const legacyCallback = (Worker as jest.Mock).mock.calls[1][1] as (job: any) => Promise<unknown>;
-    const normalCallback = (Worker as jest.Mock).mock.calls[2][1] as (job: any) => Promise<unknown>;
+    const normalCallback = (Worker as jest.Mock).mock.calls[1][1] as (job: any) => Promise<unknown>;
 
     const baseJob = {
       id: "job-1",
@@ -213,7 +220,6 @@ describe("CrawlQueueProcessor", () => {
     };
 
     await hotCallback(baseJob);
-    await legacyCallback({ ...baseJob, id: "job-2", data: { ...baseJob.data, taskId: "task-2" } });
     await normalCallback({ ...baseJob, id: "job-3", data: { ...baseJob.data, taskId: "task-3" } });
 
     expect(crawlExecutionService.runTask).toHaveBeenNthCalledWith(
@@ -225,18 +231,27 @@ describe("CrawlQueueProcessor", () => {
     );
     expect(crawlExecutionService.runTask).toHaveBeenNthCalledWith(
       2,
-      "task-2",
-      "org-1",
-      "user-1",
-      expect.objectContaining({ priorityClass: "normal", requestTimeoutMs: 120_000 })
-    );
-    expect(crawlExecutionService.runTask).toHaveBeenNthCalledWith(
-      3,
       "task-3",
       "org-1",
       "user-1",
       expect.objectContaining({ priorityClass: "normal", requestTimeoutMs: 120_000 })
     );
+  });
+
+  it("starts the legacy worker when the legacy queue still has backlog", async () => {
+    const { processor } = createContext({
+      legacyQueueOverrides: {
+        getJobCounts: jest
+          .fn()
+          .mockResolvedValue({ waiting: 1, active: 0, delayed: 0, paused: 0 }),
+      },
+    });
+
+    await processor.onModuleInit();
+
+    expect((Worker as jest.Mock).mock.calls[0][0]).toBe("crawl4ai-hot");
+    expect((Worker as jest.Mock).mock.calls[1][0]).toBe("crawl4ai");
+    expect((Worker as jest.Mock).mock.calls[2][0]).toBe("crawl4ai-normal");
   });
 
   it("routes dedicated frontier LLM jobs to frontier service handlers", async () => {
@@ -250,10 +265,10 @@ describe("CrawlQueueProcessor", () => {
 
     await processor.onModuleInit();
 
-    const llmJudgeCallback = (Worker as jest.Mock).mock.calls[3][1] as (
+    const llmJudgeCallback = (Worker as jest.Mock).mock.calls[2][1] as (
       job: any,
     ) => Promise<unknown>;
-    const llmLearnCallback = (Worker as jest.Mock).mock.calls[4][1] as (
+    const llmLearnCallback = (Worker as jest.Mock).mock.calls[3][1] as (
       job: any,
     ) => Promise<unknown>;
 
@@ -319,7 +334,7 @@ describe("CrawlQueueProcessor", () => {
     await processor.onModuleInit();
 
     const hotCallback = (Worker as jest.Mock).mock.calls[0][1] as (job: any) => Promise<unknown>;
-    const normalCallback = (Worker as jest.Mock).mock.calls[2][1] as (job: any) => Promise<unknown>;
+    const normalCallback = (Worker as jest.Mock).mock.calls[1][1] as (job: any) => Promise<unknown>;
     const baseJob = {
       id: "job-1",
       data: {
@@ -383,8 +398,11 @@ describe("CrawlQueueProcessor", () => {
     };
 
     await expect(workerCallback(job)).rejects.toBe(mockRateLimitError);
-    for (const worker of workerInstances) {
+    for (const worker of workerInstances.slice(0, 2)) {
       expect(worker.rateLimit).toHaveBeenCalledWith(90_000);
+    }
+    for (const worker of workerInstances.slice(2)) {
+      expect(worker.rateLimit).not.toHaveBeenCalled();
     }
     expect(WorkerMock.RateLimitError).toHaveBeenCalledTimes(1);
   });

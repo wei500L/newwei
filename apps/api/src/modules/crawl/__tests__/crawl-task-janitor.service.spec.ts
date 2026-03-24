@@ -51,6 +51,11 @@ const cacheMock = {
   withLock: jest.fn()
 } as any;
 
+const activityMock = {
+  ensureActiveTaskCount: jest.fn(),
+  markTasksTerminal: jest.fn()
+} as any;
+
 describe("CrawlTaskJanitorService", () => {
   let service: CrawlTaskJanitorService;
 
@@ -64,8 +69,10 @@ describe("CrawlTaskJanitorService", () => {
     cacheMock.withLock = jest.fn().mockImplementation(async (_key: string, _ttlMs: number, runner: () => Promise<any>) =>
       runner()
     );
+    activityMock.ensureActiveTaskCount = jest.fn().mockResolvedValue(1);
+    activityMock.markTasksTerminal = jest.fn().mockResolvedValue(undefined);
     (TaskLogModel.create as jest.Mock).mockResolvedValue(undefined);
-    service = new CrawlTaskJanitorService(prismaMock, envMock, queueServiceMock, cacheMock);
+    service = new CrawlTaskJanitorService(prismaMock, envMock, queueServiceMock, cacheMock, activityMock);
   });
 
   it("no-ops when there are no stale tasks", async () => {
@@ -88,6 +95,14 @@ describe("CrawlTaskJanitorService", () => {
       expect.any(Function)
     );
     expect(spy).toHaveBeenCalled();
+  });
+
+  it("skips cron cleanup when no queued or running crawl tasks are known", async () => {
+    activityMock.ensureActiveTaskCount.mockResolvedValue(0);
+
+    await service.cleanupCron();
+
+    expect(cacheMock.withLock).not.toHaveBeenCalled();
   });
 
   it("marks stale running tasks as failed", async () => {
@@ -130,6 +145,7 @@ describe("CrawlTaskJanitorService", () => {
         stage: "cleanup"
       })
     );
+    expect(activityMock.markTasksTerminal).toHaveBeenCalledWith(1);
   });
 
   it("skips queued tasks that still have pending jobs", async () => {

@@ -94,6 +94,7 @@ const DEFAULT_ADAPTIVE_ERROR_RATE_THRESHOLD = 0.2;
 const DEFAULT_ADAPTIVE_MEMORY_HEADROOM_THRESHOLD = 0.12;
 const MIN_ADAPTIVE_THRESHOLD_RATIO = 0.01;
 const MAX_ADAPTIVE_THRESHOLD_RATIO = 0.99;
+const SETTINGS_CACHE_TTL_MS = 30_000;
 const CRAWL_CLIENT_SETTINGS_AUDIT_FIELDS = [
   "healthCheckTtlMs",
   "requestTimeoutHotMs",
@@ -121,10 +122,38 @@ type CrawlClientSettingsAuditSnapshot = Record<CrawlClientSettingsAuditField, nu
 
 @Injectable()
 export class CrawlSettingsService {
+  private cachedSettings:
+    | {
+        value: CrawlClientSettings;
+        expiresAt: number;
+      }
+    | null = null;
+  private loadingPromise: Promise<CrawlClientSettings> | null = null;
+
   constructor(private readonly prisma: PrismaService, private readonly env: EnvService) {}
 
   async getSettings(): Promise<CrawlClientSettings> {
-    return this.loadSettings();
+    const cached = this.cachedSettings;
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+    if (this.loadingPromise) {
+      return this.loadingPromise;
+    }
+
+    this.loadingPromise = this.loadSettings()
+      .then((settings) => {
+        this.cachedSettings = {
+          value: settings,
+          expiresAt: Date.now() + SETTINGS_CACHE_TTL_MS
+        };
+        return settings;
+      })
+      .finally(() => {
+        this.loadingPromise = null;
+      });
+
+    return this.loadingPromise;
   }
 
   async updateSettings(
@@ -132,7 +161,7 @@ export class CrawlSettingsService {
     actorId: string,
     input: CrawlClientSettingsInput
   ): Promise<CrawlClientSettings> {
-    const current = await this.loadSettings();
+    const current = await this.getSettings();
     const normalized = this.normalize(input, current);
     await this.persistSettings(normalized, actorId);
 
@@ -157,7 +186,7 @@ export class CrawlSettingsService {
   }
 
   async updateSettingsInternal(input: CrawlClientSettingsInput): Promise<CrawlClientSettings> {
-    const current = await this.loadSettings();
+    const current = await this.getSettings();
     const normalized = this.normalize(input, current);
     await this.persistSettings(normalized, null);
     return normalized;
@@ -417,6 +446,10 @@ export class CrawlSettingsService {
         }
       })
     ]);
+    this.cachedSettings = {
+      value: settings,
+      expiresAt: Date.now() + SETTINGS_CACHE_TTL_MS
+    };
   }
 
   private buildAuditMetadata(

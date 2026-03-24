@@ -17,6 +17,7 @@ import {
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
+import { CrawlActivityService } from "./crawl-activity.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlFrontierService } from "./crawl-frontier.service";
 import { NewsSourceOpsSnapshotService } from "./news-source-ops-snapshot.service";
@@ -69,6 +70,7 @@ const MEMORY_PRESSURE_HINTS = [
 interface QueueEventBinding {
   events: QueueEvents;
   onStalled: ({ jobId }: { jobId: string }) => Promise<void>;
+  onCompleted: ({ jobId }: { jobId: string }) => Promise<void>;
   onFailed: ({
     jobId,
     failedReason,
@@ -455,6 +457,7 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly env: EnvService,
     private readonly crawlSettings: CrawlSettingsService,
+    private readonly activity: CrawlActivityService,
     private readonly crawlExecutionService: CrawlExecutionService,
     private readonly crawlFrontierService: CrawlFrontierService,
     private readonly prisma: PrismaService,
@@ -476,8 +479,8 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly newsSourceOpsSnapshots?: NewsSourceOpsSnapshotService,
   ) {}
 
-  private queueContexts(): QueueRuntimeContext[] {
-    return [
+  private queueContexts(includeLegacy = true): QueueRuntimeContext[] {
+    const contexts: QueueRuntimeContext[] = [
       {
         queueClass: "hot",
         queueName: CRAWL_QUEUE_HOT_NAME,
@@ -486,17 +489,20 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
       },
       {
         queueClass: "normal",
-        queueName: CRAWL_QUEUE_NAME,
-        queue: this.legacyQueue,
-        events: this.legacyEvents,
-      },
-      {
-        queueClass: "normal",
         queueName: CRAWL_QUEUE_NORMAL_NAME,
         queue: this.normalQueue,
         events: this.normalEvents,
       },
     ];
+    if (includeLegacy) {
+      contexts.splice(1, 0, {
+        queueClass: "normal",
+        queueName: CRAWL_QUEUE_NAME,
+        queue: this.legacyQueue,
+        events: this.legacyEvents,
+      });
+    }
+    return contexts;
   }
 
   async onModuleInit() {
@@ -521,7 +527,8 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
     );
     this.globalConcurrencyLimiter.setCapacity(concurrency);
 
-    for (const context of this.queueContexts()) {
+    const includeLegacy = await this.shouldStartLegacyWorker();
+    for (const context of this.queueContexts(includeLegacy)) {
       const worker = this.createWorker(context, concurrency);
       this.workers.push({
         queueClass: context.queueClass,
@@ -881,6 +888,29 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
       }
     };
 
+    const onCompleted = async ({ jobId }: { jobId: string }) => {
+      try {
+        const job = await context.queue.getJob(jobId);
+        if (!job?.data?.taskId || !job.data.orgId) {
+          return;
+        }
+        if (job.data.jobKind !== "frontier_node") {
+          await this.activity.markTasksTerminal(1);
+        }
+        if (job.data.sourceId && this.newsSourceOpsSnapshots) {
+          await this.newsSourceOpsSnapshots.syncQueueCounts(
+            job.data.orgId,
+            job.data.sourceId,
+          );
+        }
+      } catch (error) {
+        logger.error(
+          { queue: context.queueName, jobId, err: error },
+          "Failed to handle crawl completed event",
+        );
+      }
+    };
+
     const onFailed = async ({
       jobId,
       failedReason,
@@ -896,6 +926,9 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
             "Crawl failed event missing job data",
           );
           return;
+        }
+        if (job.data.jobKind !== "frontier_node") {
+          await this.activity.markTasksTerminal(1);
         }
         const normalizedReason =
           typeof failedReason === "string" && failedReason.trim().length > 0
@@ -966,11 +999,13 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
     };
 
     context.events.on("stalled", onStalled);
+    context.events.on("completed", onCompleted);
     context.events.on("failed", onFailed);
 
     this.queueEventBindings.push({
       events: context.events,
       onStalled,
+      onCompleted,
       onFailed,
     });
   }
@@ -988,6 +1023,7 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
 
     for (const binding of this.queueEventBindings) {
       binding.events.off("stalled", binding.onStalled);
+      binding.events.off("completed", binding.onCompleted);
       binding.events.off("failed", binding.onFailed);
     }
     this.queueEventBindings.length = 0;
@@ -1027,6 +1063,30 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
         }
       }),
     );
+  }
+
+  private async shouldStartLegacyWorker(): Promise<boolean> {
+    try {
+      const counts = (await this.legacyQueue.getJobCounts(
+        "waiting",
+        "active",
+        "delayed",
+        "paused",
+      )) as Record<string, number>;
+      return (
+        (counts.waiting ?? 0) +
+          (counts.active ?? 0) +
+          (counts.delayed ?? 0) +
+          (counts.paused ?? 0) >
+        0
+      );
+    } catch (error) {
+      logger.warn(
+        { err: error },
+        "Failed to inspect legacy crawl queue; starting legacy worker defensively",
+      );
+      return true;
+    }
   }
 
   private async resolveQueueTimeoutMs(

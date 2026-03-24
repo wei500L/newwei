@@ -6,6 +6,7 @@ import { CrawlTaskStatus } from "@prisma/client";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 
+import { CrawlActivityService } from "./crawl-activity.service";
 import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlSettingsService } from "./crawl-settings.service";
 import { CrawlQueueProcessor } from "./crawl.processor";
@@ -75,6 +76,7 @@ export class CrawlAdaptiveConcurrencyService {
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly crawlSettings: CrawlSettingsService,
+    private readonly activity: CrawlActivityService,
     private readonly crawlQueue: CrawlQueueService,
     private readonly crawlProcessor: CrawlQueueProcessor
   ) {}
@@ -86,8 +88,10 @@ export class CrawlAdaptiveConcurrencyService {
     );
   }
 
-  async getStatus(): Promise<CrawlAdaptiveConcurrencyStatus> {
-    const settings = await this.crawlSettings.getSettings();
+  async getStatus(
+    settingsInput?: Awaited<ReturnType<CrawlSettingsService["getSettings"]>>
+  ): Promise<CrawlAdaptiveConcurrencyStatus> {
+    const settings = settingsInput ?? (await this.crawlSettings.getSettings());
     const cached = await this.cache.get<AdaptiveConcurrencyState>(ADAPTIVE_STATE_CACHE_KEY);
     const thresholds: AdaptiveConcurrencyThresholds = {
       latencyRatio: settings.adaptiveLatencyThresholdRatio,
@@ -122,6 +126,19 @@ export class CrawlAdaptiveConcurrencyService {
         lastDecision: "disabled",
         lastAdjustedAt: null,
         reason: "adaptive concurrency is disabled",
+        currentMaxConcurrency: settings.maxConcurrency,
+        updatedAt: now.toISOString(),
+        metrics: createEmptyAdaptiveMetrics()
+      });
+      return;
+    }
+
+    if (!(await this.hasRecentCrawlActivity(now, settings.adaptiveWindowMinutes))) {
+      await this.persistState({
+        enabled: true,
+        lastDecision: "idle",
+        lastAdjustedAt: null,
+        reason: "no recent crawl activity",
         currentMaxConcurrency: settings.maxConcurrency,
         updatedAt: now.toISOString(),
         metrics: createEmptyAdaptiveMetrics()
@@ -312,6 +329,25 @@ export class CrawlAdaptiveConcurrencyService {
     };
   }
 
+  private async hasRecentCrawlActivity(now: Date, windowMinutes: number): Promise<boolean> {
+    const state = await this.activity.getState();
+    const activeTaskCount =
+      typeof state.activeTaskCount === "number"
+        ? state.activeTaskCount
+        : await this.activity.ensureActiveTaskCount();
+    if (activeTaskCount > 0) {
+      return true;
+    }
+
+    const cutoffMs = now.getTime() - windowMinutes * 60_000;
+    const lastEnqueuedAt = this.toTimestamp(state.lastEnqueuedAt);
+    const lastTerminalAt = this.toTimestamp(state.lastTerminalAt);
+    return (
+      (typeof lastEnqueuedAt === "number" && lastEnqueuedAt >= cutoffMs) ||
+      (typeof lastTerminalAt === "number" && lastTerminalAt >= cutoffMs)
+    );
+  }
+
   private computePercentile(values: number[], percentile: number): number | null {
     if (!Array.isArray(values) || values.length === 0) {
       return null;
@@ -331,5 +367,13 @@ export class CrawlAdaptiveConcurrencyService {
       ...metrics,
       samplingMode: "recent_sample"
     };
+  }
+
+  private toTimestamp(value: string | null | undefined): number | null {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      return null;
+    }
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 }

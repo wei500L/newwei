@@ -5,6 +5,7 @@ import { TerminusModule } from "@nestjs/terminus";
 import { CacheModule } from "../cache/cache.module";
 import { EnvService } from "../config/config.service";
 import { DatabaseModule } from "../config/database.module";
+import { CrawlSettingsService } from "../crawl/crawl-settings.service";
 
 import { Crawl4aiHealthIndicator } from "./crawl4ai.health";
 import { Crawl4aiSsrfProxyHealthIndicator } from "./crawl4ai-ssrf-proxy.health";
@@ -37,6 +38,7 @@ import { RedisHealthIndicator } from "./redis.health";
   controllers: [HealthController],
   providers: [
     RedisHealthIndicator,
+    CrawlSettingsService,
     Crawl4aiHealthIndicator,
     Crawl4aiSsrfProxyHealthIndicator,
     MongoHealthIndicator,

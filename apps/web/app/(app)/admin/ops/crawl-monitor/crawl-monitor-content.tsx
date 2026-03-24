@@ -160,6 +160,10 @@ function deriveWsUrl(dashboardUrl: string): string | null {
   }
 }
 
+function isDocumentVisible() {
+  return typeof document === "undefined" || document.visibilityState === "visible";
+}
+
 async function fetchMonitorJson(
   path: string,
   query?: Record<string, string | number | boolean | undefined>,
@@ -709,11 +713,21 @@ export function CrawlMonitorContent({
     title: string;
     payload: unknown;
   } | null>(null);
+  const [documentVisible, setDocumentVisible] = useState(isDocumentVisible);
 
   const modeRef = useRef<TransportMode>(mode);
   const reconnectAttempts = useRef(0);
   const reconnectTimeoutId = useRef<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setDocumentVisible(isDocumentVisible());
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -1220,7 +1234,7 @@ export function CrawlMonitorContent({
   }, [connectWebSocket, mode]);
 
   useEffect(() => {
-    if (mode !== "polling") {
+    if (mode !== "polling" || !documentVisible) {
       setPollError(null);
       return;
     }
@@ -1272,15 +1286,15 @@ export function CrawlMonitorContent({
     void runCore();
     void runExtended();
 
-    const coreId = window.setInterval(runCore, 2_000);
-    const extendedId = window.setInterval(runExtended, 10_000);
+    const coreId = window.setInterval(runCore, 5_000);
+    const extendedId = window.setInterval(runExtended, 30_000);
 
     return () => {
       mounted = false;
       window.clearInterval(coreId);
       window.clearInterval(extendedId);
     };
-  }, [mode, refreshPollingSnapshot]);
+  }, [documentVisible, mode, refreshPollingSnapshot]);
 
   const health = monitor?.health;
   const requests = monitor?.requests;

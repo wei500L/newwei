@@ -11,6 +11,13 @@ import { MongoOutboxStatus, MongoOutboxType } from "@prisma/client";
 import { CrawlCleanupOutboxService } from "../crawl-cleanup-outbox.service";
 
 describe("CrawlCleanupOutboxService", () => {
+  const createCacheMock = () =>
+    ({
+      withLock: jest.fn().mockImplementation(async (_key: string, _ttlMs: number, runner: () => Promise<unknown>) =>
+        runner()
+      )
+    }) as any;
+
   it("marks invalid payloads as dead", async () => {
     const prisma = {
       mongoOutbox: {
@@ -36,7 +43,8 @@ describe("CrawlCleanupOutboxService", () => {
       deleteTaskResults: jest.fn()
     } as any;
 
-    const service = new CrawlCleanupOutboxService(prisma, resultService);
+    const cache = createCacheMock();
+    const service = new CrawlCleanupOutboxService(prisma, cache, resultService);
     await service.retryPendingCleanupOutbox();
 
     expect(prisma.mongoOutbox.update).toHaveBeenCalledWith(
@@ -89,7 +97,8 @@ describe("CrawlCleanupOutboxService", () => {
       deleteTaskResults: jest.fn().mockRejectedValue(new Error("delete failed"))
     } as any;
 
-    const service = new CrawlCleanupOutboxService(prisma, resultService);
+    const cache = createCacheMock();
+    const service = new CrawlCleanupOutboxService(prisma, cache, resultService);
     await service.retryPendingCleanupOutbox();
 
     expect(resultService.deleteTaskResults).toHaveBeenCalledWith("task-1", "org-1");
@@ -143,7 +152,8 @@ describe("CrawlCleanupOutboxService", () => {
       deleteTaskResults: jest.fn().mockRejectedValue(new Error("delete failed"))
     } as any;
 
-    const service = new CrawlCleanupOutboxService(prisma, resultService);
+    const cache = createCacheMock();
+    const service = new CrawlCleanupOutboxService(prisma, cache, resultService);
     await service.retryPendingCleanupOutbox();
 
     expect(prisma.mongoOutbox.update).toHaveBeenCalledWith(
@@ -223,7 +233,8 @@ describe("CrawlCleanupOutboxService", () => {
       })
     } as any;
 
-    const service = new CrawlCleanupOutboxService(prisma, resultService);
+    const cache = createCacheMock();
+    const service = new CrawlCleanupOutboxService(prisma, cache, resultService);
     await service.retryPendingCleanupOutbox();
 
     expect(deliveryOrder).toEqual(["task-processing", "task-pending", "task-failed"]);

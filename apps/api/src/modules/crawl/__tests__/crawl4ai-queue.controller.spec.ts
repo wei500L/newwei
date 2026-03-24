@@ -41,29 +41,17 @@ describe("Crawl4aiQueueController permissions", () => {
 describe("Crawl4aiQueueController queue stats", () => {
   it("returns aggregate queue stats including per-queue runtime and adaptive details", async () => {
     const crawlQueue = {
-      getJobCounts: jest.fn().mockResolvedValue({
-        waiting: 2,
-        active: 1,
-        delayed: 3,
-        failed: 0
+      getJobCountsByQueue: jest.fn().mockResolvedValue({
+        hot: { waiting: 1, active: 1, delayed: 0, failed: 0 },
+        normal: { waiting: 1, active: 0, delayed: 3, failed: 0 }
       }),
-      isPaused: jest.fn().mockResolvedValue(false),
-      getEffectiveConcurrency: jest.fn().mockResolvedValue(4),
-      getRuntimeStatsByQueue: jest.fn().mockResolvedValue({
-        hot: {
-          queueName: CRAWL_QUEUE_HOT_NAME,
-          pending: 2,
-          paused: false,
-          counts: { waiting: 1, active: 1, delayed: 0, failed: 0 },
-          effectiveConcurrency: 3
-        },
-        normal: {
-          queueName: CRAWL_QUEUE_NORMAL_NAME,
-          pending: 4,
-          paused: false,
-          counts: { waiting: 1, active: 0, delayed: 3, failed: 0 },
-          effectiveConcurrency: 1
-        }
+      getPausedByQueue: jest.fn().mockResolvedValue({
+        hot: false,
+        normal: false
+      }),
+      getGlobalConcurrencyByQueue: jest.fn().mockResolvedValue({
+        hot: 3,
+        normal: 1
       })
     } as any;
 
@@ -145,5 +133,8 @@ describe("Crawl4aiQueueController queue stats", () => {
       })
     );
     expect(typeof result.updatedAt).toBe("string");
+    expect(adaptiveConcurrency.getStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ maxConcurrency: 4 })
+    );
   });
 });
