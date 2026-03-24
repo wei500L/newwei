@@ -18,6 +18,9 @@ const logger = createLogger({ name: 'archive-preparation-processor' });
 @Injectable()
 export class ArchivePreparationProcessor implements OnModuleInit, OnModuleDestroy {
   private worker?: Worker<ArchivePreparationJobPayload>;
+  private readonly handleQueueFailed = (event: { jobId: string; failedReason?: string }) => {
+    logger.warn({ jobId: event.jobId, failedReason: event.failedReason }, 'Archive preparation queue event failed');
+  };
 
   constructor(
     private readonly archiveService: ArchiveService,
@@ -57,12 +60,11 @@ export class ArchivePreparationProcessor implements OnModuleInit, OnModuleDestro
       }
     });
 
-    this.events.on('failed', (event) => {
-      logger.warn({ jobId: event.jobId, failedReason: event.failedReason }, 'Archive preparation queue event failed');
-    });
+    this.events.on('failed', this.handleQueueFailed);
   }
 
   async onModuleDestroy() {
+    this.events.off('failed', this.handleQueueFailed);
     await this.worker?.close();
   }
 

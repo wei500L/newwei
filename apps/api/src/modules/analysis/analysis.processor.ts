@@ -13,6 +13,9 @@ const logger = createLogger({ name: "analysis-worker" });
 @Injectable()
 export class AnalysisProcessor implements OnModuleInit, OnModuleDestroy {
   private worker?: Worker<AnalysisJobPayload>;
+  private readonly handleQueueFailed = (event: { jobId: string; failedReason?: string }) => {
+    logger.warn({ jobId: event.jobId, failedReason: event.failedReason }, "Analysis queue event failed");
+  };
 
   constructor(
     private readonly env: EnvService,
@@ -45,12 +48,11 @@ export class AnalysisProcessor implements OnModuleInit, OnModuleDestroy {
       }
     });
 
-    this.events.on("failed", (event) => {
-      logger.warn({ jobId: event.jobId, failedReason: event.failedReason }, "Analysis queue event failed");
-    });
+    this.events.on("failed", this.handleQueueFailed);
   }
 
   async onModuleDestroy() {
+    this.events.off("failed", this.handleQueueFailed);
     await this.worker?.close();
   }
 }

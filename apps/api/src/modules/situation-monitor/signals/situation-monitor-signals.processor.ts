@@ -31,6 +31,9 @@ const logger = createLogger({ name: 'situation-monitor-signals-worker' });
 @Injectable()
 export class SituationMonitorSignalsProcessor implements OnModuleInit, OnModuleDestroy {
   private worker?: Worker<SituationMonitorSignalsJobPayload>;
+  private readonly handleQueueFailed = (event: { jobId: string; failedReason?: string }) => {
+    logger.warn({ event }, 'Situation monitor signals queue event failed');
+  };
 
   constructor(
     private readonly env: EnvService,
@@ -60,12 +63,11 @@ export class SituationMonitorSignalsProcessor implements OnModuleInit, OnModuleD
       logger.warn({ error, jobId: job?.id, name: job?.name }, 'Situation monitor signals worker failed');
     });
 
-    this.events.on('failed', (event) => {
-      logger.warn({ event }, 'Situation monitor signals queue event failed');
-    });
+    this.events.on('failed', this.handleQueueFailed);
   }
 
   async onModuleDestroy() {
+    this.events.off('failed', this.handleQueueFailed);
     await this.worker?.close();
   }
 
