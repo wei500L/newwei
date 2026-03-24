@@ -58,6 +58,7 @@ interface NewsnowState {
   visibleSourceIds: string[];
   sourceSnapshots: Record<string, NewsnowSourceSnapshot>;
   sourceSnapshotHashes: Record<string, string>;
+  sourceUnreadItemIds: Record<string, string[]>;
   liveUnreadBySource: Record<string, number>;
   realtimeHighlights: NewsnowRealtimeHighlight[];
   lastRealtimeEventAt?: number;
@@ -91,6 +92,9 @@ interface NewsnowState {
     interaction: NewsnowInteractionType,
     options?: { dwellMs?: number }
   ) => void;
+  reconcileSourceItems: (sourceId: string, currentItemIds: string[]) => void;
+  markSourceItemSeen: (sourceId: string, itemId: string) => void;
+  clearSourceUnread: (sourceId: string) => void;
   upsertSourceSnapshot: (sourceId: string, snapshot: NewsnowSourceSnapshot) => void;
   removeSourceSnapshot: (sourceId: string) => void;
 }
@@ -104,6 +108,33 @@ const NOOP_STORAGE: StateStorage = {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function areStringArraysEqual(current: string[], next: string[]): boolean {
+  if (current.length !== next.length) {
+    return false;
+  }
+  for (let index = 0; index < current.length; index += 1) {
+    if (current[index] !== next[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function normalizeItemIds(itemIds: string[]): string[] {
+  const next: string[] = [];
+  for (const rawItemId of itemIds) {
+    const normalizedItemId = toItemId(rawItemId);
+    if (!normalizedItemId || next.includes(normalizedItemId)) {
+      continue;
+    }
+    next.push(normalizedItemId);
+    if (next.length >= 5000) {
+      break;
+    }
+  }
+  return next;
 }
 
 function resolveInteractionWeight(
@@ -136,6 +167,17 @@ function toSourceId(value: unknown): string | null {
     return null;
   }
   return /^[a-z0-9_-]{1,64}$/i.test(trimmed) ? trimmed : null;
+}
+
+function toItemId(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.slice(0, 512);
 }
 
 function normalizeAffinityEntry(value: unknown): NewsnowSourceAffinity {
@@ -242,6 +284,7 @@ export const useNewsnowStore = create<NewsnowState>()(
       visibleSourceIds: [],
       sourceSnapshots: {},
       sourceSnapshotHashes: {},
+      sourceUnreadItemIds: {},
       liveUnreadBySource: {},
       realtimeHighlights: [],
       lastRealtimeEventAt: undefined,
@@ -449,6 +492,75 @@ export const useNewsnowStore = create<NewsnowState>()(
               ...state.sourceAffinity,
               [sourceId]: next,
             },
+          };
+        }),
+      reconcileSourceItems: (sourceId, currentItemIds) =>
+        set((state) => {
+          const normalizedSourceId = toSourceId(sourceId);
+          if (!normalizedSourceId) {
+            return state;
+          }
+
+          const nextItemIds = normalizeItemIds(currentItemIds);
+          const currentItemIdSet = new Set(nextItemIds);
+          const existingUnread = state.sourceUnreadItemIds[normalizedSourceId] ?? [];
+          const previousSnapshotItemIds =
+            state.sourceSnapshots[normalizedSourceId]?.items.map((item) => item.id) ?? [];
+          const previousItemIdSet = new Set(previousSnapshotItemIds);
+          const addedItemIds =
+            previousSnapshotItemIds.length === 0
+              ? []
+              : nextItemIds.filter((itemId) => !previousItemIdSet.has(itemId));
+          const preservedUnread = existingUnread.filter((itemId) => currentItemIdSet.has(itemId));
+          const mergedUnread = Array.from(new Set([...addedItemIds, ...preservedUnread])).slice(0, 80);
+
+          if (areStringArraysEqual(existingUnread, mergedUnread)) {
+            return state;
+          }
+
+          const nextSourceUnreadItemIds = { ...state.sourceUnreadItemIds };
+          if (mergedUnread.length === 0) {
+            delete nextSourceUnreadItemIds[normalizedSourceId];
+          } else {
+            nextSourceUnreadItemIds[normalizedSourceId] = mergedUnread;
+          }
+
+          return {
+            sourceUnreadItemIds: nextSourceUnreadItemIds,
+          };
+        }),
+      markSourceItemSeen: (sourceId, itemId) =>
+        set((state) => {
+          const normalizedSourceId = toSourceId(sourceId);
+          const normalizedItemId = toItemId(itemId);
+          if (!normalizedSourceId || !normalizedItemId) {
+            return state;
+          }
+          const existingUnread = state.sourceUnreadItemIds[normalizedSourceId];
+          if (!existingUnread || !existingUnread.includes(normalizedItemId)) {
+            return state;
+          }
+          const nextUnread = existingUnread.filter((entry) => entry !== normalizedItemId);
+          const nextSourceUnreadItemIds = { ...state.sourceUnreadItemIds };
+          if (nextUnread.length === 0) {
+            delete nextSourceUnreadItemIds[normalizedSourceId];
+          } else {
+            nextSourceUnreadItemIds[normalizedSourceId] = nextUnread;
+          }
+          return {
+            sourceUnreadItemIds: nextSourceUnreadItemIds,
+          };
+        }),
+      clearSourceUnread: (sourceId) =>
+        set((state) => {
+          const normalizedSourceId = toSourceId(sourceId);
+          if (!normalizedSourceId || !state.sourceUnreadItemIds[normalizedSourceId]) {
+            return state;
+          }
+          const nextSourceUnreadItemIds = { ...state.sourceUnreadItemIds };
+          delete nextSourceUnreadItemIds[normalizedSourceId];
+          return {
+            sourceUnreadItemIds: nextSourceUnreadItemIds,
           };
         }),
       upsertSourceSnapshot: (sourceId, snapshot) =>

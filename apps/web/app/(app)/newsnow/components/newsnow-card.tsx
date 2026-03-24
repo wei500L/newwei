@@ -216,8 +216,11 @@ export const NewsnowCard = memo(function NewsnowCard({
   const upsertSourceSnapshot = useNewsnowStore(
     (state) => state.upsertSourceSnapshot,
   );
-  const removeSourceSnapshot = useNewsnowStore(
-    (state) => state.removeSourceSnapshot,
+  const reconcileSourceItems = useNewsnowStore(
+    (state) => state.reconcileSourceItems,
+  );
+  const markSourceItemSeen = useNewsnowStore(
+    (state) => state.markSourceItemSeen,
   );
   const sortMode = useNewsnowStore((state) => state.sortMode);
   const densityMode = useNewsnowStore((state) => state.densityMode);
@@ -236,6 +239,9 @@ export const NewsnowCard = memo(function NewsnowCard({
   );
   const affinityScore = useNewsnowStore(
     (state) => state.sourceAffinity[id]?.score ?? 0,
+  );
+  const unreadCount = useNewsnowStore(
+    (state) => state.sourceUnreadItemIds[id]?.length ?? 0,
   );
   const realtimeUnreadCount = useNewsnowStore(
     (state) => state.liveUnreadBySource[id] ?? 0,
@@ -259,7 +265,6 @@ export const NewsnowCard = memo(function NewsnowCard({
   const { getRelativeTime } = useRelativeTime();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [iconLoadError, setIconLoadError] = useState(false);
-  const [newItemIds, setNewItemIds] = useState<string[]>([]);
   const [animatedItemIds, setAnimatedItemIds] = useState<string[]>([]);
   const [resolvedTargetsByItemId, setResolvedTargetsByItemId] = useState<
     Record<string, { eventId?: string; itemId?: string }>
@@ -576,25 +581,22 @@ export const NewsnowCard = memo(function NewsnowCard({
       return;
     }
 
-    const snapshotItems = data.items.map((item) => ({
-      id: String(item.id),
+    const snapshotItems = data.items.map((item, index) => ({
+      id: getNewsItemStableKey(item, index),
       title: item.title,
       pubDate: item.pubDate,
       url: item.url,
     }));
+    reconcileSourceItems(
+      id,
+      snapshotItems.map((item) => item.id),
+    );
 
     upsertSourceSnapshot(id, {
       updatedAt: Date.now(),
       items: snapshotItems,
     });
-  }, [data?.items, id, upsertSourceSnapshot]);
-
-  useEffect(
-    () => () => {
-      removeSourceSnapshot(id);
-    },
-    [id, removeSourceSnapshot],
-  );
+  }, [data?.items, id, reconcileSourceItems, upsertSourceSnapshot]);
 
   useEffect(() => {
     const currentIds = (data?.items ?? []).map((item, index) =>
@@ -609,10 +611,6 @@ export const NewsnowCard = memo(function NewsnowCard({
       const previousSet = new Set(previousIdsRef.current);
       const added = currentIds.filter((itemId) => !previousSet.has(itemId));
       if (added.length > 0) {
-        setNewItemIds((prev) => {
-          const merged = Array.from(new Set([...added, ...prev]));
-          return merged.slice(0, 80);
-        });
         setAnimatedItemIds((prev) => {
           const merged = Array.from(new Set([...added, ...prev]));
           return merged.slice(0, 80);
@@ -764,12 +762,7 @@ export const NewsnowCard = memo(function NewsnowCard({
 
   const markItemSeen = useCallback((item: NewsItem) => {
     const itemId = getNewsItemStableKey(item);
-    setNewItemIds((prev) => {
-      if (!prev.includes(itemId)) {
-        return prev;
-      }
-      return prev.filter((id) => id !== itemId);
-    });
+    markSourceItemSeen(id, itemId);
     setAnimatedItemIds((prev) => {
       if (!prev.includes(itemId)) {
         return prev;
@@ -781,9 +774,7 @@ export const NewsnowCard = memo(function NewsnowCard({
       window.clearTimeout(timer);
       delete highlightTimersRef.current[itemId];
     }
-  }, []);
-
-  const unreadCount = newItemIds.length;
+  }, [id, markSourceItemSeen]);
   const isDormant =
     !isSourceVisible && !data && !isError && !isLoading && !isFetching;
 

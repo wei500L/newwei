@@ -369,6 +369,46 @@ describe("EconomicDataResolver", () => {
         classification: "trend"
       });
     });
+
+    it("coarsens omitted granularity based on the category base frequency", async () => {
+      (mockAkshareService.getCategoryBaseGranularity as jest.Mock).mockResolvedValue("week");
+      (mockAkshareService.getDataByCategory as jest.Mock).mockResolvedValue([
+        {
+          recordedAt: new Date("2024-01-05T00:00:00Z"),
+          value: 100,
+          unit: "%",
+          sourceField: "同比",
+          dataType: "indicator",
+          item: {
+            slug: "weekly_series",
+            displayName: "Weekly Series",
+            groupLabel: null,
+            defaultUnit: "%",
+            defaultFrequency: EconomicDataFrequency.weekly,
+            metadata: null
+          }
+        }
+      ]);
+
+      const result = await resolver.getEconomicDataWithInsights("economic-indicators", {
+        start: "2024-01-01",
+        end: "2024-01-31"
+      });
+
+      expect(mockAkshareService.getDataByCategory).toHaveBeenCalledWith(
+        "economic-indicators",
+        new Date("2024-01-01"),
+        new Date("2024-01-31"),
+        TimeGranularity.week,
+        undefined,
+        { skipGranularityValidation: true }
+      );
+      expect(result.points[0]?.effectiveGranularity).toBe(TimeGranularity.week);
+      expect(result.insights[0]).toMatchObject({
+        itemSlug: "weekly_series",
+        seriesKey: "同比"
+      });
+    });
   });
 
   describe("economicDataFetchConfigs", () => {

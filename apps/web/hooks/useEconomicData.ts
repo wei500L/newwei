@@ -51,6 +51,16 @@ export type EconomicSeriesMap = Record<string, EconomicSeriesGroup>;
 
 export type EconomicSeriesInsightsMap = Record<string, Record<string, EconomicSeriesInsight>>;
 
+export function buildEconomicQueryVariables(category: string, start: Date, end: Date) {
+  return {
+    category,
+    timeRange: {
+      start: start.toISOString(),
+      end: end.toISOString()
+    }
+  };
+}
+
 /**
  * Resolves the unit to use based on precedence rules.
  * Precedence (highest to lowest):
@@ -190,6 +200,62 @@ export function deriveEconomicFreshness(points: readonly EconomicFreshnessPoint[
   };
 }
 
+export function buildEconomicSeriesMap(
+  points: readonly EconomicDataPointModel[]
+): EconomicSeriesMap {
+  const map: EconomicSeriesMap = {};
+  for (const point of points) {
+    const slug = point.item.slug;
+    const fieldKey = point.sourceField ?? `${slug}-default`;
+    const existing = map[point.item.slug];
+    const pointUnit = point.unit ?? null;
+    const defaultUnit = point.item.defaultUnit ?? null;
+    const group: EconomicSeriesGroup =
+      existing ??
+      ({
+        name: point.item.displayName,
+        unit: resolveUnit(pointUnit, null, defaultUnit, point.dataType),
+        metadata: point.item.metadata ?? null,
+        dataType: point.dataType,
+        fields: {}
+      } satisfies EconomicSeriesGroup);
+
+    group.unit = resolveUnit(pointUnit, group.unit, defaultUnit, point.dataType);
+
+    const fieldSeries: EconomicSeriesField = group.fields[fieldKey] ?? {
+      key: fieldKey,
+      label: point.sourceField ?? point.item.displayName,
+      unit: resolveUnit(pointUnit, group.unit, defaultUnit, point.dataType),
+      values: []
+    };
+    fieldSeries.unit = resolveUnit(pointUnit, fieldSeries.unit, group.unit, point.dataType);
+    fieldSeries.values.push({
+      timestamp: normalizePointTimestamp(point),
+      value: point.value
+    });
+    group.fields[fieldKey] = fieldSeries;
+    if (!existing) {
+      map[slug] = group;
+    }
+  }
+  return map;
+}
+
+export function buildEconomicInsightsMap(
+  insights: readonly EconomicSeriesInsightModel[]
+): EconomicSeriesInsightsMap {
+  const map: EconomicSeriesInsightsMap = {};
+  for (const insight of insights) {
+    const slug = insight.itemSlug;
+    const seriesKey = insight.seriesKey;
+    if (!map[slug]) {
+      map[slug] = {};
+    }
+    map[slug]![seriesKey] = insight;
+  }
+  return map;
+}
+
 export function useEconomicData({ category, pollInterval }: EconomicSeriesOptions) {
   const { start, end } = useDashboardRangeStore();
   const { data: session, status: sessionStatus } = useSession();
@@ -197,35 +263,9 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
   const canQuery =
     sessionStatus === "authenticated" &&
     permissions.includes(ECONOMIC_DATA_PERMISSION);
-  const resolveRequestedGranularity = (
-    windowStart: Date,
-    windowEnd: Date
-  ): TimeGranularity => {
-    const diffMs = Math.max(0, windowEnd.getTime() - windowStart.getTime());
-    const minuteMs = 60 * 1000;
-    const hourMs = 60 * minuteMs;
-    const dayMs = 24 * hourMs;
-    const diffDays = Math.max(1, Math.round(diffMs / dayMs));
-
-    if (diffMs <= 6 * hourMs) return TimeGranularity.Minute;
-    if (diffMs <= 2 * dayMs) return TimeGranularity.Hour;
-    if (diffDays > 1095) return TimeGranularity.Year;
-    if (diffDays > 365) return TimeGranularity.Quarter;
-    if (diffDays > 120) return TimeGranularity.Month;
-    if (diffDays > 45) return TimeGranularity.Week;
-    return TimeGranularity.Day;
-  };
-  const requestedGranularity = resolveRequestedGranularity(start, end);
   const variables = useMemo(
-    () => ({
-      category,
-      timeRange: {
-        start: start.toISOString(),
-        end: end.toISOString()
-      },
-      granularity: requestedGranularity
-    }),
-    [category, end, requestedGranularity, start]
+    () => buildEconomicQueryVariables(category, start, end),
+    [category, end, start]
   );
   const {
     data,
@@ -264,57 +304,12 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
           (queryLoading || networkStatus === NetworkStatus.loading))));
   const refreshing = canQuery && isEconomicQueryRefreshing(networkStatus);
 
-  const grouped: EconomicSeriesMap = useMemo(() => {
-    const map: EconomicSeriesMap = {};
-    for (const point of points) {
-      const slug = point.item.slug;
-      const fieldKey = point.sourceField ?? `${slug}-default`;
-      const existing = map[point.item.slug];
-      const pointUnit = point.unit ?? null;
-      const defaultUnit = point.item.defaultUnit ?? null;
-      const group: EconomicSeriesGroup =
-        existing ??
-        ({
-          name: point.item.displayName,
-          unit: resolveUnit(pointUnit, null, defaultUnit, point.dataType),
-          metadata: point.item.metadata ?? null,
-          dataType: point.dataType,
-          fields: {}
-        } satisfies EconomicSeriesGroup);
+  const grouped: EconomicSeriesMap = useMemo(() => buildEconomicSeriesMap(points), [points]);
 
-      group.unit = resolveUnit(pointUnit, group.unit, defaultUnit, point.dataType);
-
-      const fieldSeries: EconomicSeriesField = group.fields[fieldKey] ?? {
-        key: fieldKey,
-        label: point.sourceField ?? point.item.displayName,
-        unit: resolveUnit(pointUnit, group.unit, defaultUnit, point.dataType),
-        values: []
-      };
-      fieldSeries.unit = resolveUnit(pointUnit, fieldSeries.unit, group.unit, point.dataType);
-      fieldSeries.values.push({
-        timestamp: normalizePointTimestamp(point),
-        value: point.value
-      });
-      group.fields[fieldKey] = fieldSeries;
-      if (!existing) {
-        map[slug] = group;
-      }
-    }
-    return map;
-  }, [points]);
-
-  const insightsMap: EconomicSeriesInsightsMap = useMemo(() => {
-    const map: EconomicSeriesInsightsMap = {};
-    for (const insight of insights) {
-      const slug = insight.itemSlug;
-      const seriesKey = insight.seriesKey;
-      if (!map[slug]) {
-        map[slug] = {};
-      }
-      map[slug]![seriesKey] = insight;
-    }
-    return map;
-  }, [insights]);
+  const insightsMap: EconomicSeriesInsightsMap = useMemo(
+    () => buildEconomicInsightsMap(insights),
+    [insights]
+  );
 
   const freshness = useMemo(() => deriveEconomicFreshness(points), [points]);
   const latestTimestamp = freshness.latestTimestamp;

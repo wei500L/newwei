@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { buildCrossSourceDedupResult } from '../app/(app)/newsnow/lib/newsnow-dnd';
 import { useNewsnowStore } from '../app/(app)/newsnow/store/newsnow-store';
 
 describe('newsnow realtime store', () => {
@@ -8,6 +9,7 @@ describe('newsnow realtime store', () => {
       visibleSourceIds: [],
       sourceSnapshots: {},
       sourceSnapshotHashes: {},
+      sourceUnreadItemIds: {},
       liveUnreadBySource: {},
       realtimeHighlights: [],
       lastRealtimeEventAt: undefined,
@@ -105,5 +107,140 @@ describe('newsnow realtime store', () => {
     const secondState = useNewsnowStore.getState();
     expect(secondState.sourceSnapshots).toBe(firstSnapshots);
     expect(secondState.sourceSnapshotHashes.weibo).toBeDefined();
+  });
+
+  it('reconciles source unread items from snapshot diffs and clears them when seen', () => {
+    const store = useNewsnowStore.getState();
+
+    store.reconcileSourceItems('weibo', ['https://example.com/a']);
+    store.upsertSourceSnapshot('weibo', {
+      updatedAt: 1,
+      items: [
+        {
+          id: 'https://example.com/a',
+          title: 'Alpha',
+          url: 'https://example.com/a',
+        },
+      ],
+    });
+
+    expect(useNewsnowStore.getState().sourceUnreadItemIds.weibo).toBeUndefined();
+
+    store.reconcileSourceItems('weibo', [
+      'https://example.com/b',
+      'https://example.com/a',
+    ]);
+    store.upsertSourceSnapshot('weibo', {
+      updatedAt: 2,
+      items: [
+        {
+          id: 'https://example.com/b',
+          title: 'Beta',
+          url: 'https://example.com/b',
+        },
+        {
+          id: 'https://example.com/a',
+          title: 'Alpha',
+          url: 'https://example.com/a',
+        },
+      ],
+    });
+
+    expect(useNewsnowStore.getState().sourceUnreadItemIds.weibo).toEqual([
+      'https://example.com/b',
+    ]);
+
+    store.markSourceItemSeen('weibo', 'https://example.com/b');
+    expect(useNewsnowStore.getState().sourceUnreadItemIds.weibo).toBeUndefined();
+  });
+
+  it('preserves snapshot-backed counts across remount-like replays of the same feed', () => {
+    const store = useNewsnowStore.getState();
+
+    store.reconcileSourceItems('weibo', ['https://example.com/a']);
+    store.upsertSourceSnapshot('weibo', {
+      updatedAt: 1,
+      items: [
+        {
+          id: 'https://example.com/a',
+          title: 'Shared headline',
+          url: 'https://example.com/a',
+        },
+      ],
+    });
+    store.upsertSourceSnapshot('hackernews', {
+      updatedAt: 1,
+      items: [
+        {
+          id: 'https://news.ycombinator.com/a',
+          title: 'Shared headline',
+          url: 'https://news.ycombinator.com/a',
+        },
+      ],
+    });
+
+    store.reconcileSourceItems('weibo', [
+      'https://example.com/b',
+      'https://example.com/a',
+    ]);
+    store.upsertSourceSnapshot('weibo', {
+      updatedAt: 2,
+      items: [
+        {
+          id: 'https://example.com/b',
+          title: 'Exclusive follow-up',
+          url: 'https://example.com/b',
+        },
+        {
+          id: 'https://example.com/a',
+          title: 'Shared headline',
+          url: 'https://example.com/a',
+        },
+      ],
+    });
+
+    const beforeReplay = buildCrossSourceDedupResult({
+      sourceOrder: ['weibo', 'hackernews'],
+      snapshots: useNewsnowStore.getState().sourceSnapshots,
+      snapshotHashes: useNewsnowStore.getState().sourceSnapshotHashes,
+    });
+
+    expect(useNewsnowStore.getState().sourceUnreadItemIds.weibo).toEqual([
+      'https://example.com/b',
+    ]);
+    expect(beforeReplay.duplicateItemsBySource.weibo).toBe(1);
+    expect(beforeReplay.visibleItemsBySource.weibo).toBe(2);
+
+    store.reconcileSourceItems('weibo', [
+      'https://example.com/b',
+      'https://example.com/a',
+    ]);
+    store.upsertSourceSnapshot('weibo', {
+      updatedAt: 3,
+      items: [
+        {
+          id: 'https://example.com/b',
+          title: 'Exclusive follow-up',
+          url: 'https://example.com/b',
+        },
+        {
+          id: 'https://example.com/a',
+          title: 'Shared headline',
+          url: 'https://example.com/a',
+        },
+      ],
+    });
+
+    const afterReplay = buildCrossSourceDedupResult({
+      sourceOrder: ['weibo', 'hackernews'],
+      snapshots: useNewsnowStore.getState().sourceSnapshots,
+      snapshotHashes: useNewsnowStore.getState().sourceSnapshotHashes,
+    });
+
+    expect(useNewsnowStore.getState().sourceUnreadItemIds.weibo).toEqual([
+      'https://example.com/b',
+    ]);
+    expect(afterReplay.duplicateItemsBySource.weibo).toBe(1);
+    expect(afterReplay.visibleItemsBySource.weibo).toBe(2);
   });
 });

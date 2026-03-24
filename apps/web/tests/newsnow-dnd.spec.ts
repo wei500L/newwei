@@ -67,6 +67,27 @@ describe("newsnow dnd reorder", () => {
     expect(result.visibleItemsBySource["source-b"]).toBe(0);
   });
 
+  it("supports stable item ids such as normalized urls for duplicate lookups", () => {
+    const result = buildCrossSourceDedupResult({
+      sourceOrder: ["source-a", "source-b"],
+      snapshots: {
+        "source-a": {
+          updatedAt: 1,
+          items: [{ id: "https://example.com/a", title: "同一条跨源重复新闻标题" }],
+        },
+        "source-b": {
+          updatedAt: 1,
+          items: [{ id: "https://example.org/b", title: "同一条跨源重复新闻标题" }],
+        },
+      },
+    });
+
+    expect(result.bySource["source-a"]?.["https://example.com/a"]?.isPrimary).toBe(true);
+    expect(result.bySource["source-b"]?.["https://example.org/b"]?.isPrimary).toBe(false);
+    expect(result.duplicateItemsBySource["source-a"]).toBe(1);
+    expect(result.duplicateItemsBySource["source-b"]).toBe(1);
+  });
+
   it("reuses unaffected source meta when a non-overlapping source snapshot changes", () => {
     const initial = buildCrossSourceDedupResult({
       sourceOrder: ["source-a", "source-b", "source-c"],
