@@ -3,6 +3,7 @@ import { NotificationSocketErrorCode } from "@modular/utils";
 
 import type { AuthenticatedUser } from "../auth/auth.service";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
+import type { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
 
 import { NotificationsGateway } from "./notifications.gateway";
 
@@ -88,6 +89,19 @@ function createClient(
   } as any;
 }
 
+function createMockRateLimiter(
+  overrides?: Partial<WsConnectionRateLimiterService>,
+): WsConnectionRateLimiterService {
+  return {
+    checkConnectionRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
+    checkUserConnectionRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
+    recordFailedAuth: jest.fn().mockResolvedValue(undefined),
+    getBackoffDelay: jest.fn().mockResolvedValue(0),
+    clearBackoff: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  } as any;
+}
+
 describe("NotificationsGateway", () => {
   it("emits unauthorized error code when authentication fails", async () => {
     const env = {
@@ -113,6 +127,7 @@ describe("NotificationsGateway", () => {
       accessTokenBlacklist,
       dispatcher,
       sessions,
+      createMockRateLimiter(),
     );
     const server = createFakeServer();
     (gateway as any).server = server;
@@ -168,6 +183,7 @@ describe("NotificationsGateway", () => {
       accessTokenBlacklist,
       dispatcher,
       sessions,
+      createMockRateLimiter(),
     );
     const server = createFakeServer();
     (gateway as any).server = server;
@@ -219,6 +235,12 @@ describe("NotificationsGateway", () => {
     } as any;
     const dispatcher = { registerListener: jest.fn() } as any;
     const sessions = new UserSessionManager(env as any);
+    const rateLimiter = createMockRateLimiter({
+      checkConnectionRateLimit: jest
+        .fn()
+        .mockResolvedValueOnce({ allowed: true })
+        .mockResolvedValueOnce({ allowed: false, retryAfterMs: 60000 }),
+    });
 
     const gateway = new NotificationsGateway(
       env,
@@ -226,6 +248,7 @@ describe("NotificationsGateway", () => {
       accessTokenBlacklist,
       dispatcher,
       sessions,
+      rateLimiter,
     );
     const server = createFakeServer();
     (gateway as any).server = server;
@@ -242,6 +265,10 @@ describe("NotificationsGateway", () => {
       message: "Too many connection attempts",
     });
     expect(client2.disconnect).toHaveBeenCalledWith(true);
+    expect(rateLimiter.checkConnectionRateLimit).toHaveBeenNthCalledWith(
+      2,
+      "10.0.0.1",
+    );
   });
 
   it("disconnects existing clients on module destroy", async () => {
@@ -268,6 +295,7 @@ describe("NotificationsGateway", () => {
       accessTokenBlacklist,
       dispatcher,
       sessions,
+      createMockRateLimiter(),
     );
 
     const socket1 = { id: "s1", disconnect: jest.fn() };

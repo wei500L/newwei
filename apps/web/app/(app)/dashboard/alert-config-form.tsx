@@ -34,6 +34,21 @@ import {
   systemMetricSlugs,
 } from "./alert-config.constants";
 import {
+  buildPipelineMetricPresetOptions,
+  buildPipelineOutboxTypeOptions,
+  buildPipelineProviderMetadata,
+  DEFAULT_PIPELINE_METRIC_SLUG,
+  DEFAULT_PIPELINE_OUTBOX_TYPE,
+  isMongoOutboxMetricSlug,
+  isPipelineMetricPresetSlug,
+  isPipelineOutboxType,
+  pipelineMetricPresetConfig,
+  pipelinePresetDefaultDescriptions,
+  pipelinePresetDefaultNames,
+  resolveInitialPipelineOutboxType,
+  stripControlledMetadataForProvider,
+} from "./alert-config.pipeline";
+import {
   isCustomManualMetricSlug,
   normalizeMetricSlug,
 } from "./alert-config.slug";
@@ -336,6 +351,17 @@ export function AlertConfigForm() {
   const existingRule = useMemo(() => data?.alertRules?.[0], [data]);
   const [form] = Form.useForm();
   const [channelForm] = Form.useForm();
+  const watchedMetricProvider = Form.useWatch("metricProvider", form);
+  const watchedMetricSlug = Form.useWatch("metricSlug", form);
+  const watchedPipelineOutboxType = Form.useWatch("pipelineOutboxType", form);
+  const pipelineMetricPresetOptions = useMemo(
+    () => buildPipelineMetricPresetOptions(t),
+    [t],
+  );
+  const pipelineOutboxTypeOptions = useMemo(
+    () => buildPipelineOutboxTypeOptions(t),
+    [t],
+  );
   const formInitialValues = useMemo(() => {
     const existingMetricSlug = normalizeMetricSlug(existingRule?.metricSlug);
     return {
@@ -350,7 +376,7 @@ export function AlertConfigForm() {
           ? DEFAULT_SYSTEM_METRIC_SLUG
           : existingRule?.metricProvider ===
               AlertMetricProvider.PipelineJob
-            ? "pipeline_job"
+            ? DEFAULT_PIPELINE_METRIC_SLUG
             : existingRule?.metricProvider === REALTIME_SIGNAL_PROVIDER
               ? "realtime.opensky.military_flights"
               : existingRule?.metricProvider ===
@@ -360,6 +386,12 @@ export function AlertConfigForm() {
       pipelineStatuses: existingRule?.metadata?.statuses ?? ["failed"],
       pipelineQueueName: existingRule?.metadata?.queueName,
       pipelineSourceId: existingRule?.metadata?.sourceId,
+      pipelineOutboxType: resolveInitialPipelineOutboxType(
+        existingMetricSlug,
+        typeof existingRule?.metadata?.type === "string"
+          ? existingRule.metadata.type
+          : undefined,
+      ),
       crawlStatuses: existingRule?.metadata?.statuses ?? ["failed"],
       crawlCreatedById: existingRule?.metadata?.createdById,
       systemCurrentValue: existingRule?.metadata?.currentValue,
@@ -398,6 +430,25 @@ export function AlertConfigForm() {
     form.setFieldsValue({ id: existingRule.id });
   }, [existingRule?.id, form, formInitialValues]);
 
+  useEffect(() => {
+    const normalizedMetricSlug = normalizeMetricSlug(watchedMetricSlug);
+    if (
+      watchedMetricProvider !== AlertMetricProvider.PipelineJob ||
+      !isMongoOutboxMetricSlug(normalizedMetricSlug) ||
+      isPipelineOutboxType(watchedPipelineOutboxType)
+    ) {
+      return;
+    }
+    form.setFieldsValue({
+      pipelineOutboxType: DEFAULT_PIPELINE_OUTBOX_TYPE,
+    });
+  }, [
+    form,
+    watchedMetricProvider,
+    watchedMetricSlug,
+    watchedPipelineOutboxType,
+  ]);
+
   return (
     <ConfigProvider input={{ autoComplete: "off" }} textArea={{ autoComplete: "off" }}>
       <Space direction="vertical" style={{ width: "100%" }} size="large">
@@ -433,6 +484,7 @@ export function AlertConfigForm() {
             }
             if (
               values.metricProvider === AlertMetricProvider.PipelineJob &&
+              !isMongoOutboxMetricSlug(metricSlug) &&
               (!values.pipelineStatuses || !values.pipelineStatuses.length)
             ) {
               message.error(t("alerts.config.errors.pipelineStatus"));
@@ -474,27 +526,42 @@ export function AlertConfigForm() {
             if (values.notifyAllMembers) {
               baseMetadata.notifyAllMembers = true;
             }
+            const sanitizedMetadata = stripControlledMetadataForProvider({
+              metricProvider: values.metricProvider,
+              metadata: parsedMetadata.value,
+            });
             const providerMetadata =
               values.metricProvider === AlertMetricProvider.PipelineJob
-                ? {
-                    statuses: values.pipelineStatuses,
-                    queueName: values.pipelineQueueName,
-                    sourceId: values.pipelineSourceId,
-                  }
+                ? buildPipelineProviderMetadata({
+                    metricSlug,
+                    pipelineStatuses: values.pipelineStatuses,
+                    pipelineQueueName: values.pipelineQueueName,
+                    pipelineSourceId: values.pipelineSourceId,
+                    pipelineOutboxType: values.pipelineOutboxType,
+                  })
                 : values.metricProvider === AlertMetricProvider.CrawlTask
                   ? metricSlug === "crawl_task"
                     ? {
-                        statuses: values.crawlStatuses,
-                        createdById: values.crawlCreatedById,
+                        ...(Array.isArray(values.crawlStatuses) &&
+                        values.crawlStatuses.length > 0
+                          ? { statuses: values.crawlStatuses }
+                          : {}),
+                        ...(typeof values.crawlCreatedById === "string" &&
+                        values.crawlCreatedById.trim().length > 0
+                          ? { createdById: values.crawlCreatedById.trim() }
+                          : {}),
                       }
                     : {}
                   : values.metricProvider === AlertMetricProvider.SystemMetric
-                    ? {
-                        currentValue: values.systemCurrentValue,
-                      }
+                    ? typeof values.systemCurrentValue === "number" &&
+                      Number.isFinite(values.systemCurrentValue)
+                      ? {
+                          currentValue: values.systemCurrentValue,
+                        }
+                      : {}
                     : {};
             const mergedMetadata = {
-              ...parsedMetadata.value,
+              ...sanitizedMetadata,
               ...providerMetadata,
               ...baseMetadata
             };
@@ -565,11 +632,46 @@ export function AlertConfigForm() {
                 if (provider === AlertMetricProvider.EconomicData) {
                   form.setFieldsValue({ metricSlug: "usd_index_history" });
                 } else if (provider === AlertMetricProvider.PipelineJob) {
-                  form.setFieldsValue({
-                    metricSlug: "pipeline_job",
+                  const defaultPreset =
+                    pipelineMetricPresetConfig[DEFAULT_PIPELINE_METRIC_SLUG];
+                  const currentName = form.getFieldValue("name") as
+                    | string
+                    | undefined;
+                  const currentDescription = form.getFieldValue(
+                    "description",
+                  ) as string | undefined;
+                  const normalizedName =
+                    typeof currentName === "string" ? currentName.trim() : "";
+                  const normalizedDescription =
+                    typeof currentDescription === "string"
+                      ? currentDescription.trim()
+                      : "";
+                  const defaultName = t("alerts.config.defaults.name");
+                  const nextValues: Record<string, unknown> = {
+                    metricSlug: DEFAULT_PIPELINE_METRIC_SLUG,
                     pipelineStatuses: ["failed"],
                     pipelineQueueName: null,
-                  });
+                    pipelineSourceId: null,
+                    pipelineOutboxType: undefined,
+                    operator: defaultPreset.operator,
+                    thresholdValue: defaultPreset.thresholdValue,
+                  };
+                  const shouldAutoFillName =
+                    normalizedName.length === 0 ||
+                    normalizedName === defaultName ||
+                    pipelinePresetDefaultNames.has(normalizedName);
+                  const shouldAutoFillDescription =
+                    normalizedDescription.length === 0 ||
+                    pipelinePresetDefaultDescriptions.has(
+                      normalizedDescription,
+                    );
+                  if (shouldAutoFillName) {
+                    nextValues.name = defaultPreset.defaultName;
+                  }
+                  if (shouldAutoFillDescription) {
+                    nextValues.description = defaultPreset.defaultDescription;
+                  }
+                  form.setFieldsValue(nextValues);
                 } else if (provider === AlertMetricProvider.CrawlTask) {
                   form.setFieldsValue({
                     metricSlug: "crawl_task",
@@ -688,22 +790,198 @@ export function AlertConfigForm() {
             {({ getFieldValue }) => {
               const provider = getFieldValue("metricProvider");
               if (provider === AlertMetricProvider.PipelineJob) {
+                const selectedPipelineMetricSlug = getFieldValue("metricSlug") as
+                  | string
+                  | undefined;
+                const selectedPipelinePreset = isPipelineMetricPresetSlug(
+                  selectedPipelineMetricSlug,
+                )
+                  ? pipelineMetricPresetConfig[selectedPipelineMetricSlug]
+                  : null;
+                const isPipelineOutboxMetric = isMongoOutboxMetricSlug(
+                  selectedPipelineMetricSlug,
+                );
+                const pipelinePresetOptions: {
+                  value: string;
+                  label: string;
+                }[] = [...pipelineMetricPresetOptions];
+                if (
+                  selectedPipelineMetricSlug &&
+                  !pipelinePresetOptions.some(
+                    (option) => option.value === selectedPipelineMetricSlug,
+                  )
+                ) {
+                  pipelinePresetOptions.unshift({
+                    value: selectedPipelineMetricSlug,
+                    label: t("alerts.config.pipeline.metrics.custom", {
+                      defaultValue: "Custom: {{slug}}",
+                      slug: selectedPipelineMetricSlug,
+                    }),
+                  });
+                }
                 return (
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Typography.Text strong>{t("alerts.config.pipeline.title")}</Typography.Text>
-                    <Form.Item label={t("alerts.config.pipeline.statuses")} name="pipelineStatuses">
+                    <Form.Item
+                      label={t("alerts.config.pipeline.metricPreset", {
+                        defaultValue: "Pipeline metric",
+                      })}
+                    >
                       <Select
-                        mode="multiple"
-                        options={pipelineStatusOptions}
-                        placeholder={t("alerts.config.pipeline.defaultsToFailed")}
+                        options={pipelinePresetOptions}
+                        showSearch
+                        optionFilterProp="label"
+                        value={getFieldValue("metricSlug")}
+                        onChange={(value) => {
+                          const currentMetricSlug = getFieldValue("metricSlug") as
+                            | string
+                            | undefined;
+                          const currentName = getFieldValue("name") as
+                            | string
+                            | undefined;
+                          const currentDescription = getFieldValue(
+                            "description",
+                          ) as string | undefined;
+                          const currentStatuses = getFieldValue(
+                            "pipelineStatuses",
+                          ) as string[] | undefined;
+                          const previousPreset = isPipelineMetricPresetSlug(
+                            currentMetricSlug,
+                          )
+                            ? pipelineMetricPresetConfig[currentMetricSlug]
+                            : null;
+                          const nextPreset = isPipelineMetricPresetSlug(value)
+                            ? pipelineMetricPresetConfig[value]
+                            : null;
+                          const nextValues: Record<string, unknown> = {
+                            metricSlug: value,
+                          };
+                          if (isMongoOutboxMetricSlug(value)) {
+                            nextValues.pipelineOutboxType =
+                              resolveInitialPipelineOutboxType(
+                                value,
+                                getFieldValue("pipelineOutboxType") as
+                                  | string
+                                  | undefined,
+                              );
+                          } else {
+                            nextValues.pipelineOutboxType = undefined;
+                            if (
+                              !Array.isArray(currentStatuses) ||
+                              currentStatuses.length === 0
+                            ) {
+                              nextValues.pipelineStatuses = ["failed"];
+                            }
+                          }
+                          if (nextPreset) {
+                            nextValues.operator = nextPreset.operator;
+                            nextValues.thresholdValue = nextPreset.thresholdValue;
+                            const normalizedName =
+                              typeof currentName === "string"
+                                ? currentName.trim()
+                                : "";
+                            const normalizedDescription =
+                              typeof currentDescription === "string"
+                                ? currentDescription.trim()
+                                : "";
+                            const defaultName = t("alerts.config.defaults.name");
+                            const shouldAutoFillName =
+                              normalizedName.length === 0 ||
+                              normalizedName === defaultName ||
+                              (previousPreset
+                                ? normalizedName === previousPreset.defaultName
+                                : false);
+                            const shouldAutoFillDescription =
+                              normalizedDescription.length === 0 ||
+                              (previousPreset
+                                ? normalizedDescription ===
+                                  previousPreset.defaultDescription
+                                : false);
+                            if (shouldAutoFillName) {
+                              nextValues.name = nextPreset.defaultName;
+                            }
+                            if (shouldAutoFillDescription) {
+                              nextValues.description =
+                                nextPreset.defaultDescription;
+                            }
+                          }
+                          form.setFieldsValue(nextValues);
+                        }}
                       />
                     </Form.Item>
-                    <Form.Item label={t("alerts.config.pipeline.queueName")} name="pipelineQueueName">
-                      <Input placeholder={t("alerts.config.pipeline.queueNamePlaceholder")} />
-                    </Form.Item>
-                    <Form.Item label={t("alerts.config.pipeline.sourceId")} name="pipelineSourceId">
-                      <Input placeholder={t("alerts.config.pipeline.sourceIdPlaceholder")} />
-                    </Form.Item>
+                    {selectedPipelinePreset ? (
+                      <Alert
+                        type="info"
+                        showIcon
+                        message={t("alerts.config.pipeline.presetDefaults", {
+                          defaultValue:
+                            "Default trigger: {{operator}} {{threshold}}",
+                          operator: t(
+                            `alerts.operators.${selectedPipelinePreset.operator}`,
+                            { defaultValue: selectedPipelinePreset.operator },
+                          ),
+                          threshold: selectedPipelinePreset.thresholdValue,
+                        })}
+                        description={selectedPipelinePreset.defaultDescription}
+                      />
+                    ) : null}
+                    <Typography.Text type="secondary">
+                      {t("alerts.config.pipeline.metricPresetHint", {
+                        defaultValue:
+                          "Choose between failed pipeline jobs and Mongo outbox delivery health metrics.",
+                      })}
+                    </Typography.Text>
+                    {isPipelineOutboxMetric ? (
+                      <>
+                        <Form.Item
+                          label={t("alerts.config.pipeline.outboxType", {
+                            defaultValue: "Outbox type",
+                          })}
+                          name="pipelineOutboxType"
+                        >
+                          <Select options={pipelineOutboxTypeOptions} />
+                        </Form.Item>
+                        <Typography.Text type="secondary">
+                          {t("alerts.config.pipeline.outboxTypeHint", {
+                            defaultValue:
+                              "Mongo outbox metrics ignore queue and source filters, and scope the rule with metadata.type instead.",
+                          })}
+                        </Typography.Text>
+                      </>
+                    ) : (
+                      <>
+                        <Form.Item
+                          label={t("alerts.config.pipeline.statuses")}
+                          name="pipelineStatuses"
+                        >
+                          <Select
+                            mode="multiple"
+                            options={pipelineStatusOptions}
+                            placeholder={t("alerts.config.pipeline.defaultsToFailed")}
+                          />
+                        </Form.Item>
+                        <Form.Item
+                          label={t("alerts.config.pipeline.queueName")}
+                          name="pipelineQueueName"
+                        >
+                          <Input
+                            placeholder={t(
+                              "alerts.config.pipeline.queueNamePlaceholder",
+                            )}
+                          />
+                        </Form.Item>
+                        <Form.Item
+                          label={t("alerts.config.pipeline.sourceId")}
+                          name="pipelineSourceId"
+                        >
+                          <Input
+                            placeholder={t(
+                              "alerts.config.pipeline.sourceIdPlaceholder",
+                            )}
+                          />
+                        </Form.Item>
+                      </>
+                    )}
                   </Space>
                 );
               }

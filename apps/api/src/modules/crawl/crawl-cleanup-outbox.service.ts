@@ -29,6 +29,7 @@ export class CrawlCleanupOutboxService {
   private readonly outboxBatchSize = 100;
   private readonly outboxStaleLockMs = 5 * 60_000;
   private readonly outboxRetryBaseDelayMs = 30_000;
+  private readonly outboxMaxAttempts = 10;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -45,7 +46,7 @@ export class CrawlCleanupOutboxService {
       for (const entry of entries) {
         const payload = this.parseOutboxPayload(entry.payload);
         if (!payload || (payload.orgId && payload.orgId !== entry.orgId)) {
-          await this.markOutboxFailure(
+          await this.markOutboxDead(
             entry.id,
             (entry.attempts ?? 0) + 1,
             new Error("Invalid outbox payload")
@@ -195,6 +196,11 @@ export class CrawlCleanupOutboxService {
   }
 
   private async markOutboxFailure(outboxId: string, attempts: number, error: unknown) {
+    if (attempts >= this.outboxMaxAttempts) {
+      await this.markOutboxDead(outboxId, attempts, error);
+      return;
+    }
+
     const nextDelay = this.computeBackoffDelay(this.outboxRetryBaseDelayMs, attempts, 5);
     const availableAt = new Date(Date.now() + nextDelay);
     const message = error instanceof Error ? error.message : String(error);
@@ -214,6 +220,32 @@ export class CrawlCleanupOutboxService {
       logger.warn(
         { error: updateError, outboxId, message },
         "Failed to update crawl cleanup outbox status after delivery error"
+      );
+    }
+  }
+
+  private async markOutboxDead(outboxId: string, attempts: number, error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    try {
+      await this.prisma.mongoOutbox.update({
+        where: { id: outboxId },
+        data: {
+          status: MongoOutboxStatus.dead,
+          lastError: message,
+          availableAt: new Date(),
+          lockedAt: null,
+          attempts: Math.max(attempts, 1)
+        }
+      });
+      logger.warn(
+        { outboxId, attempts: Math.max(attempts, 1), message },
+        "Marked crawl cleanup outbox dead"
+      );
+    } catch (updateError) {
+      logger.warn(
+        { error: updateError, outboxId, message },
+        "Failed to mark crawl cleanup outbox dead"
       );
     }
   }

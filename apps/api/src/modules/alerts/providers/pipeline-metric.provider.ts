@@ -109,10 +109,16 @@ export class PipelineMetricProvider implements MetricProvider {
       : typeof metadata?.status === "string"
         ? [metadata.status]
         : undefined;
+    const allowedTypes = Object.values(MongoOutboxType);
+    const requestedType =
+      typeof metadata?.type === "string" ? metadata.type.trim() : undefined;
+    const outboxType = allowedTypes.includes(requestedType as MongoOutboxType)
+      ? (requestedType as MongoOutboxType)
+      : MongoOutboxType.processed_item;
 
     const baseWhere: Prisma.MongoOutboxWhereInput = {
       orgId: rule.orgId,
-      type: MongoOutboxType.processed_item
+      type: outboxType
     };
 
     const slug = rule.metricSlug.trim();

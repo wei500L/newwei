@@ -1,6 +1,8 @@
 import { sign } from "jsonwebtoken";
 import { RealtimeSocketErrorCode } from "@modular/utils";
 
+import type { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
+
 import { NewsnowGateway } from "./newsnow.gateway";
 
 describe("NewsnowGateway", () => {
@@ -62,6 +64,11 @@ describe("NewsnowGateway", () => {
     emit: jest.fn(),
   } as any;
 
+  const connectionRateLimiterMock = {
+    checkConnectionRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
+    checkUserConnectionRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
+  } as Partial<WsConnectionRateLimiterService>;
+
   let gateway: NewsnowGateway;
 
   beforeEach(() => {
@@ -75,6 +82,12 @@ describe("NewsnowGateway", () => {
         };
       },
     );
+    connectionRateLimiterMock.checkConnectionRateLimit = jest
+      .fn()
+      .mockResolvedValue({ allowed: true });
+    connectionRateLimiterMock.checkUserConnectionRateLimit = jest
+      .fn()
+      .mockResolvedValue({ allowed: true });
     registryServiceMock.getMetadata.mockReturnValue({
       sources: {
         weibo: { name: "微博" },
@@ -90,6 +103,7 @@ describe("NewsnowGateway", () => {
       sessionsMock,
       registryServiceMock,
       activeSourcesMock,
+      connectionRateLimiterMock as WsConnectionRateLimiterService,
     );
     gateway.server = serverMock;
   });
@@ -195,6 +209,22 @@ describe("NewsnowGateway", () => {
     expect(client.emit).toHaveBeenCalledWith("newsnow:error", {
       code: RealtimeSocketErrorCode.TooManyConnections,
       message: "Too many connections",
+    });
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+  });
+
+  it("maps rate-limit failures to stable websocket error codes", async () => {
+    (
+      connectionRateLimiterMock.checkUserConnectionRateLimit as jest.Mock
+    ).mockResolvedValue({ allowed: false, retryAfterMs: 60000 });
+
+    const client = createClient(createToken());
+
+    await gateway.handleConnection(client);
+
+    expect(client.emit).toHaveBeenCalledWith("newsnow:error", {
+      code: RealtimeSocketErrorCode.TooManyConnectionAttempts,
+      message: "Too many connection attempts",
     });
     expect(client.disconnect).toHaveBeenCalledWith(true);
   });

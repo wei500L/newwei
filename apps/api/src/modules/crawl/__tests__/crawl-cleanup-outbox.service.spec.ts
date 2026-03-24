@@ -11,7 +11,7 @@ import { MongoOutboxStatus, MongoOutboxType } from "@prisma/client";
 import { CrawlCleanupOutboxService } from "../crawl-cleanup-outbox.service";
 
 describe("CrawlCleanupOutboxService", () => {
-  it("marks invalid payloads as failed", async () => {
+  it("marks invalid payloads as dead", async () => {
     const prisma = {
       mongoOutbox: {
         findMany: jest
@@ -43,14 +43,14 @@ describe("CrawlCleanupOutboxService", () => {
       expect.objectContaining({
         where: { id: "outbox-1" },
         data: expect.objectContaining({
-          status: MongoOutboxStatus.failed,
+          status: MongoOutboxStatus.dead,
           lockedAt: null
         })
       })
     );
   });
 
-  it("marks delivery failures for retry", async () => {
+  it("marks delivery failures for retry before max attempts", async () => {
     const prisma = {
       runInTransaction: jest.fn().mockImplementation(async (fn: any) => {
         const tx = {
@@ -99,6 +99,60 @@ describe("CrawlCleanupOutboxService", () => {
         data: expect.objectContaining({
           status: MongoOutboxStatus.failed,
           lockedAt: null
+        })
+      })
+    );
+  });
+
+  it("marks delivery failures as dead after max attempts", async () => {
+    const prisma = {
+      runInTransaction: jest.fn().mockImplementation(async (fn: any) => {
+        const tx = {
+          mongoOutbox: {
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findUnique: jest.fn().mockResolvedValue({ id: "outbox-1", attempts: 10 })
+          }
+        };
+        return fn(tx);
+      }),
+      mongoOutbox: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([
+            {
+              id: "outbox-1",
+              orgId: "org-1",
+              payload: {
+                type: MongoOutboxType.cleanup_crawl_results,
+                taskId: "task-1",
+                orgId: "org-1"
+              },
+              attempts: 9,
+              status: MongoOutboxStatus.failed,
+              createdAt: new Date("2026-03-23T00:00:00.000Z")
+            }
+          ])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([]),
+        delete: jest.fn(),
+        update: jest.fn().mockResolvedValue(undefined)
+      }
+    } as any;
+
+    const resultService = {
+      deleteTaskResults: jest.fn().mockRejectedValue(new Error("delete failed"))
+    } as any;
+
+    const service = new CrawlCleanupOutboxService(prisma, resultService);
+    await service.retryPendingCleanupOutbox();
+
+    expect(prisma.mongoOutbox.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "outbox-1" },
+        data: expect.objectContaining({
+          status: MongoOutboxStatus.dead,
+          lockedAt: null,
+          attempts: 10
         })
       })
     );

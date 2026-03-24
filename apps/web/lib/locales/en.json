@@ -404,11 +404,31 @@
       "pipeline": {
         "title": "Pipeline",
         "statuses": "Statuses",
-        "defaultsToFailed": "Failed to defaults",
+        "defaultsToFailed": "Defaults to failed",
         "queueName": "Queue name",
         "queueNamePlaceholder": "Enter Queue name",
         "sourceId": "Source ID",
-        "sourceIdPlaceholder": "Enter Source ID"
+        "sourceIdPlaceholder": "Enter Source ID",
+        "metricPreset": "Pipeline metric",
+        "metricPresetHint": "Choose between failed pipeline jobs and Mongo outbox delivery health metrics.",
+        "presetDefaults": "Default trigger: {{operator}} {{threshold}}",
+        "outboxType": "Outbox type",
+        "outboxTypeHint": "Mongo outbox metrics ignore queue and source filters, and scope the rule with metadata.type instead.",
+        "outboxTypes": {
+          "processedItem": "Processed item delivery",
+          "cleanupCrawlResults": "Crawl cleanup"
+        },
+        "metrics": {
+          "pipelineJobsFailed": "Failed pipeline jobs",
+          "outboxBacklog": "Mongo outbox backlog",
+          "outboxPending": "Mongo outbox pending",
+          "outboxFailed": "Mongo outbox failed",
+          "outboxProcessing": "Mongo outbox processing",
+          "outboxDead": "Mongo outbox dead-letter",
+          "outboxStaleProcessing": "Mongo outbox stale processing",
+          "outboxOldestAge": "Mongo outbox oldest age",
+          "custom": "Custom: {{slug}}"
+        }
       },
       "crawl": {
         "title": "Crawl",
@@ -8657,6 +8677,7 @@
         "pending": "Outbox pending",
         "processing": "Outbox processing",
         "failed": "Outbox failed",
+        "dead": "Outbox dead",
         "stale": "Outbox stale"
       }
     },

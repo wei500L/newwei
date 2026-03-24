@@ -10,6 +10,7 @@ import { WinstonModule } from "nest-winston";
 import { utilities as nestWinstonModuleUtilities } from "nest-winston/dist/winston.utilities";
 import * as winston from "winston";
 
+import { ApplicationShutdownService } from "./application-shutdown.service";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
@@ -119,6 +120,7 @@ const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
       provide: APP_FILTER,
       useClass: GlobalExceptionFilter,
     },
+    ApplicationShutdownService,
   ],
 })
 export class AppModule implements NestModule {

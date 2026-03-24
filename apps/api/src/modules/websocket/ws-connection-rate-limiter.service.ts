@@ -19,6 +19,7 @@ export class WsConnectionRateLimiterService {
   private readonly logger = new Logger(WsConnectionRateLimiterService.name);
 
   private readonly connectRateLimitPerIp: number;
+  private readonly connectRateLimitPerUser: number;
   private readonly connectRateLimitWindowSeconds: number;
 
   constructor(
@@ -28,6 +29,7 @@ export class WsConnectionRateLimiterService {
   ) {
     const wsConfig = this.env.webSocketSecurity;
     this.connectRateLimitPerIp = wsConfig.connectRateLimitPerIp;
+    this.connectRateLimitPerUser = wsConfig.connectRateLimitPerUser;
     this.connectRateLimitWindowSeconds = wsConfig.connectRateLimitWindowSeconds;
   }
 
@@ -36,32 +38,25 @@ export class WsConnectionRateLimiterService {
    * Returns allowed=true if under limit, allowed=false with retryAfterMs if exceeded.
    */
   async checkConnectionRateLimit(ip: string): Promise<RateLimitResult> {
-    if (!ip) {
-      return { allowed: true };
-    }
+    return this.checkRateLimit(
+      "ip",
+      ip,
+      this.connectRateLimitPerIp,
+      `ws:connect:ip:${ip}`
+    );
+  }
 
-    try {
-      const key = `ws:connect:${ip}`;
-      const allowed = await this.rateLimiter.consume(
-        key,
-        this.connectRateLimitPerIp,
-        this.connectRateLimitWindowSeconds
-      );
-
-      if (!allowed) {
-        const retryAfterMs = this.connectRateLimitWindowSeconds * 1000;
-        return { allowed: false, retryAfterMs };
-      }
-
-      return { allowed: true };
-    } catch (error) {
-      // Fail-open: allow connection if rate limiter fails
-      this.logger.warn(
-        { ip, error: error instanceof Error ? error.message : String(error) },
-        "Rate limit check failed, allowing connection (fail-open)"
-      );
-      return { allowed: true };
-    }
+  /**
+   * Check if a connection from the given user is allowed based on rate limits.
+   * Returns allowed=true if under limit, allowed=false with retryAfterMs if exceeded.
+   */
+  async checkUserConnectionRateLimit(userId: string): Promise<RateLimitResult> {
+    return this.checkRateLimit(
+      "userId",
+      userId,
+      this.connectRateLimitPerUser,
+      `ws:connect:user:${userId}`
+    );
   }
 
   /**
@@ -141,6 +136,42 @@ export class WsConnectionRateLimiterService {
         { ip, error: error instanceof Error ? error.message : String(error) },
         "Failed to clear backoff state"
       );
+    }
+  }
+
+  private async checkRateLimit(
+    dimension: "ip" | "userId",
+    value: string,
+    limit: number,
+    key: string
+  ): Promise<RateLimitResult> {
+    if (!value) {
+      return { allowed: true };
+    }
+
+    try {
+      const allowed = await this.rateLimiter.consume(
+        key,
+        limit,
+        this.connectRateLimitWindowSeconds
+      );
+
+      if (!allowed) {
+        const retryAfterMs = this.connectRateLimitWindowSeconds * 1000;
+        return { allowed: false, retryAfterMs };
+      }
+
+      return { allowed: true };
+    } catch (error) {
+      // Fail-open: allow connection if rate limiter fails
+      this.logger.warn(
+        {
+          [dimension]: value,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "Rate limit check failed, allowing connection (fail-open)"
+      );
+      return { allowed: true };
     }
   }
 }

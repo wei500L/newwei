@@ -408,7 +408,27 @@
         "queueName": "队列名称",
         "queueNamePlaceholder": "请输入队列名称",
         "sourceId": "来源 ID",
-        "sourceIdPlaceholder": "请输入来源 ID"
+        "sourceIdPlaceholder": "请输入来源 ID",
+        "metricPreset": "流水线指标",
+        "metricPresetHint": "可在失败流水线任务和 Mongo outbox 投递健康指标之间切换。",
+        "presetDefaults": "默认触发条件：{{operator}} {{threshold}}",
+        "outboxType": "Outbox 类型",
+        "outboxTypeHint": "Mongo outbox 指标不使用队列和来源过滤，而是通过 metadata.type 进行范围限定。",
+        "outboxTypes": {
+          "processedItem": "处理结果投递",
+          "cleanupCrawlResults": "抓取清理"
+        },
+        "metrics": {
+          "pipelineJobsFailed": "失败流水线任务",
+          "outboxBacklog": "Mongo outbox 积压",
+          "outboxPending": "Mongo outbox 待处理",
+          "outboxFailed": "Mongo outbox 失败",
+          "outboxProcessing": "Mongo outbox 处理中",
+          "outboxDead": "Mongo outbox 死信",
+          "outboxStaleProcessing": "Mongo outbox 陈旧 processing",
+          "outboxOldestAge": "Mongo outbox 最老等待时长",
+          "custom": "自定义：{{slug}}"
+        }
       },
       "crawl": {
         "title": "抓取",
@@ -8657,6 +8677,7 @@
         "pending": "Outbox 待处理",
         "processing": "Outbox 处理中",
         "failed": "Outbox 失败",
+        "dead": "Outbox 死信",
         "stale": "Outbox 卡住"
       }
     },

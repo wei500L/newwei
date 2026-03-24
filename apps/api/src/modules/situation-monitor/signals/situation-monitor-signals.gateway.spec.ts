@@ -1,6 +1,7 @@
 import { RealtimeSocketErrorCode } from "@modular/utils";
 import { sign } from "jsonwebtoken";
 
+import type { WsConnectionRateLimiterService } from "../../websocket/ws-connection-rate-limiter.service";
 import { SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM } from "./situation-monitor-signals.constants";
 import { SituationMonitorSignalsGateway } from "./situation-monitor-signals.gateway";
 
@@ -48,12 +49,23 @@ describe("SituationMonitorSignalsGateway", () => {
     get: jest.fn(),
   } as any;
 
+  const connectionRateLimiterMock = {
+    checkConnectionRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
+    checkUserConnectionRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
+  } as Partial<WsConnectionRateLimiterService>;
+
   let gateway: SituationMonitorSignalsGateway;
 
   beforeEach(() => {
     jest.resetAllMocks();
     dispatcherMock.registerListener.mockImplementation(() => jest.fn());
     moduleRefMock.get.mockReturnValue(monitorsMock);
+    connectionRateLimiterMock.checkConnectionRateLimit = jest
+      .fn()
+      .mockResolvedValue({ allowed: true });
+    connectionRateLimiterMock.checkUserConnectionRateLimit = jest
+      .fn()
+      .mockResolvedValue({ allowed: true });
     gateway = new SituationMonitorSignalsGateway(
       envMock,
       authServiceMock,
@@ -61,6 +73,7 @@ describe("SituationMonitorSignalsGateway", () => {
       dispatcherMock,
       sessionsMock,
       moduleRefMock,
+      connectionRateLimiterMock as WsConnectionRateLimiterService,
     );
     gateway.server = {
       sockets: {
@@ -152,9 +165,9 @@ describe("SituationMonitorSignalsGateway", () => {
       permissions: ["items.read"],
     });
     sessionsMock.register.mockResolvedValue({ userConnections: 1 });
-
-    const firstClient = createClient(createToken(), "socket-1");
-    await gateway.handleConnection(firstClient);
+    (
+      connectionRateLimiterMock.checkUserConnectionRateLimit as jest.Mock
+    ).mockResolvedValueOnce({ allowed: false, retryAfterMs: 60000 });
 
     const secondClient = createClient(createToken(), "socket-2");
     await gateway.handleConnection(secondClient);

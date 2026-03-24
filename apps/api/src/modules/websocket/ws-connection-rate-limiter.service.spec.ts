@@ -8,6 +8,7 @@ describe("WsConnectionRateLimiterService", () => {
   const mockEnv = {
     webSocketSecurity: {
       connectRateLimitPerIp: 60,
+      connectRateLimitPerUser: 30,
       connectRateLimitWindowSeconds: 60
     }
   };
@@ -38,7 +39,7 @@ describe("WsConnectionRateLimiterService", () => {
 
       expect(result).toEqual({ allowed: true });
       expect(mockRateLimiter.consume).toHaveBeenCalledWith(
-        "ws:connect:192.168.1.100",
+        "ws:connect:ip:192.168.1.100",
         60,
         60
       );
@@ -63,6 +64,44 @@ describe("WsConnectionRateLimiterService", () => {
       mockRateLimiter.consume.mockRejectedValue(new Error("Redis error"));
 
       const result = await service.checkConnectionRateLimit("192.168.1.100");
+
+      expect(result).toEqual({ allowed: true });
+    });
+  });
+
+  describe("checkUserConnectionRateLimit", () => {
+    it("returns allowed=true when user is under limit", async () => {
+      mockRateLimiter.consume.mockResolvedValue(true);
+
+      const result = await service.checkUserConnectionRateLimit("user-1");
+
+      expect(result).toEqual({ allowed: true });
+      expect(mockRateLimiter.consume).toHaveBeenCalledWith(
+        "ws:connect:user:user-1",
+        30,
+        60
+      );
+    });
+
+    it("returns allowed=false with retryAfterMs when user limit exceeded", async () => {
+      mockRateLimiter.consume.mockResolvedValue(false);
+
+      const result = await service.checkUserConnectionRateLimit("user-1");
+
+      expect(result).toEqual({ allowed: false, retryAfterMs: 60000 });
+    });
+
+    it("returns allowed=true for empty userId (fail-open)", async () => {
+      const result = await service.checkUserConnectionRateLimit("");
+
+      expect(result).toEqual({ allowed: true });
+      expect(mockRateLimiter.consume).not.toHaveBeenCalled();
+    });
+
+    it("returns allowed=true when user rate limiter throws (fail-open)", async () => {
+      mockRateLimiter.consume.mockRejectedValue(new Error("Redis error"));
+
+      const result = await service.checkUserConnectionRateLimit("user-1");
 
       expect(result).toEqual({ allowed: true });
     });

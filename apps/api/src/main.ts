@@ -12,6 +12,7 @@ import { createRequire } from "node:module";
 import { AppModule } from "./app.module";
 import { RedisIoAdapter } from "./common/websocket/redis-io.adapter";
 import { EnvService } from "./modules/config/config.service";
+import { WebSocketAdapterRegistry } from "./modules/websocket/websocket-adapter-registry.service";
 
 const nodeRequire = createRequire(__filename);
 const pkg = nodeRequire("../package.json") as { version?: string };
@@ -23,6 +24,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true
   });
+  app.enableShutdownHooks();
 
   const winstonLogger = app.get(WINSTON_MODULE_NEST_PROVIDER);
   app.useLogger(winstonLogger);
@@ -67,6 +69,7 @@ async function bootstrap() {
   app.use(json({ limit: "10mb" }));
   app.use(urlencoded({ extended: true }));
   const env = app.get(EnvService);
+  const webSocketAdapterRegistry = app.get(WebSocketAdapterRegistry);
 
   if (env.webSocketRedisAdapter.enabled) {
     const redisIoAdapter = new RedisIoAdapter(app, env);
@@ -87,6 +90,7 @@ async function bootstrap() {
       connectTimeoutMs,
       `Socket.IO Redis adapter connect timeout after ${connectTimeoutMs}ms`
     );
+    webSocketAdapterRegistry.setRedisIoAdapter(redisIoAdapter);
     app.useWebSocketAdapter(redisIoAdapter);
     bootstrapLogger.info("Socket.IO Redis adapter enabled");
   }

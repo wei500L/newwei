@@ -67,6 +67,29 @@ describe("PipelineMetricProvider", () => {
     });
   });
 
+  it("supports selecting cleanup crawl outbox metrics by metadata.type", async () => {
+    const { prisma, provider } = createProvider();
+
+    await provider.fetch({
+      orgId: "org-1",
+      metricProvider: AlertMetricProvider.pipeline_job,
+      metricSlug: "mongo_outbox.dead",
+      operator: "gte" as any,
+      changeWindowMin: 60,
+      metadata: {
+        type: MongoOutboxType.cleanup_crawl_results,
+      } as any,
+    });
+
+    expect(prisma.mongoOutbox.count).toHaveBeenCalledWith({
+      where: {
+        orgId: "org-1",
+        type: MongoOutboxType.cleanup_crawl_results,
+        status: { in: [MongoOutboxStatus.dead] },
+      },
+    });
+  });
+
   it("limits mongo_outbox.oldest_age_minutes to active backlog statuses", async () => {
     const { prisma, provider } = createProvider();
 

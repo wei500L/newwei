@@ -20,17 +20,13 @@ import {
   JwtPayload,
 } from "../auth/auth.service";
 import { EnvService } from "../config/config.service";
+import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
 
 import {
   NotificationDispatcher,
   NotificationEvent,
 } from "./notification.dispatcher";
-
-interface RateLimitState {
-  windowStartMs: number;
-  count: number;
-}
 
 @WebSocketGateway({
   namespace: "notifications",
@@ -51,8 +47,6 @@ export class NotificationsGateway
 
   private readonly logger = createLogger({ name: "notifications-gateway" });
   private unsubscribe?: () => void;
-  private readonly connectAttemptsByIp = new Map<string, RateLimitState>();
-  private readonly connectAttemptsByUserId = new Map<string, RateLimitState>();
 
   constructor(
     private readonly env: EnvService,
@@ -60,6 +54,7 @@ export class NotificationsGateway
     private readonly accessTokenBlacklist: AccessTokenBlacklistService,
     private readonly dispatcher: NotificationDispatcher,
     private readonly sessions: UserSessionManager,
+    private readonly connectionRateLimiter: WsConnectionRateLimiterService,
   ) {}
 
   onModuleInit() {
@@ -94,9 +89,6 @@ export class NotificationsGateway
         }
       }
     }
-
-    this.connectAttemptsByIp.clear();
-    this.connectAttemptsByUserId.clear();
   }
 
   async handleConnection(client: Socket) {
@@ -106,19 +98,22 @@ export class NotificationsGateway
         throw new Error("Origin not allowed");
       }
 
-      this.enforceConnectRateLimit(
-        this.connectAttemptsByIp,
-        ip ? `ip:${ip}` : "ip:unknown",
-        this.env.webSocketSecurity.connectRateLimitPerIp,
-      );
+      const ipRateLimit =
+        await this.connectionRateLimiter.checkConnectionRateLimit(ip ?? "");
+      if (!ipRateLimit.allowed) {
+        throw new Error("Too many connection attempts");
+      }
 
       const token = this.extractToken(client);
       const payload = this.verifyToken(token);
-      this.enforceConnectRateLimit(
-        this.connectAttemptsByUserId,
-        `user:${payload.sub}`,
-        this.env.webSocketSecurity.connectRateLimitPerUser,
-      );
+      const userRateLimit =
+        await this.connectionRateLimiter.checkUserConnectionRateLimit(
+          payload.sub,
+        );
+      if (!userRateLimit.allowed) {
+        throw new Error("Too many connection attempts");
+      }
+
       await this.ensureNotRevoked(payload);
       const profile = await this.authService.getUserProfile(
         payload.sub,
@@ -264,26 +259,6 @@ export class NotificationsGateway
 
     throw new Error("Missing auth token");
   }
-
-  private enforceConnectRateLimit(
-    map: Map<string, RateLimitState>,
-    key: string,
-    limit: number,
-  ) {
-    const windowMs =
-      this.env.webSocketSecurity.connectRateLimitWindowSeconds * 1000;
-    const now = Date.now();
-    const current = map.get(key);
-    if (!current || now - current.windowStartMs >= windowMs) {
-      map.set(key, { windowStartMs: now, count: 1 });
-      return;
-    }
-    current.count += 1;
-    if (current.count > limit) {
-      throw new Error("Too many connection attempts");
-    }
-  }
-
   private toSocketErrorPayload(
     errorMessage: string,
   ): NotificationSocketErrorPayload {
