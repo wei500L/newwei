@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Alert,
   App,
   Button,
   Card,
@@ -37,6 +38,11 @@ import { emitSituationMonitorMonitorsUpdated } from "@/app/(app)/situation-monit
 interface ContentSubscriptionsTabProps {
   accessToken?: string;
   active: boolean;
+}
+
+interface SubscriptionFeedbackState {
+  message: string;
+  description: string;
 }
 
 const DATE_TIME_FORMAT = {
@@ -89,6 +95,10 @@ export function ContentSubscriptionsTab({
     "all" | ContentSubscriptionKind
   >("all");
   const [taxonomyFilter, setTaxonomyFilter] = useState<string | null>(null);
+  const [subscriptionRefreshWarning, setSubscriptionRefreshWarning] =
+    useState<SubscriptionFeedbackState | null>(null);
+  const [recommendationsWarning, setRecommendationsWarning] =
+    useState<SubscriptionFeedbackState | null>(null);
   const [selectedSubscriptionKeys, setSelectedSubscriptionKeys] = useState<
     string[]
   >([]);
@@ -134,11 +144,74 @@ export function ContentSubscriptionsTab({
   }, [apiClient, catalogKind, catalogQuery, message, t, taxonomyFilter]);
 
   const loadRecommendations = useCallback(async () => {
-    const response = await apiClient.get<ContentSubscriptionCatalogResponse>(
-      "user-content-subscriptions/recommendations?limit=12",
-    );
-    setRecommendations(response.data ?? null);
-  }, [apiClient]);
+    try {
+      const response = await apiClient.get<ContentSubscriptionCatalogResponse>(
+        "user-content-subscriptions/recommendations?limit=12",
+      );
+      setRecommendations(response.data ?? null);
+      setRecommendationsWarning(null);
+    } catch (error) {
+      captureClientError(
+        "Failed to load content subscription recommendations",
+        error,
+      );
+      setRecommendationsWarning({
+        message: t("subscriptions.content.recommendationsLoadFailed", {
+          defaultValue: "Failed to load recommendations.",
+        }),
+        description: t(
+          "subscriptions.content.recommendationsLoadFailedDescription",
+          {
+            defaultValue:
+              "Recommendations are temporarily unavailable. You can still manage subscriptions and browse the catalog.",
+          },
+        ),
+      });
+      message.warning(
+        t("subscriptions.content.recommendationsLoadFailed", {
+          defaultValue: "Failed to load recommendations.",
+        }),
+      );
+    }
+  }, [apiClient, message, t]);
+
+  const refreshSubscriptionViews = useCallback(async () => {
+    const [subscriptionsResult] = await Promise.allSettled([
+      loadSubscriptions(),
+      loadRecommendations(),
+      loadCatalog(),
+    ]);
+
+    if (subscriptionsResult.status === "rejected") {
+      captureClientError(
+        "Failed to refresh content subscriptions after mutation",
+        subscriptionsResult.reason,
+      );
+      setSubscriptionRefreshWarning({
+        message: t("subscriptions.content.refreshFailedAfterMutation", {
+          defaultValue:
+            "Changes were saved, but the latest subscription list could not be reloaded.",
+        }),
+        description: t(
+          "subscriptions.content.refreshFailedAfterMutationDescription",
+          {
+            defaultValue:
+              "Your add/remove action has completed. The page is still showing the previous subscription snapshot until reload succeeds.",
+          },
+        ),
+      });
+      message.warning(
+        t("subscriptions.content.refreshFailedAfterMutation", {
+          defaultValue:
+            "Changes were saved, but the latest subscription list could not be reloaded.",
+        }),
+      );
+      return false;
+    }
+
+    setSubscriptionRefreshWarning(null);
+    return true;
+  }, [loadCatalog, loadRecommendations, loadSubscriptions, message, t]);
 
   const loadAll = useCallback(async () => {
     if (!accessToken) {
@@ -146,14 +219,36 @@ export function ContentSubscriptionsTab({
     }
     setLoading(true);
     try {
-      await Promise.all([loadSubscriptions(), loadRecommendations()]);
-    } catch (error) {
-      captureClientError("Failed to load content subscriptions center", error);
-      message.error(
-        t("subscriptions.content.loadFailed", {
-          defaultValue: "Failed to load content subscriptions.",
-        }),
-      );
+      const [subscriptionsResult] = await Promise.allSettled([
+        loadSubscriptions(),
+        loadRecommendations(),
+      ]);
+
+      if (subscriptionsResult.status === "rejected") {
+        captureClientError(
+          "Failed to load content subscriptions center",
+          subscriptionsResult.reason,
+        );
+        setSubscriptionRefreshWarning({
+          message: t("subscriptions.content.loadFailed", {
+            defaultValue: "Failed to load content subscriptions.",
+          }),
+          description: t(
+            "subscriptions.content.loadFailedDescription",
+            {
+              defaultValue:
+                "The subscriptions list could not be loaded. Retry to restore the latest subscription state.",
+            },
+          ),
+        });
+        message.error(
+          t("subscriptions.content.loadFailed", {
+            defaultValue: "Failed to load content subscriptions.",
+          }),
+        );
+      } else {
+        setSubscriptionRefreshWarning(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -294,11 +389,7 @@ export function ContentSubscriptionsTab({
         }),
       );
       setSelectedSubscriptionKeys([]);
-      await Promise.all([
-        loadSubscriptions(),
-        loadRecommendations(),
-        loadCatalog(),
-      ]);
+      await refreshSubscriptionViews();
       emitSituationMonitorMonitorsUpdated("subscriptions");
     } catch (error) {
       captureClientError("Failed to remove content subscriptions", error);
@@ -310,9 +401,7 @@ export function ContentSubscriptionsTab({
     }
   }, [
     apiClient,
-    loadCatalog,
-    loadRecommendations,
-    loadSubscriptions,
+    refreshSubscriptionViews,
     message,
     removableSelectedSubscriptionItems,
     selectedSubscriptionItems,
@@ -378,11 +467,7 @@ export function ContentSubscriptionsTab({
         );
       }
       setSelectedCatalogKeys([]);
-      await Promise.all([
-        loadSubscriptions(),
-        loadRecommendations(),
-        loadCatalog(),
-      ]);
+      await refreshSubscriptionViews();
       if (subscribedCount > 0) {
         emitSituationMonitorMonitorsUpdated("subscriptions");
       }
@@ -447,6 +532,22 @@ export function ContentSubscriptionsTab({
           </Space>
         </Space>
       </Card>
+
+      {subscriptionRefreshWarning ? (
+        <Alert
+          showIcon
+          closable
+          type="warning"
+          message={subscriptionRefreshWarning.message}
+          description={subscriptionRefreshWarning.description}
+          onClose={() => setSubscriptionRefreshWarning(null)}
+          action={
+            <Button size="small" onClick={() => void loadAll()}>
+              {t("common.retry", { defaultValue: "Retry" })}
+            </Button>
+          }
+        />
+      ) : null}
 
       <Card
         className="content-card"
@@ -806,85 +907,121 @@ export function ContentSubscriptionsTab({
 
       <Card
         className="content-card"
-        title={t("subscriptions.content.recommendationsTitle", {
-          defaultValue: "Recommended subscriptions",
-        })}
+        title={
+          <Space wrap size={[8, 8]}>
+            <span>
+              {t("subscriptions.content.recommendationsTitle", {
+                defaultValue: "Recommended subscriptions",
+              })}
+            </span>
+            {recommendationsWarning ? (
+              <Tag color="warning">
+                {t("subscriptions.content.degradedBadge", {
+                  defaultValue: "Degraded",
+                })}
+              </Tag>
+            ) : null}
+          </Space>
+        }
       >
-        {loading && !recommendations ? (
-          <Skeleton active paragraph={{ rows: 4 }} />
-        ) : (recommendations?.items?.length ?? 0) === 0 ? (
-          <Empty
-            description={t("subscriptions.content.recommendationsEmpty", {
-              defaultValue:
-                "Read more articles to unlock personalized recommendations.",
-            })}
-          />
-        ) : (
-          <List
-            dataSource={recommendations?.items ?? []}
-            renderItem={(item) => {
-              const isSubscribed = subscribedKeys.has(
-                buildContentSubscriptionKey(item.kind, item.normalizedValue),
-              );
-              return (
-                <List.Item
-                  actions={[
-                    <Button
-                      key="add"
-                      type="link"
-                      disabled={isSubscribed}
-                      onClick={() =>
-                        void handleBatchSubscribe([item], "recommendation")
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          {recommendationsWarning ? (
+            <Alert
+              showIcon
+              closable
+              type="warning"
+              message={recommendationsWarning.message}
+              description={recommendationsWarning.description}
+              onClose={() => setRecommendationsWarning(null)}
+              action={
+                <Button size="small" onClick={() => void loadRecommendations()}>
+                  {t("common.retry", { defaultValue: "Retry" })}
+                </Button>
+              }
+            />
+          ) : null}
+          {loading && !recommendations ? (
+            <Skeleton active paragraph={{ rows: 4 }} />
+          ) : (recommendations?.items?.length ?? 0) === 0 ? (
+            <Empty
+              description={t(
+                recommendationsWarning
+                  ? "subscriptions.content.recommendationsUnavailable"
+                  : "subscriptions.content.recommendationsEmpty",
+                {
+                  defaultValue: recommendationsWarning
+                    ? "Recommendations are temporarily unavailable."
+                    : "Read more articles to unlock personalized recommendations.",
+                },
+              )}
+            />
+          ) : (
+            <List
+              dataSource={recommendations?.items ?? []}
+              renderItem={(item) => {
+                const isSubscribed = subscribedKeys.has(
+                  buildContentSubscriptionKey(item.kind, item.normalizedValue),
+                );
+                return (
+                  <List.Item
+                    actions={[
+                      <Button
+                        key="add"
+                        type="link"
+                        disabled={isSubscribed}
+                        onClick={() =>
+                          void handleBatchSubscribe([item], "recommendation")
+                        }
+                      >
+                        {isSubscribed
+                          ? t("subscriptions.content.subscribed", {
+                              defaultValue: "Subscribed",
+                            })
+                          : t("subscriptions.content.addOne", {
+                              defaultValue: "Add",
+                            })}
+                      </Button>,
+                    ]}
+                  >
+                    <List.Item.Meta
+                      title={
+                        <Space wrap size={[6, 6]}>
+                          <Typography.Text strong>
+                            {item.displayValue}
+                          </Typography.Text>
+                          <Tag color={item.kind === "topic" ? "blue" : "purple"}>
+                            {item.kind}
+                          </Tag>
+                          {item.taxonomyDisplayName ? (
+                            <Tag>{item.taxonomyDisplayName}</Tag>
+                          ) : null}
+                        </Space>
                       }
-                    >
-                      {isSubscribed
-                        ? t("subscriptions.content.subscribed", {
-                            defaultValue: "Subscribed",
-                          })
-                        : t("subscriptions.content.addOne", {
-                            defaultValue: "Add",
-                          })}
-                    </Button>,
-                  ]}
-                >
-                  <List.Item.Meta
-                    title={
-                      <Space wrap size={[6, 6]}>
-                        <Typography.Text strong>
-                          {item.displayValue}
-                        </Typography.Text>
-                        <Tag color={item.kind === "topic" ? "blue" : "purple"}>
-                          {item.kind}
-                        </Tag>
-                        {item.taxonomyDisplayName ? (
-                          <Tag>{item.taxonomyDisplayName}</Tag>
-                        ) : null}
-                      </Space>
-                    }
-                    description={
-                      <Space wrap size={[6, 6]}>
-                        <Typography.Text type="secondary">
-                          {t("subscriptions.content.itemCount", {
-                            defaultValue: "{{count}} items",
-                            count: item.count,
-                          })}
-                        </Typography.Text>
-                        {typeof item.score === "number" ? (
+                      description={
+                        <Space wrap size={[6, 6]}>
                           <Typography.Text type="secondary">
-                            {t("subscriptions.content.relevanceScore", {
-                              defaultValue: "Relevance {{score}}",
-                              score: item.score.toFixed(2),
+                            {t("subscriptions.content.itemCount", {
+                              defaultValue: "{{count}} items",
+                              count: item.count,
                             })}
                           </Typography.Text>
-                        ) : null}
-                      </Space>
-                    }
-                  />
-                </List.Item>
-              );
-            }}
-          />
-        )}
+                          {typeof item.score === "number" ? (
+                            <Typography.Text type="secondary">
+                              {t("subscriptions.content.relevanceScore", {
+                                defaultValue: "Relevance {{score}}",
+                                score: item.score.toFixed(2),
+                              })}
+                            </Typography.Text>
+                          ) : null}
+                        </Space>
+                      }
+                    />
+                  </List.Item>
+                );
+              }}
+            />
+          )}
+        </Space>
       </Card>
     </div>
   );
@@ -913,11 +1050,7 @@ export function ContentSubscriptionsTab({
           defaultValue: "Subscription removed.",
         }),
       );
-      await Promise.all([
-        loadSubscriptions(),
-        loadRecommendations(),
-        loadCatalog(),
-      ]);
+      await refreshSubscriptionViews();
       emitSituationMonitorMonitorsUpdated("subscriptions");
     } catch (error) {
       captureClientError("Failed to remove single content subscription", error);

@@ -224,9 +224,42 @@ export interface Column {
   sources: string[];
 }
 
+interface NewsSourceBatchFetchError {
+  id: string;
+  message: string;
+}
+
+interface NewsSourceBatchFetchResponse {
+  results?: SourceResponse[];
+  errors?: NewsSourceBatchFetchError[];
+}
+
+type NewsSourcePrimeFailureReason = 'unsupported' | 'transient';
+
+interface NewsSourcePrimeFailure {
+  id: string;
+  message: string;
+  reason: NewsSourcePrimeFailureReason;
+}
+
+interface NewsSourceBatchPrimeResult {
+  failures: NewsSourcePrimeFailure[];
+}
+
+interface NewsSourcePrimeFeedback {
+  failedSourceIds: string[];
+  unsupportedSourceIds: string[];
+  transientSourceIds: string[];
+  requestFailed: boolean;
+}
+
 const api = createApiClient();
 const NEWS_SOURCE_QUERY_STALE_TIME_MS = 1000 * 30;
-const newsSourcePrimeInFlight = new Map<string, Promise<string[]>>();
+const NEWS_SOURCE_BATCH_REQUEST_LIMIT = 100;
+const newsSourcePrimeInFlight = new Map<
+  string,
+  Promise<NewsSourceBatchPrimeResult>
+>();
 const KNOWN_BATCH_UNSUPPORTED_NEWS_SOURCE_IDS = new Set<string>([
   // `/news-aggregator/sources/batch` currently omits this source, so keep it
   // on the per-card owner path and skip the redundant batch request upfront.
@@ -304,6 +337,35 @@ function normalizeSourceResponse(
   };
 }
 
+function shouldMarkNewsSourceBatchUnsupported(
+  error: NewsSourceBatchFetchError,
+): boolean {
+  return /unknown source|source getter not found/i.test(error.message);
+}
+
+function buildNewsSourcePrimeFeedback(
+  result: NewsSourceBatchPrimeResult,
+): NewsSourcePrimeFeedback | null {
+  if (result.failures.length === 0) {
+    return null;
+  }
+
+  const failedSourceIds = result.failures.map((failure) => failure.id);
+  const unsupportedSourceIds = result.failures
+    .filter((failure) => failure.reason === 'unsupported')
+    .map((failure) => failure.id);
+  const transientSourceIds = result.failures
+    .filter((failure) => failure.reason !== 'unsupported')
+    .map((failure) => failure.id);
+
+  return {
+    failedSourceIds,
+    unsupportedSourceIds,
+    transientSourceIds,
+    requestFailed: false,
+  };
+}
+
 async function fetchSourceById(id: string, latest = false): Promise<SourceResponse> {
   const query = latest
     ? `/news-aggregator/source?id=${encodeURIComponent(id)}&latest=1`
@@ -340,65 +402,110 @@ async function fetchDomesticOpinionIndex(
 async function batchFillNewsSourceCache(
   queryClient: QueryClient,
   sourceIds: string[],
-) {
+  options?: { forceRefresh?: boolean },
+): Promise<NewsSourceBatchPrimeResult> {
   const normalizedSourceIds = normalizeSourceIds(sourceIds);
   if (normalizedSourceIds.length === 0) {
-    return [];
+    return { failures: [] };
   }
 
-  const { data } = await api.post<{ results: SourceResponse[] }>(
-    "/news-aggregator/sources/batch",
-    {
-      sources: normalizedSourceIds,
-    },
-  );
-  const resolvedSourceIds = new Set<string>();
+  const failures: NewsSourcePrimeFailure[] = [];
 
-  for (const source of data.results ?? []) {
-    const normalizedSource = coerceSourceResponse(source);
-    resolvedSourceIds.add(normalizedSource.id);
-    newsSourceBatchUnsupported.delete(normalizedSource.id);
-    const queryKey = getNewsSourceQueryKey(normalizedSource.id);
-    const previous = queryClient.getQueryData<SourceResponse>(queryKey);
-    queryClient.setQueryData(
-      queryKey,
-      normalizeSourceResponse(normalizedSource, previous),
+  for (
+    let index = 0;
+    index < normalizedSourceIds.length;
+    index += NEWS_SOURCE_BATCH_REQUEST_LIMIT
+  ) {
+    const batchSourceIds = normalizedSourceIds.slice(
+      index,
+      index + NEWS_SOURCE_BATCH_REQUEST_LIMIT,
     );
+    const requestPath = options?.forceRefresh
+      ? "/news-aggregator/sources/batch?latest=1"
+      : "/news-aggregator/sources/batch";
+    const { data } = await api.post<NewsSourceBatchFetchResponse>(
+      requestPath,
+      {
+        sources: batchSourceIds,
+      },
+    );
+    const resolvedSourceIds = new Set<string>();
+    const failedBatchSourceIds = new Set<string>();
+
+    for (const source of data.results ?? []) {
+      const normalizedSource = coerceSourceResponse(source);
+      resolvedSourceIds.add(normalizedSource.id);
+      newsSourceBatchUnsupported.delete(normalizedSource.id);
+      const queryKey = getNewsSourceQueryKey(normalizedSource.id);
+      const previous = queryClient.getQueryData<SourceResponse>(queryKey);
+      queryClient.setQueryData(
+        queryKey,
+        normalizeSourceResponse(normalizedSource, previous),
+      );
+    }
+
+    for (const error of data.errors ?? []) {
+      failedBatchSourceIds.add(error.id);
+      const unsupported = shouldMarkNewsSourceBatchUnsupported(error);
+      failures.push({
+        id: error.id,
+        message: error.message,
+        reason: unsupported ? 'unsupported' : 'transient',
+      });
+      if (unsupported) {
+        newsSourceBatchUnsupported.add(error.id);
+      } else if (!KNOWN_BATCH_UNSUPPORTED_NEWS_SOURCE_IDS.has(error.id)) {
+        newsSourceBatchUnsupported.delete(error.id);
+      }
+    }
+
+    for (const sourceId of batchSourceIds) {
+      if (resolvedSourceIds.has(sourceId) || failedBatchSourceIds.has(sourceId)) {
+        continue;
+      }
+      failures.push({
+        id: sourceId,
+        message: 'Source missing from batch response',
+        reason: 'transient',
+      });
+      if (KNOWN_BATCH_UNSUPPORTED_NEWS_SOURCE_IDS.has(sourceId)) {
+        newsSourceBatchUnsupported.add(sourceId);
+      }
+    }
   }
 
-  const missingSourceIds = normalizedSourceIds.filter(
-    (sourceId) => !resolvedSourceIds.has(sourceId),
-  );
-  for (const sourceId of missingSourceIds) {
-    newsSourceBatchUnsupported.add(sourceId);
-  }
-  return missingSourceIds;
+  return { failures };
 }
 
 async function primeNewsSourceCache(
   queryClient: QueryClient,
   sourceIds: string[],
-) {
-  const batchTargetIds = getBatchPrimeTargetIds(queryClient, sourceIds);
+  options?: { forceRefresh?: boolean },
+): Promise<NewsSourceBatchPrimeResult> {
+  const normalizedTargetIds = normalizeSourceIds(sourceIds);
+  const batchTargetIds = options?.forceRefresh
+    ? normalizedTargetIds.filter(
+        (sourceId) => !newsSourceBatchUnsupported.has(sourceId),
+      )
+    : getBatchPrimeTargetIds(queryClient, normalizedTargetIds);
   if (batchTargetIds.length === 0) {
-    return;
+    return { failures: [] };
   }
 
-  const fingerprint = batchTargetIds.join("|");
+  const fingerprint = `${options?.forceRefresh ? 'latest:' : 'default:'}${batchTargetIds.join("|")}`;
   const inFlight = newsSourcePrimeInFlight.get(fingerprint);
   if (inFlight) {
-    await inFlight;
-    return;
+    return await inFlight;
   }
 
-  const nextPromise = batchFillNewsSourceCache(queryClient, batchTargetIds)
+  const nextPromise = batchFillNewsSourceCache(queryClient, batchTargetIds, options)
     .finally(() => {
       if (newsSourcePrimeInFlight.get(fingerprint) === nextPromise) {
         newsSourcePrimeInFlight.delete(fingerprint);
       }
     });
   newsSourcePrimeInFlight.set(fingerprint, nextPromise);
-  await nextPromise;
+  return await nextPromise;
 }
 
 export function useNewsMetadata() {
@@ -482,16 +589,20 @@ export function usePrimeNewsSources(sourceIds: string[]) {
   const [completedPrimeFingerprint, setCompletedPrimeFingerprint] = useState<
     string | null
   >(null);
+  const [primeFeedback, setPrimeFeedback] =
+    useState<NewsSourcePrimeFeedback | null>(null);
 
   useEffect(() => {
     if (normalizedSourceIds.length === 0) {
       setActivePrimeFingerprint(null);
       setCompletedPrimeFingerprint(null);
+      setPrimeFeedback(null);
       return;
     }
     const staleSourceIds = getStaleNewsSourceIds(queryClient, normalizedSourceIds);
     if (staleSourceIds.length === 0) {
       setCompletedPrimeFingerprint(sourcesFingerprint);
+      setPrimeFeedback(null);
       setActivePrimeFingerprint((current) =>
         current === sourcesFingerprint ? null : current,
       );
@@ -501,8 +612,23 @@ export function usePrimeNewsSources(sourceIds: string[]) {
     let cancelled = false;
     setActivePrimeFingerprint(sourcesFingerprint);
     void primeNewsSourceCache(queryClient, staleSourceIds)
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setPrimeFeedback(buildNewsSourcePrimeFeedback(result));
+      })
       .catch((error) => {
+        if (cancelled) {
+          return;
+        }
         console.error("NewsNow source priming failed:", error);
+        setPrimeFeedback({
+          failedSourceIds: staleSourceIds,
+          unsupportedSourceIds: [],
+          transientSourceIds: staleSourceIds,
+          requestFailed: true,
+        });
       })
       .finally(() => {
         if (cancelled) {
@@ -527,22 +653,52 @@ export function usePrimeNewsSources(sourceIds: string[]) {
   const primeSources = useCallback(
     async (ids: string[], options?: { force?: boolean }) => {
       const normalizedIds = normalizeSourceIds(ids);
+      const unsupportedSourceIds = normalizedIds.filter((sourceId) =>
+        newsSourceBatchUnsupported.has(sourceId),
+      );
       const targetIds = options?.force
         ? normalizedIds.filter(
             (sourceId) => !newsSourceBatchUnsupported.has(sourceId),
           )
         : getBatchPrimeTargetIds(queryClient, normalizedIds);
       if (targetIds.length === 0) {
+        if (unsupportedSourceIds.length > 0) {
+          setPrimeFeedback({
+            failedSourceIds: unsupportedSourceIds,
+            unsupportedSourceIds,
+            transientSourceIds: [],
+            requestFailed: false,
+          });
+        }
         return false;
       }
 
       const nextFingerprint = normalizedIds.join("|");
       setActivePrimeFingerprint(nextFingerprint);
       try {
-        await primeNewsSourceCache(queryClient, targetIds);
-        return true;
+        const result = await primeNewsSourceCache(queryClient, targetIds, {
+          forceRefresh: options?.force,
+        });
+        const nextFeedback = buildNewsSourcePrimeFeedback({
+          failures: [
+            ...result.failures,
+            ...unsupportedSourceIds.map((sourceId) => ({
+              id: sourceId,
+              message: 'Source does not support batch refresh',
+              reason: 'unsupported' as const,
+            })),
+          ],
+        });
+        setPrimeFeedback(nextFeedback);
+        return nextFeedback === null;
       } catch (error) {
         console.error("NewsNow source priming failed:", error);
+        setPrimeFeedback({
+          failedSourceIds: targetIds,
+          unsupportedSourceIds: [],
+          transientSourceIds: targetIds,
+          requestFailed: true,
+        });
         return false;
       } finally {
         setActivePrimeFingerprint((current) =>
@@ -555,6 +711,7 @@ export function usePrimeNewsSources(sourceIds: string[]) {
 
   return {
     hasFreshSourceData,
+    primeFeedback,
     isPrimingSources:
       normalizedSourceIds.length > 0 &&
       activePrimeFingerprint === sourcesFingerprint,
@@ -562,6 +719,7 @@ export function usePrimeNewsSources(sourceIds: string[]) {
       normalizedSourceIds.length > 0 &&
       !hasFreshSourceData &&
       completedPrimeFingerprint !== sourcesFingerprint,
+    clearPrimeFeedback: () => setPrimeFeedback(null),
     primeSources,
   };
 }

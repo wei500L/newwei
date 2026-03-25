@@ -40,7 +40,7 @@ export class NewsAggregatorController {
 
   @Public()
   @Post("sources/batch")
-  getSourcesBatch(@Body() body: BatchFetchDto) {
+  getSourcesBatch(@Body() body: BatchFetchDto, @Query("latest") latest?: string) {
     if (!Array.isArray(body?.sources)) {
       throw new BadRequestException("sources must be an array of source ids")
     }
@@ -49,7 +49,10 @@ export class NewsAggregatorController {
       .filter((s): s is string => typeof s === "string" && SOURCE_ID_PATTERN.test(s.trim()))
       .map((s) => s.trim())
 
-    return this.newsAggregatorService.fetchBatch(validated)
+    return this.newsAggregatorService.fetchBatch(
+      validated,
+      this.parseBooleanFlag(latest),
+    )
   }
 
   @Post("sources/order")

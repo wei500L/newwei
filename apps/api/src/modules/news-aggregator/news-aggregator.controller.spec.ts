@@ -77,6 +77,38 @@ describe("NewsAggregatorController", () => {
     await expect(controller.getSource("baidu", "true")).rejects.toBe(upstreamError)
   })
 
+  it.each(["true", "1", "yes", "y", "on"])(
+    "passes forceRefresh=true to batch fetch when query is %s",
+    async (queryValue) => {
+      newsAggregatorService.fetchBatch.mockResolvedValue({
+        requested: 1,
+        processed: 1,
+        results: [],
+        errors: [],
+      })
+
+      await controller.getSourcesBatch({ sources: ["baidu"] }, queryValue)
+
+      expect(newsAggregatorService.fetchBatch).toHaveBeenCalledWith(["baidu"], true)
+    },
+  )
+
+  it.each([undefined, "", "false", "0", "no", "n", "off"])(
+    "passes forceRefresh=false to batch fetch when query is %s",
+    async (queryValue) => {
+      newsAggregatorService.fetchBatch.mockResolvedValue({
+        requested: 1,
+        processed: 1,
+        results: [],
+        errors: [],
+      })
+
+      await controller.getSourcesBatch({ sources: ["baidu"] }, queryValue)
+
+      expect(newsAggregatorService.fetchBatch).toHaveBeenCalledWith(["baidu"], false)
+    },
+  )
+
   it("delegates resolve endpoint with normalized URL", async () => {
     newsAggregatorService.resolveByUrl.mockResolvedValue({
       matched: true,

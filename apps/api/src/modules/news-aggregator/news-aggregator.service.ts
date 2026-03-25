@@ -239,7 +239,7 @@ export class NewsAggregatorService {
     return Date.now() - updatedTime >= FREEBUF_EMPTY_CACHE_RETRY_MS
   }
 
-  async fetchBatch(ids: string[]) {
+  async fetchBatch(ids: string[], forceRefresh = false) {
     if (!Array.isArray(ids)) {
       throw new BadRequestException("sources must be an array")
     }
@@ -250,7 +250,9 @@ export class NewsAggregatorService {
 
     for (let index = 0; index < batchIds.length; index += BATCH_CONCURRENCY) {
       const chunk = batchIds.slice(index, index + BATCH_CONCURRENCY)
-      const chunkResult = await Promise.allSettled(chunk.map((sourceId) => this.fetchSource(sourceId)))
+      const chunkResult = await Promise.allSettled(
+        chunk.map((sourceId) => this.fetchSource(sourceId, forceRefresh)),
+      )
       settledResults.push(...chunkResult)
     }
 

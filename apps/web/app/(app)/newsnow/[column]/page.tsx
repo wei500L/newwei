@@ -5,6 +5,7 @@ import { Skeleton, Empty, Button, Result, Alert, Space } from "antd";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef } from "react";
 
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { useTheme } from "@/hooks/use-theme";
 
 import { NewsnowColumn } from "../components/newsnow-column";
@@ -114,7 +115,17 @@ export default function NewsnowColumnPage() {
   const domesticOpinionIndex = useDomesticOpinionIndex(
     resolvedColumnKey === "hottest",
   );
-  const { primeSources } = usePrimeNewsSources(visibleSourceIdsInColumn);
+  const { clearPrimeFeedback, primeFeedback, primeSources } =
+    usePrimeNewsSources(visibleSourceIdsInColumn);
+  const { pending: refreshingSources, run: runPrimeSources } = usePendingAction(
+    async (ids: string[]) => {
+      const refreshed = await primeSources(ids, { force: true });
+      if (refreshed) {
+        ids.forEach((sourceId) => clearLiveUnread(sourceId));
+      }
+      return refreshed;
+    },
+  );
   const hottestAnalysisGeneratedAt = hottestAnalysis.data?.generatedAt;
   const refetchDomesticOpinion = domesticOpinionIndex.refetch;
   const lastSyncedDomesticOpinionAnalysisRef = useRef<string | null>(null);
@@ -146,6 +157,51 @@ export default function NewsnowColumnPage() {
   const visibleRealtimeHighlights = realtimeHighlights
     .filter((entry) => sourceIds.includes(entry.sourceId))
     .slice(0, 3);
+  const primeFeedbackSummary = useMemo(() => {
+    if (!primeFeedback || primeFeedback.failedSourceIds.length === 0) {
+      return null;
+    }
+
+    const resolveSourceNames = (ids: string[]) =>
+      ids
+        .slice(0, 3)
+        .map((sourceId) => metadata?.sources[sourceId]?.name ?? sourceId)
+        .join("、");
+
+    if (primeFeedback.requestFailed) {
+      return {
+        message: "当前栏目刷新失败",
+        description:
+          "新闻源刷新请求未完成，页面继续显示已有缓存内容。请稍后重试。",
+      };
+    }
+
+    const details: string[] = [];
+    if (primeFeedback.transientSourceIds.length > 0) {
+      const names = resolveSourceNames(primeFeedback.transientSourceIds);
+      details.push(
+        `${primeFeedback.transientSourceIds.length} 个来源暂时刷新失败，当前继续显示缓存内容${
+          names ? `：${names}` : ""
+        }。`,
+      );
+    }
+    if (primeFeedback.unsupportedSourceIds.length > 0) {
+      const names = resolveSourceNames(primeFeedback.unsupportedSourceIds);
+      details.push(
+        `${primeFeedback.unsupportedSourceIds.length} 个来源不支持批量刷新，将在卡片加载时单独补取${
+          names ? `：${names}` : ""
+        }。`,
+      );
+    }
+
+    return {
+      message:
+        primeFeedback.transientSourceIds.length > 0
+          ? "部分来源未完成刷新"
+          : "部分来源跳过批量刷新",
+      description: details.join(" "),
+    };
+  }, [metadata?.sources, primeFeedback]);
 
   const frameClass = "min-h-full relative overflow-hidden";
   const frameStyle = isDark
@@ -255,11 +311,9 @@ export default function NewsnowColumnPage() {
                 <Space>
                   <Button
                     size="small"
+                    loading={refreshingSources}
                     className="font-medium bg-[var(--primary)] text-white border-none shadow-md hover:brightness-110 active:scale-95 transition-all"
-                    onClick={() => {
-                      void primeSources(sourceIds, { force: true });
-                      sourceIds.forEach((sourceId) => clearLiveUnread(sourceId));
-                    }}
+                    onClick={() => void runPrimeSources(sourceIds)}
                   >
                     立即刷新
                   </Button>
@@ -267,6 +321,36 @@ export default function NewsnowColumnPage() {
                     标记已读
                   </Button>
                 </Space>
+              }
+            />
+          </div>
+        ) : null}
+        {primeFeedbackSummary ? (
+          <div className="mx-auto w-full max-w-[1760px] px-4 pt-4 md:px-6 xl:px-8">
+            <Alert
+              showIcon
+              closable
+              type="warning"
+              className="glass-panel border-none shadow-sm"
+              message={
+                <span className="font-semibold">{primeFeedbackSummary.message}</span>
+              }
+              description={
+                <span className="opacity-80">{primeFeedbackSummary.description}</span>
+              }
+              onClose={clearPrimeFeedback}
+              action={
+                primeFeedback?.transientSourceIds.length ? (
+                  <Button
+                    size="small"
+                    loading={refreshingSources}
+                    onClick={() =>
+                      void runPrimeSources(primeFeedback.transientSourceIds)
+                    }
+                  >
+                    重试失败源
+                  </Button>
+                ) : undefined
               }
             />
           </div>
