@@ -53,18 +53,25 @@ describe("situation monitor interaction wiring", () => {
     expect(contentSource).toContain("const { pending: manualRefreshPending, run: runManualRefresh } =");
     expect(contentSource).toContain('apiClient.post<SituationMonitorRefreshResponse>(');
     expect(contentSource).toContain('"situation-monitor/refresh"');
+    expect(contentSource).toContain('situation-monitor/refresh-runs/${encodeURIComponent(refreshRunId)}');
     expect(contentSource).toContain("await Promise.allSettled([");
     expect(contentSource).toContain("telegramSignalActive");
     expect(contentSource).toContain("loadTelegramFeedRef.current()");
     expect(contentSource).toContain("loadOrefSignalsRef.current()");
-    expect(contentSource).toContain("setManualRefreshResult(response.data ?? null);");
+    expect(contentSource).toContain("setManualRefreshResult(nextResult);");
+    expect(contentSource).toContain("setRefreshTimelineOpen(true);");
+    expect(contentSource).toContain("void loadRefreshRun(nextResult.refreshId);");
     expect(contentSource).toContain('loading={loading || manualRefreshPending}');
   });
 
-  it("renders explicit alert feedback for refresh task results and insights warnings", () => {
+  it("renders explicit alert feedback, timeline UI, and recovery actions", () => {
     const contentSource = read("app/(app)/situation-monitor/situation-monitor-content.tsx");
 
-    expect(contentSource).toContain("manualRefreshResult.status === \"accepted\" ? \"success\" : \"warning\"");
+    expect(contentSource).toContain('manualRefreshResult.status === "accepted"');
+    expect(contentSource).toContain('getRefreshRunAlertType(refreshRun.status)');
+    expect(contentSource).toContain('title={t("situationMonitor.manualRefresh.timelineTitle"');
+    expect(contentSource).toContain("Open News Sources");
+    expect(contentSource).toContain("Open Situation Monitor Settings");
     expect(contentSource).toContain("insightsWarnings.map((warning) => (");
     expect(contentSource).toContain("No internal Situation Monitor items are available yet.");
     expect(contentSource).toContain("triggering new crawl collection requires crawl.write permission.");

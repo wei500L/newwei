@@ -29,6 +29,7 @@ import {
 } from "antd";
 import type { ColumnsType, TableProps } from "antd/es/table";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   useCallback,
@@ -45,6 +46,7 @@ import { useTranslation } from "react-i18next";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
+import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
 import { WarMap } from "@/app/(app)/dashboard/charts/war-map";
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { extractApiError } from "@/lib/api-error";
@@ -577,8 +579,20 @@ interface SituationMonitorRefreshTaskResult {
   durationMs: number;
 }
 
+interface SituationMonitorRefreshProgressCounts {
+  pending: number;
+  queued: number;
+  running: number;
+  completed: number;
+  failed: number;
+  paused?: number;
+  delayed?: number;
+}
+
 interface SituationMonitorRefreshResponse {
+  refreshId: string;
   requestedAt: string;
+  taskWindowStart: string;
   status: "accepted" | "partial";
   crawl: {
     attempted: boolean;
@@ -599,6 +613,23 @@ interface SituationMonitorRefreshResponse {
     externalCleared: number;
   };
   warnings: SituationMonitorWarning[];
+  terminal: boolean;
+}
+
+interface SituationMonitorRefreshRunResponse {
+  refreshId: string;
+  requestedAt: string;
+  taskWindowStart: string;
+  status: "queued" | "running" | "completed" | "partial" | "failed";
+  crawl: SituationMonitorRefreshResponse["crawl"];
+  progress: {
+    crawlTasks: SituationMonitorRefreshProgressCounts;
+    analysisTasks: SituationMonitorRefreshProgressCounts;
+  };
+  signals: SituationMonitorRefreshResponse["signals"];
+  cache: SituationMonitorRefreshResponse["cache"];
+  warnings: SituationMonitorWarning[];
+  terminal: boolean;
 }
 
 function mergeTranslationStatus(
@@ -643,6 +674,58 @@ function toAlertType(
     return "warning";
   }
   return "info";
+}
+
+function countRefreshTasks(progress: SituationMonitorRefreshProgressCounts): number {
+  return (
+    progress.pending +
+    progress.queued +
+    progress.running +
+    progress.completed +
+    progress.failed +
+    (progress.paused ?? 0) +
+    (progress.delayed ?? 0)
+  );
+}
+
+function countActiveRefreshTasks(progress: SituationMonitorRefreshProgressCounts): number {
+  return progress.pending + progress.queued + progress.running + (progress.delayed ?? 0);
+}
+
+function countTerminalRefreshTasks(progress: SituationMonitorRefreshProgressCounts): number {
+  return progress.completed + progress.failed + (progress.paused ?? 0);
+}
+
+function getRefreshRunAlertType(
+  status: SituationMonitorRefreshRunResponse["status"],
+): "info" | "success" | "warning" | "error" {
+  if (status === "completed") {
+    return "success";
+  }
+  if (status === "partial") {
+    return "warning";
+  }
+  if (status === "failed") {
+    return "error";
+  }
+  return "info";
+}
+
+function getRefreshRunStatusColor(
+  status: SituationMonitorRefreshRunResponse["status"],
+): string {
+  switch (status) {
+    case "completed":
+      return "green";
+    case "partial":
+      return "orange";
+    case "failed":
+      return "red";
+    case "running":
+      return "blue";
+    default:
+      return "default";
+  }
 }
 
 function toTagColor(level: string) {
@@ -833,6 +916,7 @@ function isVisibilityMatchingPreset(
 export function SituationMonitorContent() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const router = useRouter();
   const { data: session, status } = useSession();
   const screens = Grid.useBreakpoint();
   const uiSync = useUserUiSyncStatusStore(
@@ -845,8 +929,15 @@ export function SituationMonitorContent() {
   const canReadItems =
     permissions.includes("items.read") || permissions.includes("items.write");
   const canTriggerCrawl = permissions.includes("crawl.write");
+  const canViewNewsSources =
+    permissions.includes("crawl.read") || permissions.includes("crawl.write");
+  const canManageSettings = permissions.includes("settings.manage");
   const hasSignalSession =
     status === "authenticated" && Boolean(session?.accessToken);
+  const monitoringSettingsHref = buildAdminSettingsHref({
+    page: "monitoring",
+    panel: "situation-monitor",
+  });
 
   const windowHours = useSituationMonitorSettingsStore(
     (state) => state.windowHours,
@@ -881,6 +972,11 @@ export function SituationMonitorContent() {
   const [manualRefreshError, setManualRefreshError] = useState<string | null>(
     null,
   );
+  const [refreshTimelineOpen, setRefreshTimelineOpen] = useState(false);
+  const [refreshRun, setRefreshRun] =
+    useState<SituationMonitorRefreshRunResponse | null>(null);
+  const [refreshRunLoading, setRefreshRunLoading] = useState(false);
+  const [refreshRunError, setRefreshRunError] = useState<string | null>(null);
   const [data, setData] = useState<SituationMonitorInsightsResponse | null>(
     null,
   );
@@ -927,6 +1023,8 @@ export function SituationMonitorContent() {
     typeof document === "undefined" ? true : !document.hidden,
   );
   const refreshIdRef = useRef(0);
+  const refreshRunIdRef = useRef<string | null>(null);
+  const refreshRunPollTimerRef = useRef<number | null>(null);
   const telegramFeedLoadingRef = useRef(false);
   const pendingTelegramFeedLoadRef = useRef<{ silent: boolean } | null>(null);
   const loadTelegramFeedRef = useRef<
@@ -1274,6 +1372,64 @@ export function SituationMonitorContent() {
     [apiClient, scope, session?.accessToken, translateToZh, windowHours],
   );
 
+  const stopRefreshRunPolling = useCallback(() => {
+    if (refreshRunPollTimerRef.current !== null) {
+      window.clearTimeout(refreshRunPollTimerRef.current);
+      refreshRunPollTimerRef.current = null;
+    }
+  }, []);
+
+  const loadRefreshRun = useCallback(
+    async (refreshRunId: string, options?: { silent?: boolean }) => {
+      if (!session?.accessToken) {
+        return;
+      }
+
+      refreshRunIdRef.current = refreshRunId;
+      if (!options?.silent) {
+        setRefreshRunLoading(true);
+      }
+      setRefreshRunError(null);
+
+      try {
+        const response = await apiClient.get<SituationMonitorRefreshRunResponse>(
+          `situation-monitor/refresh-runs/${encodeURIComponent(refreshRunId)}`,
+        );
+        const nextRun = response.data ?? null;
+        if (!nextRun || refreshRunIdRef.current !== refreshRunId) {
+          return;
+        }
+
+        setRefreshRun(nextRun);
+        stopRefreshRunPolling();
+        if (!nextRun.terminal) {
+          refreshRunPollTimerRef.current = window.setTimeout(() => {
+            void loadRefreshRun(refreshRunId, { silent: true });
+          }, 3000);
+        }
+      } catch (err) {
+        captureClientError("Failed to load situation monitor refresh run", err);
+        if (refreshRunIdRef.current === refreshRunId) {
+          setRefreshRunError(
+            extractApiError(err).message ||
+              "Failed to load Situation Monitor refresh progress.",
+          );
+        }
+      } finally {
+        if (!options?.silent) {
+          setRefreshRunLoading(false);
+        }
+      }
+    },
+    [apiClient, session?.accessToken, stopRefreshRunPolling],
+  );
+
+  useEffect(() => {
+    return () => {
+      stopRefreshRunPolling();
+    };
+  }, [stopRefreshRunPolling]);
+
   const { pending: manualRefreshPending, run: runManualRefresh } =
     usePendingAction(async () => {
       if (!session?.accessToken) {
@@ -1282,12 +1438,20 @@ export function SituationMonitorContent() {
 
       setManualRefreshError(null);
       setManualRefreshResult(null);
+      setRefreshRun(null);
+      setRefreshRunError(null);
+      stopRefreshRunPolling();
 
       try {
         const response = await apiClient.post<SituationMonitorRefreshResponse>(
           "situation-monitor/refresh",
         );
-        setManualRefreshResult(response.data ?? null);
+        const nextResult = response.data ?? null;
+        setManualRefreshResult(nextResult);
+        if (nextResult?.refreshId) {
+          setRefreshTimelineOpen(true);
+          void loadRefreshRun(nextResult.refreshId);
+        }
       } catch (err) {
         captureClientError(
           "Failed to trigger situation monitor refresh tasks",
@@ -1325,6 +1489,71 @@ export function SituationMonitorContent() {
   const manualRefreshQueuedTasks =
     (manualRefreshResult?.crawl.crawlTaskCount ?? 0) +
     (manualRefreshResult?.crawl.analysisTaskCount ?? 0);
+  const refreshWarningCodes = useMemo(
+    () =>
+      new Set(
+        (refreshRun?.warnings ?? manualRefreshResult?.warnings ?? []).map(
+          (warning) => warning.code,
+        ),
+      ),
+    [manualRefreshResult?.warnings, refreshRun?.warnings],
+  );
+  const refreshActionItems = useMemo(() => {
+    const actions: {
+      key: string;
+      label: string;
+      onClick: () => void;
+    }[] = [];
+
+    if (
+      (refreshWarningCodes.has("situation_monitor_no_active_sources") ||
+        refreshWarningCodes.has("situation_monitor_crawl_scheduler_busy")) &&
+      canViewNewsSources
+    ) {
+      actions.push({
+        key: "news-sources",
+        label: t("situationMonitor.actions.openNewsSources", {
+          defaultValue: "Open News Sources",
+        }),
+        onClick: () => router.push("/admin/ops/news-sources"),
+      });
+    }
+
+    if (
+      (refreshWarningCodes.has("situation_monitor_telegram_refresh_failed") ||
+        refreshWarningCodes.has("situation_monitor_oref_refresh_failed")) &&
+      canManageSettings
+    ) {
+      actions.push({
+        key: "monitoring-settings",
+        label: t("situationMonitor.actions.openSettings", {
+          defaultValue: "Open Situation Monitor Settings",
+        }),
+        onClick: () => router.push(monitoringSettingsHref),
+      });
+    }
+
+    return actions;
+  }, [
+    canManageSettings,
+    canViewNewsSources,
+    monitoringSettingsHref,
+    refreshWarningCodes,
+    router,
+    t,
+  ]);
+  const refreshRunCrawlTotal = refreshRun
+    ? countRefreshTasks(refreshRun.progress.crawlTasks)
+    : 0;
+  const refreshRunAnalysisTotal = refreshRun
+    ? countRefreshTasks(refreshRun.progress.analysisTasks)
+    : 0;
+  const refreshRunCrawlTerminalCount = refreshRun
+    ? countTerminalRefreshTasks(refreshRun.progress.crawlTasks)
+    : 0;
+  const refreshRunAnalysisTerminalCount = refreshRun
+    ? countTerminalRefreshTasks(refreshRun.progress.analysisTasks)
+    : 0;
 
   const handleManualRefresh = useCallback(() => {
     void runManualRefresh();
@@ -4397,12 +4626,21 @@ export function SituationMonitorContent() {
           {t("common.loading", { defaultValue: "Loading" })}
         </Typography.Text>
       ) : !telegramFeed.configured ? (
-        <Typography.Text type="secondary">
-          {t("situationMonitor.telegram.configHint", {
-            defaultValue:
-              "Configure Telegram authorization in Admin Settings > System Settings > Situation Monitor.",
-          })}
-        </Typography.Text>
+        <Space direction="vertical" size={8}>
+          <Typography.Text type="secondary">
+            {t("situationMonitor.telegram.configHint", {
+              defaultValue:
+                "Configure Telegram authorization in Admin Settings > System Settings > Situation Monitor.",
+            })}
+          </Typography.Text>
+          {canManageSettings ? (
+            <Button size="small" href={monitoringSettingsHref}>
+              {t("situationMonitor.actions.openSettings", {
+                defaultValue: "Open Situation Monitor Settings",
+              })}
+            </Button>
+          ) : null}
+        </Space>
       ) : telegramFeed.items.length === 0 ? (
         <Typography.Text type="secondary">
           {t("situationMonitor.telegram.empty", {
@@ -4526,12 +4764,21 @@ export function SituationMonitorContent() {
           {t("common.loading", { defaultValue: "Loading" })}
         </Typography.Text>
       ) : !orefAlerts.configured ? (
-        <Typography.Text type="secondary">
-          {t("situationMonitor.oref.configHint", {
-            defaultValue:
-              "Configure OREF proxy auth and enable OREF polling in environment variables.",
-          })}
-        </Typography.Text>
+        <Space direction="vertical" size={8}>
+          <Typography.Text type="secondary">
+            {t("situationMonitor.oref.configHint", {
+              defaultValue:
+                "Configure OREF proxy auth and enable OREF polling in environment variables.",
+            })}
+          </Typography.Text>
+          {canManageSettings ? (
+            <Button size="small" href={monitoringSettingsHref}>
+              {t("situationMonitor.actions.openSettings", {
+                defaultValue: "Open Situation Monitor Settings",
+              })}
+            </Button>
+          ) : null}
+        </Space>
       ) : (
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           {orefAlerts.alerts.length === 0 ? (
@@ -5472,21 +5719,61 @@ export function SituationMonitorContent() {
       {manualRefreshResult ? (
         <div className="mt-3">
           <Alert
-            type={manualRefreshResult.status === "accepted" ? "success" : "warning"}
+            type={
+              refreshRun
+                ? getRefreshRunAlertType(refreshRun.status)
+                : manualRefreshResult.status === "accepted"
+                  ? "success"
+                  : "warning"
+            }
             showIcon
             closable
-            onClose={() => setManualRefreshResult(null)}
+            onClose={() => {
+              setManualRefreshResult(null);
+              setRefreshRun(null);
+              setRefreshRunError(null);
+              stopRefreshRunPolling();
+            }}
             message={
-              manualRefreshResult.status === "accepted"
-                ? t("situationMonitor.manualRefresh.accepted", {
-                    defaultValue: "Refresh tasks started successfully.",
+              refreshRun
+                ? t(`situationMonitor.manualRefresh.status.${refreshRun.status}`, {
+                    defaultValue:
+                      refreshRun.status === "completed"
+                        ? "Refresh completed successfully."
+                        : refreshRun.status === "partial"
+                          ? "Refresh completed with warnings."
+                          : refreshRun.status === "failed"
+                            ? "Refresh failed."
+                            : refreshRun.status === "running"
+                              ? "Refresh is running."
+                              : "Refresh is queued.",
                   })
-                : t("situationMonitor.manualRefresh.partial", {
-                    defaultValue: "Refresh completed with warnings.",
-                  })
+                : manualRefreshResult.status === "accepted"
+                  ? t("situationMonitor.manualRefresh.accepted", {
+                      defaultValue: "Refresh tasks started successfully.",
+                    })
+                  : t("situationMonitor.manualRefresh.partial", {
+                      defaultValue: "Refresh completed with warnings.",
+                    })
             }
             description={
               <Space direction="vertical" size={4}>
+                {refreshRun ? (
+                  <Space wrap size={8}>
+                    <Tag color={getRefreshRunStatusColor(refreshRun.status)}>
+                      {refreshRun.status.toUpperCase()}
+                    </Tag>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.manualRefresh.requestedAt", {
+                        defaultValue: "Requested {{time}}",
+                        time: formatDateTime(refreshRun.requestedAt, locale, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        }),
+                      })}
+                    </Typography.Text>
+                  </Space>
+                ) : null}
                 <Typography.Text>
                   {manualRefreshResult.crawl.message}
                 </Typography.Text>
@@ -5504,6 +5791,32 @@ export function SituationMonitorContent() {
                     external: manualRefreshResult.cache.externalCleared,
                   })}
                 </Typography.Text>
+                {refreshRun ? (
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.manualRefresh.timelineHint", {
+                      defaultValue:
+                        "Open the refresh timeline to inspect crawl, analysis, and signal progress.",
+                    })}
+                  </Typography.Text>
+                ) : null}
+              </Space>
+            }
+            action={
+              <Space wrap>
+                <Button size="small" onClick={() => setRefreshTimelineOpen(true)}>
+                  {t("situationMonitor.manualRefresh.viewTimeline", {
+                    defaultValue: "View timeline",
+                  })}
+                </Button>
+                {refreshActionItems.map((action) => (
+                  <Button
+                    key={action.key}
+                    size="small"
+                    onClick={action.onClick}
+                  >
+                    {action.label}
+                  </Button>
+                ))}
               </Space>
             }
           />
@@ -5583,6 +5896,37 @@ export function SituationMonitorContent() {
                           "No completed processed items matched the current time window.",
                       })
             }
+            action={
+              !canTriggerCrawl
+                ? null
+                : manualRefreshResult?.crawl.activeSourceCount === 0 &&
+                    canViewNewsSources
+                  ? (
+                    <Button
+                      size="small"
+                      onClick={() => router.push("/admin/ops/news-sources")}
+                    >
+                      {t("situationMonitor.actions.openNewsSources", {
+                        defaultValue: "Open News Sources",
+                      })}
+                    </Button>
+                  )
+                  : refreshActionItems.length > 0
+                    ? (
+                      <Space wrap>
+                        {refreshActionItems.map((action) => (
+                          <Button
+                            key={`no-coverage:${action.key}`}
+                            size="small"
+                            onClick={action.onClick}
+                          >
+                            {action.label}
+                          </Button>
+                        ))}
+                      </Space>
+                    )
+                    : null
+            }
           />
         </div>
       ) : null}
@@ -5607,6 +5951,309 @@ export function SituationMonitorContent() {
           />
         </div>
       ) : null}
+
+      <Drawer
+        title={t("situationMonitor.manualRefresh.timelineTitle", {
+          defaultValue: "Refresh Timeline",
+        })}
+        open={refreshTimelineOpen}
+        onClose={() => setRefreshTimelineOpen(false)}
+        width={screens.lg ? 480 : "100%"}
+      >
+        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+          {refreshRunError ? (
+            <Alert type="error" showIcon message={refreshRunError} />
+          ) : null}
+          {!refreshRun ? (
+            <Alert
+              type={refreshRunLoading ? "info" : "warning"}
+              showIcon
+              message={
+                refreshRunLoading
+                  ? t("situationMonitor.manualRefresh.timelineLoading", {
+                      defaultValue: "Loading refresh progress...",
+                    })
+                  : t("situationMonitor.manualRefresh.timelineEmpty", {
+                      defaultValue: "No refresh timeline is available yet.",
+                    })
+              }
+            />
+          ) : (
+            <>
+              <Alert
+                type={getRefreshRunAlertType(refreshRun.status)}
+                showIcon
+                message={t("situationMonitor.manualRefresh.timelineSummary", {
+                  defaultValue: "Refresh status: {{status}}",
+                  status: refreshRun.status.toUpperCase(),
+                })}
+                description={
+                  <Space direction="vertical" size={4}>
+                    <Typography.Text>
+                      {refreshRun.crawl.message}
+                    </Typography.Text>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.manualRefresh.timelineRequested", {
+                        defaultValue: "Requested {{time}}",
+                        time: formatDateTime(refreshRun.requestedAt, locale, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        }),
+                      })}
+                    </Typography.Text>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.manualRefresh.timelineWindow", {
+                        defaultValue: "Task window started {{time}}",
+                        time: formatDateTime(
+                          refreshRun.taskWindowStart,
+                          locale,
+                          {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          },
+                        ),
+                      })}
+                    </Typography.Text>
+                  </Space>
+                }
+                action={
+                  refreshActionItems.length > 0 ? (
+                    <Space wrap>
+                      {refreshActionItems.map((action) => (
+                        <Button
+                          key={`drawer:${action.key}`}
+                          size="small"
+                          onClick={action.onClick}
+                        >
+                          {action.label}
+                        </Button>
+                      ))}
+                    </Space>
+                  ) : null
+                }
+              />
+
+              <Card
+                size="small"
+                title={t("situationMonitor.manualRefresh.overview", {
+                  defaultValue: "Overview",
+                })}
+              >
+                <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                  <Space wrap>
+                    <Tag color={getRefreshRunStatusColor(refreshRun.status)}>
+                      {refreshRun.status.toUpperCase()}
+                    </Tag>
+                    <Tag color={refreshRun.terminal ? "green" : "blue"}>
+                      {refreshRun.terminal
+                        ? t("situationMonitor.manualRefresh.terminal", {
+                            defaultValue: "Terminal",
+                          })
+                        : t("situationMonitor.manualRefresh.live", {
+                            defaultValue: "Polling",
+                          })}
+                    </Tag>
+                  </Space>
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.manualRefresh.cache", {
+                      defaultValue:
+                        "Cleared {{insights}} insights cache entries and {{external}} external cache entries.",
+                      insights: refreshRun.cache.insightsCleared,
+                      external: refreshRun.cache.externalCleared,
+                    })}
+                  </Typography.Text>
+                </Space>
+              </Card>
+
+              <Card
+                size="small"
+                title={t("situationMonitor.manualRefresh.pipeline", {
+                  defaultValue: "Pipeline",
+                })}
+              >
+                <Row gutter={[12, 12]}>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.manualRefresh.activeSources", {
+                        defaultValue: "Active sources",
+                      })}
+                    </Typography.Text>
+                    <Typography.Title level={4} style={{ margin: 0 }}>
+                      {refreshRun.crawl.activeSourceCount}
+                    </Typography.Title>
+                  </Col>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.manualRefresh.scheduledSources", {
+                        defaultValue: "Scheduled",
+                      })}
+                    </Typography.Text>
+                    <Typography.Title level={4} style={{ margin: 0 }}>
+                      {refreshRun.crawl.scheduledSourceCount}
+                    </Typography.Title>
+                  </Col>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.manualRefresh.crawlTasks", {
+                        defaultValue: "Crawl tasks",
+                      })}
+                    </Typography.Text>
+                    <Typography.Title level={4} style={{ margin: 0 }}>
+                      {refreshRun.crawl.crawlTaskCount}
+                    </Typography.Title>
+                  </Col>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">
+                      {t("situationMonitor.manualRefresh.analysisTasks", {
+                        defaultValue: "Analysis tasks",
+                      })}
+                    </Typography.Text>
+                    <Typography.Title level={4} style={{ margin: 0 }}>
+                      {refreshRun.crawl.analysisTaskCount}
+                    </Typography.Title>
+                  </Col>
+                </Row>
+              </Card>
+
+              <Card
+                size="small"
+                title={t("situationMonitor.manualRefresh.progress", {
+                  defaultValue: "Progress",
+                })}
+              >
+                <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                  <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                    <Space wrap>
+                      <Typography.Text strong>
+                        {t("situationMonitor.manualRefresh.crawlTasks", {
+                          defaultValue: "Crawl tasks",
+                        })}
+                      </Typography.Text>
+                      <Tag>
+                        {t("situationMonitor.manualRefresh.activeTaskCount", {
+                          defaultValue: "{{count}} active",
+                          count: countActiveRefreshTasks(
+                            refreshRun.progress.crawlTasks,
+                          ),
+                        })}
+                      </Tag>
+                    </Space>
+                    <Progress
+                      percent={
+                        refreshRunCrawlTotal > 0
+                          ? Math.round(
+                              (refreshRunCrawlTerminalCount /
+                                refreshRunCrawlTotal) *
+                                100,
+                            )
+                          : 0
+                      }
+                      status={
+                        refreshRun.status === "failed" ? "exception" : "active"
+                      }
+                    />
+                    <Space wrap size={6}>
+                      <Tag>pending {refreshRun.progress.crawlTasks.pending}</Tag>
+                      <Tag>queued {refreshRun.progress.crawlTasks.queued}</Tag>
+                      <Tag>running {refreshRun.progress.crawlTasks.running}</Tag>
+                      <Tag color="green">
+                        completed {refreshRun.progress.crawlTasks.completed}
+                      </Tag>
+                      <Tag color="red">
+                        failed {refreshRun.progress.crawlTasks.failed}
+                      </Tag>
+                      <Tag>paused {refreshRun.progress.crawlTasks.paused ?? 0}</Tag>
+                    </Space>
+                  </Space>
+                  <Divider style={{ margin: "4px 0" }} />
+                  <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                    <Space wrap>
+                      <Typography.Text strong>
+                        {t("situationMonitor.manualRefresh.analysisTasks", {
+                          defaultValue: "Analysis tasks",
+                        })}
+                      </Typography.Text>
+                      <Tag>
+                        {t("situationMonitor.manualRefresh.activeTaskCount", {
+                          defaultValue: "{{count}} active",
+                          count: countActiveRefreshTasks(
+                            refreshRun.progress.analysisTasks,
+                          ),
+                        })}
+                      </Tag>
+                    </Space>
+                    <Progress
+                      percent={
+                        refreshRunAnalysisTotal > 0
+                          ? Math.round(
+                              (refreshRunAnalysisTerminalCount /
+                                refreshRunAnalysisTotal) *
+                                100,
+                            )
+                          : 0
+                      }
+                      status={
+                        refreshRun.status === "failed" ? "exception" : "active"
+                      }
+                    />
+                    <Space wrap size={6}>
+                      <Tag>pending {refreshRun.progress.analysisTasks.pending}</Tag>
+                      <Tag>queued {refreshRun.progress.analysisTasks.queued}</Tag>
+                      <Tag>running {refreshRun.progress.analysisTasks.running}</Tag>
+                      <Tag color="green">
+                        completed {refreshRun.progress.analysisTasks.completed}
+                      </Tag>
+                      <Tag color="red">
+                        failed {refreshRun.progress.analysisTasks.failed}
+                      </Tag>
+                      <Tag>
+                        delayed {refreshRun.progress.analysisTasks.delayed ?? 0}
+                      </Tag>
+                    </Space>
+                  </Space>
+                </Space>
+              </Card>
+
+              <Card
+                size="small"
+                title={t("situationMonitor.manualRefresh.signals", {
+                  defaultValue: "Signals",
+                })}
+              >
+                <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                  <Typography.Text>
+                    {`Telegram: ${refreshRun.signals.telegram.message}`}
+                  </Typography.Text>
+                  <Typography.Text>
+                    {`OREF: ${refreshRun.signals.oref.message}`}
+                  </Typography.Text>
+                </Space>
+              </Card>
+
+              {refreshRun.warnings.length > 0 ? (
+                <Card
+                  size="small"
+                  title={t("situationMonitor.manualRefresh.warnings", {
+                    defaultValue: "Warnings",
+                  })}
+                >
+                  <Space direction="vertical" size="small" style={{ width: "100%" }}>
+                    {refreshRun.warnings.map((warning) => (
+                      <Alert
+                        key={`refresh-warning:${warning.source}:${warning.code}`}
+                        type={toAlertType(warning.severity)}
+                        showIcon
+                        message={warning.message}
+                        description={warning.detail}
+                      />
+                    ))}
+                  </Space>
+                </Card>
+              ) : null}
+            </>
+          )}
+        </Space>
+      </Drawer>
 
       <Drawer
         title={t("situationMonitor.panels.title", { defaultValue: "Panels" })}

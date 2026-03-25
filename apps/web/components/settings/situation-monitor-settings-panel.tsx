@@ -1,9 +1,10 @@
 "use client";
 
-import { InfoCircleOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, InfoCircleOutlined } from "@ant-design/icons";
 import {
   Alert,
   Button,
+  Card,
   Form,
   Input,
   InputNumber,
@@ -16,10 +17,12 @@ import {
   Typography,
   message,
 } from "antd";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -34,6 +37,7 @@ type SituationMonitorTranslationProvider = "deeplx";
 type SituationMonitorTranslationApiKeySource = "stored" | "env" | "none";
 type SituationMonitorExternalApiKeySource = "stored" | "env" | "none";
 type SituationMonitorTelegramSecretSource = "stored" | "env" | "none";
+type SituationMonitorOrefSecretSource = "env" | "none";
 type SituationMonitorLiveHlsProxySource = "stored" | "none";
 
 interface SituationMonitorSettingsResponse {
@@ -60,6 +64,9 @@ interface SituationMonitorSettingsResponse {
   telegramApiHashSource: SituationMonitorTelegramSecretSource;
   hasTelegramSession: boolean;
   telegramSessionSource: SituationMonitorTelegramSecretSource;
+  orefEnabled: boolean;
+  orefConfigured: boolean;
+  orefProxyAuthSource: SituationMonitorOrefSecretSource;
   telegramChannelSet: string;
   telegramMaxFeedItems: number;
   telegramMaxTextChars: number;
@@ -187,6 +194,9 @@ const EMPTY_SETTINGS: SituationMonitorSettingsResponse = {
   telegramApiHashSource: "none",
   hasTelegramSession: false,
   telegramSessionSource: "none",
+  orefEnabled: false,
+  orefConfigured: false,
+  orefProxyAuthSource: "none",
   telegramChannelSet: "full",
   telegramMaxFeedItems: 200,
   telegramMaxTextChars: 800,
@@ -239,8 +249,40 @@ function toFormValues(settings: SituationMonitorSettingsResponse): SituationMoni
   };
 }
 
+type SituationMonitorProviderReadiness = "configured" | "missing" | "disabled";
+
+function getProviderReadinessMeta(
+  readiness: SituationMonitorProviderReadiness,
+  t: (key: string, options?: { defaultValue?: string }) => string,
+): { color: string; label: string } {
+  switch (readiness) {
+    case "configured":
+      return {
+        color: "green",
+        label: t("systemSettings.situationMonitor.status.configured", {
+          defaultValue: "Configured",
+        }),
+      };
+    case "disabled":
+      return {
+        color: "default",
+        label: t("systemSettings.situationMonitor.status.disabled", {
+          defaultValue: "Disabled",
+        }),
+      };
+    default:
+      return {
+        color: "orange",
+        label: t("systemSettings.situationMonitor.status.notConfigured", {
+          defaultValue: "Not configured",
+        }),
+      };
+  }
+}
+
 export function SituationMonitorSettingsPanel() {
   const { t } = useTranslation();
+  const router = useRouter();
   const { data: session } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
   const [form] = Form.useForm<SituationMonitorSettingsFormValues>();
@@ -614,6 +656,34 @@ export function SituationMonitorSettingsPanel() {
     defaultValue:
       "Telegram and OREF are global shared signals. Any signed-in user with items.read can view the same feed and updates.",
   });
+  const monitoringSettingsHref = buildAdminSettingsHref({
+    page: "monitoring",
+    panel: "situation-monitor",
+  });
+  const newsSourceSchedulerHref = buildAdminSettingsHref({
+    page: "ingestion",
+    panel: "news-source-scheduler",
+  });
+  const telegramReadiness: SituationMonitorProviderReadiness = !settings.telegramEnabled
+    ? "disabled"
+    : settings.hasTelegramApiId && settings.hasTelegramApiHash && settings.hasTelegramSession
+      ? "configured"
+      : "missing";
+  const orefReadiness: SituationMonitorProviderReadiness = !settings.orefEnabled
+    ? "disabled"
+    : settings.orefConfigured
+      ? "configured"
+      : "missing";
+  const finnhubReadiness: SituationMonitorProviderReadiness = settings.hasFinnhubApiKey
+    ? "configured"
+    : "missing";
+  const fredReadiness: SituationMonitorProviderReadiness = settings.hasFredApiKey
+    ? "configured"
+    : "missing";
+  const telegramReadinessMeta = getProviderReadinessMeta(telegramReadiness, t);
+  const orefReadinessMeta = getProviderReadinessMeta(orefReadiness, t);
+  const finnhubReadinessMeta = getProviderReadinessMeta(finnhubReadiness, t);
+  const fredReadinessMeta = getProviderReadinessMeta(fredReadiness, t);
 
   if (loading && !loadedOnce) {
     return (
@@ -626,6 +696,93 @@ export function SituationMonitorSettingsPanel() {
   return (
     <>
       {contextHolder}
+      <Space
+        direction="vertical"
+        size="middle"
+        style={{ display: "flex", marginBottom: "1rem" }}
+      >
+        <Space wrap>
+          <Button
+            icon={<ArrowLeftOutlined />}
+            onClick={() => router.push("/situation-monitor")}
+          >
+            {t("systemSettings.situationMonitor.actions.backToMonitor", {
+              defaultValue: "Back to Situation Monitor",
+            })}
+          </Button>
+          <Button href={monitoringSettingsHref}>
+            {t("systemSettings.situationMonitor.actions.openMonitoringSettings", {
+              defaultValue: "Open monitoring settings",
+            })}
+          </Button>
+        </Space>
+
+        <Alert
+          type="info"
+          showIcon
+          message={t("systemSettings.situationMonitor.readiness.title", {
+            defaultValue: "Situation Monitor readiness",
+          })}
+          description={t("systemSettings.situationMonitor.readiness.description", {
+            defaultValue:
+              "These settings directly affect Situation Monitor refresh, Telegram, OREF, Finnhub, and FRED data availability.",
+          })}
+        />
+
+        <Card size="small" title={t("systemSettings.situationMonitor.readiness.providers", {
+          defaultValue: "Provider readiness",
+        })}>
+          <Space direction="vertical" size="small" style={{ display: "flex" }}>
+            <Space wrap>
+              <Typography.Text strong>Telegram</Typography.Text>
+              <Tag color={telegramReadinessMeta.color}>{telegramReadinessMeta.label}</Tag>
+              <Tag color="blue">{telegramApiIdSourceLabel}</Tag>
+              <Tag color="blue">{telegramApiHashSourceLabel}</Tag>
+              <Tag color="blue">{telegramSessionSourceLabel}</Tag>
+            </Space>
+            <Space wrap>
+              <Typography.Text strong>OREF</Typography.Text>
+              <Tag color={orefReadinessMeta.color}>{orefReadinessMeta.label}</Tag>
+              <Tag color="blue">
+                {settings.orefProxyAuthSource === "env"
+                  ? t("systemSettings.situationMonitor.status.apiKeySources.env", {
+                      defaultValue: "env",
+                    })
+                  : t("systemSettings.situationMonitor.status.apiKeySources.none", {
+                      defaultValue: "none",
+                    })}
+              </Tag>
+              <Tag>
+                {settings.orefEnabled
+                  ? t("systemSettings.situationMonitor.status.enabled", {
+                      defaultValue: "Enabled",
+                    })
+                  : t("systemSettings.situationMonitor.status.disabled", {
+                      defaultValue: "Disabled",
+                    })}
+              </Tag>
+            </Space>
+            <Space wrap>
+              <Typography.Text strong>Finnhub</Typography.Text>
+              <Tag color={finnhubReadinessMeta.color}>{finnhubReadinessMeta.label}</Tag>
+              <Tag color="blue">{finnhubKeySourceLabel}</Tag>
+            </Space>
+            <Space wrap>
+              <Typography.Text strong>FRED</Typography.Text>
+              <Tag color={fredReadinessMeta.color}>{fredReadinessMeta.label}</Tag>
+              <Tag color="blue">{fredKeySourceLabel}</Tag>
+            </Space>
+            <Space wrap>
+              <Button href={newsSourceSchedulerHref}>
+                {t("systemSettings.situationMonitor.actions.openSchedulerSettings", {
+                  defaultValue: "Open scheduler settings",
+                })}
+              </Button>
+            </Space>
+          </Space>
+        </Card>
+      </Space>
+
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
         {t("systemSettings.situationMonitor.description")}
       </Typography.Paragraph>

@@ -1,4 +1,6 @@
 import { Injectable } from "@nestjs/common";
+import { CrawlTaskStatus, PipelineJobStatus } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
@@ -13,6 +15,69 @@ import type { SituationMonitorWarning } from "./situation-monitor.service";
 
 const INSIGHTS_CACHE_PREFIX = "situation-monitor:insights:";
 const EXTERNAL_CACHE_PREFIX = "situation-monitor:external:";
+const REFRESH_RUN_CACHE_KEY_PREFIX = "situation-monitor:refresh-run:";
+const REFRESH_RUN_CACHE_TTL_SECONDS = 15 * 60;
+
+type SituationMonitorRefreshLifecycleStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "partial"
+  | "failed";
+
+interface SituationMonitorRefreshRunRecord {
+  refreshId: string;
+  orgId: string;
+  requestedAt: string;
+  taskWindowStart: string;
+  activeSourceIds: string[];
+  crawl: {
+    attempted: boolean;
+    permitted: boolean;
+    activeSourceCount: number;
+    scheduledSourceCount: number;
+    schedulerTriggered: boolean;
+    crawlTaskCount: number;
+    analysisTaskCount: number;
+    message: string;
+  };
+  signals: {
+    telegram: SituationMonitorRefreshTaskResult;
+    oref: SituationMonitorRefreshTaskResult;
+  };
+  cache: {
+    insightsCleared: number;
+    externalCleared: number;
+  };
+  warnings: SituationMonitorWarning[];
+  terminal: boolean;
+}
+
+interface SituationMonitorRefreshProgressCounts {
+  pending: number;
+  queued: number;
+  running: number;
+  completed: number;
+  failed: number;
+  paused?: number;
+  delayed?: number;
+}
+
+export interface SituationMonitorRefreshRunResponse {
+  refreshId: string;
+  requestedAt: string;
+  taskWindowStart: string;
+  status: SituationMonitorRefreshLifecycleStatus;
+  crawl: SituationMonitorRefreshResponse["crawl"];
+  progress: {
+    crawlTasks: SituationMonitorRefreshProgressCounts;
+    analysisTasks: SituationMonitorRefreshProgressCounts;
+  };
+  signals: SituationMonitorRefreshResponse["signals"];
+  cache: SituationMonitorRefreshResponse["cache"];
+  warnings: SituationMonitorWarning[];
+  terminal: boolean;
+}
 
 export interface SituationMonitorRefreshTaskResult {
   attempted: boolean;
@@ -22,7 +87,9 @@ export interface SituationMonitorRefreshTaskResult {
 }
 
 export interface SituationMonitorRefreshResponse {
+  refreshId: string;
   requestedAt: string;
+  taskWindowStart: string;
   status: "accepted" | "partial";
   crawl: {
     attempted: boolean;
@@ -43,6 +110,7 @@ export interface SituationMonitorRefreshResponse {
     externalCleared: number;
   };
   warnings: SituationMonitorWarning[];
+  terminal: boolean;
 }
 
 @Injectable()
@@ -59,7 +127,9 @@ export class SituationMonitorRefreshService {
     permissions: readonly string[],
   ): Promise<SituationMonitorRefreshResponse> {
     const warnings: SituationMonitorWarning[] = [];
+    const refreshId = randomUUID();
     const requestedAt = new Date().toISOString();
+    const taskWindowStart = new Date().toISOString();
     const canTriggerCrawl = permissions.includes("crawl.write");
 
     const [
@@ -131,7 +201,6 @@ export class SituationMonitorRefreshService {
           },
         });
         scheduledSourceCount = result.count;
-        const taskWindowStart = new Date();
         const dispatchResult = await this.scheduler.scheduleCron();
 
         if (dispatchResult === null) {
@@ -150,14 +219,14 @@ export class SituationMonitorRefreshService {
               where: {
                 orgId,
                 sourceId: { in: activeSourceIds },
-                createdAt: { gte: taskWindowStart },
+                createdAt: { gte: new Date(taskWindowStart) },
               },
             }),
             this.prisma.crawlTask.count({
               where: {
                 orgId,
                 newsSourceId: { in: activeSourceIds },
-                createdAt: { gte: taskWindowStart },
+                createdAt: { gte: new Date(taskWindowStart) },
               },
             }),
           ]);
@@ -187,9 +256,12 @@ export class SituationMonitorRefreshService {
     const telegram = await this.refreshTelegramSignal(warnings);
     const oref = await this.refreshOrefSignal(warnings);
 
-    return {
+    const record: SituationMonitorRefreshRunRecord = {
+      refreshId,
+      orgId,
       requestedAt,
-      status: warnings.length > 0 ? "partial" : "accepted",
+      taskWindowStart,
+      activeSourceIds,
       crawl: {
         attempted: crawlAttempted,
         permitted: canTriggerCrawl,
@@ -208,7 +280,152 @@ export class SituationMonitorRefreshService {
         insightsCleared,
         externalCleared,
       },
+      warnings: [...warnings],
+      terminal: false,
+    };
+    await this.persistRefreshRun(record);
+    const run = await this.getRefreshRun(orgId, refreshId);
+
+    return {
+      refreshId,
+      requestedAt,
+      taskWindowStart,
+      status: warnings.length > 0 ? "partial" : "accepted",
+      crawl: record.crawl,
+      signals: {
+        telegram,
+        oref,
+      },
+      cache: {
+        insightsCleared,
+        externalCleared,
+      },
       warnings,
+      terminal: run?.terminal ?? false,
+    };
+  }
+
+  async getRefreshRun(
+    orgId: string,
+    refreshId: string,
+  ): Promise<SituationMonitorRefreshRunResponse | null> {
+    const record = await this.cache.get<SituationMonitorRefreshRunRecord>(
+      this.refreshRunCacheKey(refreshId),
+    );
+    if (!record || record.orgId !== orgId) {
+      return null;
+    }
+
+    const taskWindowStart = new Date(record.taskWindowStart);
+    const sourceFilter =
+      record.activeSourceIds.length > 0 ? { in: record.activeSourceIds } : null;
+
+    const [
+      crawlPending,
+      crawlQueued,
+      crawlRunning,
+      crawlCompleted,
+      crawlFailed,
+      crawlPaused,
+      analysisPending,
+      analysisQueued,
+      analysisRunning,
+      analysisCompleted,
+      analysisFailed,
+      analysisDelayed,
+    ] = await Promise.all([
+      this.countCrawlTasks(orgId, taskWindowStart, sourceFilter, CrawlTaskStatus.pending),
+      this.countCrawlTasks(orgId, taskWindowStart, sourceFilter, CrawlTaskStatus.queued),
+      this.countCrawlTasks(orgId, taskWindowStart, sourceFilter, CrawlTaskStatus.running),
+      this.countCrawlTasks(orgId, taskWindowStart, sourceFilter, CrawlTaskStatus.completed),
+      this.countCrawlTasks(orgId, taskWindowStart, sourceFilter, CrawlTaskStatus.failed),
+      this.countCrawlTasks(orgId, taskWindowStart, sourceFilter, CrawlTaskStatus.paused),
+      this.countPipelineJobs(orgId, taskWindowStart, sourceFilter, PipelineJobStatus.pending),
+      this.countPipelineJobs(orgId, taskWindowStart, sourceFilter, PipelineJobStatus.queued),
+      this.countPipelineJobs(orgId, taskWindowStart, sourceFilter, PipelineJobStatus.running),
+      this.countPipelineJobs(orgId, taskWindowStart, sourceFilter, PipelineJobStatus.completed),
+      this.countPipelineJobs(orgId, taskWindowStart, sourceFilter, PipelineJobStatus.failed),
+      this.countPipelineJobs(orgId, taskWindowStart, sourceFilter, PipelineJobStatus.delayed),
+    ]);
+
+    const crawlTasks = {
+      pending: crawlPending,
+      queued: crawlQueued,
+      running: crawlRunning,
+      completed: crawlCompleted,
+      failed: crawlFailed,
+      paused: crawlPaused,
+    } satisfies SituationMonitorRefreshProgressCounts;
+    const analysisTasks = {
+      pending: analysisPending,
+      queued: analysisQueued,
+      running: analysisRunning,
+      completed: analysisCompleted,
+      failed: analysisFailed,
+      delayed: analysisDelayed,
+    } satisfies SituationMonitorRefreshProgressCounts;
+
+    const activeTaskCount =
+      crawlPending +
+      crawlQueued +
+      crawlRunning +
+      analysisPending +
+      analysisQueued +
+      analysisRunning +
+      analysisDelayed;
+
+    const hasErrors =
+      record.warnings.some((warning) => warning.severity === "error") ||
+      crawlFailed > 0 ||
+      analysisFailed > 0;
+    const hasWarnings = record.warnings.length > 0;
+    const hasAnyTasks =
+      record.crawl.crawlTaskCount > 0 ||
+      record.crawl.analysisTaskCount > 0 ||
+      crawlCompleted > 0 ||
+      crawlFailed > 0 ||
+      crawlPaused > 0 ||
+      analysisCompleted > 0 ||
+      analysisFailed > 0 ||
+      analysisDelayed > 0;
+    const terminal =
+      activeTaskCount === 0 &&
+      (record.crawl.activeSourceCount === 0 ||
+        !record.crawl.permitted ||
+        !record.crawl.attempted ||
+        hasAnyTasks ||
+        !record.crawl.schedulerTriggered);
+
+    let status: SituationMonitorRefreshLifecycleStatus;
+    if (activeTaskCount > 0) {
+      status = hasAnyTasks ? "running" : "queued";
+    } else if (hasErrors) {
+      status = "failed";
+    } else if (hasWarnings) {
+      status = "partial";
+    } else {
+      status = "completed";
+    }
+
+    if (terminal !== record.terminal) {
+      record.terminal = terminal;
+      await this.persistRefreshRun(record);
+    }
+
+    return {
+      refreshId: record.refreshId,
+      requestedAt: record.requestedAt,
+      taskWindowStart: record.taskWindowStart,
+      status,
+      crawl: record.crawl,
+      progress: {
+        crawlTasks,
+        analysisTasks,
+      },
+      signals: record.signals,
+      cache: record.cache,
+      warnings: record.warnings,
+      terminal,
     };
   }
 
@@ -338,5 +555,57 @@ export class SituationMonitorRefreshService {
     }
 
     return `${scheduledLabel} and immediately queued ${input.crawlTaskCount} crawl task${input.crawlTaskCount === 1 ? "" : "s"} plus ${input.analysisTaskCount} direct analysis task${input.analysisTaskCount === 1 ? "" : "s"}.`;
+  }
+
+  private async persistRefreshRun(
+    record: SituationMonitorRefreshRunRecord,
+  ): Promise<void> {
+    await this.cache.set(
+      this.refreshRunCacheKey(record.refreshId),
+      record,
+      REFRESH_RUN_CACHE_TTL_SECONDS,
+    );
+  }
+
+  private refreshRunCacheKey(refreshId: string): string {
+    return `${REFRESH_RUN_CACHE_KEY_PREFIX}${refreshId}`;
+  }
+
+  private async countCrawlTasks(
+    orgId: string,
+    taskWindowStart: Date,
+    newsSourceId: { in: string[] } | null,
+    status: CrawlTaskStatus,
+  ): Promise<number> {
+    if (!newsSourceId) {
+      return 0;
+    }
+    return await this.prisma.crawlTask.count({
+      where: {
+        orgId,
+        ...(newsSourceId ? { newsSourceId } : {}),
+        createdAt: { gte: taskWindowStart },
+        status,
+      },
+    });
+  }
+
+  private async countPipelineJobs(
+    orgId: string,
+    taskWindowStart: Date,
+    sourceId: { in: string[] } | null,
+    status: PipelineJobStatus,
+  ): Promise<number> {
+    if (!sourceId) {
+      return 0;
+    }
+    return await this.prisma.pipelineJob.count({
+      where: {
+        orgId,
+        ...(sourceId ? { sourceId } : {}),
+        createdAt: { gte: taskWindowStart },
+        status,
+      },
+    });
   }
 }

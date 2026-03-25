@@ -45,6 +45,7 @@ import { useTranslation } from "react-i18next";
 import { io, type Socket } from "socket.io-client";
 
 import { Crawl4aiHealthCard } from "@/app/(app)/crawl/components/Crawl4aiHealthCard";
+import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
 import { CreateCrawlTaskDrawer } from "@/app/(app)/crawl/components/CreateCrawlTaskDrawer";
 import type { CreateCrawlTaskFormValues } from "@/app/(app)/crawl/types";
 import { createApiClient } from "@/lib/api-client";
@@ -173,6 +174,14 @@ interface NewsSourceRecord {
     successRate?: number | null;
     avgDurationMs?: number | null;
   };
+}
+
+interface NewsSourceReadinessSummary {
+  total: number;
+  active: number;
+  inactive: number;
+  circuitOpen: number;
+  failing: number;
 }
 
 function mapNewsSourceRecord(record: NewsSourceApiRecord): NewsSourceRecord {
@@ -1099,6 +1108,10 @@ export function NewsSourcesContent() {
   const [crawlQualityError, setCrawlQualityError] = useState<string | null>(
     null,
   );
+  const [readinessSummary, setReadinessSummary] =
+    useState<NewsSourceReadinessSummary | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [scheduleTargets, setScheduleTargets] = useState<NewsSourceRecord[]>(
@@ -1446,6 +1459,102 @@ export function NewsSourcesContent() {
     [apiClient, messageApi, searchQuery, sourcePage, sourcePageSize, t],
   );
 
+  const loadReadinessSummary = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const silent = options?.silent === true;
+      if (!session?.accessToken || !canView) {
+        setReadinessSummary(null);
+        setReadinessError(null);
+        return;
+      }
+
+      if (!silent) {
+        setReadinessLoading(true);
+      }
+
+      try {
+        const pageSize = 50;
+        const maxPages = 100;
+        const allSources: NewsSourceRecord[] = [];
+        let total = Number.POSITIVE_INFINITY;
+        let page = 1;
+
+        while (page <= maxPages && allSources.length < total) {
+          const response = await apiClient.get<NewsSourceListResponse>(
+            "admin/news-sources",
+            {
+              params: {
+                page,
+                pageSize,
+              },
+            },
+          );
+          const payload = response.data ?? {
+            sources: [],
+            total: 0,
+            page,
+            pageSize,
+          };
+          const pageSources = (payload.sources ?? []).map(mapNewsSourceRecord);
+          allSources.push(...pageSources);
+          total = Math.max(payload.total ?? 0, allSources.length);
+          if (pageSources.length < pageSize) {
+            break;
+          }
+          page += 1;
+        }
+
+        const now = Date.now();
+        const summary = allSources.reduce<NewsSourceReadinessSummary>(
+          (acc, source) => {
+            acc.total += 1;
+            if (source.isActive) {
+              acc.active += 1;
+            } else {
+              acc.inactive += 1;
+            }
+            if (
+              source.circuitOpenUntil &&
+              new Date(source.circuitOpenUntil).getTime() > now
+            ) {
+              acc.circuitOpen += 1;
+            }
+            if (Number(source.consecutiveFailures ?? 0) > 0) {
+              acc.failing += 1;
+            }
+            return acc;
+          },
+          {
+            total: 0,
+            active: 0,
+            inactive: 0,
+            circuitOpen: 0,
+            failing: 0,
+          },
+        );
+
+        setReadinessSummary(summary);
+        setReadinessError(null);
+      } catch (error) {
+        captureClientError(
+          "Failed to load news source readiness summary",
+          error,
+        );
+        setReadinessSummary(null);
+        setReadinessError(
+          t("newsSources.readiness.loadFailed", {
+            defaultValue: "Failed to load readiness summary.",
+          }),
+        );
+      } finally {
+        if (!silent) {
+          setReadinessLoading(false);
+        }
+      }
+    },
+    [apiClient, canView, session?.accessToken, t],
+  );
+
   const loadTemplates = useCallback(async () => {
     try {
       const response = await apiClient.get<CrawlTemplateRecord[]>(
@@ -1619,6 +1728,7 @@ export function NewsSourcesContent() {
       try {
         const [sourcesOk] = await Promise.all([
           loadSources({ silent }),
+          loadReadinessSummary({ silent }),
           includeQueue
             ? loadCrawlQueueStats({ silent })
             : Promise.resolve(undefined),
@@ -1638,7 +1748,12 @@ export function NewsSourcesContent() {
         }
       }
     },
-    [loadCrawlQualityStats, loadCrawlQueueStats, loadSources],
+    [
+      loadCrawlQualityStats,
+      loadCrawlQueueStats,
+      loadReadinessSummary,
+      loadSources,
+    ],
   );
 
   useEffect(() => {
@@ -4024,6 +4139,18 @@ export function NewsSourcesContent() {
     );
   }
 
+  const schedulerSettingsHref = buildAdminSettingsHref({
+    page: "ingestion",
+    panel: "news-source-scheduler",
+  });
+  const readinessTone =
+    readinessSummary && readinessSummary.active === 0
+      ? "error"
+      : readinessSummary &&
+          (readinessSummary.circuitOpen > 0 || readinessSummary.failing > 0)
+        ? "warning"
+        : "info";
+
   const columns: ColumnsType<NewsSourceRecord> = [
     {
       title: t("newsSources.columns.name", { defaultValue: "Name" }),
@@ -5080,6 +5207,144 @@ export function NewsSourcesContent() {
           <Crawl4aiHealthCard
             onOpenMonitor={() => router.push("/admin/ops/crawl-monitor")}
           />
+          <Card
+            size="small"
+            title={t("newsSources.readiness.title", {
+              defaultValue: "Situation Monitor readiness",
+            })}
+            extra={
+              <Button
+                size="small"
+                onClick={() => void loadReadinessSummary()}
+                loading={readinessLoading}
+              >
+                {t("common.refresh", { defaultValue: "Refresh" })}
+              </Button>
+            }
+          >
+            {readinessError ? (
+              <Alert
+                type="warning"
+                showIcon
+                message={t("newsSources.readiness.loadFailed", {
+                  defaultValue: "Failed to load readiness summary",
+                })}
+                description={readinessError}
+                style={{ marginBottom: 12 }}
+              />
+            ) : null}
+            {readinessSummary ? (
+              <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                <Alert
+                  type={readinessTone}
+                  showIcon
+                  message={
+                    readinessSummary.active === 0
+                      ? t("newsSources.readiness.noActiveSources", {
+                          defaultValue:
+                            "Situation Monitor cannot queue new collection because there are no active news sources.",
+                        })
+                      : readinessSummary.circuitOpen > 0 ||
+                          readinessSummary.failing > 0
+                        ? t("newsSources.readiness.degraded", {
+                            defaultValue:
+                              "Some sources are degraded and may reduce Situation Monitor coverage.",
+                          })
+                        : t("newsSources.readiness.ready", {
+                            defaultValue:
+                              "News source scheduling looks healthy for Situation Monitor refresh.",
+                          })
+                  }
+                  description={
+                    readinessSummary.active === 0
+                      ? t("newsSources.readiness.noActiveSourcesDescription", {
+                          defaultValue:
+                            "Activate at least one source or import a source list before relying on Situation Monitor refresh.",
+                        })
+                      : readinessSummary.circuitOpen > 0 ||
+                          readinessSummary.failing > 0
+                        ? t("newsSources.readiness.degradedDescription", {
+                            defaultValue:
+                              "Review circuit-open and failing sources before relying on fresh Situation Monitor data.",
+                          })
+                        : undefined
+                  }
+                  action={
+                    canManage ? (
+                      <Space wrap>
+                        <Button size="small" onClick={openCreate}>
+                          {t("newsSources.actions.new", {
+                            defaultValue: "Create source",
+                          })}
+                        </Button>
+                        <Button
+                          size="small"
+                          onClick={() => void openOpmlImport()}
+                        >
+                          {t("newsSources.actions.importOpml", {
+                            defaultValue: "Import OPML",
+                          })}
+                        </Button>
+                        <Button size="small" href={schedulerSettingsHref}>
+                          {t("newsSources.readiness.openSchedulerSettings", {
+                            defaultValue: "Open scheduler settings",
+                          })}
+                        </Button>
+                      </Space>
+                    ) : null
+                  }
+                />
+                <Row gutter={[16, 12]}>
+                  <Col xs={12} sm={8} md={4}>
+                    <Statistic
+                      title={t("newsSources.readiness.total", {
+                        defaultValue: "Total sources",
+                      })}
+                      value={readinessSummary.total}
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={4}>
+                    <Statistic
+                      title={t("newsSources.readiness.active", {
+                        defaultValue: "Active",
+                      })}
+                      value={readinessSummary.active}
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={4}>
+                    <Statistic
+                      title={t("newsSources.readiness.inactive", {
+                        defaultValue: "Inactive",
+                      })}
+                      value={readinessSummary.inactive}
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={4}>
+                    <Statistic
+                      title={t("newsSources.readiness.circuitOpen", {
+                        defaultValue: "Circuit open",
+                      })}
+                      value={readinessSummary.circuitOpen}
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={4}>
+                    <Statistic
+                      title={t("newsSources.readiness.failing", {
+                        defaultValue: "Failing",
+                      })}
+                      value={readinessSummary.failing}
+                    />
+                  </Col>
+                </Row>
+              </Space>
+            ) : (
+              <Typography.Text type="secondary">
+                {readinessLoading
+                  ? t("common.loading", { defaultValue: "Loading..." })
+                  : t("common.noData", { defaultValue: "No data" })}
+              </Typography.Text>
+            )}
+          </Card>
           <Card
             size="small"
             title={t("newsSources.queue.title", {

@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -250,6 +260,19 @@ export class SituationMonitorController {
   @Permissions("items.read")
   async refresh(@CurrentUser() user: AuthenticatedUser) {
     return await this.refreshService.refresh(user.orgId, user.permissions ?? []);
+  }
+
+  @Get("refresh-runs/:refreshId")
+  @Permissions("items.read")
+  async getRefreshRun(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("refreshId") refreshId: string,
+  ) {
+    const run = await this.refreshService.getRefreshRun(user.orgId, refreshId);
+    if (!run) {
+      throw new NotFoundException("Situation Monitor refresh run not found.");
+    }
+    return run;
   }
 
   @Get("telegram-feed")

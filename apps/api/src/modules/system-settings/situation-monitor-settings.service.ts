@@ -21,6 +21,7 @@ export type SituationMonitorTranslationApiKeySource =
   SituationMonitorApiKeySource;
 export type SituationMonitorExternalApiKeySource = SituationMonitorApiKeySource;
 export type SituationMonitorTelegramSecretSource = SituationMonitorApiKeySource;
+export type SituationMonitorOrefSecretSource = "env" | "none";
 export type SituationMonitorLiveHlsProxyChannel = "cnn" | "cnbc";
 export type SituationMonitorLiveHlsProxySource = "stored" | "none";
 
@@ -56,6 +57,9 @@ export interface SituationMonitorSettingsPublic {
   telegramApiHashSource: SituationMonitorTelegramSecretSource;
   hasTelegramSession: boolean;
   telegramSessionSource: SituationMonitorTelegramSecretSource;
+  orefEnabled: boolean;
+  orefConfigured: boolean;
+  orefProxyAuthSource: SituationMonitorOrefSecretSource;
   telegramChannelSet: string;
   telegramMaxFeedItems: number;
   telegramMaxTextChars: number;
@@ -245,6 +249,18 @@ export class SituationMonitorSettingsService {
       stored?.telegramSession,
       "telegram session",
     );
+    const orefProxyAuth = this.normalizeString(
+      this.env.get<string | undefined>("SITUATION_MONITOR_OREF_PROXY_AUTH", {
+        infer: true,
+      }) ??
+        this.env.get<string | undefined>("OREF_PROXY_AUTH", {
+          infer: true,
+        }),
+    );
+    const orefEnabled =
+      this.env.get<boolean | undefined>("SITUATION_MONITOR_OREF_ENABLED", {
+        infer: true,
+      }) ?? false;
 
     return {
       source: stored ? "db" : "env",
@@ -288,6 +304,9 @@ export class SituationMonitorSettingsService {
         storedTelegramSession,
         effective.telegramSession,
       ),
+      orefEnabled,
+      orefConfigured: Boolean(orefProxyAuth),
+      orefProxyAuthSource: orefProxyAuth ? "env" : "none",
       telegramChannelSet: effective.telegramChannelSet,
       telegramMaxFeedItems: effective.telegramMaxFeedItems,
       telegramMaxTextChars: effective.telegramMaxTextChars,
