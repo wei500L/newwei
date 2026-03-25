@@ -1,6 +1,6 @@
 "use client";
 
-import { gql, useQuery } from "@apollo/client";
+import { gql, useApolloClient, useQuery } from "@apollo/client";
 import {
   Button,
   Card,
@@ -374,7 +374,7 @@ const SOURCE_POLICY_SYNC_STATUS_QUERY = gql`
 `;
 
 const EVENT_LIST_WINDOW_DAYS = 30;
-const REFERENCED_ARTICLES_QUERY_LIMIT = 200;
+const REFERENCED_ARTICLES_QUERY_CHUNK_SIZE = 180;
 const TIMELINE_SPEED_MIN = 0.25;
 const TIMELINE_SPEED_MAX = 16;
 const TIMELINE_SETTINGS_SAVE_DEBOUNCE_MS = 650;
@@ -403,6 +403,17 @@ const normalizeStringArray = (value: unknown): string[] => {
     .filter((entry): entry is string => typeof entry === "string")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
+};
+
+const chunkStringArray = (value: string[], size: number): string[][] => {
+  if (size <= 0 || value.length === 0) {
+    return [];
+  }
+  const chunks: string[][] = [];
+  for (let index = 0; index < value.length; index += size) {
+    chunks.push(value.slice(index, index + size));
+  }
+  return chunks;
 };
 
 const normalizeWarningCodes = (value: unknown): string[] => {
@@ -577,6 +588,7 @@ export interface SpacetimeVizProps {
 }
 
 export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
+  const apolloClient = useApolloClient();
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const { data: session, status: sessionStatus } = useSession();
@@ -1006,55 +1018,134 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
   );
 
   const unresolvedTimelineArticleIds = useMemo(
-    () =>
-      selectedTimelineArticleIds
-        .filter((articleId) => !articleById.has(articleId))
-        .slice(0, REFERENCED_ARTICLES_QUERY_LIMIT),
+    () => {
+      const unresolved: string[] = [];
+      const seen = new Set<string>();
+      for (const articleId of selectedTimelineArticleIds) {
+        if (articleById.has(articleId) || seen.has(articleId)) {
+          continue;
+        }
+        seen.add(articleId);
+        unresolved.push(articleId);
+      }
+      return unresolved;
+    },
     [articleById, selectedTimelineArticleIds],
   );
 
-  const { data: referencedArticlesData, loading: referencedArticlesLoading } =
-    useQuery<{
-      newsEventReferencedArticles: Pick<
-        ReferencedArticleView,
-        | "id"
-        | "url"
-        | "sourceLabel"
-        | "title"
-        | "publishedAt"
-        | "crawlAt"
-        | "processedAt"
-      >[];
-    }>(NEWS_EVENT_REFERENCED_ARTICLES_QUERY, {
-      variables: {
-        eventId: event?.id ?? "",
-        articleIds: unresolvedTimelineArticleIds,
-        limit: REFERENCED_ARTICLES_QUERY_LIMIT,
-      },
-      skip:
-        !event?.id ||
-        unresolvedTimelineArticleIds.length === 0 ||
-        !timelineDrawerOpen,
-      fetchPolicy: "network-only",
-    });
+  const [referencedArticles, setReferencedArticles] = useState<
+    ReferencedArticleView[]
+  >([]);
+  const [referencedArticlesLoading, setReferencedArticlesLoading] =
+    useState(false);
+
+  useEffect(() => {
+    if (
+      !timelineDrawerOpen ||
+      !event?.id ||
+      unresolvedTimelineArticleIds.length === 0
+    ) {
+      setReferencedArticles([]);
+      setReferencedArticlesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setReferencedArticles([]);
+    setReferencedArticlesLoading(true);
+
+    const articleIdChunks = chunkStringArray(
+      unresolvedTimelineArticleIds,
+      REFERENCED_ARTICLES_QUERY_CHUNK_SIZE,
+    );
+
+    void Promise.allSettled(
+      articleIdChunks.map((articleIds) =>
+        apolloClient.query<{
+          newsEventReferencedArticles: Pick<
+            ReferencedArticleView,
+            | "id"
+            | "url"
+            | "sourceLabel"
+            | "title"
+            | "publishedAt"
+            | "crawlAt"
+            | "processedAt"
+          >[];
+        }>({
+          query: NEWS_EVENT_REFERENCED_ARTICLES_QUERY,
+          variables: {
+            eventId: event.id,
+            articleIds,
+            limit: REFERENCED_ARTICLES_QUERY_CHUNK_SIZE,
+          },
+          fetchPolicy: "network-only",
+        }),
+      ),
+    )
+      .then((results) => {
+        if (cancelled) {
+          return;
+        }
+        const merged = new Map<string, ReferencedArticleView>();
+        let rejectedCount = 0;
+        for (const result of results) {
+          if (result.status !== "fulfilled") {
+            rejectedCount += 1;
+            continue;
+          }
+          for (const entry of result.value.data?.newsEventReferencedArticles ?? []) {
+            if (!entry?.id || merged.has(entry.id)) {
+              continue;
+            }
+            merged.set(entry.id, {
+              id: entry.id,
+              title: entry.title ?? null,
+              url: entry.url ?? null,
+              sourceLabel: entry.sourceLabel ?? null,
+              publishedAt: entry.publishedAt ?? null,
+              crawlAt: entry.crawlAt ?? null,
+              processedAt: entry.processedAt,
+            });
+          }
+        }
+        setReferencedArticles(Array.from(merged.values()));
+        if (rejectedCount > 0) {
+          captureClientError(
+            "Failed to load some spacetime referenced articles",
+            new Error(
+              `Referenced article chunks failed: ${rejectedCount}/${results.length}`,
+            ),
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setReferencedArticles([]);
+        captureClientError("Failed to load spacetime referenced articles", error);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setReferencedArticlesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    apolloClient,
+    event?.id,
+    timelineDrawerOpen,
+    unresolvedTimelineArticleIds,
+  ]);
 
   const timelineEntryReferences = useMemo(() => {
     const articleIds = selectedTimelineArticleIds;
     const fetchedById = new Map(
-      (referencedArticlesData?.newsEventReferencedArticles ?? []).map(
-        (entry) => [
-          entry.id,
-          {
-            id: entry.id,
-            title: entry.title ?? null,
-            url: entry.url ?? null,
-            sourceLabel: entry.sourceLabel ?? null,
-            publishedAt: entry.publishedAt ?? null,
-            crawlAt: entry.crawlAt ?? null,
-            processedAt: entry.processedAt,
-          } satisfies ReferencedArticleView,
-        ],
-      ),
+      referencedArticles.map((entry) => [entry.id, entry] as const),
     );
     const resolved: ReferencedArticleView[] = [];
     const unresolved: string[] = [];
@@ -1080,7 +1171,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
     };
   }, [
     articleById,
-    referencedArticlesData?.newsEventReferencedArticles,
+    referencedArticles,
     selectedTimelineArticleIds,
   ]);
 

@@ -243,6 +243,8 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
               async requestDidStart() {
                 return {
                   async didResolveOperation(requestContext) {
+                    const operationName =
+                      requestContext.request.operationName ?? "anonymous";
                     const complexity = getComplexity({
                       schema: requestContext.schema,
                       query: requestContext.document,
@@ -252,15 +254,23 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
                     });
 
                     logger.debug(
-                      { complexity },
+                      { complexity, operationName },
                       "GraphQL query complexity evaluated",
                     );
 
                     if (complexity > cfg.complexityLimit) {
+                      logger.warn(
+                        { complexity, operationName, limit: cfg.complexityLimit },
+                        "GraphQL query rejected for excessive complexity",
+                      );
                       throw new GraphQLError(
                         `Query is too complex: ${complexity}. Maximum allowed complexity: ${cfg.complexityLimit}`,
                         {
-                          extensions: { code: "QUERY_TOO_COMPLEX", complexity },
+                          extensions: {
+                            code: "QUERY_TOO_COMPLEX",
+                            complexity,
+                            operationName,
+                          },
                         },
                       );
                     }
