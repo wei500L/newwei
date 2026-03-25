@@ -3779,7 +3779,7 @@ export function WarMap({
 
   const containerClassName = [
     "relative",
-    className ?? "min-h-[24rem] h-[clamp(24rem,55dvh,44rem)]",
+    className ?? "min-h-[24rem] h-[clamp(24rem,50dvh,29rem)]",
   ]
     .filter(Boolean)
     .join(" ");

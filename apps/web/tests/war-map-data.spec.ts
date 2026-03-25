@@ -210,7 +210,13 @@ describe("war-map page wiring", () => {
 
     expect(source).not.toContain("TimeRangeControls");
     expect(source).toContain('<WarMap className="h-full" />');
-    expect(source).toContain("h-[clamp(30rem,calc(100dvh-12rem),56rem)]");
+    expect(source).toContain(
+      "min-h-[calc(100dvh-var(--top-nav-height,4rem)-var(--ticker-height,0px)-2rem)]",
+    );
+    expect(source).toContain(
+      "md:min-h-[calc(100dvh-var(--top-nav-height,4rem)-var(--ticker-height,0px)-3rem)]",
+    );
+    expect(source).toContain("max-h-[56rem]");
     expect(source).toContain("min-h-[30rem]");
     expect(source).toContain("OpenSky flight activity");
     expect(source).toContain("Signals, News & Flights");
@@ -403,7 +409,7 @@ describe("war-map page wiring", () => {
     );
     expect(source).toContain('current === "controls" ? null : "controls"');
     expect(source).toContain(
-      'className ?? "min-h-[24rem] h-[clamp(24rem,55dvh,44rem)]"',
+      'className ?? "min-h-[24rem] h-[clamp(24rem,50dvh,29rem)]"',
     );
   });
 
@@ -438,6 +444,7 @@ describe("war-map page wiring", () => {
     expect(controlsSource).not.toContain("overlayPanelMaxHeight - 108");
     expect(railSource).toContain("dark:bg-slate-950/[0.78]");
     expect(railSource).toContain("dark:from-slate-950/[0.92]");
+    expect(railSource).toContain("right-4 z-10 flex justify-end");
     expect(railSource).toContain("iconOnly: !showActionLabels");
     expect(railSource).toContain(
       "!h-10 !min-w-[7rem] !px-4 !text-xs !font-semibold",

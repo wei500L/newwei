@@ -71,7 +71,7 @@ export function WarMapOverlayRail({
   return (
     <div
       ref={overlayRailRef}
-      className={`pointer-events-none absolute ${overlayTopClassName} right-4 z-20 flex justify-end`}
+      className={`pointer-events-none absolute ${overlayTopClassName} right-4 z-10 flex justify-end`}
       style={useDrawerControls ? undefined : { width: overlayRailWidth }}
     >
       <div
