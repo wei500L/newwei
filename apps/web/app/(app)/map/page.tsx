@@ -9,7 +9,7 @@ export default function MapPage() {
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex min-h-full flex-col gap-6">
       <div className="flex flex-col gap-3">
         <Typography.Title level={4} style={{ margin: 0 }}>
           {t("pages.map.title", { defaultValue: "Regional Signals Map" })}
@@ -21,7 +21,7 @@ export default function MapPage() {
           })}
         </Typography.Text>
       </div>
-      <div className="glass-panel border border-[var(--border)] h-[600px] overflow-hidden flex flex-col">
+      <div className="glass-panel border border-[var(--border)] flex h-[clamp(30rem,calc(100dvh-12rem),56rem)] min-h-[30rem] flex-col overflow-hidden">
         <div className="px-5 pt-4">
           <Typography.Text className="text-slate-600">
             {t("pages.map.overlay", {

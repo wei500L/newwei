@@ -60,14 +60,48 @@ export function WarMapOverlayRail({
   const dataStatus = summaryStatusCards.find((card) => card.key === "data");
   const hideRailSummaryCards =
     !useDrawerControls && openOverlayPanel === "controls";
+  const controlsLabel = t("dashboard.charts.warMap.overlay.controls", {
+    defaultValue: "Controls",
+  });
+  const legendLabel = t("dashboard.charts.warMap.legend.title", {
+    defaultValue: "Legend",
+  });
+  const controlsActive = openOverlayPanel === "controls";
 
   return (
     <div
       ref={overlayRailRef}
-      className={`pointer-events-none absolute ${overlayTopClassName} right-4 z-10 flex justify-end`}
+      className={`pointer-events-none absolute ${overlayTopClassName} right-4 z-20 flex justify-end`}
       style={useDrawerControls ? undefined : { width: overlayRailWidth }}
     >
-      <div className="flex max-w-full flex-col items-end gap-1.5">
+      <div
+        className={`flex max-w-full flex-col items-end ${
+          useDrawerControls ? "" : "w-full"
+        } gap-2`}
+      >
+        {!useDrawerControls ? (
+          <div
+            className={`${OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME} pointer-events-auto flex items-center rounded-[22px] px-2 py-2 shadow-[0_18px_36px_-26px_rgba(15,23,42,0.42)] ring-1 ring-white/60 dark:ring-white/10`}
+          >
+            <Tooltip title={controlsLabel}>
+              <Button
+                size="small"
+                type="default"
+                className={resolveOverlayButtonClassName({
+                  tone: controlsActive ? "active" : "neutral",
+                  extraClassName:
+                    "!h-10 !min-w-[7rem] !px-4 !text-xs !font-semibold",
+                })}
+                icon={<SettingOutlined />}
+                aria-label={controlsLabel}
+                aria-expanded={controlsActive}
+                onClick={onToggleControls}
+              >
+                {controlsLabel}
+              </Button>
+            </Tooltip>
+          </div>
+        ) : null}
         {hideRailSummaryCards ? null : overlayDensity === "minimal" ? (
           <div
             className={`${OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME} pointer-events-auto flex max-w-full items-center gap-2 px-3 py-2`}
@@ -147,37 +181,26 @@ export function WarMapOverlayRail({
                 : null}
             </Button>
           </Tooltip>
-          <Tooltip
-            title={t("dashboard.charts.warMap.overlay.controls", {
-              defaultValue: "Controls",
-            })}
-          >
-            <Button
-              size="small"
-              type="default"
-              className={resolveOverlayButtonClassName({
-                tone: openOverlayPanel === "controls" ? "active" : "neutral",
-                iconOnly: !showActionLabels,
-              })}
-              icon={<SettingOutlined />}
-              aria-label={t("dashboard.charts.warMap.overlay.controls", {
-                defaultValue: "Controls",
-              })}
-              onClick={onToggleControls}
-            >
-              {showActionLabels
-                ? t("dashboard.charts.warMap.overlay.controls", {
-                    defaultValue: "Controls",
-                  })
-                : null}
-            </Button>
-          </Tooltip>
           {useDrawerControls ? (
-            <Tooltip
-              title={t("dashboard.charts.warMap.legend.title", {
-                defaultValue: "Legend",
-              })}
-            >
+            <Tooltip title={controlsLabel}>
+              <Button
+                size="small"
+                type="default"
+                className={resolveOverlayButtonClassName({
+                  tone: controlsActive ? "active" : "neutral",
+                  iconOnly: !showActionLabels,
+                })}
+                icon={<SettingOutlined />}
+                aria-label={controlsLabel}
+                aria-expanded={controlsActive}
+                onClick={onToggleControls}
+              >
+                {showActionLabels ? controlsLabel : null}
+              </Button>
+            </Tooltip>
+          ) : null}
+          {useDrawerControls ? (
+            <Tooltip title={legendLabel}>
               <Button
                 size="small"
                 type="default"
@@ -190,16 +213,10 @@ export function WarMapOverlayRail({
                   iconOnly: !showActionLabels,
                 })}
                 icon={<InfoCircleOutlined />}
-                aria-label={t("dashboard.charts.warMap.legend.title", {
-                  defaultValue: "Legend",
-                })}
+                aria-label={legendLabel}
                 onClick={onOpenLegendDrawer}
               >
-                {showActionLabels
-                  ? t("dashboard.charts.warMap.legend.title", {
-                      defaultValue: "Legend",
-                    })
-                  : null}
+                {showActionLabels ? legendLabel : null}
               </Button>
             </Tooltip>
           ) : null}

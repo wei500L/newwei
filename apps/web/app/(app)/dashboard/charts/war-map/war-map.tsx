@@ -1213,10 +1213,7 @@ export function WarMap({
         selections.push({
           objectKey,
           transportKind: "aircraft",
-          label: getWarMapFlightLabel(
-            flight,
-            flight.icao24.toUpperCase(),
-          ),
+          label: getWarMapFlightLabel(flight, flight.icao24.toUpperCase()),
           subtitle:
             flight.displayCategoryZh ??
             flight.displayCategory ??
@@ -1399,7 +1396,8 @@ export function WarMap({
   const selectedTransport = useMemo(() => {
     if (
       !selectedInspector ||
-      (selectedInspector.kind !== "flight" && selectedInspector.kind !== "vessel")
+      (selectedInspector.kind !== "flight" &&
+        selectedInspector.kind !== "vessel")
     ) {
       return null;
     }
@@ -1490,15 +1488,11 @@ export function WarMap({
           defaultValue: "Failed to submit transport analysis.",
         }),
       );
-      captureClientError(
-        "Failed to submit transport analysis.",
-        error,
-        {
-          tags: {
-            context: "war-map-geo-transport-analysis",
-          },
+      captureClientError("Failed to submit transport analysis.", error, {
+        tags: {
+          context: "war-map-geo-transport-analysis",
         },
-      );
+      });
     }
   }, [
     canRunAnalysis,
@@ -2152,7 +2146,8 @@ export function WarMap({
             speed: aisProperties.speed,
             course: aisProperties.course,
             latestAt: aisProperties.observedAt,
-            sourceUpdatedAt: aisProperties.sourceUpdatedAt ?? aisDataset.updatedAt,
+            sourceUpdatedAt:
+              aisProperties.sourceUpdatedAt ?? aisDataset.updatedAt,
             description:
               aisMode === "military"
                 ? t("dashboard.charts.warMap.stats.aisMilitaryCandidates", {
@@ -2328,7 +2323,8 @@ export function WarMap({
               getIcon: () => VESSEL_ICON,
               getPosition: (point: DeckPoint) => [point.lng, point.lat],
               getColor: (point: DeckPoint) => point.color,
-              getAngle: (point: DeckPoint) => resolveVesselIconAngle(point) ?? 0,
+              getAngle: (point: DeckPoint) =>
+                resolveVesselIconAngle(point) ?? 0,
               getSize: (point: DeckPoint) => Math.max(18, point.radius * 3.1),
               sizeMinPixels: 16,
               sizeMaxPixels: 34,
@@ -3781,7 +3777,10 @@ export function WarMap({
     </div>
   );
 
-  const containerClassName = ["relative", className ?? "h-[430px]"]
+  const containerClassName = [
+    "relative",
+    className ?? "min-h-[24rem] h-[clamp(24rem,55dvh,44rem)]",
+  ]
     .filter(Boolean)
     .join(" ");
 

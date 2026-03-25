@@ -210,6 +210,8 @@ describe("war-map page wiring", () => {
 
     expect(source).not.toContain("TimeRangeControls");
     expect(source).toContain('<WarMap className="h-full" />');
+    expect(source).toContain("h-[clamp(30rem,calc(100dvh-12rem),56rem)]");
+    expect(source).toContain("min-h-[30rem]");
     expect(source).toContain("OpenSky flight activity");
     expect(source).toContain("Signals, News & Flights");
   });
@@ -221,8 +223,12 @@ describe("war-map page wiring", () => {
     expect(source).toContain("DASHBOARD_STREAM_EVENT_TYPES.warMapLayers");
     expect(source).toContain("buildWarMapNewsMarkersQueryKey");
     expect(source).toContain("buildWarMapLayersQueryKey");
-    expect(source).toContain("queryClient.setQueryData(warMapNewsMarkersKey, payload)");
-    expect(source).toContain("queryClient.setQueryData(warMapLayersKey, payload)");
+    expect(source).toContain(
+      "queryClient.setQueryData(warMapNewsMarkersKey, payload)",
+    );
+    expect(source).toContain(
+      "queryClient.setQueryData(warMapLayersKey, payload)",
+    );
     expect(source).not.toContain("invalidateWarMapNewsMarkerQueries");
     expect(source).not.toContain("invalidateWarMapLayerQueries");
   });
@@ -396,6 +402,9 @@ describe("war-map page wiring", () => {
       "legend={{ showAisLegend: layerVisibility.ais }}",
     );
     expect(source).toContain('current === "controls" ? null : "controls"');
+    expect(source).toContain(
+      'className ?? "min-h-[24rem] h-[clamp(24rem,55dvh,44rem)]"',
+    );
   });
 
   it("keeps overlay settings surfaces dark-theme aware", () => {
@@ -430,6 +439,9 @@ describe("war-map page wiring", () => {
     expect(railSource).toContain("dark:bg-slate-950/[0.78]");
     expect(railSource).toContain("dark:from-slate-950/[0.92]");
     expect(railSource).toContain("iconOnly: !showActionLabels");
+    expect(railSource).toContain(
+      "!h-10 !min-w-[7rem] !px-4 !text-xs !font-semibold",
+    );
     expect(railSource).toContain(
       'const hideRailSummaryCards =\n    !useDrawerControls && openOverlayPanel === "controls";',
     );
