@@ -374,6 +374,7 @@ const SOURCE_POLICY_SYNC_STATUS_QUERY = gql`
 `;
 
 const EVENT_LIST_WINDOW_DAYS = 30;
+const REFERENCED_ARTICLES_QUERY_LIMIT = 200;
 const TIMELINE_SPEED_MIN = 0.25;
 const TIMELINE_SPEED_MAX = 16;
 const TIMELINE_SETTINGS_SAVE_DEBOUNCE_MS = 650;
@@ -1008,7 +1009,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
     () =>
       selectedTimelineArticleIds
         .filter((articleId) => !articleById.has(articleId))
-        .slice(0, 280),
+        .slice(0, REFERENCED_ARTICLES_QUERY_LIMIT),
     [articleById, selectedTimelineArticleIds],
   );
 
@@ -1028,7 +1029,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
       variables: {
         eventId: event?.id ?? "",
         articleIds: unresolvedTimelineArticleIds,
-        limit: 360,
+        limit: REFERENCED_ARTICLES_QUERY_LIMIT,
       },
       skip:
         !event?.id ||

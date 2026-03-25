@@ -35,11 +35,22 @@ interface SectorHeatmapCell {
   sourceField?: string;
 }
 
+interface SectorHeatmapWarning {
+  code: "SOURCE_FIELD_FALLBACK";
+  itemId: string;
+  slug: string;
+  displayName: string;
+  preferredSourceFields: string[];
+  availableSourceFields: string[];
+  selectedSourceField: string;
+}
+
 interface SectorHeatmapResponse {
   xLabels: string[];
   yLabels: string[];
   cells: SectorHeatmapCell[];
   updatedAt?: string;
+  warnings?: SectorHeatmapWarning[];
 }
 
 type HeatmapValue = [number, number, number, string, number];
@@ -375,6 +386,17 @@ export function SectorHeatmap() {
 
   const hasRenderableData = Boolean(data && data.cells.length > 0);
   const showStaleErrorBanner = Boolean(isError && hasRenderableData);
+  const heatmapWarnings = data?.warnings ?? [];
+  const heatmapWarningTitle =
+    heatmapWarnings.length > 0
+      ? heatmapWarnings
+          .slice(0, 5)
+          .map(
+            (warning) =>
+              `${warning.displayName || warning.slug}: ${warning.selectedSourceField}`,
+          )
+          .join("\n")
+      : undefined;
 
   if (sessionStatus === "loading") {
     return (
@@ -523,6 +545,18 @@ export function SectorHeatmap() {
             {t("dashboard.updatedAt", {
               time: updatedAtLabel,
               defaultValue: "Updated: {{time}}"
+            })}
+          </Tag>
+        ) : null}
+        {heatmapWarnings.length > 0 ? (
+          <Tag
+            color="gold"
+            className="text-xs"
+            title={heatmapWarningTitle}
+          >
+            {t("dashboard.charts.sectorHeatmapFallbackWarning", {
+              count: heatmapWarnings.length,
+              defaultValue: "Fallback fields: {{count}}"
             })}
           </Tag>
         ) : null}

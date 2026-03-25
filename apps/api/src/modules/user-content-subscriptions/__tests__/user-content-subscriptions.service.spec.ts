@@ -105,6 +105,110 @@ describe('UserContentSubscriptionsService', () => {
     expect(liteLlm.rerank).not.toHaveBeenCalled();
   });
 
+  it('returns recommendations from the existing catalog snapshot when catalog sync refresh fails', async () => {
+    const prisma = {
+      userSetting: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'migrated' }),
+      },
+      userContentSubscription: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      contentSubscriptionCatalog: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            kind: ContentSubscriptionKind.entity,
+            normalizedValue: 'nvidia',
+            displayValue: 'NVIDIA',
+            count: 25,
+            lastSeenAt: new Date('2026-03-06T00:00:00.000Z'),
+            taxonomyPath: 'tech/semiconductor/supply-chain',
+            metadata: null,
+            embeddingVector: null,
+          },
+        ]),
+      },
+    };
+    const cache = {
+      wrap: jest.fn().mockRejectedValue(new Error('catalog sync failed')),
+    };
+    const settings = {
+      getSettings: jest.fn().mockResolvedValue({
+        taxonomyVersion: 'news-taxonomy-v1',
+        taxonomy: [],
+      }),
+    };
+    const liteLlm = {
+      embedding: jest.fn(),
+      rerank: jest.fn(),
+    };
+    const behavior = {
+      getProfile: jest.fn().mockResolvedValue({
+        actions: {},
+        sources: {},
+        topics: {},
+        entities: {},
+        items: {},
+        events: {},
+        domains: {},
+      }),
+    };
+    const service = new UserContentSubscriptionsService(
+      prisma as any,
+      cache as any,
+      settings as any,
+      liteLlm as any,
+      behavior as any,
+      monitors as any,
+    );
+
+    const result = await service.listRecommendations('org-1', 'user-1', 5);
+
+    expect(cache.wrap).toHaveBeenCalledTimes(1);
+    expect(result.items.map((item) => item.displayValue)).toEqual(['NVIDIA']);
+    expect(liteLlm.embedding).not.toHaveBeenCalled();
+    expect(liteLlm.rerank).not.toHaveBeenCalled();
+  });
+
+  it('returns catalog entries from the existing snapshot when catalog sync refresh fails', async () => {
+    const prisma = {
+      contentSubscriptionCatalog: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            kind: ContentSubscriptionKind.topic,
+            normalizedValue: 'ai chips',
+            displayValue: 'AI chips',
+            count: 18,
+            lastSeenAt: new Date('2026-03-05T00:00:00.000Z'),
+            taxonomyPath: null,
+            metadata: null,
+          },
+        ]),
+      },
+    };
+    const cache = {
+      wrap: jest.fn().mockRejectedValue(new Error('catalog sync failed')),
+    };
+    const service = new UserContentSubscriptionsService(
+      prisma as any,
+      cache as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      monitors as any,
+    );
+    jest.spyOn(service as any, 'getTaxonomyDescriptor').mockResolvedValue({
+      settingsVersion: 'news-taxonomy-v1',
+      nodes: [],
+      byPath: new Map(),
+      documents: [],
+    });
+
+    const result = await service.listCatalog('org-1', { limit: 10 });
+
+    expect(cache.wrap).toHaveBeenCalledTimes(1);
+    expect(result.items.map((item) => item.displayValue)).toEqual(['AI chips']);
+  });
+
   it('normalizes invalid catalog limit before querying Prisma', async () => {
     const prisma = {
       contentSubscriptionCatalog: {

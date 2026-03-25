@@ -1,4 +1,3 @@
-import { InternalServerErrorException } from "@nestjs/common";
 import { ProcessedArticleStatus } from "@prisma/client";
 
 import { DashboardChartsService } from "../dashboard-charts.service";
@@ -1965,7 +1964,7 @@ describe("DashboardChartsService", () => {
     ]);
   });
 
-  it("throws sector heatmap error code when mapping does not match available source fields", async () => {
+  it("falls back to the available sector heatmap sourceField when metadata mapping does not match", async () => {
     const prisma = {
       economicDataItem: {
         findMany: jest.fn().mockResolvedValue([
@@ -1989,10 +1988,23 @@ describe("DashboardChartsService", () => {
           {
             itemId: "item-2",
             sourceField: "weird_field",
-            _count: { _all: 1 },
+            _count: { _all: 2 },
           },
         ]),
-        findFirst: jest.fn(),
+        findFirst: jest.fn().mockImplementation(({ orderBy }) => {
+          if (orderBy?.recordedAt === "asc") {
+            return {
+              recordedAt: new Date("2026-01-01T00:00:00.000Z"),
+              value: 10,
+              unit: "u",
+            };
+          }
+          return {
+            recordedAt: new Date("2026-01-02T00:00:00.000Z"),
+            value: 12,
+            unit: "u",
+          };
+        }),
       },
     };
     const geocoding = {
@@ -2009,17 +2021,26 @@ describe("DashboardChartsService", () => {
       end: new Date("2026-01-02T23:59:59.999Z"),
     };
 
-    try {
-      await service.getSectorHeatmap(range);
-      throw new Error("Expected getSectorHeatmap to throw");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InternalServerErrorException);
-      expect((error as any).getResponse?.()).toEqual(
-        expect.objectContaining({
-          code: "DASHBOARD_SECTOR_HEATMAP_FIELD_MAPPING_MISMATCH",
-        }),
-      );
-    }
+    const response = await service.getSectorHeatmap(range);
+
+    expect(response.cells).toEqual([
+      expect.objectContaining({
+        name: "Mystery Metric",
+        sourceField: "weird_field",
+        value: 12,
+        change: 20,
+        unit: "u",
+      }),
+    ]);
+    expect(response.warnings).toEqual([
+      expect.objectContaining({
+        code: "SOURCE_FIELD_FALLBACK",
+        itemId: "item-2",
+        selectedSourceField: "weird_field",
+        preferredSourceFields: ["does_not_exist"],
+        availableSourceFields: ["weird_field"],
+      }),
+    ]);
   });
 
   it("maps candlestick OHLC fields via item metadata config", async () => {

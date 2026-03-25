@@ -373,6 +373,30 @@ const resolvePreferredSourceField = (
   return undefined;
 };
 
+const resolveFallbackSourceField = (
+  availableFields: Iterable<string>,
+  labelToField: Map<string, string>,
+) => {
+  const normalizedFields = uniqStrings(Array.from(availableFields));
+  if (normalizedFields.length === 0) {
+    return undefined;
+  }
+
+  const seriesByField = new Map<string, unknown[]>();
+  normalizedFields.forEach((field) => seriesByField.set(field, []));
+
+  const defaultMatch = resolvePreferredSourceField(
+    seriesByField,
+    [...PREFERRED_SOURCE_FIELDS],
+    labelToField,
+  );
+  if (defaultMatch) {
+    return defaultMatch;
+  }
+
+  return [...normalizedFields].sort((a, b) => a.localeCompare(b))[0];
+};
+
 interface GeoJsonGeometry {
   type:
     | "Point"
@@ -659,11 +683,22 @@ interface SectorHeatmapCell {
   sourceField?: string;
 }
 
+export interface SectorHeatmapWarning {
+  code: "SOURCE_FIELD_FALLBACK";
+  itemId: string;
+  slug: string;
+  displayName: string;
+  preferredSourceFields: string[];
+  availableSourceFields: string[];
+  selectedSourceField: string;
+}
+
 export interface SectorHeatmapResponse {
   xLabels: string[];
   yLabels: string[];
   cells: SectorHeatmapCell[];
   updatedAt?: string;
+  warnings?: SectorHeatmapWarning[];
 }
 
 interface FinancialCandlestickPoint {
@@ -5452,13 +5487,7 @@ export class DashboardChartsService {
 
     const cells: SectorHeatmapCell[] = [];
     let updatedAt: Date | undefined;
-    const mappingErrors: {
-      itemId: string;
-      slug: string;
-      displayName: string;
-      preferredSourceFields: string[];
-      availableSourceFields: string[];
-    }[] = [];
+    const warnings: SectorHeatmapWarning[] = [];
 
     for (const item of items) {
       const fields = availableFieldsByItemId.get(item.id);
@@ -5473,24 +5502,34 @@ export class DashboardChartsService {
           ? uniqStrings(config.heatmap.preferredSourceFields)
           : [...PREFERRED_SOURCE_FIELDS];
       const labelToField = buildLabelToSourceFieldMap(item.metadata);
+      const availableSourceFields = Array.from(fields).sort((a, b) =>
+        a.localeCompare(b),
+      );
       const seriesByField = new Map<string, unknown[]>();
-      Array.from(fields).forEach((field) => seriesByField.set(field, []));
-      const fieldKey = resolvePreferredSourceField(
+      availableSourceFields.forEach((field) => seriesByField.set(field, []));
+      let fieldKey = resolvePreferredSourceField(
         seriesByField,
         preferredKeys,
         labelToField,
       );
+      let usedFallback = false;
       if (!fieldKey) {
-        mappingErrors.push({
+        fieldKey = resolveFallbackSourceField(availableSourceFields, labelToField);
+        usedFallback = Boolean(fieldKey);
+      }
+      if (!fieldKey) {
+        continue;
+      }
+      if (usedFallback) {
+        warnings.push({
+          code: "SOURCE_FIELD_FALLBACK",
           itemId: item.id,
           slug: item.slug,
           displayName: item.displayName,
           preferredSourceFields: preferredKeys,
-          availableSourceFields: Array.from(fields).sort((a, b) =>
-            a.localeCompare(b),
-          ),
+          availableSourceFields,
+          selectedSourceField: fieldKey,
         });
-        continue;
       }
 
       const pointWhere = {
@@ -5560,14 +5599,19 @@ export class DashboardChartsService {
       }
     }
 
-    if (mappingErrors.length > 0) {
-      throw new InternalServerErrorException({
-        code: "DASHBOARD_SECTOR_HEATMAP_FIELD_MAPPING_MISMATCH",
-        message: "Sector heatmap field mapping mismatch",
-        detail:
-          "No preferred sourceField matched for one or more items. Configure EconomicDataItem.metadata.dataViz.heatmap.preferredSourceFields.",
-        items: mappingErrors,
-      });
+    if (warnings.length > 0) {
+      logger.warn(
+        {
+          warningCount: warnings.length,
+          items: warnings.map((warning) => ({
+            itemId: warning.itemId,
+            slug: warning.slug,
+            displayName: warning.displayName,
+            selectedSourceField: warning.selectedSourceField,
+          })),
+        },
+        "Sector heatmap fell back to non-preferred source fields",
+      );
     }
 
     const rowCount = Math.max(1, Math.ceil(cells.length / HEATMAP_COLUMNS));
@@ -5576,6 +5620,7 @@ export class DashboardChartsService {
       yLabels: yLabels.slice(0, rowCount),
       cells,
       updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
+      warnings: warnings.length > 0 ? warnings : undefined,
     };
   }
 

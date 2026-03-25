@@ -745,19 +745,26 @@ export class UserContentSubscriptionsService {
 
   private async ensureCatalogFresh(orgId: string) {
     const cacheKey = `content-subscription:catalog-sync:${orgId}`;
-    await this.cache.wrap(
-      cacheKey,
-      CATALOG_SYNC_TTL_SECONDS,
-      async () => {
-        await this.syncCatalog(orgId);
-        return { syncedAt: new Date().toISOString() };
-      },
-      {
-        lockTtlMs: CATALOG_SYNC_LOCK_TTL_MS,
-        retryDelayMs: 250,
-        maxWaitMs: CATALOG_SYNC_LOCK_TTL_MS,
-      },
-    );
+    try {
+      await this.cache.wrap(
+        cacheKey,
+        CATALOG_SYNC_TTL_SECONDS,
+        async () => {
+          await this.syncCatalog(orgId);
+          return { syncedAt: new Date().toISOString() };
+        },
+        {
+          lockTtlMs: CATALOG_SYNC_LOCK_TTL_MS,
+          retryDelayMs: 250,
+          maxWaitMs: CATALOG_SYNC_LOCK_TTL_MS,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        { err: error, orgId },
+        "Failed to refresh content subscription catalog; continuing with existing snapshot",
+      );
+    }
   }
 
   private async syncCatalog(orgId: string) {

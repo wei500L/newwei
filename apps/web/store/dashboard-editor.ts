@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { create } from "zustand";
+import { createWithEqualityFn as create } from "zustand/traditional";
 
 export type DashboardWidgetType = "line" | "bar" | "pie" | "scatter" | "kline" | "radar" | "table";
 

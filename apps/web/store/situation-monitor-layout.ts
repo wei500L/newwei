@@ -1,7 +1,7 @@
 "use client";
 
 import type { Layout } from "react-grid-layout";
-import { create } from "zustand";
+import { createWithEqualityFn as create } from "zustand/traditional";
 
 import {
   SITUATION_MONITOR_GRID_BREAKPOINT_ORDER,

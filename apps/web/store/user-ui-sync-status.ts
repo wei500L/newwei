@@ -1,6 +1,6 @@
 "use client";
 
-import { create } from "zustand";
+import { createWithEqualityFn as create } from "zustand/traditional";
 
 export type UserUiSyncSection = "situation-monitor" | "war-map";
 

@@ -12,7 +12,7 @@ import {
   WAR_MAP_DEFAULT_LAYER_VISIBILITY,
   normalizeWarMapSettings as normalizeWarMapSettingsFromUtils,
 } from "@modular/utils";
-import { create } from "zustand";
+import { createWithEqualityFn as create } from "zustand/traditional";
 
 export {
   type WarMapAisMode,

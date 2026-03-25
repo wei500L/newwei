@@ -51,6 +51,44 @@ describe('map runtime deck helpers', () => {
     expect(receivedLayers?.[0]).not.toBe(layer);
   });
 
+  it('drops layers that fail to clone before updating the overlay', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let receivedLayers: unknown[] | undefined;
+
+    setDeckOverlayProps(
+      {
+        setProps: (props: { layers?: unknown[] }) => {
+          receivedLayers = props.layers as unknown[] | undefined;
+        },
+      } as never,
+      {
+        layers: [
+          { id: 'valid-layer', clone: () => ({ id: 'valid-layer' }) },
+          { id: 'broken-layer', clone: () => { throw new Error('boom'); } },
+          { id: 'null-layer', clone: () => null },
+        ] as never[],
+      },
+    );
+
+    expect(receivedLayers).toEqual([{ id: 'valid-layer' }]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[DeckMapRuntime] Dropped deck layers that failed to clone before overlay update.',
+      expect.objectContaining({
+        droppedCount: 1,
+        sampleIds: ['broken-layer'],
+      }),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[DeckMapRuntime] Dropped invalid deck layers after cloning.',
+      expect.objectContaining({
+        droppedCount: 1,
+        invalidShapeCount: 1,
+      }),
+    );
+
+    warnSpy.mockRestore();
+  });
+
   it('warns when invalid layers are discarded before overlay update', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 

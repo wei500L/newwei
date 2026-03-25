@@ -37,11 +37,20 @@ interface DeckLayerCandidate {
   clone?: (() => unknown) | undefined;
 }
 
+interface DeckLayerWithId extends DeckLayerCandidate {
+  id: string;
+}
+
 interface DroppedDeckLayerSummary {
   droppedCount: number;
   missingCloneCount: number;
   missingIdCount: number;
   invalidShapeCount: number;
+  sampleIds: string[];
+}
+
+interface FailedDeckLayerCloneSummary {
+  droppedCount: number;
   sampleIds: string[];
 }
 
@@ -59,21 +68,17 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function isDeckLayerCandidate(value: unknown): value is DeckLayerCandidate {
+function hasDeckLayerId(value: unknown): value is DeckLayerWithId {
   if (!value || typeof value !== 'object') {
     return false;
   }
 
   const layer = value as DeckLayerCandidate;
-  return (
-    typeof layer.id === 'string' &&
-    layer.id.trim().length > 0 &&
-    typeof layer.clone === 'function'
-  );
+  return typeof layer.id === 'string' && layer.id.trim().length > 0;
 }
 
 export function sanitizeDeckLayers<T>(layers: readonly T[] | null | undefined): T[] {
-  return normalizeDeckLayers(layers).layers;
+  return normalizeDeckLayers(layers, { requireClone: true }).layers;
 }
 
 function cloneDeckLayer<T>(layer: T): T {
@@ -97,10 +102,12 @@ function areLayerArraysEqual(
 
 function normalizeDeckLayers<T>(
   layers: readonly T[] | null | undefined,
+  options?: { requireClone?: boolean },
 ): {
   layers: T[];
   droppedSummary: DroppedDeckLayerSummary | null;
 } {
+  const requireClone = options?.requireClone ?? true;
   const validLayers: T[] = [];
   const droppedSummary: DroppedDeckLayerSummary = {
     droppedCount: 0,
@@ -111,7 +118,10 @@ function normalizeDeckLayers<T>(
   };
 
   for (const layer of layers ?? []) {
-    if (isDeckLayerCandidate(layer)) {
+    if (
+      hasDeckLayerId(layer) &&
+      (!requireClone || typeof (layer as DeckLayerCandidate).clone === 'function')
+    ) {
       validLayers.push(layer);
       continue;
     }
@@ -129,7 +139,7 @@ function normalizeDeckLayers<T>(
       if (droppedSummary.sampleIds.length < 5) {
         droppedSummary.sampleIds.push(candidate.id);
       }
-      if (typeof candidate.clone !== 'function') {
+      if (requireClone && typeof candidate.clone !== 'function') {
         droppedSummary.missingCloneCount += 1;
       } else {
         droppedSummary.invalidShapeCount += 1;
@@ -143,14 +153,59 @@ function normalizeDeckLayers<T>(
   };
 }
 
-function warnDroppedDeckLayers(summary: DroppedDeckLayerSummary): void {
+function cloneDeckLayers<T>(layers: readonly T[]): {
+  layers: unknown[];
+  failedCloneSummary: FailedDeckLayerCloneSummary | null;
+} {
+  const clonedLayers: unknown[] = [];
+  const failedCloneSummary: FailedDeckLayerCloneSummary = {
+    droppedCount: 0,
+    sampleIds: [],
+  };
+
+  for (const layer of layers) {
+    try {
+      clonedLayers.push(cloneDeckLayer(layer));
+    } catch {
+      failedCloneSummary.droppedCount += 1;
+      const id = hasDeckLayerId(layer) ? layer.id.trim() : null;
+      if (id && failedCloneSummary.sampleIds.length < 5) {
+        failedCloneSummary.sampleIds.push(id);
+      }
+    }
+  }
+
+  return {
+    layers: clonedLayers,
+    failedCloneSummary:
+      failedCloneSummary.droppedCount > 0 ? failedCloneSummary : null,
+  };
+}
+
+function warnDroppedDeckLayers(
+  summary: DroppedDeckLayerSummary,
+  stage = 'before overlay update',
+): void {
   const signature = JSON.stringify(summary);
-  const warningKey = 'deck-layer-drop';
+  const warningKey = `deck-layer-drop:${stage}`;
   if (deckLayerWarningSignatures.get(warningKey) === signature) {
     return;
   }
   deckLayerWarningSignatures.set(warningKey, signature);
-  console.warn('[DeckMapRuntime] Dropped invalid deck layers before overlay update.', summary);
+  console.warn(`[DeckMapRuntime] Dropped invalid deck layers ${stage}.`, summary);
+}
+
+function warnFailedDeckLayerClones(summary: FailedDeckLayerCloneSummary): void {
+  const signature = JSON.stringify(summary);
+  const warningKey = 'deck-layer-clone-failures';
+  if (deckLayerWarningSignatures.get(warningKey) === signature) {
+    return;
+  }
+  deckLayerWarningSignatures.set(warningKey, signature);
+  console.warn(
+    '[DeckMapRuntime] Dropped deck layers that failed to clone before overlay update.',
+    summary,
+  );
 }
 
 export function setDeckOverlayProps(
@@ -159,7 +214,9 @@ export function setDeckOverlayProps(
 ): void {
   const cached = overlayLayerCloneCache.get(overlay);
   const normalizedLayers =
-    props.layers === undefined ? null : normalizeDeckLayers(props.layers as unknown[]);
+    props.layers === undefined
+      ? null
+      : normalizeDeckLayers(props.layers as unknown[], { requireClone: true });
   if (normalizedLayers?.droppedSummary) {
     warnDroppedDeckLayers(normalizedLayers.droppedSummary);
   }
@@ -183,7 +240,23 @@ export function setDeckOverlayProps(
           // Cache clones per overlay so unchanged layers do not get re-cloned on every update.
           layers: canReuseClonedLayers
             ? cached!.clonedLayers
-            : rawLayers.map((layer) => cloneDeckLayer(layer)),
+            : (() => {
+                const clonedLayers = cloneDeckLayers(rawLayers);
+                if (clonedLayers.failedCloneSummary) {
+                  warnFailedDeckLayerClones(clonedLayers.failedCloneSummary);
+                }
+                const normalizedClonedLayers = normalizeDeckLayers(
+                  clonedLayers.layers,
+                  { requireClone: false },
+                );
+                if (normalizedClonedLayers.droppedSummary) {
+                  warnDroppedDeckLayers(
+                    normalizedClonedLayers.droppedSummary,
+                    'after cloning',
+                  );
+                }
+                return normalizedClonedLayers.layers;
+              })(),
         };
 
   if (props.layers !== undefined) {

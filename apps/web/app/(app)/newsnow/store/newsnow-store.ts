@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createWithEqualityFn as create } from "zustand/traditional";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
 
 import {
