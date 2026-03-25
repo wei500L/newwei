@@ -22,7 +22,12 @@ import {
 import { SITUATION_PANELS } from "./config/situations";
 import { WORLD_LEADERS } from "./config/world-leaders";
 import { FinancialMainlineSnapshotService } from "./external/financial-mainline-snapshot.service";
-import { SituationMonitorExternalService } from "./external/situation-monitor-external.service";
+import {
+  SituationMonitorExternalService,
+  type SituationMonitorExternalWarning,
+  type SituationMonitorGdeltFetchResult,
+  type SituationMonitorGdeltHeadlineCandidate,
+} from "./external/situation-monitor-external.service";
 import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
 import {
   ALERT_KEYWORDS,
@@ -67,12 +72,21 @@ export interface SituationMonitorInsightsDiagnostics {
   categories: Record<SituationMonitorCategory, SituationMonitorInsightsCategoryDiagnostics>;
 }
 
+export interface SituationMonitorWarning {
+  code: string;
+  source: "core" | "external" | "gdelt" | "crawl" | "telegram" | "oref";
+  severity: "info" | "warning" | "error";
+  message: string;
+  detail?: string;
+}
+
 export interface SituationMonitorInsightsResponse {
   generatedAt: string;
   windowHours: number;
   maxItems: number;
   analyzedItems: number;
   diagnostics?: SituationMonitorInsightsDiagnostics;
+  warnings?: SituationMonitorWarning[];
   translation?: { target: "zh-CN"; applied: boolean; error?: string };
   headlines?: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
   alerts?: SituationMonitorAlertHeadline[];
@@ -156,6 +170,7 @@ export class SituationMonitorService {
       });
 
       const core = await this.cache.wrap(cacheKey, INSIGHTS_CACHE_TTL_SECONDS_CORE, async () => {
+        const warnings: SituationMonitorWarning[] = [];
         const headlines = await this.buildHeadlinesByCategory({
           orgId,
           since,
@@ -164,6 +179,7 @@ export class SituationMonitorService {
           allowGdeltFallback,
           scope,
           debug,
+          warnings,
         });
 
         const displayHeadlines = this.toDisplayHeadlines(headlines, maxHeadlinesPerCategory);
@@ -247,6 +263,7 @@ export class SituationMonitorService {
           diagnostics: this.buildDiagnostics(displayHeadlines, scope),
           headlines: displayHeadlines,
           analyzedItems,
+          ...(warnings.length > 0 ? { warnings } : {}),
           alerts: this.buildAlerts(displayHeadlines),
           leaders: this.buildWorldLeaders(analysisNews),
           situations: this.buildSituations(analysisNews),
@@ -473,6 +490,7 @@ export class SituationMonitorService {
     allowGdeltFallback: boolean;
     scope: "tagged" | "all";
     debug: boolean;
+    warnings?: SituationMonitorWarning[];
   }): Promise<Record<SituationMonitorCategory, SituationMonitorHeadline[]>> {
     const byCategory: Record<SituationMonitorCategory, SituationMonitorHeadline[]> = {
       politics: [],
@@ -670,42 +688,120 @@ export class SituationMonitorService {
       });
 
       if (fills.length > 0) {
-        const fillResults = await Promise.allSettled(
-          fills.map(async ({ category, remaining }) => ({
+        const gdeltLimit = Math.min(
+          250,
+          Math.max(
+            50,
+            fills.reduce((sum, entry) => sum + entry.remaining, 0) * 4,
+          ),
+        );
+        const gdeltResult = await this.external
+          .fetchGdeltHeadlines(gdeltLimit)
+          .catch((error) => ({
+            headlines: [],
+            warning: {
+              code: "gdelt_request_failed",
+              message: "GDELT fallback request failed.",
+              detail: this.safeErrorMessage(error),
+            },
+          } satisfies SituationMonitorGdeltFetchResult));
+        if (gdeltResult.warning) {
+          options.warnings?.push(
+            this.createSituationMonitorWarningFromExternal({
+              ...gdeltResult.warning,
+              source: "gdelt",
+            }),
+          );
+        }
+        const existingLinksByCategory = new Map<
+          SituationMonitorCategory,
+          Set<string>
+        >(
+          SITUATION_MONITOR_CATEGORIES.map((category) => [
             category,
-            headlines: await this.external.fetchGdeltCategoryHeadlines(category, remaining),
-          })),
+            new Set(byCategory[category].map((headline) => headline.link)),
+          ]),
         );
 
-        for (const entry of fillResults) {
-          if (entry.status !== "fulfilled") {
-            continue;
-          }
-          const existingLinks = new Set(byCategory[entry.value.category].map((headline) => headline.link));
-          for (const headline of entry.value.headlines) {
-            if (byCategory[entry.value.category].length >= options.maxPerCategory) {
-              break;
-            }
-            const normalizedTitle = typeof headline.title === "string" ? headline.title.trim() : "";
-            const normalizedLink = typeof headline.link === "string" ? headline.link.trim() : "";
-            if (!normalizedTitle || this.isPlaceholderTitle(normalizedTitle) || !normalizedLink) {
-              continue;
-            }
-            if (existingLinks.has(normalizedLink)) {
-              continue;
-            }
-            existingLinks.add(normalizedLink);
-            byCategory[entry.value.category].push({
-              ...headline,
-              title: normalizedTitle,
-              link: normalizedLink,
-            });
-          }
+        for (const headline of gdeltResult.headlines) {
+          this.tryAppendGdeltHeadline({
+            headline,
+            byCategory,
+            maxPerCategory: options.maxPerCategory,
+            existingLinksByCategory,
+          });
         }
       }
     }
 
     return byCategory;
+  }
+
+  private createSituationMonitorWarningFromExternal(
+    warning: SituationMonitorExternalWarning & {
+      source?: SituationMonitorWarning["source"];
+      severity?: SituationMonitorWarning["severity"];
+    },
+  ): SituationMonitorWarning {
+    return {
+      code: warning.code,
+      source: warning.source ?? "external",
+      severity: warning.severity ?? "warning",
+      message: warning.message,
+      ...(warning.detail ? { detail: warning.detail } : {}),
+    };
+  }
+
+  private tryAppendGdeltHeadline(options: {
+    headline: SituationMonitorGdeltHeadlineCandidate;
+    byCategory: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
+    maxPerCategory: number;
+    existingLinksByCategory: Map<SituationMonitorCategory, Set<string>>;
+  }) {
+    const normalizedTitle =
+      typeof options.headline.title === "string"
+        ? options.headline.title.trim()
+        : "";
+    const normalizedLink =
+      typeof options.headline.link === "string"
+        ? options.headline.link.trim()
+        : "";
+
+    if (
+      !normalizedTitle ||
+      this.isPlaceholderTitle(normalizedTitle) ||
+      !normalizedLink
+    ) {
+      return;
+    }
+
+    const classification = classifySituationMonitorCategory({
+      tags: [],
+      result: undefined,
+      rawTags: undefined,
+      title: normalizedTitle,
+      source: options.headline.source,
+    });
+    const category = classification.category;
+    if (!category) {
+      return;
+    }
+    if (options.byCategory[category].length >= options.maxPerCategory) {
+      return;
+    }
+
+    const existingLinks = options.existingLinksByCategory.get(category);
+    if (!existingLinks || existingLinks.has(normalizedLink)) {
+      return;
+    }
+
+    existingLinks.add(normalizedLink);
+    options.byCategory[category].push({
+      ...options.headline,
+      title: normalizedTitle,
+      link: normalizedLink,
+      category,
+    });
   }
 
   private extractCategory(tags: unknown): SituationMonitorCategory | null {

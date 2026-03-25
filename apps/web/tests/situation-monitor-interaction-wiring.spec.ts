@@ -46,4 +46,27 @@ describe("situation monitor interaction wiring", () => {
     );
     expect(contentSource).toContain("onExpand(record, event);");
   });
+
+  it("triggers backend refresh tasks and then reloads visible signal panels", () => {
+    const contentSource = read("app/(app)/situation-monitor/situation-monitor-content.tsx");
+
+    expect(contentSource).toContain("const { pending: manualRefreshPending, run: runManualRefresh } =");
+    expect(contentSource).toContain('apiClient.post<SituationMonitorRefreshResponse>(');
+    expect(contentSource).toContain('"situation-monitor/refresh"');
+    expect(contentSource).toContain("await Promise.allSettled([");
+    expect(contentSource).toContain("telegramSignalActive");
+    expect(contentSource).toContain("loadTelegramFeedRef.current()");
+    expect(contentSource).toContain("loadOrefSignalsRef.current()");
+    expect(contentSource).toContain("setManualRefreshResult(response.data ?? null);");
+    expect(contentSource).toContain('loading={loading || manualRefreshPending}');
+  });
+
+  it("renders explicit alert feedback for refresh task results and insights warnings", () => {
+    const contentSource = read("app/(app)/situation-monitor/situation-monitor-content.tsx");
+
+    expect(contentSource).toContain("manualRefreshResult.status === \"accepted\" ? \"success\" : \"warning\"");
+    expect(contentSource).toContain("insightsWarnings.map((warning) => (");
+    expect(contentSource).toContain("No internal Situation Monitor items are available yet.");
+    expect(contentSource).toContain("triggering new crawl collection requires crawl.write permission.");
+  });
 });

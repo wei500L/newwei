@@ -116,6 +116,7 @@ import { QueueService } from "./queue.service";
   exports: [
     QueueService,
     QueueEventPublisher,
+    NewsSourceSchedulerService,
     PIPELINE_QUEUE,
     PIPELINE_DLQ_QUEUE,
     PIPELINE_QUEUE_EVENTS,

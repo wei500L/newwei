@@ -51,6 +51,7 @@ import { extractApiError } from "@/lib/api-error";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
 import {
@@ -263,6 +264,14 @@ interface SituationMonitorHeadline {
   topics?: string[];
   entities?: string[];
   location?: string;
+}
+
+interface SituationMonitorWarning {
+  code: string;
+  source: "core" | "external" | "gdelt" | "crawl" | "telegram" | "oref";
+  severity: "info" | "warning" | "error";
+  message: string;
+  detail?: string;
 }
 
 interface SituationMonitorAlertHeadline extends SituationMonitorHeadline {
@@ -529,6 +538,7 @@ interface SituationMonitorInsightsResponse {
   maxItems: number;
   analyzedItems: number;
   diagnostics?: SituationMonitorInsightsDiagnostics;
+  warnings?: SituationMonitorWarning[];
   translation?: { target: "zh-CN"; applied: boolean; error?: string };
   headlines?: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
   alerts?: SituationMonitorAlertHeadline[];
@@ -558,6 +568,37 @@ interface SituationMonitorInsightsResponse {
     statusZh?: string;
   };
   monitorMatches?: SituationMonitorMatchResult[];
+}
+
+interface SituationMonitorRefreshTaskResult {
+  attempted: boolean;
+  ok: boolean;
+  message: string;
+  durationMs: number;
+}
+
+interface SituationMonitorRefreshResponse {
+  requestedAt: string;
+  status: "accepted" | "partial";
+  crawl: {
+    attempted: boolean;
+    permitted: boolean;
+    activeSourceCount: number;
+    scheduledSourceCount: number;
+    schedulerTriggered: boolean;
+    crawlTaskCount: number;
+    analysisTaskCount: number;
+    message: string;
+  };
+  signals: {
+    telegram: SituationMonitorRefreshTaskResult;
+    oref: SituationMonitorRefreshTaskResult;
+  };
+  cache: {
+    insightsCleared: number;
+    externalCleared: number;
+  };
+  warnings: SituationMonitorWarning[];
 }
 
 function mergeTranslationStatus(
@@ -590,6 +631,18 @@ function getHttpStatus(error: unknown): number | null {
   }
   const response = (error as { response?: { status?: unknown } }).response;
   return typeof response?.status === "number" ? response.status : null;
+}
+
+function toAlertType(
+  severity: SituationMonitorWarning["severity"],
+): "info" | "warning" | "error" {
+  if (severity === "error") {
+    return "error";
+  }
+  if (severity === "warning") {
+    return "warning";
+  }
+  return "info";
 }
 
 function toTagColor(level: string) {
@@ -791,6 +844,7 @@ export function SituationMonitorContent() {
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canReadItems =
     permissions.includes("items.read") || permissions.includes("items.write");
+  const canTriggerCrawl = permissions.includes("crawl.write");
   const hasSignalSession =
     status === "authenticated" && Boolean(session?.accessToken);
 
@@ -822,6 +876,11 @@ export function SituationMonitorContent() {
     type: "success" | "error";
     message: string;
   } | null>(null);
+  const [manualRefreshResult, setManualRefreshResult] =
+    useState<SituationMonitorRefreshResponse | null>(null);
+  const [manualRefreshError, setManualRefreshError] = useState<string | null>(
+    null,
+  );
   const [data, setData] = useState<SituationMonitorInsightsResponse | null>(
     null,
   );
@@ -1215,12 +1274,61 @@ export function SituationMonitorContent() {
     [apiClient, scope, session?.accessToken, translateToZh, windowHours],
   );
 
+  const { pending: manualRefreshPending, run: runManualRefresh } =
+    usePendingAction(async () => {
+      if (!session?.accessToken) {
+        return;
+      }
+
+      setManualRefreshError(null);
+      setManualRefreshResult(null);
+
+      try {
+        const response = await apiClient.post<SituationMonitorRefreshResponse>(
+          "situation-monitor/refresh",
+        );
+        setManualRefreshResult(response.data ?? null);
+      } catch (err) {
+        captureClientError(
+          "Failed to trigger situation monitor refresh tasks",
+          err,
+        );
+        setManualRefreshError(
+          extractApiError(err).message ||
+            "Failed to trigger Situation Monitor refresh tasks.",
+        );
+      } finally {
+        await Promise.allSettled([
+          load(),
+          telegramSignalActive
+            ? loadTelegramFeedRef.current()
+            : Promise.resolve(undefined),
+          orefSignalActive
+            ? loadOrefSignalsRef.current()
+            : Promise.resolve(undefined),
+        ]);
+      }
+    });
+
   const effectiveScope = data?.diagnostics?.effectiveScope ?? scope;
   const taggedScopeNoResults =
     !loading &&
     !error &&
     effectiveScope === "tagged" &&
     (data?.analyzedItems ?? 0) === 0;
+  const allScopeNoResults =
+    !loading &&
+    !error &&
+    effectiveScope === "all" &&
+    (data?.analyzedItems ?? 0) === 0;
+  const insightsWarnings = data?.warnings ?? [];
+  const manualRefreshQueuedTasks =
+    (manualRefreshResult?.crawl.crawlTaskCount ?? 0) +
+    (manualRefreshResult?.crawl.analysisTaskCount ?? 0);
+
+  const handleManualRefresh = useCallback(() => {
+    void runManualRefresh();
+  }, [runManualRefresh]);
 
   const submitSignalFeedback = useCallback(
     async (payload: {
@@ -5147,7 +5255,10 @@ export function SituationMonitorContent() {
             style={{ width: 160 }}
           />
           <Tag color="default">{effectiveScope.toUpperCase()}</Tag>
-          <Button onClick={() => void load()} loading={loading}>
+          <Button
+            onClick={handleManualRefresh}
+            loading={loading || manualRefreshPending}
+          >
             {t("common.refresh", { defaultValue: "Refresh" })}
           </Button>
           <Button
@@ -5347,6 +5458,67 @@ export function SituationMonitorContent() {
         }
       />
 
+      {manualRefreshError ? (
+        <div className="mt-3">
+          <Alert
+            type="error"
+            showIcon
+            message={manualRefreshError}
+            closable
+            onClose={() => setManualRefreshError(null)}
+          />
+        </div>
+      ) : null}
+      {manualRefreshResult ? (
+        <div className="mt-3">
+          <Alert
+            type={manualRefreshResult.status === "accepted" ? "success" : "warning"}
+            showIcon
+            closable
+            onClose={() => setManualRefreshResult(null)}
+            message={
+              manualRefreshResult.status === "accepted"
+                ? t("situationMonitor.manualRefresh.accepted", {
+                    defaultValue: "Refresh tasks started successfully.",
+                  })
+                : t("situationMonitor.manualRefresh.partial", {
+                    defaultValue: "Refresh completed with warnings.",
+                  })
+            }
+            description={
+              <Space direction="vertical" size={4}>
+                <Typography.Text>
+                  {manualRefreshResult.crawl.message}
+                </Typography.Text>
+                <Typography.Text>
+                  {`Telegram: ${manualRefreshResult.signals.telegram.message}`}
+                </Typography.Text>
+                <Typography.Text>
+                  {`OREF: ${manualRefreshResult.signals.oref.message}`}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  {t("situationMonitor.manualRefresh.cache", {
+                    defaultValue:
+                      "Cleared {{insights}} insights cache entries and {{external}} external cache entries.",
+                    insights: manualRefreshResult.cache.insightsCleared,
+                    external: manualRefreshResult.cache.externalCleared,
+                  })}
+                </Typography.Text>
+              </Space>
+            }
+          />
+        </div>
+      ) : null}
+      {insightsWarnings.map((warning) => (
+        <div className="mt-3" key={`${warning.source}:${warning.code}`}>
+          <Alert
+            type={toAlertType(warning.severity)}
+            showIcon
+            message={warning.message}
+            description={warning.detail}
+          />
+        </div>
+      ))}
       {error ? <Alert type="error" showIcon message={error} /> : null}
       {taggedScopeNoResults ? (
         <div className="mt-3">
@@ -5373,6 +5545,43 @@ export function SituationMonitorContent() {
                   defaultValue: "Switch to All items",
                 })}
               </Button>
+            }
+          />
+        </div>
+      ) : null}
+      {allScopeNoResults ? (
+        <div className="mt-3">
+          <Alert
+            type="warning"
+            showIcon
+            message={t("situationMonitor.noCoverage.title", {
+              defaultValue: "No internal Situation Monitor items are available yet.",
+            })}
+            description={
+              !canTriggerCrawl
+                ? t("situationMonitor.noCoverage.permission", {
+                    defaultValue:
+                      "This account can view Situation Monitor, but triggering new crawl collection requires crawl.write permission.",
+                  })
+                : manualRefreshResult?.crawl.activeSourceCount === 0
+                  ? t("situationMonitor.noCoverage.noSources", {
+                      defaultValue:
+                        "This workspace has no active news sources configured, so manual refresh cannot queue new collection.",
+                    })
+                  : manualRefreshQueuedTasks > 0
+                    ? t("situationMonitor.noCoverage.queued", {
+                        defaultValue:
+                          "Collection and analysis jobs have been triggered. New internal headlines will appear after they finish.",
+                      })
+                    : manualRefreshResult?.crawl.schedulerTriggered
+                      ? t("situationMonitor.noCoverage.scheduled", {
+                          defaultValue:
+                            "Refresh reached the crawl scheduler, but this pass did not queue any new crawl or analysis tasks.",
+                        })
+                    : t("situationMonitor.noCoverage.generic", {
+                        defaultValue:
+                          "No completed processed items matched the current time window.",
+                      })
             }
           />
         </div>

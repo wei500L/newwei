@@ -185,7 +185,8 @@ services:
       start_period: 20s
 
   litellm:
-    image: ghcr.io/berriai/litellm:main-stable
+    # Pin the currently verified LiteLLM image digest to avoid drifting to bad upstream releases.
+    image: ghcr.io/berriai/litellm@sha256:067aee932b8770ed42955ee802a04abdcd369d0995b5e696bb07d6520a231b1c
     restart: unless-stopped
     depends_on:
       redis:

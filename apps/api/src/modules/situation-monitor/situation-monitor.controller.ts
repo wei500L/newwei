@@ -18,6 +18,7 @@ import {
 } from "./dto/situation-monitor-monitor.dto";
 import { SituationMonitorInsightsQueryDto, SituationMonitorSignalFeedbackDto } from "./dto/situation-monitor.dto";
 import { SituationMonitorMonitorsService } from "./situation-monitor-monitors.service";
+import { SituationMonitorRefreshService } from "./situation-monitor-refresh.service";
 import { SituationMonitorSignalsService } from "./signals/situation-monitor-signals.service";
 import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
 import { SituationMonitorTranslationService } from "./situation-monitor-translation.service";
@@ -138,6 +139,7 @@ export class SituationMonitorController {
     private readonly translator: SituationMonitorTranslationService,
     private readonly signals: SituationMonitorSignalsService,
     private readonly settings: SituationMonitorSettingsService,
+    private readonly refreshService: SituationMonitorRefreshService,
   ) {}
 
   @Get("insights")
@@ -242,6 +244,12 @@ export class SituationMonitorController {
       itemSource: body.itemSource,
       note: body.note,
     });
+  }
+
+  @Post("refresh")
+  @Permissions("items.read")
+  async refresh(@CurrentUser() user: AuthenticatedUser) {
+    return await this.refreshService.refresh(user.orgId, user.permissions ?? []);
   }
 
   @Get("telegram-feed")

@@ -180,32 +180,29 @@ describe("SituationMonitorService", () => {
     rawFindMock.mockReturnValue(rawChain);
 
     const external = {
-      fetchGdeltCategoryHeadlines: jest.fn(async (category: string) => {
-        if (category !== "tech") {
-          return [];
-        }
-        return [
-          {
-            id: "gdelt-tech-placeholder",
-            title: "No title",
-            link: "https://example.com/no-title",
-            source: "GDELT",
-            timestamp: Date.now(),
-            category: "tech",
-            origin: "gdelt",
-            isAlert: false,
-          },
-          {
-            id: "gdelt-tech-valid",
-            title: "Semiconductor exports face new review",
-            link: "https://example.com/semiconductor-review",
-            source: "GDELT",
-            timestamp: Date.now(),
-            category: "tech",
-            origin: "gdelt",
-            isAlert: false,
-          },
-        ];
+      fetchGdeltHeadlines: jest.fn(async () => {
+        return {
+          headlines: [
+            {
+              id: "gdelt-tech-placeholder",
+              title: "No title",
+              link: "https://example.com/no-title",
+              source: "GDELT",
+              timestamp: Date.now(),
+              origin: "gdelt",
+              isAlert: false,
+            },
+            {
+              id: "gdelt-tech-valid",
+              title: "Semiconductor exports face new review",
+              link: "https://example.com/semiconductor-review",
+              source: "GDELT",
+              timestamp: Date.now(),
+              origin: "gdelt",
+              isAlert: false,
+            },
+          ],
+        };
       }),
     } as any;
     const cache = {} as any;
@@ -224,6 +221,139 @@ describe("SituationMonitorService", () => {
 
     expect(result.tech).toHaveLength(1);
     expect(result.tech[0]?.title).toBe("Semiconductor exports face new review");
+  });
+
+  it("classifies combined gdelt fallback headlines into matching categories", async () => {
+    const processedChain = createProcessedFindChain([]);
+    processedFindMock.mockReturnValue(processedChain);
+
+    const rawChain = createRawFindChain([]);
+    rawFindMock.mockReturnValue(rawChain);
+
+    const external = {
+      fetchGdeltHeadlines: jest.fn(async () => ({
+        headlines: [
+          {
+            id: "gdelt-politics",
+            title: "Election campaign reshapes parliamentary politics",
+            link: "https://example.com/election-debate",
+            source: "GDELT",
+            timestamp: Date.now(),
+            origin: "gdelt",
+            isAlert: false,
+          },
+          {
+            id: "gdelt-ai",
+            title: "ChatGPT roadmap expands enterprise AI tooling",
+            link: "https://example.com/chatgpt-roadmap",
+            source: "GDELT",
+            timestamp: Date.now(),
+            origin: "gdelt",
+            isAlert: false,
+          },
+        ],
+      })),
+    } as any;
+    const cache = {} as any;
+    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
+    const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
+
+    const result = await (service as any).buildHeadlinesByCategory({
+      orgId: "org-1",
+      since: new Date("2026-01-01T00:00:00.000Z"),
+      maxItems: 20,
+      maxPerCategory: 5,
+      allowGdeltFallback: true,
+      scope: "tagged",
+      debug: false,
+    });
+
+    expect(result.politics).toHaveLength(1);
+    expect(result.politics[0]?.title).toBe(
+      "Election campaign reshapes parliamentary politics",
+    );
+    expect(result.ai).toHaveLength(1);
+    expect(result.ai[0]?.title).toBe(
+      "ChatGPT roadmap expands enterprise AI tooling",
+    );
+  });
+
+  it("keeps insights loading resilient when gdelt fallback is rate limited", async () => {
+    const processedChain = createProcessedFindChain([]);
+    processedFindMock.mockReturnValue(processedChain);
+
+    const rawChain = createRawFindChain([]);
+    rawFindMock.mockReturnValue(rawChain);
+
+    const external = {
+      fetchGdeltHeadlines: jest
+        .fn()
+        .mockRejectedValue(new Error("HTTP 429 Too Many Requests")),
+    } as any;
+    const cache = {} as any;
+    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
+    const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
+
+    const result = await (service as any).buildHeadlinesByCategory({
+      orgId: "org-1",
+      since: new Date("2026-01-01T00:00:00.000Z"),
+      maxItems: 20,
+      maxPerCategory: 5,
+      allowGdeltFallback: true,
+      scope: "tagged",
+      debug: false,
+    });
+
+    expect(result).toEqual({
+      politics: [],
+      tech: [],
+      finance: [],
+      gov: [],
+      ai: [],
+      intel: [],
+    });
+  });
+
+  it("surfaces gdelt fallback warnings in insights responses", async () => {
+    const cache = {
+      get: jest.fn().mockResolvedValue(undefined),
+      set: jest.fn().mockResolvedValue(undefined),
+      wrap: jest.fn(async (_key: string, _ttl: number, factory: () => Promise<unknown>) => await factory()),
+    } as any;
+    const external = {
+      isGdeltEnabled: jest.fn().mockReturnValue(true),
+      fetchGdeltHeadlines: jest.fn().mockResolvedValue({
+        headlines: [],
+        warning: {
+          code: "gdelt_rate_limited",
+          message: "GDELT fallback is rate limited right now.",
+        },
+      }),
+    } as any;
+    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
+    const realtimeSignals = {
+      getSituationMonitorInsightSnapshot: jest.fn().mockResolvedValue({
+        keywordSpikes: [],
+        predictionLeads: [],
+        pizzint: undefined,
+        tensions: [],
+      }),
+    } as any;
+    const service = new SituationMonitorService(cache, external, {} as any, feedback, realtimeSignals, {} as any);
+    const processedChain = createProcessedFindChain([]);
+    processedFindMock.mockReturnValue(processedChain);
+    rawFindMock.mockReturnValue(createRawFindChain([]));
+
+    const result = await service.getInsights("org-1", { sections: ["core"] });
+
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "gdelt_rate_limited",
+          source: "gdelt",
+        }),
+      ]),
+    );
   });
 
   it("builds diagnostics from the same displayed headlines returned to clients", async () => {

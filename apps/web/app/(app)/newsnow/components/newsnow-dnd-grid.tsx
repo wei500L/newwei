@@ -8,10 +8,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import type {
-  DragEndEvent,
-  DragStartEvent,
-} from "@dnd-kit/core";
+import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import {
   SortableContext,
   sortableKeyboardCoordinates,
@@ -20,11 +17,21 @@ import {
 } from "@dnd-kit/sortable";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { shallow } from "zustand/shallow";
 
 import { useIsMobile } from "../hooks/use-is-mobile";
-import { type NewsnowAnalyzedItem, type Source } from "../hooks/use-news-sources";
+import {
+  type NewsnowAnalyzedItem,
+  type Source,
+} from "../hooks/use-news-sources";
 import {
   type PersonalizedSourceScoreDetail,
   useNewsnowPersonalizedOrder,
@@ -35,6 +42,10 @@ import {
   buildCrossSourceDedupResult,
   reorderNewsnowItems,
 } from "../lib/newsnow-dnd";
+import {
+  shouldUpdateNewsnowGridMetric,
+  shouldVirtualizeNewsnowGridRows,
+} from "../lib/newsnow-grid-virtualization";
 import { useNewsnowStore } from "../store/newsnow-store";
 
 import { NewsnowCard } from "./newsnow-card";
@@ -87,50 +98,89 @@ function NewsnowDndGridContent({
       setItems(sourceIds);
     }
   }, [columnOrder, sourceIds]);
-  const scopedSourceAffinity = useNewsnowStore(
-    (state) => {
-      const next: typeof state.sourceAffinity = {};
-      for (const sourceId of items) {
-        const affinity = state.sourceAffinity[sourceId];
-        if (affinity) {
-          next[sourceId] = affinity;
-        }
+  const scopedSourceAffinity = useNewsnowStore((state) => {
+    const next: typeof state.sourceAffinity = {};
+    for (const sourceId of items) {
+      const affinity = state.sourceAffinity[sourceId];
+      if (affinity) {
+        next[sourceId] = affinity;
       }
-      return next;
-    },
-    shallow,
-  );
+    }
+    return next;
+  }, shallow);
 
-  useEffect(() => {
+  const updateGridMetrics = useCallback(() => {
     const node = gridRef.current;
-    if (!node) {
+    if (!node || typeof window === "undefined") {
       return;
     }
 
-    const updateMetrics = () => {
-      setGridWidth(node.clientWidth);
-      setScrollMargin(node.getBoundingClientRect().top + window.scrollY);
-    };
+    const nextWidth = node.clientWidth;
+    const nextScrollMargin = node.getBoundingClientRect().top + window.scrollY;
 
-    updateMetrics();
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", updateMetrics);
-      return () => {
-        window.removeEventListener("resize", updateMetrics);
-      };
+    setGridWidth((previousWidth) =>
+      shouldUpdateNewsnowGridMetric(previousWidth, nextWidth)
+        ? nextWidth
+        : previousWidth,
+    );
+    setScrollMargin((previousScrollMargin) =>
+      shouldUpdateNewsnowGridMetric(previousScrollMargin, nextScrollMargin)
+        ? nextScrollMargin
+        : previousScrollMargin,
+    );
+  }, []);
+
+  useLayoutEffect(() => {
+    const node = gridRef.current;
+    if (!node || typeof window === "undefined") {
+      return;
     }
 
-    const observer = new ResizeObserver(() => {
-      updateMetrics();
-    });
-    observer.observe(node);
-    window.addEventListener("resize", updateMetrics);
+    let frameId = 0;
+    let settleFrameId = 0;
+    const scheduleMetricsUpdate = () => {
+      window.cancelAnimationFrame(frameId);
+      window.cancelAnimationFrame(settleFrameId);
+      frameId = window.requestAnimationFrame(() => {
+        updateGridMetrics();
+        settleFrameId = window.requestAnimationFrame(() => {
+          updateGridMetrics();
+        });
+      });
+    };
+
+    scheduleMetricsUpdate();
+
+    const handleWindowChange = () => {
+      scheduleMetricsUpdate();
+    };
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            scheduleMetricsUpdate();
+          });
+
+    resizeObserver?.observe(node);
+    if (document.body) {
+      resizeObserver?.observe(document.body);
+    }
+    if (document.documentElement) {
+      resizeObserver?.observe(document.documentElement);
+    }
+
+    window.addEventListener("resize", handleWindowChange);
+    window.addEventListener("scroll", handleWindowChange, { passive: true });
 
     return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", updateMetrics);
+      window.cancelAnimationFrame(frameId);
+      window.cancelAnimationFrame(settleFrameId);
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", handleWindowChange);
+      window.removeEventListener("scroll", handleWindowChange);
     };
-  }, []);
+  }, [updateGridMetrics]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -140,7 +190,7 @@ function NewsnowDndGridContent({
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    })
+    }),
   );
 
   function handleDragStart(event: DragStartEvent) {
@@ -194,7 +244,8 @@ function NewsnowDndGridContent({
     columnKey,
     sourceIds: items,
     settingsOverride: sortSettingsOverride,
-    enabled: (sortMode === "personalized" || sortMode === "smart") && items.length > 0,
+    enabled:
+      (sortMode === "personalized" || sortMode === "smart") && items.length > 0,
   });
 
   const effectiveDisplayItems = useMemo(() => {
@@ -206,7 +257,10 @@ function NewsnowDndGridContent({
     if (hasManualOrder) {
       return items;
     }
-    if (personalizedOrder?.sourceIds && personalizedOrder.sourceIds.length > 0) {
+    if (
+      personalizedOrder?.sourceIds &&
+      personalizedOrder.sourceIds.length > 0
+    ) {
       return personalizedOrder.sourceIds;
     }
     return items;
@@ -219,46 +273,41 @@ function NewsnowDndGridContent({
       >,
     [personalizedOrder?.sourceScoreDetails],
   );
-  const scopedSourceSnapshots = useNewsnowStore(
-    (state) => {
-      const next: typeof state.sourceSnapshots = {};
-      for (const sourceId of effectiveDisplayItems) {
-        const snapshot = state.sourceSnapshots[sourceId];
-        if (snapshot) {
-          next[sourceId] = snapshot;
-        }
+  const scopedSourceSnapshots = useNewsnowStore((state) => {
+    const next: typeof state.sourceSnapshots = {};
+    for (const sourceId of effectiveDisplayItems) {
+      const snapshot = state.sourceSnapshots[sourceId];
+      if (snapshot) {
+        next[sourceId] = snapshot;
       }
-      return next;
-    },
-    shallow,
-  );
-  const scopedSourceSnapshotHashes = useNewsnowStore(
-    (state) => {
-      const next: Record<string, string> = {};
-      for (const sourceId of effectiveDisplayItems) {
-        const hash = state.sourceSnapshotHashes[sourceId];
-        if (hash) {
-          next[sourceId] = hash;
-        }
+    }
+    return next;
+  }, shallow);
+  const scopedSourceSnapshotHashes = useNewsnowStore((state) => {
+    const next: Record<string, string> = {};
+    for (const sourceId of effectiveDisplayItems) {
+      const hash = state.sourceSnapshotHashes[sourceId];
+      if (hash) {
+        next[sourceId] = hash;
       }
-      return next;
-    },
-    shallow,
-  );
+    }
+    return next;
+  }, shallow);
 
-  const dedupeResult = useMemo(
-    () => {
-      const nextCache = buildCrossSourceDedupResult({
-        sourceOrder: effectiveDisplayItems,
-        snapshots: scopedSourceSnapshots,
-        snapshotHashes: scopedSourceSnapshotHashes,
-        previousCache: dedupeCacheRef.current,
-      });
-      dedupeCacheRef.current = nextCache;
-      return nextCache;
-    },
-    [effectiveDisplayItems, scopedSourceSnapshotHashes, scopedSourceSnapshots],
-  );
+  const dedupeResult = useMemo(() => {
+    const nextCache = buildCrossSourceDedupResult({
+      sourceOrder: effectiveDisplayItems,
+      snapshots: scopedSourceSnapshots,
+      snapshotHashes: scopedSourceSnapshotHashes,
+      previousCache: dedupeCacheRef.current,
+    });
+    dedupeCacheRef.current = nextCache;
+    return nextCache;
+  }, [
+    effectiveDisplayItems,
+    scopedSourceSnapshotHashes,
+    scopedSourceSnapshots,
+  ]);
   const columnCount = useMemo(() => {
     if (isMobile) {
       return 1;
@@ -275,18 +324,40 @@ function NewsnowDndGridContent({
   const rowGap = isMobile ? MOBILE_GRID_GAP_PX : DESKTOP_GRID_GAP_PX;
   const rowGroups = useMemo(() => {
     const groups: string[][] = [];
-    for (let index = 0; index < effectiveDisplayItems.length; index += columnCount) {
+    for (
+      let index = 0;
+      index < effectiveDisplayItems.length;
+      index += columnCount
+    ) {
       groups.push(effectiveDisplayItems.slice(index, index + columnCount));
     }
     return groups;
   }, [columnCount, effectiveDisplayItems]);
-  const shouldVirtualize = !activeDragId && rowGroups.length > 4;
+  const shouldVirtualize = shouldVirtualizeNewsnowGridRows({
+    activeDragId,
+    gridWidth,
+    isMobile,
+    rowGroupCount: rowGroups.length,
+  });
   const rowVirtualizer = useWindowVirtualizer({
     count: rowGroups.length,
     estimateSize: () => VIRTUAL_ROW_ESTIMATE_PX,
     overscan: 2,
+    enabled: shouldVirtualize,
     scrollMargin,
   });
+  useEffect(() => {
+    if (!shouldVirtualize) {
+      return;
+    }
+    rowVirtualizer.measure();
+  }, [
+    columnCount,
+    rowGroups.length,
+    rowVirtualizer,
+    scrollMargin,
+    shouldVirtualize,
+  ]);
   const virtualRows = shouldVirtualize
     ? rowVirtualizer.getVirtualItems()
     : rowGroups.map((row, index) => ({
@@ -337,7 +408,9 @@ function NewsnowDndGridContent({
       <div ref={gridRef}>
         <SortableContext
           items={effectiveDisplayItems}
-          strategy={isMobile ? verticalListSortingStrategy : rectSortingStrategy}
+          strategy={
+            isMobile ? verticalListSortingStrategy : rectSortingStrategy
+          }
         >
           {shouldVirtualize ? (
             <div
@@ -381,6 +454,9 @@ function NewsnowDndGridContent({
 }
 
 // Ensure DnD components only render on client
-export const NewsnowDndGrid = dynamic(() => Promise.resolve(NewsnowDndGridContent), {
-  ssr: false,
-});
+export const NewsnowDndGrid = dynamic(
+  () => Promise.resolve(NewsnowDndGridContent),
+  {
+    ssr: false,
+  },
+);
