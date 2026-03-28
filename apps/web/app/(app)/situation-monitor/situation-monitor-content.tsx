@@ -632,6 +632,25 @@ interface SituationMonitorRefreshRunResponse {
   terminal: boolean;
 }
 
+interface SituationMonitorCatalogResponse {
+  narratives: {
+    id: string;
+    name: string;
+    category: string;
+    severity: string;
+  }[];
+  correlations: { id: string; name: string; category: string }[];
+  refreshReadiness: {
+    activeSourceCount: number;
+    backendRefreshTargets: {
+      crawl: boolean;
+      telegram: boolean;
+      oref: boolean;
+      any: boolean;
+    };
+  };
+}
+
 function mergeTranslationStatus(
   base: SituationMonitorInsightsResponse["translation"],
   next: SituationMonitorInsightsResponse["translation"],
@@ -1005,15 +1024,8 @@ export function SituationMonitorContent() {
   });
   const [feedbackDrawerOpen, setFeedbackDrawerOpen] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
-  const [signalCatalog, setSignalCatalog] = useState<null | {
-    narratives: {
-      id: string;
-      name: string;
-      category: string;
-      severity: string;
-    }[];
-    correlations: { id: string; name: string; category: string }[];
-  }>(null);
+  const [signalCatalog, setSignalCatalog] =
+    useState<SituationMonitorCatalogResponse | null>(null);
   const [missedSignalType, setMissedSignalType] = useState<
     "narrative" | "correlation"
   >("narrative");
@@ -1072,18 +1084,27 @@ export function SituationMonitorContent() {
   const loadSignalCatalog = useCallback(async () => {
     if (
       !session?.accessToken ||
-      !canReadItems ||
-      signalCatalog ||
-      catalogLoading
+      !canReadItems
     ) {
-      return;
+      return null;
+    }
+    if (signalCatalog) {
+      return signalCatalog;
+    }
+    if (catalogLoading) {
+      return null;
     }
     setCatalogLoading(true);
     try {
-      const response = await apiClient.get("situation-monitor/catalog");
-      setSignalCatalog(response.data ?? null);
+      const response = await apiClient.get<SituationMonitorCatalogResponse>(
+        "situation-monitor/catalog",
+      );
+      const nextCatalog = response.data ?? null;
+      setSignalCatalog(nextCatalog);
+      return nextCatalog;
     } catch (err) {
       captureClientError("Failed to load situation monitor catalog", err);
+      return null;
     } finally {
       setCatalogLoading(false);
     }
@@ -1094,6 +1115,10 @@ export function SituationMonitorContent() {
     session?.accessToken,
     signalCatalog,
   ]);
+
+  useEffect(() => {
+    void loadSignalCatalog();
+  }, [loadSignalCatalog]);
 
   const loadTelegramFeed = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -1280,11 +1305,15 @@ export function SituationMonitorContent() {
         if (coreData) {
           setData((prev) => {
             if (!prev) {
-              return coreData;
+              return {
+                ...coreData,
+                warnings: coreData.warnings ?? [],
+              };
             }
             return {
               ...prev,
               ...coreData,
+              warnings: coreData.warnings ?? [],
               translation: coreData.translation,
             };
           });
@@ -1441,6 +1470,21 @@ export function SituationMonitorContent() {
       setRefreshRun(null);
       setRefreshRunError(null);
       stopRefreshRunPolling();
+
+      const catalog = signalCatalog ?? (await loadSignalCatalog());
+      const refreshTargets = catalog?.refreshReadiness.backendRefreshTargets;
+      if (refreshTargets && !refreshTargets.any) {
+        await Promise.allSettled([
+          load(),
+          telegramSignalActive
+            ? loadTelegramFeedRef.current()
+            : Promise.resolve(undefined),
+          orefSignalActive
+            ? loadOrefSignalsRef.current()
+            : Promise.resolve(undefined),
+        ]);
+        return;
+      }
 
       try {
         const response = await apiClient.post<SituationMonitorRefreshResponse>(

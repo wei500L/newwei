@@ -16,6 +16,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { ProcessedArticleStatus } from "@prisma/client";
 import type Redis from "ioredis";
 
+import { fetchWithIpv4Fallback } from "../../common/http/fetch-with-ipv4-fallback";
 import {
   extractProcessedArticleTerms,
   normalizeProcessedArticleSource,
@@ -4355,27 +4356,28 @@ export class RealtimeSignalsService {
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
         await options.beforeAttempt?.();
-        const response = await fetch(url, {
-          method: options.method ?? "GET",
-          headers: {
-            accept: "application/json",
-            ...(options.body && !options.rawBody
-              ? { "content-type": "application/json" }
-              : {}),
-            ...(options.headers ?? {}),
+        const response = await fetchWithIpv4Fallback(
+          url,
+          {
+            body:
+              typeof options.rawBody === "string"
+                ? options.rawBody
+                : options.body
+                  ? JSON.stringify(options.body)
+                  : undefined,
+            headers: {
+              accept: "application/json",
+              ...(options.body && !options.rawBody
+                ? { "content-type": "application/json" }
+                : {}),
+              ...(options.headers ?? {}),
+            },
+            method: options.method ?? "GET",
           },
-          body:
-            typeof options.rawBody === "string"
-              ? options.rawBody
-              : options.body
-                ? JSON.stringify(options.body)
-                : undefined,
-          signal: controller.signal,
-        });
+          { timeoutMs },
+        );
         if (!response.ok) {
           const body = await response.text().catch(() => "");
           const error = new Error(
@@ -4401,8 +4403,6 @@ export class RealtimeSignalsService {
           const delayMs = Math.min(5_000, 300 * (attempt + 1));
           await this.sleep(delayMs);
         }
-      } finally {
-        clearTimeout(timer);
       }
     }
 

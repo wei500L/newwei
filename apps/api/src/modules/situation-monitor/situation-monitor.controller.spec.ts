@@ -30,6 +30,12 @@ describe("SituationMonitorController", () => {
   };
   const settingsMock = {
     getLiveHlsProxyRuntimeConfig: jest.fn(),
+    getPublicSettings: jest.fn(),
+  };
+  const prismaMock = {
+    newsSource: {
+      count: jest.fn(),
+    },
   };
 
   const user: AuthenticatedUser = {
@@ -53,6 +59,15 @@ describe("SituationMonitorController", () => {
       referer: "https://example.com",
       allowedHosts: ["media.example.net"],
     });
+    settingsMock.getPublicSettings.mockResolvedValue({
+      telegramEnabled: false,
+      hasTelegramApiId: false,
+      hasTelegramApiHash: false,
+      hasTelegramSession: false,
+      orefEnabled: false,
+      orefConfigured: false,
+    });
+    prismaMock.newsSource.count.mockResolvedValue(0);
 
     controller = new SituationMonitorController(
       monitorMock as any,
@@ -61,6 +76,8 @@ describe("SituationMonitorController", () => {
       translationMock as any,
       signalsMock as any,
       settingsMock as any,
+      {} as any,
+      prismaMock as any,
     );
   });
 
@@ -81,5 +98,35 @@ describe("SituationMonitorController", () => {
     await controller.liveHlsProxyConfig(user, " CNN ");
 
     expect(settingsMock.getLiveHlsProxyRuntimeConfig).toHaveBeenCalledWith("cnn");
+  });
+
+  it("returns refresh readiness in the catalog response", async () => {
+    settingsMock.getPublicSettings.mockResolvedValue({
+      telegramEnabled: true,
+      hasTelegramApiId: true,
+      hasTelegramApiHash: true,
+      hasTelegramSession: true,
+      orefEnabled: true,
+      orefConfigured: false,
+    });
+    prismaMock.newsSource.count.mockResolvedValue(2);
+
+    const result = await controller.catalog(user);
+
+    expect(prismaMock.newsSource.count).toHaveBeenCalledWith({
+      where: {
+        orgId: user.orgId,
+        isActive: true,
+      },
+    });
+    expect(result.refreshReadiness).toEqual({
+      activeSourceCount: 2,
+      backendRefreshTargets: {
+        crawl: true,
+        telegram: true,
+        oref: false,
+        any: true,
+      },
+    });
   });
 });

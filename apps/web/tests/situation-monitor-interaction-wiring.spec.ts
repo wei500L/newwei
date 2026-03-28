@@ -51,6 +51,9 @@ describe("situation monitor interaction wiring", () => {
     const contentSource = read("app/(app)/situation-monitor/situation-monitor-content.tsx");
 
     expect(contentSource).toContain("const { pending: manualRefreshPending, run: runManualRefresh } =");
+    expect(contentSource).toContain("const catalog = signalCatalog ?? (await loadSignalCatalog());");
+    expect(contentSource).toContain("const refreshTargets = catalog?.refreshReadiness.backendRefreshTargets;");
+    expect(contentSource).toContain("if (refreshTargets && !refreshTargets.any) {");
     expect(contentSource).toContain('apiClient.post<SituationMonitorRefreshResponse>(');
     expect(contentSource).toContain('"situation-monitor/refresh"');
     expect(contentSource).toContain('situation-monitor/refresh-runs/${encodeURIComponent(refreshRunId)}');
@@ -67,6 +70,7 @@ describe("situation monitor interaction wiring", () => {
   it("renders explicit alert feedback, timeline UI, and recovery actions", () => {
     const contentSource = read("app/(app)/situation-monitor/situation-monitor-content.tsx");
 
+    expect(contentSource).toContain("warnings: coreData.warnings ?? [],");
     expect(contentSource).toContain('manualRefreshResult.status === "accepted"');
     expect(contentSource).toContain('getRefreshRunAlertType(refreshRun.status)');
     expect(contentSource).toContain('title={t("situationMonitor.manualRefresh.timelineTitle"');
