@@ -28,6 +28,9 @@ describe("situation monitor admin readiness wiring", () => {
     expect(source).toContain("Back to Situation Monitor");
     expect(source).toContain('router.push("/situation-monitor")');
     expect(source).toContain("Provider readiness");
+    expect(source).toContain("GDELT snapshot scheduler");
+    expect(source).toContain("handleForceExternalSnapshotRefresh");
+    expect(source).toContain("externalSnapshotStatus");
     expect(source).toContain("OREF");
     expect(source).toContain("orefEnabled");
     expect(source).toContain("orefConfigured");

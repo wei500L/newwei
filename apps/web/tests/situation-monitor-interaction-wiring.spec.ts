@@ -47,33 +47,27 @@ describe("situation monitor interaction wiring", () => {
     expect(contentSource).toContain("onExpand(record, event);");
   });
 
-  it("triggers backend refresh tasks and then reloads visible signal panels", () => {
+  it("uses fetch-latest refresh semantics and reloads visible signal panels", () => {
     const contentSource = read("app/(app)/situation-monitor/situation-monitor-content.tsx");
 
     expect(contentSource).toContain("const { pending: manualRefreshPending, run: runManualRefresh } =");
-    expect(contentSource).toContain("const catalog = signalCatalog ?? (await loadSignalCatalog());");
-    expect(contentSource).toContain("const refreshTargets = catalog?.refreshReadiness.backendRefreshTargets;");
-    expect(contentSource).toContain("if (refreshTargets && !refreshTargets.any) {");
-    expect(contentSource).toContain('apiClient.post<SituationMonitorRefreshResponse>(');
-    expect(contentSource).toContain('"situation-monitor/refresh"');
-    expect(contentSource).toContain('situation-monitor/refresh-runs/${encodeURIComponent(refreshRunId)}');
     expect(contentSource).toContain("await Promise.allSettled([");
+    expect(contentSource).toContain("load(),");
     expect(contentSource).toContain("telegramSignalActive");
     expect(contentSource).toContain("loadTelegramFeedRef.current()");
     expect(contentSource).toContain("loadOrefSignalsRef.current()");
-    expect(contentSource).toContain("setManualRefreshResult(nextResult);");
-    expect(contentSource).toContain("setRefreshTimelineOpen(true);");
-    expect(contentSource).toContain("void loadRefreshRun(nextResult.refreshId);");
+    expect(contentSource).not.toContain('apiClient.post<SituationMonitorRefreshResponse>(');
+    expect(contentSource).not.toContain('"situation-monitor/refresh"');
     expect(contentSource).toContain('loading={loading || manualRefreshPending}');
   });
 
-  it("renders explicit alert feedback, timeline UI, and recovery actions", () => {
+  it("renders snapshot status feedback and recovery actions", () => {
     const contentSource = read("app/(app)/situation-monitor/situation-monitor-content.tsx");
 
     expect(contentSource).toContain("warnings: coreData.warnings ?? [],");
-    expect(contentSource).toContain('manualRefreshResult.status === "accepted"');
-    expect(contentSource).toContain('getRefreshRunAlertType(refreshRun.status)');
-    expect(contentSource).toContain('title={t("situationMonitor.manualRefresh.timelineTitle"');
+    expect(contentSource).toContain('title={t("situationMonitor.snapshot.title"');
+    expect(contentSource).toContain("data?.externalSnapshot");
+    expect(contentSource).toContain("getExternalSnapshotStatusColor(");
     expect(contentSource).toContain("Open News Sources");
     expect(contentSource).toContain("Open Situation Monitor Settings");
     expect(contentSource).toContain("insightsWarnings.map((warning) => (");

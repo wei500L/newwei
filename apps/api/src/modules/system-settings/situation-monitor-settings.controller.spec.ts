@@ -28,6 +28,10 @@ describe("SituationMonitorSettingsController", () => {
   const akshareService = {
     ensureRepeatableJobs: jest.fn(),
   } as const;
+  const externalSnapshots = {
+    getStatusSummary: jest.fn(),
+    forceRefresh: jest.fn(),
+  } as const;
 
   let controller: SituationMonitorSettingsController;
 
@@ -38,10 +42,39 @@ describe("SituationMonitorSettingsController", () => {
       telegramPollIntervalMs: 60_000,
       hasTelegramSession: false,
     });
+    settings.getPublicSettings.mockResolvedValue({
+      source: "env",
+    });
     settings.resetToEnv.mockResolvedValue({
       telegramEnabled: false,
       telegramPollIntervalMs: 60_000,
       hasTelegramSession: false,
+    });
+    externalSnapshots.getStatusSummary.mockResolvedValue({
+      enabled: true,
+      intervalMinutes: 15,
+      historyRetentionDays: 7,
+      status: "idle",
+      stale: false,
+      partial: false,
+      generatedAt: null,
+      expiresAt: null,
+      warningCount: 0,
+      availableCategoryCount: 0,
+      warnings: [],
+    });
+    externalSnapshots.forceRefresh.mockResolvedValue({
+      enabled: true,
+      intervalMinutes: 15,
+      historyRetentionDays: 7,
+      status: "completed",
+      stale: false,
+      partial: false,
+      generatedAt: "2026-03-28T00:00:00.000Z",
+      expiresAt: "2026-03-28T00:20:00.000Z",
+      warningCount: 0,
+      availableCategoryCount: 6,
+      warnings: [],
     });
     controller = new SituationMonitorSettingsController(
       settings as any,
@@ -49,6 +82,7 @@ describe("SituationMonitorSettingsController", () => {
       { redisConfig: {} } as any,
       signals as any,
       akshareService as any,
+      externalSnapshots as any,
     );
     jest
       .spyOn(controller as never, "syncTelegramScheduleBestEffort" as never)
@@ -68,6 +102,7 @@ describe("SituationMonitorSettingsController", () => {
       (controller as unknown as { syncEconomicDataScheduleBestEffort: jest.Mock })
         .syncEconomicDataScheduleBestEffort,
     ).toHaveBeenCalledTimes(1);
+    expect(externalSnapshots.getStatusSummary).toHaveBeenCalledTimes(1);
   });
 
   it("re-syncs economic data jobs after reset", async () => {
@@ -78,5 +113,34 @@ describe("SituationMonitorSettingsController", () => {
       (controller as unknown as { syncEconomicDataScheduleBestEffort: jest.Mock })
         .syncEconomicDataScheduleBestEffort,
     ).toHaveBeenCalledTimes(1);
+    expect(externalSnapshots.getStatusSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns snapshot status alongside the public settings payload", async () => {
+    const result = await controller.getSettings();
+
+    expect(settings.getPublicSettings).toHaveBeenCalledTimes(1);
+    expect(externalSnapshots.getStatusSummary).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(
+      expect.objectContaining({
+        source: "env",
+        externalSnapshotStatus: expect.objectContaining({
+          intervalMinutes: 15,
+          status: "idle",
+        }),
+      }),
+    );
+  });
+
+  it("exposes a force refresh endpoint for the external snapshot", async () => {
+    const result = await controller.forceExternalSnapshotRefresh();
+
+    expect(externalSnapshots.forceRefresh).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: "completed",
+        availableCategoryCount: 6,
+      }),
+    );
   });
 });

@@ -40,6 +40,24 @@ type SituationMonitorTelegramSecretSource = "stored" | "env" | "none";
 type SituationMonitorOrefSecretSource = "env" | "none";
 type SituationMonitorLiveHlsProxySource = "stored" | "none";
 
+interface SituationMonitorExternalSnapshotStatus {
+  enabled: boolean;
+  intervalMinutes: number;
+  historyRetentionDays: number;
+  status: "completed" | "partial" | "failed" | "idle" | "disabled";
+  stale: boolean;
+  partial: boolean;
+  generatedAt: string | null;
+  expiresAt: string | null;
+  warningCount: number;
+  availableCategoryCount: number;
+  warnings: Array<{
+    code: string;
+    message: string;
+    detail?: string;
+  }>;
+}
+
 interface SituationMonitorSettingsResponse {
   source: SituationMonitorSettingsSource;
   translationMaxConcurrency: number;
@@ -85,6 +103,7 @@ interface SituationMonitorSettingsResponse {
   liveHlsProxyCnbcUpstreamUrl: string;
   liveHlsProxyCnbcReferer: string;
   liveHlsProxyCnbcAllowedHosts: string[];
+  externalSnapshotStatus: SituationMonitorExternalSnapshotStatus;
 }
 
 interface SituationMonitorSettingsFormValues {
@@ -215,6 +234,19 @@ const EMPTY_SETTINGS: SituationMonitorSettingsResponse = {
   liveHlsProxyCnbcUpstreamUrl: "",
   liveHlsProxyCnbcReferer: "",
   liveHlsProxyCnbcAllowedHosts: [],
+  externalSnapshotStatus: {
+    enabled: true,
+    intervalMinutes: 15,
+    historyRetentionDays: 7,
+    status: "idle",
+    stale: false,
+    partial: false,
+    generatedAt: null,
+    expiresAt: null,
+    warningCount: 0,
+    availableCategoryCount: 0,
+    warnings: [],
+  },
 };
 
 function toFormValues(settings: SituationMonitorSettingsResponse): SituationMonitorSettingsFormValues {
@@ -280,6 +312,17 @@ function getProviderReadinessMeta(
   }
 }
 
+function formatSnapshotDate(value: string | null): string {
+  if (!value) {
+    return "--";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.valueOf())) {
+    return value;
+  }
+  return parsed.toLocaleString();
+}
+
 export function SituationMonitorSettingsPanel() {
   const { t } = useTranslation();
   const router = useRouter();
@@ -302,6 +345,8 @@ export function SituationMonitorSettingsPanel() {
   const [telegramAuthStarting, setTelegramAuthStarting] = useState(false);
   const [telegramAuthCompleting, setTelegramAuthCompleting] = useState(false);
   const [telegramAuthClearing, setTelegramAuthClearing] = useState(false);
+  const [externalSnapshotRefreshing, setExternalSnapshotRefreshing] =
+    useState(false);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -339,6 +384,40 @@ export function SituationMonitorSettingsPanel() {
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
+
+  const handleForceExternalSnapshotRefresh = useCallback(async () => {
+    setExternalSnapshotRefreshing(true);
+    try {
+      const response =
+        await apiClient.post<SituationMonitorExternalSnapshotStatus>(
+          "system-settings/situation-monitor/external-snapshot/refresh",
+        );
+      const nextStatus = response.data ?? EMPTY_SETTINGS.externalSnapshotStatus;
+      setSettings((prev) => ({
+        ...prev,
+        externalSnapshotStatus: nextStatus,
+      }));
+      messageApi.success(
+        t("systemSettings.situationMonitor.snapshot.refreshSuccess", {
+          defaultValue: "Triggered Situation Monitor external snapshot refresh.",
+        }),
+      );
+    } catch (error) {
+      captureClientError(
+        "Failed to force refresh situation monitor external snapshot",
+        error,
+      );
+      messageApi.error(
+        extractApiError(error).message ||
+          t("systemSettings.situationMonitor.snapshot.refreshFailed", {
+            defaultValue:
+              "Failed to refresh Situation Monitor external snapshot.",
+          }),
+      );
+    } finally {
+      setExternalSnapshotRefreshing(false);
+    }
+  }, [apiClient, messageApi, t]);
 
   const handleSubmit = async (values: SituationMonitorSettingsFormValues) => {
     setSaving(true);
@@ -684,6 +763,17 @@ export function SituationMonitorSettingsPanel() {
   const orefReadinessMeta = getProviderReadinessMeta(orefReadiness, t);
   const finnhubReadinessMeta = getProviderReadinessMeta(finnhubReadiness, t);
   const fredReadinessMeta = getProviderReadinessMeta(fredReadiness, t);
+  const externalSnapshotStatus = settings.externalSnapshotStatus;
+  const externalSnapshotStatusColor =
+    externalSnapshotStatus.status === "completed"
+      ? "green"
+      : externalSnapshotStatus.status === "partial"
+        ? "gold"
+        : externalSnapshotStatus.status === "failed"
+          ? "red"
+          : externalSnapshotStatus.status === "disabled"
+            ? "default"
+            : "blue";
 
   if (loading && !loadedOnce) {
     return (
@@ -776,6 +866,88 @@ export function SituationMonitorSettingsPanel() {
               <Button href={newsSourceSchedulerHref}>
                 {t("systemSettings.situationMonitor.actions.openSchedulerSettings", {
                   defaultValue: "Open scheduler settings",
+                })}
+              </Button>
+            </Space>
+          </Space>
+        </Card>
+
+        <Card
+          size="small"
+          title={t("systemSettings.situationMonitor.snapshot.title", {
+            defaultValue: "GDELT snapshot scheduler",
+          })}
+        >
+          <Space direction="vertical" size="small" style={{ display: "flex" }}>
+            <Space wrap>
+              <Typography.Text strong>GDELT</Typography.Text>
+              <Tag color={externalSnapshotStatusColor}>
+                {externalSnapshotStatus.status.toUpperCase()}
+              </Tag>
+              {externalSnapshotStatus.stale ? (
+                <Tag color="volcano">
+                  {t("systemSettings.situationMonitor.snapshot.stale", {
+                    defaultValue: "STALE",
+                  })}
+                </Tag>
+              ) : null}
+              <Tag>
+                {t("systemSettings.situationMonitor.snapshot.interval", {
+                  defaultValue: "Every {{count}} min",
+                  count: externalSnapshotStatus.intervalMinutes,
+                })}
+              </Tag>
+              <Tag>
+                {t("systemSettings.situationMonitor.snapshot.history", {
+                  defaultValue: "{{count}} day history",
+                  count: externalSnapshotStatus.historyRetentionDays,
+                })}
+              </Tag>
+            </Space>
+            <Typography.Text type="secondary">
+              {t("systemSettings.situationMonitor.snapshot.generatedAt", {
+                defaultValue: "Last generated: {{time}}",
+                time: formatSnapshotDate(externalSnapshotStatus.generatedAt),
+              })}
+            </Typography.Text>
+            <Typography.Text type="secondary">
+              {t("systemSettings.situationMonitor.snapshot.coverage", {
+                defaultValue:
+                  "Available categories: {{count}} / 6. Active warnings: {{warnings}}.",
+                count: externalSnapshotStatus.availableCategoryCount,
+                warnings: externalSnapshotStatus.warningCount,
+              })}
+            </Typography.Text>
+            {externalSnapshotStatus.warnings.length > 0 ? (
+              <Space direction="vertical" size={8} style={{ display: "flex" }}>
+                {externalSnapshotStatus.warnings.map((warning) => (
+                  <Alert
+                    key={`snapshot-warning:${warning.code}`}
+                    type="warning"
+                    showIcon
+                    message={warning.message}
+                    description={warning.detail}
+                  />
+                ))}
+              </Space>
+            ) : null}
+            <Space wrap>
+              <Button
+                onClick={() => void loadSettings()}
+                loading={loading}
+              >
+                {t("systemSettings.situationMonitor.snapshot.refreshStatus", {
+                  defaultValue: "Refresh status",
+                })}
+              </Button>
+              <Button
+                type="primary"
+                onClick={() => void handleForceExternalSnapshotRefresh()}
+                loading={externalSnapshotRefreshing}
+                disabled={!externalSnapshotStatus.enabled}
+              >
+                {t("systemSettings.situationMonitor.snapshot.forceRefresh", {
+                  defaultValue: "Force refresh",
                 })}
               </Button>
             </Space>

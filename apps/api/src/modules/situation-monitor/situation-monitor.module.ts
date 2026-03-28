@@ -6,6 +6,7 @@ import { QueueModule } from "../queue/queue.module";
 import { RealtimeSignalsModule } from "../realtime-signals/realtime-signals.module";
 
 import { FinancialMainlineSnapshotService } from "./external/financial-mainline-snapshot.service";
+import { SituationMonitorExternalSnapshotService } from "./situation-monitor-external-snapshot.service";
 import { SituationMonitorExternalService } from "./external/situation-monitor-external.service";
 import { SituationMonitorMonitorsService } from "./situation-monitor-monitors.service";
 import { SituationMonitorRefreshService } from "./situation-monitor-refresh.service";
@@ -30,6 +31,7 @@ import { SituationMonitorService } from "./situation-monitor.service";
     SituationMonitorRefreshService,
     FinancialMainlineSnapshotService,
     SituationMonitorExternalService,
+    SituationMonitorExternalSnapshotService,
     SituationMonitorTranslationService,
     SituationMonitorFeedbackService,
   ],
@@ -38,6 +40,7 @@ import { SituationMonitorService } from "./situation-monitor.service";
     SituationMonitorTranslationService,
     SituationMonitorMonitorsService,
     SituationMonitorRefreshService,
+    SituationMonitorExternalSnapshotService,
   ],
 })
 export class SituationMonitorModule {}

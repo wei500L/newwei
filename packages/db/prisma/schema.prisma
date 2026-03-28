@@ -1805,6 +1805,16 @@ enum ObservabilitySnapshotScope {
   crawl_quality_metrics
 }
 
+enum SituationMonitorExternalSnapshotScope {
+  gdelt_global
+}
+
+enum SituationMonitorExternalSnapshotStatus {
+  completed
+  partial
+  failed
+}
+
 model ObservabilitySnapshot {
   id              String                     @id @default(cuid())
   org             Org                        @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -1821,6 +1831,23 @@ model ObservabilitySnapshot {
   @@unique([orgId, scope, variantKey], map: "ObservabilitySnapshot_org_scope_variant_uq")
   @@index([orgId, scope, expiresAt], map: "ObservabilitySnapshot_org_scope_expires_idx")
   @@index([orgId, lastRequestedAt], map: "ObservabilitySnapshot_org_lastRequested_idx")
+}
+
+model SituationMonitorExternalSnapshot {
+  id          String                                @id @default(cuid())
+  scope       SituationMonitorExternalSnapshotScope
+  variantKey  String
+  status      SituationMonitorExternalSnapshotStatus
+  source      String                                @default("scheduler")
+  payload     Json
+  warnings    Json?
+  diagnostics Json?
+  generatedAt DateTime
+  expiresAt   DateTime
+  createdAt   DateTime                              @default(now())
+
+  @@index([scope, variantKey, generatedAt], map: "SituationMonitorExternalSnapshot_scope_variant_generated_idx")
+  @@index([expiresAt], map: "SituationMonitorExternalSnapshot_expires_idx")
 }
 
 model RssTranslationMetricsDaily {

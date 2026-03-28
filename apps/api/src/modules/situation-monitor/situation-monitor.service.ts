@@ -24,10 +24,13 @@ import { WORLD_LEADERS } from "./config/world-leaders";
 import { FinancialMainlineSnapshotService } from "./external/financial-mainline-snapshot.service";
 import {
   SituationMonitorExternalService,
-  type SituationMonitorGdeltCategoryFetchResult,
   type SituationMonitorExternalWarning,
   type SituationMonitorGdeltHeadlineCandidate,
 } from "./external/situation-monitor-external.service";
+import {
+  SituationMonitorExternalSnapshotService,
+  type SituationMonitorExternalSnapshotPayload,
+} from "./situation-monitor-external-snapshot.service";
 import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
 import {
   ALERT_KEYWORDS,
@@ -55,8 +58,6 @@ const INSIGHTS_CACHE_KEY_PREFIX = "situation-monitor:insights:v2";
 const INSIGHTS_CACHE_TTL_SECONDS_CORE = 45;
 const INSIGHTS_CACHE_TTL_SECONDS_EXTERNAL = 300;
 const INSIGHTS_LEARNING_REV_KEY_PREFIX = "situation-monitor:insights:learning-rev:v1";
-const GDELT_CATEGORY_FETCH_DELAY_MS = 500;
-const GDELT_CATEGORY_MAX_RESULTS = 20;
 const PLACEHOLDER_HEADLINE_TITLE_PATTERN =
   /^(?:no\s*title|untitled|title\s*unavailable|headline\s*unavailable|n\/a|na|null|undefined|\u6682\u65e0\u6807\u9898|\u65e0\u6807\u9898|\u672a\u547d\u540d(?:\u6807\u9898)?)$/i;
 
@@ -89,6 +90,16 @@ export interface SituationMonitorInsightsResponse {
   analyzedItems: number;
   diagnostics?: SituationMonitorInsightsDiagnostics;
   warnings?: SituationMonitorWarning[];
+  externalSnapshot?: {
+    source: "scheduler";
+    status: "completed" | "partial" | "failed" | "idle";
+    stale: boolean;
+    partial: boolean;
+    generatedAt: string | null;
+    expiresAt: string | null;
+    availableCategoryCount: number;
+    warnings: SituationMonitorWarning[];
+  };
   translation?: { target: "zh-CN"; applied: boolean; error?: string };
   headlines?: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
   alerts?: SituationMonitorAlertHeadline[];
@@ -113,6 +124,7 @@ export class SituationMonitorService {
   constructor(
     private readonly cache: CacheService,
     private readonly external: SituationMonitorExternalService,
+    private readonly externalSnapshots: SituationMonitorExternalSnapshotService,
     private readonly financialMainlineSnapshots: FinancialMainlineSnapshotService,
     private readonly feedback: SituationMonitorFeedbackService,
     private readonly realtimeSignals: RealtimeSignalsService,
@@ -173,6 +185,11 @@ export class SituationMonitorService {
 
       const core = await this.cache.wrap(cacheKey, INSIGHTS_CACHE_TTL_SECONDS_CORE, async () => {
         const warnings: SituationMonitorWarning[] = [];
+        const snapshot = allowGdeltFallback
+          ? await this.externalSnapshots.getLatestSnapshot({
+              includeDatabase: true,
+            })
+          : { payload: null, stale: false };
         const headlines = await this.buildHeadlinesByCategory({
           orgId,
           since,
@@ -183,6 +200,22 @@ export class SituationMonitorService {
           debug,
           warnings,
         });
+        if (snapshot.payload) {
+          this.mergeSnapshotHeadlinesByCategory({
+            byCategory: headlines,
+            snapshot: snapshot.payload,
+            since,
+            maxPerCategory: analysisPerCategory,
+          });
+          for (const warning of snapshot.payload.warnings) {
+            warnings.push(
+              this.createSituationMonitorWarningFromExternal({
+                ...warning,
+                source: "gdelt",
+              }),
+            );
+          }
+        }
 
         const displayHeadlines = this.toDisplayHeadlines(headlines, maxHeadlinesPerCategory);
         const analysisNews = this.flattenHeadlinesForAnalysis(headlines);
@@ -265,6 +298,14 @@ export class SituationMonitorService {
           diagnostics: this.buildDiagnostics(displayHeadlines, scope),
           headlines: displayHeadlines,
           analyzedItems,
+          ...(allowGdeltFallback || snapshot.payload
+            ? {
+                externalSnapshot: this.createExternalSnapshotInfo(
+                  snapshot.payload,
+                  snapshot.stale,
+                ),
+              }
+            : {}),
           ...(warnings.length > 0 ? { warnings } : {}),
           alerts: this.buildAlerts(displayHeadlines),
           leaders: this.buildWorldLeaders(analysisNews),
@@ -680,83 +721,77 @@ export class SituationMonitorService {
       });
     }
 
-    if (options.allowGdeltFallback) {
-      const fills = SITUATION_MONITOR_CATEGORIES.flatMap((category) => {
-        const remaining = options.maxPerCategory - byCategory[category].length;
-        if (remaining <= 0) {
-          return [];
+    return byCategory;
+  }
+
+  private mergeSnapshotHeadlinesByCategory(options: {
+    byCategory: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
+    snapshot: SituationMonitorExternalSnapshotPayload;
+    since: Date;
+    maxPerCategory: number;
+  }) {
+    const existingLinksByCategory = new Map<
+      SituationMonitorCategory,
+      Set<string>
+    >(
+      SITUATION_MONITOR_CATEGORIES.map((category) => [
+        category,
+        new Set(options.byCategory[category].map((headline) => headline.link)),
+      ]),
+    );
+    const sinceTimestamp = options.since.getTime();
+
+    for (const category of SITUATION_MONITOR_CATEGORIES) {
+      const snapshotHeadlines = options.snapshot.headlinesByCategory[category] ?? [];
+      for (const headline of snapshotHeadlines) {
+        if (
+          typeof headline.timestamp !== "number" ||
+          headline.timestamp < sinceTimestamp
+        ) {
+          continue;
         }
-        return [{ category, remaining }];
-      });
-
-      if (fills.length > 0) {
-        const warningGroups = new Map<
-          string,
-          {
-            warning: SituationMonitorExternalWarning;
-            categories: Set<SituationMonitorCategory>;
-            details: Set<string>;
-          }
-        >();
-        const existingLinksByCategory = new Map<
-          SituationMonitorCategory,
-          Set<string>
-        >(
-          SITUATION_MONITOR_CATEGORIES.map((category) => [
-            category,
-            new Set(byCategory[category].map((headline) => headline.link)),
-          ]),
-        );
-
-        for (const [index, fill] of fills.entries()) {
-          const limit = Math.min(fill.remaining, GDELT_CATEGORY_MAX_RESULTS);
-          const gdeltResult = await this.external
-            .fetchGdeltCategoryHeadlines(fill.category, limit)
-            .catch((error) => ({
-              headlines: [],
-              warning: {
-                code: "gdelt_request_failed",
-                message: "GDELT fallback request failed.",
-                detail: this.safeErrorMessage(error),
-              },
-            } satisfies SituationMonitorGdeltCategoryFetchResult));
-
-          if (gdeltResult.warning) {
-            this.collectGdeltWarning(
-              warningGroups,
-              fill.category,
-              gdeltResult.warning,
-            );
-          }
-
-          for (const headline of gdeltResult.headlines) {
-            this.tryAppendCategoryGdeltHeadline({
-              category: fill.category,
-              headline,
-              byCategory,
-              maxPerCategory: options.maxPerCategory,
-              existingLinksByCategory,
-            });
-          }
-
-          if (index < fills.length - 1) {
-            await this.delay(GDELT_CATEGORY_FETCH_DELAY_MS);
-          }
-        }
-
-        for (const { warning, categories, details } of warningGroups.values()) {
-          options.warnings?.push(
-            this.createSituationMonitorWarningFromExternal({
-              ...warning,
-              source: "gdelt",
-              detail: this.formatAggregatedGdeltWarningDetail(categories, details),
-            }),
-          );
-        }
+        this.tryAppendCategoryGdeltHeadline({
+          category,
+          headline,
+          byCategory: options.byCategory,
+          maxPerCategory: options.maxPerCategory,
+          existingLinksByCategory,
+        });
       }
     }
+  }
 
-    return byCategory;
+  private createExternalSnapshotInfo(
+    snapshot: SituationMonitorExternalSnapshotPayload | null,
+    stale: boolean,
+  ): NonNullable<SituationMonitorInsightsResponse["externalSnapshot"]> {
+    const warningItems = (snapshot?.warnings ?? []).map((warning) =>
+      this.createSituationMonitorWarningFromExternal({
+        ...warning,
+        source: "gdelt",
+      }),
+    );
+    return {
+      source: "scheduler",
+      status:
+        snapshot?.status === "failed"
+          ? "failed"
+          : snapshot?.status === "partial"
+            ? "partial"
+            : snapshot?.status === "completed"
+              ? "completed"
+              : "idle",
+      stale,
+      partial: snapshot?.partial ?? false,
+      generatedAt: snapshot?.generatedAt ?? null,
+      expiresAt: snapshot?.expiresAt ?? null,
+      availableCategoryCount: snapshot
+        ? SITUATION_MONITOR_CATEGORIES.filter(
+            (category) => snapshot.headlinesByCategory[category].length > 0,
+          ).length
+        : 0,
+      warnings: warningItems,
+    };
   }
 
   private createSituationMonitorWarningFromExternal(

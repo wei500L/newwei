@@ -3,8 +3,10 @@ const rawFindMock = jest.fn();
 
 jest.mock("@modular/mongo", () => ({
   ProcessedItemModel: { find: processedFindMock },
-  RawItemModel: { find: rawFindMock }
+  RawItemModel: { find: rawFindMock },
 }));
+
+import { SituationMonitorExternalSnapshotStatus } from "@prisma/client";
 
 import { SituationMonitorService } from "../situation-monitor.service";
 
@@ -27,20 +29,95 @@ describe("SituationMonitorService", () => {
     exec: jest.fn().mockResolvedValue(result),
   });
 
+  const createCacheMock = () =>
+    ({
+      get: jest.fn().mockResolvedValue(undefined),
+      set: jest.fn().mockResolvedValue(undefined),
+      wrap: jest.fn(
+        async (_key: string, _ttl: number, factory: () => Promise<unknown>) =>
+          await factory(),
+      ),
+    }) as any;
+
+  const createSnapshotPayload = (input?: {
+    status?: SituationMonitorExternalSnapshotStatus;
+    generatedAt?: string;
+    expiresAt?: string;
+    warnings?: Array<{ code: string; message: string; detail?: string }>;
+    headlinesByCategory?: Partial<Record<string, unknown[]>>;
+  }) => ({
+    source: "scheduler",
+    scope: "gdelt_global",
+    variantKey: "default",
+    status: input?.status ?? SituationMonitorExternalSnapshotStatus.completed,
+    generatedAt: input?.generatedAt ?? "2026-03-28T12:00:00.000Z",
+    expiresAt: input?.expiresAt ?? "2026-03-28T12:20:00.000Z",
+    partial:
+      (input?.status ?? SituationMonitorExternalSnapshotStatus.completed) !==
+      SituationMonitorExternalSnapshotStatus.completed,
+    warnings: input?.warnings ?? [],
+    diagnostics: {
+      requestedCategories: 6,
+      fetchedCategories: [],
+      reusedCategories: [],
+      failedCategories: [],
+      totalHeadlines: 0,
+    },
+    headlinesByCategory: {
+      politics: [],
+      tech: [],
+      finance: [],
+      gov: [],
+      ai: [],
+      intel: [],
+      ...(input?.headlinesByCategory ?? {}),
+    },
+  });
+
+  const createService = (input?: {
+    cache?: any;
+    external?: any;
+    externalSnapshots?: any;
+    feedback?: any;
+    realtimeSignals?: any;
+  }) =>
+    new SituationMonitorService(
+      input?.cache ?? createCacheMock(),
+      input?.external ??
+        ({
+          isGdeltEnabled: jest.fn().mockReturnValue(false),
+        } as any),
+      input?.externalSnapshots ??
+        ({
+          getLatestSnapshot: jest
+            .fn()
+            .mockResolvedValue({ payload: null, stale: false }),
+        } as any),
+      {} as any,
+      input?.feedback ??
+        ({
+          getLearningState: jest.fn().mockResolvedValue(new Map()),
+        } as any),
+      input?.realtimeSignals ??
+        ({
+          getSituationMonitorInsightSnapshot: jest.fn().mockResolvedValue({
+            keywordSpikes: [],
+            predictionLeads: [],
+            pizzint: undefined,
+            tensions: [],
+          }),
+        } as any),
+      {} as any,
+    );
+
   it("uses sortAt (publishedAt-priority) windowing with ingestedAt/createdAt fallbacks for headline selection", async () => {
-    const chain = {
-      sort: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      select: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockReturnThis(),
-      exec: jest.fn().mockResolvedValue([])
-    };
+    const chain = createProcessedFindChain([]);
     processedFindMock.mockReturnValue(chain);
 
-    const cache = {} as any;
-    const external = {} as any;
-    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
-    const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
+    const service = createService({
+      external: {} as any,
+      realtimeSignals: {} as any,
+    });
 
     const since = new Date("2026-01-01T00:00:00.000Z");
     const result = await (service as any).buildHeadlinesByCategory({
@@ -50,41 +127,34 @@ describe("SituationMonitorService", () => {
       maxPerCategory: 5,
       allowGdeltFallback: false,
       scope: "tagged",
-      debug: false
+      debug: false,
     });
 
     expect(result).toBeDefined();
-
     expect(processedFindMock).toHaveBeenCalledTimes(1);
     const query = processedFindMock.mock.calls[0]?.[0] as any;
     expect(query?.createdAt).toBeUndefined();
     expect(query?.$or).toEqual(
-      expect.arrayContaining([expect.objectContaining({ sortAt: { $gte: since } })])
+      expect.arrayContaining([
+        expect.objectContaining({ sortAt: { $gte: since } }),
+      ]),
     );
-
-    expect(chain.sort).toHaveBeenCalledWith({ sortAt: -1, ingestedAt: -1, createdAt: -1 });
-    expect(chain.select).toHaveBeenCalledWith(expect.objectContaining({ ingestedAt: 1 }));
+    expect(chain.sort).toHaveBeenCalledWith({
+      sortAt: -1,
+      ingestedAt: -1,
+      createdAt: -1,
+    });
+    expect(chain.select).toHaveBeenCalledWith(
+      expect.objectContaining({ ingestedAt: 1 }),
+    );
   });
 
   it("defaults omitted scope to all items in insights loading", async () => {
-    const cache = {
-      get: jest.fn().mockResolvedValue(undefined),
-      set: jest.fn().mockResolvedValue(undefined),
-      wrap: jest.fn(async (_key: string, _ttl: number, factory: () => Promise<unknown>) => await factory()),
-    } as any;
-    const external = {
-      isGdeltEnabled: jest.fn().mockReturnValue(false),
-    } as any;
-    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
-    const realtimeSignals = {
-      getSituationMonitorInsightSnapshot: jest.fn().mockResolvedValue({
-        keywordSpikes: [],
-        predictionLeads: [],
-        pizzint: undefined,
-        tensions: [],
-      }),
-    } as any;
-    const service = new SituationMonitorService(cache, external, {} as any, feedback, realtimeSignals, {} as any);
+    const service = createService({
+      external: {
+        isGdeltEnabled: jest.fn().mockReturnValue(false),
+      } as any,
+    });
     const buildHeadlinesSpy = jest
       .spyOn(service as any, "buildHeadlinesByCategory")
       .mockResolvedValue({
@@ -107,10 +177,10 @@ describe("SituationMonitorService", () => {
     const chain = createProcessedFindChain([]);
     processedFindMock.mockReturnValue(chain);
 
-    const cache = {} as any;
-    const external = {} as any;
-    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
-    const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
+    const service = createService({
+      external: {} as any,
+      realtimeSignals: {} as any,
+    });
 
     await (service as any).buildHeadlinesByCategory({
       orgId: "org-1",
@@ -146,17 +216,29 @@ describe("SituationMonitorService", () => {
       },
     ]);
     processedFindMock.mockReturnValue(processedChain);
+    rawFindMock.mockReturnValue(
+      createRawFindChain([
+        {
+          _id: "raw-1",
+          payload: {
+            url: "https://example.com/placeholder",
+            sourceName: "Example",
+          },
+        },
+        {
+          _id: "raw-2",
+          payload: {
+            url: "https://example.com/ai-chip",
+            sourceName: "Example",
+          },
+        },
+      ]),
+    );
 
-    const rawChain = createRawFindChain([
-      { _id: "raw-1", payload: { url: "https://example.com/placeholder", sourceName: "Example" } },
-      { _id: "raw-2", payload: { url: "https://example.com/ai-chip", sourceName: "Example" } },
-    ]);
-    rawFindMock.mockReturnValue(rawChain);
-
-    const cache = {} as any;
-    const external = {} as any;
-    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
-    const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
+    const service = createService({
+      external: {} as any,
+      realtimeSignals: {} as any,
+    });
 
     const result = await (service as any).buildHeadlinesByCategory({
       orgId: "org-1",
@@ -172,202 +254,149 @@ describe("SituationMonitorService", () => {
     expect(result.tech[0]?.title).toBe("AI chip export controls tighten");
   });
 
-  it("filters placeholder titles from gdelt fallback headlines", async () => {
-    const processedChain = createProcessedFindChain([]);
-    processedFindMock.mockReturnValue(processedChain);
+  it("merges server-side GDELT snapshot headlines into category gaps during insights loading", async () => {
+    processedFindMock.mockReturnValue(createProcessedFindChain([]));
+    rawFindMock.mockReturnValue(createRawFindChain([]));
 
-    const rawChain = createRawFindChain([]);
-    rawFindMock.mockReturnValue(rawChain);
+    const externalSnapshots = {
+      getLatestSnapshot: jest.fn().mockResolvedValue({
+        stale: false,
+        payload: createSnapshotPayload({
+          headlinesByCategory: {
+            politics: [
+              {
+                id: "gdelt-politics",
+                title: "Election campaign reshapes parliamentary politics",
+                link: "https://example.com/election-debate",
+                source: "GDELT",
+                timestamp: Date.parse("2026-03-28T11:30:00.000Z"),
+                category: "politics",
+                origin: "gdelt",
+                isAlert: false,
+              },
+            ],
+            ai: [
+              {
+                id: "gdelt-ai",
+                title: "ChatGPT roadmap expands enterprise AI tooling",
+                link: "https://example.com/chatgpt-roadmap",
+                source: "GDELT",
+                timestamp: Date.parse("2026-03-28T11:45:00.000Z"),
+                category: "ai",
+                origin: "gdelt",
+                isAlert: false,
+              },
+            ],
+          },
+        }),
+      }),
+    } as any;
+    const service = createService({
+      external: {
+        isGdeltEnabled: jest.fn().mockReturnValue(true),
+      } as any,
+      externalSnapshots,
+    });
 
-    const external = {
-      fetchGdeltCategoryHeadlines: jest.fn(async (category: string) => ({
-        headlines:
-          category === "tech"
-            ? [
+    const result = await service.getInsights("org-1", { sections: ["core"] });
+
+    expect(externalSnapshots.getLatestSnapshot).toHaveBeenCalledWith({
+      includeDatabase: true,
+    });
+    expect(result.headlines?.politics[0]?.title).toBe(
+      "Election campaign reshapes parliamentary politics",
+    );
+    expect(result.headlines?.ai[0]?.title).toBe(
+      "ChatGPT roadmap expands enterprise AI tooling",
+    );
+  });
+
+  it("filters placeholder and out-of-window snapshot headlines before merging them", async () => {
+    processedFindMock.mockReturnValue(createProcessedFindChain([]));
+    rawFindMock.mockReturnValue(createRawFindChain([]));
+
+    const service = createService({
+      external: {
+        isGdeltEnabled: jest.fn().mockReturnValue(true),
+      } as any,
+      externalSnapshots: {
+        getLatestSnapshot: jest.fn().mockResolvedValue({
+          stale: false,
+          payload: createSnapshotPayload({
+            headlinesByCategory: {
+              tech: [
                 {
                   id: "gdelt-tech-placeholder",
                   title: "No title",
                   link: "https://example.com/no-title",
                   source: "GDELT",
-                  timestamp: Date.now(),
+                  timestamp: Date.parse("2026-03-28T11:00:00.000Z"),
+                  category: "tech",
+                  origin: "gdelt",
+                  isAlert: false,
+                },
+                {
+                  id: "gdelt-tech-old",
+                  title: "Semiconductor exports face new review",
+                  link: "https://example.com/old-tech",
+                  source: "GDELT",
+                  timestamp: Date.parse("2026-03-27T08:00:00.000Z"),
                   category: "tech",
                   origin: "gdelt",
                   isAlert: false,
                 },
                 {
                   id: "gdelt-tech-valid",
-                  title: "Semiconductor exports face new review",
-                  link: "https://example.com/semiconductor-review",
+                  title: "Chip tooling demand rises across cloud vendors",
+                  link: "https://example.com/chip-demand",
                   source: "GDELT",
-                  timestamp: Date.now(),
+                  timestamp: Date.parse("2026-03-28T10:30:00.000Z"),
                   category: "tech",
                   origin: "gdelt",
                   isAlert: false,
                 },
-              ]
-            : [],
-      })),
-    } as any;
-    const cache = {} as any;
-    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
-    const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
-    jest.spyOn(service as any, "delay").mockResolvedValue(undefined);
-
-    const result = await (service as any).buildHeadlinesByCategory({
-      orgId: "org-1",
-      since: new Date("2026-01-01T00:00:00.000Z"),
-      maxItems: 20,
-      maxPerCategory: 5,
-      allowGdeltFallback: true,
-      scope: "tagged",
-      debug: false,
-    });
-
-    expect(result.tech).toHaveLength(1);
-    expect(result.tech[0]?.title).toBe("Semiconductor exports face new review");
-  });
-
-  it("fills category gaps from per-category gdelt fallback responses", async () => {
-    const processedChain = createProcessedFindChain([]);
-    processedFindMock.mockReturnValue(processedChain);
-
-    const rawChain = createRawFindChain([]);
-    rawFindMock.mockReturnValue(rawChain);
-
-    const fetchGdeltCategoryHeadlines = jest.fn(async (category: string) => ({
-      headlines:
-        category === "politics"
-          ? [
-              {
-                id: "gdelt-politics",
-                title: "Election campaign reshapes parliamentary politics",
-                link: "https://example.com/election-debate",
-                source: "GDELT",
-                timestamp: Date.now(),
-                category: "politics",
-                origin: "gdelt",
-                isAlert: false,
-              },
-            ]
-          : category === "ai"
-            ? [
-                {
-                  id: "gdelt-ai",
-                  title: "ChatGPT roadmap expands enterprise AI tooling",
-                  link: "https://example.com/chatgpt-roadmap",
-                  source: "GDELT",
-                  timestamp: Date.now(),
-                  category: "ai",
-                  origin: "gdelt",
-                  isAlert: false,
-                },
-              ]
-            : [],
-    }));
-
-    const external = {
-      fetchGdeltCategoryHeadlines,
-    } as any;
-    const cache = {} as any;
-    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
-    const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
-    jest.spyOn(service as any, "delay").mockResolvedValue(undefined);
-
-    const result = await (service as any).buildHeadlinesByCategory({
-      orgId: "org-1",
-      since: new Date("2026-01-01T00:00:00.000Z"),
-      maxItems: 20,
-      maxPerCategory: 5,
-      allowGdeltFallback: true,
-      scope: "tagged",
-      debug: false,
-    });
-
-    expect(result.politics).toHaveLength(1);
-    expect(result.politics[0]?.title).toBe(
-      "Election campaign reshapes parliamentary politics",
-    );
-    expect(result.ai).toHaveLength(1);
-    expect(result.ai[0]?.title).toBe(
-      "ChatGPT roadmap expands enterprise AI tooling",
-    );
-    expect(fetchGdeltCategoryHeadlines).toHaveBeenNthCalledWith(1, "politics", 5);
-    expect(fetchGdeltCategoryHeadlines).toHaveBeenNthCalledWith(5, "ai", 5);
-  });
-
-  it("keeps insights loading resilient when gdelt fallback is rate limited", async () => {
-    const processedChain = createProcessedFindChain([]);
-    processedFindMock.mockReturnValue(processedChain);
-
-    const rawChain = createRawFindChain([]);
-    rawFindMock.mockReturnValue(rawChain);
-
-    const external = {
-      fetchGdeltCategoryHeadlines: jest
-        .fn()
-        .mockRejectedValue(new Error("HTTP 429 Too Many Requests")),
-    } as any;
-    const cache = {} as any;
-    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
-    const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
-    jest.spyOn(service as any, "delay").mockResolvedValue(undefined);
-
-    const result = await (service as any).buildHeadlinesByCategory({
-      orgId: "org-1",
-      since: new Date("2026-01-01T00:00:00.000Z"),
-      maxItems: 20,
-      maxPerCategory: 5,
-      allowGdeltFallback: true,
-      scope: "tagged",
-      debug: false,
-    });
-
-    expect(result).toEqual({
-      politics: [],
-      tech: [],
-      finance: [],
-      gov: [],
-      ai: [],
-      intel: [],
-    });
-  });
-
-  it("surfaces gdelt fallback warnings in insights responses", async () => {
-    const cache = {
-      get: jest.fn().mockResolvedValue(undefined),
-      set: jest.fn().mockResolvedValue(undefined),
-      wrap: jest.fn(async (_key: string, _ttl: number, factory: () => Promise<unknown>) => await factory()),
-    } as any;
-    const fetchGdeltCategoryHeadlines = jest.fn(async (category: string) => ({
-      headlines: [],
-      ...(category === "politics" || category === "tech"
-        ? {
-            warning: {
-              code: "gdelt_rate_limited",
-              message: "GDELT fallback is rate limited right now.",
-              detail: "HTTP 429 Too Many Requests",
+              ],
             },
-          }
-        : {}),
-    }));
-    const external = {
-      isGdeltEnabled: jest.fn().mockReturnValue(true),
-      fetchGdeltCategoryHeadlines,
-    } as any;
-    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
-    const realtimeSignals = {
-      getSituationMonitorInsightSnapshot: jest.fn().mockResolvedValue({
-        keywordSpikes: [],
-        predictionLeads: [],
-        pizzint: undefined,
-        tensions: [],
-      }),
-    } as any;
-    const service = new SituationMonitorService(cache, external, {} as any, feedback, realtimeSignals, {} as any);
-    jest.spyOn(service as any, "delay").mockResolvedValue(undefined);
-    const processedChain = createProcessedFindChain([]);
-    processedFindMock.mockReturnValue(processedChain);
+          }),
+        }),
+      } as any,
+    });
+
+    const result = await service.getInsights("org-1", {
+      sections: ["core"],
+      windowHours: 24,
+    });
+
+    expect(result.headlines?.tech).toHaveLength(1);
+    expect(result.headlines?.tech[0]?.title).toBe(
+      "Chip tooling demand rises across cloud vendors",
+    );
+  });
+
+  it("surfaces snapshot warnings and metadata in insights responses", async () => {
+    processedFindMock.mockReturnValue(createProcessedFindChain([]));
     rawFindMock.mockReturnValue(createRawFindChain([]));
+
+    const service = createService({
+      external: {
+        isGdeltEnabled: jest.fn().mockReturnValue(true),
+      } as any,
+      externalSnapshots: {
+        getLatestSnapshot: jest.fn().mockResolvedValue({
+          stale: true,
+          payload: createSnapshotPayload({
+            status: SituationMonitorExternalSnapshotStatus.partial,
+            warnings: [
+              {
+                code: "gdelt_rate_limited",
+                message: "GDELT fallback is rate limited right now.",
+                detail: "Categories: politics, tech. HTTP 429 Too Many Requests",
+              },
+            ],
+          }),
+        }),
+      } as any,
+    });
 
     const result = await service.getInsights("org-1", { sections: ["core"] });
 
@@ -376,32 +405,64 @@ describe("SituationMonitorService", () => {
         expect.objectContaining({
           code: "gdelt_rate_limited",
           source: "gdelt",
-          detail: expect.stringContaining("Categories: politics, tech"),
         }),
       ]),
     );
-    expect(result.warnings).toHaveLength(1);
+    expect(result.externalSnapshot).toEqual(
+      expect.objectContaining({
+        source: "scheduler",
+        status: "partial",
+        stale: true,
+        partial: true,
+        warnings: [
+          expect.objectContaining({
+            code: "gdelt_rate_limited",
+            source: "gdelt",
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("stays resilient when no snapshot is available yet", async () => {
+    processedFindMock.mockReturnValue(createProcessedFindChain([]));
+    rawFindMock.mockReturnValue(createRawFindChain([]));
+
+    const service = createService({
+      external: {
+        isGdeltEnabled: jest.fn().mockReturnValue(true),
+      } as any,
+      externalSnapshots: {
+        getLatestSnapshot: jest
+          .fn()
+          .mockResolvedValue({ payload: null, stale: false }),
+      } as any,
+    });
+
+    const result = await service.getInsights("org-1", { sections: ["core"] });
+
+    expect(result.headlines).toEqual({
+      politics: [],
+      tech: [],
+      finance: [],
+      gov: [],
+      ai: [],
+      intel: [],
+    });
+    expect(result.externalSnapshot).toEqual(
+      expect.objectContaining({
+        status: "idle",
+        availableCategoryCount: 0,
+      }),
+    );
   });
 
   it("builds diagnostics from the same displayed headlines returned to clients", async () => {
-    const cache = {
-      get: jest.fn().mockResolvedValue(undefined),
-      set: jest.fn().mockResolvedValue(undefined),
-      wrap: jest.fn(async (_key: string, _ttl: number, factory: () => Promise<unknown>) => await factory()),
-    } as any;
-    const external = {
-      isGdeltEnabled: jest.fn().mockReturnValue(false),
-    } as any;
-    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
-    const realtimeSignals = {
-      getSituationMonitorInsightSnapshot: jest.fn().mockResolvedValue({
-        keywordSpikes: [],
-        predictionLeads: [],
-        pizzint: undefined,
-        tensions: [],
-      }),
-    } as any;
-    const service = new SituationMonitorService(cache, external, {} as any, feedback, realtimeSignals, {} as any);
+    const service = createService({
+      external: {
+        isGdeltEnabled: jest.fn().mockReturnValue(false),
+      } as any,
+    });
 
     const makeHeadline = (index: number, origin: "items" | "gdelt") => ({
       id: `tech-${index}`,
@@ -409,7 +470,9 @@ describe("SituationMonitorService", () => {
       titleZh: null,
       link: `https://example.com/tech-${index}`,
       source: origin === "items" ? "Internal" : "GDELT",
-      timestamp: Date.parse(`2026-01-02T${String(index % 24).padStart(2, "0")}:00:00.000Z`),
+      timestamp: Date.parse(
+        `2026-01-02T${String(index % 24).padStart(2, "0")}:00:00.000Z`,
+      ),
       category: "tech",
       origin,
       isAlert: false,
@@ -422,8 +485,12 @@ describe("SituationMonitorService", () => {
     const headlines = {
       politics: [],
       tech: [
-        ...Array.from({ length: 10 }, (_, index) => makeHeadline(index + 1, "items")),
-        ...Array.from({ length: 5 }, (_, index) => makeHeadline(index + 11, "gdelt")),
+        ...Array.from({ length: 10 }, (_, index) =>
+          makeHeadline(index + 1, "items"),
+        ),
+        ...Array.from({ length: 5 }, (_, index) =>
+          makeHeadline(index + 11, "gdelt"),
+        ),
       ],
       finance: [],
       gov: [],
@@ -431,7 +498,9 @@ describe("SituationMonitorService", () => {
       intel: [],
     };
 
-    jest.spyOn(service as any, "buildHeadlinesByCategory").mockResolvedValue(headlines);
+    jest
+      .spyOn(service as any, "buildHeadlinesByCategory")
+      .mockResolvedValue(headlines);
 
     const result = await service.getInsights("org-1", { sections: ["core"] });
 
@@ -442,5 +511,4 @@ describe("SituationMonitorService", () => {
       totalCount: 12,
     });
   });
-
 });

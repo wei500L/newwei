@@ -541,6 +541,16 @@ interface SituationMonitorInsightsResponse {
   analyzedItems: number;
   diagnostics?: SituationMonitorInsightsDiagnostics;
   warnings?: SituationMonitorWarning[];
+  externalSnapshot?: {
+    source: "scheduler";
+    status: "completed" | "partial" | "failed" | "idle";
+    stale: boolean;
+    partial: boolean;
+    generatedAt: string | null;
+    expiresAt: string | null;
+    availableCategoryCount: number;
+    warnings: SituationMonitorWarning[];
+  };
   translation?: { target: "zh-CN"; applied: boolean; error?: string };
   headlines?: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
   alerts?: SituationMonitorAlertHeadline[];
@@ -693,6 +703,21 @@ function toAlertType(
     return "warning";
   }
   return "info";
+}
+
+function getExternalSnapshotStatusColor(
+  status: NonNullable<SituationMonitorInsightsResponse["externalSnapshot"]>["status"],
+): string {
+  if (status === "completed") {
+    return "green";
+  }
+  if (status === "partial") {
+    return "gold";
+  }
+  if (status === "failed") {
+    return "red";
+  }
+  return "default";
 }
 
 function countRefreshTasks(progress: SituationMonitorRefreshProgressCounts): number {
@@ -1470,52 +1495,15 @@ export function SituationMonitorContent() {
       setRefreshRun(null);
       setRefreshRunError(null);
       stopRefreshRunPolling();
-
-      const catalog = signalCatalog ?? (await loadSignalCatalog());
-      const refreshTargets = catalog?.refreshReadiness.backendRefreshTargets;
-      if (refreshTargets && !refreshTargets.any) {
-        await Promise.allSettled([
-          load(),
-          telegramSignalActive
-            ? loadTelegramFeedRef.current()
-            : Promise.resolve(undefined),
-          orefSignalActive
-            ? loadOrefSignalsRef.current()
-            : Promise.resolve(undefined),
-        ]);
-        return;
-      }
-
-      try {
-        const response = await apiClient.post<SituationMonitorRefreshResponse>(
-          "situation-monitor/refresh",
-        );
-        const nextResult = response.data ?? null;
-        setManualRefreshResult(nextResult);
-        if (nextResult?.refreshId) {
-          setRefreshTimelineOpen(true);
-          void loadRefreshRun(nextResult.refreshId);
-        }
-      } catch (err) {
-        captureClientError(
-          "Failed to trigger situation monitor refresh tasks",
-          err,
-        );
-        setManualRefreshError(
-          extractApiError(err).message ||
-            "Failed to trigger Situation Monitor refresh tasks.",
-        );
-      } finally {
-        await Promise.allSettled([
-          load(),
-          telegramSignalActive
-            ? loadTelegramFeedRef.current()
-            : Promise.resolve(undefined),
-          orefSignalActive
-            ? loadOrefSignalsRef.current()
-            : Promise.resolve(undefined),
-        ]);
-      }
+      await Promise.allSettled([
+        load(),
+        telegramSignalActive
+          ? loadTelegramFeedRef.current()
+          : Promise.resolve(undefined),
+        orefSignalActive
+          ? loadOrefSignalsRef.current()
+          : Promise.resolve(undefined),
+      ]);
     });
 
   const effectiveScope = data?.diagnostics?.effectiveScope ?? scope;
@@ -1542,6 +1530,8 @@ export function SituationMonitorContent() {
       ),
     [manualRefreshResult?.warnings, refreshRun?.warnings],
   );
+  const noActiveSourcesConfigured =
+    (signalCatalog?.refreshReadiness.activeSourceCount ?? 0) === 0;
   const refreshActionItems = useMemo(() => {
     const actions: {
       key: string;
@@ -1549,11 +1539,7 @@ export function SituationMonitorContent() {
       onClick: () => void;
     }[] = [];
 
-    if (
-      (refreshWarningCodes.has("situation_monitor_no_active_sources") ||
-        refreshWarningCodes.has("situation_monitor_crawl_scheduler_busy")) &&
-      canViewNewsSources
-    ) {
+    if (noActiveSourcesConfigured && canViewNewsSources) {
       actions.push({
         key: "news-sources",
         label: t("situationMonitor.actions.openNewsSources", {
@@ -1564,7 +1550,8 @@ export function SituationMonitorContent() {
     }
 
     if (
-      (refreshWarningCodes.has("situation_monitor_telegram_refresh_failed") ||
+      ((data?.externalSnapshot?.warnings.length ?? 0) > 0 ||
+        refreshWarningCodes.has("situation_monitor_telegram_refresh_failed") ||
         refreshWarningCodes.has("situation_monitor_oref_refresh_failed")) &&
       canManageSettings
     ) {
@@ -1581,7 +1568,9 @@ export function SituationMonitorContent() {
   }, [
     canManageSettings,
     canViewNewsSources,
+    data?.externalSnapshot?.warnings.length,
     monitoringSettingsHref,
+    noActiveSourcesConfigured,
     refreshWarningCodes,
     router,
     t,
@@ -5749,6 +5738,97 @@ export function SituationMonitorContent() {
         }
       />
 
+      {data?.externalSnapshot ? (
+        <div className="mt-3">
+          <Card
+            size="small"
+            title={t("situationMonitor.snapshot.title", {
+              defaultValue: "External snapshot",
+            })}
+            extra={
+              <Space wrap size={8}>
+                <Tag
+                  color={getExternalSnapshotStatusColor(
+                    data.externalSnapshot.status,
+                  )}
+                >
+                  {data.externalSnapshot.status.toUpperCase()}
+                </Tag>
+                {data.externalSnapshot.stale ? (
+                  <Tag color="volcano">
+                    {t("situationMonitor.snapshot.stale", {
+                      defaultValue: "STALE",
+                    })}
+                  </Tag>
+                ) : null}
+                {data.externalSnapshot.partial &&
+                data.externalSnapshot.status !== "partial" ? (
+                  <Tag color="gold">
+                    {t("situationMonitor.snapshot.partial", {
+                      defaultValue: "PARTIAL",
+                    })}
+                  </Tag>
+                ) : null}
+              </Space>
+            }
+          >
+            <Space direction="vertical" size={6} style={{ width: "100%" }}>
+              <Typography.Text type="secondary">
+                {t("situationMonitor.snapshot.generatedAt", {
+                  defaultValue: "Generated {{time}}",
+                  time: data.externalSnapshot.generatedAt
+                    ? formatDateTime(
+                        data.externalSnapshot.generatedAt,
+                        locale,
+                        {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        },
+                      )
+                    : "--",
+                })}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {t("situationMonitor.snapshot.availableCategories", {
+                  defaultValue:
+                    "{{count}} / 6 categories currently have scheduler snapshot coverage.",
+                  count: data.externalSnapshot.availableCategoryCount,
+                })}
+              </Typography.Text>
+              {data.externalSnapshot.warnings.length > 0 ? (
+                <Typography.Text type="secondary">
+                  {t("situationMonitor.snapshot.warningCount", {
+                    defaultValue:
+                      "{{count}} snapshot warning(s) are active. See the warning banners below for details.",
+                    count: data.externalSnapshot.warnings.length,
+                  })}
+                </Typography.Text>
+              ) : (
+                <Typography.Text type="secondary">
+                  {t("situationMonitor.snapshot.healthy", {
+                    defaultValue:
+                      "Snapshot-backed external headlines are being served from the server cache.",
+                  })}
+                </Typography.Text>
+              )}
+              {refreshActionItems.length > 0 ? (
+                <Space wrap>
+                  {refreshActionItems.map((action) => (
+                    <Button
+                      key={`snapshot:${action.key}`}
+                      size="small"
+                      onClick={action.onClick}
+                    >
+                      {action.label}
+                    </Button>
+                  ))}
+                </Space>
+              ) : null}
+            </Space>
+          </Card>
+        </div>
+      ) : null}
+
       {manualRefreshError ? (
         <div className="mt-3">
           <Alert
@@ -5920,10 +6000,10 @@ export function SituationMonitorContent() {
                     defaultValue:
                       "This account can view Situation Monitor, but triggering new crawl collection requires crawl.write permission.",
                   })
-                : manualRefreshResult?.crawl.activeSourceCount === 0
+                : noActiveSourcesConfigured
                   ? t("situationMonitor.noCoverage.noSources", {
                       defaultValue:
-                        "This workspace has no active news sources configured, so manual refresh cannot queue new collection.",
+                        "This workspace has no active news sources configured, so internal news coverage is still empty.",
                     })
                   : manualRefreshQueuedTasks > 0
                     ? t("situationMonitor.noCoverage.queued", {
@@ -5943,7 +6023,7 @@ export function SituationMonitorContent() {
             action={
               !canTriggerCrawl
                 ? null
-                : manualRefreshResult?.crawl.activeSourceCount === 0 &&
+                : noActiveSourcesConfigured &&
                     canViewNewsSources
                   ? (
                     <Button
