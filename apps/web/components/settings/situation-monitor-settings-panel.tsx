@@ -49,8 +49,14 @@ interface SituationMonitorExternalSnapshotStatus {
   partial: boolean;
   generatedAt: string | null;
   expiresAt: string | null;
+  lastFullSuccessAt: string | null;
+  lastNonSuccessAt: string | null;
+  nextScheduledAt: string | null;
   warningCount: number;
   availableCategoryCount: number;
+  rolling24hSuccessRate: number | null;
+  rolling24hRateLimitedCount: number;
+  rolling24hAverageAvailableCategoryCount: number | null;
   warnings: Array<{
     code: string;
     message: string;
@@ -243,8 +249,14 @@ const EMPTY_SETTINGS: SituationMonitorSettingsResponse = {
     partial: false,
     generatedAt: null,
     expiresAt: null,
+    lastFullSuccessAt: null,
+    lastNonSuccessAt: null,
+    nextScheduledAt: null,
     warningCount: 0,
     availableCategoryCount: 0,
+    rolling24hSuccessRate: null,
+    rolling24hRateLimitedCount: 0,
+    rolling24hAverageAvailableCategoryCount: null,
     warnings: [],
   },
 };
@@ -323,6 +335,13 @@ function formatSnapshotDate(value: string | null): string {
   return parsed.toLocaleString();
 }
 
+function formatMetricValue(value: number | null, suffix = ""): string {
+  if (value === null || Number.isNaN(value)) {
+    return "--";
+  }
+  return `${value}${suffix}`;
+}
+
 export function SituationMonitorSettingsPanel() {
   const { t } = useTranslation();
   const router = useRouter();
@@ -399,7 +418,7 @@ export function SituationMonitorSettingsPanel() {
       }));
       messageApi.success(
         t("systemSettings.situationMonitor.snapshot.refreshSuccess", {
-          defaultValue: "Triggered Situation Monitor external snapshot refresh.",
+          defaultValue: "Rebuilt the Situation Monitor external snapshot.",
         }),
       );
     } catch (error) {
@@ -411,7 +430,7 @@ export function SituationMonitorSettingsPanel() {
         extractApiError(error).message ||
           t("systemSettings.situationMonitor.snapshot.refreshFailed", {
             defaultValue:
-              "Failed to refresh Situation Monitor external snapshot.",
+              "Failed to rebuild the Situation Monitor external snapshot.",
           }),
       );
     } finally {
@@ -911,6 +930,24 @@ export function SituationMonitorSettingsPanel() {
               })}
             </Typography.Text>
             <Typography.Text type="secondary">
+              {t("systemSettings.situationMonitor.snapshot.lastFullSuccess", {
+                defaultValue: "Last full success: {{time}}",
+                time: formatSnapshotDate(externalSnapshotStatus.lastFullSuccessAt),
+              })}
+            </Typography.Text>
+            <Typography.Text type="secondary">
+              {t("systemSettings.situationMonitor.snapshot.lastNonSuccess", {
+                defaultValue: "Last partial/failure: {{time}}",
+                time: formatSnapshotDate(externalSnapshotStatus.lastNonSuccessAt),
+              })}
+            </Typography.Text>
+            <Typography.Text type="secondary">
+              {t("systemSettings.situationMonitor.snapshot.nextScheduled", {
+                defaultValue: "Next scheduled run: {{time}}",
+                time: formatSnapshotDate(externalSnapshotStatus.nextScheduledAt),
+              })}
+            </Typography.Text>
+            <Typography.Text type="secondary">
               {t("systemSettings.situationMonitor.snapshot.coverage", {
                 defaultValue:
                   "Available categories: {{count}} / 6. Active warnings: {{warnings}}.",
@@ -918,6 +955,31 @@ export function SituationMonitorSettingsPanel() {
                 warnings: externalSnapshotStatus.warningCount,
               })}
             </Typography.Text>
+            <Space wrap>
+              <Tag>
+                {t("systemSettings.situationMonitor.snapshot.successRate", {
+                  defaultValue: "24h success {{value}}",
+                  value: formatMetricValue(
+                    externalSnapshotStatus.rolling24hSuccessRate,
+                    "%",
+                  ),
+                })}
+              </Tag>
+              <Tag>
+                {t("systemSettings.situationMonitor.snapshot.rateLimitedCount", {
+                  defaultValue: "24h rate limits {{value}}",
+                  value: externalSnapshotStatus.rolling24hRateLimitedCount,
+                })}
+              </Tag>
+              <Tag>
+                {t("systemSettings.situationMonitor.snapshot.averageCoverage", {
+                  defaultValue: "24h avg categories {{value}} / 6",
+                  value: formatMetricValue(
+                    externalSnapshotStatus.rolling24hAverageAvailableCategoryCount,
+                  ),
+                })}
+              </Tag>
+            </Space>
             {externalSnapshotStatus.warnings.length > 0 ? (
               <Space direction="vertical" size={8} style={{ display: "flex" }}>
                 {externalSnapshotStatus.warnings.map((warning) => (
@@ -947,7 +1009,7 @@ export function SituationMonitorSettingsPanel() {
                 disabled={!externalSnapshotStatus.enabled}
               >
                 {t("systemSettings.situationMonitor.snapshot.forceRefresh", {
-                  defaultValue: "Force refresh",
+                  defaultValue: "Rebuild external snapshot",
                 })}
               </Button>
             </Space>

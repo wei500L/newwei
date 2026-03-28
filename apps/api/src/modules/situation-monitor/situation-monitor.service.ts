@@ -83,12 +83,23 @@ export interface SituationMonitorWarning {
   detail?: string;
 }
 
+export interface SituationMonitorCoverageSummary {
+  mode: "internal+external" | "external-only" | "internal-only" | "empty";
+  internalAnalyzedItems: number;
+  externalAnalyzedItems: number;
+  visibleCategoryCount: number;
+  missingCategories: SituationMonitorCategory[];
+  hasOlderItemsOutsideWindow: boolean;
+  recommendedWindowHours: number | null;
+}
+
 export interface SituationMonitorInsightsResponse {
   generatedAt: string;
   windowHours: number;
   maxItems: number;
   analyzedItems: number;
   diagnostics?: SituationMonitorInsightsDiagnostics;
+  coverageSummary?: SituationMonitorCoverageSummary;
   warnings?: SituationMonitorWarning[];
   externalSnapshot?: {
     source: "scheduler";
@@ -144,7 +155,7 @@ export class SituationMonitorService {
       debug?: boolean;
     }
   ): Promise<SituationMonitorInsightsResponse> {
-    const windowHours = this.clampInt(options?.windowHours, 1, 168, 24);
+    const windowHours = this.clampInt(options?.windowHours, 1, 168, 72);
     const maxItems = this.clampInt(options?.maxItems, 50, 1000, 400);
     const maxHeadlinesPerCategory = 12;
     const analysisPerCategory = Math.max(
@@ -220,6 +231,21 @@ export class SituationMonitorService {
         const displayHeadlines = this.toDisplayHeadlines(headlines, maxHeadlinesPerCategory);
         const analysisNews = this.flattenHeadlinesForAnalysis(headlines);
         const analyzedItems = analysisNews.length;
+        const hasOlderInternalItemsOutsideWindow =
+          await this.hasInternalCoverageOutsideWindow({
+            orgId,
+            since,
+            scope,
+          });
+        const diagnostics = this.buildDiagnostics(headlines, scope);
+        const coverageSummary = this.buildCoverageSummary({
+          analysisNews,
+          headlines,
+          snapshot: snapshot.payload,
+          since,
+          windowHours,
+          hasOlderInternalItemsOutsideWindow,
+        });
 
         const nowMinute = Math.floor(Date.now() / 60_000);
         const previousMinute = nowMinute - MOMENTUM_WINDOW_MINUTES;
@@ -295,7 +321,8 @@ export class SituationMonitorService {
         const mainCharacter = calculateMainCharacter(analysisNews);
 
         return {
-          diagnostics: this.buildDiagnostics(displayHeadlines, scope),
+          diagnostics,
+          coverageSummary,
           headlines: displayHeadlines,
           analyzedItems,
           ...(allowGdeltFallback || snapshot.payload
@@ -431,6 +458,65 @@ export class SituationMonitorService {
     };
   }
 
+  private buildCoverageSummary(options: {
+    analysisNews: SituationNewsItem[];
+    headlines: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
+    snapshot: SituationMonitorExternalSnapshotPayload | null;
+    since: Date;
+    windowHours: number;
+    hasOlderInternalItemsOutsideWindow: boolean;
+  }): SituationMonitorCoverageSummary {
+    const internalAnalyzedItems = options.analysisNews.filter(
+      (entry) => entry.origin === "items",
+    ).length;
+    const externalAnalyzedItems = options.analysisNews.filter(
+      (entry) => entry.origin === "gdelt",
+    ).length;
+    const visibleCategoryCount = SITUATION_MONITOR_CATEGORIES.filter(
+      (category) => (options.headlines[category] ?? []).length > 0,
+    ).length;
+    const missingCategories = SITUATION_MONITOR_CATEGORIES.filter(
+      (category) => (options.headlines[category] ?? []).length === 0,
+    );
+    const sinceTimestamp = options.since.getTime();
+    const hasOlderSnapshotItemsOutsideWindow = Boolean(
+      options.snapshot &&
+        SITUATION_MONITOR_CATEGORIES.some((category) =>
+          (options.snapshot?.headlinesByCategory[category] ?? []).some(
+            (headline) =>
+              typeof headline.timestamp === "number" &&
+              headline.timestamp < sinceTimestamp,
+          ),
+        ),
+    );
+    const hasOlderItemsOutsideWindow =
+      options.windowHours < 168 &&
+      (options.hasOlderInternalItemsOutsideWindow ||
+        hasOlderSnapshotItemsOutsideWindow);
+
+    return {
+      mode:
+        internalAnalyzedItems > 0 && externalAnalyzedItems > 0
+          ? "internal+external"
+          : internalAnalyzedItems > 0
+            ? "internal-only"
+            : externalAnalyzedItems > 0
+              ? "external-only"
+              : "empty",
+      internalAnalyzedItems,
+      externalAnalyzedItems,
+      visibleCategoryCount,
+      missingCategories,
+      hasOlderItemsOutsideWindow,
+      recommendedWindowHours:
+        hasOlderItemsOutsideWindow &&
+        options.windowHours < 168 &&
+        options.analysisNews.length < 12
+          ? 168
+          : null,
+    };
+  }
+
   private normalizeSections(sections: string[] | undefined) {
     if (!sections) {
       return new Set<string>();
@@ -549,19 +635,11 @@ export class SituationMonitorService {
       Math.max(options.maxItems, options.maxPerCategory * SITUATION_MONITOR_CATEGORIES.length * 4)
     );
 
-    const processedMatch: Record<string, unknown> = {
+    const processedMatch = this.buildProcessedItemsSinceMatch({
       orgId: options.orgId,
-      status: "completed",
-      duplicateOf: null,
-      $or: [
-        { sortAt: { $gte: options.since } },
-        { sortAt: { $exists: false }, ingestedAt: { $gte: options.since } },
-        { sortAt: null, ingestedAt: { $gte: options.since } },
-        { sortAt: { $exists: false }, ingestedAt: { $exists: false }, createdAt: { $gte: options.since } },
-        { sortAt: null, ingestedAt: { $exists: false }, createdAt: { $gte: options.since } }
-      ],
-      ...(options.scope === "tagged" ? { tags: SOURCE_TAG } : {}),
-    };
+      since: options.since,
+      scope: options.scope,
+    });
 
     const processed = await ProcessedItemModel.find(processedMatch)
       .sort({ sortAt: -1, ingestedAt: -1, createdAt: -1 })
@@ -722,6 +800,93 @@ export class SituationMonitorService {
     }
 
     return byCategory;
+  }
+
+  private async hasInternalCoverageOutsideWindow(options: {
+    orgId: string;
+    since: Date;
+    scope: "tagged" | "all";
+  }): Promise<boolean> {
+    const oldestTrackedAt = new Date(Date.now() - 168 * 60 * 60 * 1000);
+    if (options.since <= oldestTrackedAt) {
+      return false;
+    }
+
+    const olderItems = await ProcessedItemModel.find(
+      this.buildProcessedItemsBeforeMatch({
+        orgId: options.orgId,
+        since: options.since,
+        floor: oldestTrackedAt,
+        scope: options.scope,
+      }),
+    )
+      .sort({ sortAt: -1, ingestedAt: -1, createdAt: -1 })
+      .limit(1)
+      .select({ _id: 1 })
+      .lean()
+      .exec();
+
+    return olderItems.length > 0;
+  }
+
+  private buildProcessedItemsSinceMatch(options: {
+    orgId: string;
+    since: Date;
+    scope: "tagged" | "all";
+  }): Record<string, unknown> {
+    return {
+      orgId: options.orgId,
+      status: "completed",
+      duplicateOf: null,
+      $or: [
+        { sortAt: { $gte: options.since } },
+        { sortAt: { $exists: false }, ingestedAt: { $gte: options.since } },
+        { sortAt: null, ingestedAt: { $gte: options.since } },
+        {
+          sortAt: { $exists: false },
+          ingestedAt: { $exists: false },
+          createdAt: { $gte: options.since },
+        },
+        {
+          sortAt: null,
+          ingestedAt: { $exists: false },
+          createdAt: { $gte: options.since },
+        },
+      ],
+      ...(options.scope === "tagged" ? { tags: SOURCE_TAG } : {}),
+    };
+  }
+
+  private buildProcessedItemsBeforeMatch(options: {
+    orgId: string;
+    since: Date;
+    floor: Date;
+    scope: "tagged" | "all";
+  }): Record<string, unknown> {
+    return {
+      orgId: options.orgId,
+      status: "completed",
+      duplicateOf: null,
+      $or: [
+        { sortAt: { $lt: options.since, $gte: options.floor } },
+        {
+          sortAt: { $exists: false },
+          ingestedAt: { $lt: options.since, $gte: options.floor },
+        },
+        { sortAt: null, ingestedAt: { $lt: options.since, $gte: options.floor } },
+        {
+          sortAt: { $exists: false },
+          ingestedAt: { $exists: false },
+          createdAt: { $lt: options.since, $gte: options.floor },
+        },
+        {
+          sortAt: null,
+          ingestedAt: { $exists: false },
+          createdAt: { $lt: options.since, $gte: options.floor },
+        },
+      ],
+      ...(options.scope === "tagged" ? { tags: SOURCE_TAG } : {}),
+    };
   }
 
   private mergeSnapshotHeadlinesByCategory(options: {
@@ -1020,6 +1185,7 @@ export class SituationMonitorService {
         link: headline.link,
         source: headline.source,
         timestamp: headline.timestamp,
+        origin: headline.origin,
         itemMetaId: headline.itemMetaId,
         summary: headline.summary,
         keyPoints: headline.keyPoints,

@@ -65,13 +65,20 @@ describe("situation monitor interaction wiring", () => {
     const contentSource = read("app/(app)/situation-monitor/situation-monitor-content.tsx");
 
     expect(contentSource).toContain("warnings: coreData.warnings ?? [],");
-    expect(contentSource).toContain('title={t("situationMonitor.snapshot.title"');
-    expect(contentSource).toContain("data?.externalSnapshot");
-    expect(contentSource).toContain("getExternalSnapshotStatusColor(");
+    expect(contentSource).toContain('defaultValue: "Summary"');
+    expect(contentSource).toContain('defaultValue: "Coverage"');
+    expect(contentSource).toContain('defaultValue: "Next actions"');
+    expect(contentSource).toContain('defaultValue: "TOTAL {{count}}"');
+    expect(contentSource).toContain('defaultValue: "INT {{count}}"');
+    expect(contentSource).toContain('defaultValue: "EXT {{count}}"');
+    expect(contentSource).toContain("coverageSummary?.visibleCategoryCount");
+    expect(contentSource).toContain("data?.externalSnapshot?.generatedAt");
     expect(contentSource).toContain("Open News Sources");
     expect(contentSource).toContain("Open Situation Monitor Settings");
     expect(contentSource).toContain("insightsWarnings.map((warning) => (");
-    expect(contentSource).toContain("No internal Situation Monitor items are available yet.");
-    expect(contentSource).toContain("triggering new crawl collection requires crawl.write permission.");
+    expect(contentSource).toContain("Internal monitoring is not configured yet.");
+    expect(contentSource).toContain("Current window is too narrow.");
+    expect(contentSource).not.toContain("No internal Situation Monitor items are available yet.");
+    expect(contentSource).not.toContain("triggering new crawl collection requires crawl.write permission.");
   });
 });

@@ -79,9 +79,24 @@ export interface SituationMonitorExternalSnapshotStatusSummary {
   partial: boolean;
   generatedAt: string | null;
   expiresAt: string | null;
+  lastFullSuccessAt: string | null;
+  lastNonSuccessAt: string | null;
+  nextScheduledAt: string | null;
   warningCount: number;
   availableCategoryCount: number;
+  rolling24hSuccessRate: number | null;
+  rolling24hRateLimitedCount: number;
+  rolling24hAverageAvailableCategoryCount: number | null;
   warnings: SituationMonitorExternalWarning[];
+}
+
+interface SituationMonitorExternalSnapshotStatusMetrics {
+  lastFullSuccessAt: string | null;
+  lastNonSuccessAt: string | null;
+  nextScheduledAt: string | null;
+  rolling24hSuccessRate: number | null;
+  rolling24hRateLimitedCount: number;
+  rolling24hAverageAvailableCategoryCount: number | null;
 }
 
 @Injectable()
@@ -111,7 +126,7 @@ export class SituationMonitorExternalSnapshotService {
 
   async forceRefresh(): Promise<SituationMonitorExternalSnapshotStatusSummary> {
     if (!this.external.isGdeltEnabled()) {
-      return this.buildStatusSummary(null, false, false);
+      return await this.buildStatusSummary(null, false, false);
     }
 
     const locked = await this.cache.withLock(
@@ -121,11 +136,11 @@ export class SituationMonitorExternalSnapshotService {
     );
 
     if (locked) {
-      return this.buildStatusSummary(locked, false, true);
+      return await this.buildStatusSummary(locked, false, true);
     }
 
     const current = await this.getLatestSnapshot({ includeDatabase: true });
-    return this.buildStatusSummary(current.payload, current.stale, true);
+    return await this.buildStatusSummary(current.payload, current.stale, true);
   }
 
   async getLatestSnapshot(
@@ -139,11 +154,11 @@ export class SituationMonitorExternalSnapshotService {
   async getStatusSummary(): Promise<SituationMonitorExternalSnapshotStatusSummary> {
     if (!this.external.isGdeltEnabled()) {
       const current = await this.readSnapshot({ includeDatabase: true });
-      return this.buildStatusSummary(current.payload, current.stale, false);
+      return await this.buildStatusSummary(current.payload, current.stale, false);
     }
 
     const current = await this.readSnapshot({ includeDatabase: true });
-    return this.buildStatusSummary(current.payload, current.stale, true);
+    return await this.buildStatusSummary(current.payload, current.stale, true);
   }
 
   private async rebuildSnapshot(input: {
@@ -376,11 +391,12 @@ export class SituationMonitorExternalSnapshotService {
     ]);
   }
 
-  private buildStatusSummary(
+  private async buildStatusSummary(
     payload: SituationMonitorExternalSnapshotPayload | null,
     stale: boolean,
     enabled: boolean,
-  ): SituationMonitorExternalSnapshotStatusSummary {
+  ): Promise<SituationMonitorExternalSnapshotStatusSummary> {
+    const metrics = await this.loadStatusMetrics();
     return {
       enabled,
       intervalMinutes: SNAPSHOT_REFRESH_INTERVAL_MINUTES,
@@ -392,14 +408,112 @@ export class SituationMonitorExternalSnapshotService {
       partial: payload?.partial ?? false,
       generatedAt: payload?.generatedAt ?? null,
       expiresAt: payload?.expiresAt ?? null,
+      lastFullSuccessAt: metrics.lastFullSuccessAt,
+      lastNonSuccessAt: metrics.lastNonSuccessAt,
+      nextScheduledAt: enabled ? metrics.nextScheduledAt : null,
       warningCount: payload?.warnings.length ?? 0,
       availableCategoryCount: payload
         ? SITUATION_MONITOR_CATEGORIES.filter(
             (category) => payload.headlinesByCategory[category].length > 0,
           ).length
         : 0,
+      rolling24hSuccessRate: metrics.rolling24hSuccessRate,
+      rolling24hRateLimitedCount: metrics.rolling24hRateLimitedCount,
+      rolling24hAverageAvailableCategoryCount:
+        metrics.rolling24hAverageAvailableCategoryCount,
       warnings: payload?.warnings ?? [],
     };
+  }
+
+  private async loadStatusMetrics(): Promise<SituationMonitorExternalSnapshotStatusMetrics> {
+    const now = new Date();
+    const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const [recentRecords, latestCompleted, latestNonSuccess] = await Promise.all([
+      this.prisma.situationMonitorExternalSnapshot.findMany({
+        where: {
+          scope: SNAPSHOT_SCOPE,
+          variantKey: SNAPSHOT_VARIANT_KEY,
+          generatedAt: { gte: dayAgo },
+        },
+        orderBy: [{ generatedAt: "desc" }, { createdAt: "desc" }],
+      }),
+      this.prisma.situationMonitorExternalSnapshot.findFirst({
+        where: {
+          scope: SNAPSHOT_SCOPE,
+          variantKey: SNAPSHOT_VARIANT_KEY,
+          status: SituationMonitorExternalSnapshotStatus.completed,
+        },
+        orderBy: [{ generatedAt: "desc" }, { createdAt: "desc" }],
+      }),
+      this.prisma.situationMonitorExternalSnapshot.findFirst({
+        where: {
+          scope: SNAPSHOT_SCOPE,
+          variantKey: SNAPSHOT_VARIANT_KEY,
+          status: {
+            in: [
+              SituationMonitorExternalSnapshotStatus.partial,
+              SituationMonitorExternalSnapshotStatus.failed,
+            ],
+          },
+        },
+        orderBy: [{ generatedAt: "desc" }, { createdAt: "desc" }],
+      }),
+    ]);
+
+    const recentPayloads = recentRecords
+      .map((record) =>
+        this.normalizePayload(
+          record.payload as SituationMonitorExternalSnapshotPayload | null,
+        ),
+      )
+      .filter(
+        (payload): payload is SituationMonitorExternalSnapshotPayload =>
+          payload !== null,
+      );
+    const completedCount = recentRecords.filter(
+      (record) => record.status === SituationMonitorExternalSnapshotStatus.completed,
+    ).length;
+    const rateLimitedCount = recentPayloads.filter((payload) =>
+      payload.warnings.some((warning) => warning.code === "gdelt_rate_limited"),
+    ).length;
+    const averageAvailableCategoryCount =
+      recentPayloads.length > 0
+        ? Math.round(
+            (recentPayloads.reduce((sum, payload) => {
+              const availableCount = SITUATION_MONITOR_CATEGORIES.filter(
+                (category) => payload.headlinesByCategory[category].length > 0,
+              ).length;
+              return sum + availableCount;
+            }, 0) /
+              recentPayloads.length) *
+              10,
+          ) / 10
+        : null;
+
+    return {
+      lastFullSuccessAt: latestCompleted?.generatedAt.toISOString() ?? null,
+      lastNonSuccessAt: latestNonSuccess?.generatedAt.toISOString() ?? null,
+      nextScheduledAt: this.computeNextScheduledAt(now).toISOString(),
+      rolling24hSuccessRate:
+        recentRecords.length > 0
+          ? Math.round((completedCount / recentRecords.length) * 1000) / 10
+          : null,
+      rolling24hRateLimitedCount: rateLimitedCount,
+      rolling24hAverageAvailableCategoryCount: averageAvailableCategoryCount,
+    };
+  }
+
+  private computeNextScheduledAt(now: Date): Date {
+    const next = new Date(now);
+    next.setUTCSeconds(0, 0);
+    const minute = next.getUTCMinutes();
+    const nextQuarterMinute = Math.ceil((minute + 1) / 15) * 15;
+    if (nextQuarterMinute >= 60) {
+      next.setUTCHours(next.getUTCHours() + 1, 0, 0, 0);
+      return next;
+    }
+    next.setUTCMinutes(nextQuarterMinute, 0, 0);
+    return next;
   }
 
   private normalizePayload(

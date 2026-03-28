@@ -534,12 +534,23 @@ interface SituationMonitorInsightsDiagnostics {
   >;
 }
 
+interface SituationMonitorCoverageSummary {
+  mode: "internal+external" | "external-only" | "internal-only" | "empty";
+  internalAnalyzedItems: number;
+  externalAnalyzedItems: number;
+  visibleCategoryCount: number;
+  missingCategories: SituationMonitorCategory[];
+  hasOlderItemsOutsideWindow: boolean;
+  recommendedWindowHours: number | null;
+}
+
 interface SituationMonitorInsightsResponse {
   generatedAt: string;
   windowHours: number;
   maxItems: number;
   analyzedItems: number;
   diagnostics?: SituationMonitorInsightsDiagnostics;
+  coverageSummary?: SituationMonitorCoverageSummary;
   warnings?: SituationMonitorWarning[];
   externalSnapshot?: {
     source: "scheduler";
@@ -580,66 +591,6 @@ interface SituationMonitorInsightsResponse {
     statusZh?: string;
   };
   monitorMatches?: SituationMonitorMatchResult[];
-}
-
-interface SituationMonitorRefreshTaskResult {
-  attempted: boolean;
-  ok: boolean;
-  message: string;
-  durationMs: number;
-}
-
-interface SituationMonitorRefreshProgressCounts {
-  pending: number;
-  queued: number;
-  running: number;
-  completed: number;
-  failed: number;
-  paused?: number;
-  delayed?: number;
-}
-
-interface SituationMonitorRefreshResponse {
-  refreshId: string;
-  requestedAt: string;
-  taskWindowStart: string;
-  status: "accepted" | "partial";
-  crawl: {
-    attempted: boolean;
-    permitted: boolean;
-    activeSourceCount: number;
-    scheduledSourceCount: number;
-    schedulerTriggered: boolean;
-    crawlTaskCount: number;
-    analysisTaskCount: number;
-    message: string;
-  };
-  signals: {
-    telegram: SituationMonitorRefreshTaskResult;
-    oref: SituationMonitorRefreshTaskResult;
-  };
-  cache: {
-    insightsCleared: number;
-    externalCleared: number;
-  };
-  warnings: SituationMonitorWarning[];
-  terminal: boolean;
-}
-
-interface SituationMonitorRefreshRunResponse {
-  refreshId: string;
-  requestedAt: string;
-  taskWindowStart: string;
-  status: "queued" | "running" | "completed" | "partial" | "failed";
-  crawl: SituationMonitorRefreshResponse["crawl"];
-  progress: {
-    crawlTasks: SituationMonitorRefreshProgressCounts;
-    analysisTasks: SituationMonitorRefreshProgressCounts;
-  };
-  signals: SituationMonitorRefreshResponse["signals"];
-  cache: SituationMonitorRefreshResponse["cache"];
-  warnings: SituationMonitorWarning[];
-  terminal: boolean;
 }
 
 interface SituationMonitorCatalogResponse {
@@ -720,56 +671,66 @@ function getExternalSnapshotStatusColor(
   return "default";
 }
 
-function countRefreshTasks(progress: SituationMonitorRefreshProgressCounts): number {
-  return (
-    progress.pending +
-    progress.queued +
-    progress.running +
-    progress.completed +
-    progress.failed +
-    (progress.paused ?? 0) +
-    (progress.delayed ?? 0)
-  );
-}
-
-function countActiveRefreshTasks(progress: SituationMonitorRefreshProgressCounts): number {
-  return progress.pending + progress.queued + progress.running + (progress.delayed ?? 0);
-}
-
-function countTerminalRefreshTasks(progress: SituationMonitorRefreshProgressCounts): number {
-  return progress.completed + progress.failed + (progress.paused ?? 0);
-}
-
-function getRefreshRunAlertType(
-  status: SituationMonitorRefreshRunResponse["status"],
-): "info" | "success" | "warning" | "error" {
-  if (status === "completed") {
-    return "success";
+function formatWindowLabel(hours: number): string {
+  if (hours === 168) {
+    return "7d";
   }
-  if (status === "partial") {
-    return "warning";
+  if (hours === 72) {
+    return "72h";
   }
-  if (status === "failed") {
-    return "error";
+  if (hours === 24) {
+    return "24h";
   }
-  return "info";
+  if (hours === 6) {
+    return "6h";
+  }
+  return `${hours}h`;
 }
 
-function getRefreshRunStatusColor(
-  status: SituationMonitorRefreshRunResponse["status"],
+function getCoverageModeColor(
+  mode: NonNullable<SituationMonitorInsightsResponse["coverageSummary"]>["mode"],
 ): string {
-  switch (status) {
-    case "completed":
-      return "green";
-    case "partial":
-      return "orange";
-    case "failed":
-      return "red";
-    case "running":
-      return "blue";
-    default:
-      return "default";
+  if (mode === "internal+external") {
+    return "green";
   }
+  if (mode === "internal-only") {
+    return "blue";
+  }
+  if (mode === "external-only") {
+    return "purple";
+  }
+  return "default";
+}
+
+function getCoverageModeLabel(
+  mode: NonNullable<SituationMonitorInsightsResponse["coverageSummary"]>["mode"],
+): string {
+  if (mode === "internal+external") {
+    return "INT + EXT";
+  }
+  if (mode === "internal-only") {
+    return "INT ONLY";
+  }
+  if (mode === "external-only") {
+    return "EXT ONLY";
+  }
+  return "EMPTY";
+}
+
+function extractWarningCategories(
+  warning: SituationMonitorWarning | undefined,
+): string[] {
+  if (!warning?.detail) {
+    return [];
+  }
+  const match = warning.detail.match(/Categories:\s*([^.]+)/i);
+  if (!match?.[1]) {
+    return [];
+  }
+  return match[1]
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 function toTagColor(level: string) {
@@ -972,7 +933,6 @@ export function SituationMonitorContent() {
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canReadItems =
     permissions.includes("items.read") || permissions.includes("items.write");
-  const canTriggerCrawl = permissions.includes("crawl.write");
   const canViewNewsSources =
     permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const canManageSettings = permissions.includes("settings.manage");
@@ -1011,16 +971,6 @@ export function SituationMonitorContent() {
     type: "success" | "error";
     message: string;
   } | null>(null);
-  const [manualRefreshResult, setManualRefreshResult] =
-    useState<SituationMonitorRefreshResponse | null>(null);
-  const [manualRefreshError, setManualRefreshError] = useState<string | null>(
-    null,
-  );
-  const [refreshTimelineOpen, setRefreshTimelineOpen] = useState(false);
-  const [refreshRun, setRefreshRun] =
-    useState<SituationMonitorRefreshRunResponse | null>(null);
-  const [refreshRunLoading, setRefreshRunLoading] = useState(false);
-  const [refreshRunError, setRefreshRunError] = useState<string | null>(null);
   const [data, setData] = useState<SituationMonitorInsightsResponse | null>(
     null,
   );
@@ -1060,8 +1010,6 @@ export function SituationMonitorContent() {
     typeof document === "undefined" ? true : !document.hidden,
   );
   const refreshIdRef = useRef(0);
-  const refreshRunIdRef = useRef<string | null>(null);
-  const refreshRunPollTimerRef = useRef<number | null>(null);
   const telegramFeedLoadingRef = useRef(false);
   const pendingTelegramFeedLoadRef = useRef<{ silent: boolean } | null>(null);
   const loadTelegramFeedRef = useRef<
@@ -1426,75 +1374,12 @@ export function SituationMonitorContent() {
     [apiClient, scope, session?.accessToken, translateToZh, windowHours],
   );
 
-  const stopRefreshRunPolling = useCallback(() => {
-    if (refreshRunPollTimerRef.current !== null) {
-      window.clearTimeout(refreshRunPollTimerRef.current);
-      refreshRunPollTimerRef.current = null;
-    }
-  }, []);
-
-  const loadRefreshRun = useCallback(
-    async (refreshRunId: string, options?: { silent?: boolean }) => {
-      if (!session?.accessToken) {
-        return;
-      }
-
-      refreshRunIdRef.current = refreshRunId;
-      if (!options?.silent) {
-        setRefreshRunLoading(true);
-      }
-      setRefreshRunError(null);
-
-      try {
-        const response = await apiClient.get<SituationMonitorRefreshRunResponse>(
-          `situation-monitor/refresh-runs/${encodeURIComponent(refreshRunId)}`,
-        );
-        const nextRun = response.data ?? null;
-        if (!nextRun || refreshRunIdRef.current !== refreshRunId) {
-          return;
-        }
-
-        setRefreshRun(nextRun);
-        stopRefreshRunPolling();
-        if (!nextRun.terminal) {
-          refreshRunPollTimerRef.current = window.setTimeout(() => {
-            void loadRefreshRun(refreshRunId, { silent: true });
-          }, 3000);
-        }
-      } catch (err) {
-        captureClientError("Failed to load situation monitor refresh run", err);
-        if (refreshRunIdRef.current === refreshRunId) {
-          setRefreshRunError(
-            extractApiError(err).message ||
-              "Failed to load Situation Monitor refresh progress.",
-          );
-        }
-      } finally {
-        if (!options?.silent) {
-          setRefreshRunLoading(false);
-        }
-      }
-    },
-    [apiClient, session?.accessToken, stopRefreshRunPolling],
-  );
-
-  useEffect(() => {
-    return () => {
-      stopRefreshRunPolling();
-    };
-  }, [stopRefreshRunPolling]);
-
   const { pending: manualRefreshPending, run: runManualRefresh } =
     usePendingAction(async () => {
       if (!session?.accessToken) {
         return;
       }
 
-      setManualRefreshError(null);
-      setManualRefreshResult(null);
-      setRefreshRun(null);
-      setRefreshRunError(null);
-      stopRefreshRunPolling();
       await Promise.allSettled([
         load(),
         telegramSignalActive
@@ -1518,20 +1403,84 @@ export function SituationMonitorContent() {
     effectiveScope === "all" &&
     (data?.analyzedItems ?? 0) === 0;
   const insightsWarnings = data?.warnings ?? [];
-  const manualRefreshQueuedTasks =
-    (manualRefreshResult?.crawl.crawlTaskCount ?? 0) +
-    (manualRefreshResult?.crawl.analysisTaskCount ?? 0);
-  const refreshWarningCodes = useMemo(
-    () =>
-      new Set(
-        (refreshRun?.warnings ?? manualRefreshResult?.warnings ?? []).map(
-          (warning) => warning.code,
-        ),
-      ),
-    [manualRefreshResult?.warnings, refreshRun?.warnings],
-  );
+  const coverageSummary = data?.coverageSummary;
+  const recommendedWindowHours = coverageSummary?.recommendedWindowHours ?? null;
   const noActiveSourcesConfigured =
     (signalCatalog?.refreshReadiness.activeSourceCount ?? 0) === 0;
+  const rateLimitedCategories = useMemo(
+    () =>
+      new Set(
+        (data?.externalSnapshot?.warnings ?? [])
+          .filter((warning) => warning.code === "gdelt_rate_limited")
+          .flatMap((warning) => extractWarningCategories(warning)),
+      ),
+    [data?.externalSnapshot?.warnings],
+  );
+  const allScopeEmptyState = useMemo(() => {
+    if (!allScopeNoResults) {
+      return null;
+    }
+
+    if (noActiveSourcesConfigured) {
+      return {
+        type: "info" as const,
+        message: t("situationMonitor.empty.unconfigured.title", {
+          defaultValue: "Internal monitoring is not configured yet.",
+        }),
+        description: t("situationMonitor.empty.unconfigured.description", {
+          defaultValue:
+            "This workspace has no active internal news sources. You are currently limited to shared external snapshot coverage.",
+        }),
+      };
+    }
+
+    if (
+      coverageSummary?.hasOlderItemsOutsideWindow &&
+      recommendedWindowHours
+    ) {
+      return {
+        type: "info" as const,
+        message: t("situationMonitor.empty.window.title", {
+          defaultValue: "Current window is too narrow.",
+        }),
+        description: t("situationMonitor.empty.window.description", {
+          defaultValue:
+            "No items are visible in the current window, but older coverage is available in the last 7 days.",
+        }),
+      };
+    }
+
+    if (data?.externalSnapshot?.status === "partial") {
+      return {
+        type: "warning" as const,
+        message: t("situationMonitor.empty.partial.title", {
+          defaultValue: "External snapshot coverage is partial right now.",
+        }),
+        description: t("situationMonitor.empty.partial.description", {
+          defaultValue:
+            "Some categories are unavailable because the latest external snapshot was only partially generated.",
+        }),
+      };
+    }
+
+    return {
+      type: "warning" as const,
+      message: t("situationMonitor.empty.generic.title", {
+        defaultValue: "No content is available right now.",
+      }),
+      description: t("situationMonitor.empty.generic.description", {
+        defaultValue:
+          "There are no internal items or external snapshot headlines available for the current view.",
+      }),
+    };
+  }, [
+    allScopeNoResults,
+    coverageSummary?.hasOlderItemsOutsideWindow,
+    data?.externalSnapshot?.status,
+    noActiveSourcesConfigured,
+    recommendedWindowHours,
+    t,
+  ]);
   const refreshActionItems = useMemo(() => {
     const actions: {
       key: string;
@@ -1551,8 +1500,8 @@ export function SituationMonitorContent() {
 
     if (
       ((data?.externalSnapshot?.warnings.length ?? 0) > 0 ||
-        refreshWarningCodes.has("situation_monitor_telegram_refresh_failed") ||
-        refreshWarningCodes.has("situation_monitor_oref_refresh_failed")) &&
+        signalErrors.telegram ||
+        signalErrors.oref) &&
       canManageSettings
     ) {
       actions.push({
@@ -1571,26 +1520,61 @@ export function SituationMonitorContent() {
     data?.externalSnapshot?.warnings.length,
     monitoringSettingsHref,
     noActiveSourcesConfigured,
-    refreshWarningCodes,
     router,
+    signalErrors.oref,
+    signalErrors.telegram,
     t,
   ]);
-  const refreshRunCrawlTotal = refreshRun
-    ? countRefreshTasks(refreshRun.progress.crawlTasks)
-    : 0;
-  const refreshRunAnalysisTotal = refreshRun
-    ? countRefreshTasks(refreshRun.progress.analysisTasks)
-    : 0;
-  const refreshRunCrawlTerminalCount = refreshRun
-    ? countTerminalRefreshTasks(refreshRun.progress.crawlTasks)
-    : 0;
-  const refreshRunAnalysisTerminalCount = refreshRun
-    ? countTerminalRefreshTasks(refreshRun.progress.analysisTasks)
-    : 0;
 
   const handleManualRefresh = useCallback(() => {
     void runManualRefresh();
   }, [runManualRefresh]);
+  const summaryActionItems = useMemo(() => {
+    const actions: {
+      key: string;
+      label: string;
+      onClick: () => void;
+      type?: "primary" | "default";
+    }[] = [
+      {
+        key: "refresh-page-data",
+        label: t("situationMonitor.actions.refreshPageData", {
+          defaultValue: "Refresh page data",
+        }),
+        onClick: handleManualRefresh,
+        type: "primary",
+      },
+    ];
+
+    if (recommendedWindowHours) {
+      actions.push({
+        key: "recommended-window",
+        label: t("situationMonitor.actions.switchWindow", {
+          defaultValue: "Switch to {{window}}",
+          window: formatWindowLabel(recommendedWindowHours),
+        }),
+        onClick: () => {
+          setWindowHours(recommendedWindowHours);
+        },
+      });
+    }
+
+    for (const action of refreshActionItems) {
+      actions.push({
+        key: action.key,
+        label: action.label,
+        onClick: action.onClick,
+      });
+    }
+
+    return actions;
+  }, [
+    handleManualRefresh,
+    recommendedWindowHours,
+    refreshActionItems,
+    setWindowHours,
+    t,
+  ]);
 
   const submitSignalFeedback = useCallback(
     async (payload: {
@@ -3705,29 +3689,76 @@ export function SituationMonitorContent() {
   const renderFeedPanel = (category: SituationMonitorCategory) => {
     const entries = data?.headlines?.[category] ?? [];
     const diagnostics = data?.diagnostics?.categories?.[category];
+    const emptyReason = entries.length > 0
+      ? null
+      : rateLimitedCategories.has(category)
+        ? {
+            tag: t("situationMonitor.feeds.emptyReason.rateLimited", {
+              defaultValue: "RATE LIMITED",
+            }),
+            description: t("situationMonitor.feeds.emptyDescription.rateLimited", {
+              defaultValue:
+                "The latest external snapshot could not refresh this category because GDELT rate limited the upstream request.",
+            }),
+          }
+        : noActiveSourcesConfigured
+          ? {
+              tag: t("situationMonitor.feeds.emptyReason.unconfigured", {
+                defaultValue: "UNCONFIGURED",
+              }),
+              description: t("situationMonitor.feeds.emptyDescription.unconfigured", {
+                defaultValue:
+                  "This workspace has no active internal news sources for this category yet.",
+              }),
+            }
+          : coverageSummary?.hasOlderItemsOutsideWindow &&
+              recommendedWindowHours
+            ? {
+                tag: t("situationMonitor.feeds.emptyReason.outsideWindow", {
+                  defaultValue: "OUTSIDE WINDOW",
+                }),
+                description: t("situationMonitor.feeds.emptyDescription.outsideWindow", {
+                  defaultValue:
+                    "Older content exists outside the current time window. Expand the window to inspect broader coverage.",
+                }),
+              }
+            : {
+                tag: t("situationMonitor.feeds.emptyReason.noData", {
+                  defaultValue: "NO DATA",
+                }),
+                description: t("situationMonitor.feeds.emptyDescription.noData", {
+                  defaultValue:
+                    "Neither internal coverage nor the latest external snapshot produced visible headlines for this category.",
+                }),
+              };
     return (
       <Card
         title={
           <Space size={10}>
             <span>{categoryLabels[category]}</span>
-            <Tag color="geekblue">{entries.length}</Tag>
+            <Tag color="geekblue">
+              {t("situationMonitor.feeds.totalCount", {
+                defaultValue: "TOTAL {{count}}",
+                count: diagnostics?.totalCount ?? entries.length,
+              })}
+            </Tag>
             {diagnostics ? (
               <Popover content={internalFeedTooltip}>
                 <Tag color="blue" className="cursor-help">
-                  {t("situationMonitor.notice.internalLabel", {
-                    defaultValue: "INT",
-                  })}{" "}
-                  {diagnostics.internalCount}
+                  {t("situationMonitor.feeds.internalCount", {
+                    defaultValue: "INT {{count}}",
+                    count: diagnostics.internalCount,
+                  })}
                 </Tag>
               </Popover>
             ) : null}
-            {diagnostics?.gdeltFallbackCount ? (
+            {diagnostics ? (
               <Popover content={gdeltFeedTooltip}>
                 <Tag color="purple" className="cursor-help">
-                  {t("situationMonitor.notice.gdeltLabel", {
-                    defaultValue: "GDELT",
-                  })}{" "}
-                  {diagnostics.gdeltFallbackCount}
+                  {t("situationMonitor.feeds.externalCount", {
+                    defaultValue: "EXT {{count}}",
+                    count: diagnostics.gdeltFallbackCount,
+                  })}
                 </Tag>
               </Popover>
             ) : null}
@@ -3739,10 +3770,16 @@ export function SituationMonitorContent() {
       >
         {entries.length === 0 ? (
           <Space direction="vertical" size={4}>
+            {emptyReason ? (
+              <Tag color="default" style={{ width: "fit-content" }}>
+                {emptyReason.tag}
+              </Tag>
+            ) : null}
             <Typography.Text type="secondary">
-              {t("situationMonitor.feeds.empty", {
-                defaultValue: "No headlines yet.",
-              })}
+              {emptyReason?.description ??
+                t("situationMonitor.feeds.empty", {
+                  defaultValue: "No headlines yet.",
+                })}
             </Typography.Text>
             {data?.diagnostics?.effectiveScope === "tagged" ? (
               <Typography.Text type="secondary">
@@ -3751,6 +3788,17 @@ export function SituationMonitorContent() {
                     "Tagged scope is active. Switch to All items if you want broader coverage.",
                 })}
               </Typography.Text>
+            ) : null}
+            {recommendedWindowHours ? (
+              <Button
+                size="small"
+                onClick={() => setWindowHours(recommendedWindowHours)}
+              >
+                {t("situationMonitor.actions.switchWindow", {
+                  defaultValue: "Switch to {{window}}",
+                  window: formatWindowLabel(recommendedWindowHours),
+                })}
+              </Button>
             ) : null}
           </Space>
         ) : (
@@ -5512,6 +5560,12 @@ export function SituationMonitorContent() {
                 }),
                 value: 72,
               },
+              {
+                label: t("situationMonitor.window.168h", {
+                  defaultValue: "Last 7d",
+                }),
+                value: 168,
+              },
             ]}
             style={{ width: 160 }}
           />
@@ -5539,7 +5593,9 @@ export function SituationMonitorContent() {
             onClick={handleManualRefresh}
             loading={loading || manualRefreshPending}
           >
-            {t("common.refresh", { defaultValue: "Refresh" })}
+            {t("situationMonitor.actions.refreshPageData", {
+              defaultValue: "Refresh page data",
+            })}
           </Button>
           <Button
             icon={<SettingOutlined />}
@@ -5689,6 +5745,154 @@ export function SituationMonitorContent() {
             </Typography.Text>
           ) : null}
         </Space>
+
+        <Row gutter={[12, 12]}>
+          <Col xs={24} lg={8}>
+            <Card
+              size="small"
+              title={t("situationMonitor.summary.title", {
+                defaultValue: "Summary",
+              })}
+            >
+              <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                <Space wrap size={8}>
+                  <Tag color="geekblue">
+                    {t("situationMonitor.summary.total", {
+                      defaultValue: "TOTAL {{count}}",
+                      count: data?.analyzedItems ?? 0,
+                    })}
+                  </Tag>
+                  <Tag color="blue">
+                    {t("situationMonitor.summary.internal", {
+                      defaultValue: "INT {{count}}",
+                      count: coverageSummary?.internalAnalyzedItems ?? 0,
+                    })}
+                  </Tag>
+                  <Tag color="purple">
+                    {t("situationMonitor.summary.external", {
+                      defaultValue: "EXT {{count}}",
+                      count: coverageSummary?.externalAnalyzedItems ?? 0,
+                    })}
+                  </Tag>
+                </Space>
+                <Space wrap size={8}>
+                  <Tag color="default">
+                    {formatWindowLabel(windowHours).toUpperCase()}
+                  </Tag>
+                  <Tag
+                    color={getCoverageModeColor(
+                      coverageSummary?.mode ?? "empty",
+                    )}
+                  >
+                    {getCoverageModeLabel(coverageSummary?.mode ?? "empty")}
+                  </Tag>
+                </Space>
+                <Typography.Text type="secondary">
+                  {t("situationMonitor.summary.caption", {
+                    defaultValue:
+                      "Internal items remain workspace-specific. External snapshot coverage is shared and server-generated.",
+                  })}
+                </Typography.Text>
+              </Space>
+            </Card>
+          </Col>
+          <Col xs={24} lg={8}>
+            <Card
+              size="small"
+              title={t("situationMonitor.coverage.title", {
+                defaultValue: "Coverage",
+              })}
+            >
+              <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                <Space wrap size={8}>
+                  <Tag
+                    color={getExternalSnapshotStatusColor(
+                      data?.externalSnapshot?.status ?? "idle",
+                    )}
+                  >
+                    {(data?.externalSnapshot?.status ?? "idle").toUpperCase()}
+                  </Tag>
+                  {data?.externalSnapshot?.stale ? (
+                    <Tag color="volcano">
+                      {t("situationMonitor.snapshot.stale", {
+                        defaultValue: "STALE",
+                      })}
+                    </Tag>
+                  ) : null}
+                </Space>
+                <Typography.Text type="secondary">
+                  {t("situationMonitor.coverage.visibleCategories", {
+                    defaultValue:
+                      "{{count}} / 6 categories currently have visible coverage.",
+                    count: coverageSummary?.visibleCategoryCount ?? 0,
+                  })}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  {t("situationMonitor.coverage.generatedAt", {
+                    defaultValue: "Last snapshot: {{time}}",
+                    time: data?.externalSnapshot?.generatedAt
+                      ? formatDateTime(
+                          data.externalSnapshot.generatedAt,
+                          locale,
+                          {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          },
+                        )
+                      : "--",
+                  })}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  {t("situationMonitor.coverage.missingCategories", {
+                    defaultValue: "Missing: {{categories}}",
+                    categories:
+                      coverageSummary?.missingCategories.length
+                        ? coverageSummary.missingCategories
+                            .map((category) => categoryLabels[category])
+                            .join(", ")
+                        : t("situationMonitor.coverage.noneMissing", {
+                            defaultValue: "none",
+                          }),
+                  })}
+                </Typography.Text>
+              </Space>
+            </Card>
+          </Col>
+          <Col xs={24} lg={8}>
+            <Card
+              size="small"
+              title={t("situationMonitor.actions.title", {
+                defaultValue: "Next actions",
+              })}
+            >
+              <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                {recommendedWindowHours ? (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message={t("situationMonitor.actions.recommendedWindow", {
+                      defaultValue:
+                        "Current results are thin. Expand to {{window}} for broader context.",
+                      window: formatWindowLabel(recommendedWindowHours),
+                    })}
+                  />
+                ) : null}
+                <Space wrap>
+                  {summaryActionItems.map((action) => (
+                    <Button
+                      key={`summary:${action.key}`}
+                      type={action.type}
+                      size="small"
+                      onClick={action.onClick}
+                    >
+                      {action.label}
+                    </Button>
+                  ))}
+                </Space>
+              </Space>
+            </Card>
+          </Col>
+        </Row>
       </div>
 
       <Alert
@@ -5738,214 +5942,6 @@ export function SituationMonitorContent() {
         }
       />
 
-      {data?.externalSnapshot ? (
-        <div className="mt-3">
-          <Card
-            size="small"
-            title={t("situationMonitor.snapshot.title", {
-              defaultValue: "External snapshot",
-            })}
-            extra={
-              <Space wrap size={8}>
-                <Tag
-                  color={getExternalSnapshotStatusColor(
-                    data.externalSnapshot.status,
-                  )}
-                >
-                  {data.externalSnapshot.status.toUpperCase()}
-                </Tag>
-                {data.externalSnapshot.stale ? (
-                  <Tag color="volcano">
-                    {t("situationMonitor.snapshot.stale", {
-                      defaultValue: "STALE",
-                    })}
-                  </Tag>
-                ) : null}
-                {data.externalSnapshot.partial &&
-                data.externalSnapshot.status !== "partial" ? (
-                  <Tag color="gold">
-                    {t("situationMonitor.snapshot.partial", {
-                      defaultValue: "PARTIAL",
-                    })}
-                  </Tag>
-                ) : null}
-              </Space>
-            }
-          >
-            <Space direction="vertical" size={6} style={{ width: "100%" }}>
-              <Typography.Text type="secondary">
-                {t("situationMonitor.snapshot.generatedAt", {
-                  defaultValue: "Generated {{time}}",
-                  time: data.externalSnapshot.generatedAt
-                    ? formatDateTime(
-                        data.externalSnapshot.generatedAt,
-                        locale,
-                        {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        },
-                      )
-                    : "--",
-                })}
-              </Typography.Text>
-              <Typography.Text type="secondary">
-                {t("situationMonitor.snapshot.availableCategories", {
-                  defaultValue:
-                    "{{count}} / 6 categories currently have scheduler snapshot coverage.",
-                  count: data.externalSnapshot.availableCategoryCount,
-                })}
-              </Typography.Text>
-              {data.externalSnapshot.warnings.length > 0 ? (
-                <Typography.Text type="secondary">
-                  {t("situationMonitor.snapshot.warningCount", {
-                    defaultValue:
-                      "{{count}} snapshot warning(s) are active. See the warning banners below for details.",
-                    count: data.externalSnapshot.warnings.length,
-                  })}
-                </Typography.Text>
-              ) : (
-                <Typography.Text type="secondary">
-                  {t("situationMonitor.snapshot.healthy", {
-                    defaultValue:
-                      "Snapshot-backed external headlines are being served from the server cache.",
-                  })}
-                </Typography.Text>
-              )}
-              {refreshActionItems.length > 0 ? (
-                <Space wrap>
-                  {refreshActionItems.map((action) => (
-                    <Button
-                      key={`snapshot:${action.key}`}
-                      size="small"
-                      onClick={action.onClick}
-                    >
-                      {action.label}
-                    </Button>
-                  ))}
-                </Space>
-              ) : null}
-            </Space>
-          </Card>
-        </div>
-      ) : null}
-
-      {manualRefreshError ? (
-        <div className="mt-3">
-          <Alert
-            type="error"
-            showIcon
-            message={manualRefreshError}
-            closable
-            onClose={() => setManualRefreshError(null)}
-          />
-        </div>
-      ) : null}
-      {manualRefreshResult ? (
-        <div className="mt-3">
-          <Alert
-            type={
-              refreshRun
-                ? getRefreshRunAlertType(refreshRun.status)
-                : manualRefreshResult.status === "accepted"
-                  ? "success"
-                  : "warning"
-            }
-            showIcon
-            closable
-            onClose={() => {
-              setManualRefreshResult(null);
-              setRefreshRun(null);
-              setRefreshRunError(null);
-              stopRefreshRunPolling();
-            }}
-            message={
-              refreshRun
-                ? t(`situationMonitor.manualRefresh.status.${refreshRun.status}`, {
-                    defaultValue:
-                      refreshRun.status === "completed"
-                        ? "Refresh completed successfully."
-                        : refreshRun.status === "partial"
-                          ? "Refresh completed with warnings."
-                          : refreshRun.status === "failed"
-                            ? "Refresh failed."
-                            : refreshRun.status === "running"
-                              ? "Refresh is running."
-                              : "Refresh is queued.",
-                  })
-                : manualRefreshResult.status === "accepted"
-                  ? t("situationMonitor.manualRefresh.accepted", {
-                      defaultValue: "Refresh tasks started successfully.",
-                    })
-                  : t("situationMonitor.manualRefresh.partial", {
-                      defaultValue: "Refresh completed with warnings.",
-                    })
-            }
-            description={
-              <Space direction="vertical" size={4}>
-                {refreshRun ? (
-                  <Space wrap size={8}>
-                    <Tag color={getRefreshRunStatusColor(refreshRun.status)}>
-                      {refreshRun.status.toUpperCase()}
-                    </Tag>
-                    <Typography.Text type="secondary">
-                      {t("situationMonitor.manualRefresh.requestedAt", {
-                        defaultValue: "Requested {{time}}",
-                        time: formatDateTime(refreshRun.requestedAt, locale, {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        }),
-                      })}
-                    </Typography.Text>
-                  </Space>
-                ) : null}
-                <Typography.Text>
-                  {manualRefreshResult.crawl.message}
-                </Typography.Text>
-                <Typography.Text>
-                  {`Telegram: ${manualRefreshResult.signals.telegram.message}`}
-                </Typography.Text>
-                <Typography.Text>
-                  {`OREF: ${manualRefreshResult.signals.oref.message}`}
-                </Typography.Text>
-                <Typography.Text type="secondary">
-                  {t("situationMonitor.manualRefresh.cache", {
-                    defaultValue:
-                      "Cleared {{insights}} insights cache entries and {{external}} external cache entries.",
-                    insights: manualRefreshResult.cache.insightsCleared,
-                    external: manualRefreshResult.cache.externalCleared,
-                  })}
-                </Typography.Text>
-                {refreshRun ? (
-                  <Typography.Text type="secondary">
-                    {t("situationMonitor.manualRefresh.timelineHint", {
-                      defaultValue:
-                        "Open the refresh timeline to inspect crawl, analysis, and signal progress.",
-                    })}
-                  </Typography.Text>
-                ) : null}
-              </Space>
-            }
-            action={
-              <Space wrap>
-                <Button size="small" onClick={() => setRefreshTimelineOpen(true)}>
-                  {t("situationMonitor.manualRefresh.viewTimeline", {
-                    defaultValue: "View timeline",
-                  })}
-                </Button>
-                {refreshActionItems.map((action) => (
-                  <Button
-                    key={action.key}
-                    size="small"
-                    onClick={action.onClick}
-                  >
-                    {action.label}
-                  </Button>
-                ))}
-              </Space>
-            }
-          />
-        </div>
-      ) : null}
       {insightsWarnings.map((warning) => (
         <div className="mt-3" key={`${warning.source}:${warning.code}`}>
           <Alert
@@ -5989,67 +5985,36 @@ export function SituationMonitorContent() {
       {allScopeNoResults ? (
         <div className="mt-3">
           <Alert
-            type="warning"
+            type={allScopeEmptyState?.type ?? "warning"}
             showIcon
-            message={t("situationMonitor.noCoverage.title", {
-              defaultValue: "No internal Situation Monitor items are available yet.",
-            })}
+            message={
+              allScopeEmptyState?.message ??
+              t("situationMonitor.empty.generic.title", {
+                defaultValue: "No content is available right now.",
+              })
+            }
             description={
-              !canTriggerCrawl
-                ? t("situationMonitor.noCoverage.permission", {
-                    defaultValue:
-                      "This account can view Situation Monitor, but triggering new crawl collection requires crawl.write permission.",
-                  })
-                : noActiveSourcesConfigured
-                  ? t("situationMonitor.noCoverage.noSources", {
-                      defaultValue:
-                        "This workspace has no active news sources configured, so internal news coverage is still empty.",
-                    })
-                  : manualRefreshQueuedTasks > 0
-                    ? t("situationMonitor.noCoverage.queued", {
-                        defaultValue:
-                          "Collection and analysis jobs have been triggered. New internal headlines will appear after they finish.",
-                      })
-                    : manualRefreshResult?.crawl.schedulerTriggered
-                      ? t("situationMonitor.noCoverage.scheduled", {
-                          defaultValue:
-                            "Refresh reached the crawl scheduler, but this pass did not queue any new crawl or analysis tasks.",
-                        })
-                    : t("situationMonitor.noCoverage.generic", {
-                        defaultValue:
-                          "No completed processed items matched the current time window.",
-                      })
+              allScopeEmptyState?.description ??
+              t("situationMonitor.empty.generic.description", {
+                defaultValue:
+                  "There are no internal items or external snapshot headlines available for the current view.",
+              })
             }
             action={
-              !canTriggerCrawl
-                ? null
-                : noActiveSourcesConfigured &&
-                    canViewNewsSources
-                  ? (
+              summaryActionItems.length > 0 ? (
+                <Space wrap>
+                  {summaryActionItems.map((action) => (
                     <Button
+                      key={`no-coverage:${action.key}`}
                       size="small"
-                      onClick={() => router.push("/admin/ops/news-sources")}
+                      type={action.type}
+                      onClick={action.onClick}
                     >
-                      {t("situationMonitor.actions.openNewsSources", {
-                        defaultValue: "Open News Sources",
-                      })}
+                      {action.label}
                     </Button>
-                  )
-                  : refreshActionItems.length > 0
-                    ? (
-                      <Space wrap>
-                        {refreshActionItems.map((action) => (
-                          <Button
-                            key={`no-coverage:${action.key}`}
-                            size="small"
-                            onClick={action.onClick}
-                          >
-                            {action.label}
-                          </Button>
-                        ))}
-                      </Space>
-                    )
-                    : null
+                  ))}
+                </Space>
+              ) : null
             }
           />
         </div>
@@ -6075,309 +6040,6 @@ export function SituationMonitorContent() {
           />
         </div>
       ) : null}
-
-      <Drawer
-        title={t("situationMonitor.manualRefresh.timelineTitle", {
-          defaultValue: "Refresh Timeline",
-        })}
-        open={refreshTimelineOpen}
-        onClose={() => setRefreshTimelineOpen(false)}
-        width={screens.lg ? 480 : "100%"}
-      >
-        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          {refreshRunError ? (
-            <Alert type="error" showIcon message={refreshRunError} />
-          ) : null}
-          {!refreshRun ? (
-            <Alert
-              type={refreshRunLoading ? "info" : "warning"}
-              showIcon
-              message={
-                refreshRunLoading
-                  ? t("situationMonitor.manualRefresh.timelineLoading", {
-                      defaultValue: "Loading refresh progress...",
-                    })
-                  : t("situationMonitor.manualRefresh.timelineEmpty", {
-                      defaultValue: "No refresh timeline is available yet.",
-                    })
-              }
-            />
-          ) : (
-            <>
-              <Alert
-                type={getRefreshRunAlertType(refreshRun.status)}
-                showIcon
-                message={t("situationMonitor.manualRefresh.timelineSummary", {
-                  defaultValue: "Refresh status: {{status}}",
-                  status: refreshRun.status.toUpperCase(),
-                })}
-                description={
-                  <Space direction="vertical" size={4}>
-                    <Typography.Text>
-                      {refreshRun.crawl.message}
-                    </Typography.Text>
-                    <Typography.Text type="secondary">
-                      {t("situationMonitor.manualRefresh.timelineRequested", {
-                        defaultValue: "Requested {{time}}",
-                        time: formatDateTime(refreshRun.requestedAt, locale, {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        }),
-                      })}
-                    </Typography.Text>
-                    <Typography.Text type="secondary">
-                      {t("situationMonitor.manualRefresh.timelineWindow", {
-                        defaultValue: "Task window started {{time}}",
-                        time: formatDateTime(
-                          refreshRun.taskWindowStart,
-                          locale,
-                          {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          },
-                        ),
-                      })}
-                    </Typography.Text>
-                  </Space>
-                }
-                action={
-                  refreshActionItems.length > 0 ? (
-                    <Space wrap>
-                      {refreshActionItems.map((action) => (
-                        <Button
-                          key={`drawer:${action.key}`}
-                          size="small"
-                          onClick={action.onClick}
-                        >
-                          {action.label}
-                        </Button>
-                      ))}
-                    </Space>
-                  ) : null
-                }
-              />
-
-              <Card
-                size="small"
-                title={t("situationMonitor.manualRefresh.overview", {
-                  defaultValue: "Overview",
-                })}
-              >
-                <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                  <Space wrap>
-                    <Tag color={getRefreshRunStatusColor(refreshRun.status)}>
-                      {refreshRun.status.toUpperCase()}
-                    </Tag>
-                    <Tag color={refreshRun.terminal ? "green" : "blue"}>
-                      {refreshRun.terminal
-                        ? t("situationMonitor.manualRefresh.terminal", {
-                            defaultValue: "Terminal",
-                          })
-                        : t("situationMonitor.manualRefresh.live", {
-                            defaultValue: "Polling",
-                          })}
-                    </Tag>
-                  </Space>
-                  <Typography.Text type="secondary">
-                    {t("situationMonitor.manualRefresh.cache", {
-                      defaultValue:
-                        "Cleared {{insights}} insights cache entries and {{external}} external cache entries.",
-                      insights: refreshRun.cache.insightsCleared,
-                      external: refreshRun.cache.externalCleared,
-                    })}
-                  </Typography.Text>
-                </Space>
-              </Card>
-
-              <Card
-                size="small"
-                title={t("situationMonitor.manualRefresh.pipeline", {
-                  defaultValue: "Pipeline",
-                })}
-              >
-                <Row gutter={[12, 12]}>
-                  <Col span={12}>
-                    <Typography.Text type="secondary">
-                      {t("situationMonitor.manualRefresh.activeSources", {
-                        defaultValue: "Active sources",
-                      })}
-                    </Typography.Text>
-                    <Typography.Title level={4} style={{ margin: 0 }}>
-                      {refreshRun.crawl.activeSourceCount}
-                    </Typography.Title>
-                  </Col>
-                  <Col span={12}>
-                    <Typography.Text type="secondary">
-                      {t("situationMonitor.manualRefresh.scheduledSources", {
-                        defaultValue: "Scheduled",
-                      })}
-                    </Typography.Text>
-                    <Typography.Title level={4} style={{ margin: 0 }}>
-                      {refreshRun.crawl.scheduledSourceCount}
-                    </Typography.Title>
-                  </Col>
-                  <Col span={12}>
-                    <Typography.Text type="secondary">
-                      {t("situationMonitor.manualRefresh.crawlTasks", {
-                        defaultValue: "Crawl tasks",
-                      })}
-                    </Typography.Text>
-                    <Typography.Title level={4} style={{ margin: 0 }}>
-                      {refreshRun.crawl.crawlTaskCount}
-                    </Typography.Title>
-                  </Col>
-                  <Col span={12}>
-                    <Typography.Text type="secondary">
-                      {t("situationMonitor.manualRefresh.analysisTasks", {
-                        defaultValue: "Analysis tasks",
-                      })}
-                    </Typography.Text>
-                    <Typography.Title level={4} style={{ margin: 0 }}>
-                      {refreshRun.crawl.analysisTaskCount}
-                    </Typography.Title>
-                  </Col>
-                </Row>
-              </Card>
-
-              <Card
-                size="small"
-                title={t("situationMonitor.manualRefresh.progress", {
-                  defaultValue: "Progress",
-                })}
-              >
-                <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-                  <Space direction="vertical" size={6} style={{ width: "100%" }}>
-                    <Space wrap>
-                      <Typography.Text strong>
-                        {t("situationMonitor.manualRefresh.crawlTasks", {
-                          defaultValue: "Crawl tasks",
-                        })}
-                      </Typography.Text>
-                      <Tag>
-                        {t("situationMonitor.manualRefresh.activeTaskCount", {
-                          defaultValue: "{{count}} active",
-                          count: countActiveRefreshTasks(
-                            refreshRun.progress.crawlTasks,
-                          ),
-                        })}
-                      </Tag>
-                    </Space>
-                    <Progress
-                      percent={
-                        refreshRunCrawlTotal > 0
-                          ? Math.round(
-                              (refreshRunCrawlTerminalCount /
-                                refreshRunCrawlTotal) *
-                                100,
-                            )
-                          : 0
-                      }
-                      status={
-                        refreshRun.status === "failed" ? "exception" : "active"
-                      }
-                    />
-                    <Space wrap size={6}>
-                      <Tag>pending {refreshRun.progress.crawlTasks.pending}</Tag>
-                      <Tag>queued {refreshRun.progress.crawlTasks.queued}</Tag>
-                      <Tag>running {refreshRun.progress.crawlTasks.running}</Tag>
-                      <Tag color="green">
-                        completed {refreshRun.progress.crawlTasks.completed}
-                      </Tag>
-                      <Tag color="red">
-                        failed {refreshRun.progress.crawlTasks.failed}
-                      </Tag>
-                      <Tag>paused {refreshRun.progress.crawlTasks.paused ?? 0}</Tag>
-                    </Space>
-                  </Space>
-                  <Divider style={{ margin: "4px 0" }} />
-                  <Space direction="vertical" size={6} style={{ width: "100%" }}>
-                    <Space wrap>
-                      <Typography.Text strong>
-                        {t("situationMonitor.manualRefresh.analysisTasks", {
-                          defaultValue: "Analysis tasks",
-                        })}
-                      </Typography.Text>
-                      <Tag>
-                        {t("situationMonitor.manualRefresh.activeTaskCount", {
-                          defaultValue: "{{count}} active",
-                          count: countActiveRefreshTasks(
-                            refreshRun.progress.analysisTasks,
-                          ),
-                        })}
-                      </Tag>
-                    </Space>
-                    <Progress
-                      percent={
-                        refreshRunAnalysisTotal > 0
-                          ? Math.round(
-                              (refreshRunAnalysisTerminalCount /
-                                refreshRunAnalysisTotal) *
-                                100,
-                            )
-                          : 0
-                      }
-                      status={
-                        refreshRun.status === "failed" ? "exception" : "active"
-                      }
-                    />
-                    <Space wrap size={6}>
-                      <Tag>pending {refreshRun.progress.analysisTasks.pending}</Tag>
-                      <Tag>queued {refreshRun.progress.analysisTasks.queued}</Tag>
-                      <Tag>running {refreshRun.progress.analysisTasks.running}</Tag>
-                      <Tag color="green">
-                        completed {refreshRun.progress.analysisTasks.completed}
-                      </Tag>
-                      <Tag color="red">
-                        failed {refreshRun.progress.analysisTasks.failed}
-                      </Tag>
-                      <Tag>
-                        delayed {refreshRun.progress.analysisTasks.delayed ?? 0}
-                      </Tag>
-                    </Space>
-                  </Space>
-                </Space>
-              </Card>
-
-              <Card
-                size="small"
-                title={t("situationMonitor.manualRefresh.signals", {
-                  defaultValue: "Signals",
-                })}
-              >
-                <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                  <Typography.Text>
-                    {`Telegram: ${refreshRun.signals.telegram.message}`}
-                  </Typography.Text>
-                  <Typography.Text>
-                    {`OREF: ${refreshRun.signals.oref.message}`}
-                  </Typography.Text>
-                </Space>
-              </Card>
-
-              {refreshRun.warnings.length > 0 ? (
-                <Card
-                  size="small"
-                  title={t("situationMonitor.manualRefresh.warnings", {
-                    defaultValue: "Warnings",
-                  })}
-                >
-                  <Space direction="vertical" size="small" style={{ width: "100%" }}>
-                    {refreshRun.warnings.map((warning) => (
-                      <Alert
-                        key={`refresh-warning:${warning.source}:${warning.code}`}
-                        type={toAlertType(warning.severity)}
-                        showIcon
-                        message={warning.message}
-                        description={warning.detail}
-                      />
-                    ))}
-                  </Space>
-                </Card>
-              ) : null}
-            </>
-          )}
-        </Space>
-      </Drawer>
 
       <Drawer
         title={t("situationMonitor.panels.title", { defaultValue: "Panels" })}

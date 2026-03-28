@@ -31,6 +31,11 @@ describe("situation monitor admin readiness wiring", () => {
     expect(source).toContain("GDELT snapshot scheduler");
     expect(source).toContain("handleForceExternalSnapshotRefresh");
     expect(source).toContain("externalSnapshotStatus");
+    expect(source).toContain("Last full success");
+    expect(source).toContain("Last partial/failure");
+    expect(source).toContain("Next scheduled run");
+    expect(source).toContain("24h success");
+    expect(source).toContain("Rebuild external snapshot");
     expect(source).toContain("OREF");
     expect(source).toContain("orefEnabled");
     expect(source).toContain("orefConfigured");

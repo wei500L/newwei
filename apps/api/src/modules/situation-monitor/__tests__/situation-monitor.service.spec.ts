@@ -15,6 +15,10 @@ describe("SituationMonitorService", () => {
     jest.clearAllMocks();
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   const createProcessedFindChain = (result: unknown[]) => ({
     sort: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
@@ -173,6 +177,18 @@ describe("SituationMonitorService", () => {
     );
   });
 
+  it("defaults omitted windowHours to 72 hours", async () => {
+    const service = createService({
+      external: {
+        isGdeltEnabled: jest.fn().mockReturnValue(false),
+      } as any,
+    });
+
+    const result = await service.getInsights("org-1", { sections: ["core"] });
+
+    expect(result.windowHours).toBe(72);
+  });
+
   it("restricts headline queries to tagged sources when tagged scope is requested", async () => {
     const chain = createProcessedFindChain([]);
     processedFindMock.mockReturnValue(chain);
@@ -308,6 +324,17 @@ describe("SituationMonitorService", () => {
     );
     expect(result.headlines?.ai[0]?.title).toBe(
       "ChatGPT roadmap expands enterprise AI tooling",
+    );
+    expect(result.coverageSummary).toEqual(
+      expect.objectContaining({
+        mode: "external-only",
+        internalAnalyzedItems: 0,
+        externalAnalyzedItems: 2,
+        visibleCategoryCount: 2,
+        missingCategories: ["tech", "finance", "gov", "intel"],
+        hasOlderItemsOutsideWindow: false,
+        recommendedWindowHours: null,
+      }),
     );
   });
 
@@ -457,7 +484,7 @@ describe("SituationMonitorService", () => {
     );
   });
 
-  it("builds diagnostics from the same displayed headlines returned to clients", async () => {
+  it("builds diagnostics and coverage counts from the full analysis pool", async () => {
     const service = createService({
       external: {
         isGdeltEnabled: jest.fn().mockReturnValue(false),
@@ -507,8 +534,81 @@ describe("SituationMonitorService", () => {
     expect(result.headlines?.tech).toHaveLength(12);
     expect(result.diagnostics?.categories.tech).toEqual({
       internalCount: 10,
-      gdeltFallbackCount: 2,
-      totalCount: 12,
+      gdeltFallbackCount: 5,
+      totalCount: 15,
     });
+    expect(result.coverageSummary).toEqual(
+      expect.objectContaining({
+        mode: "internal+external",
+        internalAnalyzedItems: 10,
+        externalAnalyzedItems: 5,
+        visibleCategoryCount: 1,
+        missingCategories: ["politics", "finance", "gov", "ai", "intel"],
+        hasOlderItemsOutsideWindow: false,
+        recommendedWindowHours: null,
+      }),
+    );
+  });
+
+  it("recommends a broader window when content exists outside the current window", async () => {
+    const now = Date.parse("2026-03-28T12:00:00.000Z");
+    jest.spyOn(Date, "now").mockReturnValue(now);
+
+    processedFindMock
+      .mockReturnValueOnce(createProcessedFindChain([]))
+      .mockReturnValueOnce(
+        createProcessedFindChain([
+          {
+            _id: "processed-older-1",
+            rawItemId: "raw-older-1",
+            result: { title: "Older internal coverage remains relevant" },
+            tags: ["situation-monitor", "sm:politics"],
+            sortAt: new Date("2026-03-26T12:00:00.000Z"),
+            createdAt: new Date("2026-03-26T12:00:00.000Z"),
+          },
+        ]),
+      );
+    rawFindMock.mockReturnValue(createRawFindChain([]));
+
+    const service = createService({
+      external: {
+        isGdeltEnabled: jest.fn().mockReturnValue(true),
+      } as any,
+      externalSnapshots: {
+        getLatestSnapshot: jest.fn().mockResolvedValue({
+          stale: false,
+          payload: createSnapshotPayload({
+            headlinesByCategory: {
+              politics: [
+                {
+                  id: "gdelt-politics-old",
+                  title: "Older politics headline",
+                  link: "https://example.com/older-politics",
+                  source: "GDELT",
+                  timestamp: Date.parse("2026-03-25T12:00:00.000Z"),
+                  category: "politics",
+                  origin: "gdelt",
+                  isAlert: false,
+                },
+              ],
+            },
+          }),
+        }),
+      } as any,
+    });
+
+    const result = await service.getInsights("org-1", {
+      sections: ["core"],
+      windowHours: 24,
+    });
+
+    expect(result.analyzedItems).toBe(0);
+    expect(result.coverageSummary).toEqual(
+      expect.objectContaining({
+        mode: "empty",
+        hasOlderItemsOutsideWindow: true,
+        recommendedWindowHours: 168,
+      }),
+    );
   });
 });

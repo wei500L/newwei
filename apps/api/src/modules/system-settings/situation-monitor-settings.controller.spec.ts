@@ -59,8 +59,14 @@ describe("SituationMonitorSettingsController", () => {
       partial: false,
       generatedAt: null,
       expiresAt: null,
+      lastFullSuccessAt: null,
+      lastNonSuccessAt: null,
+      nextScheduledAt: "2026-03-28T00:15:00.000Z",
       warningCount: 0,
       availableCategoryCount: 0,
+      rolling24hSuccessRate: null,
+      rolling24hRateLimitedCount: 0,
+      rolling24hAverageAvailableCategoryCount: null,
       warnings: [],
     });
     externalSnapshots.forceRefresh.mockResolvedValue({
@@ -72,8 +78,14 @@ describe("SituationMonitorSettingsController", () => {
       partial: false,
       generatedAt: "2026-03-28T00:00:00.000Z",
       expiresAt: "2026-03-28T00:20:00.000Z",
+      lastFullSuccessAt: "2026-03-28T00:00:00.000Z",
+      lastNonSuccessAt: null,
+      nextScheduledAt: "2026-03-28T00:15:00.000Z",
       warningCount: 0,
       availableCategoryCount: 6,
+      rolling24hSuccessRate: 100,
+      rolling24hRateLimitedCount: 0,
+      rolling24hAverageAvailableCategoryCount: 6,
       warnings: [],
     });
     controller = new SituationMonitorSettingsController(
@@ -127,6 +139,7 @@ describe("SituationMonitorSettingsController", () => {
         externalSnapshotStatus: expect.objectContaining({
           intervalMinutes: 15,
           status: "idle",
+          nextScheduledAt: "2026-03-28T00:15:00.000Z",
         }),
       }),
     );
@@ -140,6 +153,7 @@ describe("SituationMonitorSettingsController", () => {
       expect.objectContaining({
         status: "completed",
         availableCategoryCount: 6,
+        rolling24hSuccessRate: 100,
       }),
     );
   });

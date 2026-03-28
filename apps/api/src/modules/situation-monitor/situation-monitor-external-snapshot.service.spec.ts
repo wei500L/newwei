@@ -13,6 +13,7 @@ describe("SituationMonitorExternalSnapshotService", () => {
       create: jest.fn(),
       deleteMany: jest.fn(),
       findFirst: jest.fn(),
+      findMany: jest.fn(),
     },
   };
   const external = {
@@ -35,6 +36,7 @@ describe("SituationMonitorExternalSnapshotService", () => {
       count: 0,
     });
     prisma.situationMonitorExternalSnapshot.findFirst.mockResolvedValue(null);
+    prisma.situationMonitorExternalSnapshot.findMany.mockResolvedValue([]);
     external.isGdeltEnabled.mockReturnValue(true);
     external.fetchGdeltCategoryHeadlines.mockResolvedValue({ headlines: [] });
     service = new SituationMonitorExternalSnapshotService(
@@ -146,6 +148,11 @@ describe("SituationMonitorExternalSnapshotService", () => {
         status: SituationMonitorExternalSnapshotStatus.partial,
         availableCategoryCount: 2,
         warningCount: 1,
+        lastFullSuccessAt: null,
+        lastNonSuccessAt: null,
+        rolling24hSuccessRate: null,
+        rolling24hRateLimitedCount: 0,
+        rolling24hAverageAvailableCategoryCount: null,
       }),
     );
   });
@@ -187,11 +194,16 @@ describe("SituationMonitorExternalSnapshotService", () => {
         intel: [],
       },
     };
-    prisma.situationMonitorExternalSnapshot.findFirst.mockResolvedValue({
-      payload,
-      generatedAt: new Date(payload.generatedAt),
-      createdAt: new Date(payload.generatedAt),
-    });
+    prisma.situationMonitorExternalSnapshot.findFirst
+      .mockResolvedValueOnce({
+        payload,
+        generatedAt: new Date(payload.generatedAt),
+        createdAt: new Date(payload.generatedAt),
+      })
+      .mockResolvedValueOnce({
+        generatedAt: new Date(payload.generatedAt),
+      })
+      .mockResolvedValueOnce(null);
 
     const result = await service.getStatusSummary();
 
@@ -202,7 +214,137 @@ describe("SituationMonitorExternalSnapshotService", () => {
         status: SituationMonitorExternalSnapshotStatus.completed,
         availableCategoryCount: 1,
         warningCount: 0,
+        lastFullSuccessAt: payload.generatedAt,
+        lastNonSuccessAt: null,
+        rolling24hSuccessRate: null,
+        rolling24hRateLimitedCount: 0,
+        rolling24hAverageAvailableCategoryCount: null,
       }),
     );
   });
+
+  it("reports rolling 24h snapshot health metrics", async () => {
+    const completedAt = new Date("2026-03-28T12:00:00.000Z");
+    const partialAt = new Date("2026-03-28T11:00:00.000Z");
+    prisma.situationMonitorExternalSnapshot.findMany.mockResolvedValue([
+      {
+        status: SituationMonitorExternalSnapshotStatus.completed,
+        generatedAt: completedAt,
+        createdAt: completedAt,
+        payload: {
+          ...createPayload({
+            status: SituationMonitorExternalSnapshotStatus.completed,
+            generatedAt: completedAt.toISOString(),
+            warnings: [],
+            headlinesByCategory: {
+              politics: [createHeadline("politics-1", "politics")],
+              tech: [createHeadline("tech-1", "tech")],
+            },
+          }),
+        },
+      },
+      {
+        status: SituationMonitorExternalSnapshotStatus.partial,
+        generatedAt: partialAt,
+        createdAt: partialAt,
+        payload: {
+          ...createPayload({
+            status: SituationMonitorExternalSnapshotStatus.partial,
+            generatedAt: partialAt.toISOString(),
+            warnings: [
+              {
+                code: "gdelt_rate_limited",
+                message: "GDELT fallback is rate limited right now.",
+              },
+            ],
+            headlinesByCategory: {
+              finance: [createHeadline("finance-1", "finance")],
+            },
+          }),
+        },
+      },
+    ]);
+    prisma.situationMonitorExternalSnapshot.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        generatedAt: completedAt,
+      })
+      .mockResolvedValueOnce({
+        generatedAt: partialAt,
+      });
+
+    const result = await service.getStatusSummary();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        lastFullSuccessAt: completedAt.toISOString(),
+        lastNonSuccessAt: partialAt.toISOString(),
+        rolling24hSuccessRate: 50,
+        rolling24hRateLimitedCount: 1,
+        rolling24hAverageAvailableCategoryCount: 1.5,
+      }),
+    );
+    expect(result.nextScheduledAt).toEqual(expect.any(String));
+  });
 });
+
+function createHeadline(
+  id: string,
+  category: string,
+): {
+  id: string;
+  title: string;
+  link: string;
+  source: string;
+  timestamp: number;
+  category: string;
+  origin: string;
+  isAlert: boolean;
+} {
+  return {
+    id,
+    title: `${category} headline`,
+    link: `https://example.com/${id}`,
+    source: "GDELT",
+    timestamp: Date.parse("2026-03-28T12:00:00.000Z"),
+    category,
+    origin: "gdelt",
+    isAlert: false,
+  };
+}
+
+function createPayload(input?: {
+  status?: SituationMonitorExternalSnapshotStatus;
+  generatedAt?: string;
+  warnings?: Array<{ code: string; message: string; detail?: string }>;
+  headlinesByCategory?: Partial<Record<string, unknown[]>>;
+}) {
+  return {
+    source: "scheduler",
+    scope: "gdelt_global",
+    variantKey: "default",
+    status: input?.status ?? SituationMonitorExternalSnapshotStatus.completed,
+    generatedAt: input?.generatedAt ?? "2026-03-28T12:00:00.000Z",
+    expiresAt: "2026-03-28T12:20:00.000Z",
+    partial:
+      (input?.status ?? SituationMonitorExternalSnapshotStatus.completed) !==
+      SituationMonitorExternalSnapshotStatus.completed,
+    warnings: input?.warnings ?? [],
+    diagnostics: {
+      requestedCategories: 6,
+      fetchedCategories: [],
+      reusedCategories: [],
+      failedCategories: [],
+      totalHeadlines: 0,
+    },
+    headlinesByCategory: {
+      politics: [],
+      tech: [],
+      finance: [],
+      gov: [],
+      ai: [],
+      intel: [],
+      ...(input?.headlinesByCategory ?? {}),
+    },
+  };
+}

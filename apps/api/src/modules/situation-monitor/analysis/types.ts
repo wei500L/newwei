@@ -4,6 +4,7 @@ export interface SituationNewsItem {
   link: string;
   source: string;
   timestamp: number;
+  origin?: "items" | "gdelt";
   itemMetaId?: string;
   summary?: string;
   keyPoints?: string[];
