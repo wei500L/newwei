@@ -34,6 +34,7 @@ import {
 } from "./external/situation-monitor-external.service";
 import {
   SituationMonitorExternalSnapshotService,
+  type SituationMonitorExternalSnapshotCategoryState,
   type SituationMonitorExternalSnapshotPayload,
 } from "./situation-monitor-external-snapshot.service";
 import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
@@ -134,6 +135,10 @@ export interface SituationMonitorInsightsResponse {
     generatedAt: string | null;
     expiresAt: string | null;
     availableCategoryCount: number;
+    categories: Record<
+      SituationMonitorCategory,
+      SituationMonitorExternalSnapshotCategoryState
+    >;
     warnings: SituationMonitorWarning[];
   };
   translation?: { target: "zh-CN"; applied: boolean; error?: string };
@@ -1050,6 +1055,31 @@ export class SituationMonitorService {
             (category) => snapshot.headlinesByCategory[category].length > 0,
           ).length
         : 0,
+      categories: snapshot
+        ? SITUATION_MONITOR_CATEGORIES.reduce(
+            (accumulator, category) => {
+              accumulator[category] = snapshot.categoryStates[category];
+              return accumulator;
+            },
+            {} as Record<
+              SituationMonitorCategory,
+              SituationMonitorExternalSnapshotCategoryState
+            >,
+          )
+        : SITUATION_MONITOR_CATEGORIES.reduce(
+            (accumulator, category) => {
+              accumulator[category] = {
+                status: "empty",
+                articleCount: 0,
+                contentGeneratedAt: null,
+              };
+              return accumulator;
+            },
+            {} as Record<
+              SituationMonitorCategory,
+              SituationMonitorExternalSnapshotCategoryState
+            >,
+          ),
       warnings: warningItems,
     };
   }

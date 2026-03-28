@@ -80,6 +80,10 @@ describe("situation monitor interaction wiring", () => {
     expect(contentSource).toContain("onPointerDown={stopSituationMonitorInteractiveEvent}");
     expect(contentSource).toContain("onMouseDown={stopSituationMonitorInteractiveEvent}");
     expect(contentSource).toContain("data?.externalSnapshot?.generatedAt");
+    expect(contentSource).toContain("data?.externalSnapshot?.categories?.[category]");
+    expect(contentSource).toContain('defaultValue: "FRESH {{count}}"');
+    expect(contentSource).toContain('defaultValue: "REUSED {{count}}"');
+    expect(contentSource).toContain('defaultValue: "REUSED"');
     expect(contentSource).toContain("Open News Sources");
     expect(contentSource).toContain("Open Situation Monitor Settings");
     expect(contentSource).toContain("insightsWarnings.map((warning) => (");

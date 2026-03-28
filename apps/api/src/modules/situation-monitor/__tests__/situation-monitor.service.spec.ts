@@ -49,25 +49,10 @@ describe("SituationMonitorService", () => {
     expiresAt?: string;
     warnings?: Array<{ code: string; message: string; detail?: string }>;
     headlinesByCategory?: Partial<Record<string, unknown[]>>;
-  }) => ({
-    source: "scheduler",
-    scope: "gdelt_global",
-    variantKey: "default",
-    status: input?.status ?? SituationMonitorExternalSnapshotStatus.completed,
-    generatedAt: input?.generatedAt ?? "2026-03-28T12:00:00.000Z",
-    expiresAt: input?.expiresAt ?? "2026-03-28T12:20:00.000Z",
-    partial:
-      (input?.status ?? SituationMonitorExternalSnapshotStatus.completed) !==
-      SituationMonitorExternalSnapshotStatus.completed,
-    warnings: input?.warnings ?? [],
-    diagnostics: {
-      requestedCategories: 6,
-      fetchedCategories: [],
-      reusedCategories: [],
-      failedCategories: [],
-      totalHeadlines: 0,
-    },
-    headlinesByCategory: {
+    categoryStates?: Partial<Record<string, unknown>>;
+  }) => {
+    const generatedAt = input?.generatedAt ?? "2026-03-28T12:00:00.000Z";
+    const headlinesByCategory = {
       politics: [],
       tech: [],
       finance: [],
@@ -75,8 +60,68 @@ describe("SituationMonitorService", () => {
       ai: [],
       intel: [],
       ...(input?.headlinesByCategory ?? {}),
-    },
-  });
+    } as Record<string, unknown[]>;
+
+    return {
+      source: "scheduler",
+      scope: "gdelt_global",
+      variantKey: "default",
+      status: input?.status ?? SituationMonitorExternalSnapshotStatus.completed,
+      generatedAt,
+      expiresAt: input?.expiresAt ?? "2026-03-28T12:20:00.000Z",
+      partial:
+        (input?.status ?? SituationMonitorExternalSnapshotStatus.completed) !==
+        SituationMonitorExternalSnapshotStatus.completed,
+      warnings: input?.warnings ?? [],
+      diagnostics: {
+        requestedCategories: 6,
+        fetchedCategories: [],
+        reusedCategories: [],
+        failedCategories: [],
+        totalHeadlines: 0,
+      },
+      categoryStates: {
+        politics: {
+          status: headlinesByCategory.politics.length > 0 ? "fresh" : "empty",
+          articleCount: headlinesByCategory.politics.length,
+          contentGeneratedAt:
+            headlinesByCategory.politics.length > 0 ? generatedAt : null,
+        },
+        tech: {
+          status: headlinesByCategory.tech.length > 0 ? "fresh" : "empty",
+          articleCount: headlinesByCategory.tech.length,
+          contentGeneratedAt:
+            headlinesByCategory.tech.length > 0 ? generatedAt : null,
+        },
+        finance: {
+          status: headlinesByCategory.finance.length > 0 ? "fresh" : "empty",
+          articleCount: headlinesByCategory.finance.length,
+          contentGeneratedAt:
+            headlinesByCategory.finance.length > 0 ? generatedAt : null,
+        },
+        gov: {
+          status: headlinesByCategory.gov.length > 0 ? "fresh" : "empty",
+          articleCount: headlinesByCategory.gov.length,
+          contentGeneratedAt:
+            headlinesByCategory.gov.length > 0 ? generatedAt : null,
+        },
+        ai: {
+          status: headlinesByCategory.ai.length > 0 ? "fresh" : "empty",
+          articleCount: headlinesByCategory.ai.length,
+          contentGeneratedAt:
+            headlinesByCategory.ai.length > 0 ? generatedAt : null,
+        },
+        intel: {
+          status: headlinesByCategory.intel.length > 0 ? "fresh" : "empty",
+          articleCount: headlinesByCategory.intel.length,
+          contentGeneratedAt:
+            headlinesByCategory.intel.length > 0 ? generatedAt : null,
+        },
+        ...(input?.categoryStates ?? {}),
+      },
+      headlinesByCategory,
+    };
+  };
 
   const createService = (input?: {
     cache?: any;
@@ -420,6 +465,28 @@ describe("SituationMonitorService", () => {
           stale: true,
           payload: createSnapshotPayload({
             status: SituationMonitorExternalSnapshotStatus.partial,
+            headlinesByCategory: {
+              politics: [
+                {
+                  id: "gdelt-politics-stale",
+                  title: "Parliament extends emergency economic debate",
+                  link: "https://example.com/politics-stale",
+                  source: "GDELT",
+                  timestamp: Date.parse("2026-03-28T11:40:00.000Z"),
+                  category: "politics",
+                  origin: "gdelt",
+                  isAlert: false,
+                },
+              ],
+            },
+            categoryStates: {
+              politics: {
+                status: "reused",
+                articleCount: 1,
+                contentGeneratedAt: "2026-03-28T10:00:00.000Z",
+                reasonCode: "gdelt_rate_limited",
+              },
+            },
             warnings: [
               {
                 code: "gdelt_rate_limited",
@@ -454,6 +521,13 @@ describe("SituationMonitorService", () => {
             source: "gdelt",
           }),
         ],
+        categories: expect.objectContaining({
+          politics: expect.objectContaining({
+            status: "reused",
+            reasonCode: "gdelt_rate_limited",
+            contentGeneratedAt: "2026-03-28T10:00:00.000Z",
+          }),
+        }),
       }),
     );
   });

@@ -50,6 +50,13 @@ export interface SituationMonitorExternalSnapshotDiagnostics {
   totalHeadlines: number;
 }
 
+export interface SituationMonitorExternalSnapshotCategoryState {
+  status: "fresh" | "reused" | "empty";
+  articleCount: number;
+  contentGeneratedAt: string | null;
+  reasonCode?: string;
+}
+
 export interface SituationMonitorExternalSnapshotPayload {
   source: typeof SNAPSHOT_SOURCE;
   scope: SituationMonitorExternalSnapshotScope;
@@ -60,6 +67,10 @@ export interface SituationMonitorExternalSnapshotPayload {
   partial: boolean;
   warnings: SituationMonitorExternalWarning[];
   diagnostics: SituationMonitorExternalSnapshotDiagnostics;
+  categoryStates: Record<
+    SituationMonitorCategory,
+    SituationMonitorExternalSnapshotCategoryState
+  >;
   headlinesByCategory: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
 }
 
@@ -167,6 +178,7 @@ export class SituationMonitorExternalSnapshotService {
   }): Promise<SituationMonitorExternalSnapshotPayload> {
     const previous = await this.readSnapshot({ includeDatabase: true });
     const headlinesByCategory = this.createEmptyHeadlinesByCategory();
+    const categoryStates = this.createEmptyCategoryStates();
     const warningGroups = new Map<
       string,
       {
@@ -200,15 +212,38 @@ export class SituationMonitorExternalSnapshotService {
       if (nextHeadlines.length > 0) {
         headlinesByCategory[category] = nextHeadlines;
         fetchedCategories.push(category);
+        categoryStates[category] = {
+          status: "fresh",
+          articleCount: nextHeadlines.length,
+          contentGeneratedAt: null,
+        };
       } else {
         const previousHeadlines =
           previous.payload?.headlinesByCategory[category] ?? [];
-        if (previousHeadlines.length > 0) {
+        const previousContentGeneratedAt =
+          previous.payload?.categoryStates?.[category]?.contentGeneratedAt ??
+          previous.payload?.generatedAt ??
+          null;
+        if (result.warning && previousHeadlines.length > 0) {
           headlinesByCategory[category] =
             this.cloneSnapshotHeadlines(previousHeadlines);
           reusedCategories.push(category);
+          categoryStates[category] = {
+            status: "reused",
+            articleCount: previousHeadlines.length,
+            contentGeneratedAt: previousContentGeneratedAt,
+            reasonCode: result.warning.code,
+          };
         } else {
-          failedCategories.push(category);
+          if (result.warning) {
+            failedCategories.push(category);
+          }
+          categoryStates[category] = {
+            status: "empty",
+            articleCount: 0,
+            contentGeneratedAt: null,
+            ...(result.warning ? { reasonCode: result.warning.code } : {}),
+          };
         }
       }
 
@@ -240,6 +275,15 @@ export class SituationMonitorExternalSnapshotService {
           : SituationMonitorExternalSnapshotStatus.completed;
 
     const generatedAt = new Date();
+    const generatedAtIso = generatedAt.toISOString();
+    for (const category of SITUATION_MONITOR_CATEGORIES) {
+      if (categoryStates[category].status === "fresh") {
+        categoryStates[category] = {
+          ...categoryStates[category],
+          contentGeneratedAt: generatedAtIso,
+        };
+      }
+    }
     const expiresAt = new Date(
       generatedAt.getTime() + SNAPSHOT_FRESH_TTL_SECONDS * 1000,
     );
@@ -255,11 +299,12 @@ export class SituationMonitorExternalSnapshotService {
       scope: SNAPSHOT_SCOPE,
       variantKey: SNAPSHOT_VARIANT_KEY,
       status,
-      generatedAt: generatedAt.toISOString(),
+      generatedAt: generatedAtIso,
       expiresAt: expiresAt.toISOString(),
       partial: status !== SituationMonitorExternalSnapshotStatus.completed,
       warnings,
       diagnostics,
+      categoryStates,
       headlinesByCategory,
     };
 
@@ -547,6 +592,41 @@ export class SituationMonitorExternalSnapshotService {
             }))
         : [];
     }
+    const categoryStates = this.createEmptyCategoryStates();
+    for (const category of SITUATION_MONITOR_CATEGORIES) {
+      const rawCategoryState = value.categoryStates?.[category];
+      const normalizedStatus =
+        rawCategoryState?.status === "reused" ||
+        rawCategoryState?.status === "empty" ||
+        rawCategoryState?.status === "fresh"
+          ? rawCategoryState.status
+          : headlinesByCategory[category].length > 0
+            ? (Array.isArray(value.diagnostics?.reusedCategories) &&
+                value.diagnostics.reusedCategories.includes(category)
+                ? "reused"
+                : "fresh")
+            : "empty";
+      const contentGeneratedAt =
+        normalizedStatus === "empty"
+          ? null
+          : typeof rawCategoryState?.contentGeneratedAt === "string" &&
+              rawCategoryState.contentGeneratedAt
+            ? rawCategoryState.contentGeneratedAt
+            : generatedAt;
+      categoryStates[category] = {
+        status: normalizedStatus,
+        articleCount:
+          typeof rawCategoryState?.articleCount === "number" &&
+          Number.isFinite(rawCategoryState.articleCount)
+            ? Math.max(0, Math.trunc(rawCategoryState.articleCount))
+            : headlinesByCategory[category].length,
+        contentGeneratedAt,
+        ...(typeof rawCategoryState?.reasonCode === "string" &&
+        rawCategoryState.reasonCode.trim()
+          ? { reasonCode: rawCategoryState.reasonCode.trim() }
+          : {}),
+      };
+    }
 
     return {
       source: SNAPSHOT_SOURCE,
@@ -564,6 +644,7 @@ export class SituationMonitorExternalSnapshotService {
       warnings: Array.isArray(value.warnings)
         ? value.warnings.filter((warning) => warning && typeof warning === "object")
         : [],
+      categoryStates,
       diagnostics: {
         requestedCategories:
           typeof value.diagnostics?.requestedCategories === "number"
@@ -599,6 +680,44 @@ export class SituationMonitorExternalSnapshotService {
               ),
       },
       headlinesByCategory,
+    };
+  }
+
+  private createEmptyCategoryStates(): Record<
+    SituationMonitorCategory,
+    SituationMonitorExternalSnapshotCategoryState
+  > {
+    return {
+      politics: {
+        status: "empty",
+        articleCount: 0,
+        contentGeneratedAt: null,
+      },
+      tech: {
+        status: "empty",
+        articleCount: 0,
+        contentGeneratedAt: null,
+      },
+      finance: {
+        status: "empty",
+        articleCount: 0,
+        contentGeneratedAt: null,
+      },
+      gov: {
+        status: "empty",
+        articleCount: 0,
+        contentGeneratedAt: null,
+      },
+      ai: {
+        status: "empty",
+        articleCount: 0,
+        contentGeneratedAt: null,
+      },
+      intel: {
+        status: "empty",
+        articleCount: 0,
+        contentGeneratedAt: null,
+      },
     };
   }
 

@@ -72,6 +72,18 @@ describe("SituationMonitorExternalSnapshotService", () => {
         failedCategories: [],
         totalHeadlines: 1,
       },
+      categoryStates: {
+        politics: {
+          status: "fresh",
+          articleCount: 1,
+          contentGeneratedAt: "2026-03-28T11:00:00.000Z",
+        },
+        tech: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        finance: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        gov: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        ai: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        intel: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      },
       headlinesByCategory: {
         politics: [
           {
@@ -139,6 +151,19 @@ describe("SituationMonitorExternalSnapshotService", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           status: SituationMonitorExternalSnapshotStatus.partial,
+          payload: expect.objectContaining({
+            categoryStates: expect.objectContaining({
+              politics: expect.objectContaining({
+                status: "reused",
+                reasonCode: "gdelt_rate_limited",
+                contentGeneratedAt: "2026-03-28T11:00:00.000Z",
+              }),
+              tech: expect.objectContaining({
+                status: "fresh",
+                articleCount: 1,
+              }),
+            }),
+          }),
         }),
       }),
     );
@@ -173,6 +198,18 @@ describe("SituationMonitorExternalSnapshotService", () => {
         reusedCategories: [],
         failedCategories: [],
         totalHeadlines: 1,
+      },
+      categoryStates: {
+        politics: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        tech: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        finance: {
+          status: "fresh",
+          articleCount: 1,
+          contentGeneratedAt: "2026-03-28T12:00:00.000Z",
+        },
+        gov: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        ai: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        intel: { status: "empty", articleCount: 0, contentGeneratedAt: null },
       },
       headlinesByCategory: {
         politics: [],
@@ -219,6 +256,74 @@ describe("SituationMonitorExternalSnapshotService", () => {
         rolling24hSuccessRate: null,
         rolling24hRateLimitedCount: 0,
         rolling24hAverageAvailableCategoryCount: null,
+      }),
+    );
+  });
+
+  it("does not reuse previous category data when gdelt returns an empty result without warnings", async () => {
+    const previousPayload = {
+      source: "scheduler",
+      scope: "gdelt_global",
+      variantKey: "default",
+      status: SituationMonitorExternalSnapshotStatus.completed,
+      generatedAt: "2026-03-28T11:00:00.000Z",
+      expiresAt: "2026-03-28T11:20:00.000Z",
+      partial: false,
+      warnings: [],
+      diagnostics: {
+        requestedCategories: 6,
+        fetchedCategories: ["finance"],
+        reusedCategories: [],
+        failedCategories: [],
+        totalHeadlines: 1,
+      },
+      categoryStates: {
+        politics: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        tech: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        finance: {
+          status: "fresh",
+          articleCount: 1,
+          contentGeneratedAt: "2026-03-28T11:00:00.000Z",
+        },
+        gov: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        ai: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        intel: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      },
+      headlinesByCategory: {
+        politics: [],
+        tech: [],
+        finance: [createHeadline("finance-previous", "finance")],
+        gov: [],
+        ai: [],
+        intel: [],
+      },
+    };
+    cache.get
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(previousPayload);
+    external.fetchGdeltCategoryHeadlines.mockResolvedValue({ headlines: [] });
+
+    await service.forceRefresh();
+
+    expect(prisma.situationMonitorExternalSnapshot.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          payload: expect.objectContaining({
+            headlinesByCategory: expect.objectContaining({
+              finance: [],
+            }),
+            categoryStates: expect.objectContaining({
+              finance: expect.objectContaining({
+                status: "empty",
+                articleCount: 0,
+                contentGeneratedAt: null,
+              }),
+            }),
+            diagnostics: expect.objectContaining({
+              reusedCategories: [],
+            }),
+          }),
+        }),
       }),
     );
   });
@@ -319,12 +424,13 @@ function createPayload(input?: {
   warnings?: Array<{ code: string; message: string; detail?: string }>;
   headlinesByCategory?: Partial<Record<string, unknown[]>>;
 }) {
+  const generatedAt = input?.generatedAt ?? "2026-03-28T12:00:00.000Z";
   return {
     source: "scheduler",
     scope: "gdelt_global",
     variantKey: "default",
     status: input?.status ?? SituationMonitorExternalSnapshotStatus.completed,
-    generatedAt: input?.generatedAt ?? "2026-03-28T12:00:00.000Z",
+    generatedAt,
     expiresAt: "2026-03-28T12:20:00.000Z",
     partial:
       (input?.status ?? SituationMonitorExternalSnapshotStatus.completed) !==
@@ -336,6 +442,14 @@ function createPayload(input?: {
       reusedCategories: [],
       failedCategories: [],
       totalHeadlines: 0,
+    },
+    categoryStates: {
+      politics: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      tech: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      finance: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      gov: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      ai: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      intel: { status: "empty", articleCount: 0, contentGeneratedAt: null },
     },
     headlinesByCategory: {
       politics: [],

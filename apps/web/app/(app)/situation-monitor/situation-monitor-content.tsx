@@ -247,6 +247,22 @@ type SituationMonitorCategory =
   | "ai"
   | "intel";
 
+const SITUATION_MONITOR_CATEGORY_KEYS: SituationMonitorCategory[] = [
+  "politics",
+  "tech",
+  "finance",
+  "gov",
+  "ai",
+  "intel",
+];
+
+interface SituationMonitorExternalSnapshotCategoryState {
+  status: "fresh" | "reused" | "empty";
+  articleCount: number;
+  contentGeneratedAt: string | null;
+  reasonCode?: string;
+}
+
 interface SituationMonitorHeadline {
   id: string;
   itemMetaId?: string;
@@ -582,6 +598,10 @@ interface SituationMonitorInsightsResponse {
     generatedAt: string | null;
     expiresAt: string | null;
     availableCategoryCount: number;
+    categories: Record<
+      SituationMonitorCategory,
+      SituationMonitorExternalSnapshotCategoryState
+    >;
     warnings: SituationMonitorWarning[];
   };
   translation?: { target: "zh-CN"; applied: boolean; error?: string };
@@ -690,6 +710,18 @@ function getExternalSnapshotStatusColor(
   }
   if (status === "failed") {
     return "red";
+  }
+  return "default";
+}
+
+function getExternalSnapshotCategoryStatusColor(
+  status: SituationMonitorExternalSnapshotCategoryState["status"],
+): string {
+  if (status === "fresh") {
+    return "green";
+  }
+  if (status === "reused") {
+    return "gold";
   }
   return "default";
 }
@@ -1439,6 +1471,20 @@ export function SituationMonitorContent() {
           .flatMap((warning) => extractWarningCategories(warning)),
       ),
     [data?.externalSnapshot?.warnings],
+  );
+  const freshSnapshotCategoryCount = useMemo(
+    () =>
+      SITUATION_MONITOR_CATEGORY_KEYS.filter(
+        (category) => data?.externalSnapshot?.categories?.[category]?.status === "fresh",
+      ).length,
+    [data?.externalSnapshot?.categories],
+  );
+  const reusedSnapshotCategoryCount = useMemo(
+    () =>
+      SITUATION_MONITOR_CATEGORY_KEYS.filter(
+        (category) => data?.externalSnapshot?.categories?.[category]?.status === "reused",
+      ).length,
+    [data?.externalSnapshot?.categories],
   );
   const allScopeEmptyState = useMemo(() => {
     if (!allScopeNoResults) {
@@ -3729,9 +3775,11 @@ export function SituationMonitorContent() {
   const renderFeedPanel = (category: SituationMonitorCategory) => {
     const clusters = data?.clusters?.[category] ?? [];
     const diagnostics = data?.diagnostics?.categories?.[category];
+    const snapshotCategoryState = data?.externalSnapshot?.categories?.[category];
     const emptyReason = clusters.length > 0
       ? null
-      : rateLimitedCategories.has(category)
+      : snapshotCategoryState?.reasonCode === "gdelt_rate_limited" ||
+          rateLimitedCategories.has(category)
         ? {
             tag: t("situationMonitor.feeds.emptyReason.rateLimited", {
               defaultValue: "RATE LIMITED",
@@ -3741,6 +3789,17 @@ export function SituationMonitorContent() {
                 "The latest external snapshot could not refresh this category because GDELT rate limited the upstream request.",
             }),
           }
+        : snapshotCategoryState?.reasonCode === "gdelt_request_failed" ||
+            snapshotCategoryState?.reasonCode === "gdelt_invalid_response"
+          ? {
+              tag: t("situationMonitor.feeds.emptyReason.upstream", {
+                defaultValue: "UPSTREAM ERROR",
+              }),
+              description: t("situationMonitor.feeds.emptyDescription.upstream", {
+                defaultValue:
+                  "The latest external snapshot could not refresh this category because the upstream GDELT request failed.",
+              }),
+            }
         : noActiveSourcesConfigured
           ? {
               tag: t("situationMonitor.feeds.emptyReason.unconfigured", {
@@ -3776,6 +3835,35 @@ export function SituationMonitorContent() {
         title={
           <Space size={10}>
             <span>{categoryLabels[category]}</span>
+            {snapshotCategoryState?.status === "reused" ? (
+              <Popover
+                content={t("situationMonitor.snapshot.reusedCategoryHint", {
+                  defaultValue:
+                    "Showing the last successful snapshot for this category from {{time}} while the newest upstream fetch recovers.",
+                  time: snapshotCategoryState.contentGeneratedAt
+                    ? formatDateTime(
+                        snapshotCategoryState.contentGeneratedAt,
+                        locale,
+                        {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        },
+                      )
+                    : "--",
+                })}
+              >
+                <Tag
+                  color={getExternalSnapshotCategoryStatusColor(
+                    snapshotCategoryState.status,
+                  )}
+                  className="cursor-help"
+                >
+                  {t("situationMonitor.snapshot.reusedCategory", {
+                    defaultValue: "REUSED",
+                  })}
+                </Tag>
+              </Popover>
+            ) : null}
             <Tag color="geekblue">
               {t("situationMonitor.feeds.clusterCount", {
                 defaultValue: "CLUSTERS {{count}}",
@@ -6064,6 +6152,22 @@ export function SituationMonitorContent() {
                     <Tag color="volcano">
                       {t("situationMonitor.snapshot.stale", {
                         defaultValue: "STALE",
+                      })}
+                    </Tag>
+                  ) : null}
+                  {freshSnapshotCategoryCount > 0 ? (
+                    <Tag color="green">
+                      {t("situationMonitor.snapshot.freshCategories", {
+                        defaultValue: "FRESH {{count}}",
+                        count: freshSnapshotCategoryCount,
+                      })}
+                    </Tag>
+                  ) : null}
+                  {reusedSnapshotCategoryCount > 0 ? (
+                    <Tag color="gold">
+                      {t("situationMonitor.snapshot.reusedCategories", {
+                        defaultValue: "REUSED {{count}}",
+                        count: reusedSnapshotCategoryCount,
                       })}
                     </Tag>
                   ) : null}
