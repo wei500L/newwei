@@ -3953,7 +3953,12 @@ export function SituationMonitorContent() {
                         <Button
                           size="small"
                           data-sm-interactive
-                          onClick={() => toggleClusterExpansion(cluster.id)}
+                          onPointerDown={stopSituationMonitorInteractiveEvent}
+                          onMouseDown={stopSituationMonitorInteractiveEvent}
+                          onClick={(event) => {
+                            stopSituationMonitorInteractiveEvent(event);
+                            toggleClusterExpansion(cluster.id);
+                          }}
                         >
                           {expanded
                             ? t("situationMonitor.feeds.hideRawArticles", {

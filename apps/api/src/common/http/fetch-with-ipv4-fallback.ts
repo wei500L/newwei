@@ -22,8 +22,20 @@ export async function fetchWithIpv4Fallback(
       signal: primarySignal.signal,
     });
   } catch (error) {
-    if (!shouldRetryWithIpv4(url, error, init.signal, options.ipv4FallbackHosts)) {
-      throw error;
+    const normalizedError = normalizeFetchTimeoutError(
+      error,
+      primarySignal.didTimeout(),
+      timeoutMs,
+    );
+    if (
+      !shouldRetryWithIpv4(
+        url,
+        normalizedError,
+        init.signal,
+        options.ipv4FallbackHosts,
+      )
+    ) {
+      throw normalizedError;
     }
   } finally {
     primarySignal.cleanup();
@@ -58,6 +70,11 @@ function shouldRetryWithIpv4(
     return callerSignal?.aborted !== true;
   }
 
+  const directCode = (error as Error & { code?: string }).code;
+  if (directCode === "ETIMEDOUT") {
+    return true;
+  }
+
   if (error.message.includes("fetch failed")) {
     return true;
   }
@@ -87,7 +104,13 @@ async function performIpv4Request(
   return await new Promise<Response>((resolve, reject) => {
     if (timedSignal.signal.aborted) {
       timedSignal.cleanup();
-      reject(createAbortError());
+      reject(
+        getAbortSignalError(
+          timedSignal.signal,
+          timeoutMs,
+          timedSignal.didTimeout(),
+        ),
+      );
       return;
     }
 
@@ -115,7 +138,14 @@ async function performIpv4Request(
       },
     );
 
-    const handleAbort = () => request.destroy(createAbortError());
+    const handleAbort = () =>
+      request.destroy(
+        getAbortSignalError(
+          timedSignal.signal,
+          timeoutMs,
+          timedSignal.didTimeout(),
+        ),
+      );
     timedSignal.signal.addEventListener("abort", handleAbort, { once: true });
 
     request.on("error", reject);
@@ -138,17 +168,82 @@ async function performIpv4Request(
 
 function createTimedSignal(signal: AbortSignal | null | undefined, timeoutMs: number) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const handleAbort = () => controller.abort();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort(createTimeoutError(timeoutMs));
+  }, timeoutMs);
+  const handleAbort = () =>
+    controller.abort(normalizeAbortReason(signal?.reason, timeoutMs));
   signal?.addEventListener("abort", handleAbort, { once: true });
 
   return {
     signal: controller.signal,
+    didTimeout: () => timedOut,
     cleanup: () => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", handleAbort);
     },
   };
+}
+
+function getAbortSignalError(
+  signal: AbortSignal,
+  timeoutMs: number,
+  didTimeout = false,
+): Error {
+  if (didTimeout) {
+    return createTimeoutError(timeoutMs);
+  }
+  return normalizeAbortReason(signal.reason, timeoutMs);
+}
+
+function normalizeAbortReason(reason: unknown, timeoutMs = 12_000): Error {
+  if (reason instanceof Error) {
+    return reason;
+  }
+
+  if (
+    reason &&
+    typeof reason === "object" &&
+    "message" in reason &&
+    typeof reason.message === "string" &&
+    reason.message.trim()
+  ) {
+    const error = new Error(reason.message.trim());
+    error.name =
+      "name" in reason && typeof reason.name === "string"
+        ? reason.name
+        : "AbortError";
+    if (
+      "code" in reason &&
+      typeof reason.code === "string" &&
+      reason.code.trim()
+    ) {
+      Object.assign(error, { code: reason.code.trim() });
+    }
+    return error;
+  }
+
+  if (typeof reason === "string" && reason.trim()) {
+    const error = new Error(reason.trim());
+    error.name = "AbortError";
+    return error;
+  }
+
+  return createAbortError();
+}
+
+function normalizeFetchTimeoutError(
+  error: unknown,
+  didTimeout: boolean,
+  timeoutMs: number,
+): Error {
+  if (didTimeout) {
+    return createTimeoutError(timeoutMs);
+  }
+
+  return error instanceof Error ? error : createAbortError();
 }
 
 function normalizeBody(
@@ -193,14 +288,14 @@ function flattenHeaders(headers: IncomingHttpHeaders): Record<string, string> {
   return flattened;
 }
 
-function createAbortError(): Error {
-  const error = new Error("This operation was aborted");
-  error.name = "AbortError";
-  return error;
-}
-
 function createTimeoutError(timeoutMs: number): Error {
   const error = new Error(`Network request timed out after ${timeoutMs}ms`);
   Object.assign(error, { code: "ETIMEDOUT" });
+  return error;
+}
+
+function createAbortError(): Error {
+  const error = new Error("This operation was aborted");
+  error.name = "AbortError";
   return error;
 }

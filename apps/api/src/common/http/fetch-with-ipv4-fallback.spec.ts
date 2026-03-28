@@ -157,4 +157,55 @@ describe("fetchWithIpv4Fallback", () => {
     });
     expect(httpsRequestMock).toHaveBeenCalledTimes(1);
   });
+
+  it("surfaces a concrete timeout error when the ipv4 retry also times out", async () => {
+    jest.useFakeTimers();
+    const timeoutError = new Error("This operation was aborted");
+    timeoutError.name = "AbortError";
+    jest.spyOn(global, "fetch").mockRejectedValue(timeoutError);
+
+    const httpsRequestMock = httpsRequest as unknown as jest.Mock;
+    httpsRequestMock.mockImplementation(
+      (
+        _url: URL,
+        _options: Record<string, unknown>,
+        _callback: (response: EventEmitter & {
+          statusCode?: number;
+          statusMessage?: string;
+          headers: Record<string, string>;
+        }) => void,
+      ) => {
+        const request = new EventEmitter() as EventEmitter & {
+          destroy: (error?: Error) => void;
+          end: () => void;
+          setTimeout: (ms: number, listener: () => void) => void;
+          write: (chunk: string | Buffer | Uint8Array) => void;
+        };
+
+        request.destroy = jest.fn((error?: Error) => {
+          request.emit("error", error);
+          request.emit("close");
+        });
+        request.write = jest.fn();
+        request.setTimeout = jest.fn();
+        request.end = jest.fn();
+
+        return request;
+      },
+    );
+
+    const pending = fetchWithIpv4Fallback(
+      "https://api.gdeltproject.org/api/v2/doc/doc?query=test",
+      {},
+      { timeoutMs: 12_000 },
+    ).catch((error) => error);
+
+    await jest.advanceTimersByTimeAsync(12_000);
+
+    const error = await pending;
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(
+      "Network request timed out after 12000ms",
+    );
+  });
 });

@@ -29,6 +29,7 @@ const SNAPSHOT_REFRESH_INTERVAL_MINUTES = 15;
 const SNAPSHOT_HISTORY_RETENTION_DAYS = 7;
 const SNAPSHOT_CATEGORY_LIMIT = 20;
 const SNAPSHOT_FETCH_DELAY_MS = 5_500;
+const SNAPSHOT_GDELT_TIMEOUT_MS = 20_000;
 const SNAPSHOT_FRESH_TTL_SECONDS = 20 * 60;
 const SNAPSHOT_STALE_TTL_SECONDS = 24 * 60 * 60;
 const SNAPSHOT_LOCK_TTL_MS = 10 * 60_000;
@@ -182,7 +183,10 @@ export class SituationMonitorExternalSnapshotService {
       const result = await this.external.fetchGdeltCategoryHeadlines(
         category,
         SNAPSHOT_CATEGORY_LIMIT,
-        { bypassCache: input.bypassCategoryCache },
+        {
+          bypassCache: input.bypassCategoryCache,
+          timeoutMs: SNAPSHOT_GDELT_TIMEOUT_MS,
+        },
       );
 
       if (result.warning) {

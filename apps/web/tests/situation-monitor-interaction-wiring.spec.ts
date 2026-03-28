@@ -76,6 +76,9 @@ describe("situation monitor interaction wiring", () => {
     expect(contentSource).toContain("coverageSummary?.visibleCategoryCount");
     expect(contentSource).toContain("data?.clusters?.[category]");
     expect(contentSource).toContain('defaultValue: "View raw articles"');
+    expect(contentSource).toContain("toggleClusterExpansion(cluster.id)");
+    expect(contentSource).toContain("onPointerDown={stopSituationMonitorInteractiveEvent}");
+    expect(contentSource).toContain("onMouseDown={stopSituationMonitorInteractiveEvent}");
     expect(contentSource).toContain("data?.externalSnapshot?.generatedAt");
     expect(contentSource).toContain("Open News Sources");
     expect(contentSource).toContain("Open Situation Monitor Settings");

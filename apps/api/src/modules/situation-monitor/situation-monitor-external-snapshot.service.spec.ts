@@ -133,7 +133,7 @@ describe("SituationMonitorExternalSnapshotService", () => {
       1,
       "politics",
       20,
-      { bypassCache: true },
+      { bypassCache: true, timeoutMs: 20_000 },
     );
     expect(prisma.situationMonitorExternalSnapshot.create).toHaveBeenCalledWith(
       expect.objectContaining({
