@@ -24,8 +24,8 @@ import { WORLD_LEADERS } from "./config/world-leaders";
 import { FinancialMainlineSnapshotService } from "./external/financial-mainline-snapshot.service";
 import {
   SituationMonitorExternalService,
+  type SituationMonitorGdeltCategoryFetchResult,
   type SituationMonitorExternalWarning,
-  type SituationMonitorGdeltFetchResult,
   type SituationMonitorGdeltHeadlineCandidate,
 } from "./external/situation-monitor-external.service";
 import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
@@ -55,6 +55,8 @@ const INSIGHTS_CACHE_KEY_PREFIX = "situation-monitor:insights:v2";
 const INSIGHTS_CACHE_TTL_SECONDS_CORE = 45;
 const INSIGHTS_CACHE_TTL_SECONDS_EXTERNAL = 300;
 const INSIGHTS_LEARNING_REV_KEY_PREFIX = "situation-monitor:insights:learning-rev:v1";
+const GDELT_CATEGORY_FETCH_DELAY_MS = 500;
+const GDELT_CATEGORY_MAX_RESULTS = 20;
 const PLACEHOLDER_HEADLINE_TITLE_PATTERN =
   /^(?:no\s*title|untitled|title\s*unavailable|headline\s*unavailable|n\/a|na|null|undefined|\u6682\u65e0\u6807\u9898|\u65e0\u6807\u9898|\u672a\u547d\u540d(?:\u6807\u9898)?)$/i;
 
@@ -688,31 +690,14 @@ export class SituationMonitorService {
       });
 
       if (fills.length > 0) {
-        const gdeltLimit = Math.min(
-          250,
-          Math.max(
-            50,
-            fills.reduce((sum, entry) => sum + entry.remaining, 0) * 4,
-          ),
-        );
-        const gdeltResult = await this.external
-          .fetchGdeltHeadlines(gdeltLimit)
-          .catch((error) => ({
-            headlines: [],
-            warning: {
-              code: "gdelt_request_failed",
-              message: "GDELT fallback request failed.",
-              detail: this.safeErrorMessage(error),
-            },
-          } satisfies SituationMonitorGdeltFetchResult));
-        if (gdeltResult.warning) {
-          options.warnings?.push(
-            this.createSituationMonitorWarningFromExternal({
-              ...gdeltResult.warning,
-              source: "gdelt",
-            }),
-          );
-        }
+        const warningGroups = new Map<
+          string,
+          {
+            warning: SituationMonitorExternalWarning;
+            categories: Set<SituationMonitorCategory>;
+            details: Set<string>;
+          }
+        >();
         const existingLinksByCategory = new Map<
           SituationMonitorCategory,
           Set<string>
@@ -723,13 +708,50 @@ export class SituationMonitorService {
           ]),
         );
 
-        for (const headline of gdeltResult.headlines) {
-          this.tryAppendGdeltHeadline({
-            headline,
-            byCategory,
-            maxPerCategory: options.maxPerCategory,
-            existingLinksByCategory,
-          });
+        for (const [index, fill] of fills.entries()) {
+          const limit = Math.min(fill.remaining, GDELT_CATEGORY_MAX_RESULTS);
+          const gdeltResult = await this.external
+            .fetchGdeltCategoryHeadlines(fill.category, limit)
+            .catch((error) => ({
+              headlines: [],
+              warning: {
+                code: "gdelt_request_failed",
+                message: "GDELT fallback request failed.",
+                detail: this.safeErrorMessage(error),
+              },
+            } satisfies SituationMonitorGdeltCategoryFetchResult));
+
+          if (gdeltResult.warning) {
+            this.collectGdeltWarning(
+              warningGroups,
+              fill.category,
+              gdeltResult.warning,
+            );
+          }
+
+          for (const headline of gdeltResult.headlines) {
+            this.tryAppendCategoryGdeltHeadline({
+              category: fill.category,
+              headline,
+              byCategory,
+              maxPerCategory: options.maxPerCategory,
+              existingLinksByCategory,
+            });
+          }
+
+          if (index < fills.length - 1) {
+            await this.delay(GDELT_CATEGORY_FETCH_DELAY_MS);
+          }
+        }
+
+        for (const { warning, categories, details } of warningGroups.values()) {
+          options.warnings?.push(
+            this.createSituationMonitorWarningFromExternal({
+              ...warning,
+              source: "gdelt",
+              detail: this.formatAggregatedGdeltWarningDetail(categories, details),
+            }),
+          );
         }
       }
     }
@@ -750,6 +772,103 @@ export class SituationMonitorService {
       message: warning.message,
       ...(warning.detail ? { detail: warning.detail } : {}),
     };
+  }
+
+  private collectGdeltWarning(
+    groups: Map<
+      string,
+      {
+        warning: SituationMonitorExternalWarning;
+        categories: Set<SituationMonitorCategory>;
+        details: Set<string>;
+      }
+    >,
+    category: SituationMonitorCategory,
+    warning: SituationMonitorExternalWarning,
+  ) {
+    const existing = groups.get(warning.code);
+    if (existing) {
+      existing.categories.add(category);
+      if (warning.detail) {
+        existing.details.add(warning.detail);
+      }
+      return;
+    }
+
+    groups.set(warning.code, {
+      warning,
+      categories: new Set([category]),
+      details: warning.detail ? new Set([warning.detail]) : new Set(),
+    });
+  }
+
+  private formatAggregatedGdeltWarningDetail(
+    categories: Set<SituationMonitorCategory>,
+    details: Set<string>,
+  ) {
+    const orderedCategories = SITUATION_MONITOR_CATEGORIES.filter((category) =>
+      categories.has(category),
+    );
+    if (orderedCategories.length === 0 && details.size === 0) {
+      return undefined;
+    }
+
+    const parts: string[] = [];
+    if (orderedCategories.length > 0) {
+      parts.push(`Categories: ${orderedCategories.join(", ")}`);
+    }
+    if (details.size > 0) {
+      parts.push(Array.from(details).join(" | "));
+    }
+    return parts.join(". ");
+  }
+
+  private async delay(ms: number) {
+    if (ms <= 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private tryAppendCategoryGdeltHeadline(options: {
+    category: SituationMonitorCategory;
+    headline: SituationMonitorHeadline;
+    byCategory: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
+    maxPerCategory: number;
+    existingLinksByCategory: Map<SituationMonitorCategory, Set<string>>;
+  }) {
+    const normalizedTitle =
+      typeof options.headline.title === "string"
+        ? options.headline.title.trim()
+        : "";
+    const normalizedLink =
+      typeof options.headline.link === "string"
+        ? options.headline.link.trim()
+        : "";
+
+    if (
+      !normalizedTitle ||
+      this.isPlaceholderTitle(normalizedTitle) ||
+      !normalizedLink
+    ) {
+      return;
+    }
+    if (options.byCategory[options.category].length >= options.maxPerCategory) {
+      return;
+    }
+
+    const existingLinks = options.existingLinksByCategory.get(options.category);
+    if (!existingLinks || existingLinks.has(normalizedLink)) {
+      return;
+    }
+
+    existingLinks.add(normalizedLink);
+    options.byCategory[options.category].push({
+      ...options.headline,
+      title: normalizedTitle,
+      link: normalizedLink,
+      category: options.category,
+    });
   }
 
   private tryAppendGdeltHeadline(options: {

@@ -180,34 +180,38 @@ describe("SituationMonitorService", () => {
     rawFindMock.mockReturnValue(rawChain);
 
     const external = {
-      fetchGdeltHeadlines: jest.fn(async () => {
-        return {
-          headlines: [
-            {
-              id: "gdelt-tech-placeholder",
-              title: "No title",
-              link: "https://example.com/no-title",
-              source: "GDELT",
-              timestamp: Date.now(),
-              origin: "gdelt",
-              isAlert: false,
-            },
-            {
-              id: "gdelt-tech-valid",
-              title: "Semiconductor exports face new review",
-              link: "https://example.com/semiconductor-review",
-              source: "GDELT",
-              timestamp: Date.now(),
-              origin: "gdelt",
-              isAlert: false,
-            },
-          ],
-        };
-      }),
+      fetchGdeltCategoryHeadlines: jest.fn(async (category: string) => ({
+        headlines:
+          category === "tech"
+            ? [
+                {
+                  id: "gdelt-tech-placeholder",
+                  title: "No title",
+                  link: "https://example.com/no-title",
+                  source: "GDELT",
+                  timestamp: Date.now(),
+                  category: "tech",
+                  origin: "gdelt",
+                  isAlert: false,
+                },
+                {
+                  id: "gdelt-tech-valid",
+                  title: "Semiconductor exports face new review",
+                  link: "https://example.com/semiconductor-review",
+                  source: "GDELT",
+                  timestamp: Date.now(),
+                  category: "tech",
+                  origin: "gdelt",
+                  isAlert: false,
+                },
+              ]
+            : [],
+      })),
     } as any;
     const cache = {} as any;
     const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
     const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
+    jest.spyOn(service as any, "delay").mockResolvedValue(undefined);
 
     const result = await (service as any).buildHeadlinesByCategory({
       orgId: "org-1",
@@ -223,40 +227,51 @@ describe("SituationMonitorService", () => {
     expect(result.tech[0]?.title).toBe("Semiconductor exports face new review");
   });
 
-  it("classifies combined gdelt fallback headlines into matching categories", async () => {
+  it("fills category gaps from per-category gdelt fallback responses", async () => {
     const processedChain = createProcessedFindChain([]);
     processedFindMock.mockReturnValue(processedChain);
 
     const rawChain = createRawFindChain([]);
     rawFindMock.mockReturnValue(rawChain);
 
+    const fetchGdeltCategoryHeadlines = jest.fn(async (category: string) => ({
+      headlines:
+        category === "politics"
+          ? [
+              {
+                id: "gdelt-politics",
+                title: "Election campaign reshapes parliamentary politics",
+                link: "https://example.com/election-debate",
+                source: "GDELT",
+                timestamp: Date.now(),
+                category: "politics",
+                origin: "gdelt",
+                isAlert: false,
+              },
+            ]
+          : category === "ai"
+            ? [
+                {
+                  id: "gdelt-ai",
+                  title: "ChatGPT roadmap expands enterprise AI tooling",
+                  link: "https://example.com/chatgpt-roadmap",
+                  source: "GDELT",
+                  timestamp: Date.now(),
+                  category: "ai",
+                  origin: "gdelt",
+                  isAlert: false,
+                },
+              ]
+            : [],
+    }));
+
     const external = {
-      fetchGdeltHeadlines: jest.fn(async () => ({
-        headlines: [
-          {
-            id: "gdelt-politics",
-            title: "Election campaign reshapes parliamentary politics",
-            link: "https://example.com/election-debate",
-            source: "GDELT",
-            timestamp: Date.now(),
-            origin: "gdelt",
-            isAlert: false,
-          },
-          {
-            id: "gdelt-ai",
-            title: "ChatGPT roadmap expands enterprise AI tooling",
-            link: "https://example.com/chatgpt-roadmap",
-            source: "GDELT",
-            timestamp: Date.now(),
-            origin: "gdelt",
-            isAlert: false,
-          },
-        ],
-      })),
+      fetchGdeltCategoryHeadlines,
     } as any;
     const cache = {} as any;
     const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
     const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
+    jest.spyOn(service as any, "delay").mockResolvedValue(undefined);
 
     const result = await (service as any).buildHeadlinesByCategory({
       orgId: "org-1",
@@ -276,6 +291,8 @@ describe("SituationMonitorService", () => {
     expect(result.ai[0]?.title).toBe(
       "ChatGPT roadmap expands enterprise AI tooling",
     );
+    expect(fetchGdeltCategoryHeadlines).toHaveBeenNthCalledWith(1, "politics", 5);
+    expect(fetchGdeltCategoryHeadlines).toHaveBeenNthCalledWith(5, "ai", 5);
   });
 
   it("keeps insights loading resilient when gdelt fallback is rate limited", async () => {
@@ -286,13 +303,14 @@ describe("SituationMonitorService", () => {
     rawFindMock.mockReturnValue(rawChain);
 
     const external = {
-      fetchGdeltHeadlines: jest
+      fetchGdeltCategoryHeadlines: jest
         .fn()
         .mockRejectedValue(new Error("HTTP 429 Too Many Requests")),
     } as any;
     const cache = {} as any;
     const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
     const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
+    jest.spyOn(service as any, "delay").mockResolvedValue(undefined);
 
     const result = await (service as any).buildHeadlinesByCategory({
       orgId: "org-1",
@@ -320,15 +338,21 @@ describe("SituationMonitorService", () => {
       set: jest.fn().mockResolvedValue(undefined),
       wrap: jest.fn(async (_key: string, _ttl: number, factory: () => Promise<unknown>) => await factory()),
     } as any;
+    const fetchGdeltCategoryHeadlines = jest.fn(async (category: string) => ({
+      headlines: [],
+      ...(category === "politics" || category === "tech"
+        ? {
+            warning: {
+              code: "gdelt_rate_limited",
+              message: "GDELT fallback is rate limited right now.",
+              detail: "HTTP 429 Too Many Requests",
+            },
+          }
+        : {}),
+    }));
     const external = {
       isGdeltEnabled: jest.fn().mockReturnValue(true),
-      fetchGdeltHeadlines: jest.fn().mockResolvedValue({
-        headlines: [],
-        warning: {
-          code: "gdelt_rate_limited",
-          message: "GDELT fallback is rate limited right now.",
-        },
-      }),
+      fetchGdeltCategoryHeadlines,
     } as any;
     const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
     const realtimeSignals = {
@@ -340,6 +364,7 @@ describe("SituationMonitorService", () => {
       }),
     } as any;
     const service = new SituationMonitorService(cache, external, {} as any, feedback, realtimeSignals, {} as any);
+    jest.spyOn(service as any, "delay").mockResolvedValue(undefined);
     const processedChain = createProcessedFindChain([]);
     processedFindMock.mockReturnValue(processedChain);
     rawFindMock.mockReturnValue(createRawFindChain([]));
@@ -351,9 +376,11 @@ describe("SituationMonitorService", () => {
         expect.objectContaining({
           code: "gdelt_rate_limited",
           source: "gdelt",
+          detail: expect.stringContaining("Categories: politics, tech"),
         }),
       ]),
     );
+    expect(result.warnings).toHaveLength(1);
   });
 
   it("builds diagnostics from the same displayed headlines returned to clients", async () => {
