@@ -36,6 +36,7 @@
 **证据**：./screenshots/screenshot-1774254993722.png
 **快照引用**：@e16 OpenAI (64), @e57 Search combobox, @e28 Refresh
 **控制台错误**：无浏览器控制台错误；agent-browser errors/console 均为空。
+1
 
 ## 2026-03-23 16:43:21 +0800 - 错误 @ http://localhost:3000/items/cmmtbs6wl079qzf7b59eujkuk
 **页面**：Modular Admin
@@ -74,6 +75,7 @@
 **证据**：./screenshots/screenshot-1774256097253.png
 **快照引用**：@e191, @e150, @e157
 **控制台错误**：agent-browser errors 未提供可用错误；点击后页面无任何可见变化。
+2
 
 
 ## 2026-03-23 16:57:09 +0800 - 错误 @ http://localhost:3000/admin/ops/crawl-tasks/cmmxcfkx90003104xporl0cb3
@@ -114,7 +116,7 @@
 **证据**：./screenshots/screenshot-1774256698160.png
 **快照引用**：@e29, @e22, @e44
 **控制台错误**：agent-browser errors 未提供可用错误；点击后界面保持原状。
-
+3
 
 ## 2026-03-23 17:07:16 CST - 错误 @ http://localhost:3000/situation-monitor?lat=49.1476&lon=0.0000&zoom=1.51&bearing=0.00&pitch=0.00&preset=global&tr=24h&layers=conflicts%2Cbases%2Ccables%2Cpipelines%2Chotspots%2Cais%2Cnuclear%2Cirradiators%2Csanctions%2Cweather%2Ceconomic%2Cwaterways%2Coutages%2CcyberThreats%2Cdatacenters%2Cprotests%2Cflights%2Cmilitary%2Cnatural%2Cdisplacement%2Cclimate%2CstartupHubs%2CcloudRegions%2Caccelerators%2CtradeRoutes%2CiranAttacks%2CgpsJamming%2Cmonitors
 **页面**：Modular Admin
@@ -151,6 +153,7 @@
 **快照引用**：@e161, @e175, @e198
 **控制台错误**：无可见输出（agent-browser console errors 返回 ✓ Done）
 
+4
 ## 2026-03-23 17:13:49 CST - 错误 @ http://localhost:3000/items?q=%27+OR+1%3D1+--
 **页面**：Modular Admin
 **描述**：/items 列表首条结果的 Part of event 按钮（@e91, @e92, @e111）点击后仍停留在当前列表页，URL 维持 http://localhost:3000/items?q=%27+OR+1%3D1+--，未跳转到任何事件详情页，也没有可见反馈。
@@ -185,6 +188,7 @@
 **证据**：./screenshots/screenshot-1774257515029.png
 **快照引用**：@e12, @e39
 **控制台错误**：无
+5
 
 ## 2026-03-23 17:19:42 CST - 错误 @ http://localhost:3000/admin/settings/ingestion?panel=news-source-runtime-secrets
 **页面**：Modular Admin
@@ -220,6 +224,7 @@
 **证据**：./screenshots/screenshot-1774257871405.png
 **快照引用**：@e12, @e29, @e33, @e106
 **控制台错误**：无
+6
 
 ## 2026-03-23 17:25:40 CST - 错误 @ http://localhost:3000/admin/settings/security?panel=security
 **页面**：Modular Admin
@@ -255,6 +260,7 @@
 **证据**：./screenshots/screenshot-1774258742556.png
 **快照引用**：@e60, @e66
 **控制台错误**：无
+7
 
 ## 2026-03-23 17:40:05 CST - 错误 @ http://localhost:3000/admin/settings/integrations?panel=email
 **页面**：Modular Admin
@@ -295,6 +301,7 @@
 **快照引用**：标题 @e6，时间控件 @e21 @e22 @e23 @e24 @e25 @e26 @e27 @e28 @e29
 **控制台错误**：console 无新增输出；browser errors 仅有历史遗留的 /events/[id] React #310 报错。
 
+8
 ## $(date) - 错误 @ http://localhost:3000/dashboard/economic-alert
 **页面**：Modular Admin
 **描述**：`/dashboard/economic-alert` 在 `wait --load networkidle` 后又额外等待 3 秒，正文仍保留 `Aggregation: Loading...`，聚合图表/数据区未完成渲染，属于数据加载卡死。

@@ -49,7 +49,11 @@ services:
       retries: 5
 
   redis:
-    image: redis:7.2
+    build:
+      context: ../..
+      dockerfile: infra/docker/redis.Dockerfile
+      args:
+        REDIS_IMAGE: ${REDIS_IMAGE:-redis:7.2}
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/usr/local/bin/redis-entrypoint.sh"]
     environment:
@@ -62,7 +66,6 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
-      - ./scripts/redis-entrypoint.sh:/usr/local/bin/redis-entrypoint.sh:ro
     logging: *json-file-logging
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -186,7 +189,11 @@ services:
 
   litellm:
     # Pin the currently verified LiteLLM image digest to avoid drifting to bad upstream releases.
-    image: ghcr.io/berriai/litellm@sha256:067aee932b8770ed42955ee802a04abdcd369d0995b5e696bb07d6520a231b1c
+    build:
+      context: ../..
+      dockerfile: infra/docker/litellm.Dockerfile
+      args:
+        LITELLM_IMAGE: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm@sha256:067aee932b8770ed42955ee802a04abdcd369d0995b5e696bb07d6520a231b1c}
     restart: unless-stopped
     depends_on:
       redis:
@@ -221,9 +228,6 @@ services:
       LITELLM_DEPLOYMENT_TPM: ${LITELLM_DEPLOYMENT_TPM:-}
     ports:
       - "4001:4000"
-    volumes:
-      - ../litellm/litellm-config.yaml:/app/config.base.yaml:ro
-      - ../litellm/generate-litellm-config.py:/app/generate-litellm-config.py:ro
     logging: *json-file-logging
     healthcheck:
       test:
@@ -237,12 +241,14 @@ services:
       start_period: 20s
 
   crawl4ai:
-    image: ${CRAWL4AI_IMAGE:-unclecode/crawl4ai:0}
+    build:
+      context: ../..
+      dockerfile: infra/docker/crawl4ai.Dockerfile
+      args:
+        CRAWL4AI_IMAGE: ${CRAWL4AI_IMAGE:-unclecode/crawl4ai:0}
     restart: unless-stopped
     working_dir: /app
     shm_size: 1g
-    volumes:
-      - ./crawl4ai/ssrf_proxy.py:/opt/modular/crawl4ai-ssrf-proxy.py:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
