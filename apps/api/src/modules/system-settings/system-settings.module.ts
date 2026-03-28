@@ -1,4 +1,4 @@
-import { Global, Module } from "@nestjs/common";
+import { Global, Module, forwardRef } from "@nestjs/common";
 import { LlmRequestLogModel } from "@modular/mongo";
 
 import { AkshareModule } from "../akshare/akshare.module";
@@ -72,7 +72,7 @@ import { ObservabilitySnapshotService } from "../observability/observability-sna
     AuthModule,
     GeoModule,
     RealtimeSignalsModule,
-    SituationMonitorModule,
+    forwardRef(() => SituationMonitorModule),
     SituationMonitorSignalsModule,
   ],
   controllers: [

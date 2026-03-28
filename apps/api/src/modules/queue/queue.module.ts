@@ -1,5 +1,5 @@
 import { getQueueToken } from "@nestjs/bull-shared";
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
 import { AuthModule } from "../auth/auth.module";
@@ -36,7 +36,7 @@ import { QueueService } from "./queue.service";
     NewsPipelineModule,
     NotificationsModule,
     AuthModule,
-    SystemSettingsModule,
+    forwardRef(() => SystemSettingsModule),
   ],
   controllers: [NewsSourceDispatchController, NewsSourceOpsController],
   providers: [

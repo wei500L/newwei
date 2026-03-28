@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 
 import { GeoModule } from "../geo/geo.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
@@ -20,7 +20,7 @@ import { SituationMonitorService } from "./situation-monitor.service";
   imports: [
     GeoModule,
     NewsPipelineModule,
-    QueueModule,
+    forwardRef(() => QueueModule),
     RealtimeSignalsModule,
     SituationMonitorSignalsModule,
   ],
