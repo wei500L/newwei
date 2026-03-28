@@ -106,6 +106,44 @@ describe("SituationMonitorTranslationService", () => {
       windowHours: 24,
       maxItems: 400,
       analyzedItems: 0,
+      clusters: {
+        politics: [
+          {
+            id: "cluster-1",
+            category: "politics",
+            lead: {
+              id: "headline-1",
+              title: headlineTitle,
+              summary: headlineTitle,
+              link: "https://example.com",
+              source: "X",
+              timestamp: Date.now(),
+              origin: "items",
+              category: "politics",
+              isAlert: false,
+            },
+            items: [
+              {
+                id: "headline-1",
+                title: headlineTitle,
+                summary: headlineTitle,
+                link: "https://example.com",
+                source: "X",
+                timestamp: Date.now(),
+                origin: "items",
+                category: "politics",
+                isAlert: false,
+              },
+            ],
+            internalCount: 1,
+            externalCount: 0,
+            distinctSourceCount: 1,
+            latestTimestamp: Date.now(),
+            isAlert: false,
+            mixedSource: false,
+          },
+        ],
+      },
       fed: {
         hasFredApiKey: true,
         indicators: [],
@@ -193,6 +231,8 @@ describe("SituationMonitorTranslationService", () => {
     expect(insights.narrative.narrativeWatch[0].nameZh).toBe("移民");
     expect(insights.narrativeSummary.statusZh).toBe("监控中");
     expect(insights.mainCharacterSummary.statusZh).toBe("Trump（提及 36 次）");
+    expect(insights.clusters.politics[0].lead.titleZh).toBe("示例标题");
+    expect(insights.clusters.politics[0].items[0].titleZh).toBe("示例标题");
 
     expect(settingsMock.getTranslationRuntimeConfig).toHaveBeenCalledTimes(1);
     expect(axiosPostSpy).not.toHaveBeenCalled();

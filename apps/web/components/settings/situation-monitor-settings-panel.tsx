@@ -64,6 +64,17 @@ interface SituationMonitorExternalSnapshotStatus {
   }>;
 }
 
+interface SituationMonitorQualitySummary {
+  generatedAt: string;
+  windowHours: number;
+  mode: "internal+external" | "external-only" | "internal-only" | "empty";
+  articleCount: number;
+  clusterCount: number;
+  mixedSourceClusterCount: number;
+  dedupeRatio: number | null;
+  avgSourcesPerCluster: number | null;
+}
+
 interface SituationMonitorSettingsResponse {
   source: SituationMonitorSettingsSource;
   translationMaxConcurrency: number;
@@ -110,6 +121,7 @@ interface SituationMonitorSettingsResponse {
   liveHlsProxyCnbcReferer: string;
   liveHlsProxyCnbcAllowedHosts: string[];
   externalSnapshotStatus: SituationMonitorExternalSnapshotStatus;
+  qualitySummary: SituationMonitorQualitySummary | null;
 }
 
 interface SituationMonitorSettingsFormValues {
@@ -259,6 +271,7 @@ const EMPTY_SETTINGS: SituationMonitorSettingsResponse = {
     rolling24hAverageAvailableCategoryCount: null,
     warnings: [],
   },
+  qualitySummary: null,
 };
 
 function toFormValues(settings: SituationMonitorSettingsResponse): SituationMonitorSettingsFormValues {
@@ -783,6 +796,7 @@ export function SituationMonitorSettingsPanel() {
   const finnhubReadinessMeta = getProviderReadinessMeta(finnhubReadiness, t);
   const fredReadinessMeta = getProviderReadinessMeta(fredReadiness, t);
   const externalSnapshotStatus = settings.externalSnapshotStatus;
+  const qualitySummary = settings.qualitySummary;
   const externalSnapshotStatusColor =
     externalSnapshotStatus.status === "completed"
       ? "green"
@@ -1014,6 +1028,77 @@ export function SituationMonitorSettingsPanel() {
               </Button>
             </Space>
           </Space>
+        </Card>
+
+        <Card
+          size="small"
+          title={t("systemSettings.situationMonitor.quality.title", {
+            defaultValue: "Analysis quality",
+          })}
+        >
+          {!qualitySummary ? (
+            <Typography.Text type="secondary">
+              {t("systemSettings.situationMonitor.quality.empty", {
+                defaultValue: "Quality metrics are not available yet.",
+              })}
+            </Typography.Text>
+          ) : (
+            <Space direction="vertical" size="small" style={{ display: "flex" }}>
+              <Space wrap>
+                <Tag color="geekblue">
+                  {t("systemSettings.situationMonitor.quality.articles", {
+                    defaultValue: "Articles {{count}}",
+                    count: qualitySummary.articleCount,
+                  })}
+                </Tag>
+                <Tag color="cyan">
+                  {t("systemSettings.situationMonitor.quality.clusters", {
+                    defaultValue: "Clusters {{count}}",
+                    count: qualitySummary.clusterCount,
+                  })}
+                </Tag>
+                <Tag color="green">
+                  {t("systemSettings.situationMonitor.quality.mixed", {
+                    defaultValue: "Mixed {{count}}",
+                    count: qualitySummary.mixedSourceClusterCount,
+                  })}
+                </Tag>
+                <Tag>
+                  {t("systemSettings.situationMonitor.quality.mode", {
+                    defaultValue: "Mode {{value}}",
+                    value: qualitySummary.mode.toUpperCase(),
+                  })}
+                </Tag>
+              </Space>
+              <Typography.Text type="secondary">
+                {t("systemSettings.situationMonitor.quality.generatedAt", {
+                  defaultValue: "Last computed: {{time}}",
+                  time: formatSnapshotDate(qualitySummary.generatedAt),
+                })}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {t("systemSettings.situationMonitor.quality.window", {
+                  defaultValue: "Window: {{hours}}h",
+                  hours: qualitySummary.windowHours,
+                })}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {t("systemSettings.situationMonitor.quality.dedupe", {
+                  defaultValue: "Dedupe ratio: {{value}}",
+                  value:
+                    qualitySummary.dedupeRatio === null
+                      ? "--"
+                      : `${(qualitySummary.dedupeRatio * 100).toFixed(1)}%`,
+                })}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {t("systemSettings.situationMonitor.quality.avgSources", {
+                  defaultValue: "Avg sources / cluster: {{value}}",
+                  value: formatMetricValue(qualitySummary.avgSourcesPerCluster),
+                })}
+              </Typography.Text>
+            </Space>
+          )}
         </Card>
       </Space>
 

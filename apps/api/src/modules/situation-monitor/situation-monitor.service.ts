@@ -16,6 +16,11 @@ import { analyzeNarratives, getNarrativeSummary, type NarrativeLearningOverride 
 import { CORRELATION_TOPICS, NARRATIVE_PATTERNS } from "./analysis/patterns";
 import type { SituationNewsItem } from "./analysis/types";
 import {
+  buildSituationMonitorEventClusters,
+  summarizeSituationMonitorCategoryClusters,
+  summarizeSituationMonitorClusterQuality,
+} from "./clustering/event-clustering";
+import {
   classifySituationMonitorCategory,
   SituationMonitorCategoryClassificationSource,
 } from "./classification/category-classifier";
@@ -41,6 +46,7 @@ import {
 import type {
   SituationMonitorAlertHeadline,
   SituationMonitorCryptoItem,
+  SituationMonitorEventCluster,
   SituationMonitorFedSnapshot,
   SituationMonitorHeadline,
   SituationMonitorMatchResult,
@@ -67,6 +73,9 @@ export interface SituationMonitorInsightsCategoryDiagnostics {
   internalCount: number;
   gdeltFallbackCount: number;
   totalCount: number;
+  clusterCount: number;
+  mixedSourceClusterCount: number;
+  distinctSourceCount: number;
 }
 
 export interface SituationMonitorInsightsDiagnostics {
@@ -85,12 +94,28 @@ export interface SituationMonitorWarning {
 
 export interface SituationMonitorCoverageSummary {
   mode: "internal+external" | "external-only" | "internal-only" | "empty";
+  articleCount: number;
+  clusterCount: number;
   internalAnalyzedItems: number;
   externalAnalyzedItems: number;
+  mixedSourceClusterCount: number;
+  dedupeRatio: number | null;
+  avgSourcesPerCluster: number | null;
   visibleCategoryCount: number;
   missingCategories: SituationMonitorCategory[];
   hasOlderItemsOutsideWindow: boolean;
   recommendedWindowHours: number | null;
+}
+
+export interface SituationMonitorQualitySummary {
+  generatedAt: string;
+  windowHours: number;
+  mode: SituationMonitorCoverageSummary["mode"];
+  articleCount: number;
+  clusterCount: number;
+  mixedSourceClusterCount: number;
+  dedupeRatio: number | null;
+  avgSourcesPerCluster: number | null;
 }
 
 export interface SituationMonitorInsightsResponse {
@@ -113,6 +138,7 @@ export interface SituationMonitorInsightsResponse {
   };
   translation?: { target: "zh-CN"; applied: boolean; error?: string };
   headlines?: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
+  clusters?: Record<SituationMonitorCategory, SituationMonitorEventCluster[]>;
   alerts?: SituationMonitorAlertHeadline[];
   leaders?: SituationMonitorWorldLeader[];
   situations?: SituationMonitorSituationPanel[];
@@ -228,7 +254,15 @@ export class SituationMonitorService {
           }
         }
 
-        const displayHeadlines = this.toDisplayHeadlines(headlines, maxHeadlinesPerCategory);
+        const displayHeadlines = this.toDisplayHeadlines(
+          headlines,
+          maxHeadlinesPerCategory,
+        );
+        const allClusters = buildSituationMonitorEventClusters(headlines, {
+          maxClustersPerCategory: analysisPerCategory,
+          maxItemsPerCluster: 6,
+        });
+        const displayClusters = this.toDisplayClusters(allClusters, 6);
         const analysisNews = this.flattenHeadlinesForAnalysis(headlines);
         const analyzedItems = analysisNews.length;
         const hasOlderInternalItemsOutsideWindow =
@@ -237,10 +271,11 @@ export class SituationMonitorService {
             since,
             scope,
           });
-        const diagnostics = this.buildDiagnostics(headlines, scope);
+        const diagnostics = this.buildDiagnostics(headlines, allClusters, scope);
         const coverageSummary = this.buildCoverageSummary({
           analysisNews,
           headlines,
+          clusters: allClusters,
           snapshot: snapshot.payload,
           since,
           windowHours,
@@ -324,6 +359,7 @@ export class SituationMonitorService {
           diagnostics,
           coverageSummary,
           headlines: displayHeadlines,
+          clusters: displayClusters,
           analyzedItems,
           ...(allowGdeltFallback || snapshot.payload
             ? {
@@ -407,6 +443,37 @@ export class SituationMonitorService {
     return response;
   }
 
+  async getQualitySummary(
+    orgId: string,
+    options?: {
+      windowHours?: number;
+      scope?: "tagged" | "all";
+    },
+  ): Promise<SituationMonitorQualitySummary | null> {
+    const insights = await this.getInsights(orgId, {
+      sections: ["core"],
+      windowHours: options?.windowHours ?? 72,
+      maxItems: 400,
+      scope: options?.scope ?? "all",
+    });
+
+    if (!insights.coverageSummary) {
+      return null;
+    }
+
+    return {
+      generatedAt: insights.generatedAt,
+      windowHours: insights.windowHours,
+      mode: insights.coverageSummary.mode,
+      articleCount: insights.coverageSummary.articleCount,
+      clusterCount: insights.coverageSummary.clusterCount,
+      mixedSourceClusterCount:
+        insights.coverageSummary.mixedSourceClusterCount,
+      dedupeRatio: insights.coverageSummary.dedupeRatio,
+      avgSourcesPerCluster: insights.coverageSummary.avgSourcesPerCluster,
+    };
+  }
+
   private insightsCacheKey(options: {
     orgId: string;
     section: "core" | "external";
@@ -436,18 +503,27 @@ export class SituationMonitorService {
 
   private buildDiagnostics(
     headlines: Record<SituationMonitorCategory, SituationMonitorHeadline[]>,
+    clusters: Record<SituationMonitorCategory, SituationMonitorEventCluster[]>,
     scope: "tagged" | "all",
   ): SituationMonitorInsightsDiagnostics {
     const categories = {} as Record<SituationMonitorCategory, SituationMonitorInsightsCategoryDiagnostics>;
 
     for (const category of SITUATION_MONITOR_CATEGORIES) {
       const entries = headlines[category] ?? [];
+      const categoryClusters = clusters[category] ?? [];
       const internalCount = entries.filter((entry) => entry.origin === "items").length;
       const gdeltFallbackCount = entries.filter((entry) => entry.origin === "gdelt").length;
+      const clusterMetrics = summarizeSituationMonitorCategoryClusters(
+        entries,
+        categoryClusters,
+      );
       categories[category] = {
         internalCount,
         gdeltFallbackCount,
         totalCount: entries.length,
+        clusterCount: clusterMetrics.clusterCount,
+        mixedSourceClusterCount: clusterMetrics.mixedSourceClusterCount,
+        distinctSourceCount: clusterMetrics.distinctSourceCount,
       };
     }
 
@@ -461,6 +537,7 @@ export class SituationMonitorService {
   private buildCoverageSummary(options: {
     analysisNews: SituationNewsItem[];
     headlines: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
+    clusters: Record<SituationMonitorCategory, SituationMonitorEventCluster[]>;
     snapshot: SituationMonitorExternalSnapshotPayload | null;
     since: Date;
     windowHours: number;
@@ -472,11 +549,15 @@ export class SituationMonitorService {
     const externalAnalyzedItems = options.analysisNews.filter(
       (entry) => entry.origin === "gdelt",
     ).length;
+    const qualitySummary = summarizeSituationMonitorClusterQuality({
+      headlinesByCategory: options.headlines,
+      clustersByCategory: options.clusters,
+    });
     const visibleCategoryCount = SITUATION_MONITOR_CATEGORIES.filter(
-      (category) => (options.headlines[category] ?? []).length > 0,
+      (category) => (options.clusters[category] ?? []).length > 0,
     ).length;
     const missingCategories = SITUATION_MONITOR_CATEGORIES.filter(
-      (category) => (options.headlines[category] ?? []).length === 0,
+      (category) => (options.clusters[category] ?? []).length === 0,
     );
     const sinceTimestamp = options.since.getTime();
     const hasOlderSnapshotItemsOutsideWindow = Boolean(
@@ -503,8 +584,13 @@ export class SituationMonitorService {
             : externalAnalyzedItems > 0
               ? "external-only"
               : "empty",
+      articleCount: qualitySummary.articleCount,
+      clusterCount: qualitySummary.clusterCount,
       internalAnalyzedItems,
       externalAnalyzedItems,
+      mixedSourceClusterCount: qualitySummary.mixedSourceClusterCount,
+      dedupeRatio: qualitySummary.dedupeRatio,
+      avgSourcesPerCluster: qualitySummary.avgSourcesPerCluster,
       visibleCategoryCount,
       missingCategories,
       hasOlderItemsOutsideWindow,
@@ -648,6 +734,7 @@ export class SituationMonitorService {
         _id: 1,
         rawItemId: 1,
         itemMetaId: 1,
+        duplicateOf: 1,
         tags: 1,
         sortAt: 1,
         ingestedAt: 1,
@@ -770,10 +857,18 @@ export class SituationMonitorService {
         typeof (item as { itemMetaId?: unknown }).itemMetaId === "string"
           ? (item as { itemMetaId?: string }).itemMetaId?.trim()
           : "";
+      const duplicateOfRaw = (item as { duplicateOf?: unknown }).duplicateOf;
+      const duplicateOf =
+        typeof duplicateOfRaw === "string"
+          ? duplicateOfRaw.trim()
+          : duplicateOfRaw
+            ? String(duplicateOfRaw).trim()
+            : "";
 
       byCategory[classification.category].push({
         id: String((item as { _id?: unknown })._id ?? link),
         itemMetaId: itemMetaId || undefined,
+        duplicateOf: duplicateOf || undefined,
         title: trimmedTitle,
         link,
         source,
@@ -1173,6 +1268,20 @@ export class SituationMonitorService {
       intel: headlines.intel.slice(0, maxPerCategory),
     };
     return result;
+  }
+
+  private toDisplayClusters(
+    clusters: Record<SituationMonitorCategory, SituationMonitorEventCluster[]>,
+    maxPerCategory: number,
+  ): Record<SituationMonitorCategory, SituationMonitorEventCluster[]> {
+    return {
+      politics: clusters.politics.slice(0, maxPerCategory),
+      tech: clusters.tech.slice(0, maxPerCategory),
+      finance: clusters.finance.slice(0, maxPerCategory),
+      gov: clusters.gov.slice(0, maxPerCategory),
+      ai: clusters.ai.slice(0, maxPerCategory),
+      intel: clusters.intel.slice(0, maxPerCategory),
+    };
   }
 
   private flattenHeadlinesForAnalysis(

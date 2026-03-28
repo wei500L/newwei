@@ -325,11 +325,18 @@ describe("SituationMonitorService", () => {
     expect(result.headlines?.ai[0]?.title).toBe(
       "ChatGPT roadmap expands enterprise AI tooling",
     );
+    expect(result.clusters?.politics).toHaveLength(1);
+    expect(result.clusters?.ai).toHaveLength(1);
     expect(result.coverageSummary).toEqual(
       expect.objectContaining({
         mode: "external-only",
+        articleCount: 2,
+        clusterCount: 2,
         internalAnalyzedItems: 0,
         externalAnalyzedItems: 2,
+        mixedSourceClusterCount: 0,
+        dedupeRatio: 0,
+        avgSourcesPerCluster: 1,
         visibleCategoryCount: 2,
         missingCategories: ["tech", "finance", "gov", "intel"],
         hasOlderItemsOutsideWindow: false,
@@ -536,12 +543,21 @@ describe("SituationMonitorService", () => {
       internalCount: 10,
       gdeltFallbackCount: 5,
       totalCount: 15,
+      clusterCount: 15,
+      mixedSourceClusterCount: 0,
+      distinctSourceCount: 2,
     });
+    expect(result.clusters?.tech).toHaveLength(6);
     expect(result.coverageSummary).toEqual(
       expect.objectContaining({
         mode: "internal+external",
+        articleCount: 15,
+        clusterCount: 15,
         internalAnalyzedItems: 10,
         externalAnalyzedItems: 5,
+        mixedSourceClusterCount: 0,
+        dedupeRatio: 0,
+        avgSourcesPerCluster: 1,
         visibleCategoryCount: 1,
         missingCategories: ["politics", "finance", "gov", "ai", "intel"],
         hasOlderItemsOutsideWindow: false,
@@ -606,8 +622,87 @@ describe("SituationMonitorService", () => {
     expect(result.coverageSummary).toEqual(
       expect.objectContaining({
         mode: "empty",
+        articleCount: 0,
+        clusterCount: 0,
         hasOlderItemsOutsideWindow: true,
         recommendedWindowHours: 168,
+      }),
+    );
+  });
+
+  it("clusters same-event internal and external headlines into mixed-source event cards", async () => {
+    const service = createService({
+      external: {
+        isGdeltEnabled: jest.fn().mockReturnValue(false),
+      } as any,
+    });
+
+    const headlines = {
+      politics: [
+        {
+          id: "items-1",
+          duplicateOf: "dup-1",
+          title: "US sanctions package targets regional shipping network",
+          link: "https://example.com/sanctions?utm_source=x",
+          source: "Internal Desk",
+          timestamp: Date.parse("2026-03-28T12:00:00.000Z"),
+          category: "politics",
+          origin: "items",
+          isAlert: false,
+          itemMetaId: "meta-1",
+          summary: "Internal summary",
+          keyPoints: [],
+          topics: [],
+        },
+        {
+          id: "gdelt-1",
+          title: "U.S. sanctions package targets regional shipping network - Reuters",
+          link: "https://example.com/sanctions",
+          source: "Reuters",
+          timestamp: Date.parse("2026-03-28T12:10:00.000Z"),
+          category: "politics",
+          origin: "gdelt",
+          isAlert: false,
+          summary: "External summary",
+          keyPoints: [],
+          topics: [],
+        },
+      ],
+      tech: [],
+      finance: [],
+      gov: [],
+      ai: [],
+      intel: [],
+    };
+
+    jest
+      .spyOn(service as any, "buildHeadlinesByCategory")
+      .mockResolvedValue(headlines);
+
+    const result = await service.getInsights("org-1", { sections: ["core"] });
+
+    expect(result.clusters?.politics).toHaveLength(1);
+    expect(result.clusters?.politics[0]).toEqual(
+      expect.objectContaining({
+        mixedSource: true,
+        internalCount: 1,
+        externalCount: 1,
+        distinctSourceCount: 2,
+      }),
+    );
+    expect(result.coverageSummary).toEqual(
+      expect.objectContaining({
+        clusterCount: 1,
+        mixedSourceClusterCount: 1,
+        dedupeRatio: 0.5,
+        avgSourcesPerCluster: 2,
+      }),
+    );
+    expect(result.diagnostics?.categories.politics).toEqual(
+      expect.objectContaining({
+        clusterCount: 1,
+        mixedSourceClusterCount: 1,
+        distinctSourceCount: 2,
       }),
     );
   });

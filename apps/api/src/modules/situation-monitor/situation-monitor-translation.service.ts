@@ -193,6 +193,29 @@ export class SituationMonitorTranslationService {
       }
     }
 
+    if (insights.clusters) {
+      for (const list of Object.values(insights.clusters)) {
+        for (const cluster of list) {
+          collect(cluster.lead.title);
+          collect(cluster.lead.summary);
+          if (Array.isArray(cluster.lead.keyPoints)) {
+            for (const point of cluster.lead.keyPoints) {
+              collect(point);
+            }
+          }
+          for (const entry of cluster.items ?? []) {
+            collect(entry.title);
+            collect(entry.summary);
+            if (Array.isArray(entry.keyPoints)) {
+              for (const point of entry.keyPoints) {
+                collect(point);
+              }
+            }
+          }
+        }
+      }
+    }
+
     if (Array.isArray(insights.alerts)) {
       for (const entry of insights.alerts) {
         collect(entry.title);
@@ -794,6 +817,17 @@ export class SituationMonitorTranslationService {
       for (const list of Object.values(insights.headlines)) {
         for (const entry of list) {
           applyHeadline(entry);
+        }
+      }
+    }
+
+    if (insights.clusters) {
+      for (const list of Object.values(insights.clusters)) {
+        for (const cluster of list) {
+          applyHeadline(cluster.lead);
+          for (const entry of cluster.items ?? []) {
+            applyHeadline(entry);
+          }
         }
       }
     }

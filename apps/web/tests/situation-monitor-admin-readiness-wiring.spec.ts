@@ -36,6 +36,10 @@ describe("situation monitor admin readiness wiring", () => {
     expect(source).toContain("Next scheduled run");
     expect(source).toContain("24h success");
     expect(source).toContain("Rebuild external snapshot");
+    expect(source).toContain("Analysis quality");
+    expect(source).toContain("Dedupe ratio");
+    expect(source).toContain("Avg sources / cluster");
+    expect(source).toContain("qualitySummary");
     expect(source).toContain("OREF");
     expect(source).toContain("orefEnabled");
     expect(source).toContain("orefConfigured");

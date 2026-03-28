@@ -32,6 +32,9 @@ describe("SituationMonitorSettingsController", () => {
     getStatusSummary: jest.fn(),
     forceRefresh: jest.fn(),
   } as const;
+  const monitor = {
+    getQualitySummary: jest.fn(),
+  } as const;
 
   let controller: SituationMonitorSettingsController;
 
@@ -88,6 +91,16 @@ describe("SituationMonitorSettingsController", () => {
       rolling24hAverageAvailableCategoryCount: 6,
       warnings: [],
     });
+    monitor.getQualitySummary.mockResolvedValue({
+      generatedAt: "2026-03-28T00:00:00.000Z",
+      windowHours: 72,
+      mode: "external-only",
+      articleCount: 12,
+      clusterCount: 5,
+      mixedSourceClusterCount: 0,
+      dedupeRatio: 0.6,
+      avgSourcesPerCluster: 1.4,
+    });
     controller = new SituationMonitorSettingsController(
       settings as any,
       telegramAuth as any,
@@ -95,6 +108,7 @@ describe("SituationMonitorSettingsController", () => {
       signals as any,
       akshareService as any,
       externalSnapshots as any,
+      monitor as any,
     );
     jest
       .spyOn(controller as never, "syncTelegramScheduleBestEffort" as never)
@@ -115,6 +129,7 @@ describe("SituationMonitorSettingsController", () => {
         .syncEconomicDataScheduleBestEffort,
     ).toHaveBeenCalledTimes(1);
     expect(externalSnapshots.getStatusSummary).toHaveBeenCalledTimes(1);
+    expect(monitor.getQualitySummary).toHaveBeenCalledWith("org-1");
   });
 
   it("re-syncs economic data jobs after reset", async () => {
@@ -126,13 +141,15 @@ describe("SituationMonitorSettingsController", () => {
         .syncEconomicDataScheduleBestEffort,
     ).toHaveBeenCalledTimes(1);
     expect(externalSnapshots.getStatusSummary).toHaveBeenCalledTimes(1);
+    expect(monitor.getQualitySummary).toHaveBeenCalledWith("org-1");
   });
 
   it("returns snapshot status alongside the public settings payload", async () => {
-    const result = await controller.getSettings();
+    const result = await controller.getSettings(user);
 
     expect(settings.getPublicSettings).toHaveBeenCalledTimes(1);
     expect(externalSnapshots.getStatusSummary).toHaveBeenCalledTimes(1);
+    expect(monitor.getQualitySummary).toHaveBeenCalledWith("org-1");
     expect(result).toEqual(
       expect.objectContaining({
         source: "env",
@@ -140,6 +157,10 @@ describe("SituationMonitorSettingsController", () => {
           intervalMinutes: 15,
           status: "idle",
           nextScheduledAt: "2026-03-28T00:15:00.000Z",
+        }),
+        qualitySummary: expect.objectContaining({
+          clusterCount: 5,
+          dedupeRatio: 0.6,
         }),
       }),
     );

@@ -250,6 +250,7 @@ type SituationMonitorCategory =
 interface SituationMonitorHeadline {
   id: string;
   itemMetaId?: string;
+  duplicateOf?: string;
   title: string;
   titleZh?: string;
   link: string;
@@ -266,6 +267,19 @@ interface SituationMonitorHeadline {
   topics?: string[];
   entities?: string[];
   location?: string;
+}
+
+interface SituationMonitorEventCluster {
+  id: string;
+  category: SituationMonitorCategory;
+  lead: SituationMonitorHeadline;
+  items: SituationMonitorHeadline[];
+  internalCount: number;
+  externalCount: number;
+  distinctSourceCount: number;
+  latestTimestamp: number;
+  isAlert: boolean;
+  mixedSource: boolean;
 }
 
 interface SituationMonitorWarning {
@@ -523,6 +537,9 @@ interface SituationMonitorCategoryDiagnostics {
   internalCount: number;
   gdeltFallbackCount: number;
   totalCount: number;
+  clusterCount: number;
+  mixedSourceClusterCount: number;
+  distinctSourceCount: number;
 }
 
 interface SituationMonitorInsightsDiagnostics {
@@ -536,8 +553,13 @@ interface SituationMonitorInsightsDiagnostics {
 
 interface SituationMonitorCoverageSummary {
   mode: "internal+external" | "external-only" | "internal-only" | "empty";
+  articleCount: number;
+  clusterCount: number;
   internalAnalyzedItems: number;
   externalAnalyzedItems: number;
+  mixedSourceClusterCount: number;
+  dedupeRatio: number | null;
+  avgSourcesPerCluster: number | null;
   visibleCategoryCount: number;
   missingCategories: SituationMonitorCategory[];
   hasOlderItemsOutsideWindow: boolean;
@@ -564,6 +586,7 @@ interface SituationMonitorInsightsResponse {
   };
   translation?: { target: "zh-CN"; applied: boolean; error?: string };
   headlines?: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
+  clusters?: Record<SituationMonitorCategory, SituationMonitorEventCluster[]>;
   alerts?: SituationMonitorAlertHeadline[];
   leaders?: SituationMonitorWorldLeader[];
   situations?: SituationMonitorSituationPanel[];
@@ -1006,6 +1029,7 @@ export function SituationMonitorContent() {
   >("narrative");
   const [missedSignalId, setMissedSignalId] = useState<string>("");
   const [missedHeadlineId, setMissedHeadlineId] = useState<string>("");
+  const [expandedClusterIds, setExpandedClusterIds] = useState<string[]>([]);
   const [pageVisible, setPageVisible] = useState(
     typeof document === "undefined" ? true : !document.hidden,
   );
@@ -1529,6 +1553,13 @@ export function SituationMonitorContent() {
   const handleManualRefresh = useCallback(() => {
     void runManualRefresh();
   }, [runManualRefresh]);
+  const toggleClusterExpansion = useCallback((clusterId: string) => {
+    setExpandedClusterIds((previous) =>
+      previous.includes(clusterId)
+        ? previous.filter((value) => value !== clusterId)
+        : [...previous, clusterId],
+    );
+  }, []);
   const summaryActionItems = useMemo(() => {
     const actions: {
       key: string;
@@ -3169,6 +3200,7 @@ export function SituationMonitorContent() {
   );
 
   const feedItemsPerCategory = screens.lg ? 6 : 4;
+  const clusterItemsPerCategory = 6;
   const alertsPerPanel = screens.lg ? 10 : 6;
   const fedNewsPerPanel = screens.lg ? 8 : 5;
   const telegramItemsPerPanel = screens.lg ? 14 : 10;
@@ -3686,10 +3718,18 @@ export function SituationMonitorContent() {
       `headline:${entry.id}`,
     );
 
+  const renderClusterMonitorMatches = (cluster: SituationMonitorEventCluster) =>
+    renderMonitorMatches(
+      cluster.items.map((entry) =>
+        buildMonitorMatchKey(entry.itemMetaId, entry.link, entry.title),
+      ),
+      `cluster:${cluster.id}`,
+    );
+
   const renderFeedPanel = (category: SituationMonitorCategory) => {
-    const entries = data?.headlines?.[category] ?? [];
+    const clusters = data?.clusters?.[category] ?? [];
     const diagnostics = data?.diagnostics?.categories?.[category];
-    const emptyReason = entries.length > 0
+    const emptyReason = clusters.length > 0
       ? null
       : rateLimitedCategories.has(category)
         ? {
@@ -3726,20 +3766,26 @@ export function SituationMonitorContent() {
                 tag: t("situationMonitor.feeds.emptyReason.noData", {
                   defaultValue: "NO DATA",
                 }),
-                description: t("situationMonitor.feeds.emptyDescription.noData", {
-                  defaultValue:
-                    "Neither internal coverage nor the latest external snapshot produced visible headlines for this category.",
-                }),
-              };
+              description: t("situationMonitor.feeds.emptyDescription.noData", {
+                defaultValue:
+                    "Neither internal coverage nor the latest external snapshot produced visible event clusters for this category.",
+              }),
+            };
     return (
       <Card
         title={
           <Space size={10}>
             <span>{categoryLabels[category]}</span>
             <Tag color="geekblue">
-              {t("situationMonitor.feeds.totalCount", {
-                defaultValue: "TOTAL {{count}}",
-                count: diagnostics?.totalCount ?? entries.length,
+              {t("situationMonitor.feeds.clusterCount", {
+                defaultValue: "CLUSTERS {{count}}",
+                count: diagnostics?.clusterCount ?? clusters.length,
+              })}
+            </Tag>
+            <Tag color="default">
+              {t("situationMonitor.feeds.articleCount", {
+                defaultValue: "ARTICLES {{count}}",
+                count: diagnostics?.totalCount ?? 0,
               })}
             </Tag>
             {diagnostics ? (
@@ -3768,7 +3814,7 @@ export function SituationMonitorContent() {
         size="small"
         loading={initialLoading}
       >
-        {entries.length === 0 ? (
+        {clusters.length === 0 ? (
           <Space direction="vertical" size={4}>
             {emptyReason ? (
               <Tag color="default" style={{ width: "fit-content" }}>
@@ -3802,86 +3848,221 @@ export function SituationMonitorContent() {
             ) : null}
           </Space>
         ) : (
-          <List
-            size="small"
-            dataSource={entries.slice(0, feedItemsPerCategory)}
-            renderItem={(entry) => {
-              const href = entry.link ? safeHttpUrl(entry.link) : null;
-              const date = Number.isFinite(entry.timestamp)
-                ? new Date(entry.timestamp)
-                : null;
-              return (
-                <List.Item key={entry.id}>
-                  <Space
-                    direction="vertical"
-                    size={2}
-                    style={{ width: "100%" }}
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            {clusters
+              .slice(0, clusterItemsPerCategory)
+              .map((cluster) => {
+                const lead = cluster.lead;
+                const href = lead.link ? safeHttpUrl(lead.link) : null;
+                const leadDate = Number.isFinite(cluster.latestTimestamp)
+                  ? new Date(cluster.latestTimestamp)
+                  : null;
+                const expanded = expandedClusterIds.includes(cluster.id);
+                return (
+                  <Card
+                    key={cluster.id}
+                    size="small"
+                    className="border border-[var(--border)]"
                   >
-                    <Space size={8} wrap>
-                      {entry.isAlert ? (
-                        <Tag color="red">
-                          {t("situationMonitor.feeds.alert", {
-                            defaultValue: "ALERT",
-                          })}
-                        </Tag>
-                      ) : null}
-                      {entry.origin === "gdelt" ? (
-                        <Popover content={gdeltFeedTooltip}>
-                          <Tag color="purple" className="cursor-help">
-                            {t("situationMonitor.notice.gdeltLabel", {
-                              defaultValue: "GDELT",
+                    <Space
+                      direction="vertical"
+                      size={8}
+                      style={{ width: "100%" }}
+                    >
+                      <Space wrap size={8}>
+                        {cluster.isAlert ? (
+                          <Tag color="red">
+                            {t("situationMonitor.feeds.alert", {
+                              defaultValue: "ALERT",
                             })}
                           </Tag>
-                        </Popover>
-                      ) : null}
-                      {renderHeadlineMonitorMatches(entry)}
-                      {href ? (
-                        <Typography.Link
-                          href={href}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {translateToZh
-                            ? (entry.titleZh ?? entry.title)
-                            : entry.title}
-                        </Typography.Link>
-                      ) : (
-                        <Typography.Text>
-                          {translateToZh
-                            ? (entry.titleZh ?? entry.title)
-                            : entry.title}
-                        </Typography.Text>
-                      )}
-                      {renderHeadlineItemLink(entry)}
-                      {renderHeadlineDetails(entry)}
-                    </Space>
-                    {renderHeadlineSummary(entry)}
-                    <Space size={8} wrap>
-                      <Typography.Text type="secondary">
-                        {entry.source}
-                      </Typography.Text>
-                      {date ? (
+                        ) : null}
+                        {cluster.mixedSource ? (
+                          <Tag color="green">
+                            {t("situationMonitor.feeds.mixedCluster", {
+                              defaultValue: "MIXED",
+                            })}
+                          </Tag>
+                        ) : null}
+                        <Tag color="blue">
+                          {t("situationMonitor.feeds.internalCount", {
+                            defaultValue: "INT {{count}}",
+                            count: cluster.internalCount,
+                          })}
+                        </Tag>
+                        <Tag color="purple">
+                          {t("situationMonitor.feeds.externalCount", {
+                            defaultValue: "EXT {{count}}",
+                            count: cluster.externalCount,
+                          })}
+                        </Tag>
+                        <Tag color="default">
+                          {t("situationMonitor.feeds.sourcesCount", {
+                            defaultValue: "{{count}} sources",
+                            count: cluster.distinctSourceCount,
+                          })}
+                        </Tag>
+                        {renderClusterMonitorMatches(cluster)}
+                      </Space>
+
+                      <Space wrap size={8}>
+                        {href ? (
+                          <Typography.Link
+                            href={href}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {translateToZh
+                              ? (lead.titleZh ?? lead.title)
+                              : lead.title}
+                          </Typography.Link>
+                        ) : (
+                          <Typography.Text strong>
+                            {translateToZh
+                              ? (lead.titleZh ?? lead.title)
+                              : lead.title}
+                          </Typography.Text>
+                        )}
+                        {renderHeadlineItemLink(lead)}
+                        {renderHeadlineDetails(lead)}
+                      </Space>
+
+                      {renderHeadlineSummary(lead)}
+
+                      <Space wrap size={8}>
                         <Typography.Text type="secondary">
-                          {formatDateTime(date, locale, {
-                            month: "2-digit",
-                            day: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
+                          {leadDate
+                            ? formatDateTime(leadDate, locale, {
+                                month: "2-digit",
+                                day: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "—"}
+                        </Typography.Text>
+                        <Typography.Text type="secondary">
+                          {t("situationMonitor.feeds.rawArticleCount", {
+                            defaultValue: "{{count}} raw articles",
+                            count: cluster.items.length,
                           })}
                         </Typography.Text>
+                        {renderHeadlineTopics(lead)}
+                      </Space>
+
+                      <Space wrap size={8}>
+                        <Button
+                          size="small"
+                          data-sm-interactive
+                          onClick={() => toggleClusterExpansion(cluster.id)}
+                        >
+                          {expanded
+                            ? t("situationMonitor.feeds.hideRawArticles", {
+                                defaultValue: "Hide raw articles",
+                              })
+                            : t("situationMonitor.feeds.viewRawArticles", {
+                                defaultValue: "View raw articles",
+                              })}
+                        </Button>
+                      </Space>
+
+                      {expanded ? (
+                        <List
+                          size="small"
+                          dataSource={cluster.items}
+                          renderItem={(entry) => {
+                            const rawHref = entry.link
+                              ? safeHttpUrl(entry.link)
+                              : null;
+                            const rawDate = Number.isFinite(entry.timestamp)
+                              ? new Date(entry.timestamp)
+                              : null;
+                            return (
+                              <List.Item key={`${cluster.id}:${entry.id}`}>
+                                <Space
+                                  direction="vertical"
+                                  size={2}
+                                  style={{ width: "100%" }}
+                                >
+                                  <Space size={8} wrap>
+                                    {entry.isAlert ? (
+                                      <Tag color="red">
+                                        {t("situationMonitor.feeds.alert", {
+                                          defaultValue: "ALERT",
+                                        })}
+                                      </Tag>
+                                    ) : null}
+                                    {entry.origin === "gdelt" ? (
+                                      <Popover content={gdeltFeedTooltip}>
+                                        <Tag
+                                          color="purple"
+                                          className="cursor-help"
+                                        >
+                                          {t("situationMonitor.notice.gdeltLabel", {
+                                            defaultValue: "GDELT",
+                                          })}
+                                        </Tag>
+                                      </Popover>
+                                    ) : (
+                                      <Popover content={internalFeedTooltip}>
+                                        <Tag
+                                          color="blue"
+                                          className="cursor-help"
+                                        >
+                                          {t("situationMonitor.notice.internalLabel", {
+                                            defaultValue: "INT",
+                                          })}
+                                        </Tag>
+                                      </Popover>
+                                    )}
+                                    {renderHeadlineMonitorMatches(entry)}
+                                    {rawHref ? (
+                                      <Typography.Link
+                                        href={rawHref}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                      >
+                                        {translateToZh
+                                          ? (entry.titleZh ?? entry.title)
+                                          : entry.title}
+                                      </Typography.Link>
+                                    ) : (
+                                      <Typography.Text>
+                                        {translateToZh
+                                          ? (entry.titleZh ?? entry.title)
+                                          : entry.title}
+                                      </Typography.Text>
+                                    )}
+                                    {renderHeadlineItemLink(entry)}
+                                    {renderHeadlineDetails(entry)}
+                                  </Space>
+                                  {renderHeadlineSummary(entry)}
+                                  <Space size={8} wrap>
+                                    <Typography.Text type="secondary">
+                                      {entry.source}
+                                    </Typography.Text>
+                                    {rawDate ? (
+                                      <Typography.Text type="secondary">
+                                        {formatDateTime(rawDate, locale, {
+                                          month: "2-digit",
+                                          day: "2-digit",
+                                          hour: "2-digit",
+                                          minute: "2-digit",
+                                        })}
+                                      </Typography.Text>
+                                    ) : null}
+                                    {renderHeadlineTopics(entry)}
+                                  </Space>
+                                </Space>
+                              </List.Item>
+                            );
+                          }}
+                        />
                       ) : null}
-                      {entry.alertKeyword ? (
-                        <Typography.Text type="secondary">
-                          {entry.alertKeyword}
-                        </Typography.Text>
-                      ) : null}
-                      {renderHeadlineTopics(entry)}
                     </Space>
-                  </Space>
-                </List.Item>
-              );
-            }}
-          />
+                  </Card>
+                );
+              })}
+          </Space>
         )}
       </Card>
     );
@@ -5603,6 +5784,56 @@ export function SituationMonitorContent() {
           >
             {t("situationMonitor.panels.title", { defaultValue: "Panels" })}
           </Button>
+          <Popover
+            placement="bottom"
+            content={
+              <Space direction="vertical" size={6}>
+                <Space wrap size={8}>
+                  <Tag color="default">
+                    {t("situationMonitor.shared.label", {
+                      defaultValue: "GLOBAL",
+                    })}
+                  </Tag>
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.notice.globalSignals", {
+                      defaultValue:
+                        "Telegram and OREF are shared global signals. Access still requires login and items.read permission.",
+                    })}
+                  </Typography.Text>
+                </Space>
+                <Space wrap size={8}>
+                  <Tag color="blue">
+                    {t("situationMonitor.notice.internalLabel", {
+                      defaultValue: "INT",
+                    })}
+                  </Tag>
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.notice.internalDescription", {
+                      defaultValue:
+                        "Processed internal headlines from this project.",
+                    })}
+                  </Typography.Text>
+                  <Tag color="purple">
+                    {t("situationMonitor.notice.gdeltLabel", {
+                      defaultValue: "GDELT",
+                    })}
+                  </Tag>
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.notice.gdeltDescription", {
+                      defaultValue:
+                        "Fallback headlines from GDELT when internal coverage is thin.",
+                    })}
+                  </Typography.Text>
+                </Space>
+              </Space>
+            }
+          >
+            <Button icon={<InfoCircleOutlined />}>
+              {t("situationMonitor.notice.title", {
+                defaultValue: "Signal legend",
+              })}
+            </Button>
+          </Popover>
           {isCompactGrid ? (
             <Button
               type={canEditLayout ? "primary" : "default"}
@@ -5757,9 +5988,15 @@ export function SituationMonitorContent() {
               <Space direction="vertical" size={6} style={{ width: "100%" }}>
                 <Space wrap size={8}>
                   <Tag color="geekblue">
-                    {t("situationMonitor.summary.total", {
-                      defaultValue: "TOTAL {{count}}",
-                      count: data?.analyzedItems ?? 0,
+                    {t("situationMonitor.summary.articles", {
+                      defaultValue: "ARTICLES {{count}}",
+                      count: coverageSummary?.articleCount ?? data?.analyzedItems ?? 0,
+                    })}
+                  </Tag>
+                  <Tag color="cyan">
+                    {t("situationMonitor.summary.clusters", {
+                      defaultValue: "CLUSTERS {{count}}",
+                      count: coverageSummary?.clusterCount ?? 0,
                     })}
                   </Tag>
                   <Tag color="blue">
@@ -5772,6 +6009,12 @@ export function SituationMonitorContent() {
                     {t("situationMonitor.summary.external", {
                       defaultValue: "EXT {{count}}",
                       count: coverageSummary?.externalAnalyzedItems ?? 0,
+                    })}
+                  </Tag>
+                  <Tag color="green">
+                    {t("situationMonitor.summary.mixedClusters", {
+                      defaultValue: "MIXED {{count}}",
+                      count: coverageSummary?.mixedSourceClusterCount ?? 0,
                     })}
                   </Tag>
                 </Space>
@@ -5825,6 +6068,22 @@ export function SituationMonitorContent() {
                     defaultValue:
                       "{{count}} / 6 categories currently have visible coverage.",
                     count: coverageSummary?.visibleCategoryCount ?? 0,
+                  })}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  {t("situationMonitor.coverage.quality", {
+                    defaultValue:
+                      "Dedupe {{dedupe}}. Avg sources / cluster {{sources}}.",
+                    dedupe:
+                      coverageSummary?.dedupeRatio !== null &&
+                      coverageSummary?.dedupeRatio !== undefined
+                        ? `${(coverageSummary.dedupeRatio * 100).toFixed(1)}%`
+                        : "--",
+                    sources:
+                      coverageSummary?.avgSourcesPerCluster !== null &&
+                      coverageSummary?.avgSourcesPerCluster !== undefined
+                        ? coverageSummary.avgSourcesPerCluster.toFixed(1)
+                        : "--",
                   })}
                 </Typography.Text>
                 <Typography.Text type="secondary">
@@ -5894,53 +6153,6 @@ export function SituationMonitorContent() {
           </Col>
         </Row>
       </div>
-
-      <Alert
-        type="info"
-        showIcon
-        message={t("situationMonitor.notice.title", {
-          defaultValue: "Signal scope and feed legend",
-        })}
-        description={
-          <Space direction="vertical" size={6}>
-            <Space wrap size={8}>
-              <Tag color="default">
-                {t("situationMonitor.shared.label", { defaultValue: "GLOBAL" })}
-              </Tag>
-              <Typography.Text type="secondary">
-                {t("situationMonitor.notice.globalSignals", {
-                  defaultValue:
-                    "Telegram and OREF are shared global signals. Access still requires login and items.read permission.",
-                })}
-              </Typography.Text>
-            </Space>
-            <Space wrap size={8}>
-              <Tag color="blue">
-                {t("situationMonitor.notice.internalLabel", {
-                  defaultValue: "INT",
-                })}
-              </Tag>
-              <Typography.Text type="secondary">
-                {t("situationMonitor.notice.internalDescription", {
-                  defaultValue:
-                    "Processed internal headlines from this project.",
-                })}
-              </Typography.Text>
-              <Tag color="purple">
-                {t("situationMonitor.notice.gdeltLabel", {
-                  defaultValue: "GDELT",
-                })}
-              </Tag>
-              <Typography.Text type="secondary">
-                {t("situationMonitor.notice.gdeltDescription", {
-                  defaultValue:
-                    "Fallback headlines from GDELT when internal coverage is thin.",
-                })}
-              </Typography.Text>
-            </Space>
-          </Space>
-        }
-      />
 
       {insightsWarnings.map((warning) => (
         <div className="mt-3" key={`${warning.source}:${warning.code}`}>

@@ -17,6 +17,7 @@ import {
 } from "../situation-monitor/signals/situation-monitor-signals.constants";
 import { SituationMonitorSignalsService } from "../situation-monitor/signals/situation-monitor-signals.service";
 import { SituationMonitorExternalSnapshotService } from "../situation-monitor/situation-monitor-external-snapshot.service";
+import { SituationMonitorService } from "../situation-monitor/situation-monitor.service";
 import {
   removeLegacyTelegramRepeatJobs,
   removeQueuedTelegramPollJobs,
@@ -47,19 +48,35 @@ export class SituationMonitorSettingsController {
     private readonly signals: SituationMonitorSignalsService,
     private readonly akshareService: AkshareService,
     private readonly externalSnapshots: SituationMonitorExternalSnapshotService,
+    private readonly monitor: SituationMonitorService,
   ) {}
 
-  private async withExternalSnapshotStatus<T extends object>(payload: T) {
+  private async withExternalSnapshotStatus<T extends object>(
+    payload: T,
+    user: AuthenticatedUser,
+  ) {
+    const [externalSnapshotStatus, qualitySummary] = await Promise.all([
+      this.externalSnapshots.getStatusSummary(),
+      this.monitor.getQualitySummary(user.orgId).catch((error) => {
+        this.logger.warn(
+          { error, orgId: user.orgId },
+          "Failed to build Situation Monitor quality summary for settings response",
+        );
+        return null;
+      }),
+    ]);
     return {
       ...payload,
-      externalSnapshotStatus: await this.externalSnapshots.getStatusSummary(),
+      externalSnapshotStatus,
+      qualitySummary,
     };
   }
 
   @Get()
-  async getSettings() {
+  async getSettings(@CurrentUser() user: AuthenticatedUser) {
     return await this.withExternalSnapshotStatus(
       await this.settings.getPublicSettings(),
+      user,
     );
   }
 
@@ -71,7 +88,7 @@ export class SituationMonitorSettingsController {
     const updated = await this.settings.updateSettings(user.orgId, user.id, body);
     await this.syncTelegramScheduleBestEffort(updated.telegramEnabled, updated.telegramPollIntervalMs);
     await this.syncEconomicDataScheduleBestEffort();
-    return await this.withExternalSnapshotStatus(updated);
+    return await this.withExternalSnapshotStatus(updated, user);
   }
 
   @Delete()
@@ -82,7 +99,7 @@ export class SituationMonitorSettingsController {
     if (!reset.hasTelegramSession) {
       await this.signals.clearTelegramState({ clearItems: true });
     }
-    return await this.withExternalSnapshotStatus(reset);
+    return await this.withExternalSnapshotStatus(reset, user);
   }
 
   @Delete("telegram-auth")
@@ -90,7 +107,7 @@ export class SituationMonitorSettingsController {
     const updated = await this.settings.clearTelegramConfiguration(user.orgId, user.id);
     await this.syncTelegramScheduleBestEffort(updated.telegramEnabled, updated.telegramPollIntervalMs);
     await this.signals.clearTelegramState({ clearItems: true });
-    return await this.withExternalSnapshotStatus(updated);
+    return await this.withExternalSnapshotStatus(updated, user);
   }
 
   @Post("telegram-auth/start")
@@ -117,7 +134,7 @@ export class SituationMonitorSettingsController {
       telegramEnabled: body.enableTelegram,
     });
     await this.syncTelegramScheduleBestEffort(updated.telegramEnabled, updated.telegramPollIntervalMs);
-    return await this.withExternalSnapshotStatus(updated);
+    return await this.withExternalSnapshotStatus(updated, user);
   }
 
   @Post("external-snapshot/refresh")

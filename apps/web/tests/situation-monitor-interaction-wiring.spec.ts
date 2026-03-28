@@ -68,10 +68,14 @@ describe("situation monitor interaction wiring", () => {
     expect(contentSource).toContain('defaultValue: "Summary"');
     expect(contentSource).toContain('defaultValue: "Coverage"');
     expect(contentSource).toContain('defaultValue: "Next actions"');
-    expect(contentSource).toContain('defaultValue: "TOTAL {{count}}"');
+    expect(contentSource).toContain('defaultValue: "ARTICLES {{count}}"');
+    expect(contentSource).toContain('defaultValue: "CLUSTERS {{count}}"');
     expect(contentSource).toContain('defaultValue: "INT {{count}}"');
     expect(contentSource).toContain('defaultValue: "EXT {{count}}"');
+    expect(contentSource).toContain('defaultValue: "MIXED {{count}}"');
     expect(contentSource).toContain("coverageSummary?.visibleCategoryCount");
+    expect(contentSource).toContain("data?.clusters?.[category]");
+    expect(contentSource).toContain('defaultValue: "View raw articles"');
     expect(contentSource).toContain("data?.externalSnapshot?.generatedAt");
     expect(contentSource).toContain("Open News Sources");
     expect(contentSource).toContain("Open Situation Monitor Settings");

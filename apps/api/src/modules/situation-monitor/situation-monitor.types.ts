@@ -4,6 +4,7 @@ import type { SituationMonitorCategory } from "./situation-monitor.constants";
 export interface SituationMonitorHeadline {
   id: string;
   itemMetaId?: string;
+  duplicateOf?: string;
   title: string;
   titleZh?: string;
   link: string;
@@ -23,6 +24,19 @@ export interface SituationMonitorHeadline {
   classificationSource?: SituationMonitorCategoryClassificationSource;
   classificationConfidence?: number;
   classificationReason?: string;
+}
+
+export interface SituationMonitorEventCluster {
+  id: string;
+  category: SituationMonitorCategory;
+  lead: SituationMonitorHeadline;
+  items: SituationMonitorHeadline[];
+  internalCount: number;
+  externalCount: number;
+  distinctSourceCount: number;
+  latestTimestamp: number;
+  isAlert: boolean;
+  mixedSource: boolean;
 }
 
 export interface SituationMonitorAlertHeadline extends SituationMonitorHeadline {
