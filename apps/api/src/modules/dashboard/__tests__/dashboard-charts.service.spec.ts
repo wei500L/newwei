@@ -635,6 +635,9 @@ describe("DashboardChartsService", () => {
         renderedVesselCount: 1,
         allVesselsAvailable: false,
         snapshotAgeSec: 300,
+        statusReasonCode: "ais_snapshot_missing_vessels_contract",
+        statusReason:
+          "AIS relay reports tracked vessels, but the snapshot payload omits vessels[] and only exposes aggregated signals.",
       }),
     );
   });
@@ -1057,6 +1060,7 @@ describe("DashboardChartsService", () => {
         blockedReason: "AIS relay snapshot does not include vessels[] yet.",
         maxReturned: 180,
         truncated: false,
+        statusReasonCode: "ais_upstream_disconnected",
       }),
     );
   });
@@ -1215,6 +1219,7 @@ describe("DashboardChartsService", () => {
         sourceEndpoint: "https://relay.example.com/ais/snapshot",
         connected: true,
         relayVesselCount: 84,
+        viewportVesselCount: 2,
         renderedVesselCount: 2,
         allVesselsAvailable: true,
         messageCount: 2048,
@@ -1317,6 +1322,7 @@ describe("DashboardChartsService", () => {
       expect.objectContaining({
         mode: "all",
         relayVesselCount: 250,
+        viewportVesselCount: 250,
         renderedVesselCount: 180,
         maxReturned: 180,
         truncated: true,

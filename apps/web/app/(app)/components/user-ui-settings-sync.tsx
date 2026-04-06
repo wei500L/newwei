@@ -91,6 +91,7 @@ const defaultWarMapFingerprint = fingerprintWarMapSettings({
   timeRangePreset: "7d",
   flightMode: "military",
   aisMode: "military",
+  aisAutoMode: true,
 });
 
 type UiCacheSection = "situation-monitor" | "war-map";
@@ -349,6 +350,7 @@ function writeWarMapCache(orgId: string, userId: string) {
     timeRangePreset: state.timeRangePreset,
     flightMode: state.flightMode,
     aisMode: state.aisMode,
+    aisAutoMode: state.aisAutoMode,
   };
   writeJsonToStorage(key, {
     version: 1,
@@ -408,6 +410,7 @@ export function UserUiSettingsSync() {
       timeRangePreset: state.timeRangePreset,
       flightMode: state.flightMode,
       aisMode: state.aisMode,
+      aisAutoMode: state.aisAutoMode,
     }),
     shallow,
   );
@@ -521,6 +524,7 @@ export function UserUiSettingsSync() {
       userId,
     );
     const warMapCacheKey = buildCacheKey("war-map", orgId, userId);
+    const warMapUrlSearch = new URLSearchParams(window.location.search);
 
     hydratingRef.current = true;
     try {
@@ -565,17 +569,25 @@ export function UserUiSettingsSync() {
 
       const warMapCache = readCacheEnvelope<WarMapCachePayload>(warMapCacheKey);
       if (warMapCache?.payload?.settings) {
+        const settings = mergeWarMapSettingsWithUrlState(
+          warMapCache.payload.settings,
+          warMapUrlSearch,
+        );
         useWarMapSettingsStore
           .getState()
-          .hydrateFromRemote(warMapCache.payload.settings);
+          .hydrateFromRemote(settings);
       } else {
         const legacyWarMapState = readLegacyZustandPersistState(
           LEGACY_STORAGE_KEY_WAR_MAP_SETTINGS,
         );
         if (legacyWarMapState) {
+          const settings = mergeWarMapSettingsWithUrlState(
+            legacyWarMapState,
+            warMapUrlSearch,
+          );
           useWarMapSettingsStore
             .getState()
-            .hydrateFromRemote(legacyWarMapState);
+            .hydrateFromRemote(settings);
         }
       }
     } finally {
@@ -725,7 +737,7 @@ export function UserUiSettingsSync() {
             if (remoteHasSettings && data.settings) {
               const settings = mergeWarMapSettingsWithUrlState(
                 data.settings,
-                new URLSearchParams(window.location.search),
+                warMapUrlSearch,
               );
               useWarMapSettingsStore
                 .getState()
@@ -740,6 +752,7 @@ export function UserUiSettingsSync() {
               timeRangePreset: currentState.timeRangePreset,
               flightMode: currentState.flightMode,
               aisMode: currentState.aisMode,
+              aisAutoMode: currentState.aisAutoMode,
             };
             const currentFingerprint =
               fingerprintWarMapSettings(currentSettings);

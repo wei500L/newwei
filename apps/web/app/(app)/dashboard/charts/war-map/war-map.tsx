@@ -100,6 +100,11 @@ import { WarMapInspectorPanel } from "./war-map-inspector-panel";
 import { resolveWarMapContainerClassName } from "./war-map-layout";
 import { WarMapOverlayRail } from "./war-map-overlay-rail";
 import {
+  isAisViewportEmptyStateActive,
+  isAisAutoModeActive,
+  resolveEffectiveAisMode,
+} from "./war-map-ais-mode";
+import {
   useDashboardStream,
   type DashboardStreamState,
 } from "../../use-dashboard-stream";
@@ -244,7 +249,7 @@ function toSvgDataUrl(svg: string): string {
 
 const AIRCRAFT_ICON = {
   url: toSvgDataUrl(`
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+    <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
       <path fill="#0f172a" d="M64 6c4 0 7 3 7 7v24l33 16c5 3 7 10 4 15l-3 5-34-8v23l13 10v10l-20-5-20 5V98l13-10V65L23 73l-3-5c-3-5-1-12 4-15l33-16V13c0-4 3-7 7-7Z"/>
     </svg>
   `),
@@ -257,7 +262,7 @@ const AIRCRAFT_ICON = {
 
 const VESSEL_ICON = {
   url: toSvgDataUrl(`
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+    <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
       <path fill="#0f172a" d="M64 10 83 34h-9v22h20l18 34-17 18H33L16 90l18-34h20V34h-9L64 10Zm-18 58-8 15h52l-8-15H46Zm-1 25 5 7h28l5-7H45Z"/>
     </svg>
   `),
@@ -627,6 +632,7 @@ export function WarMap({
   const overlayRailRef = useRef<HTMLDivElement | null>(null);
   const syncFromMapRef = useRef(false);
   const hasHydratedUrlRef = useRef(false);
+  const hasShownAisAutoModeToastRef = useRef(false);
 
   const [inView, setInView] = useState(false);
   const [mapReady, setMapReady] = useState(false);
@@ -671,6 +677,7 @@ export function WarMap({
   );
   const flightMode = useWarMapSettingsStore((state) => state.flightMode);
   const aisMode = useWarMapSettingsStore((state) => state.aisMode);
+  const aisAutoMode = useWarMapSettingsStore((state) => state.aisAutoMode);
   const setLayerVisible = useWarMapSettingsStore(
     (state) => state.setLayerVisible,
   );
@@ -686,7 +693,12 @@ export function WarMap({
   );
   const setFlightMode = useWarMapSettingsStore((state) => state.setFlightMode);
   const setAisMode = useWarMapSettingsStore((state) => state.setAisMode);
+  const setAisAutoMode = useWarMapSettingsStore(
+    (state) => state.setAisAutoMode,
+  );
   const resetLayers = useWarMapSettingsStore((state) => state.resetLayers);
+  const [effectiveAisMode, setEffectiveAisMode] =
+    useState<WarMapAisMode>(aisMode);
   const viewStateRef = useRef(viewState);
   const initialUrlState = useMemo(() => {
     if (typeof window === "undefined") {
@@ -856,12 +868,12 @@ export function WarMap({
       zoom: queryZoom,
       translateTarget,
       flightMode,
-      aisMode,
+      aisMode: effectiveAisMode,
     });
   }, [
-    aisMode,
     effectiveRange.end,
     effectiveRange.start,
+    effectiveAisMode,
     flightMode,
     onRealtimeQueryChange,
     queryBbox,
@@ -878,7 +890,7 @@ export function WarMap({
     bbox: queryBbox,
     zoom: queryZoom,
     flightMode,
-    aisMode,
+    aisMode: effectiveAisMode,
   });
   const monitors = monitorsQuery.data ?? [];
   const internalStreamState = useDashboardStream({
@@ -891,7 +903,7 @@ export function WarMap({
     warMapZoom: queryZoom,
     warMapTranslateTarget: translateTarget,
     warMapFlightMode: flightMode,
-    warMapAisMode: aisMode,
+    warMapAisMode: effectiveAisMode,
     enabled: !streamState && dataEnabled,
   });
   const resolvedStreamState = streamState ?? internalStreamState;
@@ -1021,6 +1033,10 @@ export function WarMap({
     }
     if (parsed.aisMode) {
       setAisMode(parsed.aisMode);
+      setEffectiveAisMode(parsed.aisMode);
+    }
+    if (typeof parsed.aisAutoMode === "boolean") {
+      setAisAutoMode(parsed.aisAutoMode);
     }
     if (parsed.viewState) {
       setViewState(parsed.viewState);
@@ -1031,7 +1047,9 @@ export function WarMap({
   }, [
     initialUrlState,
     setActivePreset,
+    setAisAutoMode,
     setAisMode,
+    setEffectiveAisMode,
     setFlightMode,
     setLayerVisibility,
     setTimeRangePreset,
@@ -1052,6 +1070,7 @@ export function WarMap({
         layerVisibility,
         flightMode,
         aisMode,
+        aisAutoMode,
       });
       const nextSearch = nextParams.toString();
       const currentSearch = current.searchParams.toString();
@@ -1064,6 +1083,7 @@ export function WarMap({
     return () => window.clearTimeout(timer);
   }, [
     activePreset,
+    aisAutoMode,
     aisMode,
     flightMode,
     layerVisibility,
@@ -2130,7 +2150,7 @@ export function WarMap({
             lng: feature.lng,
             label,
             color: getAisShipTypeColor(aisProperties.shipType),
-            radius: aisMode === "military" ? 7 : 5,
+            radius: effectiveAisMode === "military" ? 7 : 5,
             kind: "layer",
             layerId: "ais",
             sourceType: "ais",
@@ -2150,7 +2170,7 @@ export function WarMap({
             sourceUpdatedAt:
               aisProperties.sourceUpdatedAt ?? aisDataset.updatedAt,
             description:
-              aisMode === "military"
+              effectiveAisMode === "military"
                 ? t("dashboard.charts.warMap.stats.aisMilitaryCandidates", {
                     defaultValue: "Military / government candidate vessel",
                   })
@@ -2182,8 +2202,8 @@ export function WarMap({
             description:
               aisProperties.description ??
               aisProperties.note ??
-              t("dashboard.charts.warMap.stats.aisDensityZones", {
-                defaultValue: "AIS traffic density zone",
+              t("dashboard.charts.warMap.stats.aisDensityAggregateHint", {
+                defaultValue: "Aggregated AIS hotspot, not individual vessels.",
               }),
           });
           continue;
@@ -2214,7 +2234,12 @@ export function WarMap({
           darkShips: aisProperties.darkShips,
           latestAt: feature.timestamp ?? aisDataset.updatedAt,
           sourceUpdatedAt: aisDataset.updatedAt,
-          description: aisProperties.description,
+          description:
+            aisProperties.description ??
+            t("dashboard.charts.warMap.stats.aisDisruptionAggregateHint", {
+              defaultValue:
+                "Aggregated AIS chokepoint signal, not individual vessels.",
+            }),
         });
       }
 
@@ -2313,6 +2338,37 @@ export function WarMap({
           (point) => resolveVesselIconAngle(point) === null,
         );
 
+        aisLayers.push(
+          new ScatterplotLayer({
+            id: "wm-ais-vessels-halo",
+            data: aisVessels,
+            pickable: false,
+            stroked: true,
+            filled: true,
+            lineWidthMinPixels: 1.5,
+            getLineColor: [15, 23, 42, 150],
+            getFillColor: [255, 255, 255, 225],
+            getRadius: (point: DeckPoint) => Math.max(6, point.radius * 1.35),
+            radiusMinPixels: 6,
+            radiusMaxPixels: 18,
+            getPosition: (point: DeckPoint) => [point.lng, point.lat],
+          }),
+        );
+        aisLayers.push(
+          new ScatterplotLayer({
+            id: "wm-ais-vessels-core",
+            data: aisVessels,
+            pickable: false,
+            stroked: false,
+            filled: true,
+            getFillColor: (point: DeckPoint) => point.color,
+            getRadius: (point: DeckPoint) => Math.max(4, point.radius * 0.9),
+            radiusMinPixels: 4,
+            radiusMaxPixels: 12,
+            getPosition: (point: DeckPoint) => [point.lng, point.lat],
+          }),
+        );
+
         if (orientedAisVessels.length > 0) {
           aisLayers.push(
             new IconLayer({
@@ -2326,9 +2382,9 @@ export function WarMap({
               getColor: (point: DeckPoint) => point.color,
               getAngle: (point: DeckPoint) =>
                 resolveVesselIconAngle(point) ?? 0,
-              getSize: (point: DeckPoint) => Math.max(18, point.radius * 3.1),
-              sizeMinPixels: 16,
-              sizeMaxPixels: 34,
+              getSize: (point: DeckPoint) => Math.max(22, point.radius * 3.4),
+              sizeMinPixels: 18,
+              sizeMaxPixels: 38,
               onClick: (info: { object?: DeckPoint }) => {
                 const object = info.object;
                 if (!object?.selectionKey) {
@@ -2348,10 +2404,10 @@ export function WarMap({
               pickable: true,
               stroked: true,
               getLineColor: [15, 23, 42, 180],
-              lineWidthMinPixels: 1,
+              lineWidthMinPixels: 1.25,
               getFillColor: (point: DeckPoint) => point.color,
-              getRadius: (point: DeckPoint) => point.radius,
-              radiusMinPixels: 3,
+              getRadius: (point: DeckPoint) => Math.max(4, point.radius * 0.95),
+              radiusMinPixels: 4,
               radiusMaxPixels: 14,
               getPosition: (point: DeckPoint) => [point.lng, point.lat],
               onClick: (info: { object?: DeckPoint }) => {
@@ -2378,7 +2434,7 @@ export function WarMap({
     localClusterBbox,
     queryZoom,
     t,
-    aisMode,
+    effectiveAisMode,
     flightMode,
     translateTarget,
     zoomToLayerCluster,
@@ -2802,6 +2858,13 @@ export function WarMap({
               );
             }
           } else if (object.aisFeatureKind === "density") {
+            lines.push(
+              object.description ??
+                t("dashboard.charts.warMap.stats.aisDensityAggregateHint", {
+                  defaultValue:
+                    "Aggregated AIS hotspot, not individual vessels.",
+                }),
+            );
             if (typeof object.intensity === "number") {
               lines.push(
                 `${t("dashboard.charts.warMap.tooltip.intensity", {
@@ -2824,6 +2887,13 @@ export function WarMap({
               );
             }
           } else if (object.aisFeatureKind === "disruption") {
+            lines.push(
+              object.description ??
+                t("dashboard.charts.warMap.stats.aisDisruptionAggregateHint", {
+                  defaultValue:
+                    "Aggregated AIS chokepoint signal, not individual vessels.",
+                }),
+            );
             if (object.disruptionType) {
               lines.push(
                 `${t("dashboard.charts.warMap.tooltip.type", {
@@ -3196,8 +3266,10 @@ export function WarMap({
     aisSummary,
     "renderedVesselCount",
   );
-  const aisAllVesselsAvailable =
-    readSummaryBoolean(aisSummary, "allVesselsAvailable") ?? false;
+  const aisAllVesselsAvailable = readSummaryBoolean(
+    aisSummary,
+    "allVesselsAvailable",
+  );
   const aisMessageCount = readSummaryNumber(aisSummary, "messageCount");
   const aisClientCount = readSummaryNumber(aisSummary, "clientCount");
   const aisDroppedMessages = readSummaryNumber(aisSummary, "droppedMessages");
@@ -3214,12 +3286,26 @@ export function WarMap({
     "ignoredPositionReports",
   );
   const aisParseErrors = readSummaryNumber(aisSummary, "parseErrors");
+  const aisStatusReasonCode = readSummaryString(aisSummary, "statusReasonCode");
   const aisStatusReason = readSummaryString(aisSummary, "statusReason");
+  const aisViewportVesselCount = readSummaryNumber(
+    aisSummary,
+    "viewportVesselCount",
+  );
+  const aisMaxReturned = readSummaryNumber(aisSummary, "maxReturned");
+  const aisTruncated = readSummaryBoolean(aisSummary, "truncated") ?? false;
   const aisBlockedReasonCode = readSummaryString(
     aisSummary,
     "blockedReasonCode",
   );
   const aisBlockedReason = readSummaryString(aisSummary, "blockedReason");
+  const aisResolvedStatusReason =
+    aisStatusReasonCode === "ais_snapshot_missing_vessels_contract"
+      ? t("dashboard.charts.warMap.stats.aisSnapshotMissingVesselsContract", {
+          defaultValue:
+            "AIS relay reports tracked vessels, but this snapshot only exposes aggregated signals instead of individual vessels[].",
+        })
+      : aisStatusReason;
   const aisResolvedBlockedReason =
     aisBlockedReasonCode === "missing_vessels_snapshot"
       ? t("dashboard.charts.warMap.stats.aisAllUnavailableHint", {
@@ -3231,13 +3317,52 @@ export function WarMap({
             defaultValue: "AIS snapshot is not available yet.",
           })
         : aisBlockedReason;
+  const aisViewportEmptyStateActive =
+    layerVisibility.ais &&
+    isAisViewportEmptyStateActive({
+      effectiveMode: effectiveAisMode,
+      allVesselsAvailable: aisAllVesselsAvailable,
+      viewportVesselCount: aisViewportVesselCount,
+      renderedVesselCount: aisRenderedVesselCount,
+    });
+  const aisViewportEmptyStateLabel = aisViewportEmptyStateActive
+    ? t("dashboard.charts.warMap.stats.aisViewportEmpty", {
+        defaultValue: "Viewport has no vessel positions",
+      })
+    : null;
+  const aisViewportEmptyStateHint = aisViewportEmptyStateActive
+    ? t("dashboard.charts.warMap.stats.aisViewportEmptyHint", {
+        defaultValue:
+          "All vessels is active, but this viewport currently has no individual ship positions in the live snapshot. Pan toward nearby shipping lanes or zoom out to return to aggregated chokepoints.",
+      })
+    : null;
   const aisSnapshotRelative = aisSnapshotUpdatedAt
     ? formatWarMapRelativeTimestamp(aisSnapshotUpdatedAt, locale, nowMs)
     : null;
   const aisSnapshotExact = aisSnapshotUpdatedAt
     ? formatUpdatedAt(aisSnapshotUpdatedAt, locale)
     : null;
-  const aisHasIssue = Boolean(aisStatusReason);
+  useEffect(() => {
+    const nextEffectiveAisMode = resolveEffectiveAisMode({
+      preferredMode: aisMode,
+      autoModeEnabled: aisAutoMode,
+      aisLayerVisible: layerVisibility.ais,
+      allVesselsAvailable: aisAllVesselsAvailable,
+      zoom: queryZoom,
+      previousEffectiveMode: effectiveAisMode,
+    });
+    if (nextEffectiveAisMode !== effectiveAisMode) {
+      setEffectiveAisMode(nextEffectiveAisMode);
+    }
+  }, [
+    aisAllVesselsAvailable,
+    aisAutoMode,
+    aisMode,
+    effectiveAisMode,
+    layerVisibility.ais,
+    queryZoom,
+  ]);
+  const aisHasIssue = Boolean(aisResolvedStatusReason);
   const aisSourceStatusColor = !aisConfigured
     ? "red"
     : !aisConnected
@@ -3266,7 +3391,7 @@ export function WarMap({
           : t("dashboard.stream.status.live", {
               defaultValue: "Live",
             });
-  const aisModeLabel =
+  const aisPreferredModeLabel =
     aisMode === "all"
       ? t("dashboard.charts.warMap.stats.aisModeAll", {
           defaultValue: "All vessels",
@@ -3278,23 +3403,62 @@ export function WarMap({
         : t("dashboard.charts.warMap.stats.aisModeMilitary", {
             defaultValue: "Military candidates",
           });
+  const aisEffectiveModeLabel =
+    effectiveAisMode === "all"
+      ? t("dashboard.charts.warMap.stats.aisModeAll", {
+          defaultValue: "All vessels",
+        })
+      : effectiveAisMode === "density"
+        ? t("dashboard.charts.warMap.stats.aisModeDensity", {
+            defaultValue: "Density only",
+          })
+        : t("dashboard.charts.warMap.stats.aisModeMilitary", {
+            defaultValue: "Military candidates",
+          });
+  const aisAutoActive = isAisAutoModeActive(
+    aisMode,
+    effectiveAisMode,
+    aisAutoMode,
+  );
   const aisTooltipText = [
     `${t("dashboard.charts.warMap.layerNames.ais", {
       defaultValue: "AIS traffic",
     })}: ${aisSourceStatusLabel}`,
-    aisStatusReason,
+    aisResolvedStatusReason,
     `${t("dashboard.charts.warMap.stats.mode", {
       defaultValue: "Mode",
-    })}: ${aisModeLabel}`,
+    })}: ${aisEffectiveModeLabel}`,
+    aisAutoActive
+      ? `${t("dashboard.charts.warMap.stats.preferredMode", {
+          defaultValue: "Preferred mode",
+        })}: ${aisPreferredModeLabel}`
+      : null,
+    aisViewportEmptyStateHint,
     typeof aisRelayVesselCount === "number"
       ? `${t("dashboard.charts.warMap.stats.aisTrackedVessels", {
           defaultValue: "Tracked vessels",
         })}: ${aisRelayVesselCount}`
       : null,
+    typeof aisViewportVesselCount === "number"
+      ? `${t("dashboard.charts.warMap.stats.aisViewportVessels", {
+          defaultValue: "Viewport vessels",
+        })}: ${aisViewportVesselCount}`
+      : null,
     typeof aisRenderedVesselCount === "number"
       ? `${t("dashboard.charts.warMap.stats.aisRenderedVessels", {
           defaultValue: "Rendered vessels",
         })}: ${aisRenderedVesselCount}`
+      : null,
+    typeof aisMaxReturned === "number"
+      ? `${t("dashboard.charts.warMap.stats.aisViewportCap", {
+          defaultValue: "Viewport cap",
+        })}: ${aisMaxReturned}`
+      : null,
+    aisTruncated
+      ? t("dashboard.charts.warMap.stats.aisViewportTruncated", {
+          defaultValue:
+            "Viewport is truncated after per-cell sampling to preserve map readability.",
+        })
       : null,
     typeof aisCandidateCount === "number"
       ? `${t("dashboard.charts.warMap.stats.aisCandidates", {
@@ -3360,30 +3524,54 @@ export function WarMap({
   ]
     .filter((value): value is string => Boolean(value))
     .join("\n");
-  const aisAllModeDisabled = !aisAllVesselsAvailable;
-  const aisAllModeDisabledLabel =
-    aisResolvedBlockedReason ??
-    t("dashboard.charts.warMap.stats.aisAllUnavailable", {
-      defaultValue: "All vessels mode is waiting for relay vessel snapshots.",
-    });
+  const aisAllModeDisabled = aisAllVesselsAvailable === false;
+  const aisAllModeDisabledLabel = aisAllModeDisabled
+    ? (aisResolvedBlockedReason ??
+      t("dashboard.charts.warMap.stats.aisAllUnavailable", {
+        defaultValue: "All vessels mode is waiting for relay vessel snapshots.",
+      }))
+    : null;
   const aisPrimaryCountLabel =
-    aisMode === "density"
+    effectiveAisMode === "density"
       ? t("dashboard.charts.warMap.stats.aisDensityZones", {
           defaultValue: "Density zones",
         })
-      : aisMode === "military"
+      : effectiveAisMode === "military"
         ? t("dashboard.charts.warMap.stats.aisCandidates", {
             defaultValue: "Candidates",
           })
-        : t("dashboard.charts.warMap.stats.aisRenderedVessels", {
-            defaultValue: "Rendered vessels",
+        : t("dashboard.charts.warMap.stats.aisViewportVessels", {
+            defaultValue: "Viewport vessels",
           });
   const aisPrimaryCountValue =
-    aisMode === "density"
+    effectiveAisMode === "density"
       ? aisDensityCount
-      : aisMode === "military"
+      : effectiveAisMode === "military"
         ? (aisRenderedVesselCount ?? aisCandidateCount)
-        : aisRenderedVesselCount;
+        : (aisViewportVesselCount ?? aisRenderedVesselCount);
+  useEffect(() => {
+    if (
+      !aisAutoMode ||
+      !aisAutoActive ||
+      effectiveAisMode !== "all" ||
+      hasShownAisAutoModeToastRef.current
+    ) {
+      return;
+    }
+
+    hasShownAisAutoModeToastRef.current = true;
+    toast.message(
+      t("dashboard.charts.warMap.stats.aisAutoAllToastTitle", {
+        defaultValue: "AIS switched to individual vessels",
+      }),
+      {
+        description: t("dashboard.charts.warMap.stats.aisAutoAllToastBody", {
+          defaultValue:
+            "Auto mode switched from the aggregated AIS view to individual vessel positions for this zoom level.",
+        }),
+      },
+    );
+  }, [aisAutoActive, aisAutoMode, effectiveAisMode, t]);
   const visibleLayerCount =
     DISPLAYABLE_WAR_MAP_LAYER_IDS.filter((layerId) => layerVisibility[layerId])
       .length + (layerVisibility.monitors ? 1 : 0);
@@ -3782,21 +3970,43 @@ export function WarMap({
         flightsTruncated,
         aisLayerVisible: layerVisibility.ais,
         aisMode,
-        onAisModeChange: setAisMode,
+        aisEffectiveMode: effectiveAisMode,
+        aisAutoMode,
+        aisAutoActive,
+        onAisModeChange: (mode) => {
+          if (mode === "all" && aisAllModeDisabled) {
+            return;
+          }
+          setAisAutoMode(false);
+          setAisMode(mode);
+          setEffectiveAisMode(mode);
+        },
+        onAisAutoModeChange: (enabled) => {
+          setAisAutoMode(enabled);
+          if (!enabled) {
+            setEffectiveAisMode(aisMode);
+            return;
+          }
+          hasShownAisAutoModeToastRef.current = false;
+        },
         aisAllModeDisabled,
         aisAllModeDisabledLabel,
         aisTooltipText,
-        aisStatusReason: aisStatusReason ?? null,
+        aisStatusReason: aisResolvedStatusReason ?? null,
         aisSourceStatusColor,
         aisSourceStatusLabel,
         aisFreshness,
-        aisModeLabel,
+        aisModeLabel: aisEffectiveModeLabel,
+        aisSelectedModeLabel: aisPreferredModeLabel,
         aisRelayVesselCount,
         aisSnapshotRelative,
         aisSnapshotExact,
         aisPrimaryCountValue,
         aisPrimaryCountLabel,
         aisDisruptionsCount,
+        aisViewportEmptyStateActive,
+        aisViewportEmptyStateLabel,
+        aisViewportEmptyStateHint,
         canAnalyzeCurrentView:
           canRunAnalysis && (layerVisibility.flights || layerVisibility.ais),
         analyzingCurrentView: submittingGeoTransport,
@@ -3894,6 +4104,19 @@ export function WarMap({
 
       {!hasFatalOverlay ? (
         <>
+          {aisViewportEmptyStateActive && aisViewportEmptyStateHint ? (
+            <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(32rem,calc(100%-2rem))] -translate-x-1/2">
+              <div className="rounded-2xl border border-amber-200/80 bg-white/94 px-4 py-3 shadow-[0_18px_40px_-28px_rgba(120,53,15,0.45)] backdrop-blur dark:border-amber-500/30 dark:bg-slate-950/82 dark:shadow-[0_22px_44px_-30px_rgba(2,6,23,0.92)]">
+                <p className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+                  {aisViewportEmptyStateLabel}
+                </p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {aisViewportEmptyStateHint}
+                </p>
+              </div>
+            </div>
+          ) : null}
+
           <WarMapInspectorPanel
             selectedInspector={selectedInspector}
             transportDetail={transportDetailQuery.data?.detail ?? null}

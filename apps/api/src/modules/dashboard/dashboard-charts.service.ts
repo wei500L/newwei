@@ -2537,10 +2537,14 @@ export class DashboardChartsService {
     const positionReportsProcessed = readFiniteNumber(
       snapshotDiagnostics?.positionReportsProcessed,
     );
+    const missingVesselsSnapshotContract =
+      snapshot.status.vessels > 0 && !snapshot.hasVesselSnapshot;
     const aisStatusReasonCode =
       this.normalizeString(snapshotDiagnostics?.statusReasonCode) ??
       (!snapshot.status.connected
         ? "ais_upstream_disconnected"
+        : missingVesselsSnapshotContract
+          ? "ais_snapshot_missing_vessels_contract"
         : typeof positionReportsSeen === "number" &&
             positionReportsSeen > 0 &&
             positionReportsProcessed === 0 &&
@@ -2552,6 +2556,8 @@ export class DashboardChartsService {
       (!snapshot.status.connected
         ? (sourceStatusReason ??
           "AIS relay is reachable, but the upstream AIS stream is disconnected.")
+        : missingVesselsSnapshotContract
+          ? "AIS relay reports tracked vessels, but the snapshot payload omits vessels[] and only exposes aggregated signals."
         : typeof positionReportsSeen === "number" &&
             positionReportsSeen > 0 &&
             positionReportsProcessed === 0 &&
@@ -2584,6 +2590,10 @@ export class DashboardChartsService {
       vesselPool,
       options.bbox,
     );
+    const viewportVesselCount =
+      aisMode === "all" && snapshot.hasVesselSnapshot
+        ? filteredVessels.length
+        : undefined;
     const shapedVessels =
       aisMode === "all"
         ? this.shapeWarMapAisVesselsForViewport(vesselPool, options)
@@ -2637,6 +2647,9 @@ export class DashboardChartsService {
       ...(aisStatusReason ? { statusReason: aisStatusReason } : {}),
       ...(aisMode === "all"
         ? {
+            ...(typeof viewportVesselCount === "number"
+              ? { viewportVesselCount }
+              : {}),
             maxReturned: this.resolveWarMapAisMaxPoints(options),
             truncated: vesselFeatures.length < filteredVessels.length,
           }

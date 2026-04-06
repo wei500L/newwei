@@ -149,6 +149,7 @@ export interface WarMapSettings {
   timeRangePreset: WarMapTimeRangePreset;
   flightMode: WarMapFlightMode;
   aisMode: WarMapAisMode;
+  aisAutoMode: boolean;
 }
 
 export type WarMapGeometryType = "point" | "path" | "polygon" | "raster";
@@ -456,6 +457,7 @@ export function normalizeWarMapSettings(value: unknown): WarMapSettings {
       timeRangePreset: "7d",
       flightMode: "military",
       aisMode: "military",
+      aisAutoMode: true,
     };
   }
 
@@ -472,5 +474,6 @@ export function normalizeWarMapSettings(value: unknown): WarMapSettings {
         : record.aisMode === "density"
           ? "density"
           : "military",
+    aisAutoMode: record.aisAutoMode === false ? false : true,
   };
 }

@@ -299,7 +299,7 @@ describe("war-map page wiring", () => {
     expect(source).toContain("onEffectiveRangeChange");
     expect(source).toContain("warMapBBox: queryBbox");
     expect(source).toContain("warMapFlightMode: flightMode");
-    expect(source).toContain("warMapAisMode: aisMode");
+    expect(source).toContain("warMapAisMode: effectiveAisMode");
     expect(source).toContain(
       'const flightsSource = readSummaryString(flightsSummary, "source");',
     );
@@ -319,10 +319,18 @@ describe("war-map page wiring", () => {
     expect(source).toContain(
       "const aisMode = useWarMapSettingsStore((state) => state.aisMode);",
     );
+    expect(source).toContain(
+      "const aisAutoMode = useWarMapSettingsStore((state) => state.aisAutoMode);",
+    );
+    expect(source).toContain("resolveEffectiveAisMode({");
     expect(source).toContain("onFlightModeChange: setFlightMode,");
-    expect(source).toContain("onAisModeChange: setAisMode,");
+    expect(source).toContain("setAisAutoMode(false);");
+    expect(source).toContain("onAisAutoModeChange: (enabled) => {");
     expect(controlsSource).toContain(
       'onClick={() => transport.onFlightModeChange("all")}',
+    );
+    expect(controlsSource).toContain(
+      "transport.onAisAutoModeChange(!transport.aisAutoMode)",
     );
     expect(controlsSource).toContain(
       'onClick={() => transport.onAisModeChange("density")}',
@@ -331,6 +339,19 @@ describe("war-map page wiring", () => {
       'onClick={() => transport.onAisModeChange("all")}',
     );
     expect(source).toContain('id: "wm-ais-density-zones"');
+    expect(source).toContain("Aggregated AIS hotspot, not individual vessels.");
+    expect(source).toContain(
+      "Aggregated AIS chokepoint signal, not individual vessels.",
+    );
+    expect(source).toContain("isAisViewportEmptyStateActive({");
+    expect(source).toContain('id: "wm-ais-vessels-halo"');
+    expect(source).toContain('id: "wm-ais-vessels-core"');
+    expect(source).toContain('defaultValue: "Viewport has no vessel positions"');
+    expect(source).toContain(
+      "All vessels is active, but this viewport currently has no individual ship positions in the live snapshot.",
+    );
+    expect(controlsSource).toContain("transport.aisViewportEmptyStateActive");
+    expect(controlsSource).toContain("transport.aisViewportEmptyStateHint");
     expect(controlsSource).toContain("dashboard.charts.warMap.legend.aisTitle");
   });
 

@@ -22,7 +22,7 @@ function cloneDefaultLayerVisibility(): WarMapLayerVisibility {
 describe("war-map url-state", () => {
   it("parses view/preset/time-range/layers from url", () => {
     const params = new URLSearchParams(
-      "lat=34.1&lon=108.9&zoom=4.2&bearing=12&pitch=41&preset=asia&tr=24h&fm=all&am=density&layers=conflicts,weather,monitors",
+      "lat=34.1&lon=108.9&zoom=4.2&bearing=12&pitch=41&preset=asia&tr=24h&fm=all&am=density&aa=0&layers=conflicts,weather,monitors",
     );
 
     const parsed = readWarMapUrlState(params);
@@ -38,6 +38,7 @@ describe("war-map url-state", () => {
     expect(parsed.timeRangePreset).toBe("24h");
     expect(parsed.flightMode).toBe("all");
     expect(parsed.aisMode).toBe("density");
+    expect(parsed.aisAutoMode).toBe(false);
     expect(parsed.layerVisibility?.conflicts).toBe(true);
     expect(parsed.layerVisibility?.weather).toBe(true);
     expect(parsed.layerVisibility?.monitors).toBe(true);
@@ -60,12 +61,14 @@ describe("war-map url-state", () => {
       layerVisibility: cloneDefaultLayerVisibility(),
       flightMode: "military",
       aisMode: "military",
+      aisAutoMode: true,
     });
 
     expect(next.get("preset")).toBe("global");
     expect(next.get("tr")).toBe("7d");
     expect(next.get("fm")).toBeNull();
     expect(next.get("am")).toBeNull();
+    expect(next.get("aa")).toBeNull();
     expect(next.get("layers")).toBeNull();
     expect(next.get("foo")).toBe("bar");
   });
@@ -91,6 +94,7 @@ describe("war-map url-state", () => {
       layerVisibility: noneVisible,
       flightMode: "military",
       aisMode: "military",
+      aisAutoMode: true,
     });
 
     expect(written.get("layers")).toBe("");
@@ -124,6 +128,7 @@ describe("war-map url-state", () => {
       layerVisibility: visibility,
       flightMode: "all",
       aisMode: "density",
+      aisAutoMode: false,
     });
 
     const parsed = readWarMapUrlState(written);
@@ -132,6 +137,7 @@ describe("war-map url-state", () => {
     expect(parsed.timeRangePreset).toBe("48h");
     expect(parsed.flightMode).toBe("all");
     expect(parsed.aisMode).toBe("density");
+    expect(parsed.aisAutoMode).toBe(false);
     expect(parsed.viewState?.bearing).toBe(0);
     expect(parsed.viewState?.pitch).toBe(0);
     expect(parsed.layerVisibility?.conflicts).toBe(true);
@@ -140,21 +146,68 @@ describe("war-map url-state", () => {
     expect(parsed.layerVisibility?.monitors).toBe(false);
   });
 
-  it("preserves URL-selected AIS mode when merging remote settings", () => {
+  it("preserves URL-selected view, layers, and AIS settings when merging remote settings", () => {
+    const visibility = Object.fromEntries(
+      Object.keys(cloneDefaultLayerVisibility()).map((layerId) => [
+        layerId,
+        false,
+      ]),
+    ) as WarMapLayerVisibility;
+    visibility.conflicts = true;
+
     const merged = mergeWarMapSettingsWithUrlState(
       {
         activePreset: "asia",
+        viewState: {
+          lat: -15,
+          lon: 130,
+          zoom: 3.5,
+          bearing: 0,
+          pitch: 0,
+        },
         timeRangePreset: "24h",
+        layerVisibility: cloneDefaultLayerVisibility(),
         flightMode: "all",
         aisMode: "military",
+        aisAutoMode: true,
       },
-      new URLSearchParams("am=density"),
+      new URLSearchParams(
+        "lat=26.44916&lon=56.45&zoom=8.3&preset=global&tr=7d&fm=military&am=density&aa=0&layers=conflicts",
+      ),
     );
 
-    expect(merged.activePreset).toBe("asia");
-    expect(merged.timeRangePreset).toBe("24h");
-    expect(merged.flightMode).toBe("all");
+    expect(merged.viewState).toMatchObject({
+      lat: 26.44916,
+      lon: 56.45,
+      zoom: 8.3,
+      bearing: 0,
+      pitch: 0,
+    });
+    expect(merged.activePreset).toBe("global");
+    expect(merged.timeRangePreset).toBe("7d");
+    expect(merged.flightMode).toBe("military");
     expect(merged.aisMode).toBe("density");
+    expect(merged.aisAutoMode).toBe(false);
+    expect(merged.layerVisibility).toEqual(visibility);
+  });
+
+  it("applies preset camera when the URL only overrides the preset", () => {
+    const merged = mergeWarMapSettingsWithUrlState(
+      {
+        activePreset: "asia",
+        viewState: {
+          lat: -15,
+          lon: 130,
+          zoom: 3.5,
+          bearing: 0,
+          pitch: 0,
+        },
+      },
+      new URLSearchParams("preset=mena"),
+    );
+
+    expect(merged.activePreset).toBe("mena");
+    expect(merged.viewState).toEqual(WAR_MAP_PRESET_VIEW_STATE.mena);
   });
 });
 
@@ -172,6 +225,7 @@ describe("war-map settings store", () => {
     expect(useWarMapSettingsStore.getState().layerVisibility.ais).toBe(true);
     expect(useWarMapSettingsStore.getState().flightMode).toBe("military");
     expect(useWarMapSettingsStore.getState().aisMode).toBe("military");
+    expect(useWarMapSettingsStore.getState().aisAutoMode).toBe(true);
   });
 
   it("forces 2D camera in setViewState", () => {
@@ -215,14 +269,22 @@ describe("war-map settings store", () => {
       timeRangePreset: "24h",
       flightMode: "all",
       aisMode: "density",
+      aisAutoMode: false,
     });
 
-    const { viewState, activePreset, timeRangePreset, flightMode, aisMode } =
-      useWarMapSettingsStore.getState();
+    const {
+      viewState,
+      activePreset,
+      timeRangePreset,
+      flightMode,
+      aisMode,
+      aisAutoMode,
+    } = useWarMapSettingsStore.getState();
     expect(activePreset).toBe("asia");
     expect(timeRangePreset).toBe("24h");
     expect(flightMode).toBe("all");
     expect(aisMode).toBe("density");
+    expect(aisAutoMode).toBe(false);
     expect(viewState.lat).toBe(-15);
     expect(viewState.lon).toBe(130);
     expect(viewState.zoom).toBe(3.5);

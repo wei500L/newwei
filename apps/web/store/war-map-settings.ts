@@ -43,6 +43,7 @@ const DEFAULT_SETTINGS: WarMapSettings = {
   timeRangePreset: "7d",
   flightMode: "military",
   aisMode: "military",
+  aisAutoMode: true,
 };
 
 const WAR_MAP_TIME_RANGE_PRESET_VALUES: readonly WarMapTimeRangePreset[] = [
@@ -67,6 +68,7 @@ function normalizeWarMapSettingsFallback(payload: unknown): WarMapSettings {
       timeRangePreset: DEFAULT_SETTINGS.timeRangePreset,
       flightMode: DEFAULT_SETTINGS.flightMode,
       aisMode: DEFAULT_SETTINGS.aisMode,
+      aisAutoMode: DEFAULT_SETTINGS.aisAutoMode,
     };
   }
 
@@ -117,6 +119,10 @@ function normalizeWarMapSettingsFallback(payload: unknown): WarMapSettings {
       : record.aisMode === "density"
         ? "density"
         : DEFAULT_SETTINGS.aisMode;
+  const aisAutoMode =
+    typeof record.aisAutoMode === "boolean"
+      ? record.aisAutoMode
+      : DEFAULT_SETTINGS.aisAutoMode;
 
   return {
     layerVisibility,
@@ -125,6 +131,7 @@ function normalizeWarMapSettingsFallback(payload: unknown): WarMapSettings {
     timeRangePreset,
     flightMode,
     aisMode,
+    aisAutoMode,
   };
 }
 
@@ -142,6 +149,7 @@ export interface WarMapSettingsState {
   timeRangePreset: WarMapTimeRangePreset;
   flightMode: WarMapFlightMode;
   aisMode: WarMapAisMode;
+  aisAutoMode: boolean;
   setLayerVisible: (id: WarMapLayerId, visible: boolean) => void;
   setLayerVisibility: (visibility: WarMapLayerVisibility) => void;
   setViewState: (viewState: Partial<WarMapViewState>) => void;
@@ -149,6 +157,7 @@ export interface WarMapSettingsState {
   setTimeRangePreset: (preset: WarMapTimeRangePreset) => void;
   setFlightMode: (mode: WarMapFlightMode) => void;
   setAisMode: (mode: WarMapAisMode) => void;
+  setAisAutoMode: (enabled: boolean) => void;
   resetLayers: () => void;
   resetAll: () => void;
   hydrateFromRemote: (payload: unknown) => void;
@@ -164,6 +173,7 @@ export const useWarMapSettingsStore = create<WarMapSettingsState>((set) => ({
   timeRangePreset: DEFAULT_SETTINGS.timeRangePreset,
   flightMode: DEFAULT_SETTINGS.flightMode,
   aisMode: DEFAULT_SETTINGS.aisMode,
+  aisAutoMode: DEFAULT_SETTINGS.aisAutoMode,
   setLayerVisible: (id, visible) =>
     set((state) => ({
       layerVisibility: { ...state.layerVisibility, [id]: visible },
@@ -198,6 +208,7 @@ export const useWarMapSettingsStore = create<WarMapSettingsState>((set) => ({
   setTimeRangePreset: (preset) => set({ timeRangePreset: preset }),
   setFlightMode: (flightMode) => set({ flightMode }),
   setAisMode: (aisMode) => set({ aisMode }),
+  setAisAutoMode: (aisAutoMode) => set({ aisAutoMode }),
   resetLayers: () =>
     set({ layerVisibility: { ...WAR_MAP_DEFAULT_LAYER_VISIBILITY } }),
   resetAll: () =>
@@ -208,6 +219,7 @@ export const useWarMapSettingsStore = create<WarMapSettingsState>((set) => ({
       timeRangePreset: DEFAULT_SETTINGS.timeRangePreset,
       flightMode: DEFAULT_SETTINGS.flightMode,
       aisMode: DEFAULT_SETTINGS.aisMode,
+      aisAutoMode: DEFAULT_SETTINGS.aisAutoMode,
     }),
   hydrateFromRemote: (payload) => {
     const normalized = normalizeWarMapSettingsSafe(payload);
@@ -218,6 +230,7 @@ export const useWarMapSettingsStore = create<WarMapSettingsState>((set) => ({
       timeRangePreset: normalized.timeRangePreset,
       flightMode: normalized.flightMode,
       aisMode: normalized.aisMode,
+      aisAutoMode: normalized.aisAutoMode,
     });
   },
 }));

@@ -52,7 +52,11 @@ interface WarMapControlsPanelTransportProps {
   flightsTruncated: boolean;
   aisLayerVisible: boolean;
   aisMode: AisMode;
+  aisEffectiveMode: AisMode;
+  aisAutoMode: boolean;
+  aisAutoActive: boolean;
   onAisModeChange: (mode: AisMode) => void;
+  onAisAutoModeChange: (enabled: boolean) => void;
   aisAllModeDisabled: boolean;
   aisAllModeDisabledLabel: string | null;
   aisTooltipText: string | null;
@@ -61,12 +65,16 @@ interface WarMapControlsPanelTransportProps {
   aisSourceStatusLabel: string;
   aisFreshness?: string;
   aisModeLabel: string;
+  aisSelectedModeLabel: string;
   aisRelayVesselCount?: number;
   aisSnapshotRelative: string | null;
   aisSnapshotExact: string | null;
   aisPrimaryCountValue?: number;
   aisPrimaryCountLabel: string;
   aisDisruptionsCount?: number;
+  aisViewportEmptyStateActive: boolean;
+  aisViewportEmptyStateLabel: string | null;
+  aisViewportEmptyStateHint: string | null;
   canAnalyzeCurrentView: boolean;
   analyzingCurrentView: boolean;
   onAnalyzeCurrentView: () => void;
@@ -579,6 +587,27 @@ function TransportSection({
         {transport.aisLayerVisible ? (
           <>
             <div className={`mt-2 ${OVERLAY_BUTTON_GROUP_CLASS_NAME}`}>
+              <Tooltip
+                title={t("dashboard.charts.warMap.overlay.aisAutoModeHint", {
+                  defaultValue:
+                    "Auto switches to individual vessels at higher zoom when the relay exposes vessel snapshots.",
+                })}
+              >
+                <Button
+                  size="small"
+                  type="default"
+                  className={resolveOverlayButtonClassName({
+                    tone: transport.aisAutoMode ? "active" : "neutral",
+                  })}
+                  onClick={() =>
+                    transport.onAisAutoModeChange(!transport.aisAutoMode)
+                  }
+                >
+                  {t("dashboard.charts.warMap.stats.auto", {
+                    defaultValue: "Auto",
+                  })}
+                </Button>
+              </Tooltip>
               <Button
                 size="small"
                 type="default"
@@ -650,10 +679,36 @@ function TransportSection({
                   <Tag
                     color="volcano"
                     className={OVERLAY_STATUS_TAG_CLASS_NAME}
+                >
+                  {t("dashboard.charts.warMap.stats.aisIssue", {
+                    defaultValue: "Relay issue",
+                  })}
+                </Tag>
+              </Tooltip>
+              ) : null}
+              {transport.aisAutoMode ? (
+                <Tooltip
+                  title={t("dashboard.charts.warMap.overlay.aisAutoModeHint", {
+                    defaultValue:
+                      "Auto switches to individual vessels at higher zoom when the relay exposes vessel snapshots.",
+                  })}
+                >
+                  <Tag
+                    color={transport.aisAutoActive ? "geekblue" : "default"}
+                    className={
+                      transport.aisAutoActive
+                        ? OVERLAY_STATUS_TAG_CLASS_NAME
+                        : OVERLAY_NEUTRAL_TAG_CLASS_NAME
+                    }
                   >
-                    {t("dashboard.charts.warMap.stats.aisIssue", {
-                      defaultValue: "Relay issue",
-                    })}
+                    {transport.aisAutoActive
+                      ? t("dashboard.charts.warMap.stats.aisAutoActive", {
+                          defaultValue: "Auto -> {{mode}}",
+                          mode: transport.aisModeLabel,
+                        })
+                      : t("dashboard.charts.warMap.stats.auto", {
+                          defaultValue: "Auto",
+                        })}
                   </Tag>
                 </Tooltip>
               ) : null}
@@ -670,6 +725,14 @@ function TransportSection({
                   {transport.aisModeLabel}
                 </Tag>
               </Tooltip>
+              {transport.aisAutoMode ? (
+                <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                  {t("dashboard.charts.warMap.stats.preferredModeShort", {
+                    defaultValue: "Preferred",
+                  })}
+                  : {transport.aisSelectedModeLabel}
+                </Tag>
+              ) : null}
               {typeof transport.aisRelayVesselCount === "number" ? (
                 <Tooltip
                   title={
@@ -755,7 +818,8 @@ function TransportSection({
                   </Tag>
                 </Tooltip>
               ) : null}
-              {transport.aisMode === "all" && transport.aisAllModeDisabled ? (
+              {transport.aisEffectiveMode === "all" &&
+              transport.aisAllModeDisabled ? (
                 <Tooltip title={transport.aisAllModeDisabledLabel}>
                   <Tag
                     color="magenta"
@@ -767,7 +831,19 @@ function TransportSection({
                   </Tag>
                 </Tooltip>
               ) : null}
+              {transport.aisViewportEmptyStateActive &&
+              transport.aisViewportEmptyStateLabel ? (
+                <Tag color="gold" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
+                  {transport.aisViewportEmptyStateLabel}
+                </Tag>
+              ) : null}
             </Space>
+            {transport.aisViewportEmptyStateActive &&
+            transport.aisViewportEmptyStateHint ? (
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                {transport.aisViewportEmptyStateHint}
+              </p>
+            ) : null}
           </>
         ) : (
           <Typography.Text type="secondary" className="text-xs">
