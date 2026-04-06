@@ -676,9 +676,9 @@ export function DashboardContent() {
                 })}
               </h3>
             </div>
-            <div className="min-h-0 flex-1">
+            <div className="min-h-0 flex flex-1">
               <WarMap
-                className="h-full"
+                className="flex-1"
                 streamState={dashboardStreamState}
                 onEffectiveRangeChange={handleWarMapRealtimeQueryChange}
                 onRealtimeQueryChange={handleWarMapRealtimeQueryChange}

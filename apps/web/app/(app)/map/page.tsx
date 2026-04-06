@@ -29,8 +29,8 @@ export default function MapPage() {
             })}
           </Typography.Text>
         </div>
-        <div className="min-h-0 flex-1">
-          <WarMap className="h-full" />
+        <div className="min-h-0 flex flex-1">
+          <WarMap className="flex-1" />
         </div>
       </div>
     </div>

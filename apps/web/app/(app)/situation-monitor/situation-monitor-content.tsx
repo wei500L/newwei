@@ -4098,46 +4098,49 @@ export function SituationMonitorContent() {
 
                     {renderHeadlineSummary(lead)}
 
-                    <Space wrap size={8}>
-                      <Typography.Text type="secondary">
-                        {leadDate
-                          ? formatDateTime(leadDate, locale, {
-                              month: "2-digit",
-                              day: "2-digit",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "—"}
-                      </Typography.Text>
-                      <Typography.Text type="secondary">
-                        {t("situationMonitor.feeds.rawArticleCount", {
-                          defaultValue: "{{count}} raw articles",
-                          count: cluster.items.length,
-                        })}
-                      </Typography.Text>
-                      {renderHeadlineTopics(lead)}
-                    </Space>
-
-                    <Space wrap size={8}>
-                      <Button
-                        size="small"
-                        data-sm-interactive
-                        onPointerDown={stopSituationMonitorInteractiveEvent}
-                        onMouseDown={stopSituationMonitorInteractiveEvent}
-                        onClick={(event) => {
-                          stopSituationMonitorInteractiveEvent(event);
-                          toggleClusterExpansion(cluster.id);
-                        }}
-                      >
-                        {expanded
-                          ? t("situationMonitor.feeds.hideRawArticles", {
-                              defaultValue: "Hide raw articles",
-                            })
-                          : t("situationMonitor.feeds.viewRawArticles", {
-                              defaultValue: "View raw articles",
+                    <div className="rounded-[var(--radius)] border border-[var(--border)] bg-white/20 px-3 py-2 dark:bg-white/[0.03]">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <Space wrap size={[8, 8]} style={{ flex: 1 }}>
+                          <Typography.Text type="secondary">
+                            {leadDate
+                              ? formatDateTime(leadDate, locale, {
+                                  month: "2-digit",
+                                  day: "2-digit",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })
+                              : "—"}
+                          </Typography.Text>
+                          <Typography.Text type="secondary">
+                            {t("situationMonitor.feeds.rawArticleCount", {
+                              defaultValue: "{{count}} raw articles",
+                              count: cluster.items.length,
                             })}
-                      </Button>
-                    </Space>
+                          </Typography.Text>
+                          {renderHeadlineTopics(lead)}
+                        </Space>
+                        <Button
+                          size="small"
+                          icon={expanded ? <DownOutlined /> : <RightOutlined />}
+                          className="self-start sm:ml-3 sm:self-center"
+                          data-sm-interactive
+                          onPointerDown={stopSituationMonitorInteractiveEvent}
+                          onMouseDown={stopSituationMonitorInteractiveEvent}
+                          onClick={(event) => {
+                            stopSituationMonitorInteractiveEvent(event);
+                            toggleClusterExpansion(cluster.id);
+                          }}
+                        >
+                          {expanded
+                            ? t("situationMonitor.feeds.hideRawArticles", {
+                                defaultValue: "Hide raw articles",
+                              })
+                            : t("situationMonitor.feeds.viewRawArticles", {
+                                defaultValue: "View raw articles",
+                              })}
+                        </Button>
+                      </div>
+                    </div>
 
                     {expanded ? (
                       <List

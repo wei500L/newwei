@@ -97,6 +97,7 @@ import {
   type WarMapSelectableOption,
 } from "./war-map-overlay-model";
 import { WarMapInspectorPanel } from "./war-map-inspector-panel";
+import { resolveWarMapContainerClassName } from "./war-map-layout";
 import { WarMapOverlayRail } from "./war-map-overlay-rail";
 import {
   useDashboardStream,
@@ -3820,12 +3821,7 @@ export function WarMap({
     </div>
   );
 
-  const containerClassName = [
-    "relative",
-    className ?? "min-h-[24rem] h-[clamp(24rem,50dvh,29rem)]",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const containerClassName = resolveWarMapContainerClassName(className);
 
   if (!inView) {
     return (

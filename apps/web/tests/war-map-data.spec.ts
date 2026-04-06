@@ -209,7 +209,7 @@ describe("war-map page wiring", () => {
     const source = read("app/(app)/map/page.tsx");
 
     expect(source).not.toContain("TimeRangeControls");
-    expect(source).toContain('<WarMap className="h-full" />');
+    expect(source).toContain('<WarMap className="flex-1" />');
     expect(source).toContain(
       "min-h-[calc(100dvh-var(--top-nav-height,4rem)-var(--ticker-height,0px)-2rem)]",
     );
@@ -230,10 +230,10 @@ describe("war-map page wiring", () => {
     expect(source).toContain("buildWarMapNewsMarkersQueryKey");
     expect(source).toContain("buildWarMapLayersQueryKey");
     expect(source).toContain(
-      "queryClient.setQueryData(warMapNewsMarkersKey, payload)",
+      "queueStreamUpdate('war-map-news-markers', warMapNewsMarkersKey, payload)",
     );
     expect(source).toContain(
-      "queryClient.setQueryData(warMapLayersKey, payload)",
+      "queueStreamUpdate('war-map-layers', warMapLayersKey, payload)",
     );
     expect(source).not.toContain("invalidateWarMapNewsMarkerQueries");
     expect(source).not.toContain("invalidateWarMapLayerQueries");
@@ -408,9 +408,7 @@ describe("war-map page wiring", () => {
       "legend={{ showAisLegend: layerVisibility.ais }}",
     );
     expect(source).toContain('current === "controls" ? null : "controls"');
-    expect(source).toContain(
-      'className ?? "min-h-[24rem] h-[clamp(24rem,50dvh,29rem)]"',
-    );
+    expect(source).toContain("resolveWarMapContainerClassName(className)");
   });
 
   it("keeps overlay settings surfaces dark-theme aware", () => {
@@ -476,7 +474,8 @@ describe("war-map page wiring", () => {
     expect(source).toContain(
       'className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] overflow-hidden flex flex-col"',
     );
-    expect(source).toContain('className="min-h-0 flex-1"');
+    expect(source).toContain('className="min-h-0 flex flex-1"');
+    expect(source).toContain('className="flex-1"');
     expect(source).not.toContain('className="absolute top-4 left-4 z-10"');
   });
 });
