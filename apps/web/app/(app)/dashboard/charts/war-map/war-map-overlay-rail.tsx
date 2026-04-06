@@ -18,6 +18,11 @@ import {
   type WarMapSummaryStatusCard,
   type WarMapTranslateFn,
 } from "./war-map-overlay-model";
+import {
+  WarMapLegendSwatch,
+  getQuickLegendVisibility,
+  type WarMapLegendItem,
+} from "./war-map-symbols";
 
 export interface WarMapOverlayRailProps {
   overlayRailRef: RefObject<HTMLDivElement | null>;
@@ -31,6 +36,7 @@ export interface WarMapOverlayRailProps {
   showActionLabels: boolean;
   openOverlayPanel: OverlayPanelKey | null;
   controlsSection: OverlayControlsSection;
+  quickLegendItems: WarMapLegendItem[];
   onRefresh: () => void;
   onToggleControls: () => void;
   onOpenLegendDrawer: () => void;
@@ -50,6 +56,7 @@ export function WarMapOverlayRail({
   showActionLabels,
   openOverlayPanel,
   controlsSection,
+  quickLegendItems,
   onRefresh,
   onToggleControls,
   onOpenLegendDrawer,
@@ -67,6 +74,10 @@ export function WarMapOverlayRail({
     defaultValue: "Legend",
   });
   const controlsActive = openOverlayPanel === "controls";
+  const showQuickLegend =
+    getQuickLegendVisibility(overlayDensity) &&
+    quickLegendItems.length > 0 &&
+    !hideRailSummaryCards;
 
   return (
     <div
@@ -156,6 +167,38 @@ export function WarMapOverlayRail({
             ))}
           </div>
         )}
+        {showQuickLegend ? (
+          <div
+            className={`${OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME} pointer-events-auto w-full px-3 py-3`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <Typography.Text className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  {legendLabel}
+                </Typography.Text>
+                <Typography.Text className="mt-1 block text-[12px] font-medium text-slate-900 dark:text-slate-50">
+                  {t("dashboard.charts.warMap.legend.quickLegendHint", {
+                    defaultValue:
+                      "Live symbols stay aligned with the active map layers.",
+                  })}
+                </Typography.Text>
+              </div>
+              <Button
+                size="small"
+                type="default"
+                className={resolveOverlayButtonClassName({ tone: "neutral" })}
+                icon={<InfoCircleOutlined />}
+                aria-label={legendLabel}
+                onClick={onOpenLegendDrawer}
+              />
+            </div>
+            <div className="mt-3 grid gap-2">
+              {quickLegendItems.map(({ key, ...item }) => (
+                <WarMapLegendSwatch key={key} {...item} size={36} />
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div
           className={`${OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME} pointer-events-auto flex w-full items-center justify-end gap-2 px-2 py-2`}
         >

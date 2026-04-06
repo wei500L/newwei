@@ -344,9 +344,11 @@ describe("war-map page wiring", () => {
       "Aggregated AIS chokepoint signal, not individual vessels.",
     );
     expect(source).toContain("isAisViewportEmptyStateActive({");
-    expect(source).toContain('id: "wm-ais-vessels-halo"');
-    expect(source).toContain('id: "wm-ais-vessels-core"');
-    expect(source).toContain('defaultValue: "Viewport has no vessel positions"');
+    expect(source).toContain('id: "wm-ais-vessels"');
+    expect(source).toContain("getAngle: resolveVesselIconAngle");
+    expect(source).toContain(
+      'defaultValue: "Viewport has no vessel positions"',
+    );
     expect(source).toContain(
       "All vessels is active, but this viewport currently has no individual ship positions in the live snapshot.",
     );
@@ -365,7 +367,7 @@ describe("war-map page wiring", () => {
     expect(source).toContain("const hasFatalOverlay = Boolean(fatalOverlay);");
     expect(source).toContain("{!hasFatalOverlay ? (");
     expect(source).toContain(
-      'className="absolute inset-0 z-30 rounded-lg bg-white/80 backdrop-blur-sm dark:bg-slate-950/72"',
+      'className="absolute inset-0 z-30 rounded-lg bg-white/80 backdrop-blur-sm dark:bg-slate-950/[0.72]"',
     );
     expect(source).toContain("showCachedDataHint");
   });

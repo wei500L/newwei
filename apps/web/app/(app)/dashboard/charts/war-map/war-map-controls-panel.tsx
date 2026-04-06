@@ -26,6 +26,11 @@ import {
   type WarMapSummaryStatusCard,
   type WarMapTranslateFn,
 } from "./war-map-overlay-model";
+import {
+  WarMapLegendSwatch,
+  type WarMapLegendItem,
+  type WarMapLegendSection,
+} from "./war-map-symbols";
 
 type FlightMode = "military" | "all";
 type AisMode = "military" | "density" | "all";
@@ -97,6 +102,7 @@ export interface WarMapControlsPanelProps {
   windowLabel: string;
   feedSummaryCards: WarMapFeedSummaryCard[];
   detailedChainStatuses: WarMapDetailedChainStatus[];
+  legendSections: WarMapLegendSection[];
   view: WarMapControlsPanelViewProps;
   transport: WarMapControlsPanelTransportProps;
   onControlsSectionChange: (section: OverlayControlsSection) => void;
@@ -107,6 +113,7 @@ const OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME =
   "rounded-2xl border border-[var(--border)] bg-slate-50/80 px-3 py-3 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.16)] dark:bg-slate-900/70 dark:shadow-[0_16px_34px_-26px_rgba(2,6,23,0.66)]";
 const OVERLAY_PANEL_CHIP_CLASS_NAME =
   "inline-flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/[0.85] px-2 py-1 text-[11px] text-slate-700 shadow-[0_8px_18px_-18px_rgba(15,23,42,0.26)] transition-[border-color,background-color,color,box-shadow] duration-200 hover:border-slate-300/[0.85] hover:bg-white hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-200 dark:shadow-[0_10px_20px_-18px_rgba(2,6,23,0.7)] dark:hover:border-slate-500/80 dark:hover:bg-slate-900 dark:hover:text-slate-50";
+const OVERLAY_PANEL_LEGEND_GRID_CLASS_NAME = "mt-3 grid gap-2 sm:grid-cols-2";
 
 function renderOverviewCardIcon(key: WarMapOverviewMetricCard["key"]) {
   switch (key) {
@@ -170,100 +177,43 @@ function getSummaryMetricDetail(
   }
 }
 
-interface AisLegendItem {
-  key: string;
-  color: string;
-  label: string;
-  gradient?: boolean;
-}
+function LegendItemsGrid({
+  items,
+  compact = false,
+}: {
+  items: WarMapLegendItem[];
+  compact?: boolean;
+}) {
+  if (items.length === 0) {
+    return null;
+  }
 
-function getAisCategoryLegendItems(t: WarMapTranslateFn): AisLegendItem[] {
-  return [
-    {
-      key: "military",
-      color: "rgb(220 38 38)",
-      label: t("dashboard.charts.warMap.legend.aisMilitary", {
-        defaultValue: "Military / government",
-      }),
-    },
-    {
-      key: "fishing",
-      color: "rgb(34 197 94)",
-      label: t("dashboard.charts.warMap.legend.aisFishing", {
-        defaultValue: "Fishing",
-      }),
-    },
-    {
-      key: "passenger",
-      color: "rgb(59 130 246)",
-      label: t("dashboard.charts.warMap.legend.aisPassenger", {
-        defaultValue: "Passenger",
-      }),
-    },
-    {
-      key: "cargo",
-      color: "rgb(148 163 184)",
-      label: t("dashboard.charts.warMap.legend.aisCargo", {
-        defaultValue: "Cargo",
-      }),
-    },
-    {
-      key: "tanker",
-      color: "rgb(249 115 22)",
-      label: t("dashboard.charts.warMap.legend.aisTanker", {
-        defaultValue: "Tanker",
-      }),
-    },
-    {
-      key: "other",
-      color: "rgb(248 250 252)",
-      label: t("dashboard.charts.warMap.legend.aisOther", {
-        defaultValue: "Other",
-      }),
-    },
-  ];
-}
-
-function getAisSignalLegendItems(t: WarMapTranslateFn): AisLegendItem[] {
-  return [
-    {
-      key: "density",
-      color: "linear-gradient(90deg, rgb(147 197 253), rgb(185 28 28))",
-      label: t("dashboard.charts.warMap.legend.aisDensity", {
-        defaultValue: "Traffic density heatmap",
-      }),
-      gradient: true,
-    },
-    {
-      key: "disruption",
-      color: "rgb(220 38 38)",
-      label: t("dashboard.charts.warMap.legend.aisDisruption", {
-        defaultValue: "Chokepoint disruption",
-      }),
-    },
-  ];
-}
-
-function getAisQuickReferenceItems(t: WarMapTranslateFn): AisLegendItem[] {
-  const [military] = getAisCategoryLegendItems(t);
-  const [density, disruption] = getAisSignalLegendItems(t);
-
-  return [military!, density!, disruption!];
-}
-
-function renderAisLegendChip(item: AisLegendItem) {
   return (
-    <span key={item.key} className={OVERLAY_PANEL_CHIP_CLASS_NAME}>
-      <span
-        className="h-2.5 w-2.5 rounded-full border border-slate-300/80 dark:border-slate-600/80"
-        style={
-          item.gradient
-            ? { backgroundImage: item.color }
-            : { backgroundColor: item.color }
-        }
-      />
-      <span>{item.label}</span>
-    </span>
+    <div
+      className={
+        compact ? "mt-3 grid gap-2" : OVERLAY_PANEL_LEGEND_GRID_CLASS_NAME
+      }
+    >
+      {items.map(({ key, ...item }) => (
+        <WarMapLegendSwatch key={key} size={compact ? 36 : 42} {...item} />
+      ))}
+    </div>
+  );
+}
+
+function LegendSectionCard({ section }: { section: WarMapLegendSection }) {
+  return (
+    <div className={OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME}>
+      <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
+        {section.title}
+      </Typography.Text>
+      {section.description ? (
+        <Typography.Text type="secondary" className="mt-2 block text-xs">
+          {section.description}
+        </Typography.Text>
+      ) : null}
+      <LegendItemsGrid items={section.items} />
+    </div>
   );
 }
 
@@ -474,8 +424,15 @@ function ViewSection({
 
 function TransportSection({
   transport,
+  legendSections,
   t,
-}: Pick<WarMapControlsPanelProps, "transport" | "t">) {
+}: Pick<WarMapControlsPanelProps, "transport" | "legendSections" | "t">) {
+  const transportLegendItems =
+    legendSections.find((section) => section.key === "transport")?.items ?? [];
+  const aisReferenceItems = transportLegendItems
+    .filter((item) => item.symbolKey.startsWith("ais-"))
+    .slice(0, 4);
+
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
       <div className={OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME}>
@@ -679,12 +636,12 @@ function TransportSection({
                   <Tag
                     color="volcano"
                     className={OVERLAY_STATUS_TAG_CLASS_NAME}
-                >
-                  {t("dashboard.charts.warMap.stats.aisIssue", {
-                    defaultValue: "Relay issue",
-                  })}
-                </Tag>
-              </Tooltip>
+                  >
+                    {t("dashboard.charts.warMap.stats.aisIssue", {
+                      defaultValue: "Relay issue",
+                    })}
+                  </Tag>
+                </Tooltip>
               ) : null}
               {transport.aisAutoMode ? (
                 <Tooltip
@@ -853,7 +810,11 @@ function TransportSection({
             })}
           </Typography.Text>
         )}
-        <AisReferenceSection onOpenLegend={transport.onOpenLegend} t={t} />
+        <AisReferenceSection
+          items={aisReferenceItems}
+          onOpenLegend={transport.onOpenLegend}
+          t={t}
+        />
       </div>
       <Button
         type="primary"
@@ -871,9 +832,11 @@ function TransportSection({
 }
 
 function AisReferenceSection({
+  items,
   onOpenLegend,
   t,
 }: {
+  items: WarMapLegendItem[];
   onOpenLegend: () => void;
   t: WarMapTranslateFn;
 }) {
@@ -890,9 +853,7 @@ function AisReferenceSection({
             "Need symbol meanings? Use the AIS reference before changing modes.",
         })}
       </Typography.Text>
-      <Space size={[6, 6]} wrap className="mt-2">
-        {getAisQuickReferenceItems(t).map((item) => renderAisLegendChip(item))}
-      </Space>
+      <LegendItemsGrid items={items} compact />
       <Button
         type="link"
         size="small"
@@ -950,7 +911,10 @@ function FeedsSection({
   );
 }
 
-function LegendSection({ t }: Pick<WarMapControlsPanelProps, "t">) {
+function LegendSection({
+  legendSections,
+  t,
+}: Pick<WarMapControlsPanelProps, "legendSections" | "t">) {
   return (
     <Space direction="vertical" size={10} style={{ width: "100%" }}>
       <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
@@ -958,75 +922,9 @@ function LegendSection({ t }: Pick<WarMapControlsPanelProps, "t">) {
           defaultValue: "Legend",
         })}
       </Typography.Text>
-      <div className={OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME}>
-        <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
-          {t("dashboard.charts.warMap.overlay.signalLegend", {
-            defaultValue: "Signals",
-          })}
-        </Typography.Text>
-        <Space size={[6, 6]} wrap className="mt-2">
-          <Tag color="red" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
-            {t("dashboard.charts.warMap.stats.high", {
-              defaultValue: "High",
-            })}
-          </Tag>
-          <Tag color="gold" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
-            {t("dashboard.charts.warMap.stats.medium", {
-              defaultValue: "Medium",
-            })}
-          </Tag>
-          <Tag color="blue" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
-            {t("dashboard.charts.warMap.stats.low", {
-              defaultValue: "Low",
-            })}
-          </Tag>
-        </Space>
-      </div>
-      <div className={OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME}>
-        <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
-          {t("dashboard.charts.warMap.overlay.newsLegend", {
-            defaultValue: "News & monitors",
-          })}
-        </Typography.Text>
-        <Space size={[6, 6]} wrap className="mt-2">
-          <Tag color="green" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
-            {t("dashboard.charts.warMap.stats.geocoded", {
-              defaultValue: "Geocoded news",
-            })}
-          </Tag>
-          <Tag color="cyan" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
-            {t("dashboard.charts.warMap.stats.fallbackCountry", {
-              defaultValue: "Fallback country",
-            })}
-          </Tag>
-          <Tag color="purple" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
-            {t("dashboard.charts.warMap.stats.monitors", {
-              defaultValue: "Monitors",
-            })}
-          </Tag>
-        </Space>
-      </div>
-      <div className={OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME}>
-        <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
-          {t("dashboard.charts.warMap.legend.aisTitle", {
-            defaultValue: "AIS",
-          })}
-        </Typography.Text>
-        <Typography.Text type="secondary" className="mt-2 block text-xs">
-          {t("dashboard.charts.warMap.overlay.legendAisHint", {
-            defaultValue:
-              "Keep this reference handy when switching AIS modes or checking disruptions.",
-          })}
-        </Typography.Text>
-        <Space size={[6, 6]} wrap className="mt-2">
-          {getAisCategoryLegendItems(t).map((item) =>
-            renderAisLegendChip(item),
-          )}
-        </Space>
-        <Space size={[6, 6]} wrap className="mt-2">
-          {getAisSignalLegendItems(t).map((item) => renderAisLegendChip(item))}
-        </Space>
-      </div>
+      {legendSections.map((section) => (
+        <LegendSectionCard key={section.key} section={section} />
+      ))}
       <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white/70 px-3 py-3 dark:bg-slate-950/55">
         <Typography.Text type="secondary" className="text-xs">
           {t("dashboard.charts.warMap.legend.radius", {
@@ -1052,6 +950,7 @@ export function WarMapControlsPanel({
   windowLabel,
   feedSummaryCards,
   detailedChainStatuses,
+  legendSections,
   view,
   transport,
   onControlsSectionChange,
@@ -1138,7 +1037,13 @@ export function WarMapControlsPanel({
       controlsSectionContent = <ViewSection view={view} t={t} />;
       break;
     case "transport":
-      controlsSectionContent = <TransportSection transport={transport} t={t} />;
+      controlsSectionContent = (
+        <TransportSection
+          transport={transport}
+          legendSections={legendSections}
+          t={t}
+        />
+      );
       break;
     case "feeds":
       controlsSectionContent = (
@@ -1149,7 +1054,9 @@ export function WarMapControlsPanel({
       );
       break;
     case "legend":
-      controlsSectionContent = <LegendSection t={t} />;
+      controlsSectionContent = (
+        <LegendSection legendSections={legendSections} t={t} />
+      );
       break;
     default:
       controlsSectionContent = <ViewSection view={view} t={t} />;

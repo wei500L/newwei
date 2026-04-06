@@ -6,6 +6,7 @@ import {
   PathLayer,
   PolygonLayer,
   ScatterplotLayer,
+  TextLayer,
 } from "@deck.gl/layers";
 import type { MapboxOverlay } from "@deck.gl/mapbox";
 import {
@@ -105,6 +106,17 @@ import {
   resolveEffectiveAisMode,
 } from "./war-map-ais-mode";
 import {
+  buildWarMapLegendSections,
+  buildWarMapQuickLegendItems,
+  coerceHexColor,
+  getWarMapDeckIcon,
+  getWarMapSymbolAccentColor,
+  type WarMapActivePointLayerLegendItem,
+  type WarMapLegendItem,
+  type WarMapSymbolKey,
+  type WarMapSymbolState,
+} from "./war-map-symbols";
+import {
   useDashboardStream,
   type DashboardStreamState,
 } from "../../use-dashboard-stream";
@@ -113,11 +125,14 @@ const ALL_TIME_START = new Date("1970-01-01T00:00:00.000Z");
 
 interface DeckPoint {
   id: string;
+  interactionKey: string;
   lat: number;
   lng: number;
   label: string;
   color: [number, number, number, number];
   radius: number;
+  symbolKey: WarMapSymbolKey;
+  accentColor?: string;
   isCluster?: boolean;
   clusterCount?: number;
   selectionKey?: string;
@@ -241,37 +256,6 @@ const DISPLAYABLE_WAR_MAP_LAYER_IDS = WAR_MAP_LAYER_IDS.filter(
 );
 const STREAM_MESSAGE_STALE_MS = 45_000;
 const DATA_REFRESH_STALE_MS = 150_000;
-const TRANSPORT_ICON_SIZE = 128;
-
-function toSvgDataUrl(svg: string): string {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-const AIRCRAFT_ICON = {
-  url: toSvgDataUrl(`
-    <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-      <path fill="#0f172a" d="M64 6c4 0 7 3 7 7v24l33 16c5 3 7 10 4 15l-3 5-34-8v23l13 10v10l-20-5-20 5V98l13-10V65L23 73l-3-5c-3-5-1-12 4-15l33-16V13c0-4 3-7 7-7Z"/>
-    </svg>
-  `),
-  width: TRANSPORT_ICON_SIZE,
-  height: TRANSPORT_ICON_SIZE,
-  anchorX: TRANSPORT_ICON_SIZE / 2,
-  anchorY: TRANSPORT_ICON_SIZE / 2,
-  mask: true,
-} as const;
-
-const VESSEL_ICON = {
-  url: toSvgDataUrl(`
-    <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-      <path fill="#0f172a" d="M64 10 83 34h-9v22h20l18 34-17 18H33L16 90l18-34h20V34h-9L64 10Zm-18 58-8 15h52l-8-15H46Zm-1 25 5 7h28l5-7H45Z"/>
-    </svg>
-  `),
-  width: TRANSPORT_ICON_SIZE,
-  height: TRANSPORT_ICON_SIZE,
-  anchorX: TRANSPORT_ICON_SIZE / 2,
-  anchorY: TRANSPORT_ICON_SIZE / 2,
-  mask: true,
-} as const;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -574,6 +558,125 @@ function clusterRadius(count: number): number {
   return Math.max(12, Math.min(42, Math.sqrt(Math.max(1, count)) * 7));
 }
 
+function resolveAisVesselSymbolKey(shipType?: number): WarMapSymbolKey {
+  if (typeof shipType !== "number" || !Number.isFinite(shipType)) {
+    return "ais-vessel-other";
+  }
+  if (
+    shipType === 35 ||
+    shipType === 55 ||
+    (shipType >= 50 && shipType <= 59)
+  ) {
+    return "ais-vessel-military";
+  }
+  if (shipType >= 30 && shipType <= 39) {
+    return "ais-vessel-fishing";
+  }
+  if (shipType >= 60 && shipType <= 69) {
+    return "ais-vessel-passenger";
+  }
+  if (shipType >= 70 && shipType <= 79) {
+    return "ais-vessel-cargo";
+  }
+  if (shipType >= 80 && shipType <= 89) {
+    return "ais-vessel-tanker";
+  }
+  return "ais-vessel-other";
+}
+
+function resolveAisDisruptionSymbolKey(
+  severity: WarMapEventSeverity,
+): WarMapSymbolKey {
+  switch (severity) {
+    case "high":
+      return "ais-disruption-high";
+    case "medium":
+      return "ais-disruption-medium";
+    case "low":
+    default:
+      return "ais-disruption-low";
+  }
+}
+
+function resolveDeckPointSymbolState({
+  point,
+  hoveredInteractionKey,
+  selectedInspectorKey,
+}: {
+  point: DeckPoint;
+  hoveredInteractionKey: string | null;
+  selectedInspectorKey: string | null;
+}): WarMapSymbolState {
+  if (point.isCluster) {
+    return "cluster";
+  }
+  if (point.selectionKey && point.selectionKey === selectedInspectorKey) {
+    return "selected";
+  }
+  if (point.interactionKey === hoveredInteractionKey) {
+    return "hover";
+  }
+  return "default";
+}
+
+function resolveDeckPointSymbolSize({
+  point,
+  hoveredInteractionKey,
+  selectedInspectorKey,
+}: {
+  point: DeckPoint;
+  hoveredInteractionKey: string | null;
+  selectedInspectorKey: string | null;
+}): number {
+  const isSelected =
+    Boolean(point.selectionKey) && point.selectionKey === selectedInspectorKey;
+  const isHovered = point.interactionKey === hoveredInteractionKey;
+  const stateBoost = isSelected ? 7 : isHovered ? 3 : 0;
+
+  let baseSize = 22;
+  if (point.isCluster) {
+    baseSize = clamp(point.radius * 1.45, 32, 56);
+  } else if (point.kind === "event") {
+    baseSize = clamp(18 + point.radius * 1.2, 20, 40);
+  } else if (
+    point.kind === "layer" &&
+    (point.layerId === "flights" || point.layerId === "ais")
+  ) {
+    baseSize = clamp(20 + point.radius * 1.65, 22, 42);
+  } else if (point.kind === "monitor") {
+    baseSize = clamp(18 + point.radius * 1.05, 20, 32);
+  } else if (point.kind === "news") {
+    baseSize = clamp(18 + point.radius * 1.15, 20, 28);
+  } else if (point.kind === "layer") {
+    baseSize = clamp(18 + point.radius * 1.05, 20, 30);
+  }
+
+  return baseSize + stateBoost;
+}
+
+function resolveDeckPointRingRadius({
+  point,
+  hoveredInteractionKey,
+  selectedInspectorKey,
+}: {
+  point: DeckPoint;
+  hoveredInteractionKey: string | null;
+  selectedInspectorKey: string | null;
+}): number {
+  return Math.max(
+    14,
+    resolveDeckPointSymbolSize({
+      point,
+      hoveredInteractionKey,
+      selectedInspectorKey,
+    }) * (point.isCluster ? 0.48 : 0.45),
+  );
+}
+
+function resolveDeckPointClusterTextSize(point: DeckPoint): number {
+  return clamp(point.radius * 0.42, 12, 18);
+}
+
 function toClusterSelectionKey(
   kind: "event" | "news",
   memberKey: string,
@@ -649,6 +752,9 @@ export function WarMap({
   const [desktopInspectorMinimized, setDesktopInspectorMinimized] =
     useState(false);
   const [selectedInspectorKey, setSelectedInspectorKey] = useState<
+    string | null
+  >(null);
+  const [hoveredInteractionKey, setHoveredInteractionKey] = useState<
     string | null
   >(null);
   const [urlHydrated, setUrlHydrated] = useState(
@@ -1099,6 +1205,7 @@ export function WarMap({
           isValidLatLng(monitor.location!.lat, monitor.location!.lng),
         )
         .map((monitor) => ({
+          interactionKey: `monitor:${monitor.id}`,
           query:
             monitor.rawKeywords
               .find((keyword: string) => keyword.trim().length > 0)
@@ -1107,8 +1214,10 @@ export function WarMap({
           lat: monitor.location!.lat,
           lng: monitor.location!.lng,
           label: monitor.name,
-          color: toRgba(monitor.color, 0.9, [79, 70, 229]),
+          color: toRgba("#4f46e5", 0.9, [79, 70, 229]),
           radius: 8,
+          symbolKey: "monitor" as const,
+          accentColor: "#4f46e5",
           kind: "monitor" as const,
           description: monitor.location!.name,
         })),
@@ -1625,10 +1734,245 @@ export function WarMap({
     [queryZoom],
   );
 
+  const updateHoveredInteractionKey = useCallback((next: string | null) => {
+    setHoveredInteractionKey((current) => (current === next ? current : next));
+  }, []);
+
+  const handleDeckPointHover = useCallback(
+    (info: { object?: DeckPoint }) => {
+      updateHoveredInteractionKey(info.object?.interactionKey ?? null);
+    },
+    [updateHoveredInteractionKey],
+  );
+
+  const handleSelectablePointClick = useCallback(
+    (info: { object?: DeckPoint }) => {
+      const object = info.object;
+      if (!object?.selectionKey) {
+        return;
+      }
+      setSelectedInspectorKey(object.selectionKey);
+    },
+    [],
+  );
+
+  const handleMonitorPointClick = useCallback(
+    (info: { object?: DeckPoint }) => {
+      const object = info.object;
+      if (!object) {
+        return;
+      }
+      const query = (object.query ?? object.label).trim();
+      if (!query) {
+        toast.warning(
+          t("dashboard.charts.warMap.missingMonitorQuery", {
+            defaultValue: "No keywords available for this monitor.",
+          }),
+        );
+        return;
+      }
+      window.open(
+        `/search?q=${encodeURIComponent(query)}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+    },
+    [t],
+  );
+
+  const handleLayerPointClick = useCallback(
+    (info: { object?: DeckPoint }) => {
+      const object = info.object;
+      if (!object) {
+        return;
+      }
+      if (object.isCluster) {
+        zoomToLayerCluster(object);
+        return;
+      }
+      if (object.selectionKey) {
+        setSelectedInspectorKey(object.selectionKey);
+      }
+    },
+    [zoomToLayerCluster],
+  );
+
+  const buildPointHighlightLayers = useCallback(
+    ({ id, data }: { id: string; data: DeckPoint[] }): any[] => {
+      const selectedPoints = data.filter(
+        (point) =>
+          Boolean(point.selectionKey) &&
+          point.selectionKey === selectedInspectorKey,
+      );
+      const hoveredPoints = data.filter(
+        (point) =>
+          point.interactionKey === hoveredInteractionKey &&
+          point.selectionKey !== selectedInspectorKey,
+      );
+
+      const layers: any[] = [];
+
+      if (selectedPoints.length > 0) {
+        layers.push(
+          new ScatterplotLayer({
+            id: `${id}-selected-outer`,
+            data: selectedPoints,
+            pickable: false,
+            radiusUnits: "pixels",
+            lineWidthUnits: "pixels",
+            stroked: true,
+            filled: false,
+            getPosition: (point: DeckPoint) => [point.lng, point.lat],
+            getRadius: (point: DeckPoint) =>
+              resolveDeckPointRingRadius({
+                point,
+                hoveredInteractionKey,
+                selectedInspectorKey,
+              }) + 4,
+            getLineColor: [255, 255, 255, 235],
+            lineWidthMinPixels: 3,
+          }),
+        );
+        layers.push(
+          new ScatterplotLayer({
+            id: `${id}-selected-inner`,
+            data: selectedPoints,
+            pickable: false,
+            radiusUnits: "pixels",
+            lineWidthUnits: "pixels",
+            stroked: true,
+            filled: false,
+            getPosition: (point: DeckPoint) => [point.lng, point.lat],
+            getRadius: (point: DeckPoint) =>
+              resolveDeckPointRingRadius({
+                point,
+                hoveredInteractionKey,
+                selectedInspectorKey,
+              }) + 1.75,
+            getLineColor: [14, 165, 233, 235],
+            lineWidthMinPixels: 2.25,
+          }),
+        );
+      }
+
+      if (hoveredPoints.length > 0) {
+        layers.push(
+          new ScatterplotLayer({
+            id: `${id}-hovered`,
+            data: hoveredPoints,
+            pickable: false,
+            radiusUnits: "pixels",
+            lineWidthUnits: "pixels",
+            stroked: true,
+            filled: false,
+            getPosition: (point: DeckPoint) => [point.lng, point.lat],
+            getRadius: (point: DeckPoint) =>
+              resolveDeckPointRingRadius({
+                point,
+                hoveredInteractionKey,
+                selectedInspectorKey,
+              }) + 1.5,
+            getLineColor: [6, 182, 212, 225],
+            lineWidthMinPixels: 2,
+          }),
+        );
+      }
+
+      return layers;
+    },
+    [hoveredInteractionKey, selectedInspectorKey],
+  );
+
+  const buildSymbolPointLayers = useCallback(
+    ({
+      id,
+      data,
+      onClick,
+      pickable = true,
+      getAngle,
+    }: {
+      id: string;
+      data: DeckPoint[];
+      onClick?: (info: { object?: DeckPoint }) => void;
+      pickable?: boolean;
+      getAngle?: (point: DeckPoint) => number | null;
+    }): any[] => {
+      if (data.length === 0) {
+        return [];
+      }
+
+      const layers: any[] = [...buildPointHighlightLayers({ id, data })];
+
+      layers.push(
+        new IconLayer({
+          id: `${id}-symbols`,
+          data,
+          pickable,
+          billboard: true,
+          sizeUnits: "pixels",
+          getPosition: (point: DeckPoint) => [point.lng, point.lat],
+          getIcon: (point: DeckPoint) =>
+            getWarMapDeckIcon({
+              symbolKey: point.symbolKey,
+              state: resolveDeckPointSymbolState({
+                point,
+                hoveredInteractionKey,
+                selectedInspectorKey,
+              }),
+              accentColor: point.accentColor,
+            }),
+          getSize: (point: DeckPoint) =>
+            resolveDeckPointSymbolSize({
+              point,
+              hoveredInteractionKey,
+              selectedInspectorKey,
+            }),
+          getAngle: (point: DeckPoint) => getAngle?.(point) ?? 0,
+          sizeMinPixels: 18,
+          sizeMaxPixels: 64,
+          onHover: pickable ? handleDeckPointHover : undefined,
+          onClick,
+        }),
+      );
+
+      const clusters = data.filter(
+        (point) => point.isCluster && typeof point.clusterCount === "number",
+      );
+      if (clusters.length > 0) {
+        layers.push(
+          new TextLayer({
+            id: `${id}-counts`,
+            data: clusters,
+            pickable,
+            billboard: true,
+            getPosition: (point: DeckPoint) => [point.lng, point.lat],
+            getText: (point: DeckPoint) => String(point.clusterCount ?? ""),
+            getSize: (point: DeckPoint) =>
+              resolveDeckPointClusterTextSize(point),
+            getColor: [15, 23, 42, 255],
+            fontWeight: 800,
+            getTextAnchor: "middle",
+            getAlignmentBaseline: "center",
+            onHover: pickable ? handleDeckPointHover : undefined,
+            onClick,
+          }),
+        );
+      }
+
+      return layers;
+    },
+    [
+      buildPointHighlightLayers,
+      handleDeckPointHover,
+      hoveredInteractionKey,
+      selectedInspectorKey,
+    ],
+  );
+
   const staticDeckData = useMemo(() => {
     const layersData = layersQuery.data?.layers ?? {};
-
     const staticLayers: any[] = [];
+    const activePointLayers: WarMapActivePointLayerLegendItem[] = [];
 
     for (const layerId of WAR_MAP_LAYER_IDS) {
       if (
@@ -1654,6 +1998,7 @@ export function WarMap({
         dataset.renderHints?.opacity ?? 0.72,
         [59, 130, 246],
       );
+      const pointAccentColor = coerceHexColor(dataset.renderHints?.color);
       const minZoom = dataset.renderHints?.minZoom;
       const maxZoom = dataset.renderHints?.maxZoom;
       const isZoomVisible =
@@ -1663,12 +2008,49 @@ export function WarMap({
         continue;
       }
 
+      const layerLabel = t(`dashboard.charts.warMap.layerNames.${layerId}`, {
+        defaultValue: toLayerLabel(layerId),
+      });
+      const layerPointRadius = Math.max(
+        4,
+        Math.min(18, Math.round((dataset.renderHints?.radiusScale ?? 1) * 6)),
+      );
+      const fallbackPointRadius = Math.max(
+        4,
+        Math.min(14, Math.round((dataset.renderHints?.radiusScale ?? 1) * 5)),
+      );
+      const pickable = Boolean(dataset.renderHints?.pickable ?? true);
+
+      const readLayerFeatureCopy = (
+        feature: Pick<WarMapLayerFeature, "id" | "properties">,
+      ) => {
+        const properties =
+          feature.properties &&
+          typeof feature.properties === "object" &&
+          !Array.isArray(feature.properties)
+            ? (feature.properties as Record<string, unknown>)
+            : undefined;
+        const label =
+          typeof properties?.nameZh === "string" && translateTarget === "zh-CN"
+            ? properties.nameZh
+            : typeof properties?.name === "string"
+              ? properties.name
+              : layerLabel;
+        const description =
+          typeof properties?.descriptionZh === "string" &&
+          translateTarget === "zh-CN"
+            ? properties.descriptionZh
+            : typeof properties?.description === "string"
+              ? properties.description
+              : undefined;
+
+        return { description, label, properties };
+      };
+
       if (dataset.geometryType === "path") {
         const paths: Array<WarMapLayerFeature & { path: DeckCoordinate[] }> =
           [];
-        const pathFallbackPoints: Array<
-          WarMapLayerFeature & { lat: number; lng: number }
-        > = [];
+        const pathFallbackPoints: DeckPoint[] = [];
         const pathSanitizationSummary = {
           affectedFeatureCount: 0,
           invalidCoordinateCount: 0,
@@ -1677,6 +2059,7 @@ export function WarMap({
           pointFallbackCount: 0,
           sampleFeatureIds: [] as string[],
         };
+
         for (const feature of dataset.features) {
           const sanitized = buildSanitizedPathGeometry(feature);
           const invalidCoordinateCount = countInvalidPathCoordinates(
@@ -1700,8 +2083,26 @@ export function WarMap({
             }
           }
           paths.push(...sanitized.pathFeatures);
-          pathFallbackPoints.push(...sanitized.pointFeatures);
+
+          const { description, label } = readLayerFeatureCopy(feature);
+          for (const fallbackPoint of sanitized.pointFeatures) {
+            pathFallbackPoints.push({
+              id: `path-fallback:${layerId}:${feature.id}:${pathFallbackPoints.length}`,
+              interactionKey: `path-fallback:${layerId}:${feature.id}:${pathFallbackPoints.length}`,
+              lat: fallbackPoint.lat,
+              lng: fallbackPoint.lng,
+              label,
+              description,
+              color,
+              radius: fallbackPointRadius,
+              kind: "layer",
+              layerId,
+              symbolKey: "generic-point",
+              accentColor: pointAccentColor,
+            });
+          }
         }
+
         if (pathSanitizationSummary.affectedFeatureCount > 0) {
           warnWarMapGeometrySanitization(
             "path",
@@ -1714,7 +2115,7 @@ export function WarMap({
             new PathLayer({
               id: `wm-path-${layerId}`,
               data: paths,
-              pickable: Boolean(dataset.renderHints?.pickable ?? true),
+              pickable,
               getPath: (
                 feature: WarMapLayerFeature & { path: DeckCoordinate[] },
               ) => feature.path,
@@ -1727,25 +2128,11 @@ export function WarMap({
         }
         if (pathFallbackPoints.length > 0) {
           staticLayers.push(
-            new ScatterplotLayer({
+            ...buildSymbolPointLayers({
               id: `wm-path-${layerId}-points`,
               data: pathFallbackPoints,
-              pickable: Boolean(dataset.renderHints?.pickable ?? true),
-              getPosition: (
-                feature: WarMapLayerFeature & { lat: number; lng: number },
-              ) => [feature.lng, feature.lat],
-              getFillColor: color,
-              getRadius: () =>
-                Math.max(
-                  4,
-                  Math.min(
-                    14,
-                    Math.round((dataset.renderHints?.radiusScale ?? 1) * 5),
-                  ),
-                ),
-              radiusMinPixels: 3,
-              radiusMaxPixels: 18,
-              stroked: false,
+              pickable,
+              onClick: handleLayerPointClick,
             }),
           );
         }
@@ -1759,9 +2146,7 @@ export function WarMap({
         const polygonOutlineFeatures: Array<
           WarMapLayerFeature & { path: DeckCoordinate[] }
         > = [];
-        const polygonFallbackPoints: Array<
-          WarMapLayerFeature & { lat: number; lng: number }
-        > = [];
+        const polygonFallbackPoints: DeckPoint[] = [];
         const polygonSanitizationSummary = {
           affectedFeatureCount: 0,
           invalidCoordinateCount: 0,
@@ -1771,6 +2156,7 @@ export function WarMap({
           pointFallbackCount: 0,
           sampleFeatureIds: [] as string[],
         };
+
         for (const feature of dataset.features) {
           const sanitized = buildSanitizedPolygonResult(feature);
           const inputSummary = summarizePolygonInput(feature.polygon);
@@ -1805,8 +2191,26 @@ export function WarMap({
             polygons.push(sanitized.polygonFeature);
           }
           polygonOutlineFeatures.push(...sanitized.outlineFeatures);
-          polygonFallbackPoints.push(...sanitized.pointFeatures);
+
+          const { description, label } = readLayerFeatureCopy(feature);
+          for (const fallbackPoint of sanitized.pointFeatures) {
+            polygonFallbackPoints.push({
+              id: `polygon-fallback:${layerId}:${feature.id}:${polygonFallbackPoints.length}`,
+              interactionKey: `polygon-fallback:${layerId}:${feature.id}:${polygonFallbackPoints.length}`,
+              lat: fallbackPoint.lat,
+              lng: fallbackPoint.lng,
+              label,
+              description,
+              color,
+              radius: fallbackPointRadius,
+              kind: "layer",
+              layerId,
+              symbolKey: "generic-point",
+              accentColor: pointAccentColor,
+            });
+          }
         }
+
         if (polygonSanitizationSummary.affectedFeatureCount > 0) {
           warnWarMapGeometrySanitization(
             "polygon",
@@ -1819,7 +2223,7 @@ export function WarMap({
             new PolygonLayer({
               id: `wm-polygon-${layerId}`,
               data: polygons,
-              pickable: Boolean(dataset.renderHints?.pickable ?? true),
+              pickable,
               getPolygon: (
                 feature: WarMapLayerFeature & { polygon: DeckCoordinate[][] },
               ) => feature.polygon[0] ?? [],
@@ -1840,7 +2244,7 @@ export function WarMap({
             new PathLayer({
               id: `wm-polygon-${layerId}-fragments`,
               data: polygonOutlineFeatures,
-              pickable: Boolean(dataset.renderHints?.pickable ?? true),
+              pickable,
               getPath: (
                 feature: WarMapLayerFeature & { path: DeckCoordinate[] },
               ) => feature.path,
@@ -1857,25 +2261,11 @@ export function WarMap({
         }
         if (polygonFallbackPoints.length > 0) {
           staticLayers.push(
-            new ScatterplotLayer({
+            ...buildSymbolPointLayers({
               id: `wm-polygon-${layerId}-points`,
               data: polygonFallbackPoints,
-              pickable: Boolean(dataset.renderHints?.pickable ?? true),
-              getPosition: (
-                feature: WarMapLayerFeature & { lat: number; lng: number },
-              ) => [feature.lng, feature.lat],
-              getFillColor: color,
-              getRadius: () =>
-                Math.max(
-                  4,
-                  Math.min(
-                    14,
-                    Math.round((dataset.renderHints?.radiusScale ?? 1) * 5),
-                  ),
-                ),
-              radiusMinPixels: 3,
-              radiusMaxPixels: 18,
-              stroked: false,
+              pickable,
+              onClick: handleLayerPointClick,
             }),
           );
         }
@@ -1886,9 +2276,6 @@ export function WarMap({
         continue;
       }
 
-      const layerLabel = t(`dashboard.charts.warMap.layerNames.${layerId}`, {
-        defaultValue: toLayerLabel(layerId),
-      });
       const points: DeckPoint[] = dataset.features
         .filter(
           (
@@ -1899,45 +2286,30 @@ export function WarMap({
             isValidLatLng(feature.lat, feature.lng),
         )
         .map((feature) => {
-          const properties =
-            feature.properties &&
-            typeof feature.properties === "object" &&
-            !Array.isArray(feature.properties)
-              ? (feature.properties as Record<string, unknown>)
-              : undefined;
-          const translatedName =
-            typeof properties?.nameZh === "string" &&
-            translateTarget === "zh-CN"
-              ? properties.nameZh
-              : typeof properties?.name === "string"
-                ? properties.name
-                : layerLabel;
-          const description =
-            typeof properties?.descriptionZh === "string" &&
-            translateTarget === "zh-CN"
-              ? properties.descriptionZh
-              : typeof properties?.description === "string"
-                ? properties.description
-                : undefined;
+          const { description, label, properties } =
+            readLayerFeatureCopy(feature);
           const flight = readWarMapFlightProperties(properties);
+          const symbolKey = flight
+            ? ("flight" as const)
+            : ("generic-point" as const);
+          const accentColor = flight
+            ? getWarMapSymbolAccentColor("flight")
+            : pointAccentColor;
+          const interactionKey = `layer:${layerId}:${feature.id}`;
+
           return {
             id: `${layerId}-${feature.id}`,
+            interactionKey,
             lat: feature.lat,
             lng: feature.lng,
-            label: flight
-              ? getWarMapFlightLabel(flight, translatedName)
-              : translatedName,
+            label: flight ? getWarMapFlightLabel(flight, label) : label,
             description,
-            color,
-            radius: Math.max(
-              4,
-              Math.min(
-                18,
-                Math.round((dataset.renderHints?.radiusScale ?? 1) * 6),
-              ),
-            ),
+            color: flight ? toRgba(accentColor, 0.92, [51, 65, 85]) : color,
+            radius: layerPointRadius,
             kind: "layer",
             layerId,
+            symbolKey,
+            accentColor,
             ...(flight
               ? {
                   selectionKey: toTransportSelectionKey(
@@ -1977,130 +2349,62 @@ export function WarMap({
         ? clusterablePartition.singles
         : points;
       const pointClusters: DeckPoint[] = clusterablePartition
-        ? clusterablePartition.clusters.map((cluster) => ({
-            id: `layer-cluster:${layerId}:${cluster.memberKey}`,
-            lat: cluster.lat,
-            lng: cluster.lng,
-            label: layerLabel,
-            description:
-              layerId === "flights"
-                ? t("dashboard.charts.warMap.tooltip.clusterFlights", {
-                    defaultValue:
-                      flightMode === "all"
-                        ? "{{count}} flights. Click to zoom in."
-                        : "{{count}} military/possible military flights. Click to zoom in.",
-                    count: cluster.count,
-                  })
-                : t("dashboard.charts.warMap.tooltip.clusterLayer", {
-                    defaultValue:
-                      "{{count}} {{layer}} items. Click to zoom in.",
-                    count: cluster.count,
-                    layer: layerLabel,
-                  }),
-            color,
-            radius: clusterRadius(cluster.count),
-            kind: "layer-cluster",
-            layerId,
-            isCluster: true,
-            clusterCount: cluster.count,
-          }))
+        ? clusterablePartition.clusters.map((cluster) => {
+            const representative = cluster.members[0];
+            const interactionKey = `layer-cluster:${layerId}:${cluster.memberKey}`;
+
+            return {
+              id: interactionKey,
+              interactionKey,
+              lat: cluster.lat,
+              lng: cluster.lng,
+              label: layerLabel,
+              description:
+                layerId === "flights"
+                  ? t("dashboard.charts.warMap.tooltip.clusterFlights", {
+                      defaultValue:
+                        flightMode === "all"
+                          ? "{{count}} flights. Click to zoom in."
+                          : "{{count}} military/possible military flights. Click to zoom in.",
+                      count: cluster.count,
+                    })
+                  : t("dashboard.charts.warMap.tooltip.clusterLayer", {
+                      defaultValue:
+                        "{{count}} {{layer}} items. Click to zoom in.",
+                      count: cluster.count,
+                      layer: layerLabel,
+                    }),
+              color: representative?.color ?? color,
+              radius: clusterRadius(cluster.count),
+              kind: "layer-cluster",
+              layerId,
+              symbolKey:
+                representative?.symbolKey ??
+                (layerId === "flights" ? "flight" : "generic-point"),
+              accentColor: representative?.accentColor ?? pointAccentColor,
+              isCluster: true,
+              clusterCount: cluster.count,
+            };
+          })
         : [];
 
-      if (pointClusters.length > 0) {
-        staticLayers.push(
-          new ScatterplotLayer({
-            id: `wm-point-${layerId}-clusters`,
-            data: pointClusters,
-            pickable: Boolean(dataset.renderHints?.pickable ?? true),
-            getPosition: (point: DeckPoint) => [point.lng, point.lat],
-            getFillColor: (point: DeckPoint) => point.color,
-            getRadius: (point: DeckPoint) => point.radius,
-            radiusMinPixels: 10,
-            radiusMaxPixels: 42,
-            stroked: false,
-            onClick: (info: { object?: DeckPoint }) => {
-              zoomToLayerCluster(info.object);
-            },
-          }),
-        );
+      if (layerId !== "flights" && points.length > 0) {
+        activePointLayers.push({
+          key: layerId,
+          label: layerLabel,
+          accentColor: pointAccentColor,
+        });
       }
 
-      if (pointSingles.length > 0 && layerId === "flights") {
-        const orientedFlightPoints = pointSingles.filter(
-          (point) => resolveAircraftIconAngle(point) !== null,
-        );
-        const fallbackFlightPoints = pointSingles.filter(
-          (point) => resolveAircraftIconAngle(point) === null,
-        );
-
-        if (orientedFlightPoints.length > 0) {
-          staticLayers.push(
-            new IconLayer({
-              id: `wm-point-${layerId}-icons`,
-              data: orientedFlightPoints,
-              pickable: Boolean(dataset.renderHints?.pickable ?? true),
-              billboard: true,
-              sizeUnits: "pixels",
-              getIcon: () => AIRCRAFT_ICON,
-              getPosition: (point: DeckPoint) => [point.lng, point.lat],
-              getColor: (point: DeckPoint) => point.color,
-              getAngle: (point: DeckPoint) =>
-                resolveAircraftIconAngle(point) ?? 0,
-              getSize: (point: DeckPoint) => Math.max(20, point.radius * 3.4),
-              sizeMinPixels: 18,
-              sizeMaxPixels: 42,
-              onClick: (info: { object?: DeckPoint }) => {
-                const object = info.object;
-                if (!object?.selectionKey) {
-                  return;
-                }
-                setSelectedInspectorKey(object.selectionKey);
-              },
-            }),
-          );
-        }
-
-        if (fallbackFlightPoints.length > 0) {
-          staticLayers.push(
-            new ScatterplotLayer({
-              id: `wm-point-${layerId}-fallback`,
-              data: fallbackFlightPoints,
-              pickable: Boolean(dataset.renderHints?.pickable ?? true),
-              getPosition: (point: DeckPoint) => [point.lng, point.lat],
-              getFillColor: (point: DeckPoint) => point.color,
-              getRadius: (point: DeckPoint) => point.radius,
-              radiusMinPixels: 3,
-              radiusMaxPixels: 30,
-              stroked: false,
-              onClick: (info: { object?: DeckPoint }) => {
-                const object = info.object;
-                if (!object?.selectionKey) {
-                  return;
-                }
-                setSelectedInspectorKey(object.selectionKey);
-              },
-            }),
-          );
-        }
-      } else if (pointSingles.length > 0) {
+      if (pointSingles.length > 0 || pointClusters.length > 0) {
         staticLayers.push(
-          new ScatterplotLayer({
+          ...buildSymbolPointLayers({
             id: `wm-point-${layerId}`,
-            data: pointSingles,
-            pickable: Boolean(dataset.renderHints?.pickable ?? true),
-            getPosition: (point: DeckPoint) => [point.lng, point.lat],
-            getFillColor: (point: DeckPoint) => point.color,
-            getRadius: (point: DeckPoint) => point.radius,
-            radiusMinPixels: 3,
-            radiusMaxPixels: 30,
-            stroked: false,
-            onClick: (info: { object?: DeckPoint }) => {
-              const object = info.object;
-              if (!object?.selectionKey) {
-                return;
-              }
-              setSelectedInspectorKey(object.selectionKey);
-            },
+            data: [...pointClusters, ...pointSingles],
+            pickable,
+            onClick: handleLayerPointClick,
+            getAngle:
+              layerId === "flights" ? resolveAircraftIconAngle : undefined,
           }),
         );
       }
@@ -2144,8 +2448,10 @@ export function WarMap({
 
         if (aisProperties.featureKind === "vessel") {
           const objectKey = `ais:${aisProperties.mmsi}`;
+          const symbolKey = resolveAisVesselSymbolKey(aisProperties.shipType);
           aisVessels.push({
             id: `ais-vessel-${feature.id}`,
+            interactionKey: `ais:vessel:${objectKey}`,
             lat: feature.lat,
             lng: feature.lng,
             label,
@@ -2153,6 +2459,8 @@ export function WarMap({
             radius: effectiveAisMode === "military" ? 7 : 5,
             kind: "layer",
             layerId: "ais",
+            symbolKey,
+            accentColor: getWarMapSymbolAccentColor(symbolKey),
             sourceType: "ais",
             aisFeatureKind: "vessel",
             selectionKey: toTransportSelectionKey("vessel", objectKey),
@@ -2185,6 +2493,7 @@ export function WarMap({
           const intensity = Math.max(0, Math.min(1, aisProperties.intensity));
           aisDensityZones.push({
             id: `ais-density-${feature.id}`,
+            interactionKey: `ais:density:${feature.id}`,
             lat: feature.lat,
             lng: feature.lng,
             label,
@@ -2192,6 +2501,8 @@ export function WarMap({
             radius: 12 + intensity * 18,
             kind: "layer",
             layerId: "ais",
+            symbolKey: "ais-density",
+            accentColor: getWarMapSymbolAccentColor("ais-density"),
             sourceType: "ais",
             aisFeatureKind: "density",
             intensity,
@@ -2209,8 +2520,10 @@ export function WarMap({
           continue;
         }
 
+        const symbolKey = resolveAisDisruptionSymbolKey(aisProperties.severity);
         aisDisruptions.push({
           id: `ais-disruption-${feature.id}`,
+          interactionKey: `ais:disruption:${feature.id}`,
           lat: feature.lat,
           lng: feature.lng,
           label,
@@ -2223,6 +2536,8 @@ export function WarMap({
                 : 11,
           kind: "layer",
           layerId: "ais",
+          symbolKey,
+          accentColor: getWarMapSymbolAccentColor(symbolKey),
           sourceType: "ais",
           aisFeatureKind: "disruption",
           severity: aisProperties.severity,
@@ -2284,142 +2599,33 @@ export function WarMap({
           }),
         );
         aisLayers.push(
-          new ScatterplotLayer({
+          ...buildSymbolPointLayers({
             id: "wm-ais-density-zones",
             data: aisDensityZones,
-            pickable: true,
-            stroked: false,
-            filled: true,
-            getFillColor: (point: DeckPoint) => point.color,
-            getRadius: (point: DeckPoint) => point.radius,
-            radiusMinPixels: 10,
-            radiusMaxPixels: 34,
-            getPosition: (point: DeckPoint) => [point.lng, point.lat],
+            onClick: handleLayerPointClick,
           }),
         );
       }
 
       if (aisDisruptions.length > 0) {
         aisLayers.push(
-          new ScatterplotLayer({
-            id: "wm-ais-disruptions-ring",
+          ...buildSymbolPointLayers({
+            id: "wm-ais-disruptions",
             data: aisDisruptions,
-            pickable: true,
-            stroked: true,
-            filled: false,
-            lineWidthMinPixels: 2,
-            getLineColor: (point: DeckPoint) => point.color,
-            getRadius: (point: DeckPoint) => point.radius * 1.45,
-            radiusMinPixels: 12,
-            radiusMaxPixels: 42,
-            getPosition: (point: DeckPoint) => [point.lng, point.lat],
-          }),
-        );
-        aisLayers.push(
-          new ScatterplotLayer({
-            id: "wm-ais-disruptions-core",
-            data: aisDisruptions,
-            pickable: true,
-            stroked: false,
-            getFillColor: (point: DeckPoint) => point.color,
-            getRadius: (point: DeckPoint) => point.radius * 0.55,
-            radiusMinPixels: 5,
-            radiusMaxPixels: 18,
-            getPosition: (point: DeckPoint) => [point.lng, point.lat],
+            onClick: handleLayerPointClick,
           }),
         );
       }
 
       if (aisVessels.length > 0) {
-        const orientedAisVessels = aisVessels.filter(
-          (point) => resolveVesselIconAngle(point) !== null,
-        );
-        const fallbackAisVessels = aisVessels.filter(
-          (point) => resolveVesselIconAngle(point) === null,
-        );
-
         aisLayers.push(
-          new ScatterplotLayer({
-            id: "wm-ais-vessels-halo",
+          ...buildSymbolPointLayers({
+            id: "wm-ais-vessels",
             data: aisVessels,
-            pickable: false,
-            stroked: true,
-            filled: true,
-            lineWidthMinPixels: 1.5,
-            getLineColor: [15, 23, 42, 150],
-            getFillColor: [255, 255, 255, 225],
-            getRadius: (point: DeckPoint) => Math.max(6, point.radius * 1.35),
-            radiusMinPixels: 6,
-            radiusMaxPixels: 18,
-            getPosition: (point: DeckPoint) => [point.lng, point.lat],
+            onClick: handleSelectablePointClick,
+            getAngle: resolveVesselIconAngle,
           }),
         );
-        aisLayers.push(
-          new ScatterplotLayer({
-            id: "wm-ais-vessels-core",
-            data: aisVessels,
-            pickable: false,
-            stroked: false,
-            filled: true,
-            getFillColor: (point: DeckPoint) => point.color,
-            getRadius: (point: DeckPoint) => Math.max(4, point.radius * 0.9),
-            radiusMinPixels: 4,
-            radiusMaxPixels: 12,
-            getPosition: (point: DeckPoint) => [point.lng, point.lat],
-          }),
-        );
-
-        if (orientedAisVessels.length > 0) {
-          aisLayers.push(
-            new IconLayer({
-              id: "wm-ais-vessels-icons",
-              data: orientedAisVessels,
-              pickable: true,
-              billboard: true,
-              sizeUnits: "pixels",
-              getIcon: () => VESSEL_ICON,
-              getPosition: (point: DeckPoint) => [point.lng, point.lat],
-              getColor: (point: DeckPoint) => point.color,
-              getAngle: (point: DeckPoint) =>
-                resolveVesselIconAngle(point) ?? 0,
-              getSize: (point: DeckPoint) => Math.max(22, point.radius * 3.4),
-              sizeMinPixels: 18,
-              sizeMaxPixels: 38,
-              onClick: (info: { object?: DeckPoint }) => {
-                const object = info.object;
-                if (!object?.selectionKey) {
-                  return;
-                }
-                setSelectedInspectorKey(object.selectionKey);
-              },
-            }),
-          );
-        }
-
-        if (fallbackAisVessels.length > 0) {
-          aisLayers.push(
-            new ScatterplotLayer({
-              id: "wm-ais-vessels-fallback",
-              data: fallbackAisVessels,
-              pickable: true,
-              stroked: true,
-              getLineColor: [15, 23, 42, 180],
-              lineWidthMinPixels: 1.25,
-              getFillColor: (point: DeckPoint) => point.color,
-              getRadius: (point: DeckPoint) => Math.max(4, point.radius * 0.95),
-              radiusMinPixels: 4,
-              radiusMaxPixels: 14,
-              getPosition: (point: DeckPoint) => [point.lng, point.lat],
-              onClick: (info: { object?: DeckPoint }) => {
-                const object = info.object;
-                if (!object?.selectionKey) {
-                  return;
-                }
-                setSelectedInspectorKey(object.selectionKey);
-              },
-            }),
-          );
-        }
       }
     }
 
@@ -2427,8 +2633,12 @@ export function WarMap({
       deckLayers: [...staticLayers, ...aisLayers],
       staticVisibleCount: staticLayers.length + aisLayers.length,
       aisFeatureCount,
+      activePointLayers,
     };
   }, [
+    buildSymbolPointLayers,
+    handleLayerPointClick,
+    handleSelectablePointClick,
     layerVisibility,
     layersQuery.data?.layers,
     localClusterBbox,
@@ -2437,7 +2647,6 @@ export function WarMap({
     effectiveAisMode,
     flightMode,
     translateTarget,
-    zoomToLayerCluster,
   ]);
 
   const monitorDeckLayers = useMemo(() => {
@@ -2445,242 +2654,179 @@ export function WarMap({
       return [];
     }
 
-    return [
-      new ScatterplotLayer({
-        id: "wm-monitors",
-        data: monitorPoints,
-        pickable: true,
-        getPosition: (point: DeckPoint) => [point.lng, point.lat],
-        getFillColor: (point: DeckPoint) => point.color,
-        getRadius: (point: DeckPoint) => point.radius,
-        radiusMinPixels: 5,
-        radiusMaxPixels: 24,
-        onClick: (info: { object?: DeckPoint }) => {
-          const object = info.object;
-          if (!object) {
-            return;
-          }
-          const query = (object.query ?? object.label).trim();
-          if (!query) {
-            toast.warning(
-              t("dashboard.charts.warMap.missingMonitorQuery", {
-                defaultValue: "No keywords available for this monitor.",
-              }),
-            );
-            return;
-          }
-          window.open(
-            `/search?q=${encodeURIComponent(query)}`,
-            "_blank",
-            "noopener,noreferrer",
-          );
-        },
-      }),
-    ];
-  }, [layerVisibility.monitors, monitorPoints, t]);
+    return buildSymbolPointLayers({
+      id: "wm-monitors",
+      data: monitorPoints,
+      onClick: handleMonitorPointClick,
+    });
+  }, [
+    buildSymbolPointLayers,
+    handleMonitorPointClick,
+    layerVisibility.monitors,
+    monitorPoints,
+  ]);
 
   const eventDeckData = useMemo(() => {
-    const eventPoints: DeckPoint[] = [];
-    for (const event of clusteredEvents.singles) {
+    const eventPoints: DeckPoint[] = clusteredEvents.singles.map((event) => {
       const score =
         typeof event.derivedScore === "number"
           ? event.derivedScore
           : (event.value ?? 0);
-      eventPoints.push({
+      const symbolKey =
+        event.severity === "high"
+          ? "signal-high"
+          : event.severity === "medium"
+            ? "signal-medium"
+            : "signal-low";
+      const selectionKey = toSingleSelectionKey("event", event.id);
+
+      return {
         id: event.id,
+        interactionKey: selectionKey,
         lat: event.lat,
         lng: event.lng,
         label: event.label,
         kind: "event",
-        selectionKey: toSingleSelectionKey("event", event.id),
+        selectionKey,
         color: severityColor(event.severity),
         radius: Math.max(5, Math.min(24, Math.sqrt(Math.max(1, score)) * 2.5)),
+        symbolKey,
+        accentColor: getWarMapSymbolAccentColor(symbolKey),
         severity: event.severity,
         alertCount: event.alertCount,
         newsCount: event.newsCount,
         latestAt: event.latestAt,
-      });
-    }
+      };
+    });
 
-    const eventClusters: DeckPoint[] = [];
-    for (const cluster of clusteredEvents.clusters) {
-      const selectionKey = toClusterSelectionKey("event", cluster.memberKey);
-      eventClusters.push({
-        id: selectionKey,
-        lat: cluster.lat,
-        lng: cluster.lng,
-        label: t("dashboard.charts.warMap.panel.signalsTitle", {
-          defaultValue: "Nearby signals",
-        }),
-        kind: "event-cluster",
-        color: [180, 83, 9, 188],
-        radius: clusterRadius(cluster.count),
-        isCluster: true,
-        clusterCount: cluster.count,
-        selectionKey,
-        description: t("dashboard.charts.warMap.tooltip.clusterSignals", {
-          defaultValue: "{{count}} nearby signals. Click to inspect.",
-          count: cluster.count,
-        }),
-      });
-    }
+    const eventClusters: DeckPoint[] = clusteredEvents.clusters.map(
+      (cluster) => {
+        const selectionKey = toClusterSelectionKey("event", cluster.memberKey);
+        const leadSeverity = cluster.members[0]?.severity ?? "medium";
+        const symbolKey =
+          leadSeverity === "high"
+            ? "signal-high"
+            : leadSeverity === "medium"
+              ? "signal-medium"
+              : "signal-low";
 
-    const deckLayers: any[] = [];
-
-    if (eventClusters.length > 0) {
-      deckLayers.push(
-        new ScatterplotLayer({
-          id: "wm-events-clusters",
-          data: eventClusters,
-          pickable: true,
-          getPosition: (point: DeckPoint) => [point.lng, point.lat],
-          getFillColor: (point: DeckPoint) => point.color,
-          getRadius: (point: DeckPoint) => point.radius,
-          radiusMinPixels: 10,
-          radiusMaxPixels: 50,
-          onClick: (info: { object?: DeckPoint }) => {
-            const object = info.object;
-            if (!object?.selectionKey) {
-              return;
-            }
-            setSelectedInspectorKey(object.selectionKey);
-          },
-        }),
-      );
-    }
-
-    if (eventPoints.length > 0) {
-      deckLayers.push(
-        new ScatterplotLayer({
-          id: "wm-events",
-          data: eventPoints,
-          pickable: true,
-          getPosition: (point: DeckPoint) => [point.lng, point.lat],
-          getFillColor: (point: DeckPoint) => point.color,
-          getRadius: (point: DeckPoint) => point.radius,
-          radiusMinPixels: 4,
-          radiusMaxPixels: 34,
-          onClick: (info: { object?: DeckPoint }) => {
-            const object = info.object;
-            if (!object?.selectionKey) {
-              return;
-            }
-            setSelectedInspectorKey(object.selectionKey);
-          },
-        }),
-      );
-    }
+        return {
+          id: selectionKey,
+          interactionKey: selectionKey,
+          lat: cluster.lat,
+          lng: cluster.lng,
+          label: t("dashboard.charts.warMap.panel.signalsTitle", {
+            defaultValue: "Nearby signals",
+          }),
+          kind: "event-cluster",
+          selectionKey,
+          color: severityColor(leadSeverity),
+          radius: clusterRadius(cluster.count),
+          symbolKey,
+          accentColor: getWarMapSymbolAccentColor(symbolKey),
+          isCluster: true,
+          clusterCount: cluster.count,
+          description: t("dashboard.charts.warMap.tooltip.clusterSignals", {
+            defaultValue: "{{count}} nearby signals. Click to inspect.",
+            count: cluster.count,
+          }),
+        };
+      },
+    );
 
     return {
-      deckLayers,
+      deckLayers: buildSymbolPointLayers({
+        id: "wm-events",
+        data: [...eventClusters, ...eventPoints],
+        onClick: handleSelectablePointClick,
+      }),
       eventsCount: rawEvents.length,
       eventClustersCount: eventClusters.length,
     };
-  }, [clusteredEvents.clusters, clusteredEvents.singles, rawEvents.length, t]);
+  }, [
+    buildSymbolPointLayers,
+    clusteredEvents.clusters,
+    clusteredEvents.singles,
+    handleSelectablePointClick,
+    rawEvents.length,
+    t,
+  ]);
 
   const newsDeckData = useMemo(() => {
-    const newsPoints: DeckPoint[] = [];
-    for (const marker of clusteredNews.singles) {
-      const baseColor =
-        marker.geoSource === "fallback-country" ? [8, 145, 178] : [5, 150, 105];
+    const newsPoints: DeckPoint[] = clusteredNews.singles.map((marker) => {
+      const isFallback = marker.geoSource === "fallback-country";
+      const selectionKey = toSingleSelectionKey("news", marker.id);
+      const symbolKey = isFallback ? "news-fallback" : "news-geocoded";
+      const baseColor = isFallback ? [8, 145, 178] : [5, 150, 105];
       const [baseR = 8, baseG = 145, baseB = 178] = baseColor;
-      newsPoints.push({
+
+      return {
         id: marker.id,
+        interactionKey: selectionKey,
         lat: marker.lat,
         lng: marker.lng,
         label: marker.label,
         kind: "news",
-        selectionKey: toSingleSelectionKey("news", marker.id),
-        color: [
-          baseR,
-          baseG,
-          baseB,
-          marker.geoSource === "fallback-country" ? 110 : 200,
-        ],
+        selectionKey,
+        color: [baseR, baseG, baseB, isFallback ? 110 : 200],
         radius: 5,
+        symbolKey,
+        accentColor: getWarMapSymbolAccentColor(symbolKey),
         url: marker.url ?? null,
         publishedAt: marker.publishedAt,
         ingestedAt: marker.ingestedAt,
         locationLabel: marker.locationLabel,
         geoSource: marker.geoSource,
-      });
-    }
+      };
+    });
 
-    const newsClusters: DeckPoint[] = [];
-    for (const cluster of clusteredNews.clusters) {
+    const newsClusters: DeckPoint[] = clusteredNews.clusters.map((cluster) => {
       const selectionKey = toClusterSelectionKey("news", cluster.memberKey);
-      newsClusters.push({
+      const hasGeocodedPoint = cluster.members.some(
+        (member) => member.geoSource !== "fallback-country",
+      );
+      const symbolKey = hasGeocodedPoint ? "news-geocoded" : "news-fallback";
+
+      return {
         id: selectionKey,
+        interactionKey: selectionKey,
         lat: cluster.lat,
         lng: cluster.lng,
         label: t("dashboard.charts.warMap.panel.newsTitle", {
           defaultValue: "Nearby news",
         }),
         kind: "news-cluster",
-        color: [21, 128, 61, 176],
+        selectionKey,
+        color: hasGeocodedPoint ? [21, 128, 61, 176] : [8, 145, 178, 160],
         radius: clusterRadius(cluster.count),
+        symbolKey,
+        accentColor: getWarMapSymbolAccentColor(symbolKey),
         isCluster: true,
         clusterCount: cluster.count,
-        selectionKey,
         description: t("dashboard.charts.warMap.tooltip.clusterNews", {
           defaultValue: "{{count}} nearby news items. Click to inspect.",
           count: cluster.count,
         }),
-      });
-    }
-
-    const deckLayers: any[] = [];
-
-    if (newsClusters.length > 0) {
-      deckLayers.push(
-        new ScatterplotLayer({
-          id: "wm-news-clusters",
-          data: newsClusters,
-          pickable: true,
-          getPosition: (point: DeckPoint) => [point.lng, point.lat],
-          getFillColor: (point: DeckPoint) => point.color,
-          getRadius: (point: DeckPoint) => point.radius,
-          radiusMinPixels: 10,
-          radiusMaxPixels: 50,
-          onClick: (info: { object?: DeckPoint }) => {
-            const object = info.object;
-            if (!object?.selectionKey) {
-              return;
-            }
-            setSelectedInspectorKey(object.selectionKey);
-          },
-        }),
-      );
-    }
-
-    if (newsPoints.length > 0) {
-      deckLayers.push(
-        new ScatterplotLayer({
-          id: "wm-news",
-          data: newsPoints,
-          pickable: true,
-          getPosition: (point: DeckPoint) => [point.lng, point.lat],
-          getFillColor: (point: DeckPoint) => point.color,
-          getRadius: (point: DeckPoint) => point.radius,
-          radiusMinPixels: 4,
-          radiusMaxPixels: 18,
-          onClick: (info: { object?: DeckPoint }) => {
-            const object = info.object;
-            if (!object || object.isCluster || !object.selectionKey) {
-              return;
-            }
-            setSelectedInspectorKey(object.selectionKey);
-          },
-        }),
-      );
-    }
+      };
+    });
 
     return {
-      deckLayers,
+      deckLayers: buildSymbolPointLayers({
+        id: "wm-news",
+        data: [...newsClusters, ...newsPoints],
+        onClick: handleSelectablePointClick,
+      }),
       newsCount: rawNewsMarkers.length,
       newsClustersCount: newsClusters.length,
     };
-  }, [clusteredNews.clusters, clusteredNews.singles, rawNewsMarkers.length, t]);
+  }, [
+    buildSymbolPointLayers,
+    clusteredNews.clusters,
+    clusteredNews.singles,
+    handleSelectablePointClick,
+    rawNewsMarkers.length,
+    t,
+  ]);
 
   const deckData = useMemo(
     () => ({
@@ -3037,6 +3183,16 @@ export function WarMap({
     [flightMode, locale, t],
   );
 
+  const deckCursorGetter = useCallback(
+    ({ isDragging }: { isDragging?: boolean }) => {
+      if (isDragging) {
+        return "grabbing";
+      }
+      return hoveredInteractionKey ? "pointer" : "grab";
+    },
+    [hoveredInteractionKey],
+  );
+
   useEffect(() => {
     if (!deckOverlayRef.current) {
       return;
@@ -3044,8 +3200,14 @@ export function WarMap({
     setDeckOverlayProps(deckOverlayRef.current, {
       layers: hasRenderableMapContainer ? deckData.deckLayers : [],
       getTooltip: tooltipGetter,
+      getCursor: deckCursorGetter,
     });
-  }, [deckData.deckLayers, hasRenderableMapContainer, tooltipGetter]);
+  }, [
+    deckCursorGetter,
+    deckData.deckLayers,
+    hasRenderableMapContainer,
+    tooltipGetter,
+  ]);
 
   const anyLoading =
     eventsQuery.isLoading ||
@@ -3887,6 +4049,44 @@ export function WarMap({
       visibleLayerCount,
     ],
   );
+  const quickLegendItems = useMemo<WarMapLegendItem[]>(
+    () =>
+      buildWarMapQuickLegendItems({
+        t,
+        showMonitors: layerVisibility.monitors && monitorPoints.length > 0,
+        showFlights: layerVisibility.flights,
+        showAis: layerVisibility.ais,
+        effectiveAisMode,
+      }),
+    [
+      effectiveAisMode,
+      layerVisibility.ais,
+      layerVisibility.flights,
+      layerVisibility.monitors,
+      monitorPoints.length,
+      t,
+    ],
+  );
+  const legendSections = useMemo(
+    () =>
+      buildWarMapLegendSections({
+        t,
+        showMonitors: layerVisibility.monitors && monitorPoints.length > 0,
+        showFlights: layerVisibility.flights,
+        showAis: layerVisibility.ais,
+        effectiveAisMode,
+        activePointLayers: staticDeckData.activePointLayers,
+      }),
+    [
+      effectiveAisMode,
+      layerVisibility.ais,
+      layerVisibility.flights,
+      layerVisibility.monitors,
+      monitorPoints.length,
+      staticDeckData.activePointLayers,
+      t,
+    ],
+  );
   const presetOptions = useMemo<WarMapSelectableOption<WarMapPreset>[]>(
     () =>
       WAR_MAP_PRESETS.map((preset) => ({
@@ -3949,6 +4149,7 @@ export function WarMap({
       windowLabel={windowLabel}
       feedSummaryCards={overlayViewModel.feedSummaryCards}
       detailedChainStatuses={overlayViewModel.detailedChainStatuses}
+      legendSections={legendSections}
       view={{
         presets: presetOptions,
         timeRanges: timeRangeOptions,
@@ -4079,6 +4280,7 @@ export function WarMap({
             showActionLabels={overlayLayout.showActionLabels}
             openOverlayPanel={openOverlayPanel}
             controlsSection={activeControlsSection}
+            quickLegendItems={quickLegendItems}
             onRefresh={() => {
               void refreshMapData();
             }}
