@@ -2456,6 +2456,21 @@ export class DashboardChartsService {
       !Array.isArray(sourceState.context)
         ? sourceState.context
         : undefined;
+    const sourceStatusReasonCode =
+      this.normalizeString(sourceContext?.statusReasonCode) ??
+      (sourceState?.status === "error" &&
+      this.normalizeString(sourceState.lastError)
+        ? "ais_refresh_failed"
+        : sourceContext?.configured !== false &&
+            sourceContext?.connected === false
+          ? "ais_upstream_disconnected"
+          : undefined);
+    const sourceStatusReason =
+      this.normalizeString(sourceContext?.statusReason) ??
+      this.normalizeString(sourceState?.lastError) ??
+      (sourceContext?.configured !== false && sourceContext?.connected === false
+        ? "AIS relay is reachable, but the upstream AIS stream is disconnected."
+        : undefined);
     const staleThresholdSec =
       typeof sourceContext?.staleThresholdSec === "number" &&
       Number.isFinite(sourceContext.staleThresholdSec)
@@ -2491,6 +2506,10 @@ export class DashboardChartsService {
               blockedReason: "AIS relay snapshot is not available yet.",
             }
           : {}),
+        ...(sourceStatusReasonCode
+          ? { statusReasonCode: sourceStatusReasonCode }
+          : {}),
+        ...(sourceStatusReason ? { statusReason: sourceStatusReason } : {}),
       };
       return;
     }
@@ -2504,6 +2523,41 @@ export class DashboardChartsService {
       typeof snapshotAgeSec === "number" && snapshotAgeSec > staleThresholdSec
         ? "stale"
         : "fresh";
+    const snapshotDiagnostics =
+      snapshot.diagnostics &&
+      typeof snapshot.diagnostics === "object" &&
+      !Array.isArray(snapshot.diagnostics)
+        ? (snapshot.diagnostics as unknown as Record<string, unknown>)
+        : undefined;
+    const readFiniteNumber = (value: unknown) =>
+      typeof value === "number" && Number.isFinite(value) ? value : null;
+    const positionReportsSeen = readFiniteNumber(
+      snapshotDiagnostics?.positionReportsSeen,
+    );
+    const positionReportsProcessed = readFiniteNumber(
+      snapshotDiagnostics?.positionReportsProcessed,
+    );
+    const aisStatusReasonCode =
+      this.normalizeString(snapshotDiagnostics?.statusReasonCode) ??
+      (!snapshot.status.connected
+        ? "ais_upstream_disconnected"
+        : typeof positionReportsSeen === "number" &&
+            positionReportsSeen > 0 &&
+            positionReportsProcessed === 0 &&
+            snapshot.status.vessels === 0
+          ? "ais_position_reports_not_retained"
+          : sourceStatusReasonCode);
+    const aisStatusReason =
+      this.normalizeString(snapshotDiagnostics?.statusReason) ??
+      (!snapshot.status.connected
+        ? (sourceStatusReason ??
+          "AIS relay is reachable, but the upstream AIS stream is disconnected.")
+        : typeof positionReportsSeen === "number" &&
+            positionReportsSeen > 0 &&
+            positionReportsProcessed === 0 &&
+            snapshot.status.vessels === 0
+          ? "AIS relay is receiving position reports, but none are being retained as vessel snapshots."
+          : sourceStatusReason);
 
     const disruptionFeatures = this.filterWarMapPointsByBbox(
       snapshot.disruptions,
@@ -2567,6 +2621,20 @@ export class DashboardChartsService {
       messageCount: snapshot.status.messages,
       clientCount: snapshot.status.clients,
       droppedMessages: snapshot.status.droppedMessages,
+      ...(typeof positionReportsSeen === "number"
+        ? { positionReportsSeen }
+        : {}),
+      ...(typeof positionReportsProcessed === "number"
+        ? { positionReportsProcessed }
+        : {}),
+      ...(typeof snapshotDiagnostics?.ignoredPositionReports === "number"
+        ? { ignoredPositionReports: snapshotDiagnostics.ignoredPositionReports }
+        : {}),
+      ...(typeof snapshotDiagnostics?.parseErrors === "number"
+        ? { parseErrors: snapshotDiagnostics.parseErrors }
+        : {}),
+      ...(aisStatusReasonCode ? { statusReasonCode: aisStatusReasonCode } : {}),
+      ...(aisStatusReason ? { statusReason: aisStatusReason } : {}),
       ...(aisMode === "all"
         ? {
             maxReturned: this.resolveWarMapAisMaxPoints(options),
@@ -5514,7 +5582,10 @@ export class DashboardChartsService {
       );
       let usedFallback = false;
       if (!fieldKey) {
-        fieldKey = resolveFallbackSourceField(availableSourceFields, labelToField);
+        fieldKey = resolveFallbackSourceField(
+          availableSourceFields,
+          labelToField,
+        );
         usedFallback = Boolean(fieldKey);
       }
       if (!fieldKey) {

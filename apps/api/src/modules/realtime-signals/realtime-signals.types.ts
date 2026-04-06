@@ -42,6 +42,24 @@ export interface RealtimeAisRelayStatusSnapshot {
   droppedMessages: number;
 }
 
+export type RealtimeAisRelayHealthState = "ok" | "degraded";
+
+export interface RealtimeAisRelayDiagnostics {
+  healthState: RealtimeAisRelayHealthState;
+  statusReason?: string;
+  statusReasonCode?: string;
+  positionReportsSeen: number;
+  positionReportsProcessed: number;
+  ignoredPositionReports: number;
+  parseErrors: number;
+  lastHealthyAt?: string;
+  lastIssueAt?: string;
+  lastUpstreamErrorAt?: string;
+  lastUpstreamError?: string;
+  lastParseErrorAt?: string;
+  lastParseError?: string;
+}
+
 export type RealtimeAisDisruptionSeverity = "low" | "elevated" | "high";
 
 export interface RealtimeAisDisruptionSnapshot {
@@ -87,6 +105,7 @@ export interface RealtimeAisLatestSnapshot {
   sourceEndpoint: string;
   updatedAt: string;
   status: RealtimeAisRelayStatusSnapshot;
+  diagnostics: RealtimeAisRelayDiagnostics;
   disruptions: RealtimeAisDisruptionSnapshot[];
   density: RealtimeAisDensitySnapshot[];
   candidateReports: RealtimeAisVesselSnapshot[];

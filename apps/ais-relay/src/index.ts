@@ -36,6 +36,20 @@ const UPSTREAM_DRAIN_BUDGET_MS = readPositiveInt(
   process.env.AIS_UPSTREAM_DRAIN_BUDGET_MS,
   20,
 );
+const RELAY_HEALTH_MIN_POSITION_REPORTS = readPositiveInt(
+  process.env.AIS_RELAY_HEALTH_MIN_POSITION_REPORTS,
+  25,
+);
+const RELAY_HEALTH_MAX_IGNORED_RATIO_PERCENT = readPositiveInt(
+  process.env.AIS_RELAY_HEALTH_MAX_IGNORED_RATIO_PERCENT,
+  85,
+  1,
+);
+const RELAY_HEALTH_MAX_PARSE_ERROR_RATIO_PERCENT = readPositiveInt(
+  process.env.AIS_RELAY_HEALTH_MAX_PARSE_ERROR_RATIO_PERCENT,
+  20,
+  1,
+);
 const MAX_VESSELS = readPositiveInt(process.env.AIS_MAX_VESSELS, 20_000, 1_000);
 const MAX_VESSEL_HISTORY = readPositiveInt(
   process.env.AIS_MAX_VESSEL_HISTORY,
@@ -96,6 +110,24 @@ type CandidateReport = {
   timestamp: number;
 };
 
+type RelayHealthState = "ok" | "degraded";
+
+type AisRelayDiagnostics = {
+  healthState: RelayHealthState;
+  statusReasonCode?: string;
+  statusReason?: string;
+  positionReportsSeen: number;
+  positionReportsProcessed: number;
+  ignoredPositionReports: number;
+  parseErrors: number;
+  lastHealthyAt?: string;
+  lastIssueAt?: string;
+  lastUpstreamErrorAt?: string;
+  lastUpstreamError?: string;
+  lastParseErrorAt?: string;
+  lastParseError?: string;
+};
+
 type AisSnapshot = {
   sequence: number;
   timestamp: string;
@@ -106,6 +138,7 @@ type AisSnapshot = {
     clients: number;
     droppedMessages: number;
   };
+  diagnostics: AisRelayDiagnostics;
   disruptions: Array<Record<string, unknown>>;
   density: Array<Record<string, unknown>>;
   candidateReports: CandidateReport[];
@@ -146,11 +179,24 @@ let upstreamQueueReadIndex = 0;
 let drainScheduled = false;
 let messageCount = 0;
 let droppedMessages = 0;
+let positionReportsSeen = 0;
+let positionReportsProcessed = 0;
+let ignoredPositionReports = 0;
+let parseErrors = 0;
 let snapshotSequence = 0;
 let lastSnapshot: AisSnapshot | null = null;
 let lastSnapshotAt = 0;
 let lastSnapshotJsonWithoutCandidates: string | null = null;
 let lastSnapshotJsonWithCandidates: string | null = null;
+let lastParseErrorAt = 0;
+let lastParseErrorMessage: string | undefined;
+let lastUpstreamErrorAt = 0;
+let lastUpstreamErrorMessage: string | undefined;
+let relayHealthState: RelayHealthState = "ok";
+let relayStatusReasonCode: string | undefined;
+let relayStatusReason: string | undefined;
+let lastRelayIssueAt = 0;
+let lastRelayHealthyAt = Date.now();
 
 function readPositiveInt(value: string | undefined, fallback: number, min = 1) {
   if (!value) {
@@ -169,6 +215,13 @@ function normalizeString(value: unknown) {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeMmsi(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(Math.trunc(value));
+  }
+  return normalizeString(value);
 }
 
 function getNumber(value: unknown) {
@@ -192,6 +245,12 @@ function rawDataToString(raw: RawData) {
     return Buffer.concat(raw as readonly Uint8Array[]).toString("utf8");
   }
   return Buffer.from(raw).toString("utf8");
+}
+
+function toIsoTimestamp(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? new Date(value).toISOString()
+    : undefined;
 }
 
 function getGridKey(lat: number, lon: number) {
@@ -232,7 +291,7 @@ function removeVesselFromDensityCell(mmsi: string) {
 }
 
 function isLikelyMilitaryCandidate(meta: Record<string, unknown>) {
-  const mmsi = String(meta.MMSI ?? "");
+  const mmsi = normalizeMmsi(meta.MMSI ?? meta.MMSI_String) ?? "";
   const shipType = getNumber(meta.ShipType);
   const name = normalizeString(meta.ShipName)?.toUpperCase();
 
@@ -255,6 +314,148 @@ function isLikelyMilitaryCandidate(meta: Record<string, unknown>) {
   }
 
   return false;
+}
+
+function setRelayHealthState(
+  nextState: RelayHealthState,
+  code?: string,
+  reason?: string,
+) {
+  const previousState = relayHealthState;
+  const previousCode = relayStatusReasonCode;
+
+  relayHealthState = nextState;
+  if (nextState === "degraded") {
+    relayStatusReasonCode = code;
+    relayStatusReason = reason;
+
+    if (previousState !== nextState || previousCode !== relayStatusReasonCode) {
+      lastRelayIssueAt = Date.now();
+      console.error(
+        `[ais-relay] degraded (${relayStatusReasonCode ?? "unknown"}): ${
+          relayStatusReason ?? "No reason provided"
+        }`,
+      );
+    }
+    return;
+  }
+
+  relayStatusReasonCode = undefined;
+  relayStatusReason = undefined;
+  if (previousState === "degraded") {
+    lastRelayHealthyAt = Date.now();
+    console.log("[ais-relay] relay health recovered");
+  }
+}
+
+function evaluateRelayHealthState() {
+  const readyState = upstreamSocket?.readyState;
+  if (readyState !== WebSocket.OPEN) {
+    if (
+      readyState === WebSocket.CONNECTING &&
+      messageCount === 0 &&
+      lastUpstreamErrorAt === 0
+    ) {
+      setRelayHealthState("ok");
+      return;
+    }
+
+    const upstreamReason = normalizeString(lastUpstreamErrorMessage);
+    setRelayHealthState(
+      "degraded",
+      "ais_upstream_disconnected",
+      upstreamReason
+        ? `AIS relay is reachable, but the upstream AIS stream is disconnected. Last upstream error: ${upstreamReason}`
+        : "AIS relay is reachable, but the upstream AIS stream is disconnected.",
+    );
+    return;
+  }
+
+  if (
+    positionReportsSeen >= RELAY_HEALTH_MIN_POSITION_REPORTS &&
+    positionReportsProcessed === 0 &&
+    vessels.size === 0
+  ) {
+    setRelayHealthState(
+      "degraded",
+      "ais_position_reports_not_retained",
+      "AIS relay is receiving position reports, but none are being retained as vessel snapshots. Check MMSI and coordinate normalization.",
+    );
+    return;
+  }
+
+  if (
+    positionReportsSeen >= RELAY_HEALTH_MIN_POSITION_REPORTS &&
+    ignoredPositionReports > 0 &&
+    exceedsRatio(
+      ignoredPositionReports,
+      positionReportsSeen,
+      RELAY_HEALTH_MAX_IGNORED_RATIO_PERCENT,
+    )
+  ) {
+    setRelayHealthState(
+      "degraded",
+      "ais_position_reports_mostly_ignored",
+      `AIS relay is receiving position reports, but most are being ignored during normalization (${ignoredPositionReports}/${positionReportsSeen}).`,
+    );
+    return;
+  }
+
+  if (
+    messageCount >= RELAY_HEALTH_MIN_POSITION_REPORTS &&
+    parseErrors > 0 &&
+    exceedsRatio(
+      parseErrors,
+      messageCount,
+      RELAY_HEALTH_MAX_PARSE_ERROR_RATIO_PERCENT,
+    )
+  ) {
+    setRelayHealthState(
+      "degraded",
+      "ais_payload_parse_errors",
+      `AIS relay is encountering frequent upstream payload parse errors (${parseErrors}/${messageCount}).`,
+    );
+    return;
+  }
+
+  setRelayHealthState("ok");
+}
+
+function buildRelayDiagnostics(): AisRelayDiagnostics {
+  evaluateRelayHealthState();
+  const lastHealthyAtIso = toIsoTimestamp(lastRelayHealthyAt);
+  const lastIssueAtIso = toIsoTimestamp(lastRelayIssueAt);
+  const lastUpstreamErrorAtIso = toIsoTimestamp(lastUpstreamErrorAt);
+  const lastParseErrorAtIso = toIsoTimestamp(lastParseErrorAt);
+
+  return {
+    healthState: relayHealthState,
+    ...(relayStatusReasonCode
+      ? { statusReasonCode: relayStatusReasonCode }
+      : {}),
+    ...(relayStatusReason ? { statusReason: relayStatusReason } : {}),
+    positionReportsSeen,
+    positionReportsProcessed,
+    ignoredPositionReports,
+    parseErrors,
+    ...(lastHealthyAtIso ? { lastHealthyAt: lastHealthyAtIso } : {}),
+    ...(lastIssueAtIso ? { lastIssueAt: lastIssueAtIso } : {}),
+    ...(lastUpstreamErrorAtIso
+      ? { lastUpstreamErrorAt: lastUpstreamErrorAtIso }
+      : {}),
+    ...(lastUpstreamErrorMessage
+      ? { lastUpstreamError: lastUpstreamErrorMessage }
+      : {}),
+    ...(lastParseErrorAtIso ? { lastParseErrorAt: lastParseErrorAtIso } : {}),
+    ...(lastParseErrorMessage ? { lastParseError: lastParseErrorMessage } : {}),
+  };
+}
+
+function exceedsRatio(numerator: number, denominator: number, percent: number) {
+  if (denominator <= 0) {
+    return false;
+  }
+  return (numerator / denominator) * 100 >= percent;
 }
 
 function evictMapByTimestamp<T>(
@@ -342,10 +543,16 @@ function processRawUpstreamMessage(raw: RawData) {
       Message?: unknown;
     };
     if (parsed.MessageType === "PositionReport") {
+      positionReportsSeen += 1;
       processPositionReportForSnapshot(parsed);
     }
-  } catch {
-    // Ignore malformed payloads from upstream.
+  } catch (error) {
+    parseErrors += 1;
+    lastParseErrorAt = Date.now();
+    lastParseErrorMessage =
+      error instanceof Error
+        ? error.message
+        : "Failed to parse upstream payload.";
   }
 }
 
@@ -373,13 +580,15 @@ function processPositionReportForSnapshot(payload: {
       : undefined;
 
   if (!meta || !position) {
+    ignoredPositionReports += 1;
     return;
   }
 
-  const mmsi = normalizeString(meta.MMSI);
+  const mmsi = normalizeMmsi(meta.MMSI ?? meta.MMSI_String);
   const lat = getNumber(position.Latitude) ?? getNumber(meta.latitude);
   const lon = getNumber(position.Longitude) ?? getNumber(meta.longitude);
   if (!mmsi || lat === undefined || lon === undefined) {
+    ignoredPositionReports += 1;
     return;
   }
 
@@ -427,6 +636,8 @@ function processPositionReportForSnapshot(payload: {
       timestamp: now,
     });
   }
+
+  positionReportsProcessed += 1;
 }
 
 function cleanupAggregates() {
@@ -639,8 +850,12 @@ function getVesselsSnapshot() {
       ...(vessel.name ? { name: vessel.name } : {}),
       lat: vessel.lat,
       lon: vessel.lon,
-      ...(typeof vessel.shipType === "number" ? { shipType: vessel.shipType } : {}),
-      ...(typeof vessel.heading === "number" ? { heading: vessel.heading } : {}),
+      ...(typeof vessel.shipType === "number"
+        ? { shipType: vessel.shipType }
+        : {}),
+      ...(typeof vessel.heading === "number"
+        ? { heading: vessel.heading }
+        : {}),
       ...(typeof vessel.speed === "number" ? { speed: vessel.speed } : {}),
       ...(typeof vessel.course === "number" ? { course: vessel.course } : {}),
       timestamp: vessel.timestamp,
@@ -677,6 +892,7 @@ function buildSnapshot() {
       clients: 0,
       droppedMessages,
     },
+    diagnostics: buildRelayDiagnostics(),
     disruptions: detectDisruptions(),
     density: calculateDensityZones(),
     candidateReports: candidateSnapshot,
@@ -792,17 +1008,28 @@ function connectUpstream() {
     scheduleDrain();
   });
 
-  socket.on("close", () => {
+  socket.on("close", (code: number, reasonBuffer: Buffer) => {
     if (upstreamSocket !== socket) {
       return;
     }
     upstreamSocket = null;
     clearUpstreamQueue();
-    console.warn("[ais-relay] upstream disconnected; reconnecting in 5s");
+    lastUpstreamErrorAt = Date.now();
+    const reason = normalizeString(reasonBuffer.toString("utf8"));
+    lastUpstreamErrorMessage = reason
+      ? `close ${code}: ${reason}`
+      : `close ${code}`;
+    console.warn(
+      `[ais-relay] upstream disconnected (code=${code}${
+        reason ? `, reason=${reason}` : ""
+      }); reconnecting in 5s`,
+    );
     scheduleReconnect();
   });
 
   socket.on("error", (error: Error) => {
+    lastUpstreamErrorAt = Date.now();
+    lastUpstreamErrorMessage = error.message;
     console.error("[ais-relay] upstream error:", error.message);
   });
 }
@@ -833,8 +1060,9 @@ const server = createServer((req, res) => {
   }
 
   if (url.pathname === "/" || url.pathname === "/health") {
+    const diagnostics = buildRelayDiagnostics();
     writeJson(res, 200, {
-      status: "ok",
+      status: diagnostics.healthState,
       connected: upstreamSocket?.readyState === WebSocket.OPEN,
       vessels: vessels.size,
       messages: messageCount,
@@ -843,6 +1071,7 @@ const server = createServer((req, res) => {
         (cell) => cell.vesselIds.size >= 2,
       ).length,
       sharedSecretEnabled: AIS_SHARED_SECRET.length > 0,
+      diagnostics,
     });
     return;
   }

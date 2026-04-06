@@ -533,9 +533,15 @@ function summarizeRuntimeContext(
             },
           )
         : t("systemSettings.realtimeSignals.runtime.contextSummary.ais", {
-            defaultValue: "disruptions={{disruptions}}, density={{density}}",
+            defaultValue:
+              "disruptions={{disruptions}}, density={{density}}, vessels={{vessels}}, seen={{seen}}, processed={{processed}}, ignored={{ignored}}, parse={{parse}}",
             disruptions: num(resolvedContext.disruptions) ?? 0,
             density: num(resolvedContext.densityRegions) ?? 0,
+            vessels: num(resolvedContext.vesselCount) ?? 0,
+            seen: num(resolvedContext.positionReportsSeen) ?? 0,
+            processed: num(resolvedContext.positionReportsProcessed) ?? 0,
+            ignored: num(resolvedContext.ignoredPositionReports) ?? 0,
+            parse: num(resolvedContext.parseErrors) ?? 0,
           });
     case "unrest":
       if (resolvedContext.acledApiEnabled === false) {
@@ -2019,6 +2025,48 @@ export function RealtimeSignalsSettingsPanel() {
                   row.source === "opensky"
                     ? formatOpenskyErrorKindLabel(t, row.lastErrorKind)
                     : undefined;
+                const aisContext =
+                  row.source === "ais" && row.context ? row.context : undefined;
+                const aisTrackedVessels =
+                  typeof aisContext?.vesselCount === "number" &&
+                  Number.isFinite(aisContext.vesselCount)
+                    ? aisContext.vesselCount
+                    : null;
+                const aisCandidates =
+                  typeof aisContext?.candidateCount === "number" &&
+                  Number.isFinite(aisContext.candidateCount)
+                    ? aisContext.candidateCount
+                    : null;
+                const aisReportsSeen =
+                  typeof aisContext?.positionReportsSeen === "number" &&
+                  Number.isFinite(aisContext.positionReportsSeen)
+                    ? aisContext.positionReportsSeen
+                    : null;
+                const aisReportsProcessed =
+                  typeof aisContext?.positionReportsProcessed === "number" &&
+                  Number.isFinite(aisContext.positionReportsProcessed)
+                    ? aisContext.positionReportsProcessed
+                    : null;
+                const aisReportsIgnored =
+                  typeof aisContext?.ignoredPositionReports === "number" &&
+                  Number.isFinite(aisContext.ignoredPositionReports)
+                    ? aisContext.ignoredPositionReports
+                    : null;
+                const aisParseErrors =
+                  typeof aisContext?.parseErrors === "number" &&
+                  Number.isFinite(aisContext.parseErrors)
+                    ? aisContext.parseErrors
+                    : null;
+                const aisLastUpstreamError =
+                  typeof aisContext?.lastUpstreamError === "string" &&
+                  aisContext.lastUpstreamError.trim().length > 0
+                    ? aisContext.lastUpstreamError.trim()
+                    : null;
+                const aisLastParseError =
+                  typeof aisContext?.lastParseError === "string" &&
+                  aisContext.lastParseError.trim().length > 0
+                    ? aisContext.lastParseError.trim()
+                    : null;
                 return (
                   <Col key={row.source} xs={24} lg={12}>
                     <Card
@@ -2167,6 +2215,84 @@ export function RealtimeSignalsSettingsPanel() {
                             </Tag>
                           </Space>
                         ) : null}
+                        {row.source === "ais" ? (
+                          <Space wrap size={[8, 8]}>
+                            {aisTrackedVessels !== null ? (
+                              <Tag>
+                                {t(
+                                  "systemSettings.realtimeSignals.runtime.aisTrackedVessels",
+                                  {
+                                    defaultValue: "Tracked vessels",
+                                  },
+                                )}
+                                : {aisTrackedVessels}
+                              </Tag>
+                            ) : null}
+                            {aisCandidates !== null ? (
+                              <Tag>
+                                {t(
+                                  "systemSettings.realtimeSignals.runtime.aisCandidates",
+                                  {
+                                    defaultValue: "Candidates",
+                                  },
+                                )}
+                                : {aisCandidates}
+                              </Tag>
+                            ) : null}
+                            {aisReportsSeen !== null ? (
+                              <Tag>
+                                {t(
+                                  "systemSettings.realtimeSignals.runtime.aisReportsSeen",
+                                  {
+                                    defaultValue: "Reports seen",
+                                  },
+                                )}
+                                : {aisReportsSeen}
+                              </Tag>
+                            ) : null}
+                            {aisReportsProcessed !== null ? (
+                              <Tag color="green">
+                                {t(
+                                  "systemSettings.realtimeSignals.runtime.aisReportsProcessed",
+                                  {
+                                    defaultValue: "Reports processed",
+                                  },
+                                )}
+                                : {aisReportsProcessed}
+                              </Tag>
+                            ) : null}
+                            {aisReportsIgnored !== null ? (
+                              <Tag
+                                color={
+                                  aisReportsIgnored > 0 ? "gold" : "default"
+                                }
+                              >
+                                {t(
+                                  "systemSettings.realtimeSignals.runtime.aisReportsIgnored",
+                                  {
+                                    defaultValue: "Reports ignored",
+                                  },
+                                )}
+                                : {aisReportsIgnored}
+                              </Tag>
+                            ) : null}
+                            {aisParseErrors !== null ? (
+                              <Tag
+                                color={
+                                  aisParseErrors > 0 ? "volcano" : "default"
+                                }
+                              >
+                                {t(
+                                  "systemSettings.realtimeSignals.runtime.aisParseErrors",
+                                  {
+                                    defaultValue: "Parse errors",
+                                  },
+                                )}
+                                : {aisParseErrors}
+                              </Tag>
+                            ) : null}
+                          </Space>
+                        ) : null}
                         {openskySnapshot?.latestObservedAt ? (
                           <Typography.Text type="secondary">
                             {t(
@@ -2215,6 +2341,41 @@ export function RealtimeSignalsSettingsPanel() {
                           <Typography.Text type="secondary">
                             {runtimeStatusReason}
                           </Typography.Text>
+                        ) : null}
+                        {row.source === "ais" &&
+                        (aisLastUpstreamError || aisLastParseError) ? (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message={t(
+                              "systemSettings.realtimeSignals.runtime.aisRelayDiagnostics",
+                              {
+                                defaultValue: "AIS relay diagnostics",
+                              },
+                            )}
+                            description={[
+                              aisLastUpstreamError
+                                ? `${t(
+                                    "systemSettings.realtimeSignals.runtime.aisLastUpstreamError",
+                                    {
+                                      defaultValue: "Last upstream error",
+                                    },
+                                  )}: ${aisLastUpstreamError}`
+                                : null,
+                              aisLastParseError
+                                ? `${t(
+                                    "systemSettings.realtimeSignals.runtime.aisLastParseError",
+                                    {
+                                      defaultValue: "Last parse error",
+                                    },
+                                  )}: ${aisLastParseError}`
+                                : null,
+                            ]
+                              .filter((value): value is string =>
+                                Boolean(value),
+                              )
+                              .join(" | ")}
+                          />
                         ) : null}
                         <Space wrap size={[8, 8]}>
                           <Tag>

@@ -117,6 +117,15 @@ describe("RealtimeSignalsService unrest merge", () => {
       store as any,
       {} as any,
     );
+    jest
+      .spyOn(service as any, "persistAircraftTransportSnapshot")
+      .mockResolvedValue(undefined);
+    jest
+      .spyOn(service as any, "persistAisTransportSnapshot")
+      .mockResolvedValue(undefined);
+    jest
+      .spyOn(service as any, "persistTransportTelemetry")
+      .mockResolvedValue(undefined);
     return { service, store, cache };
   };
 
@@ -444,6 +453,14 @@ describe("RealtimeSignalsService unrest merge", () => {
           clients: 3,
           droppedMessages: 4,
         },
+        diagnostics: {
+          healthState: "ok",
+          positionReportsSeen: 1200,
+          positionReportsProcessed: 42,
+          ignoredPositionReports: 0,
+          parseErrors: 0,
+          lastHealthyAt: "2026-03-02T12:00:00.000Z",
+        },
         disruptions: [
           {
             id: "global-gap-spike",
@@ -467,7 +484,7 @@ describe("RealtimeSignalsService unrest merge", () => {
         ],
         candidateReports: [
           {
-            mmsi: "123456789",
+            mmsi: 123456789,
             name: "USS Example",
             lat: 30,
             lon: 40,
@@ -506,6 +523,11 @@ describe("RealtimeSignalsService unrest merge", () => {
         snapshotUpdatedAt: "2026-03-02T12:00:00.000Z",
         messageCount: 1200,
         droppedMessages: 4,
+        healthState: "ok",
+        positionReportsSeen: 1200,
+        positionReportsProcessed: 42,
+        ignoredPositionReports: 0,
+        parseErrors: 0,
         countryCodes: [],
       },
     });
@@ -521,6 +543,14 @@ describe("RealtimeSignalsService unrest merge", () => {
           messages: 1200,
           clients: 3,
           droppedMessages: 4,
+        },
+        diagnostics: {
+          healthState: "ok",
+          positionReportsSeen: 1200,
+          positionReportsProcessed: 42,
+          ignoredPositionReports: 0,
+          parseErrors: 0,
+          lastHealthyAt: "2026-03-02T12:00:00.000Z",
         },
         hasVesselSnapshot: false,
         disruptions: [
@@ -558,6 +588,41 @@ describe("RealtimeSignalsService unrest merge", () => {
       }),
       600,
     );
+  });
+
+  it("marks AIS runtime diagnostics as error when the relay reports degraded processing", () => {
+    const { service } = buildService();
+    const now = Date.parse("2026-03-02T12:00:30.000Z");
+
+    const result = (service as any).resolveRuntimeSourceStatus({
+      source: "ais",
+      sourceConfig: {
+        enabled: true,
+        intervalSec: 60,
+      },
+      sourceState: {
+        source: "ais",
+        status: "success",
+        lastAttemptAt: "2026-03-02T12:00:00.000Z",
+        lastSuccessAt: "2026-03-02T12:00:00.000Z",
+      },
+      lastRunMs: Date.parse("2026-03-02T12:00:00.000Z"),
+      context: {
+        configured: true,
+        connected: true,
+        statusReasonCode: "ais_position_reports_not_retained",
+        statusReason:
+          "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
+      },
+      nowMs: now,
+    });
+
+    expect(result).toEqual({
+      status: "error",
+      code: "ais_position_reports_not_retained",
+      reason:
+        "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
+    });
   });
 
   it("fails AIS refreshes when the relay payload is malformed", async () => {

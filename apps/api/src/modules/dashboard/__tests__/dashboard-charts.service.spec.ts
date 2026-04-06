@@ -767,6 +767,82 @@ describe("DashboardChartsService", () => {
     );
   });
 
+  it("surfaces degraded AIS relay reasons in the war map summary", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:05:00.000Z"));
+    const prisma = {
+      alertEvent: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const realtimeSignalsStore = createRealtimeSignalsStore({
+      getLatestAisSnapshot: jest.fn().mockResolvedValue({
+        source: "relay",
+        sourceEndpoint: "https://relay.example.com/ais/snapshot",
+        updatedAt: "2026-01-01T12:00:00.000Z",
+        status: {
+          connected: true,
+          vessels: 0,
+          messages: 800,
+          clients: 1,
+          droppedMessages: 0,
+        },
+        diagnostics: {
+          healthState: "degraded",
+          statusReasonCode: "ais_position_reports_not_retained",
+          statusReason:
+            "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
+          positionReportsSeen: 800,
+          positionReportsProcessed: 0,
+          ignoredPositionReports: 800,
+          parseErrors: 0,
+        },
+        disruptions: [],
+        density: [],
+        candidateReports: [],
+        vessels: [],
+        hasVesselSnapshot: true,
+      }),
+      getSourceState: jest.fn().mockResolvedValue({
+        source: "ais",
+        status: "success",
+        lastAttemptAt: "2026-01-01T12:00:00.000Z",
+        lastSuccessAt: "2026-01-01T12:00:00.000Z",
+        context: {
+          configured: true,
+          staleThresholdSec: 600,
+        },
+      }),
+    });
+    const service = new DashboardChartsService(
+      prisma as any,
+      { resolveCandidates: jest.fn() } as any,
+      createCache() as any,
+      undefined,
+      undefined,
+      realtimeSignalsStore as any,
+    );
+
+    const response = await service.getWarMapLayers({
+      orgId: "org-1",
+      range: {
+        start: new Date("2026-01-01T00:00:00.000Z"),
+        end: new Date("2026-01-02T00:00:00.000Z"),
+      },
+      aisMode: "military",
+    });
+
+    expect(response.layers.ais.summary).toEqual(
+      expect.objectContaining({
+        statusReasonCode: "ais_position_reports_not_retained",
+        statusReason:
+          "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
+      }),
+    );
+  });
+
   it("reports AIS density and disruption counts for the current viewport", async () => {
     jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:05:00.000Z"));
     const prisma = {

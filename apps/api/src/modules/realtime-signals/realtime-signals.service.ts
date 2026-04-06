@@ -45,10 +45,12 @@ import type {
   RealtimeAisDisruptionSeverity,
   RealtimeAisDisruptionSnapshot,
   RealtimeAisLatestSnapshot,
+  RealtimeAisRelayDiagnostics,
   RealtimeAisRelayStatusSnapshot,
   RealtimeAisVesselSnapshot,
   RealtimeSignalFetchResult,
   RealtimeSignalFlightMode,
+  RealtimeSignalRuntimeStatus,
   RealtimeOpenskyBudgetDaySummary,
   RealtimeOpenskyBudgetDegradationLevel,
   RealtimeOpenskyErrorKind,
@@ -350,6 +352,7 @@ interface OpenSkyBudgetReserveResult {
 interface OpenSkyDiagnosticMessage {
   code?: string;
   message?: string;
+  status?: RealtimeSignalRuntimeStatus;
 }
 
 interface OpenSkyErrorDetails {
@@ -422,6 +425,8 @@ class OpenSkyBudgetReserveError extends Error {
 
 @Injectable()
 export class RealtimeSignalsService {
+  private readonly aisRelayIssueCodeByOrg = new Map<string, string>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
@@ -2492,6 +2497,146 @@ export class RealtimeSignalsService {
     return Math.max(10 * 60, safeIntervalSec * 2);
   }
 
+  private normalizeAisMmsi(value: unknown) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(Math.trunc(value));
+    }
+    return this.normalizeString(value);
+  }
+
+  private resolveAisRelayStatusReason(snapshot: RealtimeAisLatestSnapshot) {
+    const statusReasonCode = this.normalizeString(
+      snapshot.diagnostics.statusReasonCode,
+    );
+    const statusReason = this.normalizeString(
+      snapshot.diagnostics.statusReason,
+    );
+    if (statusReasonCode || statusReason) {
+      return {
+        code: statusReasonCode ?? "ais_relay_degraded",
+        reason:
+          statusReason ?? "AIS relay reported a degraded processing state.",
+      };
+    }
+    if (!snapshot.status.connected) {
+      const lastUpstreamError = this.normalizeString(
+        snapshot.diagnostics.lastUpstreamError,
+      );
+      return {
+        code: "ais_upstream_disconnected",
+        reason: lastUpstreamError
+          ? `AIS relay is reachable, but the upstream AIS stream is disconnected. Last upstream error: ${lastUpstreamError}`
+          : "AIS relay is reachable, but the upstream AIS stream is disconnected.",
+      };
+    }
+    if (
+      snapshot.diagnostics.positionReportsSeen > 0 &&
+      snapshot.diagnostics.positionReportsProcessed === 0 &&
+      snapshot.status.vessels === 0
+    ) {
+      return {
+        code: "ais_position_reports_not_retained",
+        reason:
+          "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
+      };
+    }
+    return undefined;
+  }
+
+  private buildAisRelayContext(snapshot: RealtimeAisLatestSnapshot) {
+    const relayStatusReason = this.resolveAisRelayStatusReason(snapshot);
+    return {
+      source: "relay",
+      configured: true,
+      connected: snapshot.status.connected,
+      disruptions: snapshot.disruptions.length,
+      densityRegions: snapshot.density.length,
+      candidateCount: snapshot.candidateReports.length,
+      vesselCount: snapshot.status.vessels,
+      snapshotUpdatedAt: snapshot.updatedAt,
+      allVesselsAvailable: snapshot.hasVesselSnapshot,
+      messageCount: snapshot.status.messages,
+      droppedMessages: snapshot.status.droppedMessages,
+      healthState: relayStatusReason
+        ? "degraded"
+        : snapshot.diagnostics.healthState,
+      positionReportsSeen: snapshot.diagnostics.positionReportsSeen,
+      positionReportsProcessed: snapshot.diagnostics.positionReportsProcessed,
+      ignoredPositionReports: snapshot.diagnostics.ignoredPositionReports,
+      parseErrors: snapshot.diagnostics.parseErrors,
+      ...(relayStatusReason?.code
+        ? { statusReasonCode: relayStatusReason.code }
+        : {}),
+      ...(relayStatusReason?.reason
+        ? { statusReason: relayStatusReason.reason }
+        : {}),
+      ...(snapshot.diagnostics.lastHealthyAt
+        ? { lastHealthyAt: snapshot.diagnostics.lastHealthyAt }
+        : {}),
+      ...(snapshot.diagnostics.lastIssueAt
+        ? { lastIssueAt: snapshot.diagnostics.lastIssueAt }
+        : {}),
+      ...(snapshot.diagnostics.lastUpstreamErrorAt
+        ? { lastUpstreamErrorAt: snapshot.diagnostics.lastUpstreamErrorAt }
+        : {}),
+      ...(snapshot.diagnostics.lastUpstreamError
+        ? { lastUpstreamError: snapshot.diagnostics.lastUpstreamError }
+        : {}),
+      ...(snapshot.diagnostics.lastParseErrorAt
+        ? { lastParseErrorAt: snapshot.diagnostics.lastParseErrorAt }
+        : {}),
+      ...(snapshot.diagnostics.lastParseError
+        ? { lastParseError: snapshot.diagnostics.lastParseError }
+        : {}),
+    } satisfies Record<string, unknown>;
+  }
+
+  private logAisRelayStatusChange(
+    orgId: string,
+    snapshot: RealtimeAisLatestSnapshot,
+  ) {
+    const relayStatusReason = this.resolveAisRelayStatusReason(snapshot);
+    const issueCode = relayStatusReason?.code ?? "ok";
+    const previousIssueCode = this.aisRelayIssueCodeByOrg.get(orgId);
+    if (previousIssueCode === issueCode) {
+      return;
+    }
+
+    this.aisRelayIssueCodeByOrg.set(orgId, issueCode);
+    if (issueCode === "ok") {
+      if (previousIssueCode && previousIssueCode !== "ok") {
+        logger.info(
+          {
+            orgId,
+            source: "ais",
+            previousIssueCode,
+            updatedAt: snapshot.updatedAt,
+          },
+          "AIS relay snapshot recovered",
+        );
+      }
+      return;
+    }
+
+    logger.warn(
+      {
+        orgId,
+        source: "ais",
+        issueCode,
+        issueReason: relayStatusReason?.reason,
+        connected: snapshot.status.connected,
+        messages: snapshot.status.messages,
+        vessels: snapshot.status.vessels,
+        positionReportsSeen: snapshot.diagnostics.positionReportsSeen,
+        positionReportsProcessed: snapshot.diagnostics.positionReportsProcessed,
+        ignoredPositionReports: snapshot.diagnostics.ignoredPositionReports,
+        parseErrors: snapshot.diagnostics.parseErrors,
+        updatedAt: snapshot.updatedAt,
+      },
+      "AIS relay snapshot reports degraded state",
+    );
+  }
+
   private async fetchAisSignal(
     orgId: string,
     runtime: RealtimeSignalsRuntimeConfig,
@@ -2527,6 +2672,7 @@ export class RealtimeSignalsService {
       payload,
       `${aisBase}/ais/snapshot`,
     );
+    this.logAisRelayStatusChange(orgId, snapshot);
     await this.store.setLatestAisSnapshot(
       orgId,
       snapshot,
@@ -2547,17 +2693,7 @@ export class RealtimeSignalsService {
         metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.ais,
         value: snapshot.disruptions.length,
         context: {
-          source: "relay",
-          configured: true,
-          connected: snapshot.status.connected,
-          disruptions: snapshot.disruptions.length,
-          densityRegions: snapshot.density.length,
-          candidateCount: snapshot.candidateReports.length,
-          vesselCount: snapshot.status.vessels,
-          snapshotUpdatedAt: snapshot.updatedAt,
-          allVesselsAvailable: snapshot.hasVesselSnapshot,
-          messageCount: snapshot.status.messages,
-          droppedMessages: snapshot.status.droppedMessages,
+          ...this.buildAisRelayContext(snapshot),
           countryCodes: Array.from(countries),
         },
       },
@@ -4053,6 +4189,13 @@ export class RealtimeSignalsService {
       options.source,
       options.context,
     );
+    if (contextReason?.status && contextReason.status !== "ok") {
+      return {
+        status: contextReason.status,
+        code: contextReason.code,
+        reason: contextReason.message,
+      };
+    }
     return {
       status: "ok" as const,
       code: contextReason?.code,
@@ -4216,6 +4359,53 @@ export class RealtimeSignalsService {
       ].filter((value): value is string => Boolean(value));
       if (messages.length > 0) {
         return { message: messages.join(" | ") };
+      }
+      return undefined;
+    }
+    if (source === "ais") {
+      const statusReasonCode = this.normalizeString(context.statusReasonCode);
+      const statusReason = this.normalizeString(context.statusReason);
+      if (statusReasonCode || statusReason) {
+        return {
+          code: statusReasonCode ?? "ais_relay_degraded",
+          message:
+            statusReason ?? "AIS relay reported a degraded processing state.",
+          status: "error",
+        };
+      }
+
+      if (context.connected === false) {
+        const lastUpstreamError = this.normalizeString(
+          context.lastUpstreamError,
+        );
+        return {
+          code: "ais_upstream_disconnected",
+          message: lastUpstreamError
+            ? `AIS relay is reachable, but the upstream AIS stream is disconnected. Last upstream error: ${lastUpstreamError}`
+            : "AIS relay is reachable, but the upstream AIS stream is disconnected.",
+          status: "error",
+        };
+      }
+
+      const positionReportsSeen = this.toFiniteNumber(
+        context.positionReportsSeen,
+      );
+      const positionReportsProcessed = this.toFiniteNumber(
+        context.positionReportsProcessed,
+      );
+      const vesselCount = this.toFiniteNumber(context.vesselCount);
+      if (
+        typeof positionReportsSeen === "number" &&
+        positionReportsSeen > 0 &&
+        positionReportsProcessed === 0 &&
+        vesselCount === 0
+      ) {
+        return {
+          code: "ais_position_reports_not_retained",
+          message:
+            "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
+          status: "error",
+        };
       }
       return undefined;
     }
@@ -4486,6 +4676,7 @@ export class RealtimeSignalsService {
     const {
       updatedAt,
       status,
+      diagnostics,
       disruptions,
       density,
       candidateReports,
@@ -4496,6 +4687,7 @@ export class RealtimeSignalsService {
       sourceEndpoint,
       updatedAt,
       status,
+      diagnostics,
       disruptions,
       density,
       candidateReports,
@@ -4531,6 +4723,66 @@ export class RealtimeSignalsService {
         0,
         Math.round(this.toFiniteNumber(record.droppedMessages) ?? 0),
       ),
+    };
+  }
+
+  private normalizeAisRelayDiagnostics(
+    value: unknown,
+  ): RealtimeAisRelayDiagnostics {
+    const record =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    const statusReasonCode = this.normalizeString(record.statusReasonCode);
+    const statusReason = this.normalizeString(record.statusReason);
+    const healthState =
+      this.normalizeString(record.healthState) === "degraded" ||
+      statusReasonCode ||
+      statusReason
+        ? "degraded"
+        : "ok";
+    return {
+      healthState,
+      ...(statusReasonCode ? { statusReasonCode } : {}),
+      ...(statusReason ? { statusReason } : {}),
+      positionReportsSeen: Math.max(
+        0,
+        Math.round(this.toFiniteNumber(record.positionReportsSeen) ?? 0),
+      ),
+      positionReportsProcessed: Math.max(
+        0,
+        Math.round(this.toFiniteNumber(record.positionReportsProcessed) ?? 0),
+      ),
+      ignoredPositionReports: Math.max(
+        0,
+        Math.round(this.toFiniteNumber(record.ignoredPositionReports) ?? 0),
+      ),
+      parseErrors: Math.max(
+        0,
+        Math.round(this.toFiniteNumber(record.parseErrors) ?? 0),
+      ),
+      ...(this.normalizeString(record.lastHealthyAt)
+        ? { lastHealthyAt: this.toIsoTimestamp(record.lastHealthyAt) }
+        : {}),
+      ...(this.normalizeString(record.lastIssueAt)
+        ? { lastIssueAt: this.toIsoTimestamp(record.lastIssueAt) }
+        : {}),
+      ...(this.normalizeString(record.lastUpstreamErrorAt)
+        ? {
+            lastUpstreamErrorAt: this.toIsoTimestamp(
+              record.lastUpstreamErrorAt,
+            ),
+          }
+        : {}),
+      ...(this.normalizeString(record.lastUpstreamError)
+        ? { lastUpstreamError: this.normalizeString(record.lastUpstreamError) }
+        : {}),
+      ...(this.normalizeString(record.lastParseErrorAt)
+        ? { lastParseErrorAt: this.toIsoTimestamp(record.lastParseErrorAt) }
+        : {}),
+      ...(this.normalizeString(record.lastParseError)
+        ? { lastParseError: this.normalizeString(record.lastParseError) }
+        : {}),
     };
   }
 
@@ -4635,7 +4887,9 @@ export class RealtimeSignalsService {
       return null;
     }
     const record = value as Record<string, unknown>;
-    const mmsi = this.normalizeString(record.mmsi ?? record.MMSI);
+    const mmsi = this.normalizeAisMmsi(
+      record.mmsi ?? record.MMSI ?? record.MMSI_String,
+    );
     const lat = this.toFiniteNumber(record.lat);
     const lng = this.toFiniteNumber(record.lon ?? record.lng);
     if (!mmsi || !this.isValidCoordinate(lat, lng)) {
@@ -4676,6 +4930,7 @@ export class RealtimeSignalsService {
     const record = payload as {
       timestamp?: unknown;
       status?: unknown;
+      diagnostics?: unknown;
       disruptions?: unknown;
       density?: unknown;
       candidateReports?: unknown;
@@ -4691,6 +4946,7 @@ export class RealtimeSignalsService {
     return {
       updatedAt,
       status: this.normalizeAisStatusPayload(record.status),
+      diagnostics: this.normalizeAisRelayDiagnostics(record.diagnostics),
       disruptions: record.disruptions
         .map((entry, index) =>
           this.normalizeAisDisruptionSnapshot(entry, index),

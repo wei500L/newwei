@@ -3200,6 +3200,20 @@ export function WarMap({
   const aisMessageCount = readSummaryNumber(aisSummary, "messageCount");
   const aisClientCount = readSummaryNumber(aisSummary, "clientCount");
   const aisDroppedMessages = readSummaryNumber(aisSummary, "droppedMessages");
+  const aisPositionReportsSeen = readSummaryNumber(
+    aisSummary,
+    "positionReportsSeen",
+  );
+  const aisPositionReportsProcessed = readSummaryNumber(
+    aisSummary,
+    "positionReportsProcessed",
+  );
+  const aisIgnoredPositionReports = readSummaryNumber(
+    aisSummary,
+    "ignoredPositionReports",
+  );
+  const aisParseErrors = readSummaryNumber(aisSummary, "parseErrors");
+  const aisStatusReason = readSummaryString(aisSummary, "statusReason");
   const aisBlockedReasonCode = readSummaryString(
     aisSummary,
     "blockedReasonCode",
@@ -3222,13 +3236,16 @@ export function WarMap({
   const aisSnapshotExact = aisSnapshotUpdatedAt
     ? formatUpdatedAt(aisSnapshotUpdatedAt, locale)
     : null;
+  const aisHasIssue = Boolean(aisStatusReason);
   const aisSourceStatusColor = !aisConfigured
     ? "red"
     : !aisConnected
       ? "gold"
-      : aisFreshness === "stale"
-        ? "gold"
-        : "cyan";
+      : aisHasIssue
+        ? "volcano"
+        : aisFreshness === "stale"
+          ? "gold"
+          : "cyan";
   const aisSourceStatusLabel = !aisConfigured
     ? t("dashboard.charts.warMap.stats.aisNotConfigured", {
         defaultValue: "AIS not configured",
@@ -3237,13 +3254,17 @@ export function WarMap({
       ? t("dashboard.charts.warMap.stats.aisDisconnected", {
           defaultValue: "AIS disconnected",
         })
-      : aisFreshness === "stale"
-        ? t("dashboard.charts.warMap.status.stale", {
-            defaultValue: "Stale",
+      : aisHasIssue
+        ? t("dashboard.charts.warMap.stats.aisDegraded", {
+            defaultValue: "Degraded",
           })
-        : t("dashboard.stream.status.live", {
-            defaultValue: "Live",
-          });
+        : aisFreshness === "stale"
+          ? t("dashboard.charts.warMap.status.stale", {
+              defaultValue: "Stale",
+            })
+          : t("dashboard.stream.status.live", {
+              defaultValue: "Live",
+            });
   const aisModeLabel =
     aisMode === "all"
       ? t("dashboard.charts.warMap.stats.aisModeAll", {
@@ -3260,6 +3281,7 @@ export function WarMap({
     `${t("dashboard.charts.warMap.layerNames.ais", {
       defaultValue: "AIS traffic",
     })}: ${aisSourceStatusLabel}`,
+    aisStatusReason,
     `${t("dashboard.charts.warMap.stats.mode", {
       defaultValue: "Mode",
     })}: ${aisModeLabel}`,
@@ -3292,6 +3314,26 @@ export function WarMap({
       ? `${t("dashboard.charts.warMap.stats.aisMessages", {
           defaultValue: "Messages",
         })}: ${aisMessageCount}`
+      : null,
+    typeof aisPositionReportsSeen === "number"
+      ? `${t("dashboard.charts.warMap.stats.aisPositionReportsSeen", {
+          defaultValue: "Reports seen",
+        })}: ${aisPositionReportsSeen}`
+      : null,
+    typeof aisPositionReportsProcessed === "number"
+      ? `${t("dashboard.charts.warMap.stats.aisPositionReportsProcessed", {
+          defaultValue: "Reports processed",
+        })}: ${aisPositionReportsProcessed}`
+      : null,
+    typeof aisIgnoredPositionReports === "number"
+      ? `${t("dashboard.charts.warMap.stats.aisIgnoredPositionReports", {
+          defaultValue: "Reports ignored",
+        })}: ${aisIgnoredPositionReports}`
+      : null,
+    typeof aisParseErrors === "number"
+      ? `${t("dashboard.charts.warMap.stats.aisParseErrors", {
+          defaultValue: "Parse errors",
+        })}: ${aisParseErrors}`
       : null,
     typeof aisDroppedMessages === "number"
       ? `${t("dashboard.charts.warMap.stats.aisDroppedMessages", {
@@ -3743,6 +3785,7 @@ export function WarMap({
         aisAllModeDisabled,
         aisAllModeDisabledLabel,
         aisTooltipText,
+        aisStatusReason: aisStatusReason ?? null,
         aisSourceStatusColor,
         aisSourceStatusLabel,
         aisFreshness,

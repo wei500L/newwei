@@ -56,6 +56,7 @@ interface WarMapControlsPanelTransportProps {
   aisAllModeDisabled: boolean;
   aisAllModeDisabledLabel: string | null;
   aisTooltipText: string | null;
+  aisStatusReason: string | null;
   aisSourceStatusColor: string;
   aisSourceStatusLabel: string;
   aisFreshness?: string;
@@ -644,6 +645,18 @@ function TransportSection({
                   : {transport.aisSourceStatusLabel}
                 </Tag>
               </Tooltip>
+              {transport.aisStatusReason ? (
+                <Tooltip title={transport.aisStatusReason}>
+                  <Tag
+                    color="volcano"
+                    className={OVERLAY_STATUS_TAG_CLASS_NAME}
+                  >
+                    {t("dashboard.charts.warMap.stats.aisIssue", {
+                      defaultValue: "Relay issue",
+                    })}
+                  </Tag>
+                </Tooltip>
+              ) : null}
               <Tooltip
                 title={
                   transport.aisTooltipText ? (
