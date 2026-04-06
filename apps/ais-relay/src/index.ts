@@ -9,11 +9,19 @@ import path from "node:path";
 import { config as loadEnv } from "dotenv";
 import { WebSocket, type RawData } from "ws";
 
+import {
+  getNumber,
+  isLikelyMilitaryCandidate,
+  normalizeMmsi,
+  normalizeString,
+} from "./candidate-classification";
+
 loadEnv({ path: path.resolve(process.cwd(), "../../.env") });
 
 const AISSTREAM_URL =
-  normalizeString(process.env.AISSTREAM_URL ?? process.env.AIS_RELAY_UPSTREAM_URL) ??
-  "wss://stream.aisstream.io/v0/stream";
+  normalizeString(
+    process.env.AISSTREAM_URL ?? process.env.AIS_RELAY_UPSTREAM_URL,
+  ) ?? "wss://stream.aisstream.io/v0/stream";
 const GRID_SIZE_DEG = 2;
 const DENSITY_WINDOW_MS = 30 * 60 * 1_000;
 const GAP_THRESHOLD_MS = 60 * 60 * 1_000;
@@ -177,9 +185,6 @@ const CHOKEPOINTS = [
   { name: "Lombok Strait", lat: -8.47, lon: 115.72, radius: 0.5 },
 ] as const;
 
-const NAVAL_PREFIX_RE =
-  /^(USS|USNS|HMS|HMAS|HMCS|INS|JS|ROKS|TCG|FS|BNS|RFS|PLAN|PLA|CGC|PNS|KRI|ITS|SNS|MMSI)/i;
-
 const vessels = new Map<string, VesselState>();
 const vesselHistory = new Map<string, number[]>();
 const vesselGridKeys = new Map<string, string>();
@@ -223,31 +228,6 @@ function readPositiveInt(value: string | undefined, fallback: number, min = 1) {
     return fallback;
   }
   return Math.max(min, Math.floor(parsed));
-}
-
-function normalizeString(value: unknown) {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function normalizeMmsi(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return String(Math.trunc(value));
-  }
-  return normalizeString(value);
-}
-
-function getNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : typeof value === "string" &&
-        value.trim() !== "" &&
-        Number.isFinite(Number(value))
-      ? Number(value)
-      : undefined;
 }
 
 function rawDataToString(raw: RawData) {
@@ -304,32 +284,6 @@ function removeVesselFromDensityCell(mmsi: string) {
   const currentCell = densityGrid.get(currentGridKey);
   currentCell?.vesselIds.delete(mmsi);
   vesselGridKeys.delete(mmsi);
-}
-
-function isLikelyMilitaryCandidate(meta: Record<string, unknown>) {
-  const mmsi = normalizeMmsi(meta.MMSI ?? meta.MMSI_String) ?? "";
-  const shipType = getNumber(meta.ShipType);
-  const name = normalizeString(meta.ShipName)?.toUpperCase();
-
-  if (
-    typeof shipType === "number" &&
-    (shipType === 35 || shipType === 55 || (shipType >= 50 && shipType <= 59))
-  ) {
-    return true;
-  }
-
-  if (name && NAVAL_PREFIX_RE.test(name)) {
-    return true;
-  }
-
-  if (mmsi.length >= 9) {
-    const suffix = mmsi.slice(3);
-    if (suffix.startsWith("00") || suffix.startsWith("99")) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 function setRelayHealthState(
@@ -392,8 +346,7 @@ function evaluateRelayHealthState() {
     lastUpstreamConnectedAt > 0 &&
     (lastUpstreamMessageAt === 0 ||
       lastUpstreamMessageAt < lastUpstreamConnectedAt) &&
-    now - lastUpstreamConnectedAt >=
-      RELAY_HEALTH_NO_MESSAGES_AFTER_CONNECT_MS
+    now - lastUpstreamConnectedAt >= RELAY_HEALTH_NO_MESSAGES_AFTER_CONNECT_MS
   ) {
     setRelayHealthState(
       "degraded",
