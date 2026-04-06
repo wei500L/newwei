@@ -4105,14 +4105,19 @@ export function WarMap({
       {!hasFatalOverlay ? (
         <>
           {aisViewportEmptyStateActive && aisViewportEmptyStateHint ? (
-            <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(32rem,calc(100%-2rem))] -translate-x-1/2">
-              <div className="rounded-2xl border border-amber-200/80 bg-white/94 px-4 py-3 shadow-[0_18px_40px_-28px_rgba(120,53,15,0.45)] backdrop-blur dark:border-amber-500/30 dark:bg-slate-950/82 dark:shadow-[0_22px_44px_-30px_rgba(2,6,23,0.92)]">
-                <p className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">
-                  {aisViewportEmptyStateLabel}
-                </p>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  {aisViewportEmptyStateHint}
-                </p>
+            <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(34rem,calc(100%-2rem))] -translate-x-1/2">
+              <div className="rounded-2xl border border-amber-300/75 bg-white/[0.96] px-4 py-3 shadow-[0_18px_40px_-28px_rgba(120,53,15,0.45)] backdrop-blur-md dark:border-amber-400/35 dark:bg-slate-950/[0.84] dark:shadow-[0_22px_44px_-30px_rgba(2,6,23,0.92)]">
+                <div className="flex items-start gap-3">
+                  <span className="mt-1 inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)] dark:bg-amber-300 dark:shadow-[0_0_0_4px_rgba(252,211,77,0.18)]" />
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-semibold tracking-[-0.01em] text-slate-950 dark:text-slate-50">
+                      {aisViewportEmptyStateLabel}
+                    </p>
+                    <p className="mt-1 text-[12px] leading-5 text-slate-700 dark:text-slate-300">
+                      {aisViewportEmptyStateHint}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           ) : null}
@@ -4154,7 +4159,7 @@ export function WarMap({
 
       {showBootOverlay ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="rounded-xl border border-[var(--border)] bg-white/92 px-4 py-3 shadow-lg backdrop-blur dark:bg-slate-950/78 dark:shadow-[0_22px_40px_-30px_rgba(2,6,23,0.9)]">
+          <div className="rounded-xl border border-[var(--border)] bg-white/[0.92] px-4 py-3 shadow-lg backdrop-blur dark:bg-slate-950/[0.78] dark:shadow-[0_22px_40px_-30px_rgba(2,6,23,0.9)]">
             <Space size={10}>
               <Spin size="small" />
               <Typography.Text>{bootOverlayLabel}</Typography.Text>
@@ -4175,7 +4180,7 @@ export function WarMap({
       ) : null}
 
       {fatalOverlay ? (
-        <div className="absolute inset-0 z-30 rounded-lg bg-white/80 backdrop-blur-sm dark:bg-slate-950/72">
+        <div className="absolute inset-0 z-30 rounded-lg bg-white/80 backdrop-blur-sm dark:bg-slate-950/[0.72]">
           <ChartEmptyState
             variant="error"
             title={fatalOverlay.title}
