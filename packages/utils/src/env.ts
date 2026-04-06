@@ -18,6 +18,14 @@ const optionalPositiveIntFromEnv = z.preprocess((value) => {
   return value;
 }, z.coerce.number().int().positive().optional());
 
+const optionalWebsocketUrl = z.preprocess((value) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+  const normalized = value.trim();
+  return normalized === "" ? undefined : normalized;
+}, z.string().regex(/^wss?:\/\/\S+$/).optional());
+
 const envBoolean = z.preprocess((value) => {
   if (typeof value === "boolean") {
     return value;
@@ -197,6 +205,22 @@ export const baseEnvSchema = z.object({
   NEWS_PIPELINE_CONFIG_PATH: z
     .string()
     .default("config/news-pipeline.config.yaml"),
+  REALTIME_SIGNALS_AIS_BASE_URL: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().url().optional(),
+  ),
+  REALTIME_SIGNALS_AIS_SHARED_SECRET: optionalNonEmptyString,
+  AIS_RELAY_PORT: optionalPositiveIntFromEnv,
+  AIS_RELAY_SHARED_SECRET: optionalNonEmptyString,
+  AISSTREAM_API_KEY: optionalNonEmptyString,
+  AISSTREAM_URL: optionalWebsocketUrl,
+  AIS_RELAY_UPSTREAM_URL: optionalWebsocketUrl,
+  AIS_RELAY_HEALTH_NO_MESSAGES_AFTER_CONNECT_MS: optionalPositiveIntFromEnv,
+  AIS_RELAY_HEALTH_STALE_MESSAGES_MS: optionalPositiveIntFromEnv,
+  AIS_RELAY_HEALTH_MIN_POSITION_REPORTS: optionalPositiveIntFromEnv,
+  AIS_RELAY_HEALTH_MAX_IGNORED_RATIO_PERCENT: optionalPositiveIntFromEnv,
+  AIS_RELAY_HEALTH_MAX_PARSE_ERROR_RATIO_PERCENT: optionalPositiveIntFromEnv,
   SYSTEM_SETTINGS_ENCRYPTION_KEY: z.string().optional(),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
