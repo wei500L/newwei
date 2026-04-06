@@ -9237,7 +9237,30 @@
       "alert": "预警",
       "taggedHint": "当前使用“已标注来源”范围；如果想看更广的覆盖，可切换到“全部条目”。",
       "internalTooltip": "来自本项目内部处理后的新闻条目。",
-      "gdeltTooltip": "当内部覆盖不足时，使用 GDELT 作为补充回退来源。"
+      "gdeltTooltip": "当内部覆盖不足时，使用 GDELT 作为补充回退来源。",
+      "emptyReason": {
+        "rateLimited": "限流",
+        "upstream": "上游错误",
+        "unconfigured": "未配置",
+        "outsideWindow": "超出时间窗口",
+        "noData": "无数据"
+      },
+      "emptyDescription": {
+        "rateLimited": "最新外部快照在刷新该类别时，因 GDELT 上游请求被限流而失败。",
+        "upstream": "最新外部快照在刷新该类别时，GDELT 上游请求失败。",
+        "unconfigured": "当前工作区在该类别下还没有启用的内部新闻源。",
+        "outsideWindow": "当前时间窗口之外仍有较旧内容。扩大时间窗口可以查看更多覆盖。",
+        "noData": "无论是内部覆盖还是最新外部快照，都没有为该类别生成可见事件簇。"
+      },
+      "clusterCount": "簇 {{count}}",
+      "articleCount": "条目 {{count}}",
+      "internalCount": "内部 {{count}}",
+      "externalCount": "外部 {{count}}",
+      "mixedCluster": "混合",
+      "sourcesCount": "{{count}} 个来源",
+      "rawArticleCount": "{{count}} 条原始文章",
+      "hideRawArticles": "收起原始文章",
+      "viewRawArticles": "查看原始文章"
     },
     "notice": {
       "title": "信号范围与来源说明",
@@ -9300,7 +9323,11 @@
       "hint": "请在 管理员设置 > 系统设置 > 态势监控 中配置 FRED 共享金融数据 Provider。",
       "value": "数值",
       "delta": "Δ",
-      "balanceSheet": "资产负债表"
+      "balanceSheet": "资产负债表",
+      "moneyPrinter": {
+        "on": "印钞开启",
+        "off": "印钞关闭"
+      }
     },
     "leaders": {
       "title": "全球领导人",
@@ -9360,11 +9387,22 @@
     "window": {
       "6h": "近6小时",
       "24h": "近24小时",
-      "72h": "近72小时"
+      "72h": "近72小时",
+      "168h": "近7天"
+    },
+    "windowCompact": {
+      "6h": "6小时",
+      "24h": "24小时",
+      "72h": "72小时",
+      "168h": "7天"
     },
     "scope": {
       "tagged": "已标注来源",
       "all": "全部条目"
+    },
+    "scopeBadge": {
+      "tagged": "已标注",
+      "all": "全部"
     },
     "panels": {
       "title": "面板",
@@ -9372,7 +9410,77 @@
       "reset": "重置面板",
       "fixed": "固定",
       "none": "未启用任何面板。打开“面板”重新启用。",
-      "hintCompact": "Enable Edit layout on smaller screens before dragging or resizing cards."
+      "hintCompact": "在较小屏幕上拖动或调整卡片大小前，请先开启“编辑布局”。"
+    },
+    "empty": {
+      "unconfigured": {
+        "title": "尚未配置可用新闻源。",
+        "description": "当前工作区没有启用的内部新闻源，因此页面只能依赖外部快照。"
+      },
+      "window": {
+        "title": "当前时间窗口内结果较少。",
+        "description": "已有较旧内容落在当前时间窗口之外，扩大时间范围可以看到更完整的上下文。"
+      },
+      "partial": {
+        "title": "当前外部快照覆盖不完整。",
+        "description": "部分类别暂不可用，因为最新外部快照只完成了部分生成。"
+      },
+      "generic": {
+        "title": "当前暂无可用内容。",
+        "description": "在当前视图下，既没有内部条目，也没有外部快照标题可供展示。"
+      }
+    },
+    "summary": {
+      "title": "概览",
+      "articles": "条目 {{count}}",
+      "clusters": "簇 {{count}}",
+      "internal": "内部 {{count}}",
+      "external": "外部 {{count}}",
+      "mixedClusters": "混合 {{count}}",
+      "caption": "内部条目仍按工作区隔离；外部快照覆盖为共享且由服务端生成。"
+    },
+    "coverage": {
+      "title": "覆盖情况",
+      "visibleCategories": "当前有可见覆盖的类别 {{count}} / 6。",
+      "quality": "去重率 {{dedupe}}。每簇平均来源 {{sources}}。",
+      "generatedAt": "最近快照：{{time}}",
+      "missingCategories": "缺失：{{categories}}",
+      "noneMissing": "无",
+      "mode": {
+        "internal+external": "内部 + 外部",
+        "internal-only": "仅内部",
+        "external-only": "仅外部",
+        "empty": "空"
+      }
+    },
+    "actions": {
+      "title": "后续操作",
+      "openNewsSources": "打开新闻源",
+      "openSettings": "打开态势监控设置",
+      "refreshPageData": "刷新页面数据",
+      "switchWindow": "切换到 {{window}}",
+      "recommendedWindow": "当前结果偏少。可扩展到 {{window}} 获取更完整的上下文。"
+    },
+    "snapshot": {
+      "stale": "过期",
+      "freshCategories": "新鲜 {{count}}",
+      "reusedCategories": "复用 {{count}}",
+      "reusedCategory": "复用",
+      "reusedCategoryHint": "该类别最新上游抓取仍在恢复中，当前展示 {{time}} 的最近一次成功快照。",
+      "status": {
+        "completed": "完成",
+        "partial": "部分",
+        "failed": "失败",
+        "idle": "空闲"
+      }
+    },
+    "scopeRecovery": {
+      "title": "已标注来源范围下没有内部覆盖。",
+      "description": "当前视图仅展示被标记为态势监控的条目。切换到“全部条目”可加载更广覆盖。",
+      "action": "切换到全部条目"
+    },
+    "status": {
+      "noData": "暂无数据"
     },
     "autoRefresh": "自动刷新",
     "translateToZh": "翻译为简体中文",
@@ -9429,8 +9537,8 @@
       }
     },
     "layout": {
-      "done": "Done",
-      "edit": "Edit layout"
+      "done": "完成",
+      "edit": "编辑布局"
     }
   },
   "search": {

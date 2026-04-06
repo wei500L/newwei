@@ -700,7 +700,9 @@ function toAlertType(
 }
 
 function getExternalSnapshotStatusColor(
-  status: NonNullable<SituationMonitorInsightsResponse["externalSnapshot"]>["status"],
+  status: NonNullable<
+    SituationMonitorInsightsResponse["externalSnapshot"]
+  >["status"],
 ): string {
   if (status === "completed") {
     return "green";
@@ -726,9 +728,11 @@ function getExternalSnapshotCategoryStatusColor(
   return "default";
 }
 
-function formatWindowLabel(hours: number): string {
+function getWindowPresetKey(
+  hours: number,
+): "6h" | "24h" | "72h" | "168h" | null {
   if (hours === 168) {
-    return "7d";
+    return "168h";
   }
   if (hours === 72) {
     return "72h";
@@ -739,11 +743,13 @@ function formatWindowLabel(hours: number): string {
   if (hours === 6) {
     return "6h";
   }
-  return `${hours}h`;
+  return null;
 }
 
 function getCoverageModeColor(
-  mode: NonNullable<SituationMonitorInsightsResponse["coverageSummary"]>["mode"],
+  mode: NonNullable<
+    SituationMonitorInsightsResponse["coverageSummary"]
+  >["mode"],
 ): string {
   if (mode === "internal+external") {
     return "green";
@@ -755,21 +761,6 @@ function getCoverageModeColor(
     return "purple";
   }
   return "default";
-}
-
-function getCoverageModeLabel(
-  mode: NonNullable<SituationMonitorInsightsResponse["coverageSummary"]>["mode"],
-): string {
-  if (mode === "internal+external") {
-    return "INT + EXT";
-  }
-  if (mode === "internal-only") {
-    return "INT ONLY";
-  }
-  if (mode === "external-only") {
-    return "EXT ONLY";
-  }
-  return "EMPTY";
 }
 
 function extractWarningCategories(
@@ -976,6 +967,69 @@ function isVisibilityMatchingPreset(
 export function SituationMonitorContent() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const formatWindowOptionLabel = (hours: number): string => {
+    const presetKey = getWindowPresetKey(hours);
+    if (presetKey) {
+      return t(`situationMonitor.window.${presetKey}`, {
+        defaultValue:
+          presetKey === "168h"
+            ? "Last 7d"
+            : presetKey === "72h"
+              ? "Last 72h"
+              : presetKey === "24h"
+                ? "Last 24h"
+                : "Last 6h",
+      });
+    }
+    return locale === "zh-CN" ? `近${hours}小时` : `${hours}h`;
+  };
+  const formatWindowCompactLabel = (hours: number): string => {
+    const presetKey = getWindowPresetKey(hours);
+    if (presetKey) {
+      return t(`situationMonitor.windowCompact.${presetKey}`, {
+        defaultValue:
+          presetKey === "168h"
+            ? "7D"
+            : presetKey === "72h"
+              ? "72H"
+              : presetKey === "24h"
+                ? "24H"
+                : "6H",
+      });
+    }
+    return locale === "zh-CN" ? `${hours}小时` : `${hours}H`;
+  };
+  const getScopeBadgeLabel = (value: "tagged" | "all"): string =>
+    t(`situationMonitor.scopeBadge.${value}`, {
+      defaultValue: value === "tagged" ? "TAGGED" : "ALL",
+    });
+  const getCoverageModeLabel = (
+    mode: NonNullable<
+      SituationMonitorInsightsResponse["coverageSummary"]
+    >["mode"],
+  ): string =>
+    t(`situationMonitor.coverage.mode.${mode}`, {
+      defaultValue:
+        mode === "internal+external"
+          ? "INT + EXT"
+          : mode === "internal-only"
+            ? "INT ONLY"
+            : mode === "external-only"
+              ? "EXT ONLY"
+              : "EMPTY",
+    });
+  const getExternalSnapshotStatusLabel = (
+    value: NonNullable<
+      SituationMonitorInsightsResponse["externalSnapshot"]
+    >["status"],
+  ): string =>
+    t(`situationMonitor.snapshot.status.${value}`, {
+      defaultValue: value.toUpperCase(),
+    });
+  const getFedMoneyPrinterLabel = (enabled: boolean): string =>
+    t(`situationMonitor.fed.moneyPrinter.${enabled ? "on" : "off"}`, {
+      defaultValue: enabled ? "PRINTER ON" : "PRINTER OFF",
+    });
   const router = useRouter();
   const { data: session, status } = useSession();
   const screens = Grid.useBreakpoint();
@@ -1111,10 +1165,7 @@ export function SituationMonitorContent() {
   }, [telegramChannelFilter, telegramTopicFilter]);
 
   const loadSignalCatalog = useCallback(async () => {
-    if (
-      !session?.accessToken ||
-      !canReadItems
-    ) {
+    if (!session?.accessToken || !canReadItems) {
       return null;
     }
     if (signalCatalog) {
@@ -1460,7 +1511,8 @@ export function SituationMonitorContent() {
     (data?.analyzedItems ?? 0) === 0;
   const insightsWarnings = data?.warnings ?? [];
   const coverageSummary = data?.coverageSummary;
-  const recommendedWindowHours = coverageSummary?.recommendedWindowHours ?? null;
+  const recommendedWindowHours =
+    coverageSummary?.recommendedWindowHours ?? null;
   const noActiveSourcesConfigured =
     (signalCatalog?.refreshReadiness.activeSourceCount ?? 0) === 0;
   const rateLimitedCategories = useMemo(
@@ -1475,14 +1527,16 @@ export function SituationMonitorContent() {
   const freshSnapshotCategoryCount = useMemo(
     () =>
       SITUATION_MONITOR_CATEGORY_KEYS.filter(
-        (category) => data?.externalSnapshot?.categories?.[category]?.status === "fresh",
+        (category) =>
+          data?.externalSnapshot?.categories?.[category]?.status === "fresh",
       ).length,
     [data?.externalSnapshot?.categories],
   );
   const reusedSnapshotCategoryCount = useMemo(
     () =>
       SITUATION_MONITOR_CATEGORY_KEYS.filter(
-        (category) => data?.externalSnapshot?.categories?.[category]?.status === "reused",
+        (category) =>
+          data?.externalSnapshot?.categories?.[category]?.status === "reused",
       ).length,
     [data?.externalSnapshot?.categories],
   );
@@ -1504,10 +1558,7 @@ export function SituationMonitorContent() {
       };
     }
 
-    if (
-      coverageSummary?.hasOlderItemsOutsideWindow &&
-      recommendedWindowHours
-    ) {
+    if (coverageSummary?.hasOlderItemsOutsideWindow && recommendedWindowHours) {
       return {
         type: "info" as const,
         message: t("situationMonitor.empty.window.title", {
@@ -1628,7 +1679,7 @@ export function SituationMonitorContent() {
         key: "recommended-window",
         label: t("situationMonitor.actions.switchWindow", {
           defaultValue: "Switch to {{window}}",
-          window: formatWindowLabel(recommendedWindowHours),
+          window: formatWindowOptionLabel(recommendedWindowHours),
         }),
         onClick: () => {
           setWindowHours(recommendedWindowHours);
@@ -1747,7 +1798,8 @@ export function SituationMonitorContent() {
     onOrefUpdate: handleRealtimeOrefUpdate,
   });
 
-  const telegramPollingActive = telegramSignalActive && !realtimeState.connected;
+  const telegramPollingActive =
+    telegramSignalActive && !realtimeState.connected;
   const orefPollingActive = orefSignalActive && !realtimeState.connected;
 
   useEffect(() => {
@@ -2548,9 +2600,16 @@ export function SituationMonitorContent() {
         const fn = record.feedback?.falseNegative ?? 0;
         return boosted > 0 || blocked > 0 || suppressed > 0 || fp > 0 || fn > 0;
       },
-      expandIcon: ({ expanded, onExpand, record }: {
+      expandIcon: ({
+        expanded,
+        onExpand,
+        record,
+      }: {
         expanded: boolean;
-        onExpand: (record: CorrelationRow, event: ReactMouseEvent<HTMLElement>) => void;
+        onExpand: (
+          record: CorrelationRow,
+          event: ReactMouseEvent<HTMLElement>,
+        ) => void;
         record: CorrelationRow;
       }) => {
         if (!record) {
@@ -2930,9 +2989,16 @@ export function SituationMonitorContent() {
 
     return {
       rowExpandable: (record: NarrativeData) => Boolean(record.model),
-      expandIcon: ({ expanded, onExpand, record }: {
+      expandIcon: ({
+        expanded,
+        onExpand,
+        record,
+      }: {
         expanded: boolean;
-        onExpand: (record: NarrativeData, event: ReactMouseEvent<HTMLElement>) => void;
+        onExpand: (
+          record: NarrativeData,
+          event: ReactMouseEvent<HTMLElement>,
+        ) => void;
         record: NarrativeData;
       }) => {
         if (!record?.model) {
@@ -3775,61 +3841,78 @@ export function SituationMonitorContent() {
   const renderFeedPanel = (category: SituationMonitorCategory) => {
     const clusters = data?.clusters?.[category] ?? [];
     const diagnostics = data?.diagnostics?.categories?.[category];
-    const snapshotCategoryState = data?.externalSnapshot?.categories?.[category];
-    const emptyReason = clusters.length > 0
-      ? null
-      : snapshotCategoryState?.reasonCode === "gdelt_rate_limited" ||
-          rateLimitedCategories.has(category)
-        ? {
-            tag: t("situationMonitor.feeds.emptyReason.rateLimited", {
-              defaultValue: "RATE LIMITED",
-            }),
-            description: t("situationMonitor.feeds.emptyDescription.rateLimited", {
-              defaultValue:
-                "The latest external snapshot could not refresh this category because GDELT rate limited the upstream request.",
-            }),
-          }
-        : snapshotCategoryState?.reasonCode === "gdelt_request_failed" ||
-            snapshotCategoryState?.reasonCode === "gdelt_invalid_response"
+    const snapshotCategoryState =
+      data?.externalSnapshot?.categories?.[category];
+    const emptyReason =
+      clusters.length > 0
+        ? null
+        : snapshotCategoryState?.reasonCode === "gdelt_rate_limited" ||
+            rateLimitedCategories.has(category)
           ? {
-              tag: t("situationMonitor.feeds.emptyReason.upstream", {
-                defaultValue: "UPSTREAM ERROR",
+              tag: t("situationMonitor.feeds.emptyReason.rateLimited", {
+                defaultValue: "RATE LIMITED",
               }),
-              description: t("situationMonitor.feeds.emptyDescription.upstream", {
-                defaultValue:
-                  "The latest external snapshot could not refresh this category because the upstream GDELT request failed.",
-              }),
-            }
-        : noActiveSourcesConfigured
-          ? {
-              tag: t("situationMonitor.feeds.emptyReason.unconfigured", {
-                defaultValue: "UNCONFIGURED",
-              }),
-              description: t("situationMonitor.feeds.emptyDescription.unconfigured", {
-                defaultValue:
-                  "This workspace has no active internal news sources for this category yet.",
-              }),
-            }
-          : coverageSummary?.hasOlderItemsOutsideWindow &&
-              recommendedWindowHours
-            ? {
-                tag: t("situationMonitor.feeds.emptyReason.outsideWindow", {
-                  defaultValue: "OUTSIDE WINDOW",
-                }),
-                description: t("situationMonitor.feeds.emptyDescription.outsideWindow", {
+              description: t(
+                "situationMonitor.feeds.emptyDescription.rateLimited",
+                {
                   defaultValue:
-                    "Older content exists outside the current time window. Expand the window to inspect broader coverage.",
+                    "The latest external snapshot could not refresh this category because GDELT rate limited the upstream request.",
+                },
+              ),
+            }
+          : snapshotCategoryState?.reasonCode === "gdelt_request_failed" ||
+              snapshotCategoryState?.reasonCode === "gdelt_invalid_response"
+            ? {
+                tag: t("situationMonitor.feeds.emptyReason.upstream", {
+                  defaultValue: "UPSTREAM ERROR",
                 }),
+                description: t(
+                  "situationMonitor.feeds.emptyDescription.upstream",
+                  {
+                    defaultValue:
+                      "The latest external snapshot could not refresh this category because the upstream GDELT request failed.",
+                  },
+                ),
               }
-            : {
-                tag: t("situationMonitor.feeds.emptyReason.noData", {
-                  defaultValue: "NO DATA",
-                }),
-              description: t("situationMonitor.feeds.emptyDescription.noData", {
-                defaultValue:
-                    "Neither internal coverage nor the latest external snapshot produced visible event clusters for this category.",
-              }),
-            };
+            : noActiveSourcesConfigured
+              ? {
+                  tag: t("situationMonitor.feeds.emptyReason.unconfigured", {
+                    defaultValue: "UNCONFIGURED",
+                  }),
+                  description: t(
+                    "situationMonitor.feeds.emptyDescription.unconfigured",
+                    {
+                      defaultValue:
+                        "This workspace has no active internal news sources for this category yet.",
+                    },
+                  ),
+                }
+              : coverageSummary?.hasOlderItemsOutsideWindow &&
+                  recommendedWindowHours
+                ? {
+                    tag: t("situationMonitor.feeds.emptyReason.outsideWindow", {
+                      defaultValue: "OUTSIDE WINDOW",
+                    }),
+                    description: t(
+                      "situationMonitor.feeds.emptyDescription.outsideWindow",
+                      {
+                        defaultValue:
+                          "Older content exists outside the current time window. Expand the window to inspect broader coverage.",
+                      },
+                    ),
+                  }
+                : {
+                    tag: t("situationMonitor.feeds.emptyReason.noData", {
+                      defaultValue: "NO DATA",
+                    }),
+                    description: t(
+                      "situationMonitor.feeds.emptyDescription.noData",
+                      {
+                        defaultValue:
+                          "Neither internal coverage nor the latest external snapshot produced visible event clusters for this category.",
+                      },
+                    ),
+                  };
     return (
       <Card
         title={
@@ -3930,231 +4013,232 @@ export function SituationMonitorContent() {
               >
                 {t("situationMonitor.actions.switchWindow", {
                   defaultValue: "Switch to {{window}}",
-                  window: formatWindowLabel(recommendedWindowHours),
+                  window: formatWindowOptionLabel(recommendedWindowHours),
                 })}
               </Button>
             ) : null}
           </Space>
         ) : (
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
-            {clusters
-              .slice(0, clusterItemsPerCategory)
-              .map((cluster) => {
-                const lead = cluster.lead;
-                const href = lead.link ? safeHttpUrl(lead.link) : null;
-                const leadDate = Number.isFinite(cluster.latestTimestamp)
-                  ? new Date(cluster.latestTimestamp)
-                  : null;
-                const expanded = expandedClusterIds.includes(cluster.id);
-                return (
-                  <Card
-                    key={cluster.id}
-                    size="small"
-                    className="border border-[var(--border)]"
+            {clusters.slice(0, clusterItemsPerCategory).map((cluster) => {
+              const lead = cluster.lead;
+              const href = lead.link ? safeHttpUrl(lead.link) : null;
+              const leadDate = Number.isFinite(cluster.latestTimestamp)
+                ? new Date(cluster.latestTimestamp)
+                : null;
+              const expanded = expandedClusterIds.includes(cluster.id);
+              return (
+                <Card
+                  key={cluster.id}
+                  size="small"
+                  className="border border-[var(--border)]"
+                >
+                  <Space
+                    direction="vertical"
+                    size={8}
+                    style={{ width: "100%" }}
                   >
-                    <Space
-                      direction="vertical"
-                      size={8}
-                      style={{ width: "100%" }}
-                    >
-                      <Space wrap size={8}>
-                        {cluster.isAlert ? (
-                          <Tag color="red">
-                            {t("situationMonitor.feeds.alert", {
-                              defaultValue: "ALERT",
-                            })}
-                          </Tag>
-                        ) : null}
-                        {cluster.mixedSource ? (
-                          <Tag color="green">
-                            {t("situationMonitor.feeds.mixedCluster", {
-                              defaultValue: "MIXED",
-                            })}
-                          </Tag>
-                        ) : null}
-                        <Tag color="blue">
-                          {t("situationMonitor.feeds.internalCount", {
-                            defaultValue: "INT {{count}}",
-                            count: cluster.internalCount,
+                    <Space wrap size={8}>
+                      {cluster.isAlert ? (
+                        <Tag color="red">
+                          {t("situationMonitor.feeds.alert", {
+                            defaultValue: "ALERT",
                           })}
                         </Tag>
-                        <Tag color="purple">
-                          {t("situationMonitor.feeds.externalCount", {
-                            defaultValue: "EXT {{count}}",
-                            count: cluster.externalCount,
-                          })}
-                        </Tag>
-                        <Tag color="default">
-                          {t("situationMonitor.feeds.sourcesCount", {
-                            defaultValue: "{{count}} sources",
-                            count: cluster.distinctSourceCount,
-                          })}
-                        </Tag>
-                        {renderClusterMonitorMatches(cluster)}
-                      </Space>
-
-                      <Space wrap size={8}>
-                        {href ? (
-                          <Typography.Link
-                            href={href}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {translateToZh
-                              ? (lead.titleZh ?? lead.title)
-                              : lead.title}
-                          </Typography.Link>
-                        ) : (
-                          <Typography.Text strong>
-                            {translateToZh
-                              ? (lead.titleZh ?? lead.title)
-                              : lead.title}
-                          </Typography.Text>
-                        )}
-                        {renderHeadlineItemLink(lead)}
-                        {renderHeadlineDetails(lead)}
-                      </Space>
-
-                      {renderHeadlineSummary(lead)}
-
-                      <Space wrap size={8}>
-                        <Typography.Text type="secondary">
-                          {leadDate
-                            ? formatDateTime(leadDate, locale, {
-                                month: "2-digit",
-                                day: "2-digit",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
-                            : "—"}
-                        </Typography.Text>
-                        <Typography.Text type="secondary">
-                          {t("situationMonitor.feeds.rawArticleCount", {
-                            defaultValue: "{{count}} raw articles",
-                            count: cluster.items.length,
-                          })}
-                        </Typography.Text>
-                        {renderHeadlineTopics(lead)}
-                      </Space>
-
-                      <Space wrap size={8}>
-                        <Button
-                          size="small"
-                          data-sm-interactive
-                          onPointerDown={stopSituationMonitorInteractiveEvent}
-                          onMouseDown={stopSituationMonitorInteractiveEvent}
-                          onClick={(event) => {
-                            stopSituationMonitorInteractiveEvent(event);
-                            toggleClusterExpansion(cluster.id);
-                          }}
-                        >
-                          {expanded
-                            ? t("situationMonitor.feeds.hideRawArticles", {
-                                defaultValue: "Hide raw articles",
-                              })
-                            : t("situationMonitor.feeds.viewRawArticles", {
-                                defaultValue: "View raw articles",
-                              })}
-                        </Button>
-                      </Space>
-
-                      {expanded ? (
-                        <List
-                          size="small"
-                          dataSource={cluster.items}
-                          renderItem={(entry) => {
-                            const rawHref = entry.link
-                              ? safeHttpUrl(entry.link)
-                              : null;
-                            const rawDate = Number.isFinite(entry.timestamp)
-                              ? new Date(entry.timestamp)
-                              : null;
-                            return (
-                              <List.Item key={`${cluster.id}:${entry.id}`}>
-                                <Space
-                                  direction="vertical"
-                                  size={2}
-                                  style={{ width: "100%" }}
-                                >
-                                  <Space size={8} wrap>
-                                    {entry.isAlert ? (
-                                      <Tag color="red">
-                                        {t("situationMonitor.feeds.alert", {
-                                          defaultValue: "ALERT",
-                                        })}
-                                      </Tag>
-                                    ) : null}
-                                    {entry.origin === "gdelt" ? (
-                                      <Popover content={gdeltFeedTooltip}>
-                                        <Tag
-                                          color="purple"
-                                          className="cursor-help"
-                                        >
-                                          {t("situationMonitor.notice.gdeltLabel", {
-                                            defaultValue: "GDELT",
-                                          })}
-                                        </Tag>
-                                      </Popover>
-                                    ) : (
-                                      <Popover content={internalFeedTooltip}>
-                                        <Tag
-                                          color="blue"
-                                          className="cursor-help"
-                                        >
-                                          {t("situationMonitor.notice.internalLabel", {
-                                            defaultValue: "INT",
-                                          })}
-                                        </Tag>
-                                      </Popover>
-                                    )}
-                                    {renderHeadlineMonitorMatches(entry)}
-                                    {rawHref ? (
-                                      <Typography.Link
-                                        href={rawHref}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                      >
-                                        {translateToZh
-                                          ? (entry.titleZh ?? entry.title)
-                                          : entry.title}
-                                      </Typography.Link>
-                                    ) : (
-                                      <Typography.Text>
-                                        {translateToZh
-                                          ? (entry.titleZh ?? entry.title)
-                                          : entry.title}
-                                      </Typography.Text>
-                                    )}
-                                    {renderHeadlineItemLink(entry)}
-                                    {renderHeadlineDetails(entry)}
-                                  </Space>
-                                  {renderHeadlineSummary(entry)}
-                                  <Space size={8} wrap>
-                                    <Typography.Text type="secondary">
-                                      {entry.source}
-                                    </Typography.Text>
-                                    {rawDate ? (
-                                      <Typography.Text type="secondary">
-                                        {formatDateTime(rawDate, locale, {
-                                          month: "2-digit",
-                                          day: "2-digit",
-                                          hour: "2-digit",
-                                          minute: "2-digit",
-                                        })}
-                                      </Typography.Text>
-                                    ) : null}
-                                    {renderHeadlineTopics(entry)}
-                                  </Space>
-                                </Space>
-                              </List.Item>
-                            );
-                          }}
-                        />
                       ) : null}
+                      {cluster.mixedSource ? (
+                        <Tag color="green">
+                          {t("situationMonitor.feeds.mixedCluster", {
+                            defaultValue: "MIXED",
+                          })}
+                        </Tag>
+                      ) : null}
+                      <Tag color="blue">
+                        {t("situationMonitor.feeds.internalCount", {
+                          defaultValue: "INT {{count}}",
+                          count: cluster.internalCount,
+                        })}
+                      </Tag>
+                      <Tag color="purple">
+                        {t("situationMonitor.feeds.externalCount", {
+                          defaultValue: "EXT {{count}}",
+                          count: cluster.externalCount,
+                        })}
+                      </Tag>
+                      <Tag color="default">
+                        {t("situationMonitor.feeds.sourcesCount", {
+                          defaultValue: "{{count}} sources",
+                          count: cluster.distinctSourceCount,
+                        })}
+                      </Tag>
+                      {renderClusterMonitorMatches(cluster)}
                     </Space>
-                  </Card>
-                );
-              })}
+
+                    <Space wrap size={8}>
+                      {href ? (
+                        <Typography.Link
+                          href={href}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {translateToZh
+                            ? (lead.titleZh ?? lead.title)
+                            : lead.title}
+                        </Typography.Link>
+                      ) : (
+                        <Typography.Text strong>
+                          {translateToZh
+                            ? (lead.titleZh ?? lead.title)
+                            : lead.title}
+                        </Typography.Text>
+                      )}
+                      {renderHeadlineItemLink(lead)}
+                      {renderHeadlineDetails(lead)}
+                    </Space>
+
+                    {renderHeadlineSummary(lead)}
+
+                    <Space wrap size={8}>
+                      <Typography.Text type="secondary">
+                        {leadDate
+                          ? formatDateTime(leadDate, locale, {
+                              month: "2-digit",
+                              day: "2-digit",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "—"}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        {t("situationMonitor.feeds.rawArticleCount", {
+                          defaultValue: "{{count}} raw articles",
+                          count: cluster.items.length,
+                        })}
+                      </Typography.Text>
+                      {renderHeadlineTopics(lead)}
+                    </Space>
+
+                    <Space wrap size={8}>
+                      <Button
+                        size="small"
+                        data-sm-interactive
+                        onPointerDown={stopSituationMonitorInteractiveEvent}
+                        onMouseDown={stopSituationMonitorInteractiveEvent}
+                        onClick={(event) => {
+                          stopSituationMonitorInteractiveEvent(event);
+                          toggleClusterExpansion(cluster.id);
+                        }}
+                      >
+                        {expanded
+                          ? t("situationMonitor.feeds.hideRawArticles", {
+                              defaultValue: "Hide raw articles",
+                            })
+                          : t("situationMonitor.feeds.viewRawArticles", {
+                              defaultValue: "View raw articles",
+                            })}
+                      </Button>
+                    </Space>
+
+                    {expanded ? (
+                      <List
+                        size="small"
+                        dataSource={cluster.items}
+                        renderItem={(entry) => {
+                          const rawHref = entry.link
+                            ? safeHttpUrl(entry.link)
+                            : null;
+                          const rawDate = Number.isFinite(entry.timestamp)
+                            ? new Date(entry.timestamp)
+                            : null;
+                          return (
+                            <List.Item key={`${cluster.id}:${entry.id}`}>
+                              <Space
+                                direction="vertical"
+                                size={2}
+                                style={{ width: "100%" }}
+                              >
+                                <Space size={8} wrap>
+                                  {entry.isAlert ? (
+                                    <Tag color="red">
+                                      {t("situationMonitor.feeds.alert", {
+                                        defaultValue: "ALERT",
+                                      })}
+                                    </Tag>
+                                  ) : null}
+                                  {entry.origin === "gdelt" ? (
+                                    <Popover content={gdeltFeedTooltip}>
+                                      <Tag
+                                        color="purple"
+                                        className="cursor-help"
+                                      >
+                                        {t(
+                                          "situationMonitor.notice.gdeltLabel",
+                                          {
+                                            defaultValue: "GDELT",
+                                          },
+                                        )}
+                                      </Tag>
+                                    </Popover>
+                                  ) : (
+                                    <Popover content={internalFeedTooltip}>
+                                      <Tag color="blue" className="cursor-help">
+                                        {t(
+                                          "situationMonitor.notice.internalLabel",
+                                          {
+                                            defaultValue: "INT",
+                                          },
+                                        )}
+                                      </Tag>
+                                    </Popover>
+                                  )}
+                                  {renderHeadlineMonitorMatches(entry)}
+                                  {rawHref ? (
+                                    <Typography.Link
+                                      href={rawHref}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      {translateToZh
+                                        ? (entry.titleZh ?? entry.title)
+                                        : entry.title}
+                                    </Typography.Link>
+                                  ) : (
+                                    <Typography.Text>
+                                      {translateToZh
+                                        ? (entry.titleZh ?? entry.title)
+                                        : entry.title}
+                                    </Typography.Text>
+                                  )}
+                                  {renderHeadlineItemLink(entry)}
+                                  {renderHeadlineDetails(entry)}
+                                </Space>
+                                {renderHeadlineSummary(entry)}
+                                <Space size={8} wrap>
+                                  <Typography.Text type="secondary">
+                                    {entry.source}
+                                  </Typography.Text>
+                                  {rawDate ? (
+                                    <Typography.Text type="secondary">
+                                      {formatDateTime(rawDate, locale, {
+                                        month: "2-digit",
+                                        day: "2-digit",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })}
+                                    </Typography.Text>
+                                  ) : null}
+                                  {renderHeadlineTopics(entry)}
+                                </Space>
+                              </Space>
+                            </List.Item>
+                          );
+                        }}
+                      />
+                    ) : null}
+                  </Space>
+                </Card>
+              );
+            })}
           </Space>
         )}
       </Card>
@@ -4569,9 +4653,9 @@ export function SituationMonitorContent() {
                         : "red"
                     }
                   >
-                    {fedSnapshot.moneyPrinter.changeTrillions > 0
-                      ? "PRINTER ON"
-                      : "PRINTER OFF"}
+                    {getFedMoneyPrinterLabel(
+                      fedSnapshot.moneyPrinter.changeTrillions > 0,
+                    )}
                   </Tag>
                   <Typography.Text type="secondary">
                     {t("situationMonitor.fed.balanceSheet", {
@@ -5862,7 +5946,7 @@ export function SituationMonitorContent() {
             ]}
             style={{ width: 160 }}
           />
-          <Tag color="default">{effectiveScope.toUpperCase()}</Tag>
+          <Tag color="default">{getScopeBadgeLabel(effectiveScope)}</Tag>
           <Button
             onClick={handleManualRefresh}
             loading={loading || manualRefreshPending}
@@ -6083,7 +6167,10 @@ export function SituationMonitorContent() {
                   <Tag color="geekblue">
                     {t("situationMonitor.summary.articles", {
                       defaultValue: "ARTICLES {{count}}",
-                      count: coverageSummary?.articleCount ?? data?.analyzedItems ?? 0,
+                      count:
+                        coverageSummary?.articleCount ??
+                        data?.analyzedItems ??
+                        0,
                     })}
                   </Tag>
                   <Tag color="cyan">
@@ -6113,7 +6200,7 @@ export function SituationMonitorContent() {
                 </Space>
                 <Space wrap size={8}>
                   <Tag color="default">
-                    {formatWindowLabel(windowHours).toUpperCase()}
+                    {formatWindowCompactLabel(windowHours)}
                   </Tag>
                   <Tag
                     color={getCoverageModeColor(
@@ -6146,7 +6233,9 @@ export function SituationMonitorContent() {
                       data?.externalSnapshot?.status ?? "idle",
                     )}
                   >
-                    {(data?.externalSnapshot?.status ?? "idle").toUpperCase()}
+                    {getExternalSnapshotStatusLabel(
+                      data?.externalSnapshot?.status ?? "idle",
+                    )}
                   </Tag>
                   {data?.externalSnapshot?.stale ? (
                     <Tag color="volcano">
@@ -6213,14 +6302,13 @@ export function SituationMonitorContent() {
                 <Typography.Text type="secondary">
                   {t("situationMonitor.coverage.missingCategories", {
                     defaultValue: "Missing: {{categories}}",
-                    categories:
-                      coverageSummary?.missingCategories.length
-                        ? coverageSummary.missingCategories
-                            .map((category) => categoryLabels[category])
-                            .join(", ")
-                        : t("situationMonitor.coverage.noneMissing", {
-                            defaultValue: "none",
-                          }),
+                    categories: coverageSummary?.missingCategories.length
+                      ? coverageSummary.missingCategories
+                          .map((category) => categoryLabels[category])
+                          .join(", ")
+                      : t("situationMonitor.coverage.noneMissing", {
+                          defaultValue: "none",
+                        }),
                   })}
                 </Typography.Text>
               </Space>
@@ -6241,7 +6329,7 @@ export function SituationMonitorContent() {
                     message={t("situationMonitor.actions.recommendedWindow", {
                       defaultValue:
                         "Current results are thin. Expand to {{window}} for broader context.",
-                      window: formatWindowLabel(recommendedWindowHours),
+                      window: formatWindowOptionLabel(recommendedWindowHours),
                     })}
                   />
                 ) : null}
@@ -7112,7 +7200,9 @@ export function SituationMonitorContent() {
                     <Space direction="vertical" size={6} style={{ width: "100%" }}>
                       <Space size={10} wrap>
                         <Tag color={fedSnapshot.moneyPrinter.changeTrillions > 0 ? "green" : "red"}>
-                          {fedSnapshot.moneyPrinter.changeTrillions > 0 ? "PRINTER ON" : "PRINTER OFF"}
+                          {getFedMoneyPrinterLabel(
+                            fedSnapshot.moneyPrinter.changeTrillions > 0,
+                          )}
                         </Tag>
                         <Typography.Text type="secondary">
                           {t("situationMonitor.fed.balanceSheet", { defaultValue: "Balance sheet" })}:{" "}
@@ -7458,7 +7548,10 @@ export function SituationMonitorContent() {
                 <Tag color="geekblue">
                   {(translateToZh
                     ? data?.mainCharacterSummary?.statusZh ?? data?.mainCharacterSummary?.status
-                    : data?.mainCharacterSummary?.status) ?? "NO DATA"}
+                    : data?.mainCharacterSummary?.status) ??
+                    t("situationMonitor.status.noData", {
+                      defaultValue: "NO DATA",
+                    })}
                 </Tag>
               </Space>
             }

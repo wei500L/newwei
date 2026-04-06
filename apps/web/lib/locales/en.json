@@ -9237,7 +9237,30 @@
       "alert": "ALERT",
       "taggedHint": "Tagged scope is active. Switch to All items if you want broader coverage.",
       "internalTooltip": "Processed internal headlines from this project.",
-      "gdeltTooltip": "Fallback headlines from GDELT when internal coverage is thin."
+      "gdeltTooltip": "Fallback headlines from GDELT when internal coverage is thin.",
+      "emptyReason": {
+        "rateLimited": "RATE LIMITED",
+        "upstream": "UPSTREAM ERROR",
+        "unconfigured": "UNCONFIGURED",
+        "outsideWindow": "OUTSIDE WINDOW",
+        "noData": "NO DATA"
+      },
+      "emptyDescription": {
+        "rateLimited": "The latest external snapshot could not refresh this category because GDELT rate limited the upstream request.",
+        "upstream": "The latest external snapshot could not refresh this category because the upstream GDELT request failed.",
+        "unconfigured": "This workspace has no active internal news sources for this category yet.",
+        "outsideWindow": "Older content exists outside the current time window. Expand the window to inspect broader coverage.",
+        "noData": "Neither internal coverage nor the latest external snapshot produced visible event clusters for this category."
+      },
+      "clusterCount": "CLUSTERS {{count}}",
+      "articleCount": "ARTICLES {{count}}",
+      "internalCount": "INT {{count}}",
+      "externalCount": "EXT {{count}}",
+      "mixedCluster": "MIXED",
+      "sourcesCount": "{{count}} sources",
+      "rawArticleCount": "{{count}} raw articles",
+      "hideRawArticles": "Hide raw articles",
+      "viewRawArticles": "View raw articles"
     },
     "notice": {
       "title": "Signal scope and feed legend",
@@ -9300,7 +9323,11 @@
       "hint": "Configure the FRED shared financial data provider in Admin Settings > System Settings > Situation Monitor.",
       "value": "Value",
       "delta": "Δ",
-      "balanceSheet": "Balance sheet"
+      "balanceSheet": "Balance sheet",
+      "moneyPrinter": {
+        "on": "PRINTER ON",
+        "off": "PRINTER OFF"
+      }
     },
     "leaders": {
       "title": "World Leaders",
@@ -9360,11 +9387,22 @@
     "window": {
       "6h": "Last 6h",
       "24h": "Last 24h",
-      "72h": "Last 72h"
+      "72h": "Last 72h",
+      "168h": "Last 7d"
+    },
+    "windowCompact": {
+      "6h": "6H",
+      "24h": "24H",
+      "72h": "72H",
+      "168h": "7D"
     },
     "scope": {
       "tagged": "Tagged sources",
       "all": "All items"
+    },
+    "scopeBadge": {
+      "tagged": "TAGGED",
+      "all": "ALL"
     },
     "panels": {
       "title": "Panels",
@@ -9373,6 +9411,76 @@
       "fixed": "Fixed",
       "none": "No panels enabled. Open Panels to re-enable.",
       "hintCompact": "Enable Edit layout on smaller screens before dragging or resizing cards."
+    },
+    "empty": {
+      "unconfigured": {
+        "title": "No news sources are configured yet.",
+        "description": "This workspace has no active internal news sources, so the page can only rely on the external snapshot."
+      },
+      "window": {
+        "title": "Results are thin in the current window.",
+        "description": "Older content exists outside the current time window. Expand the range to inspect broader context."
+      },
+      "partial": {
+        "title": "External snapshot coverage is partial right now.",
+        "description": "Some categories are unavailable because the latest external snapshot was only partially generated."
+      },
+      "generic": {
+        "title": "No content is available right now.",
+        "description": "There are no internal items or external snapshot headlines available for the current view."
+      }
+    },
+    "summary": {
+      "title": "Summary",
+      "articles": "ARTICLES {{count}}",
+      "clusters": "CLUSTERS {{count}}",
+      "internal": "INT {{count}}",
+      "external": "EXT {{count}}",
+      "mixedClusters": "MIXED {{count}}",
+      "caption": "Internal items remain workspace-specific. External snapshot coverage is shared and server-generated."
+    },
+    "coverage": {
+      "title": "Coverage",
+      "visibleCategories": "{{count}} / 6 categories currently have visible coverage.",
+      "quality": "Dedupe {{dedupe}}. Avg sources / cluster {{sources}}.",
+      "generatedAt": "Last snapshot: {{time}}",
+      "missingCategories": "Missing: {{categories}}",
+      "noneMissing": "none",
+      "mode": {
+        "internal+external": "INT + EXT",
+        "internal-only": "INT ONLY",
+        "external-only": "EXT ONLY",
+        "empty": "EMPTY"
+      }
+    },
+    "actions": {
+      "title": "Next actions",
+      "openNewsSources": "Open News Sources",
+      "openSettings": "Open Situation Monitor Settings",
+      "refreshPageData": "Refresh page data",
+      "switchWindow": "Switch to {{window}}",
+      "recommendedWindow": "Current results are thin. Expand to {{window}} for broader context."
+    },
+    "snapshot": {
+      "stale": "STALE",
+      "freshCategories": "FRESH {{count}}",
+      "reusedCategories": "REUSED {{count}}",
+      "reusedCategory": "REUSED",
+      "reusedCategoryHint": "Showing the last successful snapshot for this category from {{time}} while the newest upstream fetch recovers.",
+      "status": {
+        "completed": "COMPLETED",
+        "partial": "PARTIAL",
+        "failed": "FAILED",
+        "idle": "IDLE"
+      }
+    },
+    "scopeRecovery": {
+      "title": "Tagged scope found no internal coverage.",
+      "description": "This view is limited to items tagged for situation monitoring. Switch to All items to load broader coverage.",
+      "action": "Switch to All items"
+    },
+    "status": {
+      "noData": "NO DATA"
     },
     "autoRefresh": "Auto refresh",
     "translateToZh": "Translate to Simplified Chinese",
