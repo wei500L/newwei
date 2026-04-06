@@ -348,30 +348,16 @@ services:
   ais-relay:
     build:
       context: ../..
-      dockerfile: infra/docker/runtime.Dockerfile
+      dockerfile: infra/docker/ais-relay.Dockerfile
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:20}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-        NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
-        NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change_me_please_replace_32_chars}
-        API_BASE_URL: ${API_BASE_URL:-http://api:4000}
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
     restart: unless-stopped
-    working_dir: /workspace
-    command: >
-      sh -ec "
-      echo '[ais-relay] starting runtime server...';
-      exec pnpm --filter @modular/ais-relay run start
-      "
     env_file:
       - ./.env
     environment:
       PORT: 3004
       NODE_ENV: production
-      HUSKY: "0"
-      COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-      npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-      pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
     dns:
       - ${DOCKER_DNS_1:-223.5.5.5}
       - ${DOCKER_DNS_2:-114.114.114.114}
@@ -384,7 +370,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:3004/health').then((response) => response.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))",
+          "fetch('http://127.0.0.1:3004/health').then(async (response) => { if (!response.ok) { process.exit(1); return; } const payload = await response.json(); process.exit(payload?.status === 'ok' ? 0 : 1); }).catch(() => process.exit(1))",
         ]
       interval: 30s
       timeout: 5s
