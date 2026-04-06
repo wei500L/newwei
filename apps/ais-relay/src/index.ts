@@ -11,7 +11,9 @@ import { WebSocket, type RawData } from "ws";
 
 loadEnv({ path: path.resolve(process.cwd(), "../../.env") });
 
-const AISSTREAM_URL = "wss://stream.aisstream.io/v0/stream";
+const AISSTREAM_URL =
+  normalizeString(process.env.AISSTREAM_URL ?? process.env.AIS_RELAY_UPSTREAM_URL) ??
+  "wss://stream.aisstream.io/v0/stream";
 const GRID_SIZE_DEG = 2;
 const DENSITY_WINDOW_MS = 30 * 60 * 1_000;
 const GAP_THRESHOLD_MS = 60 * 60 * 1_000;
@@ -49,6 +51,16 @@ const RELAY_HEALTH_MAX_PARSE_ERROR_RATIO_PERCENT = readPositiveInt(
   process.env.AIS_RELAY_HEALTH_MAX_PARSE_ERROR_RATIO_PERCENT,
   20,
   1,
+);
+const RELAY_HEALTH_NO_MESSAGES_AFTER_CONNECT_MS = readPositiveInt(
+  process.env.AIS_RELAY_HEALTH_NO_MESSAGES_AFTER_CONNECT_MS,
+  60_000,
+  5_000,
+);
+const RELAY_HEALTH_STALE_MESSAGES_MS = readPositiveInt(
+  process.env.AIS_RELAY_HEALTH_STALE_MESSAGES_MS,
+  90_000,
+  10_000,
 );
 const MAX_VESSELS = readPositiveInt(process.env.AIS_MAX_VESSELS, 20_000, 1_000);
 const MAX_VESSEL_HISTORY = readPositiveInt(
@@ -122,6 +134,8 @@ type AisRelayDiagnostics = {
   parseErrors: number;
   lastHealthyAt?: string;
   lastIssueAt?: string;
+  lastConnectedAt?: string;
+  lastMessageAt?: string;
   lastUpstreamErrorAt?: string;
   lastUpstreamError?: string;
   lastParseErrorAt?: string;
@@ -190,6 +204,8 @@ let lastSnapshotJsonWithoutCandidates: string | null = null;
 let lastSnapshotJsonWithCandidates: string | null = null;
 let lastParseErrorAt = 0;
 let lastParseErrorMessage: string | undefined;
+let lastUpstreamConnectedAt = 0;
+let lastUpstreamMessageAt = 0;
 let lastUpstreamErrorAt = 0;
 let lastUpstreamErrorMessage: string | undefined;
 let relayHealthState: RelayHealthState = "ok";
@@ -349,6 +365,7 @@ function setRelayHealthState(
 }
 
 function evaluateRelayHealthState() {
+  const now = Date.now();
   const readyState = upstreamSocket?.readyState;
   if (readyState !== WebSocket.OPEN) {
     if (
@@ -367,6 +384,37 @@ function evaluateRelayHealthState() {
       upstreamReason
         ? `AIS relay is reachable, but the upstream AIS stream is disconnected. Last upstream error: ${upstreamReason}`
         : "AIS relay is reachable, but the upstream AIS stream is disconnected.",
+    );
+    return;
+  }
+
+  if (
+    lastUpstreamConnectedAt > 0 &&
+    (lastUpstreamMessageAt === 0 ||
+      lastUpstreamMessageAt < lastUpstreamConnectedAt) &&
+    now - lastUpstreamConnectedAt >=
+      RELAY_HEALTH_NO_MESSAGES_AFTER_CONNECT_MS
+  ) {
+    setRelayHealthState(
+      "degraded",
+      "ais_upstream_no_messages_after_connect",
+      `AIS relay is connected to the upstream stream, but no AIS messages have arrived within ${Math.round(
+        RELAY_HEALTH_NO_MESSAGES_AFTER_CONNECT_MS / 1000,
+      )}s of connection establishment.`,
+    );
+    return;
+  }
+
+  if (
+    lastUpstreamMessageAt > 0 &&
+    now - lastUpstreamMessageAt >= RELAY_HEALTH_STALE_MESSAGES_MS
+  ) {
+    setRelayHealthState(
+      "degraded",
+      "ais_upstream_stalled",
+      `AIS relay has not received an upstream message for ${Math.round(
+        RELAY_HEALTH_STALE_MESSAGES_MS / 1000,
+      )}s while the upstream connection remains open.`,
     );
     return;
   }
@@ -425,6 +473,8 @@ function buildRelayDiagnostics(): AisRelayDiagnostics {
   evaluateRelayHealthState();
   const lastHealthyAtIso = toIsoTimestamp(lastRelayHealthyAt);
   const lastIssueAtIso = toIsoTimestamp(lastRelayIssueAt);
+  const lastConnectedAtIso = toIsoTimestamp(lastUpstreamConnectedAt);
+  const lastMessageAtIso = toIsoTimestamp(lastUpstreamMessageAt);
   const lastUpstreamErrorAtIso = toIsoTimestamp(lastUpstreamErrorAt);
   const lastParseErrorAtIso = toIsoTimestamp(lastParseErrorAt);
 
@@ -440,6 +490,8 @@ function buildRelayDiagnostics(): AisRelayDiagnostics {
     parseErrors,
     ...(lastHealthyAtIso ? { lastHealthyAt: lastHealthyAtIso } : {}),
     ...(lastIssueAtIso ? { lastIssueAt: lastIssueAtIso } : {}),
+    ...(lastConnectedAtIso ? { lastConnectedAt: lastConnectedAtIso } : {}),
+    ...(lastMessageAtIso ? { lastMessageAt: lastMessageAtIso } : {}),
     ...(lastUpstreamErrorAtIso
       ? { lastUpstreamErrorAt: lastUpstreamErrorAtIso }
       : {}),
@@ -535,6 +587,7 @@ function drainUpstreamQueue() {
 }
 
 function processRawUpstreamMessage(raw: RawData) {
+  lastUpstreamMessageAt = Date.now();
   messageCount += 1;
   try {
     const parsed = JSON.parse(rawDataToString(raw)) as {
@@ -971,7 +1024,7 @@ function connectUpstream() {
     reconnectTimer = null;
   }
 
-  console.log("[ais-relay] connecting to aisstream.io");
+  console.log(`[ais-relay] connecting to ${AISSTREAM_URL}`);
   const socket = new WebSocket(AISSTREAM_URL);
   upstreamSocket = socket;
   clearUpstreamQueue();
@@ -981,6 +1034,7 @@ function connectUpstream() {
       socket.close();
       return;
     }
+    lastUpstreamConnectedAt = Date.now();
     console.log("[ais-relay] upstream connected");
     socket.send(
       JSON.stringify({
