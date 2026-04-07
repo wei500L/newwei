@@ -18,6 +18,49 @@ test("accepts recognized naval vessel name prefixes", () => {
     }),
     true,
   );
+  assert.equal(
+    isLikelyMilitaryCandidate({
+      MMSI: "366999938",
+      ShipType: null,
+      ShipName: "USCG MLB 47264",
+    }),
+    true,
+  );
+  assert.equal(
+    isLikelyMilitaryCandidate({
+      MMSI: "369493500",
+      ShipType: null,
+      ShipName: "CG STORIS",
+    }),
+    true,
+  );
+});
+
+test("accepts strong military and government keywords", () => {
+  assert.equal(
+    isLikelyMilitaryCandidate({
+      MMSI: "219105000",
+      ShipType: null,
+      ShipName: "DANISH WARSHIP F363",
+    }),
+    true,
+  );
+  assert.equal(
+    isLikelyMilitaryCandidate({
+      MMSI: "244032246",
+      ShipType: null,
+      ShipName: "MRD -PATROL",
+    }),
+    true,
+  );
+  assert.equal(
+    isLikelyMilitaryCandidate({
+      MMSI: "123456780",
+      ShipType: null,
+      ShipName: "CITY COAST GUARD 01",
+    }),
+    true,
+  );
 });
 
 test("rejects MMSI-only heuristics without supporting ship metadata", () => {
@@ -61,6 +104,22 @@ test("rejects ordinary merchant vessels", () => {
       MMSI: "503250800",
       ShipType: null,
       ShipName: "PLATINUM",
+    }),
+    false,
+  );
+  assert.equal(
+    isLikelyMilitaryCandidate({
+      MMSI: "563275600",
+      ShipType: null,
+      ShipName: "MARINA AMMOLITE",
+    }),
+    false,
+  );
+  assert.equal(
+    isLikelyMilitaryCandidate({
+      MMSI: "249320000",
+      ShipType: null,
+      ShipName: "ARMADALNGMEDITERRANA",
     }),
     false,
   );

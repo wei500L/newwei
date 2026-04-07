@@ -100,11 +100,7 @@ import {
 import { WarMapInspectorPanel } from "./war-map-inspector-panel";
 import { resolveWarMapContainerClassName } from "./war-map-layout";
 import { WarMapOverlayRail } from "./war-map-overlay-rail";
-import {
-  isAisViewportEmptyStateActive,
-  isAisAutoModeActive,
-  resolveEffectiveAisMode,
-} from "./war-map-ais-mode";
+import { isAisViewportEmptyStateActive } from "./war-map-ais-mode";
 import {
   buildWarMapLegendSections,
   buildWarMapQuickLegendItems,
@@ -735,7 +731,6 @@ export function WarMap({
   const overlayRailRef = useRef<HTMLDivElement | null>(null);
   const syncFromMapRef = useRef(false);
   const hasHydratedUrlRef = useRef(false);
-  const hasShownAisAutoModeToastRef = useRef(false);
 
   const [inView, setInView] = useState(false);
   const [mapReady, setMapReady] = useState(false);
@@ -783,7 +778,9 @@ export function WarMap({
   );
   const flightMode = useWarMapSettingsStore((state) => state.flightMode);
   const aisMode = useWarMapSettingsStore((state) => state.aisMode);
-  const aisAutoMode = useWarMapSettingsStore((state) => state.aisAutoMode);
+  const aisHighlightCandidates = useWarMapSettingsStore(
+    (state) => state.aisHighlightCandidates,
+  );
   const setLayerVisible = useWarMapSettingsStore(
     (state) => state.setLayerVisible,
   );
@@ -799,12 +796,11 @@ export function WarMap({
   );
   const setFlightMode = useWarMapSettingsStore((state) => state.setFlightMode);
   const setAisMode = useWarMapSettingsStore((state) => state.setAisMode);
-  const setAisAutoMode = useWarMapSettingsStore(
-    (state) => state.setAisAutoMode,
+  const setAisHighlightCandidates = useWarMapSettingsStore(
+    (state) => state.setAisHighlightCandidates,
   );
   const resetLayers = useWarMapSettingsStore((state) => state.resetLayers);
-  const [effectiveAisMode, setEffectiveAisMode] =
-    useState<WarMapAisMode>(aisMode);
+  const effectiveAisMode: WarMapAisMode = aisMode;
   const viewStateRef = useRef(viewState);
   const initialUrlState = useMemo(() => {
     if (typeof window === "undefined") {
@@ -1139,10 +1135,6 @@ export function WarMap({
     }
     if (parsed.aisMode) {
       setAisMode(parsed.aisMode);
-      setEffectiveAisMode(parsed.aisMode);
-    }
-    if (typeof parsed.aisAutoMode === "boolean") {
-      setAisAutoMode(parsed.aisAutoMode);
     }
     if (parsed.viewState) {
       setViewState(parsed.viewState);
@@ -1153,9 +1145,7 @@ export function WarMap({
   }, [
     initialUrlState,
     setActivePreset,
-    setAisAutoMode,
     setAisMode,
-    setEffectiveAisMode,
     setFlightMode,
     setLayerVisibility,
     setTimeRangePreset,
@@ -1176,7 +1166,6 @@ export function WarMap({
         layerVisibility,
         flightMode,
         aisMode,
-        aisAutoMode,
       });
       const nextSearch = nextParams.toString();
       const currentSearch = current.searchParams.toString();
@@ -1189,7 +1178,6 @@ export function WarMap({
     return () => window.clearTimeout(timer);
   }, [
     activePreset,
-    aisAutoMode,
     aisMode,
     flightMode,
     layerVisibility,
@@ -2414,6 +2402,7 @@ export function WarMap({
     const aisDataset =
       layerVisibility.ais && layersData.ais ? layersData.ais : null;
     let aisFeatureCount = 0;
+    let aisHighlightedCandidateCount = 0;
 
     if (aisDataset?.geometryType === "point") {
       const aisVessels: DeckPoint[] = [];
@@ -2618,6 +2607,45 @@ export function WarMap({
       }
 
       if (aisVessels.length > 0) {
+        const highlightedCandidateVessels =
+          effectiveAisMode === "all" && aisHighlightCandidates
+            ? aisVessels.filter((point) => point.isMilitaryCandidate)
+            : [];
+        aisHighlightedCandidateCount = highlightedCandidateVessels.length;
+
+        if (highlightedCandidateVessels.length > 0) {
+          aisLayers.push(
+            new ScatterplotLayer({
+              id: "wm-ais-candidate-highlight-glow",
+              data: highlightedCandidateVessels,
+              pickable: false,
+              stroked: false,
+              filled: true,
+              radiusUnits: "pixels",
+              getPosition: (point: DeckPoint) => [point.lng, point.lat],
+              getFillColor: [249, 115, 22, 72],
+              getRadius: (point: DeckPoint) => point.radius + 8,
+              radiusMinPixels: 12,
+              radiusMaxPixels: 26,
+            }),
+          );
+          aisLayers.push(
+            new ScatterplotLayer({
+              id: "wm-ais-candidate-highlight-ring",
+              data: highlightedCandidateVessels,
+              pickable: false,
+              stroked: true,
+              filled: false,
+              radiusUnits: "pixels",
+              lineWidthUnits: "pixels",
+              getPosition: (point: DeckPoint) => [point.lng, point.lat],
+              getLineColor: [249, 115, 22, 220],
+              getRadius: (point: DeckPoint) => point.radius + 3.5,
+              lineWidthMinPixels: 2.5,
+            }),
+          );
+        }
+
         aisLayers.push(
           ...buildSymbolPointLayers({
             id: "wm-ais-vessels",
@@ -2633,9 +2661,11 @@ export function WarMap({
       deckLayers: [...staticLayers, ...aisLayers],
       staticVisibleCount: staticLayers.length + aisLayers.length,
       aisFeatureCount,
+      aisHighlightedCandidateCount,
       activePointLayers,
     };
   }, [
+    aisHighlightCandidates,
     buildSymbolPointLayers,
     handleLayerPointClick,
     handleSelectablePointClick,
@@ -3504,26 +3534,6 @@ export function WarMap({
   const aisSnapshotExact = aisSnapshotUpdatedAt
     ? formatUpdatedAt(aisSnapshotUpdatedAt, locale)
     : null;
-  useEffect(() => {
-    const nextEffectiveAisMode = resolveEffectiveAisMode({
-      preferredMode: aisMode,
-      autoModeEnabled: aisAutoMode,
-      aisLayerVisible: layerVisibility.ais,
-      allVesselsAvailable: aisAllVesselsAvailable,
-      zoom: queryZoom,
-      previousEffectiveMode: effectiveAisMode,
-    });
-    if (nextEffectiveAisMode !== effectiveAisMode) {
-      setEffectiveAisMode(nextEffectiveAisMode);
-    }
-  }, [
-    aisAllVesselsAvailable,
-    aisAutoMode,
-    aisMode,
-    effectiveAisMode,
-    layerVisibility.ais,
-    queryZoom,
-  ]);
   const aisHasIssue = Boolean(aisResolvedStatusReason);
   const aisSourceStatusColor = !aisConfigured
     ? "red"
@@ -3563,25 +3573,13 @@ export function WarMap({
             defaultValue: "Density only",
           })
         : t("dashboard.charts.warMap.stats.aisModeMilitary", {
-            defaultValue: "Military candidates",
+            defaultValue: "Candidates only",
           });
-  const aisEffectiveModeLabel =
+  const aisEffectiveModeLabel = aisPreferredModeLabel;
+  const aisHighlightedCandidateCount =
     effectiveAisMode === "all"
-      ? t("dashboard.charts.warMap.stats.aisModeAll", {
-          defaultValue: "All vessels",
-        })
-      : effectiveAisMode === "density"
-        ? t("dashboard.charts.warMap.stats.aisModeDensity", {
-            defaultValue: "Density only",
-          })
-        : t("dashboard.charts.warMap.stats.aisModeMilitary", {
-            defaultValue: "Military candidates",
-          });
-  const aisAutoActive = isAisAutoModeActive(
-    aisMode,
-    effectiveAisMode,
-    aisAutoMode,
-  );
+      ? staticDeckData.aisHighlightedCandidateCount
+      : undefined;
   const aisTooltipText = [
     `${t("dashboard.charts.warMap.layerNames.ais", {
       defaultValue: "AIS traffic",
@@ -3590,10 +3588,27 @@ export function WarMap({
     `${t("dashboard.charts.warMap.stats.mode", {
       defaultValue: "Mode",
     })}: ${aisEffectiveModeLabel}`,
-    aisAutoActive
-      ? `${t("dashboard.charts.warMap.stats.preferredMode", {
-          defaultValue: "Preferred mode",
-        })}: ${aisPreferredModeLabel}`
+    effectiveAisMode === "all"
+      ? t("dashboard.charts.warMap.overlay.aisAllVesselsHint", {
+          defaultValue:
+            "All vessels shows the full AIS vessel snapshot for the current viewport.",
+        })
+      : effectiveAisMode === "military"
+        ? t("dashboard.charts.warMap.overlay.aisCandidatesOnlyHint", {
+            defaultValue:
+              "Candidates only is a filtered subset based on AIS name and ship-type rules, not a complete vessel inventory.",
+          })
+        : null,
+    effectiveAisMode === "all"
+      ? aisHighlightCandidates
+        ? t("dashboard.charts.warMap.overlay.aisHighlightCandidatesHint", {
+            defaultValue:
+              "Rule-based government and military candidates are highlighted on top of the full vessel layer.",
+          })
+        : t("dashboard.charts.warMap.overlay.aisHighlightCandidatesOffHint", {
+            defaultValue:
+              "Candidate highlighting is currently off; all vessels remain visible.",
+          })
       : null,
     aisViewportEmptyStateHint,
     typeof aisRelayVesselCount === "number"
@@ -3610,6 +3625,11 @@ export function WarMap({
       ? `${t("dashboard.charts.warMap.stats.aisRenderedVessels", {
           defaultValue: "Rendered vessels",
         })}: ${aisRenderedVesselCount}`
+      : null,
+    typeof aisHighlightedCandidateCount === "number"
+      ? `${t("dashboard.charts.warMap.stats.aisHighlightedCandidates", {
+          defaultValue: "Highlighted candidates",
+        })}: ${aisHighlightedCandidateCount}`
       : null,
     typeof aisMaxReturned === "number"
       ? `${t("dashboard.charts.warMap.stats.aisViewportCap", {
@@ -3711,29 +3731,12 @@ export function WarMap({
       : effectiveAisMode === "military"
         ? (aisRenderedVesselCount ?? aisCandidateCount)
         : (aisViewportVesselCount ?? aisRenderedVesselCount);
-  useEffect(() => {
-    if (
-      !aisAutoMode ||
-      !aisAutoActive ||
-      effectiveAisMode !== "all" ||
-      hasShownAisAutoModeToastRef.current
-    ) {
-      return;
-    }
-
-    hasShownAisAutoModeToastRef.current = true;
-    toast.message(
-      t("dashboard.charts.warMap.stats.aisAutoAllToastTitle", {
-        defaultValue: "AIS switched to individual vessels",
-      }),
-      {
-        description: t("dashboard.charts.warMap.stats.aisAutoAllToastBody", {
-          defaultValue:
-            "Auto mode switched from the aggregated AIS view to individual vessel positions for this zoom level.",
-        }),
-      },
-    );
-  }, [aisAutoActive, aisAutoMode, effectiveAisMode, t]);
+  const aisHighlightCountLabel =
+    effectiveAisMode === "all" && aisHighlightCandidates
+      ? t("dashboard.charts.warMap.stats.aisHighlightedCandidates", {
+          defaultValue: "Highlighted candidates",
+        })
+      : undefined;
   const visibleLayerCount =
     DISPLAYABLE_WAR_MAP_LAYER_IDS.filter((layerId) => layerVisibility[layerId])
       .length + (layerVisibility.monitors ? 1 : 0);
@@ -4179,24 +4182,14 @@ export function WarMap({
         aisLayerVisible: layerVisibility.ais,
         aisMode,
         aisEffectiveMode: effectiveAisMode,
-        aisAutoMode,
-        aisAutoActive,
         onAisModeChange: (mode) => {
           if (mode === "all" && aisAllModeDisabled) {
             return;
           }
-          setAisAutoMode(false);
           setAisMode(mode);
-          setEffectiveAisMode(mode);
         },
-        onAisAutoModeChange: (enabled) => {
-          setAisAutoMode(enabled);
-          if (!enabled) {
-            setEffectiveAisMode(aisMode);
-            return;
-          }
-          hasShownAisAutoModeToastRef.current = false;
-        },
+        aisHighlightCandidates,
+        onAisHighlightCandidatesChange: setAisHighlightCandidates,
         aisAllModeDisabled,
         aisAllModeDisabledLabel,
         aisTooltipText,
@@ -4205,12 +4198,13 @@ export function WarMap({
         aisSourceStatusLabel,
         aisFreshness,
         aisModeLabel: aisEffectiveModeLabel,
-        aisSelectedModeLabel: aisPreferredModeLabel,
         aisRelayVesselCount,
         aisSnapshotRelative,
         aisSnapshotExact,
         aisPrimaryCountValue,
         aisPrimaryCountLabel,
+        aisHighlightCountValue: aisHighlightedCandidateCount,
+        aisHighlightCountLabel,
         aisDisruptionsCount,
         aisViewportEmptyStateActive,
         aisViewportEmptyStateLabel,

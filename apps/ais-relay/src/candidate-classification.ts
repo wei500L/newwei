@@ -1,5 +1,8 @@
 export const NAVAL_PREFIX_RE =
-  /^(USS|USNS|HMS|HMAS|HMCS|INS|JS|ROKS|TCG|FS|BNS|RFS|PLAN|PLA|CGC|PNS|KRI|ITS|SNS|MMSI)(?:\b|[-\s])/i;
+  /^(USS|USNS|HMS|HMAS|HMCS|INS|JS|ROKS|TCG|FS|BNS|RFS|PLAN|PLA|CGC|PNS|KRI|ITS|SNS|MMSI|USCG|CCG|PCG|CG)(?:\b|[-\s])/i;
+
+const MILITARY_KEYWORD_RE =
+  /\b(WARSHIP|NAVY|NAVAL|COAST\s+GUARD|PATROL|CUSTOMS|POLICE)\b/i;
 
 export function normalizeString(value: unknown) {
   if (typeof value !== "string") {
@@ -40,6 +43,10 @@ export function isLikelyMilitaryCandidate(meta: Record<string, unknown>) {
   }
 
   if (name && NAVAL_PREFIX_RE.test(name)) {
+    return true;
+  }
+
+  if (name && MILITARY_KEYWORD_RE.test(name)) {
     return true;
   }
 

@@ -219,6 +219,10 @@ function hasSameFootprint(a: Layout, b: Layout): boolean {
   return rectA.w === rectB.w && rectA.h === rectB.h;
 }
 
+function cloneLayout(layout: Layout[]): Layout[] {
+  return layout.map((item) => ({ ...item }));
+}
+
 export function stabilizeDesktopDragLayout(
   previousLayout: Layout[],
   nextLayout: Layout[],
@@ -321,6 +325,48 @@ export function stabilizeDesktopDragLayout(
   }
 
   return working;
+}
+
+const DEFAULT_LG_LAYOUT = cloneLayout(
+  SITUATION_MONITOR_PANELS.map((panel) => panel.defaultLayout),
+);
+
+const DEFAULT_RESPONSIVE_LAYOUTS: Record<GridBreakpoint, Layout[]> = {
+  lg: cloneLayout(DEFAULT_LG_LAYOUT),
+  md: buildPackedResponsiveLayout(DEFAULT_LG_LAYOUT, "md"),
+  sm: buildPackedResponsiveLayout(DEFAULT_LG_LAYOUT, "sm"),
+  xs: buildPackedResponsiveLayout(DEFAULT_LG_LAYOUT, "xs"),
+  xxs: buildPackedResponsiveLayout(DEFAULT_LG_LAYOUT, "xxs"),
+};
+
+const DEFAULT_RESPONSIVE_LAYOUT_MAPS = new Map<
+  GridBreakpoint,
+  Map<string, Layout>
+>(
+  Object.entries(DEFAULT_RESPONSIVE_LAYOUTS).map(([breakpoint, layout]) => [
+    breakpoint as GridBreakpoint,
+    new Map(layout.map((item) => [item.i, item])),
+  ]),
+);
+
+export function getDefaultPanelLayoutForBreakpoint(
+  panelId: string,
+  breakpoint: GridBreakpoint,
+): Layout | null {
+  const item = DEFAULT_RESPONSIVE_LAYOUT_MAPS.get(breakpoint)?.get(panelId);
+  return item ? { ...item } : null;
+}
+
+export function isPanelSizeCustomizedForBreakpoint(
+  item: Layout,
+  breakpoint: GridBreakpoint,
+): boolean {
+  const defaultLayout = getDefaultPanelLayoutForBreakpoint(item.i, breakpoint);
+  if (!defaultLayout) {
+    return true;
+  }
+
+  return item.w !== defaultLayout.w || item.h !== defaultLayout.h;
 }
 
 export function buildPackedResponsiveLayout(

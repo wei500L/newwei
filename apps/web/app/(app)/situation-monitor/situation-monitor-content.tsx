@@ -5,6 +5,7 @@ import {
   DragOutlined,
   FileSearchOutlined,
   InfoCircleOutlined,
+  ReloadOutlined,
   RightOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
@@ -88,9 +89,11 @@ import {
 } from "./utils/monitor-events";
 import {
   buildPackedResponsiveLayout,
+  getDefaultPanelLayoutForBreakpoint,
   GRID_BREAKPOINTS,
   GRID_COLS,
   GRID_LAYOUT_METRICS,
+  isPanelSizeCustomizedForBreakpoint,
   stabilizeDesktopDragLayout,
   type GridBreakpoint,
 } from "./utils/layout-grid";
@@ -3506,6 +3509,9 @@ export function SituationMonitorContent() {
     gridBreakpoint === "xs" ||
     gridBreakpoint === "xxs";
   const [compactLayoutEdit, setCompactLayoutEdit] = useState(false);
+  const [layoutPreviewItem, setLayoutPreviewItem] = useState<Layout | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!isCompactGrid) {
@@ -3518,6 +3524,10 @@ export function SituationMonitorContent() {
       setDesktopLayoutEdit(false);
     }
   }, [isCompactGrid]);
+
+  useEffect(() => {
+    setLayoutPreviewItem(null);
+  }, [gridBreakpoint]);
 
   const handleGridBreakpointChange = useCallback((next: string) => {
     if (next in GRID_COLS) {
@@ -3537,6 +3547,12 @@ export function SituationMonitorContent() {
 
   const gridMetrics = GRID_LAYOUT_METRICS[gridBreakpoint];
   const gridMargin = gridMetrics.margin;
+
+  useEffect(() => {
+    if (!canEditLayout) {
+      setLayoutPreviewItem(null);
+    }
+  }, [canEditLayout]);
 
   const gridLayouts = useMemo(
     () => ({
@@ -3568,6 +3584,18 @@ export function SituationMonitorContent() {
     ],
   );
 
+  const activeGridLayout = useMemo(() => {
+    const baseLayout = gridLayouts[gridBreakpoint] ?? gridLayouts.lg ?? [];
+    return layoutPreviewItem
+      ? mergePanelLayouts(baseLayout, [layoutPreviewItem])
+      : baseLayout;
+  }, [gridBreakpoint, gridLayouts, layoutPreviewItem]);
+
+  const activeGridLayoutMap = useMemo(
+    () => new Map(activeGridLayout.map((item) => [item.i, item])),
+    [activeGridLayout],
+  );
+
   const handleLayoutChange = useCallback(
     (nextLayout: Layout[], options?: { source?: "drag" | "resize" }) => {
       const currentLayout =
@@ -3589,14 +3617,63 @@ export function SituationMonitorContent() {
         mergePanelLayouts(currentLayout, stabilizedVisibleLayout),
         gridBreakpoint,
       );
+      setLayoutPreviewItem(null);
     },
     [gridBreakpoint, resolvedLayouts, setLayout, visibility],
+  );
+
+  const handleResetPanelSize = useCallback(
+    (panelId: SituationMonitorPanelId) => {
+      const defaultLayout = getDefaultPanelLayoutForBreakpoint(
+        panelId,
+        gridBreakpoint,
+      );
+      if (!defaultLayout) {
+        return;
+      }
+
+      const currentLayout =
+        resolvedLayouts[gridBreakpoint] ?? resolvedLayouts.lg;
+      const currentPanelLayout = currentLayout.find(
+        (item) => item.i === panelId,
+      );
+      if (!currentPanelLayout) {
+        return;
+      }
+
+      const nextLayoutItem: Layout = {
+        ...currentPanelLayout,
+        w: defaultLayout.w,
+        h: defaultLayout.h,
+        minW: defaultLayout.minW,
+        minH: defaultLayout.minH,
+        maxW: defaultLayout.maxW,
+        maxH: defaultLayout.maxH,
+      };
+
+      if (
+        typeof nextLayoutItem.x === "number" &&
+        nextLayoutItem.x + nextLayoutItem.w > GRID_COLS[gridBreakpoint]
+      ) {
+        nextLayoutItem.x = Math.max(
+          0,
+          GRID_COLS[gridBreakpoint] - nextLayoutItem.w,
+        );
+      }
+
+      setLayout(
+        mergePanelLayouts(currentLayout, [nextLayoutItem]),
+        gridBreakpoint,
+      );
+      setLayoutPreviewItem(null);
+    },
+    [gridBreakpoint, resolvedLayouts, setLayout],
   );
 
   const layoutHint = canEditLayout
     ? t("situationMonitor.panels.hint", {
         defaultValue:
-          "Drag cards by their headers, pull the bottom edge to change height, or use the corner handle for width and height together.",
+          "Drag cards by their headers, pull the bottom edge to change height, use the corner handle for width and height together, and restore a card's default size from its edit badge.",
       })
     : isCompactGrid
       ? t("situationMonitor.panels.hintCompact", {
@@ -6109,6 +6186,64 @@ export function SituationMonitorContent() {
     }
   };
 
+  const renderPanelShell = (panel: { id: SituationMonitorPanelId }) => {
+    const layoutItem = activeGridLayoutMap.get(panel.id);
+    const estimatedHeight = layoutItem
+      ? layoutItem.h * gridMetrics.rowHeight +
+        Math.max(0, layoutItem.h - 1) * gridMargin[1]
+      : null;
+    const isPreviewingResize = layoutPreviewItem?.i === panel.id;
+    const isSizeCustomized = layoutItem
+      ? isPanelSizeCustomizedForBreakpoint(layoutItem, gridBreakpoint)
+      : false;
+    const resetPanelSizeLabel = t("situationMonitor.layout.resetPanelSize", {
+      defaultValue: "Restore default size",
+    });
+
+    return (
+      <div
+        className="sm-layout-panel-shell h-full"
+        data-panel-id={panel.id}
+        key={panel.id}
+      >
+        {canEditLayout && layoutItem ? (
+          <div
+            className={[
+              "sm-layout-panel-tools",
+              isPreviewingResize ? "sm-layout-panel-tools--active" : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            <span className="sm-layout-panel-metrics">
+              {t("situationMonitor.layout.sizeBadge", {
+                defaultValue: "{{cols}} cols · {{rows}} rows · {{height}}px",
+                cols: layoutItem.w,
+                rows: layoutItem.h,
+                height: estimatedHeight ?? 0,
+              })}
+            </span>
+            {isSizeCustomized ? (
+              <Button
+                size="small"
+                type="default"
+                icon={<ReloadOutlined />}
+                className="sm-layout-panel-reset"
+                data-sm-interactive
+                aria-label={resetPanelSizeLabel}
+                title={resetPanelSizeLabel}
+                onPointerDown={stopSituationMonitorInteractiveEvent}
+                onMouseDown={stopSituationMonitorInteractiveEvent}
+                onClick={() => handleResetPanelSize(panel.id)}
+              />
+            ) : null}
+          </div>
+        ) : null}
+        {renderPanel(panel.id)}
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
@@ -6883,13 +7018,18 @@ export function SituationMonitorContent() {
           onDragStop={(nextLayout: Layout[]) => {
             handleLayoutChange(nextLayout, { source: "drag" });
           }}
+          onResize={(
+            _nextLayout: Layout[],
+            _oldItem: Layout,
+            nextItem: Layout,
+          ) => {
+            setLayoutPreviewItem({ ...nextItem });
+          }}
           onResizeStop={(nextLayout: Layout[]) => {
             handleLayoutChange(nextLayout, { source: "resize" });
           }}
         >
-          {visiblePanels.map((panel) => (
-            <div key={panel.id}>{renderPanel(panel.id)}</div>
-          ))}
+          {visiblePanels.map((panel) => renderPanelShell(panel))}
         </ResponsiveGridLayout>
       )}
 

@@ -155,8 +155,7 @@ export function mergeWarMapSettingsWithUrlState(
     Boolean(parsed.timeRangePreset) ||
     Boolean(parsed.layerVisibility) ||
     Boolean(parsed.flightMode) ||
-    Boolean(parsed.aisMode) ||
-    typeof parsed.aisAutoMode === 'boolean';
+    Boolean(parsed.aisMode);
 
   if (!hasUrlOverrides) {
     return normalized;
@@ -179,7 +178,6 @@ export function mergeWarMapSettingsWithUrlState(
     layerVisibility: parsed.layerVisibility ?? normalized.layerVisibility,
     flightMode: parsed.flightMode ?? normalized.flightMode,
     aisMode: parsed.aisMode ?? normalized.aisMode,
-    aisAutoMode: parsed.aisAutoMode ?? normalized.aisAutoMode,
   };
 }
 
@@ -192,7 +190,6 @@ export function writeWarMapUrlState(
     layerVisibility: WarMapLayerVisibility;
     flightMode: WarMapFlightMode;
     aisMode: WarMapAisMode;
-    aisAutoMode: boolean;
   },
 ): URLSearchParams {
   const next = new URLSearchParams(search.toString());
@@ -213,11 +210,7 @@ export function writeWarMapUrlState(
   } else {
     next.delete('am');
   }
-  if (!state.aisAutoMode) {
-    next.set('aa', '0');
-  } else {
-    next.delete('aa');
-  }
+  next.delete('aa');
 
   const enabledLayers = WAR_MAP_LAYER_IDS.filter(
     (layerId) => state.layerVisibility[layerId],

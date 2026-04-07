@@ -46,7 +46,7 @@ describe("war-map url-state", () => {
   });
 
   it("serializes state and strips default layers token", () => {
-    const params = new URLSearchParams("foo=bar");
+    const params = new URLSearchParams("foo=bar&aa=0");
 
     const next = writeWarMapUrlState(params, {
       viewState: {
@@ -61,7 +61,6 @@ describe("war-map url-state", () => {
       layerVisibility: cloneDefaultLayerVisibility(),
       flightMode: "military",
       aisMode: "military",
-      aisAutoMode: true,
     });
 
     expect(next.get("preset")).toBe("global");
@@ -94,7 +93,6 @@ describe("war-map url-state", () => {
       layerVisibility: noneVisible,
       flightMode: "military",
       aisMode: "military",
-      aisAutoMode: true,
     });
 
     expect(written.get("layers")).toBe("");
@@ -128,7 +126,6 @@ describe("war-map url-state", () => {
       layerVisibility: visibility,
       flightMode: "all",
       aisMode: "density",
-      aisAutoMode: false,
     });
 
     const parsed = readWarMapUrlState(written);
@@ -137,7 +134,7 @@ describe("war-map url-state", () => {
     expect(parsed.timeRangePreset).toBe("48h");
     expect(parsed.flightMode).toBe("all");
     expect(parsed.aisMode).toBe("density");
-    expect(parsed.aisAutoMode).toBe(false);
+    expect(parsed.aisAutoMode).toBeUndefined();
     expect(parsed.viewState?.bearing).toBe(0);
     expect(parsed.viewState?.pitch).toBe(0);
     expect(parsed.layerVisibility?.conflicts).toBe(true);
@@ -169,7 +166,7 @@ describe("war-map url-state", () => {
         layerVisibility: cloneDefaultLayerVisibility(),
         flightMode: "all",
         aisMode: "military",
-        aisAutoMode: true,
+        aisHighlightCandidates: true,
       },
       new URLSearchParams(
         "lat=26.44916&lon=56.45&zoom=8.3&preset=global&tr=7d&fm=military&am=density&aa=0&layers=conflicts",
@@ -187,7 +184,7 @@ describe("war-map url-state", () => {
     expect(merged.timeRangePreset).toBe("7d");
     expect(merged.flightMode).toBe("military");
     expect(merged.aisMode).toBe("density");
-    expect(merged.aisAutoMode).toBe(false);
+    expect(merged.aisHighlightCandidates).toBe(true);
     expect(merged.layerVisibility).toEqual(visibility);
   });
 
@@ -224,8 +221,8 @@ describe("war-map settings store", () => {
     );
     expect(useWarMapSettingsStore.getState().layerVisibility.ais).toBe(true);
     expect(useWarMapSettingsStore.getState().flightMode).toBe("military");
-    expect(useWarMapSettingsStore.getState().aisMode).toBe("military");
-    expect(useWarMapSettingsStore.getState().aisAutoMode).toBe(true);
+    expect(useWarMapSettingsStore.getState().aisMode).toBe("all");
+    expect(useWarMapSettingsStore.getState().aisHighlightCandidates).toBe(true);
   });
 
   it("forces 2D camera in setViewState", () => {
@@ -269,7 +266,7 @@ describe("war-map settings store", () => {
       timeRangePreset: "24h",
       flightMode: "all",
       aisMode: "density",
-      aisAutoMode: false,
+      aisHighlightCandidates: false,
     });
 
     const {
@@ -278,17 +275,25 @@ describe("war-map settings store", () => {
       timeRangePreset,
       flightMode,
       aisMode,
-      aisAutoMode,
+      aisHighlightCandidates,
     } = useWarMapSettingsStore.getState();
     expect(activePreset).toBe("asia");
     expect(timeRangePreset).toBe("24h");
     expect(flightMode).toBe("all");
     expect(aisMode).toBe("density");
-    expect(aisAutoMode).toBe(false);
+    expect(aisHighlightCandidates).toBe(false);
     expect(viewState.lat).toBe(-15);
     expect(viewState.lon).toBe(130);
     expect(viewState.zoom).toBe(3.5);
     expect(viewState.bearing).toBe(0);
     expect(viewState.pitch).toBe(0);
+  });
+
+  it("keeps a saved candidates-only AIS mode for existing users", () => {
+    useWarMapSettingsStore.getState().hydrateFromRemote({
+      aisMode: "military",
+    });
+
+    expect(useWarMapSettingsStore.getState().aisMode).toBe("military");
   });
 });

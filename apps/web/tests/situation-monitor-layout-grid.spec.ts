@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildPackedResponsiveLayout,
+  getDefaultPanelLayoutForBreakpoint,
   GRID_COLS,
+  isPanelSizeCustomizedForBreakpoint,
   projectLayoutToLg,
   stabilizeDesktopDragLayout,
 } from "../app/(app)/situation-monitor/utils/layout-grid";
@@ -83,6 +85,33 @@ describe("situation monitor responsive layout helpers", () => {
 
     expect(politics?.w).toBe(GRID_COLS.xxs);
     expect(politics?.minW).toBe(1);
+  });
+
+  it("exposes breakpoint-aware default panel sizes for reset affordances", () => {
+    const summary = getDefaultPanelLayoutForBreakpoint("summary", "lg");
+    const summarySm = getDefaultPanelLayoutForBreakpoint("summary", "sm");
+    const map = getDefaultPanelLayoutForBreakpoint("map", "lg");
+    const mapSm = getDefaultPanelLayoutForBreakpoint("map", "sm");
+
+    expect(summary?.w).toBe(4);
+    expect(summary?.h).toBe(4);
+    expect(summarySm?.w).toBe(GRID_COLS.sm);
+    expect(mapSm?.h).toBeLessThan(map?.h ?? 0);
+  });
+
+  it("detects when a card size differs from its breakpoint default", () => {
+    const summary = getDefaultPanelLayoutForBreakpoint("summary", "lg");
+    if (!summary) {
+      throw new Error("Missing default summary layout");
+    }
+
+    expect(isPanelSizeCustomizedForBreakpoint(summary, "lg")).toBe(false);
+    expect(
+      isPanelSizeCustomizedForBreakpoint(
+        { ...summary, h: summary.h + 2 },
+        "lg",
+      ),
+    ).toBe(true);
   });
 
   it("stabilizes desktop drag swaps without cascading unrelated cards downward", () => {

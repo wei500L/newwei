@@ -320,17 +320,16 @@ describe("war-map page wiring", () => {
       "const aisMode = useWarMapSettingsStore((state) => state.aisMode);",
     );
     expect(source).toContain(
-      "const aisAutoMode = useWarMapSettingsStore((state) => state.aisAutoMode);",
+      "const aisHighlightCandidates = useWarMapSettingsStore(",
     );
-    expect(source).toContain("resolveEffectiveAisMode({");
     expect(source).toContain("onFlightModeChange: setFlightMode,");
-    expect(source).toContain("setAisAutoMode(false);");
-    expect(source).toContain("onAisAutoModeChange: (enabled) => {");
+    expect(source).toContain("onAisHighlightCandidatesChange: setAisHighlightCandidates,");
+    expect(source).toContain('id: "wm-ais-candidate-highlight-glow"');
     expect(controlsSource).toContain(
       'onClick={() => transport.onFlightModeChange("all")}',
     );
     expect(controlsSource).toContain(
-      "transport.onAisAutoModeChange(!transport.aisAutoMode)",
+      "transport.onAisHighlightCandidatesChange(",
     );
     expect(controlsSource).toContain(
       'onClick={() => transport.onAisModeChange("density")}',
@@ -338,6 +337,8 @@ describe("war-map page wiring", () => {
     expect(controlsSource).toContain(
       'onClick={() => transport.onAisModeChange("all")}',
     );
+    expect(controlsSource).toContain('defaultValue: "Candidates only"');
+    expect(controlsSource).toContain('defaultValue: "Highlight candidates"');
     expect(source).toContain('id: "wm-ais-density-zones"');
     expect(source).toContain("Aggregated AIS hotspot, not individual vessels.");
     expect(source).toContain(

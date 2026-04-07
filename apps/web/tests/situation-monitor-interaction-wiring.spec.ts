@@ -139,9 +139,14 @@ describe("situation monitor interaction wiring", () => {
 
     expect(contentSource).toContain('resizeHandles={["s", "se"]}');
     expect(contentSource).toContain("pull the bottom edge to change height");
+    expect(contentSource).toContain("Restore default size");
+    expect(contentSource).toContain("data-panel-id={panel.id}");
+    expect(contentSource).toContain("setLayoutPreviewItem({ ...nextItem });");
     expect(globalsSource).toContain(
       ".sm-layout-grid .react-resizable-handle-s",
     );
     expect(globalsSource).toContain("cursor: ns-resize;");
+    expect(globalsSource).toContain(".sm-layout-panel-tools");
+    expect(globalsSource).toContain(".sm-layout-panel-reset.ant-btn");
   });
 });

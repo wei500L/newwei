@@ -90,8 +90,8 @@ const defaultWarMapFingerprint = fingerprintWarMapSettings({
   activePreset: "global",
   timeRangePreset: "7d",
   flightMode: "military",
-  aisMode: "military",
-  aisAutoMode: true,
+  aisMode: "all",
+  aisHighlightCandidates: true,
 });
 
 type UiCacheSection = "situation-monitor" | "war-map";
@@ -340,7 +340,7 @@ function writeWarMapCache(orgId: string, userId: string) {
     timeRangePreset: state.timeRangePreset,
     flightMode: state.flightMode,
     aisMode: state.aisMode,
-    aisAutoMode: state.aisAutoMode,
+    aisHighlightCandidates: state.aisHighlightCandidates,
   };
   writeJsonToStorage(key, {
     version: 1,
@@ -418,7 +418,7 @@ export function UserUiSettingsSync() {
       timeRangePreset: state.timeRangePreset,
       flightMode: state.flightMode,
       aisMode: state.aisMode,
-      aisAutoMode: state.aisAutoMode,
+      aisHighlightCandidates: state.aisHighlightCandidates,
     }),
     shallow,
   );
@@ -749,7 +749,7 @@ export function UserUiSettingsSync() {
               timeRangePreset: currentState.timeRangePreset,
               flightMode: currentState.flightMode,
               aisMode: currentState.aisMode,
-              aisAutoMode: currentState.aisAutoMode,
+              aisHighlightCandidates: currentState.aisHighlightCandidates,
             };
             const currentFingerprint =
               fingerprintWarMapSettings(currentSettings);
