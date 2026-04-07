@@ -89,7 +89,7 @@ describe('candlestick chart helpers', () => {
     expect(option.title).toBeUndefined();
     expect(option.grid).toMatchObject({
       containLabel: true,
-      bottom: 62,
+      bottom: 66,
       right: 24,
     });
 
@@ -109,6 +109,9 @@ describe('candlestick chart helpers', () => {
     expect(xAxis).toMatchObject({
       type: 'category',
       boundaryGap: true,
+      axisLine: {
+        show: true,
+      },
     });
     const xAxisFormatter = (
       xAxis as {

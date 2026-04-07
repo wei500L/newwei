@@ -3,6 +3,14 @@
 import { Button } from "antd";
 import * as echarts from "echarts/core";
 import { install as installGraphChart } from "echarts/lib/chart/graph/install.js";
+import { install as installCandlestickChart } from "echarts/lib/chart/candlestick/install.js";
+import { install as installLineChart } from "echarts/lib/chart/line/install.js";
+import { install as installAxisPointerComponent } from "echarts/lib/component/axisPointer/install.js";
+import { install as installDataZoomComponent } from "echarts/lib/component/dataZoom/install.js";
+import { install as installGridComponent } from "echarts/lib/component/grid/install.js";
+import { install as installLegendComponent } from "echarts/lib/component/legend/install.js";
+import { install as installTooltipComponent } from "echarts/lib/component/tooltip/install.js";
+import { install as installCanvasRenderer } from "echarts/lib/renderer/installCanvasRenderer.js";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -19,10 +27,6 @@ import {
 } from "@/lib/map/use-renderable-container";
 
 type Installer = Parameters<typeof echarts.use>[0];
-
-// Pre-register graph chart extension before any chart instance is created.
-// Graph depends on coordinate-system/layout hooks that must exist at init time.
-echarts.use(installGraphChart as unknown as Installer);
 
 interface EchartsRuntimeState {
   installed: Set<string>;
@@ -47,6 +51,34 @@ const getRuntimeState = (): EchartsRuntimeState => {
 
   return target[ECHARTS_RUNTIME_KEY];
 };
+
+const preinstallRuntimeModules = () => {
+  const runtime = getRuntimeState();
+  const installers: Array<[string, Installer]> = [
+    // These modules back the finance dashboard's hot path and are worth
+    // preloading to avoid long-lived skeletons while dynamic chunks resolve.
+    ["renderer:canvas", installCanvasRenderer as unknown as Installer],
+    ["component:grid", installGridComponent as unknown as Installer],
+    ["component:tooltip", installTooltipComponent as unknown as Installer],
+    ["component:axisPointer", installAxisPointerComponent as unknown as Installer],
+    ["component:dataZoom", installDataZoomComponent as unknown as Installer],
+    ["component:legend", installLegendComponent as unknown as Installer],
+    ["chart:line", installLineChart as unknown as Installer],
+    ["chart:candlestick", installCandlestickChart as unknown as Installer],
+    // Graph depends on coordinate-system/layout hooks that must exist before init.
+    ["chart:graph", installGraphChart as unknown as Installer],
+  ];
+
+  installers.forEach(([key, installer]) => {
+    if (runtime.installed.has(key)) {
+      return;
+    }
+    echarts.use(installer);
+    runtime.installed.add(key);
+  });
+};
+
+preinstallRuntimeModules();
 
 const installOnce = (key: string, loader: () => Promise<Installer>) => {
   const runtime = getRuntimeState();
@@ -418,10 +450,9 @@ export function DashboardChart({
   const [isInView, setIsInView] = useState(!lazy);
   const [shouldInit, setShouldInit] = useState(!lazy);
   const [ready, setReady] = useState(false);
-  const renderableContainerReady = useRenderableContainer(
-    ref,
-    shouldInit && isInView,
-  );
+  // Once a chart has entered view at least once, let initialization finish even
+  // if the user scrolls away during module loading or chart setup.
+  const renderableContainerReady = useRenderableContainer(ref, shouldInit);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -714,7 +745,7 @@ export function DashboardChart({
   }, [group, renderableContainerReady, renderer, shouldInit, theme]);
 
   useEffect(() => {
-    if (!shouldInit || !isInView) return;
+    if (!shouldInit) return;
     const p = initPromiseRef.current;
     if (!p) return;
 
@@ -762,7 +793,7 @@ export function DashboardChart({
     return () => {
       cancelled = true;
     };
-  }, [option, renderer, group, theme, isInView, shouldInit]);
+  }, [option, renderer, group, theme, shouldInit]);
 
   useEffect(() => {
     if (!shouldInit) return;

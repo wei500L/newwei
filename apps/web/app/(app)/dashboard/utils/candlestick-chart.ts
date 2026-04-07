@@ -128,6 +128,10 @@ export function buildCandlestickChartOption({
     isDarkTheme ? theme.colors.tooltipText : theme.colors.foreground,
     isDarkTheme ? 0.68 : 0.76,
   );
+  const xAxisLineColor = withOpacity(
+    isDarkTheme ? theme.colors.tooltipText : theme.colors.foreground,
+    isDarkTheme ? 0.48 : 0.3,
+  );
   const sliderBackgroundColor = withOpacity(
     theme.colors.secondary,
     isDarkTheme ? 0.72 : 0.88,
@@ -161,7 +165,7 @@ export function buildCandlestickChartOption({
       left: 48,
       right: 24,
       top: 16,
-      bottom: 62,
+      bottom: 66,
       containLabel: true,
     },
     dataZoom: [
@@ -203,8 +207,10 @@ export function buildCandlestickChartOption({
       boundaryGap: true,
       axisLine: {
         onZero: false,
+        show: true,
         lineStyle: {
-          color: theme.colors.grid,
+          color: xAxisLineColor,
+          width: 1.25,
         },
       },
       axisTick: {

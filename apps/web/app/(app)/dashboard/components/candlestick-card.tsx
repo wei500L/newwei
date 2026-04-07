@@ -17,6 +17,7 @@ export interface CandlestickCardProps {
   group?: EconomicSeriesGroup;
   height?: number;
   meta?: ReactNode;
+  chartLazy?: boolean;
 }
 
 export function CandlestickCard({
@@ -24,6 +25,7 @@ export function CandlestickCard({
   group,
   height = 336,
   meta,
+  chartLazy = true,
 }: CandlestickCardProps) {
   const { t, i18n } = useTranslation();
   const { token } = theme.useToken();
@@ -77,6 +79,7 @@ export function CandlestickCard({
         <DashboardChart
           option={option}
           height={height}
+          lazy={chartLazy}
           theme={chartTheme.echartsTheme}
         />
       ) : (

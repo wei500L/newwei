@@ -130,4 +130,18 @@ describe("situation monitor interaction wiring", () => {
       "export function hasSituationMonitorLayoutGeometry(",
     );
   });
+
+  it("exposes visible bottom-edge resize handles for per-card height changes", () => {
+    const contentSource = read(
+      "app/(app)/situation-monitor/situation-monitor-content.tsx",
+    );
+    const globalsSource = read("app/globals.css");
+
+    expect(contentSource).toContain('resizeHandles={["s", "se"]}');
+    expect(contentSource).toContain("pull the bottom edge to change height");
+    expect(globalsSource).toContain(
+      ".sm-layout-grid .react-resizable-handle-s",
+    );
+    expect(globalsSource).toContain("cursor: ns-resize;");
+  });
 });

@@ -307,10 +307,86 @@
       0 18px 36px rgba(15, 23, 42, 0.08);
   }
 
+  .sm-layout-grid--editing .sm-panel-card > .ant-card-body {
+    padding-bottom: 20px;
+  }
+
   .sm-layout-grid .react-resizable-handle {
-    width: 20px;
-    height: 20px;
+    position: absolute;
     touch-action: none;
+    opacity: 0.9;
+    transition:
+      opacity 0.2s ease,
+      transform 0.2s ease;
+  }
+
+  .sm-layout-grid--editing .react-grid-item:hover .react-resizable-handle,
+  .sm-layout-grid--editing
+    .react-grid-item.react-grid-item-resizing
+    .react-resizable-handle {
+    opacity: 1;
+  }
+
+  .sm-layout-grid .react-resizable-handle-s {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: 2px !important;
+    width: auto !important;
+    height: 18px !important;
+    margin-right: 0 !important;
+    cursor: ns-resize;
+    transform: none !important;
+    background-image: none !important;
+  }
+
+  .sm-layout-grid .react-resizable-handle-s::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 5px;
+    width: 56px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(59, 130, 246, 0.45);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5);
+    transform: translateX(-50%);
+  }
+
+  .sm-layout-grid .react-resizable-handle-se {
+    right: 2px !important;
+    bottom: 2px !important;
+    width: 22px !important;
+    height: 22px !important;
+    cursor: nwse-resize;
+    transform: none !important;
+    background-image: none !important;
+  }
+
+  .sm-layout-grid .react-resizable-handle-se::after {
+    content: "";
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+    width: 9px;
+    height: 9px;
+    border-right: 2px solid rgba(59, 130, 246, 0.6);
+    border-bottom: 2px solid rgba(59, 130, 246, 0.6);
+    border-radius: 1px;
+  }
+
+  .sm-layout-grid
+    .react-grid-item.react-grid-item-resizing
+    .react-resizable-handle-s::before,
+  .sm-layout-grid .react-grid-item:hover .react-resizable-handle-s::before {
+    background: rgba(37, 99, 235, 0.65);
+  }
+
+  .sm-layout-grid
+    .react-grid-item.react-grid-item-resizing
+    .react-resizable-handle-se::after,
+  .sm-layout-grid .react-grid-item:hover .react-resizable-handle-se::after {
+    border-right-color: rgba(37, 99, 235, 0.82);
+    border-bottom-color: rgba(37, 99, 235, 0.82);
   }
 
   .sm-layout-grid--readonly .react-resizable-handle {
@@ -339,6 +415,12 @@
   .sm-layout-grid--compact .react-resizable-handle {
     width: 24px;
     height: 24px;
+  }
+
+  .sm-layout-grid--compact .react-resizable-handle-s {
+    left: 10px !important;
+    right: 10px !important;
+    height: 20px !important;
   }
 
   .sm-layout-grid--compact .react-resizable-handle::after {

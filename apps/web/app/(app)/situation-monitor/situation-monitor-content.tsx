@@ -3596,7 +3596,7 @@ export function SituationMonitorContent() {
   const layoutHint = canEditLayout
     ? t("situationMonitor.panels.hint", {
         defaultValue:
-          "Drag cards by their headers and use the corner handle to resize them.",
+          "Drag cards by their headers, pull the bottom edge to change height, or use the corner handle for width and height together.",
       })
     : isCompactGrid
       ? t("situationMonitor.panels.hintCompact", {
@@ -6872,7 +6872,7 @@ export function SituationMonitorContent() {
           rowHeight={gridMetrics.rowHeight}
           isResizable={canEditLayout}
           isDraggable={canEditLayout}
-          resizeHandles={["se"]}
+          resizeHandles={["s", "se"]}
           compactType="vertical"
           margin={gridMargin}
           draggableHandle=".ant-card-head"
