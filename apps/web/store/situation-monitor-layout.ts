@@ -10,6 +10,9 @@ import {
 } from "@/lib/situation-monitor-grid";
 
 export type SituationMonitorPanelId =
+  | "summary"
+  | "coverage"
+  | "next-actions"
   | "map"
   | "realtime-snapshot"
   | "feeds-politics"
@@ -35,10 +38,18 @@ export type SituationMonitorPanelId =
   | "main-character"
   | "monitors";
 
+export type SituationMonitorPanelSizeProfile =
+  | "hero"
+  | "summary"
+  | "feed"
+  | "list"
+  | "analysis";
+
 export interface SituationMonitorPanelConfig {
   id: SituationMonitorPanelId;
   title: string;
   titleKey?: string;
+  sizeProfile: SituationMonitorPanelSizeProfile;
   defaultVisible: boolean;
   defaultLayout: Layout;
   locked?: boolean;
@@ -51,34 +62,82 @@ export type SituationMonitorLayouts = SituationMonitorResponsiveLayouts;
 export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
   [
     {
+      id: "summary",
+      title: "Summary",
+      titleKey: "situationMonitor.summary.title",
+      sizeProfile: "summary",
+      defaultVisible: true,
+      defaultLayout: {
+        i: "summary",
+        x: 0,
+        y: 0,
+        w: 4,
+        h: 4,
+        minW: 3,
+        minH: 3,
+      },
+    },
+    {
+      id: "coverage",
+      title: "Coverage",
+      titleKey: "situationMonitor.coverage.title",
+      sizeProfile: "summary",
+      defaultVisible: true,
+      defaultLayout: {
+        i: "coverage",
+        x: 4,
+        y: 0,
+        w: 4,
+        h: 4,
+        minW: 3,
+        minH: 3,
+      },
+    },
+    {
+      id: "next-actions",
+      title: "Next actions",
+      titleKey: "situationMonitor.actions.title",
+      sizeProfile: "summary",
+      defaultVisible: true,
+      defaultLayout: {
+        i: "next-actions",
+        x: 8,
+        y: 0,
+        w: 4,
+        h: 4,
+        minW: 3,
+        minH: 3,
+      },
+    },
+    {
       id: "map",
       title: "Global Map",
       titleKey: "situationMonitor.map.title",
+      sizeProfile: "hero",
       defaultVisible: true,
-      locked: true,
       defaultLayout: {
         i: "map",
         x: 0,
-        y: 0,
-        w: 12,
-        h: 9,
+        y: 4,
+        w: 8,
+        h: 11,
         minW: 6,
-        minH: 7,
-        static: true,
+        minH: 8,
       },
     },
     {
       id: "realtime-snapshot",
       title: "Realtime Snapshot",
       titleKey: "situationMonitor.realtimeSnapshot.title",
+      sizeProfile: "hero",
       defaultVisible: true,
       defaultLayout: {
         i: "realtime-snapshot",
-        x: 0,
-        y: 9,
-        w: 12,
-        h: 8,
-        minW: 6,
+        x: 8,
+        y: 4,
+        w: 4,
+        h: 11,
+        minW: 4,
         minH: 6,
       },
     },
@@ -86,11 +145,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "feeds-politics",
       title: "Politics",
       titleKey: "situationMonitor.categories.politics",
+      sizeProfile: "feed",
       defaultVisible: true,
       defaultLayout: {
         i: "feeds-politics",
         x: 0,
-        y: 17,
+        y: 15,
         w: 4,
         h: 7,
         minW: 3,
@@ -101,11 +161,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "feeds-tech",
       title: "Tech",
       titleKey: "situationMonitor.categories.tech",
+      sizeProfile: "feed",
       defaultVisible: true,
       defaultLayout: {
         i: "feeds-tech",
         x: 4,
-        y: 17,
+        y: 15,
         w: 4,
         h: 7,
         minW: 3,
@@ -116,11 +177,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "feeds-finance",
       title: "Finance",
       titleKey: "situationMonitor.categories.finance",
+      sizeProfile: "feed",
       defaultVisible: true,
       defaultLayout: {
         i: "feeds-finance",
         x: 8,
-        y: 17,
+        y: 15,
         w: 4,
         h: 7,
         minW: 3,
@@ -131,11 +193,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "feeds-gov",
       title: "Government",
       titleKey: "situationMonitor.categories.gov",
+      sizeProfile: "feed",
       defaultVisible: true,
       defaultLayout: {
         i: "feeds-gov",
         x: 0,
-        y: 24,
+        y: 22,
         w: 4,
         h: 7,
         minW: 3,
@@ -146,11 +209,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "feeds-ai",
       title: "AI",
       titleKey: "situationMonitor.categories.ai",
+      sizeProfile: "feed",
       defaultVisible: true,
       defaultLayout: {
         i: "feeds-ai",
         x: 4,
-        y: 24,
+        y: 22,
         w: 4,
         h: 7,
         minW: 3,
@@ -161,11 +225,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "feeds-intel",
       title: "Intel",
       titleKey: "situationMonitor.categories.intel",
+      sizeProfile: "feed",
       defaultVisible: true,
       defaultLayout: {
         i: "feeds-intel",
         x: 8,
-        y: 24,
+        y: 22,
         w: 4,
         h: 7,
         minW: 3,
@@ -176,18 +241,20 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "alerts",
       title: "Alerts",
       titleKey: "situationMonitor.alerts.title",
+      sizeProfile: "list",
       defaultVisible: true,
-      defaultLayout: { i: "alerts", x: 0, y: 31, w: 4, h: 8, minW: 3, minH: 6 },
+      defaultLayout: { i: "alerts", x: 0, y: 29, w: 4, h: 8, minW: 3, minH: 6 },
     },
     {
       id: "telegram-feed",
       title: "Telegram Early Signals",
       titleKey: "situationMonitor.telegram.title",
+      sizeProfile: "list",
       defaultVisible: true,
       defaultLayout: {
         i: "telegram-feed",
         x: 4,
-        y: 31,
+        y: 29,
         w: 4,
         h: 8,
         minW: 3,
@@ -198,11 +265,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "oref-alerts",
       title: "OREF Alerts",
       titleKey: "situationMonitor.oref.title",
+      sizeProfile: "list",
       defaultVisible: true,
       defaultLayout: {
         i: "oref-alerts",
         x: 8,
-        y: 31,
+        y: 29,
         w: 4,
         h: 8,
         minW: 3,
@@ -213,11 +281,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "markets",
       title: "Markets",
       titleKey: "situationMonitor.markets.title",
+      sizeProfile: "list",
       defaultVisible: true,
       defaultLayout: {
         i: "markets",
         x: 0,
-        y: 39,
+        y: 37,
         w: 4,
         h: 8,
         minW: 3,
@@ -228,25 +297,28 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "crypto",
       title: "Crypto",
       titleKey: "situationMonitor.crypto.title",
+      sizeProfile: "list",
       defaultVisible: true,
-      defaultLayout: { i: "crypto", x: 4, y: 39, w: 4, h: 8, minW: 3, minH: 6 },
+      defaultLayout: { i: "crypto", x: 4, y: 37, w: 4, h: 8, minW: 3, minH: 6 },
     },
     {
       id: "fed",
       title: "Federal Reserve",
       titleKey: "situationMonitor.fed.title",
+      sizeProfile: "list",
       defaultVisible: true,
-      defaultLayout: { i: "fed", x: 8, y: 39, w: 4, h: 8, minW: 4, minH: 7 },
+      defaultLayout: { i: "fed", x: 8, y: 37, w: 4, h: 8, minW: 4, minH: 7 },
     },
     {
       id: "leaders",
       title: "World Leaders",
       titleKey: "situationMonitor.leaders.title",
+      sizeProfile: "analysis",
       defaultVisible: true,
       defaultLayout: {
         i: "leaders",
         x: 0,
-        y: 47,
+        y: 45,
         w: 6,
         h: 10,
         minW: 4,
@@ -257,11 +329,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "situation-venezuela",
       title: "Venezuela Watch",
       titleKey: "situationMonitor.situations.venezuela",
+      sizeProfile: "feed",
       defaultVisible: true,
       defaultLayout: {
         i: "situation-venezuela",
         x: 6,
-        y: 47,
+        y: 45,
         w: 6,
         h: 10,
         minW: 3,
@@ -272,11 +345,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "situation-greenland",
       title: "Greenland Watch",
       titleKey: "situationMonitor.situations.greenland",
+      sizeProfile: "feed",
       defaultVisible: true,
       defaultLayout: {
         i: "situation-greenland",
         x: 0,
-        y: 57,
+        y: 55,
         w: 4,
         h: 8,
         minW: 3,
@@ -287,11 +361,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "situation-iran",
       title: "Iran Crisis",
       titleKey: "situationMonitor.situations.iran",
+      sizeProfile: "feed",
       defaultVisible: true,
       defaultLayout: {
         i: "situation-iran",
         x: 4,
-        y: 57,
+        y: 55,
         w: 4,
         h: 8,
         minW: 3,
@@ -302,11 +377,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "live-news",
       title: "Live News",
       titleKey: "situationMonitor.liveNews.title",
+      sizeProfile: "list",
       defaultVisible: true,
       defaultLayout: {
         i: "live-news",
         x: 8,
-        y: 57,
+        y: 55,
         w: 4,
         h: 8,
         minW: 4,
@@ -317,11 +393,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "live-webcams",
       title: "Live Webcams",
       titleKey: "situationMonitor.liveWebcams.title",
+      sizeProfile: "hero",
       defaultVisible: true,
       defaultLayout: {
         i: "live-webcams",
         x: 0,
-        y: 65,
+        y: 63,
         w: 12,
         h: 10,
         minW: 6,
@@ -332,11 +409,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "correlation",
       title: "Correlation Engine",
       titleKey: "situationMonitor.correlation.title",
+      sizeProfile: "hero",
       defaultVisible: true,
       defaultLayout: {
         i: "correlation",
         x: 0,
-        y: 75,
+        y: 73,
         w: 8,
         h: 20,
         minW: 6,
@@ -347,11 +425,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "narrative",
       title: "Narrative Tracker",
       titleKey: "situationMonitor.narrative.title",
+      sizeProfile: "analysis",
       defaultVisible: true,
       defaultLayout: {
         i: "narrative",
         x: 8,
-        y: 75,
+        y: 73,
         w: 4,
         h: 12,
         minW: 4,
@@ -362,11 +441,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "main-character",
       title: "Main Character",
       titleKey: "situationMonitor.mainCharacter.title",
+      sizeProfile: "analysis",
       defaultVisible: true,
       defaultLayout: {
         i: "main-character",
         x: 8,
-        y: 87,
+        y: 85,
         w: 4,
         h: 8,
         minW: 4,
@@ -377,11 +457,12 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] =
       id: "monitors",
       title: "My Monitors",
       titleKey: "situationMonitor.monitors.title",
+      sizeProfile: "list",
       defaultVisible: true,
       defaultLayout: {
         i: "monitors",
         x: 0,
-        y: 95,
+        y: 93,
         w: 12,
         h: 10,
         minW: 6,
@@ -415,6 +496,9 @@ export const SITUATION_MONITOR_PRESETS: readonly SituationMonitorPreset[] = [
     description: "Broad news coverage across all categories plus monitors.",
     descriptionKey: "situationMonitor.presets.newsJunkie.description",
     panels: [
+      "summary",
+      "coverage",
+      "next-actions",
       "map",
       "realtime-snapshot",
       "feeds-politics",
@@ -436,7 +520,17 @@ export const SITUATION_MONITOR_PRESETS: readonly SituationMonitorPreset[] = [
     nameKey: "situationMonitor.presets.markets.name",
     description: "Markets-focused view with finance + macro signals.",
     descriptionKey: "situationMonitor.presets.markets.description",
-    panels: ["map", "feeds-finance", "markets", "crypto", "fed", "alerts"],
+    panels: [
+      "summary",
+      "coverage",
+      "next-actions",
+      "map",
+      "feeds-finance",
+      "markets",
+      "crypto",
+      "fed",
+      "alerts",
+    ],
   },
   {
     id: "geopolitics",
@@ -446,6 +540,9 @@ export const SITUATION_MONITOR_PRESETS: readonly SituationMonitorPreset[] = [
       "Global situation awareness with hotspots and regional watches.",
     descriptionKey: "situationMonitor.presets.geopolitics.description",
     panels: [
+      "summary",
+      "coverage",
+      "next-actions",
       "map",
       "realtime-snapshot",
       "feeds-politics",
@@ -470,6 +567,9 @@ export const SITUATION_MONITOR_PRESETS: readonly SituationMonitorPreset[] = [
     description: "Deep analysis: correlation, narratives, and key figures.",
     descriptionKey: "situationMonitor.presets.intel.description",
     panels: [
+      "summary",
+      "coverage",
+      "next-actions",
       "map",
       "realtime-snapshot",
       "feeds-intel",
@@ -487,7 +587,14 @@ export const SITUATION_MONITOR_PRESETS: readonly SituationMonitorPreset[] = [
     nameKey: "situationMonitor.presets.minimal.name",
     description: "Just the essentials: map, key feed, and alerts.",
     descriptionKey: "situationMonitor.presets.minimal.description",
-    panels: ["map", "feeds-politics", "alerts"],
+    panels: [
+      "summary",
+      "coverage",
+      "next-actions",
+      "map",
+      "feeds-politics",
+      "alerts",
+    ],
   },
   {
     id: "everything",
@@ -506,6 +613,12 @@ const LOCKED_PANEL_IDS = new Set<SituationMonitorPanelId>(
     (panel) => panel.id,
   ),
 );
+
+const DASHBOARD_STRUCTURE_PANEL_IDS: readonly SituationMonitorPanelId[] = [
+  "summary",
+  "coverage",
+  "next-actions",
+] as const;
 
 function buildDefaults() {
   const visibility: Record<SituationMonitorPanelId, boolean> =
@@ -603,6 +716,15 @@ function mergeLayout(existing: Layout[], defaults: Layout[]): Layout[] {
   return merged;
 }
 
+function hasDashboardStructurePanels(layout: Layout[]): boolean {
+  const panelIds = new Set(
+    layout.map((item) => item.i as SituationMonitorPanelId),
+  );
+  return DASHBOARD_STRUCTURE_PANEL_IDS.every((panelId) =>
+    panelIds.has(panelId),
+  );
+}
+
 function normalizeResponsiveLayouts(
   rawLayouts: unknown,
   rawLayout: unknown,
@@ -622,25 +744,36 @@ function normalizeResponsiveLayouts(
       if (!Array.isArray(value) || value.length === 0) {
         continue;
       }
-      const merged = mergeLayout(value as Layout[], defaults);
+      const rawLayout = value as Layout[];
+      const merged = hasDashboardStructurePanels(rawLayout)
+        ? mergeLayout(rawLayout, defaults)
+        : defaults.map((entry) => ({ ...entry }));
       const repairedLayout = repairLayoutIfNeeded(merged, defaults, {
         enforceGeometry: breakpoint === "lg",
       });
       layouts[breakpoint] = repairedLayout.layout;
-      repaired = repaired || repairedLayout.repaired;
+      repaired =
+        repaired ||
+        repairedLayout.repaired ||
+        !hasDashboardStructurePanels(rawLayout);
     }
   }
 
   if (!layouts.lg) {
-    const merged = mergeLayout(
-      Array.isArray(rawLayout) ? (rawLayout as Layout[]) : [],
-      defaults,
-    );
+    const legacyLayout = Array.isArray(rawLayout)
+      ? (rawLayout as Layout[])
+      : [];
+    const merged = hasDashboardStructurePanels(legacyLayout)
+      ? mergeLayout(legacyLayout, defaults)
+      : defaults.map((entry) => ({ ...entry }));
     const repairedLayout = repairLayoutIfNeeded(merged, defaults, {
       enforceGeometry: true,
     });
     layouts.lg = repairedLayout.layout;
-    repaired = repaired || repairedLayout.repaired;
+    repaired =
+      repaired ||
+      repairedLayout.repaired ||
+      !hasDashboardStructurePanels(legacyLayout);
   }
 
   return { layouts, repaired };

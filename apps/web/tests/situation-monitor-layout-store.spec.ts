@@ -103,10 +103,10 @@ describe("situation monitor layout store", () => {
     expect(repaired).toBe(false);
     expect(getPanel("realtime-snapshot", "layout")).toMatchObject({
       i: "realtime-snapshot",
-      x: 0,
-      y: 9,
-      w: 12,
-      h: 8,
+      x: 8,
+      y: 4,
+      w: 4,
+      h: 11,
     });
   });
 
@@ -122,5 +122,22 @@ describe("situation monitor layout store", () => {
     expect(
       useSituationMonitorLayoutStore.getState().visibility["realtime-snapshot"],
     ).toBe(false);
+  });
+
+  it("keeps summary cards in default presets and leaves map movable", () => {
+    const state = useSituationMonitorLayoutStore.getState();
+
+    state.applyPreset("minimal");
+
+    expect(useSituationMonitorLayoutStore.getState().visibility.summary).toBe(
+      true,
+    );
+    expect(useSituationMonitorLayoutStore.getState().visibility.coverage).toBe(
+      true,
+    );
+    expect(
+      useSituationMonitorLayoutStore.getState().visibility["next-actions"],
+    ).toBe(true);
+    expect(getPanel("map", "layout")?.static).toBeUndefined();
   });
 });

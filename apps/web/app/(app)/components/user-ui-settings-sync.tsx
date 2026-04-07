@@ -5,9 +5,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { shallow } from "zustand/shallow";
 
-import {
-  mergeWarMapSettingsWithUrlState,
-} from "@/app/(app)/dashboard/charts/war-map/url-state";
+import { mergeWarMapSettingsWithUrlState } from "@/app/(app)/dashboard/charts/war-map/url-state";
 import {
   SITUATION_MONITOR_QUERY_KEYS,
   fetchSituationMonitorMonitors,
@@ -19,6 +17,8 @@ import { captureClientError } from "@/lib/client-telemetry";
 import {
   buildDefaultSituationMonitorLayoutPayload,
   fingerprintSituationMonitorLayout,
+  hasSituationMonitorLayoutGeometry,
+  normalizeSituationMonitorLayoutPayload,
   type SituationMonitorLayoutPayload,
 } from "@/lib/situation-monitor-layout-serialization";
 import { useSituationMonitorLayoutStore } from "@/store/situation-monitor-layout";
@@ -318,18 +318,8 @@ function readCacheEnvelope<T>(key: string): UiCacheEnvelope<T> | null {
 
 function writeSituationMonitorCache(orgId: string, userId: string) {
   const key = buildCacheKey("situation-monitor", orgId, userId);
-  const layout = {
-    layouts: useSituationMonitorLayoutStore.getState().layouts,
-    visibility: useSituationMonitorLayoutStore.getState().visibility,
-  };
-  const settings = {
-    windowHours: useSituationMonitorSettingsStore.getState().windowHours,
-    scope: useSituationMonitorSettingsStore.getState().scope,
-    autoRefresh: useSituationMonitorSettingsStore.getState().autoRefresh,
-    resetLayoutOnPreset:
-      useSituationMonitorSettingsStore.getState().resetLayoutOnPreset,
-    translateToZh: useSituationMonitorSettingsStore.getState().translateToZh,
-  };
+  const layout = readSituationMonitorLayoutPayload();
+  const settings = readSituationMonitorSettingsPayload();
   writeJsonToStorage(key, {
     version: 1,
     updatedAt: Date.now(),
@@ -372,6 +362,24 @@ function getErrorMessage(error: unknown, fallback: string): string {
     return error || fallback;
   }
   return fallback;
+}
+
+function readSituationMonitorLayoutPayload(): SituationMonitorLayoutPayload {
+  return {
+    layouts: useSituationMonitorLayoutStore.getState().layouts,
+    visibility: useSituationMonitorLayoutStore.getState().visibility,
+  };
+}
+
+function readSituationMonitorSettingsPayload() {
+  return {
+    windowHours: useSituationMonitorSettingsStore.getState().windowHours,
+    scope: useSituationMonitorSettingsStore.getState().scope,
+    autoRefresh: useSituationMonitorSettingsStore.getState().autoRefresh,
+    resetLayoutOnPreset:
+      useSituationMonitorSettingsStore.getState().resetLayoutOnPreset,
+    translateToZh: useSituationMonitorSettingsStore.getState().translateToZh,
+  };
 }
 
 export function UserUiSettingsSync() {
@@ -538,9 +546,12 @@ export function UserUiSettingsSync() {
       if (smCache) {
         const payload = smCache.payload;
         if (payload.layout) {
+          const normalizedCacheLayout = normalizeSituationMonitorLayoutPayload(
+            payload.layout,
+          );
           useSituationMonitorLayoutStore
             .getState()
-            .hydrateFromRemote(payload.layout);
+            .hydrateFromRemote(normalizedCacheLayout);
         }
         if (payload.settings) {
           useSituationMonitorSettingsStore
@@ -573,9 +584,7 @@ export function UserUiSettingsSync() {
           warMapCache.payload.settings,
           warMapUrlSearch,
         );
-        useWarMapSettingsStore
-          .getState()
-          .hydrateFromRemote(settings);
+        useWarMapSettingsStore.getState().hydrateFromRemote(settings);
       } else {
         const legacyWarMapState = readLegacyZustandPersistState(
           LEGACY_STORAGE_KEY_WAR_MAP_SETTINGS,
@@ -585,9 +594,7 @@ export function UserUiSettingsSync() {
             legacyWarMapState,
             warMapUrlSearch,
           );
-          useWarMapSettingsStore
-            .getState()
-            .hydrateFromRemote(settings);
+          useWarMapSettingsStore.getState().hydrateFromRemote(settings);
         }
       }
     } finally {
@@ -607,18 +614,23 @@ export function UserUiSettingsSync() {
         try {
           if (smResult.status === "fulfilled") {
             const data = smResult.value.data;
-            const remoteHasLayout = Boolean(data) && data.layout !== null;
+            const remoteLayoutPayload =
+              Boolean(data) && data?.layout
+                ? normalizeSituationMonitorLayoutPayload(data.layout)
+                : null;
+            const remoteHasLayout =
+              hasSituationMonitorLayoutGeometry(remoteLayoutPayload);
             const remoteHasSettings = Boolean(data) && data.settings !== null;
 
             const remoteLayoutFingerprint =
-              remoteHasLayout && data?.layout
-                ? fingerprintSituationMonitorLayout(data.layout)
+              remoteHasLayout && remoteLayoutPayload
+                ? fingerprintSituationMonitorLayout(remoteLayoutPayload)
                 : "";
             const layoutRepaired =
-              remoteHasLayout && data?.layout
+              remoteHasLayout && remoteLayoutPayload
                 ? useSituationMonitorLayoutStore
                     .getState()
-                    .hydrateFromRemote(data.layout)
+                    .hydrateFromRemote(remoteLayoutPayload)
                 : false;
             if (remoteHasSettings && data?.settings) {
               useSituationMonitorSettingsStore
@@ -626,21 +638,8 @@ export function UserUiSettingsSync() {
                 .hydrateFromRemote(data.settings);
             }
 
-            const currentLayout = {
-              layouts: useSituationMonitorLayoutStore.getState().layouts,
-              visibility: useSituationMonitorLayoutStore.getState().visibility,
-            };
-            const currentSettings = {
-              windowHours:
-                useSituationMonitorSettingsStore.getState().windowHours,
-              scope: useSituationMonitorSettingsStore.getState().scope,
-              autoRefresh:
-                useSituationMonitorSettingsStore.getState().autoRefresh,
-              resetLayoutOnPreset:
-                useSituationMonitorSettingsStore.getState().resetLayoutOnPreset,
-              translateToZh:
-                useSituationMonitorSettingsStore.getState().translateToZh,
-            };
+            const currentLayout = readSituationMonitorLayoutPayload();
+            const currentSettings = readSituationMonitorSettingsPayload();
 
             const currentLayoutFingerprint =
               fingerprintSituationMonitorLayout(currentLayout);
@@ -739,9 +738,7 @@ export function UserUiSettingsSync() {
                 data.settings,
                 warMapUrlSearch,
               );
-              useWarMapSettingsStore
-                .getState()
-                .hydrateFromRemote(settings);
+              useWarMapSettingsStore.getState().hydrateFromRemote(settings);
             }
 
             const currentState = useWarMapSettingsStore.getState();
@@ -906,6 +903,27 @@ export function UserUiSettingsSync() {
       cancelled = true;
     };
   }, [accessToken, apiClient, orgId, queryClient, userId]);
+
+  useEffect(() => {
+    if (
+      !ready.situationMonitor ||
+      !accessToken ||
+      !orgId ||
+      !userId ||
+      hydratingRef.current
+    ) {
+      return;
+    }
+
+    writeSituationMonitorCache(orgId, userId);
+  }, [
+    accessToken,
+    layoutFingerprint,
+    orgId,
+    ready.situationMonitor,
+    settingsFingerprint,
+    userId,
+  ]);
 
   useEffect(() => {
     if (

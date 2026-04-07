@@ -91,6 +91,7 @@ import {
   GRID_BREAKPOINTS,
   GRID_COLS,
   GRID_LAYOUT_METRICS,
+  stabilizeDesktopDragLayout,
   type GridBreakpoint,
 } from "./utils/layout-grid";
 import {
@@ -3494,6 +3495,7 @@ export function SituationMonitorContent() {
   const [gridBreakpoint, setGridBreakpoint] = useState<GridBreakpoint>(
     inferredGridBreakpoint,
   );
+  const [desktopLayoutEdit, setDesktopLayoutEdit] = useState(false);
 
   useEffect(() => {
     setGridBreakpoint(inferredGridBreakpoint);
@@ -3511,6 +3513,12 @@ export function SituationMonitorContent() {
     }
   }, [isCompactGrid]);
 
+  useEffect(() => {
+    if (isCompactGrid) {
+      setDesktopLayoutEdit(false);
+    }
+  }, [isCompactGrid]);
+
   const handleGridBreakpointChange = useCallback((next: string) => {
     if (next in GRID_COLS) {
       const breakpoint = next as GridBreakpoint;
@@ -3518,7 +3526,14 @@ export function SituationMonitorContent() {
     }
   }, []);
 
-  const canEditLayout = !isCompactGrid || compactLayoutEdit;
+  const canEditLayout = isCompactGrid ? compactLayoutEdit : desktopLayoutEdit;
+  const toggleLayoutEdit = useCallback(() => {
+    if (isCompactGrid) {
+      setCompactLayoutEdit((prev) => !prev);
+      return;
+    }
+    setDesktopLayoutEdit((prev) => !prev);
+  }, [isCompactGrid]);
 
   const gridMetrics = GRID_LAYOUT_METRICS[gridBreakpoint];
   const gridMargin = gridMetrics.margin;
@@ -3554,28 +3569,44 @@ export function SituationMonitorContent() {
   );
 
   const handleLayoutChange = useCallback(
-    (nextLayout: Layout[]) => {
+    (nextLayout: Layout[], options?: { source?: "drag" | "resize" }) => {
       const currentLayout =
         resolvedLayouts[gridBreakpoint] ?? resolvedLayouts.lg;
-      setLayout(mergePanelLayouts(currentLayout, nextLayout), gridBreakpoint);
+      const currentVisibleLayout = filterVisibleLayoutItems(
+        currentLayout,
+        visibility,
+      );
+      const nextVisibleLayout = mergePanelLayouts(
+        currentVisibleLayout,
+        nextLayout,
+      );
+      const stabilizedVisibleLayout =
+        options?.source === "drag" && gridBreakpoint === "lg"
+          ? stabilizeDesktopDragLayout(currentVisibleLayout, nextVisibleLayout)
+          : nextVisibleLayout;
+
+      setLayout(
+        mergePanelLayouts(currentLayout, stabilizedVisibleLayout),
+        gridBreakpoint,
+      );
     },
-    [gridBreakpoint, resolvedLayouts, setLayout],
+    [gridBreakpoint, resolvedLayouts, setLayout, visibility],
   );
 
-  const layoutHint = isCompactGrid
-    ? canEditLayout
-      ? t("situationMonitor.panels.hint", {
-          defaultValue:
-            "Drag cards by their headers and use the corner handle to resize them.",
-        })
-      : t("situationMonitor.panels.hintCompact", {
-          defaultValue:
-            "Enable Edit layout on smaller screens before dragging or resizing cards.",
-        })
-    : t("situationMonitor.panels.hint", {
+  const layoutHint = canEditLayout
+    ? t("situationMonitor.panels.hint", {
         defaultValue:
           "Drag cards by their headers and use the corner handle to resize them.",
-      });
+      })
+    : isCompactGrid
+      ? t("situationMonitor.panels.hintCompact", {
+          defaultValue:
+            "Enable Customize layout on smaller screens before dragging or resizing cards.",
+        })
+      : t("situationMonitor.panels.hintDesktop", {
+          defaultValue:
+            "Click Customize layout to resize, reorder, and emphasize the cards you care about.",
+        });
 
   const gridClassName = [
     "layout",
@@ -4247,6 +4278,195 @@ export function SituationMonitorContent() {
       </Card>
     );
   };
+
+  const renderSummaryPanel = () => (
+    <Card
+      size="small"
+      title={t("situationMonitor.summary.title", {
+        defaultValue: "Summary",
+      })}
+      className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      loading={initialLoading}
+    >
+      <Space direction="vertical" size={6} style={{ width: "100%" }}>
+        <Space wrap size={8}>
+          <Tag color="geekblue">
+            {t("situationMonitor.summary.articles", {
+              defaultValue: "ARTICLES {{count}}",
+              count: coverageSummary?.articleCount ?? data?.analyzedItems ?? 0,
+            })}
+          </Tag>
+          <Tag color="cyan">
+            {t("situationMonitor.summary.clusters", {
+              defaultValue: "CLUSTERS {{count}}",
+              count: coverageSummary?.clusterCount ?? 0,
+            })}
+          </Tag>
+          <Tag color="blue">
+            {t("situationMonitor.summary.internal", {
+              defaultValue: "INT {{count}}",
+              count: coverageSummary?.internalAnalyzedItems ?? 0,
+            })}
+          </Tag>
+          <Tag color="purple">
+            {t("situationMonitor.summary.external", {
+              defaultValue: "EXT {{count}}",
+              count: coverageSummary?.externalAnalyzedItems ?? 0,
+            })}
+          </Tag>
+          <Tag color="green">
+            {t("situationMonitor.summary.mixedClusters", {
+              defaultValue: "MIXED {{count}}",
+              count: coverageSummary?.mixedSourceClusterCount ?? 0,
+            })}
+          </Tag>
+        </Space>
+        <Space wrap size={8}>
+          <Tag color="default">{formatWindowCompactLabel(windowHours)}</Tag>
+          <Tag color={getCoverageModeColor(coverageSummary?.mode ?? "empty")}>
+            {getCoverageModeLabel(coverageSummary?.mode ?? "empty")}
+          </Tag>
+        </Space>
+        <Typography.Text type="secondary">
+          {t("situationMonitor.summary.caption", {
+            defaultValue:
+              "Internal items remain workspace-specific. External snapshot coverage is shared and server-generated.",
+          })}
+        </Typography.Text>
+      </Space>
+    </Card>
+  );
+
+  const renderCoveragePanel = () => (
+    <Card
+      size="small"
+      title={t("situationMonitor.coverage.title", {
+        defaultValue: "Coverage",
+      })}
+      className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      loading={initialLoading}
+    >
+      <Space direction="vertical" size={6} style={{ width: "100%" }}>
+        <Space wrap size={8}>
+          <Tag
+            color={getExternalSnapshotStatusColor(
+              data?.externalSnapshot?.status ?? "idle",
+            )}
+          >
+            {getExternalSnapshotStatusLabel(
+              data?.externalSnapshot?.status ?? "idle",
+            )}
+          </Tag>
+          {data?.externalSnapshot?.stale ? (
+            <Tag color="volcano">
+              {t("situationMonitor.snapshot.stale", {
+                defaultValue: "STALE",
+              })}
+            </Tag>
+          ) : null}
+          {freshSnapshotCategoryCount > 0 ? (
+            <Tag color="green">
+              {t("situationMonitor.snapshot.freshCategories", {
+                defaultValue: "FRESH {{count}}",
+                count: freshSnapshotCategoryCount,
+              })}
+            </Tag>
+          ) : null}
+          {reusedSnapshotCategoryCount > 0 ? (
+            <Tag color="gold">
+              {t("situationMonitor.snapshot.reusedCategories", {
+                defaultValue: "REUSED {{count}}",
+                count: reusedSnapshotCategoryCount,
+              })}
+            </Tag>
+          ) : null}
+        </Space>
+        <Typography.Text type="secondary">
+          {t("situationMonitor.coverage.visibleCategories", {
+            defaultValue:
+              "{{count}} / 6 categories currently have visible coverage.",
+            count: coverageSummary?.visibleCategoryCount ?? 0,
+          })}
+        </Typography.Text>
+        <Typography.Text type="secondary">
+          {t("situationMonitor.coverage.quality", {
+            defaultValue:
+              "Dedupe {{dedupe}}. Avg sources / cluster {{sources}}.",
+            dedupe:
+              coverageSummary?.dedupeRatio !== null &&
+              coverageSummary?.dedupeRatio !== undefined
+                ? `${(coverageSummary.dedupeRatio * 100).toFixed(1)}%`
+                : "--",
+            sources:
+              coverageSummary?.avgSourcesPerCluster !== null &&
+              coverageSummary?.avgSourcesPerCluster !== undefined
+                ? coverageSummary.avgSourcesPerCluster.toFixed(1)
+                : "--",
+          })}
+        </Typography.Text>
+        <Typography.Text type="secondary">
+          {t("situationMonitor.coverage.generatedAt", {
+            defaultValue: "Last snapshot: {{time}}",
+            time: data?.externalSnapshot?.generatedAt
+              ? formatDateTime(data.externalSnapshot.generatedAt, locale, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })
+              : "--",
+          })}
+        </Typography.Text>
+        <Typography.Text type="secondary">
+          {t("situationMonitor.coverage.missingCategories", {
+            defaultValue: "Missing: {{categories}}",
+            categories: coverageSummary?.missingCategories.length
+              ? coverageSummary.missingCategories
+                  .map((category) => categoryLabels[category])
+                  .join(", ")
+              : t("situationMonitor.coverage.noneMissing", {
+                  defaultValue: "none",
+                }),
+          })}
+        </Typography.Text>
+      </Space>
+    </Card>
+  );
+
+  const renderNextActionsPanel = () => (
+    <Card
+      size="small"
+      title={t("situationMonitor.actions.title", {
+        defaultValue: "Next actions",
+      })}
+      className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      loading={initialLoading}
+    >
+      <Space direction="vertical" size={8} style={{ width: "100%" }}>
+        {recommendedWindowHours ? (
+          <Alert
+            type="info"
+            showIcon
+            message={t("situationMonitor.actions.recommendedWindow", {
+              defaultValue:
+                "Current results are thin. Expand to {{window}} for broader context.",
+              window: formatWindowOptionLabel(recommendedWindowHours),
+            })}
+          />
+        ) : null}
+        <Space wrap>
+          {summaryActionItems.map((action) => (
+            <Button
+              key={`summary:${action.key}`}
+              type={action.type}
+              size="small"
+              onClick={action.onClick}
+            >
+              {action.label}
+            </Button>
+          ))}
+        </Space>
+      </Space>
+    </Card>
+  );
 
   const renderAlertsPanel = () => (
     <Card
@@ -5815,6 +6035,12 @@ export function SituationMonitorContent() {
 
   const renderPanel = (panelId: SituationMonitorPanelId) => {
     switch (panelId) {
+      case "summary":
+        return renderSummaryPanel();
+      case "coverage":
+        return renderCoveragePanel();
+      case "next-actions":
+        return renderNextActionsPanel();
       case "map":
         return renderMapPanel();
       case "realtime-snapshot":
@@ -6014,19 +6240,17 @@ export function SituationMonitorContent() {
               })}
             </Button>
           </Popover>
-          {isCompactGrid ? (
-            <Button
-              type={canEditLayout ? "primary" : "default"}
-              icon={<DragOutlined />}
-              onClick={() => setCompactLayoutEdit((prev) => !prev)}
-            >
-              {canEditLayout
-                ? t("situationMonitor.layout.done", { defaultValue: "Done" })
-                : t("situationMonitor.layout.edit", {
-                    defaultValue: "Edit layout",
-                  })}
-            </Button>
-          ) : null}
+          <Button
+            type={canEditLayout ? "primary" : "default"}
+            icon={<DragOutlined />}
+            onClick={toggleLayoutEdit}
+          >
+            {canEditLayout
+              ? t("situationMonitor.layout.done", { defaultValue: "Done" })
+              : t("situationMonitor.layout.edit", {
+                  defaultValue: "Customize layout",
+                })}
+          </Button>
           {session?.accessToken ? (
             <Space size={6} align="center">
               {uiSync.state === "error" ? (
@@ -6156,202 +6380,6 @@ export function SituationMonitorContent() {
             </Typography.Text>
           ) : null}
         </Space>
-
-        <Row gutter={[12, 12]}>
-          <Col xs={24} lg={8}>
-            <Card
-              size="small"
-              title={t("situationMonitor.summary.title", {
-                defaultValue: "Summary",
-              })}
-            >
-              <Space direction="vertical" size={6} style={{ width: "100%" }}>
-                <Space wrap size={8}>
-                  <Tag color="geekblue">
-                    {t("situationMonitor.summary.articles", {
-                      defaultValue: "ARTICLES {{count}}",
-                      count:
-                        coverageSummary?.articleCount ??
-                        data?.analyzedItems ??
-                        0,
-                    })}
-                  </Tag>
-                  <Tag color="cyan">
-                    {t("situationMonitor.summary.clusters", {
-                      defaultValue: "CLUSTERS {{count}}",
-                      count: coverageSummary?.clusterCount ?? 0,
-                    })}
-                  </Tag>
-                  <Tag color="blue">
-                    {t("situationMonitor.summary.internal", {
-                      defaultValue: "INT {{count}}",
-                      count: coverageSummary?.internalAnalyzedItems ?? 0,
-                    })}
-                  </Tag>
-                  <Tag color="purple">
-                    {t("situationMonitor.summary.external", {
-                      defaultValue: "EXT {{count}}",
-                      count: coverageSummary?.externalAnalyzedItems ?? 0,
-                    })}
-                  </Tag>
-                  <Tag color="green">
-                    {t("situationMonitor.summary.mixedClusters", {
-                      defaultValue: "MIXED {{count}}",
-                      count: coverageSummary?.mixedSourceClusterCount ?? 0,
-                    })}
-                  </Tag>
-                </Space>
-                <Space wrap size={8}>
-                  <Tag color="default">
-                    {formatWindowCompactLabel(windowHours)}
-                  </Tag>
-                  <Tag
-                    color={getCoverageModeColor(
-                      coverageSummary?.mode ?? "empty",
-                    )}
-                  >
-                    {getCoverageModeLabel(coverageSummary?.mode ?? "empty")}
-                  </Tag>
-                </Space>
-                <Typography.Text type="secondary">
-                  {t("situationMonitor.summary.caption", {
-                    defaultValue:
-                      "Internal items remain workspace-specific. External snapshot coverage is shared and server-generated.",
-                  })}
-                </Typography.Text>
-              </Space>
-            </Card>
-          </Col>
-          <Col xs={24} lg={8}>
-            <Card
-              size="small"
-              title={t("situationMonitor.coverage.title", {
-                defaultValue: "Coverage",
-              })}
-            >
-              <Space direction="vertical" size={6} style={{ width: "100%" }}>
-                <Space wrap size={8}>
-                  <Tag
-                    color={getExternalSnapshotStatusColor(
-                      data?.externalSnapshot?.status ?? "idle",
-                    )}
-                  >
-                    {getExternalSnapshotStatusLabel(
-                      data?.externalSnapshot?.status ?? "idle",
-                    )}
-                  </Tag>
-                  {data?.externalSnapshot?.stale ? (
-                    <Tag color="volcano">
-                      {t("situationMonitor.snapshot.stale", {
-                        defaultValue: "STALE",
-                      })}
-                    </Tag>
-                  ) : null}
-                  {freshSnapshotCategoryCount > 0 ? (
-                    <Tag color="green">
-                      {t("situationMonitor.snapshot.freshCategories", {
-                        defaultValue: "FRESH {{count}}",
-                        count: freshSnapshotCategoryCount,
-                      })}
-                    </Tag>
-                  ) : null}
-                  {reusedSnapshotCategoryCount > 0 ? (
-                    <Tag color="gold">
-                      {t("situationMonitor.snapshot.reusedCategories", {
-                        defaultValue: "REUSED {{count}}",
-                        count: reusedSnapshotCategoryCount,
-                      })}
-                    </Tag>
-                  ) : null}
-                </Space>
-                <Typography.Text type="secondary">
-                  {t("situationMonitor.coverage.visibleCategories", {
-                    defaultValue:
-                      "{{count}} / 6 categories currently have visible coverage.",
-                    count: coverageSummary?.visibleCategoryCount ?? 0,
-                  })}
-                </Typography.Text>
-                <Typography.Text type="secondary">
-                  {t("situationMonitor.coverage.quality", {
-                    defaultValue:
-                      "Dedupe {{dedupe}}. Avg sources / cluster {{sources}}.",
-                    dedupe:
-                      coverageSummary?.dedupeRatio !== null &&
-                      coverageSummary?.dedupeRatio !== undefined
-                        ? `${(coverageSummary.dedupeRatio * 100).toFixed(1)}%`
-                        : "--",
-                    sources:
-                      coverageSummary?.avgSourcesPerCluster !== null &&
-                      coverageSummary?.avgSourcesPerCluster !== undefined
-                        ? coverageSummary.avgSourcesPerCluster.toFixed(1)
-                        : "--",
-                  })}
-                </Typography.Text>
-                <Typography.Text type="secondary">
-                  {t("situationMonitor.coverage.generatedAt", {
-                    defaultValue: "Last snapshot: {{time}}",
-                    time: data?.externalSnapshot?.generatedAt
-                      ? formatDateTime(
-                          data.externalSnapshot.generatedAt,
-                          locale,
-                          {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          },
-                        )
-                      : "--",
-                  })}
-                </Typography.Text>
-                <Typography.Text type="secondary">
-                  {t("situationMonitor.coverage.missingCategories", {
-                    defaultValue: "Missing: {{categories}}",
-                    categories: coverageSummary?.missingCategories.length
-                      ? coverageSummary.missingCategories
-                          .map((category) => categoryLabels[category])
-                          .join(", ")
-                      : t("situationMonitor.coverage.noneMissing", {
-                          defaultValue: "none",
-                        }),
-                  })}
-                </Typography.Text>
-              </Space>
-            </Card>
-          </Col>
-          <Col xs={24} lg={8}>
-            <Card
-              size="small"
-              title={t("situationMonitor.actions.title", {
-                defaultValue: "Next actions",
-              })}
-            >
-              <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                {recommendedWindowHours ? (
-                  <Alert
-                    type="info"
-                    showIcon
-                    message={t("situationMonitor.actions.recommendedWindow", {
-                      defaultValue:
-                        "Current results are thin. Expand to {{window}} for broader context.",
-                      window: formatWindowOptionLabel(recommendedWindowHours),
-                    })}
-                  />
-                ) : null}
-                <Space wrap>
-                  {summaryActionItems.map((action) => (
-                    <Button
-                      key={`summary:${action.key}`}
-                      type={action.type}
-                      size="small"
-                      onClick={action.onClick}
-                    >
-                      {action.label}
-                    </Button>
-                  ))}
-                </Space>
-              </Space>
-            </Card>
-          </Col>
-        </Row>
       </div>
 
       {insightsWarnings.map((warning) => (
@@ -6502,12 +6530,12 @@ export function SituationMonitorContent() {
               block
               type={canEditLayout ? "primary" : "default"}
               icon={<DragOutlined />}
-              onClick={() => setCompactLayoutEdit((prev) => !prev)}
+              onClick={toggleLayoutEdit}
             >
               {canEditLayout
                 ? t("situationMonitor.layout.done", { defaultValue: "Done" })
                 : t("situationMonitor.layout.edit", {
-                    defaultValue: "Edit layout",
+                    defaultValue: "Customize layout",
                   })}
             </Button>
           ) : null}
@@ -6816,6 +6844,17 @@ export function SituationMonitorContent() {
         </Space>
       </Drawer>
 
+      {canEditLayout ? (
+        <Alert
+          type="info"
+          showIcon
+          message={t("situationMonitor.layout.editing", {
+            defaultValue: "Layout editing is on",
+          })}
+          description={layoutHint}
+        />
+      ) : null}
+
       {visiblePanels.length === 0 ? (
         <Alert
           type="info"
@@ -6833,6 +6872,8 @@ export function SituationMonitorContent() {
           rowHeight={gridMetrics.rowHeight}
           isResizable={canEditLayout}
           isDraggable={canEditLayout}
+          resizeHandles={["se"]}
+          compactType="vertical"
           margin={gridMargin}
           draggableHandle=".ant-card-head"
           draggableCancel={`${SITUATION_MONITOR_INTERACTIVE_SELECTOR},.ant-btn,.ant-select,.ant-select-selector,.ant-switch,a,button,input,textarea,[role='button']`}
@@ -6840,10 +6881,10 @@ export function SituationMonitorContent() {
             handleGridBreakpointChange(nextBreakpoint)
           }
           onDragStop={(nextLayout: Layout[]) => {
-            handleLayoutChange(nextLayout);
+            handleLayoutChange(nextLayout, { source: "drag" });
           }}
           onResizeStop={(nextLayout: Layout[]) => {
-            handleLayoutChange(nextLayout);
+            handleLayoutChange(nextLayout, { source: "resize" });
           }}
         >
           {visiblePanels.map((panel) => (

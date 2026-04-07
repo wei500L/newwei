@@ -48,7 +48,10 @@ describe("UserSettingsService", () => {
   });
 
   it("returns null payload when no situation monitor records exist", async () => {
-    const response = await service.getSituationMonitorUiSettings("org-1", "user-1");
+    const response = await service.getSituationMonitorUiSettings(
+      "org-1",
+      "user-1",
+    );
     expect(response.monitors).toBeNull();
     expect(response.layout).toBeNull();
     expect(response.settings).toBeNull();
@@ -56,33 +59,96 @@ describe("UserSettingsService", () => {
   });
 
   it("normalizes and stores situation monitor monitors", async () => {
-    const response = await service.updateSituationMonitorUiSettings("org-1", "user-1", {
-      monitors: [
-        {
-          name: " Supply chain disruption ",
-          keywords: ["tariff", "Tariff", "logistics, port"],
-          enabled: true,
-          color: "#FFF",
-          createdAt: 123,
-        },
-        { name: "", keywords: ["ignored"] },
-        { name: "Missing keywords", keywords: [] },
-      ],
-    });
+    const response = await service.updateSituationMonitorUiSettings(
+      "org-1",
+      "user-1",
+      {
+        monitors: [
+          {
+            name: " Supply chain disruption ",
+            keywords: ["tariff", "Tariff", "logistics, port"],
+            enabled: true,
+            color: "#FFF",
+            createdAt: 123,
+          },
+          { name: "", keywords: ["ignored"] },
+          { name: "Missing keywords", keywords: [] },
+        ],
+      },
+    );
 
     expect(response.monitors?.length).toBe(1);
     expect(response.monitors?.[0]?.name).toBe("Supply chain disruption");
-    expect(response.monitors?.[0]?.keywords).toEqual(["tariff", "Tariff", "logistics", "port"]);
+    expect(response.monitors?.[0]?.keywords).toEqual([
+      "tariff",
+      "Tariff",
+      "logistics",
+      "port",
+    ]);
     expect(response.monitors?.[0]?.enabled).toBe(true);
     expect(response.monitors?.[0]?.color).toBe("#fff");
   });
 
-  it("defaults situation monitor settings scope to all when missing", async () => {
-    const response = await service.updateSituationMonitorUiSettings("org-1", "user-1", {
-      settings: {
-        windowHours: 24,
+  it("normalizes responsive situation monitor layouts and preserves compact breakpoints", async () => {
+    const response = await service.updateSituationMonitorUiSettings(
+      "org-1",
+      "user-1",
+      {
+        layout: {
+          layouts: {
+            lg: [{ i: "map", x: 0, y: 4, w: 8, h: 11, minW: 6, minH: 8 }],
+            sm: [{ i: "map", x: 0, y: 0, w: 6, h: 9, minW: 3, minH: 7 }],
+          },
+          visibility: {
+            map: true,
+            summary: true,
+          },
+        },
+      },
+    );
+
+    expect(response.layout).toEqual({
+      layouts: {
+        lg: [{ i: "map", x: 0, y: 4, w: 8, h: 11, minW: 6, minH: 8 }],
+        sm: [{ i: "map", x: 0, y: 0, w: 6, h: 9, minW: 3, minH: 7 }],
+      },
+      visibility: {
+        map: true,
+        summary: true,
       },
     });
+  });
+
+  it("migrates legacy situation monitor layouts into the lg breakpoint", async () => {
+    const response = await service.updateSituationMonitorUiSettings(
+      "org-1",
+      "user-1",
+      {
+        layout: {
+          layout: [{ i: "alerts", x: 0, y: 0, w: 4, h: 8 }],
+          visibility: { alerts: false },
+        },
+      },
+    );
+
+    expect(response.layout).toEqual({
+      layouts: {
+        lg: [{ i: "alerts", x: 0, y: 0, w: 4, h: 8 }],
+      },
+      visibility: { alerts: false },
+    });
+  });
+
+  it("defaults situation monitor settings scope to all when missing", async () => {
+    const response = await service.updateSituationMonitorUiSettings(
+      "org-1",
+      "user-1",
+      {
+        settings: {
+          windowHours: 24,
+        },
+      },
+    );
 
     expect(response.settings).toEqual({
       windowHours: 24,
@@ -94,15 +160,19 @@ describe("UserSettingsService", () => {
   });
 
   it("normalizes invalid situation monitor scope to all and preserves tagged", async () => {
-    const invalidResponse = await service.updateSituationMonitorUiSettings("org-1", "user-1", {
-      settings: {
-        windowHours: 6,
-        scope: "unexpected",
-        autoRefresh: false,
-        resetLayoutOnPreset: true,
-        translateToZh: true,
+    const invalidResponse = await service.updateSituationMonitorUiSettings(
+      "org-1",
+      "user-1",
+      {
+        settings: {
+          windowHours: 6,
+          scope: "unexpected",
+          autoRefresh: false,
+          resetLayoutOnPreset: true,
+          translateToZh: true,
+        },
       },
-    });
+    );
 
     expect(invalidResponse.settings).toEqual({
       windowHours: 6,
@@ -112,11 +182,15 @@ describe("UserSettingsService", () => {
       translateToZh: true,
     });
 
-    const taggedResponse = await service.updateSituationMonitorUiSettings("org-1", "user-1", {
-      settings: {
-        scope: "tagged",
+    const taggedResponse = await service.updateSituationMonitorUiSettings(
+      "org-1",
+      "user-1",
+      {
+        settings: {
+          scope: "tagged",
+        },
       },
-    });
+    );
 
     expect(taggedResponse.settings?.scope).toBe("tagged");
   });
@@ -187,7 +261,7 @@ describe("UserSettingsService", () => {
       hottest: ["weibo", "hackernews"],
     });
     expect(response.settings?.hideCrossSourceDuplicates).toBe(true);
-    expect(response.settings?.sortMode).toBe("smart");
+    expect(response.settings?.sortMode).toBe("personalized");
     expect(response.settings?.sourceAffinity.weibo?.score).toBe(100);
     expect(response.settings?.sourceAffinity.weibo?.openOriginalCount).toBe(3);
     expect(response.settings?.sourceAffinity).not.toHaveProperty("bad source");
@@ -200,16 +274,20 @@ describe("UserSettingsService", () => {
   });
 
   it("normalizes and persists rss reader settings", async () => {
-    const response = await service.updateRssReaderUiSettings("org-1", "user-1", {
-      settings: {
-        selectedSourceIds: [" source-a ", "source-a", "source-b"],
-        sourceLanguageFilters: [" en ", "zh-cn", "EN"],
-        translationEnabled: 1,
-        translationProvider: "llm",
-        targetLanguage: " en ",
-        showOriginalContent: true,
+    const response = await service.updateRssReaderUiSettings(
+      "org-1",
+      "user-1",
+      {
+        settings: {
+          selectedSourceIds: [" source-a ", "source-a", "source-b"],
+          sourceLanguageFilters: [" en ", "zh-cn", "EN"],
+          translationEnabled: 1,
+          translationProvider: "llm",
+          targetLanguage: " en ",
+          showOriginalContent: true,
+        },
       },
-    });
+    );
 
     expect(response.settings).toEqual({
       selectedSourceIds: ["source-a", "source-b"],

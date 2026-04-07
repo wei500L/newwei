@@ -4,6 +4,7 @@ import {
   buildPackedResponsiveLayout,
   GRID_COLS,
   projectLayoutToLg,
+  stabilizeDesktopDragLayout,
 } from "../app/(app)/situation-monitor/utils/layout-grid";
 import { SITUATION_MONITOR_PANELS } from "../store/situation-monitor-layout";
 
@@ -16,6 +17,20 @@ function getDefaultLayout(id: string) {
 }
 
 describe("situation monitor responsive layout helpers", () => {
+  it("keeps overview and feed cards in a compact multi-column layout on md", () => {
+    const layout = [
+      getDefaultLayout("summary"),
+      getDefaultLayout("coverage"),
+      getDefaultLayout("feeds-politics"),
+    ];
+
+    const mdLayout = buildPackedResponsiveLayout(layout, "md");
+
+    expect(mdLayout[0]?.w).toBe(5);
+    expect(mdLayout[1]?.w).toBe(5);
+    expect(mdLayout[2]?.w).toBe(5);
+  });
+
   it("stacks default small-screen cards full width with tighter heights", () => {
     const layout = [
       getDefaultLayout("map"),
@@ -68,5 +83,31 @@ describe("situation monitor responsive layout helpers", () => {
 
     expect(politics?.w).toBe(GRID_COLS.xxs);
     expect(politics?.minW).toBe(1);
+  });
+
+  it("stabilizes desktop drag swaps without cascading unrelated cards downward", () => {
+    const previousLayout = [
+      getDefaultLayout("summary"),
+      getDefaultLayout("coverage"),
+      getDefaultLayout("next-actions"),
+      getDefaultLayout("map"),
+      getDefaultLayout("realtime-snapshot"),
+    ];
+    const nextLayout = [
+      { ...getDefaultLayout("summary"), x: 8, y: 0 },
+      getDefaultLayout("coverage"),
+      { ...getDefaultLayout("next-actions"), x: 8, y: 4 },
+      getDefaultLayout("map"),
+      { ...getDefaultLayout("realtime-snapshot"), x: 8, y: 8 },
+    ];
+
+    const stabilized = stabilizeDesktopDragLayout(previousLayout, nextLayout);
+    const nextActions = stabilized.find((item) => item.i === "next-actions");
+    const snapshot = stabilized.find((item) => item.i === "realtime-snapshot");
+
+    expect(nextActions?.x).toBe(0);
+    expect(nextActions?.y).toBe(0);
+    expect(snapshot?.x).toBe(8);
+    expect(snapshot?.y).toBe(4);
   });
 });
