@@ -212,6 +212,7 @@ export function WarMapOverlayRail({
               type="default"
               className={resolveOverlayButtonClassName({
                 iconOnly: !showActionLabels,
+                extraClassName: useDrawerControls ? "!h-10 !min-w-10" : undefined,
               })}
               icon={<ReloadOutlined />}
               loading={refreshingMapData}
@@ -232,6 +233,7 @@ export function WarMapOverlayRail({
                 className={resolveOverlayButtonClassName({
                   tone: controlsActive ? "active" : "neutral",
                   iconOnly: !showActionLabels,
+                  extraClassName: useDrawerControls ? "!h-10 !min-w-10" : undefined,
                 })}
                 icon={<SettingOutlined />}
                 aria-label={controlsLabel}
@@ -254,6 +256,7 @@ export function WarMapOverlayRail({
                       ? "active"
                       : "neutral",
                   iconOnly: !showActionLabels,
+                  extraClassName: useDrawerControls ? "!h-10 !min-w-10" : undefined,
                 })}
                 icon={<InfoCircleOutlined />}
                 aria-label={legendLabel}

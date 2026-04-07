@@ -355,6 +355,8 @@ describe("war-map page wiring", () => {
     expect(controlsSource).toContain("transport.aisViewportEmptyStateActive");
     expect(controlsSource).toContain("transport.aisViewportEmptyStateHint");
     expect(controlsSource).toContain("dashboard.charts.warMap.legend.aisTitle");
+    expect(source).toContain('className="grid gap-3 sm:grid-cols-2"');
+    expect(source).toContain("!min-h-[42px] !w-full !items-center rounded-xl");
   });
 
   it("suppresses map chrome behind fatal overlays while keeping nonfatal retry banners", () => {
@@ -431,6 +433,13 @@ describe("war-map page wiring", () => {
       "legend={{ showAisLegend: layerVisibility.ais }}",
     );
     expect(source).toContain('current === "controls" ? null : "controls"');
+    expect(source).toContain('placement="bottom"');
+    expect(source).toContain(
+      'const mobileControlsDrawerHeight = `min(${overlayLayout.controlsDrawerHeight}px, calc(100dvh - 72px))`;',
+    );
+    expect(source).toContain("height={mobileControlsDrawerHeight}");
+    expect(source).toContain("closable={false}");
+    expect(source).not.toContain('placement="right"');
     expect(source).toContain("resolveWarMapContainerClassName(className)");
   });
 
@@ -453,14 +462,17 @@ describe("war-map page wiring", () => {
     expect(overlayModelSource).toContain("dark:hover:bg-slate-950/[0.82]");
     expect(overlayModelSource).toContain("resolveOverlayButtonClassName");
     expect(overlayModelSource).toContain("OVERLAY_STATUS_TAG_CLASS_NAME");
-    expect(controlsSource).toContain("bg-white/[0.85]");
+    expect(controlsSource).toContain("bg-white/[0.88]");
     expect(controlsSource).toContain("dark:bg-slate-900/70");
-    expect(controlsSource).toContain("OVERLAY_BUTTON_GROUP_CLASS_NAME");
+    expect(controlsSource).toContain("ControlsChoiceButton");
+    expect(controlsSource).toContain("OVERLAY_PANEL_OPTION_GRID_CLASS_NAME");
+    expect(controlsSource).toContain("OVERLAY_PANEL_TAB_GRID_CLASS_NAME");
     expect(controlsSource).toContain("resolveOverlayButtonClassName({");
     expect(controlsSource).toContain("ControlsHeaderSummary");
     expect(controlsSource).toContain("renderControlsTabLabel");
     expect(controlsSource).toContain("ResizeObserver");
     expect(controlsSource).toContain("transport.onOpenLegend");
+    expect(controlsSource).toContain("overscroll-contain");
     expect(controlsSource).not.toContain("legend.showAisLegend");
     expect(controlsSource).not.toContain("overlayPanelMaxHeight - 108");
     expect(railSource).toContain("dark:bg-slate-950/[0.78]");

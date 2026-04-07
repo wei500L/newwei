@@ -4112,7 +4112,7 @@ export function WarMap({
     [t, timeRangePreset],
   );
   const layerVisibilityControls = (
-    <div className="grid gap-2 sm:grid-cols-2">
+    <div className="grid gap-3 sm:grid-cols-2">
       {DISPLAYABLE_WAR_MAP_LAYER_IDS.map((layerId) => {
         const disabled =
           layerId === "monitors" ? monitorPoints.length === 0 : false;
@@ -4121,13 +4121,20 @@ export function WarMap({
             key={layerId}
             checked={layerVisibility[layerId]}
             disabled={disabled}
+            className={`!m-0 !inline-flex !min-h-[42px] !w-full !items-center rounded-xl border !px-3 !py-2 transition ${
+              disabled
+                ? "border-slate-200/70 bg-slate-100/70 opacity-60 dark:border-slate-800/80 dark:bg-slate-900/60"
+                : "border-[var(--border)] bg-white/[0.78] shadow-[0_10px_24px_-22px_rgba(15,23,42,0.28)] hover:border-slate-300/85 hover:bg-white dark:bg-slate-950/[0.62] dark:hover:border-slate-500/80 dark:hover:bg-slate-950/80"
+            }`}
             onChange={(event) => {
               setLayerVisible(layerId, event.target.checked);
             }}
           >
-            {t(`dashboard.charts.warMap.layerNames.${layerId}`, {
-              defaultValue: toLayerLabel(layerId),
-            })}
+            <span className="text-sm font-medium leading-5 text-slate-800 dark:text-slate-100">
+              {t(`dashboard.charts.warMap.layerNames.${layerId}`, {
+                defaultValue: toLayerLabel(layerId),
+              })}
+            </span>
           </Checkbox>
         );
       })}
@@ -4217,6 +4224,7 @@ export function WarMap({
         onOpenLegend: () => setControlsSection("legend"),
       }}
       onControlsSectionChange={setControlsSection}
+      onClose={() => setOpenOverlayPanel(null)}
       t={t}
     />
   );
@@ -4231,6 +4239,7 @@ export function WarMap({
       {controlsPanelContent}
     </div>
   );
+  const mobileControlsDrawerHeight = `min(${overlayLayout.controlsDrawerHeight}px, calc(100dvh - 72px))`;
 
   const containerClassName = resolveWarMapContainerClassName(className);
 
@@ -4345,13 +4354,11 @@ export function WarMap({
             <Drawer
               open={openOverlayPanel === "controls"}
               onClose={() => setOpenOverlayPanel(null)}
-              placement="right"
-              width="100%"
+              placement="bottom"
+              height={mobileControlsDrawerHeight}
+              closable={false}
               destroyOnClose={false}
-              title={
-                overlayViewModel.controlsSectionMeta[activeControlsSection]
-                  .label
-              }
+              styles={{ body: { padding: 0 } }}
             >
               {controlsPanelContent}
             </Drawer>

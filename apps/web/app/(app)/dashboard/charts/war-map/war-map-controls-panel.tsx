@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CloseOutlined,
   DatabaseOutlined,
   FundOutlined,
   GlobalOutlined,
@@ -11,7 +12,6 @@ import { Button, Space, Tag, Tooltip, Typography } from "antd";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
-  OVERLAY_BUTTON_GROUP_CLASS_NAME,
   OVERLAY_NEUTRAL_TAG_CLASS_NAME,
   OVERLAY_SECTION_TITLE_CLASS_NAME,
   OVERLAY_STATUS_TAG_CLASS_NAME,
@@ -106,14 +106,71 @@ export interface WarMapControlsPanelProps {
   view: WarMapControlsPanelViewProps;
   transport: WarMapControlsPanelTransportProps;
   onControlsSectionChange: (section: OverlayControlsSection) => void;
+  onClose?: () => void;
   t: WarMapTranslateFn;
 }
 
 const OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME =
-  "rounded-2xl border border-[var(--border)] bg-slate-50/80 px-3 py-3 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.16)] dark:bg-slate-900/70 dark:shadow-[0_16px_34px_-26px_rgba(2,6,23,0.66)]";
+  "rounded-2xl border border-[var(--border)] bg-slate-50/80 px-4 py-4 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.16)] dark:bg-slate-900/70 dark:shadow-[0_16px_34px_-26px_rgba(2,6,23,0.66)]";
 const OVERLAY_PANEL_CHIP_CLASS_NAME =
-  "inline-flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/[0.85] px-2 py-1 text-[11px] text-slate-700 shadow-[0_8px_18px_-18px_rgba(15,23,42,0.26)] transition-[border-color,background-color,color,box-shadow] duration-200 hover:border-slate-300/[0.85] hover:bg-white hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-200 dark:shadow-[0_10px_20px_-18px_rgba(2,6,23,0.7)] dark:hover:border-slate-500/80 dark:hover:bg-slate-900 dark:hover:text-slate-50";
-const OVERLAY_PANEL_LEGEND_GRID_CLASS_NAME = "mt-3 grid gap-2 sm:grid-cols-2";
+  "inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/[0.88] px-3 py-1.5 text-[12px] text-slate-700 shadow-[0_8px_18px_-18px_rgba(15,23,42,0.26)] transition-[border-color,background-color,color,box-shadow] duration-200 hover:border-slate-300/[0.85] hover:bg-white hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-200 dark:shadow-[0_10px_20px_-18px_rgba(2,6,23,0.7)] dark:hover:border-slate-500/80 dark:hover:bg-slate-900 dark:hover:text-slate-50";
+const OVERLAY_PANEL_LEGEND_GRID_CLASS_NAME = "mt-3 grid gap-3 sm:grid-cols-2";
+const OVERLAY_PANEL_STACK_CLASS_NAME = "flex w-full flex-col gap-4";
+const OVERLAY_PANEL_OPTION_GRID_CLASS_NAME = "mt-3 grid gap-3 sm:grid-cols-2";
+const OVERLAY_PANEL_TAB_GRID_CLASS_NAME = "mt-4 grid grid-cols-2 gap-2";
+const OVERLAY_PANEL_OPTION_BUTTON_CLASS_NAME =
+  "!h-auto !min-h-10 !w-full !justify-start !rounded-[16px] !px-3.5 !py-2.5 !text-left !text-[12px] !font-semibold !leading-5";
+const OVERLAY_PANEL_TAB_BUTTON_CLASS_NAME =
+  "!h-auto !min-h-[3rem] !w-full !justify-center !rounded-[18px] !px-3.5 !py-2.5 !text-center !text-[12px] !font-semibold !leading-5";
+
+function ControlsChoiceButton({
+  active,
+  children,
+  disabled = false,
+  tooltip,
+  onClick,
+  align = "start",
+}: {
+  active: boolean;
+  children: ReactNode;
+  disabled?: boolean;
+  tooltip?: ReactNode;
+  onClick: () => void;
+  align?: "start" | "center";
+}) {
+  const button = (
+    <Button
+      type="default"
+      disabled={disabled}
+      className={resolveOverlayButtonClassName({
+        tone: active ? "active" : "neutral",
+        extraClassName:
+          align === "center"
+            ? OVERLAY_PANEL_TAB_BUTTON_CLASS_NAME
+            : OVERLAY_PANEL_OPTION_BUTTON_CLASS_NAME,
+      })}
+      onClick={onClick}
+    >
+      <span
+        className={`whitespace-normal leading-5 ${
+          align === "center" ? "text-center" : "text-left"
+        }`}
+      >
+        {children}
+      </span>
+    </Button>
+  );
+
+  if (!tooltip) {
+    return button;
+  }
+
+  return (
+    <Tooltip title={tooltip}>
+      <span className="w-full">{button}</span>
+    </Tooltip>
+  );
+}
 
 function renderOverviewCardIcon(key: WarMapOverviewMetricCard["key"]) {
   switch (key) {
@@ -231,7 +288,7 @@ function renderControlsTabLabel(
         : "border-amber-200/90 bg-amber-50 text-amber-700 dark:border-amber-400/35 dark:bg-amber-400/12 dark:text-amber-200";
 
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <span className="flex flex-wrap items-center justify-center gap-1.5 whitespace-normal leading-5">
       <span>{tab.label}</span>
       {tab.attentionLabel ? (
         <span
@@ -264,10 +321,8 @@ function ControlsHeaderSummary({
   const dataStatus = summaryStatusCards.find((card) => card.key === "data");
 
   return (
-    <div
-      className={`${OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME} mt-3 overflow-x-auto px-2 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
-    >
-      <div className="flex min-w-max items-center gap-2">
+    <div className={`${OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME} mt-4`}>
+      <div className="flex flex-wrap items-center gap-2">
         <Tooltip
           title={`${t("dashboard.charts.warMap.stats.window", {
             defaultValue: "Window",
@@ -356,26 +411,22 @@ function ViewSection({
   t,
 }: Pick<WarMapControlsPanelProps, "view" | "t">) {
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <div className={OVERLAY_PANEL_STACK_CLASS_NAME}>
       <div className={OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME}>
         <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
           {t("dashboard.charts.warMap.presets.title", {
             defaultValue: "Regions",
           })}
         </Typography.Text>
-        <div className={`mt-2 ${OVERLAY_BUTTON_GROUP_CLASS_NAME}`}>
+        <div className={OVERLAY_PANEL_OPTION_GRID_CLASS_NAME}>
           {view.presets.map((preset) => (
-            <Button
+            <ControlsChoiceButton
               key={preset.key}
-              size="small"
-              type="default"
-              className={resolveOverlayButtonClassName({
-                tone: preset.active ? "active" : "neutral",
-              })}
+              active={preset.active}
               onClick={() => view.onPresetSelect(preset.key)}
             >
               {preset.label}
-            </Button>
+            </ControlsChoiceButton>
           ))}
         </div>
       </div>
@@ -385,19 +436,15 @@ function ViewSection({
             defaultValue: "Window",
           })}
         </Typography.Text>
-        <div className={`mt-2 ${OVERLAY_BUTTON_GROUP_CLASS_NAME}`}>
+        <div className={OVERLAY_PANEL_OPTION_GRID_CLASS_NAME}>
           {view.timeRanges.map((preset) => (
-            <Button
+            <ControlsChoiceButton
               key={preset.key}
-              size="small"
-              type="default"
-              className={resolveOverlayButtonClassName({
-                tone: preset.active ? "active" : "neutral",
-              })}
+              active={preset.active}
               onClick={() => view.onTimeRangeSelect(preset.key)}
             >
               {preset.label}
-            </Button>
+            </ControlsChoiceButton>
           ))}
         </div>
       </div>
@@ -418,7 +465,7 @@ function ViewSection({
       >
         {t("common.reset", { defaultValue: "Reset" })}
       </Button>
-    </Space>
+    </div>
   );
 }
 
@@ -432,42 +479,38 @@ function TransportSection({
   const aisReferenceItems = transportLegendItems
     .filter((item) => item.symbolKey.startsWith("ais-"))
     .slice(0, 4);
+  const aisAutoModeHint = t("dashboard.charts.warMap.overlay.aisAutoModeHint", {
+    defaultValue:
+      "Auto switches to individual vessels at higher zoom when the relay exposes vessel snapshots.",
+  });
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <div className={OVERLAY_PANEL_STACK_CLASS_NAME}>
       <div className={OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME}>
         <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
           {t("dashboard.charts.warMap.overlay.flights", {
             defaultValue: "Flights",
           })}
         </Typography.Text>
-        <div className={`mt-2 ${OVERLAY_BUTTON_GROUP_CLASS_NAME}`}>
-          <Button
-            size="small"
-            type="default"
-            className={resolveOverlayButtonClassName({
-              tone: transport.flightMode === "military" ? "active" : "neutral",
-            })}
+        <div className={OVERLAY_PANEL_OPTION_GRID_CLASS_NAME}>
+          <ControlsChoiceButton
+            active={transport.flightMode === "military"}
             onClick={() => transport.onFlightModeChange("military")}
           >
             {t("dashboard.charts.warMap.stats.flightModeMilitary", {
               defaultValue: "Military",
             })}
-          </Button>
-          <Button
-            size="small"
-            type="default"
-            className={resolveOverlayButtonClassName({
-              tone: transport.flightMode === "all" ? "active" : "neutral",
-            })}
+          </ControlsChoiceButton>
+          <ControlsChoiceButton
+            active={transport.flightMode === "all"}
             onClick={() => transport.onFlightModeChange("all")}
           >
             {t("dashboard.charts.warMap.stats.flightModeAll", {
               defaultValue: "All",
             })}
-          </Button>
+          </ControlsChoiceButton>
         </div>
-        <Space size={[6, 6]} wrap className="mt-2">
+        <Space size={[8, 8]} wrap className="mt-3">
           {transport.flightsLayerVisible &&
           transport.flightsSourceBadgeLabel ? (
             <Tooltip
@@ -543,75 +586,50 @@ function TransportSection({
         </Typography.Text>
         {transport.aisLayerVisible ? (
           <>
-            <div className={`mt-2 ${OVERLAY_BUTTON_GROUP_CLASS_NAME}`}>
-              <Tooltip
-                title={t("dashboard.charts.warMap.overlay.aisAutoModeHint", {
-                  defaultValue:
-                    "Auto switches to individual vessels at higher zoom when the relay exposes vessel snapshots.",
-                })}
+            <div className={OVERLAY_PANEL_OPTION_GRID_CLASS_NAME}>
+              <ControlsChoiceButton
+                active={transport.aisAutoMode}
+                tooltip={aisAutoModeHint}
+                onClick={() =>
+                  transport.onAisAutoModeChange(!transport.aisAutoMode)
+                }
               >
-                <Button
-                  size="small"
-                  type="default"
-                  className={resolveOverlayButtonClassName({
-                    tone: transport.aisAutoMode ? "active" : "neutral",
-                  })}
-                  onClick={() =>
-                    transport.onAisAutoModeChange(!transport.aisAutoMode)
-                  }
-                >
-                  {t("dashboard.charts.warMap.stats.auto", {
-                    defaultValue: "Auto",
-                  })}
-                </Button>
-              </Tooltip>
-              <Button
-                size="small"
-                type="default"
-                className={resolveOverlayButtonClassName({
-                  tone: transport.aisMode === "military" ? "active" : "neutral",
+                {t("dashboard.charts.warMap.stats.auto", {
+                  defaultValue: "Auto",
                 })}
+              </ControlsChoiceButton>
+              <ControlsChoiceButton
+                active={transport.aisMode === "military"}
                 onClick={() => transport.onAisModeChange("military")}
               >
                 {t("dashboard.charts.warMap.stats.aisModeMilitary", {
                   defaultValue: "Military candidates",
                 })}
-              </Button>
-              <Button
-                size="small"
-                type="default"
-                className={resolveOverlayButtonClassName({
-                  tone: transport.aisMode === "density" ? "active" : "neutral",
-                })}
+              </ControlsChoiceButton>
+              <ControlsChoiceButton
+                active={transport.aisMode === "density"}
                 onClick={() => transport.onAisModeChange("density")}
               >
                 {t("dashboard.charts.warMap.stats.aisModeDensity", {
                   defaultValue: "Density only",
                 })}
-              </Button>
-              <Tooltip
-                title={
+              </ControlsChoiceButton>
+              <ControlsChoiceButton
+                active={transport.aisMode === "all"}
+                disabled={transport.aisAllModeDisabled}
+                tooltip={
                   transport.aisAllModeDisabled
                     ? transport.aisAllModeDisabledLabel
-                    : null
+                    : undefined
                 }
+                onClick={() => transport.onAisModeChange("all")}
               >
-                <Button
-                  size="small"
-                  type="default"
-                  className={resolveOverlayButtonClassName({
-                    tone: transport.aisMode === "all" ? "active" : "neutral",
-                  })}
-                  disabled={transport.aisAllModeDisabled}
-                  onClick={() => transport.onAisModeChange("all")}
-                >
-                  {t("dashboard.charts.warMap.stats.aisModeAll", {
-                    defaultValue: "All vessels",
-                  })}
-                </Button>
-              </Tooltip>
+                {t("dashboard.charts.warMap.stats.aisModeAll", {
+                  defaultValue: "All vessels",
+                })}
+              </ControlsChoiceButton>
             </div>
-            <Space size={[6, 6]} wrap className="mt-2">
+            <Space size={[8, 8]} wrap className="mt-3">
               <Tooltip
                 title={
                   transport.aisTooltipText ? (
@@ -645,10 +663,7 @@ function TransportSection({
               ) : null}
               {transport.aisAutoMode ? (
                 <Tooltip
-                  title={t("dashboard.charts.warMap.overlay.aisAutoModeHint", {
-                    defaultValue:
-                      "Auto switches to individual vessels at higher zoom when the relay exposes vessel snapshots.",
-                  })}
+                  title={aisAutoModeHint}
                 >
                   <Tag
                     color={transport.aisAutoActive ? "geekblue" : "default"}
@@ -818,7 +833,7 @@ function TransportSection({
       </div>
       <Button
         type="primary"
-        size="small"
+        className="!h-11 !rounded-[16px] !px-4 !text-[13px] !font-semibold"
         loading={transport.analyzingCurrentView}
         disabled={!transport.canAnalyzeCurrentView}
         onClick={transport.onAnalyzeCurrentView}
@@ -827,7 +842,7 @@ function TransportSection({
           defaultValue: "Analyze current view",
         })}
       </Button>
-    </Space>
+    </div>
   );
 }
 
@@ -841,7 +856,7 @@ function AisReferenceSection({
   t: WarMapTranslateFn;
 }) {
   return (
-    <div className="mt-3 rounded-xl border border-[var(--border)] bg-white/70 px-3 py-3 dark:bg-slate-950/55">
+    <div className="mt-4 rounded-2xl border border-[var(--border)] bg-white/70 px-4 py-4 dark:bg-slate-950/55">
       <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
         {t("dashboard.charts.warMap.legend.aisTitle", {
           defaultValue: "AIS",
@@ -877,8 +892,8 @@ function FeedsSection({
   "feedSummaryCards" | "detailedChainStatuses"
 >) {
   return (
-    <Space direction="vertical" size={10} style={{ width: "100%" }}>
-      <div className="grid grid-cols-3 gap-2">
+    <div className="flex w-full flex-col gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {feedSummaryCards.map((card) => (
           <div
             key={card.key}
@@ -907,7 +922,7 @@ function FeedsSection({
           </div>
         </Tooltip>
       ))}
-    </Space>
+    </div>
   );
 }
 
@@ -916,7 +931,7 @@ function LegendSection({
   t,
 }: Pick<WarMapControlsPanelProps, "legendSections" | "t">) {
   return (
-    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+    <div className="flex w-full flex-col gap-3">
       <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
         {t("dashboard.charts.warMap.legend.title", {
           defaultValue: "Legend",
@@ -933,7 +948,7 @@ function LegendSection({
           })}
         </Typography.Text>
       </div>
-    </Space>
+    </div>
   );
 }
 
@@ -954,12 +969,14 @@ export function WarMapControlsPanel({
   view,
   transport,
   onControlsSectionChange,
+  onClose,
   t,
 }: WarMapControlsPanelProps) {
   const activeControlsSection = resolveActiveControlsSection(controlsSection);
   const activeControlsSectionMeta = controlsSectionMeta[activeControlsSection];
   const headerRef = useRef<HTMLDivElement | null>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
+  const showCloseButton = useDrawerControls && typeof onClose === "function";
 
   useEffect(() => {
     const headerNode = headerRef.current;
@@ -1068,20 +1085,40 @@ export function WarMapControlsPanel({
       : undefined;
 
   return (
-    <div className="flex max-h-full flex-col">
+    <div className="flex h-full min-h-0 max-h-full flex-col">
       <div
         ref={headerRef}
-        className="border-b border-[var(--border)] bg-gradient-to-b from-white to-slate-50/90 px-3 py-3 dark:from-slate-950/90 dark:to-slate-900/90"
+        className="border-b border-[var(--border)] bg-gradient-to-b from-white to-slate-50/90 px-4 py-4 dark:from-slate-950/90 dark:to-slate-900/90"
       >
-        <Typography.Text
-          strong
-          className="block text-sm text-slate-900 dark:text-slate-100"
-        >
-          {activeControlsSectionMeta.label}
-        </Typography.Text>
-        <Typography.Text type="secondary" className="mt-1 block text-xs">
-          {activeControlsSectionMeta.description}
-        </Typography.Text>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <Typography.Text
+              strong
+              className="block text-base text-slate-900 dark:text-slate-100"
+            >
+              {activeControlsSectionMeta.label}
+            </Typography.Text>
+            <Typography.Text
+              type="secondary"
+              className="mt-1 block text-[13px] leading-5"
+            >
+              {activeControlsSectionMeta.description}
+            </Typography.Text>
+          </div>
+          {showCloseButton ? (
+            <Button
+              type="default"
+              aria-label={t("common.close", { defaultValue: "Close" })}
+              className={resolveOverlayButtonClassName({
+                tone: "neutral",
+                iconOnly: true,
+                extraClassName: "!h-10 !min-w-10 !rounded-full",
+              })}
+              icon={<CloseOutlined />}
+              onClick={onClose}
+            />
+          ) : null}
+        </div>
         <ControlsHeaderSummary
           overviewMetricCards={overviewMetricCards}
           summaryStatusCards={summaryStatusCards}
@@ -1091,22 +1128,18 @@ export function WarMapControlsPanel({
           t={t}
         />
         <div
-          className={`mt-3 flex gap-2 overflow-x-auto rounded-[20px] border border-[var(--border)] bg-white/55 p-1 pb-1 [scrollbar-width:none] shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] [&::-webkit-scrollbar]:hidden dark:bg-slate-950/55 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]`}
+          className={`rounded-[20px] border border-[var(--border)] bg-white/55 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:bg-slate-950/55 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${OVERLAY_PANEL_TAB_GRID_CLASS_NAME}`}
         >
           {controlsTabs.map((tab) => {
             const isActive = activeControlsSection === tab.key;
             const button = (
-              <Button
-                size="small"
-                type="default"
-                className={resolveOverlayButtonClassName({
-                  tone: isActive ? "active" : "neutral",
-                  extraClassName: "shrink-0",
-                })}
+              <ControlsChoiceButton
+                active={isActive}
+                align="center"
                 onClick={() => onControlsSectionChange(tab.key)}
               >
                 {renderControlsTabLabel(tab, isActive)}
-              </Button>
+              </ControlsChoiceButton>
             );
 
             if (tab.attentionTooltip) {
@@ -1122,7 +1155,7 @@ export function WarMapControlsPanel({
         </div>
       </div>
       <div
-        className="min-h-0 overflow-y-auto px-3 py-3"
+        className="min-h-0 overflow-y-auto overscroll-contain px-4 py-4"
         style={
           controlsBodyMaxHeight
             ? { maxHeight: controlsBodyMaxHeight }
