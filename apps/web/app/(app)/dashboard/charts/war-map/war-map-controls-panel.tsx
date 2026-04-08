@@ -3,9 +3,12 @@
 import {
   CloseOutlined,
   DatabaseOutlined,
+  DownOutlined,
   FundOutlined,
   GlobalOutlined,
   InfoCircleOutlined,
+  PushpinOutlined,
+  RightOutlined,
 } from "@ant-design/icons";
 import type { WarMapPreset, WarMapTimeRangePreset } from "@modular/utils";
 import { Button, Space, Tag, Tooltip, Typography } from "antd";
@@ -105,8 +108,23 @@ export interface WarMapControlsPanelProps {
   legendSections: WarMapLegendSection[];
   view: WarMapControlsPanelViewProps;
   transport: WarMapControlsPanelTransportProps;
+  activeLegendKey?: string | null;
+  highlightedLegendKey?: string | null;
+  onLegendItemHover?: (itemKey: string | null) => void;
+  onLegendItemFocus?: (itemKey: string | null) => void;
   onControlsSectionChange: (section: OverlayControlsSection) => void;
   onClose?: () => void;
+  t: WarMapTranslateFn;
+}
+
+export interface WarMapLegendPanelProps {
+  legendSections: WarMapLegendSection[];
+  summaryDataLabel?: string;
+  onClose?: () => void;
+  activeLegendKey?: string | null;
+  highlightedLegendKey?: string | null;
+  onLegendItemHover?: (itemKey: string | null) => void;
+  onLegendItemFocus?: (itemKey: string | null) => void;
   t: WarMapTranslateFn;
 }
 
@@ -114,19 +132,17 @@ const OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME =
   "rounded-2xl border border-[var(--border)] bg-slate-50/80 px-4 py-4 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.16)] dark:bg-slate-900/70 dark:shadow-[0_16px_34px_-26px_rgba(2,6,23,0.66)]";
 const OVERLAY_PANEL_CHIP_CLASS_NAME =
   "inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/[0.88] px-3 py-1.5 text-[12px] text-slate-700 shadow-[0_8px_18px_-18px_rgba(15,23,42,0.26)] transition-[border-color,background-color,color,box-shadow] duration-200 hover:border-slate-300/[0.85] hover:bg-white hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-200 dark:shadow-[0_10px_20px_-18px_rgba(2,6,23,0.7)] dark:hover:border-slate-500/80 dark:hover:bg-slate-900 dark:hover:text-slate-50";
-const OVERLAY_PANEL_LEGEND_GRID_CLASS_NAME = "mt-3 grid gap-3 sm:grid-cols-2";
 const OVERLAY_PANEL_STACK_CLASS_NAME = "flex w-full flex-col gap-4";
 const OVERLAY_PANEL_OPTION_GRID_CLASS_NAME = "mt-3 grid gap-3 sm:grid-cols-2";
 const OVERLAY_PANEL_AIS_MODE_GRID_CLASS_NAME = "mt-3 grid gap-2 sm:grid-cols-3";
-const OVERLAY_PANEL_TAB_GRID_CLASS_NAME = "mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4";
+const OVERLAY_PANEL_TAB_GRID_CLASS_NAME =
+  "mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3";
 const OVERLAY_PANEL_OPTION_BUTTON_CLASS_NAME =
   "!h-auto !min-h-10 !w-full !justify-start !rounded-[16px] !px-3.5 !py-2.5 !text-left !text-[12px] !font-semibold !leading-5";
 const OVERLAY_PANEL_TAB_BUTTON_CLASS_NAME =
   "!h-auto !min-h-[3rem] !w-full !justify-center !rounded-[18px] !px-3.5 !py-2.5 !text-center !text-[12px] !font-semibold !leading-5";
-const AIS_SECTION_CARD_CLASS_NAME =
-  `${OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME} border-cyan-200/70 bg-cyan-50/55 dark:border-cyan-400/25 dark:bg-cyan-950/12`;
-const FLIGHTS_SECTION_CARD_CLASS_NAME =
-  `${OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME} border-indigo-200/70 bg-indigo-50/45 dark:border-indigo-400/25 dark:bg-indigo-950/12`;
+const AIS_SECTION_CARD_CLASS_NAME = `${OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME} border-cyan-200/70 bg-cyan-50/55 dark:border-cyan-400/25 dark:bg-cyan-950/12`;
+const FLIGHTS_SECTION_CARD_CLASS_NAME = `${OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME} border-indigo-200/70 bg-indigo-50/45 dark:border-indigo-400/25 dark:bg-indigo-950/12`;
 const OVERLAY_PANEL_MODE_HINT_CLASS_NAME =
   "mt-3 rounded-2xl border border-amber-200/80 bg-amber-50/85 px-3.5 py-3 text-[12px] leading-5 text-amber-900 shadow-[0_12px_28px_-24px_rgba(180,83,9,0.45)] dark:border-amber-400/30 dark:bg-amber-950/25 dark:text-amber-100";
 
@@ -211,10 +227,16 @@ function TransportSectionHeader({
       <Typography.Text className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
         {eyebrow}
       </Typography.Text>
-      <Typography.Text strong className={`${OVERLAY_SECTION_TITLE_CLASS_NAME} mt-1 block`}>
+      <Typography.Text
+        strong
+        className={`${OVERLAY_SECTION_TITLE_CLASS_NAME} mt-1 block`}
+      >
         {title}
       </Typography.Text>
-      <Typography.Text type="secondary" className="mt-1 block text-xs leading-5">
+      <Typography.Text
+        type="secondary"
+        className="mt-1 block text-xs leading-5"
+      >
         {description}
       </Typography.Text>
     </div>
@@ -268,39 +290,168 @@ function getSummaryMetricDetail(
 function LegendItemsGrid({
   items,
   compact = false,
+  activeLegendKey,
+  highlightedLegendKey,
+  onLegendItemHover,
+  onLegendItemFocus,
 }: {
   items: WarMapLegendItem[];
   compact?: boolean;
+  activeLegendKey?: string | null;
+  highlightedLegendKey?: string | null;
+  onLegendItemHover?: (itemKey: string | null) => void;
+  onLegendItemFocus?: (itemKey: string | null) => void;
 }) {
   if (items.length === 0) {
     return null;
   }
 
   return (
-    <div
-      className={
-        compact ? "mt-3 grid gap-2" : OVERLAY_PANEL_LEGEND_GRID_CLASS_NAME
-      }
-    >
+    <div className={compact ? "mt-2.5 grid gap-2" : "mt-2.5 grid gap-2"}>
       {items.map(({ key, ...item }) => (
-        <WarMapLegendSwatch key={key} size={compact ? 36 : 42} {...item} />
+        <WarMapLegendSwatch
+          key={key}
+          size={compact ? 30 : 34}
+          variant={compact ? "quick" : "panel"}
+          interactive={Boolean(onLegendItemHover || onLegendItemFocus)}
+          active={activeLegendKey === key}
+          muted={Boolean(highlightedLegendKey) && highlightedLegendKey !== key}
+          onClick={
+            onLegendItemFocus
+              ? () => onLegendItemFocus(activeLegendKey === key ? null : key)
+              : undefined
+          }
+          onMouseEnter={
+            onLegendItemHover ? () => onLegendItemHover(key) : undefined
+          }
+          onMouseLeave={
+            onLegendItemHover ? () => onLegendItemHover(null) : undefined
+          }
+          endAdornment={
+            activeLegendKey === key ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/90 px-2 py-1 text-[10px] font-medium text-slate-600 dark:border-slate-600/80 dark:bg-slate-950/78 dark:text-slate-300">
+                <PushpinOutlined />
+                {compact ? null : "Focus"}
+              </span>
+            ) : null
+          }
+          {...item}
+        />
       ))}
     </div>
   );
 }
 
-function LegendSectionCard({ section }: { section: WarMapLegendSection }) {
+function LegendSectionCard({
+  section,
+  expanded,
+  activeLegendKey,
+  highlightedLegendKey,
+  onToggle,
+  onLegendItemHover,
+  onLegendItemFocus,
+}: {
+  section: WarMapLegendSection;
+  expanded: boolean;
+  activeLegendKey?: string | null;
+  highlightedLegendKey?: string | null;
+  onToggle: () => void;
+  onLegendItemHover?: (itemKey: string | null) => void;
+  onLegendItemFocus?: (itemKey: string | null) => void;
+}) {
   return (
-    <div className={OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME}>
-      <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
-        {section.title}
-      </Typography.Text>
-      {section.description ? (
-        <Typography.Text type="secondary" className="mt-2 block text-xs">
-          {section.description}
-        </Typography.Text>
+    <div className="rounded-[18px] border border-slate-200/75 bg-white/[0.68] px-3.5 py-3 shadow-[0_10px_24px_-24px_rgba(15,23,42,0.14)] dark:border-slate-700/80 dark:bg-slate-950/[0.58] dark:shadow-[0_14px_28px_-24px_rgba(2,6,23,0.72)]">
+      <button
+        type="button"
+        className="flex w-full items-start justify-between gap-3 text-left"
+        onClick={onToggle}
+      >
+        <div className="min-w-0">
+          <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
+            {section.title}
+          </Typography.Text>
+          {section.description ? (
+            <Typography.Text
+              type="secondary"
+              className="mt-1 block text-[11px] leading-[1.15rem]"
+            >
+              {section.description}
+            </Typography.Text>
+          ) : null}
+        </div>
+        <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200/80 bg-white/88 text-[11px] text-slate-500 dark:border-slate-700/80 dark:bg-slate-950/80 dark:text-slate-300">
+          {expanded ? <DownOutlined /> : <RightOutlined />}
+        </span>
+      </button>
+      {expanded ? (
+        <LegendItemsGrid
+          items={section.items}
+          activeLegendKey={activeLegendKey}
+          highlightedLegendKey={highlightedLegendKey}
+          onLegendItemHover={onLegendItemHover}
+          onLegendItemFocus={onLegendItemFocus}
+        />
       ) : null}
-      <LegendItemsGrid items={section.items} />
+    </div>
+  );
+}
+
+function LegendSectionsList({
+  legendSections,
+  activeLegendKey,
+  highlightedLegendKey,
+  onLegendItemHover,
+  onLegendItemFocus,
+}: {
+  legendSections: WarMapLegendSection[];
+  activeLegendKey?: string | null;
+  highlightedLegendKey?: string | null;
+  onLegendItemHover?: (itemKey: string | null) => void;
+  onLegendItemFocus?: (itemKey: string | null) => void;
+}) {
+  const [expandedSections, setExpandedSections] = useState<
+    Record<string, boolean>
+  >(() =>
+    Object.fromEntries(
+      legendSections.map((section) => [
+        section.key,
+        section.defaultExpanded !== false,
+      ]),
+    ),
+  );
+
+  useEffect(() => {
+    setExpandedSections((current) =>
+      Object.fromEntries(
+        legendSections.map((section) => [
+          section.key,
+          current[section.key] ?? section.defaultExpanded !== false,
+        ]),
+      ),
+    );
+  }, [legendSections]);
+
+  return (
+    <div className="flex w-full flex-col gap-2.5">
+      {legendSections.map((section) => (
+        <LegendSectionCard
+          key={section.key}
+          section={section}
+          expanded={
+            expandedSections[section.key] ?? section.defaultExpanded !== false
+          }
+          activeLegendKey={activeLegendKey}
+          highlightedLegendKey={highlightedLegendKey}
+          onToggle={() =>
+            setExpandedSections((current) => ({
+              ...current,
+              [section.key]: !current[section.key],
+            }))
+          }
+          onLegendItemHover={onLegendItemHover}
+          onLegendItemFocus={onLegendItemFocus}
+        />
+      ))}
     </div>
   );
 }
@@ -532,9 +683,11 @@ function TransportSection({
         "Candidate vessels shows a filtered subset based on AIS name and ship-type rules, not a complete vessel inventory.",
     },
   );
-  const aisAllVesselsHint = t("dashboard.charts.warMap.overlay.aisAllVesselsHint", {
-    defaultValue:
-      "All vessels shows the full AIS vessel snapshot for the current viewport.",
+  const aisAllVesselsHint = t(
+    "dashboard.charts.warMap.overlay.aisAllVesselsHint",
+    {
+      defaultValue:
+        "All vessels shows the full AIS vessel snapshot for the current viewport.",
     },
   );
   const aisSectionDescription = t(
@@ -616,17 +769,22 @@ function TransportSection({
             {transport.aisAllModeDisabled ? (
               <div className={OVERLAY_PANEL_MODE_HINT_CLASS_NAME}>
                 <Typography.Text className="block text-inherit">
-                  {transport.aisAllModeDisabledLabel ?? aisAllUnavailableInlineHint}
+                  {transport.aisAllModeDisabledLabel ??
+                    aisAllUnavailableInlineHint}
                 </Typography.Text>
               </div>
             ) : null}
-            {transport.aisMode === "military" && !transport.aisAllModeDisabled ? (
+            {transport.aisMode === "military" &&
+            !transport.aisAllModeDisabled ? (
               <div className={OVERLAY_PANEL_MODE_HINT_CLASS_NAME}>
                 <Typography.Text className="block text-inherit">
-                  {t("dashboard.charts.warMap.overlay.aisCandidatesOnlyActiveHint", {
-                    defaultValue:
-                      "Candidate vessels is a filtered subset. Some ships are intentionally hidden in this mode.",
-                  })}
+                  {t(
+                    "dashboard.charts.warMap.overlay.aisCandidatesOnlyActiveHint",
+                    {
+                      defaultValue:
+                        "Candidate vessels is a filtered subset. Some ships are intentionally hidden in this mode.",
+                    },
+                  )}
                 </Typography.Text>
                 {!transport.aisAllModeDisabled ? (
                   <Button
@@ -643,13 +801,17 @@ function TransportSection({
                 ) : null}
               </div>
             ) : null}
-            {transport.aisMode === "density" && !transport.aisAllModeDisabled ? (
+            {transport.aisMode === "density" &&
+            !transport.aisAllModeDisabled ? (
               <div className={OVERLAY_PANEL_MODE_HINT_CLASS_NAME}>
                 <Typography.Text className="block text-inherit">
-                  {t("dashboard.charts.warMap.overlay.aisDensityOnlyActiveHint", {
-                    defaultValue:
-                      "Density only summarizes chokepoints and hotspots instead of showing individual ships.",
-                  })}
+                  {t(
+                    "dashboard.charts.warMap.overlay.aisDensityOnlyActiveHint",
+                    {
+                      defaultValue:
+                        "Density only summarizes chokepoints and hotspots instead of showing individual ships.",
+                    },
+                  )}
                 </Typography.Text>
                 {!transport.aisAllModeDisabled ? (
                   <Button
@@ -731,7 +893,9 @@ function TransportSection({
               {transport.aisMode === "all" ? (
                 <Tooltip title={aisHighlightCandidatesHint}>
                   <Tag
-                    color={transport.aisHighlightCandidates ? "orange" : "default"}
+                    color={
+                      transport.aisHighlightCandidates ? "orange" : "default"
+                    }
                     className={
                       transport.aisHighlightCandidates
                         ? OVERLAY_STATUS_TAG_CLASS_NAME
@@ -826,10 +990,7 @@ function TransportSection({
                     ) : null
                   }
                 >
-                  <Tag
-                    color="orange"
-                    className={OVERLAY_STATUS_TAG_CLASS_NAME}
-                  >
+                  <Tag color="orange" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
                     {transport.aisHighlightCountLabel}:{" "}
                     {transport.aisHighlightCountValue}
                   </Tag>
@@ -1087,8 +1248,17 @@ function FeedsSection({
 
 function LegendSection({
   legendSections,
+  activeLegendKey,
+  highlightedLegendKey,
+  onLegendItemHover,
+  onLegendItemFocus,
   t,
-}: Pick<WarMapControlsPanelProps, "legendSections" | "t">) {
+}: Pick<WarMapControlsPanelProps, "legendSections" | "t"> & {
+  activeLegendKey?: string | null;
+  highlightedLegendKey?: string | null;
+  onLegendItemHover?: (itemKey: string | null) => void;
+  onLegendItemFocus?: (itemKey: string | null) => void;
+}) {
   return (
     <div className="flex w-full flex-col gap-3">
       <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
@@ -1096,9 +1266,13 @@ function LegendSection({
           defaultValue: "Legend",
         })}
       </Typography.Text>
-      {legendSections.map((section) => (
-        <LegendSectionCard key={section.key} section={section} />
-      ))}
+      <LegendSectionsList
+        legendSections={legendSections}
+        activeLegendKey={activeLegendKey}
+        highlightedLegendKey={highlightedLegendKey}
+        onLegendItemHover={onLegendItemHover}
+        onLegendItemFocus={onLegendItemFocus}
+      />
       <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white/70 px-3 py-3 dark:bg-slate-950/55">
         <Typography.Text type="secondary" className="text-xs">
           {t("dashboard.charts.warMap.legend.radius", {
@@ -1106,6 +1280,90 @@ function LegendSection({
               "Larger points indicate stronger aggregated signal density.",
           })}
         </Typography.Text>
+      </div>
+    </div>
+  );
+}
+
+export function WarMapLegendPanel({
+  legendSections,
+  summaryDataLabel,
+  onClose,
+  activeLegendKey,
+  highlightedLegendKey,
+  onLegendItemHover,
+  onLegendItemFocus,
+  t,
+}: WarMapLegendPanelProps) {
+  return (
+    <div className="flex h-full min-h-0 max-h-full flex-col">
+      <div className="border-b border-[var(--border)] bg-gradient-to-b from-white to-slate-50/90 px-4 py-3.5 dark:from-slate-950/90 dark:to-slate-900/86">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <Typography.Text
+              strong
+              className="block text-base text-slate-900 dark:text-slate-100"
+            >
+              {t("dashboard.charts.warMap.legend.title", {
+                defaultValue: "Legend",
+              })}
+            </Typography.Text>
+            <Typography.Text
+              type="secondary"
+              className="mt-1 block text-[12px] leading-5"
+            >
+              {t("dashboard.charts.warMap.legend.quickLegendHint", {
+                defaultValue:
+                  "Hover to preview a symbol family. Click to pin focus on the map.",
+              })}
+            </Typography.Text>
+          </div>
+          {onClose ? (
+            <Button
+              type="default"
+              aria-label={t("common.close", { defaultValue: "Close" })}
+              className={resolveOverlayButtonClassName({
+                tone: "neutral",
+                iconOnly: true,
+                extraClassName: "!h-10 !min-w-10 !rounded-full",
+              })}
+              icon={<CloseOutlined />}
+              onClick={onClose}
+            />
+          ) : null}
+        </div>
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+          {summaryDataLabel ? (
+            <span className="truncate">{summaryDataLabel}</span>
+          ) : null}
+          <span>
+            {t("dashboard.charts.warMap.legend.previewHint", {
+              defaultValue: "Hover previews, click pins focus.",
+            })}
+          </span>
+          {activeLegendKey ? (
+            <Button
+              type="link"
+              size="small"
+              className={resolveOverlayButtonClassName({ tone: "link" })}
+              style={{ padding: 0, height: "auto", fontSize: 11 }}
+              onClick={() => onLegendItemFocus?.(null)}
+            >
+              {t("dashboard.charts.warMap.legend.clearFocus", {
+                defaultValue: "Clear focus",
+              })}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      <div className="min-h-0 overflow-y-auto overscroll-contain px-4 py-3.5">
+        <LegendSectionsList
+          legendSections={legendSections}
+          activeLegendKey={activeLegendKey}
+          highlightedLegendKey={highlightedLegendKey}
+          onLegendItemHover={onLegendItemHover}
+          onLegendItemFocus={onLegendItemFocus}
+        />
       </div>
     </div>
   );
@@ -1127,6 +1385,10 @@ export function WarMapControlsPanel({
   legendSections,
   view,
   transport,
+  activeLegendKey,
+  highlightedLegendKey,
+  onLegendItemHover,
+  onLegendItemFocus,
   onControlsSectionChange,
   onClose,
   t,
@@ -1231,7 +1493,14 @@ export function WarMapControlsPanel({
       break;
     case "legend":
       controlsSectionContent = (
-        <LegendSection legendSections={legendSections} t={t} />
+        <LegendSection
+          legendSections={legendSections}
+          activeLegendKey={activeLegendKey}
+          highlightedLegendKey={highlightedLegendKey}
+          onLegendItemHover={onLegendItemHover}
+          onLegendItemFocus={onLegendItemFocus}
+          t={t}
+        />
       );
       break;
     default:

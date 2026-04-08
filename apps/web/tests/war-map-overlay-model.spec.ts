@@ -34,10 +34,11 @@ describe("war-map overlay model", () => {
       }),
     ).toEqual({
       overlayTopClassName: "top-4",
-      overlayRailWidth: 420,
-      overlayPanelMaxHeight: 348,
-      controlsPanelWidth: 420,
-      controlsDrawerHeight: 432,
+      overlayRailWidth: 252,
+      overlayPanelMaxHeight: 372,
+      controlsPanelWidth: 336,
+      legendPanelWidth: 308,
+      controlsDrawerHeight: 468,
       inspectorPanelHeight: 312,
       inspectorPanelWidth: 360,
       showActionLabels: true,
@@ -52,10 +53,11 @@ describe("war-map overlay model", () => {
       }),
     ).toEqual({
       overlayTopClassName: "top-20",
-      overlayRailWidth: 360,
-      overlayPanelMaxHeight: 320,
-      controlsPanelWidth: 360,
-      controlsDrawerHeight: 360,
+      overlayRailWidth: 208,
+      overlayPanelMaxHeight: 340,
+      controlsPanelWidth: 288,
+      legendPanelWidth: 280,
+      controlsDrawerHeight: 400,
       inspectorPanelHeight: 220,
       inspectorPanelWidth: 320,
       showActionLabels: false,
@@ -89,7 +91,6 @@ describe("war-map overlay model", () => {
       "view",
       "transport",
       "feeds",
-      "legend",
     ]);
     expect(viewModel.controlsSectionMeta.overview.label).toBe("Overview");
     expect(viewModel.controlsTabs.some((tab) => tab.key === "overview")).toBe(

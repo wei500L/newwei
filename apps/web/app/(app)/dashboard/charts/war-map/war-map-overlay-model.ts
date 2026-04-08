@@ -53,6 +53,7 @@ export function resolveOverlayButtonClassName({
 
 const DESKTOP_CONTROLS_PANEL_WIDTH = 420;
 const DESKTOP_INSPECTOR_PANEL_WIDTH = 360;
+const DESKTOP_LEGEND_PANEL_WIDTH = 340;
 
 export interface RenderableWarMapEvent extends WarMapEvent {
   label: string;
@@ -152,7 +153,7 @@ export type SelectedInspector =
     };
 
 export type OverlayDensity = "expanded" | "compact" | "minimal";
-export type OverlayPanelKey = "controls";
+export type OverlayPanelKey = "controls" | "legend";
 export type OverlayControlsSection =
   | "overview"
   | "view"
@@ -170,6 +171,7 @@ export interface WarMapOverlayLayout {
   overlayRailWidth: number;
   overlayPanelMaxHeight: number;
   controlsPanelWidth: number;
+  legendPanelWidth: number;
   controlsDrawerHeight: number;
   inspectorPanelHeight: number;
   inspectorPanelWidth: number;
@@ -307,34 +309,38 @@ export function buildWarMapOverlayLayout({
 }: BuildWarMapOverlayLayoutParams): WarMapOverlayLayout {
   const controlsPanelWidth =
     overlayDensity === "expanded"
-      ? clamp(wrapperWidth - 40, 360, DESKTOP_CONTROLS_PANEL_WIDTH)
+      ? clamp(Math.round(wrapperWidth * 0.24), 320, 360)
       : overlayDensity === "compact"
-        ? clamp(wrapperWidth - 32, 320, 360)
+        ? clamp(Math.round(wrapperWidth * 0.25), 288, 320)
         : clamp(wrapperWidth - 24, 280, DESKTOP_CONTROLS_PANEL_WIDTH);
+  const legendPanelWidth =
+    overlayDensity === "expanded"
+      ? clamp(Math.round(wrapperWidth * 0.22), 300, DESKTOP_LEGEND_PANEL_WIDTH)
+      : overlayDensity === "compact"
+        ? clamp(Math.round(wrapperWidth * 0.24), 280, 312)
+        : clamp(wrapperWidth - 24, 280, DESKTOP_LEGEND_PANEL_WIDTH);
   const overlayRailWidthBase =
     overlayDensity === "expanded"
-      ? clamp(wrapperWidth - 32, 260, 360)
+      ? clamp(Math.round(wrapperWidth * 0.18), 220, 272)
       : overlayDensity === "compact"
-        ? clamp(wrapperWidth - 32, 240, 300)
-        : clamp(wrapperWidth - 32, 240, DESKTOP_CONTROLS_PANEL_WIDTH);
+        ? clamp(Math.round(wrapperWidth * 0.19), 208, 248)
+        : clamp(wrapperWidth - 32, 220, 280);
 
   return {
     overlayTopClassName: hasNonFatalErrors ? "top-20" : "top-4",
-    overlayRailWidth:
-      overlayDensity === "minimal"
-        ? overlayRailWidthBase
-        : Math.max(overlayRailWidthBase, controlsPanelWidth),
+    overlayRailWidth: overlayRailWidthBase,
     overlayPanelMaxHeight:
       overlayDensity === "expanded"
-        ? clamp(Math.round((wrapperHeight || 430) * 0.58), 320, 460)
+        ? clamp(Math.round((wrapperHeight || 430) * 0.62), 340, 520)
         : overlayDensity === "compact"
-          ? clamp(Math.round((wrapperHeight || 430) * 0.64), 300, 400)
-          : clamp(Math.round((wrapperHeight || 430) * 0.72), 320, 520),
+          ? clamp(Math.round((wrapperHeight || 430) * 0.68), 320, 460)
+          : clamp(Math.round((wrapperHeight || 430) * 0.78), 360, 620),
     controlsPanelWidth,
+    legendPanelWidth,
     controlsDrawerHeight: clamp(
-      Math.round((wrapperHeight || 480) * 0.72),
-      360,
-      560,
+      Math.round((wrapperHeight || 480) * 0.78),
+      400,
+      640,
     ),
     inspectorPanelHeight:
       overlayDensity === "compact"
@@ -445,7 +451,6 @@ export function buildWarMapOverlayViewModel({
         attentionTone: feedsAttentionLabel ? "warning" : undefined,
         attentionTooltip: feedsAttentionTooltip,
       },
-      { key: "legend", label: controlsSectionMeta.legend.label },
     ],
     overviewMetricCards: [
       {

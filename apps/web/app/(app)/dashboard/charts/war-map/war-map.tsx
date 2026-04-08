@@ -83,7 +83,10 @@ import {
 import { BBOX_QUERY_MIN_ZOOM, buildWarMapQueryBbox } from "./query-viewport";
 import { readWarMapUrlState, writeWarMapUrlState } from "./url-state";
 import { useWarMapData } from "./use-war-map-data";
-import { WarMapControlsPanel } from "./war-map-controls-panel";
+import {
+  WarMapControlsPanel,
+  WarMapLegendPanel,
+} from "./war-map-controls-panel";
 import {
   OVERLAY_SURFACE_CLASS_NAME,
   buildWarMapOverlayLayout,
@@ -107,6 +110,7 @@ import {
   coerceHexColor,
   getWarMapDeckIcon,
   getWarMapSymbolAccentColor,
+  matchesWarMapLegendItem,
   type WarMapActivePointLayerLegendItem,
   type WarMapLegendItem,
   type WarMapSymbolKey,
@@ -118,6 +122,91 @@ import {
 } from "../../use-dashboard-stream";
 
 const ALL_TIME_START = new Date("1970-01-01T00:00:00.000Z");
+const WAR_MAP_SYMBOL_KEY_SET = new Set<WarMapSymbolKey>([
+  "signal-high",
+  "signal-medium",
+  "signal-low",
+  "news-geocoded",
+  "news-fallback",
+  "monitor",
+  "flight",
+  "ais-vessel-military",
+  "ais-vessel-fishing",
+  "ais-vessel-passenger",
+  "ais-vessel-cargo",
+  "ais-vessel-tanker",
+  "ais-vessel-other",
+  "ais-vessel-generic",
+  "ais-density",
+  "ais-disruption-high",
+  "ais-disruption-medium",
+  "ais-disruption-low",
+  "generic-point",
+]);
+
+function isWarMapSymbolKey(value: string): value is WarMapSymbolKey {
+  return WAR_MAP_SYMBOL_KEY_SET.has(value as WarMapSymbolKey);
+}
+
+function resolveLegendMatcher(
+  itemKey: string | null,
+): Pick<
+  WarMapLegendItem,
+  "key" | "symbolKey" | "matchSymbolKeys" | "matchLayerIds"
+> | null {
+  if (!itemKey) {
+    return null;
+  }
+
+  switch (itemKey) {
+    case "ais-vessel-generic":
+      return {
+        key: itemKey,
+        symbolKey: "ais-vessel-generic",
+        matchSymbolKeys: [
+          "ais-vessel-military",
+          "ais-vessel-fishing",
+          "ais-vessel-passenger",
+          "ais-vessel-cargo",
+          "ais-vessel-tanker",
+          "ais-vessel-other",
+          "ais-vessel-generic",
+        ],
+      };
+    case "ais-disruption":
+      return {
+        key: itemKey,
+        symbolKey: "ais-disruption-high",
+        matchSymbolKeys: [
+          "ais-disruption-high",
+          "ais-disruption-medium",
+          "ais-disruption-low",
+        ],
+      };
+    case "hover":
+    case "selected":
+    case "cluster":
+      return {
+        key: itemKey,
+        symbolKey: "signal-medium",
+        matchSymbolKeys: ["signal-medium"],
+      };
+    default:
+      if (isWarMapSymbolKey(itemKey)) {
+        return {
+          key: itemKey,
+          symbolKey: itemKey,
+          matchSymbolKeys: [itemKey],
+        };
+      }
+
+      return {
+        key: itemKey,
+        symbolKey: "generic-point",
+        matchLayerIds: [itemKey],
+      };
+  }
+}
 
 interface DeckPoint {
   id: string;
@@ -747,6 +836,12 @@ export function WarMap({
   const [desktopInspectorMinimized, setDesktopInspectorMinimized] =
     useState(false);
   const [selectedInspectorKey, setSelectedInspectorKey] = useState<
+    string | null
+  >(null);
+  const [focusedLegendItemKey, setFocusedLegendItemKey] = useState<
+    string | null
+  >(null);
+  const [hoveredLegendItemKey, setHoveredLegendItemKey] = useState<
     string | null
   >(null);
   const [hoveredInteractionKey, setHoveredInteractionKey] = useState<
@@ -1725,6 +1820,12 @@ export function WarMap({
   const updateHoveredInteractionKey = useCallback((next: string | null) => {
     setHoveredInteractionKey((current) => (current === next ? current : next));
   }, []);
+  const updateHoveredLegendItemKey = useCallback((next: string | null) => {
+    setHoveredLegendItemKey((current) => (current === next ? current : next));
+  }, []);
+  const updateFocusedLegendItemKey = useCallback((next: string | null) => {
+    setFocusedLegendItemKey((current) => (current === next ? current : next));
+  }, []);
 
   const handleDeckPointHover = useCallback(
     (info: { object?: DeckPoint }) => {
@@ -1889,14 +1990,40 @@ export function WarMap({
         return [];
       }
 
+      const highlightedLegendMatcher = resolveLegendMatcher(
+        focusedLegendItemKey ?? hoveredLegendItemKey ?? null,
+      );
+      const pointMatchesHighlightedLegendItem = highlightedLegendMatcher
+        ? (point: DeckPoint) =>
+            matchesWarMapLegendItem(highlightedLegendMatcher, {
+              symbolKey: point.symbolKey,
+              layerId: point.layerId,
+            })
+        : null;
+      const emphasizedPoints = pointMatchesHighlightedLegendItem
+        ? data.filter((point) => pointMatchesHighlightedLegendItem(point))
+        : data;
+      const mutedPoints = pointMatchesHighlightedLegendItem
+        ? data.filter((point) => !pointMatchesHighlightedLegendItem(point))
+        : [];
       const layers: any[] = [...buildPointHighlightLayers({ id, data })];
-
-      layers.push(
+      const buildIconLayer = ({
+        layerData,
+        layerSuffix,
+        opacity,
+        sizeBoost,
+      }: {
+        layerData: DeckPoint[];
+        layerSuffix: string;
+        opacity: number;
+        sizeBoost: number;
+      }) =>
         new IconLayer({
-          id: `${id}-symbols`,
-          data,
+          id: `${id}-symbols-${layerSuffix}`,
+          data: layerData,
           pickable,
           billboard: true,
+          opacity,
           sizeUnits: "pixels",
           getPosition: (point: DeckPoint) => [point.lng, point.lat],
           getIcon: (point: DeckPoint) =>
@@ -1914,35 +2041,83 @@ export function WarMap({
               point,
               hoveredInteractionKey,
               selectedInspectorKey,
-            }),
+            }) + sizeBoost,
           getAngle: (point: DeckPoint) => getAngle?.(point) ?? 0,
           sizeMinPixels: 18,
           sizeMaxPixels: 64,
           onHover: pickable ? handleDeckPointHover : undefined,
           onClick,
-        }),
-      );
+        });
 
-      const clusters = data.filter(
+      if (mutedPoints.length > 0) {
+        layers.push(
+          buildIconLayer({
+            layerData: mutedPoints,
+            layerSuffix: "muted",
+            opacity: 0.38,
+            sizeBoost: -1,
+          }),
+        );
+      }
+
+      if (emphasizedPoints.length > 0) {
+        layers.push(
+          buildIconLayer({
+            layerData: emphasizedPoints,
+            layerSuffix: "primary",
+            opacity: 1,
+            sizeBoost: pointMatchesHighlightedLegendItem ? 2 : 0,
+          }),
+        );
+      }
+
+      const buildClusterTextLayer = ({
+        layerData,
+        layerSuffix,
+        colorAlpha,
+      }: {
+        layerData: DeckPoint[];
+        layerSuffix: string;
+        colorAlpha: number;
+      }) =>
+        new TextLayer({
+          id: `${id}-counts-${layerSuffix}`,
+          data: layerData,
+          pickable,
+          billboard: true,
+          getPosition: (point: DeckPoint) => [point.lng, point.lat],
+          getText: (point: DeckPoint) => String(point.clusterCount ?? ""),
+          getSize: (point: DeckPoint) => resolveDeckPointClusterTextSize(point),
+          getColor: [15, 23, 42, colorAlpha],
+          fontWeight: 800,
+          getTextAnchor: "middle",
+          getAlignmentBaseline: "center",
+          onHover: pickable ? handleDeckPointHover : undefined,
+          onClick,
+        });
+
+      const clusters = emphasizedPoints.filter(
         (point) => point.isCluster && typeof point.clusterCount === "number",
       );
       if (clusters.length > 0) {
         layers.push(
-          new TextLayer({
-            id: `${id}-counts`,
-            data: clusters,
-            pickable,
-            billboard: true,
-            getPosition: (point: DeckPoint) => [point.lng, point.lat],
-            getText: (point: DeckPoint) => String(point.clusterCount ?? ""),
-            getSize: (point: DeckPoint) =>
-              resolveDeckPointClusterTextSize(point),
-            getColor: [15, 23, 42, 255],
-            fontWeight: 800,
-            getTextAnchor: "middle",
-            getAlignmentBaseline: "center",
-            onHover: pickable ? handleDeckPointHover : undefined,
-            onClick,
+          buildClusterTextLayer({
+            layerData: clusters,
+            layerSuffix: "primary",
+            colorAlpha: 255,
+          }),
+        );
+      }
+
+      const mutedClusters = mutedPoints.filter(
+        (point) => point.isCluster && typeof point.clusterCount === "number",
+      );
+      if (mutedClusters.length > 0) {
+        layers.push(
+          buildClusterTextLayer({
+            layerData: mutedClusters,
+            layerSuffix: "muted",
+            colorAlpha: 120,
           }),
         );
       }
@@ -1952,6 +2127,8 @@ export function WarMap({
     [
       buildPointHighlightLayers,
       handleDeckPointHover,
+      focusedLegendItemKey,
+      hoveredLegendItemKey,
       hoveredInteractionKey,
       selectedInspectorKey,
     ],
@@ -4090,6 +4267,38 @@ export function WarMap({
       t,
     ],
   );
+  const legendItemsByKey = useMemo(() => {
+    const items = new Map<string, WarMapLegendItem>();
+
+    for (const item of quickLegendItems) {
+      items.set(item.key, item);
+    }
+
+    for (const section of legendSections) {
+      for (const item of section.items) {
+        if (!items.has(item.key)) {
+          items.set(item.key, item);
+        }
+      }
+    }
+
+    return items;
+  }, [legendSections, quickLegendItems]);
+  const highlightedLegendItemKey =
+    focusedLegendItemKey ?? hoveredLegendItemKey ?? null;
+  const highlightedLegendItem = highlightedLegendItemKey
+    ? (legendItemsByKey.get(highlightedLegendItemKey) ?? null)
+    : null;
+
+  useEffect(() => {
+    if (focusedLegendItemKey && !legendItemsByKey.has(focusedLegendItemKey)) {
+      setFocusedLegendItemKey(null);
+    }
+    if (hoveredLegendItemKey && !legendItemsByKey.has(hoveredLegendItemKey)) {
+      setHoveredLegendItemKey(null);
+    }
+  }, [focusedLegendItemKey, hoveredLegendItemKey, legendItemsByKey]);
+
   const presetOptions = useMemo<WarMapSelectableOption<WarMapPreset>[]>(
     () =>
       WAR_MAP_PRESETS.map((preset) => ({
@@ -4215,8 +4424,12 @@ export function WarMap({
         onAnalyzeCurrentView: () => {
           void handleAnalyzeCurrentView();
         },
-        onOpenLegend: () => setControlsSection("legend"),
+        onOpenLegend: () => setOpenOverlayPanel("legend"),
       }}
+      activeLegendKey={focusedLegendItemKey}
+      highlightedLegendKey={highlightedLegendItemKey}
+      onLegendItemHover={updateHoveredLegendItemKey}
+      onLegendItemFocus={updateFocusedLegendItemKey}
       onControlsSectionChange={setControlsSection}
       onClose={() => setOpenOverlayPanel(null)}
       t={t}
@@ -4231,6 +4444,29 @@ export function WarMap({
       }}
     >
       {controlsPanelContent}
+    </div>
+  );
+  const legendPanelContent: ReactNode = (
+    <WarMapLegendPanel
+      legendSections={legendSections}
+      summaryDataLabel={overlayViewModel.summaryDataLabel}
+      activeLegendKey={focusedLegendItemKey}
+      highlightedLegendKey={highlightedLegendItemKey}
+      onLegendItemHover={updateHoveredLegendItemKey}
+      onLegendItemFocus={updateFocusedLegendItemKey}
+      onClose={() => setOpenOverlayPanel(null)}
+      t={t}
+    />
+  );
+  const desktopLegendPanel = (
+    <div
+      className={`${OVERLAY_SURFACE_CLASS_NAME} pointer-events-auto self-end overflow-hidden`}
+      style={{
+        width: overlayLayout.legendPanelWidth,
+        maxHeight: overlayLayout.overlayPanelMaxHeight,
+      }}
+    >
+      {legendPanelContent}
     </div>
   );
   const mobileControlsDrawerHeight = `min(${overlayLayout.controlsDrawerHeight}px, calc(100dvh - 72px))`;
@@ -4282,21 +4518,29 @@ export function WarMap({
             refreshingMapData={refreshingMapData}
             showActionLabels={overlayLayout.showActionLabels}
             openOverlayPanel={openOverlayPanel}
-            controlsSection={activeControlsSection}
             quickLegendItems={quickLegendItems}
+            activeLegendKey={focusedLegendItemKey}
+            highlightedLegendKey={highlightedLegendItemKey}
             onRefresh={() => {
               void refreshMapData();
             }}
             onToggleControls={() => {
+              if (controlsSection === "legend") {
+                setControlsSection("view");
+              }
               setOpenOverlayPanel((current) =>
                 current === "controls" ? null : "controls",
               );
             }}
-            onOpenLegendDrawer={() => {
-              setControlsSection("legend");
-              setOpenOverlayPanel("controls");
+            onToggleLegend={() => {
+              setOpenOverlayPanel((current) =>
+                current === "legend" ? null : "legend",
+              );
             }}
+            onLegendItemHover={updateHoveredLegendItemKey}
+            onLegendItemFocus={updateFocusedLegendItemKey}
             controlsPanel={desktopControlsPanel}
+            legendPanel={desktopLegendPanel}
             t={t}
           />
         </>
@@ -4346,7 +4590,7 @@ export function WarMap({
 
           {useDrawerControls ? (
             <Drawer
-              open={openOverlayPanel === "controls"}
+              open={Boolean(openOverlayPanel)}
               onClose={() => setOpenOverlayPanel(null)}
               placement="bottom"
               height={mobileControlsDrawerHeight}
@@ -4354,7 +4598,9 @@ export function WarMap({
               destroyOnClose={false}
               styles={{ body: { padding: 0 } }}
             >
-              {controlsPanelContent}
+              {openOverlayPanel === "legend"
+                ? legendPanelContent
+                : controlsPanelContent}
             </Drawer>
           ) : null}
         </>

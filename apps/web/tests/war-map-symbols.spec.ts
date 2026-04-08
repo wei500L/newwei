@@ -5,6 +5,7 @@ import {
   buildWarMapQuickLegendItems,
   coerceHexColor,
   getQuickLegendVisibility,
+  matchesWarMapLegendItem,
 } from "../app/(app)/dashboard/charts/war-map/war-map-symbols";
 
 const t = (key: string, options?: { defaultValue?: string }) =>
@@ -30,10 +31,9 @@ describe("war-map symbols", () => {
       "signal-medium",
       "signal-low",
       "news-geocoded",
-      "news-fallback",
       "monitor",
       "ais-density",
-      "ais-disruption-high",
+      "ais-disruption",
     ]);
 
     const allItems = buildWarMapQuickLegendItems({
@@ -86,6 +86,7 @@ describe("war-map symbols", () => {
         symbolKey: "generic-point",
         accentColor: "#ec4899",
         label: "Tech HQs",
+        matchLayerIds: ["techHQs"],
       },
     ]);
   });
@@ -94,5 +95,39 @@ describe("war-map symbols", () => {
     expect(getQuickLegendVisibility("expanded")).toBe(true);
     expect(getQuickLegendVisibility("compact")).toBe(true);
     expect(getQuickLegendVisibility("minimal")).toBe(false);
+  });
+
+  it("matches legend entries to symbol families and active point layers", () => {
+    expect(
+      matchesWarMapLegendItem(
+        {
+          symbolKey: "ais-disruption-high",
+          matchSymbolKeys: [
+            "ais-disruption-high",
+            "ais-disruption-medium",
+            "ais-disruption-low",
+          ],
+        },
+        { symbolKey: "ais-disruption-low" },
+      ),
+    ).toBe(true);
+    expect(
+      matchesWarMapLegendItem(
+        {
+          symbolKey: "generic-point",
+          matchLayerIds: ["techHQs"],
+        },
+        { symbolKey: "generic-point", layerId: "techHQs" },
+      ),
+    ).toBe(true);
+    expect(
+      matchesWarMapLegendItem(
+        {
+          symbolKey: "flight",
+          matchSymbolKeys: ["flight"],
+        },
+        { symbolKey: "signal-low" },
+      ),
+    ).toBe(false);
   });
 });

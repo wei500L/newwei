@@ -12,7 +12,6 @@ import {
   OVERLAY_STATUS_TAG_CLASS_NAME,
   OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME,
   resolveOverlayButtonClassName,
-  type OverlayControlsSection,
   type OverlayDensity,
   type OverlayPanelKey,
   type WarMapSummaryStatusCard,
@@ -35,12 +34,16 @@ export interface WarMapOverlayRailProps {
   refreshingMapData: boolean;
   showActionLabels: boolean;
   openOverlayPanel: OverlayPanelKey | null;
-  controlsSection: OverlayControlsSection;
   quickLegendItems: WarMapLegendItem[];
+  activeLegendKey?: string | null;
+  highlightedLegendKey?: string | null;
   onRefresh: () => void;
   onToggleControls: () => void;
-  onOpenLegendDrawer: () => void;
+  onToggleLegend: () => void;
+  onLegendItemHover?: (itemKey: string | null) => void;
+  onLegendItemFocus?: (itemKey: string | null) => void;
   controlsPanel: ReactNode;
+  legendPanel: ReactNode;
   t: WarMapTranslateFn;
 }
 
@@ -55,18 +58,20 @@ export function WarMapOverlayRail({
   refreshingMapData,
   showActionLabels,
   openOverlayPanel,
-  controlsSection,
   quickLegendItems,
+  activeLegendKey,
+  highlightedLegendKey,
   onRefresh,
   onToggleControls,
-  onOpenLegendDrawer,
+  onToggleLegend,
+  onLegendItemHover,
+  onLegendItemFocus,
   controlsPanel,
+  legendPanel,
   t,
 }: WarMapOverlayRailProps) {
   const streamStatus = summaryStatusCards.find((card) => card.key === "stream");
   const dataStatus = summaryStatusCards.find((card) => card.key === "data");
-  const hideRailSummaryCards =
-    !useDrawerControls && openOverlayPanel === "controls";
   const controlsLabel = t("dashboard.charts.warMap.overlay.controls", {
     defaultValue: "Controls",
   });
@@ -74,10 +79,24 @@ export function WarMapOverlayRail({
     defaultValue: "Legend",
   });
   const controlsActive = openOverlayPanel === "controls";
+  const legendActive = openOverlayPanel === "legend";
   const showQuickLegend =
     getQuickLegendVisibility(overlayDensity) &&
     quickLegendItems.length > 0 &&
-    !hideRailSummaryCards;
+    !openOverlayPanel;
+  const visibleQuickLegendItems = quickLegendItems.slice(0, 4);
+  const hiddenQuickLegendCount = Math.max(
+    0,
+    quickLegendItems.length - visibleQuickLegendItems.length,
+  );
+  const activePanel =
+    !useDrawerControls && openOverlayPanel
+      ? openOverlayPanel === "controls"
+        ? controlsPanel
+        : legendPanel
+      : null;
+  const showLegendToolbarButton =
+    useDrawerControls || legendActive || !showQuickLegend;
 
   return (
     <div
@@ -90,30 +109,7 @@ export function WarMapOverlayRail({
           useDrawerControls ? "" : "w-full"
         } gap-2`}
       >
-        {!useDrawerControls ? (
-          <div
-            className={`${OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME} pointer-events-auto flex items-center rounded-[22px] px-2 py-2 shadow-[0_18px_36px_-26px_rgba(15,23,42,0.42)] ring-1 ring-white/60 dark:ring-white/10`}
-          >
-            <Tooltip title={controlsLabel}>
-              <Button
-                size="small"
-                type="default"
-                className={resolveOverlayButtonClassName({
-                  tone: controlsActive ? "active" : "neutral",
-                  extraClassName:
-                    "!h-10 !min-w-[7rem] !px-4 !text-xs !font-semibold",
-                })}
-                icon={<SettingOutlined />}
-                aria-label={controlsLabel}
-                aria-expanded={controlsActive}
-                onClick={onToggleControls}
-              >
-                {controlsLabel}
-              </Button>
-            </Tooltip>
-          </div>
-        ) : null}
-        {hideRailSummaryCards ? null : overlayDensity === "minimal" ? (
+        {overlayDensity === "minimal" ? (
           <div
             className={`${OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME} pointer-events-auto flex max-w-full items-center gap-2 px-3 py-2`}
           >
@@ -137,65 +133,127 @@ export function WarMapOverlayRail({
           </div>
         ) : (
           <div
-            className={`${OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME} pointer-events-auto grid w-full grid-cols-2 gap-1.5 px-2 py-2`}
+            className={`${OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME} pointer-events-auto flex w-full flex-wrap items-center gap-2 px-3 py-2.5`}
           >
-            {summaryStatusCards.map((card) => (
-              <Tooltip key={card.key} title={card.tooltip}>
-                <div className="min-w-0 rounded-xl border border-white/80 bg-gradient-to-br from-white via-white to-slate-50 px-2.5 py-2 shadow-sm ring-1 ring-white/40 dark:border-white/10 dark:from-slate-950/[0.92] dark:via-slate-950/[0.86] dark:to-slate-900/80 dark:shadow-[0_16px_28px_-24px_rgba(2,6,23,0.82)] dark:ring-white/5">
+            {streamStatus ? (
+              <Tooltip title={streamStatus.tooltip}>
+                <div className="min-w-0 rounded-full border border-slate-200/80 bg-white/[0.92] px-3 py-2 shadow-[0_10px_18px_-18px_rgba(15,23,42,0.2)] dark:border-slate-700/80 dark:bg-slate-950/[0.78] dark:shadow-[0_12px_22px_-18px_rgba(2,6,23,0.7)]">
                   <div className="flex items-center gap-2">
                     <span
-                      className={`h-2 w-2 rounded-full ${card.dotClassName}`}
+                      className={`h-2 w-2 rounded-full ${streamStatus.dotClassName}`}
                     />
                     <Typography.Text
                       type="secondary"
                       className="text-[10px] uppercase tracking-[0.16em]"
                     >
-                      {card.label}
+                      {streamStatus.label}
+                    </Typography.Text>
+                    <Typography.Text className="text-[12px] font-semibold text-slate-900 dark:text-slate-50">
+                      {streamStatus.value}
+                    </Typography.Text>
+                    <Typography.Text
+                      type="secondary"
+                      className="max-w-[8rem] truncate text-[10px]"
+                    >
+                      {streamStatus.detail}
                     </Typography.Text>
                   </div>
-                  <Typography.Text className="mt-1 block text-sm font-semibold text-slate-900 dark:text-slate-50">
-                    {card.value}
-                  </Typography.Text>
-                  <Typography.Text
-                    type="secondary"
-                    className="block truncate text-[10px]"
-                  >
-                    {card.detail}
-                  </Typography.Text>
                 </div>
               </Tooltip>
-            ))}
+            ) : null}
+            <Tooltip title={dataStatus?.tooltip}>
+              <div className="min-w-0 rounded-full border border-slate-200/80 bg-white/[0.92] px-3 py-2 shadow-[0_10px_18px_-18px_rgba(15,23,42,0.2)] dark:border-slate-700/80 dark:bg-slate-950/[0.78] dark:shadow-[0_12px_22px_-18px_rgba(2,6,23,0.7)]">
+                <div className="flex items-center gap-2">
+                  {dataStatus ? (
+                    <span
+                      className={`h-2 w-2 rounded-full ${dataStatus.dotClassName}`}
+                    />
+                  ) : null}
+                  <Typography.Text
+                    type="secondary"
+                    className="text-[10px] uppercase tracking-[0.16em]"
+                  >
+                    {dataStatus?.label ?? "Data"}
+                  </Typography.Text>
+                  <span className="max-w-[180px] truncate text-[11px] text-slate-600 dark:text-slate-300">
+                    {summaryDataLabel}
+                  </span>
+                </div>
+              </div>
+            </Tooltip>
           </div>
         )}
         {showQuickLegend ? (
           <div
-            className={`${OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME} pointer-events-auto w-full px-3 py-3`}
+            className={`${OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME} pointer-events-auto w-full px-3 py-2.5`}
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <Typography.Text className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                   {legendLabel}
                 </Typography.Text>
-                <Typography.Text className="mt-1 block text-[12px] font-medium text-slate-900 dark:text-slate-50">
-                  {t("dashboard.charts.warMap.legend.quickLegendHint", {
-                    defaultValue:
-                      "Live symbols stay aligned with the active map layers.",
+                <Typography.Text className="mt-0.5 block text-[11px] leading-4 text-slate-600 dark:text-slate-300">
+                  {t("dashboard.charts.warMap.legend.quickLegendCompactHint", {
+                    defaultValue: "Top active symbol cues",
                   })}
                 </Typography.Text>
               </div>
-              <Button
-                size="small"
-                type="default"
-                className={resolveOverlayButtonClassName({ tone: "neutral" })}
-                icon={<InfoCircleOutlined />}
-                aria-label={legendLabel}
-                onClick={onOpenLegendDrawer}
-              />
+              <Tooltip
+                title={t("dashboard.charts.warMap.overlay.openFullLegend", {
+                  defaultValue: "Open full legend",
+                })}
+              >
+                <Button
+                  size="small"
+                  type="default"
+                  className={resolveOverlayButtonClassName({
+                    tone: "ghost",
+                    iconOnly: true,
+                    extraClassName:
+                      "!h-8 !min-w-8 !rounded-full !border !border-slate-200/80 !bg-white/[0.76] dark:!border-slate-700/80 dark:!bg-slate-950/[0.68]",
+                  })}
+                  aria-label={legendLabel}
+                  icon={<InfoCircleOutlined />}
+                  onClick={onToggleLegend}
+                />
+              </Tooltip>
             </div>
-            <div className="mt-3 grid gap-2">
-              {quickLegendItems.map(({ key, ...item }) => (
-                <WarMapLegendSwatch key={key} {...item} size={36} />
+            <div className="mt-2.5 grid gap-2">
+              {visibleQuickLegendItems.map(({ key, ...item }) => (
+                <WarMapLegendSwatch
+                  key={key}
+                  {...item}
+                  size={26}
+                  variant="quick"
+                  interactive
+                  active={activeLegendKey === key}
+                  muted={
+                    Boolean(highlightedLegendKey) &&
+                    highlightedLegendKey !== key
+                  }
+                  onClick={() =>
+                    onLegendItemFocus?.(activeLegendKey === key ? null : key)
+                  }
+                  onMouseEnter={() => onLegendItemHover?.(key)}
+                  onMouseLeave={() => onLegendItemHover?.(null)}
+                />
               ))}
+              {hiddenQuickLegendCount > 0 ? (
+                <Button
+                  type="default"
+                  className={resolveOverlayButtonClassName({
+                    tone: "neutral",
+                    extraClassName:
+                      "!h-9 !justify-start !rounded-xl !px-3 !text-[11px] !font-medium",
+                  })}
+                  onClick={onToggleLegend}
+                >
+                  {t("dashboard.charts.warMap.legend.moreItems", {
+                    defaultValue: "+{{count}} more",
+                    count: hiddenQuickLegendCount,
+                  })}
+                </Button>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -212,7 +270,9 @@ export function WarMapOverlayRail({
               type="default"
               className={resolveOverlayButtonClassName({
                 iconOnly: !showActionLabels,
-                extraClassName: useDrawerControls ? "!h-10 !min-w-10" : undefined,
+                extraClassName: useDrawerControls
+                  ? "!h-10 !min-w-10"
+                  : undefined,
               })}
               icon={<ReloadOutlined />}
               loading={refreshingMapData}
@@ -225,51 +285,47 @@ export function WarMapOverlayRail({
                 : null}
             </Button>
           </Tooltip>
-          {useDrawerControls ? (
-            <Tooltip title={controlsLabel}>
-              <Button
-                size="small"
-                type="default"
-                className={resolveOverlayButtonClassName({
-                  tone: controlsActive ? "active" : "neutral",
-                  iconOnly: !showActionLabels,
-                  extraClassName: useDrawerControls ? "!h-10 !min-w-10" : undefined,
-                })}
-                icon={<SettingOutlined />}
-                aria-label={controlsLabel}
-                aria-expanded={controlsActive}
-                onClick={onToggleControls}
-              >
-                {showActionLabels ? controlsLabel : null}
-              </Button>
-            </Tooltip>
-          ) : null}
-          {useDrawerControls ? (
+          <Tooltip title={controlsLabel}>
+            <Button
+              size="small"
+              type="default"
+              className={resolveOverlayButtonClassName({
+                tone: controlsActive ? "active" : "neutral",
+                iconOnly: !showActionLabels && useDrawerControls,
+                extraClassName: useDrawerControls
+                  ? "!h-10 !min-w-10"
+                  : "!h-10 !min-w-[6.5rem] !px-4 !text-xs !font-semibold",
+              })}
+              icon={<SettingOutlined />}
+              aria-label={controlsLabel}
+              aria-expanded={controlsActive}
+              onClick={onToggleControls}
+            >
+              {!useDrawerControls || showActionLabels ? controlsLabel : null}
+            </Button>
+          </Tooltip>
+          {showLegendToolbarButton ? (
             <Tooltip title={legendLabel}>
               <Button
                 size="small"
                 type="default"
                 className={resolveOverlayButtonClassName({
-                  tone:
-                    openOverlayPanel === "controls" &&
-                    controlsSection === "legend"
-                      ? "active"
-                      : "neutral",
-                  iconOnly: !showActionLabels,
-                  extraClassName: useDrawerControls ? "!h-10 !min-w-10" : undefined,
+                  tone: legendActive ? "active" : "neutral",
+                  iconOnly: !showActionLabels && useDrawerControls,
+                  extraClassName: useDrawerControls
+                    ? "!h-10 !min-w-10"
+                    : "!h-10 !min-w-[6.5rem] !px-4 !text-xs !font-semibold",
                 })}
                 icon={<InfoCircleOutlined />}
                 aria-label={legendLabel}
-                onClick={onOpenLegendDrawer}
+                onClick={onToggleLegend}
               >
-                {showActionLabels ? legendLabel : null}
+                {!useDrawerControls || showActionLabels ? legendLabel : null}
               </Button>
             </Tooltip>
           ) : null}
         </div>
-        {!useDrawerControls && openOverlayPanel === "controls"
-          ? controlsPanel
-          : null}
+        {activePanel}
       </div>
     </div>
   );

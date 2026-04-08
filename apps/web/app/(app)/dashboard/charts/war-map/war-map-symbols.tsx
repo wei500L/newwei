@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { WarMapAisMode } from "@modular/utils";
 
 import type {
@@ -38,12 +39,15 @@ export interface WarMapLegendItem {
   state?: WarMapSymbolState;
   accentColor?: string;
   countLabel?: string;
+  matchSymbolKeys?: WarMapSymbolKey[];
+  matchLayerIds?: string[];
 }
 
 export interface WarMapLegendSection {
   key: string;
   title: string;
   description?: string;
+  defaultExpanded?: boolean;
   items: WarMapLegendItem[];
 }
 
@@ -51,6 +55,11 @@ export interface WarMapActivePointLayerLegendItem {
   key: string;
   label: string;
   accentColor?: string;
+}
+
+export interface WarMapLegendMatchablePoint {
+  symbolKey: WarMapSymbolKey;
+  layerId?: string;
 }
 
 interface SymbolPalette {
@@ -320,6 +329,25 @@ export function getQuickLegendVisibility(density: OverlayDensity): boolean {
   return QUICK_LEGEND_DENSITIES.has(density);
 }
 
+export function matchesWarMapLegendItem(
+  item: Pick<
+    WarMapLegendItem,
+    "symbolKey" | "matchSymbolKeys" | "matchLayerIds"
+  >,
+  point: WarMapLegendMatchablePoint,
+): boolean {
+  if (
+    point.layerId &&
+    Array.isArray(item.matchLayerIds) &&
+    item.matchLayerIds.includes(point.layerId)
+  ) {
+    return true;
+  }
+
+  const matchSymbolKeys = item.matchSymbolKeys ?? [item.symbolKey];
+  return matchSymbolKeys.includes(point.symbolKey);
+}
+
 export function resolveWarMapLegendLabel(
   symbolKey: WarMapSymbolKey,
   t: WarMapTranslateFn,
@@ -423,26 +451,25 @@ export function buildWarMapQuickLegendItems({
       key: "signal-high",
       symbolKey: "signal-high",
       label: resolveWarMapLegendLabel("signal-high", t),
+      matchSymbolKeys: ["signal-high"],
     },
     {
       key: "signal-medium",
       symbolKey: "signal-medium",
       label: resolveWarMapLegendLabel("signal-medium", t),
+      matchSymbolKeys: ["signal-medium"],
     },
     {
       key: "signal-low",
       symbolKey: "signal-low",
       label: resolveWarMapLegendLabel("signal-low", t),
+      matchSymbolKeys: ["signal-low"],
     },
     {
       key: "news-geocoded",
       symbolKey: "news-geocoded",
       label: resolveWarMapLegendLabel("news-geocoded", t),
-    },
-    {
-      key: "news-fallback",
-      symbolKey: "news-fallback",
-      label: resolveWarMapLegendLabel("news-fallback", t),
+      matchSymbolKeys: ["news-geocoded"],
     },
   ];
 
@@ -451,6 +478,7 @@ export function buildWarMapQuickLegendItems({
       key: "monitor",
       symbolKey: "monitor",
       label: resolveWarMapLegendLabel("monitor", t),
+      matchSymbolKeys: ["monitor" as const],
     });
   }
 
@@ -459,6 +487,7 @@ export function buildWarMapQuickLegendItems({
       key: "flight",
       symbolKey: "flight",
       label: resolveWarMapLegendLabel("flight", t),
+      matchSymbolKeys: ["flight"],
     });
   }
 
@@ -469,13 +498,19 @@ export function buildWarMapQuickLegendItems({
           key: "ais-density",
           symbolKey: "ais-density",
           label: resolveWarMapLegendLabel("ais-density", t),
+          matchSymbolKeys: ["ais-density"],
         },
         {
-          key: "ais-disruption-high",
+          key: "ais-disruption",
           symbolKey: "ais-disruption-high",
           label: t("dashboard.charts.warMap.legend.aisDisruptionQuick", {
             defaultValue: "AIS disruption",
           }),
+          matchSymbolKeys: [
+            "ais-disruption-high",
+            "ais-disruption-medium",
+            "ais-disruption-low",
+          ],
         },
       );
     } else if (effectiveAisMode === "all") {
@@ -487,13 +522,27 @@ export function buildWarMapQuickLegendItems({
           note: t("dashboard.charts.warMap.legend.quickColorByCategory", {
             defaultValue: "Color shows vessel category",
           }),
+          matchSymbolKeys: [
+            "ais-vessel-military",
+            "ais-vessel-fishing",
+            "ais-vessel-passenger",
+            "ais-vessel-cargo",
+            "ais-vessel-tanker",
+            "ais-vessel-other",
+            "ais-vessel-generic",
+          ],
         },
         {
-          key: "ais-disruption-high",
+          key: "ais-disruption",
           symbolKey: "ais-disruption-high",
           label: t("dashboard.charts.warMap.legend.aisDisruptionQuick", {
             defaultValue: "AIS disruption",
           }),
+          matchSymbolKeys: [
+            "ais-disruption-high",
+            "ais-disruption-medium",
+            "ais-disruption-low",
+          ],
         },
       );
     } else {
@@ -502,13 +551,19 @@ export function buildWarMapQuickLegendItems({
           key: "ais-vessel-military",
           symbolKey: "ais-vessel-military",
           label: resolveWarMapLegendLabel("ais-vessel-military", t),
+          matchSymbolKeys: ["ais-vessel-military"],
         },
         {
-          key: "ais-disruption-high",
+          key: "ais-disruption",
           symbolKey: "ais-disruption-high",
           label: t("dashboard.charts.warMap.legend.aisDisruptionQuick", {
             defaultValue: "AIS disruption",
           }),
+          matchSymbolKeys: [
+            "ais-disruption-high",
+            "ais-disruption-medium",
+            "ais-disruption-low",
+          ],
         },
       );
     }
@@ -541,33 +596,38 @@ export function buildWarMapLegendSections({
       description: t("dashboard.charts.warMap.legend.signalsHint", {
         defaultValue: "Severity is encoded by both shape treatment and color.",
       }),
+      defaultExpanded: true,
       items: ["signal-high", "signal-medium", "signal-low"].map(
         (symbolKey) => ({
           key: symbolKey,
           symbolKey: symbolKey as WarMapSymbolKey,
           label: resolveWarMapLegendLabel(symbolKey as WarMapSymbolKey, t),
+          matchSymbolKeys: [symbolKey as WarMapSymbolKey],
         }),
       ),
     },
     {
       key: "news",
       title: t("dashboard.charts.warMap.legend.newsTitle", {
-        defaultValue: "News & Monitors",
+        defaultValue: "News & Monitoring",
       }),
       description: t("dashboard.charts.warMap.legend.newsHint", {
         defaultValue:
           "Shape distinguishes precision and source, not just color.",
       }),
+      defaultExpanded: true,
       items: [
         {
           key: "news-geocoded",
           symbolKey: "news-geocoded",
           label: resolveWarMapLegendLabel("news-geocoded", t),
+          matchSymbolKeys: ["news-geocoded"],
         },
         {
           key: "news-fallback",
           symbolKey: "news-fallback",
           label: resolveWarMapLegendLabel("news-fallback", t),
+          matchSymbolKeys: ["news-fallback"],
         },
         ...(showMonitors
           ? [
@@ -575,6 +635,7 @@ export function buildWarMapLegendSections({
                 key: "monitor",
                 symbolKey: "monitor" as const,
                 label: resolveWarMapLegendLabel("monitor", t),
+                matchSymbolKeys: ["monitor" as const],
               },
             ]
           : []),
@@ -589,6 +650,7 @@ export function buildWarMapLegendSections({
       key: "flight",
       symbolKey: "flight",
       label: resolveWarMapLegendLabel("flight", t),
+      matchSymbolKeys: ["flight"],
     });
   }
 
@@ -598,6 +660,7 @@ export function buildWarMapLegendSections({
         key: "ais-density",
         symbolKey: "ais-density",
         label: resolveWarMapLegendLabel("ais-density", t),
+        matchSymbolKeys: ["ais-density"],
       });
     }
 
@@ -606,16 +669,19 @@ export function buildWarMapLegendSections({
         key: "ais-disruption-high",
         symbolKey: "ais-disruption-high",
         label: resolveWarMapLegendLabel("ais-disruption-high", t),
+        matchSymbolKeys: ["ais-disruption-high"],
       },
       {
         key: "ais-disruption-medium",
         symbolKey: "ais-disruption-medium",
         label: resolveWarMapLegendLabel("ais-disruption-medium", t),
+        matchSymbolKeys: ["ais-disruption-medium"],
       },
       {
         key: "ais-disruption-low",
         symbolKey: "ais-disruption-low",
         label: resolveWarMapLegendLabel("ais-disruption-low", t),
+        matchSymbolKeys: ["ais-disruption-low"],
       },
     );
 
@@ -625,31 +691,37 @@ export function buildWarMapLegendSections({
           key: "ais-vessel-military",
           symbolKey: "ais-vessel-military",
           label: resolveWarMapLegendLabel("ais-vessel-military", t),
+          matchSymbolKeys: ["ais-vessel-military"],
         },
         {
           key: "ais-vessel-fishing",
           symbolKey: "ais-vessel-fishing",
           label: resolveWarMapLegendLabel("ais-vessel-fishing", t),
+          matchSymbolKeys: ["ais-vessel-fishing"],
         },
         {
           key: "ais-vessel-passenger",
           symbolKey: "ais-vessel-passenger",
           label: resolveWarMapLegendLabel("ais-vessel-passenger", t),
+          matchSymbolKeys: ["ais-vessel-passenger"],
         },
         {
           key: "ais-vessel-cargo",
           symbolKey: "ais-vessel-cargo",
           label: resolveWarMapLegendLabel("ais-vessel-cargo", t),
+          matchSymbolKeys: ["ais-vessel-cargo"],
         },
         {
           key: "ais-vessel-tanker",
           symbolKey: "ais-vessel-tanker",
           label: resolveWarMapLegendLabel("ais-vessel-tanker", t),
+          matchSymbolKeys: ["ais-vessel-tanker"],
         },
         {
           key: "ais-vessel-other",
           symbolKey: "ais-vessel-other",
           label: resolveWarMapLegendLabel("ais-vessel-other", t),
+          matchSymbolKeys: ["ais-vessel-other"],
         },
       );
     }
@@ -665,6 +737,7 @@ export function buildWarMapLegendSections({
         defaultValue:
           "Flights and AIS layers share the same map symbols and quick legend.",
       }),
+      defaultExpanded: false,
       items: transportItems,
     });
   }
@@ -672,7 +745,7 @@ export function buildWarMapLegendSections({
   sections.push({
     key: "states",
     title: t("dashboard.charts.warMap.legend.statesTitle", {
-      defaultValue: "Interaction States",
+      defaultValue: "Display states",
     }),
     description: t("dashboard.charts.warMap.legend.statesHint", {
       defaultValue:
@@ -686,6 +759,7 @@ export function buildWarMapLegendSections({
         label: t("dashboard.charts.warMap.legend.hoverState", {
           defaultValue: "Hover focus",
         }),
+        matchSymbolKeys: ["signal-medium"],
       },
       {
         key: "selected",
@@ -694,6 +768,7 @@ export function buildWarMapLegendSections({
         label: t("dashboard.charts.warMap.legend.selectedState", {
           defaultValue: "Selected",
         }),
+        matchSymbolKeys: ["signal-medium"],
       },
       {
         key: "cluster",
@@ -703,8 +778,10 @@ export function buildWarMapLegendSections({
         label: t("dashboard.charts.warMap.legend.clusterState", {
           defaultValue: "Cluster badge",
         }),
+        matchSymbolKeys: ["signal-medium"],
       },
     ],
+    defaultExpanded: false,
   });
 
   if (activePointLayers.length > 0) {
@@ -717,11 +794,13 @@ export function buildWarMapLegendSections({
         defaultValue:
           "Point-based overlays without a bespoke symbol still use the shared halo and outline treatment.",
       }),
+      defaultExpanded: false,
       items: activePointLayers.map((item) => ({
         key: item.key,
         symbolKey: "generic-point",
         accentColor: item.accentColor,
         label: item.label,
+        matchLayerIds: [item.key],
       })),
     });
   }
@@ -737,11 +816,48 @@ export function WarMapLegendSwatch({
   accentColor,
   countLabel,
   size = 42,
-}: WarMapLegendItem & { size?: number }) {
+  variant = "panel",
+  interactive = false,
+  active = false,
+  muted = false,
+  endAdornment,
+  onClick,
+  onMouseEnter,
+  onMouseLeave,
+}: WarMapLegendItem & {
+  size?: number;
+  variant?: "quick" | "panel";
+  interactive?: boolean;
+  active?: boolean;
+  muted?: boolean;
+  endAdornment?: ReactNode;
+  onClick?: () => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+}) {
   const icon = getWarMapDeckIcon({ symbolKey, state, accentColor });
-
-  return (
-    <div className="flex min-w-0 items-center gap-3 rounded-2xl border border-slate-200/90 bg-white/92 px-3 py-2.5 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.24)] dark:border-slate-700/80 dark:bg-slate-950/72 dark:shadow-[0_16px_30px_-24px_rgba(2,6,23,0.78)]">
+  const containerClassName =
+    variant === "quick"
+      ? `flex min-w-0 items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-[border-color,background-color,box-shadow,transform,opacity] duration-150 ${
+          active
+            ? "border-slate-300/90 bg-white/[0.94] shadow-[0_10px_18px_-18px_rgba(15,23,42,0.28)] dark:border-slate-500/70 dark:bg-slate-950/[0.84]"
+            : "border-slate-200/70 bg-white/[0.72] shadow-[0_8px_16px_-20px_rgba(15,23,42,0.22)] dark:border-slate-700/70 dark:bg-slate-950/[0.58]"
+        } ${muted ? "opacity-55" : "opacity-100"} ${
+          interactive
+            ? "hover:-translate-y-[1px] hover:border-slate-300/85 hover:bg-white/[0.9] dark:hover:border-slate-500/80 dark:hover:bg-slate-950/[0.78]"
+            : ""
+        }`
+      : `flex min-w-0 items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow,opacity] duration-150 ${
+          active
+            ? "border-slate-300 bg-white shadow-[0_14px_28px_-24px_rgba(15,23,42,0.22)] dark:border-slate-500/75 dark:bg-slate-950/82"
+            : "border-slate-200/75 bg-white/[0.74] shadow-[0_12px_26px_-26px_rgba(15,23,42,0.18)] dark:border-slate-700/80 dark:bg-slate-950/[0.62]"
+        } ${muted ? "opacity-50" : "opacity-100"} ${
+          interactive
+            ? "hover:border-slate-300/90 hover:bg-white/[0.92] dark:hover:border-slate-500/80 dark:hover:bg-slate-950/[0.8]"
+            : ""
+        }`;
+  const content = (
+    <>
       <span
         className="relative inline-flex shrink-0 items-center justify-center"
         style={{ width: size, height: size }}
@@ -758,8 +874,12 @@ export function WarMapLegendSwatch({
           </span>
         ) : null}
       </span>
-      <span className="min-w-0">
-        <span className="block truncate text-[12px] font-semibold text-slate-900 dark:text-slate-100">
+      <span className="min-w-0 flex-1">
+        <span
+          className={`block ${
+            variant === "quick" ? "truncate text-[12px]" : "text-[13px]"
+          } font-medium text-slate-900 dark:text-slate-100`}
+        >
           {label}
         </span>
         {note ? (
@@ -768,6 +888,23 @@ export function WarMapLegendSwatch({
           </span>
         ) : null}
       </span>
-    </div>
+      {endAdornment ? <span className="shrink-0">{endAdornment}</span> : null}
+    </>
   );
+
+  if (interactive) {
+    return (
+      <button
+        type="button"
+        className={containerClassName}
+        onClick={onClick}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={containerClassName}>{content}</div>;
 }
