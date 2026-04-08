@@ -1386,8 +1386,8 @@
           "visibleLayers": "Visible layers",
           "layersUpdated": "Layers updated",
           "flights": "Flights",
-          "flightModeMilitary": "Military",
-          "flightModeAll": "All",
+          "flightModeMilitary": "Military focus",
+          "flightModeAll": "All flights",
           "mode": "Mode",
           "flightSource": "Flight source",
           "flightSourceOpensky": "OpenSky",
@@ -1408,7 +1408,7 @@
           "flightBudgetDegradation": "Degradation: {{value}}",
           "flightNotConfigured": "OpenSky OAuth client credentials are not configured.",
           "flightsRaw": "raw {{count}}",
-          "aisModeMilitary": "Military candidates",
+          "aisModeMilitary": "Candidate vessels",
           "aisModeDensity": "Density only",
           "aisModeAll": "All vessels",
           "aisTrackedVessels": "Tracked vessels",
@@ -1456,6 +1456,17 @@
           "loadingMap": "Loading map base layer…",
           "loadingData": "Loading map data…",
           "preparing": "Preparing map…"
+        },
+        "overlay": {
+          "maritimeEyebrow": "Maritime",
+          "airEyebrow": "Air",
+          "aisSectionDescription": "Start with the full vessel layer, then switch to filtered candidate or density views when you need narrower maritime signals.",
+          "aisSectionDescriptionUnavailable": "Full-vessel AIS is temporarily unavailable from the relay snapshot. Use candidate or density views until vessel snapshots recover.",
+          "flightsSectionDescription": "Review OpenSky air traffic scope and switch between military-focused and broader flight coverage.",
+          "aisCandidatesOnlyActiveHint": "Candidate vessels is a filtered subset. Some ships are intentionally hidden in this mode.",
+          "aisDensityOnlyActiveHint": "Density only summarizes chokepoints and hotspots instead of showing individual ships.",
+          "aisAllUnavailableInlineHint": "All vessels is currently unavailable because relay vessel snapshots are missing.",
+          "aisShowAllAction": "Switch to All vessels"
         },
         "tooltip": {
           "location": "Location",

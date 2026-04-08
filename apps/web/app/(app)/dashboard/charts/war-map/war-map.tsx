@@ -3573,7 +3573,7 @@ export function WarMap({
             defaultValue: "Density only",
           })
         : t("dashboard.charts.warMap.stats.aisModeMilitary", {
-            defaultValue: "Candidates only",
+            defaultValue: "Candidate vessels",
           });
   const aisEffectiveModeLabel = aisPreferredModeLabel;
   const aisHighlightedCandidateCount =
@@ -3596,7 +3596,7 @@ export function WarMap({
       : effectiveAisMode === "military"
         ? t("dashboard.charts.warMap.overlay.aisCandidatesOnlyHint", {
             defaultValue:
-              "Candidates only is a filtered subset based on AIS name and ship-type rules, not a complete vessel inventory.",
+              "Candidate vessels shows a filtered subset based on AIS name and ship-type rules, not a complete vessel inventory.",
           })
         : null,
     effectiveAisMode === "all"

@@ -117,11 +117,18 @@ const OVERLAY_PANEL_CHIP_CLASS_NAME =
 const OVERLAY_PANEL_LEGEND_GRID_CLASS_NAME = "mt-3 grid gap-3 sm:grid-cols-2";
 const OVERLAY_PANEL_STACK_CLASS_NAME = "flex w-full flex-col gap-4";
 const OVERLAY_PANEL_OPTION_GRID_CLASS_NAME = "mt-3 grid gap-3 sm:grid-cols-2";
+const OVERLAY_PANEL_AIS_MODE_GRID_CLASS_NAME = "mt-3 grid gap-2 sm:grid-cols-3";
 const OVERLAY_PANEL_TAB_GRID_CLASS_NAME = "mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4";
 const OVERLAY_PANEL_OPTION_BUTTON_CLASS_NAME =
   "!h-auto !min-h-10 !w-full !justify-start !rounded-[16px] !px-3.5 !py-2.5 !text-left !text-[12px] !font-semibold !leading-5";
 const OVERLAY_PANEL_TAB_BUTTON_CLASS_NAME =
   "!h-auto !min-h-[3rem] !w-full !justify-center !rounded-[18px] !px-3.5 !py-2.5 !text-center !text-[12px] !font-semibold !leading-5";
+const AIS_SECTION_CARD_CLASS_NAME =
+  `${OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME} border-cyan-200/70 bg-cyan-50/55 dark:border-cyan-400/25 dark:bg-cyan-950/12`;
+const FLIGHTS_SECTION_CARD_CLASS_NAME =
+  `${OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME} border-indigo-200/70 bg-indigo-50/45 dark:border-indigo-400/25 dark:bg-indigo-950/12`;
+const OVERLAY_PANEL_MODE_HINT_CLASS_NAME =
+  "mt-3 rounded-2xl border border-amber-200/80 bg-amber-50/85 px-3.5 py-3 text-[12px] leading-5 text-amber-900 shadow-[0_12px_28px_-24px_rgba(180,83,9,0.45)] dark:border-amber-400/30 dark:bg-amber-950/25 dark:text-amber-100";
 
 function ControlsChoiceButton({
   active,
@@ -188,6 +195,30 @@ function renderOverviewCardIcon(key: WarMapOverviewMetricCard["key"]) {
         <InfoCircleOutlined className="text-violet-600 dark:text-violet-300" />
       );
   }
+}
+
+function TransportSectionHeader({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div>
+      <Typography.Text className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+        {eyebrow}
+      </Typography.Text>
+      <Typography.Text strong className={`${OVERLAY_SECTION_TITLE_CLASS_NAME} mt-1 block`}>
+        {title}
+      </Typography.Text>
+      <Typography.Text type="secondary" className="mt-1 block text-xs leading-5">
+        {description}
+      </Typography.Text>
+    </div>
+  );
 }
 
 function resolveActiveControlsSection(
@@ -498,7 +529,7 @@ function TransportSection({
     "dashboard.charts.warMap.overlay.aisCandidatesOnlyHint",
     {
       defaultValue:
-        "Candidates only is a filtered subset based on AIS name and ship-type rules, not a complete vessel inventory.",
+        "Candidate vessels shows a filtered subset based on AIS name and ship-type rules, not a complete vessel inventory.",
     },
   );
   const aisAllVesselsHint = t("dashboard.charts.warMap.overlay.aisAllVesselsHint", {
@@ -506,35 +537,50 @@ function TransportSection({
       "All vessels shows the full AIS vessel snapshot for the current viewport.",
     },
   );
+  const aisSectionDescription = t(
+    transport.aisAllModeDisabled
+      ? "dashboard.charts.warMap.overlay.aisSectionDescriptionUnavailable"
+      : "dashboard.charts.warMap.overlay.aisSectionDescription",
+    transport.aisAllModeDisabled
+      ? {
+          defaultValue:
+            "Full-vessel AIS is temporarily unavailable from the relay snapshot. Use candidate or density views until vessel snapshots recover.",
+        }
+      : {
+          defaultValue:
+            "Start with the full vessel layer, then switch to filtered candidate or density views when you need narrower maritime signals.",
+        },
+  );
+  const aisAllUnavailableInlineHint = t(
+    "dashboard.charts.warMap.overlay.aisAllUnavailableInlineHint",
+    {
+      defaultValue:
+        "All vessels is currently unavailable because relay vessel snapshots are missing.",
+    },
+  );
+  const flightsSectionDescription = t(
+    "dashboard.charts.warMap.overlay.flightsSectionDescription",
+    {
+      defaultValue:
+        "Review OpenSky air traffic scope and switch between military-focused and broader flight coverage.",
+    },
+  );
 
   return (
     <div className={OVERLAY_PANEL_STACK_CLASS_NAME}>
-      <div className={OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME}>
-        <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
-          {t("dashboard.charts.warMap.layerNames.ais", {
+      <div className={AIS_SECTION_CARD_CLASS_NAME}>
+        <TransportSectionHeader
+          eyebrow={t("dashboard.charts.warMap.overlay.maritimeEyebrow", {
+            defaultValue: "Maritime",
+          })}
+          title={t("dashboard.charts.warMap.layerNames.ais", {
             defaultValue: "AIS traffic",
           })}
-        </Typography.Text>
+          description={aisSectionDescription}
+        />
         {transport.aisLayerVisible ? (
           <>
-            <div className={OVERLAY_PANEL_OPTION_GRID_CLASS_NAME}>
-              <ControlsChoiceButton
-                active={transport.aisMode === "military"}
-                tooltip={aisCandidatesOnlyHint}
-                onClick={() => transport.onAisModeChange("military")}
-              >
-                {t("dashboard.charts.warMap.stats.aisModeMilitary", {
-                  defaultValue: "Candidates only",
-                })}
-              </ControlsChoiceButton>
-              <ControlsChoiceButton
-                active={transport.aisMode === "density"}
-                onClick={() => transport.onAisModeChange("density")}
-              >
-                {t("dashboard.charts.warMap.stats.aisModeDensity", {
-                  defaultValue: "Density only",
-                })}
-              </ControlsChoiceButton>
+            <div className={OVERLAY_PANEL_AIS_MODE_GRID_CLASS_NAME}>
               <ControlsChoiceButton
                 active={transport.aisMode === "all"}
                 disabled={transport.aisAllModeDisabled}
@@ -549,7 +595,77 @@ function TransportSection({
                   defaultValue: "All vessels",
                 })}
               </ControlsChoiceButton>
+              <ControlsChoiceButton
+                active={transport.aisMode === "military"}
+                tooltip={aisCandidatesOnlyHint}
+                onClick={() => transport.onAisModeChange("military")}
+              >
+                {t("dashboard.charts.warMap.stats.aisModeMilitary", {
+                  defaultValue: "Candidate vessels",
+                })}
+              </ControlsChoiceButton>
+              <ControlsChoiceButton
+                active={transport.aisMode === "density"}
+                onClick={() => transport.onAisModeChange("density")}
+              >
+                {t("dashboard.charts.warMap.stats.aisModeDensity", {
+                  defaultValue: "Density only",
+                })}
+              </ControlsChoiceButton>
             </div>
+            {transport.aisAllModeDisabled ? (
+              <div className={OVERLAY_PANEL_MODE_HINT_CLASS_NAME}>
+                <Typography.Text className="block text-inherit">
+                  {transport.aisAllModeDisabledLabel ?? aisAllUnavailableInlineHint}
+                </Typography.Text>
+              </div>
+            ) : null}
+            {transport.aisMode === "military" && !transport.aisAllModeDisabled ? (
+              <div className={OVERLAY_PANEL_MODE_HINT_CLASS_NAME}>
+                <Typography.Text className="block text-inherit">
+                  {t("dashboard.charts.warMap.overlay.aisCandidatesOnlyActiveHint", {
+                    defaultValue:
+                      "Candidate vessels is a filtered subset. Some ships are intentionally hidden in this mode.",
+                  })}
+                </Typography.Text>
+                {!transport.aisAllModeDisabled ? (
+                  <Button
+                    type="link"
+                    size="small"
+                    className={resolveOverlayButtonClassName({ tone: "link" })}
+                    style={{ padding: 0, height: "auto", marginTop: 8 }}
+                    onClick={() => transport.onAisModeChange("all")}
+                  >
+                    {t("dashboard.charts.warMap.overlay.aisShowAllAction", {
+                      defaultValue: "Switch to All vessels",
+                    })}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            {transport.aisMode === "density" && !transport.aisAllModeDisabled ? (
+              <div className={OVERLAY_PANEL_MODE_HINT_CLASS_NAME}>
+                <Typography.Text className="block text-inherit">
+                  {t("dashboard.charts.warMap.overlay.aisDensityOnlyActiveHint", {
+                    defaultValue:
+                      "Density only summarizes chokepoints and hotspots instead of showing individual ships.",
+                  })}
+                </Typography.Text>
+                {!transport.aisAllModeDisabled ? (
+                  <Button
+                    type="link"
+                    size="small"
+                    className={resolveOverlayButtonClassName({ tone: "link" })}
+                    style={{ padding: 0, height: "auto", marginTop: 8 }}
+                    onClick={() => transport.onAisModeChange("all")}
+                  >
+                    {t("dashboard.charts.warMap.overlay.aisShowAllAction", {
+                      defaultValue: "Switch to All vessels",
+                    })}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
             {transport.aisMode === "all" ? (
               <div className="mt-3">
                 <ControlsChoiceButton
@@ -778,19 +894,23 @@ function TransportSection({
           t={t}
         />
       </div>
-      <div className={OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME}>
-        <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
-          {t("dashboard.charts.warMap.overlay.flights", {
+      <div className={FLIGHTS_SECTION_CARD_CLASS_NAME}>
+        <TransportSectionHeader
+          eyebrow={t("dashboard.charts.warMap.overlay.airEyebrow", {
+            defaultValue: "Air",
+          })}
+          title={t("dashboard.charts.warMap.overlay.flights", {
             defaultValue: "Flights",
           })}
-        </Typography.Text>
+          description={flightsSectionDescription}
+        />
         <div className={OVERLAY_PANEL_OPTION_GRID_CLASS_NAME}>
           <ControlsChoiceButton
             active={transport.flightMode === "military"}
             onClick={() => transport.onFlightModeChange("military")}
           >
             {t("dashboard.charts.warMap.stats.flightModeMilitary", {
-              defaultValue: "Military",
+              defaultValue: "Military focus",
             })}
           </ControlsChoiceButton>
           <ControlsChoiceButton
@@ -798,7 +918,7 @@ function TransportSection({
             onClick={() => transport.onFlightModeChange("all")}
           >
             {t("dashboard.charts.warMap.stats.flightModeAll", {
-              defaultValue: "All",
+              defaultValue: "All flights",
             })}
           </ControlsChoiceButton>
         </div>

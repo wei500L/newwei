@@ -1386,8 +1386,8 @@
           "visibleLayers": "可见图层",
           "layersUpdated": "图层更新时间",
           "flights": "飞行",
-          "flightModeMilitary": "军用",
-          "flightModeAll": "全部",
+          "flightModeMilitary": "军用重点",
+          "flightModeAll": "全部航班",
           "mode": "模式",
           "flightSource": "飞行数据源",
           "flightSourceOpensky": "OpenSky",
@@ -1408,7 +1408,7 @@
           "flightBudgetDegradation": "降级状态：{{value}}",
           "flightNotConfigured": "尚未配置 OpenSky OAuth 客户端凭据。",
           "flightsRaw": "原始 {{count}}",
-          "aisModeMilitary": "军事候选",
+          "aisModeMilitary": "候选船舶",
           "aisModeDensity": "仅密度",
           "aisModeAll": "全部船舶",
           "aisTrackedVessels": "跟踪船舶",
@@ -1456,6 +1456,17 @@
           "loadingMap": "正在加载地图底图…",
           "loadingData": "正在加载地图数据…",
           "preparing": "正在准备地图…"
+        },
+        "overlay": {
+          "maritimeEyebrow": "海上",
+          "airEyebrow": "空中",
+          "aisSectionDescription": "先看完整船舶图层，需要更窄的海上信号时再切到候选或密度视图。",
+          "aisSectionDescriptionUnavailable": "当前 relay 快照暂未提供完整船舶数据，请先使用候选或密度视图，待船舶快照恢复后再切回全部船舶。",
+          "flightsSectionDescription": "查看 OpenSky 航班范围，并在军用重点与更广覆盖之间切换。",
+          "aisCandidatesOnlyActiveHint": "候选船舶是筛选后的子集，这个模式会有意隐藏一部分船。",
+          "aisDensityOnlyActiveHint": "仅密度模式展示的是热点和瓶颈汇总，不会显示单艘船。",
+          "aisAllUnavailableInlineHint": "由于 relay 船舶快照缺失，当前无法使用全部船舶模式。",
+          "aisShowAllAction": "切换到全部船舶"
         },
         "tooltip": {
           "location": "位置",

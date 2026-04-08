@@ -337,8 +337,14 @@ describe("war-map page wiring", () => {
     expect(controlsSource).toContain(
       'onClick={() => transport.onAisModeChange("all")}',
     );
-    expect(controlsSource).toContain('defaultValue: "Candidates only"');
+    expect(
+      controlsSource.indexOf('defaultValue: "All vessels"'),
+    ).toBeLessThan(controlsSource.indexOf('defaultValue: "Candidate vessels"'));
+    expect(controlsSource).toContain('defaultValue: "Candidate vessels"');
     expect(controlsSource).toContain('defaultValue: "Highlight candidates"');
+    expect(controlsSource).toContain("aisCandidatesOnlyActiveHint");
+    expect(controlsSource).toContain("aisDensityOnlyActiveHint");
+    expect(controlsSource).toContain('defaultValue: "Switch to All vessels"');
     expect(source).toContain('id: "wm-ais-density-zones"');
     expect(source).toContain("Aggregated AIS hotspot, not individual vessels.");
     expect(source).toContain(
