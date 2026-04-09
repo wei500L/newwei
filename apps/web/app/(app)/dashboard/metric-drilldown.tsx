@@ -17,6 +17,8 @@ import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
+import { useChartTheme } from "@/hooks/use-chart-theme";
+import { useTheme } from "@/hooks/use-theme";
 import { useMetricDrillDownDetailsQuery } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -25,7 +27,7 @@ import dayjs from "@/lib/dayjs";
 import { resolveEconomicUnit } from "@/lib/economic-units";
 import { classifyMapLoadError, type MapLoadErrorPresentation } from "@/lib/map/map-load-error";
 import { createDeckMapRuntime, setDeckOverlayProps } from "@/lib/map/map-runtime";
-import { MAP_STYLE_URL } from "@/lib/map/map-style";
+import { resolveMapStyleUrl } from "@/lib/map/map-style";
 import { useRenderableContainer } from "@/lib/map/use-renderable-container";
 import {
   formatGranularityLabelLocalized,
@@ -35,6 +37,13 @@ import {
   uiGranularityToInterval,
 } from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
+
+import {
+  buildMetricAlertFacts,
+  buildMetricAlertHeadline,
+  isGenericMetricAlertMessage,
+  resolveMetricDrilldownSurface,
+} from "./metric-drilldown-utils";
 
 interface GeoJsonGeometry {
   type:
@@ -82,24 +91,33 @@ interface GeoImpactEntry {
   value: number;
 }
 
-function resolveGeoFillColor(value: number, max: number): [number, number, number, number] {
+function resolveGeoFillColor(
+  value: number,
+  max: number,
+  isDark: boolean,
+): [number, number, number, number] {
   const safeMax = Math.max(1, max);
   const ratio = Math.max(0, Math.min(1, value / safeMax));
-  const start: [number, number, number] = [224, 255, 255];
-  const end: [number, number, number] = [0, 110, 221];
+  const start: [number, number, number] = isDark
+    ? [30, 41, 59]
+    : [224, 255, 255];
+  const end: [number, number, number] = isDark
+    ? [56, 189, 248]
+    : [0, 110, 221];
   const r = Math.round(start[0] + (end[0] - start[0]) * ratio);
   const g = Math.round(start[1] + (end[1] - start[1]) * ratio);
   const b = Math.round(start[2] + (end[2] - start[2]) * ratio);
-  return [r, g, b, value > 0 ? 210 : 70];
+  return [r, g, b, value > 0 ? (isDark ? 196 : 210) : (isDark ? 96 : 70)];
 }
 
 export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDownProps) {
   const { t } = useTranslation();
   const { data: session } = useSession();
+  const { isDark } = useTheme();
+  const chartTheme = useChartTheme();
   const rangeLabel = t("dashboard.drilldown.rangeLabel", { defaultValue: "Range" });
   const rangeToLabel = t("dashboard.drilldown.rangeTo", { defaultValue: "to" });
   const unitLabel = t("dashboard.drilldown.unitLabel", { defaultValue: "Unit" });
-  const metricValueLabel = t("dashboard.drilldown.valueLabel", { defaultValue: "Value" });
   const aggregationLabel = t("dashboard.drilldown.aggregationLabel", {
     defaultValue: "Aggregation",
   });
@@ -111,12 +129,32 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
   const mapLoadingLabel = t("dashboard.drilldown.mapLoading", {
     defaultValue: "Loading map geometry...",
   });
+  const mapInitializingLabel = t("dashboard.drilldown.mapInitializing", {
+    defaultValue: "Initializing basemap...",
+  });
   const mapLoadFailedLabel = t("dashboard.drilldown.mapLoadFailed", {
     defaultValue: "Failed to load map",
   });
   const highLabel = t("dashboard.drilldown.high", { defaultValue: "High" });
   const lowLabel = t("dashboard.drilldown.low", { defaultValue: "Low" });
+  const currentValueLabel = t("dashboard.drilldown.currentValue", {
+    defaultValue: "Current",
+  });
+  const thresholdLabel = t("dashboard.drilldown.threshold", {
+    defaultValue: "Threshold",
+  });
+  const recentChangeLabel = t("dashboard.drilldown.recentChange", {
+    defaultValue: "Change",
+  });
+  const noHistoryTitle = t("dashboard.drilldown.noHistoryTitle", {
+    defaultValue: "No history in selected range",
+  });
+  const noHistoryDescription = t("dashboard.drilldown.noHistoryDescription", {
+    defaultValue: "This metric has no historical samples for the selected period.",
+  });
+  const surface = resolveMetricDrilldownSurface(isDark);
   const { range, start: rangeStart, end: rangeEnd } = useDashboardRangeStore();
+  const mapStyleUrl = useMemo(() => resolveMapStyleUrl(isDark), [isDark]);
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -129,6 +167,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
   const [geoJsonData, setGeoJsonData] = useState<GeoJsonFeatureCollection | null>(null);
   const [geoMapCenter, setGeoMapCenter] = useState<[number, number] | null>(null);
   const [geoMapZoom, setGeoMapZoom] = useState<number | null>(null);
+  const [isGeoJsonLoading, setIsGeoJsonLoading] = useState(false);
 
   const start = rangeStart.toISOString();
   const end = rangeEnd.toISOString();
@@ -155,16 +194,21 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     if (!visible) {
       return;
     }
-    if (!session?.accessToken) {
+    if (geoJsonData) {
       return;
     }
-    if (geoJsonData) {
+    if (!session?.accessToken) {
+      setGeoJsonData({ type: "FeatureCollection", features: [] });
+      setGeoMapCenter(null);
+      setGeoMapZoom(null);
+      setIsGeoJsonLoading(false);
       return;
     }
 
     const apiClient = createApiClient({ accessToken: session.accessToken });
     let cancelled = false;
     setMapError(null);
+    setIsGeoJsonLoading(true);
 
     apiClient
       .get<WarMapGeoJsonResponse>("dashboard/war-map/geojson", {
@@ -196,6 +240,12 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           description: message,
           rawMessage: message,
         });
+      })
+      .finally(() => {
+        if (cancelled) {
+          return;
+        }
+        setIsGeoJsonLoading(false);
       });
 
     return () => {
@@ -217,7 +267,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
         bearing: 0,
         pitch: 0,
       },
-      style: MAP_STYLE_URL,
+      style: mapStyleUrl,
       onMapReady: (map) => {
         setMapError(null);
         setMapReady(true);
@@ -241,7 +291,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
       runtime.destroy();
       setMapReady(false);
     };
-  }, [hasRenderableMapContainer, visible]);
+  }, [hasRenderableMapContainer, mapStyleUrl, visible]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -358,11 +408,11 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           const resolvedCode =
             normalizeCountryCode(rawId) ?? normalizeCountryCode(rawName);
           const value = resolvedCode ? (geoValueByCode.get(resolvedCode) ?? 0) : 0;
-          return resolveGeoFillColor(value, maxGeoValue);
+          return resolveGeoFillColor(value, maxGeoValue, isDark);
         },
       }),
     ];
-  }, [geoJsonData, geoValueByCode, maxGeoValue]);
+  }, [geoJsonData, geoValueByCode, isDark, maxGeoValue]);
 
   const mapTooltipGetter = useMemo(
     () =>
@@ -448,6 +498,9 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     return {
       grid: { top: 20, right: 20, bottom: 20, left: 40, containLabel: true },
       tooltip: {
+        backgroundColor: chartTheme.colors.tooltipBg,
+        borderColor: chartTheme.colors.border,
+        textStyle: { color: chartTheme.colors.tooltipText },
         trigger: "axis",
         formatter: (params: unknown) => {
           const payload = Array.isArray(params) ? params[0] : params;
@@ -489,7 +542,11 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
         type: "category",
         data: historyData.map((h) => h.timestamp),
         boundaryGap: false,
+        axisLine: {
+          lineStyle: { color: chartTheme.colors.border },
+        },
         axisLabel: {
+          color: chartTheme.colors.foreground,
           formatter: (value: unknown) => {
             if (typeof value !== "string") return "";
             if (activeUiGranularity === UiTimeGranularity.Year) {
@@ -505,15 +562,31 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           },
         },
       },
-      yAxis: { type: "value", splitLine: { lineStyle: { type: "dashed" } } },
+      yAxis: {
+        type: "value",
+        axisLabel: { color: chartTheme.colors.foreground },
+        splitLine: { lineStyle: { type: "dashed", color: chartTheme.colors.grid } },
+      },
       series: [
         {
           data: historyData.map((h) => h.value),
           type: "line",
           smooth: true,
-          areaStyle: { opacity: 0.2 },
-          lineStyle: { width: 3 },
-          itemStyle: { color: "#1890ff" },
+          areaStyle: {
+            color: {
+              type: "linear",
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: `${chartTheme.colors.primary}66` },
+                { offset: 1, color: `${chartTheme.colors.primary}08` },
+              ],
+            },
+          },
+          lineStyle: { width: 3, color: chartTheme.colors.primary },
+          itemStyle: { color: chartTheme.colors.primary },
         },
       ],
     };
@@ -522,6 +595,12 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     activeInterval,
     activeUiGranularity,
     bucketLabel,
+    chartTheme.colors.border,
+    chartTheme.colors.foreground,
+    chartTheme.colors.grid,
+    chartTheme.colors.primary,
+    chartTheme.colors.tooltipBg,
+    chartTheme.colors.tooltipText,
     historyData,
     seriesUnit,
   ]);
@@ -555,7 +634,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
         </div>
       ) : (
         <>
-          <Typography.Paragraph type="secondary" className="mb-6">
+          <Typography.Paragraph type="secondary" className="mb-6 text-slate-600 dark:text-slate-300">
             {t(
               "dashboard.drilldown.description",
               "Detailed analysis and historical trend for {{metric}}",
@@ -584,9 +663,23 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                 size="small"
                 title={t("dashboard.drilldown.historicalTrend", "Historical Trend Analysis")}
                 variant="borderless"
-                className="bg-gray-50"
+                className={surface.sectionCardClassName}
               >
-                <DashboardChart option={trendOption} height={250} />
+                {historyData.length > 0 ? (
+                  <DashboardChart
+                    option={trendOption}
+                    height={250}
+                    lazy={false}
+                    theme={chartTheme.echartsTheme}
+                  />
+                ) : (
+                  <div className={surface.panelClassName}>
+                    <ChartEmptyState
+                      title={noHistoryTitle}
+                      description={noHistoryDescription}
+                    />
+                  </div>
+                )}
               </Card>
             </Col>
 
@@ -598,7 +691,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                   </>
                 }
                 variant="borderless"
-                className="h-full border border-gray-100"
+                className={surface.sectionCardClassName}
               >
                 {mapError ? (
                   <div className="h-[400px]">
@@ -609,10 +702,21 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                     />
                   </div>
                 ) : (
-                  <div className="relative h-[400px] overflow-hidden rounded-md bg-gray-50">
+                  <div className={surface.mapShellClassName}>
                     <div ref={mapContainerRef} className="h-full w-full" />
-                    {!mapReady || !geoJsonData ? (
-                      <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+                    {!mapReady ? (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/55 text-slate-500 backdrop-blur-sm dark:bg-slate-950/55 dark:text-slate-300">
+                        {isGeoJsonLoading ? (
+                          <Spin tip={mapLoadingLabel} />
+                        ) : (
+                          <div className="rounded-full border border-[var(--border)] bg-white/85 px-3 py-1.5 text-xs shadow-sm dark:bg-slate-950/85">
+                            {mapInitializingLabel}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                    {mapReady && isGeoJsonLoading ? (
+                      <div className="absolute right-3 top-3 rounded-full border border-[var(--border)] bg-white/88 px-3 py-1 text-xs text-slate-600 shadow-sm dark:bg-slate-950/82 dark:text-slate-300">
                         <Spin tip={mapLoadingLabel} />
                       </div>
                     ) : null}
@@ -620,15 +724,15 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                 )}
 
                 {geoData.length > 0 ? (
-                  <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
+                  <div className="mt-3 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                     <span>{lowLabel}</span>
-                    <div className="h-2 flex-1 rounded bg-gradient-to-r from-cyan-100 to-blue-700" />
+                    <div className="h-2 flex-1 rounded bg-gradient-to-r from-cyan-100 via-sky-300 to-blue-700 dark:from-slate-700 dark:via-cyan-400 dark:to-sky-500" />
                     <span>{highLabel}</span>
                   </div>
                 ) : null}
 
                 {geoData.length === 0 && mapReady && geoJsonData ? (
-                  <div className="text-center text-gray-400 text-xs mt-2">
+                  <div className="mt-2 text-center text-xs text-slate-500 dark:text-slate-400">
                     {t(
                       "dashboard.drilldown.noGeoData",
                       "No geographic data detected in recent alerts.",
@@ -643,11 +747,11 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                 title={
                   <>
                     <UnorderedListOutlined />{" "}
-                    {t("dashboard.drilldown.relatedIntelligence", "Related Intelligence")}
+                    {t("dashboard.drilldown.relatedSignals", "Related Signals")}
                   </>
                 }
                 variant="borderless"
-                className="h-full border border-gray-100"
+                className={surface.sectionCardClassName}
                 styles={{ body: { maxHeight: 400, overflowY: "auto" } }}
               >
                 {data?.relatedAlerts && data.relatedAlerts.length > 0 ? (
@@ -661,30 +765,66 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                             : "green",
                       children: (
                         <div className="pb-2">
-                          <div className="flex justify-between items-start">
-                            <span className="font-medium text-sm">{event.message}</span>
-                            <span className="text-xs text-gray-400 ml-2 whitespace-nowrap">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                {buildMetricAlertHeadline(event, title ?? metricKey ?? "")}
+                              </div>
+                              {event.message &&
+                              !isGenericMetricAlertMessage(event.message) &&
+                              event.message.trim() !==
+                                buildMetricAlertHeadline(event, title ?? metricKey ?? "") ? (
+                                <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
+                                  {event.message}
+                                </p>
+                              ) : null}
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {buildMetricAlertFacts(event, seriesUnit).map((fact) => {
+                                  const label =
+                                    fact.key === "current"
+                                      ? currentValueLabel
+                                      : fact.key === "threshold"
+                                        ? thresholdLabel
+                                        : recentChangeLabel;
+                                  const toneClassName =
+                                    fact.tone === "bullish"
+                                      ? "border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-400/35 dark:bg-emerald-400/12 dark:text-emerald-200"
+                                      : fact.tone === "bearish"
+                                        ? "border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-400/35 dark:bg-amber-400/12 dark:text-amber-200"
+                                        : "border-[var(--border)] bg-white/85 text-slate-600 dark:bg-slate-950/70 dark:text-slate-200";
+
+                                  return (
+                                    <span
+                                      key={`${event.id}-${fact.key}-${fact.value}`}
+                                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium ${toneClassName}`}
+                                    >
+                                      <span className="uppercase tracking-[0.12em] opacity-70">
+                                        {label}
+                                      </span>
+                                      <span>{fact.value}</span>
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            <span className="ml-2 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
                               {dayjs(event.triggeredAt).format("MMM D, HH:mm")}
                             </span>
                           </div>
-                          <Tag className="mt-1 mr-0" color={statusColor[event.status] ?? "default"}>
+                          <Tag className="mt-2 mr-0" color={statusColor[event.status] ?? "default"}>
                             {t(`dashboard.drilldown.status.${event.status}`, {
                               defaultValue: event.status.toUpperCase(),
                             })}
                           </Tag>
-                          <span className="text-xs text-gray-500 ml-2">
-                            {metricValueLabel}: {event.metricValue}
-                            {seriesUnit ? ` ${seriesUnit}` : ""}
-                          </span>
                         </div>
                       ),
                     }))}
                   />
                 ) : (
-                  <div className="text-gray-400 text-center py-8">
+                  <div className="py-8 text-center text-slate-500 dark:text-slate-400">
                     {t(
-                      "dashboard.drilldown.noEvents",
-                      "No related intelligence events found in the recent period.",
+                      "dashboard.drilldown.noSignals",
+                      "No related alert signals for this metric in the selected period.",
                     )}
                   </div>
                 )}

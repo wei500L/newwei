@@ -38,7 +38,9 @@ describe("war-map overlay model", () => {
       overlayPanelMaxHeight: 372,
       controlsPanelWidth: 336,
       legendPanelWidth: 308,
+      legendDockHeight: 0,
       controlsDrawerHeight: 468,
+      standaloneDrawerHeight: 0,
       inspectorPanelHeight: 312,
       inspectorPanelWidth: 360,
       showActionLabels: true,
@@ -57,10 +59,36 @@ describe("war-map overlay model", () => {
       overlayPanelMaxHeight: 340,
       controlsPanelWidth: 288,
       legendPanelWidth: 280,
+      legendDockHeight: 0,
       controlsDrawerHeight: 400,
+      standaloneDrawerHeight: 0,
       inspectorPanelHeight: 220,
       inspectorPanelWidth: 320,
       showActionLabels: false,
+    });
+  });
+
+  it("adds standalone legend dock and drawer sizing without changing embedded widths", () => {
+    expect(
+      buildWarMapOverlayLayout({
+        wrapperWidth: 1400,
+        wrapperHeight: 900,
+        overlayDensity: "expanded",
+        hasNonFatalErrors: false,
+        layoutVariant: "standalone",
+      }),
+    ).toEqual({
+      overlayTopClassName: "top-4",
+      overlayRailWidth: 252,
+      overlayPanelMaxHeight: 520,
+      controlsPanelWidth: 336,
+      legendPanelWidth: 308,
+      legendDockHeight: 196,
+      controlsDrawerHeight: 640,
+      standaloneDrawerHeight: 486,
+      inspectorPanelHeight: 380,
+      inspectorPanelWidth: 360,
+      showActionLabels: true,
     });
   });
 

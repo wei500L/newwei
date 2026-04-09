@@ -20,7 +20,9 @@ describe("map page layout", () => {
     expect(sourceText).toContain("flex-1");
     expect(sourceText).toContain('className="px-5 pt-4"');
     expect(sourceText).toContain('className="min-h-0 flex flex-1"');
-    expect(sourceText).toContain('<WarMap className="flex-1" />');
+    expect(sourceText).toContain(
+      '<WarMap className="flex-1" layoutVariant="standalone" />',
+    );
     expect(sourceText).not.toContain('className="absolute top-4 left-4 z-10"');
   });
 });

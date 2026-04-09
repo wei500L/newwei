@@ -84,13 +84,21 @@ query MetricDrillDownDetails(
       defaultUnit
     }
   }
-  relatedAlerts: alertEvents(limit: 20) {
+  relatedAlerts: alertEvents(limit: 20, metricSlug: $category) {
     id
     severity
     message
     triggeredAt
     status
     metricValue
+    changePercent
+    ruleName
+    metricSlug
+    operator
+    thresholdValue
+    thresholdLower
+    thresholdUpper
+    changeWindowMin
     context
   }
 }

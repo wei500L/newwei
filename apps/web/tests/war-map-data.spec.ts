@@ -209,7 +209,9 @@ describe("war-map page wiring", () => {
     const source = read("app/(app)/map/page.tsx");
 
     expect(source).not.toContain("TimeRangeControls");
-    expect(source).toContain('<WarMap className="flex-1" />');
+    expect(source).toContain(
+      '<WarMap className="flex-1" layoutVariant="standalone" />',
+    );
     expect(source).toContain(
       "min-h-[calc(100dvh-var(--top-nav-height,4rem)-var(--ticker-height,0px)-2rem)]",
     );
@@ -323,7 +325,9 @@ describe("war-map page wiring", () => {
       "const aisHighlightCandidates = useWarMapSettingsStore(",
     );
     expect(source).toContain("onFlightModeChange: setFlightMode,");
-    expect(source).toContain("onAisHighlightCandidatesChange: setAisHighlightCandidates,");
+    expect(source).toContain(
+      "onAisHighlightCandidatesChange: setAisHighlightCandidates,",
+    );
     expect(source).toContain('id: "wm-ais-candidate-highlight-glow"');
     expect(controlsSource).toContain(
       'onClick={() => transport.onFlightModeChange("all")}',
@@ -337,9 +341,9 @@ describe("war-map page wiring", () => {
     expect(controlsSource).toContain(
       'onClick={() => transport.onAisModeChange("all")}',
     );
-    expect(
-      controlsSource.indexOf('defaultValue: "All vessels"'),
-    ).toBeLessThan(controlsSource.indexOf('defaultValue: "Candidate vessels"'));
+    expect(controlsSource.indexOf('defaultValue: "All vessels"')).toBeLessThan(
+      controlsSource.indexOf('defaultValue: "Candidate vessels"'),
+    );
     expect(controlsSource).toContain('defaultValue: "Candidate vessels"');
     expect(controlsSource).toContain('defaultValue: "Highlight candidates"');
     expect(controlsSource).toContain("aisCandidatesOnlyActiveHint");
@@ -428,13 +432,15 @@ describe("war-map page wiring", () => {
     expect(source).toContain("buildWarMapOverlayViewModel({");
     expect(source).toContain("<WarMapOverlayRail");
     expect(source).toContain("<WarMapControlsPanel");
+    expect(source).toContain("<WarMapLegendDock");
     expect(source).toContain("<WarMapInspectorPanel");
     expect(source).toContain('useState<OverlayControlsSection>("view")');
-    expect(source).toContain(
-      'onOpenLegend: () => setControlsSection("legend")',
-    );
+    expect(source).toContain('layoutVariant = "embedded"');
+    expect(source).toContain("const standaloneLayout =");
+    expect(source).toContain("if (standaloneLayout) {");
+    expect(source).toContain("scrollLegendDockIntoView();");
+    expect(source).toContain('setOpenOverlayPanel("legend")');
     expect(source).not.toContain('setControlsSection("overview");');
-    expect(source).not.toContain('openOverlayPanel === "legend"');
     expect(source).not.toContain("legendOverlayRef");
     expect(source).not.toContain(
       "legend={{ showAisLegend: layerVisibility.ais }}",
@@ -442,10 +448,18 @@ describe("war-map page wiring", () => {
     expect(source).toContain('current === "controls" ? null : "controls"');
     expect(source).toContain('placement="bottom"');
     expect(source).toContain(
-      'const mobileControlsDrawerHeight = `min(${overlayLayout.controlsDrawerHeight}px, calc(100dvh - 72px))`;',
+      "const mobileControlsDrawerHeight = `min(${overlayLayout.controlsDrawerHeight}px, calc(100dvh - 72px))`;",
     );
-    expect(source).toContain("height={mobileControlsDrawerHeight}");
+    expect(source).toContain(
+      "const standaloneControlsDrawerHeight = `min(${overlayLayout.standaloneDrawerHeight}px, calc(100dvh - 96px))`;",
+    );
     expect(source).toContain("closable={false}");
+    expect(source).toContain(
+      "getContainer={standaloneLayout ? false : undefined}",
+    );
+    expect(source).toContain(
+      "style={{ height: overlayLayout.legendDockHeight }}",
+    );
     expect(source).not.toContain('placement="right"');
     expect(source).toContain("resolveWarMapContainerClassName(className)");
   });
@@ -474,24 +488,25 @@ describe("war-map page wiring", () => {
     expect(controlsSource).toContain("ControlsChoiceButton");
     expect(controlsSource).toContain("OVERLAY_PANEL_OPTION_GRID_CLASS_NAME");
     expect(controlsSource).toContain("OVERLAY_PANEL_TAB_GRID_CLASS_NAME");
+    expect(controlsSource).toContain(
+      "OVERLAY_PANEL_STANDALONE_SPLIT_GRID_CLASS_NAME",
+    );
     expect(controlsSource).toContain("resolveOverlayButtonClassName({");
     expect(controlsSource).toContain("ControlsHeaderSummary");
     expect(controlsSource).toContain("renderControlsTabLabel");
     expect(controlsSource).toContain("ResizeObserver");
     expect(controlsSource).toContain("transport.onOpenLegend");
     expect(controlsSource).toContain("overscroll-contain");
+    expect(controlsSource).toContain("WarMapLegendDock");
     expect(controlsSource).not.toContain("legend.showAisLegend");
-    expect(controlsSource).not.toContain("overlayPanelMaxHeight - 108");
     expect(railSource).toContain("dark:bg-slate-950/[0.78]");
-    expect(railSource).toContain("dark:from-slate-950/[0.92]");
+    expect(railSource).toContain('layoutVariant = "embedded"');
     expect(railSource).toContain("right-4 z-10 flex justify-end");
     expect(railSource).toContain("iconOnly: !showActionLabels");
     expect(railSource).toContain(
-      "!h-10 !min-w-[7rem] !px-4 !text-xs !font-semibold",
+      "!h-10 !min-w-[6.5rem] !px-4 !text-xs !font-semibold",
     );
-    expect(railSource).toContain(
-      'const hideRailSummaryCards =\n    !useDrawerControls && openOverlayPanel === "controls";',
-    );
+    expect(railSource).toContain("const usesLegendDock =");
     expect(inspectorSource).toContain("dark:from-amber-500/10");
     expect(inspectorSource).toContain("dark:bg-slate-950/[0.78]");
     expect(inspectorSource).toContain("OVERLAY_NEUTRAL_TAG_CLASS_NAME");

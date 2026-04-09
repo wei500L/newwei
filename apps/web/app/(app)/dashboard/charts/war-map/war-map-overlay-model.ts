@@ -154,6 +154,7 @@ export type SelectedInspector =
 
 export type OverlayDensity = "expanded" | "compact" | "minimal";
 export type OverlayPanelKey = "controls" | "legend";
+export type WarMapLayoutVariant = "embedded" | "standalone";
 export type OverlayControlsSection =
   | "overview"
   | "view"
@@ -172,7 +173,9 @@ export interface WarMapOverlayLayout {
   overlayPanelMaxHeight: number;
   controlsPanelWidth: number;
   legendPanelWidth: number;
+  legendDockHeight: number;
   controlsDrawerHeight: number;
+  standaloneDrawerHeight: number;
   inspectorPanelHeight: number;
   inspectorPanelWidth: number;
   showActionLabels: boolean;
@@ -248,6 +251,7 @@ interface BuildWarMapOverlayLayoutParams {
   wrapperHeight: number;
   overlayDensity: OverlayDensity;
   hasNonFatalErrors: boolean;
+  layoutVariant?: WarMapLayoutVariant;
 }
 
 interface BuildWarMapOverlayViewModelParams {
@@ -306,6 +310,7 @@ export function buildWarMapOverlayLayout({
   wrapperHeight,
   overlayDensity,
   hasNonFatalErrors,
+  layoutVariant = "embedded",
 }: BuildWarMapOverlayLayoutParams): WarMapOverlayLayout {
   const controlsPanelWidth =
     overlayDensity === "expanded"
@@ -325,6 +330,18 @@ export function buildWarMapOverlayLayout({
       : overlayDensity === "compact"
         ? clamp(Math.round(wrapperWidth * 0.19), 208, 248)
         : clamp(wrapperWidth - 32, 220, 280);
+  const legendDockHeight =
+    layoutVariant === "standalone"
+      ? overlayDensity === "expanded"
+        ? clamp(Math.round((wrapperHeight || 600) * 0.24), 168, 196)
+        : overlayDensity === "compact"
+          ? clamp(Math.round((wrapperHeight || 520) * 0.26), 168, 204)
+          : clamp(Math.round((wrapperHeight || 520) * 0.28), 176, 220)
+      : 0;
+  const standaloneDrawerHeight =
+    layoutVariant === "standalone"
+      ? clamp(Math.round((wrapperHeight || 640) * 0.54), 460, 620)
+      : 0;
 
   return {
     overlayTopClassName: hasNonFatalErrors ? "top-20" : "top-4",
@@ -337,11 +354,13 @@ export function buildWarMapOverlayLayout({
           : clamp(Math.round((wrapperHeight || 430) * 0.78), 360, 620),
     controlsPanelWidth,
     legendPanelWidth,
+    legendDockHeight,
     controlsDrawerHeight: clamp(
       Math.round((wrapperHeight || 480) * 0.78),
       400,
       640,
     ),
+    standaloneDrawerHeight,
     inspectorPanelHeight:
       overlayDensity === "compact"
         ? clamp(Math.round((wrapperHeight || 430) * 0.42), 220, 300)

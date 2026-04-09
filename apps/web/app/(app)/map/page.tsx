@@ -30,7 +30,7 @@ export default function MapPage() {
           </Typography.Text>
         </div>
         <div className="min-h-0 flex flex-1">
-          <WarMap className="flex-1" />
+          <WarMap className="flex-1" layoutVariant="standalone" />
         </div>
       </div>
     </div>

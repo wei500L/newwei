@@ -13,6 +13,7 @@ import {
   OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME,
   resolveOverlayButtonClassName,
   type OverlayDensity,
+  type WarMapLayoutVariant,
   type OverlayPanelKey,
   type WarMapSummaryStatusCard,
   type WarMapTranslateFn,
@@ -26,6 +27,7 @@ import {
 export interface WarMapOverlayRailProps {
   overlayRailRef: RefObject<HTMLDivElement | null>;
   overlayDensity: OverlayDensity;
+  layoutVariant?: WarMapLayoutVariant;
   overlayTopClassName: string;
   overlayRailWidth: number;
   useDrawerControls: boolean;
@@ -50,6 +52,7 @@ export interface WarMapOverlayRailProps {
 export function WarMapOverlayRail({
   overlayRailRef,
   overlayDensity,
+  layoutVariant = "embedded",
   overlayTopClassName,
   overlayRailWidth,
   useDrawerControls,
@@ -70,6 +73,7 @@ export function WarMapOverlayRail({
   legendPanel,
   t,
 }: WarMapOverlayRailProps) {
+  const usesLegendDock = layoutVariant === "standalone";
   const streamStatus = summaryStatusCards.find((card) => card.key === "stream");
   const dataStatus = summaryStatusCards.find((card) => card.key === "data");
   const controlsLabel = t("dashboard.charts.warMap.overlay.controls", {
@@ -79,8 +83,9 @@ export function WarMapOverlayRail({
     defaultValue: "Legend",
   });
   const controlsActive = openOverlayPanel === "controls";
-  const legendActive = openOverlayPanel === "legend";
+  const legendActive = !usesLegendDock && openOverlayPanel === "legend";
   const showQuickLegend =
+    !usesLegendDock &&
     getQuickLegendVisibility(overlayDensity) &&
     quickLegendItems.length > 0 &&
     !openOverlayPanel;
@@ -90,13 +95,15 @@ export function WarMapOverlayRail({
     quickLegendItems.length - visibleQuickLegendItems.length,
   );
   const activePanel =
-    !useDrawerControls && openOverlayPanel
+    !useDrawerControls && !usesLegendDock && openOverlayPanel
       ? openOverlayPanel === "controls"
         ? controlsPanel
-        : legendPanel
+        : usesLegendDock
+          ? null
+          : legendPanel
       : null;
   const showLegendToolbarButton =
-    useDrawerControls || legendActive || !showQuickLegend;
+    !usesLegendDock && (useDrawerControls || legendActive || !showQuickLegend);
 
   return (
     <div

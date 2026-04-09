@@ -3553,7 +3553,7 @@ export type MetricDrillDownDetailsQueryVariables = Exact<{
 }>;
 
 
-export type MetricDrillDownDetailsQuery = { __typename?: 'Query', history: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, effectiveGranularity: TimeGranularity, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, relatedAlerts: Array<{ __typename?: 'AlertEventModel', id: string, severity: AlertSeverity, message?: string | null, triggeredAt: any, status: AlertEventStatus, metricValue: number, context?: any | null }> };
+export type MetricDrillDownDetailsQuery = { __typename?: 'Query', history: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, effectiveGranularity: TimeGranularity, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, relatedAlerts: Array<{ __typename?: 'AlertEventModel', id: string, severity: AlertSeverity, message?: string | null, triggeredAt: any, status: AlertEventStatus, metricValue: number, changePercent?: number | null, ruleName?: string | null, metricSlug?: string | null, operator?: AlertOperator | null, thresholdValue?: number | null, thresholdLower?: number | null, thresholdUpper?: number | null, changeWindowMin?: number | null, context?: any | null }> };
 
 export type DashboardsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -5152,13 +5152,21 @@ export const MetricDrillDownDetailsDocument = gql`
       defaultUnit
     }
   }
-  relatedAlerts: alertEvents(limit: 20) {
+  relatedAlerts: alertEvents(limit: 20, metricSlug: $category) {
     id
     severity
     message
     triggeredAt
     status
     metricValue
+    changePercent
+    ruleName
+    metricSlug
+    operator
+    thresholdValue
+    thresholdLower
+    thresholdUpper
+    changeWindowMin
     context
   }
 }

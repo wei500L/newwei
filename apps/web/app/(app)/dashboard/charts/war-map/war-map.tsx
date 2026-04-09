@@ -85,6 +85,7 @@ import { readWarMapUrlState, writeWarMapUrlState } from "./url-state";
 import { useWarMapData } from "./use-war-map-data";
 import {
   WarMapControlsPanel,
+  WarMapLegendDock,
   WarMapLegendPanel,
 } from "./war-map-controls-panel";
 import {
@@ -98,6 +99,7 @@ import {
   type RenderableWarMapNewsMarker,
   type RenderableWarMapTransportSelection,
   type SelectedInspector,
+  type WarMapLayoutVariant,
   type WarMapSelectableOption,
 } from "./war-map-overlay-model";
 import { WarMapInspectorPanel } from "./war-map-inspector-panel";
@@ -282,6 +284,7 @@ interface DeckPoint {
 
 export interface WarMapProps {
   className?: string;
+  layoutVariant?: WarMapLayoutVariant;
   translateTarget?: WarMapTranslateTarget;
   streamState?: DashboardStreamState;
   onEffectiveRangeChange?: (range: { start: Date; end: Date }) => void;
@@ -799,6 +802,7 @@ function formatWarMapRelativeTimestamp(
 
 export function WarMap({
   className,
+  layoutVariant = "embedded",
   translateTarget,
   streamState,
   onEffectiveRangeChange,
@@ -818,6 +822,7 @@ export function WarMap({
   const mapRef = useRef<MapLibreMap | null>(null);
   const deckOverlayRef = useRef<MapboxOverlay | null>(null);
   const overlayRailRef = useRef<HTMLDivElement | null>(null);
+  const legendDockRef = useRef<HTMLDivElement | null>(null);
   const syncFromMapRef = useRef(false);
   const hasHydratedUrlRef = useRef(false);
 
@@ -858,6 +863,7 @@ export function WarMap({
     () => resolveOverlayDensity(wrapperSize.width, wrapperSize.height),
     [wrapperSize.height, wrapperSize.width],
   );
+  const standaloneLayout = layoutVariant === "standalone";
   const useDrawerControls = overlayDensity === "minimal";
   const useDesktopInspector = Boolean(
     screens.lg && overlayDensity !== "minimal",
@@ -4176,9 +4182,11 @@ export function WarMap({
         wrapperHeight: wrapperSize.height,
         overlayDensity,
         hasNonFatalErrors: hasNonFatalDataError,
+        layoutVariant,
       }),
     [
       hasNonFatalDataError,
+      layoutVariant,
       overlayDensity,
       wrapperSize.height,
       wrapperSize.width,
@@ -4352,10 +4360,23 @@ export function WarMap({
       })}
     </div>
   );
+  const scrollLegendDockIntoView = useCallback(() => {
+    setOpenOverlayPanel(null);
+
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        legendDockRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
+      });
+    }
+  }, []);
   const activeControlsSection =
     controlsSection === "overview" ? "view" : controlsSection;
   const controlsPanelContent: ReactNode = (
     <WarMapControlsPanel
+      layoutVariant={layoutVariant}
       controlsSection={activeControlsSection}
       controlsSectionMeta={overlayViewModel.controlsSectionMeta}
       controlsTabs={overlayViewModel.controlsTabs}
@@ -4424,7 +4445,13 @@ export function WarMap({
         onAnalyzeCurrentView: () => {
           void handleAnalyzeCurrentView();
         },
-        onOpenLegend: () => setOpenOverlayPanel("legend"),
+        onOpenLegend: () => {
+          if (standaloneLayout) {
+            scrollLegendDockIntoView();
+            return;
+          }
+          setOpenOverlayPanel("legend");
+        },
       }}
       activeLegendKey={focusedLegendItemKey}
       highlightedLegendKey={highlightedLegendItemKey}
@@ -4458,6 +4485,17 @@ export function WarMap({
       t={t}
     />
   );
+  const legendDockContent: ReactNode = (
+    <WarMapLegendDock
+      legendSections={legendSections}
+      summaryDataLabel={overlayViewModel.summaryDataLabel}
+      activeLegendKey={focusedLegendItemKey}
+      highlightedLegendKey={highlightedLegendItemKey}
+      onLegendItemHover={updateHoveredLegendItemKey}
+      onLegendItemFocus={updateFocusedLegendItemKey}
+      t={t}
+    />
+  );
   const desktopLegendPanel = (
     <div
       className={`${OVERLAY_SURFACE_CLASS_NAME} pointer-events-auto self-end overflow-hidden`}
@@ -4470,21 +4508,34 @@ export function WarMap({
     </div>
   );
   const mobileControlsDrawerHeight = `min(${overlayLayout.controlsDrawerHeight}px, calc(100dvh - 72px))`;
+  const standaloneControlsDrawerHeight = `min(${overlayLayout.standaloneDrawerHeight}px, calc(100dvh - 96px))`;
 
   const containerClassName = resolveWarMapContainerClassName(className);
+  const mapViewportClassName = standaloneLayout
+    ? "relative min-h-0 flex-1"
+    : "relative h-full";
+  const useBottomDrawer = standaloneLayout || useDrawerControls;
 
   if (!inView) {
     return (
       <div ref={wrapperRef} className={containerClassName}>
-        <div className="flex h-full items-center justify-center">
-          <Space size={8}>
-            <Spin size="small" />
-            <Typography.Text type="secondary">
-              {t("dashboard.charts.warMap.status.preparing", {
-                defaultValue: "Preparing map…",
-              })}
-            </Typography.Text>
-          </Space>
+        <div
+          className={
+            standaloneLayout ? "flex h-full min-h-0 flex-col gap-4" : "h-full"
+          }
+        >
+          <div className={mapViewportClassName}>
+            <div className="flex h-full items-center justify-center">
+              <Space size={8}>
+                <Spin size="small" />
+                <Typography.Text type="secondary">
+                  {t("dashboard.charts.warMap.status.preparing", {
+                    defaultValue: "Preparing map…",
+                  })}
+                </Typography.Text>
+              </Space>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -4492,154 +4543,189 @@ export function WarMap({
 
   return (
     <div ref={wrapperRef} className={containerClassName}>
-      {!hasFatalOverlay ? (
-        <>
-          {hasNonFatalDataError ? (
-            <div className="absolute left-4 right-4 top-4 z-20">
-              <RequestErrorBanner
-                error={errors[0]}
-                showCachedDataHint
-                actionLoading={refreshingMapData}
-                onRetry={() => {
+      <div
+        className={
+          standaloneLayout ? "flex h-full min-h-0 flex-col gap-4" : "h-full"
+        }
+      >
+        <div className={mapViewportClassName}>
+          {!hasFatalOverlay ? (
+            <>
+              {hasNonFatalDataError ? (
+                <div className="absolute left-4 right-4 top-4 z-20">
+                  <RequestErrorBanner
+                    error={errors[0]}
+                    showCachedDataHint
+                    actionLoading={refreshingMapData}
+                    onRetry={() => {
+                      void refreshMapData();
+                    }}
+                  />
+                </div>
+              ) : null}
+
+              <WarMapOverlayRail
+                overlayRailRef={overlayRailRef}
+                overlayDensity={overlayDensity}
+                layoutVariant={layoutVariant}
+                overlayTopClassName={overlayLayout.overlayTopClassName}
+                overlayRailWidth={overlayLayout.overlayRailWidth}
+                useDrawerControls={useDrawerControls}
+                summaryStatusCards={overlayViewModel.summaryStatusCards}
+                summaryDataLabel={overlayViewModel.summaryDataLabel}
+                refreshingMapData={refreshingMapData}
+                showActionLabels={overlayLayout.showActionLabels}
+                openOverlayPanel={openOverlayPanel}
+                quickLegendItems={quickLegendItems}
+                activeLegendKey={focusedLegendItemKey}
+                highlightedLegendKey={highlightedLegendItemKey}
+                onRefresh={() => {
                   void refreshMapData();
                 }}
+                onToggleControls={() => {
+                  if (controlsSection === "legend") {
+                    setControlsSection("view");
+                  }
+                  setOpenOverlayPanel((current) =>
+                    current === "controls" ? null : "controls",
+                  );
+                }}
+                onToggleLegend={() => {
+                  if (standaloneLayout) {
+                    scrollLegendDockIntoView();
+                    return;
+                  }
+                  setOpenOverlayPanel((current) =>
+                    current === "legend" ? null : "legend",
+                  );
+                }}
+                onLegendItemHover={updateHoveredLegendItemKey}
+                onLegendItemFocus={updateFocusedLegendItemKey}
+                controlsPanel={desktopControlsPanel}
+                legendPanel={desktopLegendPanel}
+                t={t}
               />
-            </div>
+            </>
           ) : null}
 
-          <WarMapOverlayRail
-            overlayRailRef={overlayRailRef}
-            overlayDensity={overlayDensity}
-            overlayTopClassName={overlayLayout.overlayTopClassName}
-            overlayRailWidth={overlayLayout.overlayRailWidth}
-            useDrawerControls={useDrawerControls}
-            summaryStatusCards={overlayViewModel.summaryStatusCards}
-            summaryDataLabel={overlayViewModel.summaryDataLabel}
-            refreshingMapData={refreshingMapData}
-            showActionLabels={overlayLayout.showActionLabels}
-            openOverlayPanel={openOverlayPanel}
-            quickLegendItems={quickLegendItems}
-            activeLegendKey={focusedLegendItemKey}
-            highlightedLegendKey={highlightedLegendItemKey}
-            onRefresh={() => {
-              void refreshMapData();
-            }}
-            onToggleControls={() => {
-              if (controlsSection === "legend") {
-                setControlsSection("view");
-              }
-              setOpenOverlayPanel((current) =>
-                current === "controls" ? null : "controls",
-              );
-            }}
-            onToggleLegend={() => {
-              setOpenOverlayPanel((current) =>
-                current === "legend" ? null : "legend",
-              );
-            }}
-            onLegendItemHover={updateHoveredLegendItemKey}
-            onLegendItemFocus={updateFocusedLegendItemKey}
-            controlsPanel={desktopControlsPanel}
-            legendPanel={desktopLegendPanel}
-            t={t}
+          <div
+            ref={mapContainerRef}
+            className="h-full w-full overflow-hidden rounded-lg"
           />
-        </>
-      ) : null}
 
-      <div
-        ref={mapContainerRef}
-        className="h-full w-full overflow-hidden rounded-lg"
-      />
-
-      {!hasFatalOverlay ? (
-        <>
-          {aisViewportEmptyStateActive && aisViewportEmptyStateHint ? (
-            <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(34rem,calc(100%-2rem))] -translate-x-1/2">
-              <div className="rounded-2xl border border-amber-300/75 bg-white/[0.96] px-4 py-3 shadow-[0_18px_40px_-28px_rgba(120,53,15,0.45)] backdrop-blur-md dark:border-amber-400/35 dark:bg-slate-950/[0.84] dark:shadow-[0_22px_44px_-30px_rgba(2,6,23,0.92)]">
-                <div className="flex items-start gap-3">
-                  <span className="mt-1 inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)] dark:bg-amber-300 dark:shadow-[0_0_0_4px_rgba(252,211,77,0.18)]" />
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-semibold tracking-[-0.01em] text-slate-950 dark:text-slate-50">
-                      {aisViewportEmptyStateLabel}
-                    </p>
-                    <p className="mt-1 text-[12px] leading-5 text-slate-700 dark:text-slate-300">
-                      {aisViewportEmptyStateHint}
-                    </p>
+          {!hasFatalOverlay ? (
+            <>
+              {aisViewportEmptyStateActive && aisViewportEmptyStateHint ? (
+                <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(34rem,calc(100%-2rem))] -translate-x-1/2">
+                  <div className="rounded-2xl border border-amber-300/75 bg-white/[0.96] px-4 py-3 shadow-[0_18px_40px_-28px_rgba(120,53,15,0.45)] backdrop-blur-md dark:border-amber-400/35 dark:bg-slate-950/[0.84] dark:shadow-[0_22px_44px_-30px_rgba(2,6,23,0.92)]">
+                    <div className="flex items-start gap-3">
+                      <span className="mt-1 inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)] dark:bg-amber-300 dark:shadow-[0_0_0_4px_rgba(252,211,77,0.18)]" />
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold tracking-[-0.01em] text-slate-950 dark:text-slate-50">
+                          {aisViewportEmptyStateLabel}
+                        </p>
+                        <p className="mt-1 text-[12px] leading-5 text-slate-700 dark:text-slate-300">
+                          {aisViewportEmptyStateHint}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
+              ) : null}
+
+              <WarMapInspectorPanel
+                selectedInspector={selectedInspector}
+                transportDetail={transportDetailQuery.data?.detail ?? null}
+                transportDetailLoading={transportDetailQuery.isLoading}
+                useDesktopInspector={useDesktopInspector}
+                desktopInspectorMinimized={desktopInspectorMinimized}
+                inspectorPanelWidth={overlayLayout.inspectorPanelWidth}
+                inspectorPanelHeight={overlayLayout.inspectorPanelHeight}
+                locale={locale}
+                onZoomToSelectedInspector={zoomToSelectedInspector}
+                onMinimizeInspector={() => setDesktopInspectorMinimized(true)}
+                onExpandInspector={() => setDesktopInspectorMinimized(false)}
+                onCloseInspector={closeSelectedInspector}
+                onOpenNewsLink={openNewsLink}
+                t={t}
+              />
+
+              {useBottomDrawer ? (
+                <Drawer
+                  open={
+                    standaloneLayout
+                      ? openOverlayPanel === "controls"
+                      : Boolean(openOverlayPanel)
+                  }
+                  onClose={() => setOpenOverlayPanel(null)}
+                  placement="bottom"
+                  height={
+                    standaloneLayout
+                      ? standaloneControlsDrawerHeight
+                      : mobileControlsDrawerHeight
+                  }
+                  closable={false}
+                  destroyOnClose={false}
+                  getContainer={standaloneLayout ? false : undefined}
+                  rootStyle={
+                    standaloneLayout ? { position: "absolute" } : undefined
+                  }
+                  styles={{ body: { padding: 0 } }}
+                >
+                  {openOverlayPanel === "legend" && !standaloneLayout
+                    ? legendPanelContent
+                    : controlsPanelContent}
+                </Drawer>
+              ) : null}
+            </>
+          ) : null}
+
+          {showBootOverlay ? (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <div className="rounded-xl border border-[var(--border)] bg-white/[0.92] px-4 py-3 shadow-lg backdrop-blur dark:bg-slate-950/[0.78] dark:shadow-[0_22px_40px_-30px_rgba(2,6,23,0.9)]">
+                <Space size={10}>
+                  <Spin size="small" />
+                  <Typography.Text>{bootOverlayLabel}</Typography.Text>
+                </Space>
               </div>
             </div>
           ) : null}
 
-          <WarMapInspectorPanel
-            selectedInspector={selectedInspector}
-            transportDetail={transportDetailQuery.data?.detail ?? null}
-            transportDetailLoading={transportDetailQuery.isLoading}
-            useDesktopInspector={useDesktopInspector}
-            desktopInspectorMinimized={desktopInspectorMinimized}
-            inspectorPanelWidth={overlayLayout.inspectorPanelWidth}
-            inspectorPanelHeight={overlayLayout.inspectorPanelHeight}
-            locale={locale}
-            onZoomToSelectedInspector={zoomToSelectedInspector}
-            onMinimizeInspector={() => setDesktopInspectorMinimized(true)}
-            onExpandInspector={() => setDesktopInspectorMinimized(false)}
-            onCloseInspector={closeSelectedInspector}
-            onOpenNewsLink={openNewsLink}
-            t={t}
-          />
-
-          {useDrawerControls ? (
-            <Drawer
-              open={Boolean(openOverlayPanel)}
-              onClose={() => setOpenOverlayPanel(null)}
-              placement="bottom"
-              height={mobileControlsDrawerHeight}
-              closable={false}
-              destroyOnClose={false}
-              styles={{ body: { padding: 0 } }}
-            >
-              {openOverlayPanel === "legend"
-                ? legendPanelContent
-                : controlsPanelContent}
-            </Drawer>
+          {!anyLoading && !errors.length && !hasData && mapReady ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <ChartEmptyState
+                description={t("pages.map.empty", {
+                  defaultValue:
+                    "No alerts or geo-tagged news signals in the selected range.",
+                })}
+              />
+            </div>
           ) : null}
-        </>
-      ) : null}
 
-      {showBootOverlay ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="rounded-xl border border-[var(--border)] bg-white/[0.92] px-4 py-3 shadow-lg backdrop-blur dark:bg-slate-950/[0.78] dark:shadow-[0_22px_40px_-30px_rgba(2,6,23,0.9)]">
-            <Space size={10}>
-              <Spin size="small" />
-              <Typography.Text>{bootOverlayLabel}</Typography.Text>
-            </Space>
+          {fatalOverlay ? (
+            <div className="absolute inset-0 z-30 rounded-lg bg-white/80 backdrop-blur-sm dark:bg-slate-950/[0.72]">
+              <ChartEmptyState
+                variant="error"
+                title={fatalOverlay.title}
+                description={fatalOverlay.description}
+                actionLabel={fatalOverlay.actionLabel}
+                actionLoading={fatalOverlay.actionLoading}
+                onAction={fatalOverlay.onAction}
+              />
+            </div>
+          ) : null}
+        </div>
+
+        {standaloneLayout ? (
+          <div
+            ref={legendDockRef}
+            className={`${OVERLAY_SURFACE_CLASS_NAME} shrink-0 overflow-hidden`}
+            style={{ height: overlayLayout.legendDockHeight }}
+          >
+            {legendDockContent}
           </div>
-        </div>
-      ) : null}
-
-      {!anyLoading && !errors.length && !hasData && mapReady ? (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <ChartEmptyState
-            description={t("pages.map.empty", {
-              defaultValue:
-                "No alerts or geo-tagged news signals in the selected range.",
-            })}
-          />
-        </div>
-      ) : null}
-
-      {fatalOverlay ? (
-        <div className="absolute inset-0 z-30 rounded-lg bg-white/80 backdrop-blur-sm dark:bg-slate-950/[0.72]">
-          <ChartEmptyState
-            variant="error"
-            title={fatalOverlay.title}
-            description={fatalOverlay.description}
-            actionLabel={fatalOverlay.actionLabel}
-            actionLoading={fatalOverlay.actionLoading}
-            onAction={fatalOverlay.onAction}
-          />
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 }
