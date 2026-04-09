@@ -2,6 +2,7 @@ import { RealtimeSocketErrorCode } from "@modular/utils";
 import { sign } from "jsonwebtoken";
 
 import type { WsConnectionRateLimiterService } from "../../websocket/ws-connection-rate-limiter.service";
+
 import { SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM } from "./situation-monitor-signals.constants";
 import { SituationMonitorSignalsGateway } from "./situation-monitor-signals.gateway";
 

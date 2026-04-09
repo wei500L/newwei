@@ -1,11 +1,9 @@
 import type { INestApplication } from "@nestjs/common";
-import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { sign } from "jsonwebtoken";
 import request from "supertest";
 
 import { AppModule } from "../src/app.module";
-import { GqlAuthGuard } from "../src/common/guards/gql-auth.guard";
 import { GraphqlRateLimitGuard } from "../src/graphql/guards/graphql-rate-limit.guard";
 import { AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS } from "../src/modules/akshare/akshare.constants";
 import { AkshareQueueProcessor } from "../src/modules/akshare/akshare.processor";
@@ -27,9 +25,9 @@ import { ItemsService } from "../src/modules/items/items.service";
 import { NotificationsGateway } from "../src/modules/notifications/notifications.gateway";
 import { OrgService } from "../src/modules/org/org.service";
 import { QueueEventPublisher } from "../src/modules/queue/queue-event.publisher";
+import { PIPELINE_DLQ_QUEUE, PIPELINE_QUEUE, PIPELINE_QUEUE_EVENTS } from "../src/modules/queue/queue.constants";
 import { QueueGateway } from "../src/modules/queue/queue.gateway";
 import { QueueProcessor } from "../src/modules/queue/queue.processor";
-import { PIPELINE_DLQ_QUEUE, PIPELINE_QUEUE, PIPELINE_QUEUE_EVENTS } from "../src/modules/queue/queue.constants";
 import { RbacService } from "../src/modules/rbac/rbac.service";
 
 const sampleUser: AuthenticatedUser = {

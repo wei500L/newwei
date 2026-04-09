@@ -1,6 +1,6 @@
+import { ProcessedItemModel } from "@modular/mongo";
 import { ForbiddenException, UseGuards } from "@nestjs/common";
 import { Args, Context, Float, Int, Query, Resolver } from "@nestjs/graphql";
-import { ProcessedItemModel } from "@modular/mongo";
 import { NewsEventStatus } from "@prisma/client";
 import { Types } from "mongoose";
 
@@ -449,7 +449,7 @@ export class NewsEventsResolver {
   }
 
   private async loadItemMetaIdByProcessedItemId(
-    processedItemIds: Array<string | null | undefined>,
+    processedItemIds: (string | null | undefined)[],
   ) {
     const normalizedIds = Array.from(
       new Set(
@@ -713,12 +713,12 @@ export class NewsEventsResolver {
   }
 
   private dedupeSimilarEvents(rows: EnrichedEvent[]): EnrichedEvent[] {
-    const kept: Array<{
+    const kept: {
       entry: EnrichedEvent;
       tokens: Set<string>;
       startMs: number;
       lastMs: number;
-    }> = [];
+    }[] = [];
     for (const entry of rows) {
       const tokens = this.buildEventTokenSet(entry.row);
       const startMs = this.safeTimeMs(entry.row.startAt);

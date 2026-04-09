@@ -1277,7 +1277,7 @@ export class LlmRequestLogService {
       .skip(rank)
       .limit(1)
       .select({ latencyMs: 1 })
-      .lean()) as Array<{ latencyMs?: unknown }>;
+      .lean()) as { latencyMs?: unknown }[];
     if (!Array.isArray(rows) || rows.length === 0) {
       return null;
     }

@@ -5,14 +5,12 @@ import {
   Badge,
   Button,
   Card,
-  Col,
   DatePicker,
   Form,
   Input,
   List,
   Modal,
   Popconfirm,
-  Row,
   Select,
   Skeleton,
   Space,
@@ -29,7 +27,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
-import { ContentSubscriptionsTab } from "./content-subscriptions-tab";
 import {
   AlertChannelType,
   NotificationType,
@@ -51,6 +48,8 @@ import {
   formatNotificationPresentation,
   resolveNotificationLink,
 } from "@/lib/notifications";
+
+import { ContentSubscriptionsTab } from "./content-subscriptions-tab";
 
 const typeColor: Record<NotificationType, string> = {
   [NotificationType.CrawlCompleted]: "green",

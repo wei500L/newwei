@@ -9,17 +9,17 @@ import { usePendingAction } from "@/hooks/use-pending-action";
 import { useTheme } from "@/hooks/use-theme";
 
 import { NewsnowColumn } from "../components/newsnow-column";
-import { NewsnowHottestCandidates } from "../components/newsnow-hottest-candidates";
 import { NewsnowHeader } from "../components/newsnow-header";
+import { NewsnowHottestCandidates } from "../components/newsnow-hottest-candidates";
 import {
   useDomesticOpinionIndex,
   useHottestAnalysis,
   useNewsMetadata,
   usePrimeNewsSources,
 } from "../hooks/use-news-sources";
-import { shouldSyncDomesticOpinionWithHottestAnalysis } from "../lib/newsnow-domestic-opinion";
 import { useNewsnowStream } from "../hooks/use-newsnow-stream";
 import { useNewsnowUiSync } from "../hooks/use-newsnow-ui-sync";
+import { shouldSyncDomesticOpinionWithHottestAnalysis } from "../lib/newsnow-domestic-opinion";
 import { useNewsnowStore } from "../store/newsnow-store";
 
 function NewsnowAttribution() {

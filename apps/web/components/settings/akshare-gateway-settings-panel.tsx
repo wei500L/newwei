@@ -1,6 +1,11 @@
 "use client";
 
 import {
+  ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG,
+  ECONOMIC_DASHBOARD_REFRESH_PRESET_ORDER,
+  type EconomicDashboardRefreshPreset as EconomicDashboardRefreshPresetKey,
+} from "@modular/utils";
+import {
   Alert,
   Button,
   Card,
@@ -29,11 +34,6 @@ import type {
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
-import {
-  ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG,
-  ECONOMIC_DASHBOARD_REFRESH_PRESET_ORDER,
-  type EconomicDashboardRefreshPreset as EconomicDashboardRefreshPresetKey,
-} from "@modular/utils";
 
 interface AkshareGatewayVersionResponse {
   akshareVersion: string;

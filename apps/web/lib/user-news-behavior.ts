@@ -118,7 +118,7 @@ function persistSessionViewCache(now: number) {
   if (typeof window === 'undefined') {
     return;
   }
-  const compactEntries: Array<[string, number]> = [];
+  const compactEntries: [string, number][] = [];
   for (const [key, ts] of sessionViewedEvents.entries()) {
     if (now - ts > SESSION_VIEW_TTL_MS) {
       continue;

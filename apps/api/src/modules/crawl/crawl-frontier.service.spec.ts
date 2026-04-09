@@ -1,5 +1,5 @@
-import { normalizeCrawlSiteProfileConfig } from './crawl-frontier.utils';
 import { CrawlFrontierService } from './crawl-frontier.service';
+import { normalizeCrawlSiteProfileConfig } from './crawl-frontier.utils';
 import { CrawlStrategyLayeredExecutorService } from './crawl-strategy-layered-executor.service';
 import { CrawlStrategyRootExecutorService } from './crawl-strategy-root-executor.service';
 

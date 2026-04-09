@@ -1,9 +1,12 @@
+import * as cheerio from "cheerio"
+
+import type { NewsItem } from "../news-aggregator.types"
+
+import { parseRelativeDate } from "./date";
 import { myFetch } from "./fetch";
 import { defineSource } from "./source";
-import { parseRelativeDate } from "./date";
 
-import * as cheerio from "cheerio"
-import type { NewsItem } from "../news-aggregator.types"
+
 
 export default defineSource(async () => {
   const baseURL = "https://www.solidot.org"

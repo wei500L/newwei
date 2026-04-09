@@ -7,7 +7,6 @@ import { gunzipSync } from "node:zlib";
 
 import { CacheService } from "../cache/cache.service";
 
-import { Crawl4aiClient, type Crawl4aiArticle } from "./crawl4ai.client";
 import type {
   CrawlMetadataExtractionInput,
   CrawlMetadataResult,
@@ -16,6 +15,7 @@ import type {
   CrawlSeedDiscoveryMode,
   CrawlTaskOptions,
 } from "./crawl.types";
+import { Crawl4aiClient, type Crawl4aiArticle } from "./crawl4ai.client";
 
 const logger = createLogger({ name: "crawl-metadata" });
 
@@ -946,11 +946,11 @@ export class CrawlMetadataService {
       this.normalizeUrlForComparison(input.seedUrl) ?? input.seedUrl;
     const startedAtMs = Date.now();
     const timeBudgetMs = input.deep.timeBudgetSeconds * 1000;
-    const pendingPages: Array<{
+    const pendingPages: {
       url: string;
       depth: number;
       priority: number;
-    }> = [{ url: input.seedUrl, depth: 0, priority: 1 }];
+    }[] = [{ url: input.seedUrl, depth: 0, priority: 1 }];
     const pendingPageSet = new Set<string>([normalizedSeedUrl]);
     const visitedPages = new Set<string>();
     const candidates = new Map<string, DeepDiscoveryCandidate>();
@@ -1007,11 +1007,11 @@ export class CrawlMetadataService {
             if (!article || article.success !== true) {
               return {
                 normalizedCurrentUrl,
-                nextPages: [] as Array<{
+                nextPages: [] as {
                   url: string;
                   depth: number;
                   priority: number;
-                }>,
+                }[],
                 discoveredCandidates: [] as DeepDiscoveryCandidate[],
               };
             }
@@ -1020,20 +1020,20 @@ export class CrawlMetadataService {
             if (!linksRecord) {
               return {
                 normalizedCurrentUrl,
-                nextPages: [] as Array<{
+                nextPages: [] as {
                   url: string;
                   depth: number;
                   priority: number;
-                }>,
+                }[],
                 discoveredCandidates: [] as DeepDiscoveryCandidate[],
               };
             }
 
-            const nextPages: Array<{
+            const nextPages: {
               url: string;
               depth: number;
               priority: number;
-            }> = [];
+            }[] = [];
             const discoveredCandidates: DeepDiscoveryCandidate[] = [];
             const seenNextPages = new Set<string>();
             const seenCandidates = new Set<string>();
@@ -1634,7 +1634,7 @@ export class CrawlMetadataService {
         return ts;
       }
     }
-    const dashedDate = /(20\d{2})[-_/\.]([01]\d)[-_/\.]([0-3]\d)/.exec(path);
+    const dashedDate = /(20\d{2})[-_/.]([01]\d)[-_/.]([0-3]\d)/.exec(path);
     if (dashedDate) {
       const year = Number(dashedDate[1]);
       const month = Number(dashedDate[2]);
@@ -2259,7 +2259,9 @@ export class CrawlMetadataService {
     if (!parsed) {
       return;
     }
-    diagnostics && (diagnostics.parsedSitemaps += 1);
+    if (diagnostics) {
+      diagnostics.parsedSitemaps += 1;
+    }
     const crawledAtTs = Date.now();
 
     for (const entry of parsed.urls) {
@@ -2360,20 +2362,26 @@ export class CrawlMetadataService {
       return [];
     }
     const robotsUrl = this.joinUrl(origin, "robots.txt");
-    diagnostics && (diagnostics.robotsUrl = robotsUrl);
+    if (diagnostics) {
+      diagnostics.robotsUrl = robotsUrl;
+    }
     const robotsDiscovered =
       discoveryMode === "robots" || discoveryMode === "sitemap_only"
         ? await this.discoverRobotsSitemapUrls(robotsUrl, timeoutMs)
         : [];
     if (robotsDiscovered.length > 0) {
-      diagnostics && (diagnostics.seedMethod = "robots");
+      if (diagnostics) {
+        diagnostics.seedMethod = "robots";
+      }
       diagnostics?.robotsDiscoveredSitemaps.push(...robotsDiscovered);
       return robotsDiscovered;
     }
     const fallbackSeeds = DEFAULT_SITEMAP_SEEDS.map((seed) =>
       this.joinUrl(origin, seed),
     );
-    diagnostics && (diagnostics.seedMethod = "common_paths");
+    if (diagnostics) {
+      diagnostics.seedMethod = "common_paths";
+    }
     return fallbackSeeds;
   }
 

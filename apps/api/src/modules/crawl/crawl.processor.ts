@@ -20,7 +20,6 @@ import { PrismaService } from "../config/prisma.service";
 import { CrawlActivityService } from "./crawl-activity.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlFrontierService } from "./crawl-frontier.service";
-import { NewsSourceOpsSnapshotService } from "./news-source-ops-snapshot.service";
 import { CrawlSettingsService } from "./crawl-settings.service";
 import {
   CRAWL_QUEUE_EVENTS_LEGACY,
@@ -39,6 +38,7 @@ import {
 } from "./crawl.constants";
 import type { CrawlJobData, CrawlPriorityClass } from "./crawl.types";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
+import { NewsSourceOpsSnapshotService } from "./news-source-ops-snapshot.service";
 
 const logger = createLogger({ name: "crawl-queue" });
 const RETRYABLE_STATUS_CODES = new Set([

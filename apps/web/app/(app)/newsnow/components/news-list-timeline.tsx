@@ -6,8 +6,8 @@ import { Button, Dropdown, type MenuProps } from "antd";
 import { useIsMobile } from "../hooks/use-is-mobile";
 import type { NewsItem } from "../hooks/use-news-sources";
 import { useRelativeTime } from "../hooks/use-relative-time";
-import { getNewsItemStableKey } from "../lib/newsnow-items";
 import type { CrossSourceItemMeta } from "../lib/newsnow-dnd";
+import { getNewsItemStableKey } from "../lib/newsnow-items";
 import type { NewsnowDensityMode } from "../store/newsnow-store";
 
 interface NewsListTimelineProps {

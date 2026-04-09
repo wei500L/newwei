@@ -11,8 +11,8 @@ import { HasPermission } from "../decorators/has-permission.decorator";
 import { AlertChannelInput, UpdateAlertChannelInput, UpdateAlertEventStatusInput, UpsertAlertRuleInput } from "../dto/alert.input";
 import type { GqlRequest } from "../graphql.types";
 import { AlertChannelModel, AlertEventModel, AlertEventReplayModel, AlertRuleModel, AlertRuleTuningSuggestionModel } from "../models/alert.model";
+
 import {
-  normalizeOptionalMetricSlug,
   normalizeRequiredMetricSlug,
   serializeAlertEvent,
   serializeAlertEventPayload,

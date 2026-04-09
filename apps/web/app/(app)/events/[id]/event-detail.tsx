@@ -25,11 +25,11 @@ import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { MarkdownViewer } from "@/components/markdown-viewer";
-import { useTheme } from "@/hooks/use-theme";
 import {
   useNewsEventBriefQuery,
   useProcessedItemByIdQuery,
 } from "@/graphql/generated";
+import { useTheme } from "@/hooks/use-theme";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
 import {
@@ -42,13 +42,13 @@ import {
 import { safeHttpUrl } from "@/lib/url";
 import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
 
+import { EventSignalCard } from "../components/event-signal-card";
+import { resolveFutureEventHintStyle } from "../components/event-visuals";
 import {
   isFutureEventTimestamp,
   toCredibilityPercent,
   toHeatPercent,
 } from "../events-list-helpers";
-import { EventSignalCard } from "../components/event-signal-card";
-import { resolveFutureEventHintStyle } from "../components/event-visuals";
 import { pickRepresentativeProcessedItemId } from "../utils";
 
 interface EventItem {
@@ -259,13 +259,13 @@ function getResultObject(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-type CategoryDistributionEntry = {
+interface CategoryDistributionEntry {
   categoryPath: string;
   count: number;
   share: number;
-};
+}
 
-type TimelinePhaseSummary = {
+interface TimelinePhaseSummary {
   phase: number;
   label: string;
   categoryPrefix: string;
@@ -274,7 +274,7 @@ type TimelinePhaseSummary = {
   itemCount: number;
   bucketCount: number;
   summary: string;
-};
+}
 
 function normalizeCategoryDistribution(
   value: unknown,
@@ -815,7 +815,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
   };
 
   const renderPointList = (
-    points: Array<{ text: string; citations: number[] }> | null | undefined,
+    points: { text: string; citations: number[] }[] | null | undefined,
   ) => {
     const dataSource = points ?? [];
     if (dataSource.length === 0) {

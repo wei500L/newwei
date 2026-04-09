@@ -128,13 +128,13 @@ interface CrawlFrontierRunRecord {
     llmSummary?: AnyRecord | null;
     shadowSummary?: AnyRecord | null;
     repairSummary?: AnyRecord | null;
-    trace?: Array<{
+    trace?: {
       key: string;
       label: string;
       status: "completed" | "active" | "warning" | "failed" | "skipped";
       detail?: string | null;
       tags?: string[];
-    }>;
+    }[];
   } | null;
 }
 
@@ -184,11 +184,11 @@ interface WorkflowRunDetail {
   graphSnapshot?: AnyRecord | null;
   stepResults: WorkflowRunStep[];
   candidates: WorkflowCandidateRecord[];
-  parameterSources: Array<{
+  parameterSources: {
     key: string;
     source: string;
     value: unknown;
-  }>;
+  }[];
   systemEvents: WorkflowRunEvent[];
   stepCount: number;
   candidateCount: number;
@@ -546,7 +546,7 @@ function workflowStepColor(status: WorkflowRunStep["status"]) {
   return "default";
 }
 
-function uniqueStringList(...lists: Array<string[] | undefined>) {
+function uniqueStringList(...lists: (string[] | undefined)[]) {
   return Array.from(
     new Set(
       lists.flatMap((list) =>
@@ -722,7 +722,7 @@ export function CrawlFrontierConsole() {
   const [loadingNodeDetail, setLoadingNodeDetail] = useState(false);
   const [saving, setSaving] = useState(false);
   const [profiles, setProfiles] = useState<CrawlSiteProfileRecord[]>([]);
-  const [workflowOptions, setWorkflowOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [workflowOptions, setWorkflowOptions] = useState<{ label: string; value: string }[]>([]);
   const [runs, setRuns] = useState<CrawlFrontierRunRecord[]>([]);
   const [selectedRun, setSelectedRun] = useState<CrawlFrontierRunDetail | null>(null);
   const [selectedWorkflowRun, setSelectedWorkflowRun] = useState<WorkflowRunDetail | null>(null);
@@ -816,7 +816,7 @@ export function CrawlFrontierConsole() {
   const loadWorkflowOptions = useCallback(async () => {
     if (!canView) return;
     try {
-      const response = await apiClient.get<Array<{ id: string; name: string }>>(
+      const response = await apiClient.get<{ id: string; name: string }[]>(
         "admin/crawl-frontier/workflows",
       );
       setWorkflowOptions(

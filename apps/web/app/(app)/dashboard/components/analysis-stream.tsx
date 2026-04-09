@@ -42,7 +42,6 @@ function getAnalysisTypeClassName(type: AnalysisType): string {
 export function AnalysisStream() {
   const { t } = useTranslation();
   const {
-    status,
     authenticated,
     canReadAnalysis,
     loading,

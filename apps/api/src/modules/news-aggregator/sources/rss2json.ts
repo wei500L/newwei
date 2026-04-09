@@ -33,8 +33,7 @@ export async function rss2json(url: string): Promise<RSSInfo | undefined> {
   let items = channel.item || channel.entry || []
   if (items && !Array.isArray(items)) items = [items]
 
-  for (let i = 0; i < items.length; i++) {
-    const val = items[i]
+  for (const val of items) {
     const media = {}
 
     const obj: Record<string, unknown> = {

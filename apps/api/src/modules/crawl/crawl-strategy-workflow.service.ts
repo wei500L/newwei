@@ -46,13 +46,6 @@ type WorkflowRecord = Prisma.CrawlStrategyWorkflowGetPayload<{
   };
 }>;
 
-interface WorkflowSummary {
-  workflowId: string;
-  workflowVersionId: string;
-  workflowName: string;
-  version: number;
-}
-
 @Injectable()
 export class CrawlStrategyWorkflowService {
   constructor(

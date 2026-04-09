@@ -13,6 +13,7 @@ import {
   Typography,
 } from "antd";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -39,7 +40,6 @@ import {
   useScheduledAction,
   useTimedValueDeduper,
 } from "@/lib/use-realtime-helpers";
-import { useSession } from "next-auth/react";
 
 import {
   useNotificationStream,

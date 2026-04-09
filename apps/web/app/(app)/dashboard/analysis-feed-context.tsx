@@ -1,5 +1,6 @@
 "use client";
 
+import { useSession } from "next-auth/react";
 import {
   useCallback,
   createContext,
@@ -9,7 +10,6 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
-import { useSession } from "next-auth/react";
 
 import {
   useAnalysisEventsSubscription,

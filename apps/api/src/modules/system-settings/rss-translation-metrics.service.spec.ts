@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+
 import { RssTranslationMetricsService } from "./rss-translation-metrics.service";
 
 const prismaMock = {

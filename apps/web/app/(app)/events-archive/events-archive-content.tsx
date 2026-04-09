@@ -29,6 +29,7 @@ import dayjs from "@/lib/dayjs";
 import { trackSearchTelemetry } from "@/lib/search-telemetry";
 import { safeHttpUrl } from "@/lib/url";
 import { useDebounceValue } from "@/lib/use-debounce-value";
+
 import {
   ARCHIVE_PAGE_SIZE,
   DEFAULT_REGION,
@@ -98,20 +99,20 @@ interface ArchiveDetailData {
   sourceUrl?: string | null;
   sourceLabel?: string | null;
   classification?: ArchiveClassificationDetail | null;
-  timeline: Array<{
+  timeline: {
     id: string;
     bucketStart: string;
     title?: string | null;
     summary?: string | null;
-  }>;
-  relatedArticles: Array<{
+  }[];
+  relatedArticles: {
     processedArticleId: string;
     title?: string | null;
     summary?: string | null;
     publishedAt?: string | null;
     sourceLabel?: string | null;
     sourceUrl?: string | null;
-  }>;
+  }[];
 }
 
 const ARCHIVE_DIGEST_QUERY = gql`

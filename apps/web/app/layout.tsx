@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
-import { auth } from "@/lib/auth";
 import { ThemeProvider } from "@/hooks/use-theme";
+import { auth } from "@/lib/auth";
 
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";

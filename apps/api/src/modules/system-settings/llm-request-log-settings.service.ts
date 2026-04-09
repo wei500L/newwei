@@ -561,7 +561,7 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
   }
 
   private hasDesiredManagedTtlIndex(
-    indexes: Array<Record<string, unknown>>,
+    indexes: Record<string, unknown>[],
     expireAfterSeconds: number,
   ): boolean {
     return this.getManagedCreatedAtIndexes(indexes).some(
@@ -570,7 +570,7 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
   }
 
   private findStaleManagedTtlIndexes(
-    indexes: Array<Record<string, unknown>>,
+    indexes: Record<string, unknown>[],
     expireAfterSeconds: number,
   ): string[] {
     const managed = this.getManagedCreatedAtIndexes(indexes);
@@ -588,7 +588,7 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
   }
 
   private findBlockingNonTtlCreatedAtIndex(
-    indexes: Array<Record<string, unknown>>,
+    indexes: Record<string, unknown>[],
   ): string | null {
     const managed = this.getManagedCreatedAtIndexes(indexes);
     const blocking = managed.find(
@@ -600,7 +600,7 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
   }
 
   private getManagedCreatedAtIndexes(
-    indexes: Array<Record<string, unknown>>,
+    indexes: Record<string, unknown>[],
   ): ManagedCreatedAtIndex[] {
     return indexes
       .filter((index) => this.hasCreatedAtSingleKey(index))
@@ -934,11 +934,11 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
     };
   }
 
-  private async loadIndexesSafe(): Promise<Array<Record<string, unknown>>> {
+  private async loadIndexesSafe(): Promise<Record<string, unknown>[]> {
     const collection = LlmRequestLogModel.collection;
     try {
       const indexes = await collection.indexes();
-      return indexes as Array<Record<string, unknown>>;
+      return indexes as Record<string, unknown>[];
     } catch (error) {
       if (this.isNamespaceNotFound(error)) {
         return [];

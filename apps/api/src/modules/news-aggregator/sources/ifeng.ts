@@ -1,7 +1,8 @@
+import type { NewsItem } from "../news-aggregator.types"
+
 import { myFetch } from "./fetch";
 import { defineSource } from "./source";
 
-import type { NewsItem } from "../news-aggregator.types"
 
 export default defineSource(async () => {
   const html: string = await myFetch("https://www.ifeng.com/")

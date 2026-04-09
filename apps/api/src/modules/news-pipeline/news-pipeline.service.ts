@@ -24,6 +24,7 @@ import { z } from "zod";
 
 import { extractFirstJson, safeJsonParseFromText } from "../../common/llm-json";
 import { ItemStatus } from "../../common/pipeline-status";
+import { toPrismaJsonValue } from "../../common/prisma-json";
 import {
   alignUtcHourStart,
   extractProcessedArticleTerms,
@@ -31,7 +32,6 @@ import {
   normalizeProcessedArticleSource,
   resolveProcessedArticleEventAt,
 } from "../../common/processed-article-indexing";
-import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
 import { CrawlExecutionService } from "../crawl/crawl-execution.service";
 import { assertNoCrawl4aiLlmOptions } from "../crawl/crawl4ai-llm.guard";

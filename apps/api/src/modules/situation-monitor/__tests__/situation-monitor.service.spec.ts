@@ -47,7 +47,7 @@ describe("SituationMonitorService", () => {
     status?: SituationMonitorExternalSnapshotStatus;
     generatedAt?: string;
     expiresAt?: string;
-    warnings?: Array<{ code: string; message: string; detail?: string }>;
+    warnings?: { code: string; message: string; detail?: string }[];
     headlinesByCategory?: Partial<Record<string, unknown[]>>;
     categoryStates?: Partial<Record<string, unknown>>;
   }) => {

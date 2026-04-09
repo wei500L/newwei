@@ -1,4 +1,4 @@
-import { ArchivePreparationState } from './archive.types';
+import type { ArchivePreparationState } from './archive.types';
 
 export type ArchivePreparationScope = 'digest' | 'calendar';
 

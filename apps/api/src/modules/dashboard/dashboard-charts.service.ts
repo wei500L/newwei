@@ -39,21 +39,21 @@ import { createHash } from "node:crypto";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { GeocodingService } from "../geo/geocoding.service";
-import { RealtimeSignalsSnapshotStore } from "../realtime-signals/realtime-signals.snapshot-store";
 import { RealtimeSignalsService } from "../realtime-signals/realtime-signals.service";
+import { RealtimeSignalsSnapshotStore } from "../realtime-signals/realtime-signals.snapshot-store";
 import type {
   RealtimeAdsbAircraftSnapshot,
   RealtimeAisLatestSnapshot,
   RealtimeAisVesselSnapshot,
 } from "../realtime-signals/realtime-signals.types";
-import { SituationMonitorTranslationService } from "../situation-monitor/situation-monitor-translation.service";
-
-import worldGeoJson from "./assets/world.geo.json";
-import type { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
 import {
   classifyAircraftTransport,
   classifyAisShipType,
 } from "../realtime-signals/transport-classification";
+import { SituationMonitorTranslationService } from "../situation-monitor/situation-monitor-translation.service";
+
+import worldGeoJson from "./assets/world.geo.json";
+import type { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
 import {
   buildWarMapLayersResponse,
   type WarMapLayersResponse as WarMapStaticLayersResponse,
@@ -5888,7 +5888,7 @@ export class DashboardChartsService {
 
     const resultPoints: FinancialCandlestickPoint[] = [];
     let updatedAt: Date | undefined;
-    const incompleteEntries: Array<{ timestamp: string; missing: string[] }> =
+    const incompleteEntries: { timestamp: string; missing: string[] }[] =
       [];
     const latestObservedAt = sorted.at(-1)?.timestamp;
     for (const entry of sorted) {

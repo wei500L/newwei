@@ -8,7 +8,6 @@ import {
   Col,
   Divider,
   Grid,
-  Input,
   InputNumber,
   Popover,
   Progress,
@@ -21,7 +20,6 @@ import {
   Table,
   Tabs,
   Tag,
-  Tooltip,
   Typography,
   message,
   theme,
@@ -32,8 +30,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { io, type Socket } from "socket.io-client";
 
-import { createApiClient } from "@/lib/api-client";
 import { buildAdminLogsHref } from "@/lib/admin-logs";
+import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { env } from "@/lib/env";
 
@@ -202,24 +200,24 @@ interface ClassificationQualitySummary {
   from: string;
   to: string;
   totalItems: number;
-  methodDistribution: Array<{
+  methodDistribution: {
     group: "llm_embedding_rerank" | "rule_fallback";
     count: number;
     share: number;
-  }>;
-  confidenceHistogram: Array<{
+  }[];
+  confidenceHistogram: {
     bucket: string;
     min: number;
     max: number;
     count: number;
-  }>;
-  confidenceTrend: Array<{
+  }[];
+  confidenceTrend: {
     bucketStart: string;
     total: number;
     avgConfidence: number | null;
     lowConfidenceCount: number;
-  }>;
-  lowConfidenceSources: Array<{
+  }[];
+  lowConfidenceSources: {
     sourceId: string;
     sourceName: string;
     sourceUrl: string;
@@ -227,7 +225,7 @@ interface ClassificationQualitySummary {
     lowConfidenceCount: number;
     lowConfidenceRate: number;
     avgConfidence: number | null;
-  }>;
+  }[];
   latencyPercentiles: {
     llm: {
       sampleSize: number;
@@ -255,24 +253,24 @@ interface ClassificationQualitySummary {
     rejectRate: number;
     penalizedRate: number;
   };
-  sourceCategoryBreakdown: Array<{
+  sourceCategoryBreakdown: {
     sourceType: "authoritative" | "blog" | "unknown";
     categoryPrefix: string;
     count: number;
-  }>;
+  }[];
   pendingReviewCount: number;
-  alertStatus: Array<{
+  alertStatus: {
     stage: "llm" | "embedding" | "rerank";
     thresholdMs: number;
     p95Ms: number | null;
     triggered: boolean;
-  }>;
-  gateAlertStatus: Array<{
+  }[];
+  gateAlertStatus: {
     metric: "reject_rate" | "penalized_rate";
     threshold: number;
     value: number;
     triggered: boolean;
-  }>;
+  }[];
   sampling?: {
     classifiedItems: {
       matched: number;
@@ -302,7 +300,7 @@ interface ClassificationSourceItemsResponse {
   sourceId: string;
   from: string;
   to: string;
-  items: Array<{
+  items: {
     processedItemId: string;
     itemMetaId: string | null;
     articleUrl: string | null;
@@ -312,7 +310,7 @@ interface ClassificationSourceItemsResponse {
     confidence: number | null;
     method: string | null;
     createdAt: string;
-  }>;
+  }[];
   nextCursor: string | null;
 }
 
@@ -330,12 +328,12 @@ interface ClassificationReviewItem {
   predictedLegacyCategory: string | null;
   predictedConfidence: number | null;
   predictedMethod: string | null;
-  candidatePaths: Array<{
+  candidatePaths: {
     path?: string;
     score?: number;
     legacy_category?: string | null;
     reason?: string | null;
-  }>;
+  }[];
   status: "pending" | "approved" | "rejected" | "corrected";
   correctedCategoryPath: string | null;
   note: string | null;
@@ -448,7 +446,7 @@ export function QualityContent() {
     "disconnected" | "connecting" | "connected"
   >("disconnected");
   const [liveError, setLiveError] = useState<string | null>(null);
-  const [liveLastEventAt, setLiveLastEventAt] = useState<string | null>(null);
+  const [, setLiveLastEventAt] = useState<string | null>(null);
   const [liveLastEvent, setLiveLastEvent] = useState<QualityLiveEvent | null>(
     null,
   );

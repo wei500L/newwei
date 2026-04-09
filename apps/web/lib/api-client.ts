@@ -15,7 +15,7 @@ export interface ApiClientOptions {
   accessToken?: string;
 }
 
-export interface ApiAuthSession extends BrowserAuthSession {}
+export type ApiAuthSession = BrowserAuthSession;
 
 type RetriableRequestConfig = AxiosRequestConfig & {
   _retry?: boolean;

@@ -326,7 +326,8 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
       this.orgCache.delete(cacheKey);
       return null;
     }
-    const { expiresAt: _expiresAt, ...context } = cached;
+    const { expiresAt, ...context } = cached;
+    void expiresAt;
     return context;
   }
 

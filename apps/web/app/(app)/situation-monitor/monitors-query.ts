@@ -1,6 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 
-import { createApiClient } from "@/lib/api-client";
+import type { createApiClient } from "@/lib/api-client";
 
 import type { StoredSituationMonitor } from "./types/situation-monitor-monitors";
 

@@ -1,9 +1,9 @@
+import { createLogger } from "@modular/utils";
 import {
   BadRequestException,
   ConflictException,
   Injectable,
 } from "@nestjs/common";
-import { createLogger } from "@modular/utils";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";

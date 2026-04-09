@@ -33,10 +33,6 @@ import {
   REALTIME_SIGNAL_SOURCES,
 } from "./realtime-signals.constants";
 import { RealtimeSignalsSnapshotStore } from "./realtime-signals.snapshot-store";
-import {
-  classifyAircraftTransport,
-  classifyAisShipType,
-} from "./transport-classification";
 import type {
   RealtimeAdsbAircraftSnapshot,
   RealtimeAdsbLatestSnapshot,
@@ -49,7 +45,6 @@ import type {
   RealtimeAisRelayStatusSnapshot,
   RealtimeAisVesselSnapshot,
   RealtimeSignalFetchResult,
-  RealtimeSignalFlightMode,
   RealtimeSignalRuntimeStatus,
   RealtimeOpenskyBudgetDaySummary,
   RealtimeOpenskyBudgetDegradationLevel,
@@ -65,6 +60,10 @@ import type {
   RealtimeSignalsRuntimeConfig,
   RealtimeSignalsRuntimeSettingsSource,
 } from "./realtime-signals.types";
+import {
+  classifyAircraftTransport,
+  classifyAisShipType,
+} from "./transport-classification";
 
 const logger = createLogger({ name: "realtime-signals" });
 const ACLED_API_URL = "https://acleddata.com/api/acled/read";
@@ -250,23 +249,22 @@ const OPENSKY_ALL_CAPTURE_QUERY_REGIONS = [
     bbox: [110, -47, 180, 5] as [number, number, number, number],
   },
 ] as const;
-const OPENSKY_BUDGET_HASH_FIELDS = [
-  "usedCredits",
-  "requestCount",
-  "militaryCredits",
-  "militaryCalls",
-  "allCredits",
-  "allCalls",
-  "errorCalls",
-  "authErrorCalls",
-  "rateLimitedErrorCalls",
-  "serverErrorCalls",
-  "timeoutErrorCalls",
-  "networkErrorCalls",
-  "unknownErrorCalls",
-  "blockedAllModeCount",
-  "skippedMilitaryCount",
-] as const;
+type OpenSkyBudgetCounterField =
+  | "usedCredits"
+  | "requestCount"
+  | "militaryCredits"
+  | "militaryCalls"
+  | "allCredits"
+  | "allCalls"
+  | "errorCalls"
+  | "authErrorCalls"
+  | "rateLimitedErrorCalls"
+  | "serverErrorCalls"
+  | "timeoutErrorCalls"
+  | "networkErrorCalls"
+  | "unknownErrorCalls"
+  | "blockedAllModeCount"
+  | "skippedMilitaryCount";
 const SOURCE_TO_METRIC_SLUG: Record<RealtimeSignalSource, string> = {
   opensky: REALTIME_SIGNAL_METRIC_SLUGS.opensky,
   ais: REALTIME_SIGNAL_METRIC_SLUGS.ais,
@@ -340,8 +338,6 @@ interface AdsbNormalizationResult {
 }
 
 type OpenSkyCreditScope = "military" | "all";
-
-type OpenSkyBudgetCounterField = (typeof OPENSKY_BUDGET_HASH_FIELDS)[number];
 
 interface OpenSkyBudgetReserveResult {
   allowed: boolean;
@@ -3547,11 +3543,11 @@ export class RealtimeSignalsService {
   }
 
   private buildRecentTermCountsFromBuckets(
-    rows: Array<{
+    rows: {
       term: string;
       source: string;
       _sum: { articleCount: number | null };
-    }>,
+    }[],
   ) {
     const recentCounts = new Map<
       string,
@@ -3576,10 +3572,10 @@ export class RealtimeSignalsService {
   }
 
   private buildBaselineTermCountsFromBuckets(
-    rows: Array<{
+    rows: {
       term: string;
       _sum: { articleCount: number | null };
-    }>,
+    }[],
   ) {
     const baselineCounts = new Map<string, number>();
     for (const row of rows) {
@@ -5181,10 +5177,10 @@ export class RealtimeSignalsService {
     );
 
     const trackPointsToInsert: TransportTelemetryRecord[] = [];
-    const statesToUpsert: Array<{
+    const statesToUpsert: {
       record: TransportTelemetryRecord;
       existing: Record<string, unknown> | null;
-    }> = [];
+    }[] = [];
 
     for (const record of dedupedRecords) {
       const existing =

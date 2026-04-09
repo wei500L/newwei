@@ -1,4 +1,5 @@
 import { ECONOMIC_DASHBOARD_REFRESH_PRESET } from "@modular/utils";
+
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
 
 import { ActionRateLimitService } from "./action-rate-limit.service";

@@ -27,7 +27,7 @@ export interface WarMapClusterPartition<T extends WarMapClusterablePoint> {
   bbox: WarMapBbox;
   cellSizeDeg: number;
   singles: T[];
-  clusters: Array<WarMapCluster<T>>;
+  clusters: WarMapCluster<T>[];
 }
 
 export interface ClusterWarMapPointsOptions<T extends WarMapClusterablePoint> {
@@ -271,7 +271,7 @@ export function clusterWarMapPoints<T extends WarMapClusterablePoint>(
   }
 
   const singles: T[] = [];
-  const clusters: Array<WarMapCluster<T>> = [];
+  const clusters: WarMapCluster<T>[] = [];
 
   for (const [cellKey, members] of groups.entries()) {
     const sortedMembers = options.sortMembers ? options.sortMembers(members) : [...members];

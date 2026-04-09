@@ -174,7 +174,7 @@ function createTimedSignal(signal: AbortSignal | null | undefined, timeoutMs: nu
     controller.abort(createTimeoutError(timeoutMs));
   }, timeoutMs);
   const handleAbort = () =>
-    controller.abort(normalizeAbortReason(signal?.reason, timeoutMs));
+    controller.abort(normalizeAbortReason(signal?.reason));
   signal?.addEventListener("abort", handleAbort, { once: true });
 
   return {
@@ -195,10 +195,10 @@ function getAbortSignalError(
   if (didTimeout) {
     return createTimeoutError(timeoutMs);
   }
-  return normalizeAbortReason(signal.reason, timeoutMs);
+  return normalizeAbortReason(signal.reason);
 }
 
-function normalizeAbortReason(reason: unknown, timeoutMs = 12_000): Error {
+function normalizeAbortReason(reason: unknown): Error {
   if (reason instanceof Error) {
     return reason;
   }

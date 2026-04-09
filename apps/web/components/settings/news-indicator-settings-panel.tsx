@@ -1,11 +1,11 @@
 "use client";
 
 import { gql, useMutation, useQuery } from "@apollo/client";
+import { NEWS_INDICATOR_RECOMMENDED_SLUGS } from "@modular/utils";
 import { Alert, Button, Form, InputNumber, Select, Space, Spin, Switch, Typography, message } from "antd";
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { NEWS_INDICATOR_RECOMMENDED_SLUGS } from "@modular/utils";
 import { captureClientError } from "@/lib/client-telemetry";
 
 interface NewsIndicatorSettingsModel {

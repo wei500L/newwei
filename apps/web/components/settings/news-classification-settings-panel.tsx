@@ -67,7 +67,7 @@ function getGraphqlErrorMessage(error: unknown): string | null {
   }
 
   const graphQLErrors = (
-    error as { graphQLErrors?: Array<{ message?: unknown }> }
+    error as { graphQLErrors?: { message?: unknown }[] }
   ).graphQLErrors;
   if (Array.isArray(graphQLErrors) && graphQLErrors.length > 0) {
     const firstMessage = graphQLErrors[0]?.message;

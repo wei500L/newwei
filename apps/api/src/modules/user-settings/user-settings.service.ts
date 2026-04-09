@@ -1,11 +1,11 @@
-import { Injectable } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
 import {
   type WarMapLayerId as SharedWarMapLayerId,
   type WarMapLayerVisibility as SharedWarMapLayerVisibility,
   type WarMapSettings as SharedWarMapSettings,
   normalizeWarMapSettings as normalizeSharedWarMapSettings,
 } from "@modular/utils";
+import { Injectable } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 
 import { PrismaService } from "../config/prisma.service";

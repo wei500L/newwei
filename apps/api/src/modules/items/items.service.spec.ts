@@ -651,9 +651,9 @@ describe("ItemsService personalized pagination cap", () => {
       }),
     );
     expect(rankPersonalizedCandidates).toHaveBeenCalledTimes(1);
-    const rankedCandidates = rankPersonalizedCandidates.mock.calls[0][0].candidates as Array<{
+    const rankedCandidates = rankPersonalizedCandidates.mock.calls[0][0].candidates as {
       id: string;
-    }>;
+    }[];
     expect(rankedCandidates).toHaveLength(880);
     expect(new Set(rankedCandidates.map((candidate) => candidate.id)).size).toBe(
       rankedCandidates.length,

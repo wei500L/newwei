@@ -1,8 +1,8 @@
 "use client";
 
-import { GeoJsonLayer } from "@deck.gl/layers";
-import { MapboxOverlay } from "@deck.gl/mapbox";
 import { GlobalOutlined, LineChartOutlined, UnorderedListOutlined } from "@ant-design/icons";
+import { GeoJsonLayer } from "@deck.gl/layers";
+import type { MapboxOverlay } from "@deck.gl/mapbox";
 import {
   extractCountryCodeFromText,
   getCountryName,
@@ -17,9 +17,9 @@ import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
+import { useMetricDrillDownDetailsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useTheme } from "@/hooks/use-theme";
-import { useMetricDrillDownDetailsQuery } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDashboardDate } from "@/lib/dashboard-time";

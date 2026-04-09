@@ -12,11 +12,11 @@ import { useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
-import { SystemHealthMeter } from "@/app/(app)/components/system-health-meter";
 import {
   getPrimarySystemPressure,
   type SystemHealthAssessment,
 } from "@/app/(app)/components/system-health";
+import { SystemHealthMeter } from "@/app/(app)/components/system-health-meter";
 import meterStyles from "@/app/(app)/components/system-health-meter.module.css";
 
 interface SystemHealthSummaryCardProps {

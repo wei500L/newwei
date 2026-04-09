@@ -1,6 +1,6 @@
-import axios from "axios";
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
+import axios from "axios";
 import { createHash } from "node:crypto";
 
 import { CacheService } from "../cache/cache.service";

@@ -25,13 +25,8 @@ import {
   toLlmCompatibilityErrorInfo,
 } from "../../common/llm-openai-compat";
 import { extractOpenAiTextFromChoice } from "../../common/openai-chat";
-
 import { CacheService } from "../cache/cache.service";
 
-import {
-  LlmGatewaySettingsService,
-  type LlmGatewayResponseFormatMode,
-} from "./llm-gateway-settings.service";
 import { LiteLlmProxyGovernanceService } from "./litellm-proxy-governance.service";
 import {
   LLM_GATEWAY_ERROR_CODE_API_BASE_REQUIRED as ERROR_CODE_API_BASE_REQUIRED,
@@ -48,6 +43,10 @@ import {
   LLM_GATEWAY_ERROR_CODE_REQUEST_FAILED as ERROR_CODE_REQUEST_FAILED,
   LLM_GATEWAY_ERROR_CODE_UNAVAILABLE as ERROR_CODE_UNAVAILABLE,
 } from "./llm-gateway-error-codes";
+import {
+  LlmGatewaySettingsService,
+  type LlmGatewayResponseFormatMode,
+} from "./llm-gateway-settings.service";
 
 interface ChatCompletionResponse {
   model?: string;
@@ -143,7 +142,7 @@ export interface LlmGatewayRerankTestResult {
   model: string;
   topN: number;
   latencyMs: number;
-  results: Array<{ index: number; score: number }>;
+  results: { index: number; score: number }[];
   costUsd?: number;
   keySpendUsd?: number;
   callId?: string;
@@ -1459,7 +1458,7 @@ export class LlmGatewayTestService {
 
   private normalizeRerankResults(
     payload: RerankResponse | undefined,
-  ): Array<{ index: number; score: number }> {
+  ): { index: number; score: number }[] {
     const rawResults = Array.isArray(payload?.results)
       ? payload?.results
       : Array.isArray(payload?.data)

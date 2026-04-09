@@ -1,6 +1,3 @@
-import assert from "node:assert/strict";
-import { describe, it } from "node:test";
-
 import {
   CORE_PERMISSION_DEFINITIONS,
   DEFAULT_ROLES,
@@ -8,6 +5,9 @@ import {
   getDefaultRoleDefinition,
   shouldBackfillDefaultDescription,
 } from "@modular/config";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+
 
 import { backfillRbacDefaultDescriptions } from "./rbac-default-description-backfill";
 
@@ -45,8 +45,8 @@ describe("rbac default description backfill", () => {
   });
 
   it("updates only core permissions and system roles with stale default descriptions", async () => {
-    const permissionUpdates: Array<{ id: string; description: string }> = [];
-    const roleUpdates: Array<{ id: string; description: string }> = [];
+    const permissionUpdates: { id: string; description: string }[] = [];
+    const roleUpdates: { id: string; description: string }[] = [];
 
     const client = {
       permission: {

@@ -6,8 +6,8 @@ import { QueueModule } from "../queue/queue.module";
 import { SituationMonitorModule } from "../situation-monitor/situation-monitor.module";
 import { SystemSettingsModule } from "../system-settings/system-settings.module";
 
-import { ItemsController } from "./items.controller";
 import { ItemsRssTranslationService } from "./items-rss-translation.service";
+import { ItemsController } from "./items.controller";
 import { ItemsService } from "./items.service";
 
 @Module({

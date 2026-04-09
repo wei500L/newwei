@@ -13,8 +13,8 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
-import { PrismaService } from "../config/prisma.service";
 import type { AuthenticatedUser } from "../auth/auth.service";
+import { PrismaService } from "../config/prisma.service";
 import {
   isSituationMonitorLiveHlsProxyChannel,
   SituationMonitorSettingsService,
@@ -28,10 +28,10 @@ import {
   UpdateSituationMonitorDto,
 } from "./dto/situation-monitor-monitor.dto";
 import { SituationMonitorInsightsQueryDto, SituationMonitorSignalFeedbackDto } from "./dto/situation-monitor.dto";
-import { SituationMonitorMonitorsService } from "./situation-monitor-monitors.service";
-import { SituationMonitorRefreshService } from "./situation-monitor-refresh.service";
 import { SituationMonitorSignalsService } from "./signals/situation-monitor-signals.service";
 import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
+import { SituationMonitorMonitorsService } from "./situation-monitor-monitors.service";
+import { SituationMonitorRefreshService } from "./situation-monitor-refresh.service";
 import { SituationMonitorTranslationService } from "./situation-monitor-translation.service";
 import { SituationMonitorService } from "./situation-monitor.service";
 

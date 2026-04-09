@@ -52,8 +52,8 @@ import { RbacModule } from "../modules/rbac/rbac.module";
 import { SentimentModule } from "../modules/sentiment/sentiment.module";
 
 import { GraphqlRateLimitGuard } from "./guards/graphql-rate-limit.guard";
-import { ItemReadModelLoader } from "./loaders/item-read-model.loader";
 import { ItemMetaLoader } from "./loaders/item-meta.loader";
+import { ItemReadModelLoader } from "./loaders/item-read-model.loader";
 import { ProcessedItemEventIdLoader } from "./loaders/processed-item-event-id.loader";
 import { ProcessedItemPreviewLoader } from "./loaders/processed-item-preview.loader";
 import { ProcessedItemLoader } from "./loaders/processed-item.loader";
@@ -70,11 +70,6 @@ import { DashboardResolver } from "./resolvers/dashboard.resolver";
 import { EconomicDataResolver } from "./resolvers/economic-data.resolver";
 import { EntityImpactGraphResolver } from "./resolvers/entity-impact-graph.resolver";
 import { ItemsResolver } from "./resolvers/items.resolver";
-import { ProcessedItemResolver } from "./resolvers/processed-item.resolver";
-import {
-  ProcessedItemEventResolver,
-  ProcessedItemPreviewEventResolver,
-} from "./resolvers/processed-item-event.resolver";
 import { KnowledgeGraphImpactResolver } from "./resolvers/knowledge-graph-impact.resolver";
 import { KnowledgeGraphReviewResolver } from "./resolvers/knowledge-graph-review.resolver";
 import { KnowledgeGraphResolver } from "./resolvers/knowledge-graph.resolver";
@@ -82,6 +77,11 @@ import { NewsEventsResolver } from "./resolvers/news-events.resolver";
 import { NewsIndicatorResolver } from "./resolvers/news-indicator.resolver";
 import { NotificationResolver } from "./resolvers/notification.resolver";
 import { OrgResolver } from "./resolvers/org.resolver";
+import {
+  ProcessedItemEventResolver,
+  ProcessedItemPreviewEventResolver,
+} from "./resolvers/processed-item-event.resolver";
+import { ProcessedItemResolver } from "./resolvers/processed-item.resolver";
 import { RbacResolver } from "./resolvers/rbac.resolver";
 import { SentimentResolver } from "./resolvers/sentiment.resolver";
 import { SettingsResolver } from "./resolvers/settings.resolver";

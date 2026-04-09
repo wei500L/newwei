@@ -10,6 +10,7 @@ import { BadRequestException, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 
 import { PrismaService } from "../config/prisma.service";
+
 import { StorageSettingsService } from "./storage-settings.service";
 import { type CrawlImageStorageProvider } from "./storage.constants";
 

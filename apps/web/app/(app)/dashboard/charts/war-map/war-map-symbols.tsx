@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
 import type { WarMapAisMode } from "@modular/utils";
+import type { ReactNode } from "react";
 
 import type {
   OverlayDensity,

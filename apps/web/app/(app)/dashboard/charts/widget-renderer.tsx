@@ -66,14 +66,14 @@ export interface WidgetRenderProps {
   }[];
 }
 
-type ResolvedDataPoint = {
+interface ResolvedDataPoint {
   timestamp: string | number;
   effectiveGranularity?: string | null;
   value: number;
   unit?: string | null;
   dataType?: string | null;
   item?: { defaultUnit?: string | null } | null;
-};
+}
 
 export function WidgetRenderer({
   type,

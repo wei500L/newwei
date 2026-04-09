@@ -1,8 +1,8 @@
 "use client";
 
+import { Typography } from 'antd';
 import Link from 'next/link';
 
-import { Typography } from 'antd';
 
 const pillars = [
   {

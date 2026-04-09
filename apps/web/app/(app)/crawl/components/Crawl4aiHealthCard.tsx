@@ -24,12 +24,12 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 
+import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 import {
   getCrawl4aiSsrfProxyStatus,
   parseCrawl4aiSsrfProxyRuntimeState,
   type Crawl4aiSsrfProxyRuntimeState,
 } from "@/lib/crawl4ai-ssrf-proxy";
-import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 
 type HealthStatus = "loading" | "healthy" | "unreachable";
 

@@ -254,7 +254,7 @@ describe("LiteLlmProxyGovernanceService", () => {
       .mockResolvedValueOnce(okResponse())
       .mockResolvedValueOnce(okResponse());
 
-    mockAxiosCreate.mockImplementation((config: { baseURL?: string }) => ({
+    mockAxiosCreate.mockImplementation(() => ({
       post: sameProxyPost,
     }));
 

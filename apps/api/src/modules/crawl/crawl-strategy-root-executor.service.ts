@@ -74,7 +74,7 @@ function toFiniteNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function uniqueStringList(...lists: Array<string[] | undefined>): string[] | undefined {
+function uniqueStringList(...lists: (string[] | undefined)[]): string[] | undefined {
   const merged = Array.from(
     new Set(
       lists.flatMap((list) =>

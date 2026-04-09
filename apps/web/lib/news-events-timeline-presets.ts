@@ -46,7 +46,7 @@ export const TIMELINE_PRESET_VALUES: Record<TimelinePresetKey, TimelinePresetVal
     },
   };
 
-const TIMELINE_PRESET_FIELDS: Array<keyof TimelinePresetValues> = [
+const TIMELINE_PRESET_FIELDS: (keyof TimelinePresetValues)[] = [
   "timelineLowConfidenceThreshold",
   "timelineHighConfidenceThreshold",
   "timelineDriftKlThreshold",
@@ -124,9 +124,7 @@ export function detectClosestTimelinePreset(
 
   let closestPreset: TimelinePresetKey = DEFAULT_TIMELINE_PRESET_KEY;
   let closestDistance = Number.POSITIVE_INFINITY;
-  const presets = Object.entries(TIMELINE_PRESET_VALUES) as Array<
-    [TimelinePresetKey, TimelinePresetValues]
-  >;
+  const presets = Object.entries(TIMELINE_PRESET_VALUES) as [TimelinePresetKey, TimelinePresetValues][];
 
   for (const [presetKey, presetValues] of presets) {
     let distance = 0;

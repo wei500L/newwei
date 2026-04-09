@@ -58,7 +58,7 @@ export interface NewsnowHottestGlobalSnapshot {
   signature: string;
   generatedAt: string;
   diagnostics: NewsnowHottestAnalysisDiagnostics;
-  errors: Array<{ sourceId: string; message: string }>;
+  errors: { sourceId: string; message: string }[];
   totalDomesticSourceCount: number;
   globalMaxHeatValue: number;
   signalSeeds: NewsnowHotSignalSeed[];
@@ -83,7 +83,7 @@ export interface NewsnowClusterInsight {
   summary: string | null;
   reason: string | null;
   topics: string[];
-  entities: Array<{ name: string; type: string | null }>;
+  entities: { name: string; type: string | null }[];
   contentKind: NewsnowContentKind;
   bridgeEligibleSuggestion: boolean;
   confidence: number;
@@ -125,13 +125,13 @@ export interface NewsnowEventCandidate {
   heatScore: number;
   freshnessScore: number;
   candidateScore: number;
-  itemRefs: Array<{
+  itemRefs: {
     sourceId: string;
     itemId: string;
     title: string;
     matchedItemId?: string;
     matchedEventId?: string;
-  }>;
+  }[];
 }
 
 export interface NewsnowHottestAnalysisResponse {
@@ -144,5 +144,5 @@ export interface NewsnowHottestAnalysisResponse {
   itemsAnalyzed: number;
   bySource: Record<string, Record<string, NewsnowAnalyzedItem>>;
   candidates: NewsnowEventCandidate[];
-  errors: Array<{ sourceId: string; message: string }>;
+  errors: { sourceId: string; message: string }[];
 }

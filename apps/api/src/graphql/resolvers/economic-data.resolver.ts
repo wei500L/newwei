@@ -6,13 +6,13 @@ import { ForbiddenException, UseGuards } from "@nestjs/common";
 import { Args, Context, Mutation, Query, Resolver } from "@nestjs/graphql";
 import { EconomicDataFrequency, EconomicDataValueType } from "@prisma/client";
 
-import { resolveRequestIp } from "../../common/request-ip";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
+import { resolveRequestIp } from "../../common/request-ip";
 import { AkshareService } from "../../modules/akshare/akshare.service";
+import { PaginatedResult } from "../../modules/akshare/akshare.types";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { ActionRateLimitService } from "../../modules/cache/action-rate-limit.service";
-import { PaginatedResult } from "../../modules/akshare/akshare.types";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { DateRangeInput, PaginationInput, TriggerDataFetchInput } from "../dto/economic-data.input";
 import type { GqlRequest } from "../graphql.types";

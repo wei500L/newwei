@@ -1,4 +1,3 @@
-import type { CrawlSiteProfileConfig } from "./crawl.types";
 import {
   classifyFrontierFailureKind,
   computeFrontierPageTypeBudgets,
@@ -11,6 +10,7 @@ import {
   scoreFrontierCandidate,
   shouldRejectFrontierUrl,
 } from "./crawl-frontier.utils";
+import type { CrawlSiteProfileConfig } from "./crawl.types";
 
 describe("crawl-frontier.utils", () => {
   const config: CrawlSiteProfileConfig = {

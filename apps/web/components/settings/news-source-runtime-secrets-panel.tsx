@@ -45,8 +45,8 @@ interface RuntimeSecretsResponse {
 }
 
 interface RuntimeSecretsUpdatePayload {
-  upserts: Array<{ sourceId: string; key: string; value: string }>;
-  removes: Array<{ sourceId: string; key: string }>;
+  upserts: { sourceId: string; key: string; value: string }[];
+  removes: { sourceId: string; key: string }[];
 }
 
 interface NewsAggregatorSourceMetadata {
@@ -136,7 +136,7 @@ export function NewsSourceRuntimeSecretsPanel() {
 
   const [settings, setSettings] = useState<RuntimeSecretsResponse>(EMPTY_SETTINGS);
   const [rows, setRows] = useState<SecretRow[]>([]);
-  const [removed, setRemoved] = useState<Array<{ sourceId: string; key: string }>>([]);
+  const [removed, setRemoved] = useState<{ sourceId: string; key: string }[]>([]);
   const [sourceCatalog, setSourceCatalog] = useState<Record<string, NewsAggregatorSourceMetadata>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -327,7 +327,7 @@ export function NewsSourceRuntimeSecretsPanel() {
         sourceId,
         getRuntimeSecretSuggestedKeys(metadata.runtimeSecrets).map((value) => ({ value })),
       ]),
-    ) as Record<string, Array<{ value: string }>>;
+    ) as Record<string, { value: string }[]>;
   }, [sourceCatalog]);
 
   const updateRow = useCallback((rowKey: string, patch: Partial<SecretRow>) => {

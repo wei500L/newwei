@@ -41,10 +41,12 @@ import { useItemFacetsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
 import { parseSearchHistory, SEARCH_HISTORY_KEY } from "@/lib/search-history";
 import { trackSearchTelemetry } from "@/lib/search-telemetry";
+
 import {
   formatSelectedDateParam,
   parseDateParamUtc,
 } from "../events-archive/events-archive-helpers";
+
 import {
   buildGuidedSearchHref,
   shouldResetStaleSearchQuery,

@@ -19,6 +19,15 @@ import { PermissionsAll } from "../../common/decorators/permissions.decorator";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
+import {
+  itemReadModelPublishedAt,
+  itemReadModelToMetaGraph,
+  itemReadModelToProcessedGraph,
+  itemReadModelToProcessedPreviewGraph,
+  itemReadModelToRawGraph,
+  itemReadModelToRawPreviewGraph,
+} from "../../modules/items/item-read-model.utils";
+import { ItemsRssTranslationService } from "../../modules/items/items-rss-translation.service";
 import { ItemsService } from "../../modules/items/items.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import {
@@ -31,8 +40,8 @@ import {
   TranslateRssItemsInput
 } from "../dto/item.input";
 import type { GqlRequest } from "../graphql.types";
-import { ItemReadModelLoader } from "../loaders/item-read-model.loader";
 import { ItemMetaLoader } from "../loaders/item-meta.loader";
+import { ItemReadModelLoader } from "../loaders/item-read-model.loader";
 import type { ProcessedItemPreviewDoc } from "../loaders/processed-item-preview.loader";
 import { ProcessedItemPreviewLoader } from "../loaders/processed-item-preview.loader";
 import type { ProcessedItemDoc } from "../loaders/processed-item.loader";
@@ -55,22 +64,13 @@ import {
   RssTranslationProviderStatusModel,
   TranslateRssItemsPayloadModel
 } from "../models/item.model";
+import { PageInfo } from "../models/page-info.model";
 import {
   SearchSuggestionModel,
   SearchSuggestionOrigin,
   SearchSuggestionType
 } from "../models/search-suggestion.model";
-import { PageInfo } from "../models/page-info.model";
 import { normalizeProcessedResult } from "../utils/normalize-processed-result";
-import { ItemsRssTranslationService } from "../../modules/items/items-rss-translation.service";
-import {
-  itemReadModelPublishedAt,
-  itemReadModelToMetaGraph,
-  itemReadModelToProcessedGraph,
-  itemReadModelToProcessedPreviewGraph,
-  itemReadModelToRawGraph,
-  itemReadModelToRawPreviewGraph,
-} from "../../modules/items/item-read-model.utils";
 
 interface ItemsCursorPayload {
   id: string;
@@ -135,7 +135,7 @@ function selectionContainsField(
   selections: readonly SelectionNode[] | undefined,
   fieldName: string,
   fragments?: GraphQLResolveInfo["fragments"],
-  visitedFragmentNames: Set<string> = new Set(),
+  visitedFragmentNames = new Set<string>(),
 ): boolean {
   if (!selections || selections.length === 0) {
     return false;

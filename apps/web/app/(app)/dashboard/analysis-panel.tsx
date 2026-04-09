@@ -29,7 +29,7 @@ import {
 } from "@/graphql/generated";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { dashboardNow } from "@/lib/dashboard-time";
-import dayjs from "@/lib/dayjs";
+import type dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 import {

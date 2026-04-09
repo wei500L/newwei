@@ -108,7 +108,7 @@ describe("SituationMonitorExternalSnapshotService", () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(previousPayload);
     external.fetchGdeltCategoryHeadlines.mockImplementation(
-      async (category: string, _limit: number, options?: { bypassCache?: boolean }) => {
+      async (category: string) => {
         if (category === "politics") {
           return {
             headlines: [],
@@ -421,7 +421,7 @@ function createHeadline(
 function createPayload(input?: {
   status?: SituationMonitorExternalSnapshotStatus;
   generatedAt?: string;
-  warnings?: Array<{ code: string; message: string; detail?: string }>;
+  warnings?: { code: string; message: string; detail?: string }[];
   headlinesByCategory?: Partial<Record<string, unknown[]>>;
 }) {
   const generatedAt = input?.generatedAt ?? "2026-03-28T12:00:00.000Z";

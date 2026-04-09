@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { NewsSource } from '@prisma/client';
 
-import { toPrismaJsonValue } from '../../common/prisma-json';
 import { PrismaService } from '../config/prisma.service';
 
 import {

@@ -3,6 +3,7 @@ import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { Job, Queue, QueueEvents, Worker } from 'bullmq';
 
 import { EnvService } from '../../config/config.service';
+import { SituationMonitorSettingsService } from '../../system-settings/situation-monitor-settings.service';
 
 import {
   OREF_POLL_JOB_NAME,
@@ -11,6 +12,7 @@ import {
   SITUATION_MONITOR_SIGNALS_QUEUE_NAME,
   TELEGRAM_POLL_JOB_NAME,
 } from './situation-monitor-signals.constants';
+import { SituationMonitorSignalsService } from './situation-monitor-signals.service';
 import {
   removeLegacyTelegramRepeatJobs,
   removeQueuedTelegramPollJobs,
@@ -18,8 +20,6 @@ import {
   TelegramSchedulerJobPayload,
   upsertTelegramPollScheduler,
 } from './situation-monitor-telegram-scheduler';
-import { SituationMonitorSignalsService } from './situation-monitor-signals.service';
-import { SituationMonitorSettingsService } from '../../system-settings/situation-monitor-settings.service';
 
 interface SituationMonitorSignalsJobPayload {
   type: 'poll';

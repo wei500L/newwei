@@ -22,11 +22,11 @@ interface YfinanceChartMeta {
 }
 
 interface YfinanceChartQuote {
-  close?: Array<number | null>;
-  high?: Array<number | null>;
-  low?: Array<number | null>;
-  open?: Array<number | null>;
-  volume?: Array<number | null>;
+  close?: (number | null)[];
+  high?: (number | null)[];
+  low?: (number | null)[];
+  open?: (number | null)[];
+  volume?: (number | null)[];
 }
 
 interface YfinanceChartResult {

@@ -1,8 +1,8 @@
+import type { NewsEventSourcePolicyInput } from "../../modules/news-events/news-event-source-policy.service";
 import type {
   UpdateNewsEventSourcePolicyInput,
   UpdateNewsEventSourcePolicyPresetInput,
 } from "../dto/settings.input";
-import type { NewsEventSourcePolicyInput } from "../../modules/news-events/news-event-source-policy.service";
 
 type SourcePolicyMutationInput = Pick<
   UpdateNewsEventSourcePolicyInput,

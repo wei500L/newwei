@@ -10,7 +10,6 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { getAdminSettingsPanelComponent } from './settings-registry';
 import {
   buildAdminSettingsPanelSelectionHref,
   getAdminSettingsPageDescriptionKey,
@@ -19,6 +18,7 @@ import {
   type AdminSettingsPanelDefinition,
   type AdminSettingsPanelId,
 } from './settings-navigation';
+import { getAdminSettingsPanelComponent } from './settings-registry';
 import { resolveAdminSettingsSectionState } from './settings-workspace-model';
 
 function usePanelRefs(): MutableRefObject<

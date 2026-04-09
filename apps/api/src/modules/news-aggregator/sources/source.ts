@@ -1,6 +1,5 @@
 import type {
   AllSourceID,
-  NewsItem,
   RSSHubInfo as RSSHubResponse,
   RSSHubOption,
   SourceRuntimeContext,

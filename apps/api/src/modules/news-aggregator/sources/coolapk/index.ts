@@ -1,7 +1,8 @@
+import { load } from "cheerio"
+
 import { myFetch } from "../fetch";
 import { defineSource } from "../source";
 
-import { load } from "cheerio"
 import { genHeaders } from "./utils"
 
 interface Res {

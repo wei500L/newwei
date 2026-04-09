@@ -7,7 +7,9 @@ interface MarkdownMermaidProps {
   className?: string;
 }
 
-type MermaidApi = typeof import('mermaid').default;
+const loadMermaidModule = () => import('mermaid');
+
+type MermaidApi = Awaited<ReturnType<typeof loadMermaidModule>>['default'];
 
 let mermaidApi: MermaidApi | null = null;
 
@@ -16,13 +18,13 @@ async function getMermaidApi(): Promise<MermaidApi> {
     return mermaidApi;
   }
 
-  const module = await import('mermaid');
-  module.default.initialize({
+  const mermaidModule = await loadMermaidModule();
+  mermaidModule.default.initialize({
     startOnLoad: false,
     securityLevel: 'strict',
     theme: 'neutral',
   });
-  mermaidApi = module.default;
+  mermaidApi = mermaidModule.default;
   return mermaidApi;
 }
 

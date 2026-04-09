@@ -9,6 +9,7 @@ import {
   LiteLlmService,
   LiteLlmCompletionParams,
   LiteLlmEmbeddingParams,
+  type LiteLlmStreamChunk,
 } from "./litellm.service";
 import { LlmRequestLogService } from "./llm-request-log.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
@@ -644,12 +645,23 @@ describe("LiteLlmService", () => {
         config: { headers: new AxiosHeaders() },
       });
 
-      for await (const _chunk of service.stream({
+      const chunks: LiteLlmStreamChunk[] = [];
+      for await (const chunk of service.stream({
         messages: [{ role: "user", content: "Search gold news" }],
         tools: [{ type: "web_search_preview" }],
       })) {
-        // noop
+        chunks.push(chunk);
       }
+
+      expect(chunks).toEqual([
+        expect.objectContaining({
+          finishReason: "stop",
+          model: "gpt-4o-mini",
+          raw: {
+            type: "response.completed",
+          },
+        }),
+      ]);
 
       expect(mockAxiosPost).toHaveBeenCalledWith(
         "/v1/responses",

@@ -11,6 +11,7 @@ import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navi
 import { useTheme } from "@/hooks/use-theme";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
+
 import { EventSignalCard } from "./components/event-signal-card";
 import { resolveEventRowSurface, resolveFutureEventHintStyle } from "./components/event-visuals";
 import { isFutureEventTimestamp, normalizeEntityFilter, toCredibilityPercent, toHeatPercent } from "./events-list-helpers";

@@ -53,9 +53,9 @@ describe("TaskLogSettingsService", () => {
   } as any;
 
   let service: TaskLogSettingsService;
-  let indexState: Array<Record<string, unknown>>;
+  let indexState: Record<string, unknown>[];
 
-  const setIndexState = (next: Array<Record<string, unknown>>) => {
+  const setIndexState = (next: Record<string, unknown>[]) => {
     indexState = next.map((index) => ({
       ...index,
       key:

@@ -17,6 +17,7 @@ import {
   UiTimeGranularity,
 } from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
+
 import {
   type GlobalSentimentTrendDataPoint,
   prepareGlobalSentimentTrendSeries,

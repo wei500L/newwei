@@ -5,6 +5,7 @@ import { toPrismaJsonValue } from '../../common/prisma-json';
 import { ArchiveClassifier } from '../archive/archive.classifier';
 import { ArchiveVertical } from '../archive/archive.types';
 import { PrismaService } from '../config/prisma.service';
+
 import { genMetadata } from './data/metadata';
 import { genSources } from './data/pre-sources';
 import {
@@ -984,13 +985,13 @@ export class NewsnowDomesticOpinionIndexService {
         sourceId: 1,
         'result.sentiment_label': 1,
       },
-    ).lean()) as Array<{
+    ).lean()) as {
       _id: unknown;
       sourceId?: unknown;
       result?: {
         sentiment_label?: unknown;
       };
-    }>;
+    }[];
 
     return new Map(
       rows

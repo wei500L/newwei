@@ -130,12 +130,21 @@ export function splitDeckPathSegments(path: unknown): DeckCoordinate[][] {
   return splitDeckPathGeometry(path).segments;
 }
 
+function stripFeatureGeometry(
+  feature: WarMapLayerFeature,
+): Omit<WarMapLayerFeature, 'path' | 'polygon'> {
+  const baseFeature = { ...feature };
+  delete baseFeature.path;
+  delete baseFeature.polygon;
+  return baseFeature;
+}
+
 function buildPointFeaturesFromCoordinates(
   feature: WarMapLayerFeature,
   coordinates: DeckCoordinate[],
   idPrefix: string,
 ): SanitizedDeckPointFeature[] {
-  const { path: _path, polygon: _polygon, ...baseFeature } = feature;
+  const baseFeature = stripFeatureGeometry(feature);
   return coordinates.map(([lng, lat], index) => ({
     ...baseFeature,
     id: `${feature.id}-${idPrefix}-${index}`,
@@ -150,7 +159,7 @@ function buildPathFeaturesFromSegments(
   idPrefix: string,
   preserveOriginalId = false,
 ): SanitizedDeckPathFeature[] {
-  const { path: _path, polygon: _polygon, ...baseFeature } = feature;
+  const baseFeature = stripFeatureGeometry(feature);
   return segments.map((path, index) => ({
     ...baseFeature,
     id: preserveOriginalId && index === 0 ? feature.id : `${feature.id}-${idPrefix}-${index}`,
@@ -192,7 +201,7 @@ function buildOutlinePointFeatures(
   ringIndex: number,
   coordinates: DeckCoordinate[],
 ): SanitizedDeckPointFeature[] {
-  const { path: _path, polygon: _polygon, ...baseFeature } = feature;
+  const baseFeature = stripFeatureGeometry(feature);
   return coordinates.map(([lng, lat], pointIndex) => ({
     ...baseFeature,
     id: `${feature.id}-outline-point-${ringIndex}-${pointIndex}`,
@@ -208,7 +217,7 @@ export function buildSanitizedPolygonResult(
     return { polygonFeature: null, outlineFeatures: [], pointFeatures: [] };
   }
 
-  const { path: _path, polygon: _polygon, ...baseFeature } = feature;
+  const baseFeature = stripFeatureGeometry(feature);
   const outlineFeatures: SanitizedDeckPathFeature[] = [];
   const pointFeatures: SanitizedDeckPointFeature[] = [];
   const validPolygonRings: DeckCoordinate[][] = [];

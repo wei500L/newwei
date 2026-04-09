@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import {
   IconLayer,
   PathLayer,
@@ -24,6 +23,7 @@ import {
   WAR_MAP_PRESETS,
   WAR_MAP_TIME_RANGE_PRESETS,
 } from "@modular/utils";
+import { useQuery } from "@tanstack/react-query";
 import { Checkbox, Drawer, Grid, Space, Spin, Typography } from "antd";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useSession } from "next-auth/react";
@@ -40,13 +40,13 @@ import {
 } from "@/graphql/generated";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { createApiClient } from "@/lib/api-client";
+import { captureClientError } from "@/lib/client-telemetry";
 import {
   formatDateTime,
   formatRelativeTime,
   formatUpdatedAt,
   resolveLocale,
 } from "@/lib/i18n";
-import { captureClientError } from "@/lib/client-telemetry";
 import {
   classifyMapLoadError,
   type MapLoadErrorPresentation,
@@ -62,6 +62,16 @@ import { safeHttpUrl } from "@/lib/url";
 import { useWarMapSettingsStore } from "@/store/war-map-settings";
 
 import {
+  useDashboardStream,
+  type DashboardStreamState,
+} from "../../use-dashboard-stream";
+
+import { BBOX_QUERY_MIN_ZOOM, buildWarMapQueryBbox } from "./query-viewport";
+import { readWarMapUrlState, writeWarMapUrlState } from "./url-state";
+import { useWarMapData } from "./use-war-map-data";
+import { getWarMapAisLabel, readWarMapAisProperties } from "./war-map-ais";
+import { isAisViewportEmptyStateActive } from "./war-map-ais-mode";
+import {
   clusterWarMapPoints,
   computeAverageClusterGeometry,
   computeWeightedClusterGeometry,
@@ -69,25 +79,23 @@ import {
   sortWarMapNewsClusterMembers,
 } from "./war-map-clustering";
 import {
+  WarMapControlsPanel,
+  WarMapLegendDock,
+  WarMapLegendPanel,
+} from "./war-map-controls-panel";
+import { WAR_MAP_UNSUPPORTED_LAYER_IDS } from "./war-map-data";
+import {
+  getWarMapFlightLabel,
+  readWarMapFlightProperties,
+} from "./war-map-flights";
+import {
   buildSanitizedPathGeometry,
   buildSanitizedPolygonResult,
   isValidDeckCoordinate,
   type DeckCoordinate,
 } from "./war-map-geometry";
-import { WAR_MAP_UNSUPPORTED_LAYER_IDS } from "./war-map-data";
-import { getWarMapAisLabel, readWarMapAisProperties } from "./war-map-ais";
-import {
-  getWarMapFlightLabel,
-  readWarMapFlightProperties,
-} from "./war-map-flights";
-import { BBOX_QUERY_MIN_ZOOM, buildWarMapQueryBbox } from "./query-viewport";
-import { readWarMapUrlState, writeWarMapUrlState } from "./url-state";
-import { useWarMapData } from "./use-war-map-data";
-import {
-  WarMapControlsPanel,
-  WarMapLegendDock,
-  WarMapLegendPanel,
-} from "./war-map-controls-panel";
+import { WarMapInspectorPanel } from "./war-map-inspector-panel";
+import { resolveWarMapContainerClassName } from "./war-map-layout";
 import {
   OVERLAY_SURFACE_CLASS_NAME,
   buildWarMapOverlayLayout,
@@ -102,10 +110,7 @@ import {
   type WarMapLayoutVariant,
   type WarMapSelectableOption,
 } from "./war-map-overlay-model";
-import { WarMapInspectorPanel } from "./war-map-inspector-panel";
-import { resolveWarMapContainerClassName } from "./war-map-layout";
 import { WarMapOverlayRail } from "./war-map-overlay-rail";
-import { isAisViewportEmptyStateActive } from "./war-map-ais-mode";
 import {
   buildWarMapLegendSections,
   buildWarMapQuickLegendItems,
@@ -118,10 +123,7 @@ import {
   type WarMapSymbolKey,
   type WarMapSymbolState,
 } from "./war-map-symbols";
-import {
-  useDashboardStream,
-  type DashboardStreamState,
-} from "../../use-dashboard-stream";
+
 
 const ALL_TIME_START = new Date("1970-01-01T00:00:00.000Z");
 const WAR_MAP_SYMBOL_KEY_SET = new Set<WarMapSymbolKey>([
@@ -1391,21 +1393,17 @@ export function WarMap({
   );
 
   const transportSelections = useMemo<
-    Array<
-      RenderableWarMapTransportSelection & {
+    (RenderableWarMapTransportSelection & {
         lat: number;
         lng: number;
         selectionKey: string;
-      }
-    >
+      })[]
   >(() => {
-    const selections: Array<
-      RenderableWarMapTransportSelection & {
+    const selections: (RenderableWarMapTransportSelection & {
         lat: number;
         lng: number;
         selectionKey: string;
-      }
-    > = [];
+      })[] = [];
     const layers = layersQuery.data?.layers ?? {};
 
     const flightsDataset = layers.flights;
@@ -2219,7 +2217,7 @@ export function WarMap({
       };
 
       if (dataset.geometryType === "path") {
-        const paths: Array<WarMapLayerFeature & { path: DeckCoordinate[] }> =
+        const paths: (WarMapLayerFeature & { path: DeckCoordinate[] })[] =
           [];
         const pathFallbackPoints: DeckPoint[] = [];
         const pathSanitizationSummary = {
@@ -2311,12 +2309,8 @@ export function WarMap({
       }
 
       if (dataset.geometryType === "polygon") {
-        const polygons: Array<
-          WarMapLayerFeature & { polygon: DeckCoordinate[][] }
-        > = [];
-        const polygonOutlineFeatures: Array<
-          WarMapLayerFeature & { path: DeckCoordinate[] }
-        > = [];
+        const polygons: (WarMapLayerFeature & { polygon: DeckCoordinate[][] })[] = [];
+        const polygonOutlineFeatures: (WarMapLayerFeature & { path: DeckCoordinate[] })[] = [];
         const polygonFallbackPoints: DeckPoint[] = [];
         const polygonSanitizationSummary = {
           affectedFeatureCount: 0,
@@ -4294,9 +4288,6 @@ export function WarMap({
   }, [legendSections, quickLegendItems]);
   const highlightedLegendItemKey =
     focusedLegendItemKey ?? hoveredLegendItemKey ?? null;
-  const highlightedLegendItem = highlightedLegendItemKey
-    ? (legendItemsByKey.get(highlightedLegendItemKey) ?? null)
-    : null;
 
   useEffect(() => {
     if (focusedLegendItemKey && !legendItemsByKey.has(focusedLegendItemKey)) {

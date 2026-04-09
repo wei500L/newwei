@@ -1,8 +1,8 @@
+import { ProcessedItemModel } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { ProcessedArticleStatus, Prisma } from "@prisma/client";
-import { ProcessedItemModel } from "@modular/mongo";
 
 import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";

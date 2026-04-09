@@ -12,7 +12,6 @@ import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
-import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import {
   CrawlMetadataService,
   type CrawlDiscoveryCandidate,
@@ -22,6 +21,7 @@ import {
   type CrawlDiscoveryTimestampSource,
 } from "./crawl-metadata.service";
 import { CrawlStrategyWorkflowService } from "./crawl-strategy-workflow.service";
+import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import {
   deepDiscoveryFailureStateCacheKey,
   deepDiscoveryFailureStatsCacheKey,
@@ -30,11 +30,10 @@ import {
   type DeepDiscoveryFailureStats24h,
 } from "./deep-discovery-failure";
 import {
-  NewsSourceOpsSnapshotService,
-  type NewsSourceListRuntimeState,
-  type NewsSourceOpsSummary,
-} from "./news-source-ops-snapshot.service";
-import { resolveQueryParamAllowlist } from "./url-fingerprint";
+  BatchDeleteNewsSourcesDto,
+  BatchUpdateNewsSourceActiveDto,
+  BatchUpdateNewsSourceGroupDto,
+} from "./dto/news-source-batch.dto";
 import {
   CreateNewsSourceDto,
   ListNewsSourceDto,
@@ -42,10 +41,11 @@ import {
   UpdateNewsSourceDto,
 } from "./dto/news-source.dto";
 import {
-  BatchDeleteNewsSourcesDto,
-  BatchUpdateNewsSourceActiveDto,
-  BatchUpdateNewsSourceGroupDto,
-} from "./dto/news-source-batch.dto";
+  NewsSourceOpsSnapshotService,
+  type NewsSourceListRuntimeState,
+  type NewsSourceOpsSummary,
+} from "./news-source-ops-snapshot.service";
+import { resolveQueryParamAllowlist } from "./url-fingerprint";
 
 const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
   PipelineJobStatus.pending,
@@ -125,7 +125,7 @@ export interface NewsSourcePreviewDeepError {
 export interface NewsSourcePreviewDeepFailureStats {
   total24h: number;
   streak: number;
-  byCode: Array<{ code: string; count: number }>;
+  byCode: { code: string; count: number }[];
   lastFailureAt?: string | null;
   lastCode?: string | null;
   lastMessage?: string | null;
@@ -135,8 +135,7 @@ export interface NewsSourcePreviewDeepFailureStats {
 }
 
 export interface ListNewsSourceResponse {
-  sources: Array<
-    Prisma.NewsSourceGetPayload<{
+  sources: (Prisma.NewsSourceGetPayload<{
       select: {
         id: true;
         name: true;
@@ -171,8 +170,7 @@ export interface ListNewsSourceResponse {
           rssAdaptiveState: NewsSourceListRuntimeState["rssAdaptiveState"];
         };
       };
-    }
-  >;
+    })[];
   total: number;
   page: number;
   pageSize: number;

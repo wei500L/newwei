@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from "react";
 type TimerHandle = ReturnType<typeof setTimeout>;
 
 export function useTimedValueDeduper(windowMs: number, maxEntries = 100) {
-  const entriesRef = useRef<Array<{ value: string; timestamp: number }>>([]);
+  const entriesRef = useRef<{ value: string; timestamp: number }[]>([]);
 
   return useCallback(
     (value: string, now = Date.now()) => {

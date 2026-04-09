@@ -23,11 +23,11 @@ import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { MarkdownViewer } from "@/components/markdown-viewer";
-import { useTheme } from "@/hooks/use-theme";
 import {
   useNewsEventBriefQuery,
   useProcessedItemByIdQuery,
 } from "@/graphql/generated";
+import { useTheme } from "@/hooks/use-theme";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
 import {
@@ -38,6 +38,7 @@ import {
   resolveLocale,
 } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
+
 import { EventSignalCard } from "./components/event-signal-card";
 import { resolveFutureEventHintStyle } from "./components/event-visuals";
 import {
@@ -250,13 +251,13 @@ function getResultObject(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-type CategoryDistributionEntry = {
+interface CategoryDistributionEntry {
   categoryPath: string;
   count: number;
   share: number;
-};
+}
 
-type TimelinePhaseSummary = {
+interface TimelinePhaseSummary {
   phase: number;
   label: string;
   categoryPrefix: string;
@@ -265,7 +266,7 @@ type TimelinePhaseSummary = {
   itemCount: number;
   bucketCount: number;
   summary: string;
-};
+}
 
 function normalizeCategoryDistribution(
   value: unknown,
@@ -363,14 +364,14 @@ function formatConfidencePercent(
   return `${Math.round(clamped * 100)}%`;
 }
 
-type CitationStats = {
+interface CitationStats {
   keyPoints: number;
   whyItMatters: number;
   latestUpdate: number;
   whatToWatch: number;
   consensus: number;
   divergence: number;
-};
+}
 
 export function EventDetailsDrawer({ eventId }: { eventId: string }) {
   const { t, i18n } = useTranslation();
@@ -483,7 +484,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
     };
 
     const addPoints = (
-      points: Array<{ citations: number[] }> | null | undefined,
+      points: { citations: number[] }[] | null | undefined,
       field: keyof CitationStats,
     ) => {
       for (const point of points ?? []) {
@@ -704,7 +705,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
   };
 
   const renderPointList = (
-    points: Array<{ text: string; citations: number[] }> | null | undefined,
+    points: { text: string; citations: number[] }[] | null | undefined,
   ) => {
     const dataSource = points ?? [];
     if (dataSource.length === 0) {

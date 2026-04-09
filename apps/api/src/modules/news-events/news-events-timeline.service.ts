@@ -116,7 +116,7 @@ interface TimelineMetadataPayload {
   topicDriftSummary: string | null;
   driftWarnings: TopicDriftWarning[];
   phaseSummaries: TimelinePhaseSummary[];
-  subEvents: Array<{
+  subEvents: {
     id: string;
     parentEventId: string;
     phase: number;
@@ -127,7 +127,7 @@ interface TimelineMetadataPayload {
     itemCount: number;
     bucketCount: number;
     summary: string;
-  }>;
+  }[];
   updatedAt: string;
 }
 
@@ -785,13 +785,13 @@ export class NewsEventsTimelineService {
       return [];
     }
 
-    const phases: Array<{
+    const phases: {
       startAt: Date;
       endAt: Date;
       categoryPrefix: string;
       itemCount: number;
       bucketCount: number;
-    }> = [];
+    }[] = [];
 
     let current = {
       startAt: entries[0]!.bucketStart,

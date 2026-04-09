@@ -16,8 +16,9 @@ jest.mock("../audit/audit-log.writer", () => ({
     writeAuditLogBestEffortMock(...args),
 }));
 
-import { LlmRequestLogService } from "./llm-request-log.service";
 import { REQUIRED_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS } from "../system-settings/llm-request-log-settings.service";
+
+import { LlmRequestLogService } from "./llm-request-log.service";
 
 async function readStream(stream: AsyncIterable<unknown>): Promise<string> {
   const chunks: string[] = [];
@@ -471,7 +472,9 @@ describe("LlmRequestLogService", () => {
     const probeSelect = jest.fn().mockReturnValue({ limit: probeLimit });
     const close = jest.fn().mockResolvedValue(undefined);
     const cursor = {
-      async *[Symbol.asyncIterator]() {},
+      async *[Symbol.asyncIterator]() {
+        yield* [];
+      },
       close,
     };
     const cursorFactory = jest.fn().mockReturnValue(cursor);

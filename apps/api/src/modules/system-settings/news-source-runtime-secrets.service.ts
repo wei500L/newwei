@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 
 import { createLogger } from "@modular/utils";
 import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
+import { createHash } from "node:crypto";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
@@ -31,8 +31,8 @@ export interface NewsSourceRuntimeSecretsPublic {
 }
 
 interface NewsSourceRuntimeSecretsUpdateInput {
-  upserts?: Array<{ sourceId: string; key: string; value: string }>;
-  removes?: Array<{ sourceId: string; key: string }>;
+  upserts?: { sourceId: string; key: string; value: string }[];
+  removes?: { sourceId: string; key: string }[];
 }
 
 interface StoredNewsSourceRuntimeSecretEntry {
@@ -264,8 +264,8 @@ export class NewsSourceRuntimeSecretsService {
   }
 
   private normalizeUpserts(
-    raw: Array<{ sourceId: string; key: string; value: string }>
-  ): Array<{ sourceId: string; key: string; value: string }> {
+    raw: { sourceId: string; key: string; value: string }[]
+  ): { sourceId: string; key: string; value: string }[] {
     const map = new Map<string, { sourceId: string; key: string; value: string }>();
     for (const item of raw) {
       const sourceId = this.normalizeSourceId(item.sourceId);
@@ -276,7 +276,7 @@ export class NewsSourceRuntimeSecretsService {
     return [...map.values()];
   }
 
-  private normalizeRemoves(raw: Array<{ sourceId: string; key: string }>): Array<{ sourceId: string; key: string }> {
+  private normalizeRemoves(raw: { sourceId: string; key: string }[]): { sourceId: string; key: string }[] {
     const map = new Map<string, { sourceId: string; key: string }>();
     for (const item of raw) {
       const sourceId = this.normalizeSourceId(item.sourceId);

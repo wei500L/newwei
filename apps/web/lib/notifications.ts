@@ -23,8 +23,7 @@ export interface NotificationPresentationCopy {
   toastText: string;
 }
 
-export interface NotificationStreamErrorPayload
-  extends RealtimeSocketErrorPayload {}
+export type NotificationStreamErrorPayload = RealtimeSocketErrorPayload;
 
 export interface ResolveNotificationLinkOptions {
   canReadAlerts?: boolean;

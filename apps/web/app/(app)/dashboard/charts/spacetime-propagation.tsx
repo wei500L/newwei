@@ -1,7 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { WarningOutlined } from "@ant-design/icons";
+import { useQuery } from "@tanstack/react-query";
 import { Drawer, List, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
@@ -10,8 +10,8 @@ import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
-import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { createApiClient } from "@/lib/api-client";

@@ -410,12 +410,12 @@ export class TaskLogSettingsService implements OnModuleInit {
     return "updated";
   }
 
-  private async loadIndexesSafe(): Promise<Array<Record<string, unknown>>> {
+  private async loadIndexesSafe(): Promise<Record<string, unknown>[]> {
     return TaskLogModel.collection.indexes();
   }
 
   private hasDesiredManagedTtlIndex(
-    indexes: Array<Record<string, unknown>>,
+    indexes: Record<string, unknown>[],
     expireAfterSeconds: number,
   ): boolean {
     return this.getManagedCreatedAtIndexes(indexes).some(
@@ -424,7 +424,7 @@ export class TaskLogSettingsService implements OnModuleInit {
   }
 
   private findStaleManagedTtlIndexes(
-    indexes: Array<Record<string, unknown>>,
+    indexes: Record<string, unknown>[],
     expireAfterSeconds: number,
   ): string[] {
     const managed = this.getManagedCreatedAtIndexes(indexes);
@@ -441,7 +441,7 @@ export class TaskLogSettingsService implements OnModuleInit {
   }
 
   private findBlockingNonTtlCreatedAtIndex(
-    indexes: Array<Record<string, unknown>>,
+    indexes: Record<string, unknown>[],
   ): string | null {
     const managed = this.getManagedCreatedAtIndexes(indexes);
     const blocking = managed.find(
@@ -453,7 +453,7 @@ export class TaskLogSettingsService implements OnModuleInit {
   }
 
   private getManagedCreatedAtIndexes(
-    indexes: Array<Record<string, unknown>>,
+    indexes: Record<string, unknown>[],
   ): ManagedCreatedAtIndex[] {
     return indexes
       .filter((index) => this.hasCreatedAtSingleKey(index))

@@ -57,11 +57,11 @@ interface SituationMonitorExternalSnapshotStatus {
   rolling24hSuccessRate: number | null;
   rolling24hRateLimitedCount: number;
   rolling24hAverageAvailableCategoryCount: number | null;
-  warnings: Array<{
+  warnings: {
     code: string;
     message: string;
     detail?: string;
-  }>;
+  }[];
 }
 
 interface SituationMonitorQualitySummary {

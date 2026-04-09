@@ -1,6 +1,6 @@
-import dayjs from "@/lib/dayjs";
 import type { AlertEventsQuery } from "@/graphql/generated";
 import type { CsvCellValue } from "@/lib/data-export";
+import dayjs from "@/lib/dayjs";
 
 export type AlertEventItem = AlertEventsQuery["alertEvents"][number];
 

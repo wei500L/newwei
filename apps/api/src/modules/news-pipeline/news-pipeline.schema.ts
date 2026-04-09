@@ -2,6 +2,7 @@ import { parseDateTime } from "@modular/utils";
 import { z } from "zod";
 
 import type { CrawlTaskOptions } from "../crawl/crawl.types";
+
 import { normalizeNewsContentType } from "./news-content-type";
 
 const stringList = z

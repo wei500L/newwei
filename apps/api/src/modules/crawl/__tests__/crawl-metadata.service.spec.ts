@@ -11,8 +11,8 @@ jest.mock("@modular/utils", () => {
   };
 });
 
-import { gzipSync } from "node:zlib";
 import { BadRequestException } from "@nestjs/common";
+import { gzipSync } from "node:zlib";
 
 import { CrawlMetadataService } from "../crawl-metadata.service";
 

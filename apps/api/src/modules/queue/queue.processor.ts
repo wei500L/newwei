@@ -21,6 +21,7 @@ import { ItemStatus } from "../../common/pipeline-status";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { toBullmqConnection } from "../config/redis-connection";
+import { NewsSourceOpsSnapshotService } from "../crawl/news-source-ops-snapshot.service";
 import { NewsPipelineService } from "../news-pipeline/news-pipeline.service";
 import type {
   PipelineJobContext,
@@ -28,7 +29,6 @@ import type {
 } from "../news-pipeline/news-pipeline.types";
 import { NotificationsService } from "../notifications/notifications.service";
 import { writeTaskLogBestEffort } from "../observability/task-log.writer";
-import { NewsSourceOpsSnapshotService } from "../crawl/news-source-ops-snapshot.service";
 
 import {
   ITEM_PIPELINE_QUEUE_NAME,

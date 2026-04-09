@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { auth } from "@/lib/auth";
 import { AuraBackground } from "@/components/aura-background";
+import { auth } from "@/lib/auth";
 
 import { ShellLayout } from "./components/shell";
 

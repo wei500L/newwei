@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
+import { emitSituationMonitorMonitorsUpdated } from "@/app/(app)/situation-monitor/utils/monitor-events";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -33,7 +34,6 @@ import {
   buildContentSubscriptionKey,
 } from "@/lib/content-subscriptions";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
-import { emitSituationMonitorMonitorsUpdated } from "@/app/(app)/situation-monitor/utils/monitor-events";
 
 interface ContentSubscriptionsTabProps {
   accessToken?: string;

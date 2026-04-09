@@ -1,7 +1,7 @@
 import { createLogger } from "@modular/utils";
-import { Queue } from "bullmq";
 import { Body, Controller, Delete, Get, Post, Put, Req } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { Queue } from "bullmq";
 import type { Request } from "express";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -16,8 +16,6 @@ import {
   TELEGRAM_POLL_JOB_NAME,
 } from "../situation-monitor/signals/situation-monitor-signals.constants";
 import { SituationMonitorSignalsService } from "../situation-monitor/signals/situation-monitor-signals.service";
-import { SituationMonitorExternalSnapshotService } from "../situation-monitor/situation-monitor-external-snapshot.service";
-import { SituationMonitorService } from "../situation-monitor/situation-monitor.service";
 import {
   removeLegacyTelegramRepeatJobs,
   removeQueuedTelegramPollJobs,
@@ -25,12 +23,14 @@ import {
   TelegramSchedulerJobPayload,
   upsertTelegramPollScheduler,
 } from "../situation-monitor/signals/situation-monitor-telegram-scheduler";
+import { SituationMonitorExternalSnapshotService } from "../situation-monitor/situation-monitor-external-snapshot.service";
+import { SituationMonitorService } from "../situation-monitor/situation-monitor.service";
 
+import { UpdateSituationMonitorSettingsDto } from "./dto/situation-monitor-settings.dto";
 import {
   CompleteSituationMonitorTelegramAuthDto,
   StartSituationMonitorTelegramAuthDto,
 } from "./dto/situation-monitor-telegram-auth.dto";
-import { UpdateSituationMonitorSettingsDto } from "./dto/situation-monitor-settings.dto";
 import { SituationMonitorSettingsService } from "./situation-monitor-settings.service";
 import { SituationMonitorTelegramAuthService } from "./situation-monitor-telegram-auth.service";
 

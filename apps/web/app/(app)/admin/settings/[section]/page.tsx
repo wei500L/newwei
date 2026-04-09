@@ -3,8 +3,8 @@ import { notFound, redirect } from 'next/navigation';
 import { AccessSettingsContent } from '@/components/settings/access-settings-content';
 import { auth } from '@/lib/auth';
 
-import { AdminSettingsSectionContent } from '../settings-section-content';
 import { isAdminSettingsPageId } from '../settings-navigation';
+import { AdminSettingsSectionContent } from '../settings-section-content';
 
 interface AdminSettingsSectionPageParams {
   section: string;

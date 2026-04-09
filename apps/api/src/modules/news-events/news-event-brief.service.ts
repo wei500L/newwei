@@ -5,9 +5,9 @@ import { createHash } from "node:crypto";
 import { zodToJsonSchema, type JsonSchema7Type } from "zod-to-json-schema";
 
 import { safeJsonParseFromText } from "../../common/llm-json";
+import { PrismaService } from "../config/prisma.service";
 import { LiteLlmService } from "../news-pipeline/litellm.service";
 import type { JsonSchemaResponseFormat } from "../news-pipeline/news-prompt.builder";
-import { PrismaService } from "../config/prisma.service";
 
 import { NewsEventBriefPayloadSchema, type NewsEventBriefPayload } from "./news-event-brief.schema";
 
@@ -186,7 +186,7 @@ export class NewsEventBriefService {
     generatedAt: Date;
     language: string;
     payload: NewsEventBriefPayload;
-    sources: Array<Omit<BriefSource, "summary" | "keyPoints">>;
+    sources: Omit<BriefSource, "summary" | "keyPoints">[];
   } | null> {
     const language = this.normalizeLanguage(options?.language);
     const maxSources = this.normalizeMaxSources(options?.maxSources);

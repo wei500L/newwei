@@ -1222,7 +1222,7 @@ function PermissionsPanel({
   const usageMap = useMemo(() => {
     const map = new Map<
       string,
-      Array<{ id: string; name: string; isAdmin: boolean; isSystem: boolean }>
+      { id: string; name: string; isAdmin: boolean; isSystem: boolean }[]
     >();
     for (const role of roles) {
       for (const permission of role.permissions) {

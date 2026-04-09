@@ -14,25 +14,25 @@ import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { QueueModule } from "../queue/queue.module";
 
+import { AdminErrorsController } from "./admin-errors.controller";
 import { AdminLogsController } from "./admin-logs.controller";
 import { AdminLogsService } from "./admin-logs.service";
-import { AdminErrorsController } from "./admin-errors.controller";
-import { ClassificationQualityController } from "./classification-quality.controller";
-import { ClassificationQualityProcessor } from "./classification-quality.processor";
 import { ClassificationQualityQueueCleanupService } from "./classification-quality-queue-cleanup.service";
 import { ClassificationQualitySeedTriggerService } from "./classification-quality-seed-trigger.service";
-import { ClassificationQualityService } from "./classification-quality.service";
 import {
   CLASSIFICATION_QUALITY_QUEUE,
   CLASSIFICATION_QUALITY_QUEUE_NAME,
 } from "./classification-quality.constants";
+import { ClassificationQualityController } from "./classification-quality.controller";
+import { ClassificationQualityProcessor } from "./classification-quality.processor";
+import { ClassificationQualityService } from "./classification-quality.service";
 import { ClientExceptionEventsController } from "./client-exception-events.controller";
 import { ExceptionEventsService } from "./exception-events.service";
 import { InternalExceptionEventsController } from "./internal-exception-events.controller";
 import { NewsSourceQualityController } from "./news-source-quality.controller";
 import { NewsSourceQualityService } from "./news-source-quality.service";
-import { OpsGateway } from "./ops.gateway";
 import { ObservabilitySnapshotService } from "./observability-snapshot.service";
+import { OpsGateway } from "./ops.gateway";
 import { PipelineQualityController } from "./pipeline-quality.controller";
 import { PipelineQualityService } from "./pipeline-quality.service";
 import { PipelineRecoveryController } from "./pipeline-recovery.controller";

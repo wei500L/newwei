@@ -11,7 +11,6 @@ import {
   getDefaultNewsEventSourcePolicy,
   normalizeSourceCategoryAuthority,
   normalizeSourcePolicy,
-  type NewsEventSourceCategoryAuthorityRule,
   type NewsEventSourcePolicy,
 } from "../news-events/news-event-source-classifier";
 
@@ -20,8 +19,8 @@ import {
   NewsClassificationSettingsService,
   type NewsClassificationTaxonomyNode,
 } from "./news-classification-settings.service";
-import type { JsonSchemaResponseFormat } from "./news-prompt.builder";
 import type { CleanedNews } from "./news-pipeline.schema";
+import type { JsonSchemaResponseFormat } from "./news-prompt.builder";
 
 const LlmClassificationResponseSchema = z.object({
   candidates: z

@@ -21,8 +21,8 @@ import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS } from "../src/modules/crawl/crawl.cons
 import { CrawlQueueProcessor } from "../src/modules/crawl/crawl.processor";
 import { NotificationsGateway } from "../src/modules/notifications/notifications.gateway";
 import { ExceptionEventsService } from "../src/modules/observability/exception-events.service";
-import { QueueGateway } from "../src/modules/queue/queue.gateway";
 import { PIPELINE_DLQ_QUEUE, PIPELINE_QUEUE, PIPELINE_QUEUE_EVENTS } from "../src/modules/queue/queue.constants";
+import { QueueGateway } from "../src/modules/queue/queue.gateway";
 import { QueueProcessor } from "../src/modules/queue/queue.processor";
 
 const sampleUser: AuthenticatedUser = {

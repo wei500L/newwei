@@ -297,9 +297,9 @@ interface RealtimeSignalsRuntimeDiagnosticsResponse {
   settingsSource: RealtimeSignalsRuntimeSettingsSource;
   runtimeEnabled: boolean;
   insight: {
-    keywordSpikes: Array<Record<string, unknown>>;
-    predictionLeads: Array<Record<string, unknown>>;
-    tensions: Array<Record<string, unknown>>;
+    keywordSpikes: Record<string, unknown>[];
+    predictionLeads: Record<string, unknown>[];
+    tensions: Record<string, unknown>[];
     pizzint?: {
       defcon: number;
       updatedAt: string;

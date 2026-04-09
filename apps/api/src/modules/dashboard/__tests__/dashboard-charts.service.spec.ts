@@ -36,30 +36,6 @@ const createCache = () => ({
   ),
 });
 
-const createSerializingCache = () => {
-  const store = new Map<string, string>();
-  return {
-    get: jest.fn(),
-    set: jest.fn(),
-    wrap: jest.fn(
-      async (
-        key: string,
-        _ttlSeconds: number,
-        loader: () => Promise<unknown>,
-      ) => {
-        const cached = store.get(key);
-        if (cached) {
-          return JSON.parse(cached);
-        }
-        const value = await loader();
-        const serialized = JSON.stringify(value);
-        store.set(key, serialized);
-        return JSON.parse(serialized);
-      },
-    ),
-  };
-};
-
 const createRealtimeSignalsStore = (
   overrides: Record<string, unknown> = {},
 ) => ({

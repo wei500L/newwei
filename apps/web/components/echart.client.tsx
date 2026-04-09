@@ -2,8 +2,8 @@
 
 import { Button } from "antd";
 import * as echarts from "echarts/core";
-import { install as installGraphChart } from "echarts/lib/chart/graph/install.js";
 import { install as installCandlestickChart } from "echarts/lib/chart/candlestick/install.js";
+import { install as installGraphChart } from "echarts/lib/chart/graph/install.js";
 import { install as installLineChart } from "echarts/lib/chart/line/install.js";
 import { install as installAxisPointerComponent } from "echarts/lib/component/axisPointer/install.js";
 import { install as installDataZoomComponent } from "echarts/lib/component/dataZoom/install.js";
@@ -54,7 +54,7 @@ const getRuntimeState = (): EchartsRuntimeState => {
 
 const preinstallRuntimeModules = () => {
   const runtime = getRuntimeState();
-  const installers: Array<[string, Installer]> = [
+  const installers: [string, Installer][] = [
     // These modules back the finance dashboard's hot path and are worth
     // preloading to avoid long-lived skeletons while dynamic chunks resolve.
     ["renderer:canvas", installCanvasRenderer as unknown as Installer],
@@ -447,7 +447,7 @@ export function DashboardChart({
   > | null>(null);
   const [exporting, setExporting] = useState(false);
   const [supportsHover, setSupportsHover] = useState(true);
-  const [isInView, setIsInView] = useState(!lazy);
+  const [, setIsInView] = useState(!lazy);
   const [shouldInit, setShouldInit] = useState(!lazy);
   const [ready, setReady] = useState(false);
   // Once a chart has entered view at least once, let initialization finish even

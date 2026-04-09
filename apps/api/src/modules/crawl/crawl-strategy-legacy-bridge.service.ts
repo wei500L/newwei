@@ -1,17 +1,17 @@
 import { Injectable } from '@nestjs/common';
 
 import { normalizeCrawlSiteProfileConfig } from './crawl-frontier.utils';
-import type {
-  CrawlSiteExecutionMode,
-  CrawlSiteProfileConfig,
-  CrawlSiteProfileRecord,
-} from './crawl.types';
 import {
   CrawlStrategyWorkflowNodeType,
   createEmptyWorkflowDefinition,
   isRecord,
   type CrawlStrategyWorkflowDefinition,
 } from './crawl-strategy.types';
+import type {
+  CrawlSiteExecutionMode,
+  CrawlSiteProfileConfig,
+  CrawlSiteProfileRecord,
+} from './crawl.types';
 
 interface LegacyNewsSourceInput {
   url: string;

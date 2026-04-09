@@ -13,7 +13,7 @@ dayjs.extend(duration)
 dayjs.extend(isSameOrBefore)
 dayjs.extend(weekday)
 
-export function tranformToUTC(date: string, format?: string, timezone: string = "Asia/Shanghai"): number {
+export function tranformToUTC(date: string, format?: string, timezone = "Asia/Shanghai"): number {
   if (!format) return dayjs.tz(date, timezone).valueOf()
   return dayjs.tz(date, format, timezone).valueOf()
 }
@@ -135,7 +135,7 @@ function toDurations(matches: string[]) {
 
 export const parseDate = (date: string | number, ...options: any[]) => dayjs(date, ...options).toDate()
 
-export function parseRelativeDate(date: string, timezone: string = "UTC") {
+export function parseRelativeDate(date: string, timezone = "UTC") {
   if (date === "刚刚") return new Date()
 
   const theDate = toDate(date)

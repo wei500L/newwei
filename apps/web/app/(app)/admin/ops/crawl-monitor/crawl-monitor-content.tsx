@@ -26,11 +26,11 @@ import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 import {
   getCrawl4aiSsrfProxyStatus,
   parseCrawl4aiSsrfProxyRuntimeState,
 } from "@/lib/crawl4ai-ssrf-proxy";
-import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 
 interface CrawlMonitorContentProps {
   dashboardUrl: string;
@@ -1454,33 +1454,6 @@ export function CrawlMonitorContent({
     return normalizeBrowserTimelineSeries(raw);
   }, [timeline]);
 
-  if (status === "loading") {
-    return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
-      >
-        <Typography.Text type="secondary">
-          {t("common.loading", { defaultValue: "Loading..." })}
-        </Typography.Text>
-      </div>
-    );
-  }
-
-  if (!canView) {
-    return (
-      <Card
-        className="content-card"
-        title={t("crawl.monitor.title", { defaultValue: "Crawl Monitor" })}
-      >
-        <Alert
-          type="warning"
-          message={t("settings.adminOnly.title")}
-          description={t("settings.adminOnly.description")}
-        />
-      </Card>
-    );
-  }
-
   const connectionTag = (() => {
     if (mode === "polling") {
       return (
@@ -2069,6 +2042,33 @@ export function CrawlMonitorContent({
     [runtimeProbe],
   );
   const ssrfProxyStatus = getCrawl4aiSsrfProxyStatus(ssrfProxyState);
+
+  if (status === "loading") {
+    return (
+      <div
+        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
+      >
+        <Typography.Text type="secondary">
+          {t("common.loading", { defaultValue: "Loading..." })}
+        </Typography.Text>
+      </div>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <Card
+        className="content-card"
+        title={t("crawl.monitor.title", { defaultValue: "Crawl Monitor" })}
+      >
+        <Alert
+          type="warning"
+          message={t("settings.adminOnly.title")}
+          description={t("settings.adminOnly.description")}
+        />
+      </Card>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">

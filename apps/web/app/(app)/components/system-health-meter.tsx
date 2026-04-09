@@ -3,11 +3,11 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import styles from "./system-health-meter.module.css";
 import type {
   SystemHealthAssessment,
   SystemHealthState,
 } from "./system-health";
+import styles from "./system-health-meter.module.css";
 
 interface SystemHealthMeterProps {
   assessment: SystemHealthAssessment;

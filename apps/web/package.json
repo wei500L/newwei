@@ -64,6 +64,7 @@
     "@graphql-codegen/typescript": "^4.0.7",
     "@graphql-codegen/typescript-operations": "^4.2.3",
     "@graphql-codegen/typescript-react-apollo": "^4.3.1",
+    "@modular/config": "workspace:*",
     "@types/lodash": "^4.17.23",
     "@types/node": "^20.12.7",
     "@types/react": "^19.0.0",

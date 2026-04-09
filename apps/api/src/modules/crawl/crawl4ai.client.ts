@@ -1,10 +1,10 @@
-import { HttpService } from "@nestjs/axios";
-import { Injectable, Logger } from "@nestjs/common";
 import {
   buildAutoBrowserHeadersForCrawlOptions,
   mergeBrowserHeaders,
   normalizeBrowserHeaders,
 } from "@modular/utils";
+import { HttpService } from "@nestjs/axios";
+import { Injectable, Logger } from "@nestjs/common";
 import type { AxiosError } from "axios";
 import { lastValueFrom, TimeoutError, timeout } from "rxjs";
 
@@ -37,8 +37,8 @@ import type {
   CrawlVirtualScrollConfig,
   CrawlDeepCrawlComponent,
 } from "./crawl.types";
-import { Crawl4aiRequestException } from "./crawl4ai.exception";
 import { translateLocalhostProxyUrlForCrawl4ai } from "./crawl4ai-proxy";
+import { Crawl4aiRequestException } from "./crawl4ai.exception";
 import { validateJsCodeArray } from "./validators/js-code.validator";
 
 export interface Crawl4aiRequest {
@@ -83,7 +83,7 @@ export interface Crawl4aiResponse {
   runId?: string | null;
   nextCursor?: string | null;
   warnings?: string[];
-  systemEvents?: Array<{
+  systemEvents?: {
     level: "info" | "warn" | "error";
     eventType: string;
     message: string;
@@ -93,7 +93,7 @@ export interface Crawl4aiResponse {
     rescuedCount?: number | null;
     details?: Record<string, unknown>;
     timestamp: string;
-  }>;
+  }[];
   results: Crawl4aiArticle[];
   serverMemoryMb?: number;
   peakMemoryMb?: number;

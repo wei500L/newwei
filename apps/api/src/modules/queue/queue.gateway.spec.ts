@@ -1,5 +1,5 @@
-import { sign } from "jsonwebtoken";
 import { RealtimeSocketErrorCode } from "@modular/utils";
+import { sign } from "jsonwebtoken";
 
 import type { AuthenticatedUser } from "../auth/auth.service";
 import { UserSessionManager } from "../websocket/user-session-manager.service";

@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { FilterState } from "@/app/(app)/items/components/faceted-search";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
@@ -24,7 +25,6 @@ import {
   resolveTopRssSourceIds
 } from "@/lib/rss-reader-ui";
 import type { NormalizedRssReaderPreferences } from "@/lib/rss-reader-ui";
-import type { FilterState } from "@/app/(app)/items/components/faceted-search";
 import {
   isChineseTargetLanguage,
   RSS_TRANSLATION_STATUS_QUERY,
@@ -35,6 +35,7 @@ import {
 } from "@/lib/rss-translation";
 
 import { ItemsView } from "../items/items-view";
+
 import { RSS_ITEMS_VIEW_PRESET } from "./rss-reader-preset";
 
 const DEFAULT_WINDOW_DAYS = 7;

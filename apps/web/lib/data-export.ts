@@ -6,7 +6,7 @@ export interface BuildCsvOptions {
 
 export interface ExportBaseNameOptions {
   base: string;
-  suffixes?: Array<string | null | undefined>;
+  suffixes?: (string | null | undefined)[];
   start?: string;
   end?: string;
   fallback?: string;
@@ -165,7 +165,8 @@ export interface DownloadCsvOptions {
   includeBom?: CsvBomMode;
 }
 
-const containsNonAscii = (value: string) => /[^\x00-\x7f]/.test(value);
+const containsNonAscii = (value: string) =>
+  Array.from(value).some((character) => character.charCodeAt(0) > 0x7f);
 
 export type CsvBomMode = boolean | "auto";
 

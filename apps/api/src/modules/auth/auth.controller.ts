@@ -26,8 +26,8 @@ import {
   SendVerificationDto,
   VerifyEmailDto,
 } from "./dto/email-verification.dto";
-import { LoginDto } from "./dto/login.dto";
 import { LoginWithCodeDto, SendLoginCodeDto } from "./dto/login-with-code.dto";
+import { LoginDto } from "./dto/login.dto";
 import { LogoutDto } from "./dto/logout.dto";
 import { UpdateProfileDto } from "./dto/profile.dto";
 import { RefreshDto } from "./dto/refresh.dto";

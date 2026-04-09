@@ -4,11 +4,11 @@ import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway, WebSocketSe
 import { verify } from "jsonwebtoken";
 import { Server, Socket } from "socket.io";
 
-import { AnalysisQueueEventPublisher } from "../analysis/analysis-queue-event.publisher";
 import { AlertsQueueEventPublisher } from "../alerts/alerts-queue-event.publisher";
+import { AnalysisQueueEventPublisher } from "../analysis/analysis-queue-event.publisher";
+import { AssistantQueueEventPublisher } from "../assistant/assistant-queue-event.publisher";
 import { AccessTokenBlacklistService } from "../auth/access-token-blacklist.service";
 import { AuthService, type AuthenticatedUser, type JwtPayload } from "../auth/auth.service";
-import { AssistantQueueEventPublisher } from "../assistant/assistant-queue-event.publisher";
 import { EnvService } from "../config/config.service";
 import { CrawlQueueEventPublisher } from "../crawl/crawl-queue-event.publisher";
 import { QueueEventPublisher } from "../queue/queue-event.publisher";

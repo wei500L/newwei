@@ -1,4 +1,5 @@
 import { ProcessedItemModel } from "@modular/mongo";
+
 import { REALTIME_SIGNALS_INGEST_LOCK_TTL_MS } from "./realtime-signals.constants";
 import { RealtimeSignalsService } from "./realtime-signals.service";
 import type { RealtimeSignalsRuntimeConfig } from "./realtime-signals.types";
@@ -428,7 +429,7 @@ describe("RealtimeSignalsService unrest merge", () => {
       (result[0]?.context as Record<string, unknown>).latestObservedAt,
     ).toBe("2026-03-02T11:59:55.000Z");
     const storedSnapshot = store.setLatestAdsbSnapshot.mock.calls[0]?.[1] as
-      | { aircraft?: Array<Record<string, unknown>> }
+      | { aircraft?: Record<string, unknown>[] }
       | undefined;
     expect(storedSnapshot?.aircraft?.[0]?.countryCode).toBeUndefined();
   });
@@ -1312,7 +1313,7 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
     expect(countDocumentsSpy).not.toHaveBeenCalled();
     expect(aggregateSpy).toHaveBeenCalledTimes(1);
     const pipeline = aggregateSpy.mock.calls[0]?.[0] as
-      | Array<Record<string, unknown>>
+      | Record<string, unknown>[]
       | undefined;
     expect(pipeline?.[0]).toEqual({
       $match: {

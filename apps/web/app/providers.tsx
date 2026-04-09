@@ -14,11 +14,11 @@ import { I18nextProvider } from "react-i18next";
 import { Toaster } from "sonner";
 
 import { useTheme } from "@/hooks/use-theme";
-import { getApolloClient } from "@/lib/apollo-client";
 import {
   extractApiError,
   isRuntimeSecretRequiredApiError,
 } from "@/lib/api-error";
+import { getApolloClient } from "@/lib/apollo-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
 import {

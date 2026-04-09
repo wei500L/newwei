@@ -29,6 +29,7 @@ import {
   SEARCH_HISTORY_KEY,
 } from "@/lib/search-history";
 import { parseSearchSyntax } from "@/lib/search-syntax-parser";
+
 import { resolveSuggestionRequestPlan, type SearchField } from "./enhanced-search-box-utils";
 
 const DEBOUNCE_MS = 300;

@@ -1,12 +1,12 @@
 "use client";
 
 import { CloseOutlined, ExpandOutlined } from "@ant-design/icons";
-import { Button, Drawer, List, Space, Spin, Tag, Typography } from "antd";
-
 import type {
   WarMapTransportDetail,
   WarMapTransportTrackPoint,
 } from "@modular/utils";
+import { Button, Drawer, List, Space, Spin, Tag, Typography } from "antd";
+
 
 import { formatDateTime, type SupportedLocale } from "@/lib/i18n";
 

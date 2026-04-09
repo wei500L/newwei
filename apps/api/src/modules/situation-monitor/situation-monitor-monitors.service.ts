@@ -6,16 +6,16 @@ import {
   createLogger,
 } from "@modular/utils";
 import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import {
   ContentSubscriptionKind,
   ContentSubscriptionSource,
   Prisma,
   SituationMonitorMonitorKind,
 } from "@prisma/client";
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
@@ -28,12 +28,6 @@ import type {
   SituationMonitorPreviewDto,
   UpdateSituationMonitorDto,
 } from "./dto/situation-monitor-monitor.dto";
-import type { SituationMonitorInsightsResponse } from "./situation-monitor.service";
-import type {
-  SituationMonitorMatchGeoStatus,
-  SituationMonitorMatchReason,
-  SituationMonitorMatchResult,
-} from "./situation-monitor.types";
 import type {
   OrefAlert,
   OrefHistoryEntry,
@@ -44,6 +38,12 @@ import type {
   SituationTelegramFeedResponse,
   TelegramSignalItem,
 } from "./signals/situation-monitor-signals.types";
+import type { SituationMonitorInsightsResponse } from "./situation-monitor.service";
+import type {
+  SituationMonitorMatchGeoStatus,
+  SituationMonitorMatchReason,
+  SituationMonitorMatchResult,
+} from "./situation-monitor.types";
 
 const LEGACY_MONITORS_USER_SETTING_KEY = "ui:situation-monitor:monitors:v1";
 const MAX_MANUAL_MONITORS = 20;
@@ -165,7 +165,7 @@ interface OwnershipEntry {
   systemSyncOwned: boolean;
 }
 
-type CatalogRow = {
+interface CatalogRow {
   kind: ContentSubscriptionKind;
   normalizedValue: string;
   displayValue: string;
@@ -173,7 +173,7 @@ type CatalogRow = {
   lastSeenAt: Date;
   taxonomyPath: string | null;
   embeddingVector: Prisma.JsonValue | null;
-};
+}
 
 @Injectable()
 export class SituationMonitorMonitorsService {
@@ -1742,7 +1742,7 @@ export class SituationMonitorMonitorsService {
     orgId: string,
     queryText: string,
     rows: CatalogRow[],
-  ): Promise<Array<{ row: CatalogRow; score: number }> & { model?: string }> {
+  ): Promise<{ row: CatalogRow; score: number }[] & { model?: string }> {
     try {
       const response = await this.liteLlm.embedding({
         orgId,
@@ -1756,7 +1756,7 @@ export class SituationMonitorMonitorsService {
       const vector = response.data?.[0]?.embedding;
       const normalized = Array.isArray(vector) ? normalizeVector(vector) : [];
       if (normalized.length === 0) {
-        return [] as Array<{ row: CatalogRow; score: number }> & {
+        return [] as { row: CatalogRow; score: number }[] & {
           model?: string;
         };
       }
@@ -1772,7 +1772,7 @@ export class SituationMonitorMonitorsService {
           Boolean(entry),
         )
         .sort((a, b) => b.score - a.score || b.row.count - a.row.count)
-        .slice(0, 16) as Array<{ row: CatalogRow; score: number }> & {
+        .slice(0, 16) as { row: CatalogRow; score: number }[] & {
         model?: string;
       };
       ranked.model = normalizeOptionalString(response.model) ?? undefined;
@@ -1782,7 +1782,7 @@ export class SituationMonitorMonitorsService {
         { err: error, orgId },
         "Failed to rank preview catalog by embedding",
       );
-      return [] as Array<{ row: CatalogRow; score: number }> & {
+      return [] as { row: CatalogRow; score: number }[] & {
         model?: string;
       };
     }
@@ -1791,10 +1791,10 @@ export class SituationMonitorMonitorsService {
   private async tryRerankCatalogRows(
     orgId: string,
     queryText: string,
-    rows: Array<{ row: CatalogRow; score: number }>,
+    rows: { row: CatalogRow; score: number }[],
   ) {
     if (rows.length === 0) {
-      return [] as Array<{ row: CatalogRow; score: number }>;
+      return [] as { row: CatalogRow; score: number }[];
     }
     try {
       const response = await this.liteLlm.rerank({

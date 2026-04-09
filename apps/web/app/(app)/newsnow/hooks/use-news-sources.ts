@@ -9,11 +9,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createApiClient } from "@/lib/api-client";
 import type { NewsSourceRuntimeSecretsConfig } from '@/lib/news-source-runtime-secrets';
 
-import {
-  type NewsnowAnalysisAccessState,
+import type {
   NewsnowDataState,
   type NewsnowDomesticOpinionEmptyReason,
   type NewsnowHottestAnalysisEmptyReason,
+} from "../lib/newsnow-analysis-access";
+import {
   getNewsnowAnalysisAccessState,
   getNewsnowAnalysisPermissions,
 } from "../lib/newsnow-analysis-access";
@@ -107,13 +108,13 @@ export interface NewsnowEventCandidate {
   heatScore: number;
   freshnessScore: number;
   candidateScore: number;
-  itemRefs: Array<{
+  itemRefs: {
     sourceId: string;
     itemId: string;
     title: string;
     matchedItemId?: string;
     matchedEventId?: string;
-  }>;
+  }[];
 }
 
 export interface NewsnowHottestAnalysisResponse {
@@ -126,7 +127,7 @@ export interface NewsnowHottestAnalysisResponse {
   itemsAnalyzed: number;
   bySource: Record<string, Record<string, NewsnowAnalyzedItem>>;
   candidates: NewsnowEventCandidate[];
-  errors: Array<{ sourceId: string; message: string }>;
+  errors: { sourceId: string; message: string }[];
 }
 
 export interface NewsnowHottestAnalysisDiagnostics {

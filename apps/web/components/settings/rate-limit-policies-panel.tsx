@@ -22,9 +22,9 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { buildAdminLogsHref } from "@/lib/admin-logs";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
-import { buildAdminLogsHref } from "@/lib/admin-logs";
 
 interface RateLimitPolicy {
   feature: string;

@@ -21,9 +21,10 @@ import {
   type JwtPayload,
 } from "../../auth/auth.service";
 import { EnvService } from "../../config/config.service";
-import { SituationMonitorMonitorsService } from "../situation-monitor-monitors.service";
-import { WsConnectionRateLimiterService } from "../../websocket/ws-connection-rate-limiter.service";
 import { UserSessionManager } from "../../websocket/user-session-manager.service";
+import { WsConnectionRateLimiterService } from "../../websocket/ws-connection-rate-limiter.service";
+import { SituationMonitorMonitorsService } from "../situation-monitor-monitors.service";
+
 import { SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM } from "./situation-monitor-signals.constants";
 import { SituationMonitorSignalsDispatcher } from "./situation-monitor-signals.dispatcher";
 import type {
@@ -418,7 +419,7 @@ export class SituationMonitorSignalsGateway
   private getConnectedUsers() {
     const sockets = this.server?.sockets?.sockets;
     if (!sockets) {
-      return [] as Array<{ orgId: string; userId: string }>;
+      return [] as { orgId: string; userId: string }[];
     }
 
     const users = new Map<string, { orgId: string; userId: string }>();

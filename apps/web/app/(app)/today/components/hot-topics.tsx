@@ -1,8 +1,7 @@
 "use client";
 
 import { FireOutlined, RiseOutlined } from "@ant-design/icons";
-import { useQuery } from "@apollo/client";
-import { gql } from "@apollo/client";
+import { useQuery , gql } from "@apollo/client";
 import { Skeleton, Tag } from "antd";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";

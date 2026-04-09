@@ -1,5 +1,6 @@
 "use client";
 
+import { WarningOutlined } from "@ant-design/icons";
 import {
   App,
   Button,
@@ -12,7 +13,6 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import { WarningOutlined } from "@ant-design/icons";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,11 +20,16 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
-import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useEntityImpactGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { usePendingAction } from "@/hooks/use-pending-action";
+import {
+  useEntityImpactGraph,
+  type EntityImpactLink,
+} from "@/hooks/useEntityImpactGraph";
+import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import {
   buildEntityGraphConnectionMap,
   ENTITY_GRAPH_DEFAULT_CATEGORIES,
@@ -38,11 +43,6 @@ import {
   type EntityGraphEdgeType,
   type EntityGraphLabelDensity,
 } from "@/lib/entity-impact-graph";
-import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
-import {
-  useEntityImpactGraph,
-  type EntityImpactLink,
-} from "@/hooks/useEntityImpactGraph";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 const { Text } = Typography;
@@ -484,13 +484,13 @@ export function EntityImpactGraph() {
             const safeWindowLabel = escapeHtml(windowLabel);
 
             return [
-              `<div style=\"font-weight:600;margin-bottom:6px;\">${safeNodeName}</div>`,
+              `<div style="font-weight:600;margin-bottom:6px;">${safeNodeName}</div>`,
               `<div>${t("dashboard.charts.entityGraph.type", { defaultValue: "Type" })}: ${safeType}</div>`,
               `<div>${t("dashboard.charts.entityGraph.category", { defaultValue: "Category" })}: ${safeCategoryName}</div>`,
               `<div>${t("dashboard.charts.entityGraph.weight", { defaultValue: "Weight" })}: ${Number(data.value ?? 0).toFixed(1)}</div>`,
               `<div>${t("dashboard.charts.entityGraph.connections", { defaultValue: "Connections" })}: ${original.connectionCount ?? 0}</div>`,
               relatedLabel ? `<div>${safeRelatedLabel}</div>` : "",
-              `<div style=\"color:#94a3b8;margin-top:6px;\">${t("dashboard.charts.entityGraph.window", { defaultValue: "Window" })}: ${safeWindowLabel}</div>`,
+              `<div style="color:#94a3b8;margin-top:6px;">${t("dashboard.charts.entityGraph.window", { defaultValue: "Window" })}: ${safeWindowLabel}</div>`,
             ].join("");
           }
 
@@ -529,10 +529,10 @@ export function EntityImpactGraph() {
             const safeLinkTypeLabel = escapeHtml(linkTypeLabel);
 
             return [
-              `<div style=\"font-weight:600;margin-bottom:6px;\">${safeSource} -> ${safeTarget}</div>`,
+              `<div style="font-weight:600;margin-bottom:6px;">${safeSource} -> ${safeTarget}</div>`,
               `<div>${t("dashboard.charts.entityGraph.linkType", { defaultValue: "Link Type" })}: ${safeLinkTypeLabel}</div>`,
               `<div>${t("dashboard.charts.entityGraph.strength", { defaultValue: "Strength" })}: ${Number(data.value ?? 0).toFixed(normalizedType === "correlation" ? 2 : 0)}</div>`,
-              `<div style=\"color:#94a3b8;margin-top:6px;\">${t("dashboard.charts.entityGraph.window", { defaultValue: "Window" })}: ${safeWindowLabel}</div>`,
+              `<div style="color:#94a3b8;margin-top:6px;">${t("dashboard.charts.entityGraph.window", { defaultValue: "Window" })}: ${safeWindowLabel}</div>`,
             ].join("");
           }
 

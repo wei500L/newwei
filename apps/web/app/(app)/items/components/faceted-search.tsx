@@ -39,7 +39,7 @@ interface FacetedSearchProps {
   maxSectionBodyHeight?: number;
 }
 
-function toSectionKeys(value: string | number | Array<string | number>): FacetedSectionKey[] {
+function toSectionKeys(value: string | number | (string | number)[]): FacetedSectionKey[] {
   const raw = Array.isArray(value) ? value : [value];
   return raw.filter((item): item is FacetedSectionKey =>
     typeof item === "string" && FACETED_SECTION_KEYS.includes(item as FacetedSectionKey)
@@ -80,19 +80,19 @@ export function FacetedSearch({
     onFilterChange({ ...filters, dateRange: [dates[0], dates[1]] });
   };
 
-  const handleRegionChange = (checkedValues: Array<string | number>) => {
+  const handleRegionChange = (checkedValues: (string | number)[]) => {
     onFilterChange({ ...filters, regions: checkedValues as string[] });
   };
 
-  const handleTopicChange = (checkedValues: Array<string | number>) => {
+  const handleTopicChange = (checkedValues: (string | number)[]) => {
     onFilterChange({ ...filters, topics: checkedValues as string[] });
   };
 
-  const handleSentimentChange = (checkedValues: Array<string | number>) => {
+  const handleSentimentChange = (checkedValues: (string | number)[]) => {
     onFilterChange({ ...filters, sentiments: checkedValues as string[] });
   };
 
-  const handleContentTypeChange = (checkedValues: Array<string | number>) => {
+  const handleContentTypeChange = (checkedValues: (string | number)[]) => {
     onFilterChange({ ...filters, contentTypes: checkedValues as string[] });
   };
 
@@ -241,7 +241,7 @@ export function FacetedSearch({
     selectedCount: number,
     options: string[],
     selectedValues: string[] | undefined,
-    onChange: (values: Array<string | number>) => void,
+    onChange: (values: (string | number)[]) => void,
     formatter?: (value: string) => string
   ) => {
     const keyword = sectionSearch[key] ?? '';

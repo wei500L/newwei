@@ -60,7 +60,7 @@ export interface AuthenticatedUser {
   accessTokenExpiresAt?: number;
 }
 
-interface MembershipRole extends MembershipRoleWithPermissions {}
+type MembershipRole = MembershipRoleWithPermissions;
 
 interface MembershipRecord extends MembershipWithRoles<MembershipRole> {
   isActive?: boolean;

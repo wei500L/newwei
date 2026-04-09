@@ -9,7 +9,6 @@ import {
 import { PrismaService } from "../config/prisma.service";
 import { ObservabilitySnapshotService } from "../observability/observability-snapshot.service";
 
-import { CrawlQualityTaskSnapshotService } from "./crawl-quality-task-snapshot.service";
 import type {
   CrawlQualityAlertThresholds,
   CrawlQualityMetricsSnapshot,
@@ -18,6 +17,7 @@ import {
   createEmptyCrawlQualityConfidenceBuckets,
   createEmptyCrawlQualityRejectBreakdown,
 } from "./crawl-quality-metrics.types";
+import { CrawlQualityTaskSnapshotService } from "./crawl-quality-task-snapshot.service";
 
 const DEFAULT_CRAWL_QUALITY_ALERT_THRESHOLDS: CrawlQualityAlertThresholds = {
   preflightFailureRateHigh: 0.15,

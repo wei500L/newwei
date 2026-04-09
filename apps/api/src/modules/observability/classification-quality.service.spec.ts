@@ -373,7 +373,7 @@ describe("ClassificationQualityService", () => {
     expect(TaskLogModel.countDocuments).not.toHaveBeenCalled();
 
     const processedPipeline = (ProcessedItemModel.aggregate as jest.Mock).mock.calls[0]?.[0] as
-      | Array<Record<string, unknown>>
+      | Record<string, unknown>[]
       | undefined;
     expect(processedPipeline?.[1]).toEqual(
       expect.objectContaining({

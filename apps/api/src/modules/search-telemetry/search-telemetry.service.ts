@@ -22,7 +22,7 @@ export class SearchTelemetryService {
   }) {
     const now = new Date();
     const metricKey = this.buildMetricKey(input.orgId, now);
-    const fields: Array<[string, number]> = [
+    const fields: [string, number][] = [
       ["events.total", 1],
       [`events.${input.eventType}`, 1],
     ];

@@ -11,7 +11,7 @@ import type { GqlRequest } from "../graphql.types";
 import { ProcessedItemModelGraph } from "../models/item.model";
 import { normalizeProcessedResult } from "../utils/normalize-processed-result";
 
-type LeanProcessedItem = {
+interface LeanProcessedItem {
   _id: { toString(): string };
   orgId: string;
   itemMetaId: string;
@@ -25,7 +25,7 @@ type LeanProcessedItem = {
   summaryEmbedding?: unknown;
   summaryEmbeddingModel?: unknown;
   createdAt: Date;
-};
+}
 
 @Resolver(() => ProcessedItemModelGraph)
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)

@@ -1,9 +1,11 @@
-import { myFetch } from "./fetch";
-import { defineSource } from "./source";
+import * as cheerio from "cheerio"
+
 import type { NewsItem } from "../news-aggregator.types";
 import { WEIBO_RUNTIME_SECRETS_CONFIG } from '../news-source-runtime-secrets.catalog';
 
-import * as cheerio from "cheerio"
+import { myFetch } from "./fetch";
+import { defineSource } from "./source";
+
 
 const DEFAULT_WEIBO_COOKIE =
   "SUB=_2AkMWIuNSf8NxqwJRmP8dy2rhaoV2ygrEieKgfhKJJRMxHRl-yT9jqk86tRB6PaLNvQZR6zYUcYVT1zSjoSreQHidcUq7"

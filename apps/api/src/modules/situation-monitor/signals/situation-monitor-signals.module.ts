@@ -6,6 +6,8 @@ import { AlertsModule } from '../../alerts/alerts.module';
 import { AuthModule } from '../../auth/auth.module';
 import { EnvService } from '../../config/config.service';
 import { toBullmqConnection } from '../../config/redis-connection';
+
+import { SituationMonitorSignalsQueueCleanupService } from './situation-monitor-signals-queue-cleanup.service';
 import {
   SITUATION_MONITOR_SIGNALS_QUEUE,
   SITUATION_MONITOR_SIGNALS_QUEUE_EVENTS,
@@ -14,7 +16,6 @@ import {
 import { SituationMonitorSignalsDispatcher } from './situation-monitor-signals.dispatcher';
 import { SituationMonitorSignalsGateway } from './situation-monitor-signals.gateway';
 import { SituationMonitorSignalsProcessor } from './situation-monitor-signals.processor';
-import { SituationMonitorSignalsQueueCleanupService } from './situation-monitor-signals-queue-cleanup.service';
 import { SituationMonitorSignalsService } from './situation-monitor-signals.service';
 
 @Module({

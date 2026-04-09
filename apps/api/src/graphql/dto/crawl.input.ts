@@ -1,6 +1,6 @@
-import { Type } from "class-transformer";
 import { ArgsType, Field, ID, InputType, Int, Float, registerEnumType } from "@nestjs/graphql";
 import { CrawlTaskStatus } from "@prisma/client";
+import { Type } from "class-transformer";
 import {
   IsArray,
   IsBoolean,

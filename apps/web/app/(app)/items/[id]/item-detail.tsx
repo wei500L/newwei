@@ -27,6 +27,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { emitSituationMonitorMonitorsUpdated } from "@/app/(app)/situation-monitor/utils/monitor-events";
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { MarkdownViewer } from "@/components/markdown-viewer";
@@ -62,7 +63,6 @@ import {
 } from "@/lib/rss-translation";
 import { safeHttpUrl } from "@/lib/url";
 import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
-import { emitSituationMonitorMonitorsUpdated } from "@/app/(app)/situation-monitor/utils/monitor-events";
 
 interface ItemDetailProps {
   itemId: string;

@@ -17,6 +17,9 @@ import { useSession } from "next-auth/react";
 import type { ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 
+import { buildAdminLogsHref } from "@/lib/admin-logs";
+
+import styles from "./admin-content.module.css";
 import {
   ADMIN_GROUP_ORDER,
   canViewAdmin,
@@ -25,9 +28,7 @@ import {
   type AdminGroupKey,
   type AdminLinkPermission,
 } from "./admin-content.utils";
-import { buildAdminLogsHref } from "@/lib/admin-logs";
 import { buildAdminSettingsHref } from "./settings/settings-navigation";
-import styles from "./admin-content.module.css";
 
 interface AdminLinkItem {
   key: string;

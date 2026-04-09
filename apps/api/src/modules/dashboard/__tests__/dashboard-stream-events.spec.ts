@@ -100,7 +100,7 @@ describe("dashboard stream war-map events", () => {
     };
 
     const controller = new DashboardController({} as never, chartsService as never);
-    const messages: Array<{ type?: string; data?: unknown }> = [];
+    const messages: { type?: string; data?: unknown }[] = [];
 
     const subscription = controller
       .dashboardStream({ orgId: "org-1" } as never, {} as never)

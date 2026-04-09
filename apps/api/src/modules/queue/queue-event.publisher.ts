@@ -194,7 +194,8 @@ export class QueueEventPublisher implements OnModuleDestroy {
       this.orgCache.delete(jobId);
       return null;
     }
-    const { expiresAt: _expiresAt, ...context } = cached;
+    const { expiresAt, ...context } = cached;
+    void expiresAt;
     return context;
   }
 

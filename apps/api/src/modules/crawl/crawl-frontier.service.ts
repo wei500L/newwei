@@ -10,19 +10,19 @@ import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
 
 import {
+  CrawlFrontierLlmService,
+  type FrontierLlmCandidate,
+} from "./crawl-frontier-llm.service";
+import {
   classifyFrontierFailureKind,
   computeFrontierPageTypeBudgets,
   estimateFreshnessScore,
   inferFrontierPageType,
-  isUtilityFrontierLinkText,
   normalizeCrawlSiteProfileConfig,
-  prioritizeFrontierCandidates,
   resolveEffectiveLlmAssistConfig,
   resolveFreshnessBucket,
   resolveLocaleScopeLanguage,
-  resolveNodeQueueClass,
   scoreFrontierCandidate,
-  shouldRejectFrontierUrl,
   toRegistrableDomain,
 } from "./crawl-frontier.utils";
 import {
@@ -45,10 +45,12 @@ import {
 } from "./crawl-strategy-root-executor.service";
 import { CrawlStrategyRunRecorderService } from "./crawl-strategy-run-recorder.service";
 import { CrawlStrategyWorkflowService } from "./crawl-strategy-workflow.service";
-import {
-  CrawlFrontierLlmService,
-  type FrontierLlmCandidate,
-} from "./crawl-frontier-llm.service";
+import { CrawlStrategyWorkflowRunKind } from "./crawl-strategy.types";
+import type {
+  CrawlStrategyParameterSource,
+  CrawlStrategyWorkflowDefinition,
+  CrawlStrategyWorkflowOrigin,
+} from "./crawl-strategy.types";
 import type {
   CrawlBrowserHeader,
   CrawlDeepCrawlComponent,
@@ -71,17 +73,11 @@ import {
   type Crawl4aiArticle,
   type Crawl4aiResponse,
 } from "./crawl4ai.client";
-import { CrawlStrategyWorkflowRunKind } from "./crawl-strategy.types";
-import type {
-  CrawlStrategyParameterSource,
-  CrawlStrategyWorkflowDefinition,
-  CrawlStrategyWorkflowOrigin,
-} from "./crawl-strategy.types";
 import {
   CreateCrawlFrontierRunDto,
   ListCrawlFrontierRunDto,
 } from "./dto/crawl-frontier.dto";
-import { buildCanonicalUrlFingerprint, resolveQueryParamAllowlist } from "./url-fingerprint";
+import { resolveQueryParamAllowlist } from "./url-fingerprint";
 
 interface FrontierLifecycleNode {
   id: string;
@@ -144,7 +140,7 @@ function toFiniteNumber(value: unknown): number | null {
 }
 
 function mergeMetadataRecords(
-  ...records: Array<Record<string, unknown> | null | undefined>
+  ...records: (Record<string, unknown> | null | undefined)[]
 ): Record<string, unknown> | undefined {
   const merged: Record<string, unknown> = {};
   for (const record of records) {
@@ -176,7 +172,7 @@ function toNumericRecord(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-function uniqueStringList(...lists: Array<string[] | undefined>): string[] | undefined {
+function uniqueStringList(...lists: (string[] | undefined)[]): string[] | undefined {
   const merged = Array.from(
     new Set(
       lists.flatMap((list) =>
@@ -228,7 +224,7 @@ function normalizeHeaderName(value: string): string {
 }
 
 function mergeBrowserHeaders(
-  ...headerSets: Array<CrawlBrowserHeader[] | undefined>
+  ...headerSets: (CrawlBrowserHeader[] | undefined)[]
 ): CrawlBrowserHeader[] | undefined {
   const merged = new Map<string, CrawlBrowserHeader>();
   for (const headerSet of headerSets) {
@@ -2272,9 +2268,9 @@ export class CrawlFrontierService {
       strategyResolvedFrom,
       strategyAutoResolved,
       filterChainSynthesized:
-        Boolean(filterChain) && !Boolean(nativeOptions.filterChain),
+        Boolean(filterChain) && !nativeOptions.filterChain,
       urlScorerSynthesized:
-        Boolean(urlScorer) && !Boolean(nativeOptions.urlScorer),
+        Boolean(urlScorer) && !nativeOptions.urlScorer,
     };
   }
 
@@ -3525,9 +3521,7 @@ export class CrawlFrontierService {
         : undefined;
       if (metadata) {
         const nodeCandidateStats = toNumericRecord(metadata.candidateStats);
-        for (const key of Object.keys(candidateStats) as Array<
-          keyof typeof candidateStats
-        >) {
+        for (const key of Object.keys(candidateStats) as (keyof typeof candidateStats)[]) {
           candidateStats[key] += nodeCandidateStats?.[key] ?? 0;
         }
         const nodeRejectionCounts = toNumericRecord(metadata.rejectionCounts);
@@ -4538,7 +4532,7 @@ export class CrawlFrontierService {
     const missingFieldCounts: Record<string, number> = {};
     const errorCounts: Record<string, number> = {};
     const modelCounts: Record<string, number> = {};
-    let available = articles.length;
+    const available = articles.length;
     let attempted = 0;
     let applied = 0;
     let failed = 0;

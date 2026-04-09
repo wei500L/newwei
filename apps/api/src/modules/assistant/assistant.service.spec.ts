@@ -1,5 +1,27 @@
-import type { PubSubEngine } from "graphql-subscriptions";
+import {
+  AssistantRunModel,
+  ProcessedItemModel,
+  RawItemModel,
+} from "@modular/mongo";
 import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import type { PubSubEngine } from "graphql-subscriptions";
+
+import type { EnvService } from "../config/config.service";
+import type { PrismaService } from "../config/prisma.service";
+import type { ModelServiceClient } from "../model-service/model-service.client";
+import type {
+  LiteLlmMessage,
+  LiteLlmService,
+  LiteLlmStreamChunk,
+} from "../news-pipeline/litellm.service";
+import { LiteLlmGuardrailViolationError } from "../news-pipeline/litellm.service";
+import type { AssistantSafetySettingsService } from "../system-settings/assistant-safety-settings.service";
+import type { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
+import type { OpenAiKeysSettingsService } from "../system-settings/openai-keys-settings.service";
+
+import { AssistantPromptService } from "./assistant-prompt.service";
+import { AssistantStreamError } from "./assistant.errors";
+import { AssistantService } from "./assistant.service";
 
 jest.mock(
   "@modular/vector-client",
@@ -28,25 +50,6 @@ jest.mock("@modular/mongo", () => ({
     aggregate: jest.fn(),
   },
 }));
-
-import {
-  AssistantRunModel,
-  ProcessedItemModel,
-  RawItemModel,
-} from "@modular/mongo";
-
-import type { EnvService } from "../config/config.service";
-import type { PrismaService } from "../config/prisma.service";
-import type { ModelServiceClient } from "../model-service/model-service.client";
-import type { LiteLlmMessage, LiteLlmService, LiteLlmStreamChunk } from "../news-pipeline/litellm.service";
-import { LiteLlmGuardrailViolationError } from "../news-pipeline/litellm.service";
-import type { AssistantSafetySettingsService } from "../system-settings/assistant-safety-settings.service";
-import type { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
-import type { OpenAiKeysSettingsService } from "../system-settings/openai-keys-settings.service";
-
-import { AssistantPromptService } from "./assistant-prompt.service";
-import { AssistantStreamError } from "./assistant.errors";
-import { AssistantService } from "./assistant.service";
 
 jest.mock("@modular/utils", () => ({
   createLogger: () => ({
@@ -233,7 +236,7 @@ describe("AssistantService.buildQueryConversationHistoryMessages", () => {
           runId: string,
           createdAt: Date,
           conversationId?: string
-        ) => Promise<Array<{ role: string; content: string }>>;
+        ) => Promise<{ role: string; content: string }[]>;
       }
     ).buildQueryConversationHistoryMessages.bind(service);
 
@@ -288,7 +291,7 @@ describe("AssistantService.buildQueryConversationHistoryMessages", () => {
           runId: string,
           createdAt: Date,
           conversationId?: string
-        ) => Promise<Array<{ role: string; content: string }>>;
+        ) => Promise<{ role: string; content: string }[]>;
       }
     ).buildQueryConversationHistoryMessages.bind(service);
 
@@ -733,8 +736,8 @@ describe("AssistantService.renderNewsItems", () => {
       service as unknown as {
         renderNewsItems: (
           orgId: string,
-          items: Array<{ id: string; mongoRef?: string | null; name?: string | null; publishedAt?: Date | null }>
-        ) => Promise<Array<{ itemMetaId: string; title?: string | null; source?: string | null; url?: string | null }>>;
+          items: { id: string; mongoRef?: string | null; name?: string | null; publishedAt?: Date | null }[]
+        ) => Promise<{ itemMetaId: string; title?: string | null; source?: string | null; url?: string | null }[]>;
       }
     ).renderNewsItems.bind(service);
 

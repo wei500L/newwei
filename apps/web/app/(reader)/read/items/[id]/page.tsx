@@ -1,7 +1,7 @@
 "use client";
 
-import { gql, useMutation, useQuery } from "@apollo/client";
 import { ArrowLeftOutlined, BgColorsOutlined, FontSizeOutlined, ShareAltOutlined } from "@ant-design/icons";
+import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Radio, Select, Skeleton, Space, Switch, Typography } from "antd";
 import Link from "next/link";
 import { useParams } from "next/navigation";

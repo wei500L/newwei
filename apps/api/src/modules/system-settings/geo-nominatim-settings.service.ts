@@ -1,6 +1,6 @@
-import { isEmail } from "class-validator";
 import { Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
+import { isEmail } from "class-validator";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { EnvService } from "../config/config.service";

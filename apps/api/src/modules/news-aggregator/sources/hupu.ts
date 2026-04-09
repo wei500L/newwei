@@ -16,13 +16,8 @@ export default defineSource(async () => {
   const regex = /<li class="bbs-sl-web-post-body">[\s\S]*?<a href="(\/[^"]+?\.html)"[^>]*?class="p-title"[^>]*>([^<]+)<\/a>/g
 
   const result: HotItem[] = []
-  let match
-
-  // 将赋值操作移到循环内部，修复no-cond-assign警告
-  while (true) {
-    match = regex.exec(html)
-    if (!match) break
-
+	
+  for (const match of html.matchAll(regex)) {
     const path = match[1]
     const title = match[2]
     if (!path || !title) {

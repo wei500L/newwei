@@ -1,8 +1,8 @@
 import { Injectable, OnModuleDestroy } from "@nestjs/common";
 
-type Closeable = {
+interface Closeable {
   close?: () => Promise<unknown> | void;
-};
+}
 
 @Injectable()
 export class AkshareQueueCleanupService implements OnModuleDestroy {

@@ -36,6 +36,7 @@ import { useSession } from 'next-auth/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { MarkdownViewer } from '@/components/markdown-viewer';
 import {
   asRecord,
   buildUserPromptFromRun,
@@ -52,7 +53,6 @@ import {
   isAssistantKnowledgeSourceSupported,
   type AssistantKnowledgeSource,
 } from '@/lib/assistant-knowledge-source';
-import { MarkdownViewer } from '@/components/markdown-viewer';
 import dayjs from '@/lib/dayjs';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 

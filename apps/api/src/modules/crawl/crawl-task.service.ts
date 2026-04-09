@@ -509,7 +509,7 @@ export class CrawlTaskService {
       return true;
     });
 
-    let attempted = candidates.length;
+    const attempted = candidates.length;
     let ingested = 0;
     let failed = 0;
 

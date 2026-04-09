@@ -1,5 +1,5 @@
-import { sign } from "jsonwebtoken";
 import { RealtimeSocketErrorCode } from "@modular/utils";
+import { sign } from "jsonwebtoken";
 
 import type { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
 

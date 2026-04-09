@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
 
-import type { Prisma } from '@prisma/client';
 import { createLogger } from '@modular/utils';
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
+import { createHash } from 'node:crypto';
 
 import { toPrismaJsonValue } from '../../common/prisma-json';
 import { PrismaService } from '../config/prisma.service';

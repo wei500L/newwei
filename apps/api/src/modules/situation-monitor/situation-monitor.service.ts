@@ -16,14 +16,14 @@ import { analyzeNarratives, getNarrativeSummary, type NarrativeLearningOverride 
 import { CORRELATION_TOPICS, NARRATIVE_PATTERNS } from "./analysis/patterns";
 import type { SituationNewsItem } from "./analysis/types";
 import {
+  classifySituationMonitorCategory,
+  SituationMonitorCategoryClassificationSource,
+} from "./classification/category-classifier";
+import {
   buildSituationMonitorEventClusters,
   summarizeSituationMonitorCategoryClusters,
   summarizeSituationMonitorClusterQuality,
 } from "./clustering/event-clustering";
-import {
-  classifySituationMonitorCategory,
-  SituationMonitorCategoryClassificationSource,
-} from "./classification/category-classifier";
 import { SITUATION_PANELS } from "./config/situations";
 import { WORLD_LEADERS } from "./config/world-leaders";
 import { FinancialMainlineSnapshotService } from "./external/financial-mainline-snapshot.service";
@@ -629,7 +629,7 @@ export class SituationMonitorService {
   }
 
   private buildRealtimePredictiveSignals(snapshot: {
-    keywordSpikes: Array<{
+    keywordSpikes: {
       id: string;
       term: string;
       count: number;
@@ -637,14 +637,14 @@ export class SituationMonitorService {
       multiplier: number;
       sourceCount: number;
       confidence: number;
-    }>;
-    predictionLeads: Array<{
+    }[];
+    predictionLeads: {
       id: string;
       title: string;
       shift: number;
       newsActivity: number;
       confidence: number;
-    }>;
+    }[];
   }) {
     const predictiveSignals: NonNullable<
       ReturnType<typeof analyzeCorrelations>["results"]

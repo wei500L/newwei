@@ -1,11 +1,13 @@
-import { myFetch } from "./fetch";
-import { defineSource } from "./source";
-import { parseRelativeDate } from "./date";
 
-import { Buffer } from "node:buffer"
 import * as cheerio from "cheerio"
 import iconv from "iconv-lite"
+import { Buffer } from "node:buffer"
+
 import type { NewsItem } from "../news-aggregator.types"
+
+import { parseRelativeDate } from "./date";
+import { myFetch } from "./fetch";
+import { defineSource } from "./source";
 
 export default defineSource(async () => {
   const response: ArrayBuffer = await myFetch("https://www.zaochenbao.com/realtime/", {

@@ -150,7 +150,7 @@ describe('NewsEventsTimelineService', () => {
 
     const timelineMeta = updatePayload.data.metadata.timeline as {
       topicDriftWarning: boolean;
-      categoryDistribution: Array<{ categoryPath: string; share: number }>;
+      categoryDistribution: { categoryPath: string; share: number }[];
       entries: Record<string, { tentative: boolean; anchor: boolean; categoryPath: string | null }>;
       phaseSummaries: unknown[];
       subEvents: unknown[];

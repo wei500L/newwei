@@ -154,7 +154,7 @@ export function KnowledgeGraph() {
     }
 
     // 预处理节点，同时统计重复/无效节点
-    const normalizedNodes: Array<(typeof graph.nodes)[number] & { id: string }> = [];
+    const normalizedNodes: ((typeof graph.nodes)[number] & { id: string })[] = [];
     const seenNodeIds = new Set<string>();
     let filteredNodes = 0;
     for (const node of graph.nodes) {

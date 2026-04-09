@@ -34,13 +34,13 @@ interface ArchivePreparationOperationalStatusResponse {
     failed: number;
     delayed: number;
   };
-  recentStatuses: Array<{
+  recentStatuses: {
     scope: "digest" | "calendar";
     scopeValue: string;
     state: "IDLE" | "QUEUED" | "PROCESSING" | "PARTIAL" | "READY" | "FAILED";
     updatedAt: string;
     errorMessage?: string | null;
-  }>;
+  }[];
 }
 
 const EMPTY_SETTINGS: ArchivePreparationSettingsResponse = {

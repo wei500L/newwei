@@ -12,7 +12,9 @@ jest.mock("@modular/utils", () => {
       if (!Array.isArray(input)) {
         return [];
       }
-      const controlChar = /[\u0000-\u001f\u007f]/;
+      const controlChar = new RegExp(
+        `[${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}]`,
+      );
       const headerNamePattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
       return input
         .map((entry) => {
@@ -65,6 +67,7 @@ jest.mock(
 import { TaskLogModel } from "@modular/mongo";
 import { NotificationPresentationKind } from "@modular/utils";
 import { NotificationType } from "@prisma/client";
+
 import { CrawlExecutionService } from "../crawl-execution.service";
 import { Crawl4aiRequestException } from "../crawl4ai.exception";
 import { buildCanonicalUrlFingerprint } from "../url-fingerprint";

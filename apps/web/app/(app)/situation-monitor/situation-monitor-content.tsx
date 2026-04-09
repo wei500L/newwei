@@ -50,11 +50,11 @@ import "react-resizable/css/styles.css";
 import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
 import { WarMap } from "@/app/(app)/dashboard/charts/war-map";
 import { ArticlePublishedTime } from "@/components/article-published-time";
-import { extractApiError } from "@/lib/api-error";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { createApiClient } from "@/lib/api-client";
+import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
-import { usePendingAction } from "@/hooks/use-pending-action";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
 import {
@@ -79,15 +79,6 @@ import type {
   SituationTelegramRealtimePayload,
 } from "./types/situation-monitor-signals";
 import {
-  buildMonitorMatchKey,
-  collectMonitorMatchesForKeys,
-  getDefaultMonitorReasonLabel,
-} from "./utils/monitor-matches";
-import {
-  getSituationMonitorMonitorsUpdatedSource,
-  SITUATION_MONITOR_MONITORS_UPDATED_EVENT,
-} from "./utils/monitor-events";
-import {
   buildPackedResponsiveLayout,
   getDefaultPanelLayoutForBreakpoint,
   GRID_BREAKPOINTS,
@@ -97,6 +88,15 @@ import {
   stabilizeDesktopDragLayout,
   type GridBreakpoint,
 } from "./utils/layout-grid";
+import {
+  getSituationMonitorMonitorsUpdatedSource,
+  SITUATION_MONITOR_MONITORS_UPDATED_EVENT,
+} from "./utils/monitor-events";
+import {
+  buildMonitorMatchKey,
+  collectMonitorMatchesForKeys,
+  getDefaultMonitorReasonLabel,
+} from "./utils/monitor-matches";
 import {
   isRecentOrefTimestamp,
   parseOrefTimestamp,
@@ -3315,7 +3315,6 @@ export function SituationMonitorContent() {
     [t],
   );
 
-  const feedItemsPerCategory = screens.lg ? 6 : 4;
   const clusterItemsPerCategory = 6;
   const alertsPerPanel = screens.lg ? 10 : 6;
   const fedNewsPerPanel = screens.lg ? 8 : 5;
@@ -3402,9 +3401,6 @@ export function SituationMonitorContent() {
   );
   const hasFedIndicatorSnapshotData =
     (fedSnapshot?.indicators?.length ?? 0) > 0;
-  const hasFedSnapshotData = Boolean(
-    hasFedIndicatorSnapshotData || fedSnapshot?.moneyPrinter,
-  );
 
   const layout = useSituationMonitorLayoutStore((state) => state.layout);
   const responsiveLayouts = useSituationMonitorLayoutStore(

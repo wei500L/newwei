@@ -16,7 +16,7 @@ export async function settleWithConcurrency<T, R>(
   items: readonly T[],
   concurrency: number,
   worker: (item: T, index: number) => Promise<R>,
-): Promise<Array<ConcurrentSettledResult<T, R>>> {
+): Promise<ConcurrentSettledResult<T, R>[]> {
   if (items.length === 0) {
     return [];
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useApolloClient } from "@apollo/client";
+import { useSession } from "next-auth/react";
 import {
   createContext,
   useContext,
@@ -8,7 +9,6 @@ import {
   useMemo,
   type PropsWithChildren,
 } from "react";
-import { useSession } from "next-auth/react";
 
 import type { QueueEventMessage } from "@/app/(app)/dashboard/use-queue-events";
 import { useQueueEvents } from "@/app/(app)/dashboard/use-queue-events";

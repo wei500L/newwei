@@ -27,7 +27,7 @@ import { captureClientError } from "./client-telemetry";
 import { env } from "./env";
 import { createTraceHeaders } from "./trace";
 
-interface SessionWithAccessToken extends BrowserAuthSession {}
+type SessionWithAccessToken = BrowserAuthSession;
 
 interface NetworkErrorWithResponse {
   statusCode?: number;

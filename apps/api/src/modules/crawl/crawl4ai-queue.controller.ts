@@ -5,16 +5,16 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
-import { CrawlQueueProcessor } from "./crawl.processor";
+import { CrawlAdaptiveConcurrencyService } from "./crawl-adaptive-concurrency.service";
 import { CrawlQueueService } from "./crawl-queue.service";
+import { CrawlSettingsService } from "./crawl-settings.service";
 import {
   CRAWL_QUEUE_HOT_NAME,
   CRAWL_QUEUE_MODE,
   CRAWL_QUEUE_NAME,
   CRAWL_QUEUE_NORMAL_NAME
 } from "./crawl.constants";
-import { CrawlAdaptiveConcurrencyService } from "./crawl-adaptive-concurrency.service";
-import { CrawlSettingsService } from "./crawl-settings.service";
+import { CrawlQueueProcessor } from "./crawl.processor";
 import { UpdateCrawlQueueConcurrencyDto } from "./dto/crawl-queue.dto";
 
 type QueueCounts = Record<string, number>;

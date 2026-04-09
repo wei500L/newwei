@@ -1,10 +1,11 @@
 import { Context, Parent, ResolveField, Resolver } from "@nestjs/graphql";
+
+import type { GqlRequest } from "../graphql.types";
 import { ProcessedItemEventIdLoader } from "../loaders/processed-item-event-id.loader";
 import {
   ProcessedItemModelGraph,
   ProcessedItemPreviewModelGraph
 } from "../models/item.model";
-import type { GqlRequest } from "../graphql.types";
 
 /**
  * Resolver for eventId field on ProcessedItem types.

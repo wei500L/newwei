@@ -165,16 +165,7 @@ describe("fetchWithIpv4Fallback", () => {
     jest.spyOn(global, "fetch").mockRejectedValue(timeoutError);
 
     const httpsRequestMock = httpsRequest as unknown as jest.Mock;
-    httpsRequestMock.mockImplementation(
-      (
-        _url: URL,
-        _options: Record<string, unknown>,
-        _callback: (response: EventEmitter & {
-          statusCode?: number;
-          statusMessage?: string;
-          headers: Record<string, string>;
-        }) => void,
-      ) => {
+    httpsRequestMock.mockImplementation(() => {
         const request = new EventEmitter() as EventEmitter & {
           destroy: (error?: Error) => void;
           end: () => void;
@@ -191,8 +182,7 @@ describe("fetchWithIpv4Fallback", () => {
         request.end = jest.fn();
 
         return request;
-      },
-    );
+      });
 
     const pending = fetchWithIpv4Fallback(
       "https://api.gdeltproject.org/api/v2/doc/doc?query=test",

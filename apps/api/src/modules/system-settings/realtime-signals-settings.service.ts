@@ -6,13 +6,13 @@ import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
+import type { RealtimeSignalsRuntimeConfig } from "../realtime-signals/realtime-signals.types";
 import {
   decryptStringValueV1,
   type EncryptedStringValueV1,
   isEncryptedStringValueV1,
   resolveSettingsKey,
 } from "../storage/storage-settings.crypto";
-import type { RealtimeSignalsRuntimeConfig } from "../realtime-signals/realtime-signals.types";
 
 import { SystemSecuritySettingsService } from "./system-security-settings.service";
 

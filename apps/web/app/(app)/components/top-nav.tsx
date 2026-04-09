@@ -17,9 +17,21 @@ import { signOut, useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+
+import { useTheme } from "@/hooks/use-theme";
+import { captureClientError } from "@/lib/client-telemetry";
+import { changeLanguage } from "@/lib/i18n";
+import { createTraceHeaders } from "@/lib/trace";
+
 import { buildActionRailNavConfig } from "./action-rail";
 import { resolveActiveItemKey } from "./action-rail-routing";
-import { navigateDrawerItem } from "./top-nav-drawer-navigation";
+import { AvatarFallback } from "./avatar-fallback";
+import { CommandBar } from "./command-bar";
+import { LanguageSwitcher } from "./language-switcher";
+import { NotificationCenter } from "./notification-center";
+import { OrganizationSwitcher } from "./organization-switcher";
+import { SystemDefcon } from "./system-defcon";
+import { TickerTape } from "./ticker-tape";
 import {
   alignDensityModeToBase,
   downgradeDensityModeForBase,
@@ -30,19 +42,7 @@ import {
   upgradeDensityMode,
   type TopNavDensityMode,
 } from "./top-nav-density";
-
-import { captureClientError } from "@/lib/client-telemetry";
-import { useTheme } from "@/hooks/use-theme";
-import { changeLanguage } from "@/lib/i18n";
-import { createTraceHeaders } from "@/lib/trace";
-
-import { AvatarFallback } from "./avatar-fallback";
-import { CommandBar } from "./command-bar";
-import { LanguageSwitcher } from "./language-switcher";
-import { NotificationCenter } from "./notification-center";
-import { OrganizationSwitcher } from "./organization-switcher";
-import { SystemDefcon } from "./system-defcon";
-import { TickerTape } from "./ticker-tape";
+import { navigateDrawerItem } from "./top-nav-drawer-navigation";
 import { UserUiSettingsSyncIndicator } from "./user-ui-settings-sync-indicator";
 
 const formatLabel = (value: string): string =>

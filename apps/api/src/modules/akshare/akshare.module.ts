@@ -15,8 +15,8 @@ import { AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS, AKSHARE_QUEUE_NAME } from "./aksha
 import { AkshareQueueProcessor } from "./akshare.processor";
 import { AkshareService } from "./akshare.service";
 import { AkshareFinancialDataProvider } from "./providers/akshare.provider";
-import { FinancialDataProviderRegistryInitializer } from "./providers/financial-data-provider-registry.initializer";
 import { FinancialDataProviderRegistry } from "./providers/financial-data-provider";
+import { FinancialDataProviderRegistryInitializer } from "./providers/financial-data-provider-registry.initializer";
 import { FinnhubFinancialDataProvider } from "./providers/finnhub.provider";
 import { FredFinancialDataProvider } from "./providers/fred.provider";
 import { YfinanceFinancialDataProvider } from "./providers/yfinance.provider";

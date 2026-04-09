@@ -9,7 +9,7 @@ export type UserNewsBehaviorHashKind =
   | "events"
   | "domains";
 
-export const USER_NEWS_BEHAVIOR_HASH_KINDS: ReadonlyArray<UserNewsBehaviorHashKind> = [
+export const USER_NEWS_BEHAVIOR_HASH_KINDS: readonly UserNewsBehaviorHashKind[] = [
   "actions",
   "sources",
   "topics",

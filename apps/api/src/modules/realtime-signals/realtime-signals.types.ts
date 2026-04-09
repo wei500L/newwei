@@ -300,7 +300,7 @@ export interface RealtimeSignalsRuntimeConfig {
 }
 
 export interface RealtimeSignalsInsightSnapshot {
-  keywordSpikes: Array<{
+  keywordSpikes: {
     id: string;
     term: string;
     count: number;
@@ -308,14 +308,14 @@ export interface RealtimeSignalsInsightSnapshot {
     multiplier: number;
     sourceCount: number;
     confidence: number;
-  }>;
-  predictionLeads: Array<{
+  }[];
+  predictionLeads: {
     id: string;
     title: string;
     shift: number;
     newsActivity: number;
     confidence: number;
-  }>;
+  }[];
   pizzint?: {
     defcon: number;
     adjustedScore: number;
@@ -324,7 +324,7 @@ export interface RealtimeSignalsInsightSnapshot {
     avgPop: number;
     updatedAt: string;
   };
-  tensions: Array<{
+  tensions: {
     id: string;
     label: string;
     score: number;
@@ -332,7 +332,7 @@ export interface RealtimeSignalsInsightSnapshot {
     trend: "rising" | "stable" | "falling";
     countries: string[];
     updatedAt: string;
-  }>;
+  }[];
 }
 
 export interface RealtimeSignalSourceState {

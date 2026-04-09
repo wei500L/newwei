@@ -1,8 +1,7 @@
 "use client";
 
 import { AlertOutlined } from "@ant-design/icons";
-import { useQuery } from "@apollo/client";
-import { gql } from "@apollo/client";
+import { useQuery , gql } from "@apollo/client";
 import { useTranslation } from "react-i18next";
 
 import dayjs from "@/lib/dayjs";

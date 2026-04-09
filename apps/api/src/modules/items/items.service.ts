@@ -2189,7 +2189,7 @@ export class ItemsService {
         )
           .sort({ sortAt: -1, itemMetaId: -1 })
           .limit(input.take)
-          .lean()) as Array<{ itemMetaId?: string; createdAt?: Date; sortAt?: Date }>)
+          .lean()) as { itemMetaId?: string; createdAt?: Date; sortAt?: Date }[])
       : await this.prisma.itemMeta.findMany({
           where: input.cursor
             ? {
@@ -2254,7 +2254,7 @@ export class ItemsService {
   }
 
   private resolvePersonalizedCandidateCursor(
-    candidates: Array<{ id?: string; itemMetaId?: string; createdAt?: Date; sortAt?: Date }>,
+    candidates: { id?: string; itemMetaId?: string; createdAt?: Date; sortAt?: Date }[],
   ): PersonalizedCandidateCursor | null {
     for (let index = candidates.length - 1; index >= 0; index -= 1) {
       const candidate = candidates[index];
@@ -2896,7 +2896,7 @@ export class ItemsService {
         }
       | undefined;
 
-    while (true) {
+    for (;;) {
       const pageMatch: Record<string, unknown> = { ...match };
       if (cursor) {
         pageMatch.$or = [
@@ -3050,7 +3050,7 @@ export class ItemsService {
           contentType: 1,
           tags: 1,
         },
-      ).lean()) as Array<{
+      ).lean()) as {
         region?: string | null;
         location?: string | null;
         topics?: string[];
@@ -3058,7 +3058,7 @@ export class ItemsService {
         sentiment?: string | null;
         contentType?: string | null;
         tags?: string[];
-      }>;
+      }[];
 
       const regionCounts = new Map<string, number>();
       const topicCounts = new Map<string, number>();
@@ -3422,14 +3422,14 @@ export class ItemsService {
 
     type SuggestionType = "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT";
     type SuggestionOrigin = "LEXICAL" | "SEMANTIC" | "HYBRID";
-    type SuggestionEntry = {
+    interface SuggestionEntry {
       type: SuggestionType;
       value: string;
       score: number;
       hits: number;
       lexicalScore: number;
       semanticScore: number;
-    };
+    }
 
     const clampedLimit = Math.min(Math.max(limit, 1), 25);
     const semanticLimit = Math.min(80, clampedLimit * 6);
@@ -4559,7 +4559,7 @@ export class ItemsService {
       )
         .sort({ score: { $meta: "textScore" }, sortAt: -1, itemMetaId: -1 })
         .limit(MAX_SEARCH_MATCHES)
-        .lean()) as Array<{ itemMetaId?: string }>;
+        .lean()) as { itemMetaId?: string }[];
       return this.dedupeItemMetaIds(
         docs.map((doc) => (typeof doc.itemMetaId === "string" ? doc.itemMetaId : "")),
       );
@@ -4587,7 +4587,7 @@ export class ItemsService {
     )
       .sort({ sortAt: -1, itemMetaId: -1 })
       .limit(MAX_SEARCH_MATCHES)
-      .lean()) as Array<{ itemMetaId?: string }>;
+      .lean()) as { itemMetaId?: string }[];
 
     return this.dedupeItemMetaIds(
       docs.map((doc) => (typeof doc.itemMetaId === "string" ? doc.itemMetaId : "")),
@@ -4785,7 +4785,7 @@ export class ItemsService {
       const docs = (await ItemReadModelModel.find(match, { itemMetaId: 1 })
         .sort({ sortAt: -1, itemMetaId: -1 })
         .limit(MAX_SEARCH_MATCHES)
-        .lean()) as Array<{ itemMetaId?: string }>;
+        .lean()) as { itemMetaId?: string }[];
       return this.dedupeItemMetaIds(
         docs.map((doc) => (typeof doc.itemMetaId === "string" ? doc.itemMetaId : "")),
       );
@@ -4995,7 +4995,7 @@ export class ItemsService {
         },
         { $sort: { count: -1, sourceName: 1 } },
         { $limit: SEARCH_SUGGESTIONS_MAX_SOURCE_SCAN },
-      ])) as Array<{ sourceName?: string; count?: number }>;
+      ])) as { sourceName?: string; count?: number }[];
       return new Map(
         rows
           .map((row) => {

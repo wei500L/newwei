@@ -3,11 +3,11 @@
 import type { ComponentType } from 'react';
 
 import {
-  AssistantSafetySettingsPanel,
-} from '@/components/settings/assistant-safety-settings-panel';
-import {
   ArchivePreparationSettingsPanel,
 } from '@/components/settings/archive-preparation-settings-panel';
+import {
+  AssistantSafetySettingsPanel,
+} from '@/components/settings/assistant-safety-settings-panel';
 import { EmailSettingsPanel } from '@/components/settings/email-settings-panel';
 import {
   EntityImpactGraphSettingsPanel,
@@ -38,11 +38,11 @@ import {
 } from '@/components/settings/news-classification-settings-panel';
 import { NewsDedupeSettingsPanel } from '@/components/settings/news-dedupe-settings-panel';
 import {
-  NewsEventsSettingsPanel,
-} from '@/components/settings/news-events-settings-panel';
-import {
   NewsEventSourcePolicySettingsPanel,
 } from '@/components/settings/news-event-source-policy-settings-panel';
+import {
+  NewsEventsSettingsPanel,
+} from '@/components/settings/news-events-settings-panel';
 import {
   NewsIndicatorSettingsPanel,
 } from '@/components/settings/news-indicator-settings-panel';
