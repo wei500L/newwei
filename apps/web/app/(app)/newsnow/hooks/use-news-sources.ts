@@ -11,8 +11,8 @@ import type { NewsSourceRuntimeSecretsConfig } from '@/lib/news-source-runtime-s
 
 import type {
   NewsnowDataState,
-  type NewsnowDomesticOpinionEmptyReason,
-  type NewsnowHottestAnalysisEmptyReason,
+  NewsnowDomesticOpinionEmptyReason,
+  NewsnowHottestAnalysisEmptyReason,
 } from "../lib/newsnow-analysis-access";
 import {
   getNewsnowAnalysisAccessState,
