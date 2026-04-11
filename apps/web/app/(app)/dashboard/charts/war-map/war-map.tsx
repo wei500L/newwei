@@ -721,24 +721,24 @@ function resolveDeckPointSymbolSize({
   const isSelected =
     Boolean(point.selectionKey) && point.selectionKey === selectedInspectorKey;
   const isHovered = point.interactionKey === hoveredInteractionKey;
-  const stateBoost = isSelected ? 7 : isHovered ? 3 : 0;
+  const stateBoost = isSelected ? 4 : isHovered ? 2 : 0;
 
   let baseSize = 22;
   if (point.isCluster) {
-    baseSize = clamp(point.radius * 1.45, 32, 56);
+    baseSize = clamp(point.radius * 1.3, 28, 44);
   } else if (point.kind === "event") {
-    baseSize = clamp(18 + point.radius * 1.2, 20, 40);
+    baseSize = clamp(16 + point.radius * 0.92, 20, 36);
   } else if (
     point.kind === "layer" &&
     (point.layerId === "flights" || point.layerId === "ais")
   ) {
-    baseSize = clamp(20 + point.radius * 1.65, 22, 42);
+    baseSize = clamp(16 + point.radius * 1.1, 20, 34);
   } else if (point.kind === "monitor") {
-    baseSize = clamp(18 + point.radius * 1.05, 20, 32);
+    baseSize = clamp(16 + point.radius * 0.85, 18, 28);
   } else if (point.kind === "news") {
-    baseSize = clamp(18 + point.radius * 1.15, 20, 28);
+    baseSize = clamp(12 + point.radius * 0.9, 16, 22);
   } else if (point.kind === "layer") {
-    baseSize = clamp(18 + point.radius * 1.05, 20, 30);
+    baseSize = clamp(14 + point.radius * 0.85, 18, 26);
   }
 
   return baseSize + stateBoost;
@@ -1922,8 +1922,8 @@ export function WarMap({
                 hoveredInteractionKey,
                 selectedInspectorKey,
               }) + 4,
-            getLineColor: [255, 255, 255, 235],
-            lineWidthMinPixels: 3,
+            getLineColor: [255, 255, 255, 170],
+            lineWidthMinPixels: 1.5,
           }),
         );
         layers.push(
@@ -1942,8 +1942,8 @@ export function WarMap({
                 hoveredInteractionKey,
                 selectedInspectorKey,
               }) + 1.75,
-            getLineColor: [14, 165, 233, 235],
-            lineWidthMinPixels: 2.25,
+            getLineColor: [15, 23, 42, 84],
+            lineWidthMinPixels: 1.5,
           }),
         );
       }
@@ -1965,8 +1965,8 @@ export function WarMap({
                 hoveredInteractionKey,
                 selectedInspectorKey,
               }) + 1.5,
-            getLineColor: [6, 182, 212, 225],
-            lineWidthMinPixels: 2,
+            getLineColor: [15, 23, 42, 56],
+            lineWidthMinPixels: 1.25,
           }),
         );
       }

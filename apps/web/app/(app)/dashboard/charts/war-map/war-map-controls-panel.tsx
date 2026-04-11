@@ -327,7 +327,7 @@ function LegendItemsGrid({
       {items.map(({ key, ...item }) => (
         <WarMapLegendSwatch
           key={key}
-          size={compact ? 30 : 36}
+          size={compact ? 22 : 24}
           variant={compact ? "quick" : "panel"}
           interactive={Boolean(onLegendItemHover || onLegendItemFocus)}
           active={activeLegendKey === key}

@@ -499,7 +499,7 @@ describe("war-map page wiring", () => {
     expect(controlsSource).toContain("transport.onOpenLegend");
     expect(controlsSource).toContain("overscroll-contain");
     expect(controlsSource).toContain("WarMapLegendDock");
-    expect(controlsSource).toContain('size={compact ? 30 : 36}');
+    expect(controlsSource).toContain('size={compact ? 22 : 24}');
     expect(controlsSource).toContain('className="grid gap-4 md:grid-cols-2"');
     expect(controlsSource).not.toContain("legend.showAisLegend");
     expect(railSource).toContain("dark:bg-slate-950/[0.78]");

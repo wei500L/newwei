@@ -64,14 +64,15 @@ export interface WarMapLegendMatchablePoint {
 
 interface SymbolPalette {
   accent: string;
-  shape:
-    | "diamond"
-    | "rounded-square"
-    | "hexagon"
-    | "circle"
-    | "rounded-rect"
-    | "triangle";
-  glyph?: "dot" | "flight" | "vessel" | "grid" | "warning" | "crosshair";
+  family:
+    | "signal"
+    | "news"
+    | "monitor"
+    | "flight"
+    | "vessel"
+    | "density"
+    | "warning"
+    | "generic";
 }
 
 interface DeckIconDefinition {
@@ -83,9 +84,12 @@ interface DeckIconDefinition {
   mask: false;
 }
 
-const SYMBOL_ICON_SIZE = 72;
+type WarMapSymbolRenderTarget = "map" | "legend";
+
+const SYMBOL_GRID_SIZE = 24;
+const SYMBOL_ICON_SIZE = 48;
 const SYMBOL_ICON_ANCHOR = SYMBOL_ICON_SIZE / 2;
-const OUTLINE = "#0f172a";
+const NEUTRAL_DARK = "#0f172a";
 const WHITE = "#ffffff";
 const QUICK_LEGEND_DENSITIES = new Set<OverlayDensity>(["expanded", "compact"]);
 
@@ -166,74 +170,242 @@ export function coerceHexColor(
   return parsed ? rgbToHex(parsed) : fallback;
 }
 
-function buildSymbolPath(shape: SymbolPalette["shape"]): string {
-  switch (shape) {
-    case "diamond":
-      return "M36 10 56 30 36 62 16 30Z";
-    case "rounded-square":
-      return "M22 14h28c8 0 14 6 14 14v16c0 8-6 14-14 14H22c-8 0-14-6-14-14V28c0-8 6-14 14-14Z";
-    case "hexagon":
-      return "M36 10 56 22 56 50 36 62 16 50 16 22Z";
-    case "rounded-rect":
-      return "M18 16h36c9 0 16 7 16 16v8c0 9-7 16-16 16H18C9 56 2 49 2 40v-8c0-9 7-16 16-16Z";
-    case "triangle":
-      return "M36 8 62 58H10Z";
-    case "circle":
-    default:
-      return "M36 10a26 26 0 1 1 0 52a26 26 0 1 1 0-52Z";
-  }
+function svgOpenTag(target: WarMapSymbolRenderTarget): string {
+  const size = target === "map" ? SYMBOL_ICON_SIZE : SYMBOL_GRID_SIZE;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${SYMBOL_GRID_SIZE} ${SYMBOL_GRID_SIZE}" fill="none">`;
 }
 
-function buildGlyphSvg(glyph: SymbolPalette["glyph"], accent: string): string {
-  switch (glyph) {
-    case "dot":
-      return `<circle cx="36" cy="36" r="6.5" fill="${OUTLINE}" /><circle cx="36" cy="36" r="3.5" fill="${WHITE}" />`;
+function strokeAttrs(width: number, color: string): string {
+  return `stroke="${color}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"`;
+}
+
+function mapStrokePath(path: string, stroke: string, width: number): string {
+  return [
+    `<path d="${path}" ${strokeAttrs(width + 1.15, WHITE)} opacity="0.94" />`,
+    `<path d="${path}" ${strokeAttrs(width, stroke)} />`,
+  ].join("");
+}
+
+function mapStrokeCircle(radius: number, stroke: string, width: number): string {
+  return [
+    `<circle cx="12" cy="12" r="${radius}" ${strokeAttrs(width + 1.15, WHITE)} opacity="0.94" />`,
+    `<circle cx="12" cy="12" r="${radius}" ${strokeAttrs(width, stroke)} />`,
+  ].join("");
+}
+
+function buildStateMarkup(
+  state: WarMapSymbolState,
+  target: WarMapSymbolRenderTarget,
+): string {
+  if (target !== "legend") {
+    return "";
+  }
+  if (state === "hover") {
+    return `<circle cx="12" cy="12" r="10.2" ${strokeAttrs(1.5, withAlpha(NEUTRAL_DARK, 0.18))} />`;
+  }
+  if (state === "selected") {
+    return `<circle cx="12" cy="12" r="10.2" ${strokeAttrs(2, withAlpha(NEUTRAL_DARK, 0.32))} />`;
+  }
+  return "";
+}
+
+function buildClusterBubble(accent: string, target: WarMapSymbolRenderTarget): string {
+  const arcPath = "M6.4 8.35a6.8 6.8 0 0 1 11.2 0";
+  return [
+    `<circle cx="12" cy="12" r="8.05" fill="${mixHex(accent, WHITE, 0.94)}" ${strokeAttrs(1.2, withAlpha(NEUTRAL_DARK, 0.14))} />`,
+    target === "map"
+      ? `<circle cx="12" cy="12" r="8.05" ${strokeAttrs(2.2, WHITE)} opacity="0.9" />`
+      : "",
+    `<path d="${arcPath}" ${strokeAttrs(2.15, accent)} />`,
+    `<circle cx="12" cy="12" r="3.35" fill="${withAlpha(accent, 0.12)}" />`,
+  ].join("");
+}
+
+function buildRingDotSymbol({
+  accent,
+  centerRadius,
+  outerRing,
+  target,
+  hollowCenter = false,
+  monitorTicks = false,
+}: {
+  accent: string;
+  centerRadius: number;
+  outerRing?: boolean;
+  target: WarMapSymbolRenderTarget;
+  hollowCenter?: boolean;
+  monitorTicks?: boolean;
+}): string {
+  const primaryRing =
+    target === "map"
+      ? mapStrokeCircle(6.15, accent, 1.75)
+      : `<circle cx="12" cy="12" r="6.15" fill="${WHITE}" ${strokeAttrs(1.75, accent)} />`;
+  const outerRingMarkup = outerRing
+    ? `<circle cx="12" cy="12" r="8.55" ${strokeAttrs(1.1, withAlpha(accent, 0.28))} />`
+    : "";
+  const center = hollowCenter
+    ? `<circle cx="12" cy="12" r="${centerRadius}" fill="${WHITE}" ${strokeAttrs(1.35, accent)} />`
+    : `<circle cx="12" cy="12" r="${centerRadius}" fill="${accent}" />`;
+  const ticks = monitorTicks
+    ? [
+        `<path d="M12 2.8v2.2" ${strokeAttrs(1.4, accent)} />`,
+        `<path d="M21.2 12H19" ${strokeAttrs(1.4, accent)} />`,
+        `<path d="M12 21.2V19" ${strokeAttrs(1.4, accent)} />`,
+        `<path d="M2.8 12H5" ${strokeAttrs(1.4, accent)} />`,
+      ].join("")
+    : "";
+
+  return [outerRingMarkup, primaryRing, center, ticks].join("");
+}
+
+function buildTransportGlyph({
+  accent,
+  path,
+  target,
+}: {
+  accent: string;
+  path: string;
+  target: WarMapSymbolRenderTarget;
+}): string {
+  return target === "map"
+    ? mapStrokePath(path, accent, 1.9)
+    : `<path d="${path}" ${strokeAttrs(1.9, accent)} />`;
+}
+
+function buildDensitySymbol(accent: string, target: WarMapSymbolRenderTarget): string {
+  const accentSoft = withAlpha(accent, target === "map" ? 0.18 : 0.12);
+  return [
+    `<circle cx="12" cy="12" r="8.6" fill="${accentSoft}" />`,
+    `<circle cx="12" cy="12" r="5.9" fill="${withAlpha(accent, target === "map" ? 0.14 : 0.1)}" />`,
+    target === "map"
+      ? mapStrokeCircle(5.4, accent, 1.35)
+      : `<circle cx="12" cy="12" r="5.4" ${strokeAttrs(1.35, accent)} />`,
+    `<circle cx="12" cy="12" r="1.95" fill="${accent}" />`,
+  ].join("");
+}
+
+function buildWarningSymbol({
+  accent,
+  target,
+  severity,
+}: {
+  accent: string;
+  target: WarMapSymbolRenderTarget;
+  severity: "high" | "medium" | "low";
+}): string {
+  const trianglePath = "M12 4.5 19 17.4H5Z";
+  const fillOpacity = severity === "high" ? 0.18 : severity === "medium" ? 0.12 : 0.08;
+  const triangle =
+    target === "map"
+      ? [
+          `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(2.2, WHITE)} opacity="0.9" />`,
+          `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(1.55, accent)} />`,
+        ].join("")
+      : `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(1.55, accent)} />`;
+
+  return [
+    triangle,
+    `<path d="M12 8.6v4.9" ${strokeAttrs(1.7, accent)} />`,
+    `<circle cx="12" cy="15.9" r="0.9" fill="${accent}" />`,
+  ].join("");
+}
+
+function buildSymbolBody({
+  family,
+  accent,
+  state,
+  symbolKey,
+  target,
+}: SymbolPalette & {
+  state: WarMapSymbolState;
+  symbolKey: WarMapSymbolKey;
+  target: WarMapSymbolRenderTarget;
+}): string {
+  if (state === "cluster") {
+    return buildClusterBubble(accent, target);
+  }
+
+  switch (family) {
+    case "signal":
+      return buildRingDotSymbol({
+        accent,
+        centerRadius:
+          symbolKey === "signal-high"
+            ? 2.45
+            : symbolKey === "signal-medium"
+              ? 2.1
+              : 1.75,
+        outerRing: symbolKey !== "signal-low",
+        target,
+      });
+    case "news":
+      return buildRingDotSymbol({
+        accent,
+        centerRadius: symbolKey === "news-fallback" ? 1.9 : 2.15,
+        hollowCenter: symbolKey === "news-fallback",
+        target,
+      });
+    case "monitor":
+      return buildRingDotSymbol({
+        accent,
+        centerRadius: 2.05,
+        target,
+        monitorTicks: true,
+      });
     case "flight":
-      return `<path fill="${WHITE}" d="M36 18c2.1 0 3.8 1.6 3.8 3.7v9.7l18.5 8.9c2.9 1.4 4 5 2.5 7.8l-1.4 2.5-19.6-4.8v10.7l7.6 5.8v4.9l-11.4-2.9-11.4 2.9v-4.9l7.6-5.8V45.8l-19.6 4.8-1.4-2.5c-1.5-2.8-.4-6.4 2.5-7.8l18.5-8.9v-9.7c0-2.1 1.7-3.7 3.8-3.7Z"/>`;
+      return buildTransportGlyph({
+        accent,
+        target,
+        path:
+          "M12 3.9 13.95 9.1l5.05 1.1v1.5l-5.05-.1.95 5.95-1.15.66L12 13.85l-1.75 4.36-1.15-.66.95-5.95-5.05.1v-1.5l5.05-1.1L12 3.9Z",
+      });
     case "vessel":
-      return `<path fill="${WHITE}" d="M36 18 47.5 31h-5.3v10.7h12.2L64 57.7l-8.7 8.3H16.7L8 57.7l9.6-15.9h12.2V31h-5.3L36 18Zm-10.6 28.8-5 8.5h31.1l-5-8.5H25.4Zm1.7 13.6 3 3.9h11.9l3-3.9H27.1Z"/>`;
-    case "grid":
-      return `<rect x="24" y="24" width="6" height="6" rx="2" fill="${WHITE}" /><rect x="34" y="24" width="6" height="6" rx="2" fill="${WHITE}" /><rect x="24" y="34" width="6" height="6" rx="2" fill="${WHITE}" /><rect x="34" y="34" width="6" height="6" rx="2" fill="${WHITE}" /><path d="M47 22v28" stroke="${withAlpha(WHITE, 0.72)}" stroke-width="3" stroke-linecap="round" />`;
+      return buildTransportGlyph({
+        accent,
+        target,
+        path:
+          "M12 5.1 14.25 8.2h-1.6v2.2h4.3l1.45 3.1-2.4 4.45H8.02l-2.4-4.45 1.45-3.1h4.28V8.2H9.8L12 5.1Zm-2.85 7.15-.98 2h5.66l-.98-2H9.15Zm.95 3.45.8 1.22h2.2l.8-1.22h-3.8Z",
+      });
+    case "density":
+      return buildDensitySymbol(accent, target);
     case "warning":
-      return `<path d="M36 22v16" stroke="${WHITE}" stroke-width="5" stroke-linecap="round" /><circle cx="36" cy="46.5" r="3.2" fill="${WHITE}" />`;
-    case "crosshair":
-      return `<circle cx="36" cy="36" r="7" fill="${WHITE}" /><path d="M36 19v8M36 45v8M19 36h8M45 36h8" stroke="${WHITE}" stroke-width="4" stroke-linecap="round" /><circle cx="36" cy="36" r="14" stroke="${withAlpha(WHITE, 0.76)}" stroke-width="3" fill="none" />`;
+      return buildWarningSymbol({
+        accent,
+        target,
+        severity:
+          symbolKey === "ais-disruption-high"
+            ? "high"
+            : symbolKey === "ais-disruption-medium"
+              ? "medium"
+              : "low",
+      });
+    case "generic":
     default:
-      return `<circle cx="36" cy="36" r="4" fill="${mixHex(accent, WHITE, 0.88)}" />`;
+      return buildRingDotSymbol({
+        accent,
+        centerRadius: 1.8,
+        target,
+      });
   }
 }
 
 function buildSymbolSvg({
   accent,
-  glyph,
-  shape,
+  family,
   state,
-}: SymbolPalette & { state: WarMapSymbolState }): string {
-  const basePath = buildSymbolPath(shape);
-  const isCluster = state === "cluster";
-  const innerFill = isCluster
-    ? mixHex(accent, WHITE, 0.86)
-    : state === "selected"
-      ? mixHex(accent, WHITE, 0.08)
-      : state === "hover"
-        ? mixHex(accent, WHITE, 0.14)
-        : accent;
-  const outlineStrokeWidth = isCluster ? 3.8 : state === "selected" ? 4.2 : 3.3;
-  const haloStrokeWidth = isCluster ? 11 : state === "selected" ? 12 : 10;
-  const innerStroke = isCluster ? accent : OUTLINE;
-  const innerShadowStroke = isCluster
-    ? withAlpha(accent, 0.26)
-    : withAlpha(OUTLINE, state === "hover" ? 0.4 : 0.24);
-  const glyphMarkup = buildGlyphSvg(glyph, accent);
-
-  return `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${SYMBOL_ICON_SIZE}" height="${SYMBOL_ICON_SIZE}" viewBox="0 0 72 72">
-      <path d="${basePath}" fill="none" stroke="${WHITE}" stroke-width="${haloStrokeWidth}" stroke-linejoin="round" stroke-linecap="round" />
-      <path d="${basePath}" fill="none" stroke="${innerShadowStroke}" stroke-width="${outlineStrokeWidth + 4}" stroke-linejoin="round" stroke-linecap="round" opacity="0.45" />
-      <path d="${basePath}" fill="${innerFill}" stroke="${innerStroke}" stroke-width="${outlineStrokeWidth}" stroke-linejoin="round" stroke-linecap="round" />
-      ${glyphMarkup}
-    </svg>
-  `;
+  symbolKey,
+  target,
+}: SymbolPalette & {
+  state: WarMapSymbolState;
+  symbolKey: WarMapSymbolKey;
+  target: WarMapSymbolRenderTarget;
+}): string {
+  return [
+    svgOpenTag(target),
+    buildStateMarkup(state, target),
+    buildSymbolBody({ accent, family, state, symbolKey, target }),
+    "</svg>",
+  ].join("");
 }
 
 function resolvePalette(
@@ -242,47 +414,46 @@ function resolvePalette(
 ): SymbolPalette {
   switch (symbolKey) {
     case "signal-high":
-      return { accent: "#dc2626", shape: "diamond", glyph: "crosshair" };
+      return { accent: "#b42318", family: "signal" };
     case "signal-medium":
-      return { accent: "#d97706", shape: "diamond", glyph: "crosshair" };
+      return { accent: "#c26a14", family: "signal" };
     case "signal-low":
-      return { accent: "#2563eb", shape: "diamond", glyph: "crosshair" };
+      return { accent: "#2563eb", family: "signal" };
     case "news-geocoded":
-      return { accent: "#059669", shape: "rounded-square", glyph: "dot" };
+      return { accent: "#0f8a63", family: "news" };
     case "news-fallback":
-      return { accent: "#0891b2", shape: "rounded-square", glyph: "dot" };
+      return { accent: "#217b93", family: "news" };
     case "monitor":
-      return { accent: "#4f46e5", shape: "hexagon", glyph: "crosshair" };
+      return { accent: "#5b5bd6", family: "monitor" };
     case "flight":
-      return { accent: "#334155", shape: "circle", glyph: "flight" };
+      return { accent: "#334155", family: "flight" };
     case "ais-vessel-military":
-      return { accent: "#dc2626", shape: "rounded-rect", glyph: "vessel" };
+      return { accent: "#b42318", family: "vessel" };
     case "ais-vessel-fishing":
-      return { accent: "#22c55e", shape: "rounded-rect", glyph: "vessel" };
+      return { accent: "#2f9f5d", family: "vessel" };
     case "ais-vessel-passenger":
-      return { accent: "#3b82f6", shape: "rounded-rect", glyph: "vessel" };
+      return { accent: "#2f74d0", family: "vessel" };
     case "ais-vessel-cargo":
-      return { accent: "#94a3b8", shape: "rounded-rect", glyph: "vessel" };
+      return { accent: "#7c8da4", family: "vessel" };
     case "ais-vessel-tanker":
-      return { accent: "#f97316", shape: "rounded-rect", glyph: "vessel" };
+      return { accent: "#d96b1c", family: "vessel" };
     case "ais-vessel-other":
-      return { accent: "#64748b", shape: "rounded-rect", glyph: "vessel" };
+      return { accent: "#607289", family: "vessel" };
     case "ais-vessel-generic":
-      return { accent: "#475569", shape: "rounded-rect", glyph: "vessel" };
+      return { accent: "#526277", family: "vessel" };
     case "ais-density":
-      return { accent: "#2563eb", shape: "rounded-square", glyph: "grid" };
+      return { accent: "#2563eb", family: "density" };
     case "ais-disruption-high":
-      return { accent: "#dc2626", shape: "triangle", glyph: "warning" };
+      return { accent: "#b42318", family: "warning" };
     case "ais-disruption-medium":
-      return { accent: "#ea580c", shape: "triangle", glyph: "warning" };
+      return { accent: "#c8691a", family: "warning" };
     case "ais-disruption-low":
-      return { accent: "#f59e0b", shape: "triangle", glyph: "warning" };
+      return { accent: "#c99316", family: "warning" };
     case "generic-point":
     default:
       return {
         accent: coerceHexColor(accentColor, "#3b82f6"),
-        shape: "circle",
-        glyph: "dot",
+        family: "generic",
       };
   }
 }
@@ -313,7 +484,9 @@ export function getWarMapDeckIcon({
 
   const palette = resolvePalette(symbolKey, normalizedAccent);
   const icon = {
-    url: toSvgDataUrl(buildSymbolSvg({ ...palette, state })),
+    url: toSvgDataUrl(
+      buildSymbolSvg({ ...palette, state, symbolKey, target: "map" }),
+    ),
     width: SYMBOL_ICON_SIZE,
     height: SYMBOL_ICON_SIZE,
     anchorX: SYMBOL_ICON_ANCHOR,
@@ -323,6 +496,27 @@ export function getWarMapDeckIcon({
 
   symbolIconCache.set(cacheKey, icon);
   return icon;
+}
+
+export function getWarMapLegendSvgMarkup({
+  symbolKey,
+  state = "default",
+  accentColor,
+}: {
+  symbolKey: WarMapSymbolKey;
+  state?: WarMapSymbolState;
+  accentColor?: string;
+}): string {
+  const palette = resolvePalette(
+    symbolKey,
+    symbolKey === "generic-point" ? coerceHexColor(accentColor) : accentColor,
+  );
+  return buildSymbolSvg({
+    ...palette,
+    state,
+    symbolKey,
+    target: "legend",
+  });
 }
 
 export function getQuickLegendVisibility(density: OverlayDensity): boolean {
@@ -594,7 +788,7 @@ export function buildWarMapLegendSections({
         defaultValue: "Signals",
       }),
       description: t("dashboard.charts.warMap.legend.signalsHint", {
-        defaultValue: "Severity is encoded by both shape treatment and color.",
+        defaultValue: "Severity is encoded through color and emphasis.",
       }),
       defaultExpanded: true,
       items: ["signal-high", "signal-medium", "signal-low"].map(
@@ -613,7 +807,7 @@ export function buildWarMapLegendSections({
       }),
       description: t("dashboard.charts.warMap.legend.newsHint", {
         defaultValue:
-          "Shape distinguishes precision and source, not just color.",
+          "Filled and hollow centers distinguish precise and fallback locations.",
       }),
       defaultExpanded: true,
       items: [
@@ -749,7 +943,7 @@ export function buildWarMapLegendSections({
     }),
     description: t("dashboard.charts.warMap.legend.statesHint", {
       defaultValue:
-        "Hover, selected, and clustered markers use explicit ring and badge states.",
+        "Focus rings and cluster bubbles highlight interaction state.",
     }),
     items: [
       {
@@ -835,25 +1029,25 @@ export function WarMapLegendSwatch({
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 }) {
-  const icon = getWarMapDeckIcon({ symbolKey, state, accentColor });
+  const iconMarkup = getWarMapLegendSvgMarkup({ symbolKey, state, accentColor });
   const containerClassName =
     variant === "quick"
       ? `flex min-w-0 items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-[border-color,background-color,box-shadow,transform,opacity] duration-150 ${
           active
-            ? "border-slate-300/90 bg-white/[0.94] shadow-[0_10px_18px_-18px_rgba(15,23,42,0.28)] dark:border-slate-500/70 dark:bg-slate-950/[0.84]"
-            : "border-slate-200/70 bg-white/[0.72] shadow-[0_8px_16px_-20px_rgba(15,23,42,0.22)] dark:border-slate-700/70 dark:bg-slate-950/[0.58]"
+            ? "border-slate-300/90 bg-white/[0.94] dark:border-slate-500/70 dark:bg-slate-950/[0.84]"
+            : "border-slate-200/70 bg-white/[0.54] dark:border-slate-700/70 dark:bg-slate-950/[0.46]"
         } ${muted ? "opacity-55" : "opacity-100"} ${
           interactive
-            ? "hover:-translate-y-[1px] hover:border-slate-300/85 hover:bg-white/[0.9] dark:hover:border-slate-500/80 dark:hover:bg-slate-950/[0.78]"
+            ? "hover:border-slate-300/85 hover:bg-white/[0.82] dark:hover:border-slate-500/80 dark:hover:bg-slate-950/[0.68]"
             : ""
         }`
       : `flex min-w-0 items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow,opacity] duration-150 ${
           active
-            ? "border-slate-300 bg-white shadow-[0_14px_28px_-24px_rgba(15,23,42,0.22)] dark:border-slate-500/75 dark:bg-slate-950/82"
-            : "border-slate-200/75 bg-white/[0.74] shadow-[0_12px_26px_-26px_rgba(15,23,42,0.18)] dark:border-slate-700/80 dark:bg-slate-950/[0.62]"
+            ? "border-slate-300 bg-white dark:border-slate-500/75 dark:bg-slate-950/82"
+            : "border-slate-200/75 bg-white/[0.62] dark:border-slate-700/80 dark:bg-slate-950/[0.52]"
         } ${muted ? "opacity-50" : "opacity-100"} ${
           interactive
-            ? "hover:border-slate-300/90 hover:bg-white/[0.92] dark:hover:border-slate-500/80 dark:hover:bg-slate-950/[0.8]"
+            ? "hover:border-slate-300/90 hover:bg-white/[0.84] dark:hover:border-slate-500/80 dark:hover:bg-slate-950/[0.72]"
             : ""
         }`;
   const content = (
@@ -862,10 +1056,9 @@ export function WarMapLegendSwatch({
         className="relative inline-flex shrink-0 items-center justify-center"
         style={{ width: size, height: size }}
       >
-        <img
-          alt=""
-          src={icon.url}
-          className="h-full w-full object-contain"
+        <span
+          className="h-full w-full [&>svg]:h-full [&>svg]:w-full"
+          dangerouslySetInnerHTML={{ __html: iconMarkup }}
           aria-hidden="true"
         />
         {countLabel ? (

@@ -4,6 +4,8 @@ import {
   buildWarMapLegendSections,
   buildWarMapQuickLegendItems,
   coerceHexColor,
+  getWarMapDeckIcon,
+  getWarMapLegendSvgMarkup,
   getQuickLegendVisibility,
   matchesWarMapLegendItem,
 } from "../app/(app)/dashboard/charts/war-map/war-map-symbols";
@@ -95,6 +97,38 @@ describe("war-map symbols", () => {
     expect(getQuickLegendVisibility("expanded")).toBe(true);
     expect(getQuickLegendVisibility("compact")).toBe(true);
     expect(getQuickLegendVisibility("minimal")).toBe(false);
+  });
+
+  it("renders deck icons as data URLs and legend icons as inline SVG", () => {
+    const deckIcon = getWarMapDeckIcon({
+      symbolKey: "signal-high",
+      state: "default",
+    });
+    expect(deckIcon.url.startsWith("data:image/svg+xml")).toBe(true);
+
+    const legendIcon = getWarMapLegendSvgMarkup({
+      symbolKey: "signal-high",
+      state: "selected",
+    });
+    expect(legendIcon.startsWith("<svg")).toBe(true);
+    expect(legendIcon).toContain("<circle");
+    expect(legendIcon).not.toContain("data:image");
+  });
+
+  it("renders specialized cluster and warning markups", () => {
+    const clusterIcon = getWarMapLegendSvgMarkup({
+      symbolKey: "signal-medium",
+      state: "cluster",
+    });
+    expect(clusterIcon).toContain('r="8.05"');
+    expect(clusterIcon).toContain("<path");
+
+    const warningIcon = getWarMapLegendSvgMarkup({
+      symbolKey: "ais-disruption-high",
+      state: "default",
+    });
+    expect(warningIcon).toContain("M12 4.5 19 17.4H5Z");
+    expect(warningIcon).toContain("fill=");
   });
 
   it("matches legend entries to symbol families and active point layers", () => {
