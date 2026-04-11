@@ -4358,7 +4358,7 @@ export function WarMap({
       window.requestAnimationFrame(() => {
         legendDockRef.current?.scrollIntoView({
           behavior: "smooth",
-          block: "nearest",
+          block: "start",
         });
       });
     }
@@ -4500,10 +4500,11 @@ export function WarMap({
   );
   const mobileControlsDrawerHeight = `min(${overlayLayout.controlsDrawerHeight}px, calc(100dvh - 72px))`;
   const standaloneControlsDrawerHeight = `min(${overlayLayout.standaloneDrawerHeight}px, calc(100dvh - 96px))`;
-
-  const containerClassName = resolveWarMapContainerClassName(className);
+  const containerClassName = standaloneLayout
+    ? ["relative", className?.trim()].filter(Boolean).join(" ")
+    : resolveWarMapContainerClassName(className);
   const mapViewportClassName = standaloneLayout
-    ? "relative min-h-0 flex-1"
+    ? "relative min-h-[24rem] h-[clamp(24rem,56dvh,38rem)] overflow-hidden rounded-[24px] md:h-[clamp(28rem,56dvh,38rem)] xl:h-[clamp(32rem,62dvh,44rem)]"
     : "relative h-full";
   const useBottomDrawer = standaloneLayout || useDrawerControls;
 
@@ -4512,7 +4513,7 @@ export function WarMap({
       <div ref={wrapperRef} className={containerClassName}>
         <div
           className={
-            standaloneLayout ? "flex h-full min-h-0 flex-col gap-4" : "h-full"
+            standaloneLayout ? "flex flex-col gap-5" : "h-full"
           }
         >
           <div className={mapViewportClassName}>
@@ -4536,7 +4537,7 @@ export function WarMap({
     <div ref={wrapperRef} className={containerClassName}>
       <div
         className={
-          standaloneLayout ? "flex h-full min-h-0 flex-col gap-4" : "h-full"
+          standaloneLayout ? "flex flex-col gap-5" : "h-full"
         }
       >
         <div className={mapViewportClassName}>
@@ -4710,8 +4711,7 @@ export function WarMap({
         {standaloneLayout ? (
           <div
             ref={legendDockRef}
-            className={`${OVERLAY_SURFACE_CLASS_NAME} shrink-0 overflow-hidden`}
-            style={{ height: overlayLayout.legendDockHeight }}
+            className={OVERLAY_SURFACE_CLASS_NAME}
           >
             {legendDockContent}
           </div>

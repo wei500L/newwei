@@ -320,12 +320,14 @@ function LegendItemsGrid({
     return null;
   }
 
+  const gridClassName = compact ? "mt-2.5 grid gap-2" : "mt-3 grid gap-2.5";
+
   return (
-    <div className={compact ? "mt-2.5 grid gap-2" : "mt-2.5 grid gap-2"}>
+    <div className={gridClassName}>
       {items.map(({ key, ...item }) => (
         <WarMapLegendSwatch
           key={key}
-          size={compact ? 30 : 34}
+          size={compact ? 30 : 36}
           variant={compact ? "quick" : "panel"}
           interactive={Boolean(onLegendItemHover || onLegendItemFocus)}
           active={activeLegendKey === key}
@@ -1452,7 +1454,7 @@ function LegendDockSectionCard({
   onLegendItemFocus?: (itemKey: string | null) => void;
 }) {
   return (
-    <div className="flex h-full flex-col rounded-[20px] border border-slate-200/80 bg-white/[0.7] px-4 py-4 shadow-[0_12px_24px_-24px_rgba(15,23,42,0.18)] dark:border-slate-700/80 dark:bg-slate-950/[0.58] dark:shadow-[0_16px_28px_-24px_rgba(2,6,23,0.74)]">
+    <div className="flex h-full flex-col rounded-[22px] border border-slate-200/80 bg-white/[0.76] px-5 py-5 shadow-[0_18px_34px_-28px_rgba(15,23,42,0.18)] dark:border-slate-700/80 dark:bg-slate-950/[0.58] dark:shadow-[0_18px_34px_-28px_rgba(2,6,23,0.74)]">
       <div className="min-w-0">
         <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
           {section.title}
@@ -1460,16 +1462,15 @@ function LegendDockSectionCard({
         {section.description ? (
           <Typography.Text
             type="secondary"
-            className="mt-1 block text-[11px] leading-[1.15rem]"
+            className="mt-1.5 block text-[12px] leading-5"
           >
             {section.description}
           </Typography.Text>
         ) : null}
       </div>
-      <div className="mt-3">
+      <div className="mt-4">
         <LegendItemsGrid
           items={section.items}
-          compact
           activeLegendKey={activeLegendKey}
           highlightedLegendKey={highlightedLegendKey}
           onLegendItemHover={onLegendItemHover}
@@ -1490,7 +1491,7 @@ export function WarMapLegendDock({
   t,
 }: WarMapLegendDockProps) {
   return (
-    <div className="flex h-full min-h-0 max-h-full flex-col">
+    <div className="flex flex-col">
       <div className="border-b border-[var(--border)] bg-gradient-to-b from-white to-slate-50/90 px-5 py-4 dark:from-slate-950/90 dark:to-slate-900/86">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
@@ -1537,8 +1538,8 @@ export function WarMapLegendDock({
           </div>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="px-5 pb-5 pt-4">
+        <div className="grid gap-4 md:grid-cols-2">
           {legendSections.map((section) => (
             <LegendDockSectionCard
               key={section.key}

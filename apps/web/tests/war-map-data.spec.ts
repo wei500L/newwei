@@ -210,16 +210,12 @@ describe("war-map page wiring", () => {
 
     expect(source).not.toContain("TimeRangeControls");
     expect(source).toContain(
-      '<WarMap className="flex-1" layoutVariant="standalone" />',
+      '<WarMap className="min-h-0 w-full" layoutVariant="standalone" />',
     );
+    expect(source).toContain('className="flex flex-col gap-6 pb-6"');
     expect(source).toContain(
-      "min-h-[calc(100dvh-var(--top-nav-height,4rem)-var(--ticker-height,0px)-2rem)]",
+      'className="glass-panel border border-[var(--border)] flex flex-col gap-4 p-5"',
     );
-    expect(source).toContain(
-      "md:min-h-[calc(100dvh-var(--top-nav-height,4rem)-var(--ticker-height,0px)-3rem)]",
-    );
-    expect(source).toContain("max-h-[56rem]");
-    expect(source).toContain("min-h-[30rem]");
     expect(source).toContain("OpenSky flight activity");
     expect(source).toContain("Signals, News & Flights");
   });
@@ -457,9 +453,14 @@ describe("war-map page wiring", () => {
     expect(source).toContain(
       "getContainer={standaloneLayout ? false : undefined}",
     );
+    expect(source).toContain('block: "start"');
     expect(source).toContain(
-      "style={{ height: overlayLayout.legendDockHeight }}",
+      '["relative", className?.trim()].filter(Boolean).join(" ")',
     );
+    expect(source).toContain(
+      'min-h-[24rem] h-[clamp(24rem,56dvh,38rem)] overflow-hidden rounded-[24px]',
+    );
+    expect(source).not.toContain("overlayLayout.legendDockHeight");
     expect(source).not.toContain('placement="right"');
     expect(source).toContain("resolveWarMapContainerClassName(className)");
   });
@@ -498,6 +499,8 @@ describe("war-map page wiring", () => {
     expect(controlsSource).toContain("transport.onOpenLegend");
     expect(controlsSource).toContain("overscroll-contain");
     expect(controlsSource).toContain("WarMapLegendDock");
+    expect(controlsSource).toContain('size={compact ? 30 : 36}');
+    expect(controlsSource).toContain('className="grid gap-4 md:grid-cols-2"');
     expect(controlsSource).not.toContain("legend.showAisLegend");
     expect(railSource).toContain("dark:bg-slate-950/[0.78]");
     expect(railSource).toContain('layoutVariant = "embedded"');

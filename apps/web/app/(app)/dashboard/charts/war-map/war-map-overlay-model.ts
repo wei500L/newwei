@@ -173,7 +173,6 @@ export interface WarMapOverlayLayout {
   overlayPanelMaxHeight: number;
   controlsPanelWidth: number;
   legendPanelWidth: number;
-  legendDockHeight: number;
   controlsDrawerHeight: number;
   standaloneDrawerHeight: number;
   inspectorPanelHeight: number;
@@ -330,14 +329,6 @@ export function buildWarMapOverlayLayout({
       : overlayDensity === "compact"
         ? clamp(Math.round(wrapperWidth * 0.19), 208, 248)
         : clamp(wrapperWidth - 32, 220, 280);
-  const legendDockHeight =
-    layoutVariant === "standalone"
-      ? overlayDensity === "expanded"
-        ? clamp(Math.round((wrapperHeight || 600) * 0.24), 168, 196)
-        : overlayDensity === "compact"
-          ? clamp(Math.round((wrapperHeight || 520) * 0.26), 168, 204)
-          : clamp(Math.round((wrapperHeight || 520) * 0.28), 176, 220)
-      : 0;
   const standaloneDrawerHeight =
     layoutVariant === "standalone"
       ? clamp(Math.round((wrapperHeight || 640) * 0.54), 460, 620)
@@ -354,7 +345,6 @@ export function buildWarMapOverlayLayout({
           : clamp(Math.round((wrapperHeight || 430) * 0.78), 360, 620),
     controlsPanelWidth,
     legendPanelWidth,
-    legendDockHeight,
     controlsDrawerHeight: clamp(
       Math.round((wrapperHeight || 480) * 0.78),
       400,
