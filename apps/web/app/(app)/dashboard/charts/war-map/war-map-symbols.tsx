@@ -196,51 +196,180 @@ function mapStrokeCircle(
   ].join("");
 }
 
-function buildStateMarkup({
+function mapStrokeRect({
+  x,
+  y,
+  width,
+  height,
+  rx,
+  stroke,
+  strokeWidth,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rx: number;
+  stroke: string;
+  strokeWidth: number;
+}): string {
+  return [
+    `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${rx}" ${strokeAttrs(strokeWidth + 1.05, WHITE)} opacity="0.92" />`,
+    `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${rx}" ${strokeAttrs(strokeWidth, stroke)} />`,
+  ].join("");
+}
+
+function buildCircularStateMarkup({
   state,
   target,
   accent,
 }: {
+  state: Exclude<WarMapSymbolState, "default" | "cluster">;
+  target: WarMapSymbolRenderTarget;
+  accent: string;
+}): string {
+  const outerRadius = target === "map" ? 8.8 : 9.15;
+  const hoverStroke = withAlpha(accent, target === "map" ? 0.18 : 0.24);
+  const hoverFill = withAlpha(WHITE, target === "map" ? 0.46 : 0.74);
+  const selectedStroke = withAlpha(accent, target === "map" ? 0.3 : 0.36);
+  const selectedFill = withAlpha(accent, target === "map" ? 0.05 : 0.07);
+
+  if (state === "hover") {
+    return [
+      `<circle cx="12" cy="12" r="${outerRadius}" fill="${hoverFill}" />`,
+      `<circle cx="12" cy="12" r="${outerRadius}" ${strokeAttrs(1.05, hoverStroke)} />`,
+    ].join("");
+  }
+
+  return [
+    `<circle cx="12" cy="12" r="${outerRadius + 0.1}" fill="${selectedFill}" />`,
+    `<circle cx="12" cy="12" r="${outerRadius}" ${strokeAttrs(1.45, withAlpha(WHITE, target === "map" ? 0.84 : 0.94))} />`,
+    `<circle cx="12" cy="12" r="${outerRadius}" ${strokeAttrs(1.15, selectedStroke)} />`,
+  ].join("");
+}
+
+function buildPlateStateMarkup({
+  state,
+  target,
+  accent,
+  x,
+  y,
+  width,
+  height,
+  rx,
+}: {
+  state: Exclude<WarMapSymbolState, "default" | "cluster">;
+  target: WarMapSymbolRenderTarget;
+  accent: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rx: number;
+}): string {
+  const hoverFill = withAlpha(WHITE, target === "map" ? 0.5 : 0.76);
+  const hoverStroke = withAlpha(accent, target === "map" ? 0.18 : 0.24);
+  const selectedFill = withAlpha(accent, target === "map" ? 0.07 : 0.09);
+  const selectedStroke = withAlpha(accent, target === "map" ? 0.32 : 0.38);
+
+  if (state === "hover") {
+    return [
+      `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${rx}" fill="${hoverFill}" />`,
+      `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${rx}" ${strokeAttrs(1.05, hoverStroke)} />`,
+    ].join("");
+  }
+
+  return [
+    `<rect x="${x - 0.15}" y="${y - 0.15}" width="${width + 0.3}" height="${height + 0.3}" rx="${rx + 0.2}" fill="${selectedFill}" />`,
+    target === "map"
+      ? mapStrokeRect({
+          x,
+          y,
+          width,
+          height,
+          rx,
+          stroke: selectedStroke,
+          strokeWidth: 1.15,
+        })
+      : `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${rx}" ${strokeAttrs(1.15, selectedStroke)} />`,
+  ].join("");
+}
+
+function buildStateMarkup({
+  state,
+  target,
+  accent,
+  family,
+}: {
   state: WarMapSymbolState;
   target: WarMapSymbolRenderTarget;
   accent: string;
+  family: SymbolPalette["family"];
 }): string {
   if (state === "default" || state === "cluster") {
     return "";
   }
 
-  const outerRadius = target === "map" ? 8.95 : 9.3;
-  const whiteRingOpacity = target === "map" ? 0.86 : 0.94;
-  const hoverStroke = withAlpha(accent, target === "map" ? 0.2 : 0.24);
-  const selectedStroke = withAlpha(accent, target === "map" ? 0.34 : 0.4);
-  const selectedFill = withAlpha(accent, target === "map" ? 0.06 : 0.08);
-
-  if (state === "hover") {
-    return [
-      `<circle cx="12" cy="12" r="${outerRadius}" fill="${withAlpha(WHITE, target === "map" ? 0.6 : 0.82)}" />`,
-      `<circle cx="12" cy="12" r="${outerRadius}" ${strokeAttrs(1.25, hoverStroke)} />`,
-    ].join("");
+  if (
+    family === "signal" ||
+    family === "news" ||
+    family === "monitor" ||
+    family === "generic"
+  ) {
+    return buildCircularStateMarkup({ state, target, accent });
   }
 
-  return [
-    `<circle cx="12" cy="12" r="${outerRadius + 0.15}" fill="${selectedFill}" />`,
-    `<circle cx="12" cy="12" r="${outerRadius}" ${strokeAttrs(1.6, `${withAlpha(WHITE, whiteRingOpacity)}`)} />`,
-    `<circle cx="12" cy="12" r="${outerRadius}" ${strokeAttrs(1.3, selectedStroke)} />`,
-  ].join("");
+  if (family === "flight") {
+    return buildPlateStateMarkup({
+      state,
+      target,
+      accent,
+      x: 5,
+      y: 7.05,
+      width: 14,
+      height: 9.9,
+      rx: 4.25,
+    });
+  }
+
+  if (family === "vessel") {
+    return buildPlateStateMarkup({
+      state,
+      target,
+      accent,
+      x: 6.05,
+      y: 6.2,
+      width: 11.9,
+      height: 11.6,
+      rx: 4.4,
+    });
+  }
+
+  return buildPlateStateMarkup({
+    state,
+    target,
+    accent,
+    x: 5.35,
+    y: 5.95,
+    width: 13.3,
+    height: 12.2,
+    rx: 4.35,
+  });
 }
 
 function buildClusterBubble(
   accent: string,
   target: WarMapSymbolRenderTarget,
 ): string {
-  const arcPath = "M7.2 8.7a6 6 0 0 1 9.6 0";
+  const arcPath = "M7.7 9a5.2 5.2 0 0 1 8.6 0";
   return [
-    `<circle cx="12" cy="12" r="7.8" fill="${mixHex(accent, WHITE, 0.965)}" ${strokeAttrs(1.15, withAlpha(accent, 0.18))} />`,
+    `<circle cx="12" cy="12" r="7.55" fill="${mixHex(accent, WHITE, 0.975)}" ${strokeAttrs(1.05, withAlpha(accent, 0.16))} />`,
     target === "map"
-      ? `<circle cx="12" cy="12" r="7.8" ${strokeAttrs(1.8, WHITE)} opacity="0.9" />`
+      ? `<circle cx="12" cy="12" r="7.55" ${strokeAttrs(1.55, WHITE)} opacity="0.92" />`
       : "",
-    `<path d="${arcPath}" ${strokeAttrs(1.95, accent)} />`,
-    `<circle cx="12" cy="12" r="3.2" fill="${withAlpha(accent, 0.1)}" />`,
+    `<path d="${arcPath}" ${strokeAttrs(1.7, accent)} />`,
+    `<circle cx="12" cy="12.35" r="3.45" fill="${withAlpha(WHITE, target === "map" ? 0.92 : 0.98)}" />`,
+    `<circle cx="12" cy="12.35" r="3.45" ${strokeAttrs(0.8, withAlpha(accent, 0.08))} />`,
   ].join("");
 }
 
@@ -291,22 +420,22 @@ function buildTransportGlyph({
   target: WarMapSymbolRenderTarget;
 }): string {
   return target === "map"
-    ? mapStrokePath(path, accent, 1.8)
-    : `<path d="${path}" ${strokeAttrs(1.8, accent)} />`;
+    ? mapStrokePath(path, accent, 1.6)
+    : `<path d="${path}" ${strokeAttrs(1.6, accent)} />`;
 }
 
 function buildDensitySymbol(
   accent: string,
   target: WarMapSymbolRenderTarget,
 ): string {
-  const accentSoft = withAlpha(accent, target === "map" ? 0.14 : 0.11);
+  const accentSoft = withAlpha(accent, target === "map" ? 0.11 : 0.09);
   return [
-    `<circle cx="12" cy="12" r="8.6" fill="${accentSoft}" />`,
-    `<circle cx="12" cy="12" r="5.9" fill="${withAlpha(accent, target === "map" ? 0.1 : 0.08)}" />`,
+    `<circle cx="12" cy="12" r="8" fill="${accentSoft}" />`,
+    `<circle cx="12" cy="12" r="4.95" fill="${withAlpha(accent, target === "map" ? 0.06 : 0.05)}" />`,
     target === "map"
-      ? mapStrokeCircle(5.4, accent, 1.25)
-      : `<circle cx="12" cy="12" r="5.4" ${strokeAttrs(1.25, accent)} />`,
-    `<circle cx="12" cy="12" r="1.95" fill="${accent}" />`,
+      ? mapStrokeCircle(4.85, accent, 1.05)
+      : `<circle cx="12" cy="12" r="4.85" ${strokeAttrs(1.05, accent)} />`,
+    `<circle cx="12" cy="12" r="1.55" fill="${accent}" />`,
   ].join("");
 }
 
@@ -319,21 +448,21 @@ function buildWarningSymbol({
   target: WarMapSymbolRenderTarget;
   severity: "high" | "medium" | "low";
 }): string {
-  const trianglePath = "M12 5 18.35 17H5.65Z";
+  const trianglePath = "M12 5.55 17.1 16.3H6.9Z";
   const fillOpacity =
-    severity === "high" ? 0.14 : severity === "medium" ? 0.1 : 0.07;
+    severity === "high" ? 0.12 : severity === "medium" ? 0.09 : 0.06;
   const triangle =
     target === "map"
       ? [
-          `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(2, WHITE)} opacity="0.9" />`,
-          `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(1.45, accent)} />`,
+          `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(1.8, WHITE)} opacity="0.92" />`,
+          `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(1.28, accent)} />`,
         ].join("")
-      : `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(1.45, accent)} />`;
+      : `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(1.28, accent)} />`;
 
   return [
     triangle,
-    `<path d="M12 8.9v4.5" ${strokeAttrs(1.55, accent)} />`,
-    `<circle cx="12" cy="15.45" r="0.82" fill="${accent}" />`,
+    `<path d="M12 9.15v3.9" ${strokeAttrs(1.35, accent)} />`,
+    `<circle cx="12" cy="14.75" r="0.74" fill="${accent}" />`,
   ].join("");
 }
 
@@ -383,13 +512,13 @@ function buildSymbolBody({
       return buildTransportGlyph({
         accent,
         target,
-        path: "M12 3.9 13.95 9.1l5.05 1.1v1.5l-5.05-.1.95 5.95-1.15.66L12 13.85l-1.75 4.36-1.15-.66.95-5.95-5.05.1v-1.5l5.05-1.1L12 3.9Z",
+        path: "M12 4.25 13.32 9.15 17.55 10.55v1.05l-4.23.18.92 5.1-1 .62L12 14.15 10.76 17.5l-1-.62.92-5.1-4.23-.18v-1.05l4.23-1.4L12 4.25Z",
       });
     case "vessel":
       return buildTransportGlyph({
         accent,
         target,
-        path: "M12 5.1 14.25 8.2h-1.6v2.2h4.3l1.45 3.1-2.4 4.45H8.02l-2.4-4.45 1.45-3.1h4.28V8.2H9.8L12 5.1Zm-2.85 7.15-.98 2h5.66l-.98-2H9.15Zm.95 3.45.8 1.22h2.2l.8-1.22h-3.8Z",
+        path: "M12 5.8 13.72 8.25H10.28L12 5.8Zm-3.45 3.6h6.9l1.1 2.25-.88 4.05H9.43l-.88-4.05 1.1-2.25Zm1.3 1.35-.56 1.18.4 2.32h4.62l.4-2.32-.56-1.18H9.85Zm1.55 4.95L12 16.82l.6-1.12h-1.2Z",
       });
     case "density":
       return buildDensitySymbol(accent, target);
@@ -427,7 +556,7 @@ function buildSymbolSvg({
 }): string {
   return [
     svgOpenTag(target),
-    buildStateMarkup({ state, target, accent }),
+    buildStateMarkup({ state, target, accent, family }),
     buildSymbolBody({ accent, family, state, symbolKey, target }),
     "</svg>",
   ].join("");

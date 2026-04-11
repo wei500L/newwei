@@ -718,31 +718,36 @@ function resolveDeckPointSymbolSize({
   const isSelected =
     Boolean(point.selectionKey) && point.selectionKey === selectedInspectorKey;
   const isHovered = point.interactionKey === hoveredInteractionKey;
-  const stateBoost = isSelected ? 3 : isHovered ? 1.5 : 0;
+  const stateBoost = isSelected ? 2.5 : isHovered ? 1 : 0;
 
   let baseSize = 22;
   if (point.isCluster) {
-    baseSize = clamp(point.radius * 1.24, 30, 42);
+    baseSize = clamp(point.radius * 1.18, 30, 40);
   } else if (point.kind === "event") {
-    baseSize = clamp(15 + point.radius * 0.88, 19, 32);
+    baseSize = clamp(15 + point.radius * 0.84, 19, 31);
   } else if (
     point.kind === "layer" &&
     (point.layerId === "flights" || point.layerId === "ais")
   ) {
-    baseSize = clamp(15 + point.radius * 1.02, 20, 32);
+    baseSize = clamp(15 + point.radius * 0.98, 20, 31);
   } else if (point.kind === "monitor") {
-    baseSize = clamp(15 + point.radius * 0.8, 17, 24);
+    baseSize = clamp(15 + point.radius * 0.74, 17, 23);
   } else if (point.kind === "news") {
-    baseSize = clamp(11 + point.radius * 0.75, 15, 20);
+    baseSize = clamp(11.5 + point.radius * 0.7, 15, 19);
   } else if (point.kind === "layer") {
-    baseSize = clamp(13 + point.radius * 0.8, 17, 24);
+    baseSize = clamp(13 + point.radius * 0.76, 17, 23);
   }
 
   return baseSize + stateBoost;
 }
 
 function resolveDeckPointClusterTextSize(point: DeckPoint): number {
-  return clamp(point.radius * 0.36, 11, 16);
+  return clamp(point.radius * 0.34, 11, 15.5);
+}
+
+function resolveDeckPointClusterTextOffset(point: DeckPoint): [number, number] {
+  const count = point.clusterCount ?? 0;
+  return [0, count >= 100 ? 0.7 : 0.45];
 }
 
 function toClusterSelectionKey(
@@ -1950,8 +1955,8 @@ export function WarMap({
           buildIconLayer({
             layerData: mutedPoints,
             layerSuffix: "muted",
-            opacity: 0.38,
-            sizeBoost: -1,
+            opacity: 0.44,
+            sizeBoost: -0.5,
           }),
         );
       }
@@ -1962,7 +1967,7 @@ export function WarMap({
             layerData: emphasizedPoints,
             layerSuffix: "primary",
             opacity: 1,
-            sizeBoost: pointMatchesHighlightedLegendItem ? 2 : 0,
+            sizeBoost: pointMatchesHighlightedLegendItem ? 1.5 : 0,
           }),
         );
       }
@@ -1985,6 +1990,8 @@ export function WarMap({
           getText: (point: DeckPoint) =>
             formatWarMapClusterCountLabel(point.clusterCount ?? 0),
           getSize: (point: DeckPoint) => resolveDeckPointClusterTextSize(point),
+          getPixelOffset: (point: DeckPoint) =>
+            resolveDeckPointClusterTextOffset(point),
           getColor: [15, 23, 42, colorAlpha],
           fontWeight: 700,
           getTextAnchor: "middle",
@@ -2001,7 +2008,7 @@ export function WarMap({
           buildClusterTextLayer({
             layerData: clusters,
             layerSuffix: "primary",
-            colorAlpha: 255,
+            colorAlpha: 248,
           }),
         );
       }
@@ -2014,7 +2021,7 @@ export function WarMap({
           buildClusterTextLayer({
             layerData: mutedClusters,
             layerSuffix: "muted",
-            colorAlpha: 120,
+            colorAlpha: 134,
           }),
         );
       }

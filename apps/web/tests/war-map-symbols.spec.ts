@@ -129,7 +129,7 @@ describe("war-map symbols", () => {
       state: "hover",
     });
     expect(deckIcon.url.startsWith("data:image/svg+xml")).toBe(true);
-    expect(decodeURIComponent(deckIcon.url)).toContain('r="8.95"');
+    expect(decodeURIComponent(deckIcon.url)).toContain('r="8.8"');
 
     const legendIcon = getWarMapLegendSvgMarkup({
       symbolKey: "signal-high",
@@ -137,7 +137,7 @@ describe("war-map symbols", () => {
     });
     expect(legendIcon.startsWith("<svg")).toBe(true);
     expect(legendIcon).toContain("<circle");
-    expect(legendIcon).toContain('r="9.3"');
+    expect(legendIcon).toContain('r="9.15"');
     expect(legendIcon).not.toContain("data:image");
   });
 
@@ -146,15 +146,32 @@ describe("war-map symbols", () => {
       symbolKey: "signal-medium",
       state: "cluster",
     });
-    expect(clusterIcon).toContain('r="7.8"');
+    expect(clusterIcon).toContain('r="7.55"');
     expect(clusterIcon).toContain("<path");
+    expect(clusterIcon).toContain('cy="12.35"');
 
     const warningIcon = getWarMapLegendSvgMarkup({
       symbolKey: "ais-disruption-high",
       state: "default",
     });
-    expect(warningIcon).toContain("M12 5 18.35 17H5.65Z");
+    expect(warningIcon).toContain("M12 5.55 17.1 16.3H6.9Z");
     expect(warningIcon).toContain("fill=");
+  });
+
+  it("uses family-aware interaction states for transport symbols", () => {
+    const flightSelected = getWarMapLegendSvgMarkup({
+      symbolKey: "flight",
+      state: "selected",
+    });
+    expect(flightSelected).toContain("<rect");
+    expect(flightSelected).not.toContain('r="9.15"');
+
+    const vesselHover = getWarMapLegendSvgMarkup({
+      symbolKey: "ais-vessel-cargo",
+      state: "hover",
+    });
+    expect(vesselHover).toContain("<rect");
+    expect(vesselHover).toContain('rx="4.4"');
   });
 
   it("formats cluster labels to stay compact inside the bubble", () => {

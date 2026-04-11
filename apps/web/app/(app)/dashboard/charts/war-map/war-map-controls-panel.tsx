@@ -379,7 +379,7 @@ function LegendSectionCard({
   onLegendItemFocus?: (itemKey: string | null) => void;
 }) {
   return (
-    <div className="rounded-[18px] border border-slate-200/80 bg-white/[0.78] px-3.5 py-3 shadow-[0_12px_24px_-24px_rgba(15,23,42,0.12)] dark:border-slate-700/80 dark:bg-slate-950/[0.58] dark:shadow-[0_12px_24px_-24px_rgba(2,6,23,0.62)]">
+    <div className="rounded-[18px] border border-slate-200/75 bg-white/[0.8] px-3.5 py-3 shadow-[0_10px_18px_-20px_rgba(15,23,42,0.1)] dark:border-slate-700/80 dark:bg-slate-950/[0.56] dark:shadow-[0_10px_18px_-20px_rgba(2,6,23,0.56)]">
       <button
         type="button"
         className="flex w-full items-start justify-between gap-3 text-left"
@@ -427,7 +427,7 @@ function LegendInteractionStrip({
   }
 
   return (
-    <div className="rounded-[18px] border border-slate-200/80 bg-white/[0.76] px-3.5 py-3.5 shadow-[0_12px_24px_-24px_rgba(15,23,42,0.12)] dark:border-slate-700/80 dark:bg-slate-950/[0.56] dark:shadow-[0_12px_24px_-24px_rgba(2,6,23,0.62)]">
+    <div className="rounded-[16px] border border-slate-200/70 bg-white/[0.68] px-3 py-2.5 shadow-[0_8px_16px_-20px_rgba(15,23,42,0.08)] dark:border-slate-700/75 dark:bg-slate-950/[0.48] dark:shadow-[0_8px_16px_-20px_rgba(2,6,23,0.46)]">
       <div className="min-w-0">
         <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
           {t("dashboard.charts.warMap.legend.interactionTitle", {
@@ -436,16 +436,16 @@ function LegendInteractionStrip({
         </Typography.Text>
         <Typography.Text
           type="secondary"
-          className="mt-1 block text-[11px] leading-[1.15rem]"
+          className="mt-0.5 block text-[10px] leading-[1rem]"
         >
           {t("dashboard.charts.warMap.legend.quickLegendHint", {
             defaultValue: "Hover to preview. Click to pin.",
           })}
         </Typography.Text>
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+      <div className="mt-2.5 grid gap-1.5 sm:grid-cols-3">
         {items.map(({ key, ...item }) => (
-          <WarMapLegendSwatch key={key} size={22} variant="quick" {...item} />
+          <WarMapLegendSwatch key={key} size={20} variant="quick" {...item} />
         ))}
       </div>
     </div>
@@ -1389,7 +1389,7 @@ function LegendSection({
         onLegendItemHover={onLegendItemHover}
         onLegendItemFocus={onLegendItemFocus}
       />
-      <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white/70 px-3 py-3 dark:bg-slate-950/55">
+      <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white/62 px-3 py-2.5 dark:bg-slate-950/48">
         <Typography.Text type="secondary" className="text-xs">
           {t("dashboard.charts.warMap.legend.radius", {
             defaultValue: "Larger marks indicate stronger local concentration.",
@@ -1447,15 +1447,10 @@ export function WarMapLegendPanel({
             />
           ) : null}
         </div>
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
           {summaryDataLabel ? (
             <span className="truncate">{summaryDataLabel}</span>
           ) : null}
-          <span>
-            {t("dashboard.charts.warMap.legend.previewHint", {
-              defaultValue: "Hover to preview. Click to pin.",
-            })}
-          </span>
           {activeLegendKey ? (
             <Button
               type="link"
@@ -1501,7 +1496,7 @@ function LegendDockSectionCard({
   onLegendItemFocus?: (itemKey: string | null) => void;
 }) {
   return (
-    <div className="flex h-full flex-col rounded-[22px] border border-slate-200/80 bg-white/[0.82] px-5 py-5 shadow-[0_16px_30px_-28px_rgba(15,23,42,0.14)] dark:border-slate-700/80 dark:bg-slate-950/[0.58] dark:shadow-[0_16px_30px_-28px_rgba(2,6,23,0.62)]">
+    <div className="flex h-full flex-col rounded-[22px] border border-slate-200/75 bg-white/[0.8] px-5 py-5 shadow-[0_12px_20px_-22px_rgba(15,23,42,0.1)] dark:border-slate-700/80 dark:bg-slate-950/[0.54] dark:shadow-[0_12px_20px_-22px_rgba(2,6,23,0.52)]">
       <div className="min-w-0">
         <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
           {section.title}
@@ -1564,11 +1559,6 @@ export function WarMapLegendDock({
             {summaryDataLabel ? (
               <span className="truncate">{summaryDataLabel}</span>
             ) : null}
-            <span>
-              {t("dashboard.charts.warMap.legend.previewHint", {
-                defaultValue: "Hover to preview. Click to pin.",
-              })}
-            </span>
             {activeLegendKey ? (
               <Button
                 type="link"
