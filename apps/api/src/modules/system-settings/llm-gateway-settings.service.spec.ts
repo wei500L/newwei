@@ -587,5 +587,23 @@ describe("LlmGatewaySettingsService", () => {
 
     expect(active?.apiKey).toBe("managed-runtime-key");
     expect(active?.managedByLiteLlmProxyGovernance).toBe(true);
+    expect(active?.governanceAuthMode).toBe("managed_runtime_key");
+    expect(active?.governanceTargetProfileId).toBeTruthy();
+  });
+
+  it("fails closed when governed runtime key injection fails", async () => {
+    await service.createProfile("org-1", "actor-1", {
+      name: "Gateway",
+      apiBase: "http://localhost:4001",
+      model: "openai/gpt-4o-mini",
+      apiKey: "profile-key"
+    });
+    proxyGovernanceMock.getManagedRuntimeApiKeyForProfile.mockRejectedValueOnce(
+      new Error("managed runtime key unreadable"),
+    );
+
+    await expect(service.getActiveConfig()).rejects.toThrow(
+      "managed runtime key unreadable",
+    );
   });
 });

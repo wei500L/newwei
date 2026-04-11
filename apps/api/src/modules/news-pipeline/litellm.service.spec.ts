@@ -224,7 +224,47 @@ describe("LiteLlmService", () => {
         expect.objectContaining({
           feature: "news_event_brief",
           gatewayProfileId: "profile-1",
+          governanceApplied: false,
+          authMode: "profile_key",
         }),
+      );
+    });
+
+    it("records governance context when LiteLLM managed runtime governance is active", async () => {
+      llmGatewaySettings.getActiveConfig.mockResolvedValueOnce({
+        profileId: "profile-1",
+        profileName: "Primary Gateway",
+        ...configService.config.litellm,
+        apiKey: "managed-runtime-key",
+        sendMetadata: true,
+        responseFormatMode: "json_schema",
+        apiSurface: "chat_completions",
+        assistantWebSearchEnabled: false,
+        managedByLiteLlmProxyGovernance: true,
+        governanceAuthMode: "managed_runtime_key",
+        governanceTargetProfileId: "profile-1",
+      } as any);
+
+      await service.acompletion(completionParams);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(llmRequestLogService.logRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          governanceApplied: true,
+          authMode: "managed_runtime_key",
+          governanceTargetProfileId: "profile-1",
+        }),
+      );
+    });
+
+    it("fails closed when governed config resolution fails", async () => {
+      llmGatewaySettings.getActiveConfig.mockRejectedValueOnce(
+        new Error("managed runtime key unreadable"),
+      );
+
+      await expect(service.acompletion(completionParams)).rejects.toThrow(
+        "managed runtime key unreadable",
       );
     });
 

@@ -57,6 +57,14 @@ export class LlmGatewayModelsConfigDto {
 export class LlmGatewayTestConfigDto extends LlmGatewayModelsConfigDto {
   @ApiPropertyOptional({
     description:
+      "Authentication mode for the test request. profile_key validates the profile key; managed_runtime_key validates the governed managed runtime key.",
+  })
+  @IsOptional()
+  @IsIn(["profile_key", "managed_runtime_key"])
+  authMode?: "profile_key" | "managed_runtime_key";
+
+  @ApiPropertyOptional({
+    description:
       "Optional chat/completions model to use for the test request; required when includeCompletion is true."
   })
   @IsOptional()

@@ -35,6 +35,14 @@ const LlmRequestLogSchema = new Schema(
     costUsd: { type: Number, default: null },
     feature: { type: String, default: null, index: true },
     gatewayProfileId: { type: String, default: null, index: true },
+    governanceApplied: { type: Boolean, default: null, index: true },
+    authMode: {
+      type: String,
+      enum: ["profile_key", "managed_runtime_key"],
+      default: null,
+      index: true,
+    },
+    governanceTargetProfileId: { type: String, default: null, index: true },
     latencyMs: { type: Number, required: true, min: 0 },
     error: { type: String, default: null },
     metadata: { type: Schema.Types.Mixed, default: null },
@@ -53,6 +61,12 @@ const LlmRequestLogSchema = new Schema(
 LlmRequestLogSchema.index({ orgId: 1, createdAt: -1 });
 LlmRequestLogSchema.index({ orgId: 1, feature: 1, createdAt: -1 });
 LlmRequestLogSchema.index({ orgId: 1, gatewayProfileId: 1, createdAt: -1 });
+LlmRequestLogSchema.index({
+  orgId: 1,
+  governanceTargetProfileId: 1,
+  governanceApplied: 1,
+  createdAt: -1,
+});
 LlmRequestLogSchema.index({ orgId: 1, model: 1, createdAt: -1 });
 LlmRequestLogSchema.index({
   orgId: 1,

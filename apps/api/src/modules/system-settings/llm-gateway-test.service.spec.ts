@@ -111,7 +111,15 @@ describe("LlmGatewayTestService", () => {
     cacheMock.set.mockResolvedValue(undefined);
     cacheMock.del.mockResolvedValue(undefined);
     proxyGovernanceMock.resolveTestingApiKey.mockImplementation(
-      (_apiBase: string, fallbackApiKey?: string) => fallbackApiKey,
+      (
+        _apiBase: string,
+        fallbackApiKey?: string,
+        _profileId?: string,
+        authMode?: "profile_key" | "managed_runtime_key",
+      ) =>
+        authMode === "managed_runtime_key"
+          ? "managed-runtime-key"
+          : fallbackApiKey,
     );
     service = new LlmGatewayTestService(
       settingsMock,
@@ -134,6 +142,7 @@ describe("LlmGatewayTestService", () => {
     expect(result.completion.costUsd).toBe(0.0001);
     expect(result.completion.keySpendUsd).toBe(0.05);
     expect(result.embedding?.dimensions).toBe(3);
+    expect(result.authModeUsed).toBe("profile_key");
 
     expect(mockAxiosCreate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -195,6 +204,30 @@ describe("LlmGatewayTestService", () => {
       "/chat/completions",
       expect.any(Object),
       expect.any(Object),
+    );
+  });
+
+  it("supports testing with the managed runtime key explicitly", async () => {
+    mockAxiosPost.mockResolvedValueOnce(mockCompletionResponse);
+
+    const result = await service.testProfile("profile-1", {
+      authMode: "managed_runtime_key",
+      includeEmbeddings: false,
+    });
+
+    expect(result.authModeUsed).toBe("managed_runtime_key");
+    expect(proxyGovernanceMock.resolveTestingApiKey).toHaveBeenCalledWith(
+      "http://localhost:4001",
+      "sk-test",
+      "profile-1",
+      "managed_runtime_key",
+    );
+    expect(mockAxiosCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer managed-runtime-key",
+        }),
+      }),
     );
   });
 

@@ -173,6 +173,9 @@ interface LiteLlmTokenUsageSnapshot {
 interface LiteLlmRequestLogContext {
   feature: string | null;
   gatewayProfileId: string | null;
+  governanceApplied: boolean | null;
+  authMode: "profile_key" | "managed_runtime_key" | null;
+  governanceTargetProfileId: string | null;
 }
 
 export type LiteLlmGuardrailViolationCode =
@@ -284,7 +287,7 @@ export class LiteLlmService {
     const runtimeContext = await this.startRuntimeRequest(
       "completion",
       params.metadata,
-      cfg.profileId,
+      cfg,
     );
     const apiSurface = this.resolveApiSurface(
       (cfg as { apiSurface?: unknown }).apiSurface,
@@ -351,7 +354,7 @@ export class LiteLlmService {
     const runtimeContext = await this.startRuntimeRequest(
       "embedding",
       params.metadata,
-      cfg.profileId,
+      cfg,
     );
     const model = params.model ?? cfg.embeddingModel ?? cfg.model;
     if (!model) {
@@ -386,7 +389,7 @@ export class LiteLlmService {
     const runtimeContext = await this.startRuntimeRequest(
       "rerank",
       params.metadata,
-      cfg.profileId,
+      cfg,
     );
     const requestedModel =
       typeof params.model === "string" && params.model.trim().length > 0
@@ -452,7 +455,7 @@ export class LiteLlmService {
     const runtimeContext = await this.startRuntimeRequest(
       "stream",
       params.metadata,
-      cfg.profileId,
+      cfg,
     );
     const apiSurface = this.resolveApiSurface(
       (cfg as { apiSurface?: unknown }).apiSurface,
@@ -530,7 +533,7 @@ export class LiteLlmService {
     const runtimeContext = await this.startRuntimeRequest(
       "responses",
       params.metadata,
-      cfg.profileId,
+      cfg,
     );
     const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
     const uniqueModels = Array.from(
@@ -2122,6 +2125,8 @@ export class LiteLlmService {
       apiSurface: this.resolveApiSurface(overrides?.apiSurface),
       managedByLiteLlmProxyGovernance:
         overrides?.managedByLiteLlmProxyGovernance === true,
+      governanceAuthMode: overrides?.governanceAuthMode ?? "profile_key",
+      governanceTargetProfileId: overrides?.governanceTargetProfileId ?? null,
     };
   }
 
@@ -2144,6 +2149,8 @@ export class LiteLlmService {
       apiSurface: this.resolveApiSurface(overrides?.apiSurface),
       managedByLiteLlmProxyGovernance:
         overrides?.managedByLiteLlmProxyGovernance === true,
+      governanceAuthMode: overrides?.governanceAuthMode ?? "profile_key",
+      governanceTargetProfileId: overrides?.governanceTargetProfileId ?? null,
     };
   }
 
@@ -2168,6 +2175,8 @@ export class LiteLlmService {
       apiSurface: this.resolveApiSurface(overrides?.apiSurface),
       managedByLiteLlmProxyGovernance:
         overrides?.managedByLiteLlmProxyGovernance === true,
+      governanceAuthMode: overrides?.governanceAuthMode ?? "profile_key",
+      governanceTargetProfileId: overrides?.governanceTargetProfileId ?? null,
     };
   }
 
@@ -2214,6 +2223,10 @@ export class LiteLlmService {
         this.resolveFeatureToken(params.metadata) ??
         null,
       gatewayProfileId: params.runtimeContext?.gatewayProfileId ?? null,
+      governanceApplied: params.runtimeContext?.governanceApplied ?? null,
+      authMode: params.runtimeContext?.authMode ?? null,
+      governanceTargetProfileId:
+        params.runtimeContext?.governanceTargetProfileId ?? null,
       latencyMs: this.normalizeLatency(params.latencyMs),
       error:
         params.status === "error" ? this.normalizeLogError(params.error) : null,
@@ -2225,14 +2238,28 @@ export class LiteLlmService {
   private async startRuntimeRequest(
     requestType: LlmRequestType,
     metadata?: Record<string, unknown>,
-    profileId?: string,
+    cfg?: Pick<
+      LlmGatewayResolvedConfig,
+      | "profileId"
+      | "managedByLiteLlmProxyGovernance"
+      | "governanceAuthMode"
+      | "governanceTargetProfileId"
+    >,
   ): Promise<LiteLlmRequestLogContext | null> {
     void requestType;
     return Promise.resolve({
       feature: this.resolveFeatureToken(metadata),
       gatewayProfileId:
-        typeof profileId === "string" && profileId.trim().length > 0
-          ? profileId.trim()
+        typeof cfg?.profileId === "string" && cfg.profileId.trim().length > 0
+          ? cfg.profileId.trim()
+          : null,
+      governanceApplied:
+        cfg?.managedByLiteLlmProxyGovernance === true ? true : false,
+      authMode: cfg?.governanceAuthMode ?? "profile_key",
+      governanceTargetProfileId:
+        typeof cfg?.governanceTargetProfileId === "string" &&
+        cfg.governanceTargetProfileId.trim().length > 0
+          ? cfg.governanceTargetProfileId.trim()
           : null,
     });
   }

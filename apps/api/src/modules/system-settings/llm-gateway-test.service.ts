@@ -166,6 +166,7 @@ export interface LlmGatewayTestError {
 export interface LlmGatewayTestResult {
   apiBase: string;
   apiSurfaceUsed?: "chat_completions" | "responses";
+  authModeUsed?: "profile_key" | "managed_runtime_key";
   compatibilityError?: LlmCompatibilityErrorInfo;
   completion?: LlmGatewayChatTestResult;
   completionError?: LlmGatewayTestError;
@@ -230,6 +231,7 @@ export interface LlmGatewayModelsConfigInput {
 }
 
 export interface LlmGatewayTestConfigInput extends LlmGatewayModelsConfigInput {
+  authMode?: "profile_key" | "managed_runtime_key";
   model?: string;
   embeddingModel?: string;
   rerankModel?: string;
@@ -251,6 +253,7 @@ export interface LlmGatewayTestConfigInput extends LlmGatewayModelsConfigInput {
 }
 
 export interface LlmGatewayTestInput {
+  authMode?: "profile_key" | "managed_runtime_key";
   model?: string;
   prompt?: string;
   includeCompletion?: boolean;
@@ -737,6 +740,7 @@ export class LlmGatewayTestService {
       baseUrl,
       cfg.apiKey,
       profileId,
+      input.authMode,
     );
     const effectiveCfg = {
       ...cfg,
@@ -879,6 +883,7 @@ export class LlmGatewayTestService {
 
     return {
       apiBase: baseUrl,
+      authModeUsed: input.authMode ?? "profile_key",
       ...(shouldTestCompletion ? { apiSurfaceUsed: apiSurface } : {}),
       ...(completionError?.compatibilityError
         ? { compatibilityError: completionError.compatibilityError }
@@ -929,6 +934,7 @@ export class LlmGatewayTestService {
         ? normalizeOpenAiApiKey(input.apiKey)
         : stored?.apiKey,
       input.profileId,
+      input.authMode,
     );
     const timeoutMs =
       input.timeoutMs ?? stored?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -1070,6 +1076,7 @@ export class LlmGatewayTestService {
 
     return {
       apiBase: baseUrl,
+      authModeUsed: input.authMode ?? "profile_key",
       ...(shouldTestCompletion ? { apiSurfaceUsed: apiSurface } : {}),
       ...(completionError?.compatibilityError
         ? { compatibilityError: completionError.compatibilityError }
@@ -1839,11 +1846,13 @@ export class LlmGatewayTestService {
     apiBase: string,
     fallbackApiKey?: string,
     profileId?: string,
+    authMode: "profile_key" | "managed_runtime_key" = "profile_key",
   ): Promise<string | undefined> {
     return this.proxyGovernance.resolveTestingApiKey(
       apiBase,
       fallbackApiKey,
       profileId,
+      authMode,
     );
   }
 }

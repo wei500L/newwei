@@ -14,7 +14,10 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
-import { UpdateLlmGatewayProxyGovernanceDto } from "./dto/llm-gateway-proxy-governance.dto";
+import {
+  LiteLlmProxyGovernancePreflightDto,
+  UpdateLlmGatewayProxyGovernanceDto,
+} from "./dto/llm-gateway-proxy-governance.dto";
 import { UpdateLlmGatewayProxyLoadBalancingSettingsDto } from "./dto/llm-gateway-proxy-lb-settings.dto";
 import { LlmGatewayProxyLoadBalancingTestDto } from "./dto/llm-gateway-proxy-lb-test.dto";
 import {
@@ -114,6 +117,14 @@ export class LlmGatewaySettingsController {
     @Body() body: UpdateLlmGatewayProxyGovernanceDto,
   ) {
     return this.proxyGovernance.updateSettings(user.orgId, user.id, body);
+  }
+
+  @Post("proxy-governance/preflight")
+  @Permissions("settings.manage")
+  async preflightProxyGovernanceSettings(
+    @Body() body: LiteLlmProxyGovernancePreflightDto,
+  ) {
+    return this.proxyGovernance.getEnablePreflight(body);
   }
 
   @Delete("proxy-governance")

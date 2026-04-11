@@ -15,6 +15,14 @@ const MAX_RERANK_DOCUMENTS = 20;
 
 export class LlmGatewayTestDto {
   @ApiPropertyOptional({
+    description:
+      "Authentication mode for the test request. profile_key validates the profile key; managed_runtime_key validates the governed managed runtime key.",
+  })
+  @IsOptional()
+  @IsIn(["profile_key", "managed_runtime_key"])
+  authMode?: "profile_key" | "managed_runtime_key";
+
+  @ApiPropertyOptional({
     description: "When false, skips the chat completion test and only runs the embeddings test."
   })
   @IsOptional()

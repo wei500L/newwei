@@ -28,15 +28,20 @@ describe('llm gateway governance admin UI wiring', () => {
     expect(source).toContain(
       'void handleActivateRerank(selectedGovernanceProfile.id);',
     );
+    expect(source).toContain(
+      '"system-settings/llm-gateways/proxy-governance/preflight"',
+    );
   });
 
-  it('avoids reloading observed usage for the same governed profile and surfaces the leading error', () => {
+  it('avoids reloading observed usage for the same governed profile and surfaces governance-vs-direct observations', () => {
     const source = read('components/settings/llm-gateway-settings-panel.tsx');
 
     expect(source).toContain('governanceUsageProfileId');
     expect(source).toContain('if (profileId === governanceUsageProfileId) {');
     expect(source).toContain('normalizeObservedUsageSummary');
     expect(source).toContain('leadingError');
+    expect(source).toContain('governanceBreakdown');
+    expect(source).toContain('managed_runtime_key');
     expect(source).toContain('requests in the last 24h');
   });
 });

@@ -28,6 +28,55 @@ import {
 import { SystemSecuritySettingsService } from "./system-security-settings.service";
 
 export type LiteLlmProxyGovernanceSettingsSource = "default" | "db";
+export type LiteLlmManagedRuntimeKeyState =
+  | "missing"
+  | "available"
+  | "unreadable";
+
+export interface LiteLlmProxyGovernanceTrafficBindings {
+  completion: boolean;
+  embedding: boolean;
+  rerank: boolean;
+}
+
+export interface LiteLlmProxyGovernanceEndpointCheck {
+  ok: boolean;
+  status?: number;
+  message?: string;
+}
+
+export interface LiteLlmProxyGovernanceHealthResult {
+  apiBase: string;
+  checkedAt: string;
+  liveliness: LiteLlmProxyGovernanceEndpointCheck;
+  readiness: LiteLlmProxyGovernanceEndpointCheck;
+}
+
+export interface LiteLlmProxyGovernancePreflightCheck {
+  key:
+    | "admin_key"
+    | "target_profile"
+    | "runtime_traffic"
+    | "proxy_health"
+    | "managed_runtime_key";
+  ok: boolean;
+  required: boolean;
+  message: string;
+}
+
+export interface LiteLlmProxyGovernancePreflightPublic {
+  targetProfileId: string | null;
+  targetProfileName: string | null;
+  apiBase: string | null;
+  adminKeyConfigured: boolean;
+  managedRuntimeKeyState: LiteLlmManagedRuntimeKeyState;
+  trafficBindings: LiteLlmProxyGovernanceTrafficBindings;
+  health: LiteLlmProxyGovernanceHealthResult | null;
+  checks: LiteLlmProxyGovernancePreflightCheck[];
+  canEnable: boolean;
+  blockingIssues: string[];
+  warnings: string[];
+}
 
 export interface LiteLlmProxyGovernanceSettingsPublic {
   source: LiteLlmProxyGovernanceSettingsSource;
@@ -41,6 +90,7 @@ export interface LiteLlmProxyGovernanceSettingsPublic {
   targetProfileEnabled: boolean;
   adminKeyConfigured: boolean;
   hasManagedRuntimeKey: boolean;
+  managedRuntimeKeyState: LiteLlmManagedRuntimeKeyState;
   managedTeamId: string | null;
   managedRuntimeKeyAlias: string | null;
   lastSyncedAt: string | null;
@@ -73,9 +123,15 @@ interface ResolvedLiteLlmProxyGovernanceSettings {
   targetProfileId: string | null;
   managedTeamId: string | null;
   managedRuntimeKey?: string;
+  managedRuntimeKeyState: LiteLlmManagedRuntimeKeyState;
   managedRuntimeKeyAlias: string | null;
   lastSyncedAt: string | null;
   lastSyncError: string | null;
+}
+
+interface ResolvedLiteLlmProxyGovernanceSecret {
+  value?: string;
+  state: LiteLlmManagedRuntimeKeyState;
 }
 
 interface LiteLlmTeamResponse {
@@ -117,10 +173,108 @@ export class LiteLlmProxyGovernanceService {
     const targetProfile = await this.resolveTargetProfile(resolved.targetProfileId);
     return this.toPublicSettings(stored ? "db" : "default", resolved, {
       targetProfile,
-      hasManagedRuntimeKey: this.hasStoredManagedRuntimeKey(
-        stored?.managedRuntimeKey,
-      ),
     });
+  }
+
+  async getEnablePreflight(input?: {
+    targetProfileId?: string | null;
+  }): Promise<LiteLlmProxyGovernancePreflightPublic> {
+    const stored = await this.loadStoredSettings();
+    const resolved = this.resolveEffectiveConfig(stored);
+    const targetProfileId =
+      input?.targetProfileId !== undefined
+        ? this.normalizeOptionalString(input.targetProfileId) ?? null
+        : resolved.targetProfileId;
+    const targetProfile = await this.resolveTargetProfile(targetProfileId);
+    const bindings = await this.gatewaySettings.getRuntimeBindingSnapshot();
+    const trafficBindings: LiteLlmProxyGovernanceTrafficBindings = {
+      completion:
+        Boolean(targetProfile) &&
+        bindings.completionProfileId === targetProfile?.id,
+      embedding:
+        Boolean(targetProfile) &&
+        bindings.embeddingProfileId === targetProfile?.id,
+      rerank:
+        Boolean(targetProfile) && bindings.rerankProfileId === targetProfile?.id,
+    };
+    const health = targetProfile
+      ? await this.checkTargetProfileHealth(targetProfile)
+      : null;
+    const hasTrafficBindings =
+      trafficBindings.completion ||
+      trafficBindings.embedding ||
+      trafficBindings.rerank;
+    const healthOk =
+      Boolean(health?.liveliness.ok) && Boolean(health?.readiness.ok);
+    const checks: LiteLlmProxyGovernancePreflightCheck[] = [
+      {
+        key: "admin_key",
+        ok: this.hasAdminKey(),
+        required: true,
+        message: this.hasAdminKey()
+          ? "LiteLLM admin key is configured."
+          : "Configure LITELLM_MASTER_KEY before enabling governance.",
+      },
+      {
+        key: "target_profile",
+        ok: Boolean(targetProfile),
+        required: true,
+        message: targetProfile
+          ? `Target profile ${targetProfile.name} is enabled.`
+          : "Select an enabled LiteLLM target profile before enabling governance.",
+      },
+      {
+        key: "runtime_traffic",
+        ok: hasTrafficBindings,
+        required: true,
+        message: hasTrafficBindings
+          ? `Runtime traffic currently uses the target profile for ${this.describeTrafficBindings(
+              trafficBindings,
+            )}.`
+          : "Completion, embedding, and rerank are not currently bound to the selected target profile.",
+      },
+      {
+        key: "proxy_health",
+        ok: healthOk,
+        required: true,
+        message: health
+          ? healthOk
+            ? "LiteLLM liveliness and readiness checks are healthy."
+            : "LiteLLM liveliness/readiness checks are failing for the selected target profile."
+          : "LiteLLM health checks have not been run for the selected target profile.",
+      },
+      {
+        key: "managed_runtime_key",
+        ok: resolved.managedRuntimeKeyState !== "unreadable",
+        required: false,
+        message:
+          resolved.managedRuntimeKeyState === "available"
+            ? "Stored managed runtime key is readable."
+            : resolved.managedRuntimeKeyState === "missing"
+              ? "Managed runtime key will be created when governance is enabled."
+              : "Stored managed runtime key is unreadable. Runtime governance will fail closed until secret decryption is fixed.",
+      },
+    ];
+    const blockingIssues = checks
+      .filter((check) => check.required && !check.ok)
+      .map((check) => check.message);
+    const warnings = checks
+      .filter((check) => !check.required && !check.ok)
+      .map((check) => check.message);
+
+    return {
+      targetProfileId: targetProfile?.id ?? targetProfileId,
+      targetProfileName: targetProfile?.name ?? null,
+      apiBase: targetProfile?.apiBase ?? null,
+      adminKeyConfigured: this.hasAdminKey(),
+      managedRuntimeKeyState: resolved.managedRuntimeKeyState,
+      trafficBindings,
+      health,
+      checks,
+      canEnable: blockingIssues.length === 0,
+      blockingIssues,
+      warnings,
+    };
   }
 
   async updateSettings(
@@ -162,6 +316,7 @@ export class LiteLlmProxyGovernanceService {
 
     let action = "litellm_proxy_governance_update";
     if (next.enabled) {
+      await this.assertEnablePreflight(next.targetProfileId);
       const targetProfile = await this.requireTargetProfile(next.targetProfileId);
       const shouldDisablePreviousManagedResources =
         await this.isSwitchingManagedProxyInstance(
@@ -171,6 +326,7 @@ export class LiteLlmProxyGovernanceService {
       const synced = await this.syncEnabledSettings(next, targetProfile.apiBase);
       next.managedTeamId = synced.managedTeamId;
       next.managedRuntimeKey = synced.managedRuntimeKey;
+      next.managedRuntimeKeyState = "available";
       next.managedRuntimeKeyAlias = synced.managedRuntimeKeyAlias;
       next.lastSyncedAt = new Date().toISOString();
       next.lastSyncError = null;
@@ -181,6 +337,7 @@ export class LiteLlmProxyGovernanceService {
       action = "litellm_proxy_governance_disable";
       next.managedTeamId = null;
       next.managedRuntimeKey = undefined;
+      next.managedRuntimeKeyState = "missing";
       next.managedRuntimeKeyAlias = null;
       next.lastSyncedAt = current.lastSyncedAt;
       next.lastSyncError = null;
@@ -203,7 +360,6 @@ export class LiteLlmProxyGovernanceService {
       managedRuntimeKeyAlias: next.managedRuntimeKeyAlias,
     });
     return this.toPublicSettings("db", next, {
-      hasManagedRuntimeKey: Boolean(next.managedRuntimeKey),
     });
   }
 
@@ -256,6 +412,7 @@ export class LiteLlmProxyGovernanceService {
     const next: ResolvedLiteLlmProxyGovernanceSettings = {
       ...current,
       managedRuntimeKey: generated.key,
+      managedRuntimeKeyState: "available",
       managedRuntimeKeyAlias: generated.keyAlias,
       lastSyncedAt: new Date().toISOString(),
       lastSyncError: null,
@@ -277,7 +434,6 @@ export class LiteLlmProxyGovernanceService {
       },
     );
     return this.toPublicSettings("db", next, {
-      hasManagedRuntimeKey: Boolean(next.managedRuntimeKey),
     });
   }
 
@@ -285,19 +441,29 @@ export class LiteLlmProxyGovernanceService {
     profileId: string,
     apiBase: string,
   ): Promise<string | null> {
-    if (!(await this.isGovernedProfile(profileId, apiBase))) {
-      return null;
-    }
     const stored = await this.loadStoredSettings();
-    if (!this.asBoolean(stored?.enabled, false)) {
+    const resolved = this.resolveEffectiveConfig(stored);
+    if (!resolved.enabled) {
       return null;
     }
-    const directSecret = this.resolveSecret(stored?.managedRuntimeKey);
-    if (directSecret) {
-      return directSecret;
+    const targetProfile = await this.resolveTargetProfile(resolved.targetProfileId);
+    if (!targetProfile) {
+      return null;
     }
-    const resolved = this.resolveEffectiveConfig(stored);
-    return resolved.managedRuntimeKey ?? null;
+    if (!this.matchesGovernedProfile(profileId, apiBase, targetProfile)) {
+      return null;
+    }
+    if (resolved.managedRuntimeKeyState === "unreadable") {
+      throw new ServiceUnavailableException(
+        "LiteLLM governance is enabled but the managed runtime key is unreadable",
+      );
+    }
+    if (!resolved.managedRuntimeKey) {
+      throw new ServiceUnavailableException(
+        "LiteLLM governance is enabled but the managed runtime key is missing",
+      );
+    }
+    return resolved.managedRuntimeKey;
   }
 
   async getGovernedApiBaseForProfile(
@@ -323,27 +489,27 @@ export class LiteLlmProxyGovernanceService {
     apiBase: string,
     fallbackApiKey?: string,
     profileId?: string,
+    authMode: "profile_key" | "managed_runtime_key" = "profile_key",
   ): Promise<string | undefined> {
-    if (this.hasAdminKey() && profileId) {
-      const stored = await this.loadStoredSettings();
-      const resolved = this.resolveEffectiveConfig(stored);
-      if (resolved.enabled) {
-        const targetProfile = await this.resolveTargetProfile(
-          resolved.targetProfileId,
-        );
-        if (
-          targetProfile &&
-          this.matchesGovernedProfileForTesting(
-            profileId,
-            apiBase,
-            targetProfile,
-          )
-        ) {
-          return this.normalizeSecret(this.env.liteLlmMasterKey);
-        }
-      }
+    if (authMode === "profile_key") {
+      return this.normalizeSecret(fallbackApiKey);
     }
-    return this.normalizeSecret(fallbackApiKey);
+    if (!profileId) {
+      throw new BadRequestException(
+        "Managed runtime key tests require a saved LiteLLM gateway profile",
+      );
+    }
+
+    const managedRuntimeKey = await this.getManagedRuntimeApiKeyForProfile(
+      profileId,
+      apiBase,
+    );
+    if (!managedRuntimeKey) {
+      throw new BadRequestException(
+        "Selected profile is not the active LiteLLM governance target",
+      );
+    }
+    return managedRuntimeKey;
   }
 
   async assertProfileUpdateAllowed(
@@ -439,6 +605,7 @@ export class LiteLlmProxyGovernanceService {
   private resolveEffectiveConfig(
     stored: StoredLiteLlmProxyGovernanceSettings | null,
   ): ResolvedLiteLlmProxyGovernanceSettings {
+    const managedRuntimeKey = this.resolveSecret(stored?.managedRuntimeKey);
     return {
       enabled: this.asBoolean(stored?.enabled, false),
       dailyBudgetUsd: this.asBudget(
@@ -456,7 +623,8 @@ export class LiteLlmProxyGovernanceService {
       targetProfileId:
         this.normalizeOptionalString(stored?.targetProfileId) ?? null,
       managedTeamId: this.normalizeOptionalString(stored?.managedTeamId) ?? null,
-      managedRuntimeKey: this.resolveSecret(stored?.managedRuntimeKey),
+      managedRuntimeKey: managedRuntimeKey.value,
+      managedRuntimeKeyState: managedRuntimeKey.state,
       managedRuntimeKeyAlias:
         this.normalizeOptionalString(stored?.managedRuntimeKeyAlias) ?? null,
       lastSyncedAt: this.normalizeIsoString(stored?.lastSyncedAt),
@@ -835,13 +1003,15 @@ export class LiteLlmProxyGovernanceService {
       .slice(0, 19)}`;
   }
 
-  private resolveSecret(raw: unknown): string | undefined {
+  private resolveSecret(raw: unknown): ResolvedLiteLlmProxyGovernanceSecret {
     if (!raw) {
-      return undefined;
+      return { state: "missing" };
     }
     if (typeof raw === "string") {
       const trimmed = raw.trim();
-      return trimmed ? trimmed : undefined;
+      return trimmed
+        ? { value: trimmed, state: "available" }
+        : { state: "missing" };
     }
     if (isEncryptedStringValueV1(raw)) {
       const key = resolveSettingsKey(this.env);
@@ -849,20 +1019,23 @@ export class LiteLlmProxyGovernanceService {
         this.logger.warn(
           "Missing SYSTEM_SETTINGS_ENCRYPTION_KEY for LiteLLM proxy governance secret",
         );
-        return undefined;
+        return { state: "unreadable" };
       }
       try {
         const decrypted = decryptStringValueV1(raw, key);
         const trimmed = decrypted.trim();
-        return trimmed ? trimmed : undefined;
+        return trimmed
+          ? { value: trimmed, state: "available" }
+          : { state: "missing" };
       } catch (error) {
         this.logger.warn(
           { err: error },
           "Failed to decrypt LiteLLM proxy governance secret",
         );
+        return { state: "unreadable" };
       }
     }
-    return undefined;
+    return { state: "missing" };
   }
 
   private normalizeSecret(value: unknown): string | undefined {
@@ -896,6 +1069,16 @@ export class LiteLlmProxyGovernanceService {
     return targetProfile;
   }
 
+  private async assertEnablePreflight(
+    targetProfileId: string | null,
+  ): Promise<void> {
+    const preflight = await this.getEnablePreflight({ targetProfileId });
+    if (preflight.canEnable) {
+      return;
+    }
+    throw new BadRequestException(preflight.blockingIssues.join(" "));
+  }
+
   private async resolveTargetProfile(
     targetProfileId: string | null,
   ): Promise<LlmGatewayProfileSummary | null> {
@@ -916,22 +1099,96 @@ export class LiteLlmProxyGovernanceService {
     return targetProfile?.apiBase ?? null;
   }
 
-  private matchesGovernedProfile(
-    profileId: string,
-    apiBase: string,
+  private async checkTargetProfileHealth(
     targetProfile: LlmGatewayProfileSummary,
-  ): boolean {
-    const normalizedCandidate = normalizeOpenAiApiBase(apiBase);
-    const normalizedTarget = normalizeOpenAiApiBase(targetProfile.apiBase);
-    if (!normalizedCandidate || !normalizedTarget) {
-      return false;
+  ): Promise<LiteLlmProxyGovernanceHealthResult> {
+    const baseUrl = normalizeOpenAiApiBase(targetProfile.apiBase);
+    if (!baseUrl) {
+      return {
+        apiBase: targetProfile.apiBase,
+        checkedAt: new Date().toISOString(),
+        liveliness: {
+          ok: false,
+          message: "Target profile apiBase is not a valid OpenAI-compatible base URL.",
+        },
+        readiness: {
+          ok: false,
+          message: "Target profile apiBase is not a valid OpenAI-compatible base URL.",
+        },
+      };
     }
-    return (
-      profileId === targetProfile.id || normalizedCandidate === normalizedTarget
+    const apiKey = await this.resolveTestingApiKey(
+      baseUrl,
+      undefined,
+      targetProfile.id,
+      "profile_key",
     );
+    const client = axios.create({
+      baseURL: baseUrl,
+      timeout: 10_000,
+      headers: {
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+    });
+    const [liveliness, readiness] = await Promise.all([
+      this.checkProxyEndpoint(client, "/health/liveliness"),
+      this.checkProxyEndpoint(client, "/health/readiness"),
+    ]);
+    return {
+      apiBase: baseUrl,
+      checkedAt: new Date().toISOString(),
+      liveliness,
+      readiness,
+    };
   }
 
-  private matchesGovernedProfileForTesting(
+  private async checkProxyEndpoint(
+    client: ReturnType<typeof axios.create>,
+    path: string,
+  ): Promise<LiteLlmProxyGovernanceEndpointCheck> {
+    try {
+      const response = await client.get(path, { timeout: 10_000 });
+      return {
+        ok: response.status >= 200 && response.status < 300,
+        status: response.status,
+      };
+    } catch (error) {
+      if (error instanceof AxiosError) {
+        const detail =
+          typeof error.response?.data === "string"
+            ? error.response.data
+            : typeof (error.response?.data as { detail?: unknown })?.detail ===
+                "string"
+              ? ((error.response?.data as { detail?: string }).detail ?? "")
+              : error.message;
+        return {
+          ok: false,
+          ...(typeof error.response?.status === "number"
+            ? { status: error.response.status }
+            : {}),
+          message: detail.trim() || "Proxy health check failed",
+        };
+      }
+      return {
+        ok: false,
+        message:
+          error instanceof Error ? error.message : "Proxy health check failed",
+      };
+    }
+  }
+
+  private describeTrafficBindings(
+    bindings: LiteLlmProxyGovernanceTrafficBindings,
+  ): string {
+    const labels = [
+      bindings.completion ? "completion" : null,
+      bindings.embedding ? "embedding" : null,
+      bindings.rerank ? "rerank" : null,
+    ].filter((value): value is string => value !== null);
+    return labels.join(", ");
+  }
+
+  private matchesGovernedProfile(
     profileId: string,
     apiBase: string,
     targetProfile: LlmGatewayProfileSummary,
@@ -985,7 +1242,6 @@ export class LiteLlmProxyGovernanceService {
     source: LiteLlmProxyGovernanceSettingsSource,
     resolved: ResolvedLiteLlmProxyGovernanceSettings,
     options?: {
-      hasManagedRuntimeKey?: boolean;
       targetProfile?: LlmGatewayProfileSummary | null;
     },
   ): Promise<LiteLlmProxyGovernanceSettingsPublic> {
@@ -1003,23 +1259,18 @@ export class LiteLlmProxyGovernanceService {
       targetProfileName: targetProfile?.name ?? null,
       targetProfileEnabled: targetProfile?.enabled ?? false,
       adminKeyConfigured: this.hasAdminKey(),
-      hasManagedRuntimeKey:
-        options?.hasManagedRuntimeKey ?? Boolean(resolved.managedRuntimeKey),
+      hasManagedRuntimeKey: resolved.managedRuntimeKeyState !== "missing",
+      managedRuntimeKeyState: resolved.managedRuntimeKeyState,
       managedTeamId: resolved.managedTeamId,
       managedRuntimeKeyAlias: resolved.managedRuntimeKeyAlias,
       lastSyncedAt: resolved.lastSyncedAt,
       lastSyncError:
         resolved.enabled && resolved.targetProfileId && !targetProfile
           ? "Managed governance target profile is missing or disabled"
+          : resolved.managedRuntimeKeyState === "unreadable"
+            ? "Managed runtime key is unreadable because secret decryption failed"
           : resolved.lastSyncError,
     };
-  }
-
-  private hasStoredManagedRuntimeKey(value: unknown): boolean {
-    if (typeof value === "string") {
-      return value.trim().length > 0;
-    }
-    return isEncryptedStringValueV1(value);
   }
 
   private normalizeIsoString(value: unknown): string | null {
