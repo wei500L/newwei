@@ -32,6 +32,13 @@ export interface RealtimeSignalFetchResult {
   context?: Record<string, unknown>;
 }
 
+export interface RealtimeSignalRateLimitDetails {
+  retryAfterSec?: number;
+  rateLimit?: string;
+  rateLimitPolicy?: string;
+  cfRay?: string;
+}
+
 export type RealtimeSignalFlightMode = "military" | "all";
 
 export interface RealtimeAisRelayStatusSnapshot {
@@ -339,11 +346,13 @@ export interface RealtimeSignalSourceState {
   source: RealtimeSignalSource;
   status: "success" | "error";
   lastAttemptAt: string;
+  nextEligibleAt?: string;
   lastSuccessAt?: string;
   lastErrorAt?: string;
   lastError?: string;
   lastErrorKind?: RealtimeOpenskyErrorKind;
   lastErrorStatus?: number;
+  lastRateLimit?: RealtimeSignalRateLimitDetails;
   metricSlug?: string;
   latestValue?: number;
   context?: Record<string, unknown>;
@@ -366,11 +375,13 @@ export interface RealtimeSignalRuntimeSourceDiagnostics {
   statusReasonCode?: string;
   lastRunAt?: string;
   lastAttemptAt?: string;
+  nextEligibleAt?: string;
   lastSuccessAt?: string;
   lastErrorAt?: string;
   lastError?: string;
   lastErrorKind?: RealtimeOpenskyErrorKind;
   lastErrorStatus?: number;
+  lastRateLimit?: RealtimeSignalRateLimitDetails;
   latestValue: number | null;
   previousValue: number | null;
   changePercent: number | null;

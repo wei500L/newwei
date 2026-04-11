@@ -428,6 +428,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      ais-relay:
+        condition: service_healthy
       akshare:
         condition: service_healthy
       model-service:

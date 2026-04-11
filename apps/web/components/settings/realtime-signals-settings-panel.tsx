@@ -196,11 +196,18 @@ interface RealtimeSignalRuntimeDiagnosticsSource {
   statusReasonCode?: string;
   lastRunAt?: string;
   lastAttemptAt?: string;
+  nextEligibleAt?: string;
   lastSuccessAt?: string;
   lastErrorAt?: string;
   lastError?: string;
   lastErrorKind?: RealtimeOpenskyErrorKind;
   lastErrorStatus?: number;
+  lastRateLimit?: {
+    retryAfterSec?: number;
+    rateLimit?: string;
+    rateLimitPolicy?: string;
+    cfRay?: string;
+  };
   latestValue: number | null;
   previousValue: number | null;
   changePercent: number | null;
@@ -2398,6 +2405,15 @@ export function RealtimeSignalsSettingsPanel() {
                           </Tag>
                           <Tag>
                             {t(
+                              "systemSettings.realtimeSignals.runtime.nextEligibleAt",
+                              {
+                                defaultValue: "Next eligible",
+                              },
+                            )}
+                            : {formatTimestamp(row.nextEligibleAt)}
+                          </Tag>
+                          <Tag>
+                            {t(
                               "systemSettings.realtimeSignals.runtime.lastSuccessAt",
                               {
                                 defaultValue: "Last success",
@@ -2415,7 +2431,58 @@ export function RealtimeSignalsSettingsPanel() {
                             {typeof row.lastErrorStatus === "number" ? (
                               <Tag color="default">{`HTTP ${row.lastErrorStatus}`}</Tag>
                             ) : null}
+                            {typeof row.lastRateLimit?.retryAfterSec === "number" ? (
+                              <Tag color="gold">
+                                {t(
+                                  "systemSettings.realtimeSignals.runtime.retryAfter",
+                                  {
+                                    defaultValue: "Retry-After",
+                                  },
+                                )}
+                                : {`${row.lastRateLimit.retryAfterSec}s`}
+                              </Tag>
+                            ) : null}
                           </Space>
+                        ) : null}
+                        {row.lastRateLimit ? (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message={t(
+                              "systemSettings.realtimeSignals.runtime.rateLimit",
+                              {
+                                defaultValue: "Rate limit diagnostics",
+                              },
+                            )}
+                            description={[
+                              row.lastRateLimit.rateLimit
+                                ? `${t(
+                                    "systemSettings.realtimeSignals.runtime.rateLimitHeader",
+                                    {
+                                      defaultValue: "RateLimit",
+                                    },
+                                  )}: ${row.lastRateLimit.rateLimit}`
+                                : null,
+                              row.lastRateLimit.rateLimitPolicy
+                                ? `${t(
+                                    "systemSettings.realtimeSignals.runtime.rateLimitPolicy",
+                                    {
+                                      defaultValue: "RateLimit-Policy",
+                                    },
+                                  )}: ${row.lastRateLimit.rateLimitPolicy}`
+                                : null,
+                              row.lastRateLimit.cfRay
+                                ? `${t(
+                                    "systemSettings.realtimeSignals.runtime.cfRay",
+                                    {
+                                      defaultValue: "CF-Ray",
+                                    },
+                                  )}: ${row.lastRateLimit.cfRay}`
+                                : null,
+                            ]
+                              .filter((value): value is string => Boolean(value))
+                              .join(" | ")}
+                          />
                         ) : null}
                         {row.lastError ? (
                           <Alert

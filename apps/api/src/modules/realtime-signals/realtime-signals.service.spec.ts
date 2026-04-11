@@ -1,5 +1,6 @@
 import { ProcessedItemModel } from "@modular/mongo";
 
+import * as fetchModule from "../../common/http/fetch-with-ipv4-fallback";
 import { REALTIME_SIGNALS_INGEST_LOCK_TTL_MS } from "./realtime-signals.constants";
 import { RealtimeSignalsService } from "./realtime-signals.service";
 import type { RealtimeSignalsRuntimeConfig } from "./realtime-signals.types";
@@ -1072,6 +1073,77 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
     nowSpy.mockRestore();
   });
 
+  it("backs off failed refresh attempts until the next eligible time", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-03-03T00:00:00.000Z"));
+    const { service, store } = buildService();
+    const runtime = {
+      ...runtimeConfig,
+      sources: {
+        opensky: { enabled: false, intervalSec: 60 },
+        ais: { enabled: false, intervalSec: 60 },
+        unrest: { enabled: false, intervalSec: 60 },
+        outages: { enabled: true, intervalSec: 60 },
+        keyword_spike: { enabled: false, intervalSec: 60 },
+        pizzint: { enabled: false, intervalSec: 60 },
+        gdelt_tension: { enabled: false, intervalSec: 60 },
+        polymarket_leads: { enabled: false, intervalSec: 60 },
+      },
+    } satisfies RealtimeSignalsRuntimeConfig;
+    let sourceState: Record<string, unknown> | null = null;
+
+    store.getInsightSnapshot.mockResolvedValue({
+      keywordSpikes: [],
+      predictionLeads: [],
+      tensions: [],
+    });
+    store.getLastRun.mockResolvedValue(null);
+    store.getSourceState.mockImplementation(async () => sourceState);
+    store.setSourceState.mockImplementation(
+      async (_orgId: string, state: Record<string, unknown>) => {
+        sourceState = state;
+      },
+    );
+
+    const rateLimitedError = Object.assign(
+      new Error("HTTP 429 Too Many Requests"),
+      {
+        rateLimit: {
+          retryAfterSec: 90,
+          rateLimit: '"default";r=0;t=90',
+          rateLimitPolicy: '"default";q=1200;w=300',
+          cfRay: "abc123-NRT",
+        },
+        retryAfterMs: 90_000,
+        status: 429,
+        statusText: "Too Many Requests",
+      },
+    );
+    const fetchSourceSpy = jest
+      .spyOn(service as any, "fetchSource")
+      .mockRejectedValue(rateLimitedError);
+
+    await service.refreshOrg("org-1", runtime);
+    await service.refreshOrg("org-1", runtime);
+
+    expect(fetchSourceSpy).toHaveBeenCalledTimes(1);
+    expect(store.setSourceState).toHaveBeenCalledWith(
+      "org-1",
+      expect.objectContaining({
+        source: "outages",
+        lastErrorStatus: 429,
+        lastRateLimit: expect.objectContaining({
+          retryAfterSec: 90,
+          rateLimit: '"default";r=0;t=90',
+        }),
+        nextEligibleAt: "2026-03-03T00:01:30.000Z",
+      }),
+    );
+
+    jest.setSystemTime(new Date("2026-03-03T00:01:31.000Z"));
+    await service.refreshOrg("org-1", runtime);
+    expect(fetchSourceSpy).toHaveBeenCalledTimes(2);
+  });
+
   it("drops stale insight entries when serving situation monitor snapshot", async () => {
     const now = Date.parse("2026-03-03T00:00:00.000Z");
     const nowSpy = jest.spyOn(Date, "now").mockReturnValue(now);
@@ -1169,6 +1241,59 @@ describe("RealtimeSignalsService scheduler lock", () => {
   });
 });
 
+describe("RealtimeSignalsService fetch retries", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("does not blindly retry HTTP 429 responses", async () => {
+    const service = new RealtimeSignalsService(
+      {} as any,
+      createRealtimeSignalsCache() as any,
+      {} as any,
+      { realtimeSignalsConfig: envConfig } as any,
+      {} as any,
+      { getRuntimeConfig: jest.fn().mockResolvedValue(runtimeConfig) } as any,
+    );
+    const fetchSpy = jest
+      .spyOn(fetchModule, "fetchWithIpv4Fallback")
+      .mockResolvedValue({
+        ok: false,
+        status: 429,
+        statusText: "Too Many Requests",
+        headers: new Headers({
+          "cf-ray": "abc123-NRT",
+          ratelimit: '"default";r=0;t=120',
+          "ratelimit-policy": '"default";q=1200;w=300',
+          "retry-after": "120",
+        }),
+        text: jest.fn().mockResolvedValue("{}"),
+      } as any);
+
+    let capturedError: any;
+    try {
+      await (service as any).fetchJsonWithRetry("https://example.com", {
+        ...runtimeConfig,
+        maxRetries: 2,
+      });
+    } catch (error) {
+      capturedError = error;
+    }
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(capturedError).toMatchObject({
+      status: 429,
+      retryAfterMs: 120_000,
+      rateLimit: {
+        retryAfterSec: 120,
+        rateLimit: '"default";r=0;t=120',
+        rateLimitPolicy: '"default";q=1200;w=300',
+        cfRay: "abc123-NRT",
+      },
+    });
+  });
+});
+
 describe("RealtimeSignalsService runtime diagnostics", () => {
   const buildService = () => {
     const prisma = {
@@ -1255,6 +1380,50 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       droppedMissingIdentityCount: 0,
       droppedStalePositionCount: 0,
       deduplicatedCount: 0,
+    });
+  });
+
+  it("surfaces retry timing and rate-limit headers in runtime diagnostics", async () => {
+    const { service, prisma, store } = buildService();
+    prisma.processedArticle.count.mockResolvedValue(0);
+    prisma.processedArticle.findFirst.mockResolvedValue(null);
+    jest.spyOn(service as any, "getMongoMarkerReadiness").mockResolvedValue({
+      recentProcessedItems: 0,
+      recentProcessedItemsWithLocation: 0,
+    });
+    store.getSourceState.mockImplementation(async (_orgId: string, source: string) =>
+      source === "outages"
+        ? {
+            source: "outages",
+            status: "error",
+            lastAttemptAt: "2026-03-12T03:30:00.000Z",
+            nextEligibleAt: "2026-03-12T03:32:00.000Z",
+            lastErrorAt: "2026-03-12T03:30:00.000Z",
+            lastError: "HTTP 429 Too Many Requests",
+            lastErrorStatus: 429,
+            lastRateLimit: {
+              retryAfterSec: 120,
+              rateLimit: '"default";r=0;t=120',
+              rateLimitPolicy: '"default";q=1200;w=300',
+              cfRay: "abc123-NRT",
+            },
+          }
+        : null,
+    );
+
+    const result = await service.getRuntimeDiagnostics("org-1");
+
+    expect(result.sources.find((source) => source.source === "outages")).toMatchObject({
+      status: "error",
+      lastAttemptAt: "2026-03-12T03:30:00.000Z",
+      nextEligibleAt: "2026-03-12T03:32:00.000Z",
+      lastErrorStatus: 429,
+      lastRateLimit: {
+        retryAfterSec: 120,
+        rateLimit: '"default";r=0;t=120',
+        rateLimitPolicy: '"default";q=1200;w=300',
+        cfRay: "abc123-NRT",
+      },
     });
   });
 

@@ -45,6 +45,7 @@ import type {
   RealtimeAisRelayStatusSnapshot,
   RealtimeAisVesselSnapshot,
   RealtimeSignalFetchResult,
+  RealtimeSignalRateLimitDetails,
   RealtimeSignalRuntimeStatus,
   RealtimeOpenskyBudgetDaySummary,
   RealtimeOpenskyBudgetDegradationLevel,
@@ -307,6 +308,14 @@ interface JsonFetchOptions {
   shouldRetry?: (error: unknown) => boolean;
 }
 
+interface JsonFetchError extends Error {
+  body?: string;
+  status?: number;
+  statusText?: string;
+  retryAfterMs?: number;
+  rateLimit?: RealtimeSignalRateLimitDetails;
+}
+
 interface UnrestFeedFetchResult {
   events: UnrestEventCandidate[];
   configured: boolean;
@@ -511,15 +520,16 @@ export class RealtimeSignalsService {
         orgId,
         source,
       );
+      const lastRunMs = await this.store.getLastRun(orgId, source);
       const effectiveIntervalSec =
         source === "opensky"
           ? (openskyBudget?.effectiveMilitaryIntervalSec ??
             sourceConfig.intervalSec)
           : sourceConfig.intervalSec;
 
-      const refreshState = await this.resolveRefreshState(
-        orgId,
-        source,
+      const refreshState = this.resolveRefreshState(
+        previousSourceState,
+        lastRunMs,
         effectiveIntervalSec,
       );
       if (!refreshState.shouldRun) {
@@ -536,7 +546,11 @@ export class RealtimeSignalsService {
 
       try {
         const results = await this.fetchSource(orgId, source, runtime);
-        const nowIso = new Date().toISOString();
+        const completedAtMs = Date.now();
+        const nowIso = new Date(completedAtMs).toISOString();
+        const nextEligibleAt = new Date(
+          completedAtMs + Math.max(10, Math.trunc(effectiveIntervalSec)) * 1_000,
+        ).toISOString();
         for (const result of results) {
           await this.store.appendPoint(orgId, result.metricSlug, {
             ts: nowIso,
@@ -544,32 +558,41 @@ export class RealtimeSignalsService {
             context: result.context,
           });
         }
-        await this.store.setLastRun(orgId, source, Date.now());
+        await this.store.setLastRun(orgId, source, completedAtMs);
         const primaryResult = results[0];
         await this.store.setSourceState(orgId, {
           source,
           status: "success",
           lastAttemptAt: nowIso,
+          nextEligibleAt,
           lastSuccessAt: nowIso,
+          lastRateLimit: undefined,
           metricSlug: primaryResult?.metricSlug,
           latestValue: primaryResult?.value,
           context: this.toDiagnosticContext(primaryResult?.context),
         });
         this.updateInsightSnapshot(nextInsight, source, results, nowIso);
       } catch (error) {
-        const nowIso = new Date().toISOString();
+        const completedAtMs = Date.now();
+        const nowIso = new Date(completedAtMs).toISOString();
         const diagnosticError = this.toDiagnosticErrorDetails(error);
+        const nextEligibleAt = this.computeNextEligibleAt(
+          completedAtMs,
+          effectiveIntervalSec,
+          error,
+        );
         await this.store.setSourceState(orgId, {
           source,
           status: "error",
           lastAttemptAt: nowIso,
+          nextEligibleAt,
           lastSuccessAt: previousSourceState?.lastSuccessAt,
           lastErrorAt: nowIso,
           lastError: diagnosticError.message,
           lastErrorKind:
             source === "opensky" ? diagnosticError.kind : undefined,
-          lastErrorStatus:
-            source === "opensky" ? diagnosticError.status : undefined,
+          lastErrorStatus: diagnosticError.status,
+          lastRateLimit: this.getRateLimitDetails(error),
           metricSlug: previousSourceState?.metricSlug,
           latestValue: previousSourceState?.latestValue,
           context: previousSourceState?.context,
@@ -770,11 +793,13 @@ export class RealtimeSignalsService {
               ? new Date(lastRunMs).toISOString()
               : undefined,
           lastAttemptAt: sourceState?.lastAttemptAt,
+          nextEligibleAt: sourceState?.nextEligibleAt,
           lastSuccessAt: sourceState?.lastSuccessAt,
           lastErrorAt: sourceState?.lastErrorAt,
           lastError: sourceState?.lastError,
           lastErrorKind: sourceState?.lastErrorKind,
           lastErrorStatus: sourceState?.lastErrorStatus,
+          lastRateLimit: sourceState?.lastRateLimit,
           latestValue: evaluation.latest,
           previousValue: evaluation.previous,
           changePercent: evaluation.changePercent,
@@ -839,18 +864,29 @@ export class RealtimeSignalsService {
     return nextInsight;
   }
 
-  private async resolveRefreshState(
-    orgId: string,
-    source: RealtimeSignalSource,
+  private resolveRefreshState(
+    sourceState: RealtimeSignalSourceState | null | undefined,
+    lastRunMs: number | null,
     intervalSec: number,
   ) {
-    const lastRunMs = await this.store.getLastRun(orgId, source);
-    if (!lastRunMs) {
+    const nextEligibleMs = this.parseTimestampMs(sourceState?.nextEligibleAt);
+    const safeIntervalSec = Math.max(10, Math.trunc(intervalSec));
+    if (nextEligibleMs !== null) {
+      return {
+        shouldRun: Date.now() >= nextEligibleMs,
+        lastRunMs,
+      };
+    }
+    const lastAttemptMs =
+      this.parseTimestampMs(sourceState?.lastAttemptAt) ??
+      (typeof lastRunMs === "number" && Number.isFinite(lastRunMs)
+        ? lastRunMs
+        : null);
+    if (lastAttemptMs === null) {
       return { shouldRun: true, lastRunMs: null };
     }
-    const safeIntervalSec = Math.max(10, Math.trunc(intervalSec));
     return {
-      shouldRun: Date.now() - lastRunMs >= safeIntervalSec * 1_000,
+      shouldRun: Date.now() - lastAttemptMs >= safeIntervalSec * 1_000,
       lastRunMs,
     };
   }
@@ -4529,6 +4565,121 @@ export class RealtimeSignalsService {
     };
   }
 
+  private computeNextEligibleAt(
+    attemptCompletedAtMs: number,
+    intervalSec: number,
+    error: unknown,
+  ) {
+    const defaultDelayMs = Math.max(10, Math.trunc(intervalSec)) * 1_000;
+    const retryAfterMs = this.getRetryAfterMs(error);
+    const delayMs =
+      retryAfterMs === null
+        ? defaultDelayMs
+        : Math.max(defaultDelayMs, retryAfterMs);
+    return new Date(attemptCompletedAtMs + delayMs).toISOString();
+  }
+
+  private getRetryAfterMs(error: unknown) {
+    const retryAfterMs = (error as { retryAfterMs?: unknown })?.retryAfterMs;
+    return typeof retryAfterMs === "number" && Number.isFinite(retryAfterMs)
+      ? retryAfterMs
+      : null;
+  }
+
+  private getRateLimitDetails(
+    error: unknown,
+  ): RealtimeSignalRateLimitDetails | undefined {
+    const rateLimit = (error as { rateLimit?: unknown })?.rateLimit;
+    if (!rateLimit || typeof rateLimit !== "object" || Array.isArray(rateLimit)) {
+      return undefined;
+    }
+    const details = rateLimit as RealtimeSignalRateLimitDetails;
+    if (
+      typeof details.retryAfterSec !== "number" &&
+      !details.rateLimit &&
+      !details.rateLimitPolicy &&
+      !details.cfRay
+    ) {
+      return undefined;
+    }
+    return details;
+  }
+
+  private readRateLimitDetails(headers: Headers) {
+    const retryAfterRaw = this.normalizeString(headers.get("retry-after"));
+    const retryAfterMs = this.parseRetryAfterMs(retryAfterRaw);
+    const details: RealtimeSignalRateLimitDetails = {
+      ...(retryAfterMs !== null
+        ? { retryAfterSec: Math.max(0, Math.ceil(retryAfterMs / 1_000)) }
+        : {}),
+      ...(this.normalizeString(headers.get("ratelimit"))
+        ? { rateLimit: this.normalizeString(headers.get("ratelimit")) }
+        : {}),
+      ...(this.normalizeString(headers.get("ratelimit-policy"))
+        ? { rateLimitPolicy: this.normalizeString(headers.get("ratelimit-policy")) }
+        : {}),
+      ...(this.normalizeString(headers.get("cf-ray"))
+        ? { cfRay: this.normalizeString(headers.get("cf-ray")) }
+        : {}),
+    };
+
+    return {
+      retryAfterMs,
+      details:
+        typeof details.retryAfterSec === "number" ||
+        details.rateLimit ||
+        details.rateLimitPolicy ||
+        details.cfRay
+          ? details
+          : undefined,
+    };
+  }
+
+  private parseRetryAfterMs(value: string | undefined) {
+    const normalized = this.normalizeString(value);
+    if (!normalized) {
+      return null;
+    }
+    const numericSeconds = Number(normalized);
+    if (Number.isFinite(numericSeconds) && numericSeconds >= 0) {
+      return Math.round(numericSeconds * 1_000);
+    }
+    const retryAtMs = Date.parse(normalized);
+    if (!Number.isFinite(retryAtMs)) {
+      return null;
+    }
+    return Math.max(0, retryAtMs - Date.now());
+  }
+
+  private shouldRetryFetchError(error: unknown) {
+    const status = this.toFiniteNumber((error as { status?: unknown })?.status);
+    if (typeof status === "number") {
+      if (status === 408 || status === 425) {
+        return true;
+      }
+      if (status === 429) {
+        return false;
+      }
+      return status >= 500;
+    }
+
+    const message = this.normalizeString(
+      (error as { message?: unknown })?.message,
+    )?.toLowerCase();
+    if (!message) {
+      return false;
+    }
+    return (
+      message.includes("timeout") ||
+      message.includes("timed out") ||
+      message.includes("fetch failed") ||
+      message.includes("network") ||
+      message.includes("econnreset") ||
+      message.includes("enotfound") ||
+      message.includes("eai_again")
+    );
+  }
+
   private async fetchJsonWithRetry<T>(
     url: string,
     runtime: RealtimeSignalsRuntimeConfig,
@@ -4566,11 +4717,14 @@ export class RealtimeSignalsService {
         );
         if (!response.ok) {
           const body = await response.text().catch(() => "");
+          const rateLimit = this.readRateLimitDetails(response.headers);
           const error = new Error(
             `HTTP ${response.status} ${response.statusText}`,
-          );
+          ) as JsonFetchError;
           Object.assign(error, {
             body,
+            rateLimit: rateLimit.details,
+            retryAfterMs: rateLimit.retryAfterMs ?? undefined,
             status: response.status,
             statusText: response.statusText,
           });
@@ -4581,7 +4735,9 @@ export class RealtimeSignalsService {
         lastError = error;
         const shouldRetry =
           attempt < maxRetries &&
-          (options.shouldRetry ? options.shouldRetry(error) : true);
+          (options.shouldRetry
+            ? options.shouldRetry(error)
+            : this.shouldRetryFetchError(error));
         if (!shouldRetry) {
           break;
         }

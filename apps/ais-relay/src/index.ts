@@ -15,6 +15,7 @@ import {
   normalizeMmsi,
   normalizeString,
 } from "./candidate-classification";
+import { closeUpstreamSocketForShutdown } from "./shutdown";
 
 loadEnv({ path: path.resolve(process.cwd(), "../../.env") });
 
@@ -1126,9 +1127,8 @@ function gracefulShutdown(signal: string) {
     reconnectTimer = null;
   }
   if (upstreamSocket) {
-    upstreamSocket.removeAllListeners();
     try {
-      upstreamSocket.close();
+      closeUpstreamSocketForShutdown(upstreamSocket);
     } catch {
       // Ignore close failures during shutdown.
     }
