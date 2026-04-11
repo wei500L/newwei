@@ -4762,7 +4762,14 @@
           },
           "liveliness": "Liveliness: {{value}}",
           "readiness": "Readiness: {{value}}",
-          "checkedAt": "Checked: {{value}}"
+          "checkedAt": "Checked: {{value}}",
+          "summary": {
+            "ready": "Governance can be enabled",
+            "blocked": "Governance enablement is blocked",
+            "counts": "Blocking issues {{blocking}}; warnings {{warnings}}."
+          },
+          "loading": "Loading governance preflight checks.",
+          "nextActions": "Recommended next actions"
         },
         "errors": {
           "loadFailed": "Failed to load LiteLLM proxy governance settings",
@@ -4825,8 +4832,9 @@
           "remaining24h": "24h remaining: {{value}}",
           "observed30d": "Observed 30d: {{value}}",
           "remaining30d": "30d remaining: {{value}}",
-          "observedDetails": "24h requests {{requests}}, tokens {{tokens}}, p95 latency {{latency}}.",
+          "observedDetails": "24h governed spend {{governed}}, direct spend {{direct}}, requests {{requests}}, p95 latency {{latency}}.",
           "observedLoading": "Loading observed request usage for the governed profile.",
+          "leadingError": "Top recent error: {{message}} ({{count}} requests).",
           "syncedAt": "Last synced: {{value}}",
           "adminMissing": "LITELLM_MASTER_KEY is not configured, so governance cannot be synced to LiteLLM yet."
         },
@@ -4841,19 +4849,164 @@
           "team": "Team: {{value}}",
           "key": "Key: {{value}}",
           "syncedAt": "Last synced: {{value}}",
-          "adminMissing": "Set LITELLM_MASTER_KEY on both API and LiteLLM before enabling managed governance."
+          "adminMissing": "Set LITELLM_MASTER_KEY on both API and LiteLLM before enabling managed governance.",
+          "keyStates": {
+            "available": "Readable",
+            "unreadable": "Unreadable",
+            "missing": "Missing"
+          },
+          "cards": {
+            "enforcement": "Enforcement",
+            "target": "Governed target",
+            "preflight": "Preflight",
+            "runtime": "Runtime path",
+            "governedRatio": "Governed share",
+            "managedKeyRequests": "Managed-key requests",
+            "profileKeyRequests": "Profile-key requests",
+            "successRate": "24h success rate",
+            "enforcementEnabledDescription": "LiteLLM should enforce budgets and concurrency on runtime traffic.",
+            "enforcementDisabledDescription": "Saving profiles changes config only. Runtime traffic still uses profile credentials.",
+            "targetDescriptionEmpty": "No proxy target selected."
+          },
+          "tags": {
+            "adminKeyReady": "Admin key ready",
+            "adminKeyMissing": "Admin key missing",
+            "trafficBindings": "Traffic: {{value}}",
+            "noRuntimeBindings": "No runtime bindings",
+            "preflightCounts": "{{blocking}} blocking / {{warnings}} warning",
+            "runtimeCounts": "{{governed}} governed / {{direct}} direct",
+            "none": "None",
+            "noneLowercase": "none",
+            "readyLowercase": "ready",
+            "notSelected": "not selected"
+          },
+          "preflightStates": {
+            "noTargetSelected": {
+              "label": "No target selected",
+              "description": "Select a LiteLLM profile before running governance preflight."
+            },
+            "notChecked": {
+              "label": "Not checked",
+              "description": "Run preflight to confirm this target can be governed."
+            },
+            "blocked": {
+              "label": "Blocked",
+              "description": "{{blocking}} blocking issue(s), {{warnings}} warning(s)."
+            },
+            "readyWithWarnings": {
+              "label": "Ready with warnings",
+              "description": "{{warnings}} warning(s) still worth resolving."
+            },
+            "ready": {
+              "label": "Ready",
+              "description": "Selected target is healthy enough to enable managed governance."
+            }
+          },
+          "runtimeStates": {
+            "directMode": {
+              "label": "Direct mode",
+              "description": "Runtime traffic is still expected to authenticate with profile credentials."
+            },
+            "failClosed": {
+              "label": "Fail closed",
+              "description": "Governed traffic will fail until the managed runtime key can be decrypted."
+            },
+            "noRecentTraffic": {
+              "label": "No recent traffic",
+              "description": "No requests were observed for the governed target in the last 24h."
+            },
+            "noGovernedTraffic": {
+              "label": "No governed traffic",
+              "description": "The target saw requests, but none used the managed LiteLLM runtime key."
+            },
+            "mixedTraffic": {
+              "label": "Mixed traffic",
+              "description": "Both governed and direct profile-key traffic are still hitting the governed target."
+            },
+            "governedTrafficObserved": {
+              "label": "Governed traffic observed",
+              "description": "Recent requests are reaching the target through the managed LiteLLM runtime key."
+            }
+          }
         },
         "observed": {
           "title": "Observed runtime usage",
           "hint": "This is derived from business request logs for the selected LiteLLM profile. LiteLLM still performs the actual enforcement.",
-          "daySpend": "24h spend: {{value}}",
+          "daySpend": "Governed 24h spend: {{value}}",
+          "dayDirect": "Direct 24h spend: {{value}}",
           "dayRemaining": "24h remaining: {{value}}",
-          "monthSpend": "30d spend: {{value}}",
+          "monthSpend": "Governed 30d spend: {{value}}",
+          "monthDirect": "Direct 30d spend: {{value}}",
           "monthRemaining": "30d remaining: {{value}}",
           "dayDetails": "24h requests {{requests}}, tokens {{tokens}}, success rate {{successRate}}%, errors {{errors}}, p95 latency {{latency}}.",
           "monthDetails": "30d requests {{requests}}, tokens {{tokens}}, success rate {{successRate}}%, errors {{errors}}, avg latency {{latency}}.",
           "leadingErrorTitle": "Most common recent error",
-          "loading": "Loading observed usage for the selected profile."
+          "loading": "Loading observed usage for the selected profile.",
+          "cards": {
+            "governedRatio": "Governed share",
+            "governedRatioDetail": "{{governed}} of {{total}} requests",
+            "managedKeyRequests": "Managed-key requests",
+            "managedKeyRequestsDetail": "24h managed-runtime-key requests",
+            "profileKeyRequests": "Profile-key requests",
+            "profileKeyRequestsDetail": "24h profile-key requests",
+            "successRate": "24h success rate",
+            "successRateDetail": "{{count}} errors in the last 24h"
+          },
+          "budgetPressure": "Observed budget pressure",
+          "budgetPressureHint": "Derived from app-side governed request logs. LiteLLM remains the source of truth for real enforcement.",
+          "dayBudgetProgress": "24h governed spend vs configured cap",
+          "monthBudgetProgress": "30d governed spend vs configured cap",
+          "directLeakage": "24h direct request leakage",
+          "authModeDetails": "24h managed-runtime-key requests {{managed}}, profile-key requests {{direct}}.",
+          "runtimeKeyUnreadable": "Managed runtime key is unreadable, so governed traffic will fail closed until secret decryption is fixed.",
+          "zeroGoverned": "No governed requests were observed in the last 24h.",
+          "directRequests": "Direct profile-key requests are still reaching the governed target profile.",
+          "directRequestsDetails": "Direct requests: {{count}}, governed requests: {{governed}} in the last 24h."
+        },
+        "recommendedActions": {
+          "enableAfterPreflight": "Enable governance after preflight passes.",
+          "resolveBlocking": "Resolve blocking preflight issues before saving.",
+          "bindCompletion": "Bind completion traffic to the governed profile.",
+          "bindEmbedding": "Bind embedding traffic if this profile should govern embeddings.",
+          "bindRerank": "Bind rerank traffic if this profile should govern rerank.",
+          "restoreSecretDecryption": "Restore secret decryption so the managed runtime key can be read.",
+          "verifyRuntimeTraffic": "Verify real runtime traffic is reaching the governed target profile.",
+          "removeProfileKeyCallers": "Remove remaining profile-key callers hitting the governed target profile.",
+          "reviewDailyBudget": "Review the 24h budget because observed governed spend is nearing the configured cap."
+        },
+        "attention": {
+          "preflightBlocked": {
+            "title": "Preflight is blocking enablement",
+            "description": "{{count}} required check(s) still fail for the selected target."
+          },
+          "managedKeyUnreadable": {
+            "title": "Managed runtime key is unreadable",
+            "description": "Governed traffic will fail closed until secret decryption is restored."
+          },
+          "noBindings": {
+            "title": "No governed traffic binding is active",
+            "description": "Completion, embedding, or rerank traffic must point at the governed target for LiteLLM enforcement to matter."
+          },
+          "zeroGoverned": {
+            "title": "No governed requests observed",
+            "description": "The governed target saw no managed-runtime-key requests in the last 24h."
+          },
+          "directTraffic": {
+            "title": "Direct traffic still bypasses managed governance",
+            "description": "{{count}} direct profile-key request(s) reached the governed target in the last 24h."
+          },
+          "dayBudget": {
+            "title": "24h spend is near the configured cap",
+            "description": "{{value}} of the daily governed budget has been observed."
+          },
+          "monthBudget": {
+            "title": "30d spend is near the configured cap",
+            "description": "{{value}} of the monthly governed budget has been observed."
+          },
+          "readyToEnable": {
+            "title": "Governance is ready to enable",
+            "description": "Preflight is passing for the current target profile."
+          }
         },
         "fields": {
           "enabled": "Enable LiteLLM-enforced runtime governance",

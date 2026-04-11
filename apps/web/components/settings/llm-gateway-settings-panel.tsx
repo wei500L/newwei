@@ -10,6 +10,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Progress,
   Select,
   Spin,
   Space,
@@ -34,6 +35,23 @@ type LlmGatewayResponseFormatMode = "json_schema" | "json_object" | "none";
 type LlmGatewayApiSurface = "chat_completions" | "responses";
 type LlmGatewayTestAuthMode = "profile_key" | "managed_runtime_key";
 type LiteLlmManagedRuntimeKeyState = "missing" | "available" | "unreadable";
+type GovernanceAttentionType = "success" | "info" | "warning" | "error";
+
+interface GovernanceOverviewCard {
+  key: string;
+  title: string;
+  value: string;
+  description: string;
+  tagColor?: string;
+  tagLabel?: string;
+}
+
+interface GovernanceAttentionItem {
+  key: string;
+  type: GovernanceAttentionType;
+  title: string;
+  description: string;
+}
 
 interface LlmGatewayProfile {
   id: string;
@@ -662,6 +680,45 @@ function formatObservedLatency(value: number | null | undefined): string {
   return `${Math.round(value)} ms`;
 }
 
+function formatObservedPercent(
+  value: number | null | undefined,
+  fractionDigits = 1,
+): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "-";
+  }
+  return `${value.toFixed(fractionDigits)}%`;
+}
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, value));
+}
+
+function getPressureStatusColor(value: number): string {
+  if (value >= 100) {
+    return "#ff4d4f";
+  }
+  if (value >= 80) {
+    return "#faad14";
+  }
+  return "#1677ff";
+}
+
+function getManagedRuntimeKeyStateMeta(
+  state: LiteLlmManagedRuntimeKeyState | null | undefined,
+): { color: string } {
+  if (state === "available") {
+    return { color: "green" };
+  }
+  if (state === "unreadable") {
+    return { color: "red" };
+  }
+  return { color: "default" };
+}
+
 function normalizeCommaOrLineSeparatedTokens(value: unknown): string[] {
   if (typeof value !== "string") {
     return [];
@@ -810,8 +867,10 @@ export function LlmGatewaySettingsPanel() {
     useState<LiteLlmProxyGovernancePreflightResponse | null>(null);
   const [proxyGovernancePreflightLoading, setProxyGovernancePreflightLoading] =
     useState(false);
-  const [proxyGovernancePreflightErrorMessage, setProxyGovernancePreflightErrorMessage] =
-    useState<string | null>(null);
+  const [
+    proxyGovernancePreflightErrorMessage,
+    setProxyGovernancePreflightErrorMessage,
+  ] = useState<string | null>(null);
   const [governanceUsageLoading, setGovernanceUsageLoading] = useState(false);
   const [governanceUsageErrorMessage, setGovernanceUsageErrorMessage] =
     useState<string | null>(null);
@@ -1141,6 +1200,757 @@ export function LlmGatewaySettingsPanel() {
     governanceUsage24h.governanceBreakdown.governedRequestCount === 0;
   const governanceObservedDirectRequests =
     governanceUsage24h.governanceBreakdown.directRequestCount > 0;
+  const governanceKeyStateMeta = useMemo(
+    () =>
+      getManagedRuntimeKeyStateMeta(
+        proxyGovernanceSettings?.managedRuntimeKeyState ?? null,
+      ),
+    [proxyGovernanceSettings?.managedRuntimeKeyState],
+  );
+  const governanceKeyStateLabel = useMemo(() => {
+    if (proxyGovernanceSettings?.managedRuntimeKeyState === "available") {
+      return t(
+        "settings.llmGateway.proxyGovernance.status.keyStates.available",
+        {
+          defaultValue: "Readable",
+        },
+      );
+    }
+    if (proxyGovernanceSettings?.managedRuntimeKeyState === "unreadable") {
+      return t(
+        "settings.llmGateway.proxyGovernance.status.keyStates.unreadable",
+        {
+          defaultValue: "Unreadable",
+        },
+      );
+    }
+    return t("settings.llmGateway.proxyGovernance.status.keyStates.missing", {
+      defaultValue: "Missing",
+    });
+  }, [proxyGovernanceSettings?.managedRuntimeKeyState, t]);
+  const governanceNoneLabel = t(
+    "settings.llmGateway.proxyGovernance.status.tags.noneLowercase",
+    {
+      defaultValue: "none",
+    },
+  );
+  const governanceReadyLabel = t(
+    "settings.llmGateway.proxyGovernance.status.tags.readyLowercase",
+    {
+      defaultValue: "ready",
+    },
+  );
+  const governanceNotSelectedLabel = t(
+    "settings.llmGateway.proxyGovernance.status.tags.notSelected",
+    {
+      defaultValue: "not selected",
+    },
+  );
+  const governancePreflightBlockingCount =
+    proxyGovernancePreflight?.blockingIssues.length ?? 0;
+  const governancePreflightWarningCount =
+    proxyGovernancePreflight?.warnings.length ?? 0;
+  const governanceObservedGovernedRatio =
+    governanceUsage24h.totals.requestCount > 0
+      ? (governanceUsage24h.governanceBreakdown.governedRequestCount /
+          governanceUsage24h.totals.requestCount) *
+        100
+      : 0;
+  const governanceObservedDirectRatio =
+    governanceUsage24h.totals.requestCount > 0
+      ? (governanceUsage24h.governanceBreakdown.directRequestCount /
+          governanceUsage24h.totals.requestCount) *
+        100
+      : 0;
+  const governanceObservedDayBudgetRatio =
+    proxyGovernanceSettings?.dailyBudgetUsd &&
+    proxyGovernanceSettings.dailyBudgetUsd > 0
+      ? (governanceUsage24h.governanceBreakdown.governedCostUsd /
+          proxyGovernanceSettings.dailyBudgetUsd) *
+        100
+      : 0;
+  const governanceObservedMonthBudgetRatio =
+    proxyGovernanceSettings?.monthlyBudgetUsd &&
+    proxyGovernanceSettings.monthlyBudgetUsd > 0
+      ? (governanceUsage30d.governanceBreakdown.governedCostUsd /
+          proxyGovernanceSettings.monthlyBudgetUsd) *
+        100
+      : 0;
+  const governanceRecommendedActions = useMemo(() => {
+    const actions: string[] = [];
+    if (proxyGovernanceSettings?.enabled !== true) {
+      actions.push(
+        t(
+          "settings.llmGateway.proxyGovernance.recommendedActions.enableAfterPreflight",
+          {
+            defaultValue: "Enable governance after preflight passes.",
+          },
+        ),
+      );
+    }
+    if (governancePreflightBlockingCount > 0) {
+      actions.push(
+        t(
+          "settings.llmGateway.proxyGovernance.recommendedActions.resolveBlocking",
+          {
+            defaultValue: "Resolve blocking preflight issues before saving.",
+          },
+        ),
+      );
+    }
+    if (
+      proxyGovernancePreflight &&
+      !proxyGovernancePreflight.trafficBindings.completion
+    ) {
+      actions.push(
+        t(
+          "settings.llmGateway.proxyGovernance.recommendedActions.bindCompletion",
+          {
+            defaultValue: "Bind completion traffic to the governed profile.",
+          },
+        ),
+      );
+    }
+    if (
+      selectedGovernanceProfile?.embeddingModel &&
+      proxyGovernancePreflight &&
+      !proxyGovernancePreflight.trafficBindings.embedding
+    ) {
+      actions.push(
+        t(
+          "settings.llmGateway.proxyGovernance.recommendedActions.bindEmbedding",
+          {
+            defaultValue:
+              "Bind embedding traffic if this profile should govern embeddings.",
+          },
+        ),
+      );
+    }
+    if (
+      selectedGovernanceProfile?.rerankModel &&
+      proxyGovernancePreflight &&
+      !proxyGovernancePreflight.trafficBindings.rerank
+    ) {
+      actions.push(
+        t("settings.llmGateway.proxyGovernance.recommendedActions.bindRerank", {
+          defaultValue:
+            "Bind rerank traffic if this profile should govern rerank.",
+        }),
+      );
+    }
+    if (proxyGovernanceSettings?.managedRuntimeKeyState === "unreadable") {
+      actions.push(
+        t(
+          "settings.llmGateway.proxyGovernance.recommendedActions.restoreSecretDecryption",
+          {
+            defaultValue:
+              "Restore secret decryption so the managed runtime key can be read.",
+          },
+        ),
+      );
+    }
+    if (governanceObservedZeroGoverned) {
+      actions.push(
+        t(
+          "settings.llmGateway.proxyGovernance.recommendedActions.verifyRuntimeTraffic",
+          {
+            defaultValue:
+              "Verify real runtime traffic is reaching the governed target profile.",
+          },
+        ),
+      );
+    }
+    if (governanceObservedDirectRequests) {
+      actions.push(
+        t(
+          "settings.llmGateway.proxyGovernance.recommendedActions.removeProfileKeyCallers",
+          {
+            defaultValue:
+              "Remove remaining profile-key callers hitting the governed target profile.",
+          },
+        ),
+      );
+    }
+    if (governanceObservedDayBudgetRatio >= 80) {
+      actions.push(
+        t(
+          "settings.llmGateway.proxyGovernance.recommendedActions.reviewDailyBudget",
+          {
+            defaultValue:
+              "Review the 24h budget because observed governed spend is nearing the configured cap.",
+          },
+        ),
+      );
+    }
+    return actions.slice(0, 4);
+  }, [
+    governanceObservedDayBudgetRatio,
+    governanceObservedDirectRequests,
+    governanceObservedZeroGoverned,
+    proxyGovernancePreflight,
+    governancePreflightBlockingCount,
+    proxyGovernanceSettings?.enabled,
+    proxyGovernanceSettings?.managedRuntimeKeyState,
+    selectedGovernanceProfile?.embeddingModel,
+    selectedGovernanceProfile?.rerankModel,
+    t,
+  ]);
+  const governancePreflightStatusMeta = useMemo(() => {
+    if (!selectedGovernanceProfile) {
+      return {
+        color: "default",
+        label: t(
+          "settings.llmGateway.proxyGovernance.status.preflightStates.noTargetSelected.label",
+          {
+            defaultValue: "No target selected",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.status.preflightStates.noTargetSelected.description",
+          {
+            defaultValue:
+              "Select a LiteLLM profile before running governance preflight.",
+          },
+        ),
+      };
+    }
+    if (!proxyGovernancePreflight) {
+      return {
+        color: "default",
+        label: t(
+          "settings.llmGateway.proxyGovernance.status.preflightStates.notChecked.label",
+          {
+            defaultValue: "Not checked",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.status.preflightStates.notChecked.description",
+          {
+            defaultValue:
+              "Run preflight to confirm this target can be governed.",
+          },
+        ),
+      };
+    }
+    if (!proxyGovernancePreflight.canEnable) {
+      return {
+        color: "red",
+        label: t(
+          "settings.llmGateway.proxyGovernance.status.preflightStates.blocked.label",
+          {
+            defaultValue: "Blocked",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.status.preflightStates.blocked.description",
+          {
+            defaultValue:
+              "{{blocking}} blocking issue(s), {{warnings}} warning(s).",
+            blocking: governancePreflightBlockingCount,
+            warnings: governancePreflightWarningCount,
+          },
+        ),
+      };
+    }
+    if (governancePreflightWarningCount > 0) {
+      return {
+        color: "gold",
+        label: t(
+          "settings.llmGateway.proxyGovernance.status.preflightStates.readyWithWarnings.label",
+          {
+            defaultValue: "Ready with warnings",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.status.preflightStates.readyWithWarnings.description",
+          {
+            defaultValue: "{{warnings}} warning(s) still worth resolving.",
+            warnings: governancePreflightWarningCount,
+          },
+        ),
+      };
+    }
+    return {
+      color: "green",
+      label: t(
+        "settings.llmGateway.proxyGovernance.status.preflightStates.ready.label",
+        {
+          defaultValue: "Ready",
+        },
+      ),
+      description: t(
+        "settings.llmGateway.proxyGovernance.status.preflightStates.ready.description",
+        {
+          defaultValue:
+            "Selected target is healthy enough to enable managed governance.",
+        },
+      ),
+    };
+  }, [
+    governancePreflightBlockingCount,
+    governancePreflightWarningCount,
+    proxyGovernancePreflight,
+    selectedGovernanceProfile,
+    t,
+  ]);
+  const governanceRuntimeStatusMeta = useMemo(() => {
+    if (proxyGovernanceSettings?.enabled !== true) {
+      return {
+        color: "default",
+        label: t(
+          "settings.llmGateway.proxyGovernance.status.runtimeStates.directMode.label",
+          {
+            defaultValue: "Direct mode",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.status.runtimeStates.directMode.description",
+          {
+            defaultValue:
+              "Runtime traffic is still expected to authenticate with profile credentials.",
+          },
+        ),
+      };
+    }
+    if (proxyGovernanceSettings.managedRuntimeKeyState === "unreadable") {
+      return {
+        color: "red",
+        label: t(
+          "settings.llmGateway.proxyGovernance.status.runtimeStates.failClosed.label",
+          {
+            defaultValue: "Fail closed",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.status.runtimeStates.failClosed.description",
+          {
+            defaultValue:
+              "Governed traffic will fail until the managed runtime key can be decrypted.",
+          },
+        ),
+      };
+    }
+    if (governanceUsage24h.totals.requestCount === 0) {
+      return {
+        color: "default",
+        label: t(
+          "settings.llmGateway.proxyGovernance.status.runtimeStates.noRecentTraffic.label",
+          {
+            defaultValue: "No recent traffic",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.status.runtimeStates.noRecentTraffic.description",
+          {
+            defaultValue:
+              "No requests were observed for the governed target in the last 24h.",
+          },
+        ),
+      };
+    }
+    if (governanceObservedZeroGoverned) {
+      return {
+        color: "gold",
+        label: t(
+          "settings.llmGateway.proxyGovernance.status.runtimeStates.noGovernedTraffic.label",
+          {
+            defaultValue: "No governed traffic",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.status.runtimeStates.noGovernedTraffic.description",
+          {
+            defaultValue:
+              "The target saw requests, but none used the managed LiteLLM runtime key.",
+          },
+        ),
+      };
+    }
+    if (governanceObservedDirectRequests) {
+      return {
+        color: "gold",
+        label: t(
+          "settings.llmGateway.proxyGovernance.status.runtimeStates.mixedTraffic.label",
+          {
+            defaultValue: "Mixed traffic",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.status.runtimeStates.mixedTraffic.description",
+          {
+            defaultValue:
+              "Both governed and direct profile-key traffic are still hitting the governed target.",
+          },
+        ),
+      };
+    }
+    return {
+      color: "green",
+      label: t(
+        "settings.llmGateway.proxyGovernance.status.runtimeStates.governedTrafficObserved.label",
+        {
+          defaultValue: "Governed traffic observed",
+        },
+      ),
+      description: t(
+        "settings.llmGateway.proxyGovernance.status.runtimeStates.governedTrafficObserved.description",
+        {
+          defaultValue:
+            "Recent requests are reaching the target through the managed LiteLLM runtime key.",
+        },
+      ),
+    };
+  }, [
+    governanceObservedDirectRequests,
+    governanceObservedZeroGoverned,
+    governanceUsage24h.totals.requestCount,
+    proxyGovernanceSettings,
+    t,
+  ]);
+  const governanceOverviewCards = useMemo<GovernanceOverviewCard[]>(
+    () => [
+      {
+        key: "enforcement",
+        title: t(
+          "settings.llmGateway.proxyGovernance.status.cards.enforcement",
+          {
+            defaultValue: "Enforcement",
+          },
+        ),
+        value:
+          proxyGovernanceSettings?.enabled === true
+            ? t("settings.llmGateway.proxyGovernance.summary.enabled", {
+                defaultValue: "Enforced",
+              })
+            : t("settings.llmGateway.proxyGovernance.summary.disabled", {
+                defaultValue: "Disabled",
+              }),
+        description:
+          proxyGovernanceSettings?.enabled === true
+            ? t(
+                "settings.llmGateway.proxyGovernance.status.cards.enforcementEnabledDescription",
+                {
+                  defaultValue:
+                    "LiteLLM should enforce budgets and concurrency on runtime traffic.",
+                },
+              )
+            : t(
+                "settings.llmGateway.proxyGovernance.status.cards.enforcementDisabledDescription",
+                {
+                  defaultValue:
+                    "Saving profiles changes config only. Runtime traffic still uses profile credentials.",
+                },
+              ),
+        tagColor:
+          proxyGovernanceSettings?.enabled === true ? "green" : "default",
+        tagLabel:
+          proxyGovernanceSettings?.adminKeyConfigured === true
+            ? t(
+                "settings.llmGateway.proxyGovernance.status.tags.adminKeyReady",
+                {
+                  defaultValue: "Admin key ready",
+                },
+              )
+            : t(
+                "settings.llmGateway.proxyGovernance.status.tags.adminKeyMissing",
+                {
+                  defaultValue: "Admin key missing",
+                },
+              ),
+      },
+      {
+        key: "target",
+        title: t("settings.llmGateway.proxyGovernance.status.cards.target", {
+          defaultValue: "Governed target",
+        }),
+        value:
+          selectedGovernanceProfile?.name ??
+          proxyGovernanceSettings?.targetProfileName ??
+          proxyGovernanceSettings?.targetProfileId ??
+          t("settings.llmGateway.proxyGovernance.status.tags.none", {
+            defaultValue: "None",
+          }),
+        description:
+          selectedGovernanceProfile?.apiBase ??
+          proxyGovernanceSettings?.apiBase ??
+          t(
+            "settings.llmGateway.proxyGovernance.status.cards.targetDescriptionEmpty",
+            {
+              defaultValue: "No proxy target selected.",
+            },
+          ),
+        tagColor:
+          (selectedGovernanceProfile ?? governedTargetProfile)?.enabled ===
+          false
+            ? "orange"
+            : "geekblue",
+        tagLabel: governanceHasTrafficBindings
+          ? t(
+              "settings.llmGateway.proxyGovernance.status.tags.trafficBindings",
+              {
+                defaultValue: "Traffic: {{value}}",
+                value: governanceTrafficLabels.join(", "),
+              },
+            )
+          : t(
+              "settings.llmGateway.proxyGovernance.status.tags.noRuntimeBindings",
+              {
+                defaultValue: "No runtime bindings",
+              },
+            ),
+      },
+      {
+        key: "preflight",
+        title: t("settings.llmGateway.proxyGovernance.status.cards.preflight", {
+          defaultValue: "Preflight",
+        }),
+        value: governancePreflightStatusMeta.label,
+        description: governancePreflightStatusMeta.description,
+        tagColor: governancePreflightStatusMeta.color,
+        tagLabel: t(
+          "settings.llmGateway.proxyGovernance.status.tags.preflightCounts",
+          {
+            defaultValue: "{{blocking}} blocking / {{warnings}} warning",
+            blocking: governancePreflightBlockingCount,
+            warnings: governancePreflightWarningCount,
+          },
+        ),
+      },
+      {
+        key: "runtime",
+        title: t("settings.llmGateway.proxyGovernance.status.cards.runtime", {
+          defaultValue: "Runtime path",
+        }),
+        value: governanceRuntimeStatusMeta.label,
+        description: governanceRuntimeStatusMeta.description,
+        tagColor: governanceRuntimeStatusMeta.color,
+        tagLabel: t(
+          "settings.llmGateway.proxyGovernance.status.tags.runtimeCounts",
+          {
+            defaultValue: "{{governed}} governed / {{direct}} direct",
+            governed:
+              governanceUsage24h.governanceBreakdown.governedRequestCount.toLocaleString(),
+            direct:
+              governanceUsage24h.governanceBreakdown.directRequestCount.toLocaleString(),
+          },
+        ),
+      },
+    ],
+    [
+      governedTargetProfile,
+      governanceHasTrafficBindings,
+      governancePreflightBlockingCount,
+      governancePreflightStatusMeta.color,
+      governancePreflightStatusMeta.description,
+      governancePreflightStatusMeta.label,
+      governancePreflightWarningCount,
+      governanceRuntimeStatusMeta.color,
+      governanceRuntimeStatusMeta.description,
+      governanceRuntimeStatusMeta.label,
+      governanceTrafficLabels,
+      governanceUsage24h.governanceBreakdown.directRequestCount,
+      governanceUsage24h.governanceBreakdown.governedRequestCount,
+      proxyGovernanceSettings,
+      selectedGovernanceProfile,
+      t,
+    ],
+  );
+  const governanceAttentionItems = useMemo<GovernanceAttentionItem[]>(() => {
+    const items: GovernanceAttentionItem[] = [];
+    if (proxyGovernancePreflight && governancePreflightBlockingCount > 0) {
+      items.push({
+        key: "preflight-blocked",
+        type: "error",
+        title: t(
+          "settings.llmGateway.proxyGovernance.attention.preflightBlocked.title",
+          {
+            defaultValue: "Preflight is blocking enablement",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.attention.preflightBlocked.description",
+          {
+            defaultValue:
+              "{{count}} required check(s) still fail for the selected target.",
+            count: governancePreflightBlockingCount,
+          },
+        ),
+      });
+    }
+    if (proxyGovernanceSettings?.managedRuntimeKeyState === "unreadable") {
+      items.push({
+        key: "managed-key-unreadable",
+        type: "error",
+        title: t(
+          "settings.llmGateway.proxyGovernance.attention.managedKeyUnreadable.title",
+          {
+            defaultValue: "Managed runtime key is unreadable",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.attention.managedKeyUnreadable.description",
+          {
+            defaultValue:
+              "Governed traffic will fail closed until secret decryption is restored.",
+          },
+        ),
+      });
+    }
+    if (
+      proxyGovernanceSettings?.enabled === true &&
+      !governanceHasTrafficBindings
+    ) {
+      items.push({
+        key: "no-bindings",
+        type: "error",
+        title: t(
+          "settings.llmGateway.proxyGovernance.attention.noBindings.title",
+          {
+            defaultValue: "No governed traffic binding is active",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.attention.noBindings.description",
+          {
+            defaultValue:
+              "Completion, embedding, or rerank traffic must point at the governed target for LiteLLM enforcement to matter.",
+          },
+        ),
+      });
+    }
+    if (governanceObservedZeroGoverned) {
+      items.push({
+        key: "zero-governed",
+        type: "warning",
+        title: t(
+          "settings.llmGateway.proxyGovernance.attention.zeroGoverned.title",
+          {
+            defaultValue: "No governed requests observed",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.attention.zeroGoverned.description",
+          {
+            defaultValue:
+              "The governed target saw no managed-runtime-key requests in the last 24h.",
+          },
+        ),
+      });
+    }
+    if (governanceObservedDirectRequests) {
+      items.push({
+        key: "direct-traffic",
+        type: "warning",
+        title: t(
+          "settings.llmGateway.proxyGovernance.attention.directTraffic.title",
+          {
+            defaultValue: "Direct traffic still bypasses managed governance",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.attention.directTraffic.description",
+          {
+            count: governanceUsage24h.governanceBreakdown.directRequestCount,
+          },
+        ),
+      });
+    }
+    if (governanceObservedDayBudgetRatio >= 80) {
+      items.push({
+        key: "day-budget",
+        type: "warning",
+        title: t(
+          "settings.llmGateway.proxyGovernance.attention.dayBudget.title",
+          {
+            defaultValue: "24h spend is near the configured cap",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.attention.dayBudget.description",
+          {
+            defaultValue:
+              "{{value}} of the daily governed budget has been observed.",
+            value: formatObservedPercent(governanceObservedDayBudgetRatio),
+          },
+        ),
+      });
+    }
+    if (governanceObservedMonthBudgetRatio >= 80) {
+      items.push({
+        key: "month-budget",
+        type: "warning",
+        title: t(
+          "settings.llmGateway.proxyGovernance.attention.monthBudget.title",
+          {
+            defaultValue: "30d spend is near the configured cap",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.attention.monthBudget.description",
+          {
+            defaultValue:
+              "{{value}} of the monthly governed budget has been observed.",
+            value: formatObservedPercent(governanceObservedMonthBudgetRatio),
+          },
+        ),
+      });
+    }
+    if (
+      proxyGovernanceSettings?.enabled !== true &&
+      proxyGovernancePreflight?.canEnable
+    ) {
+      items.push({
+        key: "ready-to-enable",
+        type: "success",
+        title: t(
+          "settings.llmGateway.proxyGovernance.attention.readyToEnable.title",
+          {
+            defaultValue: "Governance is ready to enable",
+          },
+        ),
+        description: t(
+          "settings.llmGateway.proxyGovernance.attention.readyToEnable.description",
+          {
+            defaultValue:
+              "Preflight is passing for the current target profile.",
+          },
+        ),
+      });
+    }
+    return items;
+  }, [
+    governanceHasTrafficBindings,
+    governanceObservedDayBudgetRatio,
+    governanceObservedDirectRequests,
+    governanceObservedMonthBudgetRatio,
+    governanceObservedZeroGoverned,
+    governancePreflightBlockingCount,
+    governanceUsage24h.governanceBreakdown.directRequestCount,
+    proxyGovernancePreflight,
+    proxyGovernanceSettings?.enabled,
+    proxyGovernanceSettings?.managedRuntimeKeyState,
+    t,
+  ]);
+  const governanceMetricGridStyle = useMemo(
+    () => ({
+      display: "grid",
+      gap: 12,
+      gridTemplateColumns: screens.md
+        ? "repeat(4, minmax(0, 1fr))"
+        : "repeat(2, minmax(0, 1fr))",
+    }),
+    [screens.md],
+  );
+  const governanceMetricCardStyle = useMemo(
+    () => ({
+      border: `1px solid ${token.colorBorderSecondary}`,
+      borderRadius: token.borderRadiusLG,
+      background: token.colorFillAlter,
+      padding: 12,
+      minHeight: 96,
+    }),
+    [token.borderRadiusLG, token.colorBorderSecondary, token.colorFillAlter],
+  );
 
   const apiBaseRules = useMemo(
     () => [
@@ -1612,20 +2422,22 @@ export function LlmGatewaySettingsPanel() {
                 value:
                   proxyGovernanceSettings?.targetProfileName ??
                   proxyGovernanceSettings?.targetProfileId ??
-                  "none",
+                  governanceNoneLabel,
               })}
             </Tag>
             <Tag color="blue">
               {t("settings.llmGateway.proxyGovernance.reset.team", {
                 defaultValue: "Managed team: {{value}}",
-                value: proxyGovernanceSettings?.managedTeamId ?? "none",
+                value:
+                  proxyGovernanceSettings?.managedTeamId ?? governanceNoneLabel,
               })}
             </Tag>
             <Tag color="purple">
               {t("settings.llmGateway.proxyGovernance.reset.key", {
                 defaultValue: "Runtime key: {{value}}",
                 value:
-                  proxyGovernanceSettings?.managedRuntimeKeyAlias ?? "none",
+                  proxyGovernanceSettings?.managedRuntimeKeyAlias ??
+                  governanceNoneLabel,
               })}
             </Tag>
           </Space>
@@ -1710,20 +2522,22 @@ export function LlmGatewaySettingsPanel() {
                   selectedGovernanceProfile?.name ??
                   proxyGovernanceSettings?.targetProfileName ??
                   proxyGovernanceSettings?.targetProfileId ??
-                  "none",
+                  governanceNoneLabel,
               })}
             </Tag>
             <Tag color="blue">
               {t("settings.llmGateway.proxyGovernance.rotate.team", {
                 defaultValue: "Managed team: {{value}}",
-                value: proxyGovernanceSettings?.managedTeamId ?? "none",
+                value:
+                  proxyGovernanceSettings?.managedTeamId ?? governanceNoneLabel,
               })}
             </Tag>
             <Tag color="purple">
               {t("settings.llmGateway.proxyGovernance.rotate.key", {
                 defaultValue: "Current key alias: {{value}}",
                 value:
-                  proxyGovernanceSettings?.managedRuntimeKeyAlias ?? "none",
+                  proxyGovernanceSettings?.managedRuntimeKeyAlias ??
+                  governanceNoneLabel,
               })}
             </Tag>
           </Space>
@@ -3955,11 +4769,15 @@ export function LlmGatewaySettingsPanel() {
               {proxyGovernanceSettings ? (
                 <Alert
                   type={
-                    !proxyGovernanceSettings.adminKeyConfigured
+                    governanceAttentionItems.some(
+                      (item) => item.type === "error",
+                    )
                       ? "warning"
-                      : proxyGovernanceSettings.enabled
-                        ? "success"
-                        : "info"
+                      : !proxyGovernanceSettings.adminKeyConfigured
+                        ? "warning"
+                        : proxyGovernanceSettings.enabled
+                          ? "success"
+                          : "info"
                   }
                   showIcon
                   message={t(
@@ -3971,7 +4789,7 @@ export function LlmGatewaySettingsPanel() {
                   description={
                     <Space
                       direction="vertical"
-                      size={4}
+                      size="middle"
                       style={{ display: "flex" }}
                     >
                       <Typography.Text type="secondary">
@@ -3980,6 +4798,29 @@ export function LlmGatewaySettingsPanel() {
                             "Budgets and concurrency are enforced by LiteLLM Proxy. The application only keeps business-level request logs.",
                         })}
                       </Typography.Text>
+                      <div style={governanceMetricGridStyle}>
+                        {governanceOverviewCards.map((card) => (
+                          <div key={card.key} style={governanceMetricCardStyle}>
+                            <Typography.Text type="secondary">
+                              {card.title}
+                            </Typography.Text>
+                            <Typography.Title
+                              level={5}
+                              style={{ margin: "8px 0 4px" }}
+                            >
+                              {card.value}
+                            </Typography.Title>
+                            <Typography.Text type="secondary">
+                              {card.description}
+                            </Typography.Text>
+                            {card.tagLabel ? (
+                              <div style={{ marginTop: 8 }}>
+                                <Tag color={card.tagColor}>{card.tagLabel}</Tag>
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
                       <Space wrap>
                         <Tag
                           color={
@@ -4001,6 +4842,39 @@ export function LlmGatewaySettingsPanel() {
                                   defaultValue: "Disabled",
                                 },
                               )}
+                        </Tag>
+                        <Tag color="blue">
+                          {t(
+                            "settings.llmGateway.proxyGovernance.summary.targetProfile",
+                            {
+                              defaultValue: "Target profile: {{value}}",
+                              value:
+                                proxyGovernanceSettings.targetProfileName ??
+                                proxyGovernanceSettings.targetProfileId ??
+                                governanceNoneLabel,
+                            },
+                          )}
+                        </Tag>
+                        <Tag color={governanceKeyStateMeta.color}>
+                          {t(
+                            "settings.llmGateway.proxyGovernance.summary.key",
+                            {
+                              defaultValue: "Managed key: {{value}}",
+                              value:
+                                proxyGovernanceSettings.managedRuntimeKeyAlias ??
+                                governanceKeyStateLabel,
+                            },
+                          )}
+                        </Tag>
+                        <Tag color="cyan">
+                          {t(
+                            "settings.llmGateway.proxyGovernance.summary.parallel",
+                            {
+                              defaultValue: "Parallel: {{value}}",
+                              value:
+                                proxyGovernanceSettings.maxParallelRequests,
+                            },
+                          )}
                         </Tag>
                         <Tag color="blue">
                           {t(
@@ -4026,58 +4900,7 @@ export function LlmGatewaySettingsPanel() {
                             },
                           )}
                         </Tag>
-                        <Tag color="cyan">
-                          {t(
-                            "settings.llmGateway.proxyGovernance.summary.parallel",
-                            {
-                              defaultValue: "Parallel: {{value}}",
-                              value:
-                                proxyGovernanceSettings.maxParallelRequests,
-                            },
-                          )}
-                        </Tag>
-                        <Tag>
-                          {t(
-                            "settings.llmGateway.proxyGovernance.summary.key",
-                            {
-                              defaultValue: "Managed key: {{value}}",
-                              value:
-                                proxyGovernanceSettings.managedRuntimeKeyAlias ??
-                                (proxyGovernanceSettings.hasManagedRuntimeKey
-                                  ? "ready"
-                                  : "none"),
-                            },
-                          )}
-                        </Tag>
-                        <Tag
-                          color={
-                            proxyGovernanceSettings.targetProfileEnabled
-                              ? "geekblue"
-                              : "orange"
-                          }
-                        >
-                          {t(
-                            "settings.llmGateway.proxyGovernance.summary.targetProfile",
-                            {
-                              defaultValue: "Target profile: {{value}}",
-                              value:
-                                proxyGovernanceSettings.targetProfileName ??
-                                proxyGovernanceSettings.targetProfileId ??
-                                "none",
-                            },
-                          )}
-                        </Tag>
                       </Space>
-                      <Typography.Text type="secondary">
-                        {t(
-                          "settings.llmGateway.proxyGovernance.summary.apiBase",
-                          {
-                            defaultValue: "Proxy API base: {{value}}",
-                            value:
-                              proxyGovernanceSettings.apiBase ?? "not selected",
-                          },
-                        )}
-                      </Typography.Text>
                       <Space wrap>
                         {governanceHasTrafficBindings ? (
                           governanceTrafficLabels.map((label) => (
@@ -4102,63 +4925,21 @@ export function LlmGatewaySettingsPanel() {
                             )}
                           </Tag>
                         )}
-                        <Tag color="blue">
-                          {t(
-                            "settings.llmGateway.proxyGovernance.summary.observed24h",
-                            {
-                              defaultValue: "Governed 24h spend: {{value}}",
-                              value: formatObservedCurrency(
-                                governanceUsage24h.governanceBreakdown
-                                  .governedCostUsd,
-                              ),
-                            },
-                          )}
-                        </Tag>
-                        <Tag
-                          color="orange"
-                        >
-                          {t(
-                            "settings.llmGateway.proxyGovernance.summary.direct24h",
-                            {
-                              defaultValue: "Direct 24h spend: {{value}}",
-                              value: formatObservedCurrency(
-                                governanceUsage24h.governanceBreakdown
-                                  .directCostUsd,
-                              ),
-                            },
-                          )}
-                        </Tag>
-                        <Tag color="purple">
-                          {t(
-                            "settings.llmGateway.proxyGovernance.summary.observed30d",
-                            {
-                              defaultValue: "Governed 30d spend: {{value}}",
-                              value: formatObservedCurrency(
-                                governanceUsage30d.governanceBreakdown
-                                  .governedCostUsd,
-                              ),
-                            },
-                          )}
-                        </Tag>
-                        <Tag color="orange">
-                          {t(
-                            "settings.llmGateway.proxyGovernance.summary.direct30d",
-                            {
-                              defaultValue: "Direct 30d spend: {{value}}",
-                              value: formatObservedCurrency(
-                                governanceUsage30d.governanceBreakdown
-                                  .directCostUsd,
-                              ),
-                            },
-                          )}
-                        </Tag>
                       </Space>
                       <Typography.Text type="secondary">
                         {t(
                           "settings.llmGateway.proxyGovernance.summary.observedDetails",
                           {
                             defaultValue:
-                              "24h requests {{requests}}, tokens {{tokens}}, p95 latency {{latency}}.",
+                              "24h governed spend {{governed}}, direct spend {{direct}}, requests {{requests}}, p95 latency {{latency}}.",
+                            governed: formatObservedCurrency(
+                              governanceUsage24h.governanceBreakdown
+                                .governedCostUsd,
+                            ),
+                            direct: formatObservedCurrency(
+                              governanceUsage24h.governanceBreakdown
+                                .directCostUsd,
+                            ),
                             requests:
                               governanceUsage24h.totals.requestCount.toLocaleString(),
                             tokens: formatObservedTokens(
@@ -4172,60 +4953,24 @@ export function LlmGatewaySettingsPanel() {
                       </Typography.Text>
                       {governanceUsage24h.leadingError ? (
                         <Typography.Text type="secondary">
-                          {`Top recent error: ${governanceUsage24h.leadingError.message} (${governanceUsage24h.leadingError.count.toLocaleString()} requests).`}
+                          {t(
+                            "settings.llmGateway.proxyGovernance.summary.leadingError",
+                            {
+                              message: governanceUsage24h.leadingError.message,
+                              count: governanceUsage24h.leadingError.count,
+                            },
+                          )}
                         </Typography.Text>
                       ) : null}
-                      {proxyGovernanceSettings.managedRuntimeKeyState ===
-                      "unreadable" ? (
+                      {governanceAttentionItems.slice(0, 2).map((item) => (
                         <Alert
-                          type="error"
+                          key={item.key}
+                          type={item.type}
                           showIcon
-                          message={t(
-                            "settings.llmGateway.proxyGovernance.summary.runtimeKeyUnreadable",
-                            {
-                              defaultValue:
-                                "Managed runtime key is unreadable, so governed traffic will fail closed until secret decryption is fixed.",
-                            },
-                          )}
+                          message={item.title}
+                          description={item.description}
                         />
-                      ) : null}
-                      {governanceObservedZeroGoverned ? (
-                        <Alert
-                          type="warning"
-                          showIcon
-                          message={t(
-                            "settings.llmGateway.proxyGovernance.summary.zeroGoverned",
-                            {
-                              defaultValue:
-                                "Governance is enabled but no governed requests were observed for the target profile in the last 24h.",
-                            },
-                          )}
-                        />
-                      ) : null}
-                      {governanceObservedDirectRequests ? (
-                        <Alert
-                          type="warning"
-                          showIcon
-                          message={t(
-                            "settings.llmGateway.proxyGovernance.summary.directObserved",
-                            {
-                              defaultValue:
-                                "Direct profile-key traffic is still reaching the governed target profile.",
-                            },
-                          )}
-                          description={t(
-                            "settings.llmGateway.proxyGovernance.summary.directObservedDetails",
-                            {
-                              defaultValue:
-                                "Direct requests: {{count}}, governed requests: {{governed}} in the last 24h.",
-                              count:
-                                governanceUsage24h.governanceBreakdown.directRequestCount,
-                              governed:
-                                governanceUsage24h.governanceBreakdown.governedRequestCount,
-                            },
-                          )}
-                        />
-                      ) : null}
+                      ))}
                       {governanceUsageLoading ? (
                         <Typography.Text type="secondary">
                           {t(
@@ -6197,18 +6942,25 @@ export function LlmGatewaySettingsPanel() {
 
             {proxyGovernanceSettings ? (
               <Alert
-                type={proxyGovernanceSettings.enabled ? "success" : "info"}
+                type={
+                  governanceAttentionItems.some((item) => item.type === "error")
+                    ? "warning"
+                    : proxyGovernanceSettings.enabled
+                      ? "success"
+                      : "info"
+                }
                 showIcon
                 message={t("settings.llmGateway.proxyGovernance.status.title", {
                   defaultValue: "Managed LiteLLM runtime key",
                 })}
                 description={
-                  <Space direction="vertical" size={4}>
+                  <Space direction="vertical" size="middle">
                     <Typography.Text type="secondary">
                       {t("settings.llmGateway.proxyGovernance.status.apiBase", {
                         defaultValue: "Proxy API base: {{value}}",
                         value:
-                          proxyGovernanceSettings.apiBase ?? "not selected",
+                          proxyGovernanceSettings.apiBase ??
+                          governanceNotSelectedLabel,
                       })}
                     </Typography.Text>
                     <Space wrap>
@@ -6227,7 +6979,7 @@ export function LlmGatewaySettingsPanel() {
                             value:
                               proxyGovernanceSettings.targetProfileName ??
                               proxyGovernanceSettings.targetProfileId ??
-                              "none",
+                              governanceNoneLabel,
                           },
                         )}
                       </Tag>
@@ -6235,7 +6987,8 @@ export function LlmGatewaySettingsPanel() {
                         {t("settings.llmGateway.proxyGovernance.status.team", {
                           defaultValue: "Team: {{value}}",
                           value:
-                            proxyGovernanceSettings.managedTeamId ?? "none",
+                            proxyGovernanceSettings.managedTeamId ??
+                            governanceNoneLabel,
                         })}
                       </Tag>
                       <Tag color="purple">
@@ -6244,11 +6997,54 @@ export function LlmGatewaySettingsPanel() {
                           value:
                             proxyGovernanceSettings.managedRuntimeKeyAlias ??
                             (proxyGovernanceSettings.hasManagedRuntimeKey
-                              ? "ready"
-                              : "none"),
+                              ? governanceReadyLabel
+                              : governanceNoneLabel),
                         })}
                       </Tag>
+                      <Tag color={governanceKeyStateMeta.color}>
+                        {governanceKeyStateLabel}
+                      </Tag>
                     </Space>
+                    <div style={governanceMetricGridStyle}>
+                      {governanceOverviewCards.map((card) => (
+                        <div key={card.key} style={governanceMetricCardStyle}>
+                          <Typography.Text type="secondary">
+                            {card.title}
+                          </Typography.Text>
+                          <Typography.Title
+                            level={5}
+                            style={{ margin: "8px 0 4px" }}
+                          >
+                            {card.value}
+                          </Typography.Title>
+                          <Typography.Text type="secondary">
+                            {card.description}
+                          </Typography.Text>
+                          {card.tagLabel ? (
+                            <div style={{ marginTop: 8 }}>
+                              <Tag color={card.tagColor}>{card.tagLabel}</Tag>
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                    {governanceAttentionItems.length > 0 ? (
+                      <Space
+                        direction="vertical"
+                        size={8}
+                        style={{ display: "flex" }}
+                      >
+                        {governanceAttentionItems.map((item) => (
+                          <Alert
+                            key={item.key}
+                            type={item.type}
+                            showIcon
+                            message={item.title}
+                            description={item.description}
+                          />
+                        ))}
+                      </Space>
+                    ) : null}
                     {proxyGovernanceSettings.lastSyncedAt ? (
                       <Typography.Text type="secondary">
                         {t(
@@ -6296,6 +7092,19 @@ export function LlmGatewaySettingsPanel() {
               title={t("settings.llmGateway.proxyGovernance.preflight.title", {
                 defaultValue: "启用前检查",
               })}
+              extra={
+                <Button
+                  size="small"
+                  onClick={() =>
+                    void loadProxyGovernancePreflight(
+                      selectedGovernanceProfile?.id ?? null,
+                    )
+                  }
+                  loading={proxyGovernancePreflightLoading}
+                >
+                  {t("common.refresh", { defaultValue: "Refresh" })}
+                </Button>
+              }
             >
               <Space
                 direction="vertical"
@@ -6316,7 +7125,9 @@ export function LlmGatewaySettingsPanel() {
                       "settings.llmGateway.proxyGovernance.preflight.targetProfile",
                       {
                         defaultValue: "Target profile: {{value}}",
-                        value: selectedGovernanceProfile?.name ?? "none",
+                        value:
+                          selectedGovernanceProfile?.name ??
+                          governanceNoneLabel,
                       },
                     )}
                   </Tag>
@@ -6328,7 +7139,7 @@ export function LlmGatewaySettingsPanel() {
                         value:
                           proxyGovernancePreflight?.apiBase ??
                           selectedGovernanceProfile?.apiBase ??
-                          "not selected",
+                          governanceNotSelectedLabel,
                       },
                     )}
                   </Tag>
@@ -6346,29 +7157,79 @@ export function LlmGatewaySettingsPanel() {
                       {
                         defaultValue: "Traffic bindings: {{value}}",
                         value:
-                          proxyGovernancePreflight?.trafficBindings.completion ||
+                          proxyGovernancePreflight?.trafficBindings
+                            .completion ||
                           proxyGovernancePreflight?.trafficBindings.embedding ||
                           proxyGovernancePreflight?.trafficBindings.rerank
                             ? [
                                 proxyGovernancePreflight?.trafficBindings
                                   .completion
-                                  ? "completion"
+                                  ? t(
+                                      "settings.llmGateway.proxyGovernance.bindings.completion",
+                                      {
+                                        defaultValue: "Completion",
+                                      },
+                                    )
                                   : null,
                                 proxyGovernancePreflight?.trafficBindings
                                   .embedding
-                                  ? "embedding"
+                                  ? t(
+                                      "settings.llmGateway.proxyGovernance.bindings.embedding",
+                                      {
+                                        defaultValue: "Embedding",
+                                      },
+                                    )
                                   : null,
                                 proxyGovernancePreflight?.trafficBindings.rerank
-                                  ? "rerank"
+                                  ? t(
+                                      "settings.llmGateway.proxyGovernance.bindings.rerank",
+                                      {
+                                        defaultValue: "Rerank",
+                                      },
+                                    )
                                   : null,
                               ]
-                                .filter((value): value is string => Boolean(value))
+                                .filter((value): value is string =>
+                                  Boolean(value),
+                                )
                                 .join(", ")
-                            : "none",
+                            : governanceNoneLabel,
                       },
                     )}
                   </Tag>
                 </Space>
+                {proxyGovernancePreflight ? (
+                  <Alert
+                    type={
+                      proxyGovernancePreflight.canEnable ? "success" : "error"
+                    }
+                    showIcon
+                    message={
+                      proxyGovernancePreflight.canEnable
+                        ? t(
+                            "settings.llmGateway.proxyGovernance.preflight.summary.ready",
+                            {
+                              defaultValue: "Governance can be enabled",
+                            },
+                          )
+                        : t(
+                            "settings.llmGateway.proxyGovernance.preflight.summary.blocked",
+                            {
+                              defaultValue: "Governance enablement is blocked",
+                            },
+                          )
+                    }
+                    description={t(
+                      "settings.llmGateway.proxyGovernance.preflight.summary.counts",
+                      {
+                        defaultValue:
+                          "Blocking issues {{blocking}}; warnings {{warnings}}.",
+                        blocking: governancePreflightBlockingCount,
+                        warnings: governancePreflightWarningCount,
+                      },
+                    )}
+                  />
+                ) : null}
                 <Space wrap>
                   <Tooltip
                     title={
@@ -6520,9 +7381,12 @@ export function LlmGatewaySettingsPanel() {
                 </Space>
                 {proxyGovernancePreflightLoading ? (
                   <Typography.Text type="secondary">
-                    {t("settings.llmGateway.proxyGovernance.preflight.loading", {
-                      defaultValue: "Loading governance preflight checks.",
-                    })}
+                    {t(
+                      "settings.llmGateway.proxyGovernance.preflight.loading",
+                      {
+                        defaultValue: "Loading governance preflight checks.",
+                      },
+                    )}
                   </Typography.Text>
                 ) : null}
                 {proxyGovernancePreflightErrorMessage ? (
@@ -6585,12 +7449,41 @@ export function LlmGatewaySettingsPanel() {
                   <Alert
                     key={check.key}
                     type={
-                      check.ok ? "success" : check.required ? "error" : "warning"
+                      check.ok
+                        ? "success"
+                        : check.required
+                          ? "error"
+                          : "warning"
                     }
                     showIcon
                     message={check.message}
                   />
                 ))}
+                {governanceRecommendedActions.length > 0 ? (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message={t(
+                      "settings.llmGateway.proxyGovernance.preflight.nextActions",
+                      {
+                        defaultValue: "Recommended next actions",
+                      },
+                    )}
+                    description={
+                      <Space
+                        direction="vertical"
+                        size={4}
+                        style={{ display: "flex" }}
+                      >
+                        {governanceRecommendedActions.map((action) => (
+                          <Typography.Text
+                            key={action}
+                          >{`• ${action}`}</Typography.Text>
+                        ))}
+                      </Space>
+                    }
+                  />
+                ) : null}
               </Space>
             </Card>
 
@@ -6599,6 +7492,21 @@ export function LlmGatewaySettingsPanel() {
               title={t("settings.llmGateway.proxyGovernance.observed.title", {
                 defaultValue: "观测到的运行态用量",
               })}
+              extra={
+                <Button
+                  size="small"
+                  onClick={() =>
+                    void loadGovernanceUsageSummary(
+                      proxyGovernanceOpen
+                        ? (selectedGovernanceProfile?.id ?? null)
+                        : (proxyGovernanceSettings?.targetProfileId ?? null),
+                    )
+                  }
+                  loading={governanceUsageLoading}
+                >
+                  {t("common.refresh", { defaultValue: "Refresh" })}
+                </Button>
+              }
             >
               <Space
                 direction="vertical"
@@ -6659,6 +7567,223 @@ export function LlmGatewaySettingsPanel() {
                     )}
                   </Tag>
                 </Space>
+                <div style={governanceMetricGridStyle}>
+                  <div style={governanceMetricCardStyle}>
+                    <Typography.Text type="secondary">
+                      {t(
+                        "settings.llmGateway.proxyGovernance.observed.cards.governedRatio",
+                        {
+                          defaultValue: "Governed share",
+                        },
+                      )}
+                    </Typography.Text>
+                    <Typography.Title level={5} style={{ margin: "8px 0 4px" }}>
+                      {formatObservedPercent(governanceObservedGovernedRatio)}
+                    </Typography.Title>
+                    <Typography.Text type="secondary">
+                      {t(
+                        "settings.llmGateway.proxyGovernance.observed.cards.governedRatioDetail",
+                        {
+                          defaultValue: "{{governed}} of {{total}} requests",
+                          governed:
+                            governanceUsage24h.governanceBreakdown.governedRequestCount.toLocaleString(),
+                          total:
+                            governanceUsage24h.totals.requestCount.toLocaleString(),
+                        },
+                      )}
+                    </Typography.Text>
+                  </div>
+                  <div style={governanceMetricCardStyle}>
+                    <Typography.Text type="secondary">
+                      {t(
+                        "settings.llmGateway.proxyGovernance.observed.cards.managedKeyRequests",
+                        {
+                          defaultValue: "Managed-key requests",
+                        },
+                      )}
+                    </Typography.Text>
+                    <Typography.Title level={5} style={{ margin: "8px 0 4px" }}>
+                      {governanceUsage24h.governanceBreakdown.managedRuntimeKeyRequestCount.toLocaleString()}
+                    </Typography.Title>
+                    <Typography.Text type="secondary">
+                      {t(
+                        "settings.llmGateway.proxyGovernance.observed.cards.managedKeyRequestsDetail",
+                        {
+                          defaultValue: "24h managed-runtime-key requests",
+                        },
+                      )}
+                    </Typography.Text>
+                  </div>
+                  <div style={governanceMetricCardStyle}>
+                    <Typography.Text type="secondary">
+                      {t(
+                        "settings.llmGateway.proxyGovernance.observed.cards.profileKeyRequests",
+                        {
+                          defaultValue: "Profile-key requests",
+                        },
+                      )}
+                    </Typography.Text>
+                    <Typography.Title level={5} style={{ margin: "8px 0 4px" }}>
+                      {governanceUsage24h.governanceBreakdown.profileKeyRequestCount.toLocaleString()}
+                    </Typography.Title>
+                    <Typography.Text type="secondary">
+                      {t(
+                        "settings.llmGateway.proxyGovernance.observed.cards.profileKeyRequestsDetail",
+                        {
+                          defaultValue: "24h profile-key requests",
+                        },
+                      )}
+                    </Typography.Text>
+                  </div>
+                  <div style={governanceMetricCardStyle}>
+                    <Typography.Text type="secondary">
+                      {t(
+                        "settings.llmGateway.proxyGovernance.observed.cards.successRate",
+                        {
+                          defaultValue: "24h success rate",
+                        },
+                      )}
+                    </Typography.Text>
+                    <Typography.Title level={5} style={{ margin: "8px 0 4px" }}>
+                      {formatObservedPercent(
+                        governanceUsage24h.statusBreakdown.successRate * 100,
+                        2,
+                      )}
+                    </Typography.Title>
+                    <Typography.Text type="secondary">
+                      {t(
+                        "settings.llmGateway.proxyGovernance.observed.cards.successRateDetail",
+                        {
+                          count: governanceUsage24h.statusBreakdown.error,
+                        },
+                      )}
+                    </Typography.Text>
+                  </div>
+                </div>
+                <Card
+                  size="small"
+                  type="inner"
+                  title={t(
+                    "settings.llmGateway.proxyGovernance.observed.budgetPressure",
+                    {
+                      defaultValue: "Observed budget pressure",
+                    },
+                  )}
+                >
+                  <Space
+                    direction="vertical"
+                    size="small"
+                    style={{ display: "flex" }}
+                  >
+                    <Typography.Text type="secondary">
+                      {t(
+                        "settings.llmGateway.proxyGovernance.observed.budgetPressureHint",
+                        {
+                          defaultValue:
+                            "Derived from app-side governed request logs. LiteLLM remains the source of truth for real enforcement.",
+                        },
+                      )}
+                    </Typography.Text>
+                    <div>
+                      <Space
+                        align="center"
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <Typography.Text>
+                          {t(
+                            "settings.llmGateway.proxyGovernance.observed.dayBudgetProgress",
+                            {
+                              defaultValue:
+                                "24h governed spend vs configured cap",
+                            },
+                          )}
+                        </Typography.Text>
+                        <Typography.Text type="secondary">
+                          {`${formatObservedCurrency(
+                            governanceUsage24h.governanceBreakdown
+                              .governedCostUsd,
+                          )} / ${formatObservedCurrency(
+                            proxyGovernanceSettings?.dailyBudgetUsd ?? null,
+                          )}`}
+                        </Typography.Text>
+                      </Space>
+                      <Progress
+                        percent={clampPercent(governanceObservedDayBudgetRatio)}
+                        strokeColor={getPressureStatusColor(
+                          governanceObservedDayBudgetRatio,
+                        )}
+                        format={(value) => formatObservedPercent(value)}
+                      />
+                    </div>
+                    <div>
+                      <Space
+                        align="center"
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <Typography.Text>
+                          {t(
+                            "settings.llmGateway.proxyGovernance.observed.monthBudgetProgress",
+                            {
+                              defaultValue:
+                                "30d governed spend vs configured cap",
+                            },
+                          )}
+                        </Typography.Text>
+                        <Typography.Text type="secondary">
+                          {`${formatObservedCurrency(
+                            governanceUsage30d.governanceBreakdown
+                              .governedCostUsd,
+                          )} / ${formatObservedCurrency(
+                            proxyGovernanceSettings?.monthlyBudgetUsd ?? null,
+                          )}`}
+                        </Typography.Text>
+                      </Space>
+                      <Progress
+                        percent={clampPercent(
+                          governanceObservedMonthBudgetRatio,
+                        )}
+                        strokeColor={getPressureStatusColor(
+                          governanceObservedMonthBudgetRatio,
+                        )}
+                        format={(value) => formatObservedPercent(value)}
+                      />
+                    </div>
+                    <div>
+                      <Space
+                        align="center"
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <Typography.Text>
+                          {t(
+                            "settings.llmGateway.proxyGovernance.observed.directLeakage",
+                            {
+                              defaultValue: "24h direct request leakage",
+                            },
+                          )}
+                        </Typography.Text>
+                        <Typography.Text type="secondary">
+                          {`${governanceUsage24h.governanceBreakdown.directRequestCount.toLocaleString()} direct / ${governanceUsage24h.totals.requestCount.toLocaleString()} total`}
+                        </Typography.Text>
+                      </Space>
+                      <Progress
+                        percent={clampPercent(governanceObservedDirectRatio)}
+                        strokeColor={getPressureStatusColor(
+                          governanceObservedDirectRatio,
+                        )}
+                        format={(value) => formatObservedPercent(value)}
+                      />
+                    </div>
+                  </Space>
+                </Card>
                 <Typography.Text type="secondary">
                   {t(
                     "settings.llmGateway.proxyGovernance.observed.dayDetails",
@@ -6760,9 +7885,11 @@ export function LlmGatewaySettingsPanel() {
                         defaultValue:
                           "Direct requests: {{count}}, governed requests: {{governed}} in the last 24h.",
                         count:
-                          governanceUsage24h.governanceBreakdown.directRequestCount,
+                          governanceUsage24h.governanceBreakdown
+                            .directRequestCount,
                         governed:
-                          governanceUsage24h.governanceBreakdown.governedRequestCount,
+                          governanceUsage24h.governanceBreakdown
+                            .governedRequestCount,
                       },
                     )}
                   />

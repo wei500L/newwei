@@ -4727,149 +4727,302 @@
       },
       "proxyGovernance": {
         "bindings": {
-          "completion": "Completion",
-          "embedding": "Embedding",
-          "rerank": "Rerank"
+          "completion": "对话",
+          "embedding": "嵌入",
+          "rerank": "重排"
         },
         "preflight": {
-          "admin": "LiteLLM admin key configured",
-          "adminReady": "API and LiteLLM can sync the managed team and runtime key.",
-          "adminMissing": "Set LITELLM_MASTER_KEY on both API and LiteLLM before enabling governance.",
-          "profile": "Target LiteLLM profile selected",
-          "profileReady": "{{name}} is selected as the governance target.",
-          "profileMissing": "Choose the enabled LiteLLM profile that should enforce runtime limits.",
-          "traffic": "Runtime traffic already routes to this profile",
-          "trafficReady": "Current bindings: {{value}}.",
-          "trafficMissing": "Completion, embedding, and rerank are not currently using this profile.",
-          "health": "Selected profile passes LiteLLM health checks",
-          "healthReady": "Liveliness and readiness probes are both healthy.",
-          "healthPending": "The console checks the selected profile automatically while this dialog stays open.",
+          "admin": "LiteLLM 管理员密钥已配置",
+          "adminReady": "API 与 LiteLLM 可以同步托管团队和运行时密钥。",
+          "adminMissing": "启用治理前，请同时在 API 和 LiteLLM 上配置 LITELLM_MASTER_KEY。",
+          "profile": "已选择治理目标 LiteLLM Profile",
+          "profileReady": "{{name}} 已被选为治理目标。",
+          "profileMissing": "请选择要负责运行时限额治理的已启用 LiteLLM Profile。",
+          "traffic": "运行时流量已路由到该 Profile",
+          "trafficReady": "当前绑定：{{value}}。",
+          "trafficMissing": "当前对话、嵌入、重排流量都还没有使用这个 Profile。",
+          "health": "选定 Profile 通过 LiteLLM 健康检查",
+          "healthReady": "存活探针与就绪探针均正常。",
+          "healthPending": "当此对话框保持打开时，控制台会自动持续检查所选 Profile。",
           "title": "启用前检查",
-          "hint": "Before enabling managed governance, confirm the selected LiteLLM profile is healthy and actually serving runtime traffic.",
-          "targetProfile": "Target profile: {{value}}",
-          "apiBase": "API base: {{value}}",
-          "bindings": "Traffic bindings: {{value}}",
+          "hint": "启用托管治理前，请确认所选 LiteLLM Profile 健康且真实承载了运行时流量。",
+          "targetProfile": "目标 Profile：{{value}}",
+          "apiBase": "代理 API 地址：{{value}}",
+          "bindings": "流量绑定：{{value}}",
           "actions": {
-            "bindCompletionDisabled": "Select a target profile before binding completion traffic.",
-            "bindCompletionDone": "Completion 已绑定",
-            "bindCompletion": "绑定 Completion",
-            "bindEmbeddingDisabled": "This profile needs an embedding model before it can receive embedding traffic.",
-            "bindEmbeddingDone": "Embedding 已绑定",
-            "bindEmbedding": "绑定 Embedding",
-            "bindRerankDisabled": "This profile needs a rerank model before it can receive rerank traffic.",
-            "bindRerankDone": "Rerank 已绑定",
-            "bindRerank": "绑定 Rerank"
+            "bindCompletionDisabled": "请先选择目标 Profile，再绑定对话流量。",
+            "bindCompletionDone": "对话流量已绑定",
+            "bindCompletion": "绑定对话流量",
+            "bindEmbeddingDisabled": "该 Profile 需要先配置嵌入模型，才能承接嵌入流量。",
+            "bindEmbeddingDone": "嵌入流量已绑定",
+            "bindEmbedding": "绑定嵌入流量",
+            "bindRerankDisabled": "该 Profile 需要先配置重排模型，才能承接重排流量。",
+            "bindRerankDone": "重排流量已绑定",
+            "bindRerank": "绑定重排流量"
           },
-          "liveliness": "Liveliness: {{value}}",
-          "readiness": "Readiness: {{value}}",
-          "checkedAt": "Checked: {{value}}"
+          "liveliness": "存活检查：{{value}}",
+          "readiness": "就绪检查：{{value}}",
+          "checkedAt": "检查时间：{{value}}",
+          "summary": {
+            "ready": "治理可启用",
+            "blocked": "治理启用被阻断",
+            "counts": "阻断项 {{blocking}} 个；告警 {{warnings}} 个。"
+          },
+          "loading": "正在加载治理启用前检查。",
+          "nextActions": "建议下一步动作"
         },
         "errors": {
-          "loadFailed": "Failed to load LiteLLM proxy governance settings",
-          "usageFailed": "Failed to load observed LiteLLM governance usage summary",
-          "saveFailed": "Failed to save LiteLLM proxy governance settings"
+          "loadFailed": "加载 LiteLLM Proxy 治理配置失败",
+          "usageFailed": "加载 LiteLLM 治理观测用量汇总失败",
+          "saveFailed": "保存 LiteLLM Proxy 治理配置失败"
         },
         "messages": {
-          "saved": "LiteLLM proxy governance settings saved"
+          "saved": "LiteLLM Proxy 治理配置已保存"
         },
         "reset": {
           "modal": {
-            "title": "Reset LiteLLM proxy governance?",
-            "content": "This disables the managed runtime key and restores the default governance thresholds."
+            "title": "重置 LiteLLM Proxy 治理配置？",
+            "content": "这会禁用托管运行时密钥，并恢复默认治理阈值。"
           },
-          "targetProfile": "Target profile: {{value}}",
-          "team": "Managed team: {{value}}",
-          "key": "Runtime key: {{value}}",
+          "targetProfile": "目标 Profile：{{value}}",
+          "team": "托管团队：{{value}}",
+          "key": "运行时密钥：{{value}}",
           "messages": {
-            "done": "LiteLLM proxy governance reset"
+            "done": "LiteLLM Proxy 治理配置已重置"
           },
           "errors": {
-            "failed": "Failed to reset LiteLLM proxy governance settings"
+            "failed": "重置 LiteLLM Proxy 治理配置失败"
           }
         },
         "rotate": {
-          "title": "Rotate LiteLLM managed runtime key?",
-          "confirm": "A new runtime key will be issued in LiteLLM and the old managed key will be blocked.",
-          "targetProfile": "Target profile: {{value}}",
-          "team": "Managed team: {{value}}",
-          "key": "Current key alias: {{value}}",
+          "title": "轮换 LiteLLM 托管运行时密钥？",
+          "confirm": "LiteLLM 将签发新的运行时密钥，并阻断旧的托管密钥。",
+          "targetProfile": "目标 Profile：{{value}}",
+          "team": "托管团队：{{value}}",
+          "key": "当前密钥别名：{{value}}",
           "messages": {
-            "done": "Managed LiteLLM runtime key rotated"
+            "done": "LiteLLM 托管运行时密钥已轮换"
           },
           "errors": {
-            "failed": "Failed to rotate LiteLLM managed runtime key"
+            "failed": "轮换 LiteLLM 托管运行时密钥失败"
           }
         },
         "actions": {
-          "rotate": "Rotate runtime key"
+          "rotate": "轮换运行时密钥"
         },
         "table": {
-          "lockedHint": "This profile is the active LiteLLM governance target. Change governance target or disable governance before editing, deleting, or disabling it.",
-          "lockedTag": "Governed target",
-          "lockedStatus": "Locked by governance"
+          "lockedHint": "该 Profile 当前是 LiteLLM 治理目标。请先切换治理目标或禁用治理，再编辑、删除或停用它。",
+          "lockedTag": "治理目标",
+          "lockedStatus": "受治理锁定"
         },
         "summary": {
-          "title": "LiteLLM proxy governance",
-          "body": "Budgets and concurrency are enforced by LiteLLM Proxy. The application only keeps business-level request logs.",
-          "enabled": "Enforced",
-          "disabled": "Disabled",
+          "title": "LiteLLM Proxy 治理",
+          "body": "预算和并发限制由 LiteLLM Proxy 统一执行，应用侧只保留业务级请求日志。",
+          "enabled": "已执行治理",
+          "disabled": "未启用治理",
           "dayBudget": "24h: ${{value}}",
           "monthBudget": "30d: ${{value}}",
-          "parallel": "Parallel: {{value}}",
-          "key": "Managed key: {{value}}",
-          "targetProfile": "Target profile: {{value}}",
-          "apiBase": "Proxy API base: {{value}}",
-          "binding": "Traffic: {{value}}",
-          "bindingMissing": "Selected target is not serving completion, embedding, or rerank traffic",
-          "observed24h": "Observed 24h: {{value}}",
-          "remaining24h": "24h remaining: {{value}}",
-          "observed30d": "Observed 30d: {{value}}",
-          "remaining30d": "30d remaining: {{value}}",
-          "observedDetails": "24h requests {{requests}}, tokens {{tokens}}, p95 latency {{latency}}.",
-          "observedLoading": "Loading observed request usage for the governed profile.",
-          "syncedAt": "Last synced: {{value}}",
-          "adminMissing": "LITELLM_MASTER_KEY is not configured, so governance cannot be synced to LiteLLM yet."
+          "parallel": "并发：{{value}}",
+          "key": "托管密钥：{{value}}",
+          "targetProfile": "目标 Profile：{{value}}",
+          "apiBase": "代理 API 地址：{{value}}",
+          "binding": "流量：{{value}}",
+          "bindingMissing": "所选目标当前未承接对话、嵌入或重排流量",
+          "observed24h": "近 24h 已观测：{{value}}",
+          "remaining24h": "24h 剩余额度：{{value}}",
+          "observed30d": "近 30d 已观测：{{value}}",
+          "remaining30d": "30d 剩余额度：{{value}}",
+          "observedDetails": "近 24h 受治理花费 {{governed}}，直连花费 {{direct}}，请求 {{requests}}，P95 延迟 {{latency}}。",
+          "observedLoading": "正在加载治理目标 Profile 的观测请求用量。",
+          "leadingError": "最近高频错误：{{message}}（{{count}} 次请求）。",
+          "syncedAt": "上次同步：{{value}}",
+          "adminMissing": "尚未配置 LITELLM_MASTER_KEY，因此治理配置还不能同步到 LiteLLM。"
         },
         "modal": {
           "title": "LiteLLM Proxy 预算/并发治理"
         },
-        "hint": "LiteLLM Proxy is the single enforcement plane for runtime budgets and concurrency. The application keeps feature-level request logs only.",
+        "hint": "LiteLLM Proxy 是运行时预算与并发的唯一执行平面，应用侧仅保留功能级请求日志。",
         "status": {
-          "title": "Managed LiteLLM runtime key",
-          "apiBase": "Proxy API base: {{value}}",
-          "targetProfile": "Target profile: {{value}}",
-          "team": "Team: {{value}}",
-          "key": "Key: {{value}}",
-          "syncedAt": "Last synced: {{value}}",
-          "adminMissing": "Set LITELLM_MASTER_KEY on both API and LiteLLM before enabling managed governance."
+          "title": "LiteLLM 托管运行时密钥",
+          "apiBase": "代理 API 地址：{{value}}",
+          "targetProfile": "目标 Profile：{{value}}",
+          "team": "团队：{{value}}",
+          "key": "密钥：{{value}}",
+          "syncedAt": "上次同步：{{value}}",
+          "adminMissing": "启用托管治理前，请同时在 API 和 LiteLLM 上配置 LITELLM_MASTER_KEY。",
+          "keyStates": {
+            "available": "可读取",
+            "unreadable": "不可读取",
+            "missing": "缺失"
+          },
+          "cards": {
+            "enforcement": "治理执行态",
+            "target": "治理目标",
+            "preflight": "启用前检查",
+            "runtime": "运行链路",
+            "governedRatio": "治理占比",
+            "managedKeyRequests": "托管密钥请求",
+            "profileKeyRequests": "直连 Profile-Key 请求",
+            "successRate": "24h 成功率",
+            "enforcementEnabledDescription": "LiteLLM 应当在运行时流量上执行预算与并发限制。",
+            "enforcementDisabledDescription": "当前仅保存配置，运行时流量仍使用 Profile 凭证。",
+            "targetDescriptionEmpty": "尚未选择 Proxy 治理目标。"
+          },
+          "tags": {
+            "adminKeyReady": "管理员密钥就绪",
+            "adminKeyMissing": "管理员密钥缺失",
+            "trafficBindings": "流量：{{value}}",
+            "noRuntimeBindings": "暂无运行态绑定",
+            "preflightCounts": "阻断 {{blocking}} / 告警 {{warnings}}",
+            "runtimeCounts": "治理 {{governed}} / 直连 {{direct}}",
+            "none": "未设置",
+            "noneLowercase": "未设置",
+            "readyLowercase": "已就绪",
+            "notSelected": "未选择"
+          },
+          "preflightStates": {
+            "noTargetSelected": {
+              "label": "未选择目标",
+              "description": "请先选择 LiteLLM Profile，再运行治理启用前检查。"
+            },
+            "notChecked": {
+              "label": "尚未检查",
+              "description": "请运行 preflight，确认该目标可被纳入治理。"
+            },
+            "blocked": {
+              "label": "已阻断",
+              "description": "当前有 {{blocking}} 个阻断项，{{warnings}} 个告警。"
+            },
+            "readyWithWarnings": {
+              "label": "可启用但有告警",
+              "description": "仍有 {{warnings}} 个告警值得先处理。"
+            },
+            "ready": {
+              "label": "可启用",
+              "description": "所选目标已满足启用托管治理的基本条件。"
+            }
+          },
+          "runtimeStates": {
+            "directMode": {
+              "label": "直连模式",
+              "description": "当前运行时流量预计仍使用 Profile 凭证鉴权。"
+            },
+            "failClosed": {
+              "label": "失败即关闭",
+              "description": "在托管运行时密钥可解密之前，治理流量将直接失败。"
+            },
+            "noRecentTraffic": {
+              "label": "近期无流量",
+              "description": "最近 24 小时未观测到治理目标的请求。"
+            },
+            "noGovernedTraffic": {
+              "label": "无治理流量",
+              "description": "目标上虽然有请求，但没有请求使用托管 LiteLLM 运行时密钥。"
+            },
+            "mixedTraffic": {
+              "label": "混合流量",
+              "description": "治理流量与直连 Profile-Key 流量仍同时打到治理目标。"
+            },
+            "governedTrafficObserved": {
+              "label": "已观测到治理流量",
+              "description": "最近请求已经通过托管 LiteLLM 运行时密钥到达目标。"
+            }
+          }
         },
         "observed": {
           "title": "观测到的运行态用量",
-          "hint": "This is derived from business request logs for the selected LiteLLM profile. LiteLLM still performs the actual enforcement.",
-          "daySpend": "24h spend: {{value}}",
-          "dayRemaining": "24h remaining: {{value}}",
-          "monthSpend": "30d spend: {{value}}",
-          "monthRemaining": "30d remaining: {{value}}",
-          "dayDetails": "24h requests {{requests}}, tokens {{tokens}}, success rate {{successRate}}%, errors {{errors}}, p95 latency {{latency}}.",
-          "monthDetails": "30d requests {{requests}}, tokens {{tokens}}, success rate {{successRate}}%, errors {{errors}}, avg latency {{latency}}.",
+          "hint": "这些数据来自所选 LiteLLM Profile 的业务请求日志；真正的限额执行仍由 LiteLLM 负责。",
+          "daySpend": "近 24h 治理花费：{{value}}",
+          "dayDirect": "近 24h 直连花费：{{value}}",
+          "dayRemaining": "24h 剩余额度：{{value}}",
+          "monthSpend": "近 30d 治理花费：{{value}}",
+          "monthDirect": "近 30d 直连花费：{{value}}",
+          "monthRemaining": "30d 剩余额度：{{value}}",
+          "dayDetails": "近 24h 请求 {{requests}}，Tokens {{tokens}}，成功率 {{successRate}}%，错误 {{errors}}，P95 延迟 {{latency}}。",
+          "monthDetails": "近 30d 请求 {{requests}}，Tokens {{tokens}}，成功率 {{successRate}}%，错误 {{errors}}，平均延迟 {{latency}}。",
           "leadingErrorTitle": "最近最常见的错误",
-          "loading": "Loading observed usage for the selected profile."
+          "loading": "正在加载所选 Profile 的观测用量。",
+          "cards": {
+            "governedRatio": "治理占比",
+            "governedRatioDetail": "{{governed}} / {{total}} 次请求",
+            "managedKeyRequests": "托管密钥请求",
+            "managedKeyRequestsDetail": "近 24h 托管运行时密钥请求数",
+            "profileKeyRequests": "Profile-Key 直连请求",
+            "profileKeyRequestsDetail": "近 24h Profile-Key 直连请求数",
+            "successRate": "24h 成功率",
+            "successRateDetail": "近 24h 错误 {{count}} 次"
+          },
+          "budgetPressure": "观测到的预算压力",
+          "budgetPressureHint": "该指标来自应用侧治理请求日志，真实执行结果仍以 LiteLLM 为准。",
+          "dayBudgetProgress": "近 24h 治理花费 / 配置上限",
+          "monthBudgetProgress": "近 30d 治理花费 / 配置上限",
+          "directLeakage": "近 24h 直连泄漏",
+          "authModeDetails": "近 24h 托管运行时密钥请求 {{managed}} 次，Profile-Key 请求 {{direct}} 次。",
+          "runtimeKeyUnreadable": "托管运行时密钥当前不可读取，因此治理流量会失败关闭，直到修复密钥解密。",
+          "zeroGoverned": "最近 24 小时未观测到治理请求。",
+          "directRequests": "仍有 Profile-Key 直连请求命中治理目标。",
+          "directRequestsDetails": "近 24h 直连请求 {{count}} 次，治理请求 {{governed}} 次。"
+        },
+        "recommendedActions": {
+          "enableAfterPreflight": "待 preflight 通过后，再启用治理。",
+          "resolveBlocking": "保存前先处理所有阻断项。",
+          "bindCompletion": "将对话流量绑定到治理目标 Profile。",
+          "bindEmbedding": "如果该 Profile 需要治理嵌入流量，请绑定嵌入流量。",
+          "bindRerank": "如果该 Profile 需要治理重排流量，请绑定重排流量。",
+          "restoreSecretDecryption": "恢复密钥解密能力，确保托管运行时密钥可读取。",
+          "verifyRuntimeTraffic": "确认真实运行时流量已经打到治理目标 Profile。",
+          "removeProfileKeyCallers": "清理仍在命中治理目标的 Profile-Key 直连调用方。",
+          "reviewDailyBudget": "近 24 小时治理花费逼近日预算上限，请及时复核预算。"
+        },
+        "attention": {
+          "preflightBlocked": {
+            "title": "启用前检查阻断了治理开启",
+            "description": "当前目标仍有 {{count}} 个必需检查未通过。"
+          },
+          "managedKeyUnreadable": {
+            "title": "托管运行时密钥不可读取",
+            "description": "在恢复密钥解密之前，治理流量会直接失败。"
+          },
+          "noBindings": {
+            "title": "当前没有生效的治理流量绑定",
+            "description": "对话、嵌入或重排流量至少需要有一类指向治理目标，LiteLLM 执行治理才有意义。"
+          },
+          "zeroGoverned": {
+            "title": "未观测到治理请求",
+            "description": "治理目标最近 24 小时没有出现使用托管运行时密钥的请求。"
+          },
+          "directTraffic": {
+            "title": "仍有直连流量绕过托管治理",
+            "description": "最近 24 小时有 {{count}} 次 Profile-Key 直连请求命中了治理目标。"
+          },
+          "dayBudget": {
+            "title": "近 24h 花费接近日上限",
+            "description": "已观测到的日治理花费占预算 {{value}}。"
+          },
+          "monthBudget": {
+            "title": "近 30d 花费接近月上限",
+            "description": "已观测到的月治理花费占预算 {{value}}。"
+          },
+          "readyToEnable": {
+            "title": "治理已具备启用条件",
+            "description": "当前目标 Profile 的 preflight 检查已通过。"
+          }
         },
         "fields": {
-          "enabled": "Enable LiteLLM-enforced runtime governance",
-          "targetProfileId": "Target LiteLLM profile",
-          "dailyBudgetUsd": "24h budget (USD)",
-          "monthlyBudgetUsd": "30d budget (USD)",
-          "maxParallelRequests": "Max parallel requests"
+          "enabled": "启用 LiteLLM 运行时强制治理",
+          "targetProfileId": "目标 LiteLLM Profile",
+          "dailyBudgetUsd": "24h 预算（USD）",
+          "monthlyBudgetUsd": "30d 预算（USD）",
+          "maxParallelRequests": "最大并发请求数"
         },
         "hints": {
           "maxParallelRequests": "仅在启用治理时作用于 LiteLLM 托管 runtime key，不会改变应用侧 worker 并发，也不会影响代理压测/测试并发。"
         },
         "validation": {
-          "targetProfileRequired": "Select the LiteLLM gateway profile that governance should manage"
+          "targetProfileRequired": "请选择要由治理接管的 LiteLLM 网关 Profile"
         },
         "placeholders": {
-          "targetProfileId": "Choose an enabled LiteLLM profile"
+          "targetProfileId": "选择一个已启用的 LiteLLM Profile"
         }
       }
     },
