@@ -233,7 +233,7 @@ export function WarMapOverlayRail({
                 <WarMapLegendSwatch
                   key={key}
                   {...item}
-                  size={20}
+                  size={22}
                   variant="quick"
                   interactive
                   active={activeLegendKey === key}

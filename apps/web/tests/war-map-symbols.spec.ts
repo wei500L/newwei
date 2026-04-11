@@ -237,6 +237,7 @@ describe("war-map symbols", () => {
       state: "default",
     });
     expect(warningIcon).toContain("M12 5.55 17.1 16.3H6.9Z");
+    expect(warningIcon).toContain("M12 7.55 15.28 14.38H8.72Z");
     expect(warningIcon).toContain("fill=");
   });
 
@@ -253,7 +254,37 @@ describe("war-map symbols", () => {
       state: "hover",
     });
     expect(vesselHover).toContain("<rect");
+    expect(vesselHover).toContain('width="4.18"');
     expect(vesselHover).toContain('rx="4.4"');
+  });
+
+  it("gives vessel classes distinct silhouettes", () => {
+    const militaryIcon = getWarMapLegendSvgMarkup({
+      symbolKey: "ais-vessel-military",
+      state: "default",
+    });
+    const fishingIcon = getWarMapLegendSvgMarkup({
+      symbolKey: "ais-vessel-fishing",
+      state: "default",
+    });
+    const cargoIcon = getWarMapLegendSvgMarkup({
+      symbolKey: "ais-vessel-cargo",
+      state: "default",
+    });
+    const tankerIcon = getWarMapLegendSvgMarkup({
+      symbolKey: "ais-vessel-tanker",
+      state: "default",
+    });
+    const passengerIcon = getWarMapLegendSvgMarkup({
+      symbolKey: "ais-vessel-passenger",
+      state: "default",
+    });
+
+    expect(militaryIcon).toContain("M12.24 6.92 14.7 7.82 12.24 8.7Z");
+    expect(fishingIcon).toContain('cx="14.22" cy="11.78"');
+    expect(cargoIcon).toContain('width="2.34"');
+    expect(tankerIcon).toContain('width="5.18"');
+    expect(passengerIcon).toContain('cx="13.82" cy="9.98"');
   });
 
   it("formats cluster labels to stay compact inside the bubble", () => {

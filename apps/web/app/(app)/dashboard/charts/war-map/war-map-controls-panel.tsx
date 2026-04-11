@@ -331,7 +331,7 @@ function LegendItemsGrid({
       {items.map(({ key, ...item }) => (
         <WarMapLegendSwatch
           key={key}
-          size={compact ? 20 : 22}
+          size={compact ? 22 : 24}
           variant={compact ? "quick" : "panel"}
           interactive={Boolean(onLegendItemHover || onLegendItemFocus)}
           active={activeLegendKey === key}
@@ -476,7 +476,7 @@ function LegendInteractionStrip({
       </div>
       <div className="mt-2.5 grid gap-1.5 sm:grid-cols-3">
         {items.map(({ key, ...item }) => (
-          <WarMapLegendSwatch key={key} size={20} variant="quick" {...item} />
+          <WarMapLegendSwatch key={key} size={22} variant="quick" {...item} />
         ))}
       </div>
     </div>
