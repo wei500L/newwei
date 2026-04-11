@@ -112,9 +112,11 @@ import {
 } from "./war-map-overlay-model";
 import { WarMapOverlayRail } from "./war-map-overlay-rail";
 import {
+  buildWarMapInteractionLegendItems,
   buildWarMapLegendSections,
   buildWarMapQuickLegendItems,
   coerceHexColor,
+  formatWarMapClusterCountLabel,
   getWarMapDeckIcon,
   getWarMapSymbolAccentColor,
   matchesWarMapLegendItem,
@@ -123,7 +125,6 @@ import {
   type WarMapSymbolKey,
   type WarMapSymbolState,
 } from "./war-map-symbols";
-
 
 const ALL_TIME_START = new Date("1970-01-01T00:00:00.000Z");
 const WAR_MAP_SYMBOL_KEY_SET = new Set<WarMapSymbolKey>([
@@ -190,11 +191,7 @@ function resolveLegendMatcher(
     case "hover":
     case "selected":
     case "cluster":
-      return {
-        key: itemKey,
-        symbolKey: "signal-medium",
-        matchSymbolKeys: ["signal-medium"],
-      };
+      return null;
     default:
       if (isWarMapSymbolKey(itemKey)) {
         return {
@@ -721,50 +718,31 @@ function resolveDeckPointSymbolSize({
   const isSelected =
     Boolean(point.selectionKey) && point.selectionKey === selectedInspectorKey;
   const isHovered = point.interactionKey === hoveredInteractionKey;
-  const stateBoost = isSelected ? 4 : isHovered ? 2 : 0;
+  const stateBoost = isSelected ? 3 : isHovered ? 1.5 : 0;
 
   let baseSize = 22;
   if (point.isCluster) {
-    baseSize = clamp(point.radius * 1.3, 28, 44);
+    baseSize = clamp(point.radius * 1.24, 30, 42);
   } else if (point.kind === "event") {
-    baseSize = clamp(16 + point.radius * 0.92, 20, 36);
+    baseSize = clamp(15 + point.radius * 0.88, 19, 32);
   } else if (
     point.kind === "layer" &&
     (point.layerId === "flights" || point.layerId === "ais")
   ) {
-    baseSize = clamp(16 + point.radius * 1.1, 20, 34);
+    baseSize = clamp(15 + point.radius * 1.02, 20, 32);
   } else if (point.kind === "monitor") {
-    baseSize = clamp(16 + point.radius * 0.85, 18, 28);
+    baseSize = clamp(15 + point.radius * 0.8, 17, 24);
   } else if (point.kind === "news") {
-    baseSize = clamp(12 + point.radius * 0.9, 16, 22);
+    baseSize = clamp(11 + point.radius * 0.75, 15, 20);
   } else if (point.kind === "layer") {
-    baseSize = clamp(14 + point.radius * 0.85, 18, 26);
+    baseSize = clamp(13 + point.radius * 0.8, 17, 24);
   }
 
   return baseSize + stateBoost;
 }
 
-function resolveDeckPointRingRadius({
-  point,
-  hoveredInteractionKey,
-  selectedInspectorKey,
-}: {
-  point: DeckPoint;
-  hoveredInteractionKey: string | null;
-  selectedInspectorKey: string | null;
-}): number {
-  return Math.max(
-    14,
-    resolveDeckPointSymbolSize({
-      point,
-      hoveredInteractionKey,
-      selectedInspectorKey,
-    }) * (point.isCluster ? 0.48 : 0.45),
-  );
-}
-
 function resolveDeckPointClusterTextSize(point: DeckPoint): number {
-  return clamp(point.radius * 0.42, 12, 18);
+  return clamp(point.radius * 0.36, 11, 16);
 }
 
 function toClusterSelectionKey(
@@ -1394,16 +1372,16 @@ export function WarMap({
 
   const transportSelections = useMemo<
     (RenderableWarMapTransportSelection & {
-        lat: number;
-        lng: number;
-        selectionKey: string;
-      })[]
+      lat: number;
+      lng: number;
+      selectionKey: string;
+    })[]
   >(() => {
     const selections: (RenderableWarMapTransportSelection & {
-        lat: number;
-        lng: number;
-        selectionKey: string;
-      })[] = [];
+      lat: number;
+      lng: number;
+      selectionKey: string;
+    })[] = [];
     const layers = layersQuery.data?.layers ?? {};
 
     const flightsDataset = layers.flights;
@@ -1890,92 +1868,6 @@ export function WarMap({
     [zoomToLayerCluster],
   );
 
-  const buildPointHighlightLayers = useCallback(
-    ({ id, data }: { id: string; data: DeckPoint[] }): any[] => {
-      const selectedPoints = data.filter(
-        (point) =>
-          Boolean(point.selectionKey) &&
-          point.selectionKey === selectedInspectorKey,
-      );
-      const hoveredPoints = data.filter(
-        (point) =>
-          point.interactionKey === hoveredInteractionKey &&
-          point.selectionKey !== selectedInspectorKey,
-      );
-
-      const layers: any[] = [];
-
-      if (selectedPoints.length > 0) {
-        layers.push(
-          new ScatterplotLayer({
-            id: `${id}-selected-outer`,
-            data: selectedPoints,
-            pickable: false,
-            radiusUnits: "pixels",
-            lineWidthUnits: "pixels",
-            stroked: true,
-            filled: false,
-            getPosition: (point: DeckPoint) => [point.lng, point.lat],
-            getRadius: (point: DeckPoint) =>
-              resolveDeckPointRingRadius({
-                point,
-                hoveredInteractionKey,
-                selectedInspectorKey,
-              }) + 4,
-            getLineColor: [255, 255, 255, 170],
-            lineWidthMinPixels: 1.5,
-          }),
-        );
-        layers.push(
-          new ScatterplotLayer({
-            id: `${id}-selected-inner`,
-            data: selectedPoints,
-            pickable: false,
-            radiusUnits: "pixels",
-            lineWidthUnits: "pixels",
-            stroked: true,
-            filled: false,
-            getPosition: (point: DeckPoint) => [point.lng, point.lat],
-            getRadius: (point: DeckPoint) =>
-              resolveDeckPointRingRadius({
-                point,
-                hoveredInteractionKey,
-                selectedInspectorKey,
-              }) + 1.75,
-            getLineColor: [15, 23, 42, 84],
-            lineWidthMinPixels: 1.5,
-          }),
-        );
-      }
-
-      if (hoveredPoints.length > 0) {
-        layers.push(
-          new ScatterplotLayer({
-            id: `${id}-hovered`,
-            data: hoveredPoints,
-            pickable: false,
-            radiusUnits: "pixels",
-            lineWidthUnits: "pixels",
-            stroked: true,
-            filled: false,
-            getPosition: (point: DeckPoint) => [point.lng, point.lat],
-            getRadius: (point: DeckPoint) =>
-              resolveDeckPointRingRadius({
-                point,
-                hoveredInteractionKey,
-                selectedInspectorKey,
-              }) + 1.5,
-            getLineColor: [15, 23, 42, 56],
-            lineWidthMinPixels: 1.25,
-          }),
-        );
-      }
-
-      return layers;
-    },
-    [hoveredInteractionKey, selectedInspectorKey],
-  );
-
   const buildSymbolPointLayers = useCallback(
     ({
       id,
@@ -2010,7 +1902,7 @@ export function WarMap({
       const mutedPoints = pointMatchesHighlightedLegendItem
         ? data.filter((point) => !pointMatchesHighlightedLegendItem(point))
         : [];
-      const layers: any[] = [...buildPointHighlightLayers({ id, data })];
+      const layers: any[] = [];
       const buildIconLayer = ({
         layerData,
         layerSuffix,
@@ -2090,10 +1982,11 @@ export function WarMap({
           pickable,
           billboard: true,
           getPosition: (point: DeckPoint) => [point.lng, point.lat],
-          getText: (point: DeckPoint) => String(point.clusterCount ?? ""),
+          getText: (point: DeckPoint) =>
+            formatWarMapClusterCountLabel(point.clusterCount ?? 0),
           getSize: (point: DeckPoint) => resolveDeckPointClusterTextSize(point),
           getColor: [15, 23, 42, colorAlpha],
-          fontWeight: 800,
+          fontWeight: 700,
           getTextAnchor: "middle",
           getAlignmentBaseline: "center",
           onHover: pickable ? handleDeckPointHover : undefined,
@@ -2129,7 +2022,6 @@ export function WarMap({
       return layers;
     },
     [
-      buildPointHighlightLayers,
       handleDeckPointHover,
       focusedLegendItemKey,
       hoveredLegendItemKey,
@@ -2217,8 +2109,7 @@ export function WarMap({
       };
 
       if (dataset.geometryType === "path") {
-        const paths: (WarMapLayerFeature & { path: DeckCoordinate[] })[] =
-          [];
+        const paths: (WarMapLayerFeature & { path: DeckCoordinate[] })[] = [];
         const pathFallbackPoints: DeckPoint[] = [];
         const pathSanitizationSummary = {
           affectedFeatureCount: 0,
@@ -2309,8 +2200,12 @@ export function WarMap({
       }
 
       if (dataset.geometryType === "polygon") {
-        const polygons: (WarMapLayerFeature & { polygon: DeckCoordinate[][] })[] = [];
-        const polygonOutlineFeatures: (WarMapLayerFeature & { path: DeckCoordinate[] })[] = [];
+        const polygons: (WarMapLayerFeature & {
+          polygon: DeckCoordinate[][];
+        })[] = [];
+        const polygonOutlineFeatures: (WarMapLayerFeature & {
+          path: DeckCoordinate[];
+        })[] = [];
         const polygonFallbackPoints: DeckPoint[] = [];
         const polygonSanitizationSummary = {
           affectedFeatureCount: 0,
@@ -4249,6 +4144,10 @@ export function WarMap({
       t,
     ],
   );
+  const interactionLegendItems = useMemo<WarMapLegendItem[]>(
+    () => buildWarMapInteractionLegendItems({ t }),
+    [t],
+  );
   const legendSections = useMemo(
     () =>
       buildWarMapLegendSections({
@@ -4276,6 +4175,12 @@ export function WarMap({
       items.set(item.key, item);
     }
 
+    for (const item of interactionLegendItems) {
+      if (!items.has(item.key)) {
+        items.set(item.key, item);
+      }
+    }
+
     for (const section of legendSections) {
       for (const item of section.items) {
         if (!items.has(item.key)) {
@@ -4285,7 +4190,7 @@ export function WarMap({
     }
 
     return items;
-  }, [legendSections, quickLegendItems]);
+  }, [interactionLegendItems, legendSections, quickLegendItems]);
   const highlightedLegendItemKey =
     focusedLegendItemKey ?? hoveredLegendItemKey ?? null;
 
@@ -4381,6 +4286,7 @@ export function WarMap({
       feedSummaryCards={overlayViewModel.feedSummaryCards}
       detailedChainStatuses={overlayViewModel.detailedChainStatuses}
       legendSections={legendSections}
+      interactionLegendItems={interactionLegendItems}
       view={{
         presets: presetOptions,
         timeRanges: timeRangeOptions,
@@ -4467,6 +4373,7 @@ export function WarMap({
   const legendPanelContent: ReactNode = (
     <WarMapLegendPanel
       legendSections={legendSections}
+      interactionLegendItems={interactionLegendItems}
       summaryDataLabel={overlayViewModel.summaryDataLabel}
       activeLegendKey={focusedLegendItemKey}
       highlightedLegendKey={highlightedLegendItemKey}
@@ -4479,6 +4386,7 @@ export function WarMap({
   const legendDockContent: ReactNode = (
     <WarMapLegendDock
       legendSections={legendSections}
+      interactionLegendItems={interactionLegendItems}
       summaryDataLabel={overlayViewModel.summaryDataLabel}
       activeLegendKey={focusedLegendItemKey}
       highlightedLegendKey={highlightedLegendItemKey}
@@ -4511,11 +4419,7 @@ export function WarMap({
   if (!inView) {
     return (
       <div ref={wrapperRef} className={containerClassName}>
-        <div
-          className={
-            standaloneLayout ? "flex flex-col gap-5" : "h-full"
-          }
-        >
+        <div className={standaloneLayout ? "flex flex-col gap-5" : "h-full"}>
           <div className={mapViewportClassName}>
             <div className="flex h-full items-center justify-center">
               <Space size={8}>
@@ -4535,11 +4439,7 @@ export function WarMap({
 
   return (
     <div ref={wrapperRef} className={containerClassName}>
-      <div
-        className={
-          standaloneLayout ? "flex flex-col gap-5" : "h-full"
-        }
-      >
+      <div className={standaloneLayout ? "flex flex-col gap-5" : "h-full"}>
         <div className={mapViewportClassName}>
           {!hasFatalOverlay ? (
             <>
@@ -4709,10 +4609,7 @@ export function WarMap({
         </div>
 
         {standaloneLayout ? (
-          <div
-            ref={legendDockRef}
-            className={OVERLAY_SURFACE_CLASS_NAME}
-          >
+          <div ref={legendDockRef} className={OVERLAY_SURFACE_CLASS_NAME}>
             {legendDockContent}
           </div>
         ) : null}

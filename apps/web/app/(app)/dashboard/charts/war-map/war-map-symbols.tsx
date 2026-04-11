@@ -89,7 +89,6 @@ type WarMapSymbolRenderTarget = "map" | "legend";
 const SYMBOL_GRID_SIZE = 24;
 const SYMBOL_ICON_SIZE = 48;
 const SYMBOL_ICON_ANCHOR = SYMBOL_ICON_SIZE / 2;
-const NEUTRAL_DARK = "#0f172a";
 const WHITE = "#ffffff";
 const QUICK_LEGEND_DENSITIES = new Set<OverlayDensity>(["expanded", "compact"]);
 
@@ -186,38 +185,62 @@ function mapStrokePath(path: string, stroke: string, width: number): string {
   ].join("");
 }
 
-function mapStrokeCircle(radius: number, stroke: string, width: number): string {
+function mapStrokeCircle(
+  radius: number,
+  stroke: string,
+  width: number,
+): string {
   return [
     `<circle cx="12" cy="12" r="${radius}" ${strokeAttrs(width + 1.15, WHITE)} opacity="0.94" />`,
     `<circle cx="12" cy="12" r="${radius}" ${strokeAttrs(width, stroke)} />`,
   ].join("");
 }
 
-function buildStateMarkup(
-  state: WarMapSymbolState,
-  target: WarMapSymbolRenderTarget,
-): string {
-  if (target !== "legend") {
+function buildStateMarkup({
+  state,
+  target,
+  accent,
+}: {
+  state: WarMapSymbolState;
+  target: WarMapSymbolRenderTarget;
+  accent: string;
+}): string {
+  if (state === "default" || state === "cluster") {
     return "";
   }
+
+  const outerRadius = target === "map" ? 8.95 : 9.3;
+  const whiteRingOpacity = target === "map" ? 0.86 : 0.94;
+  const hoverStroke = withAlpha(accent, target === "map" ? 0.2 : 0.24);
+  const selectedStroke = withAlpha(accent, target === "map" ? 0.34 : 0.4);
+  const selectedFill = withAlpha(accent, target === "map" ? 0.06 : 0.08);
+
   if (state === "hover") {
-    return `<circle cx="12" cy="12" r="10.2" ${strokeAttrs(1.5, withAlpha(NEUTRAL_DARK, 0.18))} />`;
+    return [
+      `<circle cx="12" cy="12" r="${outerRadius}" fill="${withAlpha(WHITE, target === "map" ? 0.6 : 0.82)}" />`,
+      `<circle cx="12" cy="12" r="${outerRadius}" ${strokeAttrs(1.25, hoverStroke)} />`,
+    ].join("");
   }
-  if (state === "selected") {
-    return `<circle cx="12" cy="12" r="10.2" ${strokeAttrs(2, withAlpha(NEUTRAL_DARK, 0.32))} />`;
-  }
-  return "";
+
+  return [
+    `<circle cx="12" cy="12" r="${outerRadius + 0.15}" fill="${selectedFill}" />`,
+    `<circle cx="12" cy="12" r="${outerRadius}" ${strokeAttrs(1.6, `${withAlpha(WHITE, whiteRingOpacity)}`)} />`,
+    `<circle cx="12" cy="12" r="${outerRadius}" ${strokeAttrs(1.3, selectedStroke)} />`,
+  ].join("");
 }
 
-function buildClusterBubble(accent: string, target: WarMapSymbolRenderTarget): string {
-  const arcPath = "M6.4 8.35a6.8 6.8 0 0 1 11.2 0";
+function buildClusterBubble(
+  accent: string,
+  target: WarMapSymbolRenderTarget,
+): string {
+  const arcPath = "M7.2 8.7a6 6 0 0 1 9.6 0";
   return [
-    `<circle cx="12" cy="12" r="8.05" fill="${mixHex(accent, WHITE, 0.94)}" ${strokeAttrs(1.2, withAlpha(NEUTRAL_DARK, 0.14))} />`,
+    `<circle cx="12" cy="12" r="7.8" fill="${mixHex(accent, WHITE, 0.965)}" ${strokeAttrs(1.15, withAlpha(accent, 0.18))} />`,
     target === "map"
-      ? `<circle cx="12" cy="12" r="8.05" ${strokeAttrs(2.2, WHITE)} opacity="0.9" />`
+      ? `<circle cx="12" cy="12" r="7.8" ${strokeAttrs(1.8, WHITE)} opacity="0.9" />`
       : "",
-    `<path d="${arcPath}" ${strokeAttrs(2.15, accent)} />`,
-    `<circle cx="12" cy="12" r="3.35" fill="${withAlpha(accent, 0.12)}" />`,
+    `<path d="${arcPath}" ${strokeAttrs(1.95, accent)} />`,
+    `<circle cx="12" cy="12" r="3.2" fill="${withAlpha(accent, 0.1)}" />`,
   ].join("");
 }
 
@@ -268,18 +291,21 @@ function buildTransportGlyph({
   target: WarMapSymbolRenderTarget;
 }): string {
   return target === "map"
-    ? mapStrokePath(path, accent, 1.9)
-    : `<path d="${path}" ${strokeAttrs(1.9, accent)} />`;
+    ? mapStrokePath(path, accent, 1.8)
+    : `<path d="${path}" ${strokeAttrs(1.8, accent)} />`;
 }
 
-function buildDensitySymbol(accent: string, target: WarMapSymbolRenderTarget): string {
-  const accentSoft = withAlpha(accent, target === "map" ? 0.18 : 0.12);
+function buildDensitySymbol(
+  accent: string,
+  target: WarMapSymbolRenderTarget,
+): string {
+  const accentSoft = withAlpha(accent, target === "map" ? 0.14 : 0.11);
   return [
     `<circle cx="12" cy="12" r="8.6" fill="${accentSoft}" />`,
-    `<circle cx="12" cy="12" r="5.9" fill="${withAlpha(accent, target === "map" ? 0.14 : 0.1)}" />`,
+    `<circle cx="12" cy="12" r="5.9" fill="${withAlpha(accent, target === "map" ? 0.1 : 0.08)}" />`,
     target === "map"
-      ? mapStrokeCircle(5.4, accent, 1.35)
-      : `<circle cx="12" cy="12" r="5.4" ${strokeAttrs(1.35, accent)} />`,
+      ? mapStrokeCircle(5.4, accent, 1.25)
+      : `<circle cx="12" cy="12" r="5.4" ${strokeAttrs(1.25, accent)} />`,
     `<circle cx="12" cy="12" r="1.95" fill="${accent}" />`,
   ].join("");
 }
@@ -293,20 +319,21 @@ function buildWarningSymbol({
   target: WarMapSymbolRenderTarget;
   severity: "high" | "medium" | "low";
 }): string {
-  const trianglePath = "M12 4.5 19 17.4H5Z";
-  const fillOpacity = severity === "high" ? 0.18 : severity === "medium" ? 0.12 : 0.08;
+  const trianglePath = "M12 5 18.35 17H5.65Z";
+  const fillOpacity =
+    severity === "high" ? 0.14 : severity === "medium" ? 0.1 : 0.07;
   const triangle =
     target === "map"
       ? [
-          `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(2.2, WHITE)} opacity="0.9" />`,
-          `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(1.55, accent)} />`,
+          `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(2, WHITE)} opacity="0.9" />`,
+          `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(1.45, accent)} />`,
         ].join("")
-      : `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(1.55, accent)} />`;
+      : `<path d="${trianglePath}" fill="${withAlpha(accent, fillOpacity)}" ${strokeAttrs(1.45, accent)} />`;
 
   return [
     triangle,
-    `<path d="M12 8.6v4.9" ${strokeAttrs(1.7, accent)} />`,
-    `<circle cx="12" cy="15.9" r="0.9" fill="${accent}" />`,
+    `<path d="M12 8.9v4.5" ${strokeAttrs(1.55, accent)} />`,
+    `<circle cx="12" cy="15.45" r="0.82" fill="${accent}" />`,
   ].join("");
 }
 
@@ -356,15 +383,13 @@ function buildSymbolBody({
       return buildTransportGlyph({
         accent,
         target,
-        path:
-          "M12 3.9 13.95 9.1l5.05 1.1v1.5l-5.05-.1.95 5.95-1.15.66L12 13.85l-1.75 4.36-1.15-.66.95-5.95-5.05.1v-1.5l5.05-1.1L12 3.9Z",
+        path: "M12 3.9 13.95 9.1l5.05 1.1v1.5l-5.05-.1.95 5.95-1.15.66L12 13.85l-1.75 4.36-1.15-.66.95-5.95-5.05.1v-1.5l5.05-1.1L12 3.9Z",
       });
     case "vessel":
       return buildTransportGlyph({
         accent,
         target,
-        path:
-          "M12 5.1 14.25 8.2h-1.6v2.2h4.3l1.45 3.1-2.4 4.45H8.02l-2.4-4.45 1.45-3.1h4.28V8.2H9.8L12 5.1Zm-2.85 7.15-.98 2h5.66l-.98-2H9.15Zm.95 3.45.8 1.22h2.2l.8-1.22h-3.8Z",
+        path: "M12 5.1 14.25 8.2h-1.6v2.2h4.3l1.45 3.1-2.4 4.45H8.02l-2.4-4.45 1.45-3.1h4.28V8.2H9.8L12 5.1Zm-2.85 7.15-.98 2h5.66l-.98-2H9.15Zm.95 3.45.8 1.22h2.2l.8-1.22h-3.8Z",
       });
     case "density":
       return buildDensitySymbol(accent, target);
@@ -402,7 +427,7 @@ function buildSymbolSvg({
 }): string {
   return [
     svgOpenTag(target),
-    buildStateMarkup(state, target),
+    buildStateMarkup({ state, target, accent }),
     buildSymbolBody({ accent, family, state, symbolKey, target }),
     "</svg>",
   ].join("");
@@ -788,7 +813,7 @@ export function buildWarMapLegendSections({
         defaultValue: "Signals",
       }),
       description: t("dashboard.charts.warMap.legend.signalsHint", {
-        defaultValue: "Severity is encoded through color and emphasis.",
+        defaultValue: "Color indicates urgency.",
       }),
       defaultExpanded: true,
       items: ["signal-high", "signal-medium", "signal-low"].map(
@@ -807,7 +832,7 @@ export function buildWarMapLegendSections({
       }),
       description: t("dashboard.charts.warMap.legend.newsHint", {
         defaultValue:
-          "Filled and hollow centers distinguish precise and fallback locations.",
+          "Solid marks are precise locations; hollow marks are fallback locations.",
       }),
       defaultExpanded: true,
       items: [
@@ -929,54 +954,12 @@ export function buildWarMapLegendSections({
       }),
       description: t("dashboard.charts.warMap.legend.transportHint", {
         defaultValue:
-          "Flights and AIS layers share the same map symbols and quick legend.",
+          "Aircraft, vessels, density zones, and disruptions use dedicated shapes.",
       }),
       defaultExpanded: false,
       items: transportItems,
     });
   }
-
-  sections.push({
-    key: "states",
-    title: t("dashboard.charts.warMap.legend.statesTitle", {
-      defaultValue: "Display states",
-    }),
-    description: t("dashboard.charts.warMap.legend.statesHint", {
-      defaultValue:
-        "Focus rings and cluster bubbles highlight interaction state.",
-    }),
-    items: [
-      {
-        key: "hover",
-        symbolKey: "signal-medium",
-        state: "hover",
-        label: t("dashboard.charts.warMap.legend.hoverState", {
-          defaultValue: "Hover focus",
-        }),
-        matchSymbolKeys: ["signal-medium"],
-      },
-      {
-        key: "selected",
-        symbolKey: "signal-medium",
-        state: "selected",
-        label: t("dashboard.charts.warMap.legend.selectedState", {
-          defaultValue: "Selected",
-        }),
-        matchSymbolKeys: ["signal-medium"],
-      },
-      {
-        key: "cluster",
-        symbolKey: "signal-medium",
-        state: "cluster",
-        countLabel: "12",
-        label: t("dashboard.charts.warMap.legend.clusterState", {
-          defaultValue: "Cluster badge",
-        }),
-        matchSymbolKeys: ["signal-medium"],
-      },
-    ],
-    defaultExpanded: false,
-  });
 
   if (activePointLayers.length > 0) {
     sections.push({
@@ -986,7 +969,7 @@ export function buildWarMapLegendSections({
       }),
       description: t("dashboard.charts.warMap.legend.otherLayersHint", {
         defaultValue:
-          "Point-based overlays without a bespoke symbol still use the shared halo and outline treatment.",
+          "Custom point overlays reuse the shared map symbol style.",
       }),
       defaultExpanded: false,
       items: activePointLayers.map((item) => ({
@@ -1000,6 +983,57 @@ export function buildWarMapLegendSections({
   }
 
   return sections;
+}
+
+export function buildWarMapInteractionLegendItems({
+  t,
+}: {
+  t: WarMapTranslateFn;
+}): WarMapLegendItem[] {
+  return [
+    {
+      key: "hover",
+      symbolKey: "signal-medium",
+      state: "hover",
+      label: t("dashboard.charts.warMap.legend.hoverState", {
+        defaultValue: "Hover preview",
+      }),
+      matchSymbolKeys: ["signal-medium"],
+    },
+    {
+      key: "selected",
+      symbolKey: "signal-medium",
+      state: "selected",
+      label: t("dashboard.charts.warMap.legend.selectedState", {
+        defaultValue: "Pinned focus",
+      }),
+      matchSymbolKeys: ["signal-medium"],
+    },
+    {
+      key: "cluster",
+      symbolKey: "signal-medium",
+      state: "cluster",
+      countLabel: "12",
+      label: t("dashboard.charts.warMap.legend.clusterState", {
+        defaultValue: "Cluster",
+      }),
+      matchSymbolKeys: ["signal-medium"],
+    },
+  ];
+}
+
+export function formatWarMapClusterCountLabel(count: number): string {
+  if (!Number.isFinite(count)) {
+    return "";
+  }
+  const normalizedCount = Math.max(0, Math.round(count));
+  if (normalizedCount === 0) {
+    return "";
+  }
+  if (normalizedCount > 999) {
+    return "999+";
+  }
+  return String(normalizedCount);
 }
 
 export function WarMapLegendSwatch({
@@ -1029,25 +1063,29 @@ export function WarMapLegendSwatch({
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 }) {
-  const iconMarkup = getWarMapLegendSvgMarkup({ symbolKey, state, accentColor });
+  const iconMarkup = getWarMapLegendSvgMarkup({
+    symbolKey,
+    state,
+    accentColor,
+  });
   const containerClassName =
     variant === "quick"
-      ? `flex min-w-0 items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-[border-color,background-color,box-shadow,transform,opacity] duration-150 ${
+      ? `flex min-w-0 items-center gap-2.5 rounded-[14px] border px-2.5 py-2 text-left transition-[border-color,background-color,box-shadow,transform,opacity] duration-150 ${
           active
-            ? "border-slate-300/90 bg-white/[0.94] dark:border-slate-500/70 dark:bg-slate-950/[0.84]"
-            : "border-slate-200/70 bg-white/[0.54] dark:border-slate-700/70 dark:bg-slate-950/[0.46]"
+            ? "border-slate-300/90 bg-white/[0.96] shadow-[0_12px_22px_-20px_rgba(15,23,42,0.2)] dark:border-slate-500/70 dark:bg-slate-950/[0.86]"
+            : "border-slate-200/75 bg-white/[0.72] dark:border-slate-700/70 dark:bg-slate-950/[0.52]"
         } ${muted ? "opacity-55" : "opacity-100"} ${
           interactive
-            ? "hover:border-slate-300/85 hover:bg-white/[0.82] dark:hover:border-slate-500/80 dark:hover:bg-slate-950/[0.68]"
+            ? "hover:border-slate-300/85 hover:bg-white/[0.9] dark:hover:border-slate-500/80 dark:hover:bg-slate-950/[0.7]"
             : ""
         }`
-      : `flex min-w-0 items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow,opacity] duration-150 ${
+      : `flex min-w-0 items-center gap-3 rounded-[18px] border px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow,opacity] duration-150 ${
           active
-            ? "border-slate-300 bg-white dark:border-slate-500/75 dark:bg-slate-950/82"
-            : "border-slate-200/75 bg-white/[0.62] dark:border-slate-700/80 dark:bg-slate-950/[0.52]"
+            ? "border-slate-300 bg-white shadow-[0_14px_28px_-24px_rgba(15,23,42,0.18)] dark:border-slate-500/75 dark:bg-slate-950/82"
+            : "border-slate-200/80 bg-white/[0.76] dark:border-slate-700/80 dark:bg-slate-950/[0.54]"
         } ${muted ? "opacity-50" : "opacity-100"} ${
           interactive
-            ? "hover:border-slate-300/90 hover:bg-white/[0.84] dark:hover:border-slate-500/80 dark:hover:bg-slate-950/[0.72]"
+            ? "hover:border-slate-300/90 hover:bg-white/[0.9] dark:hover:border-slate-500/80 dark:hover:bg-slate-950/[0.72]"
             : ""
         }`;
   const content = (

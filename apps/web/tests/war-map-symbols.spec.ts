@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildWarMapInteractionLegendItems,
   buildWarMapLegendSections,
   buildWarMapQuickLegendItems,
   coerceHexColor,
+  formatWarMapClusterCountLabel,
   getWarMapDeckIcon,
   getWarMapLegendSvgMarkup,
   getQuickLegendVisibility,
@@ -72,7 +74,6 @@ describe("war-map symbols", () => {
       "signals",
       "news",
       "transport",
-      "states",
       "other-point-layers",
     ]);
     expect(
@@ -93,6 +94,29 @@ describe("war-map symbols", () => {
     ]);
   });
 
+  it("builds interaction legend samples separately from semantic sections", () => {
+    const items = buildWarMapInteractionLegendItems({ t });
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        key: "hover",
+        state: "hover",
+        label: "Hover preview",
+      }),
+      expect.objectContaining({
+        key: "selected",
+        state: "selected",
+        label: "Pinned focus",
+      }),
+      expect.objectContaining({
+        key: "cluster",
+        state: "cluster",
+        countLabel: "12",
+        label: "Cluster",
+      }),
+    ]);
+  });
+
   it("shows the quick legend only on expanded and compact overlays", () => {
     expect(getQuickLegendVisibility("expanded")).toBe(true);
     expect(getQuickLegendVisibility("compact")).toBe(true);
@@ -102,9 +126,10 @@ describe("war-map symbols", () => {
   it("renders deck icons as data URLs and legend icons as inline SVG", () => {
     const deckIcon = getWarMapDeckIcon({
       symbolKey: "signal-high",
-      state: "default",
+      state: "hover",
     });
     expect(deckIcon.url.startsWith("data:image/svg+xml")).toBe(true);
+    expect(decodeURIComponent(deckIcon.url)).toContain('r="8.95"');
 
     const legendIcon = getWarMapLegendSvgMarkup({
       symbolKey: "signal-high",
@@ -112,6 +137,7 @@ describe("war-map symbols", () => {
     });
     expect(legendIcon.startsWith("<svg")).toBe(true);
     expect(legendIcon).toContain("<circle");
+    expect(legendIcon).toContain('r="9.3"');
     expect(legendIcon).not.toContain("data:image");
   });
 
@@ -120,15 +146,23 @@ describe("war-map symbols", () => {
       symbolKey: "signal-medium",
       state: "cluster",
     });
-    expect(clusterIcon).toContain('r="8.05"');
+    expect(clusterIcon).toContain('r="7.8"');
     expect(clusterIcon).toContain("<path");
 
     const warningIcon = getWarMapLegendSvgMarkup({
       symbolKey: "ais-disruption-high",
       state: "default",
     });
-    expect(warningIcon).toContain("M12 4.5 19 17.4H5Z");
+    expect(warningIcon).toContain("M12 5 18.35 17H5.65Z");
     expect(warningIcon).toContain("fill=");
+  });
+
+  it("formats cluster labels to stay compact inside the bubble", () => {
+    expect(formatWarMapClusterCountLabel(1)).toBe("1");
+    expect(formatWarMapClusterCountLabel(12)).toBe("12");
+    expect(formatWarMapClusterCountLabel(128)).toBe("128");
+    expect(formatWarMapClusterCountLabel(1000)).toBe("999+");
+    expect(formatWarMapClusterCountLabel(Number.NaN)).toBe("");
   });
 
   it("matches legend entries to symbol families and active point layers", () => {

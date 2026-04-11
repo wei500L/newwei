@@ -108,6 +108,7 @@ export interface WarMapControlsPanelProps {
   feedSummaryCards: WarMapFeedSummaryCard[];
   detailedChainStatuses: WarMapDetailedChainStatus[];
   legendSections: WarMapLegendSection[];
+  interactionLegendItems: WarMapLegendItem[];
   view: WarMapControlsPanelViewProps;
   transport: WarMapControlsPanelTransportProps;
   activeLegendKey?: string | null;
@@ -121,6 +122,7 @@ export interface WarMapControlsPanelProps {
 
 export interface WarMapLegendPanelProps {
   legendSections: WarMapLegendSection[];
+  interactionLegendItems: WarMapLegendItem[];
   summaryDataLabel?: string;
   onClose?: () => void;
   activeLegendKey?: string | null;
@@ -132,6 +134,7 @@ export interface WarMapLegendPanelProps {
 
 export interface WarMapLegendDockProps {
   legendSections: WarMapLegendSection[];
+  interactionLegendItems: WarMapLegendItem[];
   summaryDataLabel?: string;
   activeLegendKey?: string | null;
   highlightedLegendKey?: string | null;
@@ -327,7 +330,7 @@ function LegendItemsGrid({
       {items.map(({ key, ...item }) => (
         <WarMapLegendSwatch
           key={key}
-          size={compact ? 22 : 24}
+          size={compact ? 20 : 22}
           variant={compact ? "quick" : "panel"}
           interactive={Boolean(onLegendItemHover || onLegendItemFocus)}
           active={activeLegendKey === key}
@@ -376,7 +379,7 @@ function LegendSectionCard({
   onLegendItemFocus?: (itemKey: string | null) => void;
 }) {
   return (
-    <div className="rounded-[18px] border border-slate-200/75 bg-white/[0.68] px-3.5 py-3 shadow-[0_10px_24px_-24px_rgba(15,23,42,0.14)] dark:border-slate-700/80 dark:bg-slate-950/[0.58] dark:shadow-[0_14px_28px_-24px_rgba(2,6,23,0.72)]">
+    <div className="rounded-[18px] border border-slate-200/80 bg-white/[0.78] px-3.5 py-3 shadow-[0_12px_24px_-24px_rgba(15,23,42,0.12)] dark:border-slate-700/80 dark:bg-slate-950/[0.58] dark:shadow-[0_12px_24px_-24px_rgba(2,6,23,0.62)]">
       <button
         type="button"
         className="flex w-full items-start justify-between gap-3 text-left"
@@ -408,6 +411,43 @@ function LegendSectionCard({
           onLegendItemFocus={onLegendItemFocus}
         />
       ) : null}
+    </div>
+  );
+}
+
+function LegendInteractionStrip({
+  items,
+  t,
+}: {
+  items: WarMapLegendItem[];
+  t: WarMapTranslateFn;
+}) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-[18px] border border-slate-200/80 bg-white/[0.76] px-3.5 py-3.5 shadow-[0_12px_24px_-24px_rgba(15,23,42,0.12)] dark:border-slate-700/80 dark:bg-slate-950/[0.56] dark:shadow-[0_12px_24px_-24px_rgba(2,6,23,0.62)]">
+      <div className="min-w-0">
+        <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
+          {t("dashboard.charts.warMap.legend.interactionTitle", {
+            defaultValue: "Interaction",
+          })}
+        </Typography.Text>
+        <Typography.Text
+          type="secondary"
+          className="mt-1 block text-[11px] leading-[1.15rem]"
+        >
+          {t("dashboard.charts.warMap.legend.quickLegendHint", {
+            defaultValue: "Hover to preview. Click to pin.",
+          })}
+        </Typography.Text>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        {items.map(({ key, ...item }) => (
+          <WarMapLegendSwatch key={key} size={22} variant="quick" {...item} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -1319,12 +1359,16 @@ function FeedsSection({
 
 function LegendSection({
   legendSections,
+  interactionLegendItems,
   activeLegendKey,
   highlightedLegendKey,
   onLegendItemHover,
   onLegendItemFocus,
   t,
-}: Pick<WarMapControlsPanelProps, "legendSections" | "t"> & {
+}: Pick<
+  WarMapControlsPanelProps,
+  "legendSections" | "interactionLegendItems" | "t"
+> & {
   activeLegendKey?: string | null;
   highlightedLegendKey?: string | null;
   onLegendItemHover?: (itemKey: string | null) => void;
@@ -1337,6 +1381,7 @@ function LegendSection({
           defaultValue: "Legend",
         })}
       </Typography.Text>
+      <LegendInteractionStrip items={interactionLegendItems} t={t} />
       <LegendSectionsList
         legendSections={legendSections}
         activeLegendKey={activeLegendKey}
@@ -1347,8 +1392,7 @@ function LegendSection({
       <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white/70 px-3 py-3 dark:bg-slate-950/55">
         <Typography.Text type="secondary" className="text-xs">
           {t("dashboard.charts.warMap.legend.radius", {
-            defaultValue:
-              "Larger points indicate stronger aggregated signal density.",
+            defaultValue: "Larger marks indicate stronger local concentration.",
           })}
         </Typography.Text>
       </div>
@@ -1358,6 +1402,7 @@ function LegendSection({
 
 export function WarMapLegendPanel({
   legendSections,
+  interactionLegendItems,
   summaryDataLabel,
   onClose,
   activeLegendKey,
@@ -1384,8 +1429,7 @@ export function WarMapLegendPanel({
               className="mt-1 block text-[12px] leading-5"
             >
               {t("dashboard.charts.warMap.legend.quickLegendHint", {
-                defaultValue:
-                  "Hover to preview a symbol family. Click to pin focus on the map.",
+                defaultValue: "Hover to preview. Click to pin.",
               })}
             </Typography.Text>
           </div>
@@ -1409,7 +1453,7 @@ export function WarMapLegendPanel({
           ) : null}
           <span>
             {t("dashboard.charts.warMap.legend.previewHint", {
-              defaultValue: "Hover previews, click pins focus.",
+              defaultValue: "Hover to preview. Click to pin.",
             })}
           </span>
           {activeLegendKey ? (
@@ -1428,13 +1472,16 @@ export function WarMapLegendPanel({
         </div>
       </div>
       <div className="min-h-0 overflow-y-auto overscroll-contain px-4 py-3.5">
-        <LegendSectionsList
-          legendSections={legendSections}
-          activeLegendKey={activeLegendKey}
-          highlightedLegendKey={highlightedLegendKey}
-          onLegendItemHover={onLegendItemHover}
-          onLegendItemFocus={onLegendItemFocus}
-        />
+        <LegendInteractionStrip items={interactionLegendItems} t={t} />
+        <div className="mt-3">
+          <LegendSectionsList
+            legendSections={legendSections}
+            activeLegendKey={activeLegendKey}
+            highlightedLegendKey={highlightedLegendKey}
+            onLegendItemHover={onLegendItemHover}
+            onLegendItemFocus={onLegendItemFocus}
+          />
+        </div>
       </div>
     </div>
   );
@@ -1454,7 +1501,7 @@ function LegendDockSectionCard({
   onLegendItemFocus?: (itemKey: string | null) => void;
 }) {
   return (
-    <div className="flex h-full flex-col rounded-[22px] border border-slate-200/80 bg-white/[0.76] px-5 py-5 shadow-[0_18px_34px_-28px_rgba(15,23,42,0.18)] dark:border-slate-700/80 dark:bg-slate-950/[0.58] dark:shadow-[0_18px_34px_-28px_rgba(2,6,23,0.74)]">
+    <div className="flex h-full flex-col rounded-[22px] border border-slate-200/80 bg-white/[0.82] px-5 py-5 shadow-[0_16px_30px_-28px_rgba(15,23,42,0.14)] dark:border-slate-700/80 dark:bg-slate-950/[0.58] dark:shadow-[0_16px_30px_-28px_rgba(2,6,23,0.62)]">
       <div className="min-w-0">
         <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
           {section.title}
@@ -1483,6 +1530,7 @@ function LegendDockSectionCard({
 
 export function WarMapLegendDock({
   legendSections,
+  interactionLegendItems,
   summaryDataLabel,
   activeLegendKey,
   highlightedLegendKey,
@@ -1508,8 +1556,7 @@ export function WarMapLegendDock({
               className="mt-1 block text-[12px] leading-5"
             >
               {t("dashboard.charts.warMap.legend.quickLegendHint", {
-                defaultValue:
-                  "Hover to preview a symbol family. Click to pin focus on the map.",
+                defaultValue: "Hover to preview. Click to pin.",
               })}
             </Typography.Text>
           </div>
@@ -1519,7 +1566,7 @@ export function WarMapLegendDock({
             ) : null}
             <span>
               {t("dashboard.charts.warMap.legend.previewHint", {
-                defaultValue: "Hover previews, click pins focus.",
+                defaultValue: "Hover to preview. Click to pin.",
               })}
             </span>
             {activeLegendKey ? (
@@ -1539,7 +1586,8 @@ export function WarMapLegendDock({
         </div>
       </div>
       <div className="px-5 pb-5 pt-4">
-        <div className="grid gap-4 md:grid-cols-2">
+        <LegendInteractionStrip items={interactionLegendItems} t={t} />
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
           {legendSections.map((section) => (
             <LegendDockSectionCard
               key={section.key}
@@ -1571,6 +1619,7 @@ export function WarMapControlsPanel({
   feedSummaryCards,
   detailedChainStatuses,
   legendSections,
+  interactionLegendItems,
   view,
   transport,
   activeLegendKey,
@@ -1689,6 +1738,7 @@ export function WarMapControlsPanel({
       controlsSectionContent = (
         <LegendSection
           legendSections={legendSections}
+          interactionLegendItems={interactionLegendItems}
           activeLegendKey={activeLegendKey}
           highlightedLegendKey={highlightedLegendKey}
           onLegendItemHover={onLegendItemHover}

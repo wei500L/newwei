@@ -201,7 +201,7 @@ export function WarMapOverlayRail({
                 </Typography.Text>
                 <Typography.Text className="mt-0.5 block text-[11px] leading-4 text-slate-600 dark:text-slate-300">
                   {t("dashboard.charts.warMap.legend.quickLegendCompactHint", {
-                    defaultValue: "Top active symbol cues",
+                    defaultValue: "Active symbol cues",
                   })}
                 </Typography.Text>
               </div>
