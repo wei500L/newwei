@@ -483,7 +483,12 @@
         "webhook": "Webhook",
         "email": "邮箱"
       },
-      "add": "添加"
+      "add": "添加",
+      "validation": {
+        "nameRequired": "Enter a channel name.",
+        "typeRequired": "Select a channel type.",
+        "targetRequired": "Enter a delivery target."
+      }
     }
   },
   "common": {
@@ -605,7 +610,10 @@
     "back": "Back",
     "share": "Share",
     "readMore": "Read full story",
-    "unavailable": "Unavailable"
+    "unavailable": "Unavailable",
+    "totalCount": "Total {{count}}",
+    "minimize": "Minimize",
+    "justNow": "just now"
   },
   "orgSwitcher": {
     "error": {
@@ -1369,7 +1377,8 @@
           "asia": "亚洲",
           "latam": "拉丁美洲",
           "africa": "非洲",
-          "oceania": "大洋洲"
+          "oceania": "大洋洲",
+          "title": "Regions"
         },
         "timeRange": {
           "1h": "1小时",
@@ -1452,7 +1461,22 @@
           "medium": "中",
           "low": "低",
           "geocoded": "已地理编码",
-          "fallbackCountry": "国家回退"
+          "fallbackCountry": "国家回退",
+          "aisHighlightCandidates": "Highlight candidates",
+          "aisIssue": "Relay issue",
+          "aisHighlightOn": "Candidates highlighted",
+          "aisHighlightOff": "Candidates not highlighted",
+          "aisDensityAggregateHint": "Aggregated AIS hotspot, not individual vessels.",
+          "aisDisruptionAggregateHint": "Aggregated AIS chokepoint signal, not individual vessels.",
+          "aisDegraded": "Degraded",
+          "aisViewportVessels": "Viewport vessels",
+          "aisHighlightedCandidates": "Highlighted candidates",
+          "aisViewportCap": "Viewport cap",
+          "aisViewportTruncated": "Viewport is truncated after per-cell sampling to preserve map readability.",
+          "aisPositionReportsSeen": "Reports seen",
+          "aisPositionReportsProcessed": "Reports processed",
+          "aisIgnoredPositionReports": "Reports ignored",
+          "aisParseErrors": "Parse errors"
         },
         "status": {
           "ready": "就绪",
@@ -1479,7 +1503,47 @@
           "aisCandidatesOnlyActiveHint": "候选船舶是筛选后的子集，这个模式会有意隐藏一部分船。",
           "aisDensityOnlyActiveHint": "仅密度模式展示的是热点和瓶颈汇总，不会显示单艘船。",
           "aisAllUnavailableInlineHint": "由于 relay 船舶快照缺失，当前无法使用全部船舶模式。",
-          "aisShowAllAction": "切换到全部船舶"
+          "aisShowAllAction": "切换到全部船舶",
+          "signalDensityShort": "active",
+          "newsCoverageShort": "mapped",
+          "monitorCoverageShort": "tracked",
+          "layerCoverageShort": "visible",
+          "aisHighlightCandidatesHint": "Rule-based government and military candidates are highlighted on top of the full vessel layer.",
+          "aisCandidatesOnlyHint": "Candidate vessels shows a filtered subset based on AIS name and ship-type rules, not a complete vessel inventory.",
+          "aisAllVesselsHint": "All vessels shows the full AIS vessel snapshot for the current viewport.",
+          "aisStatusHint": "Enable the AIS layer to inspect vessel source, freshness, and disruption signals.",
+          "flights": "Flights",
+          "flightStatusHint": "Flight source badges appear when the layer is visible.",
+          "transportLegendHint": "Need symbol meanings? Use the AIS reference before changing modes.",
+          "openFullLegend": "Open full legend",
+          "signalLegend": "Signals",
+          "newsLegend": "News & monitors",
+          "expandInspector": "Expand details",
+          "overview": "Overview",
+          "overviewHint": "Counts, freshness, and feed health stay visible in the header snapshot.",
+          "view": "View",
+          "viewHint": "Change map framing, time window, and visible layers for the current view.",
+          "transport": "Transport",
+          "transportHint": "Review flight and AIS modes, source freshness, and transport coverage.",
+          "feeds": "Feeds",
+          "feedsHint": "Check chain health, refresh activity, and ingestion issues when data looks off.",
+          "legendHint": "Reference marker meaning, severity levels, and AIS symbols used on the map.",
+          "feedsAttention": "Issues",
+          "feedsAttentionHint": "Affected feed chains: {{count}}",
+          "signalDensity": "Current alert markers",
+          "newsCoverage": "Geo-tagged headlines",
+          "monitorCoverage": "Tracked watchlists",
+          "layerCoverage": "Active map overlays",
+          "stream": "Stream",
+          "noRecentMessage": "No stream update yet",
+          "latestStreamUpdate": "Latest stream update",
+          "data": "Data",
+          "awaitingRefresh": "Awaiting refresh",
+          "healthyFeeds": "Healthy",
+          "refreshingFeeds": "Refreshing",
+          "issueFeeds": "Issues",
+          "controls": "Controls",
+          "aisHighlightCandidatesOffHint": "Candidate highlighting is currently off; all vessels remain visible."
         },
         "tooltip": {
           "location": "位置",
@@ -1518,7 +1582,8 @@
           "darkShips": "暗船",
           "window": "窗口",
           "region": "区域",
-          "updated": "更新时间"
+          "updated": "更新时间",
+          "role": "Role"
         },
         "panel": {
           "signalsTitle": "附近信号",
@@ -1530,7 +1595,13 @@
           "count": "{{count}} 项",
           "zoomIn": "放大查看",
           "latest": "最新",
-          "openOriginal": "打开"
+          "openOriginal": "打开",
+          "flightDetailSummary": "Latest aircraft state plus recent persisted change points.",
+          "vesselDetailSummary": "Latest vessel state plus recent persisted change points.",
+          "recentTrackPoints": "Recent change points",
+          "noTrackPoints": "No persisted track points in the current range.",
+          "trackPointCount": "Points",
+          "trackDistance": "Distance"
         },
         "legend": {
           "title": "图例",
@@ -1571,7 +1642,12 @@
           "clusterState": "聚合徽标",
           "otherLayersTitle": "其他活动点图层",
           "otherLayersHint": "尚未定义专属图标的点图层，也会沿用统一的光晕与描边样式。",
-          "otherPointLayer": "其他点图层"
+          "otherPointLayer": "其他点图层",
+          "interactionTitle": "Interaction",
+          "previewHint": "Hover to preview. Click to pin.",
+          "clearFocus": "Clear focus",
+          "quickLegendCompactHint": "Active symbol cues",
+          "moreItems": "+{{count}} more"
         },
         "translation": {
           "label": "中文覆盖",
@@ -1598,7 +1674,13 @@
         "openedNews": "已在新标签页打开新闻。",
         "missingMonitorQuery": "该监控暂无关键词。",
         "openingSearch": "正在打开搜索“{{query}}”...",
-        "openedSearch": "已在新标签页打开“{{query}}”的搜索。"
+        "openedSearch": "已在新标签页打开“{{query}}”的搜索。",
+        "actions": {
+          "analyzeCurrentView": "Analyze current view",
+          "enableTransportLayers": "Enable the flight or AIS layer before requesting transport analysis.",
+          "analyzeCurrentViewSubmitted": "Transport analysis submitted for the current view.",
+          "analyzeCurrentViewFailed": "Failed to submit transport analysis."
+        }
       },
       "entityGraph": {
         "disabledTitle": "已禁用",
@@ -1774,13 +1856,15 @@
       },
       "knowledgeGraph3d": {
         "title": "知识图谱（3D）"
-      }
+      },
+      "sectorHeatmapFallbackWarning": "Fallback fields: {{count}}"
     },
     "stream": {
       "status": {
         "live": "实时",
         "polling": "轮询",
-        "offline": "离线"
+        "offline": "离线",
+        "paused": "Paused"
       },
       "fallback": "实时更新中断，已切换为轮询",
       "offline": "实时更新不可用",
@@ -2364,7 +2448,8 @@
         "ruleScore": "Rule",
         "embeddingScore": "Embedding",
         "rerankScore": "Rerank",
-        "fused": "Fusion"
+        "fused": "Fusion",
+        "open": "打开事件详情"
       },
       "preparation": {
         "failedTitle": "归档后台补齐失败",
@@ -2775,6 +2860,10 @@
       "crawlTemplates": {
         "title": "抓取模板",
         "description": "管理可复用的 Crawl4AI 配置模板"
+      },
+      "crawlFrontier": {
+        "title": "Crawl Frontier",
+        "description": "Manage crawl site profiles, frontier runs, and layered/native execution."
       }
     }
   },
@@ -3028,7 +3117,10 @@
       "seedDeepEnableSecondaryHubs": "Follow secondary hubs",
       "seedDeepEnableSecondaryHubsHint": "Allow exploration of section/topic pages during deep discovery.",
       "seedDeepIgnoreRobotsTxt": "Ignore robots.txt",
-      "seedDeepIgnoreRobotsTxtHint": "This mode is hard-locked to ignore robots.txt."
+      "seedDeepIgnoreRobotsTxtHint": "This mode is hard-locked to ignore robots.txt.",
+      "workflow": "Workflow",
+      "workflowMode": "Workflow version mode",
+      "workflowVersion": "Pinned workflow version"
     },
     "crawlHeadlessMode": {
       "auto": "自动（推荐）",
@@ -3401,6 +3493,21 @@
       "lowestSource": "lowest",
       "publishConfidenceBuckets": "Confidence buckets: <0.4={{lt04}}, 0.4~0.6={{from04To06}}, 0.6~0.8={{from06To08}}, >=0.8={{gte08}}",
       "updatedAt": "Window {{from}} - {{to}}"
+    },
+    "readiness": {
+      "loadFailed": "Failed to load readiness summary.",
+      "title": "Situation Monitor readiness",
+      "noActiveSources": "Situation Monitor cannot queue new collection because there are no active news sources.",
+      "degraded": "Some sources are degraded and may reduce Situation Monitor coverage.",
+      "ready": "News source scheduling looks healthy for Situation Monitor refresh.",
+      "noActiveSourcesDescription": "Activate at least one source or import a source list before relying on Situation Monitor refresh.",
+      "degradedDescription": "Review circuit-open and failing sources before relying on fresh Situation Monitor data.",
+      "openSchedulerSettings": "Open scheduler settings",
+      "total": "Total sources",
+      "active": "Active",
+      "inactive": "Inactive",
+      "circuitOpen": "Circuit open",
+      "failing": "Failing"
     }
   },
   "finance": {
@@ -3488,8 +3595,16 @@
       "removeSingleFailed": "取消订阅失败。",
       "openMonitor": "打开监控",
       "monitorOwnedHint": "该订阅由“我的监控”管理，请编辑对应监控来修改它。",
-      "signInRequired": "请先登录后再管理内容订阅。"
-    }
+      "signInRequired": "请先登录后再管理内容订阅。",
+      "recommendationsLoadFailed": "Failed to load recommendations.",
+      "recommendationsLoadFailedDescription": "Recommendations are temporarily unavailable. You can still manage subscriptions and browse the catalog.",
+      "refreshFailedAfterMutation": "Changes were saved, but the latest subscription list could not be reloaded.",
+      "refreshFailedAfterMutationDescription": "Your add/remove action has completed. The page is still showing the previous subscription snapshot until reload succeeds.",
+      "loadFailedDescription": "The subscriptions list could not be loaded. Retry to restore the latest subscription state.",
+      "degradedBadge": "Degraded"
+    },
+    "channelMissingId": "Channel id is missing. Reopen the dialog and try again.",
+    "channelValidationFailed": "Fill in the required fields before saving."
   },
   "brand": {
     "short": "M",
@@ -4611,7 +4726,8 @@
           "includeCompletion": "测试对话/补全",
           "apiSurface": "API 接口面",
           "responseFormatMode": "response_format 探针",
-          "includeMetadataProbe": "包含 metadata 探针"
+          "includeMetadataProbe": "包含 metadata 探针",
+          "authMode": "Auth mode"
         },
         "placeholders": {
           "prompt": "只回复 \"OK\"，不要输出其他内容。",
@@ -4624,7 +4740,8 @@
           "embeddingModel": "留空则使用网关配置的 Embedding 模型。",
           "includeCompletion": "关闭后仅测试向量（Embeddings）。",
           "includeRerank": "开启后会调用 /v1/rerank 进行探针测试。",
-          "rerankModel": "留空则使用 Profile 的 Rerank 模型 + 备用模型。"
+          "rerankModel": "留空则使用 Profile 的 Rerank 模型 + 备用模型。",
+          "authMode": "profile_key validates the profile credential. managed_runtime_key validates the governed runtime credential actually used in production."
         },
         "sections": {
           "completion": "对话补全",
@@ -4642,7 +4759,8 @@
           "compatibility": "兼容性",
           "field": "字段",
           "topN": "topN",
-          "score": "得分"
+          "score": "得分",
+          "authMode": "Auth mode"
         }
       },
       "testUnsaved": {
@@ -6026,7 +6144,8 @@
           "upstreamRateLimited": "Nominatim 上游限流（HTTP 429），请稍后再试。",
           "upstreamError": "Nominatim 请求失败（HTTP {{status}}）。",
           "networkError": "网络错误或超时，请稍后重试。"
-        }
+        },
+        "success": "Geocoding test completed."
       },
       "fields": {
         "userAgent": "User-Agent",
@@ -6580,7 +6699,8 @@
       "groups": {
         "totalCount": "键数：{{count}}",
         "persistedCount": "已配置：{{count}}",
-        "draftCount": "草稿：{{count}}"
+        "draftCount": "草稿：{{count}}",
+        "unassignedDrafts": "Draft entries"
       },
       "filters": {
         "onlyConfigured": "仅看已配置",
@@ -6741,7 +6861,10 @@
         "telegramSendCode": "发送验证码",
         "telegramCompleteAuth": "生成并保存 Session",
         "telegramClearAuthState": "清空认证状态",
-        "telegramClearSavedSession": "清除已保存的 Telegram Session"
+        "telegramClearSavedSession": "清除已保存的 Telegram Session",
+        "backToMonitor": "Back to Situation Monitor",
+        "openMonitoringSettings": "Open monitoring settings",
+        "openSchedulerSettings": "Open scheduler settings"
       },
       "validation": {
         "translationMaxConcurrency": "并发数必填",
@@ -6802,6 +6925,41 @@
         "telegramEnableContent": "Session 会被保存。请选择是否同时启用 Telegram 轮询。",
         "telegramEnableConfirm": "保存并启用",
         "telegramEnableSkip": "仅保存"
+      },
+      "snapshot": {
+        "refreshSuccess": "Rebuilt the Situation Monitor external snapshot.",
+        "refreshFailed": "Failed to rebuild the Situation Monitor external snapshot.",
+        "title": "GDELT snapshot scheduler",
+        "stale": "STALE",
+        "interval": "Every {{count}} min",
+        "history": "{{count}} day history",
+        "generatedAt": "Last generated: {{time}}",
+        "lastFullSuccess": "Last full success: {{time}}",
+        "lastNonSuccess": "Last partial/failure: {{time}}",
+        "nextScheduled": "Next scheduled run: {{time}}",
+        "coverage": "Available categories: {{count}} / 6. Active warnings: {{warnings}}.",
+        "successRate": "24h success {{value}}",
+        "rateLimitedCount": "24h rate limits {{value}}",
+        "averageCoverage": "24h avg categories {{value}} / 6",
+        "refreshStatus": "Refresh status",
+        "forceRefresh": "Rebuild external snapshot"
+      },
+      "readiness": {
+        "title": "Situation Monitor readiness",
+        "description": "These settings directly affect Situation Monitor refresh, Telegram, OREF, Finnhub, and FRED data availability.",
+        "providers": "Provider readiness"
+      },
+      "quality": {
+        "title": "Analysis quality",
+        "empty": "Quality metrics are not available yet.",
+        "articles": "Articles {{count}}",
+        "clusters": "Clusters {{count}}",
+        "mixed": "Mixed {{count}}",
+        "mode": "Mode {{value}}",
+        "generatedAt": "Last computed: {{time}}",
+        "window": "Window: {{hours}}h",
+        "dedupe": "Dedupe ratio: {{value}}",
+        "avgSources": "Avg sources / cluster: {{value}}"
       }
     },
     "realtimeSignals": {
@@ -6919,7 +7077,8 @@
         "aisRelaySharedSecret": "AIS relay 期望的共享鉴权密钥，必须和 relay 服务上的 `AIS_RELAY_SHARED_SECRET` 保持一致。",
         "acledOauthUsername": "用于自动刷新 ACLED OAuth Token 的账号邮箱。",
         "acledOauthClientId": "默认值为 `acled`，只有 ACLED 发放了其他 client_id 时才需要修改。",
-        "secretOptional": "密钥字段留空表示保持当前已保存值。"
+        "secretOptional": "密钥字段留空表示保持当前已保存值。",
+        "openskyClientId": "OAuth client ID used for OpenSky access tokens."
       },
       "placeholders": {
         "openskyBaseUrl": "https://opensky-network.org/api",
@@ -6929,7 +7088,8 @@
         "polymarketProxyUrl": "https://your-proxy.example.com/polymarket",
         "acledOauthUsername": "weidu500l@gmail.com",
         "acledOauthClientId": "acled",
-        "secretValue": "留空表示保持当前值"
+        "secretValue": "留空表示保持当前值",
+        "openskyClientId": "client-id"
       },
       "alerts": {
         "aisRelayPurpose": {
@@ -7123,7 +7283,16 @@
         "lastAttemptAt": "最近尝试",
         "lastSuccessAt": "最近成功",
         "lastError": "最近错误",
-        "empty": "运行时诊断尚未加载。"
+        "empty": "运行时诊断尚未加载。",
+        "aisTrackedVessels": "Tracked vessels",
+        "aisCandidates": "Candidates",
+        "aisReportsSeen": "Reports seen",
+        "aisReportsProcessed": "Reports processed",
+        "aisReportsIgnored": "Reports ignored",
+        "aisParseErrors": "Parse errors",
+        "aisRelayDiagnostics": "AIS relay diagnostics",
+        "aisLastUpstreamError": "Last upstream error",
+        "aisLastParseError": "Last parse error"
       }
     },
     "akshare": {
@@ -7280,6 +7449,37 @@
         "empty": "暂无最近的归档预热活动。",
         "scopeDigest": "日报 {{value}}",
         "scopeCalendar": "月历 {{value}}"
+      }
+    },
+    "multiTenantSchedulers": {
+      "errors": {
+        "loadFailed": "Failed to load multi-tenant scheduler settings.",
+        "saveFailed": "Failed to save multi-tenant scheduler settings."
+      },
+      "messages": {
+        "saved": "Multi-tenant scheduler settings saved."
+      },
+      "status": {
+        "saved": "Saved override",
+        "default": "Default",
+        "label": "Settings source"
+      },
+      "description": "Control how many organizations each background cron can process in parallel. Org-level locks still keep single-flight execution per tenant.",
+      "notice": {
+        "title": "Scheduler fan-out policy",
+        "body": "These limits apply per cron tick. Higher values reduce end-to-end tick latency, but also increase concurrent load on Redis, MySQL, MongoDB, and downstream services."
+      },
+      "fields": {
+        "newsEventsIngestionOrgConcurrency": "News events ingestion org concurrency",
+        "knowledgeGraphIngestionOrgConcurrency": "Knowledge graph ingestion org concurrency",
+        "sentimentSnapshotOrgConcurrency": "Sentiment snapshot org concurrency",
+        "newsnowHottestAnalysisOrgConcurrency": "NewsNow hottest analysis org concurrency"
+      },
+      "hints": {
+        "newsEventsIngestionOrgConcurrency": "How many orgs the news-events ingestion cron may process at once.",
+        "knowledgeGraphIngestionOrgConcurrency": "How many orgs the knowledge-graph ingestion cron may process at once.",
+        "sentimentSnapshotOrgConcurrency": "How many orgs the sentiment snapshot rebuild cron may process at once.",
+        "newsnowHottestAnalysisOrgConcurrency": "How many orgs the NewsNow hottest-analysis scheduler may refresh at once after the shared global snapshot is prepared."
       }
     }
   },
@@ -7711,7 +7911,8 @@
         "request": "请求详情",
         "browser": "浏览器详情",
         "copyJson": "复制 JSON",
-        "copied": "已复制。"
+        "copied": "已复制。",
+        "openRequest": "Open request details"
       },
       "raw": {
         "description": "用于排查问题的原始监控数据（尽力做兼容解析）。"
@@ -7857,7 +8058,15 @@
         "confirmDescription": "这会把尚未进入 Items 的抓取结果转换为 Items，并加入 LLM 处理队列。",
         "running": "正在回填结果…",
         "progress": "回填中…（{{ingested}} 已入队，{{skipped}} 已跳过，{{failed}} 失败）",
-        "done": "已加入处理队列，正在刷新…"
+        "done": "已加入处理队列，正在刷新…",
+        "emptyTitle": "No results to backfill yet.",
+        "emptyDescription": "This task has no crawl results yet, so nothing can be sent to Items.",
+        "timeout": "Backfill request timed out. Please try again after refreshing the task.",
+        "summary": "{{ingested}} ingested, {{skipped}} skipped, {{failed}} failed across {{scanned}} scanned results.",
+        "noMissingTitle": "All crawl results are already in Items.",
+        "partialTitle": "Backfill finished with failures.",
+        "failedTitle": "Backfill failed.",
+        "emptyHint": "No crawl results available yet."
       },
       "fields": {
         "displayName": "展示名称",
@@ -8864,6 +9073,10 @@
         "lastEvent": "最近事件",
         "refreshOn": "触发刷新",
         "resetCounters": "重置计数"
+      },
+      "stale": {
+        "title": "New live events arrived after the last refresh.",
+        "description": "Overview data is stale for: {{sources}}. Refresh now or enable refresh-on-event for those sources."
       }
     },
     "updatedAt": "更新时间：{{time}}",
@@ -9615,7 +9828,8 @@
       "reset": "重置面板",
       "fixed": "固定",
       "none": "未启用任何面板。打开“面板”重新启用。",
-      "hintCompact": "在较小屏幕上拖动或调整卡片大小前，请先开启“编辑布局”。"
+      "hintCompact": "在较小屏幕上拖动或调整卡片大小前，请先开启“编辑布局”。",
+      "hintDesktop": "Click Customize layout to resize, reorder, and emphasize the cards you care about."
     },
     "empty": {
       "unconfigured": {
@@ -9743,7 +9957,10 @@
     },
     "layout": {
       "done": "完成",
-      "edit": "编辑布局"
+      "edit": "编辑布局",
+      "resetPanelSize": "Restore default size",
+      "sizeBadge": "{{cols}} cols · {{rows}} rows · {{height}}px",
+      "editing": "Layout editing is on"
     }
   },
   "search": {
@@ -9784,5 +10001,14 @@
       "source": "按来源过滤",
       "phrase": "精确短语匹配"
     }
+  },
+  "crawlFrontier": {
+    "errors": {
+      "loadProfiles": "Failed to load crawl site profiles.",
+      "loadRuns": "Failed to load crawl frontier runs.",
+      "loadProfile": "Failed to load crawl site profile."
+    },
+    "title": "News Crawl Frontier Console",
+    "subtitle": "Operate site profiles, inspect seed-first and frontier traces, and debug why capture succeeded, degraded, or failed."
   }
 }

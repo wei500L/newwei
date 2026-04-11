@@ -483,7 +483,12 @@
         "webhook": "Webhook",
         "email": "Email"
       },
-      "add": "Add"
+      "add": "Add",
+      "validation": {
+        "nameRequired": "Enter a channel name.",
+        "typeRequired": "Select a channel type.",
+        "targetRequired": "Enter a delivery target."
+      }
     }
   },
   "common": {
@@ -605,7 +610,10 @@
     "back": "Back",
     "share": "Share",
     "readMore": "Read full story",
-    "unavailable": "Unavailable"
+    "unavailable": "Unavailable",
+    "totalCount": "Total {{count}}",
+    "minimize": "Minimize",
+    "justNow": "just now"
   },
   "orgSwitcher": {
     "error": {
@@ -1369,7 +1377,8 @@
           "asia": "Asia",
           "latam": "LatAm",
           "africa": "Africa",
-          "oceania": "Oceania"
+          "oceania": "Oceania",
+          "title": "Regions"
         },
         "timeRange": {
           "1h": "1H",
@@ -1452,7 +1461,22 @@
           "medium": "Medium",
           "low": "Low",
           "geocoded": "Geocoded",
-          "fallbackCountry": "Fallback country"
+          "fallbackCountry": "Fallback country",
+          "aisHighlightCandidates": "Highlight candidates",
+          "aisIssue": "Relay issue",
+          "aisHighlightOn": "Candidates highlighted",
+          "aisHighlightOff": "Candidates not highlighted",
+          "aisDensityAggregateHint": "Aggregated AIS hotspot, not individual vessels.",
+          "aisDisruptionAggregateHint": "Aggregated AIS chokepoint signal, not individual vessels.",
+          "aisDegraded": "Degraded",
+          "aisViewportVessels": "Viewport vessels",
+          "aisHighlightedCandidates": "Highlighted candidates",
+          "aisViewportCap": "Viewport cap",
+          "aisViewportTruncated": "Viewport is truncated after per-cell sampling to preserve map readability.",
+          "aisPositionReportsSeen": "Reports seen",
+          "aisPositionReportsProcessed": "Reports processed",
+          "aisIgnoredPositionReports": "Reports ignored",
+          "aisParseErrors": "Parse errors"
         },
         "status": {
           "ready": "Ready",
@@ -1479,7 +1503,47 @@
           "aisCandidatesOnlyActiveHint": "Candidate vessels is a filtered subset. Some ships are intentionally hidden in this mode.",
           "aisDensityOnlyActiveHint": "Density only summarizes chokepoints and hotspots instead of showing individual ships.",
           "aisAllUnavailableInlineHint": "All vessels is currently unavailable because relay vessel snapshots are missing.",
-          "aisShowAllAction": "Switch to All vessels"
+          "aisShowAllAction": "Switch to All vessels",
+          "signalDensityShort": "active",
+          "newsCoverageShort": "mapped",
+          "monitorCoverageShort": "tracked",
+          "layerCoverageShort": "visible",
+          "aisHighlightCandidatesHint": "Rule-based government and military candidates are highlighted on top of the full vessel layer.",
+          "aisCandidatesOnlyHint": "Candidate vessels shows a filtered subset based on AIS name and ship-type rules, not a complete vessel inventory.",
+          "aisAllVesselsHint": "All vessels shows the full AIS vessel snapshot for the current viewport.",
+          "aisStatusHint": "Enable the AIS layer to inspect vessel source, freshness, and disruption signals.",
+          "flights": "Flights",
+          "flightStatusHint": "Flight source badges appear when the layer is visible.",
+          "transportLegendHint": "Need symbol meanings? Use the AIS reference before changing modes.",
+          "openFullLegend": "Open full legend",
+          "signalLegend": "Signals",
+          "newsLegend": "News & monitors",
+          "expandInspector": "Expand details",
+          "overview": "Overview",
+          "overviewHint": "Counts, freshness, and feed health stay visible in the header snapshot.",
+          "view": "View",
+          "viewHint": "Change map framing, time window, and visible layers for the current view.",
+          "transport": "Transport",
+          "transportHint": "Review flight and AIS modes, source freshness, and transport coverage.",
+          "feeds": "Feeds",
+          "feedsHint": "Check chain health, refresh activity, and ingestion issues when data looks off.",
+          "legendHint": "Reference marker meaning, severity levels, and AIS symbols used on the map.",
+          "feedsAttention": "Issues",
+          "feedsAttentionHint": "Affected feed chains: {{count}}",
+          "signalDensity": "Current alert markers",
+          "newsCoverage": "Geo-tagged headlines",
+          "monitorCoverage": "Tracked watchlists",
+          "layerCoverage": "Active map overlays",
+          "stream": "Stream",
+          "noRecentMessage": "No stream update yet",
+          "latestStreamUpdate": "Latest stream update",
+          "data": "Data",
+          "awaitingRefresh": "Awaiting refresh",
+          "healthyFeeds": "Healthy",
+          "refreshingFeeds": "Refreshing",
+          "issueFeeds": "Issues",
+          "controls": "Controls",
+          "aisHighlightCandidatesOffHint": "Candidate highlighting is currently off; all vessels remain visible."
         },
         "tooltip": {
           "location": "Location",
@@ -1518,7 +1582,8 @@
           "darkShips": "Dark ships",
           "window": "Window",
           "region": "Region",
-          "updated": "Updated"
+          "updated": "Updated",
+          "role": "Role"
         },
         "panel": {
           "signalsTitle": "Nearby signals",
@@ -1530,7 +1595,13 @@
           "count": "{{count}} items",
           "zoomIn": "Zoom in",
           "latest": "Latest",
-          "openOriginal": "Open"
+          "openOriginal": "Open",
+          "flightDetailSummary": "Latest aircraft state plus recent persisted change points.",
+          "vesselDetailSummary": "Latest vessel state plus recent persisted change points.",
+          "recentTrackPoints": "Recent change points",
+          "noTrackPoints": "No persisted track points in the current range.",
+          "trackPointCount": "Points",
+          "trackDistance": "Distance"
         },
         "legend": {
           "title": "Legend",
@@ -1571,7 +1642,12 @@
           "clusterState": "Cluster badge",
           "otherLayersTitle": "Other Active Point Layers",
           "otherLayersHint": "Point-based overlays without a bespoke symbol still use the shared halo and outline treatment.",
-          "otherPointLayer": "Other point layer"
+          "otherPointLayer": "Other point layer",
+          "interactionTitle": "Interaction",
+          "previewHint": "Hover to preview. Click to pin.",
+          "clearFocus": "Clear focus",
+          "quickLegendCompactHint": "Active symbol cues",
+          "moreItems": "+{{count}} more"
         },
         "translation": {
           "label": "CN coverage",
@@ -1598,7 +1674,13 @@
         "openedNews": "News opened in a new tab",
         "missingMonitorQuery": "No keywords available for this monitor.",
         "openingSearch": "Opening search for \"{{query}}\"...",
-        "openedSearch": "Search opened for \"{{query}}\" in a new tab"
+        "openedSearch": "Search opened for \"{{query}}\" in a new tab",
+        "actions": {
+          "analyzeCurrentView": "Analyze current view",
+          "enableTransportLayers": "Enable the flight or AIS layer before requesting transport analysis.",
+          "analyzeCurrentViewSubmitted": "Transport analysis submitted for the current view.",
+          "analyzeCurrentViewFailed": "Failed to submit transport analysis."
+        }
       },
       "entityGraph": {
         "disabledTitle": "Disabled",
@@ -1774,13 +1856,15 @@
       },
       "knowledgeGraph3d": {
         "title": "Knowledge Graph (3D)"
-      }
+      },
+      "sectorHeatmapFallbackWarning": "Fallback fields: {{count}}"
     },
     "stream": {
       "status": {
         "live": "Live",
         "polling": "Polling",
-        "offline": "Offline"
+        "offline": "Offline",
+        "paused": "Paused"
       },
       "fallback": "Live updates interrupted; using polling",
       "offline": "Live updates unavailable",
@@ -2364,7 +2448,8 @@
         "ruleScore": "Rule",
         "embeddingScore": "Embedding",
         "rerankScore": "Rerank",
-        "fused": "Fusion"
+        "fused": "Fusion",
+        "open": "打开事件详情"
       },
       "preparation": {
         "failedTitle": "Archive background preparation failed",
@@ -2775,6 +2860,10 @@
       "crawlTemplates": {
         "title": "Crawl Templates",
         "description": "Manage reusable Crawl4ai configuration templates"
+      },
+      "crawlFrontier": {
+        "title": "Crawl Frontier",
+        "description": "Manage crawl site profiles, frontier runs, and layered/native execution."
       }
     }
   },
@@ -3028,7 +3117,10 @@
       "seedDeepEnableSecondaryHubs": "Follow secondary hubs",
       "seedDeepEnableSecondaryHubsHint": "Allow exploration of section/topic pages during deep discovery.",
       "seedDeepIgnoreRobotsTxt": "Ignore robots.txt",
-      "seedDeepIgnoreRobotsTxtHint": "This mode is hard-locked to ignore robots.txt."
+      "seedDeepIgnoreRobotsTxtHint": "This mode is hard-locked to ignore robots.txt.",
+      "workflow": "Workflow",
+      "workflowMode": "Workflow version mode",
+      "workflowVersion": "Pinned workflow version"
     },
     "crawlHeadlessMode": {
       "auto": "Auto (recommended)",
@@ -3401,6 +3493,21 @@
       "lowestSource": "lowest",
       "publishConfidenceBuckets": "Confidence buckets: <0.4={{lt04}}, 0.4~0.6={{from04To06}}, 0.6~0.8={{from06To08}}, >=0.8={{gte08}}",
       "updatedAt": "Window {{from}} - {{to}}"
+    },
+    "readiness": {
+      "loadFailed": "Failed to load readiness summary.",
+      "title": "Situation Monitor readiness",
+      "noActiveSources": "Situation Monitor cannot queue new collection because there are no active news sources.",
+      "degraded": "Some sources are degraded and may reduce Situation Monitor coverage.",
+      "ready": "News source scheduling looks healthy for Situation Monitor refresh.",
+      "noActiveSourcesDescription": "Activate at least one source or import a source list before relying on Situation Monitor refresh.",
+      "degradedDescription": "Review circuit-open and failing sources before relying on fresh Situation Monitor data.",
+      "openSchedulerSettings": "Open scheduler settings",
+      "total": "Total sources",
+      "active": "Active",
+      "inactive": "Inactive",
+      "circuitOpen": "Circuit open",
+      "failing": "Failing"
     }
   },
   "finance": {
@@ -3488,8 +3595,16 @@
       "removeSingleFailed": "Failed to remove subscription.",
       "openMonitor": "Open monitor",
       "monitorOwnedHint": "Managed by My Monitors. Edit the owning monitor to change this subscription.",
-      "signInRequired": "Please sign in to manage content subscriptions."
-    }
+      "signInRequired": "Please sign in to manage content subscriptions.",
+      "recommendationsLoadFailed": "Failed to load recommendations.",
+      "recommendationsLoadFailedDescription": "Recommendations are temporarily unavailable. You can still manage subscriptions and browse the catalog.",
+      "refreshFailedAfterMutation": "Changes were saved, but the latest subscription list could not be reloaded.",
+      "refreshFailedAfterMutationDescription": "Your add/remove action has completed. The page is still showing the previous subscription snapshot until reload succeeds.",
+      "loadFailedDescription": "The subscriptions list could not be loaded. Retry to restore the latest subscription state.",
+      "degradedBadge": "Degraded"
+    },
+    "channelMissingId": "Channel id is missing. Reopen the dialog and try again.",
+    "channelValidationFailed": "Fill in the required fields before saving."
   },
   "brand": {
     "short": "M",
@@ -4611,7 +4726,8 @@
           "includeCompletion": "Test chat completion",
           "apiSurface": "API surface",
           "responseFormatMode": "response_format probe",
-          "includeMetadataProbe": "Include metadata probe"
+          "includeMetadataProbe": "Include metadata probe",
+          "authMode": "Auth mode"
         },
         "placeholders": {
           "prompt": "Say \"OK\" and nothing else.",
@@ -4624,7 +4740,8 @@
           "embeddingModel": "Leave empty to use the profile embedding model.",
           "includeCompletion": "When disabled, only embeddings are tested.",
           "includeRerank": "When enabled, runs a rerank probe against /v1/rerank.",
-          "rerankModel": "Leave empty to use the profile rerank model + backup rerank models."
+          "rerankModel": "Leave empty to use the profile rerank model + backup rerank models.",
+          "authMode": "profile_key validates the profile credential. managed_runtime_key validates the governed runtime credential actually used in production."
         },
         "sections": {
           "completion": "Chat completion",
@@ -4642,7 +4759,8 @@
           "compatibility": "Compatibility",
           "field": "field",
           "topN": "topN",
-          "score": "score"
+          "score": "score",
+          "authMode": "Auth mode"
         }
       },
       "testUnsaved": {
@@ -6026,7 +6144,8 @@
           "upstreamRateLimited": "Upstream rate limited (HTTP 429). Please try again later.",
           "upstreamError": "Nominatim request failed (HTTP {{status}}).",
           "networkError": "Network error or timeout. Please try again later."
-        }
+        },
+        "success": "Geocoding test completed."
       },
       "fields": {
         "userAgent": "User-Agent",
@@ -6580,7 +6699,8 @@
       "groups": {
         "totalCount": "Keys: {{count}}",
         "persistedCount": "Configured: {{count}}",
-        "draftCount": "Drafts: {{count}}"
+        "draftCount": "Drafts: {{count}}",
+        "unassignedDrafts": "Draft entries"
       },
       "filters": {
         "onlyConfigured": "Configured only",
@@ -6741,7 +6861,10 @@
         "telegramSendCode": "Send code",
         "telegramCompleteAuth": "Generate & save session",
         "telegramClearAuthState": "Clear auth state",
-        "telegramClearSavedSession": "Clear saved Telegram session"
+        "telegramClearSavedSession": "Clear saved Telegram session",
+        "backToMonitor": "Back to Situation Monitor",
+        "openMonitoringSettings": "Open monitoring settings",
+        "openSchedulerSettings": "Open scheduler settings"
       },
       "validation": {
         "translationMaxConcurrency": "Concurrency is required",
@@ -6802,6 +6925,41 @@
         "telegramEnableContent": "Session will be saved either way. Choose whether to enable Telegram polling immediately.",
         "telegramEnableConfirm": "Save and enable",
         "telegramEnableSkip": "Save only"
+      },
+      "snapshot": {
+        "refreshSuccess": "Rebuilt the Situation Monitor external snapshot.",
+        "refreshFailed": "Failed to rebuild the Situation Monitor external snapshot.",
+        "title": "GDELT snapshot scheduler",
+        "stale": "STALE",
+        "interval": "Every {{count}} min",
+        "history": "{{count}} day history",
+        "generatedAt": "Last generated: {{time}}",
+        "lastFullSuccess": "Last full success: {{time}}",
+        "lastNonSuccess": "Last partial/failure: {{time}}",
+        "nextScheduled": "Next scheduled run: {{time}}",
+        "coverage": "Available categories: {{count}} / 6. Active warnings: {{warnings}}.",
+        "successRate": "24h success {{value}}",
+        "rateLimitedCount": "24h rate limits {{value}}",
+        "averageCoverage": "24h avg categories {{value}} / 6",
+        "refreshStatus": "Refresh status",
+        "forceRefresh": "Rebuild external snapshot"
+      },
+      "readiness": {
+        "title": "Situation Monitor readiness",
+        "description": "These settings directly affect Situation Monitor refresh, Telegram, OREF, Finnhub, and FRED data availability.",
+        "providers": "Provider readiness"
+      },
+      "quality": {
+        "title": "Analysis quality",
+        "empty": "Quality metrics are not available yet.",
+        "articles": "Articles {{count}}",
+        "clusters": "Clusters {{count}}",
+        "mixed": "Mixed {{count}}",
+        "mode": "Mode {{value}}",
+        "generatedAt": "Last computed: {{time}}",
+        "window": "Window: {{hours}}h",
+        "dedupe": "Dedupe ratio: {{value}}",
+        "avgSources": "Avg sources / cluster: {{value}}"
       }
     },
     "realtimeSignals": {
@@ -6919,7 +7077,8 @@
         "aisRelaySharedSecret": "Shared auth secret expected by the AIS relay. It must match `AIS_RELAY_SHARED_SECRET` on the relay service.",
         "acledOauthUsername": "ACLED account email used for automatic OAuth token refresh.",
         "acledOauthClientId": "Defaults to `acled`. Change only if ACLED issued a different client ID.",
-        "secretOptional": "Leave secret fields empty to keep existing stored values."
+        "secretOptional": "Leave secret fields empty to keep existing stored values.",
+        "openskyClientId": "OAuth client ID used for OpenSky access tokens."
       },
       "placeholders": {
         "openskyBaseUrl": "https://opensky-network.org/api",
@@ -6929,7 +7088,8 @@
         "polymarketProxyUrl": "https://your-proxy.example.com/polymarket",
         "acledOauthUsername": "weidu500l@gmail.com",
         "acledOauthClientId": "acled",
-        "secretValue": "Leave empty to keep current value"
+        "secretValue": "Leave empty to keep current value",
+        "openskyClientId": "client-id"
       },
       "alerts": {
         "aisRelayPurpose": {
@@ -7123,7 +7283,16 @@
         "lastAttemptAt": "Last attempt",
         "lastSuccessAt": "Last success",
         "lastError": "Last error",
-        "empty": "Runtime diagnostics have not been loaded yet."
+        "empty": "Runtime diagnostics have not been loaded yet.",
+        "aisTrackedVessels": "Tracked vessels",
+        "aisCandidates": "Candidates",
+        "aisReportsSeen": "Reports seen",
+        "aisReportsProcessed": "Reports processed",
+        "aisReportsIgnored": "Reports ignored",
+        "aisParseErrors": "Parse errors",
+        "aisRelayDiagnostics": "AIS relay diagnostics",
+        "aisLastUpstreamError": "Last upstream error",
+        "aisLastParseError": "Last parse error"
       }
     },
     "akshare": {
@@ -7280,6 +7449,37 @@
         "empty": "No recent archive preparation activity.",
         "scopeDigest": "Digest {{value}}",
         "scopeCalendar": "Calendar {{value}}"
+      }
+    },
+    "multiTenantSchedulers": {
+      "errors": {
+        "loadFailed": "Failed to load multi-tenant scheduler settings.",
+        "saveFailed": "Failed to save multi-tenant scheduler settings."
+      },
+      "messages": {
+        "saved": "Multi-tenant scheduler settings saved."
+      },
+      "status": {
+        "saved": "Saved override",
+        "default": "Default",
+        "label": "Settings source"
+      },
+      "description": "Control how many organizations each background cron can process in parallel. Org-level locks still keep single-flight execution per tenant.",
+      "notice": {
+        "title": "Scheduler fan-out policy",
+        "body": "These limits apply per cron tick. Higher values reduce end-to-end tick latency, but also increase concurrent load on Redis, MySQL, MongoDB, and downstream services."
+      },
+      "fields": {
+        "newsEventsIngestionOrgConcurrency": "News events ingestion org concurrency",
+        "knowledgeGraphIngestionOrgConcurrency": "Knowledge graph ingestion org concurrency",
+        "sentimentSnapshotOrgConcurrency": "Sentiment snapshot org concurrency",
+        "newsnowHottestAnalysisOrgConcurrency": "NewsNow hottest analysis org concurrency"
+      },
+      "hints": {
+        "newsEventsIngestionOrgConcurrency": "How many orgs the news-events ingestion cron may process at once.",
+        "knowledgeGraphIngestionOrgConcurrency": "How many orgs the knowledge-graph ingestion cron may process at once.",
+        "sentimentSnapshotOrgConcurrency": "How many orgs the sentiment snapshot rebuild cron may process at once.",
+        "newsnowHottestAnalysisOrgConcurrency": "How many orgs the NewsNow hottest-analysis scheduler may refresh at once after the shared global snapshot is prepared."
       }
     }
   },
@@ -7711,7 +7911,8 @@
         "request": "Request details",
         "browser": "Browser details",
         "copyJson": "Copy JSON",
-        "copied": "Copied."
+        "copied": "Copied.",
+        "openRequest": "Open request details"
       },
       "raw": {
         "description": "Raw monitoring payload for debugging (best-effort normalization)."
@@ -7857,7 +8058,15 @@
         "confirmDescription": "This will convert crawl results into Items and enqueue LLM processing for results that are not in Items yet.",
         "running": "Backfilling results...",
         "progress": "Backfilling... ({{ingested}} ingested, {{skipped}} skipped, {{failed}} failed)",
-        "done": "Queued for processing. Refreshing..."
+        "done": "Queued for processing. Refreshing...",
+        "emptyTitle": "No results to backfill yet.",
+        "emptyDescription": "This task has no crawl results yet, so nothing can be sent to Items.",
+        "timeout": "Backfill request timed out. Please try again after refreshing the task.",
+        "summary": "{{ingested}} ingested, {{skipped}} skipped, {{failed}} failed across {{scanned}} scanned results.",
+        "noMissingTitle": "All crawl results are already in Items.",
+        "partialTitle": "Backfill finished with failures.",
+        "failedTitle": "Backfill failed.",
+        "emptyHint": "No crawl results available yet."
       },
       "fields": {
         "displayName": "Display name",
@@ -8864,6 +9073,10 @@
         "lastEvent": "Last event",
         "refreshOn": "Refresh on",
         "resetCounters": "Reset counters"
+      },
+      "stale": {
+        "title": "New live events arrived after the last refresh.",
+        "description": "Overview data is stale for: {{sources}}. Refresh now or enable refresh-on-event for those sources."
       }
     },
     "updatedAt": "Updated at: {{time}}",
@@ -9615,7 +9828,8 @@
       "reset": "Reset panels",
       "fixed": "Fixed",
       "none": "No panels enabled. Open Panels to re-enable.",
-      "hintCompact": "Enable Edit layout on smaller screens before dragging or resizing cards."
+      "hintCompact": "Enable Edit layout on smaller screens before dragging or resizing cards.",
+      "hintDesktop": "Click Customize layout to resize, reorder, and emphasize the cards you care about."
     },
     "empty": {
       "unconfigured": {
@@ -9743,7 +9957,10 @@
     },
     "layout": {
       "done": "Done",
-      "edit": "Edit layout"
+      "edit": "Edit layout",
+      "resetPanelSize": "Restore default size",
+      "sizeBadge": "{{cols}} cols · {{rows}} rows · {{height}}px",
+      "editing": "Layout editing is on"
     }
   },
   "search": {
@@ -9784,5 +10001,14 @@
       "source": "Filter by source",
       "phrase": "Exact phrase match"
     }
+  },
+  "crawlFrontier": {
+    "errors": {
+      "loadProfiles": "Failed to load crawl site profiles.",
+      "loadRuns": "Failed to load crawl frontier runs.",
+      "loadProfile": "Failed to load crawl site profile."
+    },
+    "title": "News Crawl Frontier Console",
+    "subtitle": "Operate site profiles, inspect seed-first and frontier traces, and debug why capture succeeded, degraded, or failed."
   }
 }
