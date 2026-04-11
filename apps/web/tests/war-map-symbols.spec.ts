@@ -10,6 +10,7 @@ import {
   getWarMapLegendSvgMarkup,
   getQuickLegendVisibility,
   matchesWarMapLegendItem,
+  selectVisibleQuickLegendItems,
 } from "../app/(app)/dashboard/charts/war-map/war-map-symbols";
 
 const t = (key: string, options?: { defaultValue?: string }) =>
@@ -29,6 +30,13 @@ describe("war-map symbols", () => {
       showFlights: false,
       showAis: true,
       effectiveAisMode: "density",
+      transportState: {
+        aisPrimary: {
+          note: "Aggregated only",
+          countLabel: "0",
+          tone: "degraded",
+        },
+      },
     });
     expect(densityItems.map((item) => item.key)).toEqual([
       "signal-high",
@@ -39,6 +47,13 @@ describe("war-map symbols", () => {
       "ais-density",
       "ais-disruption",
     ]);
+    expect(densityItems.find((item) => item.key === "ais-density")).toEqual(
+      expect.objectContaining({
+        note: "Aggregated only",
+        countLabel: "0",
+        tone: "degraded",
+      }),
+    );
 
     const allItems = buildWarMapQuickLegendItems({
       t,
@@ -46,9 +61,23 @@ describe("war-map symbols", () => {
       showFlights: true,
       showAis: true,
       effectiveAisMode: "all",
+      transportState: {
+        flights: {
+          note: "Zoom in for live aircraft markers.",
+          countLabel: "0",
+          tone: "degraded",
+        },
+      },
     });
     expect(allItems.map((item) => item.key)).toContain("flight");
     expect(allItems.map((item) => item.key)).toContain("ais-vessel-generic");
+    expect(allItems.find((item) => item.key === "flight")).toEqual(
+      expect.objectContaining({
+        note: "Zoom in for live aircraft markers.",
+        countLabel: "0",
+        tone: "degraded",
+      }),
+    );
     expect(
       allItems.find((item) => item.key === "ais-vessel-generic")?.note,
     ).toBe("Color shows vessel category");
@@ -61,6 +90,16 @@ describe("war-map symbols", () => {
       showFlights: true,
       showAis: true,
       effectiveAisMode: "all",
+      transportState: {
+        sectionStatusLabel: "Aggregated only",
+        sectionStatusTone: "warning",
+        sectionStatusHint: "AIS vessel snapshots are unavailable.",
+        flights: {
+          note: "Snapshot stale",
+          countLabel: "0",
+          tone: "degraded",
+        },
+      },
       activePointLayers: [
         {
           key: "techHQs",
@@ -72,15 +111,34 @@ describe("war-map symbols", () => {
 
     expect(sections.map((section) => section.key)).toEqual([
       "signals",
-      "news",
       "transport",
+      "news",
       "other-point-layers",
     ]);
+    expect(sections.find((section) => section.key === "transport")).toEqual(
+      expect.objectContaining({
+        defaultExpanded: true,
+        statusLabel: "Aggregated only",
+        statusTone: "warning",
+        statusHint: "AIS vessel snapshots are unavailable.",
+      }),
+    );
     expect(
       sections
         .find((section) => section.key === "transport")
         ?.items.map((item) => item.key),
     ).toContain("ais-vessel-cargo");
+    expect(
+      sections
+        .find((section) => section.key === "transport")
+        ?.items.find((item) => item.key === "flight"),
+    ).toEqual(
+      expect.objectContaining({
+        note: "Snapshot stale",
+        countLabel: "0",
+        tone: "degraded",
+      }),
+    );
     expect(
       sections.find((section) => section.key === "other-point-layers")?.items,
     ).toEqual([
@@ -121,6 +179,30 @@ describe("war-map symbols", () => {
     expect(getQuickLegendVisibility("expanded")).toBe(true);
     expect(getQuickLegendVisibility("compact")).toBe(true);
     expect(getQuickLegendVisibility("minimal")).toBe(false);
+  });
+
+  it("keeps flight and AIS transport cues visible in compact quick legend", () => {
+    const items = buildWarMapQuickLegendItems({
+      t,
+      showMonitors: true,
+      showFlights: true,
+      showAis: true,
+      effectiveAisMode: "all",
+    });
+
+    const compactLegend = selectVisibleQuickLegendItems({
+      density: "compact",
+      items,
+    });
+
+    expect(compactLegend.visibleItems.map((item) => item.key)).toContain(
+      "flight",
+    );
+    expect(compactLegend.visibleItems.map((item) => item.key)).toContain(
+      "ais-vessel-generic",
+    );
+    expect(compactLegend.visibleItems).toHaveLength(6);
+    expect(compactLegend.hiddenCount).toBe(2);
   });
 
   it("renders deck icons as data URLs and legend icons as inline SVG", () => {

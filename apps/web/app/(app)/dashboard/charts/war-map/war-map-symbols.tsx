@@ -37,16 +37,22 @@ export interface WarMapLegendItem {
   label: string;
   note?: string;
   state?: WarMapSymbolState;
+  tone?: "default" | "degraded";
   accentColor?: string;
   countLabel?: string;
   matchSymbolKeys?: WarMapSymbolKey[];
   matchLayerIds?: string[];
 }
 
+export type WarMapLegendStatusTone = "info" | "warning" | "critical";
+
 export interface WarMapLegendSection {
   key: string;
   title: string;
   description?: string;
+  statusLabel?: string;
+  statusTone?: WarMapLegendStatusTone;
+  statusHint?: string;
   defaultExpanded?: boolean;
   items: WarMapLegendItem[];
 }
@@ -60,6 +66,21 @@ export interface WarMapActivePointLayerLegendItem {
 export interface WarMapLegendMatchablePoint {
   symbolKey: WarMapSymbolKey;
   layerId?: string;
+}
+
+export interface WarMapTransportLegendItemState {
+  note?: string;
+  countLabel?: string;
+  tone?: "default" | "degraded";
+}
+
+export interface WarMapTransportLegendState {
+  sectionStatusLabel?: string;
+  sectionStatusTone?: WarMapLegendStatusTone;
+  sectionStatusHint?: string;
+  flights?: WarMapTransportLegendItemState;
+  aisPrimary?: WarMapTransportLegendItemState;
+  aisDisruption?: WarMapTransportLegendItemState;
 }
 
 interface SymbolPalette {
@@ -410,18 +431,65 @@ function buildRingDotSymbol({
   return [outerRingMarkup, primaryRing, center, ticks].join("");
 }
 
-function buildTransportGlyph({
-  accent,
-  path,
-  target,
-}: {
-  accent: string;
-  path: string;
-  target: WarMapSymbolRenderTarget;
-}): string {
-  return target === "map"
-    ? mapStrokePath(path, accent, 1.6)
-    : `<path d="${path}" ${strokeAttrs(1.6, accent)} />`;
+function buildFlightSymbol(
+  accent: string,
+  target: WarMapSymbolRenderTarget,
+): string {
+  const bodyFill = mixHex(accent, WHITE, target === "map" ? 0.9 : 0.94);
+  const wingFill = mixHex(accent, WHITE, target === "map" ? 0.82 : 0.88);
+  const fuselagePath =
+    "M12 4.35c.54 0 1 .44 1 1v4.1l4.9 1.95c.38.15.63.51.63.92 0 .42-.26.79-.65.93L13 14.72v3.95c0 .4-.24.77-.61.92l-.39.17-.39-.17a.98.98 0 0 1-.61-.92v-3.95L6.12 13.25a1 1 0 0 1-.65-.93c0-.41.25-.77.63-.92L11 9.45v-4.1c0-.56.44-1 1-1Z";
+  const cabinPath =
+    "M12 5.55c.2 0 .38.17.38.38v2.6a.38.38 0 0 1-.25.36L9.55 9.9a.38.38 0 0 1-.47-.5l2.54-3.58a.38.38 0 0 1 .31-.16Z";
+  const wingPath = "M7.1 11.55 12 9.9l4.9 1.65-4.9 1.3-4.9-1.3Z";
+  const tailPath = "M10.62 15.55 12 14.98l1.38.57-.57 2.02H11.2l-.58-2.02Z";
+
+  const outline =
+    target === "map"
+      ? [
+          `<path d="${fuselagePath}" fill="${bodyFill}" ${strokeAttrs(1.9, WHITE)} opacity="0.95" />`,
+          `<path d="${fuselagePath}" fill="${bodyFill}" ${strokeAttrs(1.2, accent)} />`,
+        ].join("")
+      : `<path d="${fuselagePath}" fill="${bodyFill}" ${strokeAttrs(1.2, accent)} />`;
+
+  return [
+    `<path d="${wingPath}" fill="${wingFill}" />`,
+    outline,
+    `<path d="${cabinPath}" fill="${withAlpha(accent, 0.14)}" />`,
+    `<path d="${tailPath}" fill="${withAlpha(accent, 0.16)}" />`,
+    `<path d="M12 6.15v8.3" ${strokeAttrs(0.9, withAlpha(accent, 0.42))} />`,
+  ].join("");
+}
+
+function buildVesselSymbol(
+  accent: string,
+  target: WarMapSymbolRenderTarget,
+): string {
+  const hullFill = mixHex(accent, WHITE, target === "map" ? 0.9 : 0.95);
+  const deckFill = mixHex(accent, WHITE, target === "map" ? 0.78 : 0.84);
+  const hullPath =
+    "M7.05 13.9h9.9l-1.12 2.18a2.45 2.45 0 0 1-2.18 1.32h-3.3a2.45 2.45 0 0 1-2.18-1.32L7.05 13.9Z";
+  const cabinPath =
+    "M9.08 9.15c0-.42.34-.75.75-.75h2.34v-1.1c0-.42.34-.75.75-.75h.5c.42 0 .75.33.75.75v4.6H9.08v-2.75Z";
+  const deckLine = "M8.4 12.48h7.2";
+  const waveLeft = "M7.6 18.05c.72.52 1.38.52 2.1 0 .72-.53 1.38-.53 2.1 0";
+  const waveRight = "M12.2 18.05c.72.52 1.38.52 2.1 0 .72-.53 1.38-.53 2.1 0";
+
+  const hull =
+    target === "map"
+      ? [
+          `<path d="${hullPath}" fill="${hullFill}" ${strokeAttrs(1.85, WHITE)} opacity="0.94" />`,
+          `<path d="${hullPath}" fill="${hullFill}" ${strokeAttrs(1.18, accent)} />`,
+        ].join("")
+      : `<path d="${hullPath}" fill="${hullFill}" ${strokeAttrs(1.18, accent)} />`;
+
+  return [
+    `<path d="${cabinPath}" fill="${deckFill}" ${strokeAttrs(1.05, accent)} />`,
+    `<path d="${deckLine}" ${strokeAttrs(1.05, accent)} />`,
+    hull,
+    `<path d="${waveLeft}" ${strokeAttrs(0.9, withAlpha(accent, 0.4))} />`,
+    `<path d="${waveRight}" ${strokeAttrs(0.9, withAlpha(accent, 0.4))} />`,
+  ].join("");
 }
 
 function buildDensitySymbol(
@@ -509,17 +577,9 @@ function buildSymbolBody({
         monitorTicks: true,
       });
     case "flight":
-      return buildTransportGlyph({
-        accent,
-        target,
-        path: "M12 4.25 13.32 9.15 17.55 10.55v1.05l-4.23.18.92 5.1-1 .62L12 14.15 10.76 17.5l-1-.62.92-5.1-4.23-.18v-1.05l4.23-1.4L12 4.25Z",
-      });
+      return buildFlightSymbol(accent, target);
     case "vessel":
-      return buildTransportGlyph({
-        accent,
-        target,
-        path: "M12 5.8 13.72 8.25H10.28L12 5.8Zm-3.45 3.6h6.9l1.1 2.25-.88 4.05H9.43l-.88-4.05 1.1-2.25Zm1.3 1.35-.56 1.18.4 2.32h4.62l.4-2.32-.56-1.18H9.85Zm1.55 4.95L12 16.82l.6-1.12h-1.2Z",
-      });
+      return buildVesselSymbol(accent, target);
     case "density":
       return buildDensitySymbol(accent, target);
     case "warning":
@@ -677,6 +737,79 @@ export function getQuickLegendVisibility(density: OverlayDensity): boolean {
   return QUICK_LEGEND_DENSITIES.has(density);
 }
 
+function getQuickLegendMaxVisibleCount(density: OverlayDensity): number {
+  if (density === "expanded") {
+    return 7;
+  }
+  if (density === "compact") {
+    return 6;
+  }
+  return 0;
+}
+
+export function selectVisibleQuickLegendItems({
+  density,
+  items,
+}: {
+  density: OverlayDensity;
+  items: WarMapLegendItem[];
+}): {
+  visibleItems: WarMapLegendItem[];
+  hiddenCount: number;
+} {
+  const maxVisibleCount = getQuickLegendMaxVisibleCount(density);
+  if (maxVisibleCount <= 0 || items.length === 0) {
+    return {
+      visibleItems: [],
+      hiddenCount: items.length,
+    };
+  }
+
+  const visibleKeys = items.slice(0, maxVisibleCount).map((item) => item.key);
+  const removablePriority = [
+    "signal-low",
+    "signal-medium",
+    "monitor",
+    "news-geocoded",
+  ];
+  const requiredKeys = [
+    items.find((item) => item.key === "flight")?.key,
+    items.find((item) =>
+      ["ais-density", "ais-vessel-generic", "ais-vessel-military"].includes(
+        item.key,
+      ),
+    )?.key,
+  ].filter((value): value is string => Boolean(value));
+
+  for (const requiredKey of requiredKeys) {
+    if (visibleKeys.includes(requiredKey)) {
+      continue;
+    }
+
+    const replacementKey = removablePriority.find((candidate) =>
+      visibleKeys.includes(candidate),
+    );
+    const replacementIndex =
+      replacementKey === undefined
+        ? visibleKeys.length < maxVisibleCount
+          ? visibleKeys.length
+          : Math.max(visibleKeys.length - 1, 0)
+        : visibleKeys.indexOf(replacementKey);
+
+    visibleKeys[replacementIndex] = requiredKey;
+  }
+
+  const visibleKeySet = new Set(visibleKeys);
+  const visibleItems = items
+    .filter((item) => visibleKeySet.has(item.key))
+    .slice(0, maxVisibleCount);
+
+  return {
+    visibleItems,
+    hiddenCount: Math.max(0, items.length - visibleItems.length),
+  };
+}
+
 export function matchesWarMapLegendItem(
   item: Pick<
     WarMapLegendItem,
@@ -787,12 +920,14 @@ export function buildWarMapQuickLegendItems({
   showFlights,
   showAis,
   effectiveAisMode,
+  transportState,
 }: {
   t: WarMapTranslateFn;
   showMonitors: boolean;
   showFlights: boolean;
   showAis: boolean;
   effectiveAisMode: WarMapAisMode;
+  transportState?: WarMapTransportLegendState;
 }): WarMapLegendItem[] {
   const items: WarMapLegendItem[] = [
     {
@@ -835,6 +970,9 @@ export function buildWarMapQuickLegendItems({
       key: "flight",
       symbolKey: "flight",
       label: resolveWarMapLegendLabel("flight", t),
+      note: transportState?.flights?.note,
+      countLabel: transportState?.flights?.countLabel,
+      tone: transportState?.flights?.tone,
       matchSymbolKeys: ["flight"],
     });
   }
@@ -846,6 +984,9 @@ export function buildWarMapQuickLegendItems({
           key: "ais-density",
           symbolKey: "ais-density",
           label: resolveWarMapLegendLabel("ais-density", t),
+          note: transportState?.aisPrimary?.note,
+          countLabel: transportState?.aisPrimary?.countLabel,
+          tone: transportState?.aisPrimary?.tone,
           matchSymbolKeys: ["ais-density"],
         },
         {
@@ -854,6 +995,9 @@ export function buildWarMapQuickLegendItems({
           label: t("dashboard.charts.warMap.legend.aisDisruptionQuick", {
             defaultValue: "AIS disruption",
           }),
+          note: transportState?.aisDisruption?.note,
+          countLabel: transportState?.aisDisruption?.countLabel,
+          tone: transportState?.aisDisruption?.tone,
           matchSymbolKeys: [
             "ais-disruption-high",
             "ais-disruption-medium",
@@ -867,9 +1011,13 @@ export function buildWarMapQuickLegendItems({
           key: "ais-vessel-generic",
           symbolKey: "ais-vessel-generic",
           label: resolveWarMapLegendLabel("ais-vessel-generic", t),
-          note: t("dashboard.charts.warMap.legend.quickColorByCategory", {
-            defaultValue: "Color shows vessel category",
-          }),
+          note:
+            transportState?.aisPrimary?.note ??
+            t("dashboard.charts.warMap.legend.quickColorByCategory", {
+              defaultValue: "Color shows vessel category",
+            }),
+          countLabel: transportState?.aisPrimary?.countLabel,
+          tone: transportState?.aisPrimary?.tone,
           matchSymbolKeys: [
             "ais-vessel-military",
             "ais-vessel-fishing",
@@ -886,6 +1034,9 @@ export function buildWarMapQuickLegendItems({
           label: t("dashboard.charts.warMap.legend.aisDisruptionQuick", {
             defaultValue: "AIS disruption",
           }),
+          note: transportState?.aisDisruption?.note,
+          countLabel: transportState?.aisDisruption?.countLabel,
+          tone: transportState?.aisDisruption?.tone,
           matchSymbolKeys: [
             "ais-disruption-high",
             "ais-disruption-medium",
@@ -899,6 +1050,9 @@ export function buildWarMapQuickLegendItems({
           key: "ais-vessel-military",
           symbolKey: "ais-vessel-military",
           label: resolveWarMapLegendLabel("ais-vessel-military", t),
+          note: transportState?.aisPrimary?.note,
+          countLabel: transportState?.aisPrimary?.countLabel,
+          tone: transportState?.aisPrimary?.tone,
           matchSymbolKeys: ["ais-vessel-military"],
         },
         {
@@ -907,6 +1061,9 @@ export function buildWarMapQuickLegendItems({
           label: t("dashboard.charts.warMap.legend.aisDisruptionQuick", {
             defaultValue: "AIS disruption",
           }),
+          note: transportState?.aisDisruption?.note,
+          countLabel: transportState?.aisDisruption?.countLabel,
+          tone: transportState?.aisDisruption?.tone,
           matchSymbolKeys: [
             "ais-disruption-high",
             "ais-disruption-medium",
@@ -927,6 +1084,7 @@ export function buildWarMapLegendSections({
   showAis,
   effectiveAisMode,
   activePointLayers,
+  transportState,
 }: {
   t: WarMapTranslateFn;
   showMonitors: boolean;
@@ -934,6 +1092,7 @@ export function buildWarMapLegendSections({
   showAis: boolean;
   effectiveAisMode: WarMapAisMode;
   activePointLayers: WarMapActivePointLayerLegendItem[];
+  transportState?: WarMapTransportLegendState;
 }): WarMapLegendSection[] {
   const sections: WarMapLegendSection[] = [
     {
@@ -953,6 +1112,21 @@ export function buildWarMapLegendSections({
           matchSymbolKeys: [symbolKey as WarMapSymbolKey],
         }),
       ),
+    },
+    {
+      key: "transport",
+      title: t("dashboard.charts.warMap.legend.transportTitle", {
+        defaultValue: "Air & Sea",
+      }),
+      description: t("dashboard.charts.warMap.legend.transportHint", {
+        defaultValue:
+          "Aircraft, vessels, density zones, and disruptions use dedicated shapes.",
+      }),
+      statusLabel: transportState?.sectionStatusLabel,
+      statusTone: transportState?.sectionStatusTone,
+      statusHint: transportState?.sectionStatusHint,
+      defaultExpanded: true,
+      items: [],
     },
     {
       key: "news",
@@ -998,6 +1172,9 @@ export function buildWarMapLegendSections({
       key: "flight",
       symbolKey: "flight",
       label: resolveWarMapLegendLabel("flight", t),
+      note: transportState?.flights?.note,
+      countLabel: transportState?.flights?.countLabel,
+      tone: transportState?.flights?.tone,
       matchSymbolKeys: ["flight"],
     });
   }
@@ -1008,6 +1185,9 @@ export function buildWarMapLegendSections({
         key: "ais-density",
         symbolKey: "ais-density",
         label: resolveWarMapLegendLabel("ais-density", t),
+        note: transportState?.aisPrimary?.note,
+        countLabel: transportState?.aisPrimary?.countLabel,
+        tone: transportState?.aisPrimary?.tone,
         matchSymbolKeys: ["ais-density"],
       });
     }
@@ -1017,6 +1197,9 @@ export function buildWarMapLegendSections({
         key: "ais-disruption-high",
         symbolKey: "ais-disruption-high",
         label: resolveWarMapLegendLabel("ais-disruption-high", t),
+        note: transportState?.aisDisruption?.note,
+        countLabel: transportState?.aisDisruption?.countLabel,
+        tone: transportState?.aisDisruption?.tone,
         matchSymbolKeys: ["ais-disruption-high"],
       },
       {
@@ -1039,6 +1222,18 @@ export function buildWarMapLegendSections({
           key: "ais-vessel-military",
           symbolKey: "ais-vessel-military",
           label: resolveWarMapLegendLabel("ais-vessel-military", t),
+          note:
+            effectiveAisMode === "military"
+              ? transportState?.aisPrimary?.note
+              : undefined,
+          countLabel:
+            effectiveAisMode === "military"
+              ? transportState?.aisPrimary?.countLabel
+              : undefined,
+          tone:
+            effectiveAisMode === "military"
+              ? transportState?.aisPrimary?.tone
+              : undefined,
           matchSymbolKeys: ["ais-vessel-military"],
         },
         {
@@ -1076,18 +1271,19 @@ export function buildWarMapLegendSections({
   }
 
   if (transportItems.length > 0) {
-    sections.push({
-      key: "transport",
-      title: t("dashboard.charts.warMap.legend.transportTitle", {
-        defaultValue: "Air & Sea",
-      }),
-      description: t("dashboard.charts.warMap.legend.transportHint", {
-        defaultValue:
-          "Aircraft, vessels, density zones, and disruptions use dedicated shapes.",
-      }),
-      defaultExpanded: false,
-      items: transportItems,
-    });
+    const transportSection = sections.find(
+      (section) => section.key === "transport",
+    );
+    if (transportSection) {
+      transportSection.items = transportItems;
+    }
+  } else {
+    const transportSectionIndex = sections.findIndex(
+      (section) => section.key === "transport",
+    );
+    if (transportSectionIndex >= 0) {
+      sections.splice(transportSectionIndex, 1);
+    }
   }
 
   if (activePointLayers.length > 0) {
@@ -1170,6 +1366,7 @@ export function WarMapLegendSwatch({
   label,
   note,
   state = "default",
+  tone = "default",
   accentColor,
   countLabel,
   size = 42,
@@ -1203,6 +1400,10 @@ export function WarMapLegendSwatch({
           active
             ? "border-slate-300/90 bg-white/[0.96] shadow-[0_12px_22px_-20px_rgba(15,23,42,0.2)] dark:border-slate-500/70 dark:bg-slate-950/[0.86]"
             : "border-slate-200/75 bg-white/[0.72] dark:border-slate-700/70 dark:bg-slate-950/[0.52]"
+        } ${
+          tone === "degraded"
+            ? "border-amber-200/90 bg-amber-50/80 dark:border-amber-400/30 dark:bg-amber-950/22"
+            : ""
         } ${muted ? "opacity-55" : "opacity-100"} ${
           interactive
             ? "hover:border-slate-300/85 hover:bg-white/[0.9] dark:hover:border-slate-500/80 dark:hover:bg-slate-950/[0.7]"
@@ -1212,6 +1413,10 @@ export function WarMapLegendSwatch({
           active
             ? "border-slate-300 bg-white shadow-[0_14px_28px_-24px_rgba(15,23,42,0.18)] dark:border-slate-500/75 dark:bg-slate-950/82"
             : "border-slate-200/80 bg-white/[0.76] dark:border-slate-700/80 dark:bg-slate-950/[0.54]"
+        } ${
+          tone === "degraded"
+            ? "border-amber-200/90 bg-amber-50/75 dark:border-amber-400/28 dark:bg-amber-950/20"
+            : ""
         } ${muted ? "opacity-50" : "opacity-100"} ${
           interactive
             ? "hover:border-slate-300/90 hover:bg-white/[0.9] dark:hover:border-slate-500/80 dark:hover:bg-slate-950/[0.72]"

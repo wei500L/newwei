@@ -21,6 +21,7 @@ import {
 import {
   WarMapLegendSwatch,
   getQuickLegendVisibility,
+  selectVisibleQuickLegendItems,
   type WarMapLegendItem,
 } from "./war-map-symbols";
 
@@ -89,11 +90,13 @@ export function WarMapOverlayRail({
     getQuickLegendVisibility(overlayDensity) &&
     quickLegendItems.length > 0 &&
     !openOverlayPanel;
-  const visibleQuickLegendItems = quickLegendItems.slice(0, 4);
-  const hiddenQuickLegendCount = Math.max(
-    0,
-    quickLegendItems.length - visibleQuickLegendItems.length,
-  );
+  const {
+    visibleItems: visibleQuickLegendItems,
+    hiddenCount: hiddenQuickLegendCount,
+  } = selectVisibleQuickLegendItems({
+    density: overlayDensity,
+    items: quickLegendItems,
+  });
   const activePanel =
     !useDrawerControls && !usesLegendDock && openOverlayPanel
       ? openOverlayPanel === "controls"

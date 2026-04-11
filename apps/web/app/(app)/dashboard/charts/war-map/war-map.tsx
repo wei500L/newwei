@@ -124,6 +124,7 @@ import {
   type WarMapLegendItem,
   type WarMapSymbolKey,
   type WarMapSymbolState,
+  type WarMapTransportLegendState,
 } from "./war-map-symbols";
 
 const ALL_TIME_START = new Date("1970-01-01T00:00:00.000Z");
@@ -3785,8 +3786,9 @@ export function WarMap({
   ]
     .filter((value): value is string => Boolean(value))
     .join("\n");
-  const aisAllModeDisabled = aisAllVesselsAvailable === false;
-  const aisAllModeDisabledLabel = aisAllModeDisabled
+  const aisAllModeDegraded =
+    effectiveAisMode === "all" && aisAllVesselsAvailable === false;
+  const aisAllModeDegradedLabel = aisAllModeDegraded
     ? (aisResolvedBlockedReason ??
       t("dashboard.charts.warMap.stats.aisAllUnavailable", {
         defaultValue: "All vessels mode is waiting for relay vessel snapshots.",
@@ -3816,6 +3818,144 @@ export function WarMap({
           defaultValue: "Highlighted candidates",
         })
       : undefined;
+  const transportLegendState = useMemo<WarMapTransportLegendState>(() => {
+    const flightsUnavailableReason =
+      layerVisibility.flights && flightsReturnedCount === 0
+        ? flightsFreshness === "zoom_required"
+          ? t("dashboard.charts.warMap.legend.flightZoomRequired", {
+              defaultValue: "Zoom in for live aircraft markers.",
+            })
+          : flightsFreshness === "not_configured"
+            ? t("dashboard.charts.warMap.legend.flightNotConfigured", {
+                defaultValue: "OpenSky credentials are not configured.",
+              })
+            : flightsFreshness === "budget_limited"
+              ? t("dashboard.charts.warMap.legend.flightBudgetLimited", {
+                  defaultValue:
+                    "Live aircraft markers are paused by the current OpenSky budget policy.",
+                })
+              : flightsFreshness === "stale"
+                ? t("dashboard.charts.warMap.legend.flightStale", {
+                    defaultValue: "Latest aircraft snapshot is stale.",
+                  })
+                : t("dashboard.charts.warMap.legend.flightMissing", {
+                    defaultValue: "Live aircraft snapshot is not available.",
+                  })
+        : null;
+    const aisAllModeReason =
+      layerVisibility.ais && aisAllModeDegraded
+        ? (aisAllModeDegradedLabel ??
+          t("dashboard.charts.warMap.legend.aisAggregatedOnly", {
+            defaultValue:
+              "Live vessel snapshots are unavailable. Aggregated AIS signals remain visible.",
+          }))
+        : null;
+    const aisViewportReason =
+      layerVisibility.ais && aisViewportEmptyStateActive
+        ? (aisViewportEmptyStateHint ??
+          t("dashboard.charts.warMap.legend.aisViewportEmpty", {
+            defaultValue: "This viewport currently has no live vessel markers.",
+          }))
+        : null;
+
+    const statusHintLines = [
+      flightsUnavailableReason
+        ? `${t("dashboard.charts.warMap.overlay.flights", {
+            defaultValue: "Flights",
+          })}: ${flightsUnavailableReason}`
+        : null,
+      aisAllModeReason
+        ? `${t("dashboard.charts.warMap.layerNames.ais", {
+            defaultValue: "AIS traffic",
+          })}: ${aisAllModeReason}`
+        : null,
+      !aisAllModeReason && aisViewportReason
+        ? `${t("dashboard.charts.warMap.layerNames.ais", {
+            defaultValue: "AIS traffic",
+          })}: ${aisViewportReason}`
+        : null,
+    ].filter((value): value is string => Boolean(value));
+
+    const sectionStatusLabel =
+      flightsUnavailableReason && aisAllModeReason
+        ? t("dashboard.charts.warMap.legend.transportLimited", {
+            defaultValue: "Live markers limited",
+          })
+        : aisAllModeReason
+          ? t("dashboard.charts.warMap.legend.transportAggregatedOnly", {
+              defaultValue: "Aggregated only",
+            })
+          : flightsUnavailableReason
+            ? t("dashboard.charts.warMap.legend.transportFlightsLimited", {
+                defaultValue: "Flights limited",
+              })
+            : aisViewportReason
+              ? t("dashboard.charts.warMap.legend.transportViewportEmpty", {
+                  defaultValue: "Viewport empty",
+                })
+              : undefined;
+
+    const flightCountLabel =
+      typeof flightsReturnedCount === "number"
+        ? formatWarMapClusterCountLabel(flightsReturnedCount)
+        : undefined;
+    const aisPrimaryCountLabelValue =
+      typeof aisPrimaryCountValue === "number"
+        ? formatWarMapClusterCountLabel(aisPrimaryCountValue)
+        : undefined;
+    const aisDisruptionCountLabel =
+      typeof aisDisruptionsCount === "number"
+        ? formatWarMapClusterCountLabel(aisDisruptionsCount)
+        : undefined;
+
+    return {
+      sectionStatusLabel,
+      sectionStatusTone: sectionStatusLabel ? "warning" : undefined,
+      sectionStatusHint:
+        statusHintLines.length > 0 ? statusHintLines.join("\n") : undefined,
+      flights: layerVisibility.flights
+        ? {
+            note: flightsUnavailableReason ?? undefined,
+            countLabel: flightCountLabel,
+            tone: flightsUnavailableReason ? "degraded" : "default",
+          }
+        : undefined,
+      aisPrimary: layerVisibility.ais
+        ? {
+            note:
+              aisAllModeReason ??
+              aisViewportReason ??
+              (effectiveAisMode === "all"
+                ? t("dashboard.charts.warMap.legend.quickColorByCategory", {
+                    defaultValue: "Color shows vessel category",
+                  })
+                : undefined),
+            countLabel: aisPrimaryCountLabelValue,
+            tone:
+              aisAllModeReason || aisViewportReason ? "degraded" : "default",
+          }
+        : undefined,
+      aisDisruption: layerVisibility.ais
+        ? {
+            countLabel: aisDisruptionCountLabel,
+            tone: aisAllModeReason ? "degraded" : "default",
+          }
+        : undefined,
+    };
+  }, [
+    aisAllModeDegraded,
+    aisAllModeDegradedLabel,
+    aisDisruptionsCount,
+    aisPrimaryCountValue,
+    aisViewportEmptyStateActive,
+    aisViewportEmptyStateHint,
+    effectiveAisMode,
+    flightsFreshness,
+    flightsReturnedCount,
+    layerVisibility.ais,
+    layerVisibility.flights,
+    t,
+  ]);
   const visibleLayerCount =
     DISPLAYABLE_WAR_MAP_LAYER_IDS.filter((layerId) => layerVisibility[layerId])
       .length + (layerVisibility.monitors ? 1 : 0);
@@ -4141,6 +4281,7 @@ export function WarMap({
         showFlights: layerVisibility.flights,
         showAis: layerVisibility.ais,
         effectiveAisMode,
+        transportState: transportLegendState,
       }),
     [
       effectiveAisMode,
@@ -4148,6 +4289,7 @@ export function WarMap({
       layerVisibility.flights,
       layerVisibility.monitors,
       monitorPoints.length,
+      transportLegendState,
       t,
     ],
   );
@@ -4164,6 +4306,7 @@ export function WarMap({
         showAis: layerVisibility.ais,
         effectiveAisMode,
         activePointLayers: staticDeckData.activePointLayers,
+        transportState: transportLegendState,
       }),
     [
       effectiveAisMode,
@@ -4172,6 +4315,7 @@ export function WarMap({
       layerVisibility.monitors,
       monitorPoints.length,
       staticDeckData.activePointLayers,
+      transportLegendState,
       t,
     ],
   );
@@ -4316,16 +4460,11 @@ export function WarMap({
         aisLayerVisible: layerVisibility.ais,
         aisMode,
         aisEffectiveMode: effectiveAisMode,
-        onAisModeChange: (mode) => {
-          if (mode === "all" && aisAllModeDisabled) {
-            return;
-          }
-          setAisMode(mode);
-        },
+        onAisModeChange: setAisMode,
         aisHighlightCandidates,
         onAisHighlightCandidatesChange: setAisHighlightCandidates,
-        aisAllModeDisabled,
-        aisAllModeDisabledLabel,
+        aisAllModeDegraded,
+        aisAllModeDegradedLabel,
         aisTooltipText,
         aisStatusReason: aisResolvedStatusReason ?? null,
         aisSourceStatusColor,

@@ -34,6 +34,7 @@ import {
   WarMapLegendSwatch,
   type WarMapLegendItem,
   type WarMapLegendSection,
+  type WarMapLegendStatusTone,
 } from "./war-map-symbols";
 
 type FlightMode = "military" | "all";
@@ -65,8 +66,8 @@ interface WarMapControlsPanelTransportProps {
   onAisModeChange: (mode: AisMode) => void;
   aisHighlightCandidates: boolean;
   onAisHighlightCandidatesChange: (enabled: boolean) => void;
-  aisAllModeDisabled: boolean;
-  aisAllModeDisabledLabel: string | null;
+  aisAllModeDegraded: boolean;
+  aisAllModeDegradedLabel: string | null;
   aisTooltipText: string | null;
   aisStatusReason: string | null;
   aisSourceStatusColor: string;
@@ -361,6 +362,20 @@ function LegendItemsGrid({
   );
 }
 
+function resolveLegendSectionStatusClasses(
+  tone: WarMapLegendStatusTone | undefined,
+): string {
+  switch (tone) {
+    case "critical":
+      return "border-rose-200/90 bg-rose-50 text-rose-700 dark:border-rose-400/35 dark:bg-rose-400/12 dark:text-rose-200";
+    case "warning":
+      return "border-amber-200/90 bg-amber-50 text-amber-700 dark:border-amber-400/35 dark:bg-amber-400/12 dark:text-amber-200";
+    case "info":
+    default:
+      return "border-cyan-200/90 bg-cyan-50 text-cyan-700 dark:border-cyan-400/35 dark:bg-cyan-400/12 dark:text-cyan-200";
+  }
+}
+
 function LegendSectionCard({
   section,
   expanded,
@@ -386,9 +401,25 @@ function LegendSectionCard({
         onClick={onToggle}
       >
         <div className="min-w-0">
-          <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
-            {section.title}
-          </Typography.Text>
+          <div className="flex flex-wrap items-center gap-2">
+            <Typography.Text
+              strong
+              className={OVERLAY_SECTION_TITLE_CLASS_NAME}
+            >
+              {section.title}
+            </Typography.Text>
+            {section.statusLabel ? (
+              <Tooltip title={section.statusHint}>
+                <span
+                  className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-none ${resolveLegendSectionStatusClasses(
+                    section.statusTone,
+                  )}`}
+                >
+                  {section.statusLabel}
+                </span>
+              </Tooltip>
+            ) : null}
+          </div>
           {section.description ? (
             <Typography.Text
               type="secondary"
@@ -769,13 +800,13 @@ function TransportSection({
     },
   );
   const aisSectionDescription = t(
-    transport.aisAllModeDisabled
+    transport.aisAllModeDegraded
       ? "dashboard.charts.warMap.overlay.aisSectionDescriptionUnavailable"
       : "dashboard.charts.warMap.overlay.aisSectionDescription",
-    transport.aisAllModeDisabled
+    transport.aisAllModeDegraded
       ? {
           defaultValue:
-            "Full-vessel AIS is temporarily unavailable from the relay snapshot. Use candidate or density views until vessel snapshots recover.",
+            "All vessels stays selected, but live vessel snapshots are temporarily unavailable. Aggregated maritime signals remain visible until the relay recovers.",
         }
       : {
           defaultValue:
@@ -786,7 +817,7 @@ function TransportSection({
     "dashboard.charts.warMap.overlay.aisAllUnavailableInlineHint",
     {
       defaultValue:
-        "All vessels is currently unavailable because relay vessel snapshots are missing.",
+        "All vessels is active, but relay vessel snapshots are missing so only aggregated maritime signals are available.",
     },
   );
   const flightsSectionDescription = t(
@@ -827,10 +858,9 @@ function TransportSection({
               <div className={OVERLAY_PANEL_AIS_MODE_GRID_CLASS_NAME}>
                 <ControlsChoiceButton
                   active={transport.aisMode === "all"}
-                  disabled={transport.aisAllModeDisabled}
                   tooltip={
-                    transport.aisAllModeDisabled
-                      ? transport.aisAllModeDisabledLabel
+                    transport.aisAllModeDegraded
+                      ? transport.aisAllModeDegradedLabel
                       : aisAllVesselsHint
                   }
                   onClick={() => transport.onAisModeChange("all")}
@@ -857,16 +887,15 @@ function TransportSection({
                   })}
                 </ControlsChoiceButton>
               </div>
-              {transport.aisAllModeDisabled ? (
+              {transport.aisAllModeDegraded ? (
                 <div className={OVERLAY_PANEL_MODE_HINT_CLASS_NAME}>
                   <Typography.Text className="block text-inherit">
-                    {transport.aisAllModeDisabledLabel ??
+                    {transport.aisAllModeDegradedLabel ??
                       aisAllUnavailableInlineHint}
                   </Typography.Text>
                 </div>
               ) : null}
-              {transport.aisMode === "military" &&
-              !transport.aisAllModeDisabled ? (
+              {transport.aisMode === "military" ? (
                 <div className={OVERLAY_PANEL_MODE_HINT_CLASS_NAME}>
                   <Typography.Text className="block text-inherit">
                     {t(
@@ -877,25 +906,22 @@ function TransportSection({
                       },
                     )}
                   </Typography.Text>
-                  {!transport.aisAllModeDisabled ? (
-                    <Button
-                      type="link"
-                      size="small"
-                      className={resolveOverlayButtonClassName({
-                        tone: "link",
-                      })}
-                      style={{ padding: 0, height: "auto", marginTop: 8 }}
-                      onClick={() => transport.onAisModeChange("all")}
-                    >
-                      {t("dashboard.charts.warMap.overlay.aisShowAllAction", {
-                        defaultValue: "Switch to All vessels",
-                      })}
-                    </Button>
-                  ) : null}
+                  <Button
+                    type="link"
+                    size="small"
+                    className={resolveOverlayButtonClassName({
+                      tone: "link",
+                    })}
+                    style={{ padding: 0, height: "auto", marginTop: 8 }}
+                    onClick={() => transport.onAisModeChange("all")}
+                  >
+                    {t("dashboard.charts.warMap.overlay.aisShowAllAction", {
+                      defaultValue: "Switch to All vessels",
+                    })}
+                  </Button>
                 </div>
               ) : null}
-              {transport.aisMode === "density" &&
-              !transport.aisAllModeDisabled ? (
+              {transport.aisMode === "density" ? (
                 <div className={OVERLAY_PANEL_MODE_HINT_CLASS_NAME}>
                   <Typography.Text className="block text-inherit">
                     {t(
@@ -906,21 +932,19 @@ function TransportSection({
                       },
                     )}
                   </Typography.Text>
-                  {!transport.aisAllModeDisabled ? (
-                    <Button
-                      type="link"
-                      size="small"
-                      className={resolveOverlayButtonClassName({
-                        tone: "link",
-                      })}
-                      style={{ padding: 0, height: "auto", marginTop: 8 }}
-                      onClick={() => transport.onAisModeChange("all")}
-                    >
-                      {t("dashboard.charts.warMap.overlay.aisShowAllAction", {
-                        defaultValue: "Switch to All vessels",
-                      })}
-                    </Button>
-                  ) : null}
+                  <Button
+                    type="link"
+                    size="small"
+                    className={resolveOverlayButtonClassName({
+                      tone: "link",
+                    })}
+                    style={{ padding: 0, height: "auto", marginTop: 8 }}
+                    onClick={() => transport.onAisModeChange("all")}
+                  >
+                    {t("dashboard.charts.warMap.overlay.aisShowAllAction", {
+                      defaultValue: "Switch to All vessels",
+                    })}
+                  </Button>
                 </div>
               ) : null}
               {transport.aisMode === "all" ? (
@@ -1116,8 +1140,8 @@ function TransportSection({
                   </Tooltip>
                 ) : null}
                 {transport.aisEffectiveMode === "all" &&
-                transport.aisAllModeDisabled ? (
-                  <Tooltip title={transport.aisAllModeDisabledLabel}>
+                transport.aisAllModeDegraded ? (
+                  <Tooltip title={transport.aisAllModeDegradedLabel}>
                     <Tag
                       color="magenta"
                       className={OVERLAY_STATUS_TAG_CLASS_NAME}
@@ -1498,9 +1522,22 @@ function LegendDockSectionCard({
   return (
     <div className="flex h-full flex-col rounded-[22px] border border-slate-200/75 bg-white/[0.8] px-5 py-5 shadow-[0_12px_20px_-22px_rgba(15,23,42,0.1)] dark:border-slate-700/80 dark:bg-slate-950/[0.54] dark:shadow-[0_12px_20px_-22px_rgba(2,6,23,0.52)]">
       <div className="min-w-0">
-        <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
-          {section.title}
-        </Typography.Text>
+        <div className="flex flex-wrap items-center gap-2">
+          <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
+            {section.title}
+          </Typography.Text>
+          {section.statusLabel ? (
+            <Tooltip title={section.statusHint}>
+              <span
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-none ${resolveLegendSectionStatusClasses(
+                  section.statusTone,
+                )}`}
+              >
+                {section.statusLabel}
+              </span>
+            </Tooltip>
+          ) : null}
+        </div>
         {section.description ? (
           <Typography.Text
             type="secondary"
