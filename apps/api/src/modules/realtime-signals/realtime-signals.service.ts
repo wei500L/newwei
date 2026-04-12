@@ -4847,9 +4847,7 @@ export class RealtimeSignalsService {
     const statusReasonCode = this.normalizeString(record.statusReasonCode);
     const statusReason = this.normalizeString(record.statusReason);
     const healthState =
-      this.normalizeString(record.healthState) === "degraded" ||
-      statusReasonCode ||
-      statusReason
+      this.normalizeString(record.healthState) === "degraded"
         ? "degraded"
         : "ok";
     return {

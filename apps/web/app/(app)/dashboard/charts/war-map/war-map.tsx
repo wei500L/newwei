@@ -3618,10 +3618,10 @@ export function WarMap({
   const aisHasIssue = Boolean(aisResolvedStatusReason);
   const aisSourceStatusColor = !aisConfigured
     ? "red"
-    : !aisConnected
-      ? "gold"
-      : aisHasIssue
+    : aisHasIssue
         ? "volcano"
+        : !aisConnected
+          ? "gold"
         : aisFreshness === "stale"
           ? "gold"
           : "cyan";
@@ -3629,14 +3629,14 @@ export function WarMap({
     ? t("dashboard.charts.warMap.stats.aisNotConfigured", {
         defaultValue: "AIS not configured",
       })
-    : !aisConnected
-      ? t("dashboard.charts.warMap.stats.aisDisconnected", {
-          defaultValue: "AIS disconnected",
-        })
-      : aisHasIssue
+    : aisHasIssue
         ? t("dashboard.charts.warMap.stats.aisDegraded", {
             defaultValue: "Degraded",
           })
+        : !aisConnected
+          ? t("dashboard.charts.warMap.stats.aisDisconnected", {
+              defaultValue: "AIS disconnected",
+            })
         : aisFreshness === "stale"
           ? t("dashboard.charts.warMap.status.stale", {
               defaultValue: "Stale",
