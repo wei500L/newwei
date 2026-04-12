@@ -60,6 +60,102 @@ class RealtimeOpenskyRuntimeDiagnosticsDto {
   deduplicatedCount!: number;
 }
 
+class RealtimeAisRuntimeDiagnosticsDto {
+  @ApiProperty()
+  configured!: boolean;
+
+  @ApiProperty()
+  connected!: boolean;
+
+  @ApiProperty({
+    enum: ["ok", "degraded"],
+  })
+  healthState!: "ok" | "degraded";
+
+  @ApiPropertyOptional()
+  snapshotUpdatedAt?: string;
+
+  @ApiProperty()
+  allVesselsAvailable!: boolean;
+
+  @ApiProperty()
+  candidateCount!: number;
+
+  @ApiProperty()
+  vesselCount!: number;
+
+  @ApiProperty()
+  disruptionsCount!: number;
+
+  @ApiProperty()
+  densityRegions!: number;
+
+  @ApiProperty()
+  messageCount!: number;
+
+  @ApiProperty()
+  droppedMessages!: number;
+
+  @ApiProperty()
+  positionReportsSeen!: number;
+
+  @ApiProperty()
+  positionReportsProcessed!: number;
+
+  @ApiProperty()
+  ignoredPositionReports!: number;
+
+  @ApiProperty()
+  parseErrors!: number;
+
+  @ApiPropertyOptional({
+    enum: [
+      "ais_upstream_disconnected",
+      "ais_upstream_no_messages_after_connect",
+      "ais_upstream_stalled",
+      "ais_position_reports_not_retained",
+      "ais_position_reports_mostly_ignored",
+      "ais_payload_parse_errors",
+      "ais_snapshot_missing_vessels_contract",
+    ],
+  })
+  statusReasonCode?:
+    | "ais_upstream_disconnected"
+    | "ais_upstream_no_messages_after_connect"
+    | "ais_upstream_stalled"
+    | "ais_position_reports_not_retained"
+    | "ais_position_reports_mostly_ignored"
+    | "ais_payload_parse_errors"
+    | "ais_snapshot_missing_vessels_contract";
+
+  @ApiPropertyOptional()
+  statusReason?: string;
+
+  @ApiPropertyOptional()
+  lastHealthyAt?: string;
+
+  @ApiPropertyOptional()
+  lastIssueAt?: string;
+
+  @ApiPropertyOptional()
+  lastConnectedAt?: string;
+
+  @ApiPropertyOptional()
+  lastMessageAt?: string;
+
+  @ApiPropertyOptional()
+  lastUpstreamErrorAt?: string;
+
+  @ApiPropertyOptional()
+  lastUpstreamError?: string;
+
+  @ApiPropertyOptional()
+  lastParseErrorAt?: string;
+
+  @ApiPropertyOptional()
+  lastParseError?: string;
+}
+
 class RealtimeSignalsInsightKeywordSpikeDto {
   @ApiProperty()
   id!: string;
@@ -466,6 +562,11 @@ class RealtimeSignalRuntimeSourceDiagnosticsDto {
     additionalProperties: true,
   })
   context?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    type: () => RealtimeAisRuntimeDiagnosticsDto,
+  })
+  aisDiagnostics?: RealtimeAisRuntimeDiagnosticsDto;
 
   @ApiPropertyOptional({
     type: () => RealtimeOpenskyRuntimeDiagnosticsDto,

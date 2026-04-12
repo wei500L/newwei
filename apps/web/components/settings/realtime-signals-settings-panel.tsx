@@ -24,6 +24,7 @@ import {
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { RealtimeAisRuntimeDiagnostics } from "@modular/utils";
 
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
@@ -215,6 +216,7 @@ interface RealtimeSignalRuntimeDiagnosticsSource {
   previousValue: number | null;
   changePercent: number | null;
   context?: Record<string, unknown>;
+  aisDiagnostics?: RealtimeAisRuntimeDiagnostics;
   openskySnapshot?: {
     freshness: RealtimeOpenskySnapshotFreshness;
     rawAircraftCount: number;
@@ -498,9 +500,10 @@ function summarizeRuntimeContext(
   t: RealtimeSignalsTranslate,
   source: RealtimeSignalSourceKey,
   context?: Record<string, unknown>,
+  aisDiagnostics?: RealtimeAisRuntimeDiagnostics,
   openskySnapshot?: RealtimeSignalRuntimeDiagnosticsSource["openskySnapshot"],
 ) {
-  if (!context && source !== "opensky") {
+  if (!context && !aisDiagnostics && source !== "opensky") {
     return null;
   }
   const resolvedContext = context ?? {};
@@ -535,7 +538,7 @@ function summarizeRuntimeContext(
         },
       );
     case "ais":
-      return resolvedContext.configured === false
+      return aisDiagnostics?.configured === false
         ? t(
             "systemSettings.realtimeSignals.runtime.contextSummary.aisNotConfigured",
             {
@@ -545,13 +548,13 @@ function summarizeRuntimeContext(
         : t("systemSettings.realtimeSignals.runtime.contextSummary.ais", {
             defaultValue:
               "disruptions={{disruptions}}, density={{density}}, vessels={{vessels}}, seen={{seen}}, processed={{processed}}, ignored={{ignored}}, parse={{parse}}",
-            disruptions: num(resolvedContext.disruptions) ?? 0,
-            density: num(resolvedContext.densityRegions) ?? 0,
-            vessels: num(resolvedContext.vesselCount) ?? 0,
-            seen: num(resolvedContext.positionReportsSeen) ?? 0,
-            processed: num(resolvedContext.positionReportsProcessed) ?? 0,
-            ignored: num(resolvedContext.ignoredPositionReports) ?? 0,
-            parse: num(resolvedContext.parseErrors) ?? 0,
+            disruptions: aisDiagnostics?.disruptionsCount ?? 0,
+            density: aisDiagnostics?.densityRegions ?? 0,
+            vessels: aisDiagnostics?.vesselCount ?? 0,
+            seen: aisDiagnostics?.positionReportsSeen ?? 0,
+            processed: aisDiagnostics?.positionReportsProcessed ?? 0,
+            ignored: aisDiagnostics?.ignoredPositionReports ?? 0,
+            parse: aisDiagnostics?.parseErrors ?? 0,
           });
     case "unrest":
       if (resolvedContext.acledApiEnabled === false) {
@@ -2080,6 +2083,7 @@ export function RealtimeSignalsSettingsPanel() {
                   t,
                   row.source,
                   row.context,
+                  row.aisDiagnostics,
                   openskySnapshot,
                 );
                 const runtimeStatusReason =
@@ -2113,47 +2117,47 @@ export function RealtimeSignalsSettingsPanel() {
                   row.source !== "opensky"
                     ? formatRealtimeSignalErrorCode(t, row.lastErrorCode)
                     : undefined;
-                const aisContext =
-                  row.source === "ais" && row.context ? row.context : undefined;
+                const aisDiagnostics =
+                  row.source === "ais" ? row.aisDiagnostics : undefined;
                 const aisTrackedVessels =
-                  typeof aisContext?.vesselCount === "number" &&
-                  Number.isFinite(aisContext.vesselCount)
-                    ? aisContext.vesselCount
+                  typeof aisDiagnostics?.vesselCount === "number" &&
+                  Number.isFinite(aisDiagnostics.vesselCount)
+                    ? aisDiagnostics.vesselCount
                     : null;
                 const aisCandidates =
-                  typeof aisContext?.candidateCount === "number" &&
-                  Number.isFinite(aisContext.candidateCount)
-                    ? aisContext.candidateCount
+                  typeof aisDiagnostics?.candidateCount === "number" &&
+                  Number.isFinite(aisDiagnostics.candidateCount)
+                    ? aisDiagnostics.candidateCount
                     : null;
                 const aisReportsSeen =
-                  typeof aisContext?.positionReportsSeen === "number" &&
-                  Number.isFinite(aisContext.positionReportsSeen)
-                    ? aisContext.positionReportsSeen
+                  typeof aisDiagnostics?.positionReportsSeen === "number" &&
+                  Number.isFinite(aisDiagnostics.positionReportsSeen)
+                    ? aisDiagnostics.positionReportsSeen
                     : null;
                 const aisReportsProcessed =
-                  typeof aisContext?.positionReportsProcessed === "number" &&
-                  Number.isFinite(aisContext.positionReportsProcessed)
-                    ? aisContext.positionReportsProcessed
+                  typeof aisDiagnostics?.positionReportsProcessed === "number" &&
+                  Number.isFinite(aisDiagnostics.positionReportsProcessed)
+                    ? aisDiagnostics.positionReportsProcessed
                     : null;
                 const aisReportsIgnored =
-                  typeof aisContext?.ignoredPositionReports === "number" &&
-                  Number.isFinite(aisContext.ignoredPositionReports)
-                    ? aisContext.ignoredPositionReports
+                  typeof aisDiagnostics?.ignoredPositionReports === "number" &&
+                  Number.isFinite(aisDiagnostics.ignoredPositionReports)
+                    ? aisDiagnostics.ignoredPositionReports
                     : null;
                 const aisParseErrors =
-                  typeof aisContext?.parseErrors === "number" &&
-                  Number.isFinite(aisContext.parseErrors)
-                    ? aisContext.parseErrors
+                  typeof aisDiagnostics?.parseErrors === "number" &&
+                  Number.isFinite(aisDiagnostics.parseErrors)
+                    ? aisDiagnostics.parseErrors
                     : null;
                 const aisLastUpstreamError =
-                  typeof aisContext?.lastUpstreamError === "string" &&
-                  aisContext.lastUpstreamError.trim().length > 0
-                    ? aisContext.lastUpstreamError.trim()
+                  typeof aisDiagnostics?.lastUpstreamError === "string" &&
+                  aisDiagnostics.lastUpstreamError.trim().length > 0
+                    ? aisDiagnostics.lastUpstreamError.trim()
                     : null;
                 const aisLastParseError =
-                  typeof aisContext?.lastParseError === "string" &&
-                  aisContext.lastParseError.trim().length > 0
-                    ? aisContext.lastParseError.trim()
+                  typeof aisDiagnostics?.lastParseError === "string" &&
+                  aisDiagnostics.lastParseError.trim().length > 0
+                    ? aisDiagnostics.lastParseError.trim()
                     : null;
                 return (
                   <Col key={row.source} xs={24} lg={12}>

@@ -1,4 +1,5 @@
 import type { UpstreamRequestErrorCode } from "../../common/http/upstream-error-classification";
+import type { RealtimeAisRuntimeDiagnostics } from "@modular/utils";
 
 export type RealtimeSignalSource =
   | "opensky"
@@ -65,6 +66,8 @@ export interface RealtimeAisRelayDiagnostics {
   parseErrors: number;
   lastHealthyAt?: string;
   lastIssueAt?: string;
+  lastConnectedAt?: string;
+  lastMessageAt?: string;
   lastUpstreamErrorAt?: string;
   lastUpstreamError?: string;
   lastParseErrorAt?: string;
@@ -392,6 +395,7 @@ export interface RealtimeSignalRuntimeSourceDiagnostics {
   previousValue: number | null;
   changePercent: number | null;
   context?: Record<string, unknown>;
+  aisDiagnostics?: RealtimeAisRuntimeDiagnostics;
   openskySnapshot?: RealtimeOpenskyRuntimeDiagnostics;
   adsbSnapshot?: RealtimeOpenskyRuntimeDiagnostics;
 }

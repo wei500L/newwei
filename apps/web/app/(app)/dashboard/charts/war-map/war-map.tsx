@@ -10,6 +10,7 @@ import {
 import type { MapboxOverlay } from "@deck.gl/mapbox";
 import {
   type WarMapAisMode,
+  type WarMapAisLayerSummary,
   type WarMapEventSeverity,
   type WarMapFlightMode,
   type WarMapLayerFeature,
@@ -3518,67 +3519,37 @@ export function WarMap({
     .filter((value): value is string => Boolean(value))
     .join("\n");
   const aisSummary =
-    layersQuery.data?.layers.ais?.summary &&
-    typeof layersQuery.data.layers.ais.summary === "object" &&
-    !Array.isArray(layersQuery.data.layers.ais.summary)
-      ? (layersQuery.data.layers.ais.summary as Record<string, unknown>)
-      : undefined;
-  const aisConnected = readSummaryBoolean(aisSummary, "connected") ?? false;
-  const aisConfigured = readSummaryBoolean(aisSummary, "configured") ?? true;
-  const aisFreshness = readSummaryString(aisSummary, "freshness");
-  const aisSnapshotUpdatedAt = readSummaryString(
-    aisSummary,
-    "snapshotUpdatedAt",
+    layersQuery.data?.layers.ais?.summary as WarMapAisLayerSummary | undefined;
+  const aisConnected = aisSummary?.connected ?? false;
+  const aisConfigured = aisSummary?.configured ?? true;
+  const aisFreshness = aisSummary?.freshness;
+  const aisSnapshotUpdatedAt = aisSummary?.snapshotUpdatedAt;
+  const aisSourceEndpoint = aisSummary?.sourceEndpoint;
+  const aisRelayVesselCount = aisSummary?.relayVesselCount;
+  const aisDisruptionsCount = aisSummary?.disruptionsCount;
+  const aisDensityCount = aisSummary?.densityCount;
+  const aisCandidateCount = aisSummary?.candidateCount;
+  const aisRenderedVesselCount = aisSummary?.renderedVesselCount;
+  const aisAllVesselsAvailable = aisSummary?.allVesselsAvailable;
+  const aisMessageCount = aisSummary?.messageCount;
+  const aisClientCount = aisSummary?.clientCount;
+  const aisDroppedMessages = aisSummary?.droppedMessages;
+  const aisPositionReportsSeen = aisSummary?.positionReportsSeen;
+  const aisPositionReportsProcessed = aisSummary?.positionReportsProcessed;
+  const aisIgnoredPositionReports = aisSummary?.ignoredPositionReports;
+  const aisParseErrors = aisSummary?.parseErrors;
+  const aisStatusReasonCode = aisSummary?.statusReasonCode;
+  const aisStatusReason = aisSummary?.statusReason;
+  const aisViewportVesselCount = aisSummary?.viewportVesselCount;
+  const aisMaxReturned = aisSummary?.maxReturned;
+  const aisTruncated = aisSummary?.truncated ?? false;
+  const aisBlockedReasonCode = aisSummary?.blockedReasonCode;
+  const aisBlockedReason = aisSummary?.blockedReason;
+  const aisResolvedStatusReason = formatAisRuntimeReason(
+    t,
+    aisStatusReasonCode,
+    aisStatusReason,
   );
-  const aisSourceEndpoint = readSummaryString(aisSummary, "sourceEndpoint");
-  const aisRelayVesselCount = readSummaryNumber(aisSummary, "relayVesselCount");
-  const aisDisruptionsCount = readSummaryNumber(aisSummary, "disruptionsCount");
-  const aisDensityCount = readSummaryNumber(aisSummary, "densityCount");
-  const aisCandidateCount = readSummaryNumber(aisSummary, "candidateCount");
-  const aisRenderedVesselCount = readSummaryNumber(
-    aisSummary,
-    "renderedVesselCount",
-  );
-  const aisAllVesselsAvailable = readSummaryBoolean(
-    aisSummary,
-    "allVesselsAvailable",
-  );
-  const aisMessageCount = readSummaryNumber(aisSummary, "messageCount");
-  const aisClientCount = readSummaryNumber(aisSummary, "clientCount");
-  const aisDroppedMessages = readSummaryNumber(aisSummary, "droppedMessages");
-  const aisPositionReportsSeen = readSummaryNumber(
-    aisSummary,
-    "positionReportsSeen",
-  );
-  const aisPositionReportsProcessed = readSummaryNumber(
-    aisSummary,
-    "positionReportsProcessed",
-  );
-  const aisIgnoredPositionReports = readSummaryNumber(
-    aisSummary,
-    "ignoredPositionReports",
-  );
-  const aisParseErrors = readSummaryNumber(aisSummary, "parseErrors");
-  const aisStatusReasonCode = readSummaryString(aisSummary, "statusReasonCode");
-  const aisStatusReason = readSummaryString(aisSummary, "statusReason");
-  const aisViewportVesselCount = readSummaryNumber(
-    aisSummary,
-    "viewportVesselCount",
-  );
-  const aisMaxReturned = readSummaryNumber(aisSummary, "maxReturned");
-  const aisTruncated = readSummaryBoolean(aisSummary, "truncated") ?? false;
-  const aisBlockedReasonCode = readSummaryString(
-    aisSummary,
-    "blockedReasonCode",
-  );
-  const aisBlockedReason = readSummaryString(aisSummary, "blockedReason");
-  const aisResolvedStatusReason =
-    aisStatusReasonCode === "ais_snapshot_missing_vessels_contract"
-      ? t("dashboard.charts.warMap.stats.aisSnapshotMissingVesselsContract", {
-          defaultValue:
-            "AIS relay reports tracked vessels, but this snapshot only exposes aggregated signals instead of individual vessels[].",
-        })
-      : formatAisRuntimeReason(t, aisStatusReasonCode, aisStatusReason);
   const aisResolvedBlockedReason =
     aisBlockedReasonCode === "missing_vessels_snapshot"
       ? t("dashboard.charts.warMap.stats.aisAllUnavailableHint", {

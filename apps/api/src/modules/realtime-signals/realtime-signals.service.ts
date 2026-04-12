@@ -70,6 +70,7 @@ import {
   classifyAircraftTransport,
   classifyAisShipType,
 } from "./transport-classification";
+import { buildAisRuntimeSemantics } from "./ais-runtime-semantics";
 
 const logger = createLogger({ name: "realtime-signals" });
 const ACLED_API_URL = "https://acleddata.com/api/acled/read";
@@ -728,12 +729,14 @@ export class RealtimeSignalsService {
       insight,
       markerReadiness,
       adsbLatestSnapshot,
+      aisLatestSnapshot,
     ] = await Promise.all([
       this.getRuntimeConfig({ refreshAcledToken: false }),
       this.getRuntimeSettingsSource(orgId),
       this.store.getInsightSnapshot(orgId),
       this.getMarkerReadiness(orgId),
       this.store.getLatestAdsbSnapshot(orgId),
+      this.store.getLatestAisSnapshot(orgId),
     ]);
     const nowMs = Date.now();
     const openskyBudget = await this.getOpenskyBudgetSummary(runtime, nowMs);
@@ -779,6 +782,13 @@ export class RealtimeSignalsService {
                 effectiveIntervalSec,
               )
             : undefined;
+        const aisRuntime =
+          source === "ais"
+            ? buildAisRuntimeSemantics({
+                snapshot: aisLatestSnapshot,
+                sourceState,
+              })
+            : undefined;
         const runtimeStatus = this.resolveRuntimeSourceStatus({
           source,
           sourceConfig: {
@@ -788,6 +798,7 @@ export class RealtimeSignalsService {
           sourceState,
           lastRunMs,
           context,
+          aisRuntime,
           nowMs,
         });
 
@@ -818,6 +829,7 @@ export class RealtimeSignalsService {
           previousValue: evaluation.previous,
           changePercent: evaluation.changePercent,
           context,
+          ...(aisRuntime ? { aisDiagnostics: aisRuntime.diagnostics } : {}),
           ...(openskySnapshot
             ? {
                 openskySnapshot,
@@ -2551,76 +2563,14 @@ export class RealtimeSignalsService {
     return this.normalizeString(value);
   }
 
-  private resolveAisRelayStatusReason(snapshot: RealtimeAisLatestSnapshot) {
-    const statusReasonCode = this.normalizeString(
-      snapshot.diagnostics.statusReasonCode,
-    );
-    const statusReason = this.normalizeString(
-      snapshot.diagnostics.statusReason,
-    );
-    if (statusReasonCode || statusReason) {
-      return {
-        ...(statusReasonCode ? { code: statusReasonCode } : {}),
-        ...(statusReason ? { reason: statusReason } : {}),
-      };
-    }
-    return undefined;
-  }
-
-  private buildAisRelayContext(snapshot: RealtimeAisLatestSnapshot) {
-    const relayStatusReason = this.resolveAisRelayStatusReason(snapshot);
-    return {
-      source: "relay",
-      configured: true,
-      connected: snapshot.status.connected,
-      disruptions: snapshot.disruptions.length,
-      densityRegions: snapshot.density.length,
-      candidateCount: snapshot.candidateReports.length,
-      vesselCount: snapshot.status.vessels,
-      snapshotUpdatedAt: snapshot.updatedAt,
-      allVesselsAvailable: snapshot.hasVesselSnapshot,
-      messageCount: snapshot.status.messages,
-      droppedMessages: snapshot.status.droppedMessages,
-      healthState: snapshot.diagnostics.healthState,
-      positionReportsSeen: snapshot.diagnostics.positionReportsSeen,
-      positionReportsProcessed: snapshot.diagnostics.positionReportsProcessed,
-      ignoredPositionReports: snapshot.diagnostics.ignoredPositionReports,
-      parseErrors: snapshot.diagnostics.parseErrors,
-      ...(relayStatusReason?.code
-        ? { statusReasonCode: relayStatusReason.code }
-        : {}),
-      ...(relayStatusReason?.reason
-        ? { statusReason: relayStatusReason.reason }
-        : {}),
-      ...(snapshot.diagnostics.lastHealthyAt
-        ? { lastHealthyAt: snapshot.diagnostics.lastHealthyAt }
-        : {}),
-      ...(snapshot.diagnostics.lastIssueAt
-        ? { lastIssueAt: snapshot.diagnostics.lastIssueAt }
-        : {}),
-      ...(snapshot.diagnostics.lastUpstreamErrorAt
-        ? { lastUpstreamErrorAt: snapshot.diagnostics.lastUpstreamErrorAt }
-        : {}),
-      ...(snapshot.diagnostics.lastUpstreamError
-        ? { lastUpstreamError: snapshot.diagnostics.lastUpstreamError }
-        : {}),
-      ...(snapshot.diagnostics.lastParseErrorAt
-        ? { lastParseErrorAt: snapshot.diagnostics.lastParseErrorAt }
-        : {}),
-      ...(snapshot.diagnostics.lastParseError
-        ? { lastParseError: snapshot.diagnostics.lastParseError }
-        : {}),
-    } satisfies Record<string, unknown>;
-  }
-
   private logAisRelayStatusChange(
     orgId: string,
     snapshot: RealtimeAisLatestSnapshot,
   ) {
-    const relayStatusReason = this.resolveAisRelayStatusReason(snapshot);
+    const aisRuntime = buildAisRuntimeSemantics({ snapshot });
     const issueIdentity =
-      relayStatusReason?.code ??
-      relayStatusReason?.reason ??
+      aisRuntime.diagnostics.statusReasonCode ??
+      aisRuntime.diagnostics.statusReason ??
       (snapshot.diagnostics.healthState === "degraded" ? "degraded" : "ok");
     const previousIssueIdentity = this.aisRelayIssueCodeByOrg.get(orgId);
     if (previousIssueIdentity === issueIdentity) {
@@ -2647,9 +2597,9 @@ export class RealtimeSignalsService {
       {
         orgId,
         source: "ais",
-        issueCode: relayStatusReason?.code,
+        issueCode: aisRuntime.diagnostics.statusReasonCode,
         issueIdentity,
-        issueReason: relayStatusReason?.reason,
+        issueReason: aisRuntime.diagnostics.statusReason,
         connected: snapshot.status.connected,
         messages: snapshot.status.messages,
         vessels: snapshot.status.vessels,
@@ -2677,12 +2627,6 @@ export class RealtimeSignalsService {
           context: {
             source: "relay",
             configured: false,
-            connected: false,
-            disruptions: 0,
-            densityRegions: 0,
-            candidateCount: 0,
-            vesselCount: 0,
-            allVesselsAvailable: false,
             countryCodes: [],
           },
         },
@@ -2719,7 +2663,8 @@ export class RealtimeSignalsService {
         metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.ais,
         value: snapshot.disruptions.length,
         context: {
-          ...this.buildAisRelayContext(snapshot),
+          source: "relay",
+          configured: true,
           countryCodes: Array.from(countries),
         },
       },
@@ -4135,6 +4080,7 @@ export class RealtimeSignalsService {
     sourceState: RealtimeSignalSourceState | null | undefined;
     lastRunMs: number | null;
     context: Record<string, unknown> | undefined;
+    aisRuntime?: ReturnType<typeof buildAisRuntimeSemantics>;
     nowMs: number;
   }) {
     if (!options.sourceConfig.enabled) {
@@ -4208,6 +4154,22 @@ export class RealtimeSignalsService {
         status: "stale" as const,
         code: "opensky_snapshot_stale",
         reason: "Latest OpenSky snapshot is stale.",
+      };
+    }
+
+    if (options.source === "ais") {
+      if (
+        options.aisRuntime?.statusReasonCode ||
+        options.aisRuntime?.statusReason
+      ) {
+        return {
+          status: "error" as const,
+          code: options.aisRuntime.statusReasonCode,
+          reason: options.aisRuntime.statusReason,
+        };
+      }
+      return {
+        status: "ok" as const,
       };
     }
 
@@ -4385,19 +4347,6 @@ export class RealtimeSignalsService {
       ].filter((value): value is string => Boolean(value));
       if (messages.length > 0) {
         return { message: messages.join(" | ") };
-      }
-      return undefined;
-    }
-    if (source === "ais") {
-      const statusReasonCode = this.normalizeString(context.statusReasonCode);
-      const statusReason = this.normalizeString(context.statusReason);
-      if (statusReasonCode || statusReason) {
-        return {
-          ...(statusReasonCode ? { code: statusReasonCode } : {}),
-          message:
-            statusReason ?? "AIS relay reported a degraded processing state.",
-          status: "error",
-        };
       }
       return undefined;
     }
@@ -4875,6 +4824,12 @@ export class RealtimeSignalsService {
         : {}),
       ...(this.normalizeString(record.lastIssueAt)
         ? { lastIssueAt: this.toIsoTimestamp(record.lastIssueAt) }
+        : {}),
+      ...(this.normalizeString(record.lastConnectedAt)
+        ? { lastConnectedAt: this.toIsoTimestamp(record.lastConnectedAt) }
+        : {}),
+      ...(this.normalizeString(record.lastMessageAt)
+        ? { lastMessageAt: this.toIsoTimestamp(record.lastMessageAt) }
         : {}),
       ...(this.normalizeString(record.lastUpstreamErrorAt)
         ? {

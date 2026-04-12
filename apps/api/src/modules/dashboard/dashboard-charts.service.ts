@@ -11,6 +11,7 @@ import {
   getCountryName,
   type WarMapAisDensityProperties,
   type WarMapAisDisruptionProperties,
+  type WarMapAisLayerSummary,
   type WarMapAisVesselProperties,
   type WarMapEvent,
   type WarMapEventSeverity,
@@ -46,6 +47,7 @@ import type {
   RealtimeAisLatestSnapshot,
   RealtimeAisVesselSnapshot,
 } from "../realtime-signals/realtime-signals.types";
+import { buildAisRuntimeSemantics } from "../realtime-signals/ais-runtime-semantics";
 import {
   classifyAircraftTransport,
   classifyAisShipType,
@@ -2450,26 +2452,8 @@ export class DashboardChartsService {
       this.realtimeSignalsStore.getLatestAisSnapshot(orgId),
       this.realtimeSignalsStore.getSourceState(orgId, "ais"),
     ]);
-    const sourceContext =
-      sourceState?.context &&
-      typeof sourceState.context === "object" &&
-      !Array.isArray(sourceState.context)
-        ? sourceState.context
-        : undefined;
-    const sourceStatusReasonCode =
-      this.normalizeString(sourceContext?.statusReasonCode) ??
-      (sourceState?.status === "error" &&
-      this.normalizeString(sourceState.lastError)
-        ? "ais_refresh_failed"
-        : undefined);
-    const sourceStatusReason =
-      this.normalizeString(sourceContext?.statusReason) ??
-      this.normalizeString(sourceState?.lastError);
-    const staleThresholdSec =
-      typeof sourceContext?.staleThresholdSec === "number" &&
-      Number.isFinite(sourceContext.staleThresholdSec)
-        ? Math.max(60, Math.round(sourceContext.staleThresholdSec))
-        : 20 * 60;
+    const aisRuntime = buildAisRuntimeSemantics({ snapshot, sourceState });
+    const staleThresholdSec = 20 * 60;
 
     if (!snapshot) {
       dataset.features = [];
@@ -2477,7 +2461,7 @@ export class DashboardChartsService {
       dataset.summary = {
         source: "relay",
         mode: aisMode,
-        configured: sourceContext?.configured !== false,
+        configured: aisRuntime.diagnostics.configured,
         connected: false,
         freshness: "missing",
         staleThresholdSec,
@@ -2500,11 +2484,13 @@ export class DashboardChartsService {
               blockedReason: "AIS relay snapshot is not available yet.",
             }
           : {}),
-        ...(sourceStatusReasonCode
-          ? { statusReasonCode: sourceStatusReasonCode }
+        ...(aisRuntime.statusReasonCode
+          ? { statusReasonCode: aisRuntime.statusReasonCode }
           : {}),
-        ...(sourceStatusReason ? { statusReason: sourceStatusReason } : {}),
-      };
+        ...(aisRuntime.statusReason
+          ? { statusReason: aisRuntime.statusReason }
+          : {}),
+      } satisfies WarMapAisLayerSummary;
       return;
     }
 
@@ -2517,33 +2503,6 @@ export class DashboardChartsService {
       typeof snapshotAgeSec === "number" && snapshotAgeSec > staleThresholdSec
         ? "stale"
         : "fresh";
-    const snapshotDiagnostics =
-      snapshot.diagnostics &&
-      typeof snapshot.diagnostics === "object" &&
-      !Array.isArray(snapshot.diagnostics)
-        ? (snapshot.diagnostics as unknown as Record<string, unknown>)
-        : undefined;
-    const readFiniteNumber = (value: unknown) =>
-      typeof value === "number" && Number.isFinite(value) ? value : null;
-    const positionReportsSeen = readFiniteNumber(
-      snapshotDiagnostics?.positionReportsSeen,
-    );
-    const positionReportsProcessed = readFiniteNumber(
-      snapshotDiagnostics?.positionReportsProcessed,
-    );
-    const missingVesselsSnapshotContract =
-      snapshot.status.vessels > 0 && !snapshot.hasVesselSnapshot;
-    const aisStatusReasonCode =
-      this.normalizeString(snapshotDiagnostics?.statusReasonCode) ??
-      (missingVesselsSnapshotContract
-        ? "ais_snapshot_missing_vessels_contract"
-        : sourceStatusReasonCode);
-    const aisStatusReason =
-      this.normalizeString(snapshotDiagnostics?.statusReason) ??
-      (missingVesselsSnapshotContract
-        ? "AIS relay reports tracked vessels, but the snapshot payload omits vessels[] and only exposes aggregated signals."
-        : sourceStatusReason);
-
     const disruptionFeatures = this.filterWarMapPointsByBbox(
       snapshot.disruptions,
       options.bbox,
@@ -2595,35 +2554,32 @@ export class DashboardChartsService {
       source: "relay",
       sourceEndpoint: snapshot.sourceEndpoint,
       mode: aisMode,
-      configured: sourceContext?.configured !== false,
-      connected: snapshot.status.connected,
+      configured: aisRuntime.diagnostics.configured,
+      connected: aisRuntime.diagnostics.connected,
       freshness,
       snapshotUpdatedAt: snapshot.updatedAt,
       ...(typeof snapshotAgeSec === "number" ? { snapshotAgeSec } : {}),
       staleThresholdSec,
-      relayVesselCount: snapshot.status.vessels,
+      relayVesselCount: aisRuntime.diagnostics.vesselCount,
       disruptionsCount: disruptionFeatures.length,
       densityCount: densityFeatures.length,
-      candidateCount: snapshot.candidateReports.length,
+      candidateCount: aisRuntime.diagnostics.candidateCount,
       renderedVesselCount: vesselFeatures.length,
-      allVesselsAvailable: snapshot.hasVesselSnapshot,
-      messageCount: snapshot.status.messages,
+      allVesselsAvailable: aisRuntime.diagnostics.allVesselsAvailable,
+      messageCount: aisRuntime.diagnostics.messageCount,
       clientCount: snapshot.status.clients,
-      droppedMessages: snapshot.status.droppedMessages,
-      ...(typeof positionReportsSeen === "number"
-        ? { positionReportsSeen }
+      droppedMessages: aisRuntime.diagnostics.droppedMessages,
+      positionReportsSeen: aisRuntime.diagnostics.positionReportsSeen,
+      positionReportsProcessed:
+        aisRuntime.diagnostics.positionReportsProcessed,
+      ignoredPositionReports: aisRuntime.diagnostics.ignoredPositionReports,
+      parseErrors: aisRuntime.diagnostics.parseErrors,
+      ...(aisRuntime.statusReasonCode
+        ? { statusReasonCode: aisRuntime.statusReasonCode }
         : {}),
-      ...(typeof positionReportsProcessed === "number"
-        ? { positionReportsProcessed }
+      ...(aisRuntime.statusReason
+        ? { statusReason: aisRuntime.statusReason }
         : {}),
-      ...(typeof snapshotDiagnostics?.ignoredPositionReports === "number"
-        ? { ignoredPositionReports: snapshotDiagnostics.ignoredPositionReports }
-        : {}),
-      ...(typeof snapshotDiagnostics?.parseErrors === "number"
-        ? { parseErrors: snapshotDiagnostics.parseErrors }
-        : {}),
-      ...(aisStatusReasonCode ? { statusReasonCode: aisStatusReasonCode } : {}),
-      ...(aisStatusReason ? { statusReason: aisStatusReason } : {}),
       ...(aisMode === "all"
         ? {
             ...(typeof viewportVesselCount === "number"
@@ -2640,7 +2596,7 @@ export class DashboardChartsService {
             blockedReason: "AIS relay snapshot does not include vessels[] yet.",
           }
         : {}),
-    };
+    } satisfies WarMapAisLayerSummary;
   }
 
   private async enrichWarMapFlightsLayer(

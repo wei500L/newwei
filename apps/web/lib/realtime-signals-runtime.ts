@@ -1,3 +1,10 @@
+import {
+  AIS_PRODUCT_REASON_CODES,
+  AIS_RELAY_REASON_CODES,
+  type AisSurfaceReasonCode,
+  type RealtimeAisRuntimeDiagnostics,
+} from "@modular/utils";
+
 export type RealtimeSignalRuntimeStatus =
   | "ok"
   | "error"
@@ -30,7 +37,7 @@ interface AisRuntimeRowLike {
   statusReason?: string;
   statusReasonCode?: string;
   lastErrorCode?: RealtimeSignalErrorCode;
-  context?: Record<string, unknown>;
+  aisDiagnostics?: RealtimeAisRuntimeDiagnostics;
 }
 
 interface OutagesRuntimeRowLike {
@@ -39,14 +46,21 @@ interface OutagesRuntimeRowLike {
   lastErrorStatus?: number;
 }
 
-function readRuntimeContextString(value: unknown) {
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : undefined;
+const AIS_REASON_CODES = new Set<string>([
+  ...AIS_RELAY_REASON_CODES,
+  ...AIS_PRODUCT_REASON_CODES,
+]);
+
+interface AisAlertContext {
+  diagnostics?: RealtimeAisRuntimeDiagnostics;
+  formatTimestamp: (value?: string) => string;
+  t: RealtimeSignalsTranslate;
 }
 
-function readRuntimeContextNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+function isAisSurfaceReasonCode(
+  code: string | undefined,
+): code is AisSurfaceReasonCode {
+  return typeof code === "string" && AIS_REASON_CODES.has(code);
 }
 
 export function formatRealtimeSignalErrorCode(
@@ -87,31 +101,26 @@ export function buildAisRuntimeFeedbackAlert(
   row: AisRuntimeRowLike,
   formatTimestamp: (value?: string) => string,
 ): RuntimeFeedbackAlert | null {
-  const context =
-    row.context && typeof row.context === "object" && !Array.isArray(row.context)
-      ? row.context
-      : undefined;
   const statusReasonCode =
     typeof row.statusReasonCode === "string" && row.statusReasonCode.trim()
       ? row.statusReasonCode.trim()
       : undefined;
-  const lastHealthyAt = readRuntimeContextString(context?.lastHealthyAt);
-  const positionReportsSeen = readRuntimeContextNumber(
-    context?.positionReportsSeen,
-  );
-  const positionReportsProcessed = readRuntimeContextNumber(
-    context?.positionReportsProcessed,
-  );
-  const ignoredPositionReports = readRuntimeContextNumber(
-    context?.ignoredPositionReports,
-  );
-  const candidateCount = readRuntimeContextNumber(context?.candidateCount);
-  const parseErrors = readRuntimeContextNumber(context?.parseErrors);
+  const diagnostics = row.aisDiagnostics;
+  const aisReasonCode = isAisSurfaceReasonCode(diagnostics?.statusReasonCode)
+    ? diagnostics.statusReasonCode
+    : isAisSurfaceReasonCode(statusReasonCode)
+      ? statusReasonCode
+      : undefined;
+  const alertContext: AisAlertContext = {
+    diagnostics,
+    formatTimestamp,
+    t,
+  };
 
   if (
     row.status === "not_configured" ||
     statusReasonCode === "ais_not_configured" ||
-    context?.configured === false
+    diagnostics?.configured === false
   ) {
     return {
       type: "warning",
@@ -153,145 +162,15 @@ export function buildAisRuntimeFeedbackAlert(
     };
   }
 
-  if (statusReasonCode === "ais_upstream_disconnected") {
-    return {
-      type: "error",
-      message: t(
-        "systemSettings.realtimeSignals.runtime.feedback.aisUpstreamDisconnected.title",
-        {
-          defaultValue:
-            "AIS relay is reachable, but its upstream AIS stream is disconnected.",
-        },
-      ),
-      description: `${t(
-        "systemSettings.realtimeSignals.runtime.feedback.aisUpstreamDisconnected.body",
-        {
-          defaultValue:
-            "The relay service is up, but it is not maintaining a live upstream stream.",
-        },
-      )}${
-        lastHealthyAt
-          ? ` ${t(
-              "systemSettings.realtimeSignals.runtime.feedback.lastHealthyAt",
-              {
-                defaultValue: "Last healthy: {{time}}.",
-                time: formatTimestamp(lastHealthyAt),
-              },
-            )}`
-          : ""
-      }`,
-    };
-  }
-
-  if (statusReasonCode === "ais_position_reports_not_retained") {
-    return {
-      type: "error",
-      message: t(
-        "systemSettings.realtimeSignals.runtime.feedback.aisReportsNotRetained.title",
-        {
-          defaultValue:
-            "AIS relay is receiving reports, but vessel snapshots are not being retained.",
-        },
-      ),
-      description: t(
-        "systemSettings.realtimeSignals.runtime.feedback.aisReportsNotRetained.body",
-        {
-          defaultValue:
-            "Seen {{seen}} reports, processed {{processed}}, retained candidates {{candidates}}. Check relay parsing and snapshot retention logic.",
-          seen: positionReportsSeen ?? 0,
-          processed: positionReportsProcessed ?? 0,
-          candidates: candidateCount ?? 0,
-        },
-      ),
-    };
-  }
-
-  if (statusReasonCode === "ais_snapshot_missing_vessels_contract") {
-    return {
-      type: "warning",
-      message:
-        formatAisRuntimeReason(t, statusReasonCode, row.statusReason) ??
-        "AIS relay reports tracked vessels, but this snapshot only exposes aggregated signals instead of individual vessels[].",
-      description: t(
-        "systemSettings.realtimeSignals.runtime.feedback.aisSnapshotMissingVesselsContract.body",
-        {
-          defaultValue:
-            "The relay is publishing density/disruption aggregates, but not the per-vessel `vessels[]` snapshot required by AIS all-mode. Fix the relay snapshot contract instead of diagnosing this as an upstream disconnect.",
-        },
-      ),
-    };
-  }
-
-  if (statusReasonCode === "ais_upstream_no_messages_after_connect") {
-    return {
-      type: "error",
-      message:
-        formatAisRuntimeReason(t, statusReasonCode, row.statusReason) ??
-        "AIS relay connected upstream, but no AIS messages arrived after connect.",
-      description: t(
-        "systemSettings.realtimeSignals.runtime.feedback.aisUpstreamNoMessagesAfterConnect.body",
-        {
-          defaultValue:
-            "The websocket connected, but no AIS payload arrived before the relay timeout window. Check upstream subscription health, credentials, and whether the source is sending live traffic.",
-        },
-      ),
-    };
-  }
-
-  if (statusReasonCode === "ais_upstream_stalled") {
-    return {
-      type: "error",
-      message:
-        formatAisRuntimeReason(t, statusReasonCode, row.statusReason) ??
-        "AIS relay upstream message flow has stalled.",
-      description: t(
-        "systemSettings.realtimeSignals.runtime.feedback.aisUpstreamStalled.body",
-        {
-          defaultValue:
-            "The upstream socket stayed open but message flow stopped. Inspect upstream heartbeat/keepalive behavior and relay-side reconnect activity.",
-        },
-      ),
-    };
-  }
-
-  if (statusReasonCode === "ais_position_reports_mostly_ignored") {
-    return {
-      type: "warning",
-      message:
-        formatAisRuntimeReason(t, statusReasonCode, row.statusReason) ??
-        "AIS relay is receiving reports, but most position reports are being ignored during normalization.",
-      description: t(
-        "systemSettings.realtimeSignals.runtime.feedback.aisReportsMostlyIgnored.body",
-        {
-          defaultValue:
-            "The relay is receiving positions, but normalization is discarding most of them. Seen {{seen}} reports, processed {{processed}}, ignored {{ignored}}.",
-          seen: positionReportsSeen ?? 0,
-          processed: positionReportsProcessed ?? 0,
-          ignored: ignoredPositionReports ?? 0,
-        },
-      ),
-    };
-  }
-
-  if (statusReasonCode === "ais_payload_parse_errors") {
-    return {
-      type: "warning",
-      message:
-        formatAisRuntimeReason(t, statusReasonCode, row.statusReason) ??
-        "AIS relay is encountering frequent upstream payload parse errors.",
-      description: t(
-        "systemSettings.realtimeSignals.runtime.feedback.aisPayloadParseErrors.body",
-        {
-          defaultValue:
-            "The relay is discarding a significant share of upstream payloads during parsing. Review upstream payload format drift and parser assumptions. Recent parse errors: {{count}}.",
-          count: parseErrors ?? 0,
-        },
-      ),
-    };
+  if (aisReasonCode) {
+    const buildAlert = AIS_REASON_ALERT_BUILDERS[aisReasonCode];
+    if (buildAlert) {
+      return buildAlert(alertContext, diagnostics?.statusReason ?? row.statusReason);
+    }
   }
 
   if (
-    context?.healthState === "degraded" ||
+    diagnostics?.healthState === "degraded" ||
     (row.status === "error" && statusReasonCode)
   ) {
     return {
@@ -324,3 +203,128 @@ export function buildAisRuntimeFeedbackAlert(
 
   return null;
 }
+
+const AIS_REASON_ALERT_BUILDERS: Record<
+  AisSurfaceReasonCode,
+  (context: AisAlertContext, fallback: string | undefined) => RuntimeFeedbackAlert
+> = {
+  ais_upstream_disconnected: ({ diagnostics, formatTimestamp, t }, fallback) => ({
+    type: "error",
+    message:
+      formatAisRuntimeReason(t, "ais_upstream_disconnected", fallback) ??
+      "AIS relay is reachable, but its upstream AIS stream is disconnected.",
+    description: `${t(
+      "systemSettings.realtimeSignals.runtime.feedback.aisUpstreamDisconnected.body",
+      {
+        defaultValue:
+          "The relay service is up, but it is not maintaining a live upstream stream.",
+      },
+    )}${
+      diagnostics?.lastHealthyAt
+        ? ` ${t(
+            "systemSettings.realtimeSignals.runtime.feedback.lastHealthyAt",
+            {
+              defaultValue: "Last healthy: {{time}}.",
+              time: formatTimestamp(diagnostics.lastHealthyAt),
+            },
+          )}`
+        : ""
+    }`,
+  }),
+  ais_upstream_no_messages_after_connect: ({ t }, fallback) => ({
+    type: "error",
+    message:
+      formatAisRuntimeReason(
+        t,
+        "ais_upstream_no_messages_after_connect",
+        fallback,
+      ) ?? "AIS relay connected upstream, but no AIS messages arrived after connect.",
+    description: t(
+      "systemSettings.realtimeSignals.runtime.feedback.aisUpstreamNoMessagesAfterConnect.body",
+      {
+        defaultValue:
+          "The websocket connected, but no AIS payload arrived before the relay timeout window. Check upstream subscription health, credentials, and whether the source is sending live traffic.",
+      },
+    ),
+  }),
+  ais_upstream_stalled: ({ t }, fallback) => ({
+    type: "error",
+    message:
+      formatAisRuntimeReason(t, "ais_upstream_stalled", fallback) ??
+      "AIS relay upstream message flow has stalled.",
+    description: t(
+      "systemSettings.realtimeSignals.runtime.feedback.aisUpstreamStalled.body",
+      {
+        defaultValue:
+          "The upstream socket stayed open but message flow stopped. Inspect upstream heartbeat/keepalive behavior and relay-side reconnect activity.",
+      },
+    ),
+  }),
+  ais_position_reports_not_retained: ({ diagnostics, t }, fallback) => ({
+    type: "error",
+    message:
+      formatAisRuntimeReason(t, "ais_position_reports_not_retained", fallback) ??
+      "AIS relay is receiving reports, but vessel snapshots are not being retained.",
+    description: t(
+      "systemSettings.realtimeSignals.runtime.feedback.aisReportsNotRetained.body",
+      {
+        defaultValue:
+          "Seen {{seen}} reports, processed {{processed}}, retained candidates {{candidates}}. Check relay parsing and snapshot retention logic.",
+        seen: diagnostics?.positionReportsSeen ?? 0,
+        processed: diagnostics?.positionReportsProcessed ?? 0,
+        candidates: diagnostics?.candidateCount ?? 0,
+      },
+    ),
+  }),
+  ais_position_reports_mostly_ignored: ({ diagnostics, t }, fallback) => ({
+    type: "warning",
+    message:
+      formatAisRuntimeReason(
+        t,
+        "ais_position_reports_mostly_ignored",
+        fallback,
+      ) ??
+      "AIS relay is receiving reports, but most position reports are being ignored during normalization.",
+    description: t(
+      "systemSettings.realtimeSignals.runtime.feedback.aisReportsMostlyIgnored.body",
+      {
+        defaultValue:
+          "The relay is receiving positions, but normalization is discarding most of them. Seen {{seen}} reports, processed {{processed}}, ignored {{ignored}}.",
+        seen: diagnostics?.positionReportsSeen ?? 0,
+        processed: diagnostics?.positionReportsProcessed ?? 0,
+        ignored: diagnostics?.ignoredPositionReports ?? 0,
+      },
+    ),
+  }),
+  ais_payload_parse_errors: ({ diagnostics, t }, fallback) => ({
+    type: "warning",
+    message:
+      formatAisRuntimeReason(t, "ais_payload_parse_errors", fallback) ??
+      "AIS relay is encountering frequent upstream payload parse errors.",
+    description: t(
+      "systemSettings.realtimeSignals.runtime.feedback.aisPayloadParseErrors.body",
+      {
+        defaultValue:
+          "The relay is discarding a significant share of upstream payloads during parsing. Review upstream payload format drift and parser assumptions. Recent parse errors: {{count}}.",
+        count: diagnostics?.parseErrors ?? 0,
+      },
+    ),
+  }),
+  ais_snapshot_missing_vessels_contract: ({ t }, fallback) => ({
+    type: "warning",
+    message:
+      formatAisRuntimeReason(
+        t,
+        "ais_snapshot_missing_vessels_contract",
+        fallback,
+      ) ??
+      "AIS relay reports tracked vessels, but this snapshot only exposes aggregated signals instead of individual vessels[].",
+    description: t(
+      "systemSettings.realtimeSignals.runtime.feedback.aisSnapshotMissingVesselsContract.body",
+      {
+        defaultValue:
+          "The relay is publishing density/disruption aggregates, but not the per-vessel `vessels[]` snapshot required by AIS all-mode. Fix the relay snapshot contract instead of diagnosing this as an upstream disconnect.",
+      },
+    ),
+  }),
+};

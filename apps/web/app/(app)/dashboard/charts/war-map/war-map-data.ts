@@ -2,6 +2,9 @@
 
 import {
   type WarMapAisMode,
+  type WarMapAisLayerDataset,
+  type WarMapAisBlockedReasonCode,
+  type WarMapAisLayerSummary,
   type WarMapEvent,
   type WarMapEventsResponse,
   type WarMapFlightMode,
@@ -50,6 +53,111 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function asBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function normalizeAisLayerSummary(
+  summary: Record<string, unknown>,
+): WarMapAisLayerSummary | undefined {
+  const source = asString(summary.source);
+  const mode = asString(summary.mode);
+  const freshness = asString(summary.freshness);
+  const configured = asBoolean(summary.configured);
+  const connected = asBoolean(summary.connected);
+  const staleThresholdSec = asNumber(summary.staleThresholdSec);
+  const relayVesselCount = asNumber(summary.relayVesselCount);
+  const disruptionsCount = asNumber(summary.disruptionsCount);
+  const densityCount = asNumber(summary.densityCount);
+  const candidateCount = asNumber(summary.candidateCount);
+  const renderedVesselCount = asNumber(summary.renderedVesselCount);
+  const allVesselsAvailable = asBoolean(summary.allVesselsAvailable);
+  if (
+    source !== 'relay' ||
+    (mode !== 'all' && mode !== 'military' && mode !== 'density') ||
+    (freshness !== 'fresh' && freshness !== 'stale' && freshness !== 'missing') ||
+    typeof configured !== 'boolean' ||
+    typeof connected !== 'boolean' ||
+    typeof staleThresholdSec !== 'number' ||
+    typeof relayVesselCount !== 'number' ||
+    typeof disruptionsCount !== 'number' ||
+    typeof densityCount !== 'number' ||
+    typeof candidateCount !== 'number' ||
+    typeof renderedVesselCount !== 'number' ||
+    typeof allVesselsAvailable !== 'boolean'
+  ) {
+    return undefined;
+  }
+
+  const blockedReasonCode = asString(summary.blockedReasonCode);
+  return {
+    source,
+    mode,
+    configured,
+    connected,
+    freshness,
+    staleThresholdSec,
+    relayVesselCount,
+    disruptionsCount,
+    densityCount,
+    candidateCount,
+    renderedVesselCount,
+    allVesselsAvailable,
+    ...(asString(summary.sourceEndpoint)
+      ? { sourceEndpoint: asString(summary.sourceEndpoint) }
+      : {}),
+    ...(asString(summary.snapshotUpdatedAt)
+      ? { snapshotUpdatedAt: asString(summary.snapshotUpdatedAt) }
+      : {}),
+    ...(typeof asNumber(summary.snapshotAgeSec) === 'number'
+      ? { snapshotAgeSec: asNumber(summary.snapshotAgeSec) }
+      : {}),
+    ...(typeof asNumber(summary.messageCount) === 'number'
+      ? { messageCount: asNumber(summary.messageCount) }
+      : {}),
+    ...(typeof asNumber(summary.clientCount) === 'number'
+      ? { clientCount: asNumber(summary.clientCount) }
+      : {}),
+    ...(typeof asNumber(summary.droppedMessages) === 'number'
+      ? { droppedMessages: asNumber(summary.droppedMessages) }
+      : {}),
+    ...(typeof asNumber(summary.positionReportsSeen) === 'number'
+      ? { positionReportsSeen: asNumber(summary.positionReportsSeen) }
+      : {}),
+    ...(typeof asNumber(summary.positionReportsProcessed) === 'number'
+      ? { positionReportsProcessed: asNumber(summary.positionReportsProcessed) }
+      : {}),
+    ...(typeof asNumber(summary.ignoredPositionReports) === 'number'
+      ? { ignoredPositionReports: asNumber(summary.ignoredPositionReports) }
+      : {}),
+    ...(typeof asNumber(summary.parseErrors) === 'number'
+      ? { parseErrors: asNumber(summary.parseErrors) }
+      : {}),
+    ...(asString(summary.statusReasonCode)
+      ? { statusReasonCode: asString(summary.statusReasonCode) }
+      : {}),
+    ...(asString(summary.statusReason)
+      ? { statusReason: asString(summary.statusReason) }
+      : {}),
+    ...(typeof asNumber(summary.viewportVesselCount) === 'number'
+      ? { viewportVesselCount: asNumber(summary.viewportVesselCount) }
+      : {}),
+    ...(typeof asNumber(summary.maxReturned) === 'number'
+      ? { maxReturned: asNumber(summary.maxReturned) }
+      : {}),
+    ...(typeof asBoolean(summary.truncated) === 'boolean'
+      ? { truncated: asBoolean(summary.truncated) }
+      : {}),
+    ...(blockedReasonCode === 'missing_vessels_snapshot' ||
+    blockedReasonCode === 'snapshot_unavailable'
+      ? { blockedReasonCode: blockedReasonCode as WarMapAisBlockedReasonCode }
+      : {}),
+    ...(asString(summary.blockedReason)
+      ? { blockedReason: asString(summary.blockedReason) }
+      : {}),
+  };
+}
+
 function normalizeLayerFeature(value: unknown): WarMapLayerFeature | null {
   if (!isRecord(value)) {
     return null;
@@ -85,7 +193,15 @@ function normalizeLayerFeature(value: unknown): WarMapLayerFeature | null {
   return feature;
 }
 
-function normalizeLayerDataset(layerId: WarMapLayerId, value: unknown): WarMapLayerDataset | null {
+function normalizeLayerDataset(
+  layerId: 'ais',
+  value: unknown,
+): WarMapAisLayerDataset | null;
+function normalizeLayerDataset(
+  layerId: WarMapLayerId,
+  value: unknown,
+): WarMapLayerDataset | null;
+function normalizeLayerDataset(layerId: WarMapLayerId, value: unknown) {
   if (!isRecord(value)) {
     return null;
   }
@@ -115,10 +231,13 @@ function normalizeLayerDataset(layerId: WarMapLayerId, value: unknown): WarMapLa
     dataset.renderHints = value.renderHints;
   }
   if (isRecord(value.summary)) {
-    dataset.summary = value.summary;
+    dataset.summary =
+      layerId === 'ais'
+        ? normalizeAisLayerSummary(value.summary) ?? value.summary
+        : value.summary;
   }
 
-  return dataset;
+  return layerId === 'ais' ? (dataset as WarMapAisLayerDataset) : dataset;
 }
 
 function normalizeWarMapEvent(value: unknown): WarMapEvent | null {
@@ -351,7 +470,7 @@ export function normalizeWarMapNewsMarkersResponse(payload: unknown): WarMapNews
 
 export function normalizeWarMapLayersResponse(payload: unknown): WarMapLayersResponse {
   const record = isRecord(payload) ? payload : {};
-  const layers: Partial<Record<WarMapLayerId, WarMapLayerDataset>> = {};
+  const layers = {} as WarMapLayersResponse['layers'];
   const source = isRecord(record.layers) ? record.layers : {};
 
   for (const [key, value] of Object.entries(source)) {
@@ -361,7 +480,11 @@ export function normalizeWarMapLayersResponse(payload: unknown): WarMapLayersRes
     const layerId = key as WarMapLayerId;
     const dataset = normalizeLayerDataset(layerId, value);
     if (dataset) {
-      layers[layerId] = dataset;
+      if (layerId === 'ais') {
+        layers.ais = dataset as WarMapAisLayerDataset;
+      } else {
+        layers[layerId] = dataset;
+      }
     }
   }
 

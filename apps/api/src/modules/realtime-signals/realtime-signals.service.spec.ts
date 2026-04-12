@@ -516,20 +516,6 @@ describe("RealtimeSignalsService unrest merge", () => {
       context: {
         source: "relay",
         configured: true,
-        connected: true,
-        disruptions: 1,
-        densityRegions: 1,
-        candidateCount: 1,
-        vesselCount: 42,
-        allVesselsAvailable: false,
-        snapshotUpdatedAt: "2026-03-02T12:00:00.000Z",
-        messageCount: 1200,
-        droppedMessages: 4,
-        healthState: "ok",
-        positionReportsSeen: 1200,
-        positionReportsProcessed: 42,
-        ignoredPositionReports: 0,
-        parseErrors: 0,
         countryCodes: [],
       },
     });
@@ -611,7 +597,27 @@ describe("RealtimeSignalsService unrest merge", () => {
       lastRunMs: Date.parse("2026-03-02T12:00:00.000Z"),
       context: {
         configured: true,
-        connected: true,
+      },
+      aisRuntime: {
+        diagnostics: {
+          configured: true,
+          connected: true,
+          healthState: "degraded",
+          allVesselsAvailable: false,
+          candidateCount: 0,
+          vesselCount: 0,
+          disruptionsCount: 0,
+          densityRegions: 0,
+          messageCount: 0,
+          droppedMessages: 0,
+          positionReportsSeen: 0,
+          positionReportsProcessed: 0,
+          ignoredPositionReports: 0,
+          parseErrors: 0,
+          statusReasonCode: "ais_position_reports_not_retained",
+          statusReason:
+            "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
+        },
         statusReasonCode: "ais_position_reports_not_retained",
         statusReason:
           "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
@@ -1411,6 +1417,7 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
     const openskySource = result.sources.find(
       (source) => source.source === "opensky",
     );
+    const aisSource = result.sources.find((source) => source.source === "ais");
     expect(openskySource?.openskySnapshot).toEqual({
       freshness: "missing",
       rawAircraftCount: 0,
@@ -1422,6 +1429,106 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       droppedMissingIdentityCount: 0,
       droppedStalePositionCount: 0,
       deduplicatedCount: 0,
+    });
+    expect(aisSource?.aisDiagnostics).toEqual({
+      configured: true,
+      connected: false,
+      healthState: "ok",
+      allVesselsAvailable: false,
+      candidateCount: 0,
+      vesselCount: 0,
+      disruptionsCount: 0,
+      densityRegions: 0,
+      messageCount: 0,
+      droppedMessages: 0,
+      positionReportsSeen: 0,
+      positionReportsProcessed: 0,
+      ignoredPositionReports: 0,
+      parseErrors: 0,
+    });
+  });
+
+  it("surfaces typed AIS diagnostics and product contract codes in runtime diagnostics", async () => {
+    const { service, prisma, store } = buildService();
+    prisma.processedArticle.count.mockResolvedValue(0);
+    prisma.processedArticle.findFirst.mockResolvedValue(null);
+    jest.spyOn(service as any, "getMongoMarkerReadiness").mockResolvedValue({
+      recentProcessedItems: 0,
+      recentProcessedItemsWithLocation: 0,
+    });
+    store.getLatestAisSnapshot.mockResolvedValue({
+      source: "relay",
+      sourceEndpoint: "https://relay.example.com/ais/snapshot",
+      updatedAt: "2026-03-12T03:30:00.000Z",
+      status: {
+        connected: true,
+        vessels: 4,
+        messages: 120,
+        clients: 1,
+        droppedMessages: 2,
+      },
+      diagnostics: {
+        healthState: "ok",
+        positionReportsSeen: 120,
+        positionReportsProcessed: 4,
+        ignoredPositionReports: 0,
+        parseErrors: 0,
+        lastHealthyAt: "2026-03-12T03:29:00.000Z",
+        lastConnectedAt: "2026-03-12T03:28:00.000Z",
+        lastMessageAt: "2026-03-12T03:29:59.000Z",
+      },
+      disruptions: [],
+      density: [],
+      candidateReports: [],
+      vessels: [],
+      hasVesselSnapshot: false,
+    });
+    store.getSourceState.mockImplementation(async (_orgId: string, source: string) =>
+      source === "ais"
+        ? {
+            source: "ais",
+            status: "success",
+            lastAttemptAt: "2026-03-12T03:30:00.000Z",
+            lastSuccessAt: "2026-03-12T03:30:00.000Z",
+            context: {
+              source: "relay",
+              configured: true,
+            },
+          }
+        : null,
+    );
+
+    const result = await service.getRuntimeDiagnostics("org-1");
+    const aisSource = result.sources.find((source) => source.source === "ais");
+
+    expect(aisSource).toMatchObject({
+      status: "error",
+      statusReasonCode: "ais_snapshot_missing_vessels_contract",
+      statusReason:
+        "AIS relay reports tracked vessels, but the snapshot payload omits vessels[] and only exposes aggregated signals.",
+      aisDiagnostics: {
+        configured: true,
+        connected: true,
+        healthState: "ok",
+        snapshotUpdatedAt: "2026-03-12T03:30:00.000Z",
+        allVesselsAvailable: false,
+        candidateCount: 0,
+        vesselCount: 4,
+        disruptionsCount: 0,
+        densityRegions: 0,
+        messageCount: 120,
+        droppedMessages: 2,
+        positionReportsSeen: 120,
+        positionReportsProcessed: 4,
+        ignoredPositionReports: 0,
+        parseErrors: 0,
+        statusReasonCode: "ais_snapshot_missing_vessels_contract",
+        statusReason:
+          "AIS relay reports tracked vessels, but the snapshot payload omits vessels[] and only exposes aggregated signals.",
+        lastHealthyAt: "2026-03-12T03:29:00.000Z",
+        lastConnectedAt: "2026-03-12T03:28:00.000Z",
+        lastMessageAt: "2026-03-12T03:29:59.000Z",
+      },
     });
   });
 

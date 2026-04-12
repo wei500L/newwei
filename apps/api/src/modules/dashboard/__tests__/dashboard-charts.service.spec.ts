@@ -742,6 +742,58 @@ describe("DashboardChartsService", () => {
     );
   });
 
+  it("surfaces upstream AIS fetch errors without inventing local refresh reason codes", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:05:00.000Z"));
+    const prisma = {
+      alertEvent: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const realtimeSignalsStore = createRealtimeSignalsStore({
+      getLatestAisSnapshot: jest.fn().mockResolvedValue(null),
+      getSourceState: jest.fn().mockResolvedValue({
+        source: "ais",
+        status: "error",
+        lastAttemptAt: "2026-01-01T12:00:00.000Z",
+        lastErrorAt: "2026-01-01T12:00:00.000Z",
+        lastError: "fetch failed",
+        lastErrorCode: "network_error",
+        context: {
+          source: "relay",
+          configured: true,
+        },
+      }),
+    });
+    const service = new DashboardChartsService(
+      prisma as any,
+      { resolveCandidates: jest.fn() } as any,
+      createCache() as any,
+      undefined,
+      undefined,
+      realtimeSignalsStore as any,
+    );
+
+    const response = await service.getWarMapLayers({
+      orgId: "org-1",
+      range: {
+        start: new Date("2026-01-01T00:00:00.000Z"),
+        end: new Date("2026-01-02T00:00:00.000Z"),
+      },
+      aisMode: "military",
+    });
+
+    expect(response.layers.ais.summary).toEqual(
+      expect.objectContaining({
+        freshness: "missing",
+        statusReasonCode: "network_error",
+        statusReason: "fetch failed",
+      }),
+    );
+  });
+
   it("builds the AIS density mode layer from density zones and disruptions", async () => {
     jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:05:00.000Z"));
     const prisma = {

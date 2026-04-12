@@ -159,6 +159,26 @@ describe("war-map data contract helpers", () => {
       normalizeWarMapLayersResponse({
         updatedAt: "2026-03-01T00:00:00.000Z",
         layers: {
+          ais: {
+            layerId: "ais",
+            geometryType: "point",
+            summary: {
+              source: "relay",
+              mode: "all",
+              configured: true,
+              connected: true,
+              freshness: "fresh",
+              staleThresholdSec: 1200,
+              relayVesselCount: 5,
+              disruptionsCount: 1,
+              densityCount: 2,
+              candidateCount: 3,
+              renderedVesselCount: 2,
+              allVesselsAvailable: true,
+              statusReasonCode: "ais_snapshot_missing_vessels_contract",
+            },
+            features: [],
+          },
           conflicts: {
             layerId: "conflicts",
             geometryType: "polygon",
@@ -179,10 +199,30 @@ describe("war-map data contract helpers", () => {
       }),
     ).toEqual({
       updatedAt: "2026-03-01T00:00:00.000Z",
-      layers: {
-        conflicts: {
-          layerId: "conflicts",
-          geometryType: "polygon",
+        layers: {
+          ais: {
+            layerId: "ais",
+            geometryType: "point",
+            summary: {
+              source: "relay",
+              mode: "all",
+              configured: true,
+              connected: true,
+              freshness: "fresh",
+              staleThresholdSec: 1200,
+              relayVesselCount: 5,
+              disruptionsCount: 1,
+              densityCount: 2,
+              candidateCount: 3,
+              renderedVesselCount: 2,
+              allVesselsAvailable: true,
+              statusReasonCode: "ais_snapshot_missing_vessels_contract",
+            },
+            features: [],
+          },
+          conflicts: {
+            layerId: "conflicts",
+            geometryType: "polygon",
           features: [
             { id: "polygon-1", polygon: [[[1, 2]]], properties: { name: "A" } },
           ],
@@ -499,7 +539,7 @@ describe("war-map page wiring", () => {
     expect(controlsSource).toContain("transport.onOpenLegend");
     expect(controlsSource).toContain("overscroll-contain");
     expect(controlsSource).toContain("WarMapLegendDock");
-    expect(controlsSource).toContain('size={compact ? 20 : 22}');
+    expect(controlsSource).toContain('size={compact ? 22 : 24}');
     expect(controlsSource).toContain('className="mt-4 grid gap-4 md:grid-cols-2"');
     expect(controlsSource).not.toContain("legend.showAisLegend");
     expect(railSource).toContain("dark:bg-slate-950/[0.78]");
