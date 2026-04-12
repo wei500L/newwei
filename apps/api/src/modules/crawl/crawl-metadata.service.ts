@@ -8,6 +8,7 @@ import { gunzipSync } from "node:zlib";
 import { CacheService } from "../cache/cache.service";
 
 import { CrawlExecutionService } from "./crawl-execution.service";
+import { assertNoUnsupportedProxy } from "./crawl-config-policy";
 import type {
   CrawlMetadataExtractionInput,
   CrawlMetadataResult,
@@ -1868,6 +1869,7 @@ export class CrawlMetadataService {
       value && typeof value === "object" && !Array.isArray(value)
         ? (value as Partial<CrawlTaskOptions>)
         : {};
+    assertNoUnsupportedProxy(options, "crawlOptions");
     const normalized = this.executionService
       ? this.executionService.normalizeOptions(options)
       : this.normalizeDiscoveryOptionsFallback(options);

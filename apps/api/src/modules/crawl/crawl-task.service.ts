@@ -567,6 +567,7 @@ export class CrawlTaskService {
       !Array.isArray(task.config)
         ? (task.config as Record<string, unknown>)
         : null;
+    assertNoUnsupportedProxy(config, "task.config");
     const ingestToItems = config?.ingestToItems === true;
     if (ingestToItems && !actorPermissions?.includes("items.write")) {
       throw new ForbiddenException(

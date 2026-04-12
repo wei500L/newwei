@@ -39,6 +39,36 @@ export const findUnsupportedProxyIssues = (
   return issues;
 };
 
+export const findUnsupportedWorkflowProxyIssues = (
+  value: unknown,
+  path = 'draftDefinition',
+): CrawlConfigPolicyIssue[] => {
+  if (!isPlainObject(value) || !Array.isArray(value.nodes)) {
+    return [];
+  }
+
+  const issues: CrawlConfigPolicyIssue[] = [];
+  for (const [index, node] of value.nodes.entries()) {
+    if (!isPlainObject(node) || !isPlainObject(node.config)) {
+      continue;
+    }
+    const crawlOptions = isPlainObject(node.config.crawlOptions)
+      ? node.config.crawlOptions
+      : undefined;
+    if (!crawlOptions) {
+      continue;
+    }
+    issues.push(
+      ...findUnsupportedProxyIssues(
+        crawlOptions,
+        `${path}.nodes[${index}].config.crawlOptions`,
+      ),
+    );
+  }
+
+  return issues;
+};
+
 export const findUnsupportedFrontierProfileIssues = (
   value: unknown,
   path = 'config',

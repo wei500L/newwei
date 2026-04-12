@@ -517,6 +517,45 @@ describe("CrawlTaskService", () => {
     );
   });
 
+  it("rejects retrying legacy tasks with unsupported proxy config", async () => {
+    const task = {
+      id: "task-legacy-proxy",
+      orgId: "org-1",
+      config: {
+        proxyUrl: "http://proxy.example.com:8080",
+      },
+      _count: { results: 0 },
+    };
+
+    const prismaMock = {
+      crawlTask: {
+        findFirst: jest.fn().mockResolvedValue(task),
+        update: jest.fn().mockResolvedValue(undefined),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue(undefined) },
+    } as any;
+
+    const queueServiceMock = {
+      enqueueTask: jest.fn().mockResolvedValue(undefined),
+    } as any;
+
+    const service = new CrawlTaskService(
+      prismaMock,
+      { crawl4aiConfig: { maxConcurrency: 1 } } as any,
+      {} as any,
+      queueServiceMock,
+      {} as any,
+      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: jest.fn() } as any,
+    );
+
+    await expect(
+      service.retryTask("org-1", "user-1", "task-legacy-proxy"),
+    ).rejects.toThrow("Unsupported crawl config");
+    expect(prismaMock.crawlTask.update).not.toHaveBeenCalled();
+    expect(queueServiceMock.enqueueTask).not.toHaveBeenCalled();
+  });
+
   it("loads latest run details with a single result-service call when building task detail", async () => {
     const prismaMock = {
       crawlTask: {

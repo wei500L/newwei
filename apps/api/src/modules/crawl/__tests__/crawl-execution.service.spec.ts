@@ -317,6 +317,22 @@ describe("CrawlExecutionService", () => {
       expect(mockPrisma.crawlTask.update).not.toHaveBeenCalled();
     });
 
+    it("rejects legacy task config with unsupported proxy overrides before crawling", async () => {
+      const task = createMockTask({
+        config: {
+          proxyUrl: "http://proxy.example.com:8080",
+        },
+      });
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+
+      await expect(service.runTask("task-1", "org-1")).rejects.toThrow(
+        "Unsupported crawl config",
+      );
+      expect(mockCrawlClient.crawl).not.toHaveBeenCalled();
+    });
+
     it("executes full task flow successfully", async () => {
       const task = createMockTask();
       const crawlResponse = createMockCrawlResponse();

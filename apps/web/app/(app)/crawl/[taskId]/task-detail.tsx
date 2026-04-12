@@ -46,6 +46,10 @@ import {
 } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
+import {
+  findUnsupportedProxyIssues,
+  getCrawlConfigPolicyIssueTranslationKey,
+} from "@/lib/crawl-config-policy";
 import { getCrawlTaskDetailOpsRefreshDecision } from "@/lib/crawl-ops-refresh";
 import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 import {
@@ -254,6 +258,20 @@ function safeParseJson<T>(input?: string | null): T | null {
   } catch {
     return null;
   }
+}
+
+function formatPolicyIssues(
+  issues: ReturnType<typeof findUnsupportedProxyIssues>,
+  t: ReturnType<typeof useTranslation>["t"],
+) {
+  return issues
+    .map(
+      (issue) =>
+        `${issue.path}: ${t(getCrawlConfigPolicyIssueTranslationKey(issue.code), {
+          defaultValue: issue.code,
+        })}`,
+    )
+    .join(" ");
 }
 
 function resolveStoredMediaUrl(value?: string) {
@@ -937,6 +955,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return null;
     }
   }, [task?.config]);
+  const proxyIssues = useMemo(
+    () => findUnsupportedProxyIssues(config, "task.config"),
+    [config],
+  );
+  const hasUnsupportedLegacyProxy = proxyIssues.length > 0;
   const isHeadedTask = useMemo(() => config?.headless === false, [config]);
   const lastErrorHeadedIssue = useMemo(
     () => classifyHeadedIssue(task?.lastError ?? undefined),
@@ -2178,6 +2201,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
 
   const handleRetry = async () => {
     if (!task) return;
+    if (hasUnsupportedLegacyProxy) {
+      message.error(formatPolicyIssues(proxyIssues, t));
+      return;
+    }
     try {
       await retryTask({ variables: { id: task.id } });
       message.success(t("crawl.detail.retryQueued"));
@@ -2523,7 +2550,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           {t(`crawl.status.${task.status}`, { defaultValue: task.status })}
         </Tag>
         {canManage ? (
-          <Button onClick={handleRetry} loading={retrying}>
+          <Button
+            onClick={handleRetry}
+            loading={retrying}
+            disabled={hasUnsupportedLegacyProxy}
+          >
             {t("crawl.detail.retry")}
           </Button>
         ) : null}
@@ -2549,6 +2580,17 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           {t("crawl.detail.openSource")}
         </Typography.Link>
       </Space>
+      {hasUnsupportedLegacyProxy ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t("crawl.proxy.unsupportedLegacyTitle", {
+            defaultValue: "Unsupported legacy proxy configuration detected",
+          })}
+          description={formatPolicyIssues(proxyIssues, t)}
+        />
+      ) : null}
       {backfillNotice ? (
         <Alert
           type={backfillNotice.type}

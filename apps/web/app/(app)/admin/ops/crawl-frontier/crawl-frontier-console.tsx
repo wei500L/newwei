@@ -1807,7 +1807,12 @@ export function CrawlFrontierConsole() {
                     </Card>
                     <Row gutter={[16, 16]}>
                       <Col xs={24} lg={12}>
-                        <Card size="small" title="Layered frontier">
+                        <Card
+                          size="small"
+                          title={t("crawlFrontier.profile.strategy.layeredFrontier", {
+                            defaultValue: "Layered frontier",
+                          })}
+                        >
                           <Row gutter={[16, 16]}>
                             <Col xs={24} md={6}><Form.Item name={["config", "layeredOptions", "maxDepth"]} label="Max depth"><InputNumber min={1} max={8} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
                             <Col xs={24} md={6}><Form.Item name={["config", "layeredOptions", "maxPages"]} label="Max pages"><InputNumber min={1} max={500} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
@@ -1818,11 +1823,18 @@ export function CrawlFrontierConsole() {
                         </Card>
                       </Col>
                       <Col xs={24} lg={12}>
-                        <Card size="small" title="Native deep crawl">
+                        <Card
+                          size="small"
+                          title={t("crawlFrontier.profile.strategy.nativeDeepCrawl", {
+                            defaultValue: "Native deep crawl",
+                          })}
+                        >
                           <Row gutter={[16, 16]}>
                             <Col xs={24} md={8}><Form.Item name={["config", "nativeOptions", "deepCrawlStrategy", "type"]} label="Strategy"><Select disabled={profileRawMode} options={["auto", "BFSDeepCrawlStrategy", "BestFirstCrawlingStrategy"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
                             <Col xs={24} md={8}><Form.Item name={["config", "nativeOptions", "fallbackToLayered"]} valuePropName="checked" label="Fallback"><Switch disabled={profileRawMode} /></Form.Item></Col>
-                            <Col xs={24} md={4}><Form.Item name={["config", "nativeOptions", "minAcceptedResults"]} label="Min accepted"><InputNumber min={0} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                            <Col xs={24} md={4}><Form.Item name={["config", "nativeOptions", "minAcceptedResults"]} label={t("crawlFrontier.profile.strategy.minAcceptedResults", {
+                              defaultValue: "Min accepted",
+                            })}><InputNumber min={0} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
                             <Col xs={24} md={4}><Form.Item name={["config", "nativeOptions", "minArticleResults"]} label="Min article"><InputNumber min={0} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
                             <Col xs={24} md={6}><Form.Item name={["config", "nativeOptions", "deepCrawlStrategy", "params", "max_depth"]} label="Native max depth"><InputNumber min={1} max={8} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
                             <Col xs={24} md={6}><Form.Item name={["config", "nativeOptions", "deepCrawlStrategy", "params", "max_pages"]} label="Native max pages"><InputNumber min={1} max={500} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>

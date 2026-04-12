@@ -3,6 +3,7 @@ import type { NewsSource } from '@prisma/client';
 
 import { PrismaService } from '../config/prisma.service';
 
+import { assertSupportedWorkflowDefinition } from './crawl-config-policy';
 import {
   estimateFreshnessScore,
   inferFrontierPageType,
@@ -77,6 +78,10 @@ export class CrawlStrategyRuntimeService {
     if (!resolved) {
       throw new NotFoundException('Workflow not found');
     }
+    assertSupportedWorkflowDefinition(
+      resolved.definition,
+      'workflow.definition',
+    );
 
     const profile = input.profileId
       ? await this.resolveProfile(orgId, input.profileId)

@@ -10103,12 +10103,151 @@
       "loadRuns": "加载 frontier 运行记录失败。",
       "loadProfile": "加载抓取站点画像失败。"
     },
+    "profile": {
+      "strategy": {
+        "layeredFrontier": "分层 frontier",
+        "nativeDeepCrawl": "原生深度抓取",
+        "minAcceptedResults": "最少接受数"
+      }
+    },
     "run": {
       "nativeAcceptedSelected": "Native 接受数 / 入选数",
       "acceptedLabel": "已接受",
       "selectedLabel": "已入选",
       "nativeAccepted": "Native 已接受",
       "nativeSelected": "Native 已入选"
+    },
+    "workflowStudio": {
+      "title": "工作流策略工作台",
+      "actions": {
+        "newWorkflow": "新建工作流",
+        "saveDraft": "保存草稿",
+        "publish": "发布",
+        "trialRun": "试运行",
+        "replayLastRun": "重放最近一次运行",
+        "compareVersions": "比较版本",
+        "runLeft": "运行左侧版本",
+        "runRight": "运行右侧版本"
+      },
+      "errors": {
+        "load": "加载抓取策略工作流失败",
+        "saveDraft": "保存工作流草稿失败",
+        "publish": "发布工作流失败",
+        "create": "创建工作流失败",
+        "trial": "工作流试运行失败",
+        "compare": "比较工作流版本失败",
+        "replay": "重放工作流运行失败"
+      },
+      "messages": {
+        "draftSaved": "工作流草稿已保存",
+        "published": "工作流已发布",
+        "trialCompleted": "工作流试运行完成",
+        "trialStartedFromVersion": "已从 v{{version}} 启动试运行",
+        "replayCreated": "已创建重放：{{runId}}",
+        "replayCompleted": "工作流重放完成"
+      },
+      "status": {
+        "publishedVersions": "已发布版本：{{count}}",
+        "draftOnly": "仅草稿"
+      },
+      "sections": {
+        "workflows": "工作流",
+        "compare": "版本比较",
+        "nodePalette": "节点面板",
+        "trialRun": "试运行",
+        "linkedFrontierRuns": "关联的 Frontier 运行",
+        "canvas": "画布",
+        "inspector": "检查器",
+        "workflowSettings": "工作流设置",
+        "trialResult": "试运行结果"
+      },
+      "placeholders": {
+        "selectWorkflow": "选择工作流",
+        "workflowName": "工作流名称",
+        "workflowDescription": "工作流描述",
+        "leftVersion": "左侧版本",
+        "rightVersion": "右侧版本",
+        "trialSeedUrl": "https://example.com/news",
+        "bindProfile": "绑定画像",
+        "bindNewsSource": "绑定新闻源",
+        "nodeLabel": "节点标签"
+      },
+      "empty": {
+        "selectWorkflow": "请选择或新建工作流",
+        "createToEdit": "新建一个工作流后开始编辑",
+        "selectNode": "选择一个节点进行检查",
+        "noLinkedFrontierRuns": "当前没有关联到该工作流的生产 Frontier 运行记录。",
+        "noWorkflowSelected": "尚未选择工作流",
+        "trialResult": "运行一次工作流试运行后，可在此查看步骤日志与候选流转。"
+      },
+      "hints": {
+        "trialRuntime": "试运行使用与后端策略运行时相同的工作流引擎。"
+      },
+      "compare": {
+        "labels": {
+          "nodeDelta": "节点变化",
+          "edgeDelta": "连线变化",
+          "changedSettings": "变更的设置",
+          "changedNodes": "变更的节点",
+          "bindingImpact": "绑定影响",
+          "profiles": "画像",
+          "newsSources": "新闻源"
+        },
+        "cards": {
+          "settingsDiff": "设置差异",
+          "nodeDiff": "节点差异",
+          "edgeDiff": "连线差异",
+          "bindingImpact": "绑定影响"
+        },
+        "tags": {
+          "added": "新增",
+          "removed": "移除",
+          "changed": "变更"
+        },
+        "empty": {
+          "nodeDiff": "未检测到节点级差异。",
+          "edgeDiff": "未检测到连线级差异。",
+          "selectVersions": "选择两个版本以检查工作流漂移。"
+        }
+      },
+      "settings": {
+        "executionMode": "执行模式",
+        "robotsPolicy": "Robots 策略",
+        "maxDepth": "最大深度",
+        "maxPages": "最大页数"
+      },
+      "trial": {
+        "cards": {
+          "stepTimeline": "步骤时间线",
+          "candidateFlow": "候选流转",
+          "systemEvents": "系统事件",
+          "parameterSources": "参数来源"
+        },
+        "empty": {
+          "systemEvents": "本次运行没有记录系统事件。",
+          "parameterSources": "本次运行没有记录工作流参数覆盖来源。"
+        }
+      },
+      "drawer": {
+        "candidateExplanation": "候选解释",
+        "traceSummary": "轨迹摘要",
+        "trace": "轨迹",
+        "rawSnapshots": "原始快照",
+        "before": "变更前",
+        "after": "变更后"
+      },
+      "candidates": {
+        "columns": {
+          "candidate": "候选",
+          "status": "状态",
+          "signals": "信号",
+          "reason": "原因",
+          "actions": "操作"
+        },
+        "actions": {
+          "explain": "查看解释"
+        }
+      }
     },
     "title": "新闻抓取 Frontier 控制台",
     "subtitle": "管理站点画像，查看种子优先与 frontier 轨迹，并排查抓取成功、降级或失败的原因。"

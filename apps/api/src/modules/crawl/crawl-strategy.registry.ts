@@ -56,6 +56,7 @@ export const CRAWL_STRATEGY_NODE_SCHEMAS: CrawlStrategyWorkflowNodeSchema[] = [
       listMaxPages: 6,
       listPageConcurrency: 2,
       followPagination: true,
+      crawlOptions: {},
     },
     configSchema: {
       type: 'object',
@@ -72,6 +73,11 @@ export const CRAWL_STRATEGY_NODE_SCHEMAS: CrawlStrategyWorkflowNodeSchema[] = [
           default: 2,
         },
         followPagination: { type: 'boolean', default: true },
+        crawlOptions: {
+          type: 'object',
+          properties: {},
+          default: {},
+        },
       },
     },
   },
@@ -100,6 +106,7 @@ export const CRAWL_STRATEGY_NODE_SCHEMAS: CrawlStrategyWorkflowNodeSchema[] = [
         enableSecondaryHubs: true,
         ignoreRobotsTxt: false,
       },
+      crawlOptions: {},
     },
     configSchema: {
       type: 'object',
@@ -123,6 +130,11 @@ export const CRAWL_STRATEGY_NODE_SCHEMAS: CrawlStrategyWorkflowNodeSchema[] = [
             enableSecondaryHubs: { type: 'boolean', default: true },
             ignoreRobotsTxt: { type: 'boolean', default: false },
           },
+        },
+        crawlOptions: {
+          type: 'object',
+          properties: {},
+          default: {},
         },
       },
     },

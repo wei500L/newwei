@@ -99,6 +99,25 @@ function safeParseJson<T>(input?: string | null): T | null {
   }
 }
 
+function findTaskProxyIssuesFromConfig(rawConfig?: string | null) {
+  const config = safeParseJson<Record<string, unknown>>(rawConfig);
+  return findUnsupportedProxyIssues(config, "task.config");
+}
+
+function formatPolicyIssues(
+  issues: ReturnType<typeof findUnsupportedProxyIssues>,
+  t: ReturnType<typeof useTranslation>["t"],
+) {
+  return issues
+    .map(
+      (issue) =>
+        `${issue.path}: ${t(getCrawlConfigPolicyIssueTranslationKey(issue.code), {
+          defaultValue: issue.code,
+        })}`,
+    )
+    .join(" ");
+}
+
 function toCrawlWaitUntilInput(
   value?: string | null,
 ): CrawlWaitUntil | undefined {
@@ -780,8 +799,17 @@ export function CrawlTasksView() {
 
   const buildTaskConfigTags = (record: CrawlTaskNode): ReactNode[] => {
     const summary = parseCrawlTaskConfigSummary(record.config);
+    const proxyIssues = findTaskProxyIssuesFromConfig(record.config);
     if (!summary) {
-      return [];
+      return proxyIssues.length > 0
+        ? [
+            <Tag key="legacyProxy" color="error">
+              {t("crawl.proxy.unsupportedLegacyTitle", {
+                defaultValue: "Unsupported legacy proxy configuration detected",
+              })}
+            </Tag>,
+          ]
+        : [];
     }
 
     const qualityProfileLabel =
@@ -861,6 +889,15 @@ export function CrawlTasksView() {
       tags.push(
         <Tag key="autoExpandDetails" color="green">
           {t("crawl.settings.autoExpandDetails")}
+        </Tag>,
+      );
+    }
+    if (proxyIssues.length > 0) {
+      tags.unshift(
+        <Tag key="legacyProxy" color="error">
+          {t("crawl.proxy.unsupportedLegacyTitle", {
+            defaultValue: "Unsupported legacy proxy configuration detected",
+          })}
         </Tag>,
       );
     }
@@ -963,27 +1000,32 @@ export function CrawlTasksView() {
       key: "actions",
       width: 140,
       fixed: "right",
-      render: (_, record) => (
-        <Space size={4}>
-          <Button
-            size="small"
-            type="link"
-            onClick={() => openTaskDetail(record.id)}
-          >
-            {t("common.view")}
-          </Button>
-          {canManage ? (
+      render: (_, record) => {
+        const hasUnsupportedLegacyProxy =
+          findTaskProxyIssuesFromConfig(record.config).length > 0;
+        return (
+          <Space size={4}>
             <Button
               size="small"
               type="link"
-              onClick={() => handleRetry(record.id)}
-              loading={retrying}
+              onClick={() => openTaskDetail(record.id)}
             >
-              {t("common.retry")}
+              {t("common.view")}
             </Button>
-          ) : null}
-        </Space>
-      ),
+            {canManage ? (
+              <Button
+                size="small"
+                type="link"
+                onClick={() => handleRetry(record.id)}
+                loading={retrying}
+                disabled={hasUnsupportedLegacyProxy}
+              >
+                {t("common.retry")}
+              </Button>
+            ) : null}
+          </Space>
+        );
+      },
     },
   ];
 
@@ -1026,6 +1068,12 @@ export function CrawlTasksView() {
   };
 
   const handleRetry = async (id: string) => {
+    const taskRecord = taskEdgesRef.current.find((edge) => edge.node.id === id)?.node;
+    const proxyIssues = findTaskProxyIssuesFromConfig(taskRecord?.config);
+    if (proxyIssues.length > 0) {
+      message.error(formatPolicyIssues(proxyIssues, t));
+      return;
+    }
     try {
       await retryTask({ variables: { id } });
       message.success(t("crawl.task.requeued"));
@@ -2471,6 +2519,9 @@ export function CrawlTasksView() {
                         type="link"
                         onClick={() => handleRetry(record.id)}
                         loading={retrying}
+                        disabled={
+                          findTaskProxyIssuesFromConfig(record.config).length > 0
+                        }
                       >
                         {t("common.retry")}
                       </Button>

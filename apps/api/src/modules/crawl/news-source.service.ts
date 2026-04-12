@@ -657,6 +657,7 @@ export class NewsSourceService {
       templateCrawlOptions || sourceCrawlOptions
         ? { ...(templateCrawlOptions ?? {}), ...(sourceCrawlOptions ?? {}) }
         : undefined;
+    assertNoUnsupportedProxy(crawlOptions, "crawlOptions");
 
     const seedConfig = this.normalizeSeedConfig(effectiveConfig, source.url);
     const inFlightLimit = seedConfig?.enabled ? seedConfig.maxNewUrlsPerRun : 1;

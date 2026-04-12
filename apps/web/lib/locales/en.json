@@ -10103,12 +10103,151 @@
       "loadRuns": "Failed to load crawl frontier runs.",
       "loadProfile": "Failed to load crawl site profile."
     },
+    "profile": {
+      "strategy": {
+        "layeredFrontier": "Layered frontier",
+        "nativeDeepCrawl": "Native deep crawl",
+        "minAcceptedResults": "Min accepted"
+      }
+    },
     "run": {
       "nativeAcceptedSelected": "Native accepted vs selected",
       "acceptedLabel": "accepted",
       "selectedLabel": "selected",
       "nativeAccepted": "Native accepted",
       "nativeSelected": "Native selected"
+    },
+    "workflowStudio": {
+      "title": "Workflow Strategy Studio",
+      "actions": {
+        "newWorkflow": "New Workflow",
+        "saveDraft": "Save Draft",
+        "publish": "Publish",
+        "trialRun": "Trial Run",
+        "replayLastRun": "Replay Last Run",
+        "compareVersions": "Compare Versions",
+        "runLeft": "Run Left",
+        "runRight": "Run Right"
+      },
+      "errors": {
+        "load": "Failed to load crawl strategy workflows",
+        "saveDraft": "Failed to save workflow draft",
+        "publish": "Failed to publish workflow",
+        "create": "Failed to create workflow",
+        "trial": "Failed to trial run workflow",
+        "compare": "Failed to compare workflow versions",
+        "replay": "Failed to replay workflow run"
+      },
+      "messages": {
+        "draftSaved": "Workflow draft saved",
+        "published": "Workflow published",
+        "trialCompleted": "Workflow trial run completed",
+        "trialStartedFromVersion": "Trial run started from v{{version}}",
+        "replayCreated": "Replay created: {{runId}}",
+        "replayCompleted": "Workflow replay completed"
+      },
+      "status": {
+        "publishedVersions": "Published versions: {{count}}",
+        "draftOnly": "Draft only"
+      },
+      "sections": {
+        "workflows": "Workflows",
+        "compare": "Version Compare",
+        "nodePalette": "Node Palette",
+        "trialRun": "Trial Run",
+        "linkedFrontierRuns": "Linked Frontier Runs",
+        "canvas": "Canvas",
+        "inspector": "Inspector",
+        "workflowSettings": "Workflow Settings",
+        "trialResult": "Trial Run Result"
+      },
+      "placeholders": {
+        "selectWorkflow": "Select workflow",
+        "workflowName": "Workflow name",
+        "workflowDescription": "Workflow description",
+        "leftVersion": "Left version",
+        "rightVersion": "Right version",
+        "trialSeedUrl": "https://example.com/news",
+        "bindProfile": "Bind a profile",
+        "bindNewsSource": "Bind a news source",
+        "nodeLabel": "Node label"
+      },
+      "empty": {
+        "selectWorkflow": "Select or create a workflow",
+        "createToEdit": "Create a workflow to start editing",
+        "selectNode": "Select a node to inspect",
+        "noLinkedFrontierRuns": "No production frontier runs are currently linked to this workflow.",
+        "noWorkflowSelected": "No workflow selected",
+        "trialResult": "Run a workflow trial to inspect step logs and candidate flow"
+      },
+      "hints": {
+        "trialRuntime": "Trial run uses the same workflow engine as the backend strategy runtime."
+      },
+      "compare": {
+        "labels": {
+          "nodeDelta": "Node delta",
+          "edgeDelta": "Edge delta",
+          "changedSettings": "Changed settings",
+          "changedNodes": "Changed nodes",
+          "bindingImpact": "Binding impact",
+          "profiles": "Profiles",
+          "newsSources": "News sources"
+        },
+        "cards": {
+          "settingsDiff": "Settings Diff",
+          "nodeDiff": "Node Diff",
+          "edgeDiff": "Edge Diff",
+          "bindingImpact": "Binding Impact"
+        },
+        "tags": {
+          "added": "added",
+          "removed": "removed",
+          "changed": "changed"
+        },
+        "empty": {
+          "nodeDiff": "No node-level differences detected.",
+          "edgeDiff": "No edge-level differences detected.",
+          "selectVersions": "Select two versions to inspect workflow drift."
+        }
+      },
+      "settings": {
+        "executionMode": "Execution Mode",
+        "robotsPolicy": "Robots Policy",
+        "maxDepth": "Max Depth",
+        "maxPages": "Max Pages"
+      },
+      "trial": {
+        "cards": {
+          "stepTimeline": "Step Timeline",
+          "candidateFlow": "Candidate Flow",
+          "systemEvents": "System Events",
+          "parameterSources": "Parameter Sources"
+        },
+        "empty": {
+          "systemEvents": "No system events were recorded during this run.",
+          "parameterSources": "No workflow parameter overrides were recorded."
+        }
+      },
+      "drawer": {
+        "candidateExplanation": "Candidate Explanation",
+        "traceSummary": "Trace Summary",
+        "trace": "Trace",
+        "rawSnapshots": "Raw snapshots",
+        "before": "Before",
+        "after": "After"
+      },
+      "candidates": {
+        "columns": {
+          "candidate": "Candidate",
+          "status": "Status",
+          "signals": "Signals",
+          "reason": "Reason",
+          "actions": "Actions"
+        },
+        "actions": {
+          "explain": "Explain"
+        }
+      }
     },
     "title": "News Crawl Frontier Console",
     "subtitle": "Operate site profiles, inspect seed-first and frontier traces, and debug why capture succeeded, degraded, or failed."

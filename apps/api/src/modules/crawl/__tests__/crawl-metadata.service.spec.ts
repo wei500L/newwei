@@ -751,6 +751,21 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
     expect(payload.options?.multiUrlConfigs).toBeUndefined();
   });
 
+  it("rejects list discovery crawl options containing legacy proxy overrides", async () => {
+    const crawl = jest.fn();
+    const service = new CrawlMetadataService({ crawl } as any);
+
+    await expect(
+      service.discoverListUrls({
+        url: "https://www.politico.eu/latest/",
+        crawlOptions: {
+          proxyUrl: "http://proxy.example.com:8080",
+        },
+      }),
+    ).rejects.toThrow("Unsupported crawl config");
+    expect(crawl).not.toHaveBeenCalled();
+  });
+
   it("prefers the successful seed-url result when crawl4ai returns multiple results", async () => {
     const crawl = jest.fn(async () => ({
       results: [

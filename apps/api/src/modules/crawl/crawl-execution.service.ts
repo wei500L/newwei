@@ -48,6 +48,7 @@ import {
   CrawlTableExtractionStrategy,
   CrawlVirtualScrollConfig,
 } from "./crawl.types";
+import { assertNoUnsupportedProxy } from "./crawl-config-policy";
 import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import { translateLocalhostProxyUrlForCrawl4ai } from "./crawl4ai-proxy";
 import {
@@ -289,6 +290,7 @@ export class CrawlExecutionService {
         !Array.isArray(task.config)
           ? (task.config as Record<string, unknown>)
           : null;
+      assertNoUnsupportedProxy(configRecord, "task.config");
       const options = this.extractOptions(
         configRecord as Prisma.JsonValue | null,
       );

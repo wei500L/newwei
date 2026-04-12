@@ -40,6 +40,35 @@ export const findUnsupportedProxyIssues = (
   return issues;
 };
 
+export const findUnsupportedWorkflowDefinitionIssues = (
+  value: unknown,
+  path = 'draftDefinition',
+): CrawlConfigPolicyIssue[] => {
+  if (!isPlainObject(value) || !Array.isArray(value.nodes)) {
+    return [];
+  }
+
+  const issues: CrawlConfigPolicyIssue[] = [];
+  for (const [index, node] of value.nodes.entries()) {
+    if (!isPlainObject(node) || !isPlainObject(node.config)) {
+      continue;
+    }
+    const crawlOptions = isPlainObject(node.config.crawlOptions)
+      ? node.config.crawlOptions
+      : undefined;
+    if (!crawlOptions) {
+      continue;
+    }
+    issues.push(
+      ...findUnsupportedProxyIssues(
+        crawlOptions,
+        `${path}.nodes[${index}].config.crawlOptions`,
+      ),
+    );
+  }
+  return issues;
+};
+
 export const findUnsupportedFrontierNodeScopeIssues = (
   value: unknown,
   path = 'crawlSiteProfile.config',
@@ -102,6 +131,19 @@ export const assertNoUnsupportedProxy = (
   path: string,
 ): void => {
   const issues = findUnsupportedProxyIssues(value, path);
+  if (issues.length === 0) {
+    return;
+  }
+  throw new BadRequestException(
+    `Unsupported crawl config: ${formatIssues(issues)}`,
+  );
+};
+
+export const assertSupportedWorkflowDefinition = (
+  value: unknown,
+  path = 'draftDefinition',
+): void => {
+  const issues = findUnsupportedWorkflowDefinitionIssues(value, path);
   if (issues.length === 0) {
     return;
   }

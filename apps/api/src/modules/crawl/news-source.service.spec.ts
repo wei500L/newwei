@@ -1035,6 +1035,77 @@ describe("NewsSourceService.preview", () => {
       }),
     );
   });
+
+  it("rejects preview when merged source/template crawlOptions contain legacy proxy overrides", async () => {
+    const prisma = {
+      newsSource: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: "source-list-1",
+          orgId: "org-1",
+          name: "List Source",
+          url: "https://example.com/latest/",
+          siteType: "general",
+          crawlTemplateId: "template-1",
+          config: {
+            seed: {
+              enabled: true,
+              mode: "list",
+              maxUrls: 20,
+              maxNewUrlsPerRun: 5,
+              dedupeWindowHours: 24,
+            },
+          },
+        }),
+      },
+      crawlTemplate: {
+        findUnique: jest.fn().mockResolvedValue({
+          isActive: true,
+          crawlOptions: {
+            proxyConfig: {
+              server: "http://proxy.example.com:8080",
+            },
+          },
+        }),
+      },
+      pipelineJob: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      article: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    } as any;
+
+    const metadataService = {
+      discoverListCandidates: jest.fn(),
+      extract: jest.fn(),
+    } as any;
+
+    const env = {
+      newsSourceSchedulerConfig: {
+        inFlightLookbackMs: 6 * 60 * 60 * 1000,
+      },
+    } as any;
+
+    const cache = {
+      get: jest.fn().mockResolvedValue(null),
+    } as any;
+
+    const workflows = {
+      compileNewsSourceOverlay: jest.fn().mockResolvedValue(null),
+    } as any;
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
+
+    await expect(service.preview("org-1", "source-list-1")).rejects.toThrow(
+      "Unsupported crawl config",
+    );
+    expect(metadataService.discoverListCandidates).not.toHaveBeenCalled();
+  });
 });
 
 describe("NewsSourceService.updateFrequencyForAll", () => {
