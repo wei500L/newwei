@@ -1224,9 +1224,16 @@ export function CrawlFrontierConsole() {
     const ids = selectedNodeIds.map((entry) => String(entry));
     if (ids.length === 0) return;
     Modal.confirm({
-      title: "Retry selected nodes?",
-      content: "This re-queues the selected failed or skipped nodes for another crawl attempt.",
-      okText: "Retry selected",
+      title: t("crawlFrontier.console.runDrawer.nodes.retryConfirmTitle", {
+        defaultValue: "Retry selected nodes?",
+      }),
+      content: t("crawlFrontier.console.runDrawer.nodes.retryConfirmContent", {
+        defaultValue:
+          "This re-queues the selected failed or skipped nodes for another crawl attempt.",
+      }),
+      okText: t("crawlFrontier.console.runDrawer.nodes.retrySelected", {
+        defaultValue: "Retry selected",
+      }),
       onOk: async () => {
         setSaving(true);
         try {
@@ -1635,17 +1642,19 @@ export function CrawlFrontierConsole() {
         items={[
           {
             key: "profiles",
-            label: "Profiles",
+            label: t("crawlFrontier.console.tabs.profiles", {
+              defaultValue: "Profiles",
+            }),
             children: (
               <Space direction="vertical" size="large" style={{ width: "100%" }}>
                 <Row gutter={[16, 16]}>
-                  <Col xs={24} md={8}><Card className="content-card"><Statistic title="Profiles" value={profiles.length} /></Card></Col>
-                  <Col xs={24} md={8}><Card className="content-card"><Statistic title="Active" value={activeProfileCount} /></Card></Col>
-                  <Col xs={24} md={8}><Card className="content-card"><Statistic title="Shadow" value={shadowProfileCount} /></Card></Col>
+                  <Col xs={24} md={8}><Card className="content-card"><Statistic title={t("crawlFrontier.console.stats.profiles", { defaultValue: "Profiles" })} value={profiles.length} /></Card></Col>
+                  <Col xs={24} md={8}><Card className="content-card"><Statistic title={t("crawlFrontier.console.stats.active", { defaultValue: "Active" })} value={activeProfileCount} /></Card></Col>
+                  <Col xs={24} md={8}><Card className="content-card"><Statistic title={t("crawlFrontier.console.stats.shadow", { defaultValue: "Shadow" })} value={shadowProfileCount} /></Card></Col>
                 </Row>
                 <Card
                   className="content-card"
-                  extra={canManage ? <Button type="primary" onClick={openCreateProfile}>New Profile</Button> : null}
+                  extra={canManage ? <Button type="primary" onClick={openCreateProfile}>{t("crawlFrontier.console.actions.newProfile", { defaultValue: "New Profile" })}</Button> : null}
                 >
                   <Table rowKey="id" columns={profileColumns} dataSource={profiles} loading={loadingProfiles} pagination={{ pageSize: 10 }} />
                 </Card>
@@ -1654,7 +1663,9 @@ export function CrawlFrontierConsole() {
           },
           {
             key: "workflow",
-            label: "Workflow",
+            label: t("crawlFrontier.console.tabs.workflow", {
+              defaultValue: "Workflow",
+            }),
             children: (
               <CrawlWorkflowStudio
                 canManage={canManage}
@@ -1664,37 +1675,41 @@ export function CrawlFrontierConsole() {
           },
           {
             key: "runs",
-            label: "Runs",
+            label: t("crawlFrontier.console.tabs.runs", {
+              defaultValue: "Runs",
+            }),
             children: (
               <Space direction="vertical" size="large" style={{ width: "100%" }}>
                 <Card className="content-card" size="small" style={{ position: "sticky", top: 16, zIndex: 2 }}>
                   <Row gutter={[16, 16]}>
-                    <Col xs={24} md={4}><Statistic title="Total runs" value={runStats.total} /></Col>
-                    <Col xs={24} md={4}><Statistic title="Active" value={runStats.active} /></Col>
-                    <Col xs={24} md={4}><Statistic title="Failed" value={runStats.failed} /></Col>
-                    <Col xs={24} md={4}><Statistic title="Challenge" value={runStats.challenge} /></Col>
-                    <Col xs={24} md={4}><Statistic title="Pending LLM" value={runStats.pendingLlm} /></Col>
-                    <Col xs={24} md={4}><Statistic title="Seed-first" value={runStats.seedFirst} /></Col>
+                    <Col xs={24} md={4}><Statistic title={t("crawlFrontier.console.runStats.totalRuns", { defaultValue: "Total runs" })} value={runStats.total} /></Col>
+                    <Col xs={24} md={4}><Statistic title={t("crawlFrontier.console.stats.active", { defaultValue: "Active" })} value={runStats.active} /></Col>
+                    <Col xs={24} md={4}><Statistic title={t("crawlFrontier.console.runStats.failed", { defaultValue: "Failed" })} value={runStats.failed} /></Col>
+                    <Col xs={24} md={4}><Statistic title={t("crawlFrontier.console.runStats.challenge", { defaultValue: "Challenge" })} value={runStats.challenge} /></Col>
+                    <Col xs={24} md={4}><Statistic title={t("crawlFrontier.console.runStats.pendingLlm", { defaultValue: "Pending LLM" })} value={runStats.pendingLlm} /></Col>
+                    <Col xs={24} md={4}><Statistic title={t("crawlFrontier.console.runStats.seedFirst", { defaultValue: "Seed-first" })} value={runStats.seedFirst} /></Col>
                   </Row>
                   <Space wrap style={{ display: "flex", marginTop: 16, alignItems: "flex-end" }}>
                     <Input.Search
                       allowClear
                       value={runFilters.search}
                       onChange={(event) => setRunFilters((current) => ({ ...current, search: event.target.value }))}
-                      placeholder="Search seed URL or native run ID"
+                      placeholder={t("crawlFrontier.console.placeholders.searchRun", {
+                        defaultValue: "Search seed URL or native run ID",
+                      })}
                       style={{ width: 280 }}
                     />
-                    <Select allowClear placeholder="Profile" style={{ width: 220 }} value={runFilters.profileId} onChange={(value) => setRunFilters((current) => ({ ...current, profileId: value }))} options={profiles.map((profile) => ({ label: profile.name, value: profile.id }))} />
-                    <Select allowClear placeholder="Status" style={{ width: 160 }} value={runFilters.status} onChange={(value) => setRunFilters((current) => ({ ...current, status: value }))} options={["pending", "queued", "running", "completed", "failed", "canceled"].map((value) => ({ label: value, value }))} />
-                    <Select allowClear placeholder="Mode" style={{ width: 160 }} value={runFilters.executionMode} onChange={(value) => setRunFilters((current) => ({ ...current, executionMode: value }))} options={["layered", "native", "hybrid"].map((value) => ({ label: value, value }))} />
-                    <Select allowClear placeholder="Run role" style={{ width: 160 }} value={runFilters.runRole} onChange={(value) => setRunFilters((current) => ({ ...current, runRole: value }))} options={[{ label: "active", value: "active" }, { label: "shadow", value: "shadow" }]} />
-                    <Select allowClear placeholder="Failure kind" style={{ width: 180 }} value={runFilters.failureKind} onChange={(value) => setRunFilters((current) => ({ ...current, failureKind: value }))} options={["challenge_detected", "ssrf_blocked", "no_frontier_candidates", "network_tunnel_error", "llm_judge_parse_failed"].map((value) => ({ label: value, value }))} />
-                    <Select allowClear placeholder="Warning flag" style={{ width: 180 }} value={runFilters.warningFlag} onChange={(value) => setRunFilters((current) => ({ ...current, warningFlag: value }))} options={["llm_judge_parse_failed", "llm_judge_circuit_open", "challenge_detected", "ssrf_blocked", "retry_demoted_to_normal"].map((value) => ({ label: value, value }))} />
-                    <Select allowClear placeholder="Seed strategy" style={{ width: 180 }} value={runFilters.seedStrategy} onChange={(value) => setRunFilters((current) => ({ ...current, seedStrategy: value }))} options={["auto", "seed_first", "frontier_first", "frontier_only"].map((value) => ({ label: value, value }))} />
-                    <Button onClick={() => void loadRuns()}>Refresh</Button>
-                    <Button onClick={() => setRunFilters((current) => ({ ...current, search: "", profileId: undefined, status: undefined, executionMode: undefined, runRole: undefined, failureKind: undefined, warningFlag: undefined, seedStrategy: undefined }))}>Reset</Button>
-                    {canManage ? <Button type="primary" onClick={() => { runForm.setFieldsValue({ executionMode: "layered", maxDepth: 3, maxPages: 60 }); setRunModalOpen(true); }}>New Run</Button> : null}
-                    {canManage && selectedRunIds.length > 0 ? <Button danger onClick={() => void bulkCancelRuns()}>Cancel Selected</Button> : null}
+                    <Select allowClear placeholder={t("crawlFrontier.console.filters.profile", { defaultValue: "Profile" })} style={{ width: 220 }} value={runFilters.profileId} onChange={(value) => setRunFilters((current) => ({ ...current, profileId: value }))} options={profiles.map((profile) => ({ label: profile.name, value: profile.id }))} />
+                    <Select allowClear placeholder={t("crawlFrontier.console.filters.status", { defaultValue: "Status" })} style={{ width: 160 }} value={runFilters.status} onChange={(value) => setRunFilters((current) => ({ ...current, status: value }))} options={["pending", "queued", "running", "completed", "failed", "canceled"].map((value) => ({ label: value, value }))} />
+                    <Select allowClear placeholder={t("crawlFrontier.console.filters.mode", { defaultValue: "Mode" })} style={{ width: 160 }} value={runFilters.executionMode} onChange={(value) => setRunFilters((current) => ({ ...current, executionMode: value }))} options={["layered", "native", "hybrid"].map((value) => ({ label: value, value }))} />
+                    <Select allowClear placeholder={t("crawlFrontier.console.filters.runRole", { defaultValue: "Run role" })} style={{ width: 160 }} value={runFilters.runRole} onChange={(value) => setRunFilters((current) => ({ ...current, runRole: value }))} options={[{ label: "active", value: "active" }, { label: "shadow", value: "shadow" }]} />
+                    <Select allowClear placeholder={t("crawlFrontier.console.filters.failureKind", { defaultValue: "Failure kind" })} style={{ width: 180 }} value={runFilters.failureKind} onChange={(value) => setRunFilters((current) => ({ ...current, failureKind: value }))} options={["challenge_detected", "ssrf_blocked", "no_frontier_candidates", "network_tunnel_error", "llm_judge_parse_failed"].map((value) => ({ label: value, value }))} />
+                    <Select allowClear placeholder={t("crawlFrontier.console.filters.warningFlag", { defaultValue: "Warning flag" })} style={{ width: 180 }} value={runFilters.warningFlag} onChange={(value) => setRunFilters((current) => ({ ...current, warningFlag: value }))} options={["llm_judge_parse_failed", "llm_judge_circuit_open", "challenge_detected", "ssrf_blocked", "retry_demoted_to_normal"].map((value) => ({ label: value, value }))} />
+                    <Select allowClear placeholder={t("crawlFrontier.console.filters.seedStrategy", { defaultValue: "Seed strategy" })} style={{ width: 180 }} value={runFilters.seedStrategy} onChange={(value) => setRunFilters((current) => ({ ...current, seedStrategy: value }))} options={["auto", "seed_first", "frontier_first", "frontier_only"].map((value) => ({ label: value, value }))} />
+                    <Button onClick={() => void loadRuns()}>{t("crawlFrontier.console.actions.refresh", { defaultValue: "Refresh" })}</Button>
+                    <Button onClick={() => setRunFilters((current) => ({ ...current, search: "", profileId: undefined, status: undefined, executionMode: undefined, runRole: undefined, failureKind: undefined, warningFlag: undefined, seedStrategy: undefined }))}>{t("crawlFrontier.console.actions.reset", { defaultValue: "Reset" })}</Button>
+                    {canManage ? <Button type="primary" onClick={() => { runForm.setFieldsValue({ executionMode: "layered", maxDepth: 3, maxPages: 60 }); setRunModalOpen(true); }}>{t("crawlFrontier.console.actions.newRun", { defaultValue: "New Run" })}</Button> : null}
+                    {canManage && selectedRunIds.length > 0 ? <Button danger onClick={() => void bulkCancelRuns()}>{t("crawlFrontier.console.actions.cancelSelected", { defaultValue: "Cancel Selected" })}</Button> : null}
                   </Space>
                 </Card>
                 <Card className="content-card">
@@ -1707,59 +1722,59 @@ export function CrawlFrontierConsole() {
       />
 
       <Drawer
-        title={profileEditor.editing ? "Edit Site Profile" : "Create Site Profile"}
+        title={profileEditor.editing ? t("crawlFrontier.console.profileEditor.editTitle", { defaultValue: "Edit Site Profile" }) : t("crawlFrontier.console.profileEditor.createTitle", { defaultValue: "Create Site Profile" })}
         open={profileEditor.open}
         onClose={() => setProfileEditor({ open: false, editing: null })}
         width={1120}
-        extra={<Space><Button onClick={() => setProfileEditor({ open: false, editing: null })}>Close</Button><Button type="primary" loading={saving} disabled={!canManage} onClick={() => void profileForm.submit()}>Save</Button></Space>}
+        extra={<Space><Button onClick={() => setProfileEditor({ open: false, editing: null })}>{t("crawlFrontier.console.actions.close", { defaultValue: "Close" })}</Button><Button type="primary" loading={saving} disabled={!canManage} onClick={() => void profileForm.submit()}>{t("crawlFrontier.console.actions.save", { defaultValue: "Save" })}</Button></Space>}
       >
         <Form layout="vertical" form={profileForm} onFinish={submitProfile}>
           <Space direction="vertical" size="large" style={{ width: "100%" }}>
-            <Alert type={profileRawMode ? "warning" : "info"} showIcon message={profileRawMode ? "Raw JSON mode bypasses the structured form." : "Structured controls are the default. Raw JSON remains available for advanced overrides."} />
+            <Alert type={profileRawMode ? "warning" : "info"} showIcon message={profileRawMode ? t("crawlFrontier.console.profileEditor.rawMode.enabled", { defaultValue: "Raw JSON mode bypasses the structured form." }) : t("crawlFrontier.console.profileEditor.rawMode.disabled", { defaultValue: "Structured controls are the default. Raw JSON remains available for advanced overrides." })} />
             {resolvedProfileConfig.error ? <Alert type="error" showIcon message={resolvedProfileConfig.error} /> : null}
             <Tabs items={[
               {
                 key: "basic",
-                label: "Basic",
+                label: t("crawlFrontier.console.profileEditor.tabs.basic", { defaultValue: "Basic" }),
                 children: (
                   <Row gutter={[16, 16]}>
                     <Col xs={24} lg={16}>
-                      <Card size="small" title="Identity">
+                      <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.identity", { defaultValue: "Identity" })}>
                         <Row gutter={[16, 16]}>
-                          <Col xs={24} md={12}><Form.Item name="name" label="Profile name" rules={[{ required: true }]}><Input disabled={profileRawMode} /></Form.Item></Col>
-                          <Col xs={24} md={12}><Form.Item name="matchHost" label="Match host" rules={[{ required: true }]}><Input disabled={profileRawMode} placeholder="*.example.com" /></Form.Item></Col>
-                          <Col xs={24}><Form.Item name="description" label="Description"><Input disabled={profileRawMode} /></Form.Item></Col>
+                          <Col xs={24} md={12}><Form.Item name="name" label={t("crawlFrontier.console.profileEditor.fields.profileName", { defaultValue: "Profile name" })} rules={[{ required: true }]}><Input disabled={profileRawMode} /></Form.Item></Col>
+                          <Col xs={24} md={12}><Form.Item name="matchHost" label={t("crawlFrontier.console.profileEditor.fields.matchHost", { defaultValue: "Match host" })} rules={[{ required: true }]}><Input disabled={profileRawMode} placeholder={t("crawlFrontier.console.placeholders.matchHost", { defaultValue: "*.example.com" })} /></Form.Item></Col>
+                          <Col xs={24}><Form.Item name="description" label={t("crawlFrontier.console.profileEditor.fields.description", { defaultValue: "Description" })}><Input disabled={profileRawMode} /></Form.Item></Col>
                         </Row>
                       </Card>
                     </Col>
                     <Col xs={24} lg={8}>
-                      <Card size="small" title="Status">
-                        <Form.Item name="executionMode" label="Execution mode"><Select disabled={profileRawMode} options={["layered", "native", "hybrid"].map((value) => ({ label: value, value }))} /></Form.Item>
-                        <Form.Item name="isActive" valuePropName="checked" label="Active"><Switch disabled={profileRawMode} /></Form.Item>
-                        <Form.Item name="workflowId" label="Workflow binding">
-                          <Select allowClear disabled={profileRawMode} options={workflowOptions} placeholder="Optional workflow" />
+                      <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.status", { defaultValue: "Status" })}>
+                        <Form.Item name="executionMode" label={t("crawlFrontier.console.profileEditor.fields.executionMode", { defaultValue: "Execution mode" })}><Select disabled={profileRawMode} options={["layered", "native", "hybrid"].map((value) => ({ label: value, value }))} /></Form.Item>
+                        <Form.Item name="isActive" valuePropName="checked" label={t("crawlFrontier.console.stats.active", { defaultValue: "Active" })}><Switch disabled={profileRawMode} /></Form.Item>
+                        <Form.Item name="workflowId" label={t("crawlFrontier.console.profileEditor.fields.workflowBinding", { defaultValue: "Workflow binding" })}>
+                          <Select allowClear disabled={profileRawMode} options={workflowOptions} placeholder={t("crawlFrontier.console.placeholders.optionalWorkflow", { defaultValue: "Optional workflow" })} />
                         </Form.Item>
-                        <Form.Item name="workflowBindingMode" label="Workflow version mode">
+                        <Form.Item name="workflowBindingMode" label={t("crawlFrontier.console.profileEditor.fields.workflowVersionMode", { defaultValue: "Workflow version mode" })}>
                           <Select disabled={profileRawMode} options={[{ label: "published", value: "published" }, { label: "pinned", value: "pinned" }]} />
                         </Form.Item>
-                        <Form.Item name="workflowVersionId" label="Pinned workflow version">
-                          <Input disabled={profileRawMode} placeholder="workflow-version-id" />
+                        <Form.Item name="workflowVersionId" label={t("crawlFrontier.console.profileEditor.fields.pinnedWorkflowVersion", { defaultValue: "Pinned workflow version" })}>
+                          <Input disabled={profileRawMode} placeholder={t("crawlFrontier.console.placeholders.workflowVersionId", { defaultValue: "workflow-version-id" })} />
                         </Form.Item>
-                        <Form.Item name={["config", "sourceTier"]} label="Source tier"><Select disabled={profileRawMode} options={["tier1", "tier2", "tier3"].map((value) => ({ label: value, value }))} /></Form.Item>
+                        <Form.Item name={["config", "sourceTier"]} label={t("crawlFrontier.console.profileEditor.fields.sourceTier", { defaultValue: "Source tier" })}><Select disabled={profileRawMode} options={["tier1", "tier2", "tier3"].map((value) => ({ label: value, value }))} /></Form.Item>
                       </Card>
                     </Col>
                     <Col xs={24}>
-                      <Card size="small" title="Match preview">
+                      <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.matchPreview", { defaultValue: "Match preview" })}>
                         <Space wrap style={{ display: "flex" }}>
-                          <Form.Item name="previewUrl" label="Preview URL" style={{ flex: 1, minWidth: 360, marginBottom: 0 }}><Input placeholder="https://news.example.com/world/latest" /></Form.Item>
-                          <Button loading={profilePreviewLoading} onClick={() => void previewProfileMatch()}>Preview match</Button>
+                          <Form.Item name="previewUrl" label={t("crawlFrontier.console.profileEditor.fields.previewUrl", { defaultValue: "Preview URL" })} style={{ flex: 1, minWidth: 360, marginBottom: 0 }}><Input placeholder={t("crawlFrontier.console.placeholders.previewUrl", { defaultValue: "https://news.example.com/world/latest" })} /></Form.Item>
+                          <Button loading={profilePreviewLoading} onClick={() => void previewProfileMatch()}>{t("crawlFrontier.console.actions.previewMatch", { defaultValue: "Preview match" })}</Button>
                         </Space>
                         {profileMatchPreview ? (
                           <Space direction="vertical" size="middle" style={{ width: "100%", marginTop: 16 }}>
                             <Alert
                               type={profileMatchPreview.draftMatches ? "success" : "warning"}
                               showIcon
-                              message={profileMatchPreview.draftMatches ? "Draft profile matches this URL" : "Draft profile does not match this URL"}
+                              message={profileMatchPreview.draftMatches ? t("crawlFrontier.console.profileEditor.matchPreview.draftMatches", { defaultValue: "Draft profile matches this URL" }) : t("crawlFrontier.console.profileEditor.matchPreview.draftMismatch", { defaultValue: "Draft profile does not match this URL" })}
                               description={
                                 <Space direction="vertical" size="small" style={{ width: "100%" }}>
                                   <Typography.Text>{profileMatchPreview.draftMatchReason}</Typography.Text>
@@ -1770,12 +1785,15 @@ export function CrawlFrontierConsole() {
                             <Alert
                               type={profileMatchPreview.activeMatch ? "info" : "warning"}
                               showIcon
-                              message={profileMatchPreview.activeMatch ? `Active profile match: ${profileMatchPreview.activeMatch.name}` : "No active saved profile currently matches this URL"}
+                              message={profileMatchPreview.activeMatch ? t("crawlFrontier.console.profileEditor.matchPreview.activeMatch", { defaultValue: "Active profile match: {{name}}", name: profileMatchPreview.activeMatch.name }) : t("crawlFrontier.console.profileEditor.matchPreview.noActiveMatch", { defaultValue: "No active saved profile currently matches this URL" })}
                               description={
                                 profileMatchPreview.activeMatch ? (
                                   <Space wrap>{summarizeProfileConfig(profileMatchPreview.activeMatch.config).map((entry) => <Tag key={`active-${entry}`}>{entry}</Tag>)}</Space>
                                 ) : (
-                                  "This preview is based on the draft form values only."
+                                  t("crawlFrontier.console.profileEditor.matchPreview.draftOnly", {
+                                    defaultValue:
+                                      "This preview is based on the draft form values only.",
+                                  })
                                 )
                               }
                             />
@@ -1788,10 +1806,10 @@ export function CrawlFrontierConsole() {
               },
               {
                 key: "strategy",
-                label: "Strategy",
+                label: t("crawlFrontier.console.profileEditor.tabs.strategy", { defaultValue: "Strategy" }),
                 children: (
                   <Space direction="vertical" size="large" style={{ width: "100%" }}>
-                    <Card size="small" title="Seed discovery">
+                    <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.seedDiscovery", { defaultValue: "Seed discovery" })}>
                       <Row gutter={[16, 16]}>
                         <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "strategy"]} label="Strategy"><Select disabled={profileRawMode} options={["auto", "seed_first", "frontier_first", "frontier_only"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
                         <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "mode"]} label="Discovery mode"><Select disabled={profileRawMode} options={["robots", "common_paths", "sitemap_only", "disabled"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
@@ -1847,10 +1865,10 @@ export function CrawlFrontierConsole() {
               },
               {
                 key: "llm",
-                label: "LLM / Locale / DOM",
+                label: t("crawlFrontier.console.profileEditor.tabs.llmLocaleDom", { defaultValue: "LLM / Locale / DOM" }),
                 children: (
                   <Space direction="vertical" size="large" style={{ width: "100%" }}>
-                    <Card size="small" title="LLM assist">
+                    <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.llmAssist", { defaultValue: "LLM assist" })}>
                       <Row gutter={[16, 16]}>
                         <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "enabled"]} valuePropName="checked" label="Enabled"><Switch disabled={profileRawMode} /></Form.Item></Col>
                         <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "recallMode"]} label="Recall mode"><Select disabled={profileRawMode} options={["high_recall", "balanced", "low_cost"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
@@ -1867,10 +1885,10 @@ export function CrawlFrontierConsole() {
                     </Card>
                     <Row gutter={[16, 16]}>
                       <Col xs={24} lg={12}>
-                        <Card size="small" title="Locale & host scope">
+                        <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.localeHostScope", { defaultValue: "Locale & host scope" })}>
                           <Row gutter={[16, 16]}>
                             <Col xs={24} md={8}><Form.Item name={["config", "hostScope"]} label="Host scope"><Select disabled={profileRawMode} options={["registrable_domain", "strict_hosts"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
-                            <Col xs={24} md={8}><Form.Item name={["config", "localeScope", "locale"]} label="Preferred locale"><Input disabled={profileRawMode} placeholder="en-GB" /></Form.Item></Col>
+                            <Col xs={24} md={8}><Form.Item name={["config", "localeScope", "locale"]} label={t("crawlFrontier.console.profileEditor.fields.preferredLocale", { defaultValue: "Preferred locale" })}><Input disabled={profileRawMode} placeholder={t("crawlFrontier.console.placeholders.locale", { defaultValue: "en-GB" })} /></Form.Item></Col>
                             <Col xs={24} md={8}><Form.Item name={["config", "localeScope", "acceptLanguages"]} label="Accept-Language"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
                             <Col xs={24}><Form.Item name={["config", "allowedHosts"]} label="Allowed hosts"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
                             <Col xs={24}><Form.Item name={["config", "allowedDomains"]} label="Allowed domains"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
@@ -1881,7 +1899,7 @@ export function CrawlFrontierConsole() {
                         </Card>
                       </Col>
                       <Col xs={24} lg={12}>
-                        <Card size="small" title="DOM scopes & keywords">
+                        <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.domScopesKeywords", { defaultValue: "DOM scopes & keywords" })}>
                           <Form.Item name={["config", "domLinkScopes"]} label="Link scopes"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item>
                           <Form.Item name={["config", "domLinkExcludeSelectors"]} label="Exclude selectors"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item>
                           <Form.Item name={["config", "priorityKeywords"]} label="Priority keywords"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item>
@@ -1894,10 +1912,10 @@ export function CrawlFrontierConsole() {
               },
               {
                 key: "patterns",
-                label: "Patterns / JSON",
+                label: t("crawlFrontier.console.profileEditor.tabs.patternsJson", { defaultValue: "Patterns / JSON" }),
                 children: (
                   <Space direction="vertical" size="large" style={{ width: "100%" }}>
-                    <Card size="small" title="URL patterns">
+                    <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.urlPatterns", { defaultValue: "URL patterns" })}>
                       <Row gutter={[16, 16]}>
                         {(["home", "category", "list", "article", "exclude"] as const).map((key) => (
                           <Col xs={24} md={key === "exclude" ? 24 : 12} key={key}>
@@ -1908,7 +1926,7 @@ export function CrawlFrontierConsole() {
                         ))}
                       </Row>
                     </Card>
-                    <Card size="small" title="Page type signals & freshness">
+                    <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.pageTypeSignalsFreshness", { defaultValue: "Page type signals & freshness" })}>
                       <Row gutter={[16, 16]}>
                         {(["home", "category", "list", "article", "deny"] as const).map((key) => (
                           <Col xs={24} lg={12} key={`signal-${key}`}>
@@ -1923,7 +1941,7 @@ export function CrawlFrontierConsole() {
                           </Col>
                         ))}
                         <Col xs={24}>
-                          <Card size="small" type="inner" title="Freshness rules">
+                          <Card size="small" type="inner" title={t("crawlFrontier.console.profileEditor.cards.freshnessRules", { defaultValue: "Freshness rules" })}>
                             <Row gutter={[16, 16]}>
                               <Col xs={24} md={8}><Form.Item name={["config", "freshnessRules", "recentHours"]} label="Recent hours"><InputNumber min={1} max={24 * 30} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
                               <Col xs={24} md={8}><Form.Item name={["config", "freshnessRules", "weekHours"]} label="Week hours"><InputNumber min={1} max={24 * 90} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
@@ -1933,7 +1951,7 @@ export function CrawlFrontierConsole() {
                         </Col>
                       </Row>
                     </Card>
-                    <Card size="small" title="Advanced JSON">
+                    <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.advancedJson", { defaultValue: "Advanced JSON" })}>
                       <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                         <Space wrap>
                           <Typography.Text strong>Raw JSON mode</Typography.Text>
@@ -1953,7 +1971,7 @@ export function CrawlFrontierConsole() {
         </Form>
       </Drawer>
 
-      <Modal open={versionsOpen} title="Profile Versions" onCancel={() => { setVersionsOpen(false); setCurrentVersionProfile(null); }} footer={null} width={920}>
+      <Modal open={versionsOpen} title={t("crawlFrontier.console.modals.profileVersions", { defaultValue: "Profile Versions" })} onCancel={() => { setVersionsOpen(false); setCurrentVersionProfile(null); }} footer={null} width={920}>
         <Table rowKey="id" dataSource={versions} pagination={false} columns={[
           { title: "Version", dataIndex: "version", key: "version", width: 90 },
           { title: "Mode", dataIndex: "executionMode", key: "executionMode", width: 120 },
@@ -1963,21 +1981,21 @@ export function CrawlFrontierConsole() {
         ]} />
       </Modal>
 
-      <Modal open={runModalOpen} title="Create Crawl Frontier Run" onCancel={() => setRunModalOpen(false)} onOk={() => void runForm.submit()} okButtonProps={{ loading: saving, disabled: !canManage }}>
+      <Modal open={runModalOpen} title={t("crawlFrontier.console.modals.createRun", { defaultValue: "Create Crawl Frontier Run" })} onCancel={() => setRunModalOpen(false)} onOk={() => void runForm.submit()} okButtonProps={{ loading: saving, disabled: !canManage }}>
         <Form layout="vertical" form={runForm} onFinish={submitRun}>
-          <Form.Item name="seedUrl" label="Seed URL" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="profileId" label="Profile" extra="Leave empty to auto-match by host."><Select allowClear options={profiles.map((profile) => ({ label: `${profile.name} (${profile.matchHost})`, value: profile.id }))} /></Form.Item>
-          <Form.Item name="executionMode" label="Execution Mode Override"><Select allowClear options={["layered", "native", "hybrid"].map((value) => ({ label: value, value }))} /></Form.Item>
+          <Form.Item name="seedUrl" label={t("crawlFrontier.console.runForm.seedUrl", { defaultValue: "Seed URL" })} rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="profileId" label={t("crawlFrontier.console.filters.profile", { defaultValue: "Profile" })} extra={t("crawlFrontier.console.runForm.profileHelp", { defaultValue: "Leave empty to auto-match by host." })}><Select allowClear options={profiles.map((profile) => ({ label: `${profile.name} (${profile.matchHost})`, value: profile.id }))} /></Form.Item>
+          <Form.Item name="executionMode" label={t("crawlFrontier.console.runForm.executionModeOverride", { defaultValue: "Execution Mode Override" })}><Select allowClear options={["layered", "native", "hybrid"].map((value) => ({ label: value, value }))} /></Form.Item>
           <Row gutter={[16, 16]}>
-            <Col xs={24} md={12}><Form.Item name="maxDepth" label="Max Depth"><InputNumber min={1} max={8} style={{ width: "100%" }} /></Form.Item></Col>
-            <Col xs={24} md={12}><Form.Item name="maxPages" label="Max Pages"><InputNumber min={1} max={500} style={{ width: "100%" }} /></Form.Item></Col>
+            <Col xs={24} md={12}><Form.Item name="maxDepth" label={t("crawlFrontier.console.runForm.maxDepth", { defaultValue: "Max Depth" })}><InputNumber min={1} max={8} style={{ width: "100%" }} /></Form.Item></Col>
+            <Col xs={24} md={12}><Form.Item name="maxPages" label={t("crawlFrontier.console.runForm.maxPages", { defaultValue: "Max Pages" })}><InputNumber min={1} max={500} style={{ width: "100%" }} /></Form.Item></Col>
           </Row>
-          <Form.Item name="keywordsText" label="Keywords" extra="Comma or newline separated."><Input.TextArea rows={4} /></Form.Item>
+          <Form.Item name="keywordsText" label={t("crawlFrontier.console.runForm.keywords", { defaultValue: "Keywords" })} extra={t("crawlFrontier.console.runForm.keywordsHelp", { defaultValue: "Comma or newline separated." })}><Input.TextArea rows={4} /></Form.Item>
         </Form>
       </Modal>
 
       <Drawer
-        title="Crawl Frontier Run Detail"
+        title={t("crawlFrontier.console.runDrawer.title", { defaultValue: "Crawl Frontier Run Detail" })}
         open={runDrawerOpen}
         onClose={() => {
           setRunDrawerOpen(false);
@@ -2018,16 +2036,16 @@ export function CrawlFrontierConsole() {
             <Tabs activeKey={runDrawerTab} onChange={setRunDrawerTab} items={[
               {
                 key: "overview",
-                label: "Overview",
+                label: t("crawlFrontier.console.runDrawer.tabs.overview", { defaultValue: "Overview" }),
                 children: (
                   <Space direction="vertical" size="large" style={{ width: "100%" }}>
                     <Row gutter={[16, 16]}>
-                      <Col xs={24} md={6}><Card size="small"><Statistic title="Pages" value={selectedRun.pageCount} /></Card></Col>
-                      <Col xs={24} md={6}><Card size="small"><Statistic title="Nodes" value={selectedRun.nodeCount} /></Card></Col>
-                      <Col xs={24} md={6}><Card size="small"><Statistic title="Articles" value={selectedRun.articleCount} /></Card></Col>
-                      <Col xs={24} md={6}><Card size="small"><Statistic title="Pending LLM jobs" value={selectedRunSummary?.pendingLlmJudgeJobs ?? 0} /></Card></Col>
+                      <Col xs={24} md={6}><Card size="small"><Statistic title={t("crawlFrontier.console.runDrawer.overview.pages", { defaultValue: "Pages" })} value={selectedRun.pageCount} /></Card></Col>
+                      <Col xs={24} md={6}><Card size="small"><Statistic title={t("crawlFrontier.console.runDrawer.overview.nodes", { defaultValue: "Nodes" })} value={selectedRun.nodeCount} /></Card></Col>
+                      <Col xs={24} md={6}><Card size="small"><Statistic title={t("crawlFrontier.console.runDrawer.overview.articles", { defaultValue: "Articles" })} value={selectedRun.articleCount} /></Card></Col>
+                      <Col xs={24} md={6}><Card size="small"><Statistic title={t("crawlFrontier.console.runDrawer.overview.pendingLlmJobs", { defaultValue: "Pending LLM jobs" })} value={selectedRunSummary?.pendingLlmJudgeJobs ?? 0} /></Card></Col>
                     </Row>
-                    <Card size="small" title="Coverage & diagnostics">
+                    <Card size="small" title={t("crawlFrontier.console.runDrawer.overview.coverageDiagnostics", { defaultValue: "Coverage & diagnostics" })}>
                       <Descriptions size="small" column={1} bordered>
                         <Descriptions.Item label="Coverage by type">{formatCountSummary(selectedRunSummary?.coverageByPageType)}</Descriptions.Item>
                         <Descriptions.Item label="Coverage by depth">{formatCountSummary(selectedRunSummary?.coverageByDepth)}</Descriptions.Item>
@@ -2047,7 +2065,7 @@ export function CrawlFrontierConsole() {
                         </Descriptions.Item>
                       </Descriptions>
                     </Card>
-                    <Card size="small" title="Root diagnosis">
+                    <Card size="small" title={t("crawlFrontier.console.runDrawer.overview.rootDiagnosis", { defaultValue: "Root diagnosis" })}>
                       <Collapse items={[
                         { key: "structured", label: "Structured diagnosis", children: <Descriptions size="small" column={2}><Descriptions.Item label="Failure kind">{selectedRunDiagnostics?.failureKind ?? "-"}</Descriptions.Item><Descriptions.Item label="Last error">{selectedRun.lastError ?? "-"}</Descriptions.Item><Descriptions.Item label="Started at">{formatDateTime(selectedRun.startedAt)}</Descriptions.Item><Descriptions.Item label="Finished at">{formatDateTime(selectedRun.finishedAt)}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.run.nativeAccepted", { defaultValue: "Native accepted" })}>{asNumber(selectedRunRootDiagnosis?.nativeAcceptedResults) ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.run.nativeSelected", { defaultValue: "Native selected" })}>{asNumber(selectedRunRootDiagnosis?.nativeSelectedResults) ?? "-"}</Descriptions.Item></Descriptions> },
                         { key: "json", label: "Root diagnosis JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedRunRootDiagnosis)}</Typography.Paragraph> },
@@ -2058,7 +2076,7 @@ export function CrawlFrontierConsole() {
               },
               {
                 key: "strategy",
-                label: "Strategy Trace",
+                label: t("crawlFrontier.console.runDrawer.tabs.strategyTrace", { defaultValue: "Strategy Trace" }),
                 children: (
                   <Card size="small">
                     <Steps
@@ -2075,7 +2093,7 @@ export function CrawlFrontierConsole() {
               },
               {
                 key: "workflow",
-                label: "Workflow Trace",
+                label: t("crawlFrontier.console.runDrawer.tabs.workflowTrace", { defaultValue: "Workflow Trace" }),
                 children: !selectedWorkflowRun ? (
                   loadingWorkflowRun ? (
                     <div style={{ display: "flex", justifyContent: "center", padding: "4rem 0" }}>
@@ -2085,18 +2103,18 @@ export function CrawlFrontierConsole() {
                     <Alert
                       type="info"
                       showIcon
-                      message="This run does not have a linked workflow trace record."
+                      message={t("crawlFrontier.console.runDrawer.workflow.noTrace", { defaultValue: "This run does not have a linked workflow trace record." })}
                     />
                   )
                 ) : (
                   <Space direction="vertical" size="large" style={{ width: "100%" }}>
                     <Card
                       size="small"
-                      title="Workflow Run"
+                      title={t("crawlFrontier.console.runDrawer.workflow.runCard", { defaultValue: "Workflow Run" })}
                       extra={
                         <Space wrap>
                           <Button onClick={() => void reloadSelectedRun()} loading={saving}>
-                            Refresh
+                            {t("crawlFrontier.console.actions.refresh", { defaultValue: "Refresh" })}
                           </Button>
                           <Button
                             onClick={() => {
@@ -2109,13 +2127,13 @@ export function CrawlFrontierConsole() {
                             }}
                             disabled={!selectedWorkflowRun.workflow?.id}
                           >
-                            Open in Studio
+                            {t("crawlFrontier.console.runDrawer.workflow.openInStudio", { defaultValue: "Open in Studio" })}
                           </Button>
                           <Tooltip
                             title={
                               selectedWorkflowRun.workflow?.id
                                 ? undefined
-                                : "Legacy bridge runs are observable but cannot be replayed until the profile or news source is bound to a published workflow version."
+                                : t("crawlFrontier.console.runDrawer.workflow.replayLegacyHint", { defaultValue: "Legacy bridge runs are observable but cannot be replayed until the profile or news source is bound to a published workflow version." })
                             }
                           >
                           <Button
@@ -2125,7 +2143,7 @@ export function CrawlFrontierConsole() {
                             loading={replayingWorkflowRun}
                             disabled={!selectedWorkflowRun.workflow?.id}
                           >
-                            Replay
+                            {t("crawlFrontier.console.runDrawer.workflow.replay", { defaultValue: "Replay" })}
                           </Button>
                           </Tooltip>
                         </Space>
@@ -2136,22 +2154,22 @@ export function CrawlFrontierConsole() {
                           type="info"
                           showIcon
                           style={{ marginBottom: 16 }}
-                          message="This production run is backed by a legacy bridge snapshot. It is fully explorable, but replay is disabled until the source is bound to a published workflow version."
+                          message={t("crawlFrontier.console.runDrawer.workflow.legacyBridgeNotice", { defaultValue: "This production run is backed by a legacy bridge snapshot. It is fully explorable, but replay is disabled until the source is bound to a published workflow version." })}
                         />
                       ) : null}
                       <Row gutter={[16, 16]}>
                         <Col xs={24} md={6}>
-                          <Statistic title="Workflow steps" value={selectedWorkflowRun.stepCount} />
+                          <Statistic title={t("crawlFrontier.console.runDrawer.workflow.workflowSteps", { defaultValue: "Workflow steps" })} value={selectedWorkflowRun.stepCount} />
                         </Col>
                         <Col xs={24} md={6}>
-                          <Statistic title="Candidates" value={selectedWorkflowRun.candidateCount} />
+                          <Statistic title={t("crawlFrontier.console.runDrawer.workflow.candidates", { defaultValue: "Candidates" })} value={selectedWorkflowRun.candidateCount} />
                         </Col>
                         <Col xs={24} md={6}>
-                          <Statistic title="Selected" value={selectedWorkflowRun.selectedCount} />
+                          <Statistic title={t("crawlFrontier.console.runDrawer.workflow.selected", { defaultValue: "Selected" })} value={selectedWorkflowRun.selectedCount} />
                         </Col>
                         <Col xs={24} md={6}>
                           <Statistic
-                            title="System events"
+                            title={t("crawlFrontier.console.runDrawer.workflow.systemEvents", { defaultValue: "System events" })}
                             value={selectedWorkflowRun.systemEvents.length}
                           />
                         </Col>
@@ -2180,7 +2198,7 @@ export function CrawlFrontierConsole() {
                     </Card>
                     <Row gutter={[16, 16]}>
                       <Col xs={24} xl={10}>
-                        <Card size="small" title="Step Timeline">
+                        <Card size="small" title={t("crawlFrontier.console.runDrawer.workflow.stepTimeline", { defaultValue: "Step Timeline" })}>
                           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                             {selectedWorkflowRun.stepResults.map((step) => (
                               <Card key={step.stepKey ?? step.nodeId} size="small">
@@ -2214,7 +2232,7 @@ export function CrawlFrontierConsole() {
                       </Col>
                       <Col xs={24} xl={14}>
                         <Space direction="vertical" size="large" style={{ width: "100%" }}>
-                          <Card size="small" title="Candidates">
+                          <Card size="small" title={t("crawlFrontier.console.runDrawer.workflow.candidates", { defaultValue: "Candidates" })}>
                             <Table
                               rowKey="id"
                               columns={workflowCandidateColumns}
@@ -2223,7 +2241,7 @@ export function CrawlFrontierConsole() {
                               size="small"
                             />
                           </Card>
-                          <Card size="small" title="System Events">
+                          <Card size="small" title={t("crawlFrontier.console.runDrawer.workflow.systemEventsTitle", { defaultValue: "System Events" })}>
                             <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                               {selectedWorkflowRun.systemEvents.length === 0 ? (
                                 <Typography.Text type="secondary">
@@ -2278,16 +2296,16 @@ export function CrawlFrontierConsole() {
               },
               {
                 key: "nodes",
-                label: "Nodes",
+                label: t("crawlFrontier.console.runDrawer.tabs.nodes", { defaultValue: "Nodes" }),
                 children: (
                   <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                     <Card size="small">
                       <Space wrap style={{ display: "flex", alignItems: "flex-end" }}>
-                        <Input allowClear value={nodeQuery} onChange={(event) => setNodeQuery(event.target.value)} placeholder="Search URL or path" style={{ width: 260 }} />
-                        <Select value={nodeStatusFilter} onChange={setNodeStatusFilter} style={{ width: 160 }} options={[{ label: "All statuses", value: "all" }, ...(["pending", "queued", "running", "completed", "failed", "skipped", "canceled"] as const).map((value) => ({ label: value, value }))]} />
-                        <Select value={nodePageTypeFilter} onChange={setNodePageTypeFilter} style={{ width: 160 }} options={[{ label: "All page types", value: "all" }, ...uniqueStringList((selectedRun.nodes ?? []).map((node) => node.pageType)).map((value) => ({ label: value, value }))]} />
-                        <Tooltip title="Only show nodes with warnings, rejections, or failures."><Space><Switch checked={nodeProblemsOnly} onChange={setNodeProblemsOnly} /><Typography.Text>Problems only</Typography.Text></Space></Tooltip>
-                        {selectedNodeIds.length > 0 ? <Button onClick={() => void bulkRetryNodes()}>Retry selected</Button> : null}
+                        <Input allowClear value={nodeQuery} onChange={(event) => setNodeQuery(event.target.value)} placeholder={t("crawlFrontier.console.placeholders.searchNode", { defaultValue: "Search URL or path" })} style={{ width: 260 }} />
+                        <Select value={nodeStatusFilter} onChange={setNodeStatusFilter} style={{ width: 160 }} options={[{ label: t("crawlFrontier.console.runDrawer.nodes.allStatuses", { defaultValue: "All statuses" }), value: "all" }, ...(["pending", "queued", "running", "completed", "failed", "skipped", "canceled"] as const).map((value) => ({ label: value, value }))]} />
+                        <Select value={nodePageTypeFilter} onChange={setNodePageTypeFilter} style={{ width: 160 }} options={[{ label: t("crawlFrontier.console.runDrawer.nodes.allPageTypes", { defaultValue: "All page types" }), value: "all" }, ...uniqueStringList((selectedRun.nodes ?? []).map((node) => node.pageType)).map((value) => ({ label: value, value }))]} />
+                        <Tooltip title={t("crawlFrontier.console.runDrawer.nodes.problemsOnlyHint", { defaultValue: "Only show nodes with warnings, rejections, or failures." })}><Space><Switch checked={nodeProblemsOnly} onChange={setNodeProblemsOnly} /><Typography.Text>{t("crawlFrontier.console.runDrawer.nodes.problemsOnly", { defaultValue: "Problems only" })}</Typography.Text></Space></Tooltip>
+                        {selectedNodeIds.length > 0 ? <Button onClick={() => void bulkRetryNodes()}>{t("crawlFrontier.console.runDrawer.nodes.retrySelected", { defaultValue: "Retry selected" })}</Button> : null}
                       </Space>
                     </Card>
                     <Table<NodeTreeRow> rowKey="id" columns={nodeColumns} dataSource={selectedNodesTree} pagination={{ pageSize: 20 }} rowSelection={canManage ? { selectedRowKeys: selectedNodeIds, onChange: (keys) => setSelectedNodeIds(keys.map((key) => String(key))), getCheckboxProps: (record) => ({ disabled: record.status !== "failed" && record.status !== "skipped" }) } : undefined} />
@@ -2296,10 +2314,10 @@ export function CrawlFrontierConsole() {
               },
               {
                 key: "llm",
-                label: "LLM & Shadow",
+                label: t("crawlFrontier.console.runDrawer.tabs.llmShadow", { defaultValue: "LLM & Shadow" }),
                 children: (
                   <Space direction="vertical" size="large" style={{ width: "100%" }}>
-                    <Card size="small" title="LLM lifecycle">
+                    <Card size="small" title={t("crawlFrontier.console.runDrawer.llm.lifecycle", { defaultValue: "LLM lifecycle" })}>
                       <Descriptions size="small" column={2} bordered>
                         <Descriptions.Item label="Run role">{selectedRunDiagnostics?.runRole ?? "-"}</Descriptions.Item>
                         <Descriptions.Item label="Pending judge jobs">{selectedRunSummary?.pendingLlmJudgeJobs ?? 0}</Descriptions.Item>
@@ -2314,7 +2332,7 @@ export function CrawlFrontierConsole() {
                         </Space>
                       ) : null}
                     </Card>
-                    <Card size="small" title="Shadow profile">
+                    <Card size="small" title={t("crawlFrontier.console.runDrawer.llm.shadowProfile", { defaultValue: "Shadow profile" })}>
                       <Descriptions size="small" column={2} bordered>
                         <Descriptions.Item label="Shadow profile">{asString(asRecord(selectedRunSummary?.shadowSummary)?.profileId) ?? "-"}</Descriptions.Item>
                         <Descriptions.Item label="Published profile">{asString(asRecord(selectedRunSummary?.shadowSummary)?.publishedProfileId) ?? "-"}</Descriptions.Item>
@@ -2326,10 +2344,10 @@ export function CrawlFrontierConsole() {
               },
               {
                 key: "diagnostics",
-                label: "Seed & Diagnostics",
+                label: t("crawlFrontier.console.runDrawer.tabs.seedDiagnostics", { defaultValue: "Seed & Diagnostics" }),
                 children: (
                   <Space direction="vertical" size="large" style={{ width: "100%" }}>
-                    <Card size="small" title="Seed summary">
+                    <Card size="small" title={t("crawlFrontier.console.runDrawer.diagnostics.seedSummary", { defaultValue: "Seed summary" })}>
                       <Descriptions size="small" column={2} bordered>
                         <Descriptions.Item label="Strategy">{asString(asRecord(selectedRunSummary?.seedSummary)?.strategy) ?? "-"}</Descriptions.Item>
                         <Descriptions.Item label="Method">{asString(asRecord(selectedRunSummary?.seedSummary)?.method) ?? "-"}</Descriptions.Item>
@@ -2339,7 +2357,7 @@ export function CrawlFrontierConsole() {
                         <Descriptions.Item label="Seed quality">{stringifyJson(asRecord(asRecord(selectedRunSummary?.seedSummary)?.quality))}</Descriptions.Item>
                       </Descriptions>
                     </Card>
-                    <Card size="small" title="Diagnostics payloads">
+                    <Card size="small" title={t("crawlFrontier.console.runDrawer.diagnostics.payloads", { defaultValue: "Diagnostics payloads" })}>
                       <Collapse items={[
                         { key: "seedDiagnostics", label: "Seed diagnostics", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(asRecord(asRecord(selectedRunSummary?.seedSummary)?.diagnostics))}</Typography.Paragraph> },
                         { key: "runMetadata", label: "Run metadata", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedRun.metadata)}</Typography.Paragraph> },
@@ -2350,31 +2368,31 @@ export function CrawlFrontierConsole() {
               },
               {
                 key: "repair",
-                label: "Repair & Extraction",
+                label: t("crawlFrontier.console.runDrawer.tabs.repairExtraction", { defaultValue: "Repair & Extraction" }),
                 children: (
                   <Space direction="vertical" size="large" style={{ width: "100%" }}>
-                    <Card size="small" title="Article repair">
+                    <Card size="small" title={t("crawlFrontier.console.runDrawer.repair.articleRepair", { defaultValue: "Article repair" })}>
                       <Row gutter={[16, 16]}>
-                        <Col xs={24} md={6}><Statistic title="Article-linked nodes" value={asNumber(asRecord(selectedRunSummary?.repairSummary)?.available) ?? 0} /></Col>
-                        <Col xs={24} md={6}><Statistic title="Repair attempted" value={asNumber(asRecord(selectedRunSummary?.repairSummary)?.attempted) ?? 0} /></Col>
-                        <Col xs={24} md={6}><Statistic title="Repair applied" value={asNumber(asRecord(selectedRunSummary?.repairSummary)?.applied) ?? 0} /></Col>
-                        <Col xs={24} md={6}><Statistic title="Repair failed" value={asNumber(asRecord(selectedRunSummary?.repairSummary)?.failed) ?? 0} /></Col>
+                        <Col xs={24} md={6}><Statistic title={t("crawlFrontier.console.runDrawer.repair.articleLinkedNodes", { defaultValue: "Article-linked nodes" })} value={asNumber(asRecord(selectedRunSummary?.repairSummary)?.available) ?? 0} /></Col>
+                        <Col xs={24} md={6}><Statistic title={t("crawlFrontier.console.runDrawer.repair.repairAttempted", { defaultValue: "Repair attempted" })} value={asNumber(asRecord(selectedRunSummary?.repairSummary)?.attempted) ?? 0} /></Col>
+                        <Col xs={24} md={6}><Statistic title={t("crawlFrontier.console.runDrawer.repair.repairApplied", { defaultValue: "Repair applied" })} value={asNumber(asRecord(selectedRunSummary?.repairSummary)?.applied) ?? 0} /></Col>
+                        <Col xs={24} md={6}><Statistic title={t("crawlFrontier.console.runDrawer.repair.repairFailed", { defaultValue: "Repair failed" })} value={asNumber(asRecord(selectedRunSummary?.repairSummary)?.failed) ?? 0} /></Col>
                       </Row>
                       <Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>Use node inspection to see which fields were repaired, what extraction artifacts were available, and why repair was skipped or failed.</Typography.Paragraph>
                     </Card>
                     <Row gutter={[16, 16]}>
                       <Col xs={24} lg={8}>
-                        <Card size="small" title="Repaired fields">
+                        <Card size="small" title={t("crawlFrontier.console.runDrawer.repair.repairedFields", { defaultValue: "Repaired fields" })}>
                           <Space wrap>{Object.entries(asRecord(asRecord(selectedRunSummary?.repairSummary)?.repairedFields) ?? {}).map(([field, count]) => <Tag key={`repair-field-${field}`} color="green">{`${field}:${asNumber(count) ?? 0}`}</Tag>)}{Object.keys(asRecord(asRecord(selectedRunSummary?.repairSummary)?.repairedFields) ?? {}).length === 0 ? <Typography.Text type="secondary">No repaired fields recorded.</Typography.Text> : null}</Space>
                         </Card>
                       </Col>
                       <Col xs={24} lg={8}>
-                        <Card size="small" title="Missing fields">
+                        <Card size="small" title={t("crawlFrontier.console.runDrawer.repair.missingFields", { defaultValue: "Missing fields" })}>
                           <Space wrap>{Object.entries(asRecord(asRecord(selectedRunSummary?.repairSummary)?.missingFields) ?? {}).map(([field, count]) => <Tag key={`missing-field-${field}`} color="orange">{`${field}:${asNumber(count) ?? 0}`}</Tag>)}{Object.keys(asRecord(asRecord(selectedRunSummary?.repairSummary)?.missingFields) ?? {}).length === 0 ? <Typography.Text type="secondary">No missing field diagnostics recorded.</Typography.Text> : null}</Space>
                         </Card>
                       </Col>
                       <Col xs={24} lg={8}>
-                        <Card size="small" title="Repair errors & models">
+                        <Card size="small" title={t("crawlFrontier.console.runDrawer.repair.repairErrorsModels", { defaultValue: "Repair errors & models" })}>
                           <Space wrap>{Object.entries(asRecord(asRecord(selectedRunSummary?.repairSummary)?.errors) ?? {}).map(([field, count]) => <Tag key={`repair-error-${field}`} color="red">{`${field}:${asNumber(count) ?? 0}`}</Tag>)}{Object.entries(asRecord(asRecord(selectedRunSummary?.repairSummary)?.models) ?? {}).map(([field, count]) => <Tag key={`repair-model-${field}`} color="blue">{`${field}:${asNumber(count) ?? 0}`}</Tag>)}{Object.keys(asRecord(asRecord(selectedRunSummary?.repairSummary)?.errors) ?? {}).length === 0 && Object.keys(asRecord(asRecord(selectedRunSummary?.repairSummary)?.models) ?? {}).length === 0 ? <Typography.Text type="secondary">No model/error diagnostics recorded.</Typography.Text> : null}</Space>
                         </Card>
                       </Col>
@@ -2388,7 +2406,7 @@ export function CrawlFrontierConsole() {
       </Drawer>
 
       <Drawer
-        title="Workflow Candidate Explanation"
+        title={t("crawlFrontier.console.workflowCandidate.title", { defaultValue: "Workflow Candidate Explanation" })}
         open={Boolean(selectedWorkflowCandidate)}
         onClose={() => setSelectedWorkflowCandidate(null)}
         width={760}
@@ -2425,7 +2443,7 @@ export function CrawlFrontierConsole() {
                 </Space>
               </Space>
             </Card>
-            <Card size="small" title="Summary">
+            <Card size="small" title={t("crawlFrontier.console.workflowCandidate.summary", { defaultValue: "Summary" })}>
               {(() => {
                 const traceSummary = buildWorkflowCandidateTraceSummary(
                   selectedWorkflowCandidate,
@@ -2481,7 +2499,7 @@ export function CrawlFrontierConsole() {
                 );
               })()}
             </Card>
-            <Card size="small" title="Trace">
+            <Card size="small" title={t("crawlFrontier.console.workflowCandidate.trace", { defaultValue: "Trace" })}>
               <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                 {buildWorkflowCandidateTraceChain(selectedWorkflowCandidate).map((step) => {
                   const entry = step.entry;
@@ -2555,11 +2573,11 @@ export function CrawlFrontierConsole() {
                         items={[
                           {
                             key: `${step.key}-snapshots`,
-                            label: "Raw snapshots",
+                            label: t("crawlFrontier.console.workflowCandidate.rawSnapshots", { defaultValue: "Raw snapshots" }),
                             children: (
                               <Row gutter={[12, 12]}>
                                 <Col xs={24} md={12}>
-                                  <Card size="small" title="Before">
+                                  <Card size="small" title={t("crawlFrontier.console.workflowCandidate.before", { defaultValue: "Before" })}>
                                     <Typography.Paragraph
                                       style={{
                                         marginBottom: 0,
@@ -2572,7 +2590,7 @@ export function CrawlFrontierConsole() {
                                   </Card>
                                 </Col>
                                 <Col xs={24} md={12}>
-                                  <Card size="small" title="After">
+                                  <Card size="small" title={t("crawlFrontier.console.workflowCandidate.after", { defaultValue: "After" })}>
                                     <Typography.Paragraph
                                       style={{
                                         marginBottom: 0,
@@ -2609,7 +2627,7 @@ export function CrawlFrontierConsole() {
         ) : null}
       </Drawer>
 
-      <Drawer title="Node Diagnostics" open={nodeDrawerOpen} onClose={() => { setNodeDrawerOpen(false); setSelectedNode(null); }} width={980}>
+      <Drawer title={t("crawlFrontier.console.nodeDrawer.title", { defaultValue: "Node Diagnostics" })} open={nodeDrawerOpen} onClose={() => { setNodeDrawerOpen(false); setSelectedNode(null); }} width={980}>
         {loadingNodeDetail ? (
           <div style={{ display: "flex", justifyContent: "center", padding: "4rem 0" }}><Spin /></div>
         ) : selectedNode ? (
@@ -2627,7 +2645,7 @@ export function CrawlFrontierConsole() {
                 <Typography.Text type="secondary">discovery: {formatPath(selectedNode.metadata?.discoveryPath)} · frontier: {formatPath(selectedNode.metadata?.frontierPath)}</Typography.Text>
               </Space>
             </Card>
-            <Card size="small" title="Node basics">
+            <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.basics", { defaultValue: "Node basics" })}>
               <Descriptions size="small" column={2} bordered>
                 <Descriptions.Item label="Canonical URL">{selectedNode.canonicalUrl ?? "-"}</Descriptions.Item>
                 <Descriptions.Item label="Depth">{selectedNode.depth}</Descriptions.Item>
@@ -2639,7 +2657,7 @@ export function CrawlFrontierConsole() {
                 <Descriptions.Item label="Seed origin">{asString(asRecord(selectedNode.metadata)?.seedOrigin) ?? "-"}</Descriptions.Item>
               </Descriptions>
             </Card>
-            <Card size="small" title="Node judgment">
+            <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.judgment", { defaultValue: "Node judgment" })}>
               <Descriptions size="small" column={2} bordered>
                 <Descriptions.Item label="Score">{formatNumber(selectedNode.score)}</Descriptions.Item>
                 <Descriptions.Item label="Freshness">{formatNumber(selectedNode.freshnessScore)}</Descriptions.Item>
@@ -2652,7 +2670,7 @@ export function CrawlFrontierConsole() {
                 <Descriptions.Item label="Last error">{selectedNode.lastError ?? "-"}</Descriptions.Item>
               </Descriptions>
             </Card>
-            <Card size="small" title="Run linkage">
+            <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.runLinkage", { defaultValue: "Run linkage" })}>
               <Descriptions size="small" column={2} bordered>
                 <Descriptions.Item label="Run">{selectedNode.run.id}</Descriptions.Item>
                 <Descriptions.Item label="Seed URL">{selectedNode.run.seedUrl}</Descriptions.Item>
@@ -2662,16 +2680,16 @@ export function CrawlFrontierConsole() {
                 <Descriptions.Item label="Profile host">{selectedNode.run.profile?.matchHost ?? "-"}</Descriptions.Item>
               </Descriptions>
             </Card>
-            <Card size="small" title="Crawl result">
-              {selectedNode.crawlResult ? <Descriptions size="small" column={2} bordered><Descriptions.Item label="Crawl result ID">{selectedNode.crawlResult.id}</Descriptions.Item><Descriptions.Item label="Fetched at">{formatDateTime(selectedNode.crawlResult.fetchedAt)}</Descriptions.Item><Descriptions.Item label="Source URL">{selectedNode.crawlResult.sourceUrl}</Descriptions.Item><Descriptions.Item label="Markdown ref">{selectedNode.crawlResult.markdownRef}</Descriptions.Item></Descriptions> : <Empty description="No crawl result linked to this node yet." />}
+            <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.crawlResult", { defaultValue: "Crawl result" })}>
+              {selectedNode.crawlResult ? <Descriptions size="small" column={2} bordered><Descriptions.Item label="Crawl result ID">{selectedNode.crawlResult.id}</Descriptions.Item><Descriptions.Item label="Fetched at">{formatDateTime(selectedNode.crawlResult.fetchedAt)}</Descriptions.Item><Descriptions.Item label="Source URL">{selectedNode.crawlResult.sourceUrl}</Descriptions.Item><Descriptions.Item label="Markdown ref">{selectedNode.crawlResult.markdownRef}</Descriptions.Item></Descriptions> : <Empty description={t("crawlFrontier.console.nodeDrawer.empty.noCrawlResult", { defaultValue: "No crawl result linked to this node yet." })} />}
             </Card>
-            <Card size="small" title="Article & extraction">
+            <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.articleExtraction", { defaultValue: "Article & extraction" })}>
               {selectedNode.article || selectedNode.processedArticle ? (
                 <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                   {selectedNode.article ? <Descriptions size="small" column={2} bordered><Descriptions.Item label="Article URL">{selectedNode.article.url}</Descriptions.Item><Descriptions.Item label="Crawl at">{formatDateTime(selectedNode.article.crawlAt)}</Descriptions.Item><Descriptions.Item label="Title guess">{selectedNode.article.titleGuess ?? "-"}</Descriptions.Item><Descriptions.Item label="Source label">{selectedNode.article.sourceLabel ?? "-"}</Descriptions.Item><Descriptions.Item label="Language">{selectedNode.article.language ?? "-"}</Descriptions.Item><Descriptions.Item label="Repair applied">{asRecord(selectedNode.article.llmRepair)?.applied === true ? "yes" : "no"}</Descriptions.Item></Descriptions> : null}
                   {selectedNode.processedArticle ? <Descriptions size="small" column={2} bordered><Descriptions.Item label="Processed title">{selectedNode.processedArticle.title ?? "-"}</Descriptions.Item><Descriptions.Item label="Published at">{formatDateTime(selectedNode.processedArticle.publishedAt)}</Descriptions.Item><Descriptions.Item label="Author">{selectedNode.processedArticle.author ?? "-"}</Descriptions.Item><Descriptions.Item label="Category">{selectedNode.processedArticle.category ?? "-"}</Descriptions.Item><Descriptions.Item label="Quality score">{formatNumber(selectedNode.processedArticle.qualityScore)}</Descriptions.Item><Descriptions.Item label="LLM model">{selectedNode.processedArticle.llmModel ?? "-"}</Descriptions.Item></Descriptions> : null}
                   {selectedNode.extractionSummary ? (
-                    <Card size="small" type="inner" title="Extraction summary">
+                    <Card size="small" type="inner" title={t("crawlFrontier.console.nodeDrawer.cards.extractionSummary", { defaultValue: "Extraction summary" })}>
                       <Descriptions size="small" column={2} bordered>
                         <Descriptions.Item label="Processed status">{selectedNode.extractionSummary.processedStatus ?? "-"}</Descriptions.Item>
                         <Descriptions.Item label="Quality score">{formatNumber(selectedNode.extractionSummary.qualityScore)}</Descriptions.Item>
@@ -2682,7 +2700,7 @@ export function CrawlFrontierConsole() {
                     </Card>
                   ) : null}
                   {selectedNode.repairSummary ? (
-                    <Card size="small" type="inner" title="Repair summary">
+                    <Card size="small" type="inner" title={t("crawlFrontier.console.nodeDrawer.cards.repairSummary", { defaultValue: "Repair summary" })}>
                       <Descriptions size="small" column={2} bordered>
                         <Descriptions.Item label="Attempted">{selectedNode.repairSummary.attempted ? "yes" : "no"}</Descriptions.Item>
                         <Descriptions.Item label="Applied">{selectedNode.repairSummary.applied ? "yes" : "no"}</Descriptions.Item>
@@ -2696,13 +2714,13 @@ export function CrawlFrontierConsole() {
                   ) : null}
                   {selectedNode.article?.llmRepair ? <Collapse items={[{ key: "repair", label: "Repair diagnostics JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedNode.article.llmRepair)}</Typography.Paragraph> }]} /> : null}
                 </Space>
-              ) : <Empty description="No article or processed article linked to this node." />}
+              ) : <Empty description={t("crawlFrontier.console.nodeDrawer.empty.noArticle", { defaultValue: "No article or processed article linked to this node." })} />}
             </Card>
             {canViewLogLinks &&
             (selectedNode.llmLogFilters?.judge ||
               selectedNode.llmLogFilters?.learn ||
               selectedNode.llmLogFilters?.repair) ? (
-              <Card size="small" title="Related LLM logs">
+              <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.relatedLlmLogs", { defaultValue: "Related LLM logs" })}>
                 <Space wrap>
                   {selectedNode.llmLogFilters?.judge ? <Button href={buildLlmLogsHref(selectedNode.llmLogFilters.judge)}>Judge logs</Button> : null}
                   {selectedNode.llmLogFilters?.learn ? <Button href={buildLlmLogsHref(selectedNode.llmLogFilters.learn)}>Learn logs</Button> : null}
@@ -2710,7 +2728,7 @@ export function CrawlFrontierConsole() {
                 </Space>
               </Card>
             ) : null}
-            <Card size="small" title="Metadata">
+            <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.metadata", { defaultValue: "Metadata" })}>
               <Collapse items={[
                 { key: "nodeMetadata", label: "Node metadata JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedNode.metadata)}</Typography.Paragraph> },
                 { key: "articleMetadata", label: "Article metadata JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedNode.article?.metadata)}</Typography.Paragraph> },

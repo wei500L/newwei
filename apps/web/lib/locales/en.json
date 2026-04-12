@@ -8771,7 +8771,8 @@
     },
     "policy": {
       "unsupportedProxy": "Custom upstream proxies are no longer supported.",
-      "frontierSinglePrimaryUrl": "Frontier node crawl must keep a single primary URL."
+      "frontierSinglePrimaryUrl": "Frontier node crawl must keep a single primary URL.",
+      "actionBlockedByUnsupportedProxy": "Remove the unsupported legacy proxy configuration before continuing."
     },
     "title": "Crawl Tasks",
     "filter": {
@@ -10246,6 +10247,199 @@
         },
         "actions": {
           "explain": "Explain"
+        }
+      }
+    },
+    "console": {
+      "tabs": {
+        "profiles": "Profiles",
+        "workflow": "Workflow",
+        "runs": "Runs"
+      },
+      "stats": {
+        "profiles": "Profiles",
+        "active": "Active",
+        "shadow": "Shadow"
+      },
+      "runStats": {
+        "totalRuns": "Total runs",
+        "failed": "Failed",
+        "challenge": "Challenge",
+        "pendingLlm": "Pending LLM",
+        "seedFirst": "Seed-first"
+      },
+      "filters": {
+        "profile": "Profile",
+        "status": "Status",
+        "mode": "Mode",
+        "runRole": "Run role",
+        "failureKind": "Failure kind",
+        "warningFlag": "Warning flag",
+        "seedStrategy": "Seed strategy"
+      },
+      "actions": {
+        "newProfile": "New Profile",
+        "refresh": "Refresh",
+        "reset": "Reset",
+        "newRun": "New Run",
+        "cancelSelected": "Cancel Selected",
+        "close": "Close",
+        "save": "Save",
+        "previewMatch": "Preview match"
+      },
+      "placeholders": {
+        "searchRun": "Search seed URL or native run ID",
+        "searchNode": "Search URL or path",
+        "matchHost": "*.example.com",
+        "optionalWorkflow": "Optional workflow",
+        "workflowVersionId": "workflow-version-id",
+        "previewUrl": "https://news.example.com/world/latest",
+        "locale": "en-GB"
+      },
+      "profileEditor": {
+        "createTitle": "Create Site Profile",
+        "editTitle": "Edit Site Profile",
+        "rawMode": {
+          "enabled": "Raw JSON mode bypasses the structured form.",
+          "disabled": "Structured controls are the default. Raw JSON remains available for advanced overrides."
+        },
+        "tabs": {
+          "basic": "Basic",
+          "strategy": "Strategy",
+          "llmLocaleDom": "LLM / Locale / DOM",
+          "patternsJson": "Patterns / JSON"
+        },
+        "cards": {
+          "identity": "Identity",
+          "status": "Status",
+          "matchPreview": "Match preview",
+          "seedDiscovery": "Seed discovery",
+          "llmAssist": "LLM assist",
+          "localeHostScope": "Locale & host scope",
+          "domScopesKeywords": "DOM scopes & keywords",
+          "urlPatterns": "URL patterns",
+          "pageTypeSignalsFreshness": "Page type signals & freshness",
+          "freshnessRules": "Freshness rules",
+          "advancedJson": "Advanced JSON"
+        },
+        "fields": {
+          "profileName": "Profile name",
+          "matchHost": "Match host",
+          "description": "Description",
+          "executionMode": "Execution mode",
+          "workflowBinding": "Workflow binding",
+          "workflowVersionMode": "Workflow version mode",
+          "pinnedWorkflowVersion": "Pinned workflow version",
+          "sourceTier": "Source tier",
+          "previewUrl": "Preview URL",
+          "preferredLocale": "Preferred locale"
+        },
+        "matchPreview": {
+          "draftMatches": "Draft profile matches this URL",
+          "draftMismatch": "Draft profile does not match this URL",
+          "activeMatch": "Active profile match: {{name}}",
+          "noActiveMatch": "No active saved profile currently matches this URL",
+          "draftOnly": "This preview is based on the draft form values only."
+        }
+      },
+      "modals": {
+        "profileVersions": "Profile Versions",
+        "createRun": "Create Crawl Frontier Run"
+      },
+      "runForm": {
+        "seedUrl": "Seed URL",
+        "profileHelp": "Leave empty to auto-match by host.",
+        "executionModeOverride": "Execution Mode Override",
+        "maxDepth": "Max Depth",
+        "maxPages": "Max Pages",
+        "keywords": "Keywords",
+        "keywordsHelp": "Comma or newline separated."
+      },
+      "runDrawer": {
+        "title": "Crawl Frontier Run Detail",
+        "tabs": {
+          "overview": "Overview",
+          "strategyTrace": "Strategy Trace",
+          "workflowTrace": "Workflow Trace",
+          "nodes": "Nodes",
+          "llmShadow": "LLM & Shadow",
+          "seedDiagnostics": "Seed & Diagnostics",
+          "repairExtraction": "Repair & Extraction"
+        },
+        "overview": {
+          "pages": "Pages",
+          "nodes": "Nodes",
+          "articles": "Articles",
+          "pendingLlmJobs": "Pending LLM jobs",
+          "coverageDiagnostics": "Coverage & diagnostics",
+          "rootDiagnosis": "Root diagnosis"
+        },
+        "workflow": {
+          "noTrace": "This run does not have a linked workflow trace record.",
+          "runCard": "Workflow Run",
+          "openInStudio": "Open in Studio",
+          "replayLegacyHint": "Legacy bridge runs are observable but cannot be replayed until the profile or news source is bound to a published workflow version.",
+          "replay": "Replay",
+          "legacyBridgeNotice": "This production run is backed by a legacy bridge snapshot. It is fully explorable, but replay is disabled until the source is bound to a published workflow version.",
+          "workflowSteps": "Workflow steps",
+          "candidates": "Candidates",
+          "selected": "Selected",
+          "systemEvents": "System events",
+          "systemEventsTitle": "System Events",
+          "stepTimeline": "Step Timeline"
+        },
+        "nodes": {
+          "allStatuses": "All statuses",
+          "allPageTypes": "All page types",
+          "problemsOnlyHint": "Only show nodes with warnings, rejections, or failures.",
+          "problemsOnly": "Problems only",
+          "retrySelected": "Retry selected",
+          "retryConfirmTitle": "Retry selected nodes?",
+          "retryConfirmContent": "This re-queues the selected failed or skipped nodes for another crawl attempt."
+        },
+        "llm": {
+          "lifecycle": "LLM lifecycle",
+          "shadowProfile": "Shadow profile"
+        },
+        "diagnostics": {
+          "seedSummary": "Seed summary",
+          "payloads": "Diagnostics payloads"
+        },
+        "repair": {
+          "articleRepair": "Article repair",
+          "articleLinkedNodes": "Article-linked nodes",
+          "repairAttempted": "Repair attempted",
+          "repairApplied": "Repair applied",
+          "repairFailed": "Repair failed",
+          "repairedFields": "Repaired fields",
+          "missingFields": "Missing fields",
+          "repairErrorsModels": "Repair errors & models"
+        }
+      },
+      "workflowCandidate": {
+        "title": "Workflow Candidate Explanation",
+        "summary": "Summary",
+        "trace": "Trace",
+        "rawSnapshots": "Raw snapshots",
+        "before": "Before",
+        "after": "After"
+      },
+      "nodeDrawer": {
+        "title": "Node Diagnostics",
+        "cards": {
+          "basics": "Node basics",
+          "judgment": "Node judgment",
+          "runLinkage": "Run linkage",
+          "crawlResult": "Crawl result",
+          "articleExtraction": "Article & extraction",
+          "extractionSummary": "Extraction summary",
+          "repairSummary": "Repair summary",
+          "relatedLlmLogs": "Related LLM logs",
+          "metadata": "Metadata"
+        },
+        "empty": {
+          "noCrawlResult": "No crawl result linked to this node yet.",
+          "noArticle": "No article or processed article linked to this node."
         }
       }
     },

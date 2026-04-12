@@ -382,6 +382,16 @@ function WorkflowStudioInner({
     [definition],
   );
   const hasWorkflowPolicyIssues = workflowPolicyIssues.length > 0;
+  const workflowPolicyBlockedHint = useMemo(
+    () =>
+      hasWorkflowPolicyIssues
+        ? t("crawl.policy.actionBlockedByUnsupportedProxy", {
+            defaultValue:
+              "Remove the unsupported legacy proxy configuration before continuing.",
+          })
+        : undefined,
+    [hasWorkflowPolicyIssues, t],
+  );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -938,29 +948,37 @@ function WorkflowStudioInner({
                 defaultValue: "Save Draft",
               })}
             </Button>
-            <Button
-              type="primary"
-              onClick={() => void publishWorkflow()}
-              loading={publishing}
-              disabled={
-                !canManage || !selectedWorkflow || hasWorkflowPolicyIssues
-              }
-            >
-              {t("crawlFrontier.workflowStudio.actions.publish", {
-                defaultValue: "Publish",
-              })}
-            </Button>
-            <Button
-              type="primary"
-              ghost
-              onClick={() => void runTrial()}
-              loading={trialLoading}
-              disabled={!selectedWorkflow || hasWorkflowPolicyIssues}
-            >
-              {t("crawlFrontier.workflowStudio.actions.trialRun", {
-                defaultValue: "Trial Run",
-              })}
-            </Button>
+            <Tooltip title={workflowPolicyBlockedHint}>
+              <span>
+                <Button
+                  type="primary"
+                  onClick={() => void publishWorkflow()}
+                  loading={publishing}
+                  disabled={
+                    !canManage || !selectedWorkflow || hasWorkflowPolicyIssues
+                  }
+                >
+                  {t("crawlFrontier.workflowStudio.actions.publish", {
+                    defaultValue: "Publish",
+                  })}
+                </Button>
+              </span>
+            </Tooltip>
+            <Tooltip title={workflowPolicyBlockedHint}>
+              <span>
+                <Button
+                  type="primary"
+                  ghost
+                  onClick={() => void runTrial()}
+                  loading={trialLoading}
+                  disabled={!selectedWorkflow || hasWorkflowPolicyIssues}
+                >
+                  {t("crawlFrontier.workflowStudio.actions.trialRun", {
+                    defaultValue: "Trial Run",
+                  })}
+                </Button>
+              </span>
+            </Tooltip>
             {trialResult ? (
               <Button
                 onClick={() => void replayWorkflowRun(trialResult.runId)}
@@ -1152,64 +1170,72 @@ function WorkflowStudioInner({
                           defaultValue: "Compare Versions",
                         })}
                       </Button>
-                      <Button
-                        onClick={() =>
-                          void runTrial(
-                            compareLeftVersionId,
-                            compareLeftVersion
-                              ? t(
-                                  "crawlFrontier.workflowStudio.messages.trialStartedFromVersion",
-                                  {
-                                    defaultValue:
-                                      "Trial run started from v{{version}}",
-                                    version: compareLeftVersion.version,
-                                  },
-                                )
-                              : t(
-                                  "crawlFrontier.workflowStudio.messages.trialCompleted",
-                                  {
-                                    defaultValue:
-                                      "Workflow trial run completed",
-                                  },
-                                ),
-                          )
-                        }
-                        disabled={!compareLeftVersionId || hasWorkflowPolicyIssues}
-                      >
-                        {t("crawlFrontier.workflowStudio.actions.runLeft", {
-                          defaultValue: "Run Left",
-                        })}
-                      </Button>
-                      <Button
-                        onClick={() =>
-                          void runTrial(
-                            compareRightVersionId,
-                            compareRightVersion
-                              ? t(
-                                  "crawlFrontier.workflowStudio.messages.trialStartedFromVersion",
-                                  {
-                                    defaultValue:
-                                      "Trial run started from v{{version}}",
-                                    version: compareRightVersion.version,
-                                  },
-                                )
-                              : t(
-                                  "crawlFrontier.workflowStudio.messages.trialCompleted",
-                                  {
-                                    defaultValue:
-                                      "Workflow trial run completed",
-                                  },
-                                ),
-                          )
-                        }
-                        disabled={
-                          !compareRightVersionId || hasWorkflowPolicyIssues
-                        }
-                      >
-                        {t("crawlFrontier.workflowStudio.actions.runRight", {
-                          defaultValue: "Run Right",
-                        })}
-                      </Button>
+                      <Tooltip title={workflowPolicyBlockedHint}>
+                        <span>
+                          <Button
+                            onClick={() =>
+                              void runTrial(
+                                compareLeftVersionId,
+                                compareLeftVersion
+                                  ? t(
+                                      "crawlFrontier.workflowStudio.messages.trialStartedFromVersion",
+                                      {
+                                        defaultValue:
+                                          "Trial run started from v{{version}}",
+                                        version: compareLeftVersion.version,
+                                      },
+                                    )
+                                  : t(
+                                      "crawlFrontier.workflowStudio.messages.trialCompleted",
+                                      {
+                                        defaultValue:
+                                          "Workflow trial run completed",
+                                      },
+                                    ),
+                              )
+                            }
+                            disabled={!compareLeftVersionId || hasWorkflowPolicyIssues}
+                          >
+                            {t("crawlFrontier.workflowStudio.actions.runLeft", {
+                              defaultValue: "Run Left",
+                            })}
+                          </Button>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title={workflowPolicyBlockedHint}>
+                        <span>
+                          <Button
+                            onClick={() =>
+                              void runTrial(
+                                compareRightVersionId,
+                                compareRightVersion
+                                  ? t(
+                                      "crawlFrontier.workflowStudio.messages.trialStartedFromVersion",
+                                      {
+                                        defaultValue:
+                                          "Trial run started from v{{version}}",
+                                        version: compareRightVersion.version,
+                                      },
+                                    )
+                                  : t(
+                                      "crawlFrontier.workflowStudio.messages.trialCompleted",
+                                      {
+                                        defaultValue:
+                                          "Workflow trial run completed",
+                                      },
+                                    ),
+                              )
+                            }
+                            disabled={
+                              !compareRightVersionId || hasWorkflowPolicyIssues
+                            }
+                          >
+                            {t("crawlFrontier.workflowStudio.actions.runRight", {
+                              defaultValue: "Run Right",
+                            })}
+                          </Button>
+                        </span>
+                      </Tooltip>
                     </Space>
                     {compareSummary ? (
                       <Space

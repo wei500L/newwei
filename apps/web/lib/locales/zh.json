@@ -8771,7 +8771,8 @@
     },
     "policy": {
       "unsupportedProxy": "自定义上游代理已不再受支持。",
-      "frontierSinglePrimaryUrl": "Frontier 节点抓取必须保持单一主 URL。"
+      "frontierSinglePrimaryUrl": "Frontier 节点抓取必须保持单一主 URL。",
+      "actionBlockedByUnsupportedProxy": "继续操作前，请先移除不受支持的历史代理配置。"
     },
     "title": "爬取任务",
     "filter": {
@@ -10246,6 +10247,199 @@
         },
         "actions": {
           "explain": "查看解释"
+        }
+      }
+    },
+    "console": {
+      "tabs": {
+        "profiles": "画像",
+        "workflow": "工作流",
+        "runs": "运行"
+      },
+      "stats": {
+        "profiles": "画像数",
+        "active": "启用",
+        "shadow": "影子"
+      },
+      "runStats": {
+        "totalRuns": "运行总数",
+        "failed": "失败",
+        "challenge": "挑战页",
+        "pendingLlm": "待处理 LLM",
+        "seedFirst": "Seed-first"
+      },
+      "filters": {
+        "profile": "画像",
+        "status": "状态",
+        "mode": "模式",
+        "runRole": "运行角色",
+        "failureKind": "失败类型",
+        "warningFlag": "告警标记",
+        "seedStrategy": "种子策略"
+      },
+      "actions": {
+        "newProfile": "新建画像",
+        "refresh": "刷新",
+        "reset": "重置",
+        "newRun": "新建运行",
+        "cancelSelected": "取消所选",
+        "close": "关闭",
+        "save": "保存",
+        "previewMatch": "预览匹配"
+      },
+      "placeholders": {
+        "searchRun": "搜索种子 URL 或原生运行 ID",
+        "searchNode": "搜索 URL 或路径",
+        "matchHost": "*.example.com",
+        "optionalWorkflow": "可选工作流",
+        "workflowVersionId": "workflow-version-id",
+        "previewUrl": "https://news.example.com/world/latest",
+        "locale": "en-GB"
+      },
+      "profileEditor": {
+        "createTitle": "创建站点画像",
+        "editTitle": "编辑站点画像",
+        "rawMode": {
+          "enabled": "Raw JSON 模式会绕过结构化表单。",
+          "disabled": "默认使用结构化控件，Raw JSON 仍可用于高级覆盖。"
+        },
+        "tabs": {
+          "basic": "基础信息",
+          "strategy": "策略",
+          "llmLocaleDom": "LLM / Locale / DOM",
+          "patternsJson": "模式 / JSON"
+        },
+        "cards": {
+          "identity": "身份信息",
+          "status": "状态",
+          "matchPreview": "匹配预览",
+          "seedDiscovery": "种子发现",
+          "llmAssist": "LLM 辅助",
+          "localeHostScope": "语言与主机范围",
+          "domScopesKeywords": "DOM 范围与关键词",
+          "urlPatterns": "URL 模式",
+          "pageTypeSignalsFreshness": "页面类型信号与新鲜度",
+          "freshnessRules": "新鲜度规则",
+          "advancedJson": "高级 JSON"
+        },
+        "fields": {
+          "profileName": "画像名称",
+          "matchHost": "匹配主机",
+          "description": "描述",
+          "executionMode": "执行模式",
+          "workflowBinding": "工作流绑定",
+          "workflowVersionMode": "工作流版本模式",
+          "pinnedWorkflowVersion": "固定工作流版本",
+          "sourceTier": "来源层级",
+          "previewUrl": "预览 URL",
+          "preferredLocale": "首选语言区域"
+        },
+        "matchPreview": {
+          "draftMatches": "草稿画像匹配该 URL",
+          "draftMismatch": "草稿画像不匹配该 URL",
+          "activeMatch": "当前生效画像匹配：{{name}}",
+          "noActiveMatch": "当前没有已保存且生效的画像匹配该 URL",
+          "draftOnly": "该预览仅基于当前草稿表单值。"
+        }
+      },
+      "modals": {
+        "profileVersions": "画像版本",
+        "createRun": "创建 Crawl Frontier 运行"
+      },
+      "runForm": {
+        "seedUrl": "种子 URL",
+        "profileHelp": "留空时按 host 自动匹配。",
+        "executionModeOverride": "执行模式覆盖",
+        "maxDepth": "最大深度",
+        "maxPages": "最大页数",
+        "keywords": "关键词",
+        "keywordsHelp": "支持逗号或换行分隔。"
+      },
+      "runDrawer": {
+        "title": "Crawl Frontier 运行详情",
+        "tabs": {
+          "overview": "概览",
+          "strategyTrace": "策略轨迹",
+          "workflowTrace": "工作流轨迹",
+          "nodes": "节点",
+          "llmShadow": "LLM 与影子运行",
+          "seedDiagnostics": "种子与诊断",
+          "repairExtraction": "修复与提取"
+        },
+        "overview": {
+          "pages": "页面数",
+          "nodes": "节点数",
+          "articles": "文章数",
+          "pendingLlmJobs": "待处理 LLM 任务",
+          "coverageDiagnostics": "覆盖与诊断",
+          "rootDiagnosis": "根因诊断"
+        },
+        "workflow": {
+          "noTrace": "该运行没有关联的工作流轨迹记录。",
+          "runCard": "工作流运行",
+          "openInStudio": "在工作台中打开",
+          "replayLegacyHint": "Legacy bridge 运行可观测，但在画像或新闻源绑定到已发布工作流版本之前不可重放。",
+          "replay": "重放",
+          "legacyBridgeNotice": "该生产运行基于 legacy bridge 快照。你仍可完整查看，但在来源绑定到已发布工作流版本之前不允许重放。",
+          "workflowSteps": "工作流步骤",
+          "candidates": "候选",
+          "selected": "已选中",
+          "systemEvents": "系统事件",
+          "systemEventsTitle": "系统事件",
+          "stepTimeline": "步骤时间线"
+        },
+        "nodes": {
+          "allStatuses": "全部状态",
+          "allPageTypes": "全部页面类型",
+          "problemsOnlyHint": "仅显示带告警、拒绝或失败的节点。",
+          "problemsOnly": "仅问题节点",
+          "retrySelected": "重试所选",
+          "retryConfirmTitle": "重试所选节点？",
+          "retryConfirmContent": "这会将所选失败或已跳过的节点重新入队，再发起一次抓取尝试。"
+        },
+        "llm": {
+          "lifecycle": "LLM 生命周期",
+          "shadowProfile": "影子画像"
+        },
+        "diagnostics": {
+          "seedSummary": "种子摘要",
+          "payloads": "诊断载荷"
+        },
+        "repair": {
+          "articleRepair": "文章修复",
+          "articleLinkedNodes": "关联文章的节点",
+          "repairAttempted": "已尝试修复",
+          "repairApplied": "已应用修复",
+          "repairFailed": "修复失败",
+          "repairedFields": "已修复字段",
+          "missingFields": "缺失字段",
+          "repairErrorsModels": "修复错误与模型"
+        }
+      },
+      "workflowCandidate": {
+        "title": "工作流候选解释",
+        "summary": "摘要",
+        "trace": "轨迹",
+        "rawSnapshots": "原始快照",
+        "before": "变更前",
+        "after": "变更后"
+      },
+      "nodeDrawer": {
+        "title": "节点诊断",
+        "cards": {
+          "basics": "节点基础信息",
+          "judgment": "节点判定",
+          "runLinkage": "运行关联",
+          "crawlResult": "抓取结果",
+          "articleExtraction": "文章与提取",
+          "extractionSummary": "提取摘要",
+          "repairSummary": "修复摘要",
+          "relatedLlmLogs": "相关 LLM 日志",
+          "metadata": "元数据"
+        },
+        "empty": {
+          "noCrawlResult": "该节点尚未关联抓取结果。",
+          "noArticle": "该节点尚未关联文章或处理后文章。"
         }
       }
     },

@@ -24,6 +24,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   List,
   Grid,
@@ -389,6 +390,13 @@ export function CrawlTasksView() {
 
   const [createTask, { loading: creating }] = useCreateCrawlTaskMutation();
   const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
+  const unsupportedProxyActionHint = t(
+    "crawl.policy.actionBlockedByUnsupportedProxy",
+    {
+      defaultValue:
+        "Remove the unsupported legacy proxy configuration before continuing.",
+    },
+  );
   const {
     data: crawlClientSettingsData,
     loading: crawlClientSettingsLoading,
@@ -1013,15 +1021,25 @@ export function CrawlTasksView() {
               {t("common.view")}
             </Button>
             {canManage ? (
-              <Button
-                size="small"
-                type="link"
-                onClick={() => handleRetry(record.id)}
-                loading={retrying}
-                disabled={hasUnsupportedLegacyProxy}
+              <Tooltip
+                title={
+                  hasUnsupportedLegacyProxy
+                    ? unsupportedProxyActionHint
+                    : undefined
+                }
               >
-                {t("common.retry")}
-              </Button>
+                <span>
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={() => handleRetry(record.id)}
+                    loading={retrying}
+                    disabled={hasUnsupportedLegacyProxy}
+                  >
+                    {t("common.retry")}
+                  </Button>
+                </span>
+              </Tooltip>
             ) : null}
           </Space>
         );
@@ -2513,18 +2531,29 @@ export function CrawlTasksView() {
                       {t("common.view")}
                     </Button>,
                     canManage ? (
-                      <Button
+                      <Tooltip
                         key="retry"
-                        size="small"
-                        type="link"
-                        onClick={() => handleRetry(record.id)}
-                        loading={retrying}
-                        disabled={
+                        title={
                           findTaskProxyIssuesFromConfig(record.config).length > 0
+                            ? unsupportedProxyActionHint
+                            : undefined
                         }
                       >
-                        {t("common.retry")}
-                      </Button>
+                        <span>
+                          <Button
+                            size="small"
+                            type="link"
+                            onClick={() => handleRetry(record.id)}
+                            loading={retrying}
+                            disabled={
+                              findTaskProxyIssuesFromConfig(record.config)
+                                .length > 0
+                            }
+                          >
+                            {t("common.retry")}
+                          </Button>
+                        </span>
+                      </Tooltip>
                     ) : null,
                   ].filter(Boolean)}
                 >

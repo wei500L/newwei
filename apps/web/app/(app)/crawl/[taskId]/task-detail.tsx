@@ -18,6 +18,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
   Grid,
 } from "antd";
@@ -960,6 +961,16 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     [config],
   );
   const hasUnsupportedLegacyProxy = proxyIssues.length > 0;
+  const unsupportedProxyActionHint = useMemo(
+    () =>
+      hasUnsupportedLegacyProxy
+        ? t("crawl.policy.actionBlockedByUnsupportedProxy", {
+            defaultValue:
+              "Remove the unsupported legacy proxy configuration before continuing.",
+          })
+        : undefined,
+    [hasUnsupportedLegacyProxy, t],
+  );
   const isHeadedTask = useMemo(() => config?.headless === false, [config]);
   const lastErrorHeadedIssue = useMemo(
     () => classifyHeadedIssue(task?.lastError ?? undefined),
@@ -2550,13 +2561,17 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           {t(`crawl.status.${task.status}`, { defaultValue: task.status })}
         </Tag>
         {canManage ? (
-          <Button
-            onClick={handleRetry}
-            loading={retrying}
-            disabled={hasUnsupportedLegacyProxy}
-          >
-            {t("crawl.detail.retry")}
-          </Button>
+          <Tooltip title={unsupportedProxyActionHint}>
+            <span>
+              <Button
+                onClick={handleRetry}
+                loading={retrying}
+                disabled={hasUnsupportedLegacyProxy}
+              >
+                {t("crawl.detail.retry")}
+              </Button>
+            </span>
+          </Tooltip>
         ) : null}
         {canCreateItem ? (
           <Button
