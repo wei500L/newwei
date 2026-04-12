@@ -748,8 +748,6 @@ input CrawlOptionsInput {
   overrideNavigator: Boolean
   pageTimeoutMs: Int
   pageTypeHint: String
-  proxyConfig: CrawlProxyConfigInput
-  proxyUrl: String
   qualityProfile: String
   removeForms: Boolean
   scanFullPage: Boolean
@@ -774,12 +772,6 @@ input CrawlOptionsInput {
   waitForSelector: String
   waitForTimeoutMs: Int
   waitUntil: CrawlWaitUntil
-}
-
-input CrawlProxyConfigInput {
-  password: String
-  server: String!
-  username: String
 }
 
 type CrawlResultModel {

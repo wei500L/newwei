@@ -2003,10 +2003,12 @@ export function CrawlFrontierConsole() {
                         <Descriptions.Item label="Coverage by depth">{formatCountSummary(selectedRunSummary?.coverageByDepth)}</Descriptions.Item>
                         <Descriptions.Item label="Candidate stats">{formatCountSummary(selectedRunSummary?.candidateStats)}</Descriptions.Item>
                         <Descriptions.Item label="Rejection counts">{formatCountSummary(selectedRunSummary?.rejectionCounts)}</Descriptions.Item>
-                        <Descriptions.Item label="Native accepted vs selected">
+                        <Descriptions.Item label={t("crawlFrontier.run.nativeAcceptedSelected", {
+                          defaultValue: "Native accepted vs selected",
+                        })}>
                           {asNumber(selectedRunRootDiagnosis?.nativeAcceptedResults) !== null ||
                           asNumber(selectedRunRootDiagnosis?.nativeSelectedResults) !== null
-                            ? `${asNumber(selectedRunRootDiagnosis?.nativeAcceptedResults) ?? 0} accepted / ${asNumber(selectedRunRootDiagnosis?.nativeSelectedResults) ?? 0} selected`
+                            ? `${asNumber(selectedRunRootDiagnosis?.nativeAcceptedResults) ?? 0} ${t("crawlFrontier.run.acceptedLabel", { defaultValue: "accepted" })} / ${asNumber(selectedRunRootDiagnosis?.nativeSelectedResults) ?? 0} ${t("crawlFrontier.run.selectedLabel", { defaultValue: "selected" })}`
                             : "-"}
                         </Descriptions.Item>
                         <Descriptions.Item label="Judge summary">
@@ -2017,7 +2019,7 @@ export function CrawlFrontierConsole() {
                     </Card>
                     <Card size="small" title="Root diagnosis">
                       <Collapse items={[
-                        { key: "structured", label: "Structured diagnosis", children: <Descriptions size="small" column={2}><Descriptions.Item label="Failure kind">{selectedRunDiagnostics?.failureKind ?? "-"}</Descriptions.Item><Descriptions.Item label="Last error">{selectedRun.lastError ?? "-"}</Descriptions.Item><Descriptions.Item label="Started at">{formatDateTime(selectedRun.startedAt)}</Descriptions.Item><Descriptions.Item label="Finished at">{formatDateTime(selectedRun.finishedAt)}</Descriptions.Item><Descriptions.Item label="Native accepted">{asNumber(selectedRunRootDiagnosis?.nativeAcceptedResults) ?? "-"}</Descriptions.Item><Descriptions.Item label="Native selected">{asNumber(selectedRunRootDiagnosis?.nativeSelectedResults) ?? "-"}</Descriptions.Item></Descriptions> },
+                        { key: "structured", label: "Structured diagnosis", children: <Descriptions size="small" column={2}><Descriptions.Item label="Failure kind">{selectedRunDiagnostics?.failureKind ?? "-"}</Descriptions.Item><Descriptions.Item label="Last error">{selectedRun.lastError ?? "-"}</Descriptions.Item><Descriptions.Item label="Started at">{formatDateTime(selectedRun.startedAt)}</Descriptions.Item><Descriptions.Item label="Finished at">{formatDateTime(selectedRun.finishedAt)}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.run.nativeAccepted", { defaultValue: "Native accepted" })}>{asNumber(selectedRunRootDiagnosis?.nativeAcceptedResults) ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.run.nativeSelected", { defaultValue: "Native selected" })}>{asNumber(selectedRunRootDiagnosis?.nativeSelectedResults) ?? "-"}</Descriptions.Item></Descriptions> },
                         { key: "json", label: "Root diagnosis JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedRunRootDiagnosis)}</Typography.Paragraph> },
                       ]} />
                     </Card>

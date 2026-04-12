@@ -805,8 +805,13 @@ export function CrawlTemplatesContent() {
             type="warning"
             showIcon
             style={{ marginBottom: 12 }}
-            message="Custom upstream proxies are disabled"
-            description="Do not store proxyUrl or proxyConfig in template crawlOptions. Legacy proxy fields remain visible in JSON and block save until removed."
+            message={t("crawlTemplates.proxy.disabledTitle", {
+              defaultValue: "Custom upstream proxies are disabled",
+            })}
+            description={t("crawlTemplates.proxy.disabledDescription", {
+              defaultValue:
+                "Do not store proxyUrl or proxyConfig in template crawlOptions. Legacy proxy fields remain visible in JSON and block save until removed.",
+            })}
           />
           <Form.Item
             name="userAgent"

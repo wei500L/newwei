@@ -52,18 +52,6 @@ export class CrawlTimeRangeInput {
 }
 
 @InputType()
-export class CrawlProxyConfigInput {
-  @Field()
-  server!: string;
-
-  @Field({ nullable: true })
-  username?: string;
-
-  @Field({ nullable: true })
-  password?: string;
-}
-
-@InputType()
 export class CrawlBrowserHeaderInput {
   @Field()
   name!: string;
@@ -554,12 +542,6 @@ export class CrawlOptionsInput {
 
   @Field(() => Boolean, { nullable: true })
   removeForms?: boolean;
-
-  @Field({ nullable: true })
-  proxyUrl?: string;
-
-  @Field(() => CrawlProxyConfigInput, { nullable: true })
-  proxyConfig?: CrawlProxyConfigInput;
 
   @Field(() => [String], { nullable: true })
   additionalUrls?: string[];

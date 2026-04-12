@@ -1473,10 +1473,16 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       | { server?: string; username?: string; password?: string }
       | undefined;
     if (proxyConfig?.server) {
-      return `Unsupported legacy proxy config: ${proxyConfig.server}`;
+      return t("crawl.detail.proxy.unsupportedLegacy", {
+        defaultValue: "Unsupported legacy proxy config: {{value}}",
+        value: proxyConfig.server,
+      });
     }
     if (proxyUrl) {
-      return `Unsupported legacy proxy config: ${proxyUrl}`;
+      return t("crawl.detail.proxy.unsupportedLegacy", {
+        defaultValue: "Unsupported legacy proxy config: {{value}}",
+        value: proxyUrl,
+      });
     }
     return t("crawl.detail.proxy.direct");
   }, [config, t]);

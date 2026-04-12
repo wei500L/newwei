@@ -6396,8 +6396,13 @@ export function NewsSourcesContent() {
               <Alert
                 type="warning"
                 showIcon
-                message="Custom upstream proxies are disabled"
-                description="Do not add proxyUrl or proxyConfig in crawlOptions. Existing legacy proxy fields stay visible in the JSON editor and will block save until removed."
+                message={t("newsSources.crawl.proxyDisabledTitle", {
+                  defaultValue: "Custom upstream proxies are disabled",
+                })}
+                description={t("newsSources.crawl.proxyDisabledDescription", {
+                  defaultValue:
+                    "Do not add proxyUrl or proxyConfig in crawlOptions. Existing legacy proxy fields stay visible in the JSON editor and will block save until removed.",
+                })}
               />
 
               <Typography.Title level={5} style={{ marginBottom: 0 }}>

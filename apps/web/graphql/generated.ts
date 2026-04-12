@@ -792,8 +792,6 @@ export type CrawlOptionsInput = {
   overrideNavigator?: InputMaybe<Scalars['Boolean']['input']>;
   pageTimeoutMs?: InputMaybe<Scalars['Int']['input']>;
   pageTypeHint?: InputMaybe<Scalars['String']['input']>;
-  proxyConfig?: InputMaybe<CrawlProxyConfigInput>;
-  proxyUrl?: InputMaybe<Scalars['String']['input']>;
   qualityProfile?: InputMaybe<Scalars['String']['input']>;
   removeForms?: InputMaybe<Scalars['Boolean']['input']>;
   scanFullPage?: InputMaybe<Scalars['Boolean']['input']>;
@@ -818,12 +816,6 @@ export type CrawlOptionsInput = {
   waitForSelector?: InputMaybe<Scalars['String']['input']>;
   waitForTimeoutMs?: InputMaybe<Scalars['Int']['input']>;
   waitUntil?: InputMaybe<CrawlWaitUntil>;
-};
-
-export type CrawlProxyConfigInput = {
-  password?: InputMaybe<Scalars['String']['input']>;
-  server: Scalars['String']['input'];
-  username?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type CrawlResultModel = {

@@ -3333,13 +3333,20 @@ function BrowserConfigForm({
           showIcon
           message={
             proxyIssues.length > 0
-              ? "Unsupported legacy proxy configuration detected"
-              : "Custom upstream proxies are disabled"
+              ? t("crawl.proxy.unsupportedLegacyTitle", {
+                  defaultValue: "Unsupported legacy proxy configuration detected",
+                })
+              : t("crawl.proxy.disabledTitle", {
+                  defaultValue: "Custom upstream proxies are disabled",
+                })
           }
           description={
             proxyIssues.length > 0
               ? proxyIssues.map((issue) => `${issue.path}: ${issue.message}`).join(" ")
-              : "Task crawl no longer accepts proxyUrl or proxyConfig. Remove any legacy proxy fields before submitting."
+              : t("crawl.proxy.disabledDescription", {
+                  defaultValue:
+                    "Task crawl no longer accepts proxyUrl or proxyConfig. Remove any legacy proxy fields before submitting.",
+                })
           }
         />
       </Card>

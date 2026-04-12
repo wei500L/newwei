@@ -69,22 +69,6 @@ export class CrawlDetailExpansionOptionsDto {
   preferFitMarkdownForQuality?: boolean;
 }
 
-export class CrawlProxyConfigDto {
-  @IsString()
-  @MaxLength(512)
-  server!: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(256)
-  username?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(256)
-  password?: string;
-}
-
 export class CrawlBrowserHeaderDto {
   @IsString()
   @MaxLength(128)
@@ -498,20 +482,9 @@ export class CrawlOptionsDto {
   @Max(50)
   semaphoreCount?: number;
 
-
   @IsOptional()
   @IsBoolean()
   removeForms?: boolean;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(512)
-  proxyUrl?: string;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => CrawlProxyConfigDto)
-  proxyConfig?: CrawlProxyConfigDto;
 
   @IsOptional()
   @IsArray()
