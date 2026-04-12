@@ -756,9 +756,15 @@ export class RealtimeSignalsService {
           ),
         ]);
 
+        const evaluationContext = this.toDiagnosticContext(evaluation.context);
+        const sourceStateContext = this.toDiagnosticContext(sourceState?.context);
         const context =
-          this.toDiagnosticContext(evaluation.context) ??
-          this.toDiagnosticContext(sourceState?.context);
+          evaluationContext || sourceStateContext
+            ? {
+                ...(evaluationContext ?? {}),
+                ...(sourceStateContext ?? {}),
+              }
+            : undefined;
         const openskySnapshot =
           source === "opensky"
             ? this.buildAdsbRuntimeDiagnostics(
@@ -2554,9 +2560,8 @@ export class RealtimeSignalsService {
     );
     if (statusReasonCode || statusReason) {
       return {
-        code: statusReasonCode ?? "ais_relay_degraded",
-        reason:
-          statusReason ?? "AIS relay reported a degraded processing state.",
+        ...(statusReasonCode ? { code: statusReasonCode } : {}),
+        ...(statusReason ? { reason: statusReason } : {}),
       };
     }
     return undefined;
@@ -2576,9 +2581,7 @@ export class RealtimeSignalsService {
       allVesselsAvailable: snapshot.hasVesselSnapshot,
       messageCount: snapshot.status.messages,
       droppedMessages: snapshot.status.droppedMessages,
-      healthState: relayStatusReason
-        ? "degraded"
-        : snapshot.diagnostics.healthState,
+      healthState: snapshot.diagnostics.healthState,
       positionReportsSeen: snapshot.diagnostics.positionReportsSeen,
       positionReportsProcessed: snapshot.diagnostics.positionReportsProcessed,
       ignoredPositionReports: snapshot.diagnostics.ignoredPositionReports,
@@ -2615,20 +2618,23 @@ export class RealtimeSignalsService {
     snapshot: RealtimeAisLatestSnapshot,
   ) {
     const relayStatusReason = this.resolveAisRelayStatusReason(snapshot);
-    const issueCode = relayStatusReason?.code ?? "ok";
-    const previousIssueCode = this.aisRelayIssueCodeByOrg.get(orgId);
-    if (previousIssueCode === issueCode) {
+    const issueIdentity =
+      relayStatusReason?.code ??
+      relayStatusReason?.reason ??
+      (snapshot.diagnostics.healthState === "degraded" ? "degraded" : "ok");
+    const previousIssueIdentity = this.aisRelayIssueCodeByOrg.get(orgId);
+    if (previousIssueIdentity === issueIdentity) {
       return;
     }
 
-    this.aisRelayIssueCodeByOrg.set(orgId, issueCode);
-    if (issueCode === "ok") {
-      if (previousIssueCode && previousIssueCode !== "ok") {
+    this.aisRelayIssueCodeByOrg.set(orgId, issueIdentity);
+    if (issueIdentity === "ok") {
+      if (previousIssueIdentity && previousIssueIdentity !== "ok") {
         logger.info(
           {
             orgId,
             source: "ais",
-            previousIssueCode,
+            previousIssueCode: previousIssueIdentity,
             updatedAt: snapshot.updatedAt,
           },
           "AIS relay snapshot recovered",
@@ -2641,7 +2647,8 @@ export class RealtimeSignalsService {
       {
         orgId,
         source: "ais",
-        issueCode,
+        issueCode: relayStatusReason?.code,
+        issueIdentity,
         issueReason: relayStatusReason?.reason,
         connected: snapshot.status.connected,
         messages: snapshot.status.messages,
@@ -4386,7 +4393,7 @@ export class RealtimeSignalsService {
       const statusReason = this.normalizeString(context.statusReason);
       if (statusReasonCode || statusReason) {
         return {
-          code: statusReasonCode ?? "ais_relay_degraded",
+          ...(statusReasonCode ? { code: statusReasonCode } : {}),
           message:
             statusReason ?? "AIS relay reported a degraded processing state.",
           status: "error",

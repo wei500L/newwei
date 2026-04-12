@@ -153,10 +153,7 @@ export function buildAisRuntimeFeedbackAlert(
     };
   }
 
-  if (
-    statusReasonCode === "ais_upstream_disconnected" ||
-    context?.connected === false
-  ) {
+  if (statusReasonCode === "ais_upstream_disconnected") {
     return {
       type: "error",
       message: t(
@@ -204,6 +201,22 @@ export function buildAisRuntimeFeedbackAlert(
           seen: positionReportsSeen ?? 0,
           processed: positionReportsProcessed ?? 0,
           candidates: candidateCount ?? 0,
+        },
+      ),
+    };
+  }
+
+  if (statusReasonCode === "ais_snapshot_missing_vessels_contract") {
+    return {
+      type: "warning",
+      message:
+        formatAisRuntimeReason(t, statusReasonCode, row.statusReason) ??
+        "AIS relay reports tracked vessels, but this snapshot only exposes aggregated signals instead of individual vessels[].",
+      description: t(
+        "systemSettings.realtimeSignals.runtime.feedback.aisSnapshotMissingVesselsContract.body",
+        {
+          defaultValue:
+            "The relay is publishing density/disruption aggregates, but not the per-vessel `vessels[]` snapshot required by AIS all-mode. Fix the relay snapshot contract instead of diagnosing this as an upstream disconnect.",
         },
       ),
     };
