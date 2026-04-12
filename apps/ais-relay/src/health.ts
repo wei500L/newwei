@@ -1,8 +1,10 @@
+import type { AisRelayReasonCode } from "@modular/utils";
+
 export type RelayHealthState = "ok" | "degraded";
 
 export interface RelayHealthDiagnostics {
   healthState: RelayHealthState;
-  statusReasonCode?: string;
+  statusReasonCode?: AisRelayReasonCode;
   statusReason?: string;
   positionReportsSeen: number;
   positionReportsProcessed: number;

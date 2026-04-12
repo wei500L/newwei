@@ -1,8 +1,12 @@
 {
   "extends": "../../packages/config/tsconfig/base.json",
   "compilerOptions": {
+    "baseUrl": ".",
     "rootDir": ".",
-    "outDir": "dist"
+    "outDir": "dist",
+    "paths": {
+      "@modular/utils": ["../../packages/utils/dist/index.d.ts"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["dist", "node_modules"]

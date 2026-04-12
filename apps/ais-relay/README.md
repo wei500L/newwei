@@ -22,14 +22,7 @@
 
 `/health` 的 HTTP 状态码始终是 `200`，真正的运行态健康语义在响应体的 `status` 字段里。这里的 `degraded` 代表上游断流、停滞或解析质量问题，不应再阻止依赖服务启动。
 
-常见 `diagnostics.statusReasonCode`：
-
-- `ais_upstream_disconnected`
-- `ais_upstream_no_messages_after_connect`
-- `ais_upstream_stalled`
-- `ais_position_reports_not_retained`
-- `ais_position_reports_mostly_ignored`
-- `ais_payload_parse_errors`
+`diagnostics.statusReasonCode` 的权威枚举与 API/Web 共享，定义在 `packages/utils/src/realtime-signals-contract.ts` 的 `AIS_RELAY_REASON_CODES` / `AisRelayReasonCode`。
 
 ## 环境变量
 

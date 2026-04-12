@@ -10,7 +10,6 @@ import {
 import type { MapboxOverlay } from "@deck.gl/mapbox";
 import {
   type WarMapAisMode,
-  type WarMapAisLayerSummary,
   type WarMapEventSeverity,
   type WarMapFlightMode,
   type WarMapLayerFeature,
@@ -3518,8 +3517,7 @@ export function WarMap({
   ]
     .filter((value): value is string => Boolean(value))
     .join("\n");
-  const aisSummary =
-    layersQuery.data?.layers.ais?.summary as WarMapAisLayerSummary | undefined;
+  const aisSummary = layersQuery.data?.layers.ais?.summary;
   const aisConnected = aisSummary?.connected ?? false;
   const aisConfigured = aisSummary?.configured ?? true;
   const aisFreshness = aisSummary?.freshness;

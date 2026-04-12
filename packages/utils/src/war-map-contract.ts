@@ -347,7 +347,7 @@ export interface WarMapNewsMarkersResponse {
 
 export interface WarMapLayersResponse {
   updatedAt: string;
-  layers: Partial<Record<WarMapLayerId, WarMapLayerDataset>> & {
+  layers: Omit<Partial<Record<WarMapLayerId, WarMapLayerDataset>>, "ais"> & {
     ais?: WarMapAisLayerDataset;
   };
 }

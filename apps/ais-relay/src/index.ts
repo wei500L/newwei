@@ -6,6 +6,7 @@ import {
 } from "node:http";
 import path from "node:path";
 
+import type { AisRelayReasonCode } from "@modular/utils";
 import { config as loadEnv } from "dotenv";
 import { WebSocket, type RawData } from "ws";
 
@@ -201,7 +202,7 @@ let lastUpstreamMessageAt = 0;
 let lastUpstreamErrorAt = 0;
 let lastUpstreamErrorMessage: string | undefined;
 let relayHealthState: RelayHealthState = "ok";
-let relayStatusReasonCode: string | undefined;
+let relayStatusReasonCode: AisRelayReasonCode | undefined;
 let relayStatusReason: string | undefined;
 let lastRelayIssueAt = 0;
 let lastRelayHealthyAt = Date.now();
@@ -275,7 +276,7 @@ function removeVesselFromDensityCell(mmsi: string) {
 
 function setRelayHealthState(
   nextState: RelayHealthState,
-  code?: string,
+  code?: AisRelayReasonCode,
   reason?: string,
 ) {
   const previousState = relayHealthState;
