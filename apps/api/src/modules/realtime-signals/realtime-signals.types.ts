@@ -1,3 +1,5 @@
+import type { UpstreamRequestErrorCode } from "../../common/http/upstream-error-classification";
+
 export type RealtimeSignalSource =
   | "opensky"
   | "ais"
@@ -38,6 +40,8 @@ export interface RealtimeSignalRateLimitDetails {
   rateLimitPolicy?: string;
   cfRay?: string;
 }
+
+export type RealtimeSignalErrorCode = UpstreamRequestErrorCode;
 
 export type RealtimeSignalFlightMode = "military" | "all";
 
@@ -350,6 +354,7 @@ export interface RealtimeSignalSourceState {
   lastSuccessAt?: string;
   lastErrorAt?: string;
   lastError?: string;
+  lastErrorCode?: RealtimeSignalErrorCode;
   lastErrorKind?: RealtimeOpenskyErrorKind;
   lastErrorStatus?: number;
   lastRateLimit?: RealtimeSignalRateLimitDetails;
@@ -379,6 +384,7 @@ export interface RealtimeSignalRuntimeSourceDiagnostics {
   lastSuccessAt?: string;
   lastErrorAt?: string;
   lastError?: string;
+  lastErrorCode?: RealtimeSignalErrorCode;
   lastErrorKind?: RealtimeOpenskyErrorKind;
   lastErrorStatus?: number;
   lastRateLimit?: RealtimeSignalRateLimitDetails;

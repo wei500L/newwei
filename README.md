@@ -296,7 +296,7 @@ pnpm dev
 
 - `apps/api/src/main.ts`：REST 全局前缀 `/api`、Swagger `/docs`、CORS、Socket.IO Redis adapter
 - `apps/api/src/graphql/graphql.module.ts`：GraphQL code-first 生成 `apps/api/schema.gql`，并配置复杂度/深度限制
-- `apps/ais-relay/src/index.ts`：AISStream WebSocket 聚合为 `/ais/snapshot` + `/health` 的轻量 relay
+- `apps/ais-relay/src/index.ts`：AISStream WebSocket 聚合为 `/ais/snapshot`、`/health` 和 `/healthz/live` 的轻量 relay
 - `apps/web/app/`：Next.js App Router 路由组（`(app)` 控制台、`(portal)` 门户、`(reader)` 阅读器、`(auth)` 登录）
 - `infra/docker/docker-compose.yml`：本地完整栈服务定义与端口映射
 - `config/news-pipeline.config.yaml`：新闻清洗管道配置（本地）
@@ -349,8 +349,8 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml u
 关键约束：
 
 - `AISSTREAM_API_KEY` 缺失时，relay 会直接启动失败。
-- `/health` 的 HTTP 200 不代表服务可用，真正状态看响应体里的 `status`。
-- Docker Compose 已经按 `status === "ok"` 做健康检查，`degraded` 会被标记为 `unhealthy`。
+- `/healthz/live` 只表示 relay 进程在线，Docker Compose 现在使用它作为容器健康探针。
+- `/health` 的 HTTP 200 不代表运行态健康，真正状态看响应体里的 `status`；`degraded` 仍表示上游或解析质量问题，但不再阻塞 `api` 启动。
 - 如果需要做确定性 smoke test，可以用 `AISSTREAM_URL` 把上游切到本地 mock WebSocket。
 
 详细接口、降级原因码和环境变量说明见 [apps/ais-relay/README.md](./apps/ais-relay/README.md)。

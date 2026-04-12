@@ -13,7 +13,7 @@ services:
       MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_ROOT_HOST: "%"
     ports:
-      - "3306:3306"
+      - "${MYSQL_HOST_PORT:-3306}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     logging: *json-file-logging
@@ -63,7 +63,7 @@ services:
       REDIS_AOF_PREFLIGHT_LOG_TAIL: ${REDIS_AOF_PREFLIGHT_LOG_TAIL:-40}
       REDIS_AOF_BACKUP_KEEP: ${REDIS_AOF_BACKUP_KEEP:-5}
     ports:
-      - "6379:6379"
+      - "${REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     logging: *json-file-logging
@@ -370,7 +370,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:3004/health').then(async (response) => { if (!response.ok) { process.exit(1); return; } const payload = await response.json(); process.exit(payload?.status === 'ok' ? 0 : 1); }).catch(() => process.exit(1))",
+          "fetch('http://127.0.0.1:3004/healthz/live').then((response) => { process.exit(response.ok ? 0 : 1); }).catch(() => process.exit(1))",
         ]
       interval: 30s
       timeout: 5s
@@ -419,7 +419,7 @@ services:
       - ${DOCKER_DNS_1:-223.5.5.5}
       - ${DOCKER_DNS_2:-114.114.114.114}
     ports:
-      - "4000:4000"
+      - "${API_HOST_PORT:-4000}:4000"
     logging: *json-file-logging
     depends_on:
       mysql:

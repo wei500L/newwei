@@ -15,6 +15,12 @@ import {
   normalizeMmsi,
   normalizeString,
 } from "./candidate-classification";
+import {
+  buildRelayHealthPayload,
+  buildRelayLivenessPayload,
+  type RelayHealthDiagnostics,
+  type RelayHealthState,
+} from "./health";
 import { closeUpstreamSocketForShutdown } from "./shutdown";
 
 loadEnv({ path: path.resolve(process.cwd(), "../../.env") });
@@ -131,26 +137,6 @@ type CandidateReport = {
   timestamp: number;
 };
 
-type RelayHealthState = "ok" | "degraded";
-
-type AisRelayDiagnostics = {
-  healthState: RelayHealthState;
-  statusReasonCode?: string;
-  statusReason?: string;
-  positionReportsSeen: number;
-  positionReportsProcessed: number;
-  ignoredPositionReports: number;
-  parseErrors: number;
-  lastHealthyAt?: string;
-  lastIssueAt?: string;
-  lastConnectedAt?: string;
-  lastMessageAt?: string;
-  lastUpstreamErrorAt?: string;
-  lastUpstreamError?: string;
-  lastParseErrorAt?: string;
-  lastParseError?: string;
-};
-
 type AisSnapshot = {
   sequence: number;
   timestamp: string;
@@ -161,7 +147,7 @@ type AisSnapshot = {
     clients: number;
     droppedMessages: number;
   };
-  diagnostics: AisRelayDiagnostics;
+  diagnostics: RelayHealthDiagnostics;
   disruptions: Array<Record<string, unknown>>;
   density: Array<Record<string, unknown>>;
   candidateReports: CandidateReport[];
@@ -423,7 +409,7 @@ function evaluateRelayHealthState() {
   setRelayHealthState("ok");
 }
 
-function buildRelayDiagnostics(): AisRelayDiagnostics {
+function buildRelayDiagnostics(): RelayHealthDiagnostics {
   evaluateRelayHealthState();
   const lastHealthyAtIso = toIsoTimestamp(lastRelayHealthyAt);
   const lastIssueAtIso = toIsoTimestamp(lastRelayIssueAt);
@@ -1069,18 +1055,26 @@ const server = createServer((req, res) => {
 
   if (url.pathname === "/" || url.pathname === "/health") {
     const diagnostics = buildRelayDiagnostics();
-    writeJson(res, 200, {
-      status: diagnostics.healthState,
-      connected: upstreamSocket?.readyState === WebSocket.OPEN,
-      vessels: vessels.size,
-      messages: messageCount,
-      droppedMessages,
-      densityZones: [...densityGrid.values()].filter(
-        (cell) => cell.vesselIds.size >= 2,
-      ).length,
-      sharedSecretEnabled: AIS_SHARED_SECRET.length > 0,
-      diagnostics,
-    });
+    writeJson(
+      res,
+      200,
+      buildRelayHealthPayload({
+        connected: upstreamSocket?.readyState === WebSocket.OPEN,
+        vessels: vessels.size,
+        messages: messageCount,
+        droppedMessages,
+        densityZones: [...densityGrid.values()].filter(
+          (cell) => cell.vesselIds.size >= 2,
+        ).length,
+        sharedSecretEnabled: AIS_SHARED_SECRET.length > 0,
+        diagnostics,
+      }),
+    );
+    return;
+  }
+
+  if (url.pathname === "/healthz/live") {
+    writeJson(res, 200, buildRelayLivenessPayload());
     return;
   }
 

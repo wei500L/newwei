@@ -29,6 +29,14 @@ import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
 import {
+  buildAisRuntimeFeedbackAlert,
+  formatAisRuntimeReason,
+  formatRealtimeSignalErrorCode,
+  isOutagesRateLimited,
+  type RealtimeSignalErrorCode,
+  type RealtimeSignalRuntimeStatus,
+} from "@/lib/realtime-signals-runtime";
+import {
   applyRealtimeSignalsSecretFields,
   REALTIME_SIGNALS_SECRET_FIELD_NAMES,
   type RealtimeSignalsSecretFieldName,
@@ -53,12 +61,6 @@ type RealtimeSignalSourceKey =
   | "pizzint"
   | "gdelt_tension"
   | "polymarket_leads";
-type RealtimeSignalRuntimeStatus =
-  | "ok"
-  | "error"
-  | "stale"
-  | "not_configured"
-  | "idle";
 type RealtimeOpenskySnapshotFreshness = "fresh" | "stale" | "missing";
 type RealtimeOpenskyBudgetPeriod = "day" | "night";
 type RealtimeOpenskyBudgetDegradationLevel =
@@ -200,6 +202,7 @@ interface RealtimeSignalRuntimeDiagnosticsSource {
   lastSuccessAt?: string;
   lastErrorAt?: string;
   lastError?: string;
+  lastErrorCode?: RealtimeSignalErrorCode;
   lastErrorKind?: RealtimeOpenskyErrorKind;
   lastErrorStatus?: number;
   lastRateLimit?: {
@@ -686,16 +689,6 @@ function formatOpenskyErrorKindLabel(
   });
 }
 
-function readRuntimeContextString(value: unknown) {
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : undefined;
-}
-
-function readRuntimeContextNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
 function buildRuntimeFeedbackAlert(
   t: RealtimeSignalsTranslate,
   row: RealtimeSignalRuntimeDiagnosticsSource,
@@ -707,154 +700,10 @@ function buildRuntimeFeedbackAlert(
       : undefined;
 
   if (row.source === "ais") {
-    const statusReasonCode =
-      typeof row.statusReasonCode === "string" && row.statusReasonCode.trim()
-        ? row.statusReasonCode.trim()
-        : undefined;
-    const lastUpstreamError = readRuntimeContextString(
-      context?.lastUpstreamError,
-    );
-    const lastHealthyAt = readRuntimeContextString(context?.lastHealthyAt);
-    const positionReportsSeen = readRuntimeContextNumber(
-      context?.positionReportsSeen,
-    );
-    const positionReportsProcessed = readRuntimeContextNumber(
-      context?.positionReportsProcessed,
-    );
-    const candidateCount = readRuntimeContextNumber(context?.candidateCount);
-    const relayErrorParts = [row.lastError, row.statusReason, lastUpstreamError]
-      .filter((value): value is string => Boolean(value))
-      .join(" ");
-    const hasDnsResolutionFailure =
-      /\bENOTFOUND\b|\bEAI_AGAIN\b|getaddrinfo|name or service not known/i.test(
-        relayErrorParts,
-      );
-
-    if (
-      row.status === "not_configured" ||
-      statusReasonCode === "ais_not_configured" ||
-      context?.configured === false
-    ) {
-      return {
-        type: "warning" as const,
-        message: t(
-          "systemSettings.realtimeSignals.runtime.feedback.aisRelayMissingConfig.title",
-          {
-            defaultValue: "AIS relay root URL is not configured.",
-          },
-        ),
-        description: t(
-          "systemSettings.realtimeSignals.runtime.feedback.aisRelayMissingConfig.body",
-          {
-            defaultValue:
-              "The API cannot request `/ais/snapshot` until `AIS relay root URL` points to the relay service.",
-          },
-        ),
-      };
-    }
-
-    if (hasDnsResolutionFailure) {
-      return {
-        type: "error" as const,
-        message: t(
-          "systemSettings.realtimeSignals.runtime.feedback.aisRelayDnsFailure.title",
-          {
-            defaultValue: "The API cannot resolve the AIS relay host.",
-          },
-        ),
-        description: t(
-          "systemSettings.realtimeSignals.runtime.feedback.aisRelayDnsFailure.body",
-          {
-            defaultValue:
-              "Verify that `AIS relay root URL` uses the correct host name, that the `api` container is on the same Docker network, and that the `ais-relay` service name still matches the configured address.",
-          },
-        ),
-      };
-    }
-
-    if (
-      statusReasonCode === "ais_upstream_disconnected" ||
-      context?.connected === false
-    ) {
-      return {
-        type: "error" as const,
-        message: t(
-          "systemSettings.realtimeSignals.runtime.feedback.aisUpstreamDisconnected.title",
-          {
-            defaultValue:
-              "AIS relay is reachable, but its upstream AIS stream is disconnected.",
-          },
-        ),
-        description: `${t(
-          "systemSettings.realtimeSignals.runtime.feedback.aisUpstreamDisconnected.body",
-          {
-            defaultValue:
-              "The relay service is up, but it is not maintaining a live upstream stream.",
-          },
-        )}${
-          lastHealthyAt
-            ? ` ${t(
-                "systemSettings.realtimeSignals.runtime.feedback.lastHealthyAt",
-                {
-                  defaultValue: "Last healthy: {{time}}.",
-                  time: formatTimestamp(lastHealthyAt),
-                },
-              )}`
-            : ""
-        }`,
-      };
-    }
-
-    if (statusReasonCode === "ais_position_reports_not_retained") {
-      return {
-        type: "error" as const,
-        message: t(
-          "systemSettings.realtimeSignals.runtime.feedback.aisReportsNotRetained.title",
-          {
-            defaultValue:
-              "AIS relay is receiving reports, but vessel snapshots are not being retained.",
-          },
-        ),
-        description: t(
-          "systemSettings.realtimeSignals.runtime.feedback.aisReportsNotRetained.body",
-          {
-            defaultValue:
-              "Seen {{seen}} reports, processed {{processed}}, retained candidates {{candidates}}. Check relay parsing and snapshot retention logic.",
-            seen: positionReportsSeen ?? 0,
-            processed: positionReportsProcessed ?? 0,
-            candidates: candidateCount ?? 0,
-          },
-        ),
-      };
-    }
-
-    if (
-      context?.healthState === "degraded" ||
-      (row.status === "error" && statusReasonCode)
-    ) {
-      return {
-        type: "warning" as const,
-        message: t(
-          "systemSettings.realtimeSignals.runtime.feedback.aisRelayDegraded.title",
-          {
-            defaultValue: "AIS relay reported degraded runtime health.",
-          },
-        ),
-        description: t(
-          "systemSettings.realtimeSignals.runtime.feedback.aisRelayDegraded.body",
-          {
-            defaultValue:
-              "The relay is responding, but diagnostics indicate upstream or parsing problems that will affect AIS map quality.",
-          },
-        ),
-      };
-    }
+    return buildAisRuntimeFeedbackAlert(t, row, formatTimestamp);
   }
 
-  if (
-    row.source === "outages" &&
-    (row.lastErrorStatus === 429 || Boolean(row.lastRateLimit))
-  ) {
+  if (row.source === "outages" && isOutagesRateLimited(row)) {
     const retryAfterValue =
       typeof row.lastRateLimit?.retryAfterSec === "number"
         ? `${row.lastRateLimit.retryAfterSec}s`
@@ -2240,7 +2089,13 @@ export function RealtimeSignalsSettingsPanel() {
                         row.statusReasonCode,
                         row.statusReason,
                       )
-                    : row.statusReason;
+                    : row.source === "ais"
+                      ? formatAisRuntimeReason(
+                          t,
+                          row.statusReasonCode,
+                          row.statusReason,
+                        )
+                      : row.statusReason;
                 const runtimeFeedbackAlert = buildRuntimeFeedbackAlert(
                   t,
                   row,
@@ -2253,6 +2108,10 @@ export function RealtimeSignalsSettingsPanel() {
                 const openskyErrorKindLabel =
                   row.source === "opensky"
                     ? formatOpenskyErrorKindLabel(t, row.lastErrorKind)
+                    : undefined;
+                const errorCodeLabel =
+                  row.source !== "opensky"
+                    ? formatRealtimeSignalErrorCode(t, row.lastErrorCode)
                     : undefined;
                 const aisContext =
                   row.source === "ais" && row.context ? row.context : undefined;
@@ -2653,10 +2512,14 @@ export function RealtimeSignalsSettingsPanel() {
                           </Tag>
                         </Space>
                         {openskyErrorKindLabel ||
+                        errorCodeLabel ||
                         typeof row.lastErrorStatus === "number" ? (
                           <Space wrap size={[8, 8]}>
                             {openskyErrorKindLabel ? (
                               <Tag color="volcano">{openskyErrorKindLabel}</Tag>
+                            ) : null}
+                            {errorCodeLabel ? (
+                              <Tag color="default">{errorCodeLabel}</Tag>
                             ) : null}
                             {typeof row.lastErrorStatus === "number" ? (
                               <Tag color="default">{`HTTP ${row.lastErrorStatus}`}</Tag>

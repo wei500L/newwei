@@ -425,13 +425,85 @@ async def forward_content_length_body(
     remaining -= len(chunk)
 
 
+async def forward_chunked_body(
+  reader: asyncio.StreamReader,
+  writer: asyncio.StreamWriter,
+) -> None:
+  while True:
+    chunk_header = await reader.readuntil(b"\r\n")
+    if len(chunk_header) > HEADER_LIMIT:
+      raise ProxyRequestError(
+        HTTPStatus.REQUEST_HEADER_FIELDS_TOO_LARGE,
+        "Chunk header exceeds limit",
+      )
+    writer.write(chunk_header)
+    await writer.drain()
+
+    size_text = chunk_header[:-2].split(b";", 1)[0].strip()
+    try:
+      chunk_size = int(size_text, 16)
+    except ValueError as exc:
+      raise ProxyRequestError(
+        HTTPStatus.BAD_REQUEST,
+        "Invalid chunk size in request body",
+      ) from exc
+
+    remaining = chunk_size + 2
+    while remaining > 0:
+      chunk = await reader.read(min(65536, remaining))
+      if not chunk:
+        raise ProxyRequestError(
+          HTTPStatus.BAD_REQUEST,
+          "Unexpected EOF while reading chunked request body",
+        )
+      writer.write(chunk)
+      await writer.drain()
+      remaining -= len(chunk)
+
+    if chunk_size == 0:
+      while True:
+        trailer_line = await reader.readuntil(b"\r\n")
+        if len(trailer_line) > HEADER_LIMIT:
+          raise ProxyRequestError(
+            HTTPStatus.REQUEST_HEADER_FIELDS_TOO_LARGE,
+            "Chunk trailer exceeds limit",
+          )
+        writer.write(trailer_line)
+        await writer.drain()
+        if trailer_line == b"\r\n":
+          return
+
+
+async def forward_request_body(
+  reader: asyncio.StreamReader,
+  writer: asyncio.StreamWriter,
+  headers: dict[str, str],
+) -> None:
+  transfer_encoding = headers.get("transfer-encoding", "")
+  encoding_tokens = [
+    token.strip().lower() for token in transfer_encoding.split(",") if token.strip()
+  ]
+  if encoding_tokens:
+    if "chunked" not in encoding_tokens:
+      raise ProxyRequestError(
+        HTTPStatus.NOT_IMPLEMENTED,
+        "Unsupported Transfer-Encoding for proxy request body",
+      )
+    await forward_chunked_body(reader, writer)
+    return
+  await forward_content_length_body(reader, writer, headers)
+
+
 def rewrite_request_headers(
   original_headers: dict[str, str],
   authority: str,
 ) -> list[str]:
+  has_transfer_encoding = bool(original_headers.get("transfer-encoding"))
   rewritten: list[str] = [f"Host: {authority}", "Connection: close"]
   for name, value in original_headers.items():
     if name in {"host", "proxy-authorization", "proxy-connection", "connection"}:
+      continue
+    if has_transfer_encoding and name == "content-length":
       continue
     rewritten.append(f"{name}: {value}")
   return rewritten
@@ -507,7 +579,7 @@ async def handle_http_request(
   ).encode("latin-1")
   upstream_writer.write(request_bytes)
   await upstream_writer.drain()
-  await forward_content_length_body(client_reader, upstream_writer, headers)
+  await forward_request_body(client_reader, upstream_writer, headers)
   await relay_response(upstream_reader, client_writer)
   upstream_writer.close()
   await upstream_writer.wait_closed()

@@ -1160,7 +1160,7 @@ describe("DashboardChartsService", () => {
         blockedReason: "AIS relay snapshot does not include vessels[] yet.",
         maxReturned: 180,
         truncated: false,
-        statusReasonCode: "ais_upstream_disconnected",
+        statusReasonCode: "ais_snapshot_missing_vessels_contract",
       }),
     );
   });

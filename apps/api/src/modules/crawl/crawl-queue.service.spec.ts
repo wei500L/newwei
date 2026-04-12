@@ -122,6 +122,7 @@ describe("CrawlQueueService", () => {
   it("removes matching jobs from both queues and ignores lock errors", async () => {
     const hotQueue = createQueueMock();
     const normalQueue = createQueueMock();
+    const legacyQueue = createQueueMock();
     const llmJudgeQueue = createQueueMock();
     const llmLearnQueue = createQueueMock();
     const activity = createActivityMock();
@@ -133,6 +134,7 @@ describe("CrawlQueueService", () => {
       llmLearnQueue as any,
       settings,
       activity as any,
+      legacyQueue as any,
     );
 
     const lockedJob = {
@@ -154,6 +156,7 @@ describe("CrawlQueueService", () => {
 
     hotQueue.getJobs.mockResolvedValueOnce([lockedJob, okJob]);
     normalQueue.getJobs.mockResolvedValueOnce([]);
+    legacyQueue.getJobs.mockResolvedValueOnce([]);
 
     await service.removeQueuedJobs("task-1");
 
@@ -161,6 +164,7 @@ describe("CrawlQueueService", () => {
     expect(okJob.remove).toHaveBeenCalledTimes(1);
     expect(hotQueue.getJobs).toHaveBeenCalled();
     expect(normalQueue.getJobs).toHaveBeenCalled();
+    expect(legacyQueue.getJobs).toHaveBeenCalled();
 
     const utils = jest.requireMock("@modular/utils") as any;
     expect(utils.__mockLogger.warn).not.toHaveBeenCalled();
@@ -169,6 +173,7 @@ describe("CrawlQueueService", () => {
   it("aggregates job counts and pending from both queues", async () => {
     const hotQueue = createQueueMock();
     const normalQueue = createQueueMock();
+    const legacyQueue = createQueueMock();
     const llmJudgeQueue = createQueueMock();
     const llmLearnQueue = createQueueMock();
     const activity = createActivityMock();
@@ -182,26 +187,30 @@ describe("CrawlQueueService", () => {
       llmLearnQueue as any,
       settings,
       activity as any,
+      legacyQueue as any,
     );
 
     hotQueue.getJobCounts.mockResolvedValue({ waiting: 2, active: 1, delayed: 0, failed: 1, paused: 0 });
     normalQueue.getJobCounts.mockResolvedValue({ waiting: 3, active: 0, delayed: 1, failed: 0, paused: 0 });
+    legacyQueue.getJobCounts.mockResolvedValue({ waiting: 1, active: 0, delayed: 1, failed: 2, paused: 0 });
 
     const counts = await service.getJobCounts();
     const pending = await service.getPendingJobCount();
 
-    expect(counts).toEqual({ waiting: 5, active: 1, delayed: 1, failed: 1, paused: 0 });
-    expect(pending).toBe(7);
+    expect(counts).toEqual({ waiting: 6, active: 1, delayed: 2, failed: 3, paused: 0 });
+    expect(pending).toBe(9);
   });
 
-  it("applies pause/resume and global concurrency to both queues", async () => {
+  it("applies pause/resume and global concurrency to all executable queues", async () => {
     const hotQueue = createQueueMock();
     const normalQueue = createQueueMock();
+    const legacyQueue = createQueueMock();
     const llmJudgeQueue = createQueueMock();
     const llmLearnQueue = createQueueMock();
     const activity = createActivityMock();
     hotQueue.getGlobalConcurrency.mockResolvedValue(4);
     normalQueue.getGlobalConcurrency.mockResolvedValue(2);
+    legacyQueue.getGlobalConcurrency.mockResolvedValue(2);
 
     const settings = {
       getSettings: jest.fn().mockResolvedValue({ maxConcurrency: 3 })
@@ -213,6 +222,7 @@ describe("CrawlQueueService", () => {
       llmLearnQueue as any,
       settings,
       activity as any,
+      legacyQueue as any,
     );
 
     await service.pauseQueue();
@@ -224,10 +234,13 @@ describe("CrawlQueueService", () => {
 
     expect(hotQueue.pause).toHaveBeenCalledTimes(1);
     expect(normalQueue.pause).toHaveBeenCalledTimes(1);
+    expect(legacyQueue.pause).toHaveBeenCalledTimes(1);
     expect(hotQueue.resume).toHaveBeenCalledTimes(1);
     expect(normalQueue.resume).toHaveBeenCalledTimes(1);
+    expect(legacyQueue.resume).toHaveBeenCalledTimes(1);
     expect(hotQueue.setGlobalConcurrency).toHaveBeenCalledWith(5);
     expect(normalQueue.setGlobalConcurrency).toHaveBeenCalledWith(5);
+    expect(legacyQueue.setGlobalConcurrency).toHaveBeenCalledWith(5);
 
     expect(effective).toEqual({ hot: 4, normal: 2 });
     expect(paused).toEqual({ hot: false, normal: false });

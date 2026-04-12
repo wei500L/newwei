@@ -4,6 +4,9 @@
 
 ## 接口
 
+- `GET /healthz/live`
+  - 无鉴权
+  - 仅表示 relay HTTP 进程在线，可用于容器 liveness / startup probe
 - `GET /health`
   - 无鉴权
   - 返回 `status: "ok" | "degraded"`
@@ -15,7 +18,9 @@
 
 ## 健康状态
 
-`/health` 的 HTTP 状态码始终是 `200`，真正的健康语义在响应体的 `status` 字段里。Docker Compose 里的健康检查已经按 `status === "ok"` 判定。
+`/healthz/live` 的 HTTP `200` 只表示 relay 进程在线，适合 Docker / K8s 的容器探针。
+
+`/health` 的 HTTP 状态码始终是 `200`，真正的运行态健康语义在响应体的 `status` 字段里。这里的 `degraded` 代表上游断流、停滞或解析质量问题，不应再阻止依赖服务启动。
 
 常见 `diagnostics.statusReasonCode`：
 
@@ -91,4 +96,15 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml b
 docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml up -d ais-relay
 ```
 
-如果要做确定性 smoke test，可以把 `AISSTREAM_URL` 指向一个本地 mock WebSocket upstream。
+确定性启动 smoke test：
+
+```bash
+pnpm docker:smoke:ais-relay-startup
+```
+
+这条脚本会：
+
+- 用临时 Compose project 启动 `mock-ais-upstream`、`ais-relay`、`api`
+- 把 relay 上游固定到一个“连上但不发消息”的本地 WebSocket mock
+- 验证 relay `/health` 进入 `ais_upstream_no_messages_after_connect`
+- 同时验证容器 health 仍然基于 `/healthz/live`，不会卡住 `api` 启动

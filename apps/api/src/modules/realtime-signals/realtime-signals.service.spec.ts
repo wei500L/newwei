@@ -1130,6 +1130,7 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
       "org-1",
       expect.objectContaining({
         source: "outages",
+        lastErrorCode: "upstream_rate_limited",
         lastErrorStatus: 429,
         lastRateLimit: expect.objectContaining({
           retryAfterSec: 90,
@@ -1142,6 +1143,47 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
     jest.setSystemTime(new Date("2026-03-03T00:01:31.000Z"));
     await service.refreshOrg("org-1", runtime);
     expect(fetchSourceSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("classifies DNS resolution failures without relying on raw message matching", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-03-03T00:00:00.000Z"));
+    const { service, store } = buildService();
+    const runtime = {
+      ...runtimeConfig,
+      sources: {
+        opensky: { enabled: false, intervalSec: 60 },
+        ais: { enabled: false, intervalSec: 60 },
+        unrest: { enabled: false, intervalSec: 60 },
+        outages: { enabled: true, intervalSec: 60 },
+        keyword_spike: { enabled: false, intervalSec: 60 },
+        pizzint: { enabled: false, intervalSec: 60 },
+        gdelt_tension: { enabled: false, intervalSec: 60 },
+        polymarket_leads: { enabled: false, intervalSec: 60 },
+      },
+    } satisfies RealtimeSignalsRuntimeConfig;
+
+    store.getInsightSnapshot.mockResolvedValue({
+      keywordSpikes: [],
+      predictionLeads: [],
+      tensions: [],
+    });
+    store.getLastRun.mockResolvedValue(null);
+    store.getSourceState.mockResolvedValue(null);
+
+    const dnsError = Object.assign(new TypeError("fetch failed"), {
+      cause: { code: "ENOTFOUND" },
+    });
+    jest.spyOn(service as any, "fetchSource").mockRejectedValue(dnsError);
+
+    await service.refreshOrg("org-1", runtime);
+
+    expect(store.setSourceState).toHaveBeenCalledWith(
+      "org-1",
+      expect.objectContaining({
+        source: "outages",
+        lastErrorCode: "dns_resolution_failed",
+      }),
+    );
   });
 
   it("drops stale insight entries when serving situation monitor snapshot", async () => {
@@ -1398,9 +1440,57 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
             status: "error",
             lastAttemptAt: "2026-03-12T03:30:00.000Z",
             nextEligibleAt: "2026-03-12T03:32:00.000Z",
+          lastErrorAt: "2026-03-12T03:30:00.000Z",
+          lastError: "HTTP 429 Too Many Requests",
+          lastErrorCode: "upstream_rate_limited",
+          lastErrorStatus: 429,
+          lastRateLimit: {
+            retryAfterSec: 120,
+              rateLimit: '"default";r=0;t=120',
+              rateLimitPolicy: '"default";q=1200;w=300',
+              cfRay: "abc123-NRT",
+            },
+          }
+        : null,
+    );
+
+    const result = await service.getRuntimeDiagnostics("org-1");
+
+    expect(result.sources.find((source) => source.source === "outages")).toMatchObject({
+      status: "error",
+      statusReasonCode: "upstream_rate_limited",
+      lastAttemptAt: "2026-03-12T03:30:00.000Z",
+      nextEligibleAt: "2026-03-12T03:32:00.000Z",
+      lastErrorCode: "upstream_rate_limited",
+      lastErrorStatus: 429,
+      lastRateLimit: {
+        retryAfterSec: 120,
+        rateLimit: '"default";r=0;t=120',
+        rateLimitPolicy: '"default";q=1200;w=300',
+        cfRay: "abc123-NRT",
+      },
+    });
+  });
+
+  it("keeps non-429 errors distinct even when rate-limit headers are present", async () => {
+    const { service, prisma, store } = buildService();
+    prisma.processedArticle.count.mockResolvedValue(0);
+    prisma.processedArticle.findFirst.mockResolvedValue(null);
+    jest.spyOn(service as any, "getMongoMarkerReadiness").mockResolvedValue({
+      recentProcessedItems: 0,
+      recentProcessedItemsWithLocation: 0,
+    });
+    store.getSourceState.mockImplementation(async (_orgId: string, source: string) =>
+      source === "outages"
+        ? {
+            source: "outages",
+            status: "error",
+            lastAttemptAt: "2026-03-12T03:30:00.000Z",
+            nextEligibleAt: "2026-03-12T03:32:00.000Z",
             lastErrorAt: "2026-03-12T03:30:00.000Z",
-            lastError: "HTTP 429 Too Many Requests",
-            lastErrorStatus: 429,
+            lastError: "HTTP 403 Forbidden",
+            lastErrorCode: "upstream_auth_failed",
+            lastErrorStatus: 403,
             lastRateLimit: {
               retryAfterSec: 120,
               rateLimit: '"default";r=0;t=120',
@@ -1415,14 +1505,12 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
 
     expect(result.sources.find((source) => source.source === "outages")).toMatchObject({
       status: "error",
-      lastAttemptAt: "2026-03-12T03:30:00.000Z",
-      nextEligibleAt: "2026-03-12T03:32:00.000Z",
-      lastErrorStatus: 429,
+      statusReasonCode: "upstream_auth_failed",
+      lastErrorCode: "upstream_auth_failed",
+      lastErrorStatus: 403,
       lastRateLimit: {
         retryAfterSec: 120,
         rateLimit: '"default";r=0;t=120',
-        rateLimitPolicy: '"default";q=1200;w=300',
-        cfRay: "abc123-NRT",
       },
     });
   });

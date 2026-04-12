@@ -41,58 +41,38 @@ export class Crawl4aiQueueController {
   @Get("queue")
   @Permissions("crawl.read")
   async getQueueStats() {
-    const [settings, countsByQueue, pausedByQueue, globalConcurrencyByQueue] = await Promise.all([
+    const [settings, queues, legacyQueue, countsByQueue] = await Promise.all([
       this.crawlSettings.getSettings(),
-      this.crawlQueue.getJobCountsByQueue(),
-      this.crawlQueue.getPausedByQueue(),
-      this.crawlQueue.getGlobalConcurrencyByQueue()
+      this.crawlQueue.getRuntimeStatsByQueue(),
+      this.crawlQueue.getLegacyRuntimeStats(),
+      this.crawlQueue.getJobCountsByQueue()
     ]);
     const adaptive = await this.adaptiveConcurrency.getStatus(settings);
 
-    const counts = mergeCounts(countsByQueue.hot, countsByQueue.normal);
+    const counts = legacyQueue
+      ? mergeCounts(
+          mergeCounts(countsByQueue.hot, countsByQueue.normal),
+          legacyQueue.counts
+        )
+      : mergeCounts(countsByQueue.hot, countsByQueue.normal);
     const maxConcurrency = settings.maxConcurrency;
-    const queues = {
-      hot: {
-        queueName: CRAWL_QUEUE_HOT_NAME,
-        counts: countsByQueue.hot,
-        pending:
-          (countsByQueue.hot.waiting ?? 0) +
-          (countsByQueue.hot.active ?? 0) +
-          (countsByQueue.hot.delayed ?? 0),
-        paused: pausedByQueue.hot,
-        effectiveConcurrency:
-          typeof globalConcurrencyByQueue.hot === "number" &&
-          Number.isFinite(globalConcurrencyByQueue.hot) &&
-          globalConcurrencyByQueue.hot > 0
-            ? Math.max(1, Math.round(globalConcurrencyByQueue.hot))
-            : maxConcurrency
-      },
-      normal: {
-        queueName: CRAWL_QUEUE_NORMAL_NAME,
-        counts: countsByQueue.normal,
-        pending:
-          (countsByQueue.normal.waiting ?? 0) +
-          (countsByQueue.normal.active ?? 0) +
-          (countsByQueue.normal.delayed ?? 0),
-        paused: pausedByQueue.normal,
-        effectiveConcurrency:
-          typeof globalConcurrencyByQueue.normal === "number" &&
-          Number.isFinite(globalConcurrencyByQueue.normal) &&
-          globalConcurrencyByQueue.normal > 0
-            ? Math.max(1, Math.round(globalConcurrencyByQueue.normal))
-            : maxConcurrency
-      }
-    };
-    const paused = queues.hot.paused && queues.normal.paused;
+    const legacyBlocksPause =
+      legacyQueue &&
+      (legacyQueue.pending > 0 || (legacyQueue.counts.paused ?? 0) > 0)
+        ? legacyQueue.paused
+        : true;
+    const paused = queues.hot.paused && queues.normal.paused && legacyBlocksPause;
     const effectiveConcurrency = maxConcurrency;
-    const pending = (counts.waiting ?? 0) + (counts.active ?? 0) + (counts.delayed ?? 0);
+    const pending =
+      (counts.waiting ?? 0) + (counts.active ?? 0) + (counts.delayed ?? 0);
     return {
       queueName: `${CRAWL_QUEUE_HOT_NAME},${CRAWL_QUEUE_NORMAL_NAME}`,
       legacyQueueName: CRAWL_QUEUE_NAME,
       queueMode: CRAWL_QUEUE_MODE,
       queueNames: {
         hot: CRAWL_QUEUE_HOT_NAME,
-        normal: CRAWL_QUEUE_NORMAL_NAME
+        normal: CRAWL_QUEUE_NORMAL_NAME,
+        legacy: CRAWL_QUEUE_NAME,
       },
       updatedAt: new Date().toISOString(),
       pending,
@@ -100,7 +80,7 @@ export class Crawl4aiQueueController {
       paused,
       maxConcurrency,
       effectiveConcurrency,
-      queues,
+      queues: legacyQueue ? { ...queues, legacy: legacyQueue } : queues,
       adaptive
     };
   }

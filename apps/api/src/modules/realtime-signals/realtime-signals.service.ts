@@ -18,6 +18,10 @@ import type Redis from "ioredis";
 
 import { fetchWithIpv4Fallback } from "../../common/http/fetch-with-ipv4-fallback";
 import {
+  classifyUpstreamRequestError,
+  readHttpStatus,
+} from "../../common/http/upstream-error-classification";
+import {
   extractProcessedArticleTerms,
   normalizeProcessedArticleSource,
 } from "../../common/processed-article-indexing";
@@ -45,6 +49,7 @@ import type {
   RealtimeAisRelayStatusSnapshot,
   RealtimeAisVesselSnapshot,
   RealtimeSignalFetchResult,
+  RealtimeSignalErrorCode,
   RealtimeSignalRateLimitDetails,
   RealtimeSignalRuntimeStatus,
   RealtimeOpenskyBudgetDaySummary,
@@ -360,8 +365,9 @@ interface OpenSkyDiagnosticMessage {
   status?: RealtimeSignalRuntimeStatus;
 }
 
-interface OpenSkyErrorDetails {
-  kind: RealtimeOpenskyErrorKind;
+interface DiagnosticErrorDetails {
+  code: RealtimeSignalErrorCode;
+  kind?: RealtimeOpenskyErrorKind;
   status?: number;
   message: string;
 }
@@ -589,6 +595,7 @@ export class RealtimeSignalsService {
           lastSuccessAt: previousSourceState?.lastSuccessAt,
           lastErrorAt: nowIso,
           lastError: diagnosticError.message,
+          lastErrorCode: diagnosticError.code,
           lastErrorKind:
             source === "opensky" ? diagnosticError.kind : undefined,
           lastErrorStatus: diagnosticError.status,
@@ -797,6 +804,7 @@ export class RealtimeSignalsService {
           lastSuccessAt: sourceState?.lastSuccessAt,
           lastErrorAt: sourceState?.lastErrorAt,
           lastError: sourceState?.lastError,
+          lastErrorCode: sourceState?.lastErrorCode,
           lastErrorKind: sourceState?.lastErrorKind,
           lastErrorStatus: sourceState?.lastErrorStatus,
           lastRateLimit: sourceState?.lastRateLimit,
@@ -2395,9 +2403,10 @@ export class RealtimeSignalsService {
     const details = this.toDiagnosticErrorDetails(error);
     const dateHkt = this.getOpenskyHktDate(occurredAtMs ?? Date.now());
     const key = this.getOpenskyBudgetKey(dateHkt);
+    const openskyErrorKind = details.kind ?? "unknown";
     await Promise.all([
       this.cache.hincrby(key, "errorCalls", 1),
-      this.cache.hincrby(key, this.getOpenskyErrorBudgetField(details.kind), 1),
+      this.cache.hincrby(key, this.getOpenskyErrorBudgetField(openskyErrorKind), 1),
       this.cache.expire(key, this.getOpenskyBudgetTtlSeconds()),
     ]);
     if (error && typeof error === "object") {
@@ -2548,28 +2557,6 @@ export class RealtimeSignalsService {
         code: statusReasonCode ?? "ais_relay_degraded",
         reason:
           statusReason ?? "AIS relay reported a degraded processing state.",
-      };
-    }
-    if (!snapshot.status.connected) {
-      const lastUpstreamError = this.normalizeString(
-        snapshot.diagnostics.lastUpstreamError,
-      );
-      return {
-        code: "ais_upstream_disconnected",
-        reason: lastUpstreamError
-          ? `AIS relay is reachable, but the upstream AIS stream is disconnected. Last upstream error: ${lastUpstreamError}`
-          : "AIS relay is reachable, but the upstream AIS stream is disconnected.",
-      };
-    }
-    if (
-      snapshot.diagnostics.positionReportsSeen > 0 &&
-      snapshot.diagnostics.positionReportsProcessed === 0 &&
-      snapshot.status.vessels === 0
-    ) {
-      return {
-        code: "ais_position_reports_not_retained",
-        reason:
-          "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
       };
     }
     return undefined;
@@ -2836,7 +2823,7 @@ export class RealtimeSignalsService {
         configured: true,
       } satisfies UnrestFeedFetchResult;
     } catch (error) {
-      const status = this.readHttpStatus(error);
+      const status = readHttpStatus(error);
       if (status === 401 || status === 403) {
         try {
           const refreshedToken =
@@ -4181,7 +4168,7 @@ export class RealtimeSignalsService {
         code:
           options.source === "opensky"
             ? options.sourceState.lastErrorKind
-            : undefined,
+            : options.sourceState.lastErrorCode,
         reason: options.sourceState.lastError,
       };
     }
@@ -4405,40 +4392,6 @@ export class RealtimeSignalsService {
           status: "error",
         };
       }
-
-      if (context.connected === false) {
-        const lastUpstreamError = this.normalizeString(
-          context.lastUpstreamError,
-        );
-        return {
-          code: "ais_upstream_disconnected",
-          message: lastUpstreamError
-            ? `AIS relay is reachable, but the upstream AIS stream is disconnected. Last upstream error: ${lastUpstreamError}`
-            : "AIS relay is reachable, but the upstream AIS stream is disconnected.",
-          status: "error",
-        };
-      }
-
-      const positionReportsSeen = this.toFiniteNumber(
-        context.positionReportsSeen,
-      );
-      const positionReportsProcessed = this.toFiniteNumber(
-        context.positionReportsProcessed,
-      );
-      const vesselCount = this.toFiniteNumber(context.vesselCount);
-      if (
-        typeof positionReportsSeen === "number" &&
-        positionReportsSeen > 0 &&
-        positionReportsProcessed === 0 &&
-        vesselCount === 0
-      ) {
-        return {
-          code: "ais_position_reports_not_retained",
-          message:
-            "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
-          status: "error",
-        };
-      }
       return undefined;
     }
     return undefined;
@@ -4459,16 +4412,14 @@ export class RealtimeSignalsService {
     );
   }
 
-  private readHttpStatus(error: unknown) {
-    if (!error || typeof error !== "object") {
-      return undefined;
-    }
-    const status = Number((error as { status?: unknown }).status);
-    return Number.isFinite(status) ? status : undefined;
+  private classifyRealtimeSignalErrorCode(
+    error: unknown,
+  ): RealtimeSignalErrorCode {
+    return classifyUpstreamRequestError(error);
   }
 
   private classifyOpenskyError(error: unknown): RealtimeOpenskyErrorKind {
-    const status = this.readHttpStatus(error);
+    const status = readHttpStatus(error);
     if (status === 401 || status === 403) {
       return "auth";
     }
@@ -4501,9 +4452,10 @@ export class RealtimeSignalsService {
     return "unknown";
   }
 
-  private toDiagnosticErrorDetails(error: unknown): OpenSkyErrorDetails {
-    const status = this.readHttpStatus(error);
+  private toDiagnosticErrorDetails(error: unknown): DiagnosticErrorDetails {
+    const status = readHttpStatus(error);
     return {
+      code: this.classifyRealtimeSignalErrorCode(error),
       kind: this.classifyOpenskyError(error),
       status,
       message: this.toDiagnosticErrorMessage(error),
@@ -4515,7 +4467,7 @@ export class RealtimeSignalsService {
       return error.message;
     }
     if (error && typeof error === "object") {
-      const status = this.readHttpStatus(error);
+      const status = readHttpStatus(error);
       const statusText = this.normalizeString(
         (error as { statusText?: unknown }).statusText,
       );

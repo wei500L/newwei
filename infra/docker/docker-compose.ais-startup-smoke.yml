@@ -1,0 +1,44 @@
+services:
+  mock-ais-upstream:
+    image: ${NODE_IMAGE:-node:20}
+    restart: unless-stopped
+    working_dir: /workspace
+    volumes:
+      - ../scripts/src/mock-ais-upstream.js:/workspace/mock-ais-upstream.js:ro
+    command: ["node", "/workspace/mock-ais-upstream.js"]
+    environment:
+      PORT: 3014
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3014/healthz').then((response) => { process.exit(response.ok ? 0 : 1); }).catch(() => process.exit(1))",
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 1s
+
+  ais-relay:
+    environment:
+      AISSTREAM_URL: ws://mock-ais-upstream:3014
+      AISSTREAM_API_KEY: smoke-test-key
+      AIS_RELAY_HEALTH_NO_MESSAGES_AFTER_CONNECT_MS: 4000
+      AIS_RELAY_HEALTH_STALE_MESSAGES_MS: 8000
+    depends_on:
+      mock-ais-upstream:
+        condition: service_healthy
+    healthcheck:
+      interval: 2s
+      timeout: 3s
+      retries: 4
+      start_period: 6s
+
+  api:
+    healthcheck:
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 60s

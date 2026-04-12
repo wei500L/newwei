@@ -7279,6 +7279,24 @@
           "network": "网络",
           "unknown": "未知"
         },
+        "errorCode": {
+          "dns_resolution_failed": "DNS 解析失败",
+          "request_timeout": "请求超时",
+          "network_error": "网络错误",
+          "upstream_auth_failed": "上游鉴权失败",
+          "upstream_rate_limited": "上游限流",
+          "upstream_server_error": "上游服务错误",
+          "fetch_error": "抓取失败"
+        },
+        "aisReason": {
+          "ais_upstream_disconnected": "AIS relay 可访问，但它的上游 AIS 流已断开。",
+          "ais_upstream_no_messages_after_connect": "AIS relay 已连上上游，但连接建立后没有收到任何 AIS 消息。",
+          "ais_upstream_stalled": "AIS relay 的上游消息流已经停滞。",
+          "ais_position_reports_not_retained": "AIS relay 正在接收报文，但没有保留任何船舶快照。",
+          "ais_position_reports_mostly_ignored": "AIS relay 正在接收报文，但大部分位置报文在归一化阶段被忽略。",
+          "ais_payload_parse_errors": "AIS relay 正在频繁遇到上游载荷解析错误。",
+          "ais_snapshot_missing_vessels_contract": "AIS 中继显示已跟踪船舶，但当前快照仅提供聚合信号，尚未暴露单船 vessels[] 数据。"
+        },
         "lastRunAt": "最近运行",
         "lastAttemptAt": "最近尝试",
         "nextEligibleAt": "下次可重试",
@@ -7305,6 +7323,18 @@
           "aisReportsNotRetained": {
             "title": "AIS relay 已收到报文，但没有保留船舶快照。",
             "body": "已看到 {{seen}} 条报文，处理 {{processed}} 条，保留候选 {{candidates}} 条。请检查 relay 的解析与快照保留逻辑。"
+          },
+          "aisUpstreamNoMessagesAfterConnect": {
+            "body": "WebSocket 已建立，但在 relay 的超时窗口内没有收到任何 AIS 负载。请检查上游订阅健康状态、凭据，以及数据源是否仍在发送实时流量。"
+          },
+          "aisUpstreamStalled": {
+            "body": "上游 socket 仍然保持连接，但消息流已经停止。请检查上游 heartbeat/keepalive 行为以及 relay 侧的重连情况。"
+          },
+          "aisReportsMostlyIgnored": {
+            "body": "relay 正在接收位置报文，但归一化阶段丢弃了大部分数据。已看到 {{seen}} 条，处理 {{processed}} 条，忽略 {{ignored}} 条。"
+          },
+          "aisPayloadParseErrors": {
+            "body": "relay 在解析阶段丢弃了相当比例的上游负载。请检查上游 payload 格式是否漂移，以及当前解析器假设是否仍然成立。最近解析错误数：{{count}}。"
           },
           "aisRelayDegraded": {
             "title": "AIS relay 运行时健康状态已降级。",

@@ -58,6 +58,7 @@ import {
 } from "@/lib/map/map-runtime";
 import { MAP_STYLE_URL } from "@/lib/map/map-style";
 import { useRenderableContainer } from "@/lib/map/use-renderable-container";
+import { formatAisRuntimeReason } from "@/lib/realtime-signals-runtime";
 import { safeHttpUrl } from "@/lib/url";
 import { useWarMapSettingsStore } from "@/store/war-map-settings";
 
@@ -3577,7 +3578,7 @@ export function WarMap({
           defaultValue:
             "AIS relay reports tracked vessels, but this snapshot only exposes aggregated signals instead of individual vessels[].",
         })
-      : aisStatusReason;
+      : formatAisRuntimeReason(t, aisStatusReasonCode, aisStatusReason);
   const aisResolvedBlockedReason =
     aisBlockedReasonCode === "missing_vessels_snapshot"
       ? t("dashboard.charts.warMap.stats.aisAllUnavailableHint", {

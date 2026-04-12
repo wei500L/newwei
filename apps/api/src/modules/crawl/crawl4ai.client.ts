@@ -154,7 +154,13 @@ export class Crawl4aiClient {
 
     try {
       const response = await this.sendCrawlRequest(payload, requestTimeoutMs);
-      return systemEvents.length > 0 ? { ...response, systemEvents } : response;
+      if (systemEvents.length === 0) {
+        return response;
+      }
+      return {
+        ...response,
+        systemEvents: [...(response.systemEvents ?? []), ...systemEvents],
+      };
     } catch (error) {
       let resolvedError: unknown = error;
       let resolvedPayload: Crawl4aiHttpPayload = payload;
@@ -185,7 +191,7 @@ export class Crawl4aiClient {
           });
           return {
             ...response,
-            systemEvents,
+            systemEvents: [...(response.systemEvents ?? []), ...systemEvents],
           };
         } catch (retryError) {
           resolvedError = retryError;
@@ -227,7 +233,7 @@ export class Crawl4aiClient {
           });
           return {
             ...response,
-            systemEvents,
+            systemEvents: [...(response.systemEvents ?? []), ...systemEvents],
           };
         } catch (fallbackError) {
           resolvedError = fallbackError;
@@ -404,11 +410,27 @@ export class Crawl4aiClient {
   }
 
   private normalizeCrawlResponse(data?: Crawl4aiResponse): Crawl4aiResponse {
+    const systemEvents = Array.isArray(data?.systemEvents)
+      ? data.systemEvents.filter(
+          (
+            event,
+          ): event is NonNullable<Crawl4aiResponse["systemEvents"]>[number] =>
+            Boolean(
+              event &&
+                typeof event === "object" &&
+                typeof event.level === "string" &&
+                typeof event.eventType === "string" &&
+                typeof event.message === "string" &&
+                typeof event.timestamp === "string",
+            ),
+        )
+      : undefined;
     return {
       results: data?.results ?? [],
       nextCursor: data?.nextCursor ?? null,
       runId: data?.runId ?? null,
       warnings: data?.warnings ?? [],
+      systemEvents,
       serverMemoryMb: data?.serverMemoryMb,
       peakMemoryMb: data?.peakMemoryMb,
       memoryEfficiency: data?.memoryEfficiency,
@@ -630,16 +652,7 @@ export class Crawl4aiClient {
   }
 
   private isPrefetchFallbackCandidateError(error: unknown): boolean {
-    if (this.isPrefetchCompatibilityError(error)) {
-      return true;
-    }
-
-    if (!error || typeof error !== "object") {
-      return false;
-    }
-
-    const axiosError = error as AxiosError<unknown>;
-    return axiosError.response?.status === 500;
+    return this.isPrefetchCompatibilityError(error);
   }
 
   private isPrefetchCompatibilityError(error: unknown): boolean {

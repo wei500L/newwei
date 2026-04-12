@@ -2461,16 +2461,10 @@ export class DashboardChartsService {
       (sourceState?.status === "error" &&
       this.normalizeString(sourceState.lastError)
         ? "ais_refresh_failed"
-        : sourceContext?.configured !== false &&
-            sourceContext?.connected === false
-          ? "ais_upstream_disconnected"
-          : undefined);
+        : undefined);
     const sourceStatusReason =
       this.normalizeString(sourceContext?.statusReason) ??
-      this.normalizeString(sourceState?.lastError) ??
-      (sourceContext?.configured !== false && sourceContext?.connected === false
-        ? "AIS relay is reachable, but the upstream AIS stream is disconnected."
-        : undefined);
+      this.normalizeString(sourceState?.lastError);
     const staleThresholdSec =
       typeof sourceContext?.staleThresholdSec === "number" &&
       Number.isFinite(sourceContext.staleThresholdSec)
@@ -2541,29 +2535,14 @@ export class DashboardChartsService {
       snapshot.status.vessels > 0 && !snapshot.hasVesselSnapshot;
     const aisStatusReasonCode =
       this.normalizeString(snapshotDiagnostics?.statusReasonCode) ??
-      (!snapshot.status.connected
-        ? "ais_upstream_disconnected"
-        : missingVesselsSnapshotContract
-          ? "ais_snapshot_missing_vessels_contract"
-        : typeof positionReportsSeen === "number" &&
-            positionReportsSeen > 0 &&
-            positionReportsProcessed === 0 &&
-            snapshot.status.vessels === 0
-          ? "ais_position_reports_not_retained"
-          : sourceStatusReasonCode);
+      (missingVesselsSnapshotContract
+        ? "ais_snapshot_missing_vessels_contract"
+        : sourceStatusReasonCode);
     const aisStatusReason =
       this.normalizeString(snapshotDiagnostics?.statusReason) ??
-      (!snapshot.status.connected
-        ? (sourceStatusReason ??
-          "AIS relay is reachable, but the upstream AIS stream is disconnected.")
-        : missingVesselsSnapshotContract
-          ? "AIS relay reports tracked vessels, but the snapshot payload omits vessels[] and only exposes aggregated signals."
-        : typeof positionReportsSeen === "number" &&
-            positionReportsSeen > 0 &&
-            positionReportsProcessed === 0 &&
-            snapshot.status.vessels === 0
-          ? "AIS relay is receiving position reports, but none are being retained as vessel snapshots."
-          : sourceStatusReason);
+      (missingVesselsSnapshotContract
+        ? "AIS relay reports tracked vessels, but the snapshot payload omits vessels[] and only exposes aggregated signals."
+        : sourceStatusReason);
 
     const disruptionFeatures = this.filterWarMapPointsByBbox(
       snapshot.disruptions,

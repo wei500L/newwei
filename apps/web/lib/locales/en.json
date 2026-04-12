@@ -7279,6 +7279,24 @@
           "network": "network",
           "unknown": "unknown"
         },
+        "errorCode": {
+          "dns_resolution_failed": "DNS resolution failed",
+          "request_timeout": "Request timed out",
+          "network_error": "Network error",
+          "upstream_auth_failed": "Upstream auth failed",
+          "upstream_rate_limited": "Upstream rate limited",
+          "upstream_server_error": "Upstream server error",
+          "fetch_error": "Fetch error"
+        },
+        "aisReason": {
+          "ais_upstream_disconnected": "AIS relay is reachable, but its upstream AIS stream is disconnected.",
+          "ais_upstream_no_messages_after_connect": "AIS relay connected upstream, but no AIS messages arrived after connect.",
+          "ais_upstream_stalled": "AIS relay upstream message flow has stalled.",
+          "ais_position_reports_not_retained": "AIS relay is receiving reports, but vessel snapshots are not being retained.",
+          "ais_position_reports_mostly_ignored": "AIS relay is receiving reports, but most position reports are being ignored during normalization.",
+          "ais_payload_parse_errors": "AIS relay is encountering frequent upstream payload parse errors.",
+          "ais_snapshot_missing_vessels_contract": "AIS relay reports tracked vessels, but this snapshot only exposes aggregated signals instead of individual vessels[]."
+        },
         "lastRunAt": "Last run",
         "lastAttemptAt": "Last attempt",
         "nextEligibleAt": "Next eligible",
@@ -7305,6 +7323,18 @@
           "aisReportsNotRetained": {
             "title": "AIS relay is receiving reports, but vessel snapshots are not being retained.",
             "body": "Seen {{seen}} reports, processed {{processed}}, retained candidates {{candidates}}. Check relay parsing and snapshot retention logic."
+          },
+          "aisUpstreamNoMessagesAfterConnect": {
+            "body": "The websocket connected, but no AIS payload arrived before the relay timeout window. Check upstream subscription health, credentials, and whether the source is sending live traffic."
+          },
+          "aisUpstreamStalled": {
+            "body": "The upstream socket stayed open but message flow stopped. Inspect upstream heartbeat/keepalive behavior and relay-side reconnect activity."
+          },
+          "aisReportsMostlyIgnored": {
+            "body": "The relay is receiving positions, but normalization is discarding most of them. Seen {{seen}} reports, processed {{processed}}, ignored {{ignored}}."
+          },
+          "aisPayloadParseErrors": {
+            "body": "The relay is discarding a significant share of upstream payloads during parsing. Review upstream payload format drift and parser assumptions. Recent parse errors: {{count}}."
           },
           "aisRelayDegraded": {
             "title": "AIS relay reported degraded runtime health.",
