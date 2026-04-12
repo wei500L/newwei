@@ -35,6 +35,7 @@ import {
   mergeBrowserHeaders,
   normalizeBrowserHeaders,
 } from "@/lib/crawl-browser-headers";
+import { findUnsupportedProxyIssues } from "@/lib/crawl-config-policy";
 import {
   CRAWL_TASK_TEMPLATE_DESCRIPTORS,
   buildCrawlTaskTemplateValues,
@@ -163,8 +164,6 @@ export function CreateCrawlTaskDrawer({
 
   const scanFullPage = Form.useWatch("scanFullPage", form);
   const waitUntilValue = Form.useWatch("waitUntil", form);
-  const proxyUrlValue = Form.useWatch("proxyUrl", form);
-  const proxyConfigValue = Form.useWatch("proxyConfig", form);
   const markdownFilterType = Form.useWatch(["markdownFilter", "type"], form);
   const scoreLinksValue = Form.useWatch("scoreLinks", form);
   const userAgentModeValue = Form.useWatch("userAgentMode", form);
@@ -181,8 +180,6 @@ export function CreateCrawlTaskDrawer({
     form.setFields([{ name: "waitForTimeoutMs", value: 5000 }]);
   }, [form, waitUntilValue]);
 
-  const proxyUrlActive = Boolean(proxyUrlValue?.trim().length);
-  const proxyObjectActive = Boolean(proxyConfigValue?.server?.trim().length);
   const linkPreviewDisabled = !scoreLinksValue;
 
   const handleNext = async () => {
@@ -383,8 +380,6 @@ export function CreateCrawlTaskDrawer({
           <BrowserConfigForm
             userAgentModeValue={userAgentModeValue}
             useManagedBrowserValue={useManagedBrowserValue}
-            proxyUrlActive={proxyUrlActive}
-            proxyObjectActive={proxyObjectActive}
           />
         </div>
 
@@ -2770,19 +2765,24 @@ function CrawlSettingsForm({
 interface BrowserConfigFormProps {
   userAgentModeValue?: string;
   useManagedBrowserValue?: boolean;
-  proxyUrlActive: boolean;
-  proxyObjectActive: boolean;
 }
 
 function BrowserConfigForm({
   userAgentModeValue,
   useManagedBrowserValue,
-  proxyUrlActive,
-  proxyObjectActive,
 }: BrowserConfigFormProps) {
   const { t } = useTranslation();
   const form = Form.useFormInstance<CreateCrawlTaskFormValues>();
   const headlessModeValue = Form.useWatch("headlessMode", form);
+  const proxyUrlValue = Form.useWatch("proxyUrl", form);
+  const proxyConfigValue = Form.useWatch("proxyConfig", form);
+  const proxyIssues = findUnsupportedProxyIssues(
+    {
+      proxyUrl: proxyUrlValue,
+      proxyConfig: proxyConfigValue,
+    },
+    "options",
+  );
 
   const applyAutoBrowserHeaders = useCallback(() => {
     const currentValues = form.getFieldsValue(
@@ -3328,44 +3328,20 @@ function BrowserConfigForm({
         size="small"
         style={{ marginBottom: 16 }}
       >
-        <Form.Item
-          label={t("crawl.proxy.url")}
-          name="proxyUrl"
-          extra={t("crawl.proxy.urlHint")}
-        >
-          <Input
-            placeholder={t("crawl.proxy.placeholders.url")}
-            disabled={proxyObjectActive}
-          />
-        </Form.Item>
-        <Form.Item
-          label={t("crawl.proxy.server")}
-          name={["proxyConfig", "server"]}
-          extra={t("crawl.proxy.serverHint")}
-        >
-          <Input
-            placeholder={t("crawl.proxy.placeholders.server")}
-            disabled={proxyUrlActive}
-          />
-        </Form.Item>
-        <Form.Item
-          label={t("crawl.proxy.username")}
-          name={["proxyConfig", "username"]}
-        >
-          <Input
-            placeholder={t("crawl.proxy.placeholders.username")}
-            disabled={proxyUrlActive}
-          />
-        </Form.Item>
-        <Form.Item
-          label={t("crawl.proxy.password")}
-          name={["proxyConfig", "password"]}
-        >
-          <Input.Password
-            placeholder={t("crawl.proxy.placeholders.password")}
-            disabled={proxyUrlActive}
-          />
-        </Form.Item>
+        <Alert
+          type={proxyIssues.length > 0 ? "error" : "warning"}
+          showIcon
+          message={
+            proxyIssues.length > 0
+              ? "Unsupported legacy proxy configuration detected"
+              : "Custom upstream proxies are disabled"
+          }
+          description={
+            proxyIssues.length > 0
+              ? proxyIssues.map((issue) => `${issue.path}: ${issue.message}`).join(" ")
+              : "Task crawl no longer accepts proxyUrl or proxyConfig. Remove any legacy proxy fields before submitting."
+          }
+        />
       </Card>
     </>
   );

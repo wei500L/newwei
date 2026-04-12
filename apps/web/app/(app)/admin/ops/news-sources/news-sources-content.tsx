@@ -51,6 +51,7 @@ import type { CreateCrawlTaskFormValues } from "@/app/(app)/crawl/types";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { applyAutoBrowserHeadersToCrawlOptions } from "@/lib/crawl-browser-headers";
+import { findUnsupportedProxyIssues } from "@/lib/crawl-config-policy";
 import { normalizeHeadlessModeFormValues } from "@/lib/crawl-headless-mode";
 import {
   buildNewsSourceCloudflarePresetValues,
@@ -297,6 +298,8 @@ interface Crawl4aiQualitySourceMetric {
   sourceId: string;
   taskCount: number;
   lowSignalRatio: number;
+  emptyMarkdownRate: number;
+  expansionTriggerRate: number;
   expansionSuccessRate: number;
   avgMarkdownChars: number;
   candidateRejects?: {
@@ -476,8 +479,6 @@ interface NewsSourceFormValues {
   tags?: string;
   summaryHints?: string;
   metadataJson?: string;
-  crawlProxyMode?: "auto" | "enable" | "disable";
-  crawlProxyUrl?: string;
   crawlScanMode?: "default" | "full_page" | "virtual_scroll";
   crawlScrollDelayMs?: number;
   crawlVirtualScrollContainerSelector?: string;
@@ -559,8 +560,6 @@ const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
   seedRssBodySourceStrategy: DEFAULT_SEED_FORM_VALUES.seedRssBodySourceStrategy,
   seedRssNoBodyPolicy: DEFAULT_SEED_FORM_VALUES.seedRssNoBodyPolicy,
   seedQuery: "",
-  crawlProxyMode: "auto",
-  crawlProxyUrl: "",
   crawlScanMode: "default",
   crawlScrollDelayMs: undefined,
   crawlVirtualScrollContainerSelector: "",
@@ -717,7 +716,6 @@ const DISALLOWED_CRAWL4AI_LLM_NORMALIZED_KEYS = new Set([
   "extractionstrategy",
   "llmconfig",
 ]);
-const LOCAL_PROXY_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 const normalizeLooseKey = (key: string) =>
   key.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -755,26 +753,6 @@ const findDisallowedCrawl4aiLlmKeys = (
   }
 
   return hits;
-};
-
-const translateLocalProxyToDockerHost = (value: string) => {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return trimmed;
-  }
-  try {
-    const parsed = new URL(trimmed);
-    const hostname = parsed.hostname.toLowerCase();
-    if (!LOCAL_PROXY_HOSTS.has(hostname)) {
-      return trimmed;
-    }
-    parsed.hostname = "host.docker.internal";
-    const hadNoPath = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/]+$/.test(trimmed);
-    const next = parsed.toString();
-    return hadNoPath && next.endsWith("/") ? next.slice(0, -1) : next;
-  } catch {
-    return trimmed;
-  }
 };
 
 const hasSeedConfig = (
@@ -2292,37 +2270,6 @@ export function NewsSourcesContent() {
         : crawlAntiBotModeRaw === "disabled"
           ? "disable"
           : "auto";
-    const proxyConfig = isPlainObject(crawlOptionsConfig?.proxyConfig)
-      ? (crawlOptionsConfig!.proxyConfig as Record<string, unknown>)
-      : null;
-    const proxyConfigServer =
-      typeof proxyConfig?.server === "string" ? proxyConfig.server.trim() : "";
-    const proxyConfigUsername =
-      typeof proxyConfig?.username === "string"
-        ? proxyConfig.username.trim()
-        : "";
-    const proxyConfigPassword =
-      typeof proxyConfig?.password === "string"
-        ? proxyConfig.password.trim()
-        : "";
-    const proxyConfigHasAuth =
-      Boolean(proxyConfigUsername) || Boolean(proxyConfigPassword);
-    const proxyUrlRaw =
-      typeof crawlOptionsConfig?.proxyUrl === "string"
-        ? crawlOptionsConfig.proxyUrl.trim()
-        : "";
-    const crawlProxyMode =
-      proxyUrlRaw.length > 0
-        ? "enable"
-        : proxyConfigServer.length > 0 && !proxyConfigHasAuth
-          ? "enable"
-          : "auto";
-    const crawlProxyUrl =
-      proxyUrlRaw.length > 0
-        ? proxyUrlRaw
-        : proxyConfigServer.length > 0 && !proxyConfigHasAuth
-          ? proxyConfigServer
-          : "";
     const virtualScrollConfig =
       crawlOptionsConfig?.virtualScroll &&
       typeof crawlOptionsConfig.virtualScroll === "object" &&
@@ -2508,8 +2455,6 @@ export function NewsSourcesContent() {
       metadataJson: config?.metadata
         ? JSON.stringify(config.metadata, null, 2)
         : "",
-      crawlProxyMode,
-      crawlProxyUrl,
       crawlScanMode,
       crawlScrollDelayMs,
       crawlVirtualScrollContainerSelector,
@@ -2656,35 +2601,6 @@ export function NewsSourcesContent() {
       typeof resolvedCrawlOptions.antiBotMode === "string"
     ) {
       delete resolvedCrawlOptions.antiBotMode;
-    }
-
-    const crawlProxyMode =
-      values.crawlProxyMode === "enable"
-        ? "enable"
-        : values.crawlProxyMode === "disable"
-          ? "disable"
-          : "auto";
-    const crawlProxyUrl = values.crawlProxyUrl?.trim() ?? "";
-    if (crawlProxyMode === "enable") {
-      if (!crawlProxyUrl) {
-        throw new Error(
-          t("newsSources.errors.proxyUrlRequired", {
-            defaultValue: "Proxy URL is required when proxy is enabled.",
-          }),
-        );
-      }
-      resolvedCrawlOptions = resolvedCrawlOptions ?? {};
-      resolvedCrawlOptions.proxyUrl = crawlProxyUrl;
-      if (typeof resolvedCrawlOptions.proxyConfig === "object") {
-        delete resolvedCrawlOptions.proxyConfig;
-      }
-    } else if (crawlProxyMode === "disable" && resolvedCrawlOptions) {
-      if (typeof resolvedCrawlOptions.proxyUrl === "string") {
-        delete resolvedCrawlOptions.proxyUrl;
-      }
-      if (typeof resolvedCrawlOptions.proxyConfig === "object") {
-        delete resolvedCrawlOptions.proxyConfig;
-      }
     }
 
     const crawlScanMode =
@@ -2916,6 +2832,13 @@ export function NewsSourcesContent() {
     }
 
     if (resolvedCrawlOptions) {
+      const proxyIssues = findUnsupportedProxyIssues(
+        resolvedCrawlOptions,
+        "config.crawlOptions",
+      );
+      if (proxyIssues.length > 0) {
+        throw new Error(proxyIssues.map((issue) => issue.path).join(", "));
+      }
       const blockedKeys = findDisallowedCrawl4aiLlmKeys(resolvedCrawlOptions);
       if (blockedKeys.length > 0) {
         const list = blockedKeys.slice(0, 5).join(", ");
@@ -2929,6 +2852,18 @@ export function NewsSourcesContent() {
             suffix,
           }),
         );
+      }
+    }
+    const finalCrawlOptions = isRssSeedMode
+      ? existingCrawlOptions
+      : resolvedCrawlOptions;
+    if (finalCrawlOptions) {
+      const proxyIssues = findUnsupportedProxyIssues(
+        finalCrawlOptions,
+        "config.crawlOptions",
+      );
+      if (proxyIssues.length > 0) {
+        throw new Error(proxyIssues.map((issue) => issue.path).join(", "));
       }
     }
     if (isRssSeedMode) {
@@ -3035,6 +2970,15 @@ export function NewsSourcesContent() {
     let crawlOptions: ReturnType<typeof sanitizeCrawlOptions>;
     try {
       crawlOptions = sanitizeCrawlOptions(normalizeCreateDrawerValues(values));
+      const proxyIssues = findUnsupportedProxyIssues(
+        crawlOptions,
+        "config.crawlOptions",
+      );
+      if (proxyIssues.length > 0) {
+        messageApi.error(proxyIssues.map((issue) => issue.path).join(", "));
+        setCreatingFromTaskDrawer(false);
+        return;
+      }
     } catch (error) {
       messageApi.error(
         error instanceof Error ? error.message : "Invalid crawl options",
@@ -6449,110 +6393,12 @@ export function NewsSourcesContent() {
           </Form.Item>
           {showCrawlSettings ? (
             <>
-              <Form.Item
-                name="crawlProxyMode"
-                label={t("newsSources.fields.crawlProxyMode", {
-                  defaultValue: "Proxy",
-                })}
-                tooltip={t("newsSources.fields.crawlProxyModeHint", {
-                  defaultValue:
-                    "Auto keeps proxyUrl/proxyConfig from crawlOptions JSON. Enabled overrides crawlOptions with the Proxy URL below. Disabled removes any proxy settings.",
-                })}
-              >
-                <Select
-                  options={[
-                    {
-                      label: t("newsSources.crawlTriState.auto", {
-                        defaultValue: "Auto (inherit)",
-                      }),
-                      value: "auto",
-                    },
-                    {
-                      label: t("newsSources.crawlTriState.enable", {
-                        defaultValue: "Enabled",
-                      }),
-                      value: "enable",
-                    },
-                    {
-                      label: t("newsSources.crawlTriState.disable", {
-                        defaultValue: "Disabled",
-                      }),
-                      value: "disable",
-                    },
-                  ]}
-                />
-              </Form.Item>
-              <Form.Item
-                noStyle
-                shouldUpdate={(prevValues, nextValues) =>
-                  prevValues.crawlProxyMode !== nextValues.crawlProxyMode
-                }
-              >
-                {({ getFieldValue }) => {
-                  const modeRaw = getFieldValue("crawlProxyMode");
-                  const mode =
-                    modeRaw === "enable"
-                      ? "enable"
-                      : modeRaw === "disable"
-                        ? "disable"
-                        : "auto";
-                  if (mode !== "enable") {
-                    return null;
-                  }
-
-                  return (
-                    <Form.Item
-                      name="crawlProxyUrl"
-                      label={t("newsSources.fields.crawlProxyUrl", {
-                        defaultValue: "Proxy URL",
-                      })}
-                      tooltip={t("newsSources.fields.crawlProxyUrlHint", {
-                        defaultValue:
-                          "If crawl4ai runs in Docker and your proxy is on this machine, use host.docker.internal instead of localhost/127.0.0.1.",
-                      })}
-                      rules={[
-                        {
-                          required: true,
-                          message: t("newsSources.errors.proxyUrlRequired", {
-                            defaultValue:
-                              "Proxy URL is required when proxy is enabled.",
-                          }),
-                        },
-                      ]}
-                    >
-                      <Space.Compact style={{ width: "100%" }}>
-                        <Input placeholder="http://host.docker.internal:7890" />
-                        <Button
-                          onClick={() => {
-                            const current = String(
-                              form.getFieldValue("crawlProxyUrl") ?? "",
-                            );
-                            const next =
-                              translateLocalProxyToDockerHost(current);
-                            if (next !== current) {
-                              form.setFieldsValue({ crawlProxyUrl: next });
-                            }
-                          }}
-                        >
-                          {t("newsSources.actions.useDockerHostProxy", {
-                            defaultValue: "Use Docker host",
-                          })}
-                        </Button>
-                        <Button
-                          onClick={() =>
-                            form.setFieldsValue({
-                              crawlProxyMode: "disable",
-                              crawlProxyUrl: "",
-                            })
-                          }
-                        >
-                          {t("common.clear", { defaultValue: "Clear" })}
-                        </Button>
-                      </Space.Compact>
-                    </Form.Item>
-                  );
-                }}
-              </Form.Item>
+              <Alert
+                type="warning"
+                showIcon
+                message="Custom upstream proxies are disabled"
+                description="Do not add proxyUrl or proxyConfig in crawlOptions. Existing legacy proxy fields stay visible in the JSON editor and will block save until removed."
+              />
 
               <Typography.Title level={5} style={{ marginBottom: 0 }}>
                 {t("newsSources.sections.crawlStrategy", {
@@ -7252,6 +7098,15 @@ export function NewsSourcesContent() {
                         Array.isArray(parsed)
                       ) {
                         throw new Error("crawlOptions must be a JSON object");
+                      }
+                      const proxyIssues = findUnsupportedProxyIssues(
+                        parsed,
+                        "config.crawlOptions",
+                      );
+                      if (proxyIssues.length > 0) {
+                        throw new Error(
+                          proxyIssues.map((issue) => issue.path).join(", "),
+                        );
                       }
                       const blockedKeys = findDisallowedCrawl4aiLlmKeys(parsed);
                       if (blockedKeys.length === 0) {

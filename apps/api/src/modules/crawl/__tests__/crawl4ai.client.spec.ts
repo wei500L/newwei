@@ -846,7 +846,7 @@ describe("Crawl4aiClient", () => {
     expect(payload.crawler_config.params.wait_for_timeout).toBe(500);
   });
 
-  it("routes crawl traffic through the worker SSRF proxy and preserves upstream proxy overrides", async () => {
+  it("routes crawl traffic through the worker SSRF proxy without user upstream overrides", async () => {
     envMock.crawl4aiConfig.ssrfProxyUrl = "http://127.0.0.1:18080";
     const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
 
@@ -862,18 +862,7 @@ describe("Crawl4aiClient", () => {
     });
 
     const payload = httpMock.post.mock.calls[0]?.[1];
-    expect(payload.browser_config.params.proxy).toBeUndefined();
-    expect(payload.browser_config.params.proxy_config).toEqual({
-      server: "http://127.0.0.1:18080",
-      username: "__modular_ssrf_proxy__",
-      password: Buffer.from(
-        JSON.stringify({
-          server: "http://host.docker.internal:7890",
-          username: "user-1",
-          password: "secret-1",
-        }),
-        "utf8",
-      ).toString("base64url"),
-    });
+    expect(payload.browser_config.params.proxy).toBe("http://127.0.0.1:18080");
+    expect(payload.browser_config.params.proxy_config).toBeUndefined();
   });
 });

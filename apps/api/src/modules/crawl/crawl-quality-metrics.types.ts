@@ -21,6 +21,8 @@ export interface CrawlQualityMetricsSourceSnapshot {
   sourceId: string;
   taskCount: number;
   lowSignalRatio: number;
+  emptyMarkdownRate: number;
+  expansionTriggerRate: number;
   expansionSuccessRate: number;
   avgMarkdownChars: number;
   candidateRejects: CrawlQualityRejectBreakdown;

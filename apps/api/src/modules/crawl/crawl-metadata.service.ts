@@ -7,6 +7,7 @@ import { gunzipSync } from "node:zlib";
 
 import { CacheService } from "../cache/cache.service";
 
+import { CrawlExecutionService } from "./crawl-execution.service";
 import type {
   CrawlMetadataExtractionInput,
   CrawlMetadataResult,
@@ -185,6 +186,7 @@ export class CrawlMetadataService {
   constructor(
     @Optional() private readonly crawl4ai?: Crawl4aiClient,
     @Optional() private readonly cache?: CacheService,
+    @Optional() private readonly executionService?: CrawlExecutionService,
   ) {}
 
   async extract(
@@ -1864,8 +1866,24 @@ export class CrawlMetadataService {
   private normalizeCrawlOptions(value: unknown): CrawlTaskOptions | undefined {
     const options =
       value && typeof value === "object" && !Array.isArray(value)
-        ? (value as CrawlTaskOptions)
+        ? (value as Partial<CrawlTaskOptions>)
         : {};
+    const normalized = this.executionService
+      ? this.executionService.normalizeOptions(options)
+      : this.normalizeDiscoveryOptionsFallback(options);
+
+    return {
+      ...normalized,
+      additionalUrls: undefined,
+      multiUrlConfigs: undefined,
+      extractLinks: true,
+      prefetch: true,
+    };
+  }
+
+  private normalizeDiscoveryOptionsFallback(
+    options: Partial<CrawlTaskOptions>,
+  ): CrawlTaskOptions {
     const waitUntil =
       options.waitUntil === "domcontentloaded" ||
       options.waitUntil === "load" ||
@@ -1879,9 +1897,7 @@ export class CrawlMetadataService {
         ? Math.max(500, Math.min(60000, Math.round(options.waitForTimeoutMs)))
         : 12_000;
     const waitForTimeoutMs =
-      waitUntil === "networkidle" && typeof waitForTimeoutMsRaw === "number"
-        ? Math.max(5000, waitForTimeoutMsRaw)
-        : waitForTimeoutMsRaw;
+      waitUntil === "networkidle" ? Math.max(5000, waitForTimeoutMsRaw) : waitForTimeoutMsRaw;
     const pageTimeoutMs =
       typeof options.pageTimeoutMs === "number" &&
       Number.isFinite(options.pageTimeoutMs)
@@ -1905,55 +1921,13 @@ export class CrawlMetadataService {
       Number.isFinite(options.maxDelayRangeMs)
         ? Math.max(0, Math.min(10_000, Math.round(options.maxDelayRangeMs)))
         : 2_000;
-    const scanVirtualScroll =
+    const virtualScroll =
       options.virtualScroll && typeof options.virtualScroll === "object"
         ? options.virtualScroll
-        : {
-            containerSelector: "body",
-            scrollCount: 8,
-            scrollBy: "page_height" as const,
-            waitAfterScrollMs: 700,
-          };
-    const normalizedUserAgent =
-      typeof options.userAgent === "string" &&
-      options.userAgent.trim().length > 0
-        ? options.userAgent.trim()
-        : undefined;
-    const enableStealthMode =
-      typeof options.enableStealthMode === "boolean"
-        ? options.enableStealthMode
-        : false;
-    const simulateUser =
-      typeof options.simulateUser === "boolean"
-        ? options.simulateUser
-        : enableStealthMode;
-    const overrideNavigator =
-      typeof options.overrideNavigator === "boolean"
-        ? options.overrideNavigator
-        : enableStealthMode;
-    const userAgentMode = normalizedUserAgent
-      ? undefined
-      : options.userAgentMode === "random"
-        ? "random"
         : undefined;
 
     return {
-      ...options,
-      additionalUrls: undefined,
-      multiUrlConfigs: undefined,
-      extractLinks: true,
-      prefetch: true,
-      headless:
-        typeof options.headless === "boolean" ? options.headless : undefined,
-      enableUndetectedBrowser:
-        typeof options.enableUndetectedBrowser === "boolean"
-          ? options.enableUndetectedBrowser
-          : false,
-      enableStealthMode,
-      simulateUser,
-      overrideNavigator,
-      userAgent: normalizedUserAgent,
-      userAgentMode,
+      ...(options as CrawlTaskOptions),
       waitUntil,
       waitForTimeoutMs,
       pageTimeoutMs,
@@ -1968,8 +1942,12 @@ export class CrawlMetadataService {
         typeof options.processIframes === "boolean"
           ? options.processIframes
           : true,
-      scanFullPage: scanVirtualScroll ? false : options.scanFullPage,
-      virtualScroll: scanVirtualScroll,
+      scanFullPage: virtualScroll
+        ? false
+        : typeof options.scanFullPage === "boolean"
+          ? options.scanFullPage
+          : false,
+      virtualScroll,
     };
   }
 

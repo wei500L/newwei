@@ -131,8 +131,6 @@ interface CrawlScanProfile {
   adjustViewportToContent?: boolean;
 }
 
-const CRAWL4AI_SSRF_PROXY_AUTH_USER = "__modular_ssrf_proxy__";
-
 @Injectable()
 export class Crawl4aiClient {
   private readonly logger = new Logger(Crawl4aiClient.name);
@@ -353,7 +351,7 @@ export class Crawl4aiClient {
       }
       if (maybeProxyIssue) {
         hints.push(
-          "Hint: crawl4ai failed to connect to the proxy. If your proxy is on the Docker host, use host.docker.internal (e.g. http://host.docker.internal:7890) instead of 127.0.0.1/localhost, or disable proxyUrl.",
+          "Hint: crawl4ai failed to connect to the configured proxy. If the proxy is on the Docker host, use host.docker.internal (e.g. http://host.docker.internal:7890) instead of 127.0.0.1/localhost.",
         );
       }
       const messageWithHint =
@@ -1078,46 +1076,21 @@ export class Crawl4aiClient {
   }
 
   private resolveBrowserProxy(options: CrawlTaskOptions) {
-    const directProxyConfig = this.resolveProxyConfig(options);
-    const directProxyUrl = this.resolveProxyUrl(options);
     const ssrfProxyUrl = this.normalizeSsrfProxyUrl(
       this.env.crawl4aiConfig.ssrfProxyUrl,
     );
 
-    if (!ssrfProxyUrl) {
-      return {
-        proxy: directProxyUrl,
-        proxyConfig: directProxyConfig,
-      };
-    }
-
-    const encodedUpstream = this.encodeSsrfProxyUpstream(
-      directProxyConfig ??
-        (directProxyUrl ? { server: directProxyUrl } : undefined),
-    );
-
     return {
-      proxy: undefined,
-      proxyConfig: this.compact({
-        server: ssrfProxyUrl,
-        username: encodedUpstream
-          ? CRAWL4AI_SSRF_PROXY_AUTH_USER
-          : undefined,
-        password: encodedUpstream,
-      }),
+      proxy: ssrfProxyUrl ?? this.resolveProxyUrl(options),
+      proxyConfig: ssrfProxyUrl
+        ? undefined
+        : this.resolveProxyConfig(options),
     };
   }
 
   private normalizeSsrfProxyUrl(proxyUrl?: string) {
     const normalized = proxyUrl?.trim();
     return normalized && /^https?:\/\//i.test(normalized) ? normalized : undefined;
-  }
-
-  private encodeSsrfProxyUpstream(proxyConfig?: CrawlProxyConfig) {
-    if (!proxyConfig) {
-      return undefined;
-    }
-    return Buffer.from(JSON.stringify(proxyConfig), "utf8").toString("base64url");
   }
 
   private buildMarkdownGenerator(options: CrawlTaskOptions) {

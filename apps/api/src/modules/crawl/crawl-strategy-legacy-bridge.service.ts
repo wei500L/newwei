@@ -47,9 +47,10 @@ export class CrawlStrategyLegacyBridgeService {
       (node) => node.type === CrawlStrategyWorkflowNodeType.SeedDiscovery,
     );
     if (seedNode) {
+      const seedMode = config.seedDiscovery?.mode ?? 'robots';
       seedNode.config = {
         ...seedNode.config,
-        mode: config.seedDiscovery?.mode === 'disabled' ? 'sitemap' : 'sitemap',
+        mode: seedMode,
         maxUrls: config.seedDiscovery?.maxSeedUrls ?? 40,
       };
     }

@@ -977,6 +977,8 @@ export class CrawlQualityTaskSnapshotService {
           : "unknown",
       taskCount: metrics.taskCount,
       lowSignalRatio: metrics.lowSignalRatio,
+      emptyMarkdownRate: metrics.emptyMarkdownRate,
+      expansionTriggerRate: metrics.expansionTriggerRate,
       expansionSuccessRate: metrics.expansionSuccessRate,
       avgMarkdownChars: metrics.avgMarkdownChars,
       candidateRejects: metrics.candidateRejects,

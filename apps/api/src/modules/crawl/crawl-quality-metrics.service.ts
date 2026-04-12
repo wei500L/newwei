@@ -88,6 +88,8 @@ export class CrawlQualityMetricsService {
       ...snapshot,
       taskCount: entry.taskCount,
       lowSignalRatio: entry.lowSignalRatio,
+      emptyMarkdownRate: entry.emptyMarkdownRate,
+      expansionTriggerRate: entry.expansionTriggerRate,
       expansionSuccessRate: entry.expansionSuccessRate,
       avgMarkdownChars: entry.avgMarkdownChars,
       candidateRejects: entry.candidateRejects,

@@ -4,7 +4,6 @@ import asyncio
 import base64
 import contextlib
 import ipaddress
-import json
 import logging
 import os
 import socket
@@ -21,8 +20,6 @@ HEADER_LIMIT = int(os.getenv("CRAWL4AI_SSRF_PROXY_HEADER_LIMIT", str(64 * 1024))
 CONNECT_TIMEOUT_SECONDS = float(
   os.getenv("CRAWL4AI_SSRF_PROXY_CONNECT_TIMEOUT_SECONDS", "15"),
 )
-AUTH_USER = "__modular_ssrf_proxy__"
-
 BLOCKED_HOSTS = {
   "169.254.169.254",
   "169.254.170.2",
@@ -148,65 +145,10 @@ def parse_headers(lines: list[str]) -> dict[str, str]:
   return headers
 
 
-def b64url_decode(value: str) -> bytes:
-  padding = "=" * ((4 - len(value) % 4) % 4)
-  return base64.urlsafe_b64decode(f"{value}{padding}")
-
-
-def decode_override_proxy(headers: dict[str, str]) -> Optional[ProxyConfig]:
-  auth = headers.get("proxy-authorization")
-  if not auth or not auth.lower().startswith("basic "):
-    return None
-  try:
-    decoded = base64.b64decode(auth.split(" ", 1)[1]).decode("utf-8")
-  except Exception as exc:  # pragma: no cover - defensive
-    raise ProxyRequestError(
-      HTTPStatus.BAD_REQUEST,
-      f"Invalid proxy authorization header: {exc}",
-    ) from exc
-
-  username, _, password = decoded.partition(":")
-  if username != AUTH_USER or not password:
-    return None
-
-  try:
-    payload = json.loads(b64url_decode(password).decode("utf-8"))
-  except Exception as exc:
-    raise ProxyRequestError(
-      HTTPStatus.BAD_REQUEST,
-      f"Invalid SSRF proxy payload: {exc}",
-    ) from exc
-
-  if not isinstance(payload, dict):
-    raise ProxyRequestError(
-      HTTPStatus.BAD_REQUEST,
-      "Invalid SSRF proxy payload shape",
-    )
-
-  server = payload.get("server")
-  if not isinstance(server, str) or not server.strip():
-    raise ProxyRequestError(
-      HTTPStatus.BAD_REQUEST,
-      "Invalid SSRF proxy upstream server",
-    )
-
-  parsed = parse_proxy_url(server.strip())
-  return ProxyConfig(
-    scheme=parsed.scheme,
-    host=parsed.host,
-    port=parsed.port,
-    username=payload.get("username") if isinstance(payload.get("username"), str) else None,
-    password=payload.get("password") if isinstance(payload.get("password"), str) else None,
-  )
-
-
 def resolve_upstream_proxy(
   request_scheme: str,
   headers: dict[str, str],
 ) -> Optional[ProxyConfig]:
-  override = decode_override_proxy(headers)
-  if override is not None:
-    return override
   return DEFAULT_HTTPS_PROXY if request_scheme == "https" else DEFAULT_HTTP_PROXY
 
 

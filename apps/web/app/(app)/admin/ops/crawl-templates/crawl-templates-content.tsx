@@ -35,6 +35,7 @@ import { useTranslation } from "react-i18next";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { applyAutoBrowserHeadersToCrawlOptions } from "@/lib/crawl-browser-headers";
+import { findUnsupportedProxyIssues } from "@/lib/crawl-config-policy";
 import {
   applyHeadlessModeToCrawlOptions,
   resolveHeadlessModeFromHeadlessValue,
@@ -52,7 +53,6 @@ interface CrawlTemplateFormValues {
   name: string;
   description?: string;
   isActive: boolean;
-  proxyUrl?: string;
   userAgent?: string;
   headlessMode?: "auto" | "headless" | "headed";
   antiBotMode?: "auto" | "enabled" | "disabled";
@@ -255,7 +255,6 @@ export function CrawlTemplatesContent() {
         name: template.name,
         description: template.description ?? "",
         isActive: template.isActive,
-        proxyUrl: normalizeString(options?.proxyUrl),
         userAgent: normalizeString(options?.userAgent),
         headlessMode,
         antiBotMode,
@@ -306,14 +305,11 @@ export function CrawlTemplatesContent() {
 
   const buildCrawlOptions = (values: CrawlTemplateFormValues) => {
     const base = parseJsonField(values.crawlOptionsJson, "crawlOptions") ?? {};
-    assertNoCrawl4aiLlmOptions(base, "crawlOptions");
-
-    const proxyUrl = values.proxyUrl?.trim() ?? "";
-    if (proxyUrl) {
-      base.proxyUrl = proxyUrl;
-    } else {
-      delete base.proxyUrl;
+    const proxyIssues = findUnsupportedProxyIssues(base, "crawlOptions");
+    if (proxyIssues.length > 0) {
+      throw new Error(proxyIssues.map((issue) => issue.path).join(", "));
     }
+    assertNoCrawl4aiLlmOptions(base, "crawlOptions");
 
     const userAgent = values.userAgent?.trim() ?? "";
     if (userAgent) {
@@ -805,14 +801,13 @@ export function CrawlTemplatesContent() {
             })}
           </Typography.Title>
 
-          <Form.Item
-            name="proxyUrl"
-            label={t("crawlTemplates.fields.proxyUrl", {
-              defaultValue: "Proxy URL",
-            })}
-          >
-            <Input placeholder="http(s)://user:pass@host:port" />
-          </Form.Item>
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="Custom upstream proxies are disabled"
+            description="Do not store proxyUrl or proxyConfig in template crawlOptions. Legacy proxy fields remain visible in JSON and block save until removed."
+          />
           <Form.Item
             name="userAgent"
             label={t("crawlTemplates.fields.userAgent", {
@@ -1195,6 +1190,15 @@ export function CrawlTemplatesContent() {
                     Array.isArray(parsed)
                   ) {
                     throw new Error("crawlOptions must be a JSON object");
+                  }
+                  const proxyIssues = findUnsupportedProxyIssues(
+                    parsed,
+                    "crawlOptions",
+                  );
+                  if (proxyIssues.length > 0) {
+                    throw new Error(
+                      proxyIssues.map((issue) => issue.path).join(", "),
+                    );
                   }
                   assertNoCrawl4aiLlmOptions(parsed, "crawlOptions");
                 },

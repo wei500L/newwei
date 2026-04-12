@@ -59,6 +59,7 @@ import {
 import { createApiClient } from "@/lib/api-client";
 import { normalizeHeadlessModeFormValues } from "@/lib/crawl-headless-mode";
 import { getCrawlTasksOpsRefreshDecision } from "@/lib/crawl-ops-refresh";
+import { findUnsupportedProxyIssues } from "@/lib/crawl-config-policy";
 import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
@@ -1199,6 +1200,11 @@ export function CrawlTasksView() {
     let options: CrawlOptionsInput;
     try {
       const sanitizedOptions = sanitizeCrawlOptions(normalizedValues);
+      const proxyIssues = findUnsupportedProxyIssues(sanitizedOptions, "options");
+      if (proxyIssues.length > 0) {
+        message.error(proxyIssues.map((issue) => issue.path).join(", "));
+        return;
+      }
       assertNoCrawl4aiLlmOptions(sanitizedOptions, "options");
       options = toGraphqlCrawlOptionsInput(sanitizedOptions);
     } catch (error) {

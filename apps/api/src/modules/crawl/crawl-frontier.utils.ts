@@ -18,6 +18,7 @@ import type {
   CrawlSiteProfileConfig,
   CrawlSourceTier,
 } from "./crawl.types";
+import { assertSupportedFrontierProfileConfig } from "./crawl-config-policy";
 import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 
 const ARTICLE_SIGNAL_PATTERN =
@@ -598,6 +599,7 @@ export function normalizeCrawlSiteProfileConfig(
 ): CrawlSiteProfileConfig {
   const value = isPlainObject(raw) ? raw : {};
   assertNoCrawl4aiLlmOptions(value, "crawlSiteProfile.config");
+  assertSupportedFrontierProfileConfig(value, "crawlSiteProfile.config");
 
   return {
     keywords: toKeywordList(value.keywords),

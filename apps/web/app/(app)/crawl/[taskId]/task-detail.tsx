@@ -127,7 +127,6 @@ const limitOptions = [
   },
 ];
 
-const LOCAL_PROXY_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 const BACKFILL_BATCH_TIMEOUT_MS = 15_000;
 
 const markdownPreviewStyle: CSSProperties = {
@@ -162,27 +161,6 @@ async function withTimeout<T>(
     if (timeoutId !== undefined) {
       clearTimeout(timeoutId);
     }
-  }
-}
-
-function isLocalhostProxyUrl(value: string): boolean {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return false;
-  }
-  try {
-    const parsed = new URL(trimmed);
-    return LOCAL_PROXY_HOSTS.has(parsed.hostname.toLowerCase());
-  } catch {
-    const lower = trimmed.toLowerCase();
-    return (
-      lower.includes("://localhost") ||
-      lower.includes("://127.0.0.1") ||
-      lower.includes("://[::1]") ||
-      lower.startsWith("localhost:") ||
-      lower.startsWith("127.0.0.1:") ||
-      lower.startsWith("[::1]:")
-    );
   }
 }
 
@@ -1494,43 +1472,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     const proxyConfig = config.proxyConfig as
       | { server?: string; username?: string; password?: string }
       | undefined;
-    const rawServer = proxyConfig?.server ?? proxyUrl ?? null;
     if (proxyConfig?.server) {
-      const label = t("crawl.detail.proxy.dict", {
-        server: proxyConfig.server,
-        user: proxyConfig.username ?? null,
-      });
-      if (rawServer && isLocalhostProxyUrl(rawServer)) {
-        return (
-          <Space direction="vertical" size={0}>
-            <Typography.Text>{label}</Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {t("crawl.detail.proxy.dockerHint", {
-                defaultValue:
-                  "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead.",
-              })}
-            </Typography.Text>
-          </Space>
-        );
-      }
-      return label;
+      return `Unsupported legacy proxy config: ${proxyConfig.server}`;
     }
     if (proxyUrl) {
-      const label = proxyUrl;
-      if (rawServer && isLocalhostProxyUrl(rawServer)) {
-        return (
-          <Space direction="vertical" size={0}>
-            <Typography.Text>{label}</Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {t("crawl.detail.proxy.dockerHint", {
-                defaultValue:
-                  "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead.",
-              })}
-            </Typography.Text>
-          </Space>
-        );
-      }
-      return label;
+      return `Unsupported legacy proxy config: ${proxyUrl}`;
     }
     return t("crawl.detail.proxy.direct");
   }, [config, t]);

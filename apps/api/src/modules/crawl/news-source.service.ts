@@ -21,6 +21,7 @@ import {
   type CrawlDiscoveryTimestampSource,
 } from "./crawl-metadata.service";
 import { CrawlStrategyWorkflowService } from "./crawl-strategy-workflow.service";
+import { assertNoUnsupportedProxy } from "./crawl-config-policy";
 import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import {
   deepDiscoveryFailureStateCacheKey,
@@ -1186,6 +1187,7 @@ export class NewsSourceService {
       ) {
         throw new BadRequestException("crawlOptions must be an object");
       }
+      assertNoUnsupportedProxy(crawlOptions, "config.crawlOptions");
       assertNoCrawl4aiLlmOptions(
         crawlOptions as Record<string, unknown>,
         "crawlOptions",

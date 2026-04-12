@@ -34,6 +34,7 @@ import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
+import { findUnsupportedFrontierProfileIssues } from "@/lib/crawl-config-policy";
 
 import { canViewCrawlFrontierLlmLogs } from "./crawl-frontier-access";
 import { CrawlWorkflowStudio } from "./crawl-workflow-studio";
@@ -773,17 +774,24 @@ export function CrawlFrontierConsole() {
   );
 
   const resolvedProfileConfig = useMemo(() => {
-    if (!profileRawMode) {
+    const buildResolvedConfig = (config: AnyRecord) => {
+      const merged = mergeProfileConfigDefaults(config);
+      const issues = findUnsupportedFrontierProfileIssues(merged, "config");
       return {
-        config: mergeProfileConfigDefaults(asRecord(watchedProfileConfig)),
-        error: null as string | null,
+        config: issues.length > 0 ? null : merged,
+        error:
+          issues.length > 0
+            ? issues.map((issue) => issue.path).join(", ")
+            : null,
       };
+    };
+    if (!profileRawMode) {
+      return buildResolvedConfig(asRecord(watchedProfileConfig) ?? {});
     }
     try {
-      return {
-        config: mergeProfileConfigDefaults(parseJsonObject(String(watchedProfileConfigJson ?? "{}"), "config")),
-        error: null as string | null,
-      };
+      return buildResolvedConfig(
+        parseJsonObject(String(watchedProfileConfigJson ?? "{}"), "config"),
+      );
     } catch (error) {
       return {
         config: null,
@@ -980,6 +988,13 @@ export function CrawlFrontierConsole() {
   const submitProfile = async (values: ProfileFormValues) => {
     setSaving(true);
     try {
+      const config = profileRawMode
+        ? parseJsonObject(values.configJson, "config")
+        : mergeProfileConfigDefaults(asRecord(values.config));
+      const configIssues = findUnsupportedFrontierProfileIssues(config, "config");
+      if (configIssues.length > 0) {
+        throw new Error(configIssues.map((issue) => issue.path).join(", "));
+      }
       const payload = {
         name: values.name.trim(),
         description: values.description?.trim() || undefined,
@@ -989,9 +1004,7 @@ export function CrawlFrontierConsole() {
         workflowId: values.workflowId || undefined,
         workflowVersionId: values.workflowVersionId || undefined,
         workflowBindingMode: values.workflowBindingMode ?? "published",
-        config: profileRawMode
-          ? parseJsonObject(values.configJson, "config")
-          : mergeProfileConfigDefaults(asRecord(values.config)),
+        config,
       };
       if (profileEditor.editing) {
         await apiClient.patch(`admin/crawl-frontier/profiles/${profileEditor.editing.id}`, payload);
@@ -1292,6 +1305,9 @@ export function CrawlFrontierConsole() {
 
   const selectedRunDiagnostics = selectedRun ? collectRunDiagnostics(selectedRun) : null;
   const selectedRunSummary = selectedRun?.summary ?? null;
+  const selectedRunRootDiagnosis = asRecord(
+    selectedRunSummary?.rootDiagnosis ?? asRecord(selectedRun?.metadata)?.rootDiagnosis,
+  );
   const selectedNodesTree = useMemo(() => buildNodeTree(filteredNodes), [filteredNodes]);
 
   const profileColumns: ColumnsType<CrawlSiteProfileRecord> = [
@@ -1987,6 +2003,12 @@ export function CrawlFrontierConsole() {
                         <Descriptions.Item label="Coverage by depth">{formatCountSummary(selectedRunSummary?.coverageByDepth)}</Descriptions.Item>
                         <Descriptions.Item label="Candidate stats">{formatCountSummary(selectedRunSummary?.candidateStats)}</Descriptions.Item>
                         <Descriptions.Item label="Rejection counts">{formatCountSummary(selectedRunSummary?.rejectionCounts)}</Descriptions.Item>
+                        <Descriptions.Item label="Native accepted vs selected">
+                          {asNumber(selectedRunRootDiagnosis?.nativeAcceptedResults) !== null ||
+                          asNumber(selectedRunRootDiagnosis?.nativeSelectedResults) !== null
+                            ? `${asNumber(selectedRunRootDiagnosis?.nativeAcceptedResults) ?? 0} accepted / ${asNumber(selectedRunRootDiagnosis?.nativeSelectedResults) ?? 0} selected`
+                            : "-"}
+                        </Descriptions.Item>
                         <Descriptions.Item label="Judge summary">
                           {formatCountSummary(asRecord(selectedRunSummary?.judgeSummary)?.methods)}
                           {asNumber(asRecord(selectedRunSummary?.judgeSummary)?.averageConfidence) !== null ? ` · avg ${formatNumber(asRecord(selectedRunSummary?.judgeSummary)?.averageConfidence)}` : ""}
@@ -1995,8 +2017,8 @@ export function CrawlFrontierConsole() {
                     </Card>
                     <Card size="small" title="Root diagnosis">
                       <Collapse items={[
-                        { key: "structured", label: "Structured diagnosis", children: <Descriptions size="small" column={2}><Descriptions.Item label="Failure kind">{selectedRunDiagnostics?.failureKind ?? "-"}</Descriptions.Item><Descriptions.Item label="Last error">{selectedRun.lastError ?? "-"}</Descriptions.Item><Descriptions.Item label="Started at">{formatDateTime(selectedRun.startedAt)}</Descriptions.Item><Descriptions.Item label="Finished at">{formatDateTime(selectedRun.finishedAt)}</Descriptions.Item></Descriptions> },
-                        { key: "json", label: "Root diagnosis JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedRunSummary?.rootDiagnosis ?? asRecord(selectedRun.metadata)?.rootDiagnosis)}</Typography.Paragraph> },
+                        { key: "structured", label: "Structured diagnosis", children: <Descriptions size="small" column={2}><Descriptions.Item label="Failure kind">{selectedRunDiagnostics?.failureKind ?? "-"}</Descriptions.Item><Descriptions.Item label="Last error">{selectedRun.lastError ?? "-"}</Descriptions.Item><Descriptions.Item label="Started at">{formatDateTime(selectedRun.startedAt)}</Descriptions.Item><Descriptions.Item label="Finished at">{formatDateTime(selectedRun.finishedAt)}</Descriptions.Item><Descriptions.Item label="Native accepted">{asNumber(selectedRunRootDiagnosis?.nativeAcceptedResults) ?? "-"}</Descriptions.Item><Descriptions.Item label="Native selected">{asNumber(selectedRunRootDiagnosis?.nativeSelectedResults) ?? "-"}</Descriptions.Item></Descriptions> },
+                        { key: "json", label: "Root diagnosis JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedRunRootDiagnosis)}</Typography.Paragraph> },
                       ]} />
                     </Card>
                   </Space>

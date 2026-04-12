@@ -30,6 +30,7 @@ import type {
   CrawlTaskView,
 } from "./crawl.types";
 import { clampResultLimit, coerceDate, normalizeKeywords } from "./crawl.utils";
+import { assertNoUnsupportedProxy } from "./crawl-config-policy";
 import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import {
@@ -121,6 +122,7 @@ export class CrawlTaskService {
       userId,
       rawOptions,
     );
+    assertNoUnsupportedProxy(normalizedRawOptions, "options");
     assertNoCrawl4aiLlmOptions(normalizedRawOptions, "options");
 
     const keywords = normalizeKeywords(dto.keywords);

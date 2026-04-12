@@ -153,6 +153,7 @@ describe('CrawlFrontierService layered extraction tracing', () => {
       node: {
         id: 'node-root',
       },
+      acceptedCount: 1,
       createdCount: 1,
       minAcceptedResults: 3,
       minArticleResults: 2,
