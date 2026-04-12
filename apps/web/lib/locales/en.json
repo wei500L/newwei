@@ -7289,6 +7289,34 @@
         "rateLimitHeader": "RateLimit",
         "rateLimitPolicy": "RateLimit-Policy",
         "cfRay": "CF-Ray",
+        "feedback": {
+          "aisRelayMissingConfig": {
+            "title": "AIS relay root URL is not configured.",
+            "body": "The API cannot request `/ais/snapshot` until `AIS relay root URL` points to the relay service."
+          },
+          "aisRelayDnsFailure": {
+            "title": "The API cannot resolve the AIS relay host.",
+            "body": "Verify that `AIS relay root URL` uses the correct host name, that the `api` container is on the same Docker network, and that the `ais-relay` service name still matches the configured address."
+          },
+          "aisUpstreamDisconnected": {
+            "title": "AIS relay is reachable, but its upstream AIS stream is disconnected.",
+            "body": "The relay service is up, but it is not maintaining a live upstream stream."
+          },
+          "aisReportsNotRetained": {
+            "title": "AIS relay is receiving reports, but vessel snapshots are not being retained.",
+            "body": "Seen {{seen}} reports, processed {{processed}}, retained candidates {{candidates}}. Check relay parsing and snapshot retention logic."
+          },
+          "aisRelayDegraded": {
+            "title": "AIS relay reported degraded runtime health.",
+            "body": "The relay is responding, but diagnostics indicate upstream or parsing problems that will affect AIS map quality."
+          },
+          "outagesRateLimited": {
+            "title": "Cloudflare Radar outages source is currently rate limited.",
+            "body": "The API is honoring the upstream limit window and will not retry before {{time}}."
+          },
+          "lastHealthyAt": "Last healthy: {{time}}.",
+          "retryAfterWindow": "Retry-After requested {{value}} of backoff."
+        },
         "empty": "Runtime diagnostics have not been loaded yet.",
         "aisTrackedVessels": "Tracked vessels",
         "aisCandidates": "Candidates",

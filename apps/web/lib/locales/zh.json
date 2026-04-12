@@ -7284,21 +7284,49 @@
         "nextEligibleAt": "下次可重试",
         "lastSuccessAt": "最近成功",
         "lastError": "最近错误",
-        "retryAfter": "Retry-After",
+        "retryAfter": "重试等待",
         "rateLimit": "限流诊断",
-        "rateLimitHeader": "RateLimit",
-        "rateLimitPolicy": "RateLimit-Policy",
-        "cfRay": "CF-Ray",
+        "rateLimitHeader": "限流响应头",
+        "rateLimitPolicy": "限流策略",
+        "cfRay": "Cloudflare 请求追踪",
+        "feedback": {
+          "aisRelayMissingConfig": {
+            "title": "尚未配置 AIS relay 根地址。",
+            "body": "只有把 `AIS relay 根地址` 指向 relay 服务后，API 才能请求 `/ais/snapshot`。"
+          },
+          "aisRelayDnsFailure": {
+            "title": "API 无法解析 AIS relay 主机名。",
+            "body": "请确认 `AIS relay 根地址` 使用了正确的主机名，`api` 容器和 relay 在同一 Docker 网络内，并且 `ais-relay` 服务名仍与当前配置一致。"
+          },
+          "aisUpstreamDisconnected": {
+            "title": "AIS relay 可达，但它连接的上游 AIS 流已断开。",
+            "body": "relay 服务本身仍在运行，但当前没有维持有效的上游实时流连接。"
+          },
+          "aisReportsNotRetained": {
+            "title": "AIS relay 已收到报文，但没有保留船舶快照。",
+            "body": "已看到 {{seen}} 条报文，处理 {{processed}} 条，保留候选 {{candidates}} 条。请检查 relay 的解析与快照保留逻辑。"
+          },
+          "aisRelayDegraded": {
+            "title": "AIS relay 运行时健康状态已降级。",
+            "body": "relay 仍有响应，但诊断信息表明上游连接或解析过程存在问题，会直接影响 AIS 地图质量。"
+          },
+          "outagesRateLimited": {
+            "title": "Cloudflare Radar outages 数据源当前被限流。",
+            "body": "API 正在遵守上游限流窗口，在 {{time}} 之前不会提前重试。"
+          },
+          "lastHealthyAt": "最近一次健康时间：{{time}}。",
+          "retryAfterWindow": "上游通过 Retry-After 要求回退 {{value}}。"
+        },
         "empty": "运行时诊断尚未加载。",
-        "aisTrackedVessels": "Tracked vessels",
-        "aisCandidates": "Candidates",
-        "aisReportsSeen": "Reports seen",
-        "aisReportsProcessed": "Reports processed",
-        "aisReportsIgnored": "Reports ignored",
-        "aisParseErrors": "Parse errors",
-        "aisRelayDiagnostics": "AIS relay diagnostics",
-        "aisLastUpstreamError": "Last upstream error",
-        "aisLastParseError": "Last parse error"
+        "aisTrackedVessels": "跟踪船舶",
+        "aisCandidates": "候选船舶",
+        "aisReportsSeen": "已接收报文",
+        "aisReportsProcessed": "已处理报文",
+        "aisReportsIgnored": "已忽略报文",
+        "aisParseErrors": "解析错误",
+        "aisRelayDiagnostics": "AIS relay 诊断",
+        "aisLastUpstreamError": "最近一次上游错误",
+        "aisLastParseError": "最近一次解析错误"
       }
     },
     "akshare": {
