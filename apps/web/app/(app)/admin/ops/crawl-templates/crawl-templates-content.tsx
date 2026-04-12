@@ -35,7 +35,10 @@ import { useTranslation } from "react-i18next";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { applyAutoBrowserHeadersToCrawlOptions } from "@/lib/crawl-browser-headers";
-import { findUnsupportedProxyIssues } from "@/lib/crawl-config-policy";
+import {
+  findUnsupportedProxyIssues,
+  getCrawlConfigPolicyIssueTranslationKey,
+} from "@/lib/crawl-config-policy";
 import {
   applyHeadlessModeToCrawlOptions,
   resolveHeadlessModeFromHeadlessValue,
@@ -133,6 +136,19 @@ const stringifyPatternList = (value: unknown): string => {
     .filter((entry) => entry.length > 0);
   return normalized.length > 0 ? normalized.join("\n") : "";
 };
+
+const formatPolicyIssues = (
+  issues: ReturnType<typeof findUnsupportedProxyIssues>,
+  t: ReturnType<typeof useTranslation>["t"],
+) =>
+  issues
+    .map(
+      (issue) =>
+        `${issue.path}: ${t(getCrawlConfigPolicyIssueTranslationKey(issue.code), {
+          defaultValue: issue.code,
+        })}`,
+    )
+    .join(", ");
 
 export function CrawlTemplatesContent() {
   const { t } = useTranslation();
@@ -307,7 +323,7 @@ export function CrawlTemplatesContent() {
     const base = parseJsonField(values.crawlOptionsJson, "crawlOptions") ?? {};
     const proxyIssues = findUnsupportedProxyIssues(base, "crawlOptions");
     if (proxyIssues.length > 0) {
-      throw new Error(proxyIssues.map((issue) => issue.path).join(", "));
+      throw new Error(formatPolicyIssues(proxyIssues, t));
     }
     assertNoCrawl4aiLlmOptions(base, "crawlOptions");
 
@@ -1201,9 +1217,7 @@ export function CrawlTemplatesContent() {
                     "crawlOptions",
                   );
                   if (proxyIssues.length > 0) {
-                    throw new Error(
-                      proxyIssues.map((issue) => issue.path).join(", "),
-                    );
+                    throw new Error(formatPolicyIssues(proxyIssues, t));
                   }
                   assertNoCrawl4aiLlmOptions(parsed, "crawlOptions");
                 },

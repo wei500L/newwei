@@ -51,7 +51,11 @@ import type { CreateCrawlTaskFormValues } from "@/app/(app)/crawl/types";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { applyAutoBrowserHeadersToCrawlOptions } from "@/lib/crawl-browser-headers";
-import { findUnsupportedProxyIssues } from "@/lib/crawl-config-policy";
+import {
+  findUnsupportedProxyIssues,
+  getCrawlConfigPolicyIssueTranslationKey,
+  type CrawlConfigPolicyIssue,
+} from "@/lib/crawl-config-policy";
 import { normalizeHeadlessModeFormValues } from "@/lib/crawl-headless-mode";
 import {
   buildNewsSourceCloudflarePresetValues,
@@ -754,6 +758,19 @@ const findDisallowedCrawl4aiLlmKeys = (
 
   return hits;
 };
+
+const formatPolicyIssues = (
+  issues: CrawlConfigPolicyIssue[],
+  t: ReturnType<typeof useTranslation>["t"],
+) =>
+  issues
+    .map(
+      (issue) =>
+        `${issue.path}: ${t(getCrawlConfigPolicyIssueTranslationKey(issue.code), {
+          defaultValue: issue.code,
+        })}`,
+    )
+    .join(", ");
 
 const hasSeedConfig = (
   config: unknown,
@@ -2837,7 +2854,7 @@ export function NewsSourcesContent() {
         "config.crawlOptions",
       );
       if (proxyIssues.length > 0) {
-        throw new Error(proxyIssues.map((issue) => issue.path).join(", "));
+        throw new Error(formatPolicyIssues(proxyIssues, t));
       }
       const blockedKeys = findDisallowedCrawl4aiLlmKeys(resolvedCrawlOptions);
       if (blockedKeys.length > 0) {
@@ -2863,7 +2880,7 @@ export function NewsSourcesContent() {
         "config.crawlOptions",
       );
       if (proxyIssues.length > 0) {
-        throw new Error(proxyIssues.map((issue) => issue.path).join(", "));
+        throw new Error(formatPolicyIssues(proxyIssues, t));
       }
     }
     if (isRssSeedMode) {
@@ -2975,7 +2992,7 @@ export function NewsSourcesContent() {
         "config.crawlOptions",
       );
       if (proxyIssues.length > 0) {
-        messageApi.error(proxyIssues.map((issue) => issue.path).join(", "));
+        messageApi.error(formatPolicyIssues(proxyIssues, t));
         setCreatingFromTaskDrawer(false);
         return;
       }
@@ -7109,9 +7126,7 @@ export function NewsSourcesContent() {
                         "config.crawlOptions",
                       );
                       if (proxyIssues.length > 0) {
-                        throw new Error(
-                          proxyIssues.map((issue) => issue.path).join(", "),
-                        );
+                        throw new Error(formatPolicyIssues(proxyIssues, t));
                       }
                       const blockedKeys = findDisallowedCrawl4aiLlmKeys(parsed);
                       if (blockedKeys.length === 0) {

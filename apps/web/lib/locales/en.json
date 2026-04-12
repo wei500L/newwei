@@ -1643,6 +1643,17 @@
           "otherLayersTitle": "Other Active Point Layers",
           "otherLayersHint": "Point-based overlays without a bespoke symbol still use the shared halo and outline treatment.",
           "otherPointLayer": "Other point layer",
+          "flightZoomRequired": "Zoom in to request all-flight OpenSky data for the current viewport.",
+          "flightNotConfigured": "OpenSky OAuth client credentials are not configured.",
+          "flightBudgetLimited": "OpenSky all-flight mode is temporarily limited to preserve the daily credit budget.",
+          "flightStale": "Flight layer is temporarily stale.",
+          "flightMissing": "Flight layer is unavailable.",
+          "aisAggregatedOnly": "AIS is currently showing aggregated signals only.",
+          "aisViewportEmpty": "This viewport currently has no individual vessel positions.",
+          "transportLimited": "Air and sea transport layers are partially limited.",
+          "transportAggregatedOnly": "Transport layers are showing aggregated AIS signals only.",
+          "transportFlightsLimited": "Transport layers are showing limited flight coverage.",
+          "transportViewportEmpty": "Transport layers currently have no individual positions in this viewport.",
           "interactionTitle": "Interaction",
           "previewHint": "Hover to preview. Click to pin.",
           "clearFocus": "Clear focus",
@@ -2993,6 +3004,10 @@
       "setGroup": "Set group",
       "clearGroup": "Clear group",
       "importOpml": "Import OPML"
+    },
+    "crawl": {
+      "proxyDisabledTitle": "Custom upstream proxies are disabled",
+      "proxyDisabledDescription": "Do not add proxyUrl or proxyConfig in crawlOptions. Existing legacy proxy fields stay visible in the JSON editor and will block save until removed."
     },
     "fields": {
       "name": "Name",
@@ -7336,6 +7351,10 @@
           "aisPayloadParseErrors": {
             "body": "The relay is discarding a significant share of upstream payloads during parsing. Review upstream payload format drift and parser assumptions. Recent parse errors: {{count}}."
           },
+          "aisSnapshotMissingVesselsContract": {
+            "title": "AIS relay snapshot contract is missing vessels[].",
+            "body": "The relay is publishing density/disruption aggregates, but not the per-vessel `vessels[]` snapshot required by AIS all-mode. Fix the relay snapshot contract instead of diagnosing this as an upstream disconnect."
+          },
           "aisRelayDegraded": {
             "title": "AIS relay reported degraded runtime health.",
             "body": "The relay is responding, but diagnostics indicate upstream or parsing problems that will affect AIS map quality."
@@ -8058,7 +8077,8 @@
       "proxy": {
         "direct": "Direct",
         "dict": "Proxy {{server}} / user {{user}}",
-        "dockerHint": "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead."
+        "dockerHint": "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead.",
+        "unsupportedLegacy": "Unsupported legacy proxy config: {{value}}"
       },
       "markdown": {
         "default": "Default",
@@ -8735,6 +8755,9 @@
       "title": "Proxy",
       "url": "URL",
       "urlHint": "URL hint",
+      "disabledTitle": "Custom upstream proxies are disabled",
+      "disabledDescription": "Task crawl no longer accepts proxyUrl or proxyConfig. Remove any legacy proxy fields before submitting.",
+      "unsupportedLegacyTitle": "Unsupported legacy proxy configuration detected",
       "placeholders": {
         "url": "Enter URL",
         "server": "Enter Server",
@@ -8745,6 +8768,10 @@
       "serverHint": "Server hint",
       "username": "Username",
       "password": "Password"
+    },
+    "policy": {
+      "unsupportedProxy": "Custom upstream proxies are no longer supported.",
+      "frontierSinglePrimaryUrl": "Frontier node crawl must keep a single primary URL."
     },
     "title": "Crawl Tasks",
     "filter": {
@@ -9082,6 +9109,10 @@
     "hints": {
       "noLlmTitle": "No LLM in crawl stage",
       "noLlmDescription": "The crawl stage must only fetch and store cleaned markdown; run your configured model in the pipeline stage instead."
+    },
+    "proxy": {
+      "disabledTitle": "Custom upstream proxies are disabled",
+      "disabledDescription": "Do not store proxyUrl or proxyConfig in template crawlOptions. Legacy proxy fields remain visible in JSON and block save until removed."
     },
     "headless": {
       "auto": "Auto",
@@ -10071,6 +10102,13 @@
       "loadProfiles": "Failed to load crawl site profiles.",
       "loadRuns": "Failed to load crawl frontier runs.",
       "loadProfile": "Failed to load crawl site profile."
+    },
+    "run": {
+      "nativeAcceptedSelected": "Native accepted vs selected",
+      "acceptedLabel": "accepted",
+      "selectedLabel": "selected",
+      "nativeAccepted": "Native accepted",
+      "nativeSelected": "Native selected"
     },
     "title": "News Crawl Frontier Console",
     "subtitle": "Operate site profiles, inspect seed-first and frontier traces, and debug why capture succeeded, degraded, or failed."

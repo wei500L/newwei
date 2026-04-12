@@ -35,7 +35,11 @@ import {
   mergeBrowserHeaders,
   normalizeBrowserHeaders,
 } from "@/lib/crawl-browser-headers";
-import { findUnsupportedProxyIssues } from "@/lib/crawl-config-policy";
+import {
+  findUnsupportedProxyIssues,
+  getCrawlConfigPolicyIssueTranslationKey,
+  type CrawlConfigPolicyIssue,
+} from "@/lib/crawl-config-policy";
 import {
   CRAWL_TASK_TEMPLATE_DESCRIPTORS,
   buildCrawlTaskTemplateValues,
@@ -146,6 +150,19 @@ const hasBlockedCrawlLlmParams = (rawText?: string) => {
     return false;
   }
 };
+
+const formatPolicyIssues = (
+  issues: CrawlConfigPolicyIssue[],
+  t: ReturnType<typeof useTranslation>["t"],
+) =>
+  issues
+    .map(
+      (issue) =>
+        `${issue.path}: ${t(getCrawlConfigPolicyIssueTranslationKey(issue.code), {
+          defaultValue: issue.code,
+        })}`,
+    )
+    .join(" ");
 
 export function CreateCrawlTaskDrawer({
   form,
@@ -3342,7 +3359,7 @@ function BrowserConfigForm({
           }
           description={
             proxyIssues.length > 0
-              ? proxyIssues.map((issue) => `${issue.path}: ${issue.message}`).join(" ")
+              ? formatPolicyIssues(proxyIssues, t)
               : t("crawl.proxy.disabledDescription", {
                   defaultValue:
                     "Task crawl no longer accepts proxyUrl or proxyConfig. Remove any legacy proxy fields before submitting.",

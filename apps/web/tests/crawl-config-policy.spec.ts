@@ -17,12 +17,12 @@ describe('crawl config policy', () => {
       ),
     ).toEqual([
       {
+        code: 'unsupported_proxy',
         path: 'options.proxyUrl',
-        message: 'Custom upstream proxies are no longer supported.',
       },
       {
+        code: 'unsupported_proxy',
         path: 'options.proxyConfig',
-        message: 'Custom upstream proxies are no longer supported.',
       },
     ]);
   });
@@ -42,16 +42,16 @@ describe('crawl config policy', () => {
       }),
     ).toEqual([
       {
+        code: 'unsupported_proxy',
         path: 'config.crawlOptions.proxyUrl',
-        message: 'Custom upstream proxies are no longer supported.',
       },
       {
+        code: 'frontier_single_primary_url',
         path: 'config.crawlOptions.additionalUrls',
-        message: 'Frontier node crawl must keep a single primary URL.',
       },
       {
+        code: 'frontier_single_primary_url',
         path: 'config.pageRules.article.multiUrlConfigs',
-        message: 'Frontier node crawl must keep a single primary URL.',
       },
     ]);
   });

@@ -1643,10 +1643,21 @@
           "otherLayersTitle": "其他活动点图层",
           "otherLayersHint": "尚未定义专属图标的点图层，也会沿用统一的光晕与描边样式。",
           "otherPointLayer": "其他点图层",
-          "interactionTitle": "Interaction",
-          "previewHint": "Hover to preview. Click to pin.",
-          "clearFocus": "Clear focus",
-          "quickLegendCompactHint": "Active symbol cues",
+          "flightZoomRequired": "请先放大地图，再请求当前视口的 OpenSky 全量航班数据。",
+          "flightNotConfigured": "尚未配置 OpenSky OAuth 客户端凭据。",
+          "flightBudgetLimited": "为了保留当天额度，OpenSky 全部航班模式已被临时限制。",
+          "flightStale": "航班图层当前数据已过旧。",
+          "flightMissing": "航班图层当前不可用。",
+          "aisAggregatedOnly": "AIS 当前仅显示聚合信号。",
+          "aisViewportEmpty": "当前视口暂无单船位置。",
+          "transportLimited": "空海图层当前存在部分限制。",
+          "transportAggregatedOnly": "空海图层当前仅显示聚合 AIS 信号。",
+          "transportFlightsLimited": "空海图层当前仅显示受限的航班覆盖。",
+          "transportViewportEmpty": "当前视口的空海图层暂无单体位置。",
+          "interactionTitle": "交互",
+          "previewHint": "悬停预览，点击固定。",
+          "clearFocus": "清除聚焦",
+          "quickLegendCompactHint": "当前启用的符号提示",
           "moreItems": "+{{count}} more"
         },
         "translation": {
@@ -2993,6 +3004,10 @@
       "setGroup": "设置分组",
       "clearGroup": "清除分组",
       "importOpml": "Import OPML"
+    },
+    "crawl": {
+      "proxyDisabledTitle": "自定义上游代理已禁用",
+      "proxyDisabledDescription": "请不要在 crawlOptions 中添加 proxyUrl 或 proxyConfig。历史代理字段仍会在 JSON 编辑器中显示，并在保存前阻断。"
     },
     "fields": {
       "name": "名称",
@@ -7336,6 +7351,10 @@
           "aisPayloadParseErrors": {
             "body": "relay 在解析阶段丢弃了相当比例的上游负载。请检查上游 payload 格式是否漂移，以及当前解析器假设是否仍然成立。最近解析错误数：{{count}}。"
           },
+          "aisSnapshotMissingVesselsContract": {
+            "title": "AIS relay 快照协议缺少 vessels[] 数据。",
+            "body": "relay 当前只发布密度/扰动等聚合信号，没有提供 AIS 全量模式所需的单船 `vessels[]` 快照。应优先修复 relay 快照协议，而不是把它误判成上游断连。"
+          },
           "aisRelayDegraded": {
             "title": "AIS relay 运行时健康状态已降级。",
             "body": "relay 仍有响应，但诊断信息表明上游连接或解析过程存在问题，会直接影响 AIS 地图质量。"
@@ -8058,7 +8077,8 @@
       "proxy": {
         "direct": "直连",
         "dict": "代理 {{server}} / 用户 {{user}}",
-        "dockerHint": "如果 crawl4ai 在 Docker 中运行，容器内的 localhost/127.0.0.1 无法访问宿主机代理，请改用 host.docker.internal。"
+        "dockerHint": "如果 crawl4ai 在 Docker 中运行，容器内的 localhost/127.0.0.1 无法访问宿主机代理，请改用 host.docker.internal。",
+        "unsupportedLegacy": "发现不受支持的历史代理配置：{{value}}"
       },
       "markdown": {
         "default": "默认",
@@ -8735,6 +8755,9 @@
       "title": "代理",
       "url": "URL",
       "urlHint": "URL 提示",
+      "disabledTitle": "自定义上游代理已禁用",
+      "disabledDescription": "任务抓取不再接受 proxyUrl 或 proxyConfig。提交前请移除历史代理字段。",
+      "unsupportedLegacyTitle": "检测到不受支持的历史代理配置",
       "placeholders": {
         "url": "请输入 URL",
         "server": "请输入服务器",
@@ -8745,6 +8768,10 @@
       "serverHint": "服务器提示",
       "username": "用户名",
       "password": "密码"
+    },
+    "policy": {
+      "unsupportedProxy": "自定义上游代理已不再受支持。",
+      "frontierSinglePrimaryUrl": "Frontier 节点抓取必须保持单一主 URL。"
     },
     "title": "爬取任务",
     "filter": {
@@ -9082,6 +9109,10 @@
     "hints": {
       "noLlmTitle": "抓取阶段不使用 LLM",
       "noLlmDescription": "抓取阶段只应获取并存储清理后的 markdown；结构化总结与分析请放到后续流水线阶段。"
+    },
+    "proxy": {
+      "disabledTitle": "自定义上游代理已禁用",
+      "disabledDescription": "请不要在模板 crawlOptions 中保存 proxyUrl 或 proxyConfig。历史代理字段仍会在 JSON 中显示，并在保存前阻断。"
     },
     "headless": {
       "auto": "自动",
@@ -10068,11 +10099,18 @@
   },
   "crawlFrontier": {
     "errors": {
-      "loadProfiles": "Failed to load crawl site profiles.",
-      "loadRuns": "Failed to load crawl frontier runs.",
-      "loadProfile": "Failed to load crawl site profile."
+      "loadProfiles": "加载抓取站点画像失败。",
+      "loadRuns": "加载 frontier 运行记录失败。",
+      "loadProfile": "加载抓取站点画像失败。"
     },
-    "title": "News Crawl Frontier Console",
-    "subtitle": "Operate site profiles, inspect seed-first and frontier traces, and debug why capture succeeded, degraded, or failed."
+    "run": {
+      "nativeAcceptedSelected": "Native 接受数 / 入选数",
+      "acceptedLabel": "已接受",
+      "selectedLabel": "已入选",
+      "nativeAccepted": "Native 已接受",
+      "nativeSelected": "Native 已入选"
+    },
+    "title": "新闻抓取 Frontier 控制台",
+    "subtitle": "管理站点画像，查看种子优先与 frontier 轨迹，并排查抓取成功、降级或失败的原因。"
   }
 }

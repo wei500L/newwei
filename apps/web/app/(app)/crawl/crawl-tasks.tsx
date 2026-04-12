@@ -59,7 +59,10 @@ import {
 import { createApiClient } from "@/lib/api-client";
 import { normalizeHeadlessModeFormValues } from "@/lib/crawl-headless-mode";
 import { getCrawlTasksOpsRefreshDecision } from "@/lib/crawl-ops-refresh";
-import { findUnsupportedProxyIssues } from "@/lib/crawl-config-policy";
+import {
+  findUnsupportedProxyIssues,
+  getCrawlConfigPolicyIssueTranslationKey,
+} from "@/lib/crawl-config-policy";
 import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
@@ -1202,7 +1205,17 @@ export function CrawlTasksView() {
       const sanitizedOptions = sanitizeCrawlOptions(normalizedValues);
       const proxyIssues = findUnsupportedProxyIssues(sanitizedOptions, "options");
       if (proxyIssues.length > 0) {
-        message.error(proxyIssues.map((issue) => issue.path).join(", "));
+        message.error(
+          proxyIssues
+            .map(
+              (issue) =>
+                `${issue.path}: ${t(
+                  getCrawlConfigPolicyIssueTranslationKey(issue.code),
+                  { defaultValue: issue.code },
+                )}`,
+            )
+            .join(" "),
+        );
         return;
       }
       assertNoCrawl4aiLlmOptions(sanitizedOptions, "options");

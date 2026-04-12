@@ -34,7 +34,11 @@ import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
-import { findUnsupportedFrontierProfileIssues } from "@/lib/crawl-config-policy";
+import {
+  findUnsupportedFrontierProfileIssues,
+  getCrawlConfigPolicyIssueTranslationKey,
+  type CrawlConfigPolicyIssue,
+} from "@/lib/crawl-config-policy";
 
 import { canViewCrawlFrontierLlmLogs } from "./crawl-frontier-access";
 import { CrawlWorkflowStudio } from "./crawl-workflow-studio";
@@ -477,6 +481,20 @@ function parseJsonObject(value: string, label: string) {
   }
 }
 
+function formatPolicyIssues(
+  issues: CrawlConfigPolicyIssue[],
+  t: ReturnType<typeof useTranslation>["t"],
+) {
+  return issues
+    .map(
+      (issue) =>
+        `${issue.path}: ${t(getCrawlConfigPolicyIssueTranslationKey(issue.code), {
+          defaultValue: issue.code,
+        })}`,
+    )
+    .join(", ");
+}
+
 function extractErrorMessage(error: unknown, fallback: string) {
   if (
     error &&
@@ -781,7 +799,7 @@ export function CrawlFrontierConsole() {
         config: issues.length > 0 ? null : merged,
         error:
           issues.length > 0
-            ? issues.map((issue) => issue.path).join(", ")
+            ? formatPolicyIssues(issues, t)
             : null,
       };
     };
@@ -798,7 +816,7 @@ export function CrawlFrontierConsole() {
         error: error instanceof Error ? error.message : "Invalid config JSON",
       };
     }
-  }, [profileRawMode, watchedProfileConfig, watchedProfileConfigJson]);
+  }, [profileRawMode, t, watchedProfileConfig, watchedProfileConfigJson]);
 
   const loadProfiles = useCallback(async () => {
     if (!canView) return;
@@ -993,7 +1011,7 @@ export function CrawlFrontierConsole() {
         : mergeProfileConfigDefaults(asRecord(values.config));
       const configIssues = findUnsupportedFrontierProfileIssues(config, "config");
       if (configIssues.length > 0) {
-        throw new Error(configIssues.map((issue) => issue.path).join(", "));
+        throw new Error(formatPolicyIssues(configIssues, t));
       }
       const payload = {
         name: values.name.trim(),

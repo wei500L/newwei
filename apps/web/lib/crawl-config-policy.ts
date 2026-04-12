@@ -1,8 +1,12 @@
 type AnyRecord = Record<string, unknown>;
 
+export type CrawlConfigPolicyIssueCode =
+  | 'unsupported_proxy'
+  | 'frontier_single_primary_url';
+
 export interface CrawlConfigPolicyIssue {
+  code: CrawlConfigPolicyIssueCode;
   path: string;
-  message: string;
 }
 
 const hasOwn = (value: AnyRecord, key: string): boolean =>
@@ -22,14 +26,14 @@ export const findUnsupportedProxyIssues = (
   const issues: CrawlConfigPolicyIssue[] = [];
   if (hasOwn(value, 'proxyUrl')) {
     issues.push({
+      code: 'unsupported_proxy',
       path: `${path}.proxyUrl`,
-      message: 'Custom upstream proxies are no longer supported.',
     });
   }
   if (hasOwn(value, 'proxyConfig')) {
     issues.push({
+      code: 'unsupported_proxy',
       path: `${path}.proxyConfig`,
-      message: 'Custom upstream proxies are no longer supported.',
     });
   }
   return issues;
@@ -51,14 +55,14 @@ export const findUnsupportedFrontierProfileIssues = (
     issues.push(...findUnsupportedProxyIssues(crawlOptions, `${path}.crawlOptions`));
     if (hasOwn(crawlOptions, 'additionalUrls')) {
       issues.push({
+        code: 'frontier_single_primary_url',
         path: `${path}.crawlOptions.additionalUrls`,
-        message: 'Frontier node crawl must keep a single primary URL.',
       });
     }
     if (hasOwn(crawlOptions, 'multiUrlConfigs')) {
       issues.push({
+        code: 'frontier_single_primary_url',
         path: `${path}.crawlOptions.multiUrlConfigs`,
-        message: 'Frontier node crawl must keep a single primary URL.',
       });
     }
   }
@@ -79,14 +83,14 @@ export const findUnsupportedFrontierProfileIssues = (
     issues.push(...findUnsupportedProxyIssues(pageRule, pagePath));
     if (hasOwn(pageRule, 'additionalUrls')) {
       issues.push({
+        code: 'frontier_single_primary_url',
         path: `${pagePath}.additionalUrls`,
-        message: 'Frontier node crawl must keep a single primary URL.',
       });
     }
     if (hasOwn(pageRule, 'multiUrlConfigs')) {
       issues.push({
+        code: 'frontier_single_primary_url',
         path: `${pagePath}.multiUrlConfigs`,
-        message: 'Frontier node crawl must keep a single primary URL.',
       });
     }
   }
@@ -94,6 +98,13 @@ export const findUnsupportedFrontierProfileIssues = (
   return issues;
 };
 
-export const formatCrawlConfigPolicyIssues = (
-  issues: CrawlConfigPolicyIssue[],
-): string => issues.map((issue) => `${issue.path}: ${issue.message}`).join(" ");
+export const getCrawlConfigPolicyIssueTranslationKey = (
+  code: CrawlConfigPolicyIssueCode,
+): string => {
+  switch (code) {
+    case 'unsupported_proxy':
+      return 'crawl.policy.unsupportedProxy';
+    case 'frontier_single_primary_url':
+      return 'crawl.policy.frontierSinglePrimaryUrl';
+  }
+};
