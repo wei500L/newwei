@@ -46,6 +46,8 @@ function createAggregates() {
           dedupeEvaluatedCount: 2,
         },
         lowSignalRatio: 0.5,
+        emptyMarkdownRate: 0.25,
+        expansionTriggerRate: 0.5,
         expansionSuccessRate: 1,
         avgMarkdownChars: 120,
         candidateRejects: {
@@ -170,5 +172,52 @@ describe("CrawlQualityMetricsService", () => {
     expect(taskSnapshots.readAggregates).not.toHaveBeenCalled();
     expect(snapshot.taskCount).toBe(0);
     expect(snapshot.groupedBySource).toEqual([]);
+  });
+
+  it("returns source-scoped sample counts from the matching grouped entry", async () => {
+    const { prisma, service, taskSnapshots } = createService();
+    prisma.crawlTask.findMany.mockResolvedValue([
+      {
+        id: "task-1",
+        status: "completed",
+        updatedAt: new Date("2026-03-22T10:00:00.000Z"),
+      },
+    ]);
+    taskSnapshots.readAggregates.mockResolvedValue({
+      ...createAggregates(),
+      taskCount: 10,
+      sampleCounts: {
+        markdownCount: 10,
+        expansionTriggeredTaskCount: 8,
+        headSignalAttemptedCount: 9,
+        preflightRunCount: 10,
+        dedupeEvaluatedCount: 7,
+      },
+      groupedBySource: [
+        {
+          ...createAggregates().groupedBySource[0],
+          taskCount: 2,
+          sampleCounts: {
+            markdownCount: 2,
+            expansionTriggeredTaskCount: 1,
+            headSignalAttemptedCount: 2,
+            preflightRunCount: 2,
+            dedupeEvaluatedCount: 1,
+          },
+        },
+      ],
+    });
+
+    const snapshot = await service.getSourceSnapshot("org-1", "source-1");
+
+    expect(snapshot.taskCount).toBe(2);
+    expect(snapshot.sampleCounts).toEqual({
+      markdownCount: 2,
+      expansionTriggeredTaskCount: 1,
+      headSignalAttemptedCount: 2,
+      preflightRunCount: 2,
+      dedupeEvaluatedCount: 1,
+    });
+    expect(snapshot.groupedBySource).toHaveLength(1);
   });
 });
