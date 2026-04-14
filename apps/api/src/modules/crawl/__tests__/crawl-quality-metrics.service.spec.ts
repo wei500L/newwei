@@ -3,6 +3,13 @@ import { CrawlQualityMetricsService } from "../crawl-quality-metrics.service";
 function createAggregates() {
   return {
     taskCount: 2,
+    sampleCounts: {
+      markdownCount: 2,
+      expansionTriggeredTaskCount: 1,
+      headSignalAttemptedCount: 2,
+      preflightRunCount: 2,
+      dedupeEvaluatedCount: 2,
+    },
     lowSignalRatio: 0.5,
     emptyMarkdownRate: 0.25,
     expansionTriggerRate: 0.5,
@@ -31,6 +38,13 @@ function createAggregates() {
       {
         sourceId: "source-1",
         taskCount: 2,
+        sampleCounts: {
+          markdownCount: 2,
+          expansionTriggeredTaskCount: 1,
+          headSignalAttemptedCount: 2,
+          preflightRunCount: 2,
+          dedupeEvaluatedCount: 2,
+        },
         lowSignalRatio: 0.5,
         expansionSuccessRate: 1,
         avgMarkdownChars: 120,

@@ -66,11 +66,14 @@ import {
 } from "@/lib/crawl-config-policy";
 import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { formatRealtimeSocketError } from "@/lib/realtime-socket-errors";
 
 import { Crawl4aiHealthCard } from "./components/Crawl4aiHealthCard";
 import { CreateCrawlTaskDrawer } from "./components/CreateCrawlTaskDrawer";
 import { MetadataExtractionCard } from "./components/MetadataExtractionCard";
 import type { CreateCrawlTaskFormValues, MetadataFormValues } from "./types";
+
+const REALTIME_SOCKET_TIMEOUT_MS = 10_000;
 
 const statusColors: Record<CrawlTaskStatus, string> = {
   pending: "gold",
@@ -386,6 +389,7 @@ export function CrawlTasksView() {
   const [opsLiveStatus, setOpsLiveStatus] = useState<
     "disconnected" | "connecting" | "connected"
   >("disconnected");
+  const [opsLiveError, setOpsLiveError] = useState<string | null>(null);
   const currentPageRef = useRef(current);
 
   const [createTask, { loading: creating }] = useCreateCrawlTaskMutation();
@@ -722,34 +726,94 @@ export function CrawlTasksView() {
     if (!canView || !session?.accessToken) {
       opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
+      setOpsLiveError(null);
       return;
     }
 
     opsSocketBootstrappingRef.current = true;
     setOpsLiveStatus("connecting");
+    setOpsLiveError(null);
     let hasConnectedOnce = false;
     const socket = io(`${env.apiRoot}/ops`, {
       auth: { token: session.accessToken },
       transports: ["websocket"],
+      withCredentials: true,
+      autoConnect: false,
+      timeout: REALTIME_SOCKET_TIMEOUT_MS,
     });
     opsSocketRef.current = socket;
+    const connectTimer = window.setTimeout(() => {
+      socket.connect();
+    }, 0);
 
     const handleConnect = () => {
       opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("connected");
+      setOpsLiveError(null);
       if (hasConnectedOnce) {
         scheduleOpsRefresh();
         return;
       }
       hasConnectedOnce = true;
     };
-    const handleDisconnect = () => {
+    const getLocalizedError = (
+      payload:
+        | { code?: string; message?: string; retryAfterMs?: number }
+        | undefined,
+      fallbackKind: "socket" | "connect",
+    ) =>
+      formatRealtimeSocketError(payload, t, {
+        keyPrefix: "crawl.liveUpdates.connectionError",
+        fallbackKind,
+        defaults: {
+          unauthorized: "Crawl realtime access expired. Please sign in again.",
+          tooManyConnections:
+            "Crawl realtime connections are at capacity. Please try again later.",
+          tooManyConnectionAttempts:
+            "Too many crawl realtime connection attempts. Please try again later.",
+          rateLimitExceeded:
+            "Crawl realtime connection attempts are too frequent. Please try again later.",
+          tooManyFailedAttempts:
+            "Too many failed crawl realtime sign-in attempts. Please try again later.",
+          timeout: "Connecting to crawl realtime timed out. Please try again.",
+          network:
+            "Unable to connect to crawl realtime. Please check the network and try again.",
+          connect:
+            "Unable to connect to crawl realtime right now. Please try again later.",
+          socket:
+            "Crawl realtime connection is unstable. Please try again later.",
+        },
+      });
+    const handleDisconnect = (reason: string) => {
       opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
+      if (reason === "io client disconnect") {
+        setOpsLiveError(null);
+        return;
+      }
+      setOpsLiveError((currentError) =>
+        currentError ?? getLocalizedError({ message: reason }, "socket"),
+      );
     };
-    const handleConnectError = () => {
+    const handleConnectError = (
+      error: { code?: string; message?: string; retryAfterMs?: number },
+    ) => {
       opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
+      setOpsLiveError(getLocalizedError(error, "connect"));
+    };
+    const handleServerError = (payload: unknown) => {
+      const candidate =
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? (payload as {
+              code?: string;
+              message?: string;
+              retryAfterMs?: number;
+            })
+          : undefined;
+      opsSocketBootstrappingRef.current = false;
+      setOpsLiveStatus("disconnected");
+      setOpsLiveError(getLocalizedError(candidate, "socket"));
     };
     const handleEvent = (payload: unknown) => {
       const refreshDecision = getCrawlTasksOpsRefreshDecision(payload);
@@ -762,12 +826,15 @@ export function CrawlTasksView() {
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
     socket.on("connect_error", handleConnectError);
+    socket.on("ops:error", handleServerError);
     socket.on("ops:event", handleEvent);
 
     return () => {
+      window.clearTimeout(connectTimer);
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
       socket.off("connect_error", handleConnectError);
+      socket.off("ops:error", handleServerError);
       socket.off("ops:event", handleEvent);
       socket.disconnect();
       if (opsSocketRef.current === socket) {
@@ -775,7 +842,7 @@ export function CrawlTasksView() {
       }
       opsSocketBootstrappingRef.current = false;
     };
-  }, [canView, scheduleOpsRefresh, session?.accessToken]);
+  }, [canView, scheduleOpsRefresh, session?.accessToken, t]);
 
   useEffect(() => {
     if (
@@ -1426,6 +1493,29 @@ export function CrawlTasksView() {
               description={tasksError}
             />
           ) : null}
+          {opsLiveError ? (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 0 }}
+              message={t("crawl.liveUpdates.alertTitle", {
+                defaultValue: "Realtime updates unavailable",
+              })}
+              description={
+                <Space direction="vertical" size={4}>
+                  <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
+                    {opsLiveError}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">
+                    {t("crawl.liveUpdates.fallbackHint", {
+                      defaultValue:
+                        "This page is temporarily using scheduled refresh while the realtime connection recovers.",
+                    })}
+                  </Typography.Text>
+                </Space>
+              }
+            />
+          ) : null}
           <div
             style={{
               display: "flex",
@@ -1513,6 +1603,33 @@ export function CrawlTasksView() {
                 width: screens.md ? "auto" : "100%",
               }}
             >
+              <Tag
+                color={
+                  opsLiveError
+                    ? "red"
+                    : opsLiveStatus === "connected"
+                      ? "green"
+                      : opsLiveStatus === "connecting"
+                        ? "blue"
+                        : undefined
+                }
+              >
+                {opsLiveError
+                  ? t("crawl.liveUpdates.error", {
+                      defaultValue: "Error",
+                    })
+                  : opsLiveStatus === "connected"
+                    ? t("crawl.liveUpdates.connected", {
+                        defaultValue: "Live",
+                      })
+                    : opsLiveStatus === "connecting"
+                      ? t("crawl.liveUpdates.connecting", {
+                          defaultValue: "Connecting",
+                        })
+                      : t("crawl.liveUpdates.disconnected", {
+                          defaultValue: "Disconnected",
+                        })}
+              </Tag>
               <Button
                 icon={<DashboardOutlined />}
                 onClick={() => router.push("/admin/ops/crawl-monitor")}

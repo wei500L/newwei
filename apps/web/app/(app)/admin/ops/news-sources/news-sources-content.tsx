@@ -64,6 +64,7 @@ import {
 import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { resolveRssAdaptiveListUiModel } from "@/lib/news-source-rss-adaptive-ui";
+import { formatRealtimeSocketError } from "@/lib/realtime-socket-errors";
 import {
   buildSeedConfigFromFormValues,
   type SeedSchedulerRuntimeSettings,
@@ -120,6 +121,8 @@ interface NewsSourceListResponse {
   page: number;
   pageSize: number;
 }
+
+const REALTIME_SOCKET_TIMEOUT_MS = 10_000;
 
 interface NewsSourceRecord {
   id: string;
@@ -187,6 +190,20 @@ interface NewsSourceReadinessSummary {
   inactive: number;
   circuitOpen: number;
   failing: number;
+}
+
+interface CrawlQualitySampleCounts {
+  markdownCount: number;
+  expansionTriggeredTaskCount: number;
+  headSignalAttemptedCount: number;
+  preflightRunCount: number;
+  dedupeEvaluatedCount: number;
+}
+
+interface RefreshAllOptions {
+  silent?: boolean;
+  includeQueue?: boolean;
+  includeQuality?: boolean;
 }
 
 function mapNewsSourceRecord(record: NewsSourceApiRecord): NewsSourceRecord {
@@ -301,6 +318,7 @@ interface Crawl4aiQueueStats {
 interface Crawl4aiQualitySourceMetric {
   sourceId: string;
   taskCount: number;
+  sampleCounts?: CrawlQualitySampleCounts;
   lowSignalRatio: number;
   emptyMarkdownRate: number;
   expansionTriggerRate: number;
@@ -332,6 +350,7 @@ interface Crawl4aiQualitySnapshot {
   from: string;
   to: string;
   taskCount: number;
+  sampleCounts?: CrawlQualitySampleCounts;
   lowSignalRatio: number;
   emptyMarkdownRate: number;
   expansionTriggerRate: number;
@@ -1029,6 +1048,20 @@ const DEFAULT_CRAWL_QUALITY_HIGH_ORG_HASH_DEDUPE_RATE_THRESHOLD = 0.3;
 const DEFAULT_CRAWL_QUALITY_PREFLIGHT_FAILURE_RATE_THRESHOLD = 0.15;
 const normalizeRateValue = (value: number | undefined): number =>
   typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
+const normalizeCountValue = (value: number | undefined): number =>
+  typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
+
+type CrawlQualitySampleMetric =
+  | "markdownCount"
+  | "expansionTriggeredTaskCount"
+  | "headSignalAttemptedCount"
+  | "preflightRunCount"
+  | "dedupeEvaluatedCount";
+
+const getSampleCount = (
+  sampleCounts: CrawlQualitySampleCounts | undefined,
+  key: CrawlQualitySampleMetric,
+): number => normalizeCountValue(sampleCounts?.[key]);
 
 export function NewsSourcesContent() {
   const { t, i18n } = useTranslation();
@@ -1146,6 +1179,10 @@ export function NewsSourcesContent() {
   const liveRefreshTimerRef = useRef<number | null>(null);
   const liveSocketRef = useRef<Socket | null>(null);
   const liveUiBusyRef = useRef(false);
+  const visibleSourceIdSetRef = useRef<Set<string>>(new Set());
+  const refreshAllRef = useRef<((options?: RefreshAllOptions) => Promise<void>) | null>(
+    null,
+  );
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const refreshRef = useRef(false);
   const pendingRefreshRef = useRef<{
@@ -1242,16 +1279,29 @@ export function NewsSourcesContent() {
     const orgHashDedupeHitRate = normalizeRateValue(
       crawlQualityStats.orgHashDedupeHitRate,
     );
+    const preflightRunCount = getSampleCount(
+      crawlQualityStats.sampleCounts,
+      "preflightRunCount",
+    );
+    const dedupeEvaluatedCount = getSampleCount(
+      crawlQualityStats.sampleCounts,
+      "dedupeEvaluatedCount",
+    );
 
     return {
       preflightFailureRate,
       http304HitRate,
       orgHashDedupeHitRate,
+      preflightRunCount,
+      dedupeEvaluatedCount,
       preflightFailureBreached:
+        preflightRunCount > 0 &&
         preflightFailureRate >= crawlQualityThresholds.preflightFailureRateHigh,
       http304Breached:
+        preflightRunCount > 0 &&
         http304HitRate <= crawlQualityThresholds.http304HitRateLow,
       orgHashDedupeBreached:
+        dedupeEvaluatedCount > 0 &&
         orgHashDedupeHitRate >= crawlQualityThresholds.orgHashDedupeHitRateHigh,
     };
   }, [crawlQualityStats, crawlQualityThresholds]);
@@ -1266,9 +1316,13 @@ export function NewsSourcesContent() {
     const resolveExtremeSource = (
       selector: (entry: Crawl4aiQualitySourceMetric) => number | undefined,
       direction: "high" | "low",
+      sampleSelector?: (entry: Crawl4aiQualitySourceMetric) => number,
     ) => {
       let best: { sourceId: string; rate: number } | null = null;
       for (const entry of grouped) {
+        if (sampleSelector && sampleSelector(entry) <= 0) {
+          continue;
+        }
         const value = selector(entry);
         const rate =
           typeof value === "number" && Number.isFinite(value)
@@ -1306,7 +1360,13 @@ export function NewsSourcesContent() {
       threshold: number,
       rawRate: number | undefined,
       selector: (entry: Crawl4aiQualitySourceMetric) => number | undefined,
+      sampleCountRaw?: number,
+      sampleSelector?: (entry: Crawl4aiQualitySourceMetric) => number,
     ) => {
+      const sampleCount = normalizeCountValue(sampleCountRaw);
+      if (sampleCount <= 0) {
+        return;
+      }
       const overallRate =
         typeof rawRate === "number" && Number.isFinite(rawRate)
           ? Math.max(0, rawRate)
@@ -1319,7 +1379,7 @@ export function NewsSourcesContent() {
         direction: "high",
         threshold,
         overallRate,
-        extremeSource: resolveExtremeSource(selector, "high"),
+        extremeSource: resolveExtremeSource(selector, "high", sampleSelector),
       });
     };
     const pushLowAlert = (
@@ -1327,7 +1387,13 @@ export function NewsSourcesContent() {
       threshold: number,
       rawRate: number | undefined,
       selector: (entry: Crawl4aiQualitySourceMetric) => number | undefined,
+      sampleCountRaw?: number,
+      sampleSelector?: (entry: Crawl4aiQualitySourceMetric) => number,
     ) => {
+      const sampleCount = normalizeCountValue(sampleCountRaw);
+      if (sampleCount <= 0) {
+        return;
+      }
       const overallRate =
         typeof rawRate === "number" && Number.isFinite(rawRate)
           ? Math.max(0, rawRate)
@@ -1340,7 +1406,7 @@ export function NewsSourcesContent() {
         direction: "low",
         threshold,
         overallRate,
-        extremeSource: resolveExtremeSource(selector, "low"),
+        extremeSource: resolveExtremeSource(selector, "low", sampleSelector),
       });
     };
     pushHighAlert(
@@ -1348,36 +1414,48 @@ export function NewsSourcesContent() {
       CRAWL_QUALITY_ALERT_RATE_THRESHOLD,
       crawlQualityStats.headSignalSoftFailureRate,
       (entry) => entry.headSignalSoftFailureRate,
+      getSampleCount(crawlQualityStats.sampleCounts, "headSignalAttemptedCount"),
+      (entry) => getSampleCount(entry.sampleCounts, "headSignalAttemptedCount"),
     );
     pushHighAlert(
       "truncated",
       CRAWL_QUALITY_ALERT_RATE_THRESHOLD,
       crawlQualityStats.headSignalTruncatedRate,
       (entry) => entry.headSignalTruncatedRate,
+      getSampleCount(crawlQualityStats.sampleCounts, "headSignalAttemptedCount"),
+      (entry) => getSampleCount(entry.sampleCounts, "headSignalAttemptedCount"),
     );
     pushHighAlert(
       "noPublishSignal",
       CRAWL_QUALITY_ALERT_RATE_THRESHOLD,
       crawlQualityStats.headSignalNoPublishSignalRate,
       (entry) => entry.headSignalNoPublishSignalRate,
+      getSampleCount(crawlQualityStats.sampleCounts, "headSignalAttemptedCount"),
+      (entry) => getSampleCount(entry.sampleCounts, "headSignalAttemptedCount"),
     );
     pushHighAlert(
       "preflightFailure",
       crawlQualityThresholds.preflightFailureRateHigh,
       crawlQualityStats.preflightFailureRate,
       (entry) => entry.preflightFailureRate,
+      getSampleCount(crawlQualityStats.sampleCounts, "preflightRunCount"),
+      (entry) => getSampleCount(entry.sampleCounts, "preflightRunCount"),
     );
     pushHighAlert(
       "orgHashDedupeHigh",
       crawlQualityThresholds.orgHashDedupeHitRateHigh,
       crawlQualityStats.orgHashDedupeHitRate,
       (entry) => entry.orgHashDedupeHitRate,
+      getSampleCount(crawlQualityStats.sampleCounts, "dedupeEvaluatedCount"),
+      (entry) => getSampleCount(entry.sampleCounts, "dedupeEvaluatedCount"),
     );
     pushLowAlert(
       "http304Low",
       crawlQualityThresholds.http304HitRateLow,
       crawlQualityStats.http304HitRate,
       (entry) => entry.http304HitRate,
+      getSampleCount(crawlQualityStats.sampleCounts, "preflightRunCount"),
+      (entry) => getSampleCount(entry.sampleCounts, "preflightRunCount"),
     );
     return alerts;
   }, [crawlQualityStats, crawlQualityThresholds]);
@@ -1390,6 +1468,10 @@ export function NewsSourcesContent() {
   useEffect(() => {
     liveRefreshSourcesRef.current = liveRefreshSources;
   }, [liveRefreshSources]);
+
+  useEffect(() => {
+    visibleSourceIdSetRef.current = visibleSourceIdSet;
+  }, [visibleSourceIdSet]);
 
   const loadSources = useCallback(
     async (options?: {
@@ -1700,11 +1782,7 @@ export function NewsSourcesContent() {
   );
 
   const refreshAll = useCallback(
-    async (options?: {
-      silent?: boolean;
-      includeQueue?: boolean;
-      includeQuality?: boolean;
-    }) => {
+    async (options?: RefreshAllOptions) => {
       const silent = options?.silent === true;
       const includeQueue = options?.includeQueue !== false;
       const includeQuality = options?.includeQuality !== false;
@@ -1750,6 +1828,10 @@ export function NewsSourcesContent() {
       loadSources,
     ],
   );
+
+  useEffect(() => {
+    refreshAllRef.current = refreshAll;
+  }, [refreshAll]);
 
   useEffect(() => {
     if (canView) {
@@ -1887,13 +1969,13 @@ export function NewsSourcesContent() {
       if (liveUiBusyRef.current) {
         return;
       }
-      void refreshAll({
+      void refreshAllRef.current?.({
         silent: true,
         includeQueue: false,
         includeQuality: false,
       });
     }, 1200);
-  }, [refreshAll]);
+  }, []);
 
   const resetLiveCounters = useCallback(() => {
     setLiveEventCount(0);
@@ -1913,27 +1995,68 @@ export function NewsSourcesContent() {
     const socket = io(`${env.apiRoot}/ops`, {
       auth: { token: session.accessToken },
       transports: ["websocket"],
+      withCredentials: true,
+      autoConnect: false,
+      timeout: REALTIME_SOCKET_TIMEOUT_MS,
     });
 
     liveSocketRef.current = socket;
+    const connectTimer = window.setTimeout(() => {
+      socket.connect();
+    }, 0);
 
     const handleConnect = () => {
       setLiveStatus("connected");
       setLiveError(null);
-      void refreshAll({ silent: true });
+      void refreshAllRef.current?.({ silent: true });
     };
     const handleDisconnect = () => setLiveStatus("disconnected");
-    const handleConnectError = (error: Error) => {
+    const getLocalizedError = (
+      payload:
+        | { code?: string; message?: string; retryAfterMs?: number }
+        | undefined,
+      fallbackKind: "socket" | "connect",
+    ) =>
+      formatRealtimeSocketError(payload, t, {
+        keyPrefix: "newsSources.liveUpdates.connectionError",
+        fallbackKind,
+        defaults: {
+          unauthorized:
+            "News source realtime access expired. Please sign in again.",
+          tooManyConnections:
+            "News source realtime connections are at capacity. Please try again later.",
+          tooManyConnectionAttempts:
+            "Too many news source realtime connection attempts. Please try again later.",
+          rateLimitExceeded:
+            "News source realtime connection attempts are too frequent. Please try again later.",
+          tooManyFailedAttempts:
+            "Too many failed news source realtime sign-in attempts. Please try again later.",
+          timeout:
+            "Connecting to news source realtime timed out. Please try again.",
+          network:
+            "Unable to connect to news source realtime. Please check the network and try again.",
+          connect:
+            "Unable to connect to news source realtime right now. Please try again later.",
+          socket:
+            "News source realtime connection is unstable. Please try again later.",
+        },
+      });
+    const handleConnectError = (
+      error: { code?: string; message?: string; retryAfterMs?: number },
+    ) => {
       setLiveStatus("disconnected");
-      setLiveError(error.message);
+      setLiveError(getLocalizedError(error, "connect"));
     };
     const handleServerError = (payload: unknown) => {
-      if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-        const message = (payload as { message?: unknown }).message;
-        if (typeof message === "string" && message.trim()) {
-          setLiveError(message.trim());
-        }
-      }
+      const candidate =
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? (payload as {
+              code?: string;
+              message?: string;
+              retryAfterMs?: number;
+            })
+          : undefined;
+      setLiveError(getLocalizedError(candidate, "socket"));
     };
     const handleEvent = (payload: unknown) => {
       if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -1968,7 +2091,7 @@ export function NewsSourcesContent() {
       const isPageScopedSource = source === "pipeline" || source === "crawl";
       if (
         isPageScopedSource &&
-        (!sourceId || !visibleSourceIdSet.has(sourceId))
+        (!sourceId || !visibleSourceIdSetRef.current.has(sourceId))
       ) {
         return;
       }
@@ -1985,6 +2108,7 @@ export function NewsSourcesContent() {
     socket.on("ops:event", handleEvent);
 
     return () => {
+      window.clearTimeout(connectTimer);
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
       socket.off("connect_error", handleConnectError);
@@ -2003,10 +2127,8 @@ export function NewsSourcesContent() {
   }, [
     canView,
     liveUpdatesEnabled,
-    refreshAll,
-    scheduleLiveRefresh,
     session?.accessToken,
-    visibleSourceIdSet,
+    scheduleLiveRefresh,
   ]);
 
   useEffect(() => {
@@ -4104,13 +4226,21 @@ export function NewsSourcesContent() {
     page: "ingestion",
     panel: "news-source-scheduler",
   });
+  const readinessState = !readinessSummary
+    ? null
+    : readinessSummary.total === 0
+      ? "empty"
+      : readinessSummary.active === 0
+        ? "inactive"
+        : readinessSummary.circuitOpen > 0 || readinessSummary.failing > 0
+          ? "degraded"
+          : "ready";
   const readinessTone =
-    readinessSummary && readinessSummary.active === 0
-      ? "error"
-      : readinessSummary &&
-          (readinessSummary.circuitOpen > 0 || readinessSummary.failing > 0)
+    readinessState === "empty"
+      ? "info"
+      : readinessState === "inactive" || readinessState === "degraded"
         ? "warning"
-        : "info";
+        : "success";
 
   const columns: ColumnsType<NewsSourceRecord> = [
     {
@@ -4784,7 +4914,6 @@ export function NewsSourcesContent() {
       title: t("common.actions"),
       key: "actions",
       width: 340,
-      fixed: "right",
       render: (_, record) => (
         <Space wrap>
           <Button size="small" onClick={() => void handlePreview(record)}>
@@ -5200,13 +5329,17 @@ export function NewsSourcesContent() {
                   type={readinessTone}
                   showIcon
                   message={
-                    readinessSummary.active === 0
+                    readinessState === "empty"
+                      ? t("newsSources.readiness.noSourcesConfigured", {
+                          defaultValue:
+                            "No news sources are configured for this workspace yet.",
+                        })
+                      : readinessState === "inactive"
                       ? t("newsSources.readiness.noActiveSources", {
                           defaultValue:
                             "Situation Monitor cannot queue new collection because there are no active news sources.",
                         })
-                      : readinessSummary.circuitOpen > 0 ||
-                          readinessSummary.failing > 0
+                      : readinessState === "degraded"
                         ? t("newsSources.readiness.degraded", {
                             defaultValue:
                               "Some sources are degraded and may reduce Situation Monitor coverage.",
@@ -5217,13 +5350,17 @@ export function NewsSourcesContent() {
                           })
                   }
                   description={
-                    readinessSummary.active === 0
+                    readinessState === "empty"
+                      ? t("newsSources.readiness.noSourcesConfiguredDescription", {
+                          defaultValue:
+                            "Import an OPML list or create a source to enable Situation Monitor crawl refresh.",
+                        })
+                      : readinessState === "inactive"
                       ? t("newsSources.readiness.noActiveSourcesDescription", {
                           defaultValue:
                             "Activate at least one source or import a source list before relying on Situation Monitor refresh.",
                         })
-                      : readinessSummary.circuitOpen > 0 ||
-                          readinessSummary.failing > 0
+                      : readinessState === "degraded"
                         ? t("newsSources.readiness.degradedDescription", {
                             defaultValue:
                               "Review circuit-open and failing sources before relying on fresh Situation Monitor data.",
@@ -5618,21 +5755,32 @@ export function NewsSourcesContent() {
                           </span>
                           <Tag
                             color={
-                              crawlQualityThresholdStatus?.http304Breached
+                              (crawlQualityThresholdStatus?.preflightRunCount ??
+                                0) <= 0
+                                ? "default"
+                                : crawlQualityThresholdStatus?.http304Breached
                                 ? "red"
                                 : "green"
                             }
                           >
-                            {crawlQualityThresholdStatus?.http304Breached
-                              ? t(
-                                  "newsSources.quality.thresholdStatusBreached",
-                                  {
-                                    defaultValue: "breach",
-                                  },
-                                )
-                              : t("newsSources.quality.thresholdStatusNormal", {
-                                  defaultValue: "normal",
-                                })}
+                            {(crawlQualityThresholdStatus?.preflightRunCount ??
+                              0) <= 0
+                              ? t("newsSources.quality.thresholdStatusNoData", {
+                                  defaultValue: "no data",
+                                })
+                              : crawlQualityThresholdStatus?.http304Breached
+                                ? t(
+                                    "newsSources.quality.thresholdStatusBreached",
+                                    {
+                                      defaultValue: "breach",
+                                    },
+                                  )
+                                : t(
+                                    "newsSources.quality.thresholdStatusNormal",
+                                    {
+                                      defaultValue: "normal",
+                                    },
+                                  )}
                           </Tag>
                           <Tag>
                             {`<= ${Number(
@@ -5643,12 +5791,21 @@ export function NewsSourcesContent() {
                           </Tag>
                         </Space>
                       }
-                      value={Number(
-                        ((crawlQualityStats.http304HitRate ?? 0) * 100).toFixed(
-                          1,
-                        ),
-                      )}
-                      suffix="%"
+                      value={
+                        (crawlQualityThresholdStatus?.preflightRunCount ?? 0) >
+                        0
+                          ? Number(
+                              ((crawlQualityStats.http304HitRate ?? 0) * 100)
+                                .toFixed(1),
+                            )
+                          : "-"
+                      }
+                      suffix={
+                        (crawlQualityThresholdStatus?.preflightRunCount ?? 0) >
+                        0
+                          ? "%"
+                          : ""
+                      }
                     />
                   </Col>
                   <Col xs={12} sm={8} md={6}>
@@ -5662,21 +5819,32 @@ export function NewsSourcesContent() {
                           </span>
                           <Tag
                             color={
-                              crawlQualityThresholdStatus?.preflightFailureBreached
+                              (crawlQualityThresholdStatus?.preflightRunCount ??
+                                0) <= 0
+                                ? "default"
+                                : crawlQualityThresholdStatus?.preflightFailureBreached
                                 ? "red"
                                 : "green"
                             }
                           >
-                            {crawlQualityThresholdStatus?.preflightFailureBreached
-                              ? t(
-                                  "newsSources.quality.thresholdStatusBreached",
-                                  {
-                                    defaultValue: "breach",
-                                  },
-                                )
-                              : t("newsSources.quality.thresholdStatusNormal", {
-                                  defaultValue: "normal",
-                                })}
+                            {(crawlQualityThresholdStatus?.preflightRunCount ??
+                              0) <= 0
+                              ? t("newsSources.quality.thresholdStatusNoData", {
+                                  defaultValue: "no data",
+                                })
+                              : crawlQualityThresholdStatus?.preflightFailureBreached
+                                ? t(
+                                    "newsSources.quality.thresholdStatusBreached",
+                                    {
+                                      defaultValue: "breach",
+                                    },
+                                  )
+                                : t(
+                                    "newsSources.quality.thresholdStatusNormal",
+                                    {
+                                      defaultValue: "normal",
+                                    },
+                                  )}
                           </Tag>
                           <Tag>
                             {`>= ${Number(
@@ -5688,12 +5856,23 @@ export function NewsSourcesContent() {
                           </Tag>
                         </Space>
                       }
-                      value={Number(
-                        (
-                          (crawlQualityStats.preflightFailureRate ?? 0) * 100
-                        ).toFixed(1),
-                      )}
-                      suffix="%"
+                      value={
+                        (crawlQualityThresholdStatus?.preflightRunCount ?? 0) >
+                        0
+                          ? Number(
+                              (
+                                (crawlQualityStats.preflightFailureRate ?? 0) *
+                                100
+                              ).toFixed(1),
+                            )
+                          : "-"
+                      }
+                      suffix={
+                        (crawlQualityThresholdStatus?.preflightRunCount ?? 0) >
+                        0
+                          ? "%"
+                          : ""
+                      }
                     />
                   </Col>
                   <Col xs={12} sm={8} md={6}>
@@ -5707,21 +5886,32 @@ export function NewsSourcesContent() {
                           </span>
                           <Tag
                             color={
-                              crawlQualityThresholdStatus?.orgHashDedupeBreached
+                              (crawlQualityThresholdStatus?.dedupeEvaluatedCount ??
+                                0) <= 0
+                                ? "default"
+                                : crawlQualityThresholdStatus?.orgHashDedupeBreached
                                 ? "red"
                                 : "green"
                             }
                           >
-                            {crawlQualityThresholdStatus?.orgHashDedupeBreached
-                              ? t(
-                                  "newsSources.quality.thresholdStatusBreached",
-                                  {
-                                    defaultValue: "breach",
-                                  },
-                                )
-                              : t("newsSources.quality.thresholdStatusNormal", {
-                                  defaultValue: "normal",
-                                })}
+                            {(crawlQualityThresholdStatus?.dedupeEvaluatedCount ??
+                              0) <= 0
+                              ? t("newsSources.quality.thresholdStatusNoData", {
+                                  defaultValue: "no data",
+                                })
+                              : crawlQualityThresholdStatus?.orgHashDedupeBreached
+                                ? t(
+                                    "newsSources.quality.thresholdStatusBreached",
+                                    {
+                                      defaultValue: "breach",
+                                    },
+                                  )
+                                : t(
+                                    "newsSources.quality.thresholdStatusNormal",
+                                    {
+                                      defaultValue: "normal",
+                                    },
+                                  )}
                           </Tag>
                           <Tag>
                             {`>= ${Number(
@@ -5733,12 +5923,23 @@ export function NewsSourcesContent() {
                           </Tag>
                         </Space>
                       }
-                      value={Number(
-                        (
-                          (crawlQualityStats.orgHashDedupeHitRate ?? 0) * 100
-                        ).toFixed(1),
-                      )}
-                      suffix="%"
+                      value={
+                        (crawlQualityThresholdStatus?.dedupeEvaluatedCount ??
+                          0) > 0
+                          ? Number(
+                              (
+                                (crawlQualityStats.orgHashDedupeHitRate ?? 0) *
+                                100
+                              ).toFixed(1),
+                            )
+                          : "-"
+                      }
+                      suffix={
+                        (crawlQualityThresholdStatus?.dedupeEvaluatedCount ??
+                          0) > 0
+                          ? "%"
+                          : ""
+                      }
                     />
                   </Col>
                 </Row>
@@ -5748,6 +5949,20 @@ export function NewsSourcesContent() {
                       "Threshold tags come from active alert rules and are evaluated over the selected window.",
                   })}
                 </Typography.Text>
+                {crawlQualityStats.taskCount === 0 ? (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message={t("newsSources.quality.noSamples", {
+                      defaultValue:
+                        "No crawl quality samples are available for the selected window yet.",
+                    })}
+                    description={t("newsSources.quality.noSamplesDescription", {
+                      defaultValue:
+                        "Run or schedule at least one crawl before relying on crawl quality thresholds.",
+                    })}
+                  />
+                ) : null}
                 {crawlQualityRateAlerts.length > 0 ? (
                   <Alert
                     type="warning"
@@ -5963,10 +6178,9 @@ export function NewsSourcesContent() {
           <Table
             rowKey="id"
             loading={loading}
-            tableLayout="fixed"
             columns={columns}
             dataSource={sources}
-            scroll={{ x: 2400 }}
+            scroll={{ x: "max-content" }}
             rowSelection={
               canManage
                 ? {

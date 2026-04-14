@@ -1,7 +1,7 @@
 "use client";
 
 import { useApolloClient } from "@apollo/client";
-import { Alert, Badge, Divider, List, Skeleton, Space, Tag, Typography } from "antd";
+import { Alert, App, Badge, Divider, List, Skeleton, Space, Tag, Typography } from "antd";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useEffect } from "react";
@@ -12,6 +12,7 @@ import type { AlertEventsStreamSubscription } from "@/graphql/generated";
 import { AlertEventsStreamDocument, useAlertEventsQuery } from "@/graphql/generated";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { useTimedValueDeduper } from "@/lib/use-realtime-helpers";
 
 const severityColor: Record<string, string> = {
   low: "green",
@@ -29,6 +30,7 @@ const eventStatusBadge: Record<string, "success" | "processing" | "error" | "def
 
 export function AlertPanel() {
   const { t, i18n } = useTranslation();
+  const { message } = App.useApp();
   const locale = resolveLocale(i18n.language);
   const client = useApolloClient();
   const { data: session, status } = useSession();
@@ -43,6 +45,7 @@ export function AlertPanel() {
   const { pending: refreshingEvents, run: refreshEvents } = usePendingAction(
     () => refetchEvents(),
   );
+  const shouldShowStreamError = useTimedValueDeduper(30_000);
 
   useEffect(() => {
     if (!authenticated || !canReadAlerts) {
@@ -55,10 +58,27 @@ export function AlertPanel() {
       .subscribe({
         next: () => {
           void refetchEvents();
+        },
+        error: (error) => {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          const toastMessage = t("alerts.streamError", { error: errorMessage });
+          if (!shouldShowStreamError(toastMessage)) {
+            return;
+          }
+          message.error(toastMessage);
         }
       });
     return () => sub.unsubscribe();
-  }, [authenticated, canReadAlerts, client, refetchEvents]);
+  }, [
+    authenticated,
+    canReadAlerts,
+    client,
+    message,
+    refetchEvents,
+    shouldShowStreamError,
+    t,
+  ]);
 
   const events = eventsData?.alertEvents ?? [];
   if (status === "loading") {

@@ -1,8 +1,4 @@
-import {
-  createLogger,
-  RealtimeSocketErrorCode,
-  type RealtimeSocketErrorPayload,
-} from "@modular/utils";
+import { createLogger } from "@modular/utils";
 import { OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
 import {
@@ -21,6 +17,10 @@ import {
   type JwtPayload,
 } from "../../auth/auth.service";
 import { EnvService } from "../../config/config.service";
+import {
+  buildRealtimeSocketErrorPayload,
+  shouldRecordFailedSocketAuth,
+} from "../../websocket/socket-error-payloads";
 import { UserSessionManager } from "../../websocket/user-session-manager.service";
 import { WsConnectionRateLimiterService } from "../../websocket/ws-connection-rate-limiter.service";
 import { SituationMonitorMonitorsService } from "../situation-monitor-monitors.service";
@@ -95,14 +95,45 @@ export class SituationMonitorSignalsGateway
     const ip = this.extractClientIp(client);
 
     try {
-      if (!this.isOriginAllowed(this.extractOrigin(client))) {
-        throw new Error("Origin not allowed");
-      }
-
       const ipRateLimit =
         await this.connectionRateLimiter.checkConnectionRateLimit(ip ?? "");
       if (!ipRateLimit.allowed) {
-        throw new Error("Too many connection attempts");
+        this.logger.warn(
+          { socketId: client.id, ip },
+          "Situation monitor socket connection rate limited",
+        );
+        client.emit(
+          "situation:error",
+          buildRealtimeSocketErrorPayload(
+            "Rate limit exceeded",
+            ipRateLimit.retryAfterMs,
+          ),
+        );
+        client.disconnect(true);
+        return;
+      }
+
+      const backoffDelay = await this.connectionRateLimiter.getBackoffDelay(
+        ip ?? "",
+      );
+      if (backoffDelay > 0) {
+        this.logger.warn(
+          { socketId: client.id, ip, backoffDelay },
+          "Situation monitor socket connection in backoff period",
+        );
+        client.emit(
+          "situation:error",
+          buildRealtimeSocketErrorPayload(
+            "Too many failed attempts",
+            backoffDelay,
+          ),
+        );
+        client.disconnect(true);
+        return;
+      }
+
+      if (!this.isOriginAllowed(this.extractOrigin(client))) {
+        throw new Error("Origin not allowed");
       }
 
       const token = this.extractToken(client);
@@ -113,7 +144,19 @@ export class SituationMonitorSignalsGateway
           payload.sub,
         );
       if (!userRateLimit.allowed) {
-        throw new Error("Too many connection attempts");
+        this.logger.warn(
+          { socketId: client.id, ip, userId: payload.sub },
+          "Situation monitor socket user connection attempts throttled",
+        );
+        client.emit(
+          "situation:error",
+          buildRealtimeSocketErrorPayload(
+            "Too many connection attempts",
+            userRateLimit.retryAfterMs,
+          ),
+        );
+        client.disconnect(true);
+        return;
       }
 
       await this.ensureNotRevoked(payload);
@@ -124,6 +167,7 @@ export class SituationMonitorSignalsGateway
       if (!profile.permissions.includes("items.read")) {
         throw new Error("Insufficient permissions");
       }
+      await this.connectionRateLimiter.clearBackoff(ip ?? "");
 
       client.data.user = profile;
       client.data.clientIp = ip;
@@ -157,11 +201,9 @@ export class SituationMonitorSignalsGateway
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      const responseMessage =
-        errorMessage === "Too many connections" ||
-        errorMessage === "Too many connection attempts"
-          ? errorMessage
-          : "Unauthorized";
+      if (shouldRecordFailedSocketAuth(errorMessage)) {
+        await this.connectionRateLimiter.recordFailedAuth(ip ?? "");
+      }
       this.sessions.unregister(client);
       this.logger.warn(
         { socketId: client.id, ip, error: errorMessage },
@@ -169,7 +211,7 @@ export class SituationMonitorSignalsGateway
       );
       client.emit(
         "situation:error",
-        this.toSocketErrorPayload(responseMessage),
+        buildRealtimeSocketErrorPayload(errorMessage),
       );
       client.disconnect(true);
     }
@@ -340,27 +382,6 @@ export class SituationMonitorSignalsGateway
 
     return undefined;
   }
-  private toSocketErrorPayload(
-    errorMessage: string,
-  ): RealtimeSocketErrorPayload {
-    if (errorMessage === "Too many connections") {
-      return {
-        code: RealtimeSocketErrorCode.TooManyConnections,
-        message: "Too many connections",
-      };
-    }
-    if (errorMessage === "Too many connection attempts") {
-      return {
-        code: RealtimeSocketErrorCode.TooManyConnectionAttempts,
-        message: "Too many connection attempts",
-      };
-    }
-    return {
-      code: RealtimeSocketErrorCode.Unauthorized,
-      message: "Unauthorized",
-    };
-  }
-
   private extractClientIp(client: Socket): string | undefined {
     const forwardedHeader = client.handshake.headers["x-forwarded-for"];
     const forwarded = Array.isArray(forwardedHeader)

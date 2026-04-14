@@ -143,6 +143,9 @@ describe("NotificationsGateway", () => {
       message: "Unauthorized",
     });
     expect(client.disconnect).toHaveBeenCalledWith(true);
+    expect(
+      (gateway as any).connectionRateLimiter.recordFailedAuth,
+    ).toHaveBeenCalledWith("127.0.0.1");
   });
 
   it("enforces max connections per user", async () => {
@@ -193,6 +196,9 @@ describe("NotificationsGateway", () => {
     await gateway.handleConnection(client1);
     expect(client1.join).toHaveBeenCalledTimes(1);
     expect(client1.disconnect).not.toHaveBeenCalled();
+    expect(
+      (gateway as any).connectionRateLimiter.clearBackoff,
+    ).toHaveBeenCalledWith("127.0.0.1");
 
     const client2 = createClient(server, { id: "s2", token });
     await gateway.handleConnection(client2);
@@ -202,6 +208,9 @@ describe("NotificationsGateway", () => {
       message: "Too many connections",
     });
     expect(client2.disconnect).toHaveBeenCalledWith(true);
+    expect(
+      (gateway as any).connectionRateLimiter.recordFailedAuth,
+    ).not.toHaveBeenCalled();
   });
 
   it("rate limits connection attempts per IP", async () => {
@@ -261,14 +270,113 @@ describe("NotificationsGateway", () => {
     const client2 = createClient(server, { id: "s2", token, ip: "10.0.0.1" });
     await gateway.handleConnection(client2);
     expect(client2.emit).toHaveBeenCalledWith("notification:error", {
-      code: NotificationSocketErrorCode.TooManyConnectionAttempts,
-      message: "Too many connection attempts",
+      code: NotificationSocketErrorCode.RateLimitExceeded,
+      message: "Rate limit exceeded",
+      retryAfterMs: 60000,
     });
     expect(client2.disconnect).toHaveBeenCalledWith(true);
     expect(rateLimiter.checkConnectionRateLimit).toHaveBeenNthCalledWith(
       2,
       "10.0.0.1",
     );
+  });
+
+  it("enforces auth backoff before token verification", async () => {
+    const env = {
+      jwtConfig,
+      graphqlConfig: { corsOrigin: undefined },
+      webSocketSecurity: {
+        maxConnectionsPerUser: 50,
+        maxConnectionsPerIp: 50,
+        connectRateLimitPerIp: 999,
+        connectRateLimitPerUser: 999,
+        connectRateLimitWindowSeconds: 60,
+      },
+    } as any;
+
+    const authService = { getUserProfile: jest.fn() } as any;
+    const accessTokenBlacklist = { has: jest.fn() } as any;
+    const dispatcher = { registerListener: jest.fn() } as any;
+    const sessions = new UserSessionManager(env as any);
+    const rateLimiter = createMockRateLimiter({
+      getBackoffDelay: jest.fn().mockResolvedValue(8000),
+    });
+
+    const gateway = new NotificationsGateway(
+      env,
+      authService,
+      accessTokenBlacklist,
+      dispatcher,
+      sessions,
+      rateLimiter,
+    );
+    const server = createFakeServer();
+    (gateway as any).server = server;
+    const client = createClient(server, {
+      id: "s-backoff",
+      token: createToken("user-1", "org-1"),
+      ip: "10.0.0.2",
+    });
+
+    await gateway.handleConnection(client);
+
+    expect(client.emit).toHaveBeenCalledWith("notification:error", {
+      code: NotificationSocketErrorCode.TooManyFailedAttempts,
+      message: "Too many failed attempts",
+      retryAfterMs: 8000,
+    });
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+    expect(authService.getUserProfile).not.toHaveBeenCalled();
+  });
+
+  it("preserves retryAfterMs for per-user connection throttling", async () => {
+    const env = {
+      jwtConfig,
+      graphqlConfig: { corsOrigin: undefined },
+      webSocketSecurity: {
+        maxConnectionsPerUser: 50,
+        maxConnectionsPerIp: 50,
+        connectRateLimitPerIp: 999,
+        connectRateLimitPerUser: 999,
+        connectRateLimitWindowSeconds: 60,
+      },
+    } as any;
+
+    const authService = { getUserProfile: jest.fn() } as any;
+    const accessTokenBlacklist = { has: jest.fn().mockResolvedValue(false) } as any;
+    const dispatcher = { registerListener: jest.fn() } as any;
+    const sessions = new UserSessionManager(env as any);
+    const rateLimiter = createMockRateLimiter({
+      checkUserConnectionRateLimit: jest
+        .fn()
+        .mockResolvedValue({ allowed: false, retryAfterMs: 45000 }),
+    });
+
+    const gateway = new NotificationsGateway(
+      env,
+      authService,
+      accessTokenBlacklist,
+      dispatcher,
+      sessions,
+      rateLimiter,
+    );
+    const server = createFakeServer();
+    (gateway as any).server = server;
+    const client = createClient(server, {
+      id: "s-user-throttle",
+      token: createToken("user-1", "org-1"),
+      ip: "10.0.0.3",
+    });
+
+    await gateway.handleConnection(client);
+
+    expect(client.emit).toHaveBeenCalledWith("notification:error", {
+      code: NotificationSocketErrorCode.TooManyConnectionAttempts,
+      message: "Too many connection attempts",
+      retryAfterMs: 45000,
+    });
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+    expect(authService.getUserProfile).not.toHaveBeenCalled();
   });
 
   it("disconnects existing clients on module destroy", async () => {

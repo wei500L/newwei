@@ -34,6 +34,9 @@ import { buildAdminLogsHref } from "@/lib/admin-logs";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { env } from "@/lib/env";
+import { formatRealtimeSocketError } from "@/lib/realtime-socket-errors";
+
+const REALTIME_SOCKET_TIMEOUT_MS = 10_000;
 
 type TaskLogStatus = "pending" | "processing" | "completed" | "failed";
 
@@ -959,26 +962,66 @@ export function QualityContent() {
     const socket = io(`${env.apiRoot}/quality`, {
       auth: { token: session.accessToken },
       transports: ["websocket"],
+      withCredentials: true,
+      autoConnect: false,
+      timeout: REALTIME_SOCKET_TIMEOUT_MS,
     });
 
     liveSocketRef.current = socket;
+    const connectTimer = window.setTimeout(() => {
+      socket.connect();
+    }, 0);
 
     const handleConnect = () => {
       setLiveStatus("connected");
       setLiveError(null);
     };
     const handleDisconnect = () => setLiveStatus("disconnected");
-    const handleConnectError = (error: Error) => {
+    const getLocalizedError = (
+      payload:
+        | { code?: string; message?: string; retryAfterMs?: number }
+        | undefined,
+      fallbackKind: "socket" | "connect",
+    ) =>
+      formatRealtimeSocketError(payload, t, {
+        keyPrefix: "quality.liveUpdates.connectionError",
+        fallbackKind,
+        defaults: {
+          unauthorized:
+            "Quality realtime access expired. Please sign in again.",
+          tooManyConnections:
+            "Quality realtime connections are at capacity. Please try again later.",
+          tooManyConnectionAttempts:
+            "Too many quality realtime connection attempts. Please try again later.",
+          rateLimitExceeded:
+            "Quality realtime connection attempts are too frequent. Please try again later.",
+          tooManyFailedAttempts:
+            "Too many failed quality realtime sign-in attempts. Please try again later.",
+          timeout: "Connecting to quality realtime timed out. Please try again.",
+          network:
+            "Unable to connect to quality realtime. Please check the network and try again.",
+          connect:
+            "Unable to connect to quality realtime right now. Please try again later.",
+          socket:
+            "Quality realtime connection is unstable. Please try again later.",
+        },
+      });
+    const handleConnectError = (
+      error: { code?: string; message?: string; retryAfterMs?: number },
+    ) => {
       setLiveStatus("disconnected");
-      setLiveError(error.message);
+      setLiveError(getLocalizedError(error, "connect"));
     };
     const handleServerError = (payload: unknown) => {
-      if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-        const message = (payload as { message?: unknown }).message;
-        if (typeof message === "string" && message.trim()) {
-          setLiveError(message.trim());
-        }
-      }
+      const candidate =
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? (payload as {
+              code?: string;
+              message?: string;
+              retryAfterMs?: number;
+            })
+          : undefined;
+      setLiveError(getLocalizedError(candidate, "socket"));
     };
     const handleEvent = (payload: unknown) => {
       if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -1032,6 +1075,7 @@ export function QualityContent() {
     socket.on("quality:event", handleEvent);
 
     return () => {
+      window.clearTimeout(connectTimer);
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
       socket.off("connect_error", handleConnectError);

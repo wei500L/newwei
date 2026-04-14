@@ -53,6 +53,9 @@ describe("SituationMonitorSignalsGateway", () => {
   const connectionRateLimiterMock = {
     checkConnectionRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
     checkUserConnectionRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
+    recordFailedAuth: jest.fn().mockResolvedValue(undefined),
+    getBackoffDelay: jest.fn().mockResolvedValue(0),
+    clearBackoff: jest.fn().mockResolvedValue(undefined),
   } as Partial<WsConnectionRateLimiterService>;
 
   let gateway: SituationMonitorSignalsGateway;
@@ -67,6 +70,11 @@ describe("SituationMonitorSignalsGateway", () => {
     connectionRateLimiterMock.checkUserConnectionRateLimit = jest
       .fn()
       .mockResolvedValue({ allowed: true });
+    connectionRateLimiterMock.recordFailedAuth = jest
+      .fn()
+      .mockResolvedValue(undefined);
+    connectionRateLimiterMock.getBackoffDelay = jest.fn().mockResolvedValue(0);
+    connectionRateLimiterMock.clearBackoff = jest.fn().mockResolvedValue(undefined);
     gateway = new SituationMonitorSignalsGateway(
       envMock,
       authServiceMock,
@@ -138,6 +146,9 @@ describe("SituationMonitorSignalsGateway", () => {
       userId: "user-1",
     });
     expect(client.disconnect).not.toHaveBeenCalled();
+    expect(connectionRateLimiterMock.clearBackoff).toHaveBeenCalledWith(
+      "127.0.0.1",
+    );
   });
 
   it("maps unauthorized failures to stable websocket error codes", async () => {
@@ -157,6 +168,60 @@ describe("SituationMonitorSignalsGateway", () => {
     });
     expect(client.disconnect).toHaveBeenCalledWith(true);
     expect(sessionsMock.unregister).toHaveBeenCalledWith(client);
+    expect(connectionRateLimiterMock.recordFailedAuth).toHaveBeenCalledWith(
+      "127.0.0.1",
+    );
+  });
+
+  it("maps IP rate-limit failures to stable websocket error codes", async () => {
+    (
+      connectionRateLimiterMock.checkConnectionRateLimit as jest.Mock
+    ).mockResolvedValueOnce({ allowed: false, retryAfterMs: 60000 });
+
+    const client = createClient(createToken());
+    await gateway.handleConnection(client);
+
+    expect(client.emit).toHaveBeenCalledWith("situation:error", {
+      code: RealtimeSocketErrorCode.RateLimitExceeded,
+      message: "Rate limit exceeded",
+      retryAfterMs: 60000,
+    });
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+  });
+
+  it("does not record auth backoff for max-connection failures", async () => {
+    authServiceMock.getUserProfile.mockResolvedValue({
+      id: "user-1",
+      orgId: "org-1",
+      permissions: ["items.read"],
+    });
+    sessionsMock.register.mockRejectedValue(new Error("Too many connections"));
+
+    const client = createClient(createToken(), "socket-capacity");
+    await gateway.handleConnection(client);
+
+    expect(client.emit).toHaveBeenCalledWith("situation:error", {
+      code: RealtimeSocketErrorCode.TooManyConnections,
+      message: "Too many connections",
+    });
+    expect(connectionRateLimiterMock.recordFailedAuth).not.toHaveBeenCalled();
+  });
+
+  it("maps auth backoff failures to stable websocket error codes", async () => {
+    (connectionRateLimiterMock.getBackoffDelay as jest.Mock).mockResolvedValue(
+      8000,
+    );
+
+    const client = createClient(createToken(), "socket-backoff");
+    await gateway.handleConnection(client);
+
+    expect(client.emit).toHaveBeenCalledWith("situation:error", {
+      code: RealtimeSocketErrorCode.TooManyFailedAttempts,
+      message: "Too many failed attempts",
+      retryAfterMs: 8000,
+    });
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+    expect(authServiceMock.getUserProfile).not.toHaveBeenCalled();
   });
 
   it("maps connection-attempt throttling to stable websocket error codes", async () => {
@@ -176,6 +241,7 @@ describe("SituationMonitorSignalsGateway", () => {
     expect(secondClient.emit).toHaveBeenCalledWith("situation:error", {
       code: RealtimeSocketErrorCode.TooManyConnectionAttempts,
       message: "Too many connection attempts",
+      retryAfterMs: 60000,
     });
     expect(secondClient.disconnect).toHaveBeenCalledWith(true);
   });

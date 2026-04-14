@@ -16,6 +16,7 @@ import type {
 import {
   createEmptyCrawlQualityConfidenceBuckets,
   createEmptyCrawlQualityRejectBreakdown,
+  createEmptyCrawlQualitySampleCounts,
 } from "./crawl-quality-metrics.types";
 import { CrawlQualityTaskSnapshotService } from "./crawl-quality-task-snapshot.service";
 
@@ -65,6 +66,7 @@ export class CrawlQualityMetricsService {
       return {
         ...snapshot,
         taskCount: 0,
+        sampleCounts: createEmptyCrawlQualitySampleCounts(),
         lowSignalRatio: 0,
         emptyMarkdownRate: 0,
         expansionTriggerRate: 0,
@@ -244,6 +246,7 @@ export class CrawlQualityMetricsService {
       from: from.toISOString(),
       to: to.toISOString(),
       taskCount: 0,
+      sampleCounts: createEmptyCrawlQualitySampleCounts(),
       lowSignalRatio: 0,
       emptyMarkdownRate: 0,
       expansionTriggerRate: 0,

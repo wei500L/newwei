@@ -892,6 +892,13 @@ export class CrawlQualityTaskSnapshotService {
 
     return {
       taskCount,
+      sampleCounts: {
+        markdownCount,
+        expansionTriggeredTaskCount,
+        headSignalAttemptedCount,
+        preflightRunCount,
+        dedupeEvaluatedCount,
+      },
       lowSignalRatio: this.safeRatio(
         this.toSafeNonNegativeInt(row?.lowSignalTaskCount),
         taskCount,
@@ -976,6 +983,7 @@ export class CrawlQualityTaskSnapshotService {
           ? row.sourceId
           : "unknown",
       taskCount: metrics.taskCount,
+      sampleCounts: metrics.sampleCounts,
       lowSignalRatio: metrics.lowSignalRatio,
       emptyMarkdownRate: metrics.emptyMarkdownRate,
       expansionTriggerRate: metrics.expansionTriggerRate,

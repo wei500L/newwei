@@ -1,8 +1,4 @@
-import {
-  createLogger,
-  RealtimeSocketErrorCode,
-  type RealtimeSocketErrorPayload,
-} from "@modular/utils";
+import { createLogger } from "@modular/utils";
 import { OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import {
   OnGatewayConnection,
@@ -20,6 +16,10 @@ import {
   JwtPayload,
 } from "../auth/auth.service";
 import { EnvService } from "../config/config.service";
+import {
+  buildRealtimeSocketErrorPayload,
+  shouldRecordFailedSocketAuth,
+} from "../websocket/socket-error-payloads";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
 import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
 
@@ -85,14 +85,45 @@ export class NewsnowGateway
   async handleConnection(client: Socket) {
     const ip = this.extractClientIp(client);
     try {
-      if (!this.isOriginAllowed(this.extractOrigin(client))) {
-        throw new Error("Origin not allowed");
-      }
-
       const ipRateLimit =
         await this.connectionRateLimiter.checkConnectionRateLimit(ip ?? "");
       if (!ipRateLimit.allowed) {
-        throw new Error("Too many connection attempts");
+        this.logger.warn(
+          { socketId: client.id, ip },
+          "NewsNow socket connection rate limited",
+        );
+        client.emit(
+          "newsnow:error",
+          buildRealtimeSocketErrorPayload(
+            "Rate limit exceeded",
+            ipRateLimit.retryAfterMs,
+          ),
+        );
+        client.disconnect(true);
+        return;
+      }
+
+      const backoffDelay = await this.connectionRateLimiter.getBackoffDelay(
+        ip ?? "",
+      );
+      if (backoffDelay > 0) {
+        this.logger.warn(
+          { socketId: client.id, ip, backoffDelay },
+          "NewsNow socket connection in backoff period",
+        );
+        client.emit(
+          "newsnow:error",
+          buildRealtimeSocketErrorPayload(
+            "Too many failed attempts",
+            backoffDelay,
+          ),
+        );
+        client.disconnect(true);
+        return;
+      }
+
+      if (!this.isOriginAllowed(this.extractOrigin(client))) {
+        throw new Error("Origin not allowed");
       }
 
       const token = this.extractToken(client);
@@ -102,7 +133,19 @@ export class NewsnowGateway
           payload.sub,
         );
       if (!userRateLimit.allowed) {
-        throw new Error("Too many connection attempts");
+        this.logger.warn(
+          { socketId: client.id, ip, userId: payload.sub },
+          "NewsNow socket user connection attempts throttled",
+        );
+        client.emit(
+          "newsnow:error",
+          buildRealtimeSocketErrorPayload(
+            "Too many connection attempts",
+            userRateLimit.retryAfterMs,
+          ),
+        );
+        client.disconnect(true);
+        return;
       }
       await this.ensureNotRevoked(payload);
       const profile = await this.authService.getUserProfile(
@@ -112,6 +155,7 @@ export class NewsnowGateway
       if (!profile.permissions.includes("items.read")) {
         throw new Error("Insufficient permissions");
       }
+      await this.connectionRateLimiter.clearBackoff(ip ?? "");
 
       client.data.user = profile;
       client.data.clientIp = ip;
@@ -146,16 +190,17 @@ export class NewsnowGateway
       this.sessions.unregister(client);
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      const responseMessage =
-        errorMessage === "Too many connections" ||
-        errorMessage === "Too many connection attempts"
-          ? errorMessage
-          : "Unauthorized";
+      if (shouldRecordFailedSocketAuth(errorMessage)) {
+        await this.connectionRateLimiter.recordFailedAuth(ip ?? "");
+      }
       this.logger.warn(
         { socketId: client.id, ip, error: errorMessage },
         "NewsNow socket authentication failed",
       );
-      client.emit("newsnow:error", this.toSocketErrorPayload(responseMessage));
+      client.emit(
+        "newsnow:error",
+        buildRealtimeSocketErrorPayload(errorMessage),
+      );
       client.disconnect(true);
     }
   }
@@ -319,27 +364,6 @@ export class NewsnowGateway
 
     return normalized;
   }
-  private toSocketErrorPayload(
-    errorMessage: string,
-  ): RealtimeSocketErrorPayload {
-    if (errorMessage === "Too many connections") {
-      return {
-        code: RealtimeSocketErrorCode.TooManyConnections,
-        message: "Too many connections",
-      };
-    }
-    if (errorMessage === "Too many connection attempts") {
-      return {
-        code: RealtimeSocketErrorCode.TooManyConnectionAttempts,
-        message: "Too many connection attempts",
-      };
-    }
-    return {
-      code: RealtimeSocketErrorCode.Unauthorized,
-      message: "Unauthorized",
-    };
-  }
-
   private extractOrigin(client: Socket) {
     const originHeader =
       client.handshake.headers.origin ?? client.handshake.headers.referer;

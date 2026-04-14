@@ -1875,7 +1875,7 @@
         "live": "实时",
         "polling": "轮询",
         "offline": "离线",
-        "paused": "Paused"
+        "paused": "已暂停"
       },
       "fallback": "实时更新中断，已切换为轮询",
       "offline": "实时更新不可用",
@@ -1884,7 +1884,7 @@
       "retries": "重连次数",
       "error": "错误",
       "window": "窗口",
-      "liveRecovered": "Live updates restored"
+      "liveRecovered": "实时更新已恢复"
     },
     "filters": {
       "resetAll": "重置全部筛选"
@@ -2959,6 +2959,17 @@
       "disconnected": "已断开",
       "error": "错误",
       "lastEvent": "最近事件：{{time}}",
+      "connectionError": {
+        "unauthorized": "新闻源实时连接已失效，请重新登录后再试。",
+        "tooManyConnections": "新闻源实时连接数已达上限，请稍后再试。",
+        "tooManyConnectionAttempts": "新闻源实时连接尝试过于频繁，请稍后再试。",
+        "rateLimitExceeded": "新闻源实时连接请求过于频繁，请稍后再试。",
+        "tooManyFailedAttempts": "新闻源实时鉴权失败次数过多，请稍后再试。",
+        "timeout": "连接新闻源实时服务超时，请稍后重试。",
+        "network": "当前无法连接新闻源实时服务，请检查网络后重试。",
+        "connect": "暂时无法连接新闻源实时服务，请稍后再试。",
+        "socket": "新闻源实时连接出现异常，请稍后再试。"
+      },
       "details": {
         "lastEvent": "最近事件",
         "refreshOn": "触发刷新",
@@ -3003,7 +3014,7 @@
       "useDockerHostProxy": "使用 Docker 宿主机",
       "setGroup": "设置分组",
       "clearGroup": "清除分组",
-      "importOpml": "Import OPML"
+      "importOpml": "导入 OPML"
     },
     "crawl": {
       "proxyDisabledTitle": "自定义上游代理已禁用",
@@ -3477,52 +3488,57 @@
       }
     },
     "tags": {
-      "antiBotEnabled": "Anti-bot retry enabled",
-      "antiBotDisabled": "Anti-bot retry disabled"
+      "antiBotEnabled": "已启用反反爬重试",
+      "antiBotDisabled": "已禁用反反爬重试"
     },
     "quality": {
-      "title": "Crawl quality",
-      "manageThresholds": "Manage thresholds",
-      "loadFailed": "Failed to load quality stats",
-      "taskCount": "Tasks",
-      "lowSignal": "Low signal",
-      "emptyMarkdown": "Empty markdown",
-      "expansionTrigger": "Expansion trigger",
-      "expansionSuccess": "Expansion success",
-      "avgMarkdownChars": "Avg markdown chars",
-      "publishConfidenceRejects": "Publish-confidence rejects",
-      "patternRejects": "Pattern rejects",
-      "fitMarkdownPreference": "Fit markdown preference",
-      "headSignalSuccess": "Head signal success",
-      "headSignalSoftFailure": "Head signal soft-failure",
-      "headSignalTruncated": "Head signal truncated",
-      "headSignalNoPublishSignal": "Head signal no-publish",
-      "http304HitRate": "HTTP 304 hit",
-      "thresholdStatusBreached": "breach",
-      "thresholdStatusNormal": "normal",
-      "preflightFailureRate": "Preflight failure",
-      "orgHashDedupeHitRate": "Org hash dedupe hit",
-      "thresholdHint": "Threshold tags come from active alert rules and are evaluated over the selected window.",
-      "crawlQualityAlertTitle": "Crawl quality warning: one or more quality rates crossed configured thresholds",
-      "highestSource": "highest",
-      "lowestSource": "lowest",
-      "publishConfidenceBuckets": "Confidence buckets: <0.4={{lt04}}, 0.4~0.6={{from04To06}}, 0.6~0.8={{from06To08}}, >=0.8={{gte08}}",
-      "updatedAt": "Window {{from}} - {{to}}"
+      "title": "抓取质量",
+      "manageThresholds": "管理阈值",
+      "loadFailed": "加载质量统计失败",
+      "taskCount": "任务数",
+      "lowSignal": "低信号",
+      "emptyMarkdown": "Markdown 为空",
+      "expansionTrigger": "触发扩展",
+      "expansionSuccess": "扩展成功",
+      "avgMarkdownChars": "平均 Markdown 字符数",
+      "publishConfidenceRejects": "发布置信度拦截",
+      "patternRejects": "模式拦截",
+      "fitMarkdownPreference": "命中 Markdown 偏好",
+      "headSignalSuccess": "头部信号成功率",
+      "headSignalSoftFailure": "头部信号软失败",
+      "headSignalTruncated": "头部信号截断",
+      "headSignalNoPublishSignal": "头部信号无发布时间",
+      "http304HitRate": "HTTP 304 命中率",
+      "thresholdStatusBreached": "超阈值",
+      "thresholdStatusNoData": "无数据",
+      "thresholdStatusNormal": "正常",
+      "preflightFailureRate": "预检失败率",
+      "orgHashDedupeHitRate": "组织哈希去重命中率",
+      "thresholdHint": "阈值标签来自当前生效的告警规则，并按所选时间窗口计算。",
+      "noSamples": "当前时间窗口内还没有可用的抓取质量样本。",
+      "noSamplesDescription": "请先运行或调度至少一次抓取，再依据这些质量阈值判断。",
+      "crawlQualityAlertTitle": "抓取质量告警：一个或多个质量比率已越过配置阈值",
+      "highestSource": "最高",
+      "lowestSource": "最低",
+      "publishConfidenceBuckets": "置信度分桶：<0.4={{lt04}}，0.4~0.6={{from04To06}}，0.6~0.8={{from06To08}}，>=0.8={{gte08}}",
+      "updatedAt": "窗口 {{from}} - {{to}}"
     },
     "readiness": {
-      "loadFailed": "Failed to load readiness summary.",
-      "title": "Situation Monitor readiness",
-      "noActiveSources": "Situation Monitor cannot queue new collection because there are no active news sources.",
-      "degraded": "Some sources are degraded and may reduce Situation Monitor coverage.",
-      "ready": "News source scheduling looks healthy for Situation Monitor refresh.",
-      "noActiveSourcesDescription": "Activate at least one source or import a source list before relying on Situation Monitor refresh.",
-      "degradedDescription": "Review circuit-open and failing sources before relying on fresh Situation Monitor data.",
-      "openSchedulerSettings": "Open scheduler settings",
-      "total": "Total sources",
-      "active": "Active",
-      "inactive": "Inactive",
-      "circuitOpen": "Circuit open",
-      "failing": "Failing"
+      "loadFailed": "加载就绪状态摘要失败。",
+      "title": "Situation Monitor 就绪状态",
+      "noSourcesConfigured": "当前工作区还没有配置任何新闻源。",
+      "noSourcesConfiguredDescription": "请导入 OPML 列表或新建数据源，以启用 Situation Monitor 的抓取刷新。",
+      "noActiveSources": "Situation Monitor 当前无法排队新的采集任务，因为没有启用中的新闻源。",
+      "degraded": "部分数据源处于降级状态，可能会影响 Situation Monitor 的覆盖范围。",
+      "ready": "当前新闻源调度状态健康，可用于 Situation Monitor 刷新。",
+      "noActiveSourcesDescription": "请至少启用一个数据源，或先导入一批数据源，再依赖 Situation Monitor 刷新。",
+      "degradedDescription": "在依赖最新 Situation Monitor 数据前，请先检查已熔断或持续失败的数据源。",
+      "openSchedulerSettings": "打开调度设置",
+      "total": "数据源总数",
+      "active": "启用中",
+      "inactive": "未启用",
+      "circuitOpen": "已熔断",
+      "failing": "失败中"
     }
   },
   "finance": {
@@ -7848,6 +7864,7 @@
       "ws": {
         "missingUrl": "无法生成 WebSocket 地址。",
         "error": "WebSocket 连接错误。",
+        "timeout": "WebSocket 连接超时，正在自动重试...",
         "reconnecting": "已断开，正在重连...",
         "warningTitle": "WebSocket 连接异常",
         "noAutoFallback": "不会自动降级，请按需手动切换到轮询。",
@@ -7999,6 +8016,25 @@
       },
       "raw": {
         "description": "用于排查问题的原始监控数据（尽力做兼容解析）。"
+      }
+    },
+    "liveUpdates": {
+      "connected": "实时中",
+      "connecting": "连接中",
+      "disconnected": "已断开",
+      "error": "错误",
+      "alertTitle": "实时更新不可用",
+      "fallbackHint": "实时连接恢复前，页面会暂时继续使用定时刷新保持数据同步。",
+      "connectionError": {
+        "unauthorized": "Crawl 实时连接已失效，请重新登录。",
+        "tooManyConnections": "Crawl 实时连接数已达上限，请稍后再试。",
+        "tooManyConnectionAttempts": "Crawl 实时连接尝试过于频繁，请稍后再试。",
+        "rateLimitExceeded": "Crawl 实时连接请求过于频繁，请稍后再试。",
+        "tooManyFailedAttempts": "Crawl 实时登录失败次数过多，请稍后再试。",
+        "timeout": "连接 Crawl 实时服务超时，请重试。",
+        "network": "无法连接 Crawl 实时服务，请检查网络后重试。",
+        "connect": "当前无法连接 Crawl 实时服务，请稍后再试。",
+        "socket": "Crawl 实时连接不稳定，请稍后再试。"
       }
     },
     "ops": {
@@ -9165,6 +9201,17 @@
       "disconnected": "已断开",
       "error": "错误",
       "lastEvent": "最近事件：{{time}}",
+      "connectionError": {
+        "unauthorized": "质量实时连接已失效，请重新登录后再试。",
+        "tooManyConnections": "质量实时连接数已达上限，请稍后再试。",
+        "tooManyConnectionAttempts": "质量实时连接尝试过于频繁，请稍后再试。",
+        "rateLimitExceeded": "质量实时连接请求过于频繁，请稍后再试。",
+        "tooManyFailedAttempts": "质量实时鉴权失败次数过多，请稍后再试。",
+        "timeout": "连接质量实时服务超时，请稍后重试。",
+        "network": "当前无法连接质量实时服务，请检查网络后重试。",
+        "connect": "暂时无法连接质量实时服务，请稍后再试。",
+        "socket": "质量实时连接出现异常，请稍后再试。"
+      },
       "details": {
         "lastEvent": "最近事件",
         "refreshOn": "触发刷新",

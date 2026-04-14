@@ -65,4 +65,14 @@ describe('dashboard refresh feedback wiring', () => {
       ).toBe(true);
     }
   });
+
+  it('keeps the dashboard SSE stream on an explicit connect-timeout policy', () => {
+    const source = read('app/(app)/dashboard/use-dashboard-stream.ts');
+
+    expect(source).toContain('const DASHBOARD_STREAM_CONNECT_TIMEOUT_MS = 10_000;');
+    expect(source).toContain('const connectTimeoutId = window.setTimeout(() => {');
+    expect(source).toContain('controller.abort();');
+    expect(source).toContain("handleError('Dashboard stream connection timed out');");
+    expect(source).toContain('window.clearTimeout(connectTimeoutId);');
+  });
 });

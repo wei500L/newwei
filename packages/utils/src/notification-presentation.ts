@@ -39,5 +39,7 @@ export interface NotificationSocketErrorPayload
   code:
     | RealtimeSocketErrorCode.Unauthorized
     | RealtimeSocketErrorCode.TooManyConnections
-    | RealtimeSocketErrorCode.TooManyConnectionAttempts;
+    | RealtimeSocketErrorCode.TooManyConnectionAttempts
+    | RealtimeSocketErrorCode.RateLimitExceeded
+    | RealtimeSocketErrorCode.TooManyFailedAttempts;
 }

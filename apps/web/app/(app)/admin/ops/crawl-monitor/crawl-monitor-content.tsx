@@ -39,6 +39,7 @@ interface CrawlMonitorContentProps {
 type TransportMode = "ws" | "polling";
 
 type WsStatus = "idle" | "connecting" | "connected" | "reconnecting" | "error";
+const WS_CONNECT_TIMEOUT_MS = 10_000;
 
 type MonitorField =
   | "health"
@@ -718,6 +719,7 @@ export function CrawlMonitorContent({
   const modeRef = useRef<TransportMode>(mode);
   const reconnectAttempts = useRef(0);
   const reconnectTimeoutId = useRef<number | null>(null);
+  const wsConnectTimeoutId = useRef<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -1084,6 +1086,10 @@ export function CrawlMonitorContent({
       window.clearTimeout(reconnectTimeoutId.current);
       reconnectTimeoutId.current = null;
     }
+    if (wsConnectTimeoutId.current) {
+      window.clearTimeout(wsConnectTimeoutId.current);
+      wsConnectTimeoutId.current = null;
+    }
 
     try {
       if (wsRef.current) {
@@ -1097,9 +1103,26 @@ export function CrawlMonitorContent({
 
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
+      wsConnectTimeoutId.current = window.setTimeout(() => {
+        if (wsRef.current !== ws || ws.readyState !== WebSocket.CONNECTING) {
+          return;
+        }
+        setWsStatus("error");
+        setWsError(
+          t("crawl.monitor.ws.timeout", {
+            defaultValue:
+              "WebSocket connection timed out. Retrying automatically...",
+          }),
+        );
+        ws.close();
+      }, WS_CONNECT_TIMEOUT_MS);
 
       ws.onopen = () => {
         if (wsRef.current !== ws) return;
+        if (wsConnectTimeoutId.current) {
+          window.clearTimeout(wsConnectTimeoutId.current);
+          wsConnectTimeoutId.current = null;
+        }
         reconnectAttempts.current = 0;
         setWsStatus("connected");
         setWsError(null);
@@ -1133,6 +1156,10 @@ export function CrawlMonitorContent({
 
       ws.onerror = () => {
         if (wsRef.current !== ws) return;
+        if (wsConnectTimeoutId.current) {
+          window.clearTimeout(wsConnectTimeoutId.current);
+          wsConnectTimeoutId.current = null;
+        }
         setWsStatus("error");
         setWsError(
           t("crawl.monitor.ws.error", { defaultValue: "WebSocket error." }),
@@ -1141,6 +1168,10 @@ export function CrawlMonitorContent({
 
       ws.onclose = () => {
         if (wsRef.current !== ws) return;
+        if (wsConnectTimeoutId.current) {
+          window.clearTimeout(wsConnectTimeoutId.current);
+          wsConnectTimeoutId.current = null;
+        }
         wsRef.current = null;
         if (modeRef.current !== "ws") return;
         const attempt = reconnectAttempts.current + 1;
@@ -1216,6 +1247,10 @@ export function CrawlMonitorContent({
         window.clearTimeout(reconnectTimeoutId.current);
         reconnectTimeoutId.current = null;
       }
+      if (wsConnectTimeoutId.current) {
+        window.clearTimeout(wsConnectTimeoutId.current);
+        wsConnectTimeoutId.current = null;
+      }
       setWsStatus("idle");
       setWsError(null);
       return;
@@ -1229,6 +1264,10 @@ export function CrawlMonitorContent({
       if (reconnectTimeoutId.current) {
         window.clearTimeout(reconnectTimeoutId.current);
         reconnectTimeoutId.current = null;
+      }
+      if (wsConnectTimeoutId.current) {
+        window.clearTimeout(wsConnectTimeoutId.current);
+        wsConnectTimeoutId.current = null;
       }
     };
   }, [connectWebSocket, mode]);

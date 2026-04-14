@@ -15,6 +15,8 @@ import {
 } from "../lib/newsnow-fetching";
 import { useNewsnowStore } from "../store/newsnow-store";
 
+const REALTIME_SOCKET_TIMEOUT_MS = 10_000;
+
 export interface NewsnowRealtimeMessage {
   sourceId: string;
   newItemsCount: number;
@@ -94,6 +96,7 @@ export function useNewsnowStream() {
       auth: { token },
       withCredentials: true,
       autoConnect: false,
+      timeout: REALTIME_SOCKET_TIMEOUT_MS,
     });
     socketRef.current = socket;
 

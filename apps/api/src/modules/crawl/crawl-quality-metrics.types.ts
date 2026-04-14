@@ -17,9 +17,18 @@ export interface CrawlQualityAlertThresholds {
   orgHashDedupeHitRateHigh: number;
 }
 
+export interface CrawlQualityMetricSampleCounts {
+  markdownCount: number;
+  expansionTriggeredTaskCount: number;
+  headSignalAttemptedCount: number;
+  preflightRunCount: number;
+  dedupeEvaluatedCount: number;
+}
+
 export interface CrawlQualityMetricsSourceSnapshot {
   sourceId: string;
   taskCount: number;
+  sampleCounts: CrawlQualityMetricSampleCounts;
   lowSignalRatio: number;
   emptyMarkdownRate: number;
   expansionTriggerRate: number;
@@ -42,6 +51,7 @@ export interface CrawlQualityMetricsSnapshot {
   from: string;
   to: string;
   taskCount: number;
+  sampleCounts: CrawlQualityMetricSampleCounts;
   lowSignalRatio: number;
   emptyMarkdownRate: number;
   expansionTriggerRate: number;
@@ -63,6 +73,7 @@ export interface CrawlQualityMetricsSnapshot {
 
 export interface CrawlQualityMetricsAggregates {
   taskCount: number;
+  sampleCounts: CrawlQualityMetricSampleCounts;
   lowSignalRatio: number;
   emptyMarkdownRate: number;
   expansionTriggerRate: number;
@@ -95,5 +106,15 @@ export function createEmptyCrawlQualityConfidenceBuckets(): CrawlQualityConfiden
     from04To06: 0,
     from06To08: 0,
     gte08: 0,
+  };
+}
+
+export function createEmptyCrawlQualitySampleCounts(): CrawlQualityMetricSampleCounts {
+  return {
+    markdownCount: 0,
+    expansionTriggeredTaskCount: 0,
+    headSignalAttemptedCount: 0,
+    preflightRunCount: 0,
+    dedupeEvaluatedCount: 0,
   };
 }

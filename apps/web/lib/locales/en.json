@@ -2959,6 +2959,17 @@
       "disconnected": "Disconnected",
       "error": "Error",
       "lastEvent": "Last event: {{time}}",
+      "connectionError": {
+        "unauthorized": "News source realtime access expired. Please sign in again.",
+        "tooManyConnections": "News source realtime connections are at capacity. Please try again later.",
+        "tooManyConnectionAttempts": "Too many news source realtime connection attempts. Please try again later.",
+        "rateLimitExceeded": "News source realtime connection attempts are too frequent. Please try again later.",
+        "tooManyFailedAttempts": "Too many failed news source realtime sign-in attempts. Please try again later.",
+        "timeout": "Connecting to news source realtime timed out. Please try again.",
+        "network": "Unable to connect to news source realtime. Please check the network and try again.",
+        "connect": "Unable to connect to news source realtime right now. Please try again later.",
+        "socket": "News source realtime connection is unstable. Please try again later."
+      },
       "details": {
         "lastEvent": "Last event",
         "refreshOn": "Refresh on",
@@ -3499,10 +3510,13 @@
       "headSignalNoPublishSignal": "Head signal no-publish",
       "http304HitRate": "HTTP 304 hit",
       "thresholdStatusBreached": "breach",
+      "thresholdStatusNoData": "no data",
       "thresholdStatusNormal": "normal",
       "preflightFailureRate": "Preflight failure",
       "orgHashDedupeHitRate": "Org hash dedupe hit",
       "thresholdHint": "Threshold tags come from active alert rules and are evaluated over the selected window.",
+      "noSamples": "No crawl quality samples are available for the selected window yet.",
+      "noSamplesDescription": "Run or schedule at least one crawl before relying on crawl quality thresholds.",
       "crawlQualityAlertTitle": "Crawl quality warning: one or more quality rates crossed configured thresholds",
       "highestSource": "highest",
       "lowestSource": "lowest",
@@ -3512,6 +3526,8 @@
     "readiness": {
       "loadFailed": "Failed to load readiness summary.",
       "title": "Situation Monitor readiness",
+      "noSourcesConfigured": "No news sources are configured for this workspace yet.",
+      "noSourcesConfiguredDescription": "Import an OPML list or create a source to enable Situation Monitor crawl refresh.",
       "noActiveSources": "Situation Monitor cannot queue new collection because there are no active news sources.",
       "degraded": "Some sources are degraded and may reduce Situation Monitor coverage.",
       "ready": "News source scheduling looks healthy for Situation Monitor refresh.",
@@ -7848,6 +7864,7 @@
       "ws": {
         "missingUrl": "WebSocket URL not available.",
         "error": "WebSocket error.",
+        "timeout": "WebSocket connection timed out. Retrying automatically...",
         "reconnecting": "Disconnected. Reconnecting...",
         "warningTitle": "WebSocket connection issue",
         "noAutoFallback": "No automatic fallback. Switch to Polling manually if needed.",
@@ -7999,6 +8016,25 @@
       },
       "raw": {
         "description": "Raw monitoring payload for debugging (best-effort normalization)."
+      }
+    },
+    "liveUpdates": {
+      "connected": "Live",
+      "connecting": "Connecting",
+      "disconnected": "Disconnected",
+      "error": "Error",
+      "alertTitle": "Realtime updates unavailable",
+      "fallbackHint": "This page is temporarily using scheduled refresh while the realtime connection recovers.",
+      "connectionError": {
+        "unauthorized": "Crawl realtime access expired. Please sign in again.",
+        "tooManyConnections": "Crawl realtime connections are at capacity. Please try again later.",
+        "tooManyConnectionAttempts": "Too many crawl realtime connection attempts. Please try again later.",
+        "rateLimitExceeded": "Crawl realtime connection attempts are too frequent. Please try again later.",
+        "tooManyFailedAttempts": "Too many failed crawl realtime sign-in attempts. Please try again later.",
+        "timeout": "Connecting to crawl realtime timed out. Please try again.",
+        "network": "Unable to connect to crawl realtime. Please check the network and try again.",
+        "connect": "Unable to connect to crawl realtime right now. Please try again later.",
+        "socket": "Crawl realtime connection is unstable. Please try again later."
       }
     },
     "ops": {
@@ -9165,6 +9201,17 @@
       "disconnected": "Disconnected",
       "error": "Error",
       "lastEvent": "Last event: {{time}}",
+      "connectionError": {
+        "unauthorized": "Quality realtime access expired. Please sign in again.",
+        "tooManyConnections": "Quality realtime connections are at capacity. Please try again later.",
+        "tooManyConnectionAttempts": "Too many quality realtime connection attempts. Please try again later.",
+        "rateLimitExceeded": "Quality realtime connection attempts are too frequent. Please try again later.",
+        "tooManyFailedAttempts": "Too many failed quality realtime sign-in attempts. Please try again later.",
+        "timeout": "Connecting to quality realtime timed out. Please try again.",
+        "network": "Unable to connect to quality realtime. Please check the network and try again.",
+        "connect": "Unable to connect to quality realtime right now. Please try again later.",
+        "socket": "Quality realtime connection is unstable. Please try again later."
+      },
       "details": {
         "lastEvent": "Last event",
         "refreshOn": "Refresh on",

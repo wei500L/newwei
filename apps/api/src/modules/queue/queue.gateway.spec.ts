@@ -162,6 +162,9 @@ describe("QueueGateway", () => {
       message: "Too many connections",
     });
     expect(client2.disconnect).toHaveBeenCalledWith(true);
+    expect(
+      (gateway as any).connectionRateLimiter.recordFailedAuth,
+    ).not.toHaveBeenCalled();
   });
 
   it("rejects connection when rate limit exceeded", async () => {

@@ -40,6 +40,7 @@ interface NetworkErrorWithResponse {
 }
 
 let apolloClient: ApolloClient<NormalizedCacheObject> | null = null;
+const GRAPHQL_WS_CONNECTION_ACK_TIMEOUT_MS = 10_000;
 
 const toWsUrl = (url: string): string => url.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
 
@@ -167,6 +168,7 @@ function createApolloClient() {
           createClient({
             url: toWsUrl(env.graphqlUrl),
             lazy: true,
+            connectionAckWaitTimeout: GRAPHQL_WS_CONNECTION_ACK_TIMEOUT_MS,
             connectionParams: async () => {
               const session = await getCachedSession();
               const token = session?.accessToken;
