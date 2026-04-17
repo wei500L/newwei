@@ -1,5 +1,6 @@
 import { ProcessedItemModel } from "@modular/mongo";
 
+import { NewsExtractionPipelineMode } from "../news-extraction-settings.service";
 import { NewsPipelineService } from "../news-pipeline.service";
 import { NewsPromptBuilder } from "../news-prompt.builder";
 
@@ -71,6 +72,35 @@ describe("NewsPipelineService classification backfill", () => {
   };
   const promptConfig = {} as any;
   const dedupeSettings = {} as any;
+  const extractionSettings = {
+    getSettings: jest.fn().mockResolvedValue({
+      pipelineMode: NewsExtractionPipelineMode.legacy,
+      preflightGate: {
+        enabled: true,
+        minWordCount: 120,
+        rejectBotChallenge: true,
+        rejectListLike: true,
+      },
+      postCleanGate: {
+        enabled: true,
+        minQualityScore: 0.35,
+        minCleanedChars: 400,
+        requireSummary: true,
+      },
+      capabilities: {
+        entities: true,
+        sentiment: true,
+        kg: true,
+      },
+      providers: {
+        clean: "llm",
+        entities: "llm",
+        sentiment: "llm",
+        kg: "llm",
+      },
+    }),
+  };
+  const extractionStages = {} as any;
   const prisma = {} as any;
   const crawlExecution = {} as any;
 
@@ -142,6 +172,8 @@ describe("NewsPipelineService classification backfill", () => {
       promptBuilder,
       promptConfig,
       dedupeSettings,
+      extractionSettings,
+      extractionStages,
       prisma,
       crawlExecution,
       undefined,
@@ -208,6 +240,8 @@ describe("NewsPipelineService classification backfill", () => {
       promptBuilder,
       promptConfig,
       dedupeSettings,
+      extractionSettings,
+      extractionStages,
       prisma,
       crawlExecution,
       undefined,

@@ -39,6 +39,7 @@ export type AdminSettingsPanelId =
   | "news-events"
   | "news-event-source-policy"
   | "news-indicator"
+  | "news-extraction"
   | "news-dedupe"
   | "news-classification"
   | "news-prompts"
@@ -328,6 +329,14 @@ export const ADMIN_SETTINGS_PAGE_DEFINITIONS: readonly AdminSettingsPageDefiniti
           defaultTitle: "News indicators",
           defaultDescription:
             "Manage indicator matching, thresholds, and associations.",
+          requiredPermission: MANAGE_PERMISSION,
+        },
+        {
+          id: "news-extraction",
+          titleKey: "settings.tabs.newsExtraction",
+          defaultTitle: "News extraction",
+          defaultDescription:
+            "Control staged cleaning, gates, and enrichment providers.",
           requiredPermission: MANAGE_PERMISSION,
         },
         {

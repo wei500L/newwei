@@ -1525,6 +1525,7 @@ type Mutation {
   updateNewsEventSettings(input: UpdateNewsEventSettingsInput!): NewsEventSettingsModel!
   updateNewsEventSourcePolicy(input: UpdateNewsEventSourcePolicyInput!): NewsEventSourcePolicySettingsModel!
   updateNewsEventSourcePolicyPresets(input: UpdateNewsEventSourcePolicyPresetInput!): NewsEventSourcePolicyPresetSettingsModel!
+  updateNewsExtractionSettings(input: UpdateNewsExtractionSettingsInput!): NewsExtractionSettingsModel!
   updateNewsIndicatorSettings(input: UpdateNewsIndicatorSettingsInput!): NewsIndicatorSettingsModel!
   updateNewsPromptConfig(input: UpdateNewsPromptConfigInput!): NewsPromptConfigModel!
   updateOrg(input: UpdateOrgInput!): OrgModel!
@@ -1893,6 +1894,78 @@ type NewsEventTimelineEntryModel {
   updatedAt: DateTime!
 }
 
+input NewsExtractionCapabilitiesSettingsInput {
+  entities: Boolean
+  kg: Boolean
+  sentiment: Boolean
+}
+
+type NewsExtractionCapabilitiesSettingsModel {
+  entities: Boolean!
+  kg: Boolean!
+  sentiment: Boolean!
+}
+
+enum NewsExtractionPipelineMode {
+  legacy
+  staged
+}
+
+input NewsExtractionPostCleanGateSettingsInput {
+  enabled: Boolean
+  minCleanedChars: Int
+  minQualityScore: Float
+  requireSummary: Boolean
+}
+
+type NewsExtractionPostCleanGateSettingsModel {
+  enabled: Boolean!
+  minCleanedChars: Int!
+  minQualityScore: Float!
+  requireSummary: Boolean!
+}
+
+input NewsExtractionPreflightGateSettingsInput {
+  enabled: Boolean
+  minWordCount: Int
+  rejectBotChallenge: Boolean
+  rejectListLike: Boolean
+}
+
+type NewsExtractionPreflightGateSettingsModel {
+  enabled: Boolean!
+  minWordCount: Int!
+  rejectBotChallenge: Boolean!
+  rejectListLike: Boolean!
+}
+
+enum NewsExtractionProviderId {
+  external_http
+  llm
+}
+
+input NewsExtractionProvidersSettingsInput {
+  clean: NewsExtractionProviderId
+  entities: NewsExtractionProviderId
+  kg: NewsExtractionProviderId
+  sentiment: NewsExtractionProviderId
+}
+
+type NewsExtractionProvidersSettingsModel {
+  clean: NewsExtractionProviderId!
+  entities: NewsExtractionProviderId!
+  kg: NewsExtractionProviderId!
+  sentiment: NewsExtractionProviderId!
+}
+
+type NewsExtractionSettingsModel {
+  capabilities: NewsExtractionCapabilitiesSettingsModel!
+  pipelineMode: NewsExtractionPipelineMode!
+  postCleanGate: NewsExtractionPostCleanGateSettingsModel!
+  preflightGate: NewsExtractionPreflightGateSettingsModel!
+  providers: NewsExtractionProvidersSettingsModel!
+}
+
 type NewsIndicatorAssociationBacktestRunModel {
   config: JSON
   createdAt: DateTime!
@@ -1962,6 +2035,12 @@ type NewsIndicatorSettingsModel {
 }
 
 type NewsPromptConfigModel {
+  entitySystemPromptTemplate: String!
+  entityUserPromptTemplate: String!
+  kgSystemPromptTemplate: String!
+  kgUserPromptTemplate: String!
+  sentimentSystemPromptTemplate: String!
+  sentimentUserPromptTemplate: String!
   systemPromptTemplate: String!
   userPromptTemplate: String!
   version: String!
@@ -2169,6 +2248,7 @@ type Query {
   newsEventSourcePolicyRevisionDiff(baseRevision: Int!, targetRevision: Int!): NewsEventSourcePolicyRevisionDiffModel!
   newsEventSourcePolicySyncStatus: NewsEventSourcePolicySyncStatusModel!
   newsEvents(dedupeSimilar: Boolean, entity: String, limit: Int, minAuthoritativeSources: Int, minCredibilityScore: Float, minHeatScore: Float, sortBy: NewsEventSortBy, sourceType: NewsEventSourceType, status: NewsEventStatus, windowDays: Int): [NewsEventModel!]!
+  newsExtractionSettings: NewsExtractionSettingsModel!
   newsIndicatorAssociation(backtestsLimit: Int, id: String!): NewsIndicatorAssociationModel
   newsIndicatorAssociations(featureMetric: NewsIndicatorFeatureMetric, indicatorSlug: String, limit: Int, scopeKey: String, scopeType: NewsIndicatorScopeType): [NewsIndicatorAssociationModel!]!
   newsIndicatorSettings: NewsIndicatorSettingsModel!
@@ -2602,6 +2682,14 @@ input UpdateNewsEventSourcePolicyPresetInput {
   note: String
 }
 
+input UpdateNewsExtractionSettingsInput {
+  capabilities: NewsExtractionCapabilitiesSettingsInput
+  pipelineMode: NewsExtractionPipelineMode
+  postCleanGate: NewsExtractionPostCleanGateSettingsInput
+  preflightGate: NewsExtractionPreflightGateSettingsInput
+  providers: NewsExtractionProvidersSettingsInput
+}
+
 input UpdateNewsIndicatorSettingsInput {
   backtestBaselineDays: Int!
   backtestHoldoutDays: Int!
@@ -2621,6 +2709,12 @@ input UpdateNewsIndicatorSettingsInput {
 }
 
 input UpdateNewsPromptConfigInput {
+  entitySystemPromptTemplate: String!
+  entityUserPromptTemplate: String!
+  kgSystemPromptTemplate: String!
+  kgUserPromptTemplate: String!
+  sentimentSystemPromptTemplate: String!
+  sentimentUserPromptTemplate: String!
   systemPromptTemplate: String!
   userPromptTemplate: String!
   version: String!

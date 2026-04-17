@@ -57,10 +57,21 @@ import {
   NewsDedupeJudgeSchema,
 } from "./news-dedupe-llm";
 import { NewsDedupeSettingsService } from "./news-dedupe-settings.service";
+import {
+  NewsExtractionPipelineMode,
+  NewsExtractionSettingsService,
+  type NewsExtractionSettings,
+} from "./news-extraction-settings.service";
+import {
+  NewsExtractionStageService,
+  type NewsStageContext,
+  type NewsStageLlmMetadata,
+} from "./news-extraction-stage.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import {
   CleanedNewsSchema,
   CleanedNews,
+  type NewsStageMeta,
   NormalizedNewsPayload,
   NormalizedNewsPayloadSchema,
 } from "./news-pipeline.schema";
@@ -98,6 +109,10 @@ interface SummaryDedupeResult {
   duplicateSimilarity?: number | null;
   thresholdUsed?: number | null;
 }
+
+type StageStatus = "completed" | "skipped" | "rejected" | "failed";
+
+type StageMetaEntry = NonNullable<NewsStageMeta["clean"]>;
 
 interface RankedLlmDedupeCandidate {
   id: string;
@@ -255,6 +270,8 @@ export class NewsPipelineService implements OnModuleDestroy {
     private readonly promptBuilder: NewsPromptBuilder,
     private readonly promptConfig: NewsPromptConfigService,
     private readonly dedupeSettings: NewsDedupeSettingsService,
+    private readonly extractionSettings: NewsExtractionSettingsService,
+    private readonly extractionStages: NewsExtractionStageService,
     private readonly prisma: PrismaService,
     private readonly crawlExecution: CrawlExecutionService,
     @Optional()
@@ -834,6 +851,31 @@ export class NewsPipelineService implements OnModuleDestroy {
       },
     );
 
+    const extractionSettings = await this.extractionSettings.getSettings(
+      job.orgId,
+    );
+
+    if (
+      extractionSettings.pipelineMode !== NewsExtractionPipelineMode.staged
+    ) {
+      return this.processLegacyPipeline(job, raw, payload, article);
+    }
+
+    return this.processStagedPipeline(
+      job,
+      raw,
+      payload,
+      article,
+      extractionSettings,
+    );
+  }
+
+  private async processLegacyPipeline(
+    job: PipelineJobContext,
+    raw: RawPipelineItem,
+    payload: NormalizedNewsPayload,
+    article: CrawledArticle & { fromCache: boolean },
+  ) {
     const {
       cleaned,
       llm,
@@ -921,6 +963,775 @@ export class NewsPipelineService implements OnModuleDestroy {
       ...document,
       id: document.id ?? persistResult.processedItem._id.toString(),
     };
+  }
+
+  private async processStagedPipeline(
+    job: PipelineJobContext,
+    raw: RawPipelineItem,
+    payload: NormalizedNewsPayload,
+    article: CrawledArticle & { fromCache: boolean },
+    extractionSettings: NewsExtractionSettings,
+  ) {
+    const preflight = this.evaluatePreflightGate(article, extractionSettings);
+    if (preflight.rejected) {
+      const cleaned = this.buildGateRejectedCleanedNews({
+        article,
+        payload,
+        reason: preflight.reason ?? "preflight_rejected",
+        stageMeta: {
+          preflight: this.createStageMetaEntry({
+            status: "rejected",
+            provider: "rules",
+            reason: preflight.reason ?? "preflight_rejected",
+          }),
+          clean: this.createStageMetaEntry({
+            status: "skipped",
+            provider: "llm",
+            reason: "preflight_rejected",
+          }),
+          quality_gate: this.createStageMetaEntry({
+            status: "skipped",
+            provider: "rules",
+            reason: "preflight_rejected",
+          }),
+          entities: this.createStageMetaEntry({
+            status: "skipped",
+            provider: extractionSettings.providers.entities,
+            reason: "preflight_rejected",
+          }),
+          sentiment: this.createStageMetaEntry({
+            status: "skipped",
+            provider: extractionSettings.providers.sentiment,
+            reason: "preflight_rejected",
+          }),
+          kg: this.createStageMetaEntry({
+            status: "skipped",
+            provider: extractionSettings.providers.kg,
+            reason: "preflight_rejected",
+          }),
+          classify: this.createStageMetaEntry({
+            status: "skipped",
+            provider: "classifier",
+            reason: "preflight_rejected",
+          }),
+          dedupe: this.createStageMetaEntry({
+            status: "skipped",
+            provider: "dedupe",
+            reason: "preflight_rejected",
+          }),
+        },
+      });
+      await this.recordStageOutcome(
+        job,
+        "preflight",
+        cleaned.stage_meta?.preflight,
+        { reason: preflight.reason ?? "preflight_rejected" },
+      );
+      const persistResult = await this.runStage(
+        job,
+        "persist",
+        async () =>
+          this.persistProcessedResult({
+            job,
+            raw,
+            payload,
+            article,
+            cleaned,
+            llm: this.emptyLlmMetadata(),
+            contentHash: article.contentHash ?? this.hashContent(article.markdown),
+            articleMetadataPatch: {
+              extraction: {
+                mode: NewsExtractionPipelineMode.staged,
+                gateRejected: true,
+                gateReason: preflight.reason ?? "preflight_rejected",
+              },
+            },
+            processedItemId: job.processedItemId,
+          }),
+        {
+          onErrorData: () => ({
+            rawItemId: raw.id,
+            itemMetaId: job.itemMetaId,
+          }),
+        },
+      );
+
+      const document = persistResult.processedItem.toJSON() as { id?: string };
+      return {
+        ...document,
+        id: document.id ?? persistResult.processedItem._id.toString(),
+      };
+    }
+
+    await this.recordStageOutcome(
+      job,
+      "preflight",
+      this.createStageMetaEntry({
+        status: "completed",
+        provider: "rules",
+      }),
+    );
+
+    const {
+      cleaned: cleanResult,
+      llm,
+      contentHash,
+      processedArticleId,
+      contentDuplicateOf,
+      articleMetadataPatch,
+    } = await this.runStage(
+      job,
+      "clean",
+      async () =>
+        this.cleanArticle(
+          payload,
+          article,
+          job,
+          extractionSettings.providers.clean,
+        ),
+      {
+        onErrorData: () => ({
+          url: payload.url,
+          runId: article.runId,
+        }),
+      },
+    );
+
+    let stagedCleaned = this.stripEnrichmentFields(cleanResult);
+    stagedCleaned.stage_meta = {
+      ...(stagedCleaned.stage_meta ?? {}),
+      preflight: this.createStageMetaEntry({
+        status: "completed",
+        provider: "rules",
+      }),
+      clean: this.createStageMetaEntry({
+        status: "completed",
+        provider: llm.model ? "llm" : "processed_cache",
+        reason: null,
+        model: llm.model,
+        promptVersion: llm.promptVersion,
+        promptTokens: llm.promptTokens,
+        completionTokens: llm.completionTokens,
+        totalTokens: llm.totalTokens,
+        costUsd: llm.costUsd,
+        latencyMs: llm.latencyMs,
+      }),
+    };
+    await this.recordStageOutcome(job, "clean", stagedCleaned.stage_meta.clean);
+
+    const qualityGate = this.evaluatePostCleanGate(
+      stagedCleaned,
+      extractionSettings,
+    );
+    stagedCleaned.stage_meta.quality_gate = this.createStageMetaEntry({
+      status: qualityGate.rejected ? "rejected" : "completed",
+      provider: "rules",
+      reason: qualityGate.reason ?? null,
+    });
+    await this.recordStageOutcome(
+      job,
+      "quality_gate",
+      stagedCleaned.stage_meta.quality_gate,
+      qualityGate.reason ? { reason: qualityGate.reason } : undefined,
+    );
+
+    if (qualityGate.rejected) {
+      stagedCleaned.stage_meta.entities = this.createStageMetaEntry({
+        status: "skipped",
+        provider: extractionSettings.providers.entities,
+        reason: qualityGate.reason ?? "quality_gate_rejected",
+      });
+      stagedCleaned.stage_meta.sentiment = this.createStageMetaEntry({
+        status: "skipped",
+        provider: extractionSettings.providers.sentiment,
+        reason: qualityGate.reason ?? "quality_gate_rejected",
+      });
+      stagedCleaned.stage_meta.kg = this.createStageMetaEntry({
+        status: "skipped",
+        provider: extractionSettings.providers.kg,
+        reason: qualityGate.reason ?? "quality_gate_rejected",
+      });
+      stagedCleaned.stage_meta.classify = this.createStageMetaEntry({
+        status: "skipped",
+        provider: "classifier",
+        reason: qualityGate.reason ?? "quality_gate_rejected",
+      });
+      stagedCleaned.stage_meta.dedupe = this.createStageMetaEntry({
+        status: "skipped",
+        provider: "dedupe",
+        reason: qualityGate.reason ?? "quality_gate_rejected",
+      });
+      await this.recordStageOutcome(job, "extract_entities", stagedCleaned.stage_meta.entities);
+      await this.recordStageOutcome(job, "extract_sentiment", stagedCleaned.stage_meta.sentiment);
+      await this.recordStageOutcome(job, "extract_kg", stagedCleaned.stage_meta.kg);
+      await this.recordStageOutcome(job, "classify", stagedCleaned.stage_meta.classify);
+      await this.recordStageOutcome(job, "dedupe", stagedCleaned.stage_meta.dedupe);
+    } else {
+      stagedCleaned = await this.runIndependentEnrichmentStages(
+        job,
+        payload,
+        article,
+        stagedCleaned,
+        extractionSettings,
+      );
+
+      const cleanedWithClassification = await this.runClassificationStage(
+        job,
+        payload,
+        article,
+        stagedCleaned,
+      );
+
+      stagedCleaned = cleanedWithClassification;
+
+      const dedupe = await this.runStage(job, "dedupe", async () =>
+        this.evaluateSummaryDedupe({
+          job,
+          payload,
+          cleaned: stagedCleaned,
+          contentDuplicateOf,
+        }),
+      );
+      stagedCleaned.stage_meta = {
+        ...(stagedCleaned.stage_meta ?? {}),
+        dedupe: this.createStageMetaEntry({
+          status: "completed",
+          provider: "dedupe",
+          reason:
+            dedupe.duplicateOf && dedupe.duplicateSimilarity !== null
+              ? `duplicate:${dedupe.duplicateOf}`
+              : null,
+        }),
+      };
+      await this.recordStageOutcome(job, "dedupe", stagedCleaned.stage_meta.dedupe);
+
+      const persistResult = await this.runStage(
+        job,
+        "persist",
+        async () =>
+          this.persistProcessedResult({
+            job,
+            raw,
+            payload,
+            article,
+            cleaned: stagedCleaned,
+            llm,
+            contentHash,
+            processedArticleId,
+            articleMetadataPatch: {
+              ...articleMetadataPatch,
+              extraction: {
+                mode: NewsExtractionPipelineMode.staged,
+                gateRejected: false,
+              },
+            },
+            processedItemId: job.processedItemId,
+            summaryEmbedding: dedupe.summaryEmbedding ?? undefined,
+            summaryEmbeddingModel: dedupe.summaryEmbeddingModel ?? undefined,
+            duplicateOf: dedupe.duplicateOf ?? undefined,
+            duplicateSimilarity: dedupe.duplicateSimilarity ?? undefined,
+          }),
+        {
+          onErrorData: () => ({
+            rawItemId: raw.id,
+            itemMetaId: job.itemMetaId,
+          }),
+        },
+      );
+
+      const document = persistResult.processedItem.toJSON() as { id?: string };
+      return {
+        ...document,
+        id: document.id ?? persistResult.processedItem._id.toString(),
+      };
+    }
+
+    const persistResult = await this.runStage(
+      job,
+      "persist",
+      async () =>
+        this.persistProcessedResult({
+          job,
+          raw,
+          payload,
+          article,
+          cleaned: stagedCleaned,
+          llm,
+          contentHash,
+          processedArticleId,
+          articleMetadataPatch: {
+            ...articleMetadataPatch,
+            extraction: {
+              mode: NewsExtractionPipelineMode.staged,
+              gateRejected: true,
+              gateReason: qualityGate.reason ?? "quality_gate_rejected",
+            },
+          },
+          processedItemId: job.processedItemId,
+        }),
+      {
+        onErrorData: () => ({
+          rawItemId: raw.id,
+          itemMetaId: job.itemMetaId,
+        }),
+      },
+    );
+
+    const document = persistResult.processedItem.toJSON() as { id?: string };
+    return {
+      ...document,
+      id: document.id ?? persistResult.processedItem._id.toString(),
+    };
+  }
+
+  private emptyLlmMetadata(): LlmCallMetadata {
+    return {
+      model: null,
+      promptVersion: null,
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+      costUsd: null,
+      latencyMs: null,
+    };
+  }
+
+  private createStageMetaEntry(input: {
+    status: StageStatus;
+    provider: string | null;
+    reason?: string | null;
+    model?: string | null;
+    promptVersion?: string | null;
+    promptTokens?: number | null;
+    completionTokens?: number | null;
+    totalTokens?: number | null;
+    costUsd?: number | null;
+    latencyMs?: number | null;
+  }): StageMetaEntry {
+    return {
+      status: input.status,
+      provider: input.provider,
+      reason: input.reason ?? null,
+      model: input.model ?? null,
+      prompt_version: input.promptVersion ?? null,
+      prompt_tokens: input.promptTokens ?? null,
+      completion_tokens: input.completionTokens ?? null,
+      total_tokens: input.totalTokens ?? null,
+      cost_usd: input.costUsd ?? null,
+      latency_ms: input.latencyMs ?? null,
+    };
+  }
+
+  private evaluatePreflightGate(
+    article: CrawledArticle,
+    settings: NewsExtractionSettings,
+  ): { rejected: boolean; reason?: string } {
+    const gate = settings.preflightGate;
+    if (!gate.enabled) {
+      return { rejected: false };
+    }
+    const markdown = this.buildPipelineQualityMarkdown(article);
+    const quality = this.assessPipelineMarkdownQuality(markdown);
+    if (
+      gate.rejectBotChallenge &&
+      (quality.isChallenge || this.isLikelyBotChallengeMarkdown(markdown))
+    ) {
+      return { rejected: true, reason: "bot_challenge_markdown" };
+    }
+    if (gate.rejectListLike && quality.isListLike) {
+      return { rejected: true, reason: "list_like_markdown" };
+    }
+    if (quality.words < gate.minWordCount) {
+      return { rejected: true, reason: "insufficient_word_count" };
+    }
+    return { rejected: false };
+  }
+
+  private evaluatePostCleanGate(
+    cleaned: CleanedNews,
+    settings: NewsExtractionSettings,
+  ): { rejected: boolean; reason?: string } {
+    const gate = settings.postCleanGate;
+    if (!gate.enabled) {
+      return { rejected: false };
+    }
+    const cleanedChars = cleaned.cleaned_markdown.trim().length;
+    if (cleanedChars < gate.minCleanedChars) {
+      return { rejected: true, reason: "cleaned_markdown_too_short" };
+    }
+    if (gate.requireSummary && !(cleaned.summary && cleaned.summary.trim())) {
+      return { rejected: true, reason: "missing_summary" };
+    }
+    const qualityScore =
+      typeof cleaned.quality_score === "number" &&
+      Number.isFinite(cleaned.quality_score)
+        ? cleaned.quality_score
+        : null;
+    if (qualityScore !== null && qualityScore < gate.minQualityScore) {
+      return { rejected: true, reason: "quality_score_below_threshold" };
+    }
+    return { rejected: false };
+  }
+
+  private buildGateRejectedCleanedNews(options: {
+    article: CrawledArticle;
+    payload: NormalizedNewsPayload;
+    reason: string;
+    stageMeta: NewsStageMeta;
+  }): CleanedNews {
+    const fallbackMarkdown = this.buildMarkdownForLlm(
+      options.article,
+      Math.min(this.configService.config.pipeline.maxInputChars, 8_000),
+    );
+    const summaryText = fallbackMarkdown.markdown
+      .split(/\n\s*\n/g)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+      .slice(0, 2)
+      .join(" ")
+      .slice(0, 300);
+
+    return CleanedNewsSchema.parse({
+      title: options.payload.sourceName ?? null,
+      subtitle: null,
+      author: null,
+      source: options.payload.sourceName ?? null,
+      published_at: options.article.publishedAt ?? null,
+      language: options.payload.language ?? null,
+      location: null,
+      category: null,
+      content_type: null,
+      category_path: null,
+      category_labels: [],
+      category_confidence: null,
+      category_reason: null,
+      category_method: null,
+      category_candidates: [],
+      sentiment: null,
+      sentiment_label: null,
+      topics: [],
+      summary: summaryText || null,
+      key_points: [],
+      entities: [],
+      kg_relations: [],
+      stage_meta: options.stageMeta,
+      cleaned_markdown: fallbackMarkdown.markdown || options.article.markdown,
+      cleaned_markdown_source: "crawl_fallback",
+      removed_noise_types: [options.reason],
+      quality_score: null,
+      llm_model: null,
+      llm_prompt_version: null,
+    });
+  }
+
+  private stripEnrichmentFields(cleaned: CleanedNews): CleanedNews {
+    return {
+      ...cleaned,
+      sentiment: null,
+      sentiment_label: null,
+      entities: [],
+      kg_relations: [],
+    };
+  }
+
+  private async runIndependentEnrichmentStages(
+    job: PipelineJobContext,
+    payload: NormalizedNewsPayload,
+    article: CrawledArticle,
+    cleaned: CleanedNews,
+    settings: NewsExtractionSettings,
+  ): Promise<CleanedNews> {
+    const promptConfig = await this.promptConfig.getConfig();
+    const context: NewsStageContext = {
+      orgId: job.orgId,
+      jobId: job.jobId,
+    };
+    const promptInput = {
+      title: cleaned.title ?? null,
+      summary: cleaned.summary ?? null,
+      language: cleaned.language ?? payload.language ?? null,
+      markdown: cleaned.cleaned_markdown,
+    };
+
+    let next = { ...cleaned, stage_meta: { ...(cleaned.stage_meta ?? {}) } };
+
+    if (!settings.capabilities.entities) {
+      next.stage_meta.entities = this.createStageMetaEntry({
+        status: "skipped",
+        provider: settings.providers.entities,
+        reason: "capability_disabled",
+      });
+      await this.recordStageOutcome(job, "extract_entities", next.stage_meta.entities);
+    } else {
+      try {
+        const entities = await this.extractionStages.extractEntities(
+          context,
+          promptConfig,
+          settings.providers.entities,
+          promptInput,
+        );
+        next.entities = entities.entities;
+        next.stage_meta.entities = this.createStageMetaEntry({
+          status: "completed",
+          provider: entities.llm?.provider ?? settings.providers.entities,
+          model: entities.llm?.model ?? null,
+          promptVersion: entities.llm?.promptVersion ?? promptConfig.version,
+          promptTokens: entities.llm?.promptTokens ?? null,
+          completionTokens: entities.llm?.completionTokens ?? null,
+          totalTokens: entities.llm?.totalTokens ?? null,
+          costUsd: entities.llm?.costUsd ?? null,
+          latencyMs: entities.llm?.latencyMs ?? null,
+        });
+        await this.recordStageOutcome(job, "extract_entities", next.stage_meta.entities);
+      } catch (error) {
+        next.entities = [];
+        next.stage_meta.entities = this.createStageMetaEntry({
+          status: "failed",
+          provider: settings.providers.entities,
+          reason: error instanceof Error ? error.message : "entity_extraction_failed",
+        });
+        await this.logStageFailure(job, "extract_entities", undefined, error);
+        await this.recordStageOutcome(job, "extract_entities", next.stage_meta.entities);
+      }
+    }
+
+    if (!settings.capabilities.sentiment) {
+      next.stage_meta.sentiment = this.createStageMetaEntry({
+        status: "skipped",
+        provider: settings.providers.sentiment,
+        reason: "capability_disabled",
+      });
+      await this.recordStageOutcome(job, "extract_sentiment", next.stage_meta.sentiment);
+    } else {
+      try {
+        const sentiment = await this.extractionStages.analyzeSentiment(
+          context,
+          promptConfig,
+          settings.providers.sentiment,
+          promptInput,
+        );
+        next.sentiment = sentiment.sentimentLabel;
+        next.sentiment_label = sentiment.sentimentLabel;
+        next.stage_meta.sentiment = this.createStageMetaEntry({
+          status: "completed",
+          provider: sentiment.llm?.provider ?? settings.providers.sentiment,
+          model: sentiment.llm?.model ?? null,
+          promptVersion: sentiment.llm?.promptVersion ?? promptConfig.version,
+          promptTokens: sentiment.llm?.promptTokens ?? null,
+          completionTokens: sentiment.llm?.completionTokens ?? null,
+          totalTokens: sentiment.llm?.totalTokens ?? null,
+          costUsd: sentiment.llm?.costUsd ?? null,
+          latencyMs: sentiment.llm?.latencyMs ?? null,
+        });
+        await this.recordStageOutcome(job, "extract_sentiment", next.stage_meta.sentiment);
+      } catch (error) {
+        next.sentiment = null;
+        next.sentiment_label = null;
+        next.stage_meta.sentiment = this.createStageMetaEntry({
+          status: "failed",
+          provider: settings.providers.sentiment,
+          reason:
+            error instanceof Error ? error.message : "sentiment_extraction_failed",
+        });
+        await this.logStageFailure(job, "extract_sentiment", undefined, error);
+        await this.recordStageOutcome(job, "extract_sentiment", next.stage_meta.sentiment);
+      }
+    }
+
+    if (!settings.capabilities.kg) {
+      next.stage_meta.kg = this.createStageMetaEntry({
+        status: "skipped",
+        provider: settings.providers.kg,
+        reason: "capability_disabled",
+      });
+      await this.recordStageOutcome(job, "extract_kg", next.stage_meta.kg);
+      return next;
+    }
+
+    try {
+      const kg = await this.extractionStages.extractKgRelations(
+        context,
+        promptConfig,
+        settings.providers.kg,
+        {
+          ...promptInput,
+          markdown: this.buildKgExtractionMarkdown(promptInput, next.entities),
+        },
+      );
+      next.kg_relations = kg.relations;
+      next.stage_meta.kg = this.createStageMetaEntry({
+        status: "completed",
+        provider: kg.llm?.provider ?? settings.providers.kg,
+        model: kg.llm?.model ?? null,
+        promptVersion: kg.llm?.promptVersion ?? promptConfig.version,
+        promptTokens: kg.llm?.promptTokens ?? null,
+        completionTokens: kg.llm?.completionTokens ?? null,
+        totalTokens: kg.llm?.totalTokens ?? null,
+        costUsd: kg.llm?.costUsd ?? null,
+        latencyMs: kg.llm?.latencyMs ?? null,
+      });
+      await this.recordStageOutcome(job, "extract_kg", next.stage_meta.kg);
+    } catch (error) {
+      next.kg_relations = [];
+      next.stage_meta.kg = this.createStageMetaEntry({
+        status: "failed",
+        provider: settings.providers.kg,
+        reason: error instanceof Error ? error.message : "kg_extraction_failed",
+      });
+      await this.logStageFailure(job, "extract_kg", undefined, error);
+      await this.recordStageOutcome(job, "extract_kg", next.stage_meta.kg);
+    }
+
+    return next;
+  }
+
+  private buildKgExtractionMarkdown(
+    input: {
+      markdown: string;
+      title?: string | null;
+      summary?: string | null;
+      language?: string | null;
+    },
+    entities: CleanedNews["entities"],
+  ) {
+    const entitySummary =
+      entities.length > 0
+        ? `Entities: ${entities
+            .slice(0, 20)
+            .map((entity) => `${entity.name} (${entity.type})`)
+            .join(", ")}`
+        : "";
+    return [entitySummary, input.markdown].filter(Boolean).join("\n\n");
+  }
+
+  private async runClassificationStage(
+    job: PipelineJobContext,
+    payload: NormalizedNewsPayload,
+    article: CrawledArticle,
+    cleaned: CleanedNews,
+  ): Promise<CleanedNews> {
+    if (!this.classifier) {
+      const next = {
+        ...cleaned,
+        stage_meta: {
+          ...(cleaned.stage_meta ?? {}),
+          classify: this.createStageMetaEntry({
+            status: "skipped",
+            provider: "classifier",
+            reason: "classifier_unavailable",
+          }),
+        },
+      };
+      await this.recordStageOutcome(job, "classify", next.stage_meta.classify);
+      return next;
+    }
+
+    const classification = await this.runStage(
+      job,
+      "classify",
+      async () =>
+        this.classifier!.classify(job.orgId, cleaned, {
+          jobId: job.jobId,
+          sourceId: this.extractSourceId(payload) ?? null,
+          sourceUrl:
+            (typeof article.sourceUrl === "string" &&
+            article.sourceUrl.trim().length > 0
+              ? article.sourceUrl.trim()
+              : payload.url) ?? null,
+          sourceLabel: cleaned.source ?? payload.sourceName ?? null,
+        }),
+      {
+        onErrorData: () => ({
+          itemMetaId: job.itemMetaId,
+        }),
+      },
+    );
+    const next = this.classifier.applyToCleanedNews(cleaned, classification);
+    next.stage_meta = {
+      ...(next.stage_meta ?? {}),
+      classify: this.createStageMetaEntry({
+        status: "completed",
+        provider: "classifier",
+        reason: classification.method,
+      }),
+    };
+    await this.recordStageOutcome(job, "classify", next.stage_meta.classify);
+    return next;
+  }
+
+  private async recordStageOutcome(
+    job: PipelineJobContext,
+    stage: string,
+    entry: StageMetaEntry | undefined,
+    data?: Record<string, unknown>,
+  ) {
+    await writeTaskLogBestEffort({
+      queue: job.queue,
+      jobId: job.jobId,
+      orgId: job.orgId,
+      stage,
+      status: entry?.status === "failed" ? "failed" : "completed",
+      data: {
+        ...(data ?? {}),
+        ...(entry ? { stageMeta: entry } : {}),
+      },
+    });
+    await this.updatePipelineJobStageMetadata(job, stage, entry);
+  }
+
+  private async updatePipelineJobStageMetadata(
+    job: PipelineJobContext,
+    stage: string,
+    entry: StageMetaEntry | undefined,
+  ) {
+    if (!job.pipelineJobId || !entry) {
+      return;
+    }
+    try {
+      const current = await this.prisma.pipelineJob.findUnique({
+        where: { id: job.pipelineJobId },
+        select: { metadata: true },
+      });
+      const metadata =
+        current?.metadata &&
+        typeof current.metadata === "object" &&
+        !Array.isArray(current.metadata)
+          ? ({ ...current.metadata } as Record<string, unknown>)
+          : {};
+      const extraction =
+        metadata.extraction &&
+        typeof metadata.extraction === "object" &&
+        !Array.isArray(metadata.extraction)
+          ? ({
+              ...(metadata.extraction as Record<string, unknown>),
+            } as Record<string, unknown>)
+          : {};
+      const stages =
+        extraction.stages &&
+        typeof extraction.stages === "object" &&
+        !Array.isArray(extraction.stages)
+          ? ({
+              ...(extraction.stages as Record<string, unknown>),
+            } as Record<string, unknown>)
+          : {};
+
+      stages[stage] = entry;
+      extraction.stages = stages;
+      extraction.updatedAt = new Date().toISOString();
+      metadata.extraction = extraction;
+
+      await this.prisma.pipelineJob.updateMany({
+        where: { id: job.pipelineJobId },
+        data: {
+          metadata: toPrismaJsonValue(metadata),
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        { err: error, pipelineJobId: job.pipelineJobId, stage },
+        "Failed to update pipeline job extraction metadata",
+      );
+    }
   }
 
   private async persistProcessedResult(options: {
@@ -1885,6 +2696,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     payload: NormalizedNewsPayload,
     article: CrawledArticle & { fromCache: boolean },
     job: PipelineJobContext,
+    cleanProvider = "llm",
   ): Promise<{
     cleaned: CleanedNews;
     llm: LlmCallMetadata;
@@ -1940,64 +2752,56 @@ export class NewsPipelineService implements OnModuleDestroy {
       await this.liteLlm.getCompletionTimeoutMs(),
       180_000,
     );
-    const response = await this.liteLlm.acompletion({
-      orgId: job.orgId,
-      messages: [
-        {
-          role: "system",
-          content: this.promptBuilder.buildSystemPrompt(
-            promptConfig,
-            payload.language,
-          ),
-        },
-        {
-          role: "user",
-          content: this.promptBuilder.buildDenoisePrompt(promptConfig),
-        },
-        {
-          role: "user",
-          content: this.promptBuilder.buildUserPrompt(promptConfig, {
-            url: article.sourceUrl,
-            markdown: truncated,
-            metadata: {
-              ...payload.metadata,
-              publishedAt: article.publishedAt,
-              sourceName: payload.sourceName,
-              markdownSource: markdownForPrompt.source,
-              markdownVariant: markdownForPrompt.variant,
-              markdownReferencesAppended: markdownForPrompt.referencesAppended,
-            },
-            keywords: payload.keywords,
-            summaryHints: payload.summaryHints,
-            language: payload.language,
-            cacheHit: article.fromCache,
-          }),
-        },
-      ],
-      response_format: this.promptBuilder.buildResponseFormat(),
-      metadata: {
-        jobId: job.jobId,
-        source: "news-pipeline",
+    if (cleanProvider !== "llm") {
+      throw new Error(`Unsupported clean provider: ${cleanProvider}`);
+    }
+    const stageResponse = await this.extractionStages.cleanWithLlm(
+      { orgId: job.orgId, jobId: job.jobId },
+      promptConfig,
+      {
+        systemPrompt: this.promptBuilder.buildSystemPrompt(
+          promptConfig,
+          payload.language,
+        ),
+        denoisePrompt: this.promptBuilder.buildDenoisePrompt(promptConfig),
+        userPrompt: this.promptBuilder.buildUserPrompt(promptConfig, {
+          url: article.sourceUrl,
+          markdown: truncated,
+          metadata: {
+            ...payload.metadata,
+            publishedAt: article.publishedAt,
+            sourceName: payload.sourceName,
+            markdownSource: markdownForPrompt.source,
+            markdownVariant: markdownForPrompt.variant,
+            markdownReferencesAppended: markdownForPrompt.referencesAppended,
+          },
+          keywords: payload.keywords,
+          summaryHints: payload.summaryHints,
+          language: payload.language,
+          cacheHit: article.fromCache,
+        }),
+        completionTimeoutMs,
       },
-      timeoutMs: completionTimeoutMs,
-    });
+    );
 
     const cleaned = this.withResolvedContentType(
       this.withPromptMetadata(
-        this.parseResponse(response, { fallbackCleanedMarkdown: truncated }),
+        this.parseStoredCleanedNewsResult(
+          this.applyCleanedMarkdownFallback(stageResponse.cleaned, truncated),
+        ) ?? stageResponse.cleaned,
         promptConfig.version,
-        response.model,
+        stageResponse.llm.model,
       ),
       { payload, article },
     );
     const llm: LlmCallMetadata = {
-      model: response.model,
+      model: stageResponse.llm.model,
       promptVersion: promptConfig.version,
-      promptTokens: response.usage?.prompt_tokens ?? null,
-      completionTokens: response.usage?.completion_tokens ?? null,
-      totalTokens: response.usage?.total_tokens ?? null,
-      costUsd: response.costUsd ?? null,
-      latencyMs: response.latencyMs ?? null,
+      promptTokens: stageResponse.llm.promptTokens,
+      completionTokens: stageResponse.llm.completionTokens,
+      totalTokens: stageResponse.llm.totalTokens,
+      costUsd: stageResponse.llm.costUsd,
+      latencyMs: stageResponse.llm.latencyMs,
     };
     const repaired = await this.maybeRepairCleanedArticle({
       job,
@@ -3009,6 +3813,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     const keyPoints = this.toStringArray(processed.keyPoints);
     const removedNoiseTypes = this.toStringArray(processed.removedNoiseTypes);
     const entities = this.normalizeEntities(processed.entities);
+    const kgRelations = this.normalizeKgRelations(processed.kgRelations);
     let cleanedMarkdown = "";
     if (processed.title) {
       cleanedMarkdown = `# ${processed.title}\n\n`;
@@ -3036,6 +3841,7 @@ export class NewsPipelineService implements OnModuleDestroy {
       summary: processed.summary ?? null,
       key_points: keyPoints,
       entities,
+      kg_relations: kgRelations,
       cleaned_markdown: cleanedMarkdown,
       removed_noise_types: removedNoiseTypes,
       quality_score: processed.qualityScore ?? null,
@@ -4334,6 +5140,11 @@ export class NewsPipelineService implements OnModuleDestroy {
       .filter((entity): entity is CleanedNews["entities"][number] =>
         Boolean(entity),
       );
+  }
+
+  private normalizeKgRelations(value: unknown): CleanedNews["kg_relations"] {
+    const parsed = CleanedNewsSchema.shape.kg_relations.safeParse(value);
+    return parsed.success ? parsed.data : [];
   }
 
   private normalizeProcessedItemRef(ref?: string | null) {

@@ -17,6 +17,24 @@ registerEnumType(NewsEventSourcePolicyRevisionOperation, {
   name: "NewsEventSourcePolicyRevisionOperation",
 });
 
+export enum NewsExtractionPipelineModeModel {
+  legacy = "legacy",
+  staged = "staged",
+}
+
+export enum NewsExtractionProviderIdModel {
+  llm = "llm",
+  external_http = "external_http",
+}
+
+registerEnumType(NewsExtractionPipelineModeModel, {
+  name: "NewsExtractionPipelineMode",
+});
+
+registerEnumType(NewsExtractionProviderIdModel, {
+  name: "NewsExtractionProviderId",
+});
+
 @ObjectType()
 export class RateLimitBucketModel {
   @Field(() => Int)
@@ -129,6 +147,99 @@ export class NewsPromptConfigModel {
 
   @Field()
   userPromptTemplate!: string;
+
+  @Field()
+  entitySystemPromptTemplate!: string;
+
+  @Field()
+  entityUserPromptTemplate!: string;
+
+  @Field()
+  sentimentSystemPromptTemplate!: string;
+
+  @Field()
+  sentimentUserPromptTemplate!: string;
+
+  @Field()
+  kgSystemPromptTemplate!: string;
+
+  @Field()
+  kgUserPromptTemplate!: string;
+}
+
+@ObjectType()
+export class NewsExtractionPreflightGateSettingsModel {
+  @Field(() => Boolean)
+  enabled!: boolean;
+
+  @Field(() => Int)
+  minWordCount!: number;
+
+  @Field(() => Boolean)
+  rejectBotChallenge!: boolean;
+
+  @Field(() => Boolean)
+  rejectListLike!: boolean;
+}
+
+@ObjectType()
+export class NewsExtractionPostCleanGateSettingsModel {
+  @Field(() => Boolean)
+  enabled!: boolean;
+
+  @Field(() => Float)
+  minQualityScore!: number;
+
+  @Field(() => Int)
+  minCleanedChars!: number;
+
+  @Field(() => Boolean)
+  requireSummary!: boolean;
+}
+
+@ObjectType()
+export class NewsExtractionCapabilitiesSettingsModel {
+  @Field(() => Boolean)
+  entities!: boolean;
+
+  @Field(() => Boolean)
+  sentiment!: boolean;
+
+  @Field(() => Boolean)
+  kg!: boolean;
+}
+
+@ObjectType()
+export class NewsExtractionProvidersSettingsModel {
+  @Field(() => NewsExtractionProviderIdModel)
+  clean!: NewsExtractionProviderIdModel;
+
+  @Field(() => NewsExtractionProviderIdModel)
+  entities!: NewsExtractionProviderIdModel;
+
+  @Field(() => NewsExtractionProviderIdModel)
+  sentiment!: NewsExtractionProviderIdModel;
+
+  @Field(() => NewsExtractionProviderIdModel)
+  kg!: NewsExtractionProviderIdModel;
+}
+
+@ObjectType()
+export class NewsExtractionSettingsModel {
+  @Field(() => NewsExtractionPipelineModeModel)
+  pipelineMode!: NewsExtractionPipelineModeModel;
+
+  @Field(() => NewsExtractionPreflightGateSettingsModel)
+  preflightGate!: NewsExtractionPreflightGateSettingsModel;
+
+  @Field(() => NewsExtractionPostCleanGateSettingsModel)
+  postCleanGate!: NewsExtractionPostCleanGateSettingsModel;
+
+  @Field(() => NewsExtractionCapabilitiesSettingsModel)
+  capabilities!: NewsExtractionCapabilitiesSettingsModel;
+
+  @Field(() => NewsExtractionProvidersSettingsModel)
+  providers!: NewsExtractionProvidersSettingsModel;
 }
 
 @ObjectType()

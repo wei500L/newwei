@@ -97,6 +97,8 @@ const ProcessedItemResultSchema = new Schema(
     summary: { type: String, default: null },
     key_points: { type: [String], default: [] },
     entities: { type: [ProcessedItemEntitySchema], default: [] },
+    kg_relations: { type: [Schema.Types.Mixed], default: [] },
+    stage_meta: { type: Schema.Types.Mixed, default: undefined },
     cleaned_markdown: { type: String, required: true },
     cleaned_markdown_source: {
       type: String,

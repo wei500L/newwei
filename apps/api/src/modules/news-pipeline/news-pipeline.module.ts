@@ -13,6 +13,8 @@ import { NewsClassificationQualitySettingsService } from "./news-classification-
 import { NewsClassificationSettingsService } from "./news-classification-settings.service";
 import { NewsClassifierService } from "./news-classifier.service";
 import { NewsDedupeSettingsService } from "./news-dedupe-settings.service";
+import { NewsExtractionSettingsService } from "./news-extraction-settings.service";
+import { NewsExtractionStageService } from "./news-extraction-stage.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import { NewsPipelineService } from "./news-pipeline.service";
 import { NewsPromptConfigService } from "./news-prompt-config.service";
@@ -30,6 +32,8 @@ import { NewsPromptBuilder } from "./news-prompt.builder";
     NewsPromptConfigService,
     NewsPromptBuilder,
     NewsDedupeSettingsService,
+    NewsExtractionSettingsService,
+    NewsExtractionStageService,
     NewsClassificationSettingsService,
     NewsClassificationQualitySettingsService,
     NewsClassifierService,
@@ -42,11 +46,13 @@ import { NewsPromptBuilder } from "./news-prompt.builder";
     NewsPipelineConfigService,
     NewsPromptConfigService,
     NewsDedupeSettingsService,
+    NewsExtractionSettingsService,
     NewsClassificationSettingsService,
     NewsClassificationQualitySettingsService,
     NewsClassifierService,
     LlmRequestLogService,
-    LiteLlmService
+    LiteLlmService,
+    NewsExtractionStageService,
   ]
 })
 export class NewsPipelineModule {}

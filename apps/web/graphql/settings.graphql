@@ -67,6 +67,12 @@ query NewsPromptConfig {
     version
     systemPromptTemplate
     userPromptTemplate
+    entitySystemPromptTemplate
+    entityUserPromptTemplate
+    sentimentSystemPromptTemplate
+    sentimentUserPromptTemplate
+    kgSystemPromptTemplate
+    kgUserPromptTemplate
   }
 }
 
@@ -75,6 +81,70 @@ mutation UpdateNewsPromptConfig($input: UpdateNewsPromptConfigInput!) {
     version
     systemPromptTemplate
     userPromptTemplate
+    entitySystemPromptTemplate
+    entityUserPromptTemplate
+    sentimentSystemPromptTemplate
+    sentimentUserPromptTemplate
+    kgSystemPromptTemplate
+    kgUserPromptTemplate
+  }
+}
+
+query NewsExtractionSettings {
+  newsExtractionSettings {
+    pipelineMode
+    preflightGate {
+      enabled
+      minWordCount
+      rejectBotChallenge
+      rejectListLike
+    }
+    postCleanGate {
+      enabled
+      minQualityScore
+      minCleanedChars
+      requireSummary
+    }
+    capabilities {
+      entities
+      sentiment
+      kg
+    }
+    providers {
+      clean
+      entities
+      sentiment
+      kg
+    }
+  }
+}
+
+mutation UpdateNewsExtractionSettings($input: UpdateNewsExtractionSettingsInput!) {
+  updateNewsExtractionSettings(input: $input) {
+    pipelineMode
+    preflightGate {
+      enabled
+      minWordCount
+      rejectBotChallenge
+      rejectListLike
+    }
+    postCleanGate {
+      enabled
+      minQualityScore
+      minCleanedChars
+      requireSummary
+    }
+    capabilities {
+      entities
+      sentiment
+      kg
+    }
+    providers {
+      clean
+      entities
+      sentiment
+      kg
+    }
   }
 }
 

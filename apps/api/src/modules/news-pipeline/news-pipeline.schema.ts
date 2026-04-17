@@ -138,6 +138,30 @@ const KgRelationSchema = z.object({
   evidence: z.string().nullable().optional()
 });
 
+const StageMetaEntrySchema = z.object({
+  status: z.enum(["completed", "skipped", "rejected", "failed"]),
+  provider: z.string().nullable().optional(),
+  reason: z.string().nullable().optional(),
+  model: z.string().nullable().optional(),
+  prompt_version: z.string().nullable().optional(),
+  prompt_tokens: z.number().finite().nullable().optional(),
+  completion_tokens: z.number().finite().nullable().optional(),
+  total_tokens: z.number().finite().nullable().optional(),
+  cost_usd: z.number().finite().nullable().optional(),
+  latency_ms: z.number().finite().nullable().optional(),
+});
+
+const StageMetaSchema = z.object({
+  preflight: StageMetaEntrySchema.optional(),
+  clean: StageMetaEntrySchema.optional(),
+  quality_gate: StageMetaEntrySchema.optional(),
+  entities: StageMetaEntrySchema.optional(),
+  sentiment: StageMetaEntrySchema.optional(),
+  kg: StageMetaEntrySchema.optional(),
+  classify: StageMetaEntrySchema.optional(),
+  dedupe: StageMetaEntrySchema.optional(),
+});
+
 export const NormalizedNewsPayloadSchema = z
   .object({
     url: z.string().trim().min(1, "url is required"),
@@ -222,6 +246,7 @@ export const CleanedNewsSchema = z.object({
     )
     .default([]),
   kg_relations: z.array(KgRelationSchema).default([]),
+  stage_meta: StageMetaSchema.optional(),
   cleaned_markdown: z.string().min(1),
   cleaned_markdown_source: cleanedMarkdownSourceSchema,
   removed_noise_types: z.array(z.string().min(1)).default([]),
@@ -231,3 +256,4 @@ export const CleanedNewsSchema = z.object({
 });
 
 export type CleanedNews = z.infer<typeof CleanedNewsSchema>;
+export type NewsStageMeta = z.infer<typeof StageMetaSchema>;

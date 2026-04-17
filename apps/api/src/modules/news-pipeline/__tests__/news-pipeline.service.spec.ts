@@ -15,6 +15,7 @@ import type {
 } from "../news-pipeline.types";
 import { DEFAULT_NEWS_PROMPT_CONFIG } from "../news-prompt-config.service";
 import { NewsPromptBuilder } from "../news-prompt.builder";
+import { NewsExtractionPipelineMode } from "../news-extraction-settings.service";
 
 jest.mock(
   "@modular/vector-client",
@@ -239,6 +240,61 @@ describe("NewsPipelineService", () => {
     })),
   };
 
+  const extractionSettingsService = {
+    getSettings: jest.fn().mockResolvedValue({
+      pipelineMode: NewsExtractionPipelineMode.legacy,
+      preflightGate: {
+        enabled: true,
+        minWordCount: 120,
+        rejectBotChallenge: true,
+        rejectListLike: true,
+      },
+      postCleanGate: {
+        enabled: true,
+        minQualityScore: 0.35,
+        minCleanedChars: 400,
+        requireSummary: true,
+      },
+      capabilities: {
+        entities: true,
+        sentiment: true,
+        kg: true,
+      },
+      providers: {
+        clean: "llm",
+        entities: "llm",
+        sentiment: "llm",
+        kg: "llm",
+      },
+    }),
+  };
+
+  const extractionStageService = {
+    cleanWithLlm: jest.fn(async (_context, promptConfig) => {
+      const response = await liteLlm.acompletion();
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error("LiteLLM returned empty content");
+      }
+      return {
+        cleaned: JSON.parse(content),
+        llm: {
+          provider: "llm",
+          model: response.model ?? null,
+          promptVersion: promptConfig.version,
+          promptTokens: response.usage?.prompt_tokens ?? null,
+          completionTokens: response.usage?.completion_tokens ?? null,
+          totalTokens: response.usage?.total_tokens ?? null,
+          costUsd: response.costUsd ?? null,
+          latencyMs: response.latencyMs ?? null,
+        },
+      };
+    }),
+    extractEntities: jest.fn(),
+    analyzeSentiment: jest.fn(),
+    extractKgRelations: jest.fn(),
+  };
+
   const configService = {
     get config() {
       return baseConfig;
@@ -313,6 +369,8 @@ describe("NewsPipelineService", () => {
     promptBuilder,
     promptConfigService as any,
     dedupeSettingsService as any,
+    extractionSettingsService as any,
+    extractionStageService as any,
     prisma as any,
     crawlExecution as any,
   );
@@ -1557,7 +1615,10 @@ describe("NewsPipelineService", () => {
       attempts: 4,
     });
 
-    await (service as any).deliverOutboxFromQueue("outbox-invalid-queued", null);
+    await (service as any).deliverOutboxFromQueue(
+      "outbox-invalid-queued",
+      null,
+    );
 
     expect(updateSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1846,6 +1907,8 @@ describe("NewsPipelineService", () => {
       promptBuilder,
       promptConfigService as any,
       dedupeSettingsService as any,
+      extractionSettingsService as any,
+      extractionStageService as any,
       prisma as any,
       crawlExecution as any,
       undefined,
@@ -1959,6 +2022,8 @@ describe("NewsPipelineService", () => {
       promptBuilder,
       promptConfigService as any,
       dedupeSettingsService as any,
+      extractionSettingsService as any,
+      extractionStageService as any,
       prisma as any,
       crawlExecution as any,
       undefined,

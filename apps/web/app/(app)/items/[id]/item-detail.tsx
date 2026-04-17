@@ -143,6 +143,17 @@ const toString = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const STAGE_LABELS: Record<string, string> = {
+  preflight: "Preflight",
+  clean: "Clean",
+  quality_gate: "Quality gate",
+  entities: "Entities",
+  sentiment: "Sentiment",
+  kg: "Knowledge graph",
+  classify: "Classification",
+  dedupe: "Dedupe",
+};
+
 type ContentTypeValue = "news_fact" | "opinion" | "analysis" | "mixed";
 
 function normalizeContentType(value: unknown): ContentTypeValue | undefined {
@@ -401,6 +412,20 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const cleanedMarkdown = toString(processedResult?.cleaned_markdown);
   const cleanedMarkdownSource = toString(
     processedResult?.cleaned_markdown_source,
+  );
+  const stageMeta =
+    processedResult?.stage_meta &&
+    typeof processedResult.stage_meta === "object" &&
+    !Array.isArray(processedResult.stage_meta)
+      ? (processedResult.stage_meta as Record<string, unknown>)
+      : null;
+  const stageEntries = useMemo(
+    () =>
+      Object.entries(stageMeta ?? {}).filter(
+        ([, value]) =>
+          value && typeof value === "object" && !Array.isArray(value),
+      ),
+    [stageMeta],
   );
   const summary = resolveDisplaySummary({
     processedSummary: processedResult?.summary,
@@ -1804,6 +1829,43 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           </Card>
         </Col>
       </Row>
+
+      {stageEntries.length > 0 ? (
+        <Card
+          className="content-card"
+          title={t("items.detail.stageMetaTitle", {
+            defaultValue: "Stage execution",
+          })}
+        >
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            <Space wrap size={[8, 8]}>
+              {stageEntries.map(([key, value]) => {
+                const entry = value as Record<string, unknown>;
+                const status = toString(entry.status) ?? "unknown";
+                const reason = toString(entry.reason);
+                const color =
+                  status === "completed"
+                    ? "green"
+                    : status === "skipped"
+                      ? "default"
+                      : status === "rejected"
+                        ? "orange"
+                        : "red";
+                return (
+                  <Tag key={key} color={color}>
+                    {`${STAGE_LABELS[key] ?? key}: ${status}${
+                      reason ? ` (${reason})` : ""
+                    }`}
+                  </Tag>
+                );
+              })}
+            </Space>
+            <pre className="max-h-[320px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
+              {JSON.stringify(stageMeta, null, 2)}
+            </pre>
+          </Space>
+        </Card>
+      ) : null}
 
       <Card
         className="content-card"

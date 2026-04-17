@@ -1,6 +1,15 @@
 "use client";
 
-import { Button, Form, Input, Spin, Tag, Typography, message } from "antd";
+import {
+  Button,
+  Card,
+  Form,
+  Input,
+  Spin,
+  Tag,
+  Typography,
+  message,
+} from "antd";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -22,6 +31,13 @@ const PLACEHOLDER_TOKENS = [
   "{{metadata_section}}",
   "{{keywords_section}}",
   "{{summary_hints_section}}",
+  "{{markdown}}",
+];
+
+const STAGE_PLACEHOLDER_TOKENS = [
+  "{{title}}",
+  "{{summary}}",
+  "{{language}}",
   "{{markdown}}",
 ];
 
@@ -94,42 +110,161 @@ export function NewsPromptSettingsPanel() {
         >
           <Input placeholder={t("settings.newsPrompts.placeholders.version")} />
         </Form.Item>
-        <Form.Item
-          label={t("settings.newsPrompts.fields.systemTemplate")}
-          name="systemPromptTemplate"
-          rules={[
-            {
-              required: true,
-              message: t("settings.newsPrompts.validation.systemTemplate"),
-            },
-          ]}
-          extra={<TokenEstimateExtra name="systemPromptTemplate" />}
+
+        <Card
+          size="small"
+          title={t("settings.newsPrompts.cleaningTitle", {
+            defaultValue: "Cleaning prompts",
+          })}
+          style={{ marginBottom: "1rem" }}
         >
-          <Input.TextArea
-            rows={5}
-            placeholder={t("settings.newsPrompts.placeholders.systemTemplate")}
+          <Form.Item
+            label={t("settings.newsPrompts.fields.systemTemplate")}
+            name="systemPromptTemplate"
+            rules={[
+              {
+                required: true,
+                message: t("settings.newsPrompts.validation.systemTemplate"),
+              },
+            ]}
+            extra={<TokenEstimateExtra name="systemPromptTemplate" />}
+          >
+            <Input.TextArea
+              rows={5}
+              placeholder={t(
+                "settings.newsPrompts.placeholders.systemTemplate",
+              )}
+            />
+          </Form.Item>
+          <Form.Item
+            label={t("settings.newsPrompts.fields.userTemplate")}
+            name="userPromptTemplate"
+            rules={[
+              {
+                required: true,
+                message: t("settings.newsPrompts.validation.userTemplate"),
+              },
+            ]}
+            extra={<TokenEstimateExtra name="userPromptTemplate" />}
+          >
+            <Input.TextArea
+              rows={10}
+              placeholder={t("settings.newsPrompts.placeholders.userTemplate")}
+            />
+          </Form.Item>
+          <TotalTokenEstimateText
+            systemName="systemPromptTemplate"
+            userName="userPromptTemplate"
           />
-        </Form.Item>
-        <Form.Item
-          label={t("settings.newsPrompts.fields.userTemplate")}
-          name="userPromptTemplate"
-          rules={[
-            {
-              required: true,
-              message: t("settings.newsPrompts.validation.userTemplate"),
-            },
-          ]}
-          extra={<TokenEstimateExtra name="userPromptTemplate" />}
+        </Card>
+
+        <Card
+          size="small"
+          title={t("settings.newsPrompts.entityTitle", {
+            defaultValue: "Entity extraction prompts",
+          })}
+          style={{ marginBottom: "1rem" }}
         >
-          <Input.TextArea
-            rows={10}
-            placeholder={t("settings.newsPrompts.placeholders.userTemplate")}
+          <Typography.Paragraph type="secondary">
+            {STAGE_PLACEHOLDER_TOKENS.map((token) => (
+              <Tag key={`entity-${token}`}>{token}</Tag>
+            ))}
+          </Typography.Paragraph>
+          <Form.Item
+            label={t("settings.newsPrompts.fields.entitySystemTemplate", {
+              defaultValue: "Entity system template",
+            })}
+            name="entitySystemPromptTemplate"
+            extra={<TokenEstimateExtra name="entitySystemPromptTemplate" />}
+          >
+            <Input.TextArea rows={4} />
+          </Form.Item>
+          <Form.Item
+            label={t("settings.newsPrompts.fields.entityUserTemplate", {
+              defaultValue: "Entity user template",
+            })}
+            name="entityUserPromptTemplate"
+            extra={<TokenEstimateExtra name="entityUserPromptTemplate" />}
+          >
+            <Input.TextArea rows={8} />
+          </Form.Item>
+          <TotalTokenEstimateText
+            systemName="entitySystemPromptTemplate"
+            userName="entityUserPromptTemplate"
           />
-        </Form.Item>
-        <TotalTokenEstimateText
-          systemName="systemPromptTemplate"
-          userName="userPromptTemplate"
-        />
+        </Card>
+
+        <Card
+          size="small"
+          title={t("settings.newsPrompts.sentimentTitle", {
+            defaultValue: "Sentiment prompts",
+          })}
+          style={{ marginBottom: "1rem" }}
+        >
+          <Typography.Paragraph type="secondary">
+            {STAGE_PLACEHOLDER_TOKENS.map((token) => (
+              <Tag key={`sentiment-${token}`}>{token}</Tag>
+            ))}
+          </Typography.Paragraph>
+          <Form.Item
+            label={t("settings.newsPrompts.fields.sentimentSystemTemplate", {
+              defaultValue: "Sentiment system template",
+            })}
+            name="sentimentSystemPromptTemplate"
+            extra={<TokenEstimateExtra name="sentimentSystemPromptTemplate" />}
+          >
+            <Input.TextArea rows={4} />
+          </Form.Item>
+          <Form.Item
+            label={t("settings.newsPrompts.fields.sentimentUserTemplate", {
+              defaultValue: "Sentiment user template",
+            })}
+            name="sentimentUserPromptTemplate"
+            extra={<TokenEstimateExtra name="sentimentUserPromptTemplate" />}
+          >
+            <Input.TextArea rows={6} />
+          </Form.Item>
+          <TotalTokenEstimateText
+            systemName="sentimentSystemPromptTemplate"
+            userName="sentimentUserPromptTemplate"
+          />
+        </Card>
+
+        <Card
+          size="small"
+          title={t("settings.newsPrompts.kgTitle", {
+            defaultValue: "Knowledge graph prompts",
+          })}
+          style={{ marginBottom: "1rem" }}
+        >
+          <Typography.Paragraph type="secondary">
+            {STAGE_PLACEHOLDER_TOKENS.map((token) => (
+              <Tag key={`kg-${token}`}>{token}</Tag>
+            ))}
+          </Typography.Paragraph>
+          <Form.Item
+            label={t("settings.newsPrompts.fields.kgSystemTemplate", {
+              defaultValue: "Knowledge graph system template",
+            })}
+            name="kgSystemPromptTemplate"
+            extra={<TokenEstimateExtra name="kgSystemPromptTemplate" />}
+          >
+            <Input.TextArea rows={4} />
+          </Form.Item>
+          <Form.Item
+            label={t("settings.newsPrompts.fields.kgUserTemplate", {
+              defaultValue: "Knowledge graph user template",
+            })}
+            name="kgUserPromptTemplate"
+            extra={<TokenEstimateExtra name="kgUserPromptTemplate" />}
+          >
+            <Input.TextArea rows={8} />
+          </Form.Item>
+          <TotalTokenEstimateText
+            systemName="kgSystemPromptTemplate"
+            userName="kgUserPromptTemplate"
+          />
+        </Card>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
             {t("common.saveChanges")}
