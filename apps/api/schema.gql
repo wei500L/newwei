@@ -1353,6 +1353,24 @@ The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://
 """
 scalar JSON
 
+type KnowledgeGraphEdgeEvidenceArticleModel {
+  crawlAt: DateTime!
+  id: String!
+  language: String
+  summary: String
+  title: String
+  url: String!
+}
+
+type KnowledgeGraphEdgeEvidenceItemModel {
+  article: KnowledgeGraphEdgeEvidenceArticleModel!
+  confidence: Float
+  createdAt: DateTime!
+  evidence: JSON
+  extractorVersion: String
+  id: String!
+}
+
 type KnowledgeGraphEdgeModel {
   confidence: Float!
   from: String!
@@ -1644,6 +1662,11 @@ type NewsEventBriefSourceModel {
   url: String!
 }
 
+enum NewsEventClusteringMode {
+  bertopic_primary
+  vector
+}
+
 type NewsEventItemModel {
   assignedBy: NewsEventAssignmentMethod!
   createdAt: DateTime!
@@ -1719,10 +1742,14 @@ type NewsEventReferencedArticleModel {
 
 type NewsEventSettingsModel {
   backfillDays: Int!
+  bertopicMaxItemsPerRequest: Int!
+  bertopicMinItemsPerGroup: Int!
+  bertopicMinTopicSize: Int!
   cacheTtlSeconds: Int!
   categoryConflictReject: Boolean!
   categorySoftPenalty: Float!
   classificationGateEnabled: Boolean!
+  clusteringMode: NewsEventClusteringMode!
   crossLanguagePenalty: Float!
   enabled: Boolean!
   forceAuthoritativeMode: Boolean!
@@ -2232,6 +2259,7 @@ type Query {
   item(id: String!): ItemModel
   itemFacets(filters: ItemsFiltersInput, search: String): ItemFacets!
   items(after: String, filters: ItemsFiltersInput, first: Int! = 10, orderBy: ItemsOrderBy! = CREATED_DESC, page: Int, rankingMode: ItemsRankingMode, search: String): ItemConnection!
+  knowledgeGraphEdgeEvidence(edgeId: String!, limit: Int): [KnowledgeGraphEdgeEvidenceItemModel!]!
   knowledgeGraphEvidenceReviewQueue(limit: Int, maxConfidence: Float, onlyUnreviewed: Boolean): [KnowledgeGraphEvidenceReviewItemModel!]!
   knowledgeGraphSettings: KnowledgeGraphSettingsModel!
   me: UserModel!
@@ -2637,10 +2665,14 @@ input UpdateNewsDedupeSettingsInput {
 
 input UpdateNewsEventSettingsInput {
   backfillDays: Int!
+  bertopicMaxItemsPerRequest: Int
+  bertopicMinItemsPerGroup: Int
+  bertopicMinTopicSize: Int
   cacheTtlSeconds: Int!
   categoryConflictReject: Boolean
   categorySoftPenalty: Float
   classificationGateEnabled: Boolean
+  clusteringMode: NewsEventClusteringMode
   crossLanguagePenalty: Float!
   enabled: Boolean!
   forceAuthoritativeMode: Boolean

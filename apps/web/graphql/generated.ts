@@ -1391,6 +1391,26 @@ export enum ItemsRankingMode {
   Relevance = 'RELEVANCE'
 }
 
+export type KnowledgeGraphEdgeEvidenceArticleModel = {
+  __typename?: 'KnowledgeGraphEdgeEvidenceArticleModel';
+  crawlAt: Scalars['DateTime']['output'];
+  id: Scalars['String']['output'];
+  language?: Maybe<Scalars['String']['output']>;
+  summary?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+  url: Scalars['String']['output'];
+};
+
+export type KnowledgeGraphEdgeEvidenceItemModel = {
+  __typename?: 'KnowledgeGraphEdgeEvidenceItemModel';
+  article: KnowledgeGraphEdgeEvidenceArticleModel;
+  confidence?: Maybe<Scalars['Float']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  evidence?: Maybe<Scalars['JSON']['output']>;
+  extractorVersion?: Maybe<Scalars['String']['output']>;
+  id: Scalars['String']['output'];
+};
+
 export type KnowledgeGraphEdgeModel = {
   __typename?: 'KnowledgeGraphEdgeModel';
   confidence: Scalars['Float']['output'];
@@ -1982,6 +2002,11 @@ export type NewsEventBriefSourceModel = {
   url: Scalars['String']['output'];
 };
 
+export enum NewsEventClusteringMode {
+  BertopicPrimary = 'bertopic_primary',
+  Vector = 'vector'
+}
+
 export type NewsEventItemModel = {
   __typename?: 'NewsEventItemModel';
   assignedBy: NewsEventAssignmentMethod;
@@ -2058,10 +2083,14 @@ export type NewsEventReferencedArticleModel = {
 export type NewsEventSettingsModel = {
   __typename?: 'NewsEventSettingsModel';
   backfillDays: Scalars['Int']['output'];
+  bertopicMaxItemsPerRequest: Scalars['Int']['output'];
+  bertopicMinItemsPerGroup: Scalars['Int']['output'];
+  bertopicMinTopicSize: Scalars['Int']['output'];
   cacheTtlSeconds: Scalars['Int']['output'];
   categoryConflictReject: Scalars['Boolean']['output'];
   categorySoftPenalty: Scalars['Float']['output'];
   classificationGateEnabled: Scalars['Boolean']['output'];
+  clusteringMode: NewsEventClusteringMode;
   crossLanguagePenalty: Scalars['Float']['output'];
   enabled: Scalars['Boolean']['output'];
   forceAuthoritativeMode: Scalars['Boolean']['output'];
@@ -2590,6 +2619,7 @@ export type Query = {
   item?: Maybe<ItemModel>;
   itemFacets: ItemFacets;
   items: ItemConnection;
+  knowledgeGraphEdgeEvidence: Array<KnowledgeGraphEdgeEvidenceItemModel>;
   knowledgeGraphEvidenceReviewQueue: Array<KnowledgeGraphEvidenceReviewItemModel>;
   knowledgeGraphSettings: KnowledgeGraphSettingsModel;
   me: UserModel;
@@ -2796,6 +2826,12 @@ export type QueryItemsArgs = {
   page?: InputMaybe<Scalars['Int']['input']>;
   rankingMode?: InputMaybe<ItemsRankingMode>;
   search?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryKnowledgeGraphEdgeEvidenceArgs = {
+  edgeId: Scalars['String']['input'];
+  limit?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -3302,10 +3338,14 @@ export type UpdateNewsDedupeSettingsInput = {
 
 export type UpdateNewsEventSettingsInput = {
   backfillDays: Scalars['Int']['input'];
+  bertopicMaxItemsPerRequest?: InputMaybe<Scalars['Int']['input']>;
+  bertopicMinItemsPerGroup?: InputMaybe<Scalars['Int']['input']>;
+  bertopicMinTopicSize?: InputMaybe<Scalars['Int']['input']>;
   cacheTtlSeconds: Scalars['Int']['input'];
   categoryConflictReject?: InputMaybe<Scalars['Boolean']['input']>;
   categorySoftPenalty?: InputMaybe<Scalars['Float']['input']>;
   classificationGateEnabled?: InputMaybe<Scalars['Boolean']['input']>;
+  clusteringMode?: InputMaybe<NewsEventClusteringMode>;
   crossLanguagePenalty: Scalars['Float']['input'];
   enabled: Scalars['Boolean']['input'];
   forceAuthoritativeMode?: InputMaybe<Scalars['Boolean']['input']>;
@@ -3781,6 +3821,14 @@ export type GetKnowledgeGraphSubgraphQueryVariables = Exact<{
 
 
 export type GetKnowledgeGraphSubgraphQuery = { __typename?: 'Query', getKnowledgeGraphSubgraph?: { __typename?: 'KnowledgeGraphModel', seed: { __typename?: 'KnowledgeGraphNodeModel', id: string, name: string, type: string, properties?: any | null }, nodes: Array<{ __typename?: 'KnowledgeGraphNodeModel', id: string, name: string, type: string, properties?: any | null }>, edges: Array<{ __typename?: 'KnowledgeGraphEdgeModel', id: string, from: string, to: string, type: string, weight: number, confidence: number, properties?: any | null }>, metadata: { __typename?: 'KnowledgeGraphMetadataModel', totalNodes: number, totalEdges: number, generatedAt: any } } | null };
+
+export type KnowledgeGraphEdgeEvidenceQueryVariables = Exact<{
+  edgeId: Scalars['String']['input'];
+  limit?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type KnowledgeGraphEdgeEvidenceQuery = { __typename?: 'Query', knowledgeGraphEdgeEvidence: Array<{ __typename?: 'KnowledgeGraphEdgeEvidenceItemModel', id: string, confidence?: number | null, extractorVersion?: string | null, createdAt: any, evidence?: any | null, article: { __typename?: 'KnowledgeGraphEdgeEvidenceArticleModel', id: string, url: string, title?: string | null, summary?: string | null, language?: string | null, crawlAt: any } }> };
 
 export type MeQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -6280,6 +6328,59 @@ export type GetKnowledgeGraphSubgraphQueryHookResult = ReturnType<typeof useGetK
 export type GetKnowledgeGraphSubgraphLazyQueryHookResult = ReturnType<typeof useGetKnowledgeGraphSubgraphLazyQuery>;
 export type GetKnowledgeGraphSubgraphSuspenseQueryHookResult = ReturnType<typeof useGetKnowledgeGraphSubgraphSuspenseQuery>;
 export type GetKnowledgeGraphSubgraphQueryResult = Apollo.QueryResult<GetKnowledgeGraphSubgraphQuery, GetKnowledgeGraphSubgraphQueryVariables>;
+export const KnowledgeGraphEdgeEvidenceDocument = gql`
+    query KnowledgeGraphEdgeEvidence($edgeId: String!, $limit: Int) {
+  knowledgeGraphEdgeEvidence(edgeId: $edgeId, limit: $limit) {
+    id
+    confidence
+    extractorVersion
+    createdAt
+    evidence
+    article {
+      id
+      url
+      title
+      summary
+      language
+      crawlAt
+    }
+  }
+}
+    `;
+
+/**
+ * __useKnowledgeGraphEdgeEvidenceQuery__
+ *
+ * To run a query within a React component, call `useKnowledgeGraphEdgeEvidenceQuery` and pass it any options that fit your needs.
+ * When your component renders, `useKnowledgeGraphEdgeEvidenceQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useKnowledgeGraphEdgeEvidenceQuery({
+ *   variables: {
+ *      edgeId: // value for 'edgeId'
+ *      limit: // value for 'limit'
+ *   },
+ * });
+ */
+export function useKnowledgeGraphEdgeEvidenceQuery(baseOptions: Apollo.QueryHookOptions<KnowledgeGraphEdgeEvidenceQuery, KnowledgeGraphEdgeEvidenceQueryVariables> & ({ variables: KnowledgeGraphEdgeEvidenceQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<KnowledgeGraphEdgeEvidenceQuery, KnowledgeGraphEdgeEvidenceQueryVariables>(KnowledgeGraphEdgeEvidenceDocument, options);
+      }
+export function useKnowledgeGraphEdgeEvidenceLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<KnowledgeGraphEdgeEvidenceQuery, KnowledgeGraphEdgeEvidenceQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<KnowledgeGraphEdgeEvidenceQuery, KnowledgeGraphEdgeEvidenceQueryVariables>(KnowledgeGraphEdgeEvidenceDocument, options);
+        }
+export function useKnowledgeGraphEdgeEvidenceSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<KnowledgeGraphEdgeEvidenceQuery, KnowledgeGraphEdgeEvidenceQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<KnowledgeGraphEdgeEvidenceQuery, KnowledgeGraphEdgeEvidenceQueryVariables>(KnowledgeGraphEdgeEvidenceDocument, options);
+        }
+export type KnowledgeGraphEdgeEvidenceQueryHookResult = ReturnType<typeof useKnowledgeGraphEdgeEvidenceQuery>;
+export type KnowledgeGraphEdgeEvidenceLazyQueryHookResult = ReturnType<typeof useKnowledgeGraphEdgeEvidenceLazyQuery>;
+export type KnowledgeGraphEdgeEvidenceSuspenseQueryHookResult = ReturnType<typeof useKnowledgeGraphEdgeEvidenceSuspenseQuery>;
+export type KnowledgeGraphEdgeEvidenceQueryResult = Apollo.QueryResult<KnowledgeGraphEdgeEvidenceQuery, KnowledgeGraphEdgeEvidenceQueryVariables>;
 export const MeDocument = gql`
     query Me {
   me {

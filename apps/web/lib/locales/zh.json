@@ -1996,6 +1996,7 @@
       "eventsArchive": "历史档案",
       "rss": "RSS 阅读",
       "map": "地图态势",
+      "knowledgeGraph": "知识图谱",
       "finance": "金融面板",
       "alerts": "预警中心",
       "search": "搜索",
@@ -2029,6 +2030,78 @@
       "demoBadge": "演示",
       "demoNote": "当前为演示指标，待接入真实预警地理上下文。",
       "empty": "所选范围内没有告警或带地理标记的新闻信号。"
+    },
+    "knowledgeGraph": {
+      "title": "知识图谱探索",
+      "subtitle": "在控制台内探索实体关系、查看边证据，并快速切换新的图谱中心。",
+      "emptyDescription": "输入一个种子实体，即可加载图谱并查看带证据的关系。",
+      "controls": {
+        "seed": "种子实体",
+        "seedPlaceholder": "搜索公司、政策、商品或组织",
+        "seedType": "种子类型",
+        "seedTypeAny": "任意类型",
+        "relations": "关系类型",
+        "relationsAny": "全部关系类型",
+        "depth": "深度",
+        "maxNodes": "最大节点数"
+      },
+      "actions": {
+        "filters": "筛选",
+        "openExplorer": "打开探索页",
+        "reflow": "重新布局",
+        "centerNode": "设为中心实体",
+        "openSearch": "打开搜索",
+        "openArticle": "打开原文"
+      },
+      "meta": {
+        "scope": "范围",
+        "scopeEmpty": "未选择种子实体",
+        "time": "时间",
+        "notRangeFiltered": "当前不按时间窗过滤",
+        "relationCount": "关系",
+        "nodes": "节点",
+        "edges": "边",
+        "generatedAt": "生成时间"
+      },
+      "details": {
+        "drawerTitle": "图谱详情",
+        "empty": "选择一个节点或边以查看详情。",
+        "degree": "度数",
+        "nodeId": "节点 ID",
+        "edgeId": "边 ID",
+        "type": "类型",
+        "from": "起点",
+        "to": "终点",
+        "weight": "权重",
+        "confidence": "置信度",
+        "evidenceTitle": "证据",
+        "evidenceConfidence": "证据",
+        "untitledArticle": "未命名文章",
+        "noEvidence": "该边暂无证据记录。",
+        "properties": "属性",
+        "noProperties": "该节点暂无结构化属性。"
+      },
+      "nodeTypes": {
+        "company": "公司",
+        "industry": "行业",
+        "person": "人物",
+        "policy": "政策",
+        "commodity": "商品",
+        "instrument": "金融标的",
+        "organization": "组织"
+      },
+      "relations": {
+        "belongs_to_industry": "属于行业",
+        "supplies": "供应",
+        "customer_of": "客户关系",
+        "competes_with": "竞争关系",
+        "holds_position": "任职于",
+        "affects_industry": "影响行业",
+        "affects_company": "影响公司",
+        "upstream_of": "上游于",
+        "downstream_of": "下游于",
+        "has_ticker": "关联代码"
+      }
     },
     "search": {
       "title": "搜索",

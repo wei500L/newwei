@@ -88,6 +88,22 @@ export interface KnowledgeGraphSubgraphResult {
   edges: KnowledgeEdge[];
 }
 
+export interface KnowledgeGraphEdgeEvidenceResult {
+  id: string;
+  confidence: number | null;
+  extractorVersion: string | null;
+  createdAt: Date;
+  evidence: Record<string, unknown> | null;
+  article: {
+    id: string;
+    url: string;
+    title: string | null;
+    summary: string | null;
+    language: string | null;
+    crawlAt: Date;
+  };
+}
+
 @Injectable()
 export class KnowledgeGraphService {
   private readonly logger = createLogger({ name: "knowledge-graph" });
@@ -108,6 +124,50 @@ export class KnowledgeGraphService {
       orderBy: { createdAt: "desc" },
       take,
       include: { entity: true }
+    });
+  }
+
+  async listEdgeEvidence(
+    orgId: string,
+    edgeId: string,
+    limit: number
+  ): Promise<KnowledgeGraphEdgeEvidenceResult[]> {
+    const take = Math.min(Math.max(limit, 1), 50);
+    const rows = await this.prisma.knowledgeEdgeEvidence.findMany({
+      where: { orgId, edgeId },
+      take,
+      orderBy: [{ article: { crawlAt: "desc" } }, { createdAt: "desc" }],
+      include: {
+        article: {
+          include: {
+            processed: true
+          }
+        }
+      }
+    });
+
+    return rows.map((row) => {
+      const processed = row.article.processed;
+      const evidence =
+        row.evidence && typeof row.evidence === "object" && !Array.isArray(row.evidence)
+          ? (row.evidence as Record<string, unknown>)
+          : null;
+
+      return {
+        id: row.id,
+        confidence: row.confidence ?? null,
+        extractorVersion: row.extractorVersion ?? null,
+        createdAt: row.createdAt,
+        evidence,
+        article: {
+          id: row.articleId,
+          url: row.article.url,
+          title: processed?.title ?? row.article.titleGuess ?? null,
+          summary: processed?.summary ?? null,
+          language: processed?.language ?? row.article.language ?? null,
+          crawlAt: row.article.crawlAt
+        }
+      };
     });
   }
 

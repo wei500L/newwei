@@ -2,6 +2,7 @@
 
 import { SearchOutlined } from "@ant-design/icons";
 import { Alert, Button, Input, Skeleton, Slider, Space, Tag, Typography, message } from "antd";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -12,6 +13,7 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import { useGetKnowledgeGraphSubgraphQuery, useKnowledgeGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { usePendingAction } from "@/hooks/use-pending-action";
+import { buildKnowledgeGraphExplorerHref } from "@/lib/knowledge-graph-explorer";
 
 const { Text } = Typography;
 
@@ -146,6 +148,11 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
 
   const graph = data?.getKnowledgeGraphSubgraph ?? null;
   const degreeMap = useMemo(() => (graph ? buildDegreeMap(graph.edges) : new Map<string, number>()), [graph]);
+  const explorerHref = buildKnowledgeGraphExplorerHref({
+    seedName,
+    maxDepth,
+    maxNodes
+  });
 
   useEffect(() => {
     if (!graph || !containerRef.current) {
@@ -630,6 +637,9 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
             <Slider min={50} max={180} step={10} value={maxNodes} onChange={(value) => setMaxNodes(value)} style={{ width: 160 }} />
           </div>
         </Space>
+        <Link href={explorerHref}>
+          <Button>{t("pages.knowledgeGraph.actions.openExplorer", { defaultValue: "Open explorer" })}</Button>
+        </Link>
       </div>
 
       {settings ? (

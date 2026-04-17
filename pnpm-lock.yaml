@@ -50,6 +50,9 @@ importers:
 
   apps/ais-relay:
     dependencies:
+      '@modular/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
       dotenv:
         specifier: ^16.6.1
         version: 16.6.1
@@ -443,6 +446,12 @@ importers:
       axios:
         specifier: ^1.6.8
         version: 1.13.2
+      cytoscape:
+        specifier: ^3.33.1
+        version: 3.33.1
+      cytoscape-fcose:
+        specifier: ^2.2.0
+        version: 2.2.0(cytoscape@3.33.1)
       dayjs:
         specifier: ^1.11.13
         version: 1.11.19

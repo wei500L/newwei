@@ -11,6 +11,7 @@ import { KnowledgeGraphService } from "../../modules/knowledge-graph/knowledge-g
 import { HasPermission } from "../decorators/has-permission.decorator";
 import type { GqlRequest } from "../graphql.types";
 import { ArticleEntityLinkModel } from "../models/article-entity-link.model";
+import { KnowledgeGraphEdgeEvidenceItemModel } from "../models/knowledge-graph-evidence.model";
 import { KnowledgeGraphModel, KnowledgeGraphSubgraphInput } from "../models/knowledge-graph.model";
 
 function normalizeEnumValue<T extends Record<string, string>>(value: string, enumObject: T): T[keyof T] | undefined {
@@ -178,6 +179,39 @@ export class KnowledgeGraphResolver {
         type: row.entity.type,
         properties: (row.entity.properties as Record<string, unknown> | null) ?? null
       }
+    }));
+  }
+
+  @HasPermission("dashboards.read")
+  @Query(() => [KnowledgeGraphEdgeEvidenceItemModel])
+  async knowledgeGraphEdgeEvidence(
+    @Context("req") req: GqlRequest,
+    @Args("edgeId") edgeId: string,
+    @Args("limit", { type: () => Int, nullable: true }) limit?: number
+  ): Promise<KnowledgeGraphEdgeEvidenceItemModel[]> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+
+    const settings = await this.settings.getSettings(requester.orgId);
+    if (!settings.enabled) {
+      return [];
+    }
+
+    const rows = await this.graph.listEdgeEvidence(
+      requester.orgId,
+      edgeId,
+      typeof limit === "number" ? limit : 20
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      confidence: row.confidence,
+      extractorVersion: row.extractorVersion,
+      createdAt: row.createdAt,
+      evidence: row.evidence,
+      article: row.article
     }));
   }
 

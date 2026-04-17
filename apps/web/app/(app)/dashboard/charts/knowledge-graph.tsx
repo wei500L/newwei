@@ -3,6 +3,7 @@
 import { SearchOutlined, WarningOutlined } from "@ant-design/icons";
 import { Alert, Button, Drawer, Input, Skeleton, Slider, Space, Tag, Tooltip, Typography, message } from "antd";
 import type { EChartsOption } from "echarts";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -13,6 +14,7 @@ import { DashboardChart } from "@/components/echart";
 import { useGetKnowledgeGraphSubgraphQuery, useKnowledgeGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { usePendingAction } from "@/hooks/use-pending-action";
+import { buildKnowledgeGraphExplorerHref } from "@/lib/knowledge-graph-explorer";
 
 const { Text } = Typography;
 
@@ -147,6 +149,11 @@ export function KnowledgeGraph() {
   );
 
   const graph = data?.getKnowledgeGraphSubgraph ?? null;
+  const explorerHref = buildKnowledgeGraphExplorerHref({
+    seedName,
+    maxDepth,
+    maxNodes
+  });
 
   const normalizedGraph = useMemo(() => {
     if (!graph) {
@@ -442,6 +449,9 @@ export function KnowledgeGraph() {
             <Slider min={50} max={500} step={25} value={maxNodes} onChange={(value) => setMaxNodes(value)} style={{ width: 160 }} />
           </div>
         </Space>
+        <Link href={explorerHref}>
+          <Button>{t("pages.knowledgeGraph.actions.openExplorer", { defaultValue: "Open explorer" })}</Button>
+        </Link>
       </div>
 
       {seedName ? (
@@ -602,6 +612,11 @@ export function KnowledgeGraph() {
               </Text>
             </div>
             <Space wrap>
+              <Link href={buildKnowledgeGraphExplorerHref({ seedName: selectedNode.name })}>
+                <Button>
+                  {t("pages.knowledgeGraph.actions.openExplorer", { defaultValue: "Open explorer" })}
+                </Button>
+              </Link>
               <Button
                 type="primary"
                 onClick={() => {

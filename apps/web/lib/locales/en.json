@@ -1996,6 +1996,7 @@
       "eventsArchive": "Events Archive",
       "rss": "RSS Reader",
       "map": "Situation Map",
+      "knowledgeGraph": "Knowledge Graph",
       "finance": "Finance Panel",
       "alerts": "Alert Center",
       "search": "Search",
@@ -2029,6 +2030,78 @@
       "demoBadge": "Demo",
       "demoNote": "Demo indicators until alert geo context is connected.",
       "empty": "No alerts or geo-tagged news signals in the selected range."
+    },
+    "knowledgeGraph": {
+      "title": "Knowledge Graph Explorer",
+      "subtitle": "Explore entity relationships, inspect edge evidence, and pivot graph searches without leaving the console.",
+      "emptyDescription": "Enter a seed entity to load a graph and inspect its evidence-backed relationships.",
+      "controls": {
+        "seed": "Seed entity",
+        "seedPlaceholder": "Search a company, policy, commodity, or organization",
+        "seedType": "Seed type",
+        "seedTypeAny": "Any type",
+        "relations": "Relation types",
+        "relationsAny": "All relation types",
+        "depth": "Depth",
+        "maxNodes": "Max nodes"
+      },
+      "actions": {
+        "filters": "Filters",
+        "openExplorer": "Open explorer",
+        "reflow": "Reflow layout",
+        "centerNode": "Set as seed",
+        "openSearch": "Open search",
+        "openArticle": "Open article"
+      },
+      "meta": {
+        "scope": "Scope",
+        "scopeEmpty": "No seed selected",
+        "time": "Time",
+        "notRangeFiltered": "Not range-filtered",
+        "relationCount": "Relations",
+        "nodes": "Nodes",
+        "edges": "Edges",
+        "generatedAt": "Generated"
+      },
+      "details": {
+        "drawerTitle": "Graph details",
+        "empty": "Select a node or edge to inspect details.",
+        "degree": "Degree",
+        "nodeId": "Node ID",
+        "edgeId": "Edge ID",
+        "type": "Type",
+        "from": "From",
+        "to": "To",
+        "weight": "Weight",
+        "confidence": "Confidence",
+        "evidenceTitle": "Evidence",
+        "evidenceConfidence": "Evidence",
+        "untitledArticle": "Untitled article",
+        "noEvidence": "No evidence records were found for this edge.",
+        "properties": "Properties",
+        "noProperties": "No structured properties for this node."
+      },
+      "nodeTypes": {
+        "company": "Company",
+        "industry": "Industry",
+        "person": "Person",
+        "policy": "Policy",
+        "commodity": "Commodity",
+        "instrument": "Instrument",
+        "organization": "Organization"
+      },
+      "relations": {
+        "belongs_to_industry": "Belongs to industry",
+        "supplies": "Supplies",
+        "customer_of": "Customer of",
+        "competes_with": "Competes with",
+        "holds_position": "Holds position",
+        "affects_industry": "Affects industry",
+        "affects_company": "Affects company",
+        "upstream_of": "Upstream of",
+        "downstream_of": "Downstream of",
+        "has_ticker": "Has ticker"
+      }
     },
     "search": {
       "title": "Search",

@@ -29,3 +29,20 @@ query GetKnowledgeGraphSubgraph($input: KnowledgeGraphSubgraphInput!) {
   }
 }
 
+query KnowledgeGraphEdgeEvidence($edgeId: String!, $limit: Int) {
+  knowledgeGraphEdgeEvidence(edgeId: $edgeId, limit: $limit) {
+    id
+    confidence
+    extractorVersion
+    createdAt
+    evidence
+    article {
+      id
+      url
+      title
+      summary
+      language
+      crawlAt
+    }
+  }
+}
