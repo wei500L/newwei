@@ -2,6 +2,7 @@ export * from "./connection";
 export * from "./url-comparison";
 export * from "./models/raw-item";
 export * from "./models/processed-item";
+export * from "./models/news-event-clustering-failure";
 export * from "./models/item-read-model";
 export * from "./models/task-log";
 export * from "./models/crawl-result-content";

@@ -17,6 +17,7 @@ import {
 import {
   NewsExtractionPipelineModeModel,
   NewsExtractionProviderIdModel,
+  NewsEventClusteringModeModel,
 } from "../models/settings.model";
 
 @InputType()
@@ -475,6 +476,29 @@ export class UpdateNewsEventSettingsInput {
   @Field(() => Boolean)
   @IsBoolean()
   timelineEnabled!: boolean;
+
+  @Field(() => NewsEventClusteringModeModel, { nullable: true })
+  @IsOptional()
+  @IsEnum(NewsEventClusteringModeModel)
+  clusteringMode?: NewsEventClusteringModeModel;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(2)
+  @Max(100)
+  bertopicMinItemsPerGroup?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(2)
+  @Max(500)
+  bertopicMaxItemsPerRequest?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(2)
+  @Max(100)
+  bertopicMinTopicSize?: number;
 
   @Field(() => Boolean, { nullable: true })
   @IsOptional()

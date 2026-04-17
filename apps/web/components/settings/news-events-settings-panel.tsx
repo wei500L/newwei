@@ -4,18 +4,27 @@ import { gql, useMutation, useQuery } from "@apollo/client";
 import {
   Alert,
   Button,
+  Card,
+  Descriptions,
   Form,
   InputNumber,
+  Select,
   Space,
   Spin,
   Switch,
+  Table,
   Tag,
   Typography,
   message,
 } from "antd";
-import { useEffect, useMemo } from "react";
+import { useSession } from "next-auth/react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
+import { createApiClient } from "@/lib/api-client";
+import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
 import {
   TIMELINE_PRESET_VALUES,
@@ -30,6 +39,10 @@ interface NewsEventSettingsModel {
   enabled: boolean;
   ingestionEnabled: boolean;
   timelineEnabled: boolean;
+  clusteringMode: "vector" | "bertopic_primary";
+  bertopicMinItemsPerGroup: number;
+  bertopicMaxItemsPerRequest: number;
+  bertopicMinTopicSize: number;
   forceAuthoritativeMode: boolean;
   forceMinAuthoritativeSources: number;
   maxBatchSize: number;
@@ -65,6 +78,10 @@ interface FormValues {
   enabled: boolean;
   ingestionEnabled: boolean;
   timelineEnabled: boolean;
+  clusteringMode: "vector" | "bertopic_primary";
+  bertopicMinItemsPerGroup: number;
+  bertopicMaxItemsPerRequest: number;
+  bertopicMinTopicSize: number;
   forceAuthoritativeMode: boolean;
   forceMinAuthoritativeSources: number;
   maxBatchSize: number;
@@ -88,12 +105,48 @@ interface FormValues {
   cacheTtlSeconds: number;
 }
 
+interface ModelServiceSettingsResponse {
+  enabled: boolean;
+  baseUrl: string | null;
+  hasToken: boolean;
+}
+
+interface ClusteringFailureOverview {
+  pendingCount: number;
+  resolvedCount: number;
+  ignoredCount: number;
+  latestFailureAt: string | null;
+}
+
+interface ClusteringFailureRow {
+  groupId: string;
+  status: "pending" | "resolved" | "ignored";
+  clusteringMode: string;
+  failureReason: string;
+  failureMessage: string | null;
+  language: string | null;
+  embeddingModel: string | null;
+  itemCount: number;
+  sampleTitles: string[];
+  attemptCount: number;
+  lastAttemptAt: string | null;
+  lastError: string | null;
+  resolvedAt: string | null;
+  resolutionMode: string | null;
+  resolvedEventIds: string[];
+  createdAt: string;
+}
+
 const NEWS_EVENT_SETTINGS_QUERY = gql`
   query NewsEventSettings {
     newsEventSettings {
       enabled
       ingestionEnabled
       timelineEnabled
+      clusteringMode
+      bertopicMinItemsPerGroup
+      bertopicMaxItemsPerRequest
+      bertopicMinTopicSize
       forceAuthoritativeMode
       forceMinAuthoritativeSources
       maxBatchSize
@@ -125,6 +178,10 @@ const UPDATE_NEWS_EVENT_SETTINGS_MUTATION = gql`
       enabled
       ingestionEnabled
       timelineEnabled
+      clusteringMode
+      bertopicMinItemsPerGroup
+      bertopicMaxItemsPerRequest
+      bertopicMinTopicSize
       forceAuthoritativeMode
       forceMinAuthoritativeSources
       maxBatchSize
@@ -152,8 +209,21 @@ const UPDATE_NEWS_EVENT_SETTINGS_MUTATION = gql`
 
 export function NewsEventsSettingsPanel() {
   const { t } = useTranslation();
+  const { data: session } = useSession();
   const [form] = Form.useForm<FormValues>();
   const [messageApi, contextHolder] = message.useMessage();
+  const [modelServiceSettings, setModelServiceSettings] =
+    useState<ModelServiceSettingsResponse | null>(null);
+  const [failureOverview, setFailureOverview] =
+    useState<ClusteringFailureOverview | null>(null);
+  const [failureRows, setFailureRows] = useState<ClusteringFailureRow[]>([]);
+  const [failuresLoading, setFailuresLoading] = useState(false);
+  const [actionGroupId, setActionGroupId] = useState<string | null>(null);
+
+  const apiClient = useMemo(
+    () => createApiClient({ accessToken: session?.accessToken }),
+    [session?.accessToken],
+  );
 
   const { data, loading, refetch, error } = useQuery<QueryData>(
     NEWS_EVENT_SETTINGS_QUERY,
@@ -165,6 +235,7 @@ export function NewsEventsSettingsPanel() {
   const [updateSettings, { loading: saving }] = useMutation<MutationData>(
     UPDATE_NEWS_EVENT_SETTINGS_MUTATION,
   );
+  const watchedClusteringMode = Form.useWatch("clusteringMode", form);
   const watchedLowConfidenceThreshold = Form.useWatch(
     "timelineLowConfidenceThreshold",
     form,
@@ -191,6 +262,44 @@ export function NewsEventsSettingsPanel() {
     "timelinePresetCustomDistanceThreshold",
     form,
   );
+
+  const loadClusteringAdminState = useCallback(async () => {
+    setFailuresLoading(true);
+    try {
+      const [modelServiceResponse, overviewResponse, failuresResponse] =
+        await Promise.all([
+          apiClient.get<ModelServiceSettingsResponse>("system-settings/model-service"),
+          apiClient.get<ClusteringFailureOverview>(
+            "system-settings/news-events/clustering/overview",
+          ),
+          apiClient.get<ClusteringFailureRow[]>(
+            "system-settings/news-events/clustering/failures",
+            {
+              params: { limit: 20 },
+            },
+          ),
+        ]);
+      setModelServiceSettings(modelServiceResponse.data ?? null);
+      setFailureOverview(overviewResponse.data ?? null);
+      setFailureRows(
+        Array.isArray(failuresResponse.data) ? failuresResponse.data : [],
+      );
+    } catch (error) {
+      captureClientError("Failed to load news event clustering admin state", error);
+      messageApi.error(
+        extractApiError(error).message ||
+          t("settings.newsEvents.messages.clusteringAdminLoadFailed", {
+            defaultValue: "Failed to load BERTopic clustering diagnostics.",
+          }),
+      );
+    } finally {
+      setFailuresLoading(false);
+    }
+  }, [apiClient, messageApi, t]);
+
+  useEffect(() => {
+    void loadClusteringAdminState();
+  }, [loadClusteringAdminState]);
 
   const applyTimelinePreset = (preset: TimelinePresetKey) => {
     form.setFieldsValue(TIMELINE_PRESET_VALUES[preset]);
@@ -298,6 +407,7 @@ export function NewsEventsSettingsPanel() {
     try {
       await updateSettings({ variables: { input: values } });
       await refetch();
+      await loadClusteringAdminState();
       messageApi.success(
         t("settings.newsEvents.messages.saved", { defaultValue: "Saved" }),
       );
@@ -310,6 +420,169 @@ export function NewsEventsSettingsPanel() {
       );
     }
   };
+
+  const modelServiceReady = Boolean(
+    modelServiceSettings?.enabled &&
+      modelServiceSettings?.baseUrl &&
+      modelServiceSettings?.hasToken,
+  );
+
+  const handleVectorBackfill = useCallback(
+    async (groupId: string) => {
+      setActionGroupId(groupId);
+      try {
+        await apiClient.post(
+          `system-settings/news-events/clustering/failures/${groupId}/vector-backfill`,
+        );
+        messageApi.success(
+          t("settings.newsEvents.messages.vectorBackfillDone", {
+            defaultValue: "Vector backfill completed.",
+          }),
+        );
+        await loadClusteringAdminState();
+      } catch (error) {
+        captureClientError("Failed to run news event vector backfill", error);
+        messageApi.error(
+          extractApiError(error).message ||
+            t("settings.newsEvents.messages.vectorBackfillFailed", {
+              defaultValue: "Failed to run vector backfill.",
+            }),
+        );
+      } finally {
+        setActionGroupId((current) => (current === groupId ? null : current));
+      }
+    },
+    [apiClient, loadClusteringAdminState, messageApi, t],
+  );
+
+  const handleIgnoreFailure = useCallback(
+    async (groupId: string) => {
+      setActionGroupId(groupId);
+      try {
+        await apiClient.post(
+          `system-settings/news-events/clustering/failures/${groupId}/ignore`,
+        );
+        messageApi.success(
+          t("settings.newsEvents.messages.failureIgnored", {
+            defaultValue: "Failure group ignored.",
+          }),
+        );
+        await loadClusteringAdminState();
+      } catch (error) {
+        captureClientError("Failed to ignore clustering failure group", error);
+        messageApi.error(
+          extractApiError(error).message ||
+            t("settings.newsEvents.messages.failureIgnoreFailed", {
+              defaultValue: "Failed to ignore failure group.",
+            }),
+        );
+      } finally {
+        setActionGroupId((current) => (current === groupId ? null : current));
+      }
+    },
+    [apiClient, loadClusteringAdminState, messageApi, t],
+  );
+
+  const failureColumns = useMemo(
+    () => [
+      {
+        title: t("settings.newsEvents.clusteringQueue.columns.group", {
+          defaultValue: "Group",
+        }),
+        dataIndex: "groupId",
+        key: "groupId",
+        render: (value: string, row: ClusteringFailureRow) => (
+          <Space direction="vertical" size={2}>
+            <Typography.Text strong>{value}</Typography.Text>
+            <Typography.Text type="secondary">
+              {row.failureReason}
+            </Typography.Text>
+          </Space>
+        ),
+      },
+      {
+        title: t("settings.newsEvents.clusteringQueue.columns.status", {
+          defaultValue: "Status",
+        }),
+        key: "status",
+        render: (_: unknown, row: ClusteringFailureRow) => (
+          <Space wrap>
+            <Tag
+              color={
+                row.status === "pending"
+                  ? "warning"
+                  : row.status === "resolved"
+                    ? "success"
+                    : "default"
+              }
+            >
+              {row.status}
+            </Tag>
+            {row.embeddingModel ? <Tag>{row.embeddingModel}</Tag> : null}
+            {row.language ? <Tag>{row.language}</Tag> : null}
+          </Space>
+        ),
+      },
+      {
+        title: t("settings.newsEvents.clusteringQueue.columns.items", {
+          defaultValue: "Items",
+        }),
+        dataIndex: "itemCount",
+        key: "itemCount",
+        width: 90,
+      },
+      {
+        title: t("settings.newsEvents.clusteringQueue.columns.samples", {
+          defaultValue: "Samples",
+        }),
+        key: "sampleTitles",
+        render: (_: unknown, row: ClusteringFailureRow) =>
+          row.sampleTitles.length > 0 ? (
+            <Space direction="vertical" size={2}>
+              {row.sampleTitles.slice(0, 3).map((title) => (
+                <Typography.Text key={`${row.groupId}:${title}`} ellipsis>
+                  {title}
+                </Typography.Text>
+              ))}
+            </Space>
+          ) : (
+            <Typography.Text type="secondary">-</Typography.Text>
+          ),
+      },
+      {
+        title: t("settings.newsEvents.clusteringQueue.columns.actions", {
+          defaultValue: "Actions",
+        }),
+        key: "actions",
+        render: (_: unknown, row: ClusteringFailureRow) => (
+          <Space wrap>
+            <Button
+              size="small"
+              type="primary"
+              disabled={row.status !== "pending"}
+              loading={actionGroupId === row.groupId}
+              onClick={() => void handleVectorBackfill(row.groupId)}
+            >
+              {t("settings.newsEvents.clusteringQueue.actions.vectorBackfill", {
+                defaultValue: "Vector backfill",
+              })}
+            </Button>
+            <Button
+              size="small"
+              disabled={row.status !== "pending"}
+              loading={actionGroupId === row.groupId}
+              onClick={() => void handleIgnoreFailure(row.groupId)}
+            >
+              {t("settings.newsEvents.clusteringQueue.actions.ignore", {
+                defaultValue: "Ignore",
+              })}
+            </Button>
+          </Space>
+        ),
+      },
+    ],
+    [actionGroupId, handleIgnoreFailure, handleVectorBackfill, t],
+  );
 
   if (loading && !data?.newsEventSettings) {
     return (
@@ -356,6 +629,12 @@ export function NewsEventsSettingsPanel() {
         />
       ) : null}
 
+      <Typography.Title level={5} style={{ marginTop: 0 }}>
+        {t("settings.newsEvents.sections.clustering", {
+          defaultValue: "Clustering",
+        })}
+      </Typography.Title>
+
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
           label={t("settings.newsEvents.fields.enabled", {
@@ -366,6 +645,154 @@ export function NewsEventsSettingsPanel() {
         >
           <Switch />
         </Form.Item>
+
+        <Form.Item
+          label={t("settings.newsEvents.fields.clusteringMode", {
+            defaultValue: "Clustering mode",
+          })}
+          name="clusteringMode"
+          extra={t("settings.newsEvents.hints.clusteringMode", {
+            defaultValue:
+              "Use vector assignment only, or run BERTopic first and queue hard failures for manual backfill.",
+          })}
+          rules={[
+            {
+              required: true,
+              message: t("settings.newsEvents.validation.required", {
+                defaultValue: "Required",
+              }),
+            },
+          ]}
+        >
+          <Select
+            options={[
+              {
+                value: "vector",
+                label: t("settings.newsEvents.options.clusteringMode.vector", {
+                  defaultValue: "Vector only",
+                }),
+              },
+              {
+                value: "bertopic_primary",
+                label: t(
+                  "settings.newsEvents.options.clusteringMode.bertopicPrimary",
+                  {
+                    defaultValue: "BERTopic primary",
+                  },
+                ),
+              },
+            ]}
+          />
+        </Form.Item>
+
+        {watchedClusteringMode === "bertopic_primary" ? (
+          <>
+            <Alert
+              type={modelServiceReady ? "info" : "warning"}
+              showIcon
+              style={{ marginBottom: "1rem" }}
+              message={t("settings.newsEvents.clusteringMode.notice.title", {
+                defaultValue: "BERTopic execution path",
+              })}
+              description={
+                <Space direction="vertical" size={4}>
+                  <Typography.Text>
+                    {modelServiceReady
+                      ? t(
+                          "settings.newsEvents.clusteringMode.notice.ready",
+                          {
+                            defaultValue:
+                              "Model service credentials are available. BERTopic will run before vector fallback.",
+                          },
+                        )
+                      : t(
+                          "settings.newsEvents.clusteringMode.notice.notReady",
+                          {
+                            defaultValue:
+                              "Model service is not fully configured. BERTopic requests will fail and affected groups will enter the admin review queue.",
+                          },
+                        )}
+                  </Typography.Text>
+                  <Link
+                    href={buildAdminSettingsHref({
+                      page: "ai",
+                      panel: "model-service",
+                    })}
+                  >
+                    {t("settings.newsEvents.clusteringMode.actions.modelService", {
+                      defaultValue: "Open model service settings",
+                    })}
+                  </Link>
+                </Space>
+              }
+            />
+
+            <Space style={{ width: "100%" }} size="middle" direction="vertical">
+              <Form.Item
+                label={t("settings.newsEvents.fields.bertopicMinItemsPerGroup", {
+                  defaultValue: "BERTopic min items per group",
+                })}
+                name="bertopicMinItemsPerGroup"
+                extra={t("settings.newsEvents.hints.bertopicMinItemsPerGroup", {
+                  defaultValue:
+                    "Language + embedding-model groups below this size skip BERTopic and use vector assignment directly.",
+                })}
+                rules={[
+                  {
+                    required: true,
+                    message: t("settings.newsEvents.validation.required", {
+                      defaultValue: "Required",
+                    }),
+                  },
+                ]}
+              >
+                <InputNumber min={2} max={100} step={1} style={{ width: "100%" }} />
+              </Form.Item>
+
+              <Form.Item
+                label={t("settings.newsEvents.fields.bertopicMaxItemsPerRequest", {
+                  defaultValue: "BERTopic max items per request",
+                })}
+                name="bertopicMaxItemsPerRequest"
+                extra={t("settings.newsEvents.hints.bertopicMaxItemsPerRequest", {
+                  defaultValue:
+                    "Upper bound for each BERTopic request to control CPU and memory pressure on the model service.",
+                })}
+                rules={[
+                  {
+                    required: true,
+                    message: t("settings.newsEvents.validation.required", {
+                      defaultValue: "Required",
+                    }),
+                  },
+                ]}
+              >
+                <InputNumber min={2} max={500} step={1} style={{ width: "100%" }} />
+              </Form.Item>
+
+              <Form.Item
+                label={t("settings.newsEvents.fields.bertopicMinTopicSize", {
+                  defaultValue: "BERTopic min topic size",
+                })}
+                name="bertopicMinTopicSize"
+                extra={t("settings.newsEvents.hints.bertopicMinTopicSize", {
+                  defaultValue:
+                    "Minimum local cluster size passed through to BERTopic/HDBSCAN before a topic is kept.",
+                })}
+                rules={[
+                  {
+                    required: true,
+                    message: t("settings.newsEvents.validation.required", {
+                      defaultValue: "Required",
+                    }),
+                  },
+                ]}
+              >
+                <InputNumber min={2} max={100} step={1} style={{ width: "100%" }} />
+              </Form.Item>
+            </Space>
+          </>
+        ) : null}
 
         <Form.Item
           label={t("settings.newsEvents.fields.ingestionEnabled", {
@@ -967,6 +1394,84 @@ export function NewsEventsSettingsPanel() {
           </Button>
         </Form.Item>
       </Form>
+
+      <Typography.Title level={5} style={{ marginTop: "1.5rem" }}>
+        {t("settings.newsEvents.sections.clusteringQueue", {
+          defaultValue: "BERTopic failure queue",
+        })}
+      </Typography.Title>
+
+      <Card>
+        <Space direction="vertical" size="middle" style={{ display: "flex" }}>
+          <Descriptions
+            size="small"
+            column={2}
+            items={[
+              {
+                key: "pendingCount",
+                label: t("settings.newsEvents.clusteringQueue.overview.pending", {
+                  defaultValue: "Pending",
+                }),
+                children: failureOverview?.pendingCount ?? 0,
+              },
+              {
+                key: "resolvedCount",
+                label: t(
+                  "settings.newsEvents.clusteringQueue.overview.resolved",
+                  {
+                    defaultValue: "Resolved",
+                  },
+                ),
+                children: failureOverview?.resolvedCount ?? 0,
+              },
+              {
+                key: "ignoredCount",
+                label: t("settings.newsEvents.clusteringQueue.overview.ignored", {
+                  defaultValue: "Ignored",
+                }),
+                children: failureOverview?.ignoredCount ?? 0,
+              },
+              {
+                key: "latestFailureAt",
+                label: t("settings.newsEvents.clusteringQueue.overview.latest", {
+                  defaultValue: "Latest failure",
+                }),
+                children: failureOverview?.latestFailureAt ? (
+                  new Date(failureOverview.latestFailureAt).toLocaleString()
+                ) : (
+                  <Typography.Text type="secondary">-</Typography.Text>
+                ),
+              },
+            ]}
+          />
+
+          <Alert
+            type="info"
+            showIcon
+            message={t("settings.newsEvents.clusteringQueue.notice.title", {
+              defaultValue: "Manual recovery path",
+            })}
+            description={t("settings.newsEvents.clusteringQueue.notice.body", {
+              defaultValue:
+                "Only hard BERTopic request failures enter this queue. Small groups, missing embeddings, and outliers still fall back to the standard vector assignment automatically.",
+            })}
+          />
+
+          <Table<ClusteringFailureRow>
+            rowKey="groupId"
+            loading={failuresLoading}
+            columns={failureColumns}
+            dataSource={failureRows}
+            pagination={false}
+            scroll={{ x: 920 }}
+            locale={{
+              emptyText: t("settings.newsEvents.clusteringQueue.empty", {
+                defaultValue: "No queued BERTopic failures.",
+              }),
+            }}
+          />
+        </Space>
+      </Card>
     </>
   );
 }

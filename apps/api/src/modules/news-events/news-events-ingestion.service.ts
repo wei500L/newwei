@@ -10,6 +10,10 @@ import { PrismaService } from "../config/prisma.service";
 import { buildNewsSignalFromProcessedArticle } from "../news-signals/news-signal";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 
+import {
+  NewsEventsBertopicService,
+  type NewsEventIngestionBatchEntry,
+} from "./news-events-bertopic.service";
 import { NewsEventsSettingsService } from "./news-events-settings.service";
 import { NewsEventsService } from "./news-events.service";
 
@@ -26,6 +30,7 @@ export class NewsEventsIngestionService {
     private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
     private readonly settings: NewsEventsSettingsService,
     private readonly events: NewsEventsService,
+    private readonly bertopic: NewsEventsBertopicService,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
@@ -147,7 +152,7 @@ export class NewsEventsIngestionService {
       },
       orderBy: [{ processedAt: "asc" }, { articleId: "asc" }],
       take: settings.maxBatchSize
-    });
+    }) as NewsEventIngestionBatchEntry[];
 
     if (batch.length === 0) {
       return;
@@ -194,6 +199,25 @@ export class NewsEventsIngestionService {
 
     let processedArticles = 0;
     let assigned = 0;
+    let queuedForManual = 0;
+
+    if (settings.clusteringMode === "bertopic_primary") {
+      const result = await this.bertopic.processBatch({
+        orgId,
+        batch,
+        processedItemResultById,
+        settings,
+      });
+      processedArticles = result.processedArticles;
+      assigned = result.assigned;
+      queuedForManual = result.queuedForManual;
+      await this.updateStateToLastBatchEntry(orgId, batch);
+      logger.info(
+        { orgId, processedArticles, assigned, queuedForManual },
+        "News event ingestion completed",
+      );
+      return;
+    }
 
     for (const entry of batch) {
       const signal = buildNewsSignalFromProcessedArticle({
@@ -237,6 +261,26 @@ export class NewsEventsIngestionService {
       });
     }
 
-    logger.info({ orgId, processedArticles, assigned }, "News event ingestion completed");
+    logger.info(
+      { orgId, processedArticles, assigned, queuedForManual },
+      "News event ingestion completed",
+    );
+  }
+
+  private async updateStateToLastBatchEntry(
+    orgId: string,
+    batch: NewsEventIngestionBatchEntry[],
+  ) {
+    const last = batch[batch.length - 1];
+    if (!last) {
+      return;
+    }
+    await this.prisma.newsEventIngestionState.update({
+      where: { orgId },
+      data: {
+        lastProcessedAt: last.processedAt,
+        lastProcessedArticleId: last.articleId,
+      },
+    });
   }
 }

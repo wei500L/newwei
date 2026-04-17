@@ -664,6 +664,71 @@ export class NewsEventsService {
     });
   }
 
+  async assignNewsSignalToSpecificEvent(
+    orgId: string,
+    eventId: string,
+    signal: NewsSignal,
+    options?: {
+      similarity?: number | null;
+      assignedBy?: NewsEventAssignmentMethod;
+    },
+  ) {
+    const existing = await this.prisma.newsEventItem.findUnique({
+      where: {
+        orgId_processedArticleId: {
+          orgId,
+          processedArticleId: signal.processedArticleId,
+        },
+      },
+      select: { id: true, eventId: true },
+    });
+    if (existing) {
+      return { eventId: existing.eventId, created: false };
+    }
+
+    const timestamp = this.clampFutureDate(signal.timestamp);
+    return this.prisma.runInTransaction(async (tx) => {
+      try {
+        await tx.newsEventItem.create({
+          data: {
+            orgId,
+            eventId,
+            processedArticleId: signal.processedArticleId,
+            processedItemId: this.normalizeOptionalString(
+              signal.processedItemId,
+            ),
+            similarity: options?.similarity ?? null,
+            assignedBy: options?.assignedBy ?? NewsEventAssignmentMethod.manual,
+          },
+        });
+      } catch (error) {
+        if (this.isUniqueConstraintError(error)) {
+          return { eventId, created: false };
+        }
+        throw error;
+      }
+
+      const current = await tx.newsEvent.findUnique({
+        where: { id: eventId },
+        select: { startAt: true, lastAt: true },
+      });
+
+      const startAt = current
+        ? this.minDate(this.clampFutureDate(current.startAt), timestamp)
+        : timestamp;
+      const lastAt = current
+        ? this.maxDate(this.clampFutureDate(current.lastAt), timestamp)
+        : timestamp;
+
+      await tx.newsEvent.update({
+        where: { id: eventId },
+        data: { startAt, lastAt },
+      });
+
+      return { eventId, created: true };
+    });
+  }
+
   private async pickEventForSignal(
     orgId: string,
     signal: NewsSignal,

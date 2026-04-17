@@ -47,6 +47,31 @@ export interface ModelServiceForecastHoldoutLastResponse {
   diagnostics: Record<string, unknown>;
 }
 
+export interface ModelServiceTopicClusteringDocument {
+  id: string;
+  text: string;
+  embedding: number[];
+}
+
+export interface ModelServiceTopicClusteringRequest {
+  documents: ModelServiceTopicClusteringDocument[];
+  minTopicSize?: number;
+  requestId?: string;
+}
+
+export interface ModelServiceTopicCluster {
+  topicId: number;
+  itemIds: string[];
+  representativeId: string;
+  keywords: string[];
+}
+
+export interface ModelServiceTopicClusteringResponse {
+  clusters: ModelServiceTopicCluster[];
+  outlierIds: string[];
+  diagnostics: Record<string, unknown>;
+}
+
 @Injectable()
 export class ModelServiceClient {
   private consecutiveFailures = 0;
@@ -192,6 +217,131 @@ export class ModelServiceClient {
       }
     }
     return null;
+  }
+
+  async clusterTopicsBestEffort(
+    input: ModelServiceTopicClusteringRequest,
+  ): Promise<ModelServiceTopicClusteringResponse | null> {
+    const cfg = await this.settings.getEffectiveConfig();
+    this.refreshFingerprint(cfg);
+    if (!cfg.enabled) {
+      return null;
+    }
+    if (!cfg.baseUrl) {
+      this.warnIncompleteOnce({
+        baseUrl: cfg.baseUrl,
+        tokenConfigured: Boolean(cfg.internalToken),
+      });
+      return null;
+    }
+    if (!cfg.internalToken) {
+      this.warnIncompleteOnce({ baseUrl: cfg.baseUrl, tokenConfigured: false });
+      return null;
+    }
+    if (this.isTemporarilyUnavailable()) {
+      return null;
+    }
+
+    const url = `${this.normalizeBaseUrl(cfg.baseUrl)}/v1/topic-model/bertopic/cluster`;
+    const payload = {
+      documents: input.documents,
+      min_topic_size: input.minTopicSize,
+      request_id: input.requestId,
+    };
+
+    const maxRetries = Math.min(Math.max(Math.trunc(cfg.maxRetries), 0), 5);
+    const attempts = maxRetries + 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const response = await firstValueFrom(
+          this.http.post<ModelServiceTopicClusteringResponse>(url, payload, {
+            headers: { "x-internal-token": cfg.internalToken },
+            timeout: cfg.timeoutMs,
+          }),
+        );
+        this.markAvailable();
+        return response.data;
+      } catch (error) {
+        const decision = this.classifyError(error);
+        if (decision === "unauthorized") {
+          this.markUnavailable(error);
+          return null;
+        }
+        if (decision === "non_retryable") {
+          return null;
+        }
+        if (attempt >= attempts - 1) {
+          this.markUnavailable(error);
+          return null;
+        }
+        const delayMs = this.computeRetryDelayMs(attempt);
+        await this.delay(delayMs);
+      }
+    }
+    return null;
+  }
+
+  async clusterTopicsOrThrow(
+    input: ModelServiceTopicClusteringRequest,
+  ): Promise<ModelServiceTopicClusteringResponse> {
+    const cfg = await this.settings.getEffectiveConfig();
+    this.refreshFingerprint(cfg);
+    if (!cfg.enabled) {
+      throw new Error("Model service is disabled");
+    }
+    if (!cfg.baseUrl) {
+      this.warnIncompleteOnce({
+        baseUrl: cfg.baseUrl,
+        tokenConfigured: Boolean(cfg.internalToken),
+      });
+      throw new Error("Model service baseUrl is not configured");
+    }
+    if (!cfg.internalToken) {
+      this.warnIncompleteOnce({ baseUrl: cfg.baseUrl, tokenConfigured: false });
+      throw new Error("Model service internal token is not configured");
+    }
+    if (this.isTemporarilyUnavailable()) {
+      throw new Error("Model service is temporarily unavailable");
+    }
+
+    const url = `${this.normalizeBaseUrl(cfg.baseUrl)}/v1/topic-model/bertopic/cluster`;
+    const payload = {
+      documents: input.documents,
+      min_topic_size: input.minTopicSize,
+      request_id: input.requestId,
+    };
+
+    const maxRetries = Math.min(Math.max(Math.trunc(cfg.maxRetries), 0), 5);
+    const attempts = maxRetries + 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const response = await firstValueFrom(
+          this.http.post<ModelServiceTopicClusteringResponse>(url, payload, {
+            headers: { "x-internal-token": cfg.internalToken },
+            timeout: cfg.timeoutMs,
+          }),
+        );
+        this.markAvailable();
+        return response.data;
+      } catch (error) {
+        const decision = this.classifyError(error);
+        if (decision === "unauthorized") {
+          this.markUnavailable(error);
+          throw new Error("Model service request unauthorized");
+        }
+        if (decision === "non_retryable") {
+          throw new Error(this.formatError("Model service request failed", error));
+        }
+        if (attempt >= attempts - 1) {
+          this.markUnavailable(error);
+          throw new Error(this.formatError("Model service request failed", error));
+        }
+        const delayMs = this.computeRetryDelayMs(attempt);
+        await this.delay(delayMs);
+      }
+    }
+
+    throw new Error("Model service request failed");
   }
 
   private normalizeBaseUrl(baseUrl: string) {

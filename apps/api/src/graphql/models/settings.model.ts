@@ -6,6 +6,7 @@ import {
   ObjectType,
   registerEnumType,
 } from "@nestjs/graphql";
+import { NEWS_EVENT_CLUSTERING_MODES } from "../../modules/news-events/news-events-settings.service";
 
 export enum NewsEventSourcePolicyRevisionOperation {
   update = "update",
@@ -27,12 +28,21 @@ export enum NewsExtractionProviderIdModel {
   external_http = "external_http",
 }
 
+export enum NewsEventClusteringModeModel {
+  vector = "vector",
+  bertopic_primary = "bertopic_primary",
+}
+
 registerEnumType(NewsExtractionPipelineModeModel, {
   name: "NewsExtractionPipelineMode",
 });
 
 registerEnumType(NewsExtractionProviderIdModel, {
   name: "NewsExtractionProviderId",
+});
+
+registerEnumType(NewsEventClusteringModeModel, {
+  name: "NewsEventClusteringMode",
 });
 
 @ObjectType()
@@ -321,6 +331,18 @@ export class NewsEventSettingsModel {
 
   @Field(() => Boolean)
   timelineEnabled!: boolean;
+
+  @Field(() => NewsEventClusteringModeModel)
+  clusteringMode!: (typeof NEWS_EVENT_CLUSTERING_MODES)[number];
+
+  @Field(() => Int)
+  bertopicMinItemsPerGroup!: number;
+
+  @Field(() => Int)
+  bertopicMaxItemsPerRequest!: number;
+
+  @Field(() => Int)
+  bertopicMinTopicSize!: number;
 
   @Field(() => Boolean)
   forceAuthoritativeMode!: boolean;

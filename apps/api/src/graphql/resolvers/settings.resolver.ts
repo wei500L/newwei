@@ -256,6 +256,13 @@ export class SettingsResolver {
       enabled: input.enabled,
       ingestionEnabled: input.ingestionEnabled,
       timelineEnabled: input.timelineEnabled,
+      clusteringMode: input.clusteringMode ?? current.clusteringMode,
+      bertopicMinItemsPerGroup:
+        input.bertopicMinItemsPerGroup ?? current.bertopicMinItemsPerGroup,
+      bertopicMaxItemsPerRequest:
+        input.bertopicMaxItemsPerRequest ?? current.bertopicMaxItemsPerRequest,
+      bertopicMinTopicSize:
+        input.bertopicMinTopicSize ?? current.bertopicMinTopicSize,
       forceAuthoritativeMode:
         input.forceAuthoritativeMode ?? current.forceAuthoritativeMode,
       forceMinAuthoritativeSources:

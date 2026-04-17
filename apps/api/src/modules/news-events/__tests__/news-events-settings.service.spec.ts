@@ -53,6 +53,10 @@ describe("NewsEventsSettingsService", () => {
     });
     expect(settings).toEqual(
       expect.objectContaining({
+        clusteringMode: "vector",
+        bertopicMinItemsPerGroup: 8,
+        bertopicMaxItemsPerRequest: 64,
+        bertopicMinTopicSize: 4,
         classificationGateEnabled: true,
         categoryConflictReject: true,
         categorySoftPenalty: 0.15,
@@ -75,6 +79,8 @@ describe("NewsEventsSettingsService", () => {
         enabled: true,
         ingestionEnabled: true,
         timelineEnabled: true,
+        clusteringMode: "bertopic_primary",
+        bertopicMinItemsPerGroup: 12,
         maxBatchSize: 120,
         backfillDays: 14,
         lookbackDays: 10,
@@ -92,6 +98,10 @@ describe("NewsEventsSettingsService", () => {
         enabled: true,
         ingestionEnabled: true,
         timelineEnabled: true,
+        clusteringMode: "bertopic_primary",
+        bertopicMinItemsPerGroup: 12,
+        bertopicMaxItemsPerRequest: 64,
+        bertopicMinTopicSize: 4,
         maxBatchSize: 120,
         backfillDays: 14,
         lookbackDays: 10,
@@ -113,6 +123,10 @@ describe("NewsEventsSettingsService", () => {
       enabled: true,
       ingestionEnabled: true,
       timelineEnabled: true,
+      clusteringMode: "bertopic_primary",
+      bertopicMinItemsPerGroup: 1,
+      bertopicMaxItemsPerRequest: 999,
+      bertopicMinTopicSize: 1,
       forceAuthoritativeMode: true,
       forceMinAuthoritativeSources: 9,
       maxBatchSize: 999,
@@ -138,6 +152,10 @@ describe("NewsEventsSettingsService", () => {
 
     expect(updated).toEqual(
       expect.objectContaining({
+        clusteringMode: "bertopic_primary",
+        bertopicMinItemsPerGroup: 2,
+        bertopicMaxItemsPerRequest: 500,
+        bertopicMinTopicSize: 2,
         forceMinAuthoritativeSources: 5,
         maxBatchSize: 500,
         backfillDays: 1,
