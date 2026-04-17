@@ -2817,6 +2817,9 @@
       "news-indicator": {
         "description": "Manage indicator matching, thresholds, and associations."
       },
+      "news-extraction": {
+        "description": "Control staged cleaning, quality gates, and downstream enrichment."
+      },
       "news-dedupe": {
         "description": "Adjust dedupe windows, similarity rules, and fallbacks."
       },
@@ -4439,11 +4442,21 @@
     "newsPrompts": {
       "saved": "Saved",
       "saveFailed": "Failed to save",
-      "description": "News prompts description",
+      "description": "Manage the prompt templates used for cleaning and staged news extraction.",
+      "cleaningTitle": "Cleaning prompts",
+      "entityTitle": "Entity extraction prompts",
+      "sentimentTitle": "Sentiment prompts",
+      "kgTitle": "Knowledge graph prompts",
       "fields": {
         "version": "Version",
         "systemTemplate": "System template",
-        "userTemplate": "User template"
+        "userTemplate": "User template",
+        "entitySystemTemplate": "Entity system template",
+        "entityUserTemplate": "Entity user template",
+        "sentimentSystemTemplate": "Sentiment system template",
+        "sentimentUserTemplate": "Sentiment user template",
+        "kgSystemTemplate": "Knowledge graph system template",
+        "kgUserTemplate": "Knowledge graph user template"
       },
       "validation": {
         "version": "Version is required",
@@ -4458,6 +4471,36 @@
       "estimatedTokens": "Estimated tokens: {{count}}",
       "estimatedTotalTokens": "Estimated total tokens: {{count}}",
       "placeholdersTitle": "Placeholders title"
+    },
+    "newsExtraction": {
+      "saved": "News extraction settings saved.",
+      "saveFailed": "Failed to save news extraction settings.",
+      "description": "Configure staged article cleaning, low-cost quality gates, and downstream enrichment stages.",
+      "pipelineTitle": "Pipeline mode",
+      "preflightTitle": "Preflight gate",
+      "postCleanTitle": "Post-clean gate",
+      "capabilitiesTitle": "Downstream enrichment",
+      "providersTitle": "Providers",
+      "pipelineModeLegacy": "Legacy single-pass",
+      "pipelineModeStaged": "Staged extraction",
+      "providersHint": "Provider routing is stage-specific. This rollout currently supports the built-in LLM provider.",
+      "fields": {
+        "enabled": "Enabled",
+        "pipelineMode": "Execution mode",
+        "rejectBotChallenge": "Reject bot challenge pages",
+        "rejectListLike": "Reject list-like pages",
+        "minWordCount": "Minimum word count",
+        "requireSummary": "Require summary",
+        "minQualityScore": "Minimum quality score",
+        "minCleanedChars": "Minimum cleaned characters",
+        "entities": "Entities",
+        "sentiment": "Sentiment",
+        "kg": "Knowledge graph relations",
+        "cleanProvider": "Clean provider",
+        "entitiesProvider": "Entity provider",
+        "sentimentProvider": "Sentiment provider",
+        "kgProvider": "Knowledge graph provider"
+      }
     },
     "llmGateway": {
       "description": "Manage OpenAI-compatible LLM gateway profiles. The active profile overrides runtime requests made by the API.",
@@ -5503,6 +5546,7 @@
       "newsEvents": "News events",
       "newsEventSourcePolicy": "News source policy",
       "newsIndicator": "News ↔ indicators",
+      "newsExtraction": "News extraction",
       "newsDedupe": "News dedupe",
       "newsClassification": "News classification",
       "newsPrompts": "News prompts",
@@ -8868,7 +8912,7 @@
       "metaTitle": "Metadata",
       "contextTitle": "Context",
       "contextEmpty": "No topics or entities.",
-      "payloadTitle": "Payload",
+      "payloadTitle": "Full text & JSON",
       "payloadEmpty": "No payload available.",
       "payloadProcessed": "Processed JSON",
       "payloadRaw": "Raw JSON",
@@ -8927,7 +8971,53 @@
         "llmCost": "LLM cost",
         "llmTokens": "LLM total tokens",
         "embeddingModel": "Embedding model",
-        "embeddingDims": "Embedding dims"
+        "embeddingDims": "Embedding dims",
+        "provider": "Provider",
+        "model": "Model",
+        "promptVersion": "Prompt version",
+        "reason": "Reason",
+        "tokens": "Tokens",
+        "promptTokens": "Prompt tokens",
+        "completionTokens": "Completion tokens",
+        "latency": "Latency",
+        "cost": "Cost"
+      },
+      "stageMetaTitle": "Stage execution",
+      "stages": {
+        "attention": "Some pipeline stages need attention",
+        "rawJson": "Raw stage metadata JSON",
+        "summary": {
+          "completed": "Completed",
+          "skipped": "Skipped",
+          "rejected": "Rejected",
+          "failed": "Failed"
+        },
+        "status": {
+          "completed": "Completed",
+          "skipped": "Skipped",
+          "rejected": "Rejected",
+          "failed": "Failed"
+        },
+        "labels": {
+          "preflight": "Preflight",
+          "clean": "Clean",
+          "qualityGate": "Quality gate",
+          "entities": "Entities",
+          "sentiment": "Sentiment",
+          "kg": "Knowledge graph",
+          "classify": "Classification",
+          "dedupe": "Dedupe"
+        },
+        "descriptions": {
+          "preflight": "Low-cost crawl quality screening before LLM cleaning.",
+          "clean": "Primary LLM cleanup and structured extraction pass.",
+          "qualityGate": "Post-clean gating based on quality score and minimum content.",
+          "entities": "Independent entity extraction from cleaned content.",
+          "sentiment": "Overall sentiment inference from cleaned content.",
+          "kg": "Knowledge graph relation extraction.",
+          "classify": "Taxonomy and content-type classification.",
+          "dedupe": "Summary-level duplicate detection."
+        }
       },
       "keyPointsMore": "+{{count}} more",
       "processedErrorTitle": "Processing failed",
@@ -9057,6 +9147,7 @@
     }
   },
   "reader": {
+    "theme": "Theme",
     "translation": {
       "title": "Translation",
       "enable": "Enable",
@@ -9072,7 +9163,17 @@
     },
     "back": "Back",
     "font": "Font",
+    "fontFamily": {
+      "sans": "Sans",
+      "serif": "Serif",
+      "mono": "Mono"
+    },
     "size": "Size",
+    "fontSize": {
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large"
+    },
     "languageNotice": "Original language: {{language}}",
     "coverCaption": "Cover image from {{source}}",
     "summary": "Summary",

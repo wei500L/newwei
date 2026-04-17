@@ -48,24 +48,18 @@ export function NewsExtractionSettingsPanel() {
     try {
       await updateSettings({ variables: { input: values } });
       await refetch();
-      messageApi.success(
-        t("settings.newsExtraction.saved", {
-          defaultValue: "News extraction settings saved.",
-        }),
-      );
+      messageApi.success(t("settings.newsExtraction.saved"));
     } catch (error) {
       captureClientError("Failed to save news extraction settings", error);
-      messageApi.error(
-        t("settings.newsExtraction.saveFailed", {
-          defaultValue: "Failed to save news extraction settings.",
-        }),
-      );
+      messageApi.error(t("settings.newsExtraction.saveFailed"));
     }
   };
 
   if (loading && !data?.newsExtractionSettings) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+      <div
+        style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}
+      >
         <Spin />
       </div>
     );
@@ -75,37 +69,26 @@ export function NewsExtractionSettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-        {t("settings.newsExtraction.description", {
-          defaultValue:
-            "Configure staged article cleaning, low-cost quality gates, and downstream enrichment stages.",
-        })}
+        {t("settings.newsExtraction.description")}
       </Typography.Paragraph>
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Card
           size="small"
-          title={t("settings.newsExtraction.pipelineTitle", {
-            defaultValue: "Pipeline mode",
-          })}
+          title={t("settings.newsExtraction.pipelineTitle")}
           style={{ marginBottom: 16 }}
         >
           <Form.Item
             name="pipelineMode"
-            label={t("settings.newsExtraction.fields.pipelineMode", {
-              defaultValue: "Execution mode",
-            })}
+            label={t("settings.newsExtraction.fields.pipelineMode")}
           >
             <Select
               options={[
                 {
-                  label: t("settings.newsExtraction.pipelineModeLegacy", {
-                    defaultValue: "Legacy single-pass",
-                  }),
+                  label: t("settings.newsExtraction.pipelineModeLegacy"),
                   value: "legacy",
                 },
                 {
-                  label: t("settings.newsExtraction.pipelineModeStaged", {
-                    defaultValue: "Staged extraction",
-                  }),
+                  label: t("settings.newsExtraction.pipelineModeStaged"),
                   value: "staged",
                 },
               ]}
@@ -115,35 +98,27 @@ export function NewsExtractionSettingsPanel() {
 
         <Card
           size="small"
-          title={t("settings.newsExtraction.preflightTitle", {
-            defaultValue: "Preflight gate",
-          })}
+          title={t("settings.newsExtraction.preflightTitle")}
           style={{ marginBottom: 16 }}
         >
           <Space size={24} wrap style={{ display: "flex", marginBottom: 16 }}>
             <Form.Item
               name={["preflightGate", "enabled"]}
-              label={t("settings.newsExtraction.fields.enabled", {
-                defaultValue: "Enabled",
-              })}
+              label={t("settings.newsExtraction.fields.enabled")}
               valuePropName="checked"
             >
               <Switch />
             </Form.Item>
             <Form.Item
               name={["preflightGate", "rejectBotChallenge"]}
-              label={t("settings.newsExtraction.fields.rejectBotChallenge", {
-                defaultValue: "Reject bot challenge pages",
-              })}
+              label={t("settings.newsExtraction.fields.rejectBotChallenge")}
               valuePropName="checked"
             >
               <Switch />
             </Form.Item>
             <Form.Item
               name={["preflightGate", "rejectListLike"]}
-              label={t("settings.newsExtraction.fields.rejectListLike", {
-                defaultValue: "Reject list-like pages",
-              })}
+              label={t("settings.newsExtraction.fields.rejectListLike")}
               valuePropName="checked"
             >
               <Switch />
@@ -151,9 +126,7 @@ export function NewsExtractionSettingsPanel() {
           </Space>
           <Form.Item
             name={["preflightGate", "minWordCount"]}
-            label={t("settings.newsExtraction.fields.minWordCount", {
-              defaultValue: "Minimum word count",
-            })}
+            label={t("settings.newsExtraction.fields.minWordCount")}
           >
             <InputNumber min={0} max={10000} style={{ width: "100%" }} />
           </Form.Item>
@@ -161,26 +134,20 @@ export function NewsExtractionSettingsPanel() {
 
         <Card
           size="small"
-          title={t("settings.newsExtraction.postCleanTitle", {
-            defaultValue: "Post-clean gate",
-          })}
+          title={t("settings.newsExtraction.postCleanTitle")}
           style={{ marginBottom: 16 }}
         >
           <Space size={24} wrap style={{ display: "flex", marginBottom: 16 }}>
             <Form.Item
               name={["postCleanGate", "enabled"]}
-              label={t("settings.newsExtraction.fields.enabled", {
-                defaultValue: "Enabled",
-              })}
+              label={t("settings.newsExtraction.fields.enabled")}
               valuePropName="checked"
             >
               <Switch />
             </Form.Item>
             <Form.Item
               name={["postCleanGate", "requireSummary"]}
-              label={t("settings.newsExtraction.fields.requireSummary", {
-                defaultValue: "Require summary",
-              })}
+              label={t("settings.newsExtraction.fields.requireSummary")}
               valuePropName="checked"
             >
               <Switch />
@@ -188,17 +155,18 @@ export function NewsExtractionSettingsPanel() {
           </Space>
           <Form.Item
             name={["postCleanGate", "minQualityScore"]}
-            label={t("settings.newsExtraction.fields.minQualityScore", {
-              defaultValue: "Minimum quality score",
-            })}
+            label={t("settings.newsExtraction.fields.minQualityScore")}
           >
-            <InputNumber min={0} max={1} step={0.05} style={{ width: "100%" }} />
+            <InputNumber
+              min={0}
+              max={1}
+              step={0.05}
+              style={{ width: "100%" }}
+            />
           </Form.Item>
           <Form.Item
             name={["postCleanGate", "minCleanedChars"]}
-            label={t("settings.newsExtraction.fields.minCleanedChars", {
-              defaultValue: "Minimum cleaned characters",
-            })}
+            label={t("settings.newsExtraction.fields.minCleanedChars")}
           >
             <InputNumber min={0} max={100000} style={{ width: "100%" }} />
           </Form.Item>
@@ -206,35 +174,27 @@ export function NewsExtractionSettingsPanel() {
 
         <Card
           size="small"
-          title={t("settings.newsExtraction.capabilitiesTitle", {
-            defaultValue: "Downstream enrichment",
-          })}
+          title={t("settings.newsExtraction.capabilitiesTitle")}
           style={{ marginBottom: 16 }}
         >
           <Space size={24} wrap style={{ display: "flex" }}>
             <Form.Item
               name={["capabilities", "entities"]}
-              label={t("settings.newsExtraction.fields.entities", {
-                defaultValue: "Entities",
-              })}
+              label={t("settings.newsExtraction.fields.entities")}
               valuePropName="checked"
             >
               <Switch />
             </Form.Item>
             <Form.Item
               name={["capabilities", "sentiment"]}
-              label={t("settings.newsExtraction.fields.sentiment", {
-                defaultValue: "Sentiment",
-              })}
+              label={t("settings.newsExtraction.fields.sentiment")}
               valuePropName="checked"
             >
               <Switch />
             </Form.Item>
             <Form.Item
               name={["capabilities", "kg"]}
-              label={t("settings.newsExtraction.fields.kg", {
-                defaultValue: "Knowledge graph relations",
-              })}
+              label={t("settings.newsExtraction.fields.kg")}
               valuePropName="checked"
             >
               <Switch />
@@ -244,46 +204,33 @@ export function NewsExtractionSettingsPanel() {
 
         <Card
           size="small"
-          title={t("settings.newsExtraction.providersTitle", {
-            defaultValue: "Providers",
-          })}
+          title={t("settings.newsExtraction.providersTitle")}
           style={{ marginBottom: 16 }}
         >
           <Typography.Paragraph type="secondary">
-            {t("settings.newsExtraction.providersHint", {
-              defaultValue:
-                "Provider routing is stage-specific. This rollout currently supports the built-in LLM provider.",
-            })}
+            {t("settings.newsExtraction.providersHint")}
           </Typography.Paragraph>
           <Form.Item
             name={["providers", "clean"]}
-            label={t("settings.newsExtraction.fields.cleanProvider", {
-              defaultValue: "Clean provider",
-            })}
+            label={t("settings.newsExtraction.fields.cleanProvider")}
           >
             <Select options={[{ label: "LLM", value: "llm" }]} />
           </Form.Item>
           <Form.Item
             name={["providers", "entities"]}
-            label={t("settings.newsExtraction.fields.entitiesProvider", {
-              defaultValue: "Entity provider",
-            })}
+            label={t("settings.newsExtraction.fields.entitiesProvider")}
           >
             <Select options={[{ label: "LLM", value: "llm" }]} />
           </Form.Item>
           <Form.Item
             name={["providers", "sentiment"]}
-            label={t("settings.newsExtraction.fields.sentimentProvider", {
-              defaultValue: "Sentiment provider",
-            })}
+            label={t("settings.newsExtraction.fields.sentimentProvider")}
           >
             <Select options={[{ label: "LLM", value: "llm" }]} />
           </Form.Item>
           <Form.Item
             name={["providers", "kg"]}
-            label={t("settings.newsExtraction.fields.kgProvider", {
-              defaultValue: "Knowledge graph provider",
-            })}
+            label={t("settings.newsExtraction.fields.kgProvider")}
           >
             <Select options={[{ label: "LLM", value: "llm" }]} />
           </Form.Item>
@@ -291,7 +238,7 @@ export function NewsExtractionSettingsPanel() {
 
         <Form.Item style={{ marginBottom: 0 }}>
           <Button type="primary" htmlType="submit" loading={saving}>
-            {t("common.saveChanges", { defaultValue: "Save changes" })}
+            {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>

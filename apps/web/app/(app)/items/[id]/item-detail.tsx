@@ -143,16 +143,90 @@ const toString = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
-const STAGE_LABELS: Record<string, string> = {
-  preflight: "Preflight",
-  clean: "Clean",
-  quality_gate: "Quality gate",
-  entities: "Entities",
-  sentiment: "Sentiment",
-  kg: "Knowledge graph",
-  classify: "Classification",
-  dedupe: "Dedupe",
-};
+const STAGE_ORDER = [
+  "preflight",
+  "clean",
+  "quality_gate",
+  "entities",
+  "sentiment",
+  "kg",
+  "classify",
+  "dedupe",
+] as const;
+
+type StageStatus = "completed" | "skipped" | "rejected" | "failed";
+
+interface NormalizedStageMetaEntry {
+  key: string;
+  label: string;
+  description: string;
+  status: StageStatus;
+  provider?: string;
+  reason?: string;
+  model?: string;
+  promptVersion?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  costUsd?: number;
+  latencyMs?: number;
+}
+
+function toFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function normalizeStageMetaEntry(
+  key: string,
+  value: unknown,
+  labels: Record<string, string>,
+  descriptions: Record<string, string>,
+): NormalizedStageMetaEntry | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const status = toString(record.status);
+  if (
+    status !== "completed" &&
+    status !== "skipped" &&
+    status !== "rejected" &&
+    status !== "failed"
+  ) {
+    return null;
+  }
+
+  return {
+    key,
+    label: labels[key] ?? key,
+    description: descriptions[key] ?? "Pipeline stage execution details.",
+    status,
+    provider: toString(record.provider),
+    reason: toString(record.reason),
+    model: toString(record.model),
+    promptVersion: toString(record.prompt_version),
+    promptTokens: toFiniteNumber(record.prompt_tokens),
+    completionTokens: toFiniteNumber(record.completion_tokens),
+    totalTokens: toFiniteNumber(record.total_tokens),
+    costUsd: toFiniteNumber(record.cost_usd),
+    latencyMs: toFiniteNumber(record.latency_ms),
+  };
+}
+
+function getStageStatusColor(status: StageStatus): string {
+  if (status === "completed") {
+    return "green";
+  }
+  if (status === "skipped") {
+    return "default";
+  }
+  if (status === "rejected") {
+    return "orange";
+  }
+  return "red";
+}
 
 type ContentTypeValue = "news_fact" | "opinion" | "analysis" | "mixed";
 
@@ -275,6 +349,41 @@ function buildDigestSubscriptionKey(
 export function ItemDetail({ itemId }: ItemDetailProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const stageLabels = useMemo(
+    () => ({
+      preflight: t("items.detail.stages.labels.preflight"),
+      clean: t("items.detail.stages.labels.clean"),
+      quality_gate: t("items.detail.stages.labels.qualityGate"),
+      entities: t("items.detail.stages.labels.entities"),
+      sentiment: t("items.detail.stages.labels.sentiment"),
+      kg: t("items.detail.stages.labels.kg"),
+      classify: t("items.detail.stages.labels.classify"),
+      dedupe: t("items.detail.stages.labels.dedupe"),
+    }),
+    [t],
+  );
+  const stageDescriptions = useMemo(
+    () => ({
+      preflight: t("items.detail.stages.descriptions.preflight"),
+      clean: t("items.detail.stages.descriptions.clean"),
+      quality_gate: t("items.detail.stages.descriptions.qualityGate"),
+      entities: t("items.detail.stages.descriptions.entities"),
+      sentiment: t("items.detail.stages.descriptions.sentiment"),
+      kg: t("items.detail.stages.descriptions.kg"),
+      classify: t("items.detail.stages.descriptions.classify"),
+      dedupe: t("items.detail.stages.descriptions.dedupe"),
+    }),
+    [t],
+  );
+  const stageStatusLabels = useMemo(
+    () => ({
+      completed: t("items.detail.stages.status.completed"),
+      skipped: t("items.detail.stages.status.skipped"),
+      rejected: t("items.detail.stages.status.rejected"),
+      failed: t("items.detail.stages.status.failed"),
+    }),
+    [t],
+  );
   const router = useRouter();
   const { data: session, status: sessionStatus } = useSession();
   const apiClient = useMemo(
@@ -394,13 +503,13 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const contentType = normalizeContentType(rawContentType);
   const contentTypeLabel =
     contentType === "news_fact"
-      ? t("items.contentType.newsFact", { defaultValue: "News fact" })
+      ? t("items.contentType.newsFact")
       : contentType === "opinion"
-        ? t("items.contentType.opinion", { defaultValue: "Opinion" })
+        ? t("items.contentType.opinion")
         : contentType === "analysis"
-          ? t("items.contentType.analysis", { defaultValue: "Analysis" })
+          ? t("items.contentType.analysis")
           : contentType === "mixed"
-            ? t("items.contentType.mixed", { defaultValue: "Mixed" })
+            ? t("items.contentType.mixed")
             : rawContentType;
   const qualityScore =
     typeof processedResult?.quality_score === "number"
@@ -419,13 +528,47 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     !Array.isArray(processedResult.stage_meta)
       ? (processedResult.stage_meta as Record<string, unknown>)
       : null;
-  const stageEntries = useMemo(
-    () =>
-      Object.entries(stageMeta ?? {}).filter(
-        ([, value]) =>
-          value && typeof value === "object" && !Array.isArray(value),
+  const stageEntries = useMemo(() => {
+    const ordered = STAGE_ORDER.map((key) =>
+      normalizeStageMetaEntry(
+        key,
+        stageMeta?.[key],
+        stageLabels,
+        stageDescriptions,
       ),
-    [stageMeta],
+    ).filter((entry): entry is NormalizedStageMetaEntry => Boolean(entry));
+    const extras = Object.entries(stageMeta ?? {})
+      .filter(
+        ([key]) => !STAGE_ORDER.includes(key as (typeof STAGE_ORDER)[number]),
+      )
+      .map(([key, value]) =>
+        normalizeStageMetaEntry(key, value, stageLabels, stageDescriptions),
+      )
+      .filter((entry): entry is NormalizedStageMetaEntry => Boolean(entry));
+    return [...ordered, ...extras];
+  }, [stageDescriptions, stageLabels, stageMeta]);
+  const stageCounts = useMemo(
+    () =>
+      stageEntries.reduce(
+        (acc, entry) => {
+          acc[entry.status] += 1;
+          return acc;
+        },
+        {
+          completed: 0,
+          skipped: 0,
+          rejected: 0,
+          failed: 0,
+        } as Record<StageStatus, number>,
+      ),
+    [stageEntries],
+  );
+  const stageAlerts = useMemo(
+    () =>
+      stageEntries.filter(
+        (entry) => entry.status === "failed" || entry.status === "rejected",
+      ),
+    [stageEntries],
   );
   const summary = resolveDisplaySummary({
     processedSummary: processedResult?.summary,
@@ -474,8 +617,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     summaryText && !summaryExpanded && canExpandSummary
       ? `${summaryText.slice(0, 300).trimEnd()}…`
       : summaryText;
-  const expandLabel = t("common.expand", { defaultValue: "Show more" });
-  const collapseLabel = t("common.collapse", { defaultValue: "Show less" });
+  const expandLabel = t("common.expand");
+  const collapseLabel = t("common.collapse");
   const keyPointsDisplay = resolvedKeyPoints.slice(0, 8);
   const extraKeyPoints = Math.max(
     resolvedKeyPoints.length - keyPointsDisplay.length,
@@ -532,10 +675,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     }
     return bits.length > 0 ? bits.join(" | ") : null;
   }, [llm?.costUsd, llm?.latencyMs, llm?.model]);
-  const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
-  const publishedUnknownLabel = t("items.time.publishedUnknown", {
-    defaultValue: "Published time unknown",
-  });
+  const ingestedLabel = t("items.time.ingested");
+  const publishedUnknownLabel = t("items.time.publishedUnknown");
   const handleSearch = (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
@@ -651,11 +792,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     });
     try {
       if (sessionStatus !== "authenticated" || !session?.accessToken) {
-        message.warning(
-          t("items.detail.subscribeLoginRequired", {
-            defaultValue: "Please sign in before subscribing",
-          }),
-        );
+        message.warning(t("items.detail.subscribeLoginRequired"));
         return;
       }
 
@@ -673,11 +810,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           ? currentPreference.focusTopics
           : currentPreference.focusEntities;
       if (hasDigestSubscription(currentTags, trimmed)) {
-        message.info(
-          t("items.detail.subscribeAlready", {
-            defaultValue: "Already in subscription list",
-          }),
-        );
+        message.info(t("items.detail.subscribeAlready"));
         setDigestPreference(currentPreference);
         return;
       }
@@ -690,20 +823,12 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       );
       const result = response.data?.items?.[0];
       if (!result || result.status === "already_subscribed") {
-        message.info(
-          t("items.detail.subscribeAlready", {
-            defaultValue: "Already in subscription list",
-          }),
-        );
+        message.info(t("items.detail.subscribeAlready"));
         setDigestPreference(currentPreference);
         return;
       }
       if (result.status === "limit_reached") {
-        message.warning(
-          t("items.detail.subscribeLimitReached", {
-            defaultValue: "Subscription limit reached for this type.",
-          }),
-        );
+        message.warning(t("items.detail.subscribeLimitReached"));
         setDigestPreference(currentPreference);
         return;
       }
@@ -733,10 +858,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       }));
       emitSituationMonitorMonitorsUpdated("item-detail");
       message.success(
-        t("items.detail.subscribeSaved", {
-          defaultValue:
-            "Added to subscriptions and used by personalized digest",
-        }) +
+        t("items.detail.subscribeSaved") +
           (result.taxonomyDisplayName
             ? ` · ${result.taxonomyDisplayName}`
             : ""),
@@ -746,11 +868,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         "Failed to save digest subscription from item detail",
         subscriptionError,
       );
-      message.error(
-        t("items.detail.subscribeFailed", {
-          defaultValue: "Failed to save subscription. Please try again later.",
-        }),
-      );
+      message.error(t("items.detail.subscribeFailed"));
     } finally {
       setSubscriptionBusyByKey((current) => {
         const next = { ...current };
@@ -882,10 +1000,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           {showDelayHint ? (
             <ChartEmptyState
               className="h-auto"
-              description={t("common.loadingDelayed", {
-                defaultValue:
-                  "Data is taking longer than usual. Please hold on or refresh.",
-              })}
+              description={t("common.loadingDelayed")}
             />
           ) : null}
         </Space>
@@ -901,9 +1016,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     return (
       <ChartEmptyState
         className="h-auto py-12"
-        description={t("items.detail.empty", {
-          defaultValue: "Item not found.",
-        })}
+        description={t("items.detail.empty")}
       />
     );
   }
@@ -920,9 +1033,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   if (processedResult) {
     payloadPanels.push({
       key: "processed",
-      label: t("items.detail.payloadProcessed", {
-        defaultValue: "Processed JSON",
-      }),
+      label: t("items.detail.payloadProcessed"),
       children: (
         <pre className="max-h-[360px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
           {JSON.stringify(processedResult, null, 2)}
@@ -935,17 +1046,9 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       key: "markdown",
       label: (
         <Space size={8} wrap>
-          <span>
-            {t("items.detail.payloadMarkdown", {
-              defaultValue: "Cleaned Markdown",
-            })}
-          </span>
+          <span>{t("items.detail.payloadMarkdown")}</span>
           {markdownFallbackUsed ? (
-            <Tag color="orange">
-              {t("items.detail.markdownFallback", {
-                defaultValue: "Markdown fallback",
-              })}
-            </Tag>
+            <Tag color="orange">{t("items.detail.markdownFallback")}</Tag>
           ) : null}
         </Space>
       ),
@@ -955,13 +1058,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
             <Alert
               type="warning"
               showIcon
-              message={t("items.detail.markdownFallback", {
-                defaultValue: "Markdown fallback",
-              })}
-              description={t("items.detail.markdownFallbackTooltip", {
-                defaultValue:
-                  "LLM response omitted cleaned_markdown; showing crawled markdown as fallback.",
-              })}
+              message={t("items.detail.markdownFallback")}
+              description={t("items.detail.markdownFallbackTooltip")}
             />
           ) : null}
           <pre className="max-h-[360px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
@@ -974,7 +1072,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   if (rawPayload) {
     payloadPanels.push({
       key: "raw",
-      label: t("items.detail.payloadRaw", { defaultValue: "Raw JSON" }),
+      label: t("items.detail.payloadRaw"),
       children: (
         <pre className="max-h-[360px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
           {JSON.stringify(rawPayload, null, 2)}
@@ -998,9 +1096,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         <Alert
           type="error"
           showIcon
-          message={t("items.detail.processedErrorTitle", {
-            defaultValue: "Processing failed",
-          })}
+          message={t("items.detail.processedErrorTitle")}
           description={
             processedErrorName
               ? `${processedErrorName}: ${processedErrorMessage}`
@@ -1012,15 +1108,11 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         <Space direction="vertical" size="small" style={{ width: "100%" }}>
           <Space wrap>
             <Typography.Text strong>
-              {t("items.detail.translation.title", {
-                defaultValue: "Article translation",
-              })}
+              {t("items.detail.translation.title")}
             </Typography.Text>
             <Space>
               <Typography.Text>
-                {t("items.detail.translation.enable", {
-                  defaultValue: "Enable",
-                })}
+                {t("items.detail.translation.enable")}
               </Typography.Text>
               <Switch
                 checked={translationEnabled}
@@ -1039,14 +1131,10 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
               disabled={!translationEnabled}
             >
               <Radio.Button value="deeplx">
-                {t("items.detail.translation.provider.deeplx", {
-                  defaultValue: "DeepLX API",
-                })}
+                {t("items.detail.translation.provider.deeplx")}
               </Radio.Button>
               <Radio.Button value="llm">
-                {t("items.detail.translation.provider.llm", {
-                  defaultValue: "LLM",
-                })}
+                {t("items.detail.translation.provider.llm")}
               </Radio.Button>
             </Radio.Group>
             <Select
@@ -1059,9 +1147,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
             {translationEnabled ? (
               <Space>
                 <Typography.Text>
-                  {t("items.detail.translation.showOriginal", {
-                    defaultValue: "Show original",
-                  })}
+                  {t("items.detail.translation.showOriginal")}
                 </Typography.Text>
                 <Switch
                   checked={showOriginalContent}
@@ -1077,9 +1163,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
             <Alert
               type="warning"
               showIcon
-              message={t("items.detail.translation.unavailable", {
-                defaultValue: "Selected translation source is unavailable.",
-              })}
+              message={t("items.detail.translation.unavailable")}
               description={
                 selectedProviderStatus.message ?? t("common.notAvailable")
               }
@@ -1093,10 +1177,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
             <Alert
               type="warning"
               showIcon
-              message={t("items.detail.translation.targetUnsupported", {
-                defaultValue:
-                  "Target language is not supported by selected source.",
-              })}
+              message={t("items.detail.translation.targetUnsupported")}
               description={
                 selectedProviderStatus.message ?? t("common.notAvailable")
               }
@@ -1105,9 +1186,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
 
           {translationEnabled && translationLoading ? (
             <Typography.Text type="secondary">
-              {t("items.detail.translation.loading", {
-                defaultValue: "Translating article content...",
-              })}
+              {t("items.detail.translation.loading")}
             </Typography.Text>
           ) : null}
 
@@ -1115,9 +1194,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
             <Alert
               type="error"
               showIcon
-              message={t("items.detail.translation.failed", {
-                defaultValue: "Translation failed.",
-              })}
+              message={t("items.detail.translation.failed")}
               description={translationError}
             />
           ) : null}
@@ -1136,7 +1213,6 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           {hasNonChineseContent ? (
             <Tag color="orange">
               {t("items.detail.originalLanguage", {
-                defaultValue: "Original language: {{language}}",
                 language: languageLabel,
               })}
             </Tag>
@@ -1145,12 +1221,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
             <Tooltip
               title={
                 <div className="text-xs">
-                  <div>
-                    {t("items.metrics.quality.tooltip", {
-                      defaultValue:
-                        "Quality score from LLM cleaning stage (0–1, shown as %).",
-                    })}
-                  </div>
+                  <div>{t("items.metrics.quality.tooltip")}</div>
                   {llm?.model ? <div>Model: {llm.model}</div> : null}
                   {llm?.promptVersion ? (
                     <div>Prompt: {llm.promptVersion}</div>
@@ -1159,8 +1230,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
               }
             >
               <Tag color="purple">
-                {t("items.detail.fields.quality", { defaultValue: "Quality" })}:{" "}
-                {qualityScoreLabel}
+                {t("items.detail.fields.quality")}: {qualityScoreLabel}
               </Tag>
             </Tooltip>
           ) : null}
@@ -1168,40 +1238,22 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
             <Tooltip
               title={
                 <div className="text-xs">
-                  <div>
-                    {t("items.metrics.duplicate.tooltip", {
-                      defaultValue:
-                        "Duplicate similarity from dedup stage (0–1, shown as %).",
-                    })}
-                  </div>
+                  <div>{t("items.metrics.duplicate.tooltip")}</div>
                   {duplicateOf ? <div>Duplicate of: {duplicateOf}</div> : null}
                 </div>
               }
             >
               <Tag color="gold">
                 {duplicateOf
-                  ? t("items.duplicate.duplicate", {
-                      defaultValue: "Duplicate",
-                    })
-                  : t("items.duplicate.similarity", {
-                      defaultValue: "Similarity",
-                    })}{" "}
+                  ? t("items.duplicate.duplicate")
+                  : t("items.duplicate.similarity")}{" "}
                 {duplicateScore}
               </Tag>
             </Tooltip>
           ) : null}
           {markdownFallbackUsed ? (
-            <Tooltip
-              title={t("items.detail.markdownFallbackTooltip", {
-                defaultValue:
-                  "LLM response omitted cleaned_markdown; showing crawled markdown as fallback.",
-              })}
-            >
-              <Tag color="orange">
-                {t("items.detail.markdownFallback", {
-                  defaultValue: "Markdown fallback",
-                })}
-              </Tag>
+            <Tooltip title={t("items.detail.markdownFallbackTooltip")}>
+              <Tag color="orange">{t("items.detail.markdownFallback")}</Tag>
             </Tooltip>
           ) : null}
         </Space>
@@ -1256,7 +1308,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
             target="_blank"
             rel="noopener noreferrer"
           >
-            {t("items.detail.readOriginal", { defaultValue: "Read original" })}
+            {t("items.detail.readOriginal")}
           </Typography.Link>
         ) : null}
       </Space>
@@ -1271,10 +1323,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         imgClassName="rounded-xl"
       />
 
-      <Card
-        className="content-card"
-        title={t("items.detail.summaryTitle", { defaultValue: "Summary" })}
-      >
+      <Card className="content-card" title={t("items.detail.summaryTitle")}>
         {hasSummaryContent ? (
           <Space direction="vertical" size="small" style={{ width: "100%" }}>
             {displaySummary ? (
@@ -1296,17 +1345,13 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
               </div>
             ) : (
               <Typography.Text type="secondary">
-                {t("items.detail.summaryEmpty", {
-                  defaultValue: "No summary available.",
-                })}
+                {t("items.detail.summaryEmpty")}
               </Typography.Text>
             )}
             {keyPointsDisplay.length > 0 ? (
               <div>
                 <Typography.Text strong>
-                  {t("items.detail.keyPointsTitle", {
-                    defaultValue: "Key points",
-                  })}
+                  {t("items.detail.keyPointsTitle")}
                 </Typography.Text>
                 <List
                   size="small"
@@ -1321,49 +1366,33 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                 />
                 {extraKeyPoints > 0 ? (
                   <Typography.Text type="secondary">
-                    {t("items.detail.keyPointsMore", {
-                      defaultValue: "+{{count}} more",
-                      count: extraKeyPoints,
-                    })}
+                    {t("items.detail.keyPointsMore", { count: extraKeyPoints })}
                   </Typography.Text>
                 ) : null}
               </div>
             ) : (
               <Typography.Text type="secondary">
-                {t("items.detail.keyPointsEmpty", {
-                  defaultValue: "No key points.",
-                })}
+                {t("items.detail.keyPointsEmpty")}
               </Typography.Text>
             )}
           </Space>
         ) : (
           <ChartEmptyState
             className="h-auto py-6"
-            description={t("items.detail.summaryEmpty", {
-              defaultValue: "No summary available.",
-            })}
+            description={t("items.detail.summaryEmpty")}
           />
         )}
       </Card>
 
-      <Card
-        className="content-card"
-        title={t("items.detail.fullTextTitle", {
-          defaultValue: "Article text",
-        })}
-      >
+      <Card className="content-card" title={t("items.detail.fullTextTitle")}>
         {hasArticleContent ? (
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
             {hasNonChineseContent ? (
               <Alert
                 type="info"
                 showIcon
-                message={t("items.detail.languageNoticeTitle", {
-                  defaultValue: "Language notice",
-                })}
+                message={t("items.detail.languageNoticeTitle")}
                 description={t("items.detail.languageNoticeDescription", {
-                  defaultValue:
-                    "Detected language is {{language}}. This article may not have been translated to Chinese yet.",
                   language: languageLabel,
                 })}
               />
@@ -1372,13 +1401,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
               <Alert
                 type="warning"
                 showIcon
-                message={t("items.detail.markdownFallback", {
-                  defaultValue: "Markdown fallback",
-                })}
-                description={t("items.detail.markdownFallbackTooltip", {
-                  defaultValue:
-                    "LLM response omitted cleaned_markdown; showing crawled markdown as fallback.",
-                })}
+                message={t("items.detail.markdownFallback")}
+                description={t("items.detail.markdownFallbackTooltip")}
               />
             ) : null}
             <MarkdownViewer markdown={resolvedArticleContent!} />
@@ -1386,45 +1410,26 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         ) : (
           <ChartEmptyState
             className="h-auto py-6"
-            description={t("items.detail.fullTextEmpty", {
-              defaultValue: "No translated article text available.",
-            })}
+            description={t("items.detail.fullTextEmpty")}
           />
         )}
       </Card>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card
-            className="content-card"
-            title={t("items.detail.metaTitle", { defaultValue: "Metadata" })}
-          >
+          <Card className="content-card" title={t("items.detail.metaTitle")}>
             <Descriptions column={1} size="small">
-              <Descriptions.Item
-                label={t("items.detail.fields.itemId", {
-                  defaultValue: "Item ID",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.itemId")}>
                 {item.id}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.externalId", {
-                  defaultValue: "External ID",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.externalId")}>
                 {item.meta?.externalId ?? t("common.notAvailable")}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.status", {
-                  defaultValue: "Status",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.status")}>
                 <Tag color="blue">{item.status}</Tag>
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("items.detail.fields.processedStatus", {
-                  defaultValue: "Processed status",
-                })}
+                label={t("items.detail.fields.processedStatus")}
               >
                 {processedStatus ? (
                   <Tag color="geekblue">{processedStatus}</Tag>
@@ -1433,66 +1438,34 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                 )}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("items.detail.fields.duplicateSimilarity", {
-                  defaultValue: "Duplicate similarity",
-                })}
+                label={t("items.detail.fields.duplicateSimilarity")}
               >
                 {duplicateScoreLabel}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.duplicateOf", {
-                  defaultValue: "Duplicate of",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.duplicateOf")}>
                 {duplicateOf ?? t("common.notAvailable")}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.llmModel", {
-                  defaultValue: "LLM model",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.llmModel")}>
                 {llmModel}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.llmLatency", {
-                  defaultValue: "LLM latency",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.llmLatency")}>
                 {llmLatency}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.llmCost", {
-                  defaultValue: "LLM cost",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.llmCost")}>
                 {llmCost}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.llmTokens", {
-                  defaultValue: "LLM total tokens",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.llmTokens")}>
                 {llmTokens}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("items.detail.fields.embeddingModel", {
-                  defaultValue: "Embedding model",
-                })}
+                label={t("items.detail.fields.embeddingModel")}
               >
                 {embeddingModel ?? t("common.notAvailable")}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.embeddingDims", {
-                  defaultValue: "Embedding dims",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.embeddingDims")}>
                 {embeddingDimensionsLabel}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.createdAt", {
-                  defaultValue: "Created at",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.createdAt")}>
                 {formatDateTime(item.createdAt, locale, {
                   year: "numeric",
                   month: "2-digit",
@@ -1502,11 +1475,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                   timeZoneName: "short",
                 })}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.updatedAt", {
-                  defaultValue: "Updated at",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.updatedAt")}>
                 {formatDateTime(item.updatedAt, locale, {
                   year: "numeric",
                   month: "2-digit",
@@ -1516,76 +1485,39 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                   timeZoneName: "short",
                 })}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.publishedAt", {
-                  defaultValue: "Published at",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.publishedAt")}>
                 {formattedPublishedAt}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.source", {
-                  defaultValue: "Source",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.source")}>
                 {source ?? t("common.notAvailable")}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.rawSource", {
-                  defaultValue: "Raw source",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.rawSource")}>
                 {rawSource ?? t("common.notAvailable")}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.author", {
-                  defaultValue: "Author",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.author")}>
                 {author ?? t("common.notAvailable")}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.language", {
-                  defaultValue: "Language",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.language")}>
                 {language ?? t("common.notAvailable")}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.location", {
-                  defaultValue: "Location",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.location")}>
                 {location ?? t("common.notAvailable")}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.category", {
-                  defaultValue: "Category",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.category")}>
                 {category ?? t("common.notAvailable")}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={t("items.detail.fields.contentType", {
-                  defaultValue: "Content type",
-                })}
-              >
+              <Descriptions.Item label={t("items.detail.fields.contentType")}>
                 {contentTypeLabel ?? t("common.notAvailable")}
               </Descriptions.Item>
             </Descriptions>
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card
-            className="content-card"
-            title={t("items.detail.contextTitle", { defaultValue: "Context" })}
-          >
+          <Card className="content-card" title={t("items.detail.contextTitle")}>
             {topics.length === 0 && entities.length === 0 ? (
               <ChartEmptyState
                 className="h-auto py-6"
-                description={t("items.detail.contextEmpty", {
-                  defaultValue: "No topics or entities.",
-                })}
+                description={t("items.detail.contextEmpty")}
               />
             ) : (
               <Space
@@ -1631,12 +1563,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                           <Tooltip
                             title={
                               isSubscribed
-                                ? t("items.detail.subscribedTopic", {
-                                    defaultValue: "Topic subscribed",
-                                  })
-                                : t("items.detail.subscribeTopic", {
-                                    defaultValue: "Subscribe topic",
-                                  })
+                                ? t("items.detail.subscribedTopic")
+                                : t("items.detail.subscribeTopic")
                             }
                           >
                             <Button
@@ -1650,12 +1578,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                               }}
                             >
                               {isSubscribed
-                                ? t("items.detail.subscribedAction", {
-                                    defaultValue: "Subscribed",
-                                  })
-                                : t("items.detail.subscribeAction", {
-                                    defaultValue: "Subscribe",
-                                  })}
+                                ? t("items.detail.subscribedAction")
+                                : t("items.detail.subscribeAction")}
                             </Button>
                           </Tooltip>
                         </Space>
@@ -1702,12 +1626,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                           <Tooltip
                             title={
                               isSubscribed
-                                ? t("items.detail.subscribedEntity", {
-                                    defaultValue: "Entity subscribed",
-                                  })
-                                : t("items.detail.subscribeEntity", {
-                                    defaultValue: "Subscribe entity",
-                                  })
+                                ? t("items.detail.subscribedEntity")
+                                : t("items.detail.subscribeEntity")
                             }
                           >
                             <Button
@@ -1721,12 +1641,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                               }}
                             >
                               {isSubscribed
-                                ? t("items.detail.subscribedAction", {
-                                    defaultValue: "Subscribed",
-                                  })
-                                : t("items.detail.subscribeAction", {
-                                    defaultValue: "Subscribe",
-                                  })}
+                                ? t("items.detail.subscribedAction")
+                                : t("items.detail.subscribeAction")}
                             </Button>
                           </Tooltip>
                         </Space>
@@ -1742,9 +1658,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                     style={{ width: "100%" }}
                   >
                     <Typography.Text type="secondary">
-                      {t("items.detail.relatedTopics", {
-                        defaultValue: "Related topics",
-                      })}
+                      {t("items.detail.relatedTopics")}
                     </Typography.Text>
                     <Space wrap size={[6, 6]}>
                       {relatedTopics.map((topic) => {
@@ -1788,12 +1702,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                             <Tooltip
                               title={
                                 isSubscribed
-                                  ? t("items.detail.subscribedTopic", {
-                                      defaultValue: "Topic subscribed",
-                                    })
-                                  : t("items.detail.subscribeRelatedTopic", {
-                                      defaultValue: "Subscribe related topic",
-                                    })
+                                  ? t("items.detail.subscribedTopic")
+                                  : t("items.detail.subscribeRelatedTopic")
                               }
                             >
                               <Button
@@ -1810,12 +1720,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                                 }}
                               >
                                 {isSubscribed
-                                  ? t("items.detail.subscribedAction", {
-                                      defaultValue: "Subscribed",
-                                    })
-                                  : t("items.detail.subscribeAction", {
-                                      defaultValue: "Subscribe",
-                                    })}
+                                  ? t("items.detail.subscribedAction")
+                                  : t("items.detail.subscribeAction")}
                               </Button>
                             </Tooltip>
                           </Space>
@@ -1831,48 +1737,153 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       </Row>
 
       {stageEntries.length > 0 ? (
-        <Card
-          className="content-card"
-          title={t("items.detail.stageMetaTitle", {
-            defaultValue: "Stage execution",
-          })}
-        >
+        <Card className="content-card" title={t("items.detail.stageMetaTitle")}>
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
             <Space wrap size={[8, 8]}>
-              {stageEntries.map(([key, value]) => {
-                const entry = value as Record<string, unknown>;
-                const status = toString(entry.status) ?? "unknown";
-                const reason = toString(entry.reason);
-                const color =
-                  status === "completed"
-                    ? "green"
-                    : status === "skipped"
-                      ? "default"
-                      : status === "rejected"
-                        ? "orange"
-                        : "red";
-                return (
-                  <Tag key={key} color={color}>
-                    {`${STAGE_LABELS[key] ?? key}: ${status}${
-                      reason ? ` (${reason})` : ""
-                    }`}
-                  </Tag>
-                );
-              })}
+              <Tag color="green">
+                {t("items.detail.stages.summary.completed")}:{" "}
+                {stageCounts.completed}
+              </Tag>
+              {stageCounts.skipped > 0 ? (
+                <Tag>
+                  {t("items.detail.stages.summary.skipped")}:{" "}
+                  {stageCounts.skipped}
+                </Tag>
+              ) : null}
+              {stageCounts.rejected > 0 ? (
+                <Tag color="orange">
+                  {t("items.detail.stages.summary.rejected")}:{" "}
+                  {stageCounts.rejected}
+                </Tag>
+              ) : null}
+              {stageCounts.failed > 0 ? (
+                <Tag color="red">
+                  {t("items.detail.stages.summary.failed")}:{" "}
+                  {stageCounts.failed}
+                </Tag>
+              ) : null}
             </Space>
-            <pre className="max-h-[320px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
-              {JSON.stringify(stageMeta, null, 2)}
-            </pre>
+
+            {stageAlerts.length > 0 ? (
+              <Alert
+                type={stageCounts.failed > 0 ? "error" : "warning"}
+                showIcon
+                message={t("items.detail.stages.attention")}
+                description={stageAlerts
+                  .map(
+                    (entry) =>
+                      `${entry.label}: ${
+                        entry.reason ?? stageStatusLabels[entry.status]
+                      }`,
+                  )
+                  .join(" · ")}
+              />
+            ) : null}
+
+            <Row gutter={[12, 12]}>
+              {stageEntries.map((entry) => (
+                <Col key={entry.key} xs={24} md={12} xl={8}>
+                  <Card
+                    size="small"
+                    title={
+                      <Space size={8} wrap>
+                        <span>{entry.label}</span>
+                        <Tag color={getStageStatusColor(entry.status)}>
+                          {stageStatusLabels[entry.status]}
+                        </Tag>
+                      </Space>
+                    }
+                  >
+                    <Space
+                      direction="vertical"
+                      size="small"
+                      style={{ width: "100%" }}
+                    >
+                      <Typography.Text type="secondary">
+                        {entry.description}
+                      </Typography.Text>
+                      <Descriptions column={1} size="small">
+                        <Descriptions.Item
+                          label={t("items.detail.fields.provider")}
+                        >
+                          {entry.provider ?? t("common.notAvailable")}
+                        </Descriptions.Item>
+                        <Descriptions.Item
+                          label={t("items.detail.fields.model")}
+                        >
+                          {entry.model ?? t("common.notAvailable")}
+                        </Descriptions.Item>
+                        <Descriptions.Item
+                          label={t("items.detail.fields.promptVersion")}
+                        >
+                          {entry.promptVersion ?? t("common.notAvailable")}
+                        </Descriptions.Item>
+                        <Descriptions.Item
+                          label={t("items.detail.fields.reason")}
+                        >
+                          {entry.reason ?? t("common.notAvailable")}
+                        </Descriptions.Item>
+                        <Descriptions.Item
+                          label={t("items.detail.fields.tokens")}
+                        >
+                          {typeof entry.totalTokens === "number"
+                            ? Math.round(entry.totalTokens).toString()
+                            : t("common.notAvailable")}
+                        </Descriptions.Item>
+                        <Descriptions.Item
+                          label={t("items.detail.fields.promptTokens")}
+                        >
+                          {typeof entry.promptTokens === "number"
+                            ? Math.round(entry.promptTokens).toString()
+                            : t("common.notAvailable")}
+                        </Descriptions.Item>
+                        <Descriptions.Item
+                          label={t("items.detail.fields.completionTokens")}
+                        >
+                          {typeof entry.completionTokens === "number"
+                            ? Math.round(entry.completionTokens).toString()
+                            : t("common.notAvailable")}
+                        </Descriptions.Item>
+                        <Descriptions.Item
+                          label={t("items.detail.fields.latency")}
+                        >
+                          {typeof entry.latencyMs === "number"
+                            ? `${Math.round(entry.latencyMs)} ms`
+                            : t("common.notAvailable")}
+                        </Descriptions.Item>
+                        <Descriptions.Item
+                          label={t("items.detail.fields.cost")}
+                        >
+                          {typeof entry.costUsd === "number"
+                            ? `$${entry.costUsd.toFixed(4)}`
+                            : t("common.notAvailable")}
+                        </Descriptions.Item>
+                      </Descriptions>
+                    </Space>
+                  </Card>
+                </Col>
+              ))}
+            </Row>
+
+            <Collapse
+              ghost
+              items={[
+                {
+                  key: "stage-meta-json",
+                  label: t("items.detail.stages.rawJson"),
+                  children: (
+                    <pre className="max-h-[320px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
+                      {JSON.stringify(stageMeta, null, 2)}
+                    </pre>
+                  ),
+                },
+              ]}
+            />
           </Space>
         </Card>
       ) : null}
 
-      <Card
-        className="content-card"
-        title={t("items.detail.payloadTitle", {
-          defaultValue: "Full text & JSON",
-        })}
-      >
+      <Card className="content-card" title={t("items.detail.payloadTitle")}>
         {payloadPanels.length > 0 ? (
           <Collapse
             activeKey={activePayloadPanelKeys}
@@ -1883,9 +1894,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         ) : (
           <ChartEmptyState
             className="h-auto py-6"
-            description={t("items.detail.payloadEmpty", {
-              defaultValue: "No payload available.",
-            })}
+            description={t("items.detail.payloadEmpty")}
           />
         )}
       </Card>

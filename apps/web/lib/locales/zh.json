@@ -67,8 +67,8 @@
   },
   "alerts": {
     "live": {
-      "message": "[{{severity}}] {{message}}（{{value}}）",
-      "batchMessage": "{{count}} alerts triggered · {{titles}}"
+      "message": "告警 [{{severity}}] {{message}}（{{value}}）",
+      "batchMessage": "共触发 {{count}} 条告警 · {{titles}}"
     },
     "events": {
       "triggered": "告警已触发",
@@ -138,7 +138,7 @@
         "observed": "观测值",
         "expected": "期望值",
         "residual": "残差",
-        "sigma": "Sigma",
+        "sigma": "Sigma 标准差",
         "ci": "置信区间",
         "window": "窗口",
         "baseline": "基线",
@@ -180,7 +180,7 @@
           "acled": "ACLED 事件",
           "gdelt": "GDELT 事件",
           "dedupeReducedBy": "去重减少",
-          "defcon": "DEFCON",
+          "defcon": "DEFCON 等级",
           "adjustedScore": "调整后分数",
           "openLocations": "开放地区数",
           "activeSpikes": "活跃激增",
@@ -375,7 +375,7 @@
         "crawlStatus": "抓取状态",
         "systemMetricSlug": "系统指标标识",
         "metricSlugRequired": "指标标识不能为空。",
-        "systemCurrentValueRequired": "Manual system metric requires a current value override."
+        "systemCurrentValueRequired": "手动系统指标必须提供当前值覆盖。"
       },
       "saved": "已保存",
       "saveFailed": "保存失败。",
@@ -399,7 +399,7 @@
         "notifyAllMembers": "通知全部成员",
         "metadataJson": "元数据（JSON）",
         "metadataJsonHint": "可选 JSON 对象，将合并到规则元数据中。",
-        "description": "Description"
+        "description": "说明"
       },
       "pipeline": {
         "title": "流水线",
@@ -436,8 +436,8 @@
         "defaultsToFailed": "默认失败",
         "createdBy": "已创建",
         "createdByPlaceholder": "请输入创建",
-        "metricPreset": "Crawl metric",
-        "metricPresetHint": "This quality metric uses pipeline logs; crawl status filters are not applied."
+        "metricPreset": "抓取指标",
+        "metricPresetHint": "该质量指标基于流水线日志计算，不会应用抓取状态筛选。"
       },
       "system": {
         "title": "系统",
@@ -461,7 +461,7 @@
           "unrest": "抗议事件数",
           "outages": "互联网中断",
           "keywordSpike": "关键词激增计数",
-          "pizzint": "PizzINT DEFCON",
+          "pizzint": "PizzINT DEFCON 指数",
           "gdeltTension": "GDELT 紧张度最高分",
           "polymarketLeads": "Polymarket 领先信号数",
           "custom": "自定义：{{slug}}"
@@ -480,14 +480,14 @@
         "targetPlaceholder": "请输入目标"
       },
       "types": {
-        "webhook": "Webhook",
+        "webhook": "Webhook 回调",
         "email": "邮箱"
       },
       "add": "添加",
       "validation": {
-        "nameRequired": "Enter a channel name.",
-        "typeRequired": "Select a channel type.",
-        "targetRequired": "Enter a delivery target."
+        "nameRequired": "请输入渠道名称。",
+        "typeRequired": "请选择渠道类型。",
+        "targetRequired": "请输入投递目标。"
       }
     }
   },
@@ -606,14 +606,14 @@
     "more": "更多",
     "search": "搜索",
     "ok": "确定",
-    "unknown": "Unknown",
-    "back": "Back",
-    "share": "Share",
-    "readMore": "Read full story",
-    "unavailable": "Unavailable",
-    "totalCount": "Total {{count}}",
-    "minimize": "Minimize",
-    "justNow": "just now"
+    "unknown": "未知",
+    "back": "返回",
+    "share": "分享",
+    "readMore": "阅读全文",
+    "unavailable": "不可用",
+    "totalCount": "共 {{count}}",
+    "minimize": "最小化",
+    "justNow": "刚刚"
   },
   "orgSwitcher": {
     "error": {
@@ -643,7 +643,7 @@
         "reserves": "储备"
       },
       "empty": {
-        "gdp": "GDP",
+        "gdp": "GDP（国内生产总值）",
         "yieldCurve": "收益率曲线",
         "reserves": "储备"
       },
@@ -754,7 +754,7 @@
     },
     "systemStatus": {
       "title": "系统状态",
-      "scoreValue": "{{score}}/100",
+      "scoreValue": "评分 {{score}}/100",
       "scorePending": "--/100",
       "cachedData": "缓存快照",
       "primaryPressure": "当前主要压力来自{{metric}}，强度约 {{pressure}}%，贡献了 {{contribution}}% 的总体风险。",
@@ -799,7 +799,7 @@
       "loading": "加载指标中...",
       "unavailable": "指标不可用",
       "empty": "暂无指标数据",
-      "permissionRequired": "Economic metrics require economicdata.read"
+      "permissionRequired": "经济指标需要 `economicdata.read` 权限"
     },
     "errors": {
       "metricsUnavailable": "指标不可用",
@@ -819,7 +819,7 @@
       "latestBucket": "最新分桶：{{bucket}}（{{granularity}}）",
       "trendVsPreviousGranularity": "较上一个{{granularity}}",
       "trendVsPreviousPoint": "较上一个数据点",
-      "permissionRequired": "Hero metrics require the economicdata.read permission. Switch to an organization with access or contact an administrator."
+      "permissionRequired": "Hero 指标需要 `economicdata.read` 权限。请切换到有权限的组织，或联系管理员。"
     },
     "nextActions": {
       "title": "下一步操作",
@@ -995,12 +995,12 @@
       },
       "series": {
         "shanghaiComposite": "上海综合",
-        "sp500": "S&P 500",
-        "usd": "USD",
-        "eur": "EUR",
-        "jpy": "JPY",
-        "usdCny": "USD/CNY",
-        "eurCny": "EUR/CNY"
+        "sp500": "标普 500",
+        "usd": "美元指数",
+        "eur": "欧元",
+        "jpy": "日元",
+        "usdCny": "美元/人民币",
+        "eurCny": "欧元/人民币"
       }
     },
     "economicSeries": {
@@ -1020,8 +1020,8 @@
         "usYieldInversion": "美国收益率倒挂"
       },
       "gauges": {
-        "cpi": "CPI",
-        "ppi": "PPI"
+        "cpi": "CPI（消费者物价指数）",
+        "ppi": "PPI（生产者物价指数）"
       },
       "pmi": {
         "china": "中国",
@@ -1032,8 +1032,8 @@
         "spread": "利差"
       },
       "us": {
-        "cpi": "CPI",
-        "ppi": "PPI",
+        "cpi": "CPI（消费者物价指数）",
+        "ppi": "PPI（生产者物价指数）",
         "manufacturingPmi": "制造业 PMI",
         "servicesPmi": "服务业 PMI"
       },
@@ -1120,25 +1120,25 @@
       "m2YoyAxis": "M2同比轴",
       "metalMa": "金属均线",
       "us": {
-        "gdp": "GDP",
-        "cpi": "CPI",
-        "ppi": "PPI",
+        "gdp": "GDP（国内生产总值）",
+        "cpi": "CPI（消费者物价指数）",
+        "ppi": "PPI（生产者物价指数）",
         "manufacturingPmi": "制造业 PMI",
         "servicesPmi": "服务业 PMI"
       },
       "title": "中期经济",
       "loadFailed": "加载失败",
       "cards": {
-        "gdpM2": "GDP/M2",
+        "gdpM2": "GDP/M2 比值",
         "metalMa": "金属均线",
         "pmiChanges": "PMI 变化",
         "usGrowth": "美国增长",
         "usPmi": "美国 PMI"
       },
       "empty": {
-        "gdpM2": "GDP/M2",
+        "gdpM2": "GDP/M2 比值",
         "metals": "金属",
-        "pmi": "PMI",
+        "pmi": "PMI（采购经理指数）",
         "usEconomy": "美国经济",
         "usPmi": "美国 PMI"
       }
@@ -1162,10 +1162,10 @@
         "soybean": "大豆"
       },
       "volatility": {
-        "qvix50etf": "50ETF",
-        "qvix300etf": "300ETF",
-        "qvix500etf": "500ETF",
-        "qvix100etf": "100ETF",
+        "qvix50etf": "50ETF 波动率",
+        "qvix300etf": "300ETF 波动率",
+        "qvix500etf": "500ETF 波动率",
+        "qvix100etf": "100ETF 波动率",
         "qvix50index": "上证50",
         "qvix300index": "沪深300",
         "qvix1000index": "中证1000",
@@ -1378,7 +1378,7 @@
           "latam": "拉丁美洲",
           "africa": "非洲",
           "oceania": "大洋洲",
-          "title": "Regions"
+          "title": "区域"
         },
         "timeRange": {
           "1h": "1小时",
@@ -1407,7 +1407,7 @@
           "flightModeAll": "全部航班",
           "mode": "模式",
           "flightSource": "飞行数据源",
-          "flightSourceOpensky": "OpenSky",
+          "flightSourceOpensky": "OpenSky 数据源",
           "flightScope": "范围",
           "flightScopeMilitary": "军用 / 疑似军用",
           "flightScopeAll": "全部航班",
@@ -1462,21 +1462,21 @@
           "low": "低",
           "geocoded": "已地理编码",
           "fallbackCountry": "国家回退",
-          "aisHighlightCandidates": "Highlight candidates",
-          "aisIssue": "Relay issue",
-          "aisHighlightOn": "Candidates highlighted",
-          "aisHighlightOff": "Candidates not highlighted",
-          "aisDensityAggregateHint": "Aggregated AIS hotspot, not individual vessels.",
-          "aisDisruptionAggregateHint": "Aggregated AIS chokepoint signal, not individual vessels.",
-          "aisDegraded": "Degraded",
-          "aisViewportVessels": "Viewport vessels",
-          "aisHighlightedCandidates": "Highlighted candidates",
-          "aisViewportCap": "Viewport cap",
-          "aisViewportTruncated": "Viewport is truncated after per-cell sampling to preserve map readability.",
-          "aisPositionReportsSeen": "Reports seen",
-          "aisPositionReportsProcessed": "Reports processed",
-          "aisIgnoredPositionReports": "Reports ignored",
-          "aisParseErrors": "Parse errors"
+          "aisHighlightCandidates": "高亮候选",
+          "aisIssue": "Relay 异常",
+          "aisHighlightOn": "已高亮候选",
+          "aisHighlightOff": "未高亮候选",
+          "aisDensityAggregateHint": "这里展示的是聚合后的 AIS 热点，而不是单艘船舶。",
+          "aisDisruptionAggregateHint": "这里展示的是聚合后的 AIS 瓶颈/扰动信号，而不是单艘船舶。",
+          "aisDegraded": "已降级",
+          "aisViewportVessels": "视口船舶数",
+          "aisHighlightedCandidates": "已高亮候选",
+          "aisViewportCap": "视口上限",
+          "aisViewportTruncated": "为保持地图可读性，视口内船舶经过按网格采样后已截断显示。",
+          "aisPositionReportsSeen": "已接收报告",
+          "aisPositionReportsProcessed": "已处理报告",
+          "aisIgnoredPositionReports": "已忽略报告",
+          "aisParseErrors": "解析错误"
         },
         "status": {
           "ready": "就绪",
@@ -1504,46 +1504,46 @@
           "aisDensityOnlyActiveHint": "仅密度模式展示的是热点和瓶颈汇总，不会显示单艘船。",
           "aisAllUnavailableInlineHint": "由于 relay 船舶快照缺失，当前无法使用全部船舶模式。",
           "aisShowAllAction": "切换到全部船舶",
-          "signalDensityShort": "active",
-          "newsCoverageShort": "mapped",
-          "monitorCoverageShort": "tracked",
-          "layerCoverageShort": "visible",
-          "aisHighlightCandidatesHint": "Rule-based government and military candidates are highlighted on top of the full vessel layer.",
-          "aisCandidatesOnlyHint": "Candidate vessels shows a filtered subset based on AIS name and ship-type rules, not a complete vessel inventory.",
-          "aisAllVesselsHint": "All vessels shows the full AIS vessel snapshot for the current viewport.",
-          "aisStatusHint": "Enable the AIS layer to inspect vessel source, freshness, and disruption signals.",
-          "flights": "Flights",
-          "flightStatusHint": "Flight source badges appear when the layer is visible.",
-          "transportLegendHint": "Need symbol meanings? Use the AIS reference before changing modes.",
-          "openFullLegend": "Open full legend",
-          "signalLegend": "Signals",
-          "newsLegend": "News & monitors",
-          "expandInspector": "Expand details",
-          "overview": "Overview",
-          "overviewHint": "Counts, freshness, and feed health stay visible in the header snapshot.",
-          "view": "View",
-          "viewHint": "Change map framing, time window, and visible layers for the current view.",
-          "transport": "Transport",
-          "transportHint": "Review flight and AIS modes, source freshness, and transport coverage.",
-          "feeds": "Feeds",
-          "feedsHint": "Check chain health, refresh activity, and ingestion issues when data looks off.",
-          "legendHint": "Reference marker meaning, severity levels, and AIS symbols used on the map.",
-          "feedsAttention": "Issues",
-          "feedsAttentionHint": "Affected feed chains: {{count}}",
-          "signalDensity": "Current alert markers",
-          "newsCoverage": "Geo-tagged headlines",
-          "monitorCoverage": "Tracked watchlists",
-          "layerCoverage": "Active map overlays",
-          "stream": "Stream",
-          "noRecentMessage": "No stream update yet",
-          "latestStreamUpdate": "Latest stream update",
-          "data": "Data",
-          "awaitingRefresh": "Awaiting refresh",
-          "healthyFeeds": "Healthy",
-          "refreshingFeeds": "Refreshing",
-          "issueFeeds": "Issues",
-          "controls": "Controls",
-          "aisHighlightCandidatesOffHint": "Candidate highlighting is currently off; all vessels remain visible."
+          "signalDensityShort": "活跃",
+          "newsCoverageShort": "已映射",
+          "monitorCoverageShort": "已跟踪",
+          "layerCoverageShort": "可见",
+          "aisHighlightCandidatesHint": "基于规则识别出的政府与军用候选目标，会在完整船舶图层上方高亮显示。",
+          "aisCandidatesOnlyHint": "候选船舶模式只显示基于 AIS 名称和船型规则筛出的子集，并非完整船舶清单。",
+          "aisAllVesselsHint": "全部船舶模式会展示当前视口中的完整 AIS 船舶快照。",
+          "aisStatusHint": "启用 AIS 图层后，可查看船舶来源、新鲜度与扰动信号。",
+          "flights": "航班",
+          "flightStatusHint": "当图层可见时，会显示航班来源状态徽标。",
+          "transportLegendHint": "需要查看符号含义？切换模式前请先打开 AIS 图例参考。",
+          "openFullLegend": "打开完整图例",
+          "signalLegend": "信号",
+          "newsLegend": "新闻与监控",
+          "expandInspector": "展开详情",
+          "overview": "概览",
+          "overviewHint": "数量、新鲜度和链路健康状态会持续显示在头部摘要区域。",
+          "view": "视图",
+          "viewHint": "调整当前视图的地图范围、时间窗口和可见图层。",
+          "transport": "交通",
+          "transportHint": "查看航班与 AIS 模式、来源新鲜度以及交通覆盖情况。",
+          "feeds": "数据链路",
+          "feedsHint": "当数据异常时，可检查链路健康、刷新活动和入库问题。",
+          "legendHint": "查看地图上使用的标记含义、严重级别和 AIS 符号说明。",
+          "feedsAttention": "异常",
+          "feedsAttentionHint": "受影响的数据链路：{{count}}",
+          "signalDensity": "当前预警标记",
+          "newsCoverage": "地理标注新闻",
+          "monitorCoverage": "已跟踪监控列表",
+          "layerCoverage": "当前激活图层",
+          "stream": "数据流",
+          "noRecentMessage": "暂无最新流更新",
+          "latestStreamUpdate": "最近一次流更新",
+          "data": "数据",
+          "awaitingRefresh": "等待刷新",
+          "healthyFeeds": "健康",
+          "refreshingFeeds": "刷新中",
+          "issueFeeds": "异常",
+          "controls": "控制项",
+          "aisHighlightCandidatesOffHint": "当前未开启候选高亮，全部船舶仍然可见。"
         },
         "tooltip": {
           "location": "位置",
@@ -1583,7 +1583,7 @@
           "window": "窗口",
           "region": "区域",
           "updated": "更新时间",
-          "role": "Role"
+          "role": "角色"
         },
         "panel": {
           "signalsTitle": "附近信号",
@@ -1596,17 +1596,17 @@
           "zoomIn": "放大查看",
           "latest": "最新",
           "openOriginal": "打开",
-          "flightDetailSummary": "Latest aircraft state plus recent persisted change points.",
-          "vesselDetailSummary": "Latest vessel state plus recent persisted change points.",
-          "recentTrackPoints": "Recent change points",
-          "noTrackPoints": "No persisted track points in the current range.",
-          "trackPointCount": "Points",
-          "trackDistance": "Distance"
+          "flightDetailSummary": "展示最新航空器状态及最近持久化的变更点。",
+          "vesselDetailSummary": "展示最新船舶状态及最近持久化的变更点。",
+          "recentTrackPoints": "最近变更点",
+          "noTrackPoints": "当前时间范围内没有持久化轨迹点。",
+          "trackPointCount": "点位数",
+          "trackDistance": "距离"
         },
         "legend": {
           "title": "图例",
           "radius": "点位越大，表示聚合后的信号密度越高。",
-          "aisTitle": "AIS",
+          "aisTitle": "AIS 航运",
           "signalHigh": "高等级信号",
           "signalMedium": "中等级信号",
           "signalLow": "低等级信号",
@@ -1658,7 +1658,7 @@
           "previewHint": "悬停预览，点击固定。",
           "clearFocus": "清除聚焦",
           "quickLegendCompactHint": "当前启用的符号提示",
-          "moreItems": "+{{count}} more"
+          "moreItems": "还有 {{count}} 项"
         },
         "translation": {
           "label": "中文覆盖",
@@ -1687,10 +1687,10 @@
         "openingSearch": "正在打开搜索“{{query}}”...",
         "openedSearch": "已在新标签页打开“{{query}}”的搜索。",
         "actions": {
-          "analyzeCurrentView": "Analyze current view",
-          "enableTransportLayers": "Enable the flight or AIS layer before requesting transport analysis.",
-          "analyzeCurrentViewSubmitted": "Transport analysis submitted for the current view.",
-          "analyzeCurrentViewFailed": "Failed to submit transport analysis."
+          "analyzeCurrentView": "分析当前视图",
+          "enableTransportLayers": "请求交通分析前，请先启用飞行或 AIS 图层。",
+          "analyzeCurrentViewSubmitted": "已为当前视图提交交通分析。",
+          "analyzeCurrentViewFailed": "提交交通分析失败。"
         }
       },
       "entityGraph": {
@@ -1868,7 +1868,7 @@
       "knowledgeGraph3d": {
         "title": "知识图谱（3D）"
       },
-      "sectorHeatmapFallbackWarning": "Fallback fields: {{count}}"
+      "sectorHeatmapFallbackWarning": "兜底字段：{{count}}"
     },
     "stream": {
       "status": {
@@ -1929,7 +1929,7 @@
         "soybeans": "大豆"
       },
       "empty": {
-        "cpi": "CPI",
+        "cpi": "CPI（消费者物价指数）",
         "agri": "农业",
         "tourism": "旅游"
       }
@@ -2005,10 +2005,10 @@
       "assistant": "助手"
     },
     "adminGroup": "管理",
-    "commandRunSearch": "Search all items",
-    "searchAriaLabel": "Search news items",
-    "openMenu": "Open navigation menu",
-    "menu": "Menu"
+    "commandRunSearch": "搜索全部条目",
+    "searchAriaLabel": "搜索新闻条目",
+    "openMenu": "打开导航菜单",
+    "menu": "菜单"
   },
   "pages": {
     "today": {
@@ -2018,9 +2018,9 @@
       "marketsStable": "市场运行平稳",
       "breakingAlert": "突发预警",
       "alertsDisclaimer": "仅供参考 • AI 生成预警",
-      "headline": "Headline",
-      "hotTopics": "Hot Topics",
-      "latestFeed": "Latest Feed"
+      "headline": "头条",
+      "hotTopics": "热点话题",
+      "latestFeed": "最新动态"
     },
     "map": {
       "title": "区域信号态势图",
@@ -2113,8 +2113,8 @@
         "translatedCount": "已翻译：{{count}}",
         "originalCount": "原文：{{count}}",
         "provider": {
-          "deeplx": "DeepLX API",
-          "llm": "LLM"
+          "deeplx": "DeepLX 翻译接口",
+          "llm": "LLM 模型"
         },
         "showOriginal": "显示原文",
         "unavailable": "所选翻译服务不可用。",
@@ -2140,11 +2140,11 @@
         "openSettingsWithKey": "去系统设置 > 新闻源密钥（推荐：{{key}}）",
         "maybeRequired": "该源可能需要先配置密钥",
         "maybeRequiredWithKey": "该源可能需要先配置密钥（推荐：{{key}}）",
-        "requiredTitle": "Missing runtime secret",
-        "requiredKeys": "Required keys: {{keys}}"
+        "requiredTitle": "缺少运行时密钥",
+        "requiredKeys": "所需密钥：{{keys}}"
       },
       "source": {
-        "fetchFailed": "Failed to fetch source"
+        "fetchFailed": "获取来源失败"
       }
     },
     "topics": {
@@ -2169,7 +2169,7 @@
         "countLabel": "报道",
         "openDetails": "详情",
         "openTopic": "预览",
-        "moreTag": "+{{count}}"
+        "moreTag": "另 {{count}} 个"
       },
       "eventDetail": {
         "title": "事件详情",
@@ -2290,12 +2290,12 @@
         },
         "timelineEmpty": "暂无时间线条目。请启用时间线生成并等待定时任务。",
         "itemsEmpty": "该事件暂无文章。",
-        "topicDrift": "Topic drift detected",
-        "topicDriftDescription": "Category distribution changed significantly across timeline buckets.",
-        "timelinePhases": "Timeline phases",
-        "confidence": "Confidence",
-        "anchor": "Anchor",
-        "tentative": "Tentative"
+        "topicDrift": "检测到主题漂移",
+        "topicDriftDescription": "时间线各阶段的分类分布发生了明显变化。",
+        "timelinePhases": "时间线阶段",
+        "confidence": "置信度",
+        "anchor": "锚点",
+        "tentative": "待确认"
       },
       "detail": {
         "loadFailed": "加载事件失败。",
@@ -2330,24 +2330,24 @@
         "articleLoadFailed": "加载文章失败。",
         "articleNotFound": "未找到处理结果。",
         "articleEmpty": "暂无 AI 内容。",
-        "credibilityStrong": "Cross-source corroboration detected. Confidence is relatively strong.",
-        "credibilityWeak": "Single-source signal. Treat this as preliminary.",
-        "credibilityMedium": "Multiple sources exist, but corroboration is still limited.",
-        "credibilityCardTitle": "Credibility signal",
-        "uniqueSources": "Unique sources",
-        "authoritativeSources": "Authoritative",
-        "blogSources": "Blog",
-        "corroboratedYes": "Corroborated",
-        "corroboratedNo": "Needs corroboration",
-        "topicDrift": "Topic drift detected",
-        "topicDriftDescription": "Category distribution changed significantly across timeline buckets.",
-        "timelinePhases": "Timeline phases",
-        "confidence": "Confidence",
-        "anchor": "Anchor",
-        "tentative": "Tentative"
+        "credibilityStrong": "已检测到跨来源交叉印证，可信度相对较高。",
+        "credibilityWeak": "当前仅有单一来源信号，请将其视为初步线索。",
+        "credibilityMedium": "已有多个来源，但交叉印证仍然有限。",
+        "credibilityCardTitle": "可信度信号",
+        "uniqueSources": "独立来源",
+        "authoritativeSources": "权威来源",
+        "blogSources": "博客来源",
+        "corroboratedYes": "已交叉验证",
+        "corroboratedNo": "仍需交叉验证",
+        "topicDrift": "检测到主题漂移",
+        "topicDriftDescription": "时间线各阶段的分类分布发生了明显变化。",
+        "timelinePhases": "时间线阶段",
+        "confidence": "置信度",
+        "anchor": "锚点",
+        "tentative": "待确认"
       },
       "quickNav": {
-        "hub": "News Hub",
+        "hub": "新闻中心",
         "newsnow": "实时热榜",
         "items": "深度文章"
       }
@@ -2453,13 +2453,13 @@
         "classificationPending": "分类准备中，后台完成归档后会显示判定依据。",
         "classificationStale": "展示旧分类结果",
         "classificationStaleHint": "当前分类结果与现行模型或分类版本不一致，正在展示最近一次可用的归档判断。",
-        "embeddingModel": "Embedding model",
-        "rerankModel": "Rerank model",
+        "embeddingModel": "Embedding 模型",
+        "rerankModel": "Rerank 模型",
         "fusedScore": "融合 {{percent}}%",
-        "ruleScore": "Rule",
-        "embeddingScore": "Embedding",
-        "rerankScore": "Rerank",
-        "fused": "Fusion",
+        "ruleScore": "规则",
+        "embeddingScore": "向量召回分",
+        "rerankScore": "重排序分",
+        "fused": "融合",
         "open": "打开事件详情"
       },
       "preparation": {
@@ -2680,12 +2680,12 @@
       }
     },
     "metrics": {
-      "sections": "Sections",
-      "sectionsHint": "Functional domains",
-      "links": "Quick Links",
-      "linksHint": "Available shortcuts",
-      "permissions": "Permissions",
-      "permissionsHint": "Granted capabilities"
+      "sections": "分区",
+      "sectionsHint": "功能领域",
+      "links": "快捷入口",
+      "linksHint": "可用快捷方式",
+      "permissions": "权限",
+      "permissionsHint": "已授予能力"
     }
   },
   "adminSettings": {
@@ -2817,6 +2817,9 @@
       "news-indicator": {
         "description": "管理指标匹配阈值、关联与刷新行为。"
       },
+      "news-extraction": {
+        "description": "控制分阶段清洗、质量门控与下游富化步骤。"
+      },
       "news-dedupe": {
         "description": "调整去重窗口、相似度规则与回退策略。"
       },
@@ -2873,8 +2876,8 @@
         "description": "管理可复用的 Crawl4AI 配置模板"
       },
       "crawlFrontier": {
-        "title": "Crawl Frontier",
-        "description": "Manage crawl site profiles, frontier runs, and layered/native execution."
+        "title": "抓取前沿",
+        "description": "管理抓取站点画像、frontier 运行任务以及分层/原生执行。"
       }
     }
   },
@@ -2891,7 +2894,7 @@
       "actor": "操作者",
       "resource": "资源",
       "action": "动作",
-      "ipAddress": "IP",
+      "ipAddress": "IP 地址",
       "metadata": "元数据"
     }
   },
@@ -2988,7 +2991,7 @@
       "strategy": "策略",
       "strategyEmpty": "默认",
       "lastSuccess": "最近成功",
-      "stats24h": "24h",
+      "stats24h": "24 小时",
       "latest": "最新",
       "group": "分组"
     },
@@ -3022,7 +3025,7 @@
     },
     "fields": {
       "name": "名称",
-      "url": "URL",
+      "url": "地址 URL",
       "type": "类型",
       "language": "语言",
       "languageHint": "例如 en, zh",
@@ -3114,44 +3117,44 @@
       "cronWindowStartHour": "开始小时（0-23）",
       "cronWindowEndHour": "结束小时（1-24）",
       "nextRunAt": "下次运行时间",
-      "crawlAntiBotMode": "Anti-bot retry",
-      "crawlAntiBotModeHint": "Auto removes crawlOptions.antiBotMode so templates/defaults can apply. Enable/Disable explicitly controls anti-bot retry when failures occur.",
-      "seedPatternList": "Article URL pattern (optional)",
-      "seedQueryParamAllowlist": "URL query param allowlist",
-      "seedQueryParamAllowlistHint": "Only these query keys are kept when building URL fingerprints. Leave empty to use the global scheduler defaults.",
-      "seedQueryParamAllowlistPlaceholder": "id, page, lang",
-      "seedListMaxPages": "List pages per discovery",
-      "seedListMaxPagesHint": "For List mode, crawl up to N paginated listing pages before scheduling article detail URLs.",
-      "seedListPageConcurrency": "List page concurrency",
-      "seedListPageConcurrencyHint": "How many listing pages to crawl in parallel during list discovery.",
-      "seedFollowPagination": "Follow pagination",
-      "seedFollowPaginationHint": "Enable this to follow next/older/load-more list links and discover more article events.",
-      "seedDeepHint": "Deep mode crawls section/list pages in bounded depth/time, then strictly keeps publish-time-ranked article links (no link-score fallback).",
-      "seedDeepMaxPages": "Deep max pages",
-      "seedDeepMaxPagesHint": "Total number of pages that deep discovery may crawl.",
-      "seedDeepMaxDepth": "Deep max depth",
-      "seedDeepMaxDepthHint": "How many link hops from the seed URL are allowed.",
-      "seedDeepTimeBudgetSeconds": "Deep time budget (sec)",
-      "seedDeepPageConcurrency": "Deep page concurrency",
-      "seedDeepScoreThreshold": "Deep score threshold",
-      "seedDeepScoreThresholdHint": "Optional pre-filter for raw link candidates before publish-time enrichment (0..1); final ranking does not fall back to link score.",
-      "seedDeepCandidatePoolSize": "Candidate pool size",
-      "seedDeepHeadFetchTopK": "Head fetch top K",
-      "seedDeepHeadFetchTopKHint": "For top-K candidates without URL date, fetch head metadata to infer publish time.",
-      "seedDeepPreferPathDate": "Prefer URL path date",
-      "seedDeepPreferPathDateHint": "Use /YYYY/MM/DD/ style path date as a fast publish-time signal.",
-      "seedDeepEnableSecondaryHubs": "Follow secondary hubs",
-      "seedDeepEnableSecondaryHubsHint": "Allow exploration of section/topic pages during deep discovery.",
-      "seedDeepIgnoreRobotsTxt": "Ignore robots.txt",
-      "seedDeepIgnoreRobotsTxtHint": "This mode is hard-locked to ignore robots.txt.",
-      "workflow": "Workflow",
-      "workflowMode": "Workflow version mode",
-      "workflowVersion": "Pinned workflow version"
+      "crawlAntiBotMode": "反反爬重试",
+      "crawlAntiBotModeHint": "选择 Auto 时会移除 crawlOptions.antiBotMode，以便套用模板或默认配置；显式选择启用/禁用时，则在抓取失败时明确控制是否执行反反爬重试。",
+      "seedPatternList": "文章 URL 模式（可选）",
+      "seedQueryParamAllowlist": "URL 查询参数白名单",
+      "seedQueryParamAllowlistHint": "仅保留这些查询参数键来构建 URL 指纹。留空则使用全局调度默认配置。",
+      "seedQueryParamAllowlistPlaceholder": "例如 id, page, lang",
+      "seedListMaxPages": "每次发现的列表页数",
+      "seedListMaxPagesHint": "在列表模式下，调度文章详情 URL 之前，最多抓取 N 个分页列表页。",
+      "seedListPageConcurrency": "列表页并发数",
+      "seedListPageConcurrencyHint": "列表发现阶段同时抓取多少个列表页。",
+      "seedFollowPagination": "跟随分页",
+      "seedFollowPaginationHint": "启用后会继续跟随 next/older/load-more 列表链接，以发现更多文章事件。",
+      "seedDeepHint": "深度模式会在受限深度/时间内抓取栏目页与列表页，然后只保留按发布时间排序的文章链接，不再回退到 link-score。",
+      "seedDeepMaxPages": "深度发现最大页数",
+      "seedDeepMaxPagesHint": "深度发现允许抓取的总页数上限。",
+      "seedDeepMaxDepth": "深度发现最大深度",
+      "seedDeepMaxDepthHint": "从种子 URL 出发最多允许经过多少跳链接。",
+      "seedDeepTimeBudgetSeconds": "深度发现时间预算（秒）",
+      "seedDeepPageConcurrency": "深度发现页面并发数",
+      "seedDeepScoreThreshold": "深度发现评分阈值",
+      "seedDeepScoreThresholdHint": "在发布时间补齐前，可选地先用该阈值对原始候选链接做预过滤（0..1）；最终排序不会回退为 link score。",
+      "seedDeepCandidatePoolSize": "候选池大小",
+      "seedDeepHeadFetchTopK": "头部抓取 Top K",
+      "seedDeepHeadFetchTopKHint": "对前 K 个 URL 中未带日期的候选，抓取 head 元信息以推断发布时间。",
+      "seedDeepPreferPathDate": "优先使用路径日期",
+      "seedDeepPreferPathDateHint": "将 /YYYY/MM/DD/ 形式的路径日期作为快速发布时间信号。",
+      "seedDeepEnableSecondaryHubs": "跟随二级栏目页",
+      "seedDeepEnableSecondaryHubsHint": "允许在深度发现过程中探索栏目页或专题页。",
+      "seedDeepIgnoreRobotsTxt": "忽略 robots.txt",
+      "seedDeepIgnoreRobotsTxtHint": "该模式固定为忽略 robots.txt。",
+      "workflow": "工作流",
+      "workflowMode": "工作流版本模式",
+      "workflowVersion": "固定工作流版本"
     },
     "crawlHeadlessMode": {
       "auto": "自动（推荐）",
-      "headless": "Headless",
-      "headed": "Headed（Xvfb）"
+      "headless": "无头",
+      "headed": "有头（Xvfb）"
     },
     "crawlTriState": {
       "auto": "自动（继承）",
@@ -3179,10 +3182,10 @@
     "presets": {
       "cloudflare": "Cloudflare 预设",
       "cloudflareHint": "一键启用 undetected + stealth，并切换浏览器为 Headed（Xvfb）。",
-      "reutersCf": "Reuters + CF preset",
-      "reutersCfHint": "Adds Reuters-oriented article defaults (detail page hint + quality-first + cleaned markdown).",
-      "cloudflareDefaultHint": "This is now the default for new sources; use Auto/Disable only for low-friction sites.",
-      "cloudflareRuntimeHint": "When challenge pages are detected, API now auto-primes a same-site warmup session and retries with incremental anti-bot backoff."
+      "reutersCf": "Reuters + CF 预设",
+      "reutersCfHint": "加入面向 Reuters 的文章默认配置（详情页提示、质量优先、清洗后 Markdown）。",
+      "cloudflareDefaultHint": "这已成为新来源的默认策略；仅在低摩擦站点上才建议使用 Auto/Disable。",
+      "cloudflareRuntimeHint": "检测到挑战页时，API 会自动预热同站会话，并采用递增式反爬回退策略重试。"
     },
     "messages": {
       "created": "已创建数据源。",
@@ -3241,7 +3244,7 @@
     },
     "preview": {
       "columns": {
-        "url": "URL",
+        "url": "地址 URL",
         "relevance": "相关度",
         "timeSignal": "时间信号",
         "status": "状态",
@@ -3257,7 +3260,7 @@
       "inFlight": "进行中",
       "title": "新闻源预览",
       "modeSitemap": "站点地图",
-      "modeRss": "RSS",
+      "modeRss": "RSS 模式",
       "modeList": "列表页",
       "modeSingle": "单条",
       "strategy": "策略",
@@ -3267,13 +3270,13 @@
       "inFlightCount": "进行中：{{count}}/{{limit}}",
       "loading": "正在加载预览...",
       "empty": "暂无预览数据。",
-      "modeDeep": "Deep discovery",
+      "modeDeep": "深度发现",
       "deepFailure": {
-        "title": "Deep discovery failure stats",
-        "total24h": "Failures (24h)",
-        "streak": "Current streak",
-        "nextRetryAt": "Next retry",
-        "lastFailureAt": "Last failure: {{time}}"
+        "title": "深度发现失败统计",
+        "total24h": "24 小时失败次数",
+        "streak": "当前连续失败次数",
+        "nextRetryAt": "下次重试时间",
+        "lastFailureAt": "最近失败：{{time}}"
       }
     },
     "sections": {
@@ -3283,7 +3286,7 @@
       "scheduleHint": "可选择按间隔（频率）调度或使用 Cron 表达式，并可选设置时间窗口。",
       "crawlStrategy": "抓取策略",
       "crawlStrategyHint": "在不使用 LLM 抽取的前提下，配置整页扫描、列表/详情扩展与质量档位。",
-      "crawlMarkdown": "RAG Markdown",
+      "crawlMarkdown": "RAG Markdown 输出",
       "crawlMarkdownHint": "Crawl4AI 会将网页转换为干净的 Markdown，请根据检索链路选择合适的内容来源与转义策略。",
       "crawlOptionsPreview": "解析后的 crawlOptions 预览",
       "crawlOptionsPreviewHint": "展示结构化表单与高级 JSON 合并后的最终 crawlOptions 载荷。"
@@ -3297,7 +3300,7 @@
     },
     "seedMode": {
       "sitemap": "站点地图",
-      "rss": "RSS / Atom",
+      "rss": "RSS / Atom 订阅",
       "list": "列表页",
       "deep": "深度发现"
     },
@@ -3356,9 +3359,9 @@
       "descriptionMixed": "设置下次运行时间。RSS 新闻源会直接创建流水线任务，其他新闻源仍会创建 CrawlTask 并经过 Crawl4AI。",
       "enablesSource": "这将启用 {{count}} 个数据源。",
       "presets": {
-        "in5m": "+5m",
-        "in30m": "+30m",
-        "in1h": "+1h",
+        "in5m": "+5 分钟",
+        "in30m": "+30 分钟",
+        "in1h": "+1 小时",
         "nextHour": "下一个整点",
         "tomorrow9": "明天 09:00",
         "nextInterval": "下一个周期"
@@ -3372,10 +3375,10 @@
     },
     "rssAdaptive": {
       "tier": {
-        "hot": "Hot",
-        "warm": "Warm",
-        "normal": "Normal",
-        "cold": "Cold"
+        "hot": "高热",
+        "warm": "温热",
+        "normal": "常规",
+        "cold": "冷门"
       },
       "tierTag": "自适应 {{tier}}",
       "intervalTag": "轮询 {{seconds}} 秒",
@@ -3427,7 +3430,7 @@
     },
     "scheduleMode": {
       "interval": "间隔",
-      "cron": "Cron"
+      "cron": "Cron 表达式"
     },
     "opml": {
       "title": "从 OPML 导入 RSS 订阅源",
@@ -3555,7 +3558,7 @@
       "overviewSubtitle": "在所选时间范围内跟踪宏观与市场信号。",
       "sectorHeatmap": "板块热力图",
       "candlestick": "K 线图",
-      "permissionRequired": "Market overview hero metrics require the economicdata.read permission."
+      "permissionRequired": "市场概览 Hero 指标需要 `economicdata.read` 权限。"
     },
     "macro": {
       "overview": "宏观概览",
@@ -3627,15 +3630,15 @@
       "openMonitor": "打开监控",
       "monitorOwnedHint": "该订阅由“我的监控”管理，请编辑对应监控来修改它。",
       "signInRequired": "请先登录后再管理内容订阅。",
-      "recommendationsLoadFailed": "Failed to load recommendations.",
-      "recommendationsLoadFailedDescription": "Recommendations are temporarily unavailable. You can still manage subscriptions and browse the catalog.",
-      "refreshFailedAfterMutation": "Changes were saved, but the latest subscription list could not be reloaded.",
-      "refreshFailedAfterMutationDescription": "Your add/remove action has completed. The page is still showing the previous subscription snapshot until reload succeeds.",
-      "loadFailedDescription": "The subscriptions list could not be loaded. Retry to restore the latest subscription state.",
-      "degradedBadge": "Degraded"
+      "recommendationsLoadFailed": "加载推荐失败。",
+      "recommendationsLoadFailedDescription": "推荐服务暂时不可用。你仍可继续管理订阅并浏览目录。",
+      "refreshFailedAfterMutation": "更改已保存，但最新订阅列表无法重新加载。",
+      "refreshFailedAfterMutationDescription": "你的新增/移除操作已完成，但在重新加载成功前，页面仍显示上一版订阅快照。",
+      "loadFailedDescription": "无法加载订阅列表。请重试以恢复最新订阅状态。",
+      "degradedBadge": "降级"
     },
-    "channelMissingId": "Channel id is missing. Reopen the dialog and try again.",
-    "channelValidationFailed": "Fill in the required fields before saving."
+    "channelMissingId": "缺少频道 ID。请重新打开对话框后重试。",
+    "channelValidationFailed": "保存前请先填写必填字段。"
   },
   "brand": {
     "short": "M",
@@ -3878,15 +3881,15 @@
         "detailPublishSignalHeadFetchMaxReadBytes": "详情发布时间信号头部抓取最大读取字节数",
         "maxAttempts": "最大尝试次数",
         "retryBackoff": "重试退避",
-        "requestTimeoutHot": "Hot request timeout",
-        "requestTimeoutNormal": "Normal request timeout",
-        "queueOverloadCooldown": "Queue overload cooldown",
-        "adaptiveConcurrency": "Adaptive concurrency",
-        "adaptiveWindowMinutes": "Adaptive window",
-        "adaptiveCooldownMinutes": "Adaptive cooldown",
-        "adaptiveLatencyThresholdRatio": "Adaptive latency threshold",
-        "adaptiveErrorRateThreshold": "Adaptive error-rate threshold",
-        "adaptiveMemoryHeadroomThreshold": "Adaptive memory headroom threshold"
+        "requestTimeoutHot": "热点请求超时",
+        "requestTimeoutNormal": "常规请求超时",
+        "queueOverloadCooldown": "队列过载冷却时间",
+        "adaptiveConcurrency": "自适应并发",
+        "adaptiveWindowMinutes": "自适应窗口",
+        "adaptiveCooldownMinutes": "自适应冷却时间",
+        "adaptiveLatencyThresholdRatio": "自适应延迟阈值",
+        "adaptiveErrorRateThreshold": "自适应错误率阈值",
+        "adaptiveMemoryHeadroomThreshold": "自适应内存余量阈值"
       },
       "hints": {
         "adaptiveEnabled": "已启用自适应模式，下方窗口与阈值配置将生效。",
@@ -3902,14 +3905,14 @@
         "detailPublishSignalHeadFetchMaxReadBytes": "请填写详情发布时间信号头部抓取最大读取字节数",
         "maxAttempts": "请填写最大尝试次数",
         "retryBackoff": "请填写重试退避",
-        "requestTimeoutHot": "Please enter hot request timeout.",
-        "requestTimeoutNormal": "Please enter normal request timeout.",
-        "queueOverloadCooldown": "Please enter queue overload cooldown.",
-        "adaptiveWindowMinutes": "Please enter adaptive window in minutes.",
-        "adaptiveCooldownMinutes": "Please enter adaptive cooldown in minutes.",
-        "adaptiveLatencyThresholdRatio": "Please enter adaptive latency threshold ratio.",
-        "adaptiveErrorRateThreshold": "Please enter adaptive error-rate threshold ratio.",
-        "adaptiveMemoryHeadroomThreshold": "Please enter adaptive memory headroom threshold ratio."
+        "requestTimeoutHot": "请填写热点请求超时。",
+        "requestTimeoutNormal": "请填写常规请求超时。",
+        "queueOverloadCooldown": "请填写队列过载冷却时间。",
+        "adaptiveWindowMinutes": "请填写自适应窗口（分钟）。",
+        "adaptiveCooldownMinutes": "请填写自适应冷却时间（分钟）。",
+        "adaptiveLatencyThresholdRatio": "请填写自适应延迟阈值比例。",
+        "adaptiveErrorRateThreshold": "请填写自适应错误率阈值比例。",
+        "adaptiveMemoryHeadroomThreshold": "请填写自适应内存余量阈值比例。"
       },
       "save": "保存"
     },
@@ -4146,8 +4149,8 @@
         "enableRerank": "启用 Reranker 层",
         "llmModel": "覆盖 LLM 模型（可选）",
         "minConfidence": "最低置信度",
-        "embeddingTopK": "Embedding Top-K",
-        "rerankTopN": "Rerank Top-N",
+        "embeddingTopK": "向量召回 Top-K",
+        "rerankTopN": "重排序 Top-N",
         "cacheTtlSeconds": "缓存 TTL（秒）",
         "taxonomyVersion": "分类法版本",
         "taxonomyJson": "分类法 JSON"
@@ -4288,7 +4291,7 @@
         "rollbackFailed": "回滚失败",
         "resetSaved": "重置完成",
         "resetFailed": "重置失败",
-        "saveBlockedBeforeLoad": "Current policy is not loaded yet. Please refresh and try again."
+        "saveBlockedBeforeLoad": "当前策略尚未加载完成，请刷新后重试。"
       }
     },
     "newsIndicator": {
@@ -4362,9 +4365,9 @@
         "llmJudgePromptVersion": "Prompt 版本",
         "llmJudgeSystemPromptTemplate": "System Prompt 模板",
         "llmJudgeUserPromptTemplate": "User Prompt 模板",
-        "sourceId": "Source ID (optional)",
-        "language": "Language (optional)",
-        "categoryPath": "Category path (optional)"
+        "sourceId": "来源 ID（可选）",
+        "language": "语言（可选）",
+        "categoryPath": "分类路径（可选）"
       },
       "hints": {
         "defaultThreshold": "未命中主题/分类时使用，范围 0–1（越高越严格）。",
@@ -4381,9 +4384,9 @@
       },
       "placeholders": {
         "category": "例如：finance / 科技 / geopolitics",
-        "sourceId": "news-source-id",
-        "language": "en / zh",
-        "categoryPath": "finance/markets"
+        "sourceId": "例如 news-source-id",
+        "language": "例如 zh / en",
+        "categoryPath": "例如 finance/markets"
       },
       "actions": {
         "add": "添加覆盖项",
@@ -4406,16 +4409,16 @@
           "category": "分类",
           "topics": "主题列表",
           "summaryLength": "摘要长度",
-          "sourceId": "Source ID",
-          "language": "Language",
-          "categoryPath": "Category path"
+          "sourceId": "来源 ID",
+          "language": "语言",
+          "categoryPath": "分类路径"
         },
         "placeholders": {
           "category": "可选",
           "topics": "可选（逗号/回车分隔）",
-          "sourceId": "Optional",
-          "language": "Optional",
-          "categoryPath": "Optional"
+          "sourceId": "可选",
+          "language": "可选",
+          "categoryPath": "可选"
         },
         "results": {
           "base": "基础",
@@ -4439,11 +4442,21 @@
     "newsPrompts": {
       "saved": "已保存",
       "saveFailed": "保存失败",
-      "description": "新闻提示词说明",
+      "description": "管理清洗与分阶段新闻抽取使用的提示词模板。",
+      "cleaningTitle": "清洗提示词",
+      "entityTitle": "实体抽取提示词",
+      "sentimentTitle": "情感提示词",
+      "kgTitle": "知识图谱提示词",
       "fields": {
         "version": "版本",
         "systemTemplate": "系统模板",
-        "userTemplate": "用户模板"
+        "userTemplate": "用户模板",
+        "entitySystemTemplate": "实体系统模板",
+        "entityUserTemplate": "实体用户模板",
+        "sentimentSystemTemplate": "情感系统模板",
+        "sentimentUserTemplate": "情感用户模板",
+        "kgSystemTemplate": "知识图谱系统模板",
+        "kgUserTemplate": "知识图谱用户模板"
       },
       "validation": {
         "version": "请填写版本号",
@@ -4458,6 +4471,36 @@
       "estimatedTokens": "预计 Token：{{count}}",
       "estimatedTotalTokens": "预计总 Token：{{count}}",
       "placeholdersTitle": "占位符标题"
+    },
+    "newsExtraction": {
+      "saved": "新闻抽取设置已保存。",
+      "saveFailed": "保存新闻抽取设置失败。",
+      "description": "配置分阶段文章清洗、低成本质量门控与下游富化步骤。",
+      "pipelineTitle": "流水线模式",
+      "preflightTitle": "预检门控",
+      "postCleanTitle": "清洗后门控",
+      "capabilitiesTitle": "下游富化",
+      "providersTitle": "服务提供方",
+      "pipelineModeLegacy": "旧版单次抽取",
+      "pipelineModeStaged": "分阶段抽取",
+      "providersHint": "不同阶段可独立指定 Provider。当前版本仅支持内置 LLM Provider。",
+      "fields": {
+        "enabled": "启用",
+        "pipelineMode": "执行模式",
+        "rejectBotChallenge": "拦截机器人挑战页",
+        "rejectListLike": "拦截列表型页面",
+        "minWordCount": "最小词数",
+        "requireSummary": "要求摘要",
+        "minQualityScore": "最低质量分",
+        "minCleanedChars": "最少清洗字符数",
+        "entities": "实体",
+        "sentiment": "情感",
+        "kg": "知识图谱关系",
+        "cleanProvider": "清洗 Provider",
+        "entitiesProvider": "实体 Provider",
+        "sentimentProvider": "情感 Provider",
+        "kgProvider": "知识图谱 Provider"
+      }
     },
     "llmGateway": {
       "description": "管理 OpenAI 兼容的 LLM 网关配置。启用的配置会用于后端运行时调用。",
@@ -4528,24 +4571,24 @@
         "hint": "将负载均衡设置保存到 MySQL。保存后需重启 litellm 服务使配置生效。",
         "fields": {
           "enabled": "启用 DB 负载均衡",
-          "openaiKeys": "OPENAI_API_KEYS",
-          "anthropicKeys": "ANTHROPIC_API_KEYS",
+          "openaiKeys": "OpenAI 密钥（OPENAI_API_KEYS）",
+          "anthropicKeys": "Anthropic 密钥（ANTHROPIC_API_KEYS）",
           "clearAnthropicKeys": "清空已存储的 Anthropic Keys",
-          "routingStrategy": "routing_strategy",
-          "deploymentRpm": "LITELLM_DEPLOYMENT_RPM",
-          "deploymentTpm": "LITELLM_DEPLOYMENT_TPM",
-          "redisHost": "LITELLM_REDIS_HOST",
-          "redisPort": "LITELLM_REDIS_PORT",
-          "redisPassword": "LITELLM_REDIS_PASSWORD"
+          "routingStrategy": "路由策略（routing_strategy）",
+          "deploymentRpm": "默认 RPM（LITELLM_DEPLOYMENT_RPM）",
+          "deploymentTpm": "默认 TPM（LITELLM_DEPLOYMENT_TPM）",
+          "redisHost": "Redis 主机（LITELLM_REDIS_HOST）",
+          "redisPort": "Redis 端口（LITELLM_REDIS_PORT）",
+          "redisPassword": "Redis 密码（LITELLM_REDIS_PASSWORD）"
         },
         "hints": {
-          "openaiKeys": "逗号或换行分隔。留空表示保留现有 OpenAI keys；如填写则替换已存储列表。",
-          "anthropicKeys": "逗号或换行分隔。留空表示保留现有 Anthropic keys。"
+          "openaiKeys": "逗号或换行分隔。留空表示保留现有 OpenAI 密钥；如填写则替换已存储列表。",
+          "anthropicKeys": "逗号或换行分隔。留空表示保留现有 Anthropic 密钥。"
         },
         "tooltips": {
           "enabled": "开启后，LiteLLM 启动时会从 MySQL 读取并应用负载均衡配置。",
-          "openaiKeys": "OpenAI 上游 Key 存储在 MySQL。此输入框用于替换列表；若留空则不改动。",
-          "anthropicKeys": "Anthropic 上游 Key 存储在 MySQL。输入后会替换列表；也可使用下方开关清空。",
+          "openaiKeys": "OpenAI 上游密钥存储在 MySQL。此输入框用于替换列表；若留空则不改动。",
+          "anthropicKeys": "Anthropic 上游密钥存储在 MySQL。输入后会替换列表；也可使用下方开关清空。",
           "routingStrategy": "simple-shuffle 为随机分流；least-busy 优先空闲部署；usage-based-routing 按使用量分配；latency-based-routing 优先低延迟部署。",
           "deploymentRpm": "给每个 deployment 注入默认 RPM（仅在 deployment 未显式配置 rpm 时生效）。",
           "deploymentTpm": "给每个 deployment 注入默认 TPM（仅在 deployment 未显式配置 tpm 时生效）。",
@@ -4556,8 +4599,8 @@
         "status": {
           "enabled": "已启用 DB 负载均衡",
           "disabled": "已禁用 DB 负载均衡",
-          "openaiKeys": "OpenAI keys：{{count}}",
-          "anthropicKeys": "Anthropic keys：{{count}}",
+          "openaiKeys": "OpenAI 密钥：{{count}}",
+          "anthropicKeys": "Anthropic 密钥：{{count}}",
           "restartRequired": "需要重启"
         },
         "messages": {
@@ -4568,7 +4611,7 @@
           "saveFailed": "保存负载均衡配置失败"
         },
         "validation": {
-          "redisHost": "请填写 Redis Host"
+          "redisHost": "请填写 Redis 主机"
         },
         "reset": {
           "modal": {
@@ -4609,17 +4652,17 @@
           "duration": "耗时",
           "deployments": "模型 ID",
           "modelIds": "模型 ID",
-          "apiBases": "API Base"
+          "apiBases": "API 基础地址"
         },
         "sections": {
-          "modelIds": "Model ID 分布",
-          "apiBases": "API base 分布",
-          "callIds": "Call ID 样本",
+          "modelIds": "模型 ID 分布",
+          "apiBases": "API 基础地址分布",
+          "callIds": "调用 ID 样本",
           "errors": "错误"
         },
         "columns": {
-          "id": "ID",
-          "apiBase": "API Base",
+          "id": "编号 ID",
+          "apiBase": "API 基础地址",
           "count": "次数",
           "ratio": "占比"
         }
@@ -4647,14 +4690,14 @@
         "assistantWebSearchOff": "assistant:联网搜索:关",
         "metadataOn": "metadata:开",
         "metadataOff": "metadata:关",
-        "rpm": "RPM",
+        "rpm": "每分钟请求数（RPM）",
         "status": "状态",
-        "apiKey": "API Key"
+        "apiKey": "API 密钥"
       },
       "fields": {
         "name": "名称",
-        "apiBase": "API Base 地址",
-        "apiKey": "API Key",
+        "apiBase": "API 基础地址",
+        "apiKey": "API 密钥",
         "model": "默认模型",
         "assistantModel": "助手专用模型",
         "assistantWebSearchEnabled": "助手联网搜索",
@@ -4664,10 +4707,10 @@
         "apiSurface": "API 接口面",
         "timeoutMs": "超时 (ms)",
         "temperature": "温度",
-        "topP": "Top P",
+        "topP": "Top P 参数",
         "maxOutputTokens": "最大输出 Token",
         "maxRetries": "最大重试次数",
-        "fallbackModels": "Fallback 模型",
+        "fallbackModels": "回退模型",
         "sendMetadata": "发送 metadata",
         "responseFormatMode": "response_format 模式",
         "enabled": "启用"
@@ -4700,14 +4743,14 @@
       },
       "validation": {
         "nameRequired": "请填写名称",
-        "apiBaseRequired": "请填写 API Base URL",
+        "apiBaseRequired": "请填写 API 基础地址",
         "apiBaseUrl": "请输入合法的 URL（包含 http/https）",
         "modelRequired": "请填写模型",
         "timeoutRequired": "请填写超时",
         "maxRetriesRequired": "请填写最大重试次数",
         "rpmRequired": "请填写每分钟请求数",
-        "temperatureRequired": "请填写 Temperature",
-        "topPRequired": "请填写 Top P",
+        "temperatureRequired": "请填写温度",
+        "topPRequired": "请填写 Top P 参数",
         "maxOutputTokensRequired": "请填写最大输出 Token"
       },
       "modal": {
@@ -4747,23 +4790,23 @@
         "fields": {
           "model": "模型覆盖",
           "prompt": "提示词",
-          "includeEmbeddings": "测试 Embedding",
-          "embeddingModel": "Embedding 模型覆盖",
-          "embeddingInput": "Embedding 输入",
-          "includeRerank": "测试 Rerank",
-          "rerankModel": "Rerank 模型覆盖",
-          "rerankQuery": "Rerank 查询",
-          "rerankDocuments": "Rerank 文档",
+          "includeEmbeddings": "测试向量模型",
+          "embeddingModel": "向量模型覆盖",
+          "embeddingInput": "向量输入",
+          "includeRerank": "测试重排序",
+          "rerankModel": "重排序模型覆盖",
+          "rerankQuery": "重排序查询",
+          "rerankDocuments": "重排序文档",
           "includeCompletion": "测试对话/补全",
           "apiSurface": "API 接口面",
           "responseFormatMode": "response_format 探针",
           "includeMetadataProbe": "包含 metadata 探针",
-          "authMode": "Auth mode"
+          "authMode": "鉴权模式"
         },
         "placeholders": {
           "prompt": "只回复 \"OK\"，不要输出其他内容。",
-          "embeddingInput": "hello",
-          "rerankQuery": "latest US inflation outlook and Fed policy",
+          "embeddingInput": "你好",
+          "rerankQuery": "最新美国通胀前景与美联储政策",
           "rerankDocuments": "每行一条文档。留空则使用默认探针文档。"
         },
         "hints": {
@@ -4772,16 +4815,16 @@
           "includeCompletion": "关闭后仅测试向量（Embeddings）。",
           "includeRerank": "开启后会调用 /v1/rerank 进行探针测试。",
           "rerankModel": "留空则使用 Profile 的 Rerank 模型 + 备用模型。",
-          "authMode": "profile_key validates the profile credential. managed_runtime_key validates the governed runtime credential actually used in production."
+          "authMode": "`profile_key` 用于校验 Profile 自身凭据；`managed_runtime_key` 用于校验生产运行时实际使用的受治理凭据。"
         },
         "sections": {
           "completion": "对话补全",
           "embedding": "向量（Embedding）",
           "rerank": "重排序（Rerank）"
         },
-        "tokens": "Token：{{total}}",
+        "tokens": "Token 数：{{total}}",
         "dimensions": "{{n}} 维",
-        "cost": "$ {{cost}}",
+        "cost": "费用：$ {{cost}}",
         "errors": {
           "failed": "测试失败"
         },
@@ -4789,9 +4832,9 @@
           "apiSurface": "API 接口面",
           "compatibility": "兼容性",
           "field": "字段",
-          "topN": "topN",
+          "topN": "前 N 项（Top N）",
           "score": "得分",
-          "authMode": "Auth mode"
+          "authMode": "鉴权模式"
         }
       },
       "testUnsaved": {
@@ -4826,7 +4869,7 @@
         "errors": {
           "activateFailed": "更新 Embeddings 配置失败"
         },
-        "tag": "Embeddings",
+        "tag": "向量模型",
         "title": "Embeddings 网关",
         "hint": "用于 Embeddings / 向量化请求（可与对话模型使用不同的网关和模型）。在 use_default 模式下，后端会使用 MySQL 中首个可用启用 Profile。",
         "currentCompletion": "当前对话模型配置",
@@ -4854,7 +4897,7 @@
         "errors": {
           "activateFailed": "更新 Reranker 配置失败"
         },
-        "tag": "Reranker",
+        "tag": "重排序器",
         "title": "Rerank 网关",
         "hint": "用于 Rerank / 重排序请求（可与对话模型使用不同的网关和模型）。在 use_default 模式下，后端会使用 MySQL 中首个可用启用 Profile。",
         "currentCompletion": "当前对话模型配置",
@@ -4969,8 +5012,8 @@
           "body": "预算和并发限制由 LiteLLM Proxy 统一执行，应用侧只保留业务级请求日志。",
           "enabled": "已执行治理",
           "disabled": "未启用治理",
-          "dayBudget": "24h: ${{value}}",
-          "monthBudget": "30d: ${{value}}",
+          "dayBudget": "24 小时：${{value}}",
+          "monthBudget": "30 天：${{value}}",
           "parallel": "并发：{{value}}",
           "key": "托管密钥：{{value}}",
           "targetProfile": "目标 Profile：{{value}}",
@@ -5188,7 +5231,7 @@
           "litellmModels": "Models 接口",
           "litellmGuardrailsList": "Guardrails 列表",
           "guardrails": "生效的 Guardrails",
-          "openaiKeys": "OpenAI Key"
+          "openaiKeys": "OpenAI 密钥"
         },
         "guardrails": {
           "count": "{{count}} 个 guardrails",
@@ -5211,7 +5254,7 @@
           "blocked": "拦截",
           "rate": "拦截率",
           "moderationCalls": "审核调用（估算）",
-          "guardrails": "Guardrails",
+          "guardrails": "安全护栏",
           "codes": "原因代码"
         },
         "errors": {
@@ -5225,13 +5268,13 @@
       "docs": {
         "scope": "该设置只影响「AI 助手」页面（/assistant）。其他使用 LiteLlmService 的能力（新闻流水线/分析/监测等）不会传 guardrails，因此不会被这套拦截影响。",
         "setupTitle": "启用检查清单：",
-        "setupBody": "1）在 infra/litellm/litellm-config.yaml 配置 LiteLLM Proxy guardrails（openai-moderation-pre / openai-moderation-post）。\n2）在本面板配置 OpenAI API Key（会写入 MySQL）。\n3）在 API 与 litellm 的环境变量中同时配置 LITELLM_CONFIG_INTERNAL_TOKEN（根目录 .env 或 infra/docker/.env），然后重启 litellm 服务使其在启动时拉取 Key 生成配置。\n4）（可选）在本面板启用「输出审核」，用于对 AI 助手的输出再做一次审核（可能影响流式输出）。"
+        "setupBody": "1）在 infra/litellm/litellm-config.yaml 配置 LiteLLM Proxy guardrails（openai-moderation-pre / openai-moderation-post）。\n2）在本面板配置 OpenAI API 密钥（会写入 MySQL）。\n3）在 API 与 litellm 的环境变量中同时配置 LITELLM_CONFIG_INTERNAL_TOKEN（根目录 .env 或 infra/docker/.env），然后重启 litellm 服务使其在启动时拉取密钥生成配置。\n4）（可选）在本面板启用「输出审核」，用于对 AI 助手的输出再做一次审核（可能影响流式输出）。"
       },
       "openaiKeys": {
-        "title": "OpenAI Key（LiteLLM 上游）",
-        "description": "这些 Key 会写入 MySQL，并由 LiteLLM Proxy 在启动时通过内部接口拉取（需要配置 LITELLM_CONFIG_INTERNAL_TOKEN），用于 OpenAI 模型调用与 omni-moderation 审核。支持多个 Key：AI 助手会把 moderation 调用分摊到各 Key。更新后需要重启 litellm 服务生效。",
-        "quotaHint": "预计可用的免费审核额度：{{quota}} 次/天（每个 Key {{perKey}} 次/天）。当前 AI 助手设置每次运行预计消耗 {{callsPerRun}} 次。",
-        "compliance": "请确保你的使用方式符合 OpenAI 条款；不要用多个 Key 去规避上游的配额/计费策略。",
+        "title": "OpenAI 密钥（LiteLLM 上游）",
+        "description": "这些密钥会写入 MySQL，并由 LiteLLM Proxy 在启动时通过内部接口拉取（需要配置 LITELLM_CONFIG_INTERNAL_TOKEN），用于 OpenAI 模型调用与 omni-moderation 审核。支持多个密钥：AI 助手会把 moderation 调用分摊到各密钥。更新后需要重启 litellm 服务生效。",
+        "quotaHint": "预计可用的免费审核额度：{{quota}} 次/天（每个密钥 {{perKey}} 次/天）。当前 AI 助手设置每次运行预计消耗 {{callsPerRun}} 次。",
+        "compliance": "请确保你的使用方式符合 OpenAI 条款；不要用多个密钥去规避上游的配额或计费策略。",
         "status": {
           "configured": "已配置",
           "empty": "未配置",
@@ -5251,7 +5294,7 @@
           "tooManyKeys": "将超过最多 {{max}} 个 Key 的限制。"
         },
         "fields": {
-          "keys": "OpenAI API Key 列表",
+          "keys": "OpenAI API 密钥列表",
           "keysHint": "支持逗号或换行分隔；「追加保存」会合并去重，「覆盖保存」会覆盖数据库里已存的 Key 列表。",
           "keysPlaceholder": "sk-...\nsk-...\n..."
         },
@@ -5302,8 +5345,8 @@
         "reset": {
           "action": "清空 Key",
           "modal": {
-            "title": "确认清空 OpenAI Key？",
-            "content": "将删除数据库中存储的 OpenAI API Key。"
+            "title": "确认清空 OpenAI 密钥？",
+            "content": "将删除数据库中存储的 OpenAI API 密钥。"
           },
           "messages": {
             "done": "已清空"
@@ -5363,7 +5406,7 @@
         "lastDays": "最近 {{days}} 天",
         "providers": {
           "all": "全部来源",
-          "deeplx": "DeepLX API",
+          "deeplx": "DeepLX 翻译接口",
           "llm": "LLM 小模型"
         },
         "languages": {
@@ -5503,6 +5546,7 @@
       "newsEvents": "新闻事件",
       "newsEventSourcePolicy": "新闻来源策略",
       "newsIndicator": "新闻-指标",
+      "newsExtraction": "新闻抽取",
       "newsDedupe": "新闻去重",
       "newsClassification": "新闻分类",
       "newsPrompts": "新闻提示词",
@@ -5697,8 +5741,8 @@
       "loginRecordsFallbackTitle": "登录记录",
       "loginRecordsLoadFailed": "加载登录记录失败",
       "loginRecordsEmpty": "暂无登录记录",
-      "loginRecordIp": "IP：{{value}}",
-      "loginRecordUserAgent": "User-Agent：{{value}}",
+      "loginRecordIp": "IP 地址：{{value}}",
+      "loginRecordUserAgent": "User-Agent 标识：{{value}}",
       "columns": {
         "user": "用户",
         "status": "状态",
@@ -5775,7 +5819,7 @@
         "lastLogin": "最近登录",
         "usedBy": "被以下角色使用",
         "time": "时间",
-        "ip": "IP",
+        "ip": "IP 地址",
         "device": "设备",
         "loginMethod": "登录方式"
       },
@@ -6048,7 +6092,7 @@
         "feature": "功能",
         "requestType": "类型",
         "status": "状态",
-        "tokens": "Token",
+        "tokens": "Token 数",
         "totalTokens": "总量：{{value}}",
         "promptCompletionTokens": "输入/输出：{{prompt}} / {{completion}}",
         "cost": "成本",
@@ -6099,7 +6143,7 @@
           "title": "按模型",
           "model": "模型",
           "requests": "请求数",
-          "tokens": "Token",
+          "tokens": "Token 数",
           "cost": "成本 (USD)",
           "avgLatency": "平均延迟",
           "empty": "暂无模型汇总。"
@@ -6108,7 +6152,7 @@
           "title": "按天（UTC）",
           "date": "日期（UTC）",
           "requests": "请求数",
-          "tokens": "Token",
+          "tokens": "Token 数",
           "cost": "成本 (USD)",
           "avgLatency": "平均延迟",
           "empty": "暂无按天汇总。"
@@ -6119,7 +6163,7 @@
       "description": "配置 API 地理编码服务（用于新闻地图定位）的 Nominatim 标识信息。",
       "notice": {
         "title": "Nominatim 使用要求",
-        "body": "建议填写清晰的 User-Agent 与可联系的邮箱，以降低被限流或封禁风险。使用 OSM 公共 Nominatim 时，本系统会强制每 2 秒最多 1 次请求。"
+        "body": "建议填写清晰的 User-Agent 标识与可联系的邮箱，以降低被限流或封禁风险。使用 OSM 公共 Nominatim 时，本系统会强制每 2 秒最多 1 次请求。"
       },
       "health": {
         "title": "服务健康",
@@ -6161,7 +6205,7 @@
         },
         "placeholders": {
           "query": "例如：纽约，美国",
-          "countryCode": "US"
+          "countryCode": "例如 US"
         },
         "validation": {
           "query": "请输入查询内容",
@@ -6176,10 +6220,10 @@
           "upstreamError": "Nominatim 请求失败（HTTP {{status}}）。",
           "networkError": "网络错误或超时，请稍后重试。"
         },
-        "success": "Geocoding test completed."
+        "success": "地理编码测试已完成。"
       },
       "fields": {
-        "userAgent": "User-Agent",
+        "userAgent": "User-Agent 标识",
         "email": "邮箱"
       },
       "placeholders": {
@@ -6485,7 +6529,7 @@
         "rssAdaptiveColdMaxIntervalSeconds": "Cold 最大间隔（秒）",
         "rssAdaptiveHotDiscoveryCacheTtlCapSeconds": "Hot 发现缓存 TTL 上限（秒）",
         "rssAdaptiveWarmDiscoveryCacheTtlCapSeconds": "Warm 发现缓存 TTL 上限（秒）",
-        "seedUrlQueryParamAllowlist": "Seed URL query param allowlist"
+        "seedUrlQueryParamAllowlist": "种子 URL 查询参数允许名单"
       },
       "sections": {
         "rssAdaptive": "RSS 自适应轮询策略"
@@ -6505,7 +6549,7 @@
         "rssAdaptiveColdMaxIntervalSeconds": "Cold 档位调度间隔上限。",
         "rssAdaptiveHotDiscoveryCacheTtlCapSeconds": "Hot 档位发现缓存 TTL 上限。",
         "rssAdaptiveWarmDiscoveryCacheTtlCapSeconds": "Warm 档位发现缓存 TTL 上限。",
-        "seedUrlQueryParamAllowlist": "Only these query keys are kept when canonicalizing discovered URLs (e.g. keep id/page, drop utm_*)."
+        "seedUrlQueryParamAllowlist": "在发现 URL 做规范化时，仅保留这些查询参数键（例如保留 id/page，丢弃 utm_*）。"
       },
       "validation": {
         "seedFreshnessWindowDaysRequired": "新鲜度窗口必填",
@@ -6537,8 +6581,8 @@
         "rssAdaptiveWarmDiscoveryCacheTtlCapSecondsRequired": "Warm 发现缓存 TTL 上限必填",
         "rssAdaptiveWarmDiscoveryCacheTtlCapSecondsRange": "Warm 发现缓存 TTL 上限必须在 10 到 3600 秒之间",
         "rssAdaptiveWarmDiscoveryCacheTtlCapSecondsOrdering": "Warm 发现缓存 TTL 上限必须大于或等于 Hot 发现缓存 TTL 上限",
-        "seedUrlQueryParamAllowlistLimit": "At most 64 keys.",
-        "seedUrlQueryParamAllowlistInvalid": "Each key must match [a-z0-9_.-] and be up to 64 chars."
+        "seedUrlQueryParamAllowlistLimit": "最多允许 64 个键。",
+        "seedUrlQueryParamAllowlistInvalid": "每个键都必须匹配 [a-z0-9_.-]，且长度不超过 64 个字符。"
       },
       "messages": {
         "saved": "已保存"
@@ -6552,7 +6596,7 @@
         }
       },
       "placeholders": {
-        "seedUrlQueryParamAllowlist": "id, page, lang"
+        "seedUrlQueryParamAllowlist": "例如 id, page, lang"
       }
     },
     "newsnowPersonalization": {
@@ -6731,7 +6775,7 @@
         "totalCount": "键数：{{count}}",
         "persistedCount": "已配置：{{count}}",
         "draftCount": "草稿：{{count}}",
-        "unassignedDrafts": "Draft entries"
+        "unassignedDrafts": "草稿条目"
       },
       "filters": {
         "onlyConfigured": "仅看已配置",
@@ -6774,12 +6818,12 @@
         "globalSignalHint": "Telegram 与 OREF 属于全局共享信号；任何已登录且具备 items.read 权限的用户都会看到同一份 feed 与更新。",
         "configured": "已配置",
         "notConfigured": "未配置",
-        "translationApiKeySource": "翻译 API Key 来源",
+        "translationApiKeySource": "翻译 API 密钥来源",
         "translationFallbackApi": "备用翻译 API",
         "liveHlsProxyCnn": "直播 HLS 代理（CNN）",
         "liveHlsProxyCnbc": "直播 HLS 代理（CNBC）",
-        "finnhubApiKeySource": "Finnhub API Key 来源",
-        "fredApiKeySource": "FRED API Key 来源",
+        "finnhubApiKeySource": "Finnhub API 密钥来源",
+        "fredApiKeySource": "FRED API 密钥来源",
         "telegramApiIdSource": "Telegram API ID 来源",
         "telegramApiHashSource": "Telegram API Hash 来源",
         "telegramSessionSource": "Telegram Session 来源",
@@ -6800,29 +6844,29 @@
       },
       "sections": {
         "translationApi": "翻译 API",
-        "externalApis": "共享金融数据 Provider",
+        "externalApis": "共享金融数据提供方",
         "liveHlsProxy": "直播 HLS 代理",
         "telegram": "Telegram 采集",
         "telegramAuth": "Telegram Session 授权"
       },
       "sharedProviders": {
-        "title": "共享金融数据 Provider",
+        "title": "共享金融数据提供方",
         "description": "Finnhub 与 FRED 的密钥现在供共享经济数据主线使用；Situation Monitor、GraphQL 经济数据、Dashboard 和告警都会复用同一套 provider 凭据与已落库时序数据。"
       },
       "fields": {
         "translationMaxConcurrency": "翻译最大并发数",
         "translationApiEnabled": "启用翻译 API",
-        "translationApiBaseUrl": "DeepLX Base URL",
-        "translationApiKey": "DeepLX API Key",
+        "translationApiBaseUrl": "DeepLX 基础地址",
+        "translationApiKey": "DeepLX API 密钥",
         "translationFallbackApiEnabled": "启用备用翻译 API",
-        "translationFallbackApiBaseUrl": "备用翻译 Endpoint",
-        "finnhubApiKey": "Finnhub API Key",
-        "fredApiKey": "FRED API Key",
+        "translationFallbackApiBaseUrl": "备用翻译端点",
+        "finnhubApiKey": "Finnhub API 密钥",
+        "fredApiKey": "FRED API 密钥",
         "translationApiTimeoutMs": "翻译超时（毫秒）",
         "translationApiMaxRetries": "翻译重试次数",
         "telegramEnabled": "启用 Telegram 轮询",
-        "telegramApiId": "Telegram API ID",
-        "telegramApiHash": "Telegram API Hash",
+        "telegramApiId": "Telegram API 标识 ID",
+        "telegramApiHash": "Telegram API 哈希",
         "telegramChannelSet": "Telegram 频道集合",
         "telegramMaxFeedItems": "Telegram 最大 Feed 条数",
         "telegramMaxTextChars": "Telegram 文本最大字符数",
@@ -6880,7 +6924,7 @@
         "liveHlsProxyAllowedHosts": "host-a.example.com, host-b.example.com",
         "telegramApiId": "例如 12345678",
         "telegramApiHash": "用于发送验证码（如系统中已存在可留空）",
-        "telegramChannelSet": "full",
+        "telegramChannelSet": "full（完整）",
         "telegramPhoneNumber": "+971xxxxxxxxx",
         "telegramPhoneCode": "Telegram 发来的验证码",
         "telegram2faPassword": "未开启可直接回车"
@@ -6893,9 +6937,9 @@
         "telegramCompleteAuth": "生成并保存 Session",
         "telegramClearAuthState": "清空认证状态",
         "telegramClearSavedSession": "清除已保存的 Telegram Session",
-        "backToMonitor": "Back to Situation Monitor",
-        "openMonitoringSettings": "Open monitoring settings",
-        "openSchedulerSettings": "Open scheduler settings"
+        "backToMonitor": "返回态势监控",
+        "openMonitoringSettings": "打开监控设置",
+        "openSchedulerSettings": "打开调度设置"
       },
       "validation": {
         "translationMaxConcurrency": "并发数必填",
@@ -6958,39 +7002,39 @@
         "telegramEnableSkip": "仅保存"
       },
       "snapshot": {
-        "refreshSuccess": "Rebuilt the Situation Monitor external snapshot.",
-        "refreshFailed": "Failed to rebuild the Situation Monitor external snapshot.",
-        "title": "GDELT snapshot scheduler",
-        "stale": "STALE",
-        "interval": "Every {{count}} min",
-        "history": "{{count}} day history",
-        "generatedAt": "Last generated: {{time}}",
-        "lastFullSuccess": "Last full success: {{time}}",
-        "lastNonSuccess": "Last partial/failure: {{time}}",
-        "nextScheduled": "Next scheduled run: {{time}}",
-        "coverage": "Available categories: {{count}} / 6. Active warnings: {{warnings}}.",
-        "successRate": "24h success {{value}}",
-        "rateLimitedCount": "24h rate limits {{value}}",
-        "averageCoverage": "24h avg categories {{value}} / 6",
-        "refreshStatus": "Refresh status",
-        "forceRefresh": "Rebuild external snapshot"
+        "refreshSuccess": "已重建 Situation Monitor 外部快照。",
+        "refreshFailed": "重建 Situation Monitor 外部快照失败。",
+        "title": "GDELT 快照调度器",
+        "stale": "过期",
+        "interval": "每 {{count}} 分钟",
+        "history": "{{count}} 天历史",
+        "generatedAt": "最近生成：{{time}}",
+        "lastFullSuccess": "最近一次完整成功：{{time}}",
+        "lastNonSuccess": "最近一次部分成功/失败：{{time}}",
+        "nextScheduled": "下次计划运行：{{time}}",
+        "coverage": "可用分类：{{count}} / 6。当前活跃告警：{{warnings}}。",
+        "successRate": "24 小时成功率 {{value}}",
+        "rateLimitedCount": "24 小时限流次数 {{value}}",
+        "averageCoverage": "24 小时平均分类数 {{value}} / 6",
+        "refreshStatus": "刷新状态",
+        "forceRefresh": "重建外部快照"
       },
       "readiness": {
-        "title": "Situation Monitor readiness",
-        "description": "These settings directly affect Situation Monitor refresh, Telegram, OREF, Finnhub, and FRED data availability.",
-        "providers": "Provider readiness"
+        "title": "Situation Monitor 就绪状态",
+        "description": "这些设置会直接影响 Situation Monitor 刷新、Telegram、OREF、Finnhub 和 FRED 的数据可用性。",
+        "providers": "提供方就绪状态"
       },
       "quality": {
-        "title": "Analysis quality",
-        "empty": "Quality metrics are not available yet.",
-        "articles": "Articles {{count}}",
-        "clusters": "Clusters {{count}}",
-        "mixed": "Mixed {{count}}",
-        "mode": "Mode {{value}}",
-        "generatedAt": "Last computed: {{time}}",
-        "window": "Window: {{hours}}h",
-        "dedupe": "Dedupe ratio: {{value}}",
-        "avgSources": "Avg sources / cluster: {{value}}"
+        "title": "分析质量",
+        "empty": "质量指标暂不可用。",
+        "articles": "文章 {{count}}",
+        "clusters": "聚类 {{count}}",
+        "mixed": "混合 {{count}}",
+        "mode": "模式 {{value}}",
+        "generatedAt": "最近计算：{{time}}",
+        "window": "窗口：{{hours}} 小时",
+        "dedupe": "去重比例：{{value}}",
+        "avgSources": "平均每个聚类来源数：{{value}}"
       }
     },
     "realtimeSignals": {
@@ -7016,24 +7060,24 @@
         "openskyBaseUrl": "OpenSky 基础地址",
         "openskyTokenUrl": "OpenSky Token 地址",
         "adsbBaseUrl": "OpenSky 基础地址（兼容别名）",
-        "openskyClientId": "OpenSky Client ID",
-        "openskyClientSecret": "OpenSky Client Secret",
+        "openskyClientId": "OpenSky 客户端 ID",
+        "openskyClientSecret": "OpenSky 客户端密钥",
         "aisRelayBaseUrl": "AIS relay 根地址",
         "polymarketProxyUrl": "Polymarket 代理地址",
         "aisRelaySharedSecret": "AIS relay 共享密钥",
-        "acledApi": "ACLED API",
+        "acledApi": "ACLED 接口",
         "acledApiEnabled": "可用",
         "acledApiDisabled": "当前停用",
-        "acledAccessToken": "ACLED Access Token",
+        "acledAccessToken": "ACLED 访问令牌",
         "acledAccessTokenExpiresAt": "ACLED Token 到期时间",
         "acledAccessTokenRefreshedAt": "ACLED Token 最近刷新时间",
         "acledAccessTokenLastAttemptAt": "ACLED Token 最近刷新尝试时间",
         "acledAccessTokenLastError": "ACLED Token 最近错误",
         "acledOauthUsername": "ACLED OAuth 用户名",
         "acledOauthPassword": "ACLED OAuth 密码",
-        "acledOauthClientId": "ACLED OAuth Client ID",
-        "cloudflareApiToken": "Cloudflare API Token",
-        "wingbitsApiKey": "Wingbits API Key",
+        "acledOauthClientId": "ACLED OAuth 客户端 ID",
+        "cloudflareApiToken": "Cloudflare API 令牌",
+        "wingbitsApiKey": "Wingbits API 密钥",
         "acledTokenStatuses": {
           "ready": "Token 可用",
           "expiring": "Token 即将过期",
@@ -7061,7 +7105,7 @@
         "unrest": "抗议事件",
         "outages": "互联网中断",
         "keywordSpike": "关键词激增",
-        "pizzint": "PizzINT DEFCON",
+        "pizzint": "PizzINT DEFCON 指数",
         "gdeltTension": "GDELT 双边紧张度",
         "polymarketLeads": "Polymarket 领先信号"
       },
@@ -7085,16 +7129,16 @@
         "openskyBaseUrl": "OpenSky 基础地址",
         "openskyTokenUrl": "OpenSky Token 地址",
         "adsbBaseUrl": "OpenSky 基础地址（兼容别名）",
-        "openskyClientId": "OpenSky Client ID",
-        "openskyClientSecret": "OpenSky Client Secret",
+        "openskyClientId": "OpenSky 客户端 ID",
+        "openskyClientSecret": "OpenSky 客户端密钥",
         "aisRelayBaseUrl": "AIS relay 根地址",
         "polymarketProxyUrl": "Polymarket 代理地址",
         "aisRelaySharedSecret": "AIS relay 共享密钥",
         "acledOauthUsername": "ACLED OAuth 用户名",
         "acledOauthPassword": "ACLED OAuth 密码",
-        "acledOauthClientId": "ACLED OAuth Client ID",
-        "cloudflareApiToken": "Cloudflare API Token",
-        "wingbitsApiKey": "Wingbits API Key"
+        "acledOauthClientId": "ACLED OAuth 客户端 ID",
+        "cloudflareApiToken": "Cloudflare API 令牌",
+        "wingbitsApiKey": "Wingbits API 密钥"
       },
       "hints": {
         "openskyBaseUrl": "用于 OpenSky state 查询的 REST API 基础地址。",
@@ -7109,7 +7153,7 @@
         "acledOauthUsername": "用于自动刷新 ACLED OAuth Token 的账号邮箱。",
         "acledOauthClientId": "默认值为 `acled`，只有 ACLED 发放了其他 client_id 时才需要修改。",
         "secretOptional": "密钥字段留空表示保持当前已保存值。",
-        "openskyClientId": "OAuth client ID used for OpenSky access tokens."
+        "openskyClientId": "用于 OpenSky access token 的 OAuth 客户端 ID。"
       },
       "placeholders": {
         "openskyBaseUrl": "https://opensky-network.org/api",
@@ -7194,7 +7238,7 @@
           "healthy": "健康数据源",
           "issues": "异常数据源",
           "markerReadiness": "新闻标记",
-          "pizzint": "PizzINT DEFCON"
+          "pizzint": "PizzINT DEFCON 指数"
         },
         "markerWarning": {
           "title": "War Map 新闻标记尚未就绪。",
@@ -7271,7 +7315,7 @@
           "calls": "今日调用",
           "errorBreakdown": "错误分布",
           "resetAt": "每日重置",
-          "resetAtValue": "00:00 HKT",
+          "resetAtValue": "香港时间 00:00",
           "blockedCounts": "预算拦截",
           "allModeBlocked": "全部航班模式受限",
           "periods": {
@@ -7411,7 +7455,7 @@
       },
       "upgradeStarted": "升级已开始，当前版本 {{version}}",
       "description": "AKShare说明",
-      "title": "AKShare",
+      "title": "AKShare 数据源",
       "label": "标签",
       "python": "Python 版本 {{version}}",
       "refreshStatus": "刷新状态",
@@ -7455,7 +7499,7 @@
       "providers": {
         "title": "金融数据 Provider",
         "description": "展示已纳入经济数据主线的非 AKShare provider 项，包括 API Key 就绪情况与最近抓取状态。",
-        "provider": "Provider",
+        "provider": "提供方",
         "scope": "主线角色",
         "secret": "密钥",
         "notRequired": "不需要",
@@ -7480,7 +7524,7 @@
       "newsSourceRuntimeSecrets": "新闻源密钥",
       "vectorService": "向量服务",
       "modelService": "模型服务",
-      "akshare": "AKShare",
+      "akshare": "AKShare 数据源",
       "archivePreparation": "归档预热",
       "llmRuntime": "LLM 运行时"
     },
@@ -7552,33 +7596,33 @@
     },
     "multiTenantSchedulers": {
       "errors": {
-        "loadFailed": "Failed to load multi-tenant scheduler settings.",
-        "saveFailed": "Failed to save multi-tenant scheduler settings."
+        "loadFailed": "加载多租户调度器设置失败。",
+        "saveFailed": "保存多租户调度器设置失败。"
       },
       "messages": {
-        "saved": "Multi-tenant scheduler settings saved."
+        "saved": "多租户调度器设置已保存。"
       },
       "status": {
-        "saved": "Saved override",
-        "default": "Default",
-        "label": "Settings source"
+        "saved": "已保存覆盖配置",
+        "default": "默认值",
+        "label": "设置来源"
       },
-      "description": "Control how many organizations each background cron can process in parallel. Org-level locks still keep single-flight execution per tenant.",
+      "description": "控制每个后台 cron 在一次调度中可并行处理多少个组织。组织级锁仍会保证每个租户单飞执行。",
       "notice": {
-        "title": "Scheduler fan-out policy",
-        "body": "These limits apply per cron tick. Higher values reduce end-to-end tick latency, but also increase concurrent load on Redis, MySQL, MongoDB, and downstream services."
+        "title": "调度器扇出策略",
+        "body": "这些限制按每次 cron tick 生效。更高的数值可降低端到端调度延迟，但也会增加 Redis、MySQL、MongoDB 与下游服务的并发负载。"
       },
       "fields": {
-        "newsEventsIngestionOrgConcurrency": "News events ingestion org concurrency",
-        "knowledgeGraphIngestionOrgConcurrency": "Knowledge graph ingestion org concurrency",
-        "sentimentSnapshotOrgConcurrency": "Sentiment snapshot org concurrency",
-        "newsnowHottestAnalysisOrgConcurrency": "NewsNow hottest analysis org concurrency"
+        "newsEventsIngestionOrgConcurrency": "新闻事件入库组织并发数",
+        "knowledgeGraphIngestionOrgConcurrency": "知识图谱入库组织并发数",
+        "sentimentSnapshotOrgConcurrency": "情绪快照组织并发数",
+        "newsnowHottestAnalysisOrgConcurrency": "NewsNow 热榜分析组织并发数"
       },
       "hints": {
-        "newsEventsIngestionOrgConcurrency": "How many orgs the news-events ingestion cron may process at once.",
-        "knowledgeGraphIngestionOrgConcurrency": "How many orgs the knowledge-graph ingestion cron may process at once.",
-        "sentimentSnapshotOrgConcurrency": "How many orgs the sentiment snapshot rebuild cron may process at once.",
-        "newsnowHottestAnalysisOrgConcurrency": "How many orgs the NewsNow hottest-analysis scheduler may refresh at once after the shared global snapshot is prepared."
+        "newsEventsIngestionOrgConcurrency": "新闻事件入库 cron 一次最多可并行处理多少个组织。",
+        "knowledgeGraphIngestionOrgConcurrency": "知识图谱入库 cron 一次最多可并行处理多少个组织。",
+        "sentimentSnapshotOrgConcurrency": "情绪快照重建 cron 一次最多可并行处理多少个组织。",
+        "newsnowHottestAnalysisOrgConcurrency": "在共享全局快照准备完成后，NewsNow 热榜分析调度器一次最多可刷新多少个组织。"
       }
     }
   },
@@ -7743,9 +7787,9 @@
       "completed": "已完成",
       "failed": "操作失败",
       "columns": {
-        "url": "URL",
+        "url": "地址 URL",
         "status": "状态",
-        "http": "HTTP",
+        "http": "HTTP 状态",
         "score": "评分",
         "summary": "摘要",
         "keywords": "关键词",
@@ -7765,14 +7809,14 @@
         "source": "来源",
         "domain": "域名",
         "pattern": "模式",
-        "maxUrls": "最大 URL",
-        "urls": "URL",
+        "maxUrls": "最大 URL 数",
+        "urls": "URL 列表",
         "query": "查询",
         "scoreThreshold": "评分阈值"
       },
       "source": {
         "sitemap": "站点地图",
-        "urls": "URL"
+        "urls": "URL 列表"
       },
       "placeholders": {
         "domain": "请输入域名",
@@ -7841,7 +7885,7 @@
         "updatedAt": "更新于 {{time}}"
       },
       "transport": {
-        "ws": "WebSocket",
+        "ws": "WebSocket 连接",
         "polling": "轮询"
       },
       "troubleshoot": {
@@ -7901,8 +7945,8 @@
         "headedOk": "Headed 正常",
         "headedFailed": "Headed 失败",
         "unavailable": "运行态探测不可用",
-        "headless": "Headless（headless=true）",
-        "headed": "Headed（headless=false）",
+        "headless": "无头模式（headless=true）",
+        "headed": "有界面模式（headless=false）",
         "ssrfProxy": "Worker SSRF 代理",
         "ssrfProxyOk": "SSRF 代理正常",
         "ssrfProxyFailed": "SSRF 代理异常",
@@ -7959,10 +8003,10 @@
         },
         "columns": {
           "endpoint": "接口",
-          "url": "URL",
+          "url": "地址 URL",
           "status": "状态",
           "latency": "耗时 (ms)",
-          "http": "HTTP",
+          "http": "HTTP 状态",
           "poolHit": "命中池",
           "memory": "内存 Δ (MB)",
           "elapsed": "耗时"
@@ -8012,7 +8056,7 @@
         "browser": "浏览器详情",
         "copyJson": "复制 JSON",
         "copied": "已复制。",
-        "openRequest": "Open request details"
+        "openRequest": "打开请求详情"
       },
       "raw": {
         "description": "用于排查问题的原始监控数据（尽力做兼容解析）。"
@@ -8062,14 +8106,14 @@
       "batchFrequencyConfirmDesc": "这会更新你所在组织全部新闻源的 frequencySeconds。",
       "batchFrequencySaved": "已更新 {{count}} 个新闻源，已重新调度活跃来源：{{rescheduled}}。",
       "batchFrequencySaveFailed": "批量更新新闻源频率失败。",
-      "queueSplit": "Hot/Normal pending",
-      "hotQueueRuntime": "Hot queue (A/F/E/P)",
-      "normalQueueRuntime": "Normal queue (A/F/E/P)",
-      "adaptiveStatus": "Adaptive",
-      "adaptiveWindowCooldown": "Adaptive window/cooldown (min)",
-      "adaptiveThresholds": "Adaptive thresholds (L/E/M)",
-      "adaptiveMetrics": "Adaptive metrics p95/error/headroom",
-      "adaptiveReason": "Adaptive reason"
+      "queueSplit": "热点/常规待处理",
+      "hotQueueRuntime": "热点队列（A/F/E/P）",
+      "normalQueueRuntime": "常规队列（A/F/E/P）",
+      "adaptiveStatus": "自适应状态",
+      "adaptiveWindowCooldown": "自适应窗口/冷却（分钟）",
+      "adaptiveThresholds": "自适应阈值（L/E/M）",
+      "adaptiveMetrics": "自适应指标 p95/错误率/余量",
+      "adaptiveReason": "自适应原因"
     },
     "runtimeGuide": {
       "title": "Headed 模式与 Xvfb",
@@ -8179,14 +8223,14 @@
         "running": "正在回填结果…",
         "progress": "回填中…（{{ingested}} 已入队，{{skipped}} 已跳过，{{failed}} 失败）",
         "done": "已加入处理队列，正在刷新…",
-        "emptyTitle": "No results to backfill yet.",
-        "emptyDescription": "This task has no crawl results yet, so nothing can be sent to Items.",
-        "timeout": "Backfill request timed out. Please try again after refreshing the task.",
-        "summary": "{{ingested}} ingested, {{skipped}} skipped, {{failed}} failed across {{scanned}} scanned results.",
-        "noMissingTitle": "All crawl results are already in Items.",
-        "partialTitle": "Backfill finished with failures.",
-        "failedTitle": "Backfill failed.",
-        "emptyHint": "No crawl results available yet."
+        "emptyTitle": "暂无可回填结果。",
+        "emptyDescription": "该任务目前还没有抓取结果，因此没有内容可发送到 Items。",
+        "timeout": "回填请求超时。请刷新任务后重试。",
+        "summary": "共扫描 {{scanned}} 条结果，其中 {{ingested}} 条已入库，{{skipped}} 条已跳过，{{failed}} 条失败。",
+        "noMissingTitle": "所有抓取结果都已进入 Items。",
+        "partialTitle": "回填完成，但存在失败项。",
+        "failedTitle": "回填失败。",
+        "emptyHint": "当前还没有可用抓取结果。"
       },
       "fields": {
         "displayName": "展示名称",
@@ -8220,7 +8264,7 @@
         "timezone": "时区",
         "geolocation": "地理位置",
         "customHeaders": "自定义请求头",
-        "cookies": "Cookie",
+        "cookies": "Cookie 信息",
         "sessionId": "会话 ID",
         "storageState": "存储状态",
         "jsOnly": "仅 JS",
@@ -8250,7 +8294,7 @@
         "lastSuccess": "成功",
         "lastError": "上次错误",
         "configuration": "配置",
-        "antiBotMode": "Anti-bot retry"
+        "antiBotMode": "反反爬重试"
       },
       "expansion": {
         "softFailureMessage": "{{count}} 次发布时间信号补强抓取发生软失败（不阻断任务）",
@@ -8262,8 +8306,8 @@
           "networkOrTimeout": "超时/网络异常：{{count}}",
           "noPublishSignal": "未提取到发布时间信号：{{count}}"
         },
-        "urlPathFallbackMessage": "{{count}}/{{total}} candidates fell back to url-path publish confidence",
-        "urlPathFallbackDescription": "URL-path fallback keeps crawl running (non-blocking), but can reduce publish-time confidence quality. Current fallback ratio: {{ratio}}%."
+        "urlPathFallbackMessage": "{{count}}/{{total}} 个候选回退到了基于 URL 路径的发布时间置信度",
+        "urlPathFallbackDescription": "URL 路径回退不会阻断抓取继续执行，但会降低发布时间置信度质量。当前回退比例：{{ratio}}%。"
       },
       "latestError": "最近错误",
       "scanFullPageEnabled": "扫描完整页面已启用",
@@ -8301,9 +8345,9 @@
       "ingestQueued": "已加入队列进行 LLM 处理，并添加到条目中。",
       "title": "爬取任务",
       "antiBotMode": {
-        "enabled": "Enabled",
-        "disabled": "Disabled",
-        "auto": "Auto"
+        "enabled": "启用",
+        "disabled": "禁用",
+        "auto": "自动"
       }
     },
     "multiUrl": {
@@ -8315,7 +8359,7 @@
         "label": "标签",
         "matchMode": "匹配模式",
         "patterns": "模式",
-        "urls": "URL",
+        "urls": "URL 列表",
         "cacheMode": "缓存模式"
       },
       "placeholders": {
@@ -8542,8 +8586,8 @@
       "waitUntil": "导航等待条件",
       "waitUntilHint": "选择 Crawl4AI 何时认为页面加载完成。对重 JS 页面通常建议 networkidle。",
       "waitUntilOptions": {
-        "domcontentloaded": "DOMContentLoaded",
-        "load": "Load",
+        "domcontentloaded": "DOMContentLoaded 完成",
+        "load": "页面 Load 完成",
         "networkidle": "网络空闲",
         "commit": "提交"
       },
@@ -8719,18 +8763,18 @@
         "userAgentModeRandom": "用户代理模式随机",
         "generatorPlatform": "生成器平台",
         "platforms": {
-          "windows": "Windows",
-          "macos": "macOS",
-          "linux": "Linux",
-          "android": "Android",
-          "ios": "iOS"
+          "windows": "Windows 系统",
+          "macos": "macOS 系统",
+          "linux": "Linux 系统",
+          "android": "Android 设备",
+          "ios": "iOS 设备"
         },
         "generatorBrowser": "生成器浏览器",
         "browsers": {
-          "chrome": "Chrome",
-          "firefox": "Firefox",
-          "safari": "Safari",
-          "edge": "Edge"
+          "chrome": "Chrome 浏览器",
+          "firefox": "Firefox 浏览器",
+          "safari": "Safari 浏览器",
+          "edge": "Edge 浏览器"
         },
         "generatorDevice": "生成器设备",
         "devices": {
@@ -8758,7 +8802,7 @@
         "autoFillSecChHint": "如果缺失，将自动补齐 sec-fetch；当 User-Agent 为可确定的 Chromium 时，再补齐匹配的 sec-ch 请求头。"
       },
       "cookies": {
-        "title": "Cookie",
+        "title": "Cookie 信息",
         "placeholders": {
           "name": "请输入名称",
           "value": "请输入值",
@@ -8767,12 +8811,12 @@
         },
         "add": "添加"
       },
-      "antiBotMode": "Anti-bot retry mode",
-      "antiBotModeHint": "Auto retries when challenge pages are detected. Enabled forces anti-bot retry when crawl failures exist; Disabled skips this pipeline.",
+      "antiBotMode": "反反爬重试模式",
+      "antiBotModeHint": "检测到挑战页时，Auto 会自动重试；Enabled 会在抓取失败时强制执行反反爬重试；Disabled 会跳过这条处理链。",
       "antiBotModes": {
-        "auto": "Auto (recommended)",
-        "enabled": "Anti-bot enabled",
-        "disabled": "Anti-bot disabled"
+        "auto": "自动（推荐）",
+        "enabled": "已启用反反爬",
+        "disabled": "已禁用反反爬"
       }
     },
     "session": {
@@ -8789,7 +8833,7 @@
     },
     "proxy": {
       "title": "代理",
-      "url": "URL",
+      "url": "地址 URL",
       "urlHint": "URL 提示",
       "disabledTitle": "自定义上游代理已禁用",
       "disabledDescription": "任务抓取不再接受 proxyUrl 或 proxyConfig。提交前请移除历史代理字段。",
@@ -8815,14 +8859,14 @@
       "sourceId": "已按新闻源 {{id}} 过滤"
     },
     "taskList": {
-      "title": "Task List",
-      "total": "Total {{count}}"
+      "title": "任务列表",
+      "total": "共 {{count}}"
     }
   },
   "errors": {
     "kinds": {
-      "http": "HTTP",
-      "graphql": "GraphQL",
+      "http": "HTTP 错误",
+      "graphql": "GraphQL 错误",
       "unknown": "未知"
     },
     "filters": {
@@ -8832,8 +8876,8 @@
     },
     "stats": {
       "total": "总计",
-      "http": "HTTP",
-      "graphql": "GraphQL",
+      "http": "HTTP 错误",
+      "graphql": "GraphQL 错误",
       "unknown": "未知",
       "daily": "每日数量",
       "date": "日期",
@@ -8868,7 +8912,7 @@
       "metaTitle": "元数据",
       "contextTitle": "上下文",
       "contextEmpty": "暂无专题或实体。",
-      "payloadTitle": "载荷",
+      "payloadTitle": "全文与 JSON",
       "payloadEmpty": "暂无载荷。",
       "payloadProcessed": "处理结果 JSON",
       "payloadRaw": "原始 JSON",
@@ -8879,8 +8923,8 @@
         "title": "文章翻译",
         "enable": "启用",
         "provider": {
-          "deeplx": "DeepLX API",
-          "llm": "LLM"
+          "deeplx": "DeepLX 翻译接口",
+          "llm": "LLM 模型"
         },
         "showOriginal": "显示原文",
         "unavailable": "所选翻译服务不可用。",
@@ -8927,15 +8971,61 @@
         "llmCost": "LLM 成本",
         "llmTokens": "LLM 总 token 数",
         "embeddingModel": "Embedding 模型",
-        "embeddingDims": "Embedding 维度"
+        "embeddingDims": "Embedding 维度",
+        "provider": "服务提供方",
+        "model": "模型",
+        "promptVersion": "提示词版本",
+        "reason": "原因",
+        "tokens": "Token 数",
+        "promptTokens": "输入 Token",
+        "completionTokens": "输出 Token",
+        "latency": "耗时",
+        "cost": "成本"
+      },
+      "stageMetaTitle": "阶段执行",
+      "stages": {
+        "attention": "部分流水线阶段需要关注",
+        "rawJson": "原始阶段元数据 JSON",
+        "summary": {
+          "completed": "已完成",
+          "skipped": "已跳过",
+          "rejected": "已拒绝",
+          "failed": "失败"
+        },
+        "status": {
+          "completed": "已完成",
+          "skipped": "已跳过",
+          "rejected": "已拒绝",
+          "failed": "失败"
+        },
+        "labels": {
+          "preflight": "预检",
+          "clean": "清洗",
+          "qualityGate": "质量门控",
+          "entities": "实体",
+          "sentiment": "情感",
+          "kg": "知识图谱",
+          "classify": "分类",
+          "dedupe": "去重"
+        },
+        "descriptions": {
+          "preflight": "在进入 LLM 清洗前，先做低成本抓取质量筛查。",
+          "clean": "执行主清洗与结构化抽取。",
+          "qualityGate": "基于质量分与最小内容长度做清洗后门控。",
+          "entities": "基于清洗内容独立执行实体抽取。",
+          "sentiment": "基于清洗内容推断整体情感。",
+          "kg": "抽取知识图谱关系。",
+          "classify": "执行内容类型与 taxonomy 分类。",
+          "dedupe": "基于摘要执行重复检测。"
+        }
       },
       "keyPointsMore": "+{{count}} 条更多",
       "processedErrorTitle": "处理失败",
-      "originalLanguage": "Original language: {{language}}",
-      "fullTextTitle": "Article text",
-      "languageNoticeTitle": "Language notice",
-      "languageNoticeDescription": "Detected language is {{language}}. This article may not have been translated to Chinese yet.",
-      "fullTextEmpty": "No translated article text available."
+      "originalLanguage": "原始语言：{{language}}",
+      "fullTextTitle": "正文",
+      "languageNoticeTitle": "语言提示",
+      "languageNoticeDescription": "检测到文章语言为 {{language}}，该内容可能尚未翻译为中文。",
+      "fullTextEmpty": "暂无可展示的翻译正文。"
     },
     "columns": {
       "name": "标题",
@@ -8977,8 +9067,8 @@
       "sectionSearchPlaceholder": "搜索{{label}}",
       "selectedCountInline": "已选 {{count}} 项",
       "more": "还有 {{count}} 项",
-      "excludeDuplicates": "Hide duplicates",
-      "excludeDuplicatesHint": "Hide entries that are marked as duplicates."
+      "excludeDuplicates": "隐藏重复项",
+      "excludeDuplicatesHint": "隐藏已标记为重复的条目。"
     },
     "stats": {
       "query": "查询",
@@ -9014,21 +9104,21 @@
       "duplicate": {
         "tooltip": "来自去重阶段的重复相似度（0–1，以百分比展示）。"
       },
-      "title": "Technical Metrics",
-      "model": "Model",
-      "prompt": "Prompt"
+      "title": "技术指标",
+      "model": "模型",
+      "prompt": "提示词"
     },
     "duplicate": {
       "duplicate": "重复",
       "similarity": "相似度",
-      "of": "Duplicate of",
+      "of": "重复于",
       "viewPrimary": "查看主稿"
     },
     "sentiment": {
       "positive": "正面",
       "neutral": "中性",
       "negative": "负面",
-      "tooltip": "Sentiment inferred by AI model analysis"
+      "tooltip": "由 AI 模型推断的情感倾向"
     },
     "contentType": {
       "newsFact": "新闻事实",
@@ -9042,21 +9132,22 @@
       "grid": "网格",
       "list": "列表"
     },
-    "readMode": "Read mode",
-    "readingTime": "min read",
-    "partOfEvent": "Part of event",
+    "readMode": "阅读模式",
+    "readingTime": "分钟阅读",
+    "partOfEvent": "所属事件",
     "quickNav": {
-      "hub": "News Hub",
+      "hub": "新闻中心",
       "newsnow": "实时热榜",
       "events": "事件脉络"
     },
     "sort": {
-      "latest": "Latest",
-      "published": "Published",
-      "personalized": "Personalized"
+      "latest": "最新",
+      "published": "发布时间",
+      "personalized": "个性化"
     }
   },
   "reader": {
+    "theme": "主题",
     "translation": {
       "title": "翻译",
       "enable": "启用",
@@ -9067,15 +9158,25 @@
       "failed": "翻译失败。"
     },
     "error": {
-      "title": "Failed to load article",
-      "notFound": "Article not found"
+      "title": "加载文章失败",
+      "notFound": "未找到文章"
     },
-    "back": "Back",
-    "font": "Font",
-    "size": "Size",
-    "languageNotice": "Original language: {{language}}",
-    "coverCaption": "Cover image from {{source}}",
-    "summary": "Summary",
+    "back": "返回",
+    "font": "字体",
+    "fontFamily": {
+      "sans": "无衬线",
+      "serif": "衬线",
+      "mono": "等宽"
+    },
+    "size": "字号",
+    "fontSize": {
+      "small": "小",
+      "medium": "中",
+      "large": "大"
+    },
+    "languageNotice": "原始语言：{{language}}",
+    "coverCaption": "封面图片来源：{{source}}",
+    "summary": "摘要",
     "aiInsights": {
       "title": "AI 解读",
       "sentiment": "情感",
@@ -9086,11 +9187,11 @@
       "actors": "关键主体",
       "relations": "关系图谱"
     },
-    "keyPoints": "Key Points",
-    "noContent": "No readable content available",
-    "viewOriginal": "View original article",
-    "viewDetails": "View Details",
-    "originalSource": "Original Source"
+    "keyPoints": "关键点",
+    "noContent": "暂无可阅读正文",
+    "viewOriginal": "查看原文",
+    "viewDetails": "查看详情",
+    "originalSource": "原始来源"
   },
   "crawlTemplates": {
     "errors": {
@@ -9124,7 +9225,7 @@
       "description": "描述",
       "active": "启用",
       "proxyUrl": "代理 URL",
-      "userAgent": "User-Agent",
+      "userAgent": "User-Agent 标识",
       "headless": "无头模式",
       "headlessHint": "有界面模式（headless=false）可能需要 crawl4ai 容器内启用 Xvfb/DISPLAY；如出现“cannot open display”等错误，请切回无头模式或在 docker-compose 中开启 Xvfb。",
       "stealth": "隐身模式",
@@ -9135,10 +9236,10 @@
       "autoExpandDetails": "自动展开详情",
       "allowExternalLinks": "允许外域链接",
       "advancedJson": "高级爬取选项（JSON）",
-      "antiBotModeEnabled": "Anti-bot retry: Enabled",
-      "antiBotModeDisabled": "Anti-bot retry: Disabled",
-      "antiBotMode": "Anti-bot retry mode",
-      "antiBotModeHint": "Auto removes crawlOptions.antiBotMode. Enabled/Disabled explicitly control anti-bot retry when failures occur."
+      "antiBotModeEnabled": "反反爬重试：启用",
+      "antiBotModeDisabled": "反反爬重试：禁用",
+      "antiBotMode": "反反爬重试模式",
+      "antiBotModeHint": "Auto 会移除 crawlOptions.antiBotMode；启用/禁用则会在发生抓取失败时显式控制是否执行反反爬重试。"
     },
     "sections": {
       "commonOptions": "通用选项"
@@ -9157,9 +9258,9 @@
       "headed": "有界面（Xvfb）"
     },
     "triState": {
-      "auto": "Auto (inherit)",
-      "enable": "Enabled",
-      "disable": "Disabled"
+      "auto": "自动（继承）",
+      "enable": "启用",
+      "disable": "禁用"
     }
   },
   "quality": {
@@ -9218,8 +9319,8 @@
         "resetCounters": "重置计数"
       },
       "stale": {
-        "title": "New live events arrived after the last refresh.",
-        "description": "Overview data is stale for: {{sources}}. Refresh now or enable refresh-on-event for those sources."
+        "title": "上次刷新后有新的实时事件到达。",
+        "description": "以下来源的概览数据已过期：{{sources}}。请立即刷新，或为这些来源启用按事件自动刷新。"
       }
     },
     "updatedAt": "更新时间：{{time}}",
@@ -9243,7 +9344,7 @@
       }
     },
     "llm": {
-      "title": "LLM",
+      "title": "LLM 模型",
       "columns": {
         "model": "模型",
         "count": "数量",
@@ -9296,123 +9397,123 @@
     },
     "classification": {
       "errors": {
-        "loadFailed": "Failed to load classification quality.",
-        "sourceItems": "Failed to load source drilldown items."
+        "loadFailed": "加载分类质量失败。",
+        "sourceItems": "加载来源下钻条目失败。"
       },
       "review": {
-        "success": "Review decision submitted.",
-        "error": "Failed to submit review decision.",
-        "batchSuccess": "Batch review submitted.",
-        "batchError": "Failed to submit batch review.",
+        "success": "审核结果已提交。",
+        "error": "提交审核结果失败。",
+        "batchSuccess": "批量审核已提交。",
+        "batchError": "提交批量审核失败。",
         "columns": {
-          "time": "Time",
-          "article": "Article",
-          "predicted": "Predicted",
-          "candidates": "Candidates",
-          "status": "Status",
-          "actions": "Actions"
+          "time": "时间",
+          "article": "文章",
+          "predicted": "预测结果",
+          "candidates": "候选项",
+          "status": "状态",
+          "actions": "操作"
         },
         "actions": {
-          "approve": "Approve",
-          "reject": "Reject",
-          "correct": "Correct"
+          "approve": "通过",
+          "reject": "驳回",
+          "correct": "纠正"
         },
         "correct": {
-          "prompt": "Input corrected category path",
-          "batchPrompt": "Input corrected category path for selected items"
+          "prompt": "输入修正后的分类路径",
+          "batchPrompt": "为选中条目输入修正后的分类路径"
         },
-        "title": "Review Queue",
-        "onlyPending": "Only pending",
+        "title": "审核队列",
+        "onlyPending": "仅显示待处理",
         "batch": {
-          "approve": "Batch approve",
-          "reject": "Batch reject",
-          "correct": "Batch correct"
+          "approve": "批量通过",
+          "reject": "批量驳回",
+          "correct": "批量纠正"
         }
       },
       "methods": {
         "columns": {
-          "group": "Method group",
-          "count": "Count",
-          "share": "Share"
+          "group": "方法分组",
+          "count": "数量",
+          "share": "占比"
         }
       },
       "histogram": {
         "columns": {
-          "bucket": "Confidence bucket",
-          "count": "Count",
-          "distribution": "Distribution"
+          "bucket": "置信度分桶",
+          "count": "数量",
+          "distribution": "分布"
         },
-        "title": "Confidence Histogram"
+        "title": "置信度直方图"
       },
       "trend": {
         "columns": {
-          "time": "Bucket",
-          "total": "Total",
-          "avgConfidence": "Avg confidence",
-          "lowConfidence": "Low confidence"
+          "time": "时间桶",
+          "total": "总数",
+          "avgConfidence": "平均置信度",
+          "lowConfidence": "低置信度"
         },
-        "title": "Confidence Trend"
+        "title": "置信度趋势"
       },
       "sources": {
         "columns": {
-          "source": "Source",
-          "lowCount": "Low confidence",
-          "total": "Total",
-          "lowRate": "Low rate",
-          "avg": "Avg confidence",
-          "actions": "Actions"
+          "source": "来源",
+          "lowCount": "低置信度",
+          "total": "总数",
+          "lowRate": "低置信度占比",
+          "avg": "平均置信度",
+          "actions": "操作"
         },
         "actions": {
-          "drilldown": "Drilldown"
+          "drilldown": "下钻"
         },
-        "title": "Low Confidence Sources TOP10"
+        "title": "低置信度来源 TOP10"
       },
       "drilldown": {
         "columns": {
-          "time": "Time",
-          "title": "Article",
-          "path": "Category path",
-          "confidence": "Confidence",
-          "method": "Method"
+          "time": "时间",
+          "title": "文章",
+          "path": "分类路径",
+          "confidence": "置信度",
+          "method": "方法"
         },
-        "title": "Source Drilldown",
-        "loadMore": "Load more",
-        "close": "Close"
+        "title": "来源下钻",
+        "loadMore": "加载更多",
+        "close": "关闭"
       },
       "sourceCategory": {
         "columns": {
-          "sourceType": "Source type",
-          "categoryPrefix": "Category prefix",
-          "count": "Count"
+          "sourceType": "来源类型",
+          "categoryPrefix": "分类前缀",
+          "count": "数量"
         },
-        "title": "Source × Category Breakdown"
+        "title": "来源 × 分类分布"
       },
-      "title": "Classification Quality",
+      "title": "分类质量",
       "window": {
-        "label": "Time window",
-        "1h": "Last 1h",
-        "24h": "Last 24h",
-        "7d": "Last 7d"
+        "label": "时间窗口",
+        "1h": "最近 1 小时",
+        "24h": "最近 24 小时",
+        "7d": "最近 7 天"
       },
       "filters": {
-        "active": "Active filters",
-        "source": "Source",
-        "category": "Category",
-        "clear": "Clear filters"
+        "active": "生效筛选",
+        "source": "来源",
+        "category": "分类",
+        "clear": "清空筛选"
       },
       "stats": {
-        "total": "Total classified",
-        "pendingReviews": "Pending review",
-        "gateRejectRate": "Gate reject rate",
-        "gatePenalizedRate": "Gate penalized rate"
+        "total": "已分类总数",
+        "pendingReviews": "待审核",
+        "gateRejectRate": "门控拒绝率",
+        "gatePenalizedRate": "门控惩罚率"
       },
       "latency": {
-        "title": "Classification Latency & Gate"
+        "title": "分类延迟与门控"
       }
     },
     "tabs": {
-      "overview": "Overview",
-      "classification": "Classification"
+      "overview": "概览",
+      "classification": "分类"
     }
   },
   "assistant": {
@@ -9519,18 +9620,18 @@
         "hintSiteDb": "使用站内数据库回答已采集内容，结果更稳定可追溯。",
         "hintWebSearch": "使用联网搜索补充最新外部信息，并在回答中附上来源链接。"
       },
-      "deleteRunningDenied": "Cannot delete a running conversation. Please wait until it finishes.",
-      "deleteSuccess": "Conversation deleted.",
-      "deleteNotFound": "Conversation no longer exists.",
-      "deleteFailed": "Failed to delete conversation: {{error}}",
-      "deleteConfirmTitle": "Delete this conversation?",
-      "deleteConfirmDescription": "This action cannot be undone.",
-      "deleteConversation": "Delete conversation",
-      "newConversation": "New",
-      "recentConversations": "Recent conversations",
-      "hideHistory": "Hide history",
-      "showHistory": "Show history",
-      "inputAriaLabel": "Assistant message input"
+      "deleteRunningDenied": "运行中的对话无法删除，请等待其完成。",
+      "deleteSuccess": "对话已删除。",
+      "deleteNotFound": "该对话已不存在。",
+      "deleteFailed": "删除对话失败：{{error}}",
+      "deleteConfirmTitle": "删除该对话？",
+      "deleteConfirmDescription": "此操作无法撤销。",
+      "deleteConversation": "删除对话",
+      "newConversation": "新建",
+      "recentConversations": "最近对话",
+      "hideHistory": "隐藏历史记录",
+      "showHistory": "显示历史记录",
+      "inputAriaLabel": "助手消息输入框"
     },
     "messageRequired": "请输入问题。",
     "requestFailed": "请求失败：{{error}}",
@@ -9552,8 +9653,8 @@
       "lookbackDays": "回溯天数",
       "modelKind": "模型",
       "model": {
-        "ets": "ETS",
-        "arima": "ARIMA"
+        "ets": "ETS 模型",
+        "arima": "ARIMA 模型"
       },
       "seasonalPeriod": "季节周期",
       "confidenceLevel": "置信水平",
@@ -9573,7 +9674,7 @@
     },
     "runPermissionRequired": "你没有权限运行助手任务。",
     "hero": {
-      "kicker": "INTELLIGENCE CONSOLE"
+      "kicker": "情报控制台"
     }
   },
   "situationMonitor": {
@@ -9592,7 +9693,7 @@
       "title": "相关性引擎",
       "hint": "基于模式对标题进行相关性分析（动量使用短期 Redis 历史窗口）。",
       "realtimeOverlayTitle": "实时叠加信号",
-      "pizzint": "PizzINT",
+      "pizzint": "PizzINT 指数",
       "pizzintEmpty": "当前窗口暂无 PizzINT 快照。",
       "tensionsEmpty": "当前暂无双边紧张度快照。",
       "tensionPair": "国家对",
@@ -9621,7 +9722,7 @@
     },
     "realtimeSnapshot": {
       "title": "实时快照",
-      "pizzint": "PizzINT",
+      "pizzint": "PizzINT 指数",
       "pizzintEmpty": "当前窗口暂无 PizzINT 快照。",
       "tensionsTitle": "双边紧张度",
       "tensionsEmpty": "当前暂无双边紧张度快照。",
@@ -9697,7 +9798,7 @@
       "tech": "科技",
       "finance": "金融",
       "gov": "政府",
-      "ai": "AI",
+      "ai": "AI 主题",
       "intel": "情报"
     },
     "headlines": {
@@ -9826,9 +9927,9 @@
     "notice": {
       "title": "信号范围与来源说明",
       "globalSignals": "Telegram 与 OREF 属于全局共享信号；仍然需要登录并具备 items.read 权限才能查看。",
-      "internalLabel": "INT",
+      "internalLabel": "内部源（INT）",
       "internalDescription": "来自本项目内部处理后的新闻条目。",
-      "gdeltLabel": "GDELT",
+      "gdeltLabel": "GDELT 来源",
       "gdeltDescription": "当内部覆盖不足时，使用 GDELT 作为补充回退来源。"
     },
     "shared": {
@@ -9972,7 +10073,7 @@
       "fixed": "固定",
       "none": "未启用任何面板。打开“面板”重新启用。",
       "hintCompact": "在较小屏幕上拖动或调整卡片大小前，请先开启“编辑布局”。",
-      "hintDesktop": "Click Customize layout to resize, reorder, and emphasize the cards you care about."
+      "hintDesktop": "点击“自定义布局”可调整卡片尺寸、顺序，并突出你最关心的内容。"
     },
     "empty": {
       "unconfigured": {
@@ -10101,9 +10202,9 @@
     "layout": {
       "done": "完成",
       "edit": "编辑布局",
-      "resetPanelSize": "Restore default size",
-      "sizeBadge": "{{cols}} cols · {{rows}} rows · {{height}}px",
-      "editing": "Layout editing is on"
+      "resetPanelSize": "恢复默认尺寸",
+      "sizeBadge": "{{cols}} 列 · {{rows}} 行 · {{height}}px",
+      "editing": "布局编辑已开启"
     }
   },
   "search": {
@@ -10313,7 +10414,7 @@
         "failed": "失败",
         "challenge": "挑战页",
         "pendingLlm": "待处理 LLM",
-        "seedFirst": "Seed-first"
+        "seedFirst": "种子优先"
       },
       "filters": {
         "profile": "画像",
@@ -10353,7 +10454,7 @@
         "tabs": {
           "basic": "基础信息",
           "strategy": "策略",
-          "llmLocaleDom": "LLM / Locale / DOM",
+          "llmLocaleDom": "LLM / 语言区域 / DOM",
           "patternsJson": "模式 / JSON"
         },
         "cards": {

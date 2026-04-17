@@ -24,7 +24,7 @@ export function FinancialCard({ item }: FinancialCardProps) {
   const router = useRouter();
   const isPositive = (item.change ?? 0) >= 0;
   const color = isPositive ? "#3f8600" : "#cf1322";
-  const openLabel = t("items.detail.openItem", { defaultValue: "Open item" });
+  const openLabel = t("items.detail.openItem");
 
   const chartOption = item.history
     ? {
@@ -98,7 +98,12 @@ export function FinancialCard({ item }: FinancialCardProps) {
           </div>
         )}
         <div style={{ marginTop: "auto" }}>
-          <Button type="link" size="small" onClick={() => router.push(`/items/${item.id}`)} className="px-0">
+          <Button
+            type="link"
+            size="small"
+            onClick={() => router.push(`/items/${item.id}`)}
+            className="px-0"
+          >
             {openLabel}
           </Button>
         </div>

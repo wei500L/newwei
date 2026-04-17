@@ -25,29 +25,25 @@ export function RequestErrorBanner({
   className,
   showCachedDataHint = false,
   includeDetailText = false,
-  presentation = "banner"
+  presentation = "banner",
 }: RequestErrorBannerProps) {
   const { t } = useTranslation();
-  const retryLabel = t("common.retry", { defaultValue: "Retry" });
+  const retryLabel = t("common.retry");
   const state = buildRequestErrorEmptyState({
     t,
     error,
     onRetry,
     actionLoading,
     actionLabelOverride,
-    includeDetailText
+    includeDetailText,
   });
   const resolvedActionLabel =
     actionLabelOverride ??
     (state.actionLabel === retryLabel
-      ? t("dashboard.actions.retryFetch", {
-          defaultValue: "Retry fetch"
-        })
+      ? t("dashboard.actions.retryFetch")
       : state.actionLabel);
 
-  const cachedHint = showCachedDataHint
-    ? t("common.showingCachedData", { defaultValue: "Showing cached data." })
-    : null;
+  const cachedHint = showCachedDataHint ? t("common.showingCachedData") : null;
 
   const description: ReactNode =
     cachedHint || (!includeDetailText && state.detailText) ? (
@@ -55,7 +51,9 @@ export function RequestErrorBanner({
         {cachedHint ? <span>{cachedHint}</span> : null}
         <span>{state.description}</span>
         {!includeDetailText && state.detailText ? (
-          <span className="font-mono text-[10px] opacity-80">{state.detailText}</span>
+          <span className="font-mono text-[10px] opacity-80">
+            {state.detailText}
+          </span>
         ) : null}
       </div>
     ) : (

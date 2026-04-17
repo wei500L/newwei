@@ -1,9 +1,19 @@
-'use client';
+"use client";
 
-import { Button, Card, Checkbox, Collapse, DatePicker, Input, Space, Tag, Typography } from 'antd';
-import type { Dayjs } from 'dayjs';
-import { useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import {
+  Button,
+  Card,
+  Checkbox,
+  Collapse,
+  DatePicker,
+  Input,
+  Space,
+  Tag,
+  Typography,
+} from "antd";
+import type { Dayjs } from "dayjs";
+import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   FACETED_SECTION_KEYS,
@@ -11,8 +21,8 @@ import {
   getFacetedSelectionCounts,
   resolveFacetedDefaultActiveKeys,
   type FacetedFilterBehavior,
-  type FacetedSectionKey
-} from './faceted-search-state';
+  type FacetedSectionKey,
+} from "./faceted-search-state";
 
 const { RangePicker } = DatePicker;
 const SECTION_SEARCH_MIN_OPTIONS = 8;
@@ -39,10 +49,14 @@ interface FacetedSearchProps {
   maxSectionBodyHeight?: number;
 }
 
-function toSectionKeys(value: string | number | (string | number)[]): FacetedSectionKey[] {
+function toSectionKeys(
+  value: string | number | (string | number)[],
+): FacetedSectionKey[] {
   const raw = Array.isArray(value) ? value : [value];
-  return raw.filter((item): item is FacetedSectionKey =>
-    typeof item === "string" && FACETED_SECTION_KEYS.includes(item as FacetedSectionKey)
+  return raw.filter(
+    (item): item is FacetedSectionKey =>
+      typeof item === "string" &&
+      FACETED_SECTION_KEYS.includes(item as FacetedSectionKey),
   );
 }
 
@@ -60,16 +74,18 @@ export function FacetedSearch({
   topics = [],
   sentiments = [],
   contentTypes = [],
-  behavior = 'legacy',
+  behavior = "legacy",
   stickySummary = false,
-  maxSectionBodyHeight = 240
+  maxSectionBodyHeight = 240,
 }: FacetedSearchProps) {
   const { t } = useTranslation();
-  const [sectionSearch, setSectionSearch] = useState<Record<FacetedSectionKey, string>>({
-    region: '',
-    topic: '',
-    sentiment: '',
-    contentType: ''
+  const [sectionSearch, setSectionSearch] = useState<
+    Record<FacetedSectionKey, string>
+  >({
+    region: "",
+    topic: "",
+    sentiment: "",
+    contentType: "",
   });
 
   const handleDateChange = (dates: [Dayjs | null, Dayjs | null] | null) => {
@@ -98,45 +114,57 @@ export function FacetedSearch({
 
   const orderedSentiments = useMemo(
     () => [
-      ...['positive', 'neutral', 'negative'].filter((value) => sentiments.includes(value)),
-      ...sentiments.filter((value) => !['positive', 'neutral', 'negative'].includes(value))
+      ...["positive", "neutral", "negative"].filter((value) =>
+        sentiments.includes(value),
+      ),
+      ...sentiments.filter(
+        (value) => !["positive", "neutral", "negative"].includes(value),
+      ),
     ],
-    [sentiments]
+    [sentiments],
   );
 
   const availableSectionKeys = useMemo(() => {
     const keys: FacetedSectionKey[] = [];
     if (regions.length > 0) {
-      keys.push('region');
+      keys.push("region");
     }
     if (topics.length > 0) {
-      keys.push('topic');
+      keys.push("topic");
     }
     if (orderedSentiments.length > 0) {
-      keys.push('sentiment');
+      keys.push("sentiment");
     }
     if (contentTypes.length > 0) {
-      keys.push('contentType');
+      keys.push("contentType");
     }
     return keys;
-  }, [contentTypes.length, orderedSentiments.length, regions.length, topics.length]);
+  }, [
+    contentTypes.length,
+    orderedSentiments.length,
+    regions.length,
+    topics.length,
+  ]);
 
   const defaultActiveKeys = useMemo(
     () =>
       resolveFacetedDefaultActiveKeys({
         behavior,
         availableKeys: availableSectionKeys,
-        filters
+        filters,
       }),
-    [availableSectionKeys, behavior, filters]
+    [availableSectionKeys, behavior, filters],
   );
 
-  const [activeKeys, setActiveKeys] = useState<FacetedSectionKey[]>(defaultActiveKeys);
+  const [activeKeys, setActiveKeys] =
+    useState<FacetedSectionKey[]>(defaultActiveKeys);
 
   useEffect(() => {
     setActiveKeys((prev) => {
-      if (behavior === 'legacy') {
-        return hasSameKeys(prev, availableSectionKeys) ? prev : availableSectionKeys;
+      if (behavior === "legacy") {
+        return hasSameKeys(prev, availableSectionKeys)
+          ? prev
+          : availableSectionKeys;
       }
 
       const availableSet = new Set(availableSectionKeys);
@@ -146,91 +174,96 @@ export function FacetedSearch({
     });
   }, [availableSectionKeys, behavior, defaultActiveKeys]);
 
-  const selectionCounts = useMemo(() => getFacetedSelectionCounts(filters), [filters]);
+  const selectionCounts = useMemo(
+    () => getFacetedSelectionCounts(filters),
+    [filters],
+  );
 
   const summaryTags = useMemo(
     () =>
       [
         selectionCounts.sourceIds > 0
           ? {
-              key: 'source',
-              label: t('pages.rss.sourceLabel', { defaultValue: 'RSS Sources' }),
-              count: selectionCounts.sourceIds
+              key: "source",
+              label: t("pages.rss.sourceLabel"),
+              count: selectionCounts.sourceIds,
             }
           : null,
         selectionCounts.regions > 0
           ? {
-              key: 'region',
-              label: t('items.filters.region', { defaultValue: 'Region' }),
-              count: selectionCounts.regions
+              key: "region",
+              label: t("items.filters.region"),
+              count: selectionCounts.regions,
             }
           : null,
         selectionCounts.topics > 0
           ? {
-              key: 'topic',
-              label: t('items.filters.topic', { defaultValue: 'Topic' }),
-              count: selectionCounts.topics
+              key: "topic",
+              label: t("items.filters.topic"),
+              count: selectionCounts.topics,
             }
           : null,
         selectionCounts.sentiments > 0
           ? {
-              key: 'sentiment',
-              label: t('items.filters.sentiment', { defaultValue: 'Sentiment' }),
-              count: selectionCounts.sentiments
+              key: "sentiment",
+              label: t("items.filters.sentiment"),
+              count: selectionCounts.sentiments,
             }
           : null,
         selectionCounts.contentTypes > 0
           ? {
-              key: 'contentType',
-              label: t('items.filters.contentType', { defaultValue: 'Content type' }),
-              count: selectionCounts.contentTypes
+              key: "contentType",
+              label: t("items.filters.contentType"),
+              count: selectionCounts.contentTypes,
             }
           : null,
         filters.excludeDuplicates
           ? {
-              key: 'dedupe',
-              label: t('items.filters.excludeDuplicates', { defaultValue: 'Hide duplicates' }),
-              count: 1
+              key: "dedupe",
+              label: t("items.filters.excludeDuplicates"),
+              count: 1,
             }
           : null,
         selectionCounts.dateRange > 0
           ? {
-              key: 'date',
-              label: t('items.filters.date', { defaultValue: 'Date Range' }),
-              count: selectionCounts.dateRange
+              key: "date",
+              label: t("items.filters.date"),
+              count: selectionCounts.dateRange,
             }
-          : null
-      ].filter((item): item is { key: string; label: string; count: number } => Boolean(item)),
-    [selectionCounts, t]
+          : null,
+      ].filter((item): item is { key: string; label: string; count: number } =>
+        Boolean(item),
+      ),
+    [selectionCounts, t],
   );
 
   const hasActiveFilters = summaryTags.length > 0;
 
   const formatSentimentLabel = (value: string): string => {
-    if (value === 'positive') {
-      return t('items.sentiment.positive', { defaultValue: 'Positive' });
+    if (value === "positive") {
+      return t("items.sentiment.positive");
     }
-    if (value === 'neutral') {
-      return t('items.sentiment.neutral', { defaultValue: 'Neutral' });
+    if (value === "neutral") {
+      return t("items.sentiment.neutral");
     }
-    if (value === 'negative') {
-      return t('items.sentiment.negative', { defaultValue: 'Negative' });
+    if (value === "negative") {
+      return t("items.sentiment.negative");
     }
     return value;
   };
 
   const formatContentTypeLabel = (value: string): string => {
-    if (value === 'news_fact') {
-      return t('items.contentType.newsFact', { defaultValue: 'News fact' });
+    if (value === "news_fact") {
+      return t("items.contentType.newsFact");
     }
-    if (value === 'opinion') {
-      return t('items.contentType.opinion', { defaultValue: 'Opinion' });
+    if (value === "opinion") {
+      return t("items.contentType.opinion");
     }
-    if (value === 'analysis') {
-      return t('items.contentType.analysis', { defaultValue: 'Analysis' });
+    if (value === "analysis") {
+      return t("items.contentType.analysis");
     }
-    if (value === 'mixed') {
-      return t('items.contentType.mixed', { defaultValue: 'Mixed' });
+    if (value === "mixed") {
+      return t("items.contentType.mixed");
     }
     return value;
   };
@@ -242,32 +275,31 @@ export function FacetedSearch({
     options: string[],
     selectedValues: string[] | undefined,
     onChange: (values: (string | number)[]) => void,
-    formatter?: (value: string) => string
+    formatter?: (value: string) => string,
   ) => {
-    const keyword = sectionSearch[key] ?? '';
+    const keyword = sectionSearch[key] ?? "";
     const filteredValues =
-      behavior === 'layered' ? filterFacetOptions(options, keyword) : options;
-    const showSearch = behavior === 'layered' && options.length > SECTION_SEARCH_MIN_OPTIONS;
+      behavior === "layered" ? filterFacetOptions(options, keyword) : options;
+    const showSearch =
+      behavior === "layered" && options.length > SECTION_SEARCH_MIN_OPTIONS;
 
     return {
       key,
       label:
         selectedCount > 0
-          ? `${label} · ${t('items.filters.selectedCountInline', {
+          ? `${label} · ${t("items.filters.selectedCountInline", {
               count: selectedCount,
-              defaultValue: '{{count}} selected'
             })}`
           : label,
       children: (
-        <Space direction="vertical" style={{ width: '100%' }} size="small">
+        <Space direction="vertical" style={{ width: "100%" }} size="small">
           {showSearch ? (
             <Input
               allowClear
               value={keyword}
               size="small"
-              placeholder={t('items.filters.sectionSearchPlaceholder', {
+              placeholder={t("items.filters.sectionSearchPlaceholder", {
                 label,
-                defaultValue: 'Search {{label}}'
               })}
               onChange={(event) => {
                 const value = event.target.value;
@@ -279,28 +311,29 @@ export function FacetedSearch({
           {filteredValues.length > 0 ? (
             <div
               style={{
-                maxHeight: behavior === 'layered' ? maxSectionBodyHeight : undefined,
-                overflowY: behavior === 'layered' ? 'auto' : undefined,
-                paddingRight: behavior === 'layered' ? 4 : 0
+                maxHeight:
+                  behavior === "layered" ? maxSectionBodyHeight : undefined,
+                overflowY: behavior === "layered" ? "auto" : undefined,
+                paddingRight: behavior === "layered" ? 4 : 0,
               }}
             >
               <Checkbox.Group
                 options={filteredValues.map((value) => ({
                   value,
-                  label: formatter ? formatter(value) : value
+                  label: formatter ? formatter(value) : value,
                 }))}
                 value={selectedValues}
                 onChange={onChange}
-                style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
+                style={{ display: "flex", flexDirection: "column", gap: "8px" }}
               />
             </div>
           ) : (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {t('items.filters.empty', { defaultValue: 'No filter options for current results.' })}
+              {t("items.filters.empty")}
             </Typography.Text>
           )}
         </Space>
-      )
+      ),
     };
   };
 
@@ -309,101 +342,110 @@ export function FacetedSearch({
       ? [
           renderSection(
             "region",
-            t("items.filters.region", { defaultValue: "Region" }),
+            t("items.filters.region"),
             selectionCounts.regions,
             regions,
             filters.regions,
-            handleRegionChange
-          )
+            handleRegionChange,
+          ),
         ]
       : []),
     ...(topics.length
       ? [
           renderSection(
             "topic",
-            t("items.filters.topic", { defaultValue: "Topic" }),
+            t("items.filters.topic"),
             selectionCounts.topics,
             topics,
             filters.topics,
-            handleTopicChange
-          )
+            handleTopicChange,
+          ),
         ]
       : []),
     ...(orderedSentiments.length
       ? [
           renderSection(
             "sentiment",
-            t("items.filters.sentiment", { defaultValue: "Sentiment" }),
+            t("items.filters.sentiment"),
             selectionCounts.sentiments,
             orderedSentiments,
             filters.sentiments,
             handleSentimentChange,
-            formatSentimentLabel
-          )
+            formatSentimentLabel,
+          ),
         ]
       : []),
     ...(contentTypes.length
       ? [
           renderSection(
             "contentType",
-            t("items.filters.contentType", { defaultValue: "Content type" }),
+            t("items.filters.contentType"),
             selectionCounts.contentTypes,
             contentTypes,
             filters.contentTypes,
             handleContentTypeChange,
-            formatContentTypeLabel
-          )
+            formatContentTypeLabel,
+          ),
         ]
-      : [])
+      : []),
   ];
 
   const handleClearAll = () => {
     onFilterChange({
-      ...(filters.sourceIds?.length ? { sourceIds: [...filters.sourceIds] } : {})
+      ...(filters.sourceIds?.length
+        ? { sourceIds: [...filters.sourceIds] }
+        : {}),
     });
   };
 
   return (
-    <Card className="h-full" styles={{ body: { padding: '12px' } }}>
-      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+    <Card className="h-full" styles={{ body: { padding: "12px" } }}>
+      <Space direction="vertical" style={{ width: "100%" }} size="middle">
         <div className="flex items-center justify-between gap-3">
           <Typography.Title level={5} style={{ margin: 0 }}>
-            {t('items.filters.title', { defaultValue: 'Filters' })}
+            {t("items.filters.title")}
           </Typography.Title>
           {hasActiveFilters ? (
-            <Button type="link" size="small" onClick={handleClearAll} className="px-0">
-              {t('items.filters.clearAll', { defaultValue: 'Clear all' })}
+            <Button
+              type="link"
+              size="small"
+              onClick={handleClearAll}
+              className="px-0"
+            >
+              {t("items.filters.clearAll")}
             </Button>
           ) : null}
         </div>
 
-        {behavior === 'layered' ? (
-          <div className={stickySummary ? 'items-filter-summary' : undefined}>
-            <Space direction="vertical" style={{ width: '100%' }} size={8}>
+        {behavior === "layered" ? (
+          <div className={stickySummary ? "items-filter-summary" : undefined}>
+            <Space direction="vertical" style={{ width: "100%" }} size={8}>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {t('items.filters.selectedSummary', { defaultValue: 'Selected' })}
+                {t("items.filters.selectedSummary")}
               </Typography.Text>
               {summaryTags.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
                   {summaryTags.slice(0, 4).map((item) => (
-                    <Tag className="items-compact-tag" key={item.key} color="blue">
+                    <Tag
+                      className="items-compact-tag"
+                      key={item.key}
+                      color="blue"
+                    >
                       {item.label}: {item.count}
                     </Tag>
                   ))}
                   {summaryTags.length > 4 ? (
                     <Tag className="items-compact-tag">
-                      {t('items.filters.more', {
+                      {t("items.filters.more", {
                         count: summaryTags.length - 4,
-                        defaultValue: '+{{count}} more'
                       })}
                     </Tag>
                   ) : null}
                 </div>
               ) : (
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {t('items.filters.selectedCountInline', {
+                  {t("items.filters.selectedCountInline", {
                     count: 0,
-                    defaultValue: '{{count}} selected'
                   })}
                 </Typography.Text>
               )}
@@ -411,14 +453,16 @@ export function FacetedSearch({
           </div>
         ) : null}
 
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Typography.Text strong>
-            {t('items.filters.date', { defaultValue: 'Date Range' })}
-          </Typography.Text>
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Typography.Text strong>{t("items.filters.date")}</Typography.Text>
           <RangePicker
-            style={{ width: '100%' }}
+            style={{ width: "100%" }}
             value={filters.dateRange ?? null}
-            onChange={handleDateChange as (value: [Dayjs | null, Dayjs | null] | null) => void}
+            onChange={
+              handleDateChange as (
+                value: [Dayjs | null, Dayjs | null] | null,
+              ) => void
+            }
           />
         </Space>
 
@@ -431,7 +475,7 @@ export function FacetedSearch({
           />
         ) : (
           <Typography.Text type="secondary">
-            {t('items.filters.empty', { defaultValue: 'No filter options for current results.' })}
+            {t("items.filters.empty")}
           </Typography.Text>
         )}
       </Space>

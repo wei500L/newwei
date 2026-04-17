@@ -1,6 +1,10 @@
 "use client";
 
-import { AppstoreOutlined, BarsOutlined, UnorderedListOutlined } from "@ant-design/icons";
+import {
+  AppstoreOutlined,
+  BarsOutlined,
+  UnorderedListOutlined,
+} from "@ant-design/icons";
 import { Segmented } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -16,24 +20,24 @@ export function ViewSwitcher({ view, onChange }: ViewSwitcherProps) {
 
   return (
     <Segmented
-      aria-label={t("items.view.label", { defaultValue: "View mode" })}
+      aria-label={t("items.view.label")}
       value={view}
       onChange={(value) => onChange(value as ItemViewType)}
       options={[
         {
           value: "feed",
           icon: <BarsOutlined />,
-          label: t("items.view.feed", { defaultValue: "Feed" }),
+          label: t("items.view.feed"),
         },
         {
           value: "grid",
           icon: <AppstoreOutlined />,
-          label: t("items.view.grid", { defaultValue: "Grid" }),
+          label: t("items.view.grid"),
         },
         {
           value: "list",
           icon: <UnorderedListOutlined />,
-          label: t("items.view.list", { defaultValue: "List" }),
+          label: t("items.view.list"),
         },
       ]}
     />

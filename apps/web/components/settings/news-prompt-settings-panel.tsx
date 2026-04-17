@@ -113,9 +113,7 @@ export function NewsPromptSettingsPanel() {
 
         <Card
           size="small"
-          title={t("settings.newsPrompts.cleaningTitle", {
-            defaultValue: "Cleaning prompts",
-          })}
+          title={t("settings.newsPrompts.cleaningTitle")}
           style={{ marginBottom: "1rem" }}
         >
           <Form.Item
@@ -160,9 +158,7 @@ export function NewsPromptSettingsPanel() {
 
         <Card
           size="small"
-          title={t("settings.newsPrompts.entityTitle", {
-            defaultValue: "Entity extraction prompts",
-          })}
+          title={t("settings.newsPrompts.entityTitle")}
           style={{ marginBottom: "1rem" }}
         >
           <Typography.Paragraph type="secondary">
@@ -171,18 +167,14 @@ export function NewsPromptSettingsPanel() {
             ))}
           </Typography.Paragraph>
           <Form.Item
-            label={t("settings.newsPrompts.fields.entitySystemTemplate", {
-              defaultValue: "Entity system template",
-            })}
+            label={t("settings.newsPrompts.fields.entitySystemTemplate")}
             name="entitySystemPromptTemplate"
             extra={<TokenEstimateExtra name="entitySystemPromptTemplate" />}
           >
             <Input.TextArea rows={4} />
           </Form.Item>
           <Form.Item
-            label={t("settings.newsPrompts.fields.entityUserTemplate", {
-              defaultValue: "Entity user template",
-            })}
+            label={t("settings.newsPrompts.fields.entityUserTemplate")}
             name="entityUserPromptTemplate"
             extra={<TokenEstimateExtra name="entityUserPromptTemplate" />}
           >
@@ -196,9 +188,7 @@ export function NewsPromptSettingsPanel() {
 
         <Card
           size="small"
-          title={t("settings.newsPrompts.sentimentTitle", {
-            defaultValue: "Sentiment prompts",
-          })}
+          title={t("settings.newsPrompts.sentimentTitle")}
           style={{ marginBottom: "1rem" }}
         >
           <Typography.Paragraph type="secondary">
@@ -207,18 +197,14 @@ export function NewsPromptSettingsPanel() {
             ))}
           </Typography.Paragraph>
           <Form.Item
-            label={t("settings.newsPrompts.fields.sentimentSystemTemplate", {
-              defaultValue: "Sentiment system template",
-            })}
+            label={t("settings.newsPrompts.fields.sentimentSystemTemplate")}
             name="sentimentSystemPromptTemplate"
             extra={<TokenEstimateExtra name="sentimentSystemPromptTemplate" />}
           >
             <Input.TextArea rows={4} />
           </Form.Item>
           <Form.Item
-            label={t("settings.newsPrompts.fields.sentimentUserTemplate", {
-              defaultValue: "Sentiment user template",
-            })}
+            label={t("settings.newsPrompts.fields.sentimentUserTemplate")}
             name="sentimentUserPromptTemplate"
             extra={<TokenEstimateExtra name="sentimentUserPromptTemplate" />}
           >
@@ -232,9 +218,7 @@ export function NewsPromptSettingsPanel() {
 
         <Card
           size="small"
-          title={t("settings.newsPrompts.kgTitle", {
-            defaultValue: "Knowledge graph prompts",
-          })}
+          title={t("settings.newsPrompts.kgTitle")}
           style={{ marginBottom: "1rem" }}
         >
           <Typography.Paragraph type="secondary">
@@ -243,18 +227,14 @@ export function NewsPromptSettingsPanel() {
             ))}
           </Typography.Paragraph>
           <Form.Item
-            label={t("settings.newsPrompts.fields.kgSystemTemplate", {
-              defaultValue: "Knowledge graph system template",
-            })}
+            label={t("settings.newsPrompts.fields.kgSystemTemplate")}
             name="kgSystemPromptTemplate"
             extra={<TokenEstimateExtra name="kgSystemPromptTemplate" />}
           >
             <Input.TextArea rows={4} />
           </Form.Item>
           <Form.Item
-            label={t("settings.newsPrompts.fields.kgUserTemplate", {
-              defaultValue: "Knowledge graph user template",
-            })}
+            label={t("settings.newsPrompts.fields.kgUserTemplate")}
             name="kgUserPromptTemplate"
             extra={<TokenEstimateExtra name="kgUserPromptTemplate" />}
           >
