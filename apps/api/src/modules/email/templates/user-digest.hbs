@@ -1,0 +1,28 @@
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>每日摘要</title>
+  </head>
+  <body
+    style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #0f172a; line-height: 1.6;"
+  >
+    <h2 style="margin: 0 0 12px;">{{recipientName}}，你的每日摘要已生成</h2>
+    <p style="margin: 0 0 8px;">生成时间：{{generatedAtLabel}}</p>
+    <p style="margin: 0 0 8px;">摘要窗口：{{windowLabel}}</p>
+    <p style="margin: 0 0 16px;">共 {{eventCount}} 条重点事件。</p>
+    <p style="margin: 0 0 16px;">
+      <a href="{{digestLink}}" target="_blank" rel="noreferrer">打开 Today 页面查看完整摘要</a>
+    </p>
+
+    {{#each events}}
+    <div style="padding: 12px 0; border-top: 1px solid #e2e8f0;">
+      <h3 style="margin: 0 0 6px; font-size: 16px;">{{title}}</h3>
+      <p style="margin: 0 0 6px; color: #334155;">{{summary}}</p>
+      <p style="margin: 0 0 6px; color: #64748b; font-size: 13px;">
+        事件条数：{{itemCount}} · 最近更新时间：{{updatedAtLabel}}
+      </p>
+      <a href="{{link}}" target="_blank" rel="noreferrer">打开原文</a>
+    </div>
+    {{/each}}
+  </body>
+</html>

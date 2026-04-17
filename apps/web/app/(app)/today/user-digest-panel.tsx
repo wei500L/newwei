@@ -1,6 +1,7 @@
 "use client";
 
-import { Button, Empty, Form, InputNumber, List, Modal, Space, Spin, Switch, Tag, Typography, message } from "antd";
+import { Alert, Button, Empty, Form, InputNumber, List, Modal, Select, Space, Spin, Switch, Tag, TimePicker, Typography, message } from "antd";
+import dayjs from "dayjs";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -77,6 +78,26 @@ interface PreferenceFormValues {
   maxIndicatorsPerEvent: number;
 }
 
+interface UserDigestDeliverySettingsV1 {
+  version: 1;
+  enabled: boolean;
+  time: string;
+  timezone: string;
+  targetEmail: string;
+  emailVerified: boolean;
+  nextRunAt: string | null;
+  lastSentAt: string | null;
+  lastStatus: "idle" | "sent" | "empty_notified" | "failed";
+  lastStatusAt: string | null;
+  lastError: string | null;
+}
+
+interface DeliveryFormValues {
+  enabled: boolean;
+  time: dayjs.Dayjs;
+  timezone: string;
+}
+
 const EMPTY_PREFERENCE: UserDigestPreferenceV1 = {
   version: 1,
   focusEntities: [],
@@ -86,6 +107,31 @@ const EMPTY_PREFERENCE: UserDigestPreferenceV1 = {
   includeIndicators: true,
   maxIndicatorsPerEvent: 5
 };
+
+const DEFAULT_DELIVERY: UserDigestDeliverySettingsV1 = {
+  version: 1,
+  enabled: false,
+  time: "09:00",
+  timezone: "UTC",
+  targetEmail: "",
+  emailVerified: false,
+  nextRunAt: null,
+  lastSentAt: null,
+  lastStatus: "idle",
+  lastStatusAt: null,
+  lastError: null
+};
+
+function getSupportedTimezones() {
+  try {
+    const values = (
+      Intl as typeof Intl & { supportedValuesOf?: (key: string) => string[] }
+    ).supportedValuesOf?.("timeZone");
+    return Array.isArray(values) && values.length > 0 ? values : ["UTC"];
+  } catch {
+    return ["UTC"];
+  }
+}
 
 function formatSigned(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -110,13 +156,29 @@ export function UserDigestPanel() {
   const apiClient = useMemo(() => createApiClient({ accessToken: session?.accessToken }), [session?.accessToken]);
 
   const [messageApi, contextHolder] = message.useMessage();
+  const [deliveryForm] = Form.useForm<DeliveryFormValues>();
   const [loadingPreference, setLoadingPreference] = useState(false);
   const [loadingDigest, setLoadingDigest] = useState(false);
+  const [loadingDelivery, setLoadingDelivery] = useState(false);
   const [savingPreference, setSavingPreference] = useState(false);
+  const [savingDelivery, setSavingDelivery] = useState(false);
   const [preference, setPreference] = useState<UserDigestPreferenceV1>(EMPTY_PREFERENCE);
   const [digest, setDigest] = useState<UserDigestV1 | null>(null);
+  const [delivery, setDelivery] = useState<UserDigestDeliverySettingsV1>(DEFAULT_DELIVERY);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [deliveryModalOpen, setDeliveryModalOpen] = useState(false);
+  const [browserTimezone] = useState<string>(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    } catch {
+      return "UTC";
+    }
+  });
+  const timezoneOptions = useMemo(
+    () => getSupportedTimezones().map((value) => ({ label: value, value })),
+    []
+  );
 
   const loadPreference = useCallback(async () => {
     setLoadingPreference(true);
@@ -146,13 +208,36 @@ export function UserDigestPanel() {
     }
   }, [apiClient, t]);
 
+  const loadDelivery = useCallback(async () => {
+    setLoadingDelivery(true);
+    try {
+      const response = await apiClient.get<UserDigestDeliverySettingsV1>("user-digest/delivery");
+      setDelivery(response.data ?? DEFAULT_DELIVERY);
+    } catch (err) {
+      captureClientError("Failed to load user digest delivery settings", err);
+      setErrorMessage(t("pages.digest.deliveryLoadFailed", { defaultValue: "Failed to load digest delivery settings." }));
+    } finally {
+      setLoadingDelivery(false);
+    }
+  }, [apiClient, t]);
+
   useEffect(() => {
     void loadPreference();
     void loadDigest();
-  }, [loadDigest, loadPreference]);
+    void loadDelivery();
+  }, [loadDelivery, loadDigest, loadPreference]);
 
   const handleOpenModal = () => {
     setModalOpen(true);
+  };
+
+  const handleOpenDeliveryModal = () => {
+    deliveryForm.setFieldsValue({
+      enabled: delivery.enabled,
+      time: dayjs(`2026-01-01T${delivery.time || "09:00"}:00`),
+      timezone: delivery.timezone || browserTimezone,
+    });
+    setDeliveryModalOpen(true);
   };
 
   const handleSavePreference = async (values: PreferenceFormValues) => {
@@ -178,6 +263,28 @@ export function UserDigestPanel() {
     }
   };
 
+  const handleSaveDelivery = async (values: DeliveryFormValues) => {
+    setSavingDelivery(true);
+    try {
+      const response = await apiClient.put<UserDigestDeliverySettingsV1>(
+        "user-digest/delivery",
+        {
+          enabled: values.enabled,
+          time: values.time.format("HH:mm"),
+          timezone: values.timezone.trim(),
+        }
+      );
+      setDelivery(response.data ?? delivery);
+      messageApi.success(t("pages.digest.deliverySaved", { defaultValue: "Delivery schedule saved." }));
+      setDeliveryModalOpen(false);
+    } catch (err) {
+      captureClientError("Failed to save user digest delivery settings", err);
+      messageApi.error(t("pages.digest.deliverySaveFailed", { defaultValue: "Failed to save delivery schedule." }));
+    } finally {
+      setSavingDelivery(false);
+    }
+  };
+
   const events = digest?.events ?? [];
   const generatedAt = digest?.generatedAt ?? null;
 
@@ -192,7 +299,23 @@ export function UserDigestPanel() {
     return focusBits.length > 0 ? focusBits.join(" · ") : null;
   }, [preference.focusEntities.length, preference.focusTopics.length, t]);
 
-  const loading = loadingPreference || loadingDigest;
+  const loading = loadingPreference || loadingDigest || loadingDelivery;
+  const deliveryStatusColor =
+    delivery.lastStatus === "sent"
+      ? "green"
+      : delivery.lastStatus === "failed"
+        ? "red"
+        : delivery.lastStatus === "empty_notified"
+          ? "gold"
+          : "default";
+  const deliveryStatusLabel =
+    delivery.lastStatus === "sent"
+      ? t("pages.digest.deliveryStatus.sent", { defaultValue: "Last run sent" })
+      : delivery.lastStatus === "failed"
+        ? t("pages.digest.deliveryStatus.failed", { defaultValue: "Last run failed" })
+        : delivery.lastStatus === "empty_notified"
+          ? t("pages.digest.deliveryStatus.empty", { defaultValue: "No digest items" })
+          : t("pages.digest.deliveryStatus.idle", { defaultValue: "Idle" });
 
   return (
     <>
@@ -208,6 +331,9 @@ export function UserDigestPanel() {
             </Button>
             <Button onClick={() => router.push('/subscriptions?tab=content')} size="small">
               {t("pages.digest.manageSubscriptions", { defaultValue: "Manage subscriptions" })}
+            </Button>
+            <Button onClick={handleOpenDeliveryModal} disabled={loadingDelivery} size="small">
+              {t("pages.digest.delivery.customize", { defaultValue: "Delivery schedule" })}
             </Button>
             <Button onClick={handleOpenModal} disabled={loadingPreference} size="small">
               {t("pages.digest.customize", { defaultValue: "Customize" })}
@@ -243,7 +369,48 @@ export function UserDigestPanel() {
                   {formatDateTime(generatedAt, locale, { dateStyle: "medium", timeStyle: "short" })}
                 </Tag>
               ) : null}
+              <Tag color={delivery.enabled ? "blue" : "default"}>
+                {delivery.enabled
+                  ? t("pages.digest.delivery.enabled", { defaultValue: "Delivery on" })
+                  : t("pages.digest.delivery.disabled", { defaultValue: "Delivery off" })}
+              </Tag>
+              {delivery.enabled ? (
+                <Tag>
+                  {t("pages.digest.delivery.schedule", { defaultValue: "Schedule" })}: {delivery.time} · {delivery.timezone}
+                </Tag>
+              ) : null}
+              <Tag color={deliveryStatusColor}>{deliveryStatusLabel}</Tag>
+              {delivery.nextRunAt ? (
+                <Tag>
+                  {t("pages.digest.delivery.nextRunAt", { defaultValue: "Next run" })}:{" "}
+                  {formatDateTime(delivery.nextRunAt, locale, { dateStyle: "medium", timeStyle: "short" })}
+                </Tag>
+              ) : null}
             </Space>
+
+            {!delivery.emailVerified ? (
+              <Alert
+                type="info"
+                showIcon
+                message={t("pages.digest.delivery.emailRequired", {
+                  defaultValue: "Verify your email in Profile before enabling scheduled digest delivery.",
+                })}
+                action={
+                  <Button size="small" onClick={() => router.push("/profile")}>
+                    {t("pages.digest.delivery.openProfile", { defaultValue: "Open profile" })}
+                  </Button>
+                }
+              />
+            ) : null}
+
+            {delivery.lastError ? (
+              <Alert
+                type="warning"
+                showIcon
+                message={t("pages.digest.delivery.lastError", { defaultValue: "Last delivery error" })}
+                description={delivery.lastError}
+              />
+            ) : null}
 
             {events.length === 0 ? (
               <Empty
@@ -400,6 +567,87 @@ export function UserDigestPanel() {
           >
             <InputNumber min={0} max={50} style={{ width: "100%" }} />
           </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        open={deliveryModalOpen}
+        title={t("pages.digest.delivery.title", { defaultValue: "Digest Delivery Schedule" })}
+        onCancel={() => setDeliveryModalOpen(false)}
+        confirmLoading={savingDelivery}
+        okButtonProps={{ htmlType: "submit", form: "user-digest-delivery-form" }}
+        okText={t("common.saveChanges", { defaultValue: "Save changes" })}
+        cancelText={t("common.cancel", { defaultValue: "Cancel" })}
+        destroyOnHidden
+      >
+        <Form
+          id="user-digest-delivery-form"
+          layout="vertical"
+          form={deliveryForm}
+          onFinish={handleSaveDelivery}
+          initialValues={{
+            enabled: delivery.enabled,
+            time: dayjs(`2026-01-01T${delivery.time}:00`),
+            timezone: delivery.timezone || browserTimezone,
+          }}
+        >
+          <Typography.Paragraph type="secondary">
+            {t("pages.digest.delivery.description", {
+              defaultValue:
+                "Send the current rolling digest to your verified email once per day, and also record the result in Notification Center.",
+            })}
+          </Typography.Paragraph>
+
+          <Form.Item
+            label={t("pages.digest.delivery.targetEmail", { defaultValue: "Target email" })}
+          >
+            <Typography.Text>{delivery.targetEmail || t("common.notAvailable", { defaultValue: "N/A" })}</Typography.Text>
+          </Form.Item>
+
+          <Form.Item
+            label={t("pages.digest.delivery.enabledLabel", { defaultValue: "Enable daily delivery" })}
+            name="enabled"
+            valuePropName="checked"
+            extra={
+              !delivery.emailVerified
+                ? t("pages.digest.delivery.verifyFirst", {
+                    defaultValue: "Email verification is required before this can be enabled.",
+                  })
+                : undefined
+            }
+          >
+            <Switch disabled={!delivery.emailVerified} />
+          </Form.Item>
+
+          <Form.Item
+            label={t("pages.digest.delivery.time", { defaultValue: "Delivery time" })}
+            name="time"
+            rules={[{ required: true, message: t("pages.digest.preferences.required", { defaultValue: "Required" }) }]}
+          >
+            <TimePicker format="HH:mm" minuteStep={5} style={{ width: "100%" }} />
+          </Form.Item>
+
+          <Form.Item
+            label={t("pages.digest.delivery.timezone", { defaultValue: "Timezone" })}
+            name="timezone"
+            rules={[{ required: true, message: t("pages.digest.preferences.required", { defaultValue: "Required" }) }]}
+          >
+            <Select
+              showSearch
+              options={timezoneOptions}
+              optionFilterProp="label"
+              placeholder={t("pages.digest.delivery.timezonePlaceholder", {
+                defaultValue: "Select an IANA timezone",
+              })}
+            />
+          </Form.Item>
+
+          {delivery.lastSentAt ? (
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              {t("pages.digest.delivery.lastSentAt", { defaultValue: "Last email sent" })}:{" "}
+              {formatDateTime(delivery.lastSentAt, locale, { dateStyle: "medium", timeStyle: "short" })}
+            </Typography.Paragraph>
+          ) : null}
         </Form>
       </Modal>
     </>

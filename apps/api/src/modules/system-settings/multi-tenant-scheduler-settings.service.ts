@@ -17,6 +17,7 @@ export interface MultiTenantSchedulerSettingsPublic {
   knowledgeGraphIngestionOrgConcurrency: number;
   sentimentSnapshotOrgConcurrency: number;
   newsnowHottestAnalysisOrgConcurrency: number;
+  userDigestDeliveryOrgConcurrency: number;
 }
 
 interface StoredMultiTenantSchedulerSettings {
@@ -24,6 +25,7 @@ interface StoredMultiTenantSchedulerSettings {
   knowledgeGraphIngestionOrgConcurrency?: unknown;
   sentimentSnapshotOrgConcurrency?: unknown;
   newsnowHottestAnalysisOrgConcurrency?: unknown;
+  userDigestDeliveryOrgConcurrency?: unknown;
 }
 
 const SETTINGS_KEY = "multi_tenant_scheduler_runtime_settings";
@@ -37,13 +39,14 @@ const INVALID_PERSISTED_SETTINGS_CODE =
 const INVALID_PERSISTED_SETTINGS_ERROR =
   "Stored multi-tenant scheduler runtime settings are invalid.";
 const INVALID_PERSISTED_SETTINGS_DETAIL =
-  "newsEventsIngestionOrgConcurrency, knowledgeGraphIngestionOrgConcurrency, sentimentSnapshotOrgConcurrency, and newsnowHottestAnalysisOrgConcurrency must be integers between 1 and 16.";
+  "newsEventsIngestionOrgConcurrency, knowledgeGraphIngestionOrgConcurrency, sentimentSnapshotOrgConcurrency, newsnowHottestAnalysisOrgConcurrency, and userDigestDeliveryOrgConcurrency must be integers between 1 and 16.";
 
 const DEFAULT_SETTINGS: Omit<MultiTenantSchedulerSettingsPublic, "source"> = {
   newsEventsIngestionOrgConcurrency: 4,
   knowledgeGraphIngestionOrgConcurrency: 4,
   sentimentSnapshotOrgConcurrency: 2,
   newsnowHottestAnalysisOrgConcurrency: 6,
+  userDigestDeliveryOrgConcurrency: 4,
 };
 
 @Injectable()
@@ -120,6 +123,7 @@ export class MultiTenantSchedulerSettingsService {
       knowledgeGraphIngestionOrgConcurrency: number;
       sentimentSnapshotOrgConcurrency: number;
       newsnowHottestAnalysisOrgConcurrency: number;
+      userDigestDeliveryOrgConcurrency: number;
     },
   ): Promise<MultiTenantSchedulerSettingsPublic> {
     const normalized = this.normalizeInputOrThrow(input);
@@ -201,12 +205,16 @@ export class MultiTenantSchedulerSettingsService {
     const newsnowHottestAnalysisOrgConcurrency = this.toStrictOptionalInt(
       record.newsnowHottestAnalysisOrgConcurrency,
     );
+    const userDigestDeliveryOrgConcurrency = this.toStrictOptionalInt(
+      record.userDigestDeliveryOrgConcurrency,
+    );
 
     if (
       newsEventsIngestionOrgConcurrency === null ||
       knowledgeGraphIngestionOrgConcurrency === null ||
       sentimentSnapshotOrgConcurrency === null ||
-      newsnowHottestAnalysisOrgConcurrency === null
+      newsnowHottestAnalysisOrgConcurrency === null ||
+      userDigestDeliveryOrgConcurrency === null
     ) {
       return null;
     }
@@ -224,6 +232,9 @@ export class MultiTenantSchedulerSettingsService {
       newsnowHottestAnalysisOrgConcurrency:
         newsnowHottestAnalysisOrgConcurrency ??
         DEFAULT_SETTINGS.newsnowHottestAnalysisOrgConcurrency,
+      userDigestDeliveryOrgConcurrency:
+        userDigestDeliveryOrgConcurrency ??
+        DEFAULT_SETTINGS.userDigestDeliveryOrgConcurrency,
     };
   }
 
@@ -232,6 +243,7 @@ export class MultiTenantSchedulerSettingsService {
     knowledgeGraphIngestionOrgConcurrency: number;
     sentimentSnapshotOrgConcurrency: number;
     newsnowHottestAnalysisOrgConcurrency: number;
+    userDigestDeliveryOrgConcurrency: number;
   }): Omit<MultiTenantSchedulerSettingsPublic, "source"> {
     return {
       newsEventsIngestionOrgConcurrency: this.requireConcurrencyOrThrow(
@@ -249,6 +261,10 @@ export class MultiTenantSchedulerSettingsService {
       newsnowHottestAnalysisOrgConcurrency: this.requireConcurrencyOrThrow(
         input.newsnowHottestAnalysisOrgConcurrency,
         "newsnowHottestAnalysisOrgConcurrency",
+      ),
+      userDigestDeliveryOrgConcurrency: this.requireConcurrencyOrThrow(
+        input.userDigestDeliveryOrgConcurrency,
+        "userDigestDeliveryOrgConcurrency",
       ),
     };
   }

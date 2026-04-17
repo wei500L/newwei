@@ -64,6 +64,7 @@ model Org {
   rssTranslationMetricsDaily           RssTranslationMetricsDaily[]
   observabilitySnapshots               ObservabilitySnapshot[]
   userSettings                         UserSetting[]
+  userDigestDeliverySchedules          UserDigestDeliverySchedule[]
   contentSubscriptionCatalog           ContentSubscriptionCatalog[]
   userContentSubscriptions             UserContentSubscription[]
   situationMonitorMonitors             SituationMonitorMonitor[]
@@ -98,6 +99,7 @@ model User {
   rateLimitPoliciesUpdated RateLimitPolicy[]          @relation("RateLimitPolicyUpdatedBy")
   notifications            Notification[]
   userSettings             UserSetting[]
+  userDigestDeliverySchedules UserDigestDeliverySchedule[]
   situationMonitorMonitors SituationMonitorMonitor[]
 }
 
@@ -708,6 +710,36 @@ model UserSetting {
   @@unique([orgId, userId, key])
   @@index([orgId, userId])
   @@index([orgId, key])
+}
+
+model UserDigestDeliverySchedule {
+  id           String                     @id @default(cuid())
+  org          Org                        @relation(fields: [orgId], references: [id])
+  orgId        String
+  user         User                       @relation(fields: [userId], references: [id])
+  userId       String
+  enabled      Boolean                    @default(false)
+  timezone     String
+  sendHour     Int
+  sendMinute   Int
+  nextRunAt    DateTime?
+  lastSentAt   DateTime?
+  lastStatus   UserDigestDeliveryStatus   @default(idle)
+  lastStatusAt DateTime?
+  lastError    String?
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+
+  @@unique([orgId, userId])
+  @@index([enabled, nextRunAt])
+  @@index([orgId, nextRunAt])
+}
+
+enum UserDigestDeliveryStatus {
+  idle
+  sent
+  empty_notified
+  failed
 }
 
 enum ContentSubscriptionKind {

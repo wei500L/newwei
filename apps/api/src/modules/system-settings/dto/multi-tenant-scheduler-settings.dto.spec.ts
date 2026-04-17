@@ -17,6 +17,7 @@ describe("UpdateMultiTenantSchedulerSettingsDto", () => {
     knowledgeGraphIngestionOrgConcurrency: 4,
     sentimentSnapshotOrgConcurrency: 2,
     newsnowHottestAnalysisOrgConcurrency: 6,
+    userDigestDeliveryOrgConcurrency: 4,
   };
 
   it("accepts valid payload", async () => {

@@ -17,6 +17,7 @@ interface MultiTenantSchedulerSettingsResponse {
   knowledgeGraphIngestionOrgConcurrency: number;
   sentimentSnapshotOrgConcurrency: number;
   newsnowHottestAnalysisOrgConcurrency: number;
+  userDigestDeliveryOrgConcurrency: number;
 }
 
 interface MultiTenantSchedulerSettingsFormValues {
@@ -24,6 +25,7 @@ interface MultiTenantSchedulerSettingsFormValues {
   knowledgeGraphIngestionOrgConcurrency: number;
   sentimentSnapshotOrgConcurrency: number;
   newsnowHottestAnalysisOrgConcurrency: number;
+  userDigestDeliveryOrgConcurrency: number;
 }
 
 const DEFAULT_SETTINGS: MultiTenantSchedulerSettingsResponse = {
@@ -32,6 +34,7 @@ const DEFAULT_SETTINGS: MultiTenantSchedulerSettingsResponse = {
   knowledgeGraphIngestionOrgConcurrency: 4,
   sentimentSnapshotOrgConcurrency: 2,
   newsnowHottestAnalysisOrgConcurrency: 6,
+  userDigestDeliveryOrgConcurrency: 4,
 };
 
 export function MultiTenantSchedulerSettingsPanel() {
@@ -66,6 +69,8 @@ export function MultiTenantSchedulerSettingsPanel() {
         sentimentSnapshotOrgConcurrency: next.sentimentSnapshotOrgConcurrency,
         newsnowHottestAnalysisOrgConcurrency:
           next.newsnowHottestAnalysisOrgConcurrency,
+        userDigestDeliveryOrgConcurrency:
+          next.userDigestDeliveryOrgConcurrency,
       });
     },
     [form],
@@ -265,6 +270,25 @@ export function MultiTenantSchedulerSettingsPanel() {
             {
               defaultValue:
                 "How many orgs the NewsNow hottest-analysis scheduler may refresh at once after the shared global snapshot is prepared.",
+            },
+          )}
+        >
+          <InputNumber min={1} max={16} style={{ width: "100%" }} />
+        </Form.Item>
+
+        <Form.Item
+          name="userDigestDeliveryOrgConcurrency"
+          label={t(
+            "systemSettings.multiTenantSchedulers.fields.userDigestDeliveryOrgConcurrency",
+            {
+              defaultValue: "User digest delivery org concurrency",
+            },
+          )}
+          extra={t(
+            "systemSettings.multiTenantSchedulers.hints.userDigestDeliveryOrgConcurrency",
+            {
+              defaultValue:
+                "How many orgs the user digest email scheduler may process at once.",
             },
           )}
         >

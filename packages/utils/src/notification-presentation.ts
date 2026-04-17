@@ -10,6 +10,9 @@ export enum NotificationPresentationKind {
   NewsSourcePipelineRetrySpike = "news_source_pipeline_retry_spike",
   NewsSourceSchedulerBackpressure = "news_source_scheduler_backpressure",
   ClassificationQualityThresholdExceeded = "classification_quality_threshold_exceeded",
+  UserDigestReady = "user_digest_ready",
+  UserDigestEmpty = "user_digest_empty",
+  UserDigestDeliveryFailed = "user_digest_delivery_failed",
 }
 
 export interface NotificationPresentationPayload {

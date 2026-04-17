@@ -50,6 +50,9 @@ const NotificationPresentationKind = {
   NewsSourceSchedulerBackpressure: "news_source_scheduler_backpressure",
   ClassificationQualityThresholdExceeded:
     "classification_quality_threshold_exceeded",
+  UserDigestReady: "user_digest_ready",
+  UserDigestEmpty: "user_digest_empty",
+  UserDigestDeliveryFailed: "user_digest_delivery_failed",
 } as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -548,7 +551,60 @@ export const formatNotificationPresentation = (
               "Classification quality thresholds were exceeded in the {{window}} window. Review system monitoring for details.",
             window,
           },
-        );
+      );
+      return { title, body, toastText: title };
+    }
+    case NotificationPresentationKind.UserDigestReady: {
+      const eventCount = formatCount(toNumberValue(params.eventCount), locale);
+      const generatedAt = formatTimestamp(params.generatedAt, locale);
+      const title = t("notifications.presentation.userDigestReady.title", {
+        defaultValue: "Daily digest ready",
+      });
+      const body = t("notifications.presentation.userDigestReady.body", {
+        defaultValue: "Emailed {{count}} digest event(s){{generatedSuffix}}.",
+        count: eventCount || "0",
+        generatedSuffix: generatedAt
+          ? t("notifications.presentation.userDigestReady.generatedSuffix", {
+              defaultValue: " at {{value}}",
+              value: generatedAt,
+            })
+          : "",
+      });
+      return { title, body, toastText: title };
+    }
+    case NotificationPresentationKind.UserDigestEmpty: {
+      const title = t("notifications.presentation.userDigestEmpty.title", {
+        defaultValue: "Daily digest has no new items",
+      });
+      const body = t("notifications.presentation.userDigestEmpty.body", {
+        defaultValue:
+          "No digest events matched your current window. The next delivery check is already scheduled.",
+      });
+      return { title, body, toastText: title };
+    }
+    case NotificationPresentationKind.UserDigestDeliveryFailed: {
+      const title = t(
+        "notifications.presentation.userDigestDeliveryFailed.title",
+        {
+          defaultValue: "Daily digest delivery failed",
+        },
+      );
+      const targetEmail = toStringValue(params.targetEmail);
+      const detail =
+        technicalDetail ||
+        toStringValue(params.message) ||
+        item.body ||
+        t("notifications.presentation.userDigestDeliveryFailed.body", {
+          defaultValue:
+            "The system could not send your digest email. Review your delivery settings and try again later.",
+        });
+      const body = targetEmail
+        ? t("notifications.presentation.userDigestDeliveryFailed.bodyWithEmail", {
+            defaultValue: "Target {{email}}. {{detail}}",
+            email: targetEmail,
+            detail,
+          })
+        : detail;
       return { title, body, toastText: title };
     }
     default:

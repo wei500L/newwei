@@ -1,0 +1,15 @@
+{{recipientName}}，你的每日摘要已生成
+
+生成时间：{{generatedAtLabel}}
+摘要窗口：{{windowLabel}}
+共 {{eventCount}} 条重点事件
+打开 Today 页面：{{digestLink}}
+
+{{#each events}}
+- {{title}}
+  摘要：{{summary}}
+  事件条数：{{itemCount}}
+  最近更新时间：{{updatedAtLabel}}
+  链接：{{link}}
+
+{{/each}}

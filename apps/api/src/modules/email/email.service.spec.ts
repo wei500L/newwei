@@ -82,6 +82,48 @@ describe("EmailService templates", () => {
     expect(text).toContain("87654321");
   });
 
+  it("loads and renders user digest templates", () => {
+    const service = new EmailService(envStub);
+    const html = service.buildUserDigestTemplate({
+      recipientName: "Ada",
+      generatedAtLabel: "2026-04-18 08:30",
+      windowLabel: "3 天",
+      eventCount: 2,
+      digestLink: "http://localhost:3000/today",
+      events: [
+        {
+          title: "Macro risk",
+          summary: "Summary 1",
+          itemCount: 3,
+          updatedAtLabel: "2026-04-18 08:20",
+          link: "https://example.com/story-1",
+        },
+      ],
+    });
+    const text = service.buildUserDigestTextTemplate({
+      recipientName: "Ada",
+      generatedAtLabel: "2026-04-18 08:30",
+      windowLabel: "3 天",
+      eventCount: 2,
+      digestLink: "http://localhost:3000/today",
+      events: [
+        {
+          title: "Macro risk",
+          summary: "Summary 1",
+          itemCount: 3,
+          updatedAtLabel: "2026-04-18 08:20",
+          link: "https://example.com/story-1",
+        },
+      ],
+    });
+
+    expect(html).toContain("Ada");
+    expect(html).toContain("Macro risk");
+    expect(html).toContain("http://localhost:3000/today");
+    expect(text).toContain("Summary 1");
+    expect(text).toContain("https://example.com/story-1");
+  });
+
   it("rejects path traversal attempts when resolving templates", () => {
     const service = new EmailService(envStub) as unknown as {
       resolveTemplatePath: (templateFile: string) => string | null;

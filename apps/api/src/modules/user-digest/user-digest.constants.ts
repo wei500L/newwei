@@ -1,1 +1,6 @@
-export const USER_DIGEST_PREFERENCE_KEY = 'ai:digest:preference:v1';
+export const USER_DIGEST_PREFERENCE_KEY = "ai:digest:preference:v1";
+
+export const DEFAULT_USER_DIGEST_DELIVERY_TIME = "09:00";
+export const DEFAULT_USER_DIGEST_DELIVERY_TIMEZONE = "UTC";
+export const USER_DIGEST_DELIVERY_LOCK_TTL_MS = 55_000;
+export const USER_DIGEST_ORG_LOCK_TTL_MS = 55_000;

@@ -20,4 +20,9 @@ export class UpdateMultiTenantSchedulerSettingsDto {
   @Min(1)
   @Max(16)
   newsnowHottestAnalysisOrgConcurrency!: number;
+
+  @IsInt()
+  @Min(1)
+  @Max(16)
+  userDigestDeliveryOrgConcurrency!: number;
 }

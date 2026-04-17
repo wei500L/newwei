@@ -41,10 +41,29 @@ interface VerificationCodeTemplateContext {
   expiresMinutes: number;
 }
 
+interface UserDigestTemplateEventContext {
+  title: string;
+  summary: string;
+  itemCount: number;
+  updatedAtLabel: string;
+  link: string;
+}
+
+interface UserDigestTemplateContext {
+  recipientName: string;
+  generatedAtLabel: string;
+  windowLabel: string;
+  eventCount: number;
+  digestLink: string;
+  events: UserDigestTemplateEventContext[];
+}
+
 const ALERT_TEMPLATE_NAME = "alert.hbs";
 const ALERT_TEXT_TEMPLATE_NAME = "alert.text.hbs";
 const VERIFICATION_CODE_TEMPLATE_NAME = "verification-code.hbs";
 const VERIFICATION_CODE_TEXT_TEMPLATE_NAME = "verification-code.text.hbs";
+const USER_DIGEST_TEMPLATE_NAME = "user-digest.hbs";
+const USER_DIGEST_TEXT_TEMPLATE_NAME = "user-digest.text.hbs";
 const EMAIL_EXTRACT_REGEX =
   /[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+/gi;
 
@@ -60,6 +79,8 @@ export class EmailService implements OnModuleDestroy {
     alertText: TemplateDelegate<AlertTemplateContext>;
     verificationCode: TemplateDelegate<VerificationCodeTemplateContext>;
     verificationCodeText: TemplateDelegate<VerificationCodeTemplateContext>;
+    userDigest: TemplateDelegate<UserDigestTemplateContext>;
+    userDigestText: TemplateDelegate<UserDigestTemplateContext>;
   };
 
   constructor(private readonly env: EnvService) {
@@ -101,6 +122,12 @@ export class EmailService implements OnModuleDestroy {
         this.compileTemplate<VerificationCodeTemplateContext>(
           VERIFICATION_CODE_TEXT_TEMPLATE_NAME,
         ),
+      userDigest: this.compileTemplate<UserDigestTemplateContext>(
+        USER_DIGEST_TEMPLATE_NAME,
+      ),
+      userDigestText: this.compileTemplate<UserDigestTemplateContext>(
+        USER_DIGEST_TEXT_TEMPLATE_NAME,
+      ),
     };
 
     this.logger.debug(
@@ -303,6 +330,14 @@ export class EmailService implements OnModuleDestroy {
       code,
       expiresMinutes,
     });
+  }
+
+  buildUserDigestTemplate(params: UserDigestTemplateContext) {
+    return this.templates.userDigest(params);
+  }
+
+  buildUserDigestTextTemplate(params: UserDigestTemplateContext) {
+    return this.templates.userDigestText(params);
   }
 
   private compileTemplate<T>(templateFile: string): TemplateDelegate<T> {

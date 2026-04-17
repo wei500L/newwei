@@ -34,6 +34,7 @@ describe("MultiTenantSchedulerSettingsService", () => {
       knowledgeGraphIngestionOrgConcurrency: 4,
       sentimentSnapshotOrgConcurrency: 2,
       newsnowHottestAnalysisOrgConcurrency: 6,
+      userDigestDeliveryOrgConcurrency: 4,
     });
   });
 
@@ -66,6 +67,7 @@ describe("MultiTenantSchedulerSettingsService", () => {
         knowledgeGraphIngestionOrgConcurrency: 5,
         sentimentSnapshotOrgConcurrency: 3,
         newsnowHottestAnalysisOrgConcurrency: 8,
+        userDigestDeliveryOrgConcurrency: 2,
       },
     });
 
@@ -75,6 +77,7 @@ describe("MultiTenantSchedulerSettingsService", () => {
       knowledgeGraphIngestionOrgConcurrency: 5,
       sentimentSnapshotOrgConcurrency: 3,
       newsnowHottestAnalysisOrgConcurrency: 8,
+      userDigestDeliveryOrgConcurrency: 2,
     });
   });
 
@@ -92,6 +95,7 @@ describe("MultiTenantSchedulerSettingsService", () => {
       knowledgeGraphIngestionOrgConcurrency: 4,
       sentimentSnapshotOrgConcurrency: 2,
       newsnowHottestAnalysisOrgConcurrency: 6,
+      userDigestDeliveryOrgConcurrency: 4,
     });
   });
 
@@ -103,6 +107,7 @@ describe("MultiTenantSchedulerSettingsService", () => {
         knowledgeGraphIngestionOrgConcurrency: 4,
         sentimentSnapshotOrgConcurrency: 2,
         newsnowHottestAnalysisOrgConcurrency: 6,
+        userDigestDeliveryOrgConcurrency: 3,
       },
     });
 
@@ -119,6 +124,7 @@ describe("MultiTenantSchedulerSettingsService", () => {
       knowledgeGraphIngestionOrgConcurrency: 4,
       sentimentSnapshotOrgConcurrency: 3,
       newsnowHottestAnalysisOrgConcurrency: 7,
+      userDigestDeliveryOrgConcurrency: 4,
     });
 
     expect(prisma.systemSetting.upsert).toHaveBeenCalledWith(
@@ -136,6 +142,7 @@ describe("MultiTenantSchedulerSettingsService", () => {
         knowledgeGraphIngestionOrgConcurrency: 4,
         sentimentSnapshotOrgConcurrency: 2,
         newsnowHottestAnalysisOrgConcurrency: 6,
+        userDigestDeliveryOrgConcurrency: 4,
       }),
     ).rejects.toThrow(
       "newsEventsIngestionOrgConcurrency must be an integer between 1 and 16",
