@@ -6,6 +6,7 @@ import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
 import { NewsEventClusteringFailureService } from "./news-event-clustering-failure.service";
+import { NewsEventClusteringRecoveryService } from "./news-event-clustering-recovery.service";
 
 @ApiTags("system-settings")
 @ApiBearerAuth()
@@ -13,7 +14,14 @@ import { NewsEventClusteringFailureService } from "./news-event-clustering-failu
 export class NewsEventClusteringAdminController {
   constructor(
     private readonly failures: NewsEventClusteringFailureService,
+    private readonly recovery: NewsEventClusteringRecoveryService,
   ) {}
+
+  @Get("readiness")
+  @Permissions("settings.manage")
+  async getReadiness() {
+    return this.recovery.getReadiness();
+  }
 
   @Get("overview")
   @Permissions("settings.manage")
@@ -30,7 +38,10 @@ export class NewsEventClusteringAdminController {
   ) {
     const limit = limitRaw ? Number(limitRaw) : undefined;
     const normalizedStatus =
-      status === "pending" || status === "resolved" || status === "ignored"
+      status === "pending" ||
+      status === "processing" ||
+      status === "resolved" ||
+      status === "ignored"
         ? status
         : undefined;
     return this.failures.listFailures(user.orgId, {
@@ -50,6 +61,15 @@ export class NewsEventClusteringAdminController {
       user.id,
       groupId,
     );
+  }
+
+  @Post("failures/:groupId/llm-backfill")
+  @Permissions("settings.manage")
+  async llmBackfill(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("groupId") groupId: string,
+  ) {
+    return this.recovery.enqueueLlmBackfill(user.orgId, user.id, groupId);
   }
 
   @Post("failures/:groupId/ignore")

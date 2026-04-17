@@ -105,14 +105,25 @@ interface FormValues {
   cacheTtlSeconds: number;
 }
 
-interface ModelServiceSettingsResponse {
-  enabled: boolean;
-  baseUrl: string | null;
-  hasToken: boolean;
+interface ClusteringReadinessResponse {
+  modelService: {
+    ready: boolean;
+    enabled: boolean;
+    baseUrl: string | null;
+    hasToken: boolean;
+  };
+  llmBackfill: {
+    ready: boolean;
+    profileId: string | null;
+    profileName: string | null;
+    model: string | null;
+    apiSurface: "chat_completions" | "responses" | null;
+  };
 }
 
 interface ClusteringFailureOverview {
   pendingCount: number;
+  processingCount: number;
   resolvedCount: number;
   ignoredCount: number;
   latestFailureAt: string | null;
@@ -120,7 +131,7 @@ interface ClusteringFailureOverview {
 
 interface ClusteringFailureRow {
   groupId: string;
-  status: "pending" | "resolved" | "ignored";
+  status: "pending" | "processing" | "resolved" | "ignored";
   clusteringMode: string;
   failureReason: string;
   failureMessage: string | null;
@@ -131,6 +142,10 @@ interface ClusteringFailureRow {
   attemptCount: number;
   lastAttemptAt: string | null;
   lastError: string | null;
+  activeJobId: string | null;
+  progressProcessedCount: number;
+  progressTotalCount: number;
+  lastRecoveryModel: string | null;
   resolvedAt: string | null;
   resolutionMode: string | null;
   resolvedEventIds: string[];
@@ -212,8 +227,8 @@ export function NewsEventsSettingsPanel() {
   const { data: session } = useSession();
   const [form] = Form.useForm<FormValues>();
   const [messageApi, contextHolder] = message.useMessage();
-  const [modelServiceSettings, setModelServiceSettings] =
-    useState<ModelServiceSettingsResponse | null>(null);
+  const [clusteringReadiness, setClusteringReadiness] =
+    useState<ClusteringReadinessResponse | null>(null);
   const [failureOverview, setFailureOverview] =
     useState<ClusteringFailureOverview | null>(null);
   const [failureRows, setFailureRows] = useState<ClusteringFailureRow[]>([]);
@@ -266,9 +281,11 @@ export function NewsEventsSettingsPanel() {
   const loadClusteringAdminState = useCallback(async () => {
     setFailuresLoading(true);
     try {
-      const [modelServiceResponse, overviewResponse, failuresResponse] =
+      const [readinessResponse, overviewResponse, failuresResponse] =
         await Promise.all([
-          apiClient.get<ModelServiceSettingsResponse>("system-settings/model-service"),
+          apiClient.get<ClusteringReadinessResponse>(
+            "system-settings/news-events/clustering/readiness",
+          ),
           apiClient.get<ClusteringFailureOverview>(
             "system-settings/news-events/clustering/overview",
           ),
@@ -279,7 +296,7 @@ export function NewsEventsSettingsPanel() {
             },
           ),
         ]);
-      setModelServiceSettings(modelServiceResponse.data ?? null);
+      setClusteringReadiness(readinessResponse.data ?? null);
       setFailureOverview(overviewResponse.data ?? null);
       setFailureRows(
         Array.isArray(failuresResponse.data) ? failuresResponse.data : [],
@@ -422,30 +439,29 @@ export function NewsEventsSettingsPanel() {
   };
 
   const modelServiceReady = Boolean(
-    modelServiceSettings?.enabled &&
-      modelServiceSettings?.baseUrl &&
-      modelServiceSettings?.hasToken,
+    clusteringReadiness?.modelService.ready,
   );
+  const llmBackfillReady = Boolean(clusteringReadiness?.llmBackfill.ready);
 
-  const handleVectorBackfill = useCallback(
+  const handleLlmBackfill = useCallback(
     async (groupId: string) => {
       setActionGroupId(groupId);
       try {
         await apiClient.post(
-          `system-settings/news-events/clustering/failures/${groupId}/vector-backfill`,
+          `system-settings/news-events/clustering/failures/${groupId}/llm-backfill`,
         );
         messageApi.success(
-          t("settings.newsEvents.messages.vectorBackfillDone", {
-            defaultValue: "Vector backfill completed.",
+          t("settings.newsEvents.messages.llmBackfillQueued", {
+            defaultValue: "LLM backfill queued.",
           }),
         );
         await loadClusteringAdminState();
       } catch (error) {
-        captureClientError("Failed to run news event vector backfill", error);
+        captureClientError("Failed to queue news event llm backfill", error);
         messageApi.error(
           extractApiError(error).message ||
-            t("settings.newsEvents.messages.vectorBackfillFailed", {
-              defaultValue: "Failed to run vector backfill.",
+            t("settings.newsEvents.messages.llmBackfillFailed", {
+              defaultValue: "Failed to queue LLM backfill.",
             }),
         );
       } finally {
@@ -511,6 +527,8 @@ export function NewsEventsSettingsPanel() {
               color={
                 row.status === "pending"
                   ? "warning"
+                  : row.status === "processing"
+                    ? "processing"
                   : row.status === "resolved"
                     ? "success"
                     : "default"
@@ -518,6 +536,7 @@ export function NewsEventsSettingsPanel() {
             >
               {row.status}
             </Tag>
+            {row.lastRecoveryModel ? <Tag>{row.lastRecoveryModel}</Tag> : null}
             {row.embeddingModel ? <Tag>{row.embeddingModel}</Tag> : null}
             {row.language ? <Tag>{row.language}</Tag> : null}
           </Space>
@@ -530,6 +549,31 @@ export function NewsEventsSettingsPanel() {
         dataIndex: "itemCount",
         key: "itemCount",
         width: 90,
+      },
+      {
+        title: t("settings.newsEvents.clusteringQueue.columns.recovery", {
+          defaultValue: "Recovery",
+        }),
+        key: "recovery",
+        render: (_: unknown, row: ClusteringFailureRow) => (
+          <Space direction="vertical" size={2}>
+            <Typography.Text type="secondary">
+              {row.progressTotalCount > 0
+                ? `${row.progressProcessedCount}/${row.progressTotalCount}`
+                : "-"}
+            </Typography.Text>
+            {row.activeJobId ? (
+              <Typography.Text type="secondary" ellipsis>
+                {row.activeJobId}
+              </Typography.Text>
+            ) : null}
+            {row.lastError ? (
+              <Typography.Text type="danger" ellipsis>
+                {row.lastError}
+              </Typography.Text>
+            ) : null}
+          </Space>
+        ),
       },
       {
         title: t("settings.newsEvents.clusteringQueue.columns.samples", {
@@ -559,12 +603,12 @@ export function NewsEventsSettingsPanel() {
             <Button
               size="small"
               type="primary"
-              disabled={row.status !== "pending"}
+              disabled={row.status !== "pending" || !llmBackfillReady}
               loading={actionGroupId === row.groupId}
-              onClick={() => void handleVectorBackfill(row.groupId)}
+              onClick={() => void handleLlmBackfill(row.groupId)}
             >
-              {t("settings.newsEvents.clusteringQueue.actions.vectorBackfill", {
-                defaultValue: "Vector backfill",
+              {t("settings.newsEvents.clusteringQueue.actions.llmBackfill", {
+                defaultValue: "LLM backfill",
               })}
             </Button>
             <Button
@@ -581,7 +625,7 @@ export function NewsEventsSettingsPanel() {
         ),
       },
     ],
-    [actionGroupId, handleIgnoreFailure, handleVectorBackfill, t],
+    [actionGroupId, handleIgnoreFailure, handleLlmBackfill, llmBackfillReady, t],
   );
 
   if (loading && !data?.newsEventSettings) {
@@ -1415,6 +1459,16 @@ export function NewsEventsSettingsPanel() {
                 children: failureOverview?.pendingCount ?? 0,
               },
               {
+                key: "processingCount",
+                label: t(
+                  "settings.newsEvents.clusteringQueue.overview.processing",
+                  {
+                    defaultValue: "Processing",
+                  },
+                ),
+                children: failureOverview?.processingCount ?? 0,
+              },
+              {
                 key: "resolvedCount",
                 label: t(
                   "settings.newsEvents.clusteringQueue.overview.resolved",
@@ -1446,15 +1500,42 @@ export function NewsEventsSettingsPanel() {
           />
 
           <Alert
-            type="info"
+            type={llmBackfillReady ? "info" : "warning"}
             showIcon
             message={t("settings.newsEvents.clusteringQueue.notice.title", {
               defaultValue: "Manual recovery path",
             })}
-            description={t("settings.newsEvents.clusteringQueue.notice.body", {
-              defaultValue:
-                "Only hard BERTopic request failures enter this queue. Small groups, missing embeddings, and outliers still fall back to the standard vector assignment automatically.",
-            })}
+            description={
+              <Space direction="vertical" size={4}>
+                <Typography.Text>
+                  {t("settings.newsEvents.clusteringQueue.notice.body", {
+                    defaultValue:
+                      "Only hard BERTopic request failures enter this queue. Small groups, missing embeddings, and outliers still fall back to the standard vector assignment automatically.",
+                  })}
+                </Typography.Text>
+                <Typography.Text>
+                  {llmBackfillReady
+                    ? t("settings.newsEvents.clusteringQueue.notice.ready", {
+                        defaultValue:
+                          "LLM recovery is ready. Pending groups can be queued for manual backfill.",
+                      })
+                    : t("settings.newsEvents.clusteringQueue.notice.notReady", {
+                        defaultValue:
+                          "LLM recovery is not ready. Configure an active LLM gateway completion profile before using manual backfill.",
+                      })}
+                </Typography.Text>
+                <Link
+                  href={buildAdminSettingsHref({
+                    page: "ai",
+                    panel: "llm-gateway",
+                  })}
+                >
+                  {t("settings.newsEvents.clusteringQueue.actions.openLlmGateway", {
+                    defaultValue: "Open LLM gateway settings",
+                  })}
+                </Link>
+              </Space>
+            }
           />
 
           <Table<ClusteringFailureRow>

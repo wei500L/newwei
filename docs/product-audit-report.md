@@ -65,12 +65,12 @@
 | 关系质量验证 | ✅ 完整 | LLM-based yes/no/uncertain 验证 |
 | 影响分析 | ✅ 完整 | executive_change / commodity_move / policy_event 场景，图遍历涟漪效应 |
 | 人工审核 | ✅ 完整 | 低置信边的 review queue |
-| 新闻事件聚类 | ✅ 完整 | 每 5 分钟增量 ingestion，向量相似度事件分配 |
+| 新闻事件聚类 | ✅ 完整 | 每 5 分钟增量 ingestion，支持向量分配 + BERTopic primary，硬失败进入管理员人工恢复队列 |
 | 事件时间线 | ✅ 完整 | 每 10 分钟重建，KL 散度检测 topic drift |
 | 新闻-经济指标关联 | ✅ 完整 | Pearson 相关性 + 回测框架 (`NewsIndicatorAssociation`) |
 | 情感快照 | ✅ 完整 | 每小时聚合 entity/topic 级别情感快照 |
 
-**Gap**: 事件聚类仅基于向量相似度，缺少 BERTopic/LDA 等主题模型聚类方式。
+**Gap**: BERTopic 已补入主链路，但仍受模型服务 CPU/内存约束，需要继续通过 `bertopicMaxItemsPerRequest` 控制单次请求规模。
 
 ### 1.4 检索（Search）— 完备度: ★★★☆☆
 
@@ -86,6 +86,8 @@
 | 高级检索语法 | ❌ 缺失 | 无布尔运算 (AND/OR/NOT)、短语匹配、字段限定搜索 |
 
 **Gap**: **无 Elasticsearch/OpenSearch** 是检索环节最大的结构性短板。MySQL fulltext + Qdrant 的组合在数据量增长后面临性能和功能瓶颈（无高亮、无聚合、无同义词扩展、无 fuzzy match）。
+
+**Note**: BERTopic 属于新闻事件聚类能力，不替代检索引擎。
 
 ### 1.5 可视化（Visualization）— 完备度: ★★★★★
 

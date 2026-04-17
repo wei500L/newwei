@@ -242,7 +242,7 @@ export class NewsEventsSettingsService {
       timelineEnabled: true,
       clusteringMode: "vector",
       bertopicMinItemsPerGroup: 8,
-      bertopicMaxItemsPerRequest: 64,
+      bertopicMaxItemsPerRequest: 32,
       bertopicMinTopicSize: 4,
       forceAuthoritativeMode: false,
       forceMinAuthoritativeSources: 1,

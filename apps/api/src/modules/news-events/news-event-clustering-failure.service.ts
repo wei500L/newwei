@@ -2,7 +2,11 @@ import {
   NewsEventClusteringFailureModel,
 } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { createHash } from "node:crypto";
 
 import { writeTaskLogBestEffort } from "../observability/task-log.writer";
@@ -31,9 +35,15 @@ interface NewsEventClusteringFailureItemInput {
   crawlAt: Date | null;
 }
 
+export type NewsEventClusteringFailureStatus =
+  | "pending"
+  | "processing"
+  | "resolved"
+  | "ignored";
+
 export interface NewsEventClusteringFailureSummary {
   groupId: string;
-  status: "pending" | "resolved" | "ignored";
+  status: NewsEventClusteringFailureStatus;
   clusteringMode: string;
   failureReason: string;
   failureMessage: string | null;
@@ -44,6 +54,10 @@ export interface NewsEventClusteringFailureSummary {
   attemptCount: number;
   lastAttemptAt: string | null;
   lastError: string | null;
+  activeJobId: string | null;
+  progressProcessedCount: number;
+  progressTotalCount: number;
+  lastRecoveryModel: string | null;
   resolvedAt: string | null;
   resolutionMode: string | null;
   resolvedEventIds: string[];
@@ -53,14 +67,29 @@ export interface NewsEventClusteringFailureSummary {
 
 export interface NewsEventClusteringFailureOverview {
   pendingCount: number;
+  processingCount: number;
   resolvedCount: number;
   ignoredCount: number;
   latestFailureAt: string | null;
 }
 
+export interface NewsEventClusteringFailureRecord {
+  orgId: string;
+  groupId: string;
+  status: NewsEventClusteringFailureStatus;
+  attemptCount: number;
+  items: NewsEventClusteringFailureItemInput[];
+  activeJobId: string | null;
+  progressProcessedCount: number;
+  progressTotalCount: number;
+  lastRecoveryModel: string | null;
+  lastError: string | null;
+  resolvedEventIds: string[];
+}
+
 interface NewsEventClusteringFailureSummaryRow {
   groupId?: string | null;
-  status?: "pending" | "resolved" | "ignored" | null;
+  status?: NewsEventClusteringFailureStatus | null;
   clusteringMode?: string | null;
   failureReason?: string | null;
   failureMessage?: string | null;
@@ -71,6 +100,10 @@ interface NewsEventClusteringFailureSummaryRow {
   attemptCount?: number | null;
   lastAttemptAt?: Date | string | null;
   lastError?: string | null;
+  activeJobId?: string | null;
+  progressProcessedCount?: number | null;
+  progressTotalCount?: number | null;
+  lastRecoveryModel?: string | null;
   resolvedAt?: Date | string | null;
   resolutionMode?: string | null;
   resolvedEventIds?: unknown;
@@ -131,6 +164,10 @@ export class NewsEventClusteringFailureService {
           resolutionMode: null,
           resolvedEventIds: [],
           lastError: input.failureMessage,
+          activeJobId: null,
+          progressProcessedCount: 0,
+          progressTotalCount: itemCount,
+          lastRecoveryModel: null,
         },
         $setOnInsert: {
           attemptCount: 0,
@@ -162,11 +199,15 @@ export class NewsEventClusteringFailureService {
   }
 
   async getOverview(orgId: string): Promise<NewsEventClusteringFailureOverview> {
-    const [pendingCount, resolvedCount, ignoredCount, latestFailure] =
+    const [pendingCount, processingCount, resolvedCount, ignoredCount, latestFailure] =
       await Promise.all([
         NewsEventClusteringFailureModel.countDocuments({
           orgId,
           status: "pending",
+        }),
+        NewsEventClusteringFailureModel.countDocuments({
+          orgId,
+          status: "processing",
         }),
         NewsEventClusteringFailureModel.countDocuments({
           orgId,
@@ -185,6 +226,7 @@ export class NewsEventClusteringFailureService {
 
     return {
       pendingCount,
+      processingCount,
       resolvedCount,
       ignoredCount,
       latestFailureAt: latestFailure?.createdAt
@@ -196,7 +238,7 @@ export class NewsEventClusteringFailureService {
   async listFailures(
     orgId: string,
     options?: {
-      status?: "pending" | "resolved" | "ignored";
+      status?: NewsEventClusteringFailureStatus;
       limit?: number;
     },
   ): Promise<NewsEventClusteringFailureSummary[]> {
@@ -210,6 +252,174 @@ export class NewsEventClusteringFailureService {
       .lean()
       .exec();
     return rows.map((row) => this.toSummary(row));
+  }
+
+  async getFailureGroupOrThrow(
+    orgId: string,
+    groupId: string,
+  ): Promise<NewsEventClusteringFailureRecord> {
+    const row = await NewsEventClusteringFailureModel.findOne({
+      orgId,
+      groupId,
+    })
+      .lean()
+      .exec();
+    if (!row) {
+      throw new NotFoundException("News event clustering failure not found");
+    }
+
+    return {
+      orgId,
+      groupId: row.groupId ?? groupId,
+      status: row.status ?? "pending",
+      attemptCount: Math.max(0, Number(row.attemptCount ?? 0)),
+      items: Array.isArray(row.items)
+        ? (row.items as NewsEventClusteringFailureItemInput[])
+        : [],
+      activeJobId:
+        typeof row.activeJobId === "string" && row.activeJobId.trim().length > 0
+          ? row.activeJobId.trim()
+          : null,
+      progressProcessedCount: Math.max(
+        0,
+        Number(row.progressProcessedCount ?? 0),
+      ),
+      progressTotalCount: Math.max(0, Number(row.progressTotalCount ?? 0)),
+      lastRecoveryModel:
+        typeof row.lastRecoveryModel === "string" &&
+        row.lastRecoveryModel.trim().length > 0
+          ? row.lastRecoveryModel.trim()
+          : null,
+      lastError: row.lastError ?? null,
+      resolvedEventIds: Array.isArray(row.resolvedEventIds)
+        ? row.resolvedEventIds.filter(
+            (value): value is string => typeof value === "string",
+          )
+        : [],
+    };
+  }
+
+  async markLlmBackfillQueued(input: {
+    orgId: string;
+    actorId: string;
+    groupId: string;
+    jobId: string;
+    model: string | null;
+  }) {
+    const row = await this.getFailureGroupOrThrow(input.orgId, input.groupId);
+    if (row.status === "processing") {
+      throw new BadRequestException("Failure group is already processing");
+    }
+    if (row.status === "resolved" || row.status === "ignored") {
+      throw new BadRequestException(
+        "Failure group can no longer be recovered",
+      );
+    }
+
+    const startedAt = new Date();
+    const attemptCount = row.attemptCount + 1;
+    const progressTotalCount = row.items.length;
+
+    await NewsEventClusteringFailureModel.updateOne(
+      { orgId: input.orgId, groupId: input.groupId },
+      {
+        $set: {
+          status: "processing",
+          attemptCount,
+          lastAttemptAt: startedAt,
+          lastError: null,
+          activeJobId: input.jobId,
+          progressProcessedCount: 0,
+          progressTotalCount,
+          lastRecoveryModel: input.model,
+          resolvedAt: null,
+          resolvedById: null,
+          resolutionMode: null,
+          resolvedEventIds: [],
+        },
+      },
+    ).exec();
+
+    return {
+      attemptCount,
+      startedAt,
+      progressTotalCount,
+    };
+  }
+
+  async updateLlmBackfillProgress(input: {
+    orgId: string;
+    groupId: string;
+    processedCount: number;
+    totalCount: number;
+    jobId?: string | null;
+    model?: string | null;
+  }) {
+    await NewsEventClusteringFailureModel.updateOne(
+      { orgId: input.orgId, groupId: input.groupId },
+      {
+        $set: {
+          status: "processing",
+          progressProcessedCount: Math.max(0, input.processedCount),
+          progressTotalCount: Math.max(0, input.totalCount),
+          ...(input.jobId ? { activeJobId: input.jobId } : {}),
+          ...(input.model ? { lastRecoveryModel: input.model } : {}),
+        },
+      },
+    ).exec();
+  }
+
+  async markLlmBackfillResolved(input: {
+    orgId: string;
+    actorId: string;
+    groupId: string;
+    processedCount: number;
+    totalCount: number;
+    model: string | null;
+    resolvedEventIds: string[];
+  }) {
+    const resolvedAt = new Date();
+    await NewsEventClusteringFailureModel.updateOne(
+      { orgId: input.orgId, groupId: input.groupId },
+      {
+        $set: {
+          status: "resolved",
+          progressProcessedCount: Math.max(0, input.processedCount),
+          progressTotalCount: Math.max(0, input.totalCount),
+          lastError: null,
+          activeJobId: null,
+          resolvedAt,
+          resolvedById: input.actorId,
+          resolutionMode: "llm_backfill",
+          resolvedEventIds: input.resolvedEventIds.slice().sort(),
+          lastRecoveryModel: input.model,
+        },
+      },
+    ).exec();
+    return resolvedAt;
+  }
+
+  async markLlmBackfillFailed(input: {
+    orgId: string;
+    groupId: string;
+    processedCount: number;
+    totalCount: number;
+    errorMessage: string;
+    model: string | null;
+  }) {
+    await NewsEventClusteringFailureModel.updateOne(
+      { orgId: input.orgId, groupId: input.groupId },
+      {
+        $set: {
+          status: "pending",
+          progressProcessedCount: Math.max(0, input.processedCount),
+          progressTotalCount: Math.max(0, input.totalCount),
+          lastError: input.errorMessage,
+          activeJobId: null,
+          lastRecoveryModel: input.model,
+        },
+      },
+    ).exec();
   }
 
   async resolveFailureGroupByVectorBackfill(
@@ -262,6 +472,10 @@ export class NewsEventClusteringFailureService {
             attemptCount: nextAttemptCount,
             lastAttemptAt: startedAt,
             lastError: null,
+            activeJobId: null,
+            progressProcessedCount: items.length,
+            progressTotalCount: items.length,
+            lastRecoveryModel: row.lastRecoveryModel ?? null,
             resolvedAt,
             resolvedById: actorId,
             resolutionMode: "vector_backfill",
@@ -302,6 +516,7 @@ export class NewsEventClusteringFailureService {
             attemptCount: nextAttemptCount,
             lastAttemptAt: startedAt,
             lastError: message,
+            activeJobId: null,
           },
         },
       ).exec();
@@ -326,6 +541,7 @@ export class NewsEventClusteringFailureService {
       {
         $set: {
           status: "ignored",
+          activeJobId: null,
           resolvedById: actorId,
           resolvedAt: new Date(),
           resolutionMode: "ignored",
@@ -401,6 +617,13 @@ export class NewsEventClusteringFailureService {
         ? new Date(row.lastAttemptAt).toISOString()
         : null,
       lastError: row.lastError ?? null,
+      activeJobId: row.activeJobId ?? null,
+      progressProcessedCount: Math.max(
+        0,
+        Number(row.progressProcessedCount ?? 0),
+      ),
+      progressTotalCount: Math.max(0, Number(row.progressTotalCount ?? 0)),
+      lastRecoveryModel: row.lastRecoveryModel ?? null,
       resolvedAt: row.resolvedAt ? new Date(row.resolvedAt).toISOString() : null,
       resolutionMode: row.resolutionMode ?? null,
       resolvedEventIds: Array.isArray(row.resolvedEventIds)

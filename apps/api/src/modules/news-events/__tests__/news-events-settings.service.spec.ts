@@ -55,7 +55,7 @@ describe("NewsEventsSettingsService", () => {
       expect.objectContaining({
         clusteringMode: "vector",
         bertopicMinItemsPerGroup: 8,
-        bertopicMaxItemsPerRequest: 64,
+        bertopicMaxItemsPerRequest: 32,
         bertopicMinTopicSize: 4,
         classificationGateEnabled: true,
         categoryConflictReject: true,
@@ -100,7 +100,7 @@ describe("NewsEventsSettingsService", () => {
         timelineEnabled: true,
         clusteringMode: "bertopic_primary",
         bertopicMinItemsPerGroup: 12,
-        bertopicMaxItemsPerRequest: 64,
+        bertopicMaxItemsPerRequest: 32,
         bertopicMinTopicSize: 4,
         maxBatchSize: 120,
         backfillDays: 14,
