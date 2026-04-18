@@ -34,6 +34,7 @@ import {
   buildContentSubscriptionKey,
 } from "@/lib/content-subscriptions";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
 
 interface ContentSubscriptionsTabProps {
   accessToken?: string;
@@ -383,6 +384,14 @@ export function ContentSubscriptionsTab({
           })),
         },
       );
+      removableSelectedSubscriptionItems.forEach((item) => {
+        void trackUserNewsBehavior({
+          type: "unsubscribe",
+          ...(item.kind === "topic"
+            ? { topics: [item.displayValue] }
+            : { entities: [item.displayValue] }),
+        });
+      });
       message.success(
         t("subscriptions.content.batchRemoved", {
           defaultValue: "Subscriptions removed.",
@@ -1038,6 +1047,12 @@ export function ContentSubscriptionsTab({
           subscriptions: [{ kind: item.kind, value: item.displayValue }],
         },
       );
+      void trackUserNewsBehavior({
+        type: "unsubscribe",
+        ...(item.kind === "topic"
+          ? { topics: [item.displayValue] }
+          : { entities: [item.displayValue] }),
+      });
       setSelectedSubscriptionKeys((current) =>
         current.filter(
           (entry) =>

@@ -399,7 +399,7 @@ export class UserContentSubscriptionsService {
     await this.ensureCatalogFresh(orgId);
 
     const taxonomy = await this.getTaxonomyDescriptor(orgId);
-    const profile = await this.behavior.getProfile(orgId, userId);
+    const profile = await this.behavior.getPersonalizationProfile(orgId, userId);
     const subscribedRows = await this.prisma.userContentSubscription.findMany({
       where: { orgId, userId },
       select: { kind: true, normalizedValue: true },
@@ -418,9 +418,26 @@ export class UserContentSubscriptionsService {
       take: RECOMMENDATION_CANDIDATE_LIMIT * 4,
     });
 
-    const availableCandidates = candidateRows.filter(
-      (row) => !subscribed.has(this.subscriptionKey(row.kind, row.normalizedValue)),
-    );
+    const negativeTopicKeys = new Set(Object.keys(profile.negative.topics));
+    const negativeEntityKeys = new Set(Object.keys(profile.negative.entities));
+    const availableCandidates = candidateRows.filter((row) => {
+      if (subscribed.has(this.subscriptionKey(row.kind, row.normalizedValue))) {
+        return false;
+      }
+      if (
+        row.kind === ContentSubscriptionKind.topic &&
+        negativeTopicKeys.has(row.normalizedValue)
+      ) {
+        return false;
+      }
+      if (
+        row.kind === ContentSubscriptionKind.entity &&
+        negativeEntityKeys.has(row.normalizedValue)
+      ) {
+        return false;
+      }
+      return true;
+    });
 
     if (availableCandidates.length === 0) {
       return {
@@ -1424,11 +1441,13 @@ export class UserContentSubscriptionsService {
     };
   }
 
-  private buildRecommendationQuery(profile: Awaited<ReturnType<UserNewsBehaviorService['getProfile']>>) {
-    const topicBits = this.topEntries(profile.topics, 8);
-    const entityBits = this.topEntries(profile.entities, 8);
-    const sourceBits = this.topEntries(profile.sources, 4);
-    const domainBits = this.topEntries(profile.domains, 4);
+  private buildRecommendationQuery(
+    profile: Awaited<ReturnType<UserNewsBehaviorService["getPersonalizationProfile"]>>,
+  ) {
+    const topicBits = this.topEntries(profile.positive.topics, 8);
+    const entityBits = this.topEntries(profile.positive.entities, 8);
+    const sourceBits = this.topEntries(profile.positive.sources, 4);
+    const domainBits = this.topEntries(profile.positive.domains, 4);
 
     const parts = [
       topicBits.length > 0 ? `topics: ${topicBits.join(', ')}` : '',

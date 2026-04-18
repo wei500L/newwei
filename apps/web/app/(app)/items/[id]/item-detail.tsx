@@ -1,6 +1,6 @@
 "use client";
 
-import { InfoCircleOutlined } from "@ant-design/icons";
+import { InfoCircleOutlined, ShareAltOutlined } from "@ant-design/icons";
 import { useMutation, useQuery } from "@apollo/client";
 import {
   Alert,
@@ -63,7 +63,11 @@ import {
   type TranslateRssItemsMutationVariables,
 } from "@/lib/rss-translation";
 import { safeHttpUrl } from "@/lib/url";
-import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
+import { estimateReadingTimeMinutes, useUserNewsReadMilestones } from "@/lib/use-user-news-read-milestones";
+import {
+  shareTrackedNewsLink,
+  trackUserNewsBehavior,
+} from "@/lib/user-news-behavior";
 
 import { PipelineRecoveryCard } from "./pipeline-recovery-card";
 
@@ -611,6 +615,15 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     translationReady && !showOriginalContent && translatedMarkdown
       ? translatedMarkdown
       : articleContent;
+  const estimatedReadingTime = useMemo(
+    () =>
+      estimateReadingTimeMinutes(
+        [resolvedSummary, ...resolvedKeyPoints, resolvedArticleContent]
+          .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+          .join("\n\n"),
+      ),
+    [resolvedArticleContent, resolvedKeyPoints, resolvedSummary],
+  );
   const hasSummaryContent =
     Boolean(resolvedSummary) || resolvedKeyPoints.length > 0;
   const hasArticleContent = Boolean(resolvedArticleContent);
@@ -658,6 +671,16 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     typeof llm?.totalTokens === "number"
       ? Math.round(llm.totalTokens).toString()
       : t("common.notAvailable");
+
+  useUserNewsReadMilestones({
+    itemId: item?.id ?? undefined,
+    source: source ?? undefined,
+    topics: topics.slice(0, 6),
+    entities: entities.slice(0, 6),
+    url: originalUrl ?? undefined,
+    estimatedReadingTimeMinutes: estimatedReadingTime,
+    enabled: Boolean(item?.id),
+  });
   const embeddingModel = item?.processed?.summaryEmbeddingModel ?? null;
   const embeddingDimensions =
     item?.processed?.summaryEmbeddingDimensions ?? null;
@@ -1313,6 +1336,29 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           >
             {t("items.detail.readOriginal")}
           </Typography.Link>
+        ) : null}
+        {item?.id ? (
+          <Button
+            type="text"
+            size="small"
+            icon={<ShareAltOutlined />}
+            onClick={() => {
+              void shareTrackedNewsLink({
+                title: displayTitle,
+                url: `${window.location.origin}/items/${item.id}`,
+                behavior: {
+                  type: "share",
+                  itemId: item.id,
+                  source: source ?? undefined,
+                  topics: topics.slice(0, 6),
+                  entities: entities.slice(0, 6),
+                  ...(originalUrl ? { url: originalUrl } : {}),
+                },
+              });
+            }}
+          >
+            {t("common.share")}
+          </Button>
         ) : null}
       </Space>
 

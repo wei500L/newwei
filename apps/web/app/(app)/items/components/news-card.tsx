@@ -4,11 +4,12 @@ import {
   BookOutlined,
   ClockCircleOutlined,
   InfoCircleOutlined,
+  MoreOutlined,
   ShareAltOutlined,
 } from "@ant-design/icons";
-import { Button, Card, Popover, Space, Tag, Tooltip, Typography } from "antd";
+import { Button, Card, Dropdown, Popover, Space, Tag, Tooltip, Typography } from "antd";
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
@@ -17,7 +18,13 @@ import { SentimentBadge } from "@/components/sentiment-badge";
 import { resolveLocale } from "@/lib/i18n";
 import { formatRatioAsPercent } from "@/lib/metrics-format";
 import { safeHttpUrl } from "@/lib/url";
-import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
+import {
+  hideSessionBehaviorKey,
+  isSessionHiddenBehaviorKey,
+  shareTrackedNewsLink,
+  subscribeSessionHiddenBehaviorKeys,
+  trackUserNewsBehavior,
+} from "@/lib/user-news-behavior";
 
 const { Title, Paragraph } = Typography;
 const VIEW_EXPOSURE_THRESHOLD = 0.4;
@@ -131,6 +138,9 @@ export function NewsCard({
   const cardRef = useRef<HTMLDivElement | null>(null);
   const viewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasTrackedViewRef = useRef(false);
+  const [isHidden, setIsHidden] = useState(() =>
+    isSessionHiddenBehaviorKey("items", item.id),
+  );
 
   const handleOpenItem = () => {
     void trackUserNewsBehavior({
@@ -173,6 +183,13 @@ export function NewsCard({
 
   useEffect(() => {
     hasTrackedViewRef.current = false;
+  }, [item.id]);
+
+  useEffect(() => {
+    setIsHidden(isSessionHiddenBehaviorKey("items", item.id));
+    return subscribeSessionHiddenBehaviorKeys("items", (keys) => {
+      setIsHidden(keys.includes(item.id));
+    });
   }, [item.id]);
 
   useEffect(() => {
@@ -241,6 +258,38 @@ export function NewsCard({
       observer.disconnect();
     };
   }, [item.entities, item.id, item.source, item.topics, originalUrl]);
+
+  if (isHidden) {
+    return null;
+  }
+
+  const handleHideItem = () => {
+    hideSessionBehaviorKey("items", item.id);
+    setIsHidden(true);
+  };
+
+  const handleNotInterested = () => {
+    hideSessionBehaviorKey("items", item.id);
+    setIsHidden(true);
+    void trackUserNewsBehavior({
+      type: "not_interested",
+      itemId: item.id,
+      ...(originalUrl ? { url: originalUrl } : {}),
+    });
+  };
+
+  const moreActionItems = [
+    {
+      key: "hide",
+      label: t("common.hide", { defaultValue: "Hide" }),
+      onClick: handleHideItem,
+    },
+    {
+      key: "not-interested",
+      label: t("common.notInterested", { defaultValue: "Not interested" }),
+      onClick: handleNotInterested,
+    },
+  ];
 
   const metricsContent = (
     <div className="flex flex-col gap-2 text-xs min-w-[220px]">
@@ -480,12 +529,18 @@ export function NewsCard({
                   size="small"
                   icon={<ShareAltOutlined />}
                   onClick={() => {
-                    if (navigator.share) {
-                      navigator.share({
-                        title: item.title,
-                        url: window.location.origin + `/items/${item.id}`,
-                      });
-                    }
+                    void shareTrackedNewsLink({
+                      title: item.title,
+                      url: window.location.origin + `/items/${item.id}`,
+                      behavior: {
+                        type: "share",
+                        itemId: item.id,
+                        source: item.source,
+                        topics: item.topics,
+                        entities: item.entities,
+                        ...(originalUrl ? { url: originalUrl } : {}),
+                      },
+                    });
                   }}
                 />
               </Tooltip>
@@ -521,6 +576,19 @@ export function NewsCard({
             >
               {openLabel}
             </Button>
+            {!isReaderVariant ? (
+              <Dropdown
+                trigger={["click"]}
+                menu={{ items: moreActionItems }}
+              >
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MoreOutlined />}
+                  aria-label={t("common.actions", { defaultValue: "Actions" })}
+                />
+              </Dropdown>
+            ) : null}
           </Space>
         </div>
       </Card>

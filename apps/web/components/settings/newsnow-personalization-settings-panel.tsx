@@ -81,6 +81,34 @@ interface UserNewsBehaviorProfileResponse {
   items: Record<string, number>;
   events: Record<string, number>;
   domains: Record<string, number>;
+  positive?: {
+    actions: Record<string, number>;
+    sources: Record<string, number>;
+    topics: Record<string, number>;
+    entities: Record<string, number>;
+    items: Record<string, number>;
+    events: Record<string, number>;
+    domains: Record<string, number>;
+  };
+  negative?: {
+    actions: Record<string, number>;
+    sources: Record<string, number>;
+    topics: Record<string, number>;
+    entities: Record<string, number>;
+    items: Record<string, number>;
+    events: Record<string, number>;
+    domains: Record<string, number>;
+  };
+  bands?: Array<{
+    key: string;
+    weight: number;
+    positive: Record<string, Record<string, number>>;
+    negative: Record<string, Record<string, number>>;
+    net: Record<string, Record<string, number>>;
+  }>;
+  meta?: {
+    legacyFallbackUsed?: boolean;
+  };
 }
 
 const DEFAULT_SETTINGS: NewsnowPersonalizationSettingsResponse = {
@@ -701,6 +729,16 @@ export function NewsnowPersonalizationSettingsPanel() {
           style={{ marginBottom: '0.75rem' }}
         />
       ) : null}
+      {behaviorProfile?.meta?.legacyFallbackUsed ? (
+        <Alert
+          type="info"
+          showIcon
+          message={t('systemSettings.newsnowPersonalization.behaviorProfile.legacyFallback', {
+            defaultValue: 'Legacy behavior fallback is still contributing because the v2 profile is sparse.',
+          })}
+          style={{ marginBottom: '0.75rem' }}
+        />
+      ) : null}
 
       <div
         style={{
@@ -720,7 +758,10 @@ export function NewsnowPersonalizationSettingsPanel() {
             <Card
               key={section.key}
               size="small"
-              title={section.label}
+              title={`${section.label} · ${t(
+                'systemSettings.newsnowPersonalization.behaviorProfile.sections.combined',
+                { defaultValue: 'Combined' },
+              )}`}
               loading={behaviorProfileLoading}
             >
               {entries.length > 0 ? (
@@ -754,6 +795,103 @@ export function NewsnowPersonalizationSettingsPanel() {
           );
         })}
       </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+          gap: 12,
+          marginBottom: '1rem',
+        }}
+      >
+        {behaviorDimensions.map((section) => {
+          const positiveEntries = topBehaviorEntries(
+            behaviorProfile?.positive?.[section.key as keyof NonNullable<UserNewsBehaviorProfileResponse['positive']>],
+          );
+          const negativeEntries = topBehaviorEntries(
+            behaviorProfile?.negative?.[section.key as keyof NonNullable<UserNewsBehaviorProfileResponse['negative']>],
+          );
+          return (
+            <Card
+              key={`polarity-${section.key}`}
+              size="small"
+              title={section.label}
+              loading={behaviorProfileLoading}
+            >
+              <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                <div>
+                  <Typography.Text strong>
+                    {t('systemSettings.newsnowPersonalization.behaviorProfile.sections.positive', {
+                      defaultValue: 'Positive',
+                    })}
+                  </Typography.Text>
+                  {positiveEntries.length > 0 ? (
+                    <Space direction="vertical" size={6} style={{ width: '100%', marginTop: 6 }}>
+                      {positiveEntries.slice(0, 4).map(([key, value]) => (
+                        <div
+                          key={`positive-${section.key}-${key}`}
+                          style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}
+                        >
+                          <Typography.Text ellipsis={{ tooltip: key }} style={{ maxWidth: '70%' }}>
+                            {key}
+                          </Typography.Text>
+                          <Tag color="green">{value.toFixed(2)}</Tag>
+                        </div>
+                      ))}
+                    </Space>
+                  ) : (
+                    <Typography.Text type="secondary">
+                      {t('systemSettings.newsnowPersonalization.behaviorProfile.empty')}
+                    </Typography.Text>
+                  )}
+                </div>
+                <div>
+                  <Typography.Text strong>
+                    {t('systemSettings.newsnowPersonalization.behaviorProfile.sections.negative', {
+                      defaultValue: 'Negative',
+                    })}
+                  </Typography.Text>
+                  {negativeEntries.length > 0 ? (
+                    <Space direction="vertical" size={6} style={{ width: '100%', marginTop: 6 }}>
+                      {negativeEntries.slice(0, 4).map(([key, value]) => (
+                        <div
+                          key={`negative-${section.key}-${key}`}
+                          style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}
+                        >
+                          <Typography.Text ellipsis={{ tooltip: key }} style={{ maxWidth: '70%' }}>
+                            {key}
+                          </Typography.Text>
+                          <Tag color="red">{value.toFixed(2)}</Tag>
+                        </div>
+                      ))}
+                    </Space>
+                  ) : (
+                    <Typography.Text type="secondary">
+                      {t('systemSettings.newsnowPersonalization.behaviorProfile.empty')}
+                    </Typography.Text>
+                  )}
+                </div>
+              </Space>
+            </Card>
+          );
+        })}
+      </div>
+      {(behaviorProfile?.bands ?? []).length > 0 ? (
+        <Card
+          size="small"
+          title={t('systemSettings.newsnowPersonalization.behaviorProfile.bands', {
+            defaultValue: 'Recency bands',
+          })}
+          style={{ marginBottom: '1rem' }}
+        >
+          <Space wrap size={[8, 8]}>
+            {(behaviorProfile?.bands ?? []).map((band) => (
+              <Tag key={band.key}>
+                {band.key} · {(band.weight * 100).toFixed(0)}%
+              </Tag>
+            ))}
+          </Space>
+        </Card>
+      ) : null}
 
       <Form
         name="newsnow-personalization-settings"

@@ -13,10 +13,19 @@ describe("items card wiring", () => {
     const source = read("app/(app)/items/components/news-card.tsx");
 
     expect(source).toContain('import Link from "next/link"');
-    expect(source).toContain("<Link href={itemHref}");
-    expect(source).toContain("<Link href={eventHref}");
+    expect(source).toContain('href={itemHref}');
+    expect(source).toContain('href={eventHref}');
     expect(source).toContain('href={itemHref}');
     expect(source).not.toContain('router.push(`/items/${item.id}`)');
     expect(source).not.toContain('router.push(`/events/${item.eventId}`)');
+  });
+
+  it("tracks share and negative-feedback actions through the shared behavior helper", () => {
+    const source = read("app/(app)/items/components/news-card.tsx");
+
+    expect(source).toContain('shareTrackedNewsLink');
+    expect(source).toContain('type: "not_interested"');
+    expect(source).toContain('hideSessionBehaviorKey("items", item.id)');
+    expect(source).toContain('<Dropdown');
   });
 });

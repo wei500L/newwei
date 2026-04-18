@@ -46,6 +46,11 @@ import {
   type TranslateRssItemsMutationVariables,
 } from "@/lib/rss-translation";
 import { safeHttpUrl } from "@/lib/url";
+import {
+  estimateReadingTimeMinutes,
+  useUserNewsReadMilestones,
+} from "@/lib/use-user-news-read-milestones";
+import { shareTrackedNewsLink } from "@/lib/user-news-behavior";
 
 import { buildReaderAiInsights } from "./reader-ai-insights";
 
@@ -198,6 +203,18 @@ export default function ReaderPage() {
           typeof point === "string" && point.trim().length > 0,
       )
     : [];
+  const topics = Array.isArray(processedResult?.topics)
+    ? processedResult.topics.filter(
+        (topic): topic is string =>
+          typeof topic === "string" && topic.trim().length > 0,
+      )
+    : [];
+  const entities = Array.isArray(processedResult?.entities)
+    ? processedResult.entities.filter(
+        (entity): entity is string =>
+          typeof entity === "string" && entity.trim().length > 0,
+      )
+    : [];
   const summary = resolveDisplaySummary({
     processedSummary: processedResult?.summary,
     rawSummary: rawPayload?.summary,
@@ -238,6 +255,15 @@ export default function ReaderPage() {
     translationReady && !showOriginalContent && translatedArticleContent
       ? translatedArticleContent
       : baseArticleContent;
+  const estimatedReadingTime = useMemo(
+    () =>
+      estimateReadingTimeMinutes(
+        [resolvedSummary, ...resolvedKeyPoints, articleContent]
+          .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+          .join("\n\n"),
+      ),
+    [articleContent, resolvedKeyPoints, resolvedSummary],
+  );
   const languageLabel = resolveLanguageLabel(processedResult?.language);
   const hasNonChineseContent = Boolean(
     languageLabel && !isChineseLanguage(languageLabel),
@@ -255,6 +281,17 @@ export default function ReaderPage() {
     () => buildReaderAiInsights(processedResult),
     [processedResult],
   );
+
+  useUserNewsReadMilestones({
+    itemId: item?.id ?? undefined,
+    eventId: item?.processed?.eventId ?? undefined,
+    source,
+    topics: topics.slice(0, 6),
+    entities: entities.slice(0, 6),
+    url: originalUrl ?? undefined,
+    estimatedReadingTimeMinutes: estimatedReadingTime,
+    enabled: Boolean(item?.id),
+  });
 
   useEffect(() => {
     if (
@@ -383,6 +420,24 @@ export default function ReaderPage() {
               type="text"
               size="small"
               icon={<ShareAltOutlined />}
+              onClick={() => {
+                if (!item?.id) {
+                  return;
+                }
+                void shareTrackedNewsLink({
+                  title: displayTitle,
+                  url: `${window.location.origin}/items/${item.id}`,
+                  behavior: {
+                    type: "share",
+                    itemId: item.id,
+                    eventId: item.processed?.eventId ?? undefined,
+                    source,
+                    topics: topics.slice(0, 6),
+                    entities: entities.slice(0, 6),
+                    ...(originalUrl ? { url: originalUrl } : {}),
+                  },
+                });
+              }}
               aria-label={t("common.share")}
             />
           </div>

@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common"
 import { AuthModule } from "../auth/auth.module";
 import { ItemsModule } from "../items/items.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
+import { UserNewsBehaviorModule } from "../user-news-behavior/user-news-behavior.module";
 import { UserSettingsModule } from "../user-settings/user-settings.module";
 
 import { NewsAggregatorRegistryService } from "./news-aggregator-registry.service"
@@ -17,7 +18,13 @@ import { NewsnowSourceWarmSchedulerService } from "./newsnow-source-warm.schedul
 import { NewsnowGateway } from "./newsnow.gateway";
 
 @Module({
-  imports: [AuthModule, UserSettingsModule, NewsPipelineModule, ItemsModule],
+  imports: [
+    AuthModule,
+    UserSettingsModule,
+    NewsPipelineModule,
+    ItemsModule,
+    UserNewsBehaviorModule,
+  ],
   controllers: [NewsAggregatorController],
   providers: [
     NewsAggregatorRegistryService,

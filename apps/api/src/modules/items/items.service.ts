@@ -32,7 +32,7 @@ import {
   NormalizedNewsPayloadSchema
 } from "../news-pipeline/news-pipeline.schema";
 import { QueueService } from "../queue/queue.service";
-import { buildUserNewsBehaviorHashKey } from "../user-news-behavior/user-news-behavior.constants";
+import { UserNewsBehaviorService } from "../user-news-behavior/user-news-behavior.service";
 import { VectorClientService } from "../vector/vector-client.service";
 
 import { CreateItemDto } from "./dto/create-item.dto";
@@ -150,12 +150,22 @@ export interface ItemMetaRow {
 type ItemListRow = ItemMetaRow & { relevanceScore?: number; rankOffset?: number };
 
 interface ItemPersonalizationProfile {
-  sources: Record<string, number>;
-  topics: Record<string, number>;
-  entities: Record<string, number>;
-  items: Record<string, number>;
-  events: Record<string, number>;
-  domains: Record<string, number>;
+  positive: {
+    sources: Record<string, number>;
+    topics: Record<string, number>;
+    entities: Record<string, number>;
+    items: Record<string, number>;
+    events: Record<string, number>;
+    domains: Record<string, number>;
+  };
+  negative: {
+    sources: Record<string, number>;
+    topics: Record<string, number>;
+    entities: Record<string, number>;
+    items: Record<string, number>;
+    events: Record<string, number>;
+    domains: Record<string, number>;
+  };
 }
 
 interface PersonalizedCandidateRow {
@@ -346,6 +356,7 @@ export class ItemsService {
     private readonly cache: CacheService,
     private readonly env: EnvService,
     private readonly liteLlm: LiteLlmService,
+    private readonly userNewsBehavior: UserNewsBehaviorService,
     @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection,
     @Optional() private readonly vectorClient?: VectorClientService
   ) {
@@ -2279,12 +2290,18 @@ export class ItemsService {
     profile: ItemPersonalizationProfile;
   }): Promise<RankedItem[]> {
     const profileEnabled =
-      Object.keys(input.profile.sources).length > 0 ||
-      Object.keys(input.profile.topics).length > 0 ||
-      Object.keys(input.profile.entities).length > 0 ||
-      Object.keys(input.profile.items).length > 0 ||
-      Object.keys(input.profile.events).length > 0 ||
-      Object.keys(input.profile.domains).length > 0;
+      Object.keys(input.profile.positive.sources).length > 0 ||
+      Object.keys(input.profile.positive.topics).length > 0 ||
+      Object.keys(input.profile.positive.entities).length > 0 ||
+      Object.keys(input.profile.positive.items).length > 0 ||
+      Object.keys(input.profile.positive.events).length > 0 ||
+      Object.keys(input.profile.positive.domains).length > 0 ||
+      Object.keys(input.profile.negative.sources).length > 0 ||
+      Object.keys(input.profile.negative.topics).length > 0 ||
+      Object.keys(input.profile.negative.entities).length > 0 ||
+      Object.keys(input.profile.negative.items).length > 0 ||
+      Object.keys(input.profile.negative.events).length > 0 ||
+      Object.keys(input.profile.negative.domains).length > 0;
     if (input.candidates.length === 0) {
       return [];
     }
@@ -2308,40 +2325,74 @@ export class ItemsService {
           };
         }
 
-        const sourceScore = this.resolveSourcePreferenceScore(
+        const positiveSourceScore = this.resolveSourcePreferenceScore(
           feature,
-          input.profile.sources,
+          input.profile.positive.sources,
         );
-        const topicScore = this.sumPreferenceScore(
+        const negativeSourceScore = this.resolveSourcePreferenceScore(
+          feature,
+          input.profile.negative.sources,
+        );
+        const positiveTopicScore = this.sumPreferenceScore(
           feature?.topics ?? [],
-          input.profile.topics,
+          input.profile.positive.topics,
           6,
         );
-        const entityScore = this.sumPreferenceScore(
+        const negativeTopicScore = this.sumPreferenceScore(
+          feature?.topics ?? [],
+          input.profile.negative.topics,
+          6,
+        );
+        const positiveEntityScore = this.sumPreferenceScore(
           feature?.entities ?? [],
-          input.profile.entities,
+          input.profile.positive.entities,
+          6,
+        );
+        const negativeEntityScore = this.sumPreferenceScore(
+          feature?.entities ?? [],
+          input.profile.negative.entities,
           6,
         );
         const itemPreferenceId = this.normalizeBehaviorId(candidate.id);
-        const itemScore = itemPreferenceId
-          ? (input.profile.items[itemPreferenceId] ?? 0)
+        const positiveItemScore = itemPreferenceId
+          ? (input.profile.positive.items[itemPreferenceId] ?? 0)
           : 0;
-        const eventScore = this.sumPreferenceScore(
+        const negativeItemScore = itemPreferenceId
+          ? (input.profile.negative.items[itemPreferenceId] ?? 0)
+          : 0;
+        const positiveEventScore = this.sumPreferenceScore(
           feature?.eventIds ?? [],
-          input.profile.events,
+          input.profile.positive.events,
           4,
         );
-        const domainScore = feature?.domain
-          ? (input.profile.domains[feature.domain] ?? 0)
+        const negativeEventScore = this.sumPreferenceScore(
+          feature?.eventIds ?? [],
+          input.profile.negative.events,
+          4,
+        );
+        const positiveDomainScore = feature?.domain
+          ? (input.profile.positive.domains[feature.domain] ?? 0)
           : 0;
-        const behaviorRaw =
-          sourceScore * 1.15 +
-          topicScore +
-          entityScore * 0.9 +
-          itemScore * 1.45 +
-          eventScore * 1.2 +
-          domainScore * 0.75;
-        const behaviorScore = Math.log1p(Math.max(0, behaviorRaw));
+        const negativeDomainScore = feature?.domain
+          ? (input.profile.negative.domains[feature.domain] ?? 0)
+          : 0;
+        const positiveRaw =
+          positiveSourceScore * 1.15 +
+          positiveTopicScore +
+          positiveEntityScore * 0.9 +
+          positiveItemScore * 1.45 +
+          positiveEventScore * 1.2 +
+          positiveDomainScore * 0.75;
+        const negativeRaw =
+          negativeSourceScore * 1.15 +
+          negativeTopicScore +
+          negativeEntityScore * 0.9 +
+          negativeItemScore * 1.45 +
+          negativeEventScore * 1.2 +
+          negativeDomainScore * 0.75;
+        const behaviorScore =
+          Math.log1p(Math.max(0, positiveRaw)) -
+          Math.log1p(Math.max(0, negativeRaw * 1.15));
         return {
           id: candidate.id,
           score: behaviorScore * 0.78 + recencyScore * 0.22,
@@ -2633,44 +2684,40 @@ export class ItemsService {
     orgId: string,
     userId: string,
   ): Promise<ItemPersonalizationProfile> {
-    const [sourcesRaw, topicsRaw, entitiesRaw, itemsRaw, eventsRaw, domainsRaw] =
-      await Promise.all([
-        this.cache.hgetall(
-          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "sources" }),
-        ),
-        this.cache.hgetall(
-          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "topics" }),
-        ),
-        this.cache.hgetall(
-          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "entities" }),
-        ),
-        this.cache.hgetall(
-          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "items" }),
-        ),
-        this.cache.hgetall(
-          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "events" }),
-        ),
-        this.cache.hgetall(
-          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "domains" }),
-        ),
-      ]);
-
+    const profile = await this.userNewsBehavior.getPersonalizationProfile(
+      orgId,
+      userId,
+    );
     return {
-      sources: this.parseBehaviorScores(sourcesRaw),
-      topics: this.parseBehaviorScores(topicsRaw),
-      entities: this.parseBehaviorScores(entitiesRaw),
-      items: this.parseBehaviorScores(itemsRaw, (value) =>
-        this.normalizeBehaviorId(value),
-      ),
-      events: this.parseBehaviorScores(eventsRaw, (value) =>
-        this.normalizeBehaviorId(value),
-      ),
-      domains: this.parseBehaviorScores(domainsRaw),
+      positive: {
+        sources: this.parseBehaviorScores(profile.positive.sources),
+        topics: this.parseBehaviorScores(profile.positive.topics),
+        entities: this.parseBehaviorScores(profile.positive.entities),
+        items: this.parseBehaviorScores(profile.positive.items, (value) =>
+          this.normalizeBehaviorId(value),
+        ),
+        events: this.parseBehaviorScores(profile.positive.events, (value) =>
+          this.normalizeBehaviorId(value),
+        ),
+        domains: this.parseBehaviorScores(profile.positive.domains),
+      },
+      negative: {
+        sources: this.parseBehaviorScores(profile.negative.sources),
+        topics: this.parseBehaviorScores(profile.negative.topics),
+        entities: this.parseBehaviorScores(profile.negative.entities),
+        items: this.parseBehaviorScores(profile.negative.items, (value) =>
+          this.normalizeBehaviorId(value),
+        ),
+        events: this.parseBehaviorScores(profile.negative.events, (value) =>
+          this.normalizeBehaviorId(value),
+        ),
+        domains: this.parseBehaviorScores(profile.negative.domains),
+      },
     };
   }
 
   private parseBehaviorScores(
-    raw: Record<string, string>,
+    raw: Record<string, string | number>,
     normalizeKey: (value?: string) => string | null = (value) =>
       this.normalizePreferenceKey(value),
   ): Record<string, number> {

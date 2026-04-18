@@ -79,14 +79,23 @@ describe('UserContentSubscriptionsService', () => {
       rerank: jest.fn(),
     };
     const behavior = {
-      getProfile: jest.fn().mockResolvedValue({
-        actions: {},
-        sources: {},
-        topics: {},
-        entities: {},
-        items: {},
-        events: {},
-        domains: {},
+      getPersonalizationProfile: jest.fn().mockResolvedValue({
+        positive: {
+          sources: {},
+          topics: {},
+          entities: {},
+          items: {},
+          events: {},
+          domains: {},
+        },
+        negative: {
+          sources: {},
+          topics: {},
+          entities: {},
+          items: {},
+          events: {},
+          domains: {},
+        },
       }),
     };
     const service = new UserContentSubscriptionsService(
@@ -142,14 +151,23 @@ describe('UserContentSubscriptionsService', () => {
       rerank: jest.fn(),
     };
     const behavior = {
-      getProfile: jest.fn().mockResolvedValue({
-        actions: {},
-        sources: {},
-        topics: {},
-        entities: {},
-        items: {},
-        events: {},
-        domains: {},
+      getPersonalizationProfile: jest.fn().mockResolvedValue({
+        positive: {
+          sources: {},
+          topics: {},
+          entities: {},
+          items: {},
+          events: {},
+          domains: {},
+        },
+        negative: {
+          sources: {},
+          topics: {},
+          entities: {},
+          items: {},
+          events: {},
+          domains: {},
+        },
       }),
     };
     const service = new UserContentSubscriptionsService(
@@ -207,6 +225,96 @@ describe('UserContentSubscriptionsService', () => {
 
     expect(cache.wrap).toHaveBeenCalledTimes(1);
     expect(result.items.map((item) => item.displayValue)).toEqual(['AI chips']);
+  });
+
+  it('filters negatively-signaled topic and entity recommendations', async () => {
+    const prisma = {
+      userSetting: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'migrated' }),
+      },
+      userContentSubscription: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      contentSubscriptionCatalog: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            kind: ContentSubscriptionKind.topic,
+            normalizedValue: 'ai chips',
+            displayValue: 'AI chips',
+            count: 18,
+            lastSeenAt: new Date('2026-03-05T00:00:00.000Z'),
+            taxonomyPath: 'tech/ai/model-release',
+            metadata: null,
+            embeddingVector: null,
+          },
+          {
+            kind: ContentSubscriptionKind.entity,
+            normalizedValue: 'nvidia',
+            displayValue: 'NVIDIA',
+            count: 25,
+            lastSeenAt: new Date('2026-03-06T00:00:00.000Z'),
+            taxonomyPath: 'tech/semiconductor/supply-chain',
+            metadata: null,
+            embeddingVector: null,
+          },
+          {
+            kind: ContentSubscriptionKind.entity,
+            normalizedValue: 'amd',
+            displayValue: 'AMD',
+            count: 12,
+            lastSeenAt: new Date('2026-03-04T00:00:00.000Z'),
+            taxonomyPath: 'tech/semiconductor/supply-chain',
+            metadata: null,
+            embeddingVector: null,
+          },
+        ]),
+      },
+    };
+    const cache = {
+      wrap: jest.fn().mockResolvedValue({ syncedAt: '2026-03-06T00:00:00.000Z' }),
+    };
+    const settings = {
+      getSettings: jest.fn().mockResolvedValue({
+        taxonomyVersion: 'news-taxonomy-v1',
+        taxonomy: [],
+      }),
+    };
+    const liteLlm = {
+      embedding: jest.fn(),
+      rerank: jest.fn(),
+    };
+    const behavior = {
+      getPersonalizationProfile: jest.fn().mockResolvedValue({
+        positive: {
+          sources: {},
+          topics: {},
+          entities: {},
+          items: {},
+          events: {},
+          domains: {},
+        },
+        negative: {
+          sources: {},
+          topics: { 'ai chips': 1.2 },
+          entities: { nvidia: 0.9 },
+          items: {},
+          events: {},
+          domains: {},
+        },
+      }),
+    };
+    const service = new UserContentSubscriptionsService(
+      prisma as any,
+      cache as any,
+      settings as any,
+      liteLlm as any,
+      behavior as any,
+      monitors as any,
+    );
+
+    const result = await service.listRecommendations('org-1', 'user-1', 5);
+
+    expect(result.items.map((item) => item.displayValue)).toEqual(['AMD']);
   });
 
   it('normalizes invalid catalog limit before querying Prisma', async () => {

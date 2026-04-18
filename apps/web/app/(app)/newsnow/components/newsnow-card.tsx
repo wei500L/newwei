@@ -2,13 +2,14 @@
 
 import {
   DragOutlined,
+  MoreOutlined,
   ReloadOutlined,
   StarFilled,
   StarOutlined,
 } from "@ant-design/icons";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Button, Skeleton, Tooltip, message } from "antd";
+import { Button, Dropdown, Skeleton, Tooltip, message } from "antd";
 import { useRouter } from "next/navigation";
 import {
   memo,
@@ -30,7 +31,12 @@ import {
   getPrimaryRuntimeSecretKey,
 } from '@/lib/news-source-runtime-secrets';
 import { shouldShowRuntimeSecretCta } from '@/lib/news-source-runtime-secrets-ui';
-import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
+import {
+  hideSessionBehaviorKey,
+  isSessionHiddenBehaviorKey,
+  subscribeSessionHiddenBehaviorKeys,
+  trackUserNewsBehavior,
+} from "@/lib/user-news-behavior";
 
 import {
   useNewsSource,
@@ -401,6 +407,9 @@ export const NewsnowCard = memo(function NewsnowCard({
   const glowColor = auraGlowColorMap[source.color] || "rgba(59,130,246,0.15)";
   
   const sourceBehaviorKey = useMemo(() => id.trim() || source.name, [id, source.name]);
+  const [isSourceHidden, setIsSourceHidden] = useState(() =>
+    isSessionHiddenBehaviorKey("newsnowSources", sourceBehaviorKey),
+  );
   const runtimeSecretsSettingsHref = useMemo(
     () =>
       buildAdminSettingsHref({
@@ -479,6 +488,15 @@ export const NewsnowCard = memo(function NewsnowCard({
   useEffect(() => {
     setIconLoadError(false);
   }, [iconUrl]);
+
+  useEffect(() => {
+    setIsSourceHidden(
+      isSessionHiddenBehaviorKey("newsnowSources", sourceBehaviorKey),
+    );
+    return subscribeSessionHiddenBehaviorKeys("newsnowSources", (keys) => {
+      setIsSourceHidden(keys.includes(sourceBehaviorKey));
+    });
+  }, [sourceBehaviorKey]);
 
   const dedupMetaMap =
     crossSourceMetaByItemId ?? EMPTY_CROSS_SOURCE_META_BY_ITEM_ID;
@@ -1120,6 +1138,10 @@ export const NewsnowCard = memo(function NewsnowCard({
     trackOriginalOpen,
   ]);
 
+  if (isSourceHidden) {
+    return null;
+  }
+
   return (
     <article
       ref={setArticleNodeRef}
@@ -1230,6 +1252,9 @@ export const NewsnowCard = memo(function NewsnowCard({
                         {personalizedScoreDetail?.behaviorScore.toFixed(2)} ×{" "}
                         {((personalizedScoreDetail?.behaviorWeight ?? 0) * 100).toFixed(0)}%
                       </div>
+                      <div>
+                        负向扣分 {personalizedScoreDetail?.negativeContribution.toFixed(2)}
+                      </div>
                       <div>关注加分 {personalizedScoreDetail?.focusBonus.toFixed(2)}</div>
                     </div>
                   }
@@ -1314,6 +1339,43 @@ export const NewsnowCard = memo(function NewsnowCard({
               {prefetchedEventIds.length > 0 ? ` ${prefetchedEventIds.length}` : ""}
             </Button>
           </Tooltip>
+          <Dropdown
+            trigger={["click"]}
+            menu={{
+              items: [
+                {
+                  key: "hide-source",
+                  label: t("common.hide", { defaultValue: "Hide" }),
+                  onClick: () => {
+                    hideSessionBehaviorKey("newsnowSources", sourceBehaviorKey);
+                    setIsSourceHidden(true);
+                  },
+                },
+                {
+                  key: "not-interested-source",
+                  label: t("common.notInterested", {
+                    defaultValue: "Not interested",
+                  }),
+                  onClick: () => {
+                    hideSessionBehaviorKey("newsnowSources", sourceBehaviorKey);
+                    setIsSourceHidden(true);
+                    void trackUserNewsBehavior({
+                      type: "not_interested",
+                      source: sourceBehaviorKey,
+                    });
+                  },
+                },
+              ],
+            }}
+          >
+            <Button
+              type="text"
+              size="small"
+              icon={<MoreOutlined />}
+              className="h-7 w-7 text-[var(--secondary-foreground)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+              aria-label={t("common.actions", { defaultValue: "Actions" })}
+            />
+          </Dropdown>
           <Tooltip title={dragDisabled ? "智能排序中已禁用拖动" : "拖动排序"}>
             <button
               type="button"
