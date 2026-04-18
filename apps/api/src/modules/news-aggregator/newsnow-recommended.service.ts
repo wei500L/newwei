@@ -233,7 +233,11 @@ export class NewsnowRecommendedService {
       title,
       url,
     });
-    const analyzed = input.analysisBySource[signalKey];
+    const analysisItemKey =
+      typeof input.item.id === 'string' || typeof input.item.id === 'number'
+        ? String(input.item.id)
+        : '';
+    const analyzed = analysisItemKey ? input.analysisBySource[analysisItemKey] : undefined;
     const domain = this.normalizeDomain(url);
     const contentScore = this.computePreferenceScore({
       matchedItemId: analyzed?.matchedItemId ?? null,

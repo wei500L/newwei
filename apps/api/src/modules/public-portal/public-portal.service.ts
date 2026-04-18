@@ -77,9 +77,10 @@ function normalizeOptionalString(value: unknown): string | null {
 function sanitizeSlugSegment(value: string): string {
   const normalized = value
     .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\p{Mark}+/gu, "")
+    .normalize("NFC")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[^\p{Letter}\p{Number}]+/gu, "-")
     .replace(/^-+|-+$/g, "");
 
   return normalized || "story";
@@ -277,52 +278,71 @@ export class PublicPortalService {
       excludeEventId?: string;
     },
   ): Promise<PublicPortalStory[]> {
-    const rows = await this.prisma.newsEvent.findMany({
-      where: {
-        orgId,
-        status: NewsEventStatus.active,
-        title: { not: null },
-        summary: { not: null },
-        ...(options.excludeEventId ? { id: { not: options.excludeEventId } } : {}),
-      },
-      orderBy: [{ lastAt: "desc" }, { startAt: "desc" }],
-      take: STORY_FETCH_LIMIT,
-      select: {
-        id: true,
-        orgId: true,
-        title: true,
-        summary: true,
-        primaryTopic: true,
-        primaryEntity: true,
-        language: true,
-        startAt: true,
-        lastAt: true,
-        representativeProcessedArticleId: true,
-        _count: {
-          select: {
-            items: true,
+    const stories: PublicPortalStory[] = [];
+    let skip = 0;
+
+    while (stories.length < options.limit) {
+      const rows = await this.prisma.newsEvent.findMany({
+        where: {
+          orgId,
+          status: NewsEventStatus.active,
+          title: { not: null },
+          summary: { not: null },
+          ...(options.excludeEventId ? { id: { not: options.excludeEventId } } : {}),
+        },
+        orderBy: [{ lastAt: "desc" }, { startAt: "desc" }, { id: "desc" }],
+        skip,
+        take: STORY_FETCH_LIMIT,
+        select: {
+          id: true,
+          orgId: true,
+          title: true,
+          summary: true,
+          primaryTopic: true,
+          primaryEntity: true,
+          language: true,
+          startAt: true,
+          lastAt: true,
+          representativeProcessedArticleId: true,
+          _count: {
+            select: {
+              items: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    const eventIds = rows.map((row) => row.id);
-    const [heatMap, authorityMap] = await Promise.all([
-      this.newsEvents.getEventHeatMap(orgId, eventIds),
-      this.newsEvents.getEventAuthorityMap(orgId, eventIds),
-    ]);
+      if (rows.length === 0) {
+        break;
+      }
 
-    const strictStories = rows
-      .map((row) =>
-        this.toStoryCard(row, heatMap.get(row.id), authorityMap.get(row.id)),
-      )
-      .filter((entry): entry is PublicPortalStory => Boolean(entry));
+      skip += rows.length;
 
-    const filteredStories = strictStories.filter((entry) =>
-      options.topicSlug ? entry.topicSlug === options.topicSlug : true,
-    );
+      const eventIds = rows.map((row) => row.id);
+      const [heatMap, authorityMap] = await Promise.all([
+        this.newsEvents.getEventHeatMap(orgId, eventIds),
+        this.newsEvents.getEventAuthorityMap(orgId, eventIds),
+      ]);
 
-    return filteredStories.slice(0, options.limit);
+      const filteredRows = rows
+        .map((row) =>
+          this.toStoryCard(row, heatMap.get(row.id), authorityMap.get(row.id)),
+        )
+        .filter((entry): entry is PublicPortalStory => {
+          if (!entry) {
+            return false;
+          }
+          return options.topicSlug ? entry.topicSlug === options.topicSlug : true;
+        });
+
+      stories.push(...filteredRows);
+
+      if (rows.length < STORY_FETCH_LIMIT) {
+        break;
+      }
+    }
+
+    return stories.slice(0, options.limit);
   }
 
   private toStoryCard(

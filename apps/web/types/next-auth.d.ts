@@ -38,6 +38,7 @@ declare module "next-auth" {
       globalRoles?: GlobalRole[];
       mfaEnabled?: boolean;
       mfaRequired?: boolean;
+      mfaEnrollmentRequired?: boolean;
       image?: string | null;
     };
   }

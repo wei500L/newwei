@@ -1,4 +1,10 @@
-import { IsArray, IsBoolean, IsOptional, IsString, MinLength } from "class-validator";
+import {
+  IsArray,
+  IsBoolean,
+  IsOptional,
+  IsString,
+  MinLength,
+} from "class-validator";
 
 export class VerifyMfaCodeDto {
   @IsString()
@@ -7,6 +13,16 @@ export class VerifyMfaCodeDto {
 }
 
 export class CompleteMfaLoginDto extends VerifyMfaCodeDto {
+  @IsString()
+  challengeId!: string;
+}
+
+export class BeginMfaEnrollmentChallengeDto {
+  @IsString()
+  challengeId!: string;
+}
+
+export class CompleteMfaEnrollmentChallengeDto extends VerifyMfaCodeDto {
   @IsString()
   challengeId!: string;
 }

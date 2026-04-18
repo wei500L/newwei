@@ -1,5 +1,4 @@
 import { NewsnowRecommendedService } from './newsnow-recommended.service';
-import { buildSignalKey } from './newsnow-hottest-analysis.utils';
 
 describe('NewsnowRecommendedService', () => {
   const metadata = {
@@ -40,11 +39,6 @@ describe('NewsnowRecommendedService', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    const signalKey = buildSignalKey({
-      sourceId: 'weibo',
-      title: 'AI 巨头发布新模型',
-      url: 'https://example.com/ai-story',
-    });
     registry.getMetadata.mockReturnValue(metadata);
     behavior.getProfile.mockResolvedValue({
       items: { 'item-1': 4 },
@@ -133,9 +127,9 @@ describe('NewsnowRecommendedService', () => {
       candidates: [],
       bySource: {
         weibo: {
-          [signalKey]: {
+          'w-1': {
             sourceId: 'weibo',
-            itemId: signalKey,
+            itemId: 'w-1',
             clusterId: 'c-1',
             theme: 'AI',
             candidateLabel: 'AI',

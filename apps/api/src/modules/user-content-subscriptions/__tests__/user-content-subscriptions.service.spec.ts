@@ -764,6 +764,39 @@ describe("UserContentSubscriptionsService", () => {
     expect(prisma.contentSubscriptionCatalog.upsert).not.toHaveBeenCalled();
   });
 
+  it("canonicalizes equivalent geo candidates to one stable catalog key", () => {
+    const service = new UserContentSubscriptionsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      monitors as any,
+    );
+    const target = new Map<string, Record<string, unknown>>();
+    const mergeGeoCandidate = (service as any).mergeGeoCandidate.bind(service);
+
+    mergeGeoCandidate(target, {
+      _id: "JP",
+      count: 2,
+      lastSeenAt: new Date("2026-03-06T00:00:00.000Z"),
+    });
+    mergeGeoCandidate(target, {
+      _id: "Japan",
+      count: 3,
+      lastSeenAt: new Date("2026-03-07T00:00:00.000Z"),
+    });
+
+    expect(Array.from(target.keys())).toEqual(["geo:jp"]);
+    expect(target.get("geo:jp")).toMatchObject({
+      kind: CONTENT_SUBSCRIPTION_KIND_GEO,
+      normalizedValue: "jp",
+      displayValue: "Japan",
+      count: 5,
+      metadata: { countryCodeAlpha2: "JP" },
+    });
+  });
+
   it("chunks snapshot persistence across multiple createMany calls", async () => {
     const tx = {
       contentSubscriptionCatalog: {

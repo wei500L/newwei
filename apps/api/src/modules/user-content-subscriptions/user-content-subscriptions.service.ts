@@ -1,5 +1,5 @@
 import { ProcessedItemModel } from "@modular/mongo";
-import { createLogger, extractCountryCodeFromText } from "@modular/utils";
+import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import {
   ContentSubscriptionKind,
@@ -7,6 +7,7 @@ import {
   Prisma,
 } from "@prisma/client";
 
+import { canonicalizeGeoValue } from "../../common/geo-subscription";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
@@ -778,18 +779,42 @@ export class UserContentSubscriptionsService {
           sourceId: row.normalizedValue,
           displayValue: row.displayValue,
         })),
-      focusGeos: rows
-        .filter((row) => row.kind === CONTENT_SUBSCRIPTION_KIND_GEO)
-        .map((row) => {
-          const metadata = this.parseRecord(row.metadata);
-          return {
-            normalizedValue: row.normalizedValue,
-            displayValue: row.displayValue,
-            ...(typeof metadata?.countryCodeAlpha2 === "string"
-              ? { countryCodeAlpha2: metadata.countryCodeAlpha2 }
-              : {}),
-          };
-        }),
+      focusGeos: Array.from(
+        rows
+          .filter((row) => row.kind === CONTENT_SUBSCRIPTION_KIND_GEO)
+          .reduce<
+            Map<
+              string,
+              {
+                normalizedValue: string;
+                displayValue: string;
+                countryCodeAlpha2?: string;
+              }
+            >
+          >((map, row) => {
+            const metadata = this.parseRecord(row.metadata);
+            const canonical = canonicalizeGeoValue(
+              row.displayValue || row.normalizedValue,
+            );
+            const normalizedValue =
+              canonical.normalizedValue || row.normalizedValue;
+            const displayValue = canonical.displayValue || row.displayValue;
+            if (!normalizedValue || !displayValue) {
+              return map;
+            }
+            map.set(normalizedValue, {
+              normalizedValue,
+              displayValue,
+              ...(typeof metadata?.countryCodeAlpha2 === "string"
+                ? { countryCodeAlpha2: metadata.countryCodeAlpha2 }
+                : canonical.countryCodeAlpha2
+                  ? { countryCodeAlpha2: canonical.countryCodeAlpha2 }
+                  : {}),
+            });
+            return map;
+          }, new Map())
+          .values(),
+      ),
     };
   }
 
@@ -1733,7 +1758,7 @@ export class UserContentSubscriptionsService {
       lastSeenAt: Date | null | undefined;
     },
   ) {
-    const normalized = this.normalizeValue(row._id);
+    const normalized = canonicalizeGeoValue(row._id);
     if (!normalized.normalizedValue) {
       return;
     }
@@ -1745,9 +1770,9 @@ export class UserContentSubscriptionsService {
     const count = this.toPositiveInt(row.count);
     const lastSeenAt =
       row.lastSeenAt instanceof Date ? row.lastSeenAt : new Date();
-    const countryCodeAlpha2 =
-      extractCountryCodeFromText(normalized.displayValue) ?? undefined;
-    const metadata = countryCodeAlpha2 ? { countryCodeAlpha2 } : undefined;
+    const metadata = normalized.countryCodeAlpha2
+      ? { countryCodeAlpha2: normalized.countryCodeAlpha2 }
+      : undefined;
     const existing = target.get(key);
 
     if (existing) {
@@ -1926,11 +1951,11 @@ export class UserContentSubscriptionsService {
 
   private createEmptyCounts(): Record<ContentSubscriptionKind, number> {
     return {
-      [ContentSubscriptionKind.topic]: 0,
-      [ContentSubscriptionKind.entity]: 0,
-      [CONTENT_SUBSCRIPTION_KIND_SOURCE]: 0,
-      [CONTENT_SUBSCRIPTION_KIND_KEYWORD]: 0,
-      [CONTENT_SUBSCRIPTION_KIND_GEO]: 0,
+      topic: 0,
+      entity: 0,
+      source: 0,
+      keyword: 0,
+      geo: 0,
     };
   }
 
@@ -2306,6 +2331,9 @@ export class UserContentSubscriptionsService {
   }
 
   private normalizeValue(value: unknown, kind?: ContentSubscriptionKind) {
+    if (kind === CONTENT_SUBSCRIPTION_KIND_GEO) {
+      return canonicalizeGeoValue(value);
+    }
     if (typeof value !== "string") {
       return { normalizedValue: "", displayValue: "" };
     }

@@ -12,11 +12,7 @@ import {
   Query,
   StreamableFile,
 } from "@nestjs/common";
-import {
-  ApiBearerAuth,
-  ApiProduces,
-  ApiTags,
-} from "@nestjs/swagger";
+import { ApiBearerAuth, ApiProduces, ApiTags } from "@nestjs/swagger";
 import { AnalysisSubjectType } from ".prisma/client";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -47,7 +43,7 @@ export class AnalysisWorkspaceController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: ListSavedAnalysisViewsDto,
   ) {
-    return this.workspace.listViews(user.orgId, user.id, query);
+    return this.workspace.listViews(user.orgId, user, query);
   }
 
   @Get("views/:id")
@@ -57,7 +53,7 @@ export class AnalysisWorkspaceController {
     @CurrentUser() user: AuthenticatedUser,
     @Param("id") id: string,
   ) {
-    return this.workspace.getView(user.orgId, user.id, id);
+    return this.workspace.getView(user.orgId, user, id);
   }
 
   @Post("views")
@@ -97,7 +93,12 @@ export class AnalysisWorkspaceController {
     subjectType: AnalysisSubjectType,
     @Param("subjectId") subjectId: string,
   ) {
-    return this.workspace.getThread(user.orgId, user.id, subjectType, subjectId);
+    return this.workspace.getThread(
+      user.orgId,
+      user.id,
+      subjectType,
+      subjectId,
+    );
   }
 
   @Put("threads/:subjectType/:subjectId")

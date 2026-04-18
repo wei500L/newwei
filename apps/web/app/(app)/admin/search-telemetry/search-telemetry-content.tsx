@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Card, Col, DatePicker, Row, Select, Space, Statistic, Table, Typography } from "antd";
+import { Alert, Card, Col, DatePicker, Row, Space, Statistic, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { Dayjs } from "dayjs";
 import type { EChartsOption } from "echarts";
@@ -12,9 +12,7 @@ import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
-import dayjs from "@/lib/dayjs";
-
-type SearchTelemetrySurface = "all" | "search_page" | "events_archive";
+import { resolveDefaultSearchTelemetryRange } from "@/lib/search-telemetry-admin";
 
 interface SearchTelemetryDailyPoint {
   date: string;
@@ -26,7 +24,7 @@ interface SearchTelemetryDailyPoint {
 interface SearchTelemetrySummaryResponse {
   from: string;
   to: string;
-  surface: SearchTelemetrySurface;
+  surface: "all";
   totals: {
     totalEvents: number;
     eventCounts: Record<string, number>;
@@ -53,14 +51,6 @@ const EMPTY_SUMMARY: SearchTelemetrySummaryResponse = {
   daily: [],
 };
 
-function resolveDefaultRange() {
-  const today = new Date();
-  const to = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  const from = new Date(to);
-  from.setUTCDate(from.getUTCDate() - 6);
-  return [dayjs(from), dayjs(to)] as [Dayjs, Dayjs];
-}
-
 export function SearchTelemetryContent() {
   const { t } = useTranslation();
   const chartTheme = useChartTheme();
@@ -68,8 +58,7 @@ export function SearchTelemetryContent() {
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canManageSettings = permissions.includes("settings.manage");
   const [summary, setSummary] = useState<SearchTelemetrySummaryResponse>(EMPTY_SUMMARY);
-  const [range, setRange] = useState<[Dayjs, Dayjs]>(resolveDefaultRange);
-  const [surface, setSurface] = useState<SearchTelemetrySurface>("all");
+  const [range, setRange] = useState<[Dayjs, Dayjs]>(resolveDefaultSearchTelemetryRange);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -91,7 +80,6 @@ export function SearchTelemetryContent() {
           params: {
             from: range[0].format("YYYY-MM-DD"),
             to: range[1].format("YYYY-MM-DD"),
-            ...(surface !== "all" ? { surface } : {}),
           },
         },
       );
@@ -108,7 +96,7 @@ export function SearchTelemetryContent() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, canManageSettings, range, surface, t]);
+  }, [apiClient, canManageSettings, range, t]);
 
   useEffect(() => {
     void loadSummary();
@@ -273,22 +261,16 @@ export function SearchTelemetryContent() {
                 setRange(nextRange);
               }}
             />
-            <Select<SearchTelemetrySurface>
-              value={surface}
-              onChange={setSurface}
-              style={{ minWidth: 220 }}
-              options={[
-                {
-                  value: "all",
-                  label: t("admin.searchTelemetry.filters.allSurfaces", {
-                    defaultValue: "All surfaces",
-                  }),
-                },
-                { value: "search_page", label: "search_page" },
-                { value: "events_archive", label: "events_archive" },
-              ]}
-            />
           </Space>
+
+          <Alert
+            type="info"
+            showIcon
+            message={t("admin.searchTelemetry.filters.surfaceUnavailable", {
+              defaultValue:
+                "Surface filtering is temporarily unavailable because the stored telemetry only includes aggregate daily event counters.",
+            })}
+          />
 
           {errorMessage ? (
             <Alert type="error" showIcon message={errorMessage} />

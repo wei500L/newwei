@@ -294,6 +294,7 @@ export async function shareTrackedNewsLink(
   if (!normalizedUrl) {
     return false;
   }
+  const trackingUrl = normalizeValue(input.behavior.url, 2048) ?? normalizedUrl;
 
   try {
     if (typeof navigator.share === 'function') {
@@ -304,7 +305,7 @@ export async function shareTrackedNewsLink(
       await trackUserNewsBehavior({
         ...input.behavior,
         type: 'share',
-        url: normalizedUrl,
+        url: trackingUrl,
       });
       return true;
     }
@@ -321,7 +322,7 @@ export async function shareTrackedNewsLink(
       await trackUserNewsBehavior({
         ...input.behavior,
         type: 'share',
-        url: normalizedUrl,
+        url: trackingUrl,
       });
       return true;
     }

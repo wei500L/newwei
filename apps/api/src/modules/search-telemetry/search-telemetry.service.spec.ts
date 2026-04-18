@@ -72,4 +72,27 @@ describe("SearchTelemetryService", () => {
       }),
     ).rejects.toThrow("date range cannot exceed 31 days");
   });
+
+  it("rejects unsupported surface filtering", async () => {
+    await expect(
+      service.getSummary({
+        orgId: "org-1",
+        from: "2026-04-01",
+        to: "2026-04-02",
+        surface: "events_archive",
+      }),
+    ).rejects.toThrow(
+      "surface filtering is not supported by the stored telemetry counters",
+    );
+  });
+
+  it("rejects impossible calendar dates", async () => {
+    await expect(
+      service.getSummary({
+        orgId: "org-1",
+        from: "2026-02-31",
+        to: "2026-03-02",
+      }),
+    ).rejects.toThrow("invalid date");
+  });
 });

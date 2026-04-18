@@ -60,6 +60,7 @@ describe("NewsEventClusteringFailureService", () => {
         groupId: "group-1",
         status: "processing",
         attemptCount: 2,
+        progressTotalCount: 2,
         items: [
           {
             processedArticleId: "pa-1",
@@ -69,9 +70,6 @@ describe("NewsEventClusteringFailureService", () => {
           },
         ],
       }),
-    );
-    modelMocks.updateOne.mockReturnValue(
-      createExecChain({ acknowledged: true }),
     );
 
     const result = await service.markLlmBackfillQueued({
@@ -88,28 +86,27 @@ describe("NewsEventClusteringFailureService", () => {
         groupId: "group-1",
         status: "pending",
       },
-      expect.objectContaining({
-        $set: expect.objectContaining({
-          status: "processing",
-          activeJobId: "job-1",
-          progressProcessedCount: 0,
-          progressTotalCount: 0,
-          lastRecoveryModel: "openai/gpt-4.1-mini",
-        }),
-        $inc: {
-          attemptCount: 1,
+      [
+        {
+          $set: expect.objectContaining({
+            status: "processing",
+            activeJobId: "job-1",
+            progressProcessedCount: 0,
+            progressTotalCount: {
+              $size: {
+                $ifNull: ["$items", []],
+              },
+            },
+            lastRecoveryModel: "openai/gpt-4.1-mini",
+            attemptCount: {
+              $add: [{ $ifNull: ["$attemptCount", 0] }, 1],
+            },
+          }),
         },
-      }),
+      ],
       { new: true },
     );
-    expect(modelMocks.updateOne).toHaveBeenCalledWith(
-      { orgId: "org-1", groupId: "group-1" },
-      {
-        $set: {
-          progressTotalCount: 2,
-        },
-      },
-    );
+    expect(modelMocks.updateOne).not.toHaveBeenCalled();
     expect(result).toEqual(
       expect.objectContaining({
         attemptCount: 2,

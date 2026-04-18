@@ -1,5 +1,7 @@
 import { ProcessedItemModel } from "@modular/mongo";
+import { normalizeCountryCode } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
+import type { FilterQuery } from "mongoose";
 import {
   NewsEventStatus,
   NewsIndicatorFeatureMetric,
@@ -7,6 +9,7 @@ import {
   Prisma,
 } from "@prisma/client";
 
+import { canonicalizeGeoValue } from "../../common/geo-subscription";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
 import {
@@ -473,68 +476,144 @@ export class UserDigestService {
       return matchedEventIds;
     }
 
-    const relatedRows = await this.prisma.newsEventItem.findMany({
-      where: {
-        orgId,
-        event: {
-          orgId,
-          status: NewsEventStatus.active,
-          lastAt: { gte: since },
-        },
-        processedItemId: { not: null },
-      },
-      select: {
-        eventId: true,
-        processedItemId: true,
-      },
-    });
-
-    const processedItemIds = Array.from(
-      new Set(
-        relatedRows
-          .map((row) =>
-            typeof row.processedItemId === "string"
-              ? row.processedItemId.trim()
-              : "",
-          )
-          .filter((value) => value.length > 0),
-      ),
+    const processedItemIds = await this.findMatchedProcessedItemIds(
+      orgId,
+      subscriptions,
     );
     if (processedItemIds.length === 0) {
       return matchedEventIds;
     }
 
-    const docs = await ProcessedItemModel.find({
-      _id: { $in: processedItemIds },
-    })
-      .select({ _id: 1, result: 1 })
-      .lean()
-      .exec();
-    const resultById = new Map(
-      docs.map((doc) => [
-        String((doc as { _id?: unknown })._id ?? ""),
-        (doc as { result?: unknown }).result ?? null,
-      ]),
-    );
-
-    for (const row of relatedRows) {
-      const processedItemId =
-        typeof row.processedItemId === "string"
-          ? row.processedItemId.trim()
-          : "";
-      if (!processedItemId) {
-        continue;
-      }
-      const result = resultById.get(processedItemId);
-      if (
-        this.matchesKeywordSubscription(result, subscriptions.focusKeywords) ||
-        this.matchesGeoSubscription(result, subscriptions.focusGeos)
-      ) {
+    for (const batch of this.chunkArray(processedItemIds, 500)) {
+      const rows = await this.prisma.newsEventItem.findMany({
+        where: {
+          orgId,
+          processedItemId: { in: batch },
+          event: {
+            orgId,
+            status: NewsEventStatus.active,
+            lastAt: { gte: since },
+          },
+        },
+        select: { eventId: true },
+        distinct: ["eventId"],
+      });
+      for (const row of rows) {
         matchedEventIds.add(row.eventId);
       }
     }
 
     return matchedEventIds;
+  }
+
+  private async findMatchedProcessedItemIds(
+    orgId: string,
+    subscriptions: DigestSubscriptionValues,
+  ): Promise<string[]> {
+    const filters = this.buildProcessedItemSubscriptionFilters(subscriptions);
+    if (filters.length === 0) {
+      return [];
+    }
+
+    const docs = await ProcessedItemModel.find({
+      orgId,
+      status: "completed",
+      duplicateOf: null,
+      $or: filters,
+    })
+      .select({ _id: 1 })
+      .lean()
+      .exec();
+
+    return Array.from(
+      new Set(
+        docs
+          .map((doc) => String((doc as { _id?: unknown })._id ?? "").trim())
+          .filter((value) => value.length > 0),
+      ),
+    );
+  }
+
+  private buildProcessedItemSubscriptionFilters(
+    subscriptions: DigestSubscriptionValues,
+  ): FilterQuery<unknown>[] {
+    return [
+      ...subscriptions.focusKeywords
+        .map((keyword) => this.buildKeywordProcessedItemFilter(keyword))
+        .filter((entry): entry is FilterQuery<unknown> => Boolean(entry)),
+      ...subscriptions.focusGeos
+        .map((geo) => this.buildGeoProcessedItemFilter(geo))
+        .filter((entry): entry is FilterQuery<unknown> => Boolean(entry)),
+    ];
+  }
+
+  private buildKeywordProcessedItemFilter(
+    keyword: string,
+  ): FilterQuery<unknown> | null {
+    const trimmed = keyword.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const regex = new RegExp(escapeRegExp(trimmed), "i");
+    return {
+      $or: [
+        { "result.title": regex },
+        { "result.headline": regex },
+        { "result.title_zh": regex },
+        { "result.titleZh": regex },
+        { "result.summary": regex },
+        { "result.abstract": regex },
+        { "result.subtitle": regex },
+        { "result.topics": regex },
+        { "result.entities": regex },
+        { "result.entities.name": regex },
+        { "result.keyPoints": regex },
+      ],
+    };
+  }
+
+  private buildGeoProcessedItemFilter(
+    geo: DigestSubscriptionValues["focusGeos"][number],
+  ): FilterQuery<unknown> | null {
+    const canonical = canonicalizeGeoValue(
+      geo.displayValue || geo.normalizedValue,
+    );
+    const normalized = this.normalizeTerm(
+      canonical.displayValue || canonical.normalizedValue,
+    );
+    const expectedCountry =
+      geo.countryCodeAlpha2 ?? canonical.countryCodeAlpha2 ?? undefined;
+    const structuredFields = [
+      "result.location",
+      "result.region",
+      "result.country",
+      "result.area",
+    ];
+    const filters: FilterQuery<unknown>[] = [];
+
+    if (normalized) {
+      const phraseRegex = new RegExp(
+        `(^|[^a-z0-9])${escapeRegExp(normalized)}([^a-z0-9]|$)`,
+        "i",
+      );
+      for (const field of structuredFields) {
+        filters.push({ [field]: phraseRegex });
+      }
+    }
+
+    if (expectedCountry) {
+      for (const variant of this.geoCountryVariants(expectedCountry)) {
+        const regex = new RegExp(
+          `(^|[^a-z0-9])${escapeRegExp(variant)}([^a-z0-9]|$)`,
+          "i",
+        );
+        for (const field of structuredFields) {
+          filters.push({ [field]: regex });
+        }
+      }
+    }
+
+    return filters.length > 0 ? { $or: filters } : null;
   }
 
   private enrichEvent(
@@ -642,44 +721,6 @@ export class UserDigestService {
     });
   }
 
-  private matchesGeoSubscription(
-    result: unknown,
-    geos: DigestSubscriptionValues["focusGeos"],
-  ) {
-    if (geos.length === 0) {
-      return false;
-    }
-
-    const location = this.pickResultString(result, ["location"]);
-    const region = this.pickResultString(result, ["region", "country", "area"]);
-    const values = [location, region]
-      .filter((entry): entry is string => Boolean(entry))
-      .map((entry) => this.normalizeTerm(entry));
-    const haystack = values.join(" ");
-    const countryCode = this.extractCountryCode(
-      `${location ?? ""} ${region ?? ""}`,
-    );
-
-    return geos.some((entry) => {
-      if (
-        entry.countryCodeAlpha2 &&
-        countryCode &&
-        entry.countryCodeAlpha2.toLowerCase() === countryCode.toLowerCase()
-      ) {
-        return true;
-      }
-      const normalized = this.normalizeTerm(entry.normalizedValue);
-      if (!normalized) {
-        return false;
-      }
-      return (
-        values.some(
-          (value) => value === normalized || value.includes(normalized),
-        ) || haystack.includes(normalized)
-      );
-    });
-  }
-
   private pickResultString(result: unknown, keys: string[]) {
     if (!result || typeof result !== "object" || Array.isArray(result)) {
       return null;
@@ -723,25 +764,38 @@ export class UserDigestService {
     return values;
   }
 
-  private extractCountryCode(value: string) {
-    const normalized = value.trim();
-    if (!normalized) {
-      return null;
-    }
-    const upper = normalized.toUpperCase();
-    if (/^[A-Z]{2,3}$/.test(upper)) {
-      return upper;
-    }
-    for (const token of upper.split(/[^A-Z]+/).filter(Boolean)) {
-      if (/^[A-Z]{2,3}$/.test(token)) {
-        return token;
-      }
-    }
-    return null;
-  }
-
   private normalizeTerm(value: string) {
     return value.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 128);
+  }
+
+  private geoCountryVariants(countryCodeAlpha2: string): string[] {
+    const normalized = countryCodeAlpha2.trim().toUpperCase();
+    if (!normalized) {
+      return [];
+    }
+    const canonical = canonicalizeGeoValue(normalized);
+    const alpha3 = normalizeCountryCode(normalized);
+    return Array.from(
+      new Set(
+        [
+          normalized,
+          alpha3,
+          canonical.countryCodeAlpha2,
+          canonical.displayValue,
+        ]
+          .filter((entry): entry is string => Boolean(entry))
+          .map((entry) => entry.trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  private chunkArray<T>(values: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < values.length; index += size) {
+      chunks.push(values.slice(index, index + size));
+    }
+    return chunks;
   }
 
   private async loadLatestTopicSentiments(orgId: string, topics: string[]) {
@@ -944,4 +998,8 @@ export class UserDigestService {
 
     return grouped;
   }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

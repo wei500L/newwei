@@ -381,35 +381,15 @@ describe("UserDigestService", () => {
           .fn()
           .mockResolvedValueOnce([{ eventId: "event-source" }])
           .mockResolvedValueOnce([
-            { eventId: "event-keyword", processedItemId: "pi-1" },
-            { eventId: "event-geo", processedItemId: "pi-2" },
-            { eventId: "event-both", processedItemId: "pi-3" },
+            { eventId: "event-keyword" },
+            { eventId: "event-geo" },
+            { eventId: "event-both" },
           ]),
       },
     };
-    const exec = jest.fn().mockResolvedValue([
-      {
-        _id: "pi-1",
-        result: {
-          title: "NVIDIA supply chain pressure",
-          summary: "Keyword hit",
-        },
-      },
-      {
-        _id: "pi-2",
-        result: {
-          location: "Tokyo",
-          region: "JP",
-        },
-      },
-      {
-        _id: "pi-3",
-        result: {
-          summary: "Reuters on Japan semiconductor policy",
-          location: "Japan",
-        },
-      },
-    ]);
+    const exec = jest
+      .fn()
+      .mockResolvedValue([{ _id: "pi-1" }, { _id: "pi-2" }, { _id: "pi-3" }]);
     jest.spyOn(ProcessedItemModel, "find").mockReturnValue({
       select: jest.fn().mockReturnValue({
         lean: jest.fn().mockReturnValue({
@@ -474,10 +454,20 @@ describe("UserDigestService", () => {
     expect(prisma.newsEventItem.findMany).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
+        where: expect.objectContaining({
+          processedItemId: { in: ["pi-1", "pi-2", "pi-3"] },
+        }),
         select: {
           eventId: true,
-          processedItemId: true,
         },
+        distinct: ["eventId"],
+      }),
+    );
+    expect(ProcessedItemModel.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        status: "completed",
+        duplicateOf: null,
       }),
     );
     expect(exec).toHaveBeenCalledTimes(1);

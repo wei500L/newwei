@@ -68,7 +68,7 @@ export class OidcAuthService {
     });
     const nextSecret = params.clientSecret?.trim()
       ? await this.authSecurity.encodeSecret(params.clientSecret.trim())
-      : existing?.clientSecret ?? null;
+      : (existing?.clientSecret ?? null);
     const nextScopes = (params.scopes ?? []).filter(
       (scope): scope is string =>
         typeof scope === "string" && scope.trim().length > 0,
@@ -128,7 +128,9 @@ export class OidcAuthService {
       },
     });
     if (!org?.oidcConfig?.enabled) {
-      throw new BadRequestException("OIDC is not configured for this organization");
+      throw new BadRequestException(
+        "OIDC is not configured for this organization",
+      );
     }
 
     const discovery = await this.fetchDiscovery(org.oidcConfig);
@@ -152,7 +154,10 @@ export class OidcAuthService {
     const url = new URL(discovery.authorization_endpoint);
     url.searchParams.set("client_id", org.oidcConfig.clientId);
     url.searchParams.set("response_type", "code");
-    url.searchParams.set("scope", this.readScopes(org.oidcConfig.scopes).join(" "));
+    url.searchParams.set(
+      "scope",
+      this.readScopes(org.oidcConfig.scopes).join(" "),
+    );
     url.searchParams.set("redirect_uri", redirectUri);
     url.searchParams.set("state", state);
     url.searchParams.set("nonce", nonce);
@@ -190,7 +195,9 @@ export class OidcAuthService {
       },
     });
     if (!org?.oidcConfig?.enabled) {
-      throw new UnauthorizedException("OIDC is not configured for this organization");
+      throw new UnauthorizedException(
+        "OIDC is not configured for this organization",
+      );
     }
 
     const discovery = await this.fetchDiscovery(org.oidcConfig);
@@ -266,7 +273,7 @@ export class OidcAuthService {
       "login_with_oidc",
     );
 
-    if ("mfaRequired" in result) {
+    if ("mfaRequired" in result || "mfaEnrollmentRequired" in result) {
       return result;
     }
 
@@ -290,10 +297,14 @@ export class OidcAuthService {
       where: { id: handoffToken },
     });
     if (!challenge || challenge.type !== "sso_handoff") {
-      throw new UnauthorizedException("SSO handoff token is invalid or expired");
+      throw new UnauthorizedException(
+        "SSO handoff token is invalid or expired",
+      );
     }
     if (challenge.consumedAt || challenge.expiresAt.getTime() < Date.now()) {
-      throw new UnauthorizedException("SSO handoff token is invalid or expired");
+      throw new UnauthorizedException(
+        "SSO handoff token is invalid or expired",
+      );
     }
 
     await this.prisma.authChallenge.update({
@@ -325,19 +336,20 @@ export class OidcAuthService {
       return ["openid", "email", "profile"];
     }
     const scopes = value.filter(
-      (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+      (entry): entry is string =>
+        typeof entry === "string" && entry.trim().length > 0,
     );
     return scopes.length > 0 ? scopes : ["openid", "email", "profile"];
   }
 
   private getCallbackUrl() {
-    const nextAuthUrl =
-      this.env.get<string>("NEXTAUTH_URL", { infer: true }) ??
-      process.env.NEXTAUTH_URL;
-    if (!nextAuthUrl) {
-      throw new BadRequestException("NEXTAUTH_URL is required for OIDC");
+    const apiBaseUrl =
+      this.env.get<string>("API_BASE_URL", { infer: true }) ??
+      process.env.API_BASE_URL;
+    if (!apiBaseUrl) {
+      throw new BadRequestException("API_BASE_URL is required for OIDC");
     }
-    return `${nextAuthUrl.replace(/\/$/, "")}/api/auth/oidc/callback`;
+    return `${apiBaseUrl.replace(/\/$/, "")}/api/auth/oidc/callback`;
   }
 
   private stateCacheKey(state: string) {
@@ -358,7 +370,10 @@ export class OidcAuthService {
       throw new UnauthorizedException("OIDC token is invalid");
     }
     const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+    const padded = normalized.padEnd(
+      normalized.length + ((4 - (normalized.length % 4)) % 4),
+      "=",
+    );
     return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
   }
 }

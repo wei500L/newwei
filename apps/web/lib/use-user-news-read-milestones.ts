@@ -9,6 +9,12 @@ import {
 
 const READ_MILESTONE_STORAGE_PREFIX = 'user-news-behavior:read-milestones:v1';
 const EVALUATION_INTERVAL_MS = 1500;
+const WORDS_PER_MINUTE = 200;
+const CJK_CHARACTERS_PER_MINUTE = 500;
+const CJK_CHARACTER_PATTERN =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu;
+const NON_CJK_WORD_PATTERN =
+  /[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu;
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -57,9 +63,17 @@ export function estimateReadingTimeMinutes(text?: string | null): number {
   if (typeof text !== 'string' || !text.trim()) {
     return 1;
   }
-  const wordsPerMinute = 200;
-  const wordCount = text.trim().split(/\s+/).length;
-  return Math.max(1, Math.ceil(wordCount / wordsPerMinute));
+  const normalizedText = text.trim();
+  const cjkCharacterCount =
+    normalizedText.match(CJK_CHARACTER_PATTERN)?.length ?? 0;
+  const textWithoutCjk = normalizedText.replace(CJK_CHARACTER_PATTERN, ' ');
+  const nonCjkWordCount =
+    textWithoutCjk.match(NON_CJK_WORD_PATTERN)?.length ?? 0;
+  const estimatedMinutes =
+    nonCjkWordCount / WORDS_PER_MINUTE +
+    cjkCharacterCount / CJK_CHARACTERS_PER_MINUTE;
+
+  return Math.max(1, Math.ceil(estimatedMinutes));
 }
 
 export function useUserNewsReadMilestones(input: {

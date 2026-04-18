@@ -6,6 +6,8 @@ import { useMemo } from 'react';
 
 import { createApiClient } from '@/lib/api-client';
 
+import { buildNewsnowRecommendedQueryKey } from './newsnow-recommended-query';
+
 export interface NewsnowRecommendedItem {
   id: string;
   sourceId: string;
@@ -48,7 +50,11 @@ export function useNewsnowRecommended(limit = 30) {
   );
 
   return useQuery<NewsnowRecommendedResponse>({
-    queryKey: ['newsnow-recommended', limit],
+    queryKey: buildNewsnowRecommendedQueryKey({
+      orgId: session?.orgId,
+      userId: session?.user?.id,
+      limit,
+    }),
     enabled: status === 'authenticated' && canReadItems && Boolean(accessToken),
     staleTime: 60_000,
     queryFn: async () => {

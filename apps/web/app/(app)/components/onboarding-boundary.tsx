@@ -146,7 +146,6 @@ export function OnboardingBoundary({ children }: PropsWithChildren) {
           }
           return {
             ...current,
-            dismissed: false,
             checklist: {
               ...current.checklist,
               [step]: true,

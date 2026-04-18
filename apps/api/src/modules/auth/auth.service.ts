@@ -61,6 +61,7 @@ export interface AuthenticatedUser {
   globalRoles?: string[];
   mfaEnabled?: boolean;
   mfaRequired?: boolean;
+  mfaEnrollmentRequired?: boolean;
   accessTokenId?: string;
   accessTokenExpiresAt?: number;
 }
@@ -69,15 +70,38 @@ export interface AuthenticatedLoginResult {
   user: AuthenticatedUser;
   accessToken: string;
   refreshToken: string;
-  organizations: { id: string; name?: string; slug?: string; isActive?: boolean }[];
+  organizations: {
+    id: string;
+    name?: string;
+    slug?: string;
+    isActive?: boolean;
+  }[];
   expiresIn: number;
 }
 
 export interface MfaChallengeResult {
   user: AuthenticatedUser;
-  organizations: { id: string; name?: string; slug?: string; isActive?: boolean }[];
+  organizations: {
+    id: string;
+    name?: string;
+    slug?: string;
+    isActive?: boolean;
+  }[];
   mfaRequired: true;
   authChallengeId: string;
+  challengeExpiresAt: string;
+}
+
+export interface MfaEnrollmentChallengeResult {
+  user: AuthenticatedUser;
+  organizations: {
+    id: string;
+    name?: string;
+    slug?: string;
+    isActive?: boolean;
+  }[];
+  mfaEnrollmentRequired: true;
+  enrollmentChallengeId: string;
   challengeExpiresAt: string;
 }
 
@@ -195,7 +219,8 @@ export class AuthService {
     scene: EmailCodeScene,
     identifier: string,
   ) {
-    const { ttlSeconds, maxAttempts } = await this.authEmailCodeSettings.getSettings();
+    const { ttlSeconds, maxAttempts } =
+      await this.authEmailCodeSettings.getSettings();
     const attempts = await this.cache.incr(
       this.buildEmailCodeAttemptsKey(scene, identifier),
       ttlSeconds,
@@ -231,21 +256,17 @@ export class AuthService {
     }
   }
 
-  private isMembershipAccessible(
-    membership: {
-      isActive?: boolean;
-      org?: { isActive?: boolean } | null;
-    },
-  ): boolean {
+  private isMembershipAccessible(membership: {
+    isActive?: boolean;
+    org?: { isActive?: boolean } | null;
+  }): boolean {
     return (membership.org?.isActive ?? true) && (membership.isActive ?? true);
   }
 
-  private assertMembershipAccessible(
-    membership: {
-      isActive?: boolean;
-      org?: { isActive?: boolean } | null;
-    },
-  ) {
+  private assertMembershipAccessible(membership: {
+    isActive?: boolean;
+    org?: { isActive?: boolean } | null;
+  }) {
     if (!(membership.org?.isActive ?? true)) {
       throw new UnauthorizedException("Organization disabled");
     }
@@ -271,8 +292,8 @@ export class AuthService {
       );
     }
     if (!orgIdOrSlug) {
-      const activeMemberships = memberships.filter(
-        (membership) => this.isMembershipAccessible(membership),
+      const activeMemberships = memberships.filter((membership) =>
+        this.isMembershipAccessible(membership),
       );
 
       if (memberships.length === 1) {
@@ -329,7 +350,11 @@ export class AuthService {
     membership: MembershipRecord,
   ): Pick<
     AuthenticatedUser,
-    "primaryRoleId" | "roleIds" | "permissions" | "planTier" | "subscriptionStatus"
+    | "primaryRoleId"
+    | "roleIds"
+    | "permissions"
+    | "planTier"
+    | "subscriptionStatus"
   > {
     return {
       primaryRoleId: membership.roleId ?? null,
@@ -354,8 +379,13 @@ export class AuthService {
     },
     membership: MembershipRecord,
   ): Promise<AuthenticatedUser> {
-    const { primaryRoleId, roleIds, permissions, planTier, subscriptionStatus } =
-      this.buildMembershipClaims(membership);
+    const {
+      primaryRoleId,
+      roleIds,
+      permissions,
+      planTier,
+      subscriptionStatus,
+    } = this.buildMembershipClaims(membership);
     const [globalRoles, mfaStatus] = await Promise.all([
       this.platformAccess.getGlobalRoles(user.id),
       this.mfaService.getStatus(user.id),
@@ -380,6 +410,7 @@ export class AuthService {
       globalRoles,
       mfaEnabled: mfaStatus.enabled,
       mfaRequired: false,
+      mfaEnrollmentRequired: false,
     };
   }
 
@@ -440,7 +471,9 @@ export class AuthService {
     userAgent?: string,
     action = "login",
     options?: { skipMfa?: boolean },
-  ): Promise<AuthenticatedLoginResult | MfaChallengeResult> {
+  ): Promise<
+    AuthenticatedLoginResult | MfaChallengeResult | MfaEnrollmentChallengeResult
+  > {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
@@ -481,24 +514,42 @@ export class AuthService {
 
     const authUser = await this.buildAuthenticatedUser(user, membership);
     if (!options?.skipMfa) {
-      const requiresMfa = await this.mfaService.shouldRequireMfa(
+      const loginRequirement = await this.mfaService.getLoginRequirement(
         user.id,
         membership.orgId,
       );
-      if (requiresMfa) {
-        const challenge = await this.mfaService.createLoginChallenge({
+      if (loginRequirement !== "none") {
+        const organizations =
+          await this.orgService.listOrganizationOptionsForUser(user.id);
+
+        if (loginRequirement === "verify") {
+          const challenge = await this.mfaService.createLoginChallenge({
+            userId: user.id,
+            orgId: membership.orgId,
+            ipAddress,
+            userAgent,
+          });
+          return {
+            user: { ...authUser, mfaRequired: true },
+            organizations,
+            mfaRequired: true,
+            authChallengeId: challenge.challengeId,
+            challengeExpiresAt: challenge.expiresAt,
+          };
+        }
+
+        const challenge = await this.mfaService.createEnrollmentChallenge({
           userId: user.id,
           orgId: membership.orgId,
           ipAddress,
           userAgent,
+          action,
         });
-        const organizations =
-          await this.orgService.listOrganizationOptionsForUser(user.id);
         return {
-          user: { ...authUser, mfaRequired: true },
+          user: { ...authUser, mfaEnrollmentRequired: true },
           organizations,
-          mfaRequired: true,
-          authChallengeId: challenge.challengeId,
+          mfaEnrollmentRequired: true,
+          enrollmentChallengeId: challenge.challengeId,
           challengeExpiresAt: challenge.expiresAt,
         };
       }
@@ -1289,12 +1340,10 @@ export class AuthService {
     currentPassword: string,
     newPassword: string,
   ) {
-    const currentTrimmed = currentPassword.trim();
-    const nextTrimmed = newPassword.trim();
-    if (!currentTrimmed || !nextTrimmed) {
+    if (!currentPassword || !newPassword) {
       throw new BadRequestException("Password fields are required");
     }
-    if (currentTrimmed === nextTrimmed) {
+    if (currentPassword === newPassword) {
       throw new BadRequestException(
         "New password must be different from current password",
       );
@@ -1312,14 +1361,14 @@ export class AuthService {
     }
 
     const passwordValid = await bcrypt.compare(
-      currentTrimmed,
+      currentPassword,
       user.passwordHash,
     );
     if (!passwordValid) {
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    const passwordHash = await bcrypt.hash(nextTrimmed, 10);
+    const passwordHash = await bcrypt.hash(newPassword, 10);
     const now = new Date();
     await this.prisma.$transaction([
       this.prisma.user.update({
@@ -1422,8 +1471,37 @@ export class AuthService {
       challenge.orgId,
       ipAddress ?? challenge.ipAddress ?? undefined,
       userAgent ?? challenge.userAgent ?? undefined,
-      "login_with_mfa",
+      challenge.action === "login_with_oidc"
+        ? "login_with_oidc"
+        : "login_with_mfa",
       { skipMfa: true },
     );
+  }
+
+  async completeMfaEnrollmentLogin(
+    challengeId: string,
+    code: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
+    const challenge = await this.mfaService.consumeEnrollmentChallenge(
+      challengeId,
+      code,
+    );
+    const result = await this.completeTrustedLogin(
+      challenge.userId,
+      challenge.orgId,
+      ipAddress ?? challenge.ipAddress ?? undefined,
+      userAgent ?? challenge.userAgent ?? undefined,
+      challenge.action,
+      { skipMfa: true },
+    );
+    if (!("accessToken" in result)) {
+      throw new UnauthorizedException("MFA enrollment could not be completed");
+    }
+    return {
+      ...result,
+      recoveryCodes: challenge.recoveryCodes,
+    };
   }
 }

@@ -19,6 +19,7 @@ describe("UserNewsBehaviorService", () => {
     },
     userNewsSimilaritySnapshot: {
       upsert: jest.fn().mockResolvedValue(undefined),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       findUnique: jest.fn().mockResolvedValue(null),
     },
@@ -85,6 +86,15 @@ describe("UserNewsBehaviorService", () => {
         update: { dirty: true },
       }),
     );
+    expect(prisma.userNewsSimilaritySnapshot.updateMany).toHaveBeenCalledWith({
+      where: {
+        orgId: "org-1",
+        userId: { not: "user-1" },
+      },
+      data: {
+        dirty: true,
+      },
+    });
   });
 
   it("aggregates positive, negative, and legacy fallback scores", async () => {
@@ -166,6 +176,15 @@ describe("UserNewsBehaviorService", () => {
     });
     expect(prisma.userNewsSimilaritySnapshot.deleteMany).toHaveBeenCalledWith({
       where: { orgId: "org-1", userId: "user-1" },
+    });
+    expect(prisma.userNewsSimilaritySnapshot.updateMany).toHaveBeenCalledWith({
+      where: {
+        orgId: "org-1",
+        userId: { not: "user-1" },
+      },
+      data: {
+        dirty: true,
+      },
     });
   });
 

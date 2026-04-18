@@ -441,7 +441,7 @@ export function ContentSubscriptionsTab({
       }
       if (item.kind === "source") {
         void trackUserNewsBehavior({
-          type: "unsubscribe",
+          type: "not_interested",
           source: item.normalizedValue,
         });
       }

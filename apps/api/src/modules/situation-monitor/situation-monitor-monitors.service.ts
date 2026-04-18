@@ -17,6 +17,10 @@ import {
   SituationMonitorMonitorKind,
 } from "@prisma/client";
 
+import {
+  canonicalizeGeoValue,
+  extractGeoCountryAlpha2,
+} from "../../common/geo-subscription";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
 import { GeocodeBounds, GeocodingService } from "../geo/geocoding.service";
@@ -162,6 +166,7 @@ interface MonitorCandidate {
   topics: string[];
   entities: string[];
   location?: string;
+  geoTexts: string[];
   extraTexts: string[];
 }
 
@@ -554,6 +559,7 @@ export class SituationMonitorMonitorsService {
           topics: entry.topics ?? [],
           entities: entry.entities ?? [],
           location: entry.location,
+          geoTexts: entry.location ? [entry.location] : [],
           extraTexts: entry.keyPoints ?? [],
         });
       }
@@ -574,6 +580,7 @@ export class SituationMonitorMonitorsService {
         topics: entry.topics ?? [],
         entities: entry.entities ?? [],
         location: entry.location,
+        geoTexts: entry.location ? [entry.location] : [],
         extraTexts: entry.keyPoints ?? [],
       });
     }
@@ -590,6 +597,7 @@ export class SituationMonitorMonitorsService {
           category: `situation:${panel.id}`,
           topics: [],
           entities: [],
+          geoTexts: [],
           extraTexts: [panel.title, panel.subtitle],
         });
       }
@@ -1054,14 +1062,10 @@ export class SituationMonitorMonitorsService {
       });
     }
 
-    const geoSubscriptionHits = collectSetHits(monitor.approvedGeos, [
-      candidate.location ?? "",
-      candidate.title,
-      candidate.summary ?? "",
-      ...candidate.extraTexts,
-      ...candidate.topics,
-      ...candidate.entities,
-    ]);
+    const geoSubscriptionHits = collectGeoHits(
+      monitor.approvedGeos,
+      candidate.geoTexts,
+    );
     if (geoSubscriptionHits.length > 0) {
       matchedTerms.push(...geoSubscriptionHits);
       reasons.push({
@@ -1071,7 +1075,7 @@ export class SituationMonitorMonitorsService {
       });
     }
 
-    const geoStatus = this.resolveGeoStatus(monitor, candidate, haystack);
+    const geoStatus = this.resolveGeoStatus(monitor, candidate);
     let baseScore = 0;
     if (keywordHits.length > 0) {
       baseScore += 0.42;
@@ -1106,27 +1110,20 @@ export class SituationMonitorMonitorsService {
   private resolveGeoStatus(
     monitor: NormalizedMonitorRecord,
     candidate: MonitorCandidate,
-    haystack: string,
   ): SituationMonitorMatchGeoStatus {
     if (!monitor.location) {
       return "not_configured";
     }
 
-    const normalizedLocationName = normalizeTerm(monitor.location.name);
-    if (normalizedLocationName && haystack.includes(normalizedLocationName)) {
+    if (
+      collectGeoHits([monitor.location.name], candidate.geoTexts).length > 0
+    ) {
       return "matched";
     }
 
-    const candidateCountry = extractCountryCodeFromText(
-      [
-        candidate.location ?? "",
-        candidate.title,
-        candidate.summary ?? "",
-        ...candidate.extraTexts,
-        ...candidate.topics,
-        ...candidate.entities,
-      ].join(" "),
-    );
+    const candidateCountry = candidate.geoTexts
+      .map((entry) => extractGeoCountryAlpha2(entry))
+      .find((entry): entry is string => Boolean(entry));
 
     if (
       candidateCountry &&
@@ -2067,6 +2064,7 @@ export class SituationMonitorMonitorsService {
       category: item.topic,
       topics: item.topic ? [item.topic] : [],
       entities: [],
+      geoTexts: [],
       extraTexts: item.tags ?? [],
     };
   }
@@ -2087,6 +2085,7 @@ export class SituationMonitorMonitorsService {
       category: alert.cat,
       topics: [],
       entities: [],
+      geoTexts: areas,
       extraTexts: areas,
     };
   }
@@ -2432,6 +2431,49 @@ function collectSetHits(expected: string[], values: string[]): string[] {
       }
     }
   }
+  return hits;
+}
+
+function collectGeoHits(expected: string[], values: string[]): string[] {
+  const structuredValues = values
+    .map((entry) => normalizeTerm(entry))
+    .filter(Boolean);
+  const structuredCountries = new Set(
+    values
+      .map((entry) => extractGeoCountryAlpha2(entry))
+      .filter((entry): entry is string => Boolean(entry)),
+  );
+  const hits: string[] = [];
+
+  for (const entry of normalizeStringList(expected, MAX_APPROVED_TERMS)) {
+    const canonical = canonicalizeGeoValue(entry);
+    if (
+      canonical.countryCodeAlpha2 &&
+      structuredCountries.has(canonical.countryCodeAlpha2)
+    ) {
+      hits.push(entry);
+    } else {
+      const normalized = normalizeTerm(
+        canonical.displayValue || canonical.normalizedValue,
+      );
+      const shortAscii =
+        normalized.length <= 3 && /^[a-z0-9]+$/.test(normalized);
+      const matched = shortAscii
+        ? structuredValues.some((value) => value === normalized)
+        : structuredValues.some(
+            (value) => value === normalized || value.includes(normalized),
+          );
+      if (!matched) {
+        continue;
+      }
+      hits.push(entry);
+    }
+
+    if (hits.length >= 6) {
+      break;
+    }
+  }
+
   return hits;
 }
 

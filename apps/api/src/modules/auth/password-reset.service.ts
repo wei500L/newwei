@@ -116,7 +116,9 @@ export class PasswordResetService {
       resetRecord.usedAt ||
       resetRecord.expiresAt.getTime() < Date.now()
     ) {
-      throw new UnauthorizedException("Password reset token is invalid or expired");
+      throw new UnauthorizedException(
+        "Password reset token is invalid or expired",
+      );
     }
     if (params.password.trim().length < 8) {
       throw new BadRequestException("Password must be at least 8 characters");
@@ -130,8 +132,11 @@ export class PasswordResetService {
           passwordHash,
         },
       });
-      await tx.passwordResetToken.update({
-        where: { id: resetRecord.id },
+      await tx.passwordResetToken.updateMany({
+        where: {
+          userId: resetRecord.userId,
+          usedAt: null,
+        },
         data: { usedAt: new Date() },
       });
       await tx.refreshToken.updateMany({

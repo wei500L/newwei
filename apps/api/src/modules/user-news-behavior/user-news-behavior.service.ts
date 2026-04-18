@@ -391,6 +391,15 @@ export class UserNewsBehaviorService {
       this.prisma.userNewsSimilaritySnapshot.deleteMany({
         where: { orgId, userId },
       }),
+      this.prisma.userNewsSimilaritySnapshot.updateMany({
+        where: {
+          orgId,
+          userId: { not: userId },
+        },
+        data: {
+          dirty: true,
+        },
+      }),
     ]);
     return { cleared: true };
   }
@@ -532,26 +541,37 @@ export class UserNewsBehaviorService {
         }),
       ),
     );
-    await this.markSimilaritySnapshotDirty(orgId, userId);
+    await this.markSimilaritySnapshotsDirty(orgId, userId);
   }
 
-  private async markSimilaritySnapshotDirty(orgId: string, userId: string) {
-    await this.prisma.userNewsSimilaritySnapshot.upsert({
-      where: {
-        orgId_userId: {
+  private async markSimilaritySnapshotsDirty(orgId: string, userId: string) {
+    await this.prisma.$transaction([
+      this.prisma.userNewsSimilaritySnapshot.upsert({
+        where: {
+          orgId_userId: {
+            orgId,
+            userId,
+          },
+        },
+        create: {
           orgId,
           userId,
+          dirty: true,
         },
-      },
-      create: {
-        orgId,
-        userId,
-        dirty: true,
-      },
-      update: {
-        dirty: true,
-      },
-    });
+        update: {
+          dirty: true,
+        },
+      }),
+      this.prisma.userNewsSimilaritySnapshot.updateMany({
+        where: {
+          orgId,
+          userId: { not: userId },
+        },
+        data: {
+          dirty: true,
+        },
+      }),
+    ]);
   }
 
   private async ensurePersistentAggregateBackfill(orgId: string, userId: string) {
@@ -584,7 +604,7 @@ export class UserNewsBehaviorService {
       data,
       skipDuplicates: true,
     });
-    await this.markSimilaritySnapshotDirty(orgId, userId);
+    await this.markSimilaritySnapshotsDirty(orgId, userId);
   }
 
   private async getSimilaritySnapshot(orgId: string, userId: string): Promise<{

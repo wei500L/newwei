@@ -90,6 +90,12 @@ export class SearchTelemetryService {
   async getSummary(
     input: SearchTelemetrySummaryRequest,
   ): Promise<SearchTelemetrySummaryResponse> {
+    if (input.surface) {
+      throw new Error(
+        "surface filtering is not supported by the stored telemetry counters",
+      );
+    }
+
     const range = this.resolveDateRange(input.from, input.to);
     const dates = this.buildDateRange(range.from, range.to);
     const keys = dates.map((date) =>
@@ -123,22 +129,10 @@ export class SearchTelemetryService {
           this.readFieldCount(row, `surface.${surface}`),
         ]),
       ) as Record<string, number>;
+      const totalEvents = this.readFieldCount(row, "events.total");
 
-      const filteredEvents =
-        input.surface && input.surface in surfaces
-          ? this.filterEventsBySurface(
-              events,
-              surfaces[input.surface] ?? 0,
-              input.surface,
-            )
-          : events;
-      const filteredTotal =
-        input.surface && input.surface in surfaces
-          ? surfaces[input.surface] ?? 0
-          : this.readFieldCount(row, "events.total");
-
-      totals.totalEvents += filteredTotal;
-      for (const [eventType, count] of Object.entries(filteredEvents)) {
+      totals.totalEvents += totalEvents;
+      for (const [eventType, count] of Object.entries(events)) {
         totals.eventCounts[eventType] =
           (totals.eventCounts[eventType] ?? 0) + count;
       }
@@ -162,8 +156,8 @@ export class SearchTelemetryService {
 
       return {
         date,
-        totalEvents: filteredTotal,
-        events: filteredEvents,
+        totalEvents,
+        events,
         surfaces,
       } satisfies SearchTelemetryDailyPoint;
     });
@@ -236,8 +230,22 @@ export class SearchTelemetryService {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
       throw new Error("date must use YYYY-MM-DD");
     }
-    const parsed = new Date(`${normalized}T00:00:00.000Z`);
-    if (Number.isNaN(parsed.getTime())) {
+
+    const [yearPart, monthPart, dayPart] = normalized.split("-") as [
+      string,
+      string,
+      string,
+    ];
+    const year = Number.parseInt(yearPart, 10);
+    const month = Number.parseInt(monthPart, 10);
+    const day = Number.parseInt(dayPart, 10);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (
+      Number.isNaN(parsed.getTime()) ||
+      parsed.getUTCFullYear() !== year ||
+      parsed.getUTCMonth() + 1 !== month ||
+      parsed.getUTCDate() !== day
+    ) {
       throw new Error("invalid date");
     }
     return parsed;
@@ -258,36 +266,5 @@ export class SearchTelemetryService {
     const parsed =
       typeof value === "number" ? value : Number.parseInt(value ?? "", 10);
     return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
-  }
-
-  private filterEventsBySurface(
-    events: Record<string, number>,
-    surfaceTotal: number,
-    surface: SearchTelemetrySurface,
-  ) {
-    const searchSubmit = events.archive_search_submit ?? 0;
-    const tooShort = events.archive_query_too_short ?? 0;
-    const loadMore =
-      surface === "events_archive"
-        ? Math.min(events.archive_load_more_click ?? 0, surfaceTotal)
-        : 0;
-    const total = searchSubmit + tooShort + loadMore;
-    if (surfaceTotal >= total) {
-      return {
-        ...events,
-        archive_load_more_click: loadMore,
-      };
-    }
-
-    const remaining = Math.max(0, surfaceTotal - loadMore);
-    return {
-      ...events,
-      archive_search_submit: Math.min(searchSubmit, remaining),
-      archive_query_too_short: Math.max(
-        0,
-        Math.min(tooShort, remaining - Math.min(searchSubmit, remaining)),
-      ),
-      archive_load_more_click: loadMore,
-    };
   }
 }

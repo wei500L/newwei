@@ -3,7 +3,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import { PrismaService } from "../config/prisma.service";
 
@@ -20,9 +20,11 @@ interface LoginChallengePayload {
   orgId: string;
   ipAddress?: string | null;
   userAgent?: string | null;
+  action?: string | null;
 }
 
 const MFA_CHALLENGE_TTL_MINUTES = 10;
+const MFA_ENROLLMENT_CHALLENGE_TTL_MINUTES = 15;
 const MFA_ISSUER = "Modular";
 
 @Injectable()
@@ -55,15 +57,32 @@ export class MfaService {
   async beginEnrollment(userId: string, accountName: string) {
     const secret = generateTotpSecret();
     const storedSecret = await this.authSecurity.encodeSecret(secret);
+    const existingFactor = await this.prisma.userTotpFactor.findUnique({
+      where: { userId },
+      select: {
+        verifiedAt: true,
+        disabledAt: true,
+      },
+    });
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.userRecoveryCode.deleteMany({
+    if (existingFactor?.verifiedAt && !existingFactor.disabledAt) {
+      await this.prisma.userTotpFactor.update({
         where: { userId },
+        data: {
+          pendingSecret: storedSecret as Prisma.InputJsonValue,
+          pendingLabel: accountName,
+          pendingStartedAt: new Date(),
+        },
       });
-      await tx.userTotpFactor.upsert({
+    } else {
+      await this.prisma.userTotpFactor.upsert({
         where: { userId },
         update: {
           secret: storedSecret as Prisma.InputJsonValue,
+          pendingSecret: Prisma.DbNull,
+          label: accountName,
+          pendingLabel: null,
+          pendingStartedAt: null,
           verifiedAt: null,
           disabledAt: null,
           lastUsedAt: null,
@@ -74,7 +93,7 @@ export class MfaService {
           label: accountName,
         },
       });
-    });
+    }
 
     return {
       secret,
@@ -94,19 +113,30 @@ export class MfaService {
       throw new BadRequestException("MFA enrollment is not initialized");
     }
 
-    const secret = await this.authSecurity.decodeSecret(factor.secret);
+    const enrollmentSecretValue = factor.pendingSecret ?? factor.secret;
+    const secret = await this.authSecurity.decodeSecret(enrollmentSecretValue);
     if (!secret || !verifyTotpCode(secret, code)) {
       throw new BadRequestException("Invalid MFA verification code");
     }
 
     const recoveryCodes = generateRecoveryCodes();
+    const verifiedAt = new Date();
     await this.prisma.$transaction(async (tx) => {
       await tx.userTotpFactor.update({
         where: { userId },
         data: {
-          verifiedAt: new Date(),
+          secret: enrollmentSecretValue as Prisma.InputJsonValue,
+          label: factor.pendingLabel ?? factor.label,
+          pendingSecret: Prisma.DbNull,
+          pendingLabel: null,
+          pendingStartedAt: null,
+          enrolledAt:
+            factor.pendingSecret && factor.verifiedAt && !factor.disabledAt
+              ? verifiedAt
+              : factor.enrolledAt,
+          verifiedAt,
           disabledAt: null,
-          lastUsedAt: new Date(),
+          lastUsedAt: verifiedAt,
         },
       });
       await tx.userRecoveryCode.deleteMany({
@@ -163,7 +193,7 @@ export class MfaService {
     };
   }
 
-  async shouldRequireMfa(userId: string, orgId: string) {
+  async getLoginRequirement(userId: string, orgId: string) {
     const factor = await this.prisma.userTotpFactor.findUnique({
       where: { userId },
       select: {
@@ -175,18 +205,20 @@ export class MfaService {
     const policy = await this.authSecurity.getMfaPolicy();
 
     if (policy === "off") {
-      return enabled;
+      return enabled ? "verify" : "none";
     }
 
     const isAdmin = await this.isOrgAdmin(userId, orgId);
-    const applies = policy === "all_users" || (policy === "admins_only" && isAdmin);
+    const applies =
+      policy === "all_users" || (policy === "admins_only" && isAdmin);
     if (!applies) {
-      return enabled;
+      return enabled ? "verify" : "none";
     }
-    if (!enabled) {
-      throw new UnauthorizedException("MFA enrollment required");
-    }
-    return true;
+    return enabled ? "verify" : "enroll";
+  }
+
+  async shouldRequireMfa(userId: string, orgId: string) {
+    return (await this.getLoginRequirement(userId, orgId)) === "verify";
   }
 
   async createLoginChallenge(params: {
@@ -205,8 +237,36 @@ export class MfaService {
           ipAddress: params.ipAddress ?? null,
           userAgent: params.userAgent ?? null,
         } satisfies Prisma.InputJsonObject,
+        expiresAt: new Date(Date.now() + MFA_CHALLENGE_TTL_MINUTES * 60_000),
+      },
+    });
+
+    return {
+      challengeId: challenge.id,
+      expiresAt: challenge.expiresAt.toISOString(),
+    };
+  }
+
+  async createEnrollmentChallenge(params: {
+    userId: string;
+    orgId: string;
+    ipAddress?: string;
+    userAgent?: string;
+    action?: string;
+  }) {
+    const challenge = await this.prisma.authChallenge.create({
+      data: {
+        type: "mfa_enrollment",
+        userId: params.userId,
+        orgId: params.orgId,
+        payload: {
+          orgId: params.orgId,
+          ipAddress: params.ipAddress ?? null,
+          userAgent: params.userAgent ?? null,
+          action: params.action ?? "login",
+        } satisfies Prisma.InputJsonObject,
         expiresAt: new Date(
-          Date.now() + MFA_CHALLENGE_TTL_MINUTES * 60_000,
+          Date.now() + MFA_ENROLLMENT_CHALLENGE_TTL_MINUTES * 60_000,
         ),
       },
     });
@@ -217,16 +277,39 @@ export class MfaService {
     };
   }
 
-  async consumeLoginChallenge(challengeId: string, code: string) {
-    const challenge = await this.prisma.authChallenge.findUnique({
-      where: { id: challengeId },
+  async beginEnrollmentWithChallenge(challengeId: string) {
+    const challenge = await this.getActiveChallenge(
+      challengeId,
+      "mfa_enrollment",
+      "MFA enrollment challenge is invalid or expired",
+    );
+    if (!challenge.userId) {
+      throw new UnauthorizedException(
+        "MFA enrollment challenge is invalid or expired",
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: challenge.userId },
+      select: {
+        email: true,
+      },
     });
-    if (!challenge || challenge.type !== "mfa_login") {
-      throw new UnauthorizedException("MFA challenge is invalid or expired");
+    if (!user) {
+      throw new UnauthorizedException(
+        "MFA enrollment challenge is invalid or expired",
+      );
     }
-    if (challenge.consumedAt || challenge.expiresAt.getTime() < Date.now()) {
-      throw new UnauthorizedException("MFA challenge is invalid or expired");
-    }
+
+    return this.beginEnrollment(challenge.userId, user.email);
+  }
+
+  async consumeLoginChallenge(challengeId: string, code: string) {
+    const challenge = await this.getActiveChallenge(
+      challengeId,
+      "mfa_login",
+      "MFA challenge is invalid or expired",
+    );
     if (!challenge.userId) {
       throw new UnauthorizedException("MFA challenge is invalid or expired");
     }
@@ -245,6 +328,38 @@ export class MfaService {
       orgId: payload.orgId ?? challenge.orgId ?? "",
       ipAddress: payload.ipAddress ?? null,
       userAgent: payload.userAgent ?? null,
+      action: payload.action ?? "login",
+    };
+  }
+
+  async consumeEnrollmentChallenge(challengeId: string, code: string) {
+    const challenge = await this.getActiveChallenge(
+      challengeId,
+      "mfa_enrollment",
+      "MFA enrollment challenge is invalid or expired",
+    );
+    if (!challenge.userId) {
+      throw new UnauthorizedException(
+        "MFA enrollment challenge is invalid or expired",
+      );
+    }
+
+    const enrollment = await this.verifyEnrollment(challenge.userId, code);
+    await this.prisma.authChallenge.update({
+      where: { id: challenge.id },
+      data: {
+        consumedAt: new Date(),
+      },
+    });
+
+    const payload = this.parseLoginChallengePayload(challenge.payload);
+    return {
+      userId: challenge.userId,
+      orgId: payload.orgId ?? challenge.orgId ?? "",
+      ipAddress: payload.ipAddress ?? null,
+      userAgent: payload.userAgent ?? null,
+      action: payload.action ?? "login",
+      recoveryCodes: enrollment.recoveryCodes,
     };
   }
 
@@ -338,6 +453,24 @@ export class MfaService {
         typeof value.ipAddress === "string" ? value.ipAddress : undefined,
       userAgent:
         typeof value.userAgent === "string" ? value.userAgent : undefined,
+      action: typeof value.action === "string" ? value.action : undefined,
     };
+  }
+
+  private async getActiveChallenge(
+    challengeId: string,
+    type: "mfa_login" | "mfa_enrollment",
+    message: string,
+  ) {
+    const challenge = await this.prisma.authChallenge.findUnique({
+      where: { id: challengeId },
+    });
+    if (!challenge || challenge.type !== type) {
+      throw new UnauthorizedException(message);
+    }
+    if (challenge.consumedAt || challenge.expiresAt.getTime() < Date.now()) {
+      throw new UnauthorizedException(message);
+    }
+    return challenge;
   }
 }

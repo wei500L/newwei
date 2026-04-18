@@ -9,6 +9,16 @@ const read = (relativePath: string) =>
   fs.readFileSync(path.resolve(webRoot, relativePath), "utf8");
 
 describe("content subscriptions resilience wiring", () => {
+  it("records source removals as source-level negative feedback", () => {
+    const source = read(
+      "app/(app)/subscriptions/content-subscriptions-tab.tsx",
+    );
+
+    expect(source).toContain('type: "not_interested"');
+    expect(source).toContain("source: item.normalizedValue");
+    expect(source).not.toContain('type: "unsubscribe",\n          source: item.normalizedValue');
+  });
+
   it("treats recommendations and post-mutation refresh as best-effort", () => {
     const source = read(
       "app/(app)/subscriptions/content-subscriptions-tab.tsx",

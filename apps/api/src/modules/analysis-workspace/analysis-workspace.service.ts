@@ -138,7 +138,7 @@ export class AnalysisWorkspaceService {
 
   async listViews(
     orgId: string,
-    userId: string,
+    user: AnalysisActor,
     options?: {
       scope?: string;
       surface?: SavedAnalysisSurface;
@@ -154,15 +154,15 @@ export class AnalysisWorkspaceService {
         orgId,
         ...(options?.surface ? { surface: options.surface } : {}),
         ...(scope === "mine"
-          ? { createdById: userId }
+          ? { createdById: user.id }
           : scope === "shared"
             ? {
                 visibility: SavedAnalysisVisibility.org_shared,
-                NOT: { createdById: userId },
+                NOT: { createdById: user.id },
               }
             : {
                 OR: [
-                  { createdById: userId },
+                  { createdById: user.id },
                   { visibility: SavedAnalysisVisibility.org_shared },
                 ],
               }),
@@ -174,23 +174,23 @@ export class AnalysisWorkspaceService {
     return rows.map((row: SavedViewRecord) =>
       this.withSavedViewPermissions(
         this.toSavedViewResponse(row),
-        { id: userId, permissions: [] },
+        user,
         row.createdById,
       ),
     );
   }
 
-  async getView(orgId: string, userId: string, id: string) {
+  async getView(orgId: string, user: AnalysisActor, id: string) {
     const row = await this.analysisPrisma.savedAnalysisView.findFirst({
       where: { orgId, id },
       include: SAVED_VIEW_INCLUDE,
     });
-    if (!row || !this.canReadSavedView(row, userId)) {
+    if (!row || !this.canReadSavedView(row, user.id)) {
       throw new NotFoundException("Saved analysis view not found");
     }
     return this.withSavedViewPermissions(
       this.toSavedViewResponse(row),
-      { id: userId, permissions: [] },
+      user,
       row.createdById,
     );
   }
@@ -361,18 +361,31 @@ export class AnalysisWorkspaceService {
       if (!normalizedNote) {
         return null;
       }
-      existing = await this.analysisPrisma.analysisThread.create({
-        data: {
-          orgId,
-          createdById: user.id,
-          updatedById: user.id,
-          subjectType,
-          subjectId,
-          noteMarkdown: normalizedNote,
-        },
-        include: this.threadInclude(),
-      });
-      return this.toThreadResponse(existing);
+      try {
+        existing = await this.analysisPrisma.analysisThread.create({
+          data: {
+            orgId,
+            createdById: user.id,
+            updatedById: user.id,
+            subjectType,
+            subjectId,
+            noteMarkdown: normalizedNote,
+          },
+          include: this.threadInclude(),
+        });
+        return this.toThreadResponse(existing);
+      } catch (error) {
+        if (!this.isUniqueConstraintViolation(error)) {
+          throw error;
+        }
+        existing = await this.analysisPrisma.analysisThread.findFirst({
+          where: { orgId, subjectType, subjectId },
+          include: this.threadInclude(),
+        });
+        if (!existing) {
+          throw this.toUnexpectedThreadCreationError(error);
+        }
+      }
     }
 
     const row = await this.analysisPrisma.analysisThread.update({
@@ -400,19 +413,36 @@ export class AnalysisWorkspaceService {
       where: { orgId, subjectType, subjectId },
       select: { id: true },
     });
+    let createdThread = false;
     if (!thread) {
-      thread = await this.analysisPrisma.analysisThread.create({
-        data: {
-          orgId,
-          createdById: user.id,
-          updatedById: user.id,
-          subjectType,
-          subjectId,
-          noteMarkdown: null,
-        },
-        select: { id: true },
-      });
-    } else {
+      try {
+        thread = await this.analysisPrisma.analysisThread.create({
+          data: {
+            orgId,
+            createdById: user.id,
+            updatedById: user.id,
+            subjectType,
+            subjectId,
+            noteMarkdown: null,
+          },
+          select: { id: true },
+        });
+        createdThread = true;
+      } catch (error) {
+        if (!this.isUniqueConstraintViolation(error)) {
+          throw error;
+        }
+        thread = await this.analysisPrisma.analysisThread.findFirst({
+          where: { orgId, subjectType, subjectId },
+          select: { id: true },
+        });
+        if (!thread) {
+          throw this.toUnexpectedThreadCreationError(error);
+        }
+      }
+    }
+
+    if (!createdThread) {
       await this.analysisPrisma.analysisThread.update({
         where: { id: thread.id },
         data: { updatedById: user.id },
@@ -504,7 +534,9 @@ export class AnalysisWorkspaceService {
       throw new NotFoundException("Analysis comment not found");
     }
     this.assertCanManageComment(user, existing.createdById);
-    await this.analysisPrisma.analysisComment.delete({ where: { id: existing.id } });
+    await this.analysisPrisma.analysisComment.delete({
+      where: { id: existing.id },
+    });
     return { ok: true };
   }
 
@@ -697,9 +729,21 @@ export class AnalysisWorkspaceService {
     return user.id === ownerId || user.permissions.includes("users.write");
   }
 
+  private isUniqueConstraintViolation(error: unknown) {
+    return error instanceof Error && "code" in error && error.code === "P2002";
+  }
+
+  private toUnexpectedThreadCreationError(error: unknown) {
+    return error instanceof Error
+      ? error
+      : new Error("Analysis thread creation failed unexpectedly");
+  }
+
   private assertCanManageOwnedResource(user: AnalysisActor, ownerId: string) {
     if (!this.canManageOwnedResource(user, ownerId)) {
-      throw new ForbiddenException("You do not have permission to edit this resource");
+      throw new ForbiddenException(
+        "You do not have permission to edit this resource",
+      );
     }
   }
 
@@ -707,7 +751,9 @@ export class AnalysisWorkspaceService {
     if (user.id === ownerId || user.permissions.includes("users.write")) {
       return;
     }
-    throw new ForbiddenException("You do not have permission to edit this comment");
+    throw new ForbiddenException(
+      "You do not have permission to edit this comment",
+    );
   }
 
   private async assertSubjectReadable(
@@ -868,7 +914,10 @@ export class AnalysisWorkspaceService {
 
     const processedIds = readModels
       .map((doc) => doc.processed?.id)
-      .filter((value): value is string => typeof value === "string" && value.length > 0);
+      .filter(
+        (value): value is string =>
+          typeof value === "string" && value.length > 0,
+      );
     const eventRows = processedIds.length
       ? await this.prisma.newsEventItem.findMany({
           where: {
@@ -904,10 +953,9 @@ export class AnalysisWorkspaceService {
 
     return result.items.map((item: ItemMetaRow) => {
       const readModel = readModelById.get(item.id);
-      const linkedEvent =
-        readModel?.processed?.id
-          ? eventByProcessedId.get(readModel.processed.id)
-          : undefined;
+      const linkedEvent = readModel?.processed?.id
+        ? eventByProcessedId.get(readModel.processed.id)
+        : undefined;
       return [
         item.id,
         readModel?.title ?? item.name,
@@ -937,7 +985,9 @@ export class AnalysisWorkspaceService {
       const digest = await this.archiveService.getDigest(orgId, {
         anchorDate: this.parseArchiveDate(params.get("archiveDate")),
         region: this.parseArchiveRegion(params.get("archiveRegion")),
-        ...(this.parseArchiveSearch(params) ? { search: this.parseArchiveSearch(params) ?? undefined } : {}),
+        ...(this.parseArchiveSearch(params)
+          ? { search: this.parseArchiveSearch(params) ?? undefined }
+          : {}),
         weights: this.parseArchiveWeights(params.get("archiveWeights")),
         pageSize: 100,
         cursors,
@@ -983,7 +1033,9 @@ export class AnalysisWorkspaceService {
       item.sourceLabel ?? "",
       item.eventId ?? "",
       item.matchOrigin ?? "",
-      typeof item.relevanceScore === "number" ? String(item.relevanceScore) : "",
+      typeof item.relevanceScore === "number"
+        ? String(item.relevanceScore)
+        : "",
       item.sourceUrl ?? "",
     ]);
   }
@@ -1049,13 +1101,13 @@ export class AnalysisWorkspaceService {
         row,
         heat: heatMap.get(row.id) ?? { breaking: false, heatScore: 0 },
         authority: authorityMap.get(row.id) ?? {
-        sourceType: "unknown",
-        credibilityScore: 0,
-        uniqueSourceCount: 0,
-        authoritativeSourceCount: 0,
-        blogSourceCount: 0,
-        corroborated: false,
-      },
+          sourceType: "unknown",
+          credibilityScore: 0,
+          uniqueSourceCount: 0,
+          authoritativeSourceCount: 0,
+          blogSourceCount: 0,
+          corroborated: false,
+        },
       }),
     );
 
@@ -1254,7 +1306,9 @@ export class AnalysisWorkspaceService {
     return "all";
   }
 
-  private parseEventsSortBy(raw: string | null): "latest" | "heat" | "credibility" {
+  private parseEventsSortBy(
+    raw: string | null,
+  ): "latest" | "heat" | "credibility" {
     const trimmed = typeof raw === "string" ? raw.trim().toLowerCase() : "";
     if (trimmed === "heat" || trimmed === "credibility") {
       return trimmed;
@@ -1328,7 +1382,10 @@ export class AnalysisWorkspaceService {
     title: string | null;
   }) {
     const normalized = [row.primaryEntity, row.primaryTopic, row.title]
-      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .filter(
+        (value): value is string =>
+          typeof value === "string" && value.trim().length > 0,
+      )
       .join(" ")
       .toLowerCase()
       .replace(/[^a-z0-9\u4e00-\u9fff]+/g, " ")

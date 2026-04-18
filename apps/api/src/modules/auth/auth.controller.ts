@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -33,7 +34,13 @@ import {
   SubmitJoinOrgApplicationDto,
   SubmitNewOrgApplicationDto,
 } from "./dto/identity-admin.dto";
-import { CompleteMfaLoginDto, OidcConfigDto, VerifyMfaCodeDto } from "./dto/mfa.dto";
+import {
+  BeginMfaEnrollmentChallengeDto,
+  CompleteMfaEnrollmentChallengeDto,
+  CompleteMfaLoginDto,
+  OidcConfigDto,
+  VerifyMfaCodeDto,
+} from "./dto/mfa.dto";
 import {
   AvatarPresignRequestDto,
   AvatarPresignResponseDto,
@@ -47,7 +54,10 @@ import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginWithCodeDto, SendLoginCodeDto } from "./dto/login-with-code.dto";
 import { LoginDto } from "./dto/login.dto";
 import { LogoutDto } from "./dto/logout.dto";
-import { RequestPasswordResetDto, ResetPasswordDto } from "./dto/password-reset.dto";
+import {
+  RequestPasswordResetDto,
+  ResetPasswordDto,
+} from "./dto/password-reset.dto";
 import { MfaService } from "./mfa.service";
 import { OidcAuthService } from "./oidc-auth.service";
 import { OrgInviteService } from "./org-invite.service";
@@ -230,6 +240,29 @@ export class AuthController {
     );
   }
 
+  @Public()
+  @Post("mfa/enrollment/start")
+  async beginMfaEnrollmentChallenge(
+    @Body() body: BeginMfaEnrollmentChallengeDto,
+  ) {
+    return this.mfaService.beginEnrollmentWithChallenge(body.challengeId);
+  }
+
+  @Public()
+  @Post("mfa/enrollment/complete")
+  @HttpCode(200)
+  async completeMfaEnrollmentChallenge(
+    @Body() body: CompleteMfaEnrollmentChallengeDto,
+    @Req() req: Request,
+  ) {
+    return this.authService.completeMfaEnrollmentLogin(
+      body.challengeId,
+      body.code,
+      req.ip,
+      req.get("user-agent") ?? undefined,
+    );
+  }
+
   @Permissions("settings.manage")
   @Get("admin/oidc-config")
   async getOidcConfig(@CurrentUser() user: AuthenticatedUser) {
@@ -284,7 +317,12 @@ export class AuthController {
       this.env.get<string>("NEXTAUTH_URL", { infer: true }) ??
       process.env.NEXTAUTH_URL ??
       "http://localhost:3000";
-    return this.inviteService.resendInvite(user.orgId, user.id, inviteId, baseUrl);
+    return this.inviteService.resendInvite(
+      user.orgId,
+      user.id,
+      inviteId,
+      baseUrl,
+    );
   }
 
   @Permissions("users.write")
@@ -296,12 +334,21 @@ export class AuthController {
     return this.inviteService.revokeInvite(user.orgId, user.id, inviteId);
   }
 
-  @Permissions("users.write")
+  @AllowAuthenticated()
   @Get("admin/registration-applications")
   async listRegistrationApplications(@CurrentUser() user: AuthenticatedUser) {
+    const hasUsersWritePermission = user.permissions.includes("users.write");
     const isPlatformAdmin = await this.platformAccess.isPlatformAdmin(user.id);
+    if (!hasUsersWritePermission && !isPlatformAdmin) {
+      throw new ForbiddenException("Insufficient permissions");
+    }
     const [orgApplications, platformApplications] = await Promise.all([
-      this.registrationApplications.listOrgJoinApplications(user.orgId, user.id),
+      hasUsersWritePermission
+        ? this.registrationApplications.listOrgJoinApplications(
+            user.orgId,
+            user.id,
+          )
+        : Promise.resolve([]),
       isPlatformAdmin
         ? this.registrationApplications.listPlatformApplications(user.id)
         : Promise.resolve([]),
@@ -456,6 +503,11 @@ export class AuthController {
       });
       if ("handoffToken" in result) {
         callbackUrl.searchParams.set("handoffToken", result.handoffToken);
+      } else if ("mfaEnrollmentRequired" in result) {
+        callbackUrl.searchParams.set(
+          "enrollmentChallengeId",
+          result.enrollmentChallengeId,
+        );
       } else {
         callbackUrl.searchParams.set("challengeId", result.authChallengeId);
       }

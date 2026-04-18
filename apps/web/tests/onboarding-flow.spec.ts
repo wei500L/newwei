@@ -5,6 +5,10 @@ import { describe, expect, it } from "vitest";
 
 const appLayoutPath = path.resolve(__dirname, "../app/(app)/layout.tsx");
 const loginPagePath = path.resolve(__dirname, "../app/(auth)/login/page.tsx");
+const onboardingBoundaryPath = path.resolve(
+  __dirname,
+  "../app/(app)/components/onboarding-boundary.tsx",
+);
 const welcomePagePath = path.resolve(__dirname, "../app/(app)/welcome/page.tsx");
 
 describe("onboarding flow wiring", () => {
@@ -28,5 +32,14 @@ describe("onboarding flow wiring", () => {
     expect(source).toContain('/events?${ONBOARDING_MODE_QUERY_KEY}=1&${ONBOARDING_TOUR_QUERY_KEY}=events');
     expect(source).toContain('/map?${ONBOARDING_MODE_QUERY_KEY}=1&${ONBOARDING_TOUR_QUERY_KEY}=map');
     expect(source).toContain('/finance?${ONBOARDING_MODE_QUERY_KEY}=1&${ONBOARDING_TOUR_QUERY_KEY}=finance');
+  });
+
+  it("does not clear a skipped onboarding dismissal when a guided page is visited", () => {
+    const source = fs.readFileSync(onboardingBoundaryPath, "utf8");
+    const markChecklistSection =
+      source.split("markChecklistVisited: (step) => {")[1]?.split("completeTour: (step) => {")[0] ??
+      "";
+
+    expect(markChecklistSection).not.toContain("dismissed: false");
   });
 });

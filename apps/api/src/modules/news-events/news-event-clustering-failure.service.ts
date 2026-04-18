@@ -318,24 +318,30 @@ export class NewsEventClusteringFailureService {
         groupId: input.groupId,
         status: "pending",
       },
-      {
-        $set: {
-          status: "processing",
-          lastAttemptAt: startedAt,
-          lastError: null,
-          activeJobId: input.jobId,
-          progressProcessedCount: 0,
-          progressTotalCount: 0,
-          lastRecoveryModel: input.model,
-          resolvedAt: null,
-          resolvedById: null,
-          resolutionMode: null,
-          resolvedEventIds: [],
+      [
+        {
+          $set: {
+            status: "processing",
+            lastAttemptAt: startedAt,
+            lastError: null,
+            activeJobId: input.jobId,
+            progressProcessedCount: 0,
+            progressTotalCount: {
+              $size: {
+                $ifNull: ["$items", []],
+              },
+            },
+            lastRecoveryModel: input.model,
+            resolvedAt: null,
+            resolvedById: null,
+            resolutionMode: null,
+            resolvedEventIds: [],
+            attemptCount: {
+              $add: [{ $ifNull: ["$attemptCount", 0] }, 1],
+            },
+          },
         },
-        $inc: {
-          attemptCount: 1,
-        },
-      },
+      ],
       { new: true },
     )
       .lean()
@@ -358,16 +364,13 @@ export class NewsEventClusteringFailureService {
     }
 
     const attemptCount = Math.max(0, Number(row.attemptCount ?? 0));
-    const progressTotalCount = Array.isArray(row.items) ? row.items.length : 0;
-
-    await NewsEventClusteringFailureModel.updateOne(
-      { orgId: input.orgId, groupId: input.groupId },
-      {
-        $set: {
-          progressTotalCount,
-        },
-      },
-    ).exec();
+    const progressTotalCount = Math.max(
+      0,
+      Number(
+        row.progressTotalCount ??
+          (Array.isArray(row.items) ? row.items.length : 0),
+      ),
+    );
 
     return {
       attemptCount,

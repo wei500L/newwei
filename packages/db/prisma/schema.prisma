@@ -1820,6 +1820,7 @@ model PasswordResetToken {
 
 enum AuthChallengeType {
   mfa_login
+  mfa_enrollment
   sso_handoff
 }
 
@@ -1840,17 +1841,20 @@ model AuthChallenge {
 }
 
 model UserTotpFactor {
-  id          String   @id @default(cuid())
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId      String   @unique
-  secret      Json
-  label       String?
-  enrolledAt  DateTime @default(now())
-  verifiedAt  DateTime?
-  disabledAt  DateTime?
-  lastUsedAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String   @unique
+  secret          Json
+  pendingSecret   Json?
+  label           String?
+  pendingLabel    String?
+  pendingStartedAt DateTime?
+  enrolledAt      DateTime @default(now())
+  verifiedAt      DateTime?
+  disabledAt      DateTime?
+  lastUsedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model UserRecoveryCode {

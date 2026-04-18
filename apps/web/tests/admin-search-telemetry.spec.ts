@@ -21,5 +21,7 @@ describe("admin search telemetry wiring", () => {
 
     expect(source).toContain("admin/search-telemetry/summary");
     expect(source).toContain("Daily trend");
+    expect(source).not.toContain("surface !== \"all\"");
+    expect(source).toContain("Surface filtering is temporarily unavailable");
   });
 });

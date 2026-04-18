@@ -33,6 +33,7 @@ export interface AuthenticatedUser {
   globalRoles?: string[];
   mfaEnabled?: boolean;
   mfaRequired?: boolean;
+  mfaEnrollmentRequired?: boolean;
 }
 
 export interface BackendLoginResponse {
@@ -41,6 +42,7 @@ export interface BackendLoginResponse {
   expiresIn: number;
   user: AuthenticatedUser;
   organizations?: OrganizationOption[];
+  recoveryCodes?: string[];
 }
 
 export interface BackendMfaChallengeResponse {
@@ -48,6 +50,14 @@ export interface BackendMfaChallengeResponse {
   organizations?: OrganizationOption[];
   mfaRequired: true;
   authChallengeId: string;
+  challengeExpiresAt: string;
+}
+
+export interface BackendMfaEnrollmentChallengeResponse {
+  user: AuthenticatedUser;
+  organizations?: OrganizationOption[];
+  mfaEnrollmentRequired: true;
+  enrollmentChallengeId: string;
   challengeExpiresAt: string;
 }
 
@@ -189,7 +199,9 @@ const config: NextAuthConfig = {
             `${serverEnv.apiBaseUrl}/auth/sso/handoff/exchange`,
             {
               method: "POST",
-              headers: createTraceHeaders({ "Content-Type": "application/json" }),
+              headers: createTraceHeaders({
+                "Content-Type": "application/json",
+              }),
               body: JSON.stringify({ handoffToken }),
             },
           );
