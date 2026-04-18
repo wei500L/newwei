@@ -19,6 +19,7 @@ import {
   Table,
   Tag,
   Typography,
+  type FormInstance,
   type FormProps,
   type TableColumnsType,
 } from 'antd';
@@ -50,6 +51,7 @@ import {
   buildAdminSettingsPanelSelectionHref,
   getAdminSettingsPanelDescriptionKey,
 } from '@/lib/admin-settings-panel-links';
+import { createApiClient } from '@/lib/api-client';
 import { captureClientError } from '@/lib/client-telemetry';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 
@@ -88,6 +90,31 @@ interface UserLoginRecordListItem {
   method: string;
 }
 
+interface InviteListItem {
+  id: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  primaryRoleId: string;
+  primaryRole: { id: string; name: string };
+  status: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+interface RegistrationApplicationItem {
+  id: string;
+  type: 'new_org' | 'join_org';
+  status: 'pending' | 'approved' | 'rejected';
+  email: string;
+  firstName: string;
+  lastName: string;
+  requestedOrgName?: string | null;
+  requestedOrgSlug?: string | null;
+  decisionReason?: string | null;
+  org?: { id: string; name: string; slug: string } | null;
+}
+
 interface AccessSettingsMetaData {
   roles: RoleListItem[];
   permissions: PermissionListItem[];
@@ -118,6 +145,14 @@ interface UpdateMembershipRolesInput {
 interface SetUserActiveInput {
   userId: string;
   isActive: boolean;
+}
+
+interface CreateInviteFormValues {
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  primaryRoleId: string;
+  roleIds: string[];
 }
 
 interface CreateRoleMutationData {
@@ -352,6 +387,15 @@ export function AccessSettingsContent() {
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState<Error | null>(null);
+  const [invites, setInvites] = useState<InviteListItem[]>([]);
+  const [applications, setApplications] = useState<{
+    orgApplications: RegistrationApplicationItem[];
+    platformApplications: RegistrationApplicationItem[];
+  }>({ orgApplications: [], platformApplications: [] });
+  const [adminFlowsLoading, setAdminFlowsLoading] = useState(false);
+  const [createInviteForm] = Form.useForm<CreateInviteFormValues>();
+  const [approveJoinTarget, setApproveJoinTarget] =
+    useState<RegistrationApplicationItem | null>(null);
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const usersRequestIdRef = useRef(0);
 
@@ -363,6 +407,10 @@ export function AccessSettingsContent() {
     sessionPermissions.includes('permissions.read');
   const currentUserId = session?.user?.id ?? null;
   const deferredUserSearch = useDeferredValue(userSearch.trim());
+  const apiClient = useMemo(
+    () => createApiClient({ accessToken: session?.accessToken }),
+    [session?.accessToken],
+  );
 
   const {
     data: metaData,
@@ -535,9 +583,41 @@ export function AccessSettingsContent() {
     }
   }, [loginRecordsError]);
 
+  useEffect(() => {
+    if (!canReadAccessMetadata || !isOrgAdmin) {
+      setInvites([]);
+      setApplications({ orgApplications: [], platformApplications: [] });
+      return;
+    }
+
+    void (async () => {
+      setAdminFlowsLoading(true);
+      try {
+        const [invitesResponse, applicationsResponse] = await Promise.all([
+          apiClient.get<InviteListItem[]>('auth/admin/invites'),
+          apiClient.get<{
+            orgApplications: RegistrationApplicationItem[];
+            platformApplications: RegistrationApplicationItem[];
+          }>('auth/admin/registration-applications'),
+        ]);
+        setInvites(invitesResponse.data ?? []);
+        setApplications(
+          applicationsResponse.data ?? {
+            orgApplications: [],
+            platformApplications: [],
+          },
+        );
+      } catch (error) {
+        captureClientError('Failed to load identity admin data', error);
+      } finally {
+        setAdminFlowsLoading(false);
+      }
+    })();
+  }, [apiClient, canReadAccessMetadata, isOrgAdmin]);
+
   const selectedPanel = (() => {
     const candidate = searchParams.get('panel');
-    const validPanels = ['roles', 'permissions', 'members'];
+    const validPanels = ['roles', 'permissions', 'members', 'invites', 'applications'];
     return validPanels.includes(candidate ?? '') ? candidate : null;
   })();
 
@@ -676,6 +756,95 @@ export function AccessSettingsContent() {
     });
   };
 
+  const reloadAdminIdentityData = async () => {
+    const [invitesResponse, applicationsResponse] = await Promise.all([
+      apiClient.get<InviteListItem[]>('auth/admin/invites'),
+      apiClient.get<{
+        orgApplications: RegistrationApplicationItem[];
+        platformApplications: RegistrationApplicationItem[];
+      }>('auth/admin/registration-applications'),
+    ]);
+    setInvites(invitesResponse.data ?? []);
+    setApplications(
+      applicationsResponse.data ?? {
+        orgApplications: [],
+        platformApplications: [],
+      },
+    );
+  };
+
+  const handleCreateInvite = async (values: CreateInviteFormValues) => {
+    try {
+      await apiClient.post('auth/admin/invites', values);
+      createInviteForm.resetFields();
+      await reloadAdminIdentityData();
+      messageApi.success('Invite created');
+    } catch (error) {
+      captureClientError('Failed to create invite', error);
+      messageApi.error('Failed to create invite');
+    }
+  };
+
+  const handleInviteAction = async (inviteId: string, action: 'resend' | 'revoke') => {
+    try {
+      await apiClient.post(`auth/admin/invites/${inviteId}/${action}`);
+      await reloadAdminIdentityData();
+      messageApi.success(action === 'resend' ? 'Invite resent' : 'Invite revoked');
+    } catch (error) {
+      captureClientError(`Failed to ${action} invite`, error);
+      messageApi.error(`Failed to ${action} invite`);
+    }
+  };
+
+  const handleApproveJoinApplication = async (
+    application: RegistrationApplicationItem,
+    input: { primaryRoleId: string; roleIds: string[] },
+  ) => {
+    try {
+      await apiClient.post(
+        `auth/admin/registration-applications/${application.id}/approve-join`,
+        input,
+      );
+      setApproveJoinTarget(null);
+      await reloadAdminIdentityData();
+      messageApi.success('Join application approved');
+    } catch (error) {
+      captureClientError('Failed to approve join application', error);
+      messageApi.error('Failed to approve join application');
+    }
+  };
+
+  const handleRejectApplication = async (
+    application: RegistrationApplicationItem,
+    scope: 'join' | 'org',
+  ) => {
+    try {
+      await apiClient.post(
+        `auth/admin/registration-applications/${application.id}/reject-${scope}`,
+        {},
+      );
+      await reloadAdminIdentityData();
+      messageApi.success('Application rejected');
+    } catch (error) {
+      captureClientError('Failed to reject application', error);
+      messageApi.error('Failed to reject application');
+    }
+  };
+
+  const handleApproveOrgApplication = async (application: RegistrationApplicationItem) => {
+    try {
+      await apiClient.post(
+        `auth/admin/registration-applications/${application.id}/approve-org`,
+        {},
+      );
+      await reloadAdminIdentityData();
+      messageApi.success('Organization application approved');
+    } catch (error) {
+      captureClientError('Failed to approve organization application', error);
+      messageApi.error('Failed to approve organization application');
+    }
+  };
+
   const sections = [
     {
       key: 'members',
@@ -705,6 +874,38 @@ export function AccessSettingsContent() {
           onRetry={() => {
             void loadAllUsers(deferredUserSearch || undefined);
           }}
+        />
+      ),
+    },
+    {
+      key: 'invites',
+      title: 'Invites',
+      description: 'Invite new or existing users into the current organization.',
+      content: (
+        <InvitesPanel
+          roles={roles}
+          invites={invites}
+          loading={adminFlowsLoading}
+          form={createInviteForm}
+          onCreate={handleCreateInvite}
+          onInviteAction={handleInviteAction}
+        />
+      ),
+    },
+    {
+      key: 'applications',
+      title: 'Applications',
+      description: 'Review join requests for this organization and platform-level org requests.',
+      content: (
+        <ApplicationsPanel
+          roles={roles}
+          applications={applications}
+          loading={adminFlowsLoading}
+          canManagePlatform={Boolean(session?.user?.globalRoles?.includes('platform_admin'))}
+          onApproveJoin={setApproveJoinTarget}
+          onRejectJoin={(application) => void handleRejectApplication(application, 'join')}
+          onApproveOrg={(application) => void handleApproveOrgApplication(application)}
+          onRejectOrg={(application) => void handleRejectApplication(application, 'org')}
         />
       ),
     },
@@ -926,6 +1127,14 @@ export function AccessSettingsContent() {
             },
           });
         }}
+      />
+
+      <ApproveJoinApplicationModal
+        open={Boolean(approveJoinTarget)}
+        application={approveJoinTarget}
+        roles={roles}
+        onClose={() => setApproveJoinTarget(null)}
+        onApprove={handleApproveJoinApplication}
       />
     </div>
   );
@@ -1869,5 +2078,245 @@ function UserLoginRecordsDrawer({
         <Empty description={t('settings.members.loginRecordsEmpty')} />
       )}
     </Drawer>
+  );
+}
+
+function InvitesPanel({
+  roles,
+  invites,
+  loading,
+  form,
+  onCreate,
+  onInviteAction,
+}: {
+  roles: RoleListItem[];
+  invites: InviteListItem[];
+  loading: boolean;
+  form: FormInstance<CreateInviteFormValues>;
+  onCreate: (values: CreateInviteFormValues) => Promise<void>;
+  onInviteAction: (inviteId: string, action: 'resend' | 'revoke') => Promise<void>;
+}) {
+  return (
+    <Space direction="vertical" size="large" style={{ display: 'flex' }}>
+      <Card size="small" title="Create invite">
+        <Form form={form} layout="vertical" onFinish={(values) => void onCreate(values)}>
+          <Form.Item label="Email" name="email" rules={[{ required: true }]}>
+            <Input size="large" />
+          </Form.Item>
+          <Form.Item label="First name" name="firstName">
+            <Input />
+          </Form.Item>
+          <Form.Item label="Last name" name="lastName">
+            <Input />
+          </Form.Item>
+          <Form.Item label="Primary role" name="primaryRoleId" rules={[{ required: true }]}>
+            <Select
+              options={roles.map((role) => ({ value: role.id, label: role.name }))}
+            />
+          </Form.Item>
+          <Form.Item label="Role bundle" name="roleIds" rules={[{ required: true }]}>
+            <Select
+              mode="multiple"
+              options={roles.map((role) => ({ value: role.id, label: role.name }))}
+            />
+          </Form.Item>
+          <Button type="primary" htmlType="submit">
+            Send invite
+          </Button>
+        </Form>
+      </Card>
+
+      <Table
+        rowKey="id"
+        loading={loading}
+        dataSource={invites}
+        pagination={false}
+        columns={[
+          { title: 'Email', dataIndex: 'email', key: 'email' },
+          {
+            title: 'Role',
+            key: 'primaryRole',
+            render: (_, invite) => invite.primaryRole?.name ?? invite.primaryRoleId,
+          },
+          { title: 'Status', dataIndex: 'status', key: 'status' },
+          {
+            title: 'Expires',
+            dataIndex: 'expiresAt',
+            key: 'expiresAt',
+            render: (value: string) => value,
+          },
+          {
+            title: 'Actions',
+            key: 'actions',
+            render: (_, invite) => (
+              <Space>
+                <Button size="small" onClick={() => void onInviteAction(invite.id, 'resend')}>
+                  Resend
+                </Button>
+                <Button size="small" danger onClick={() => void onInviteAction(invite.id, 'revoke')}>
+                  Revoke
+                </Button>
+              </Space>
+            ),
+          },
+        ]}
+      />
+    </Space>
+  );
+}
+
+function ApplicationsPanel({
+  roles,
+  applications,
+  loading,
+  canManagePlatform,
+  onApproveJoin,
+  onRejectJoin,
+  onApproveOrg,
+  onRejectOrg,
+}: {
+  roles: RoleListItem[];
+  applications: {
+    orgApplications: RegistrationApplicationItem[];
+    platformApplications: RegistrationApplicationItem[];
+  };
+  loading: boolean;
+  canManagePlatform: boolean;
+  onApproveJoin: (application: RegistrationApplicationItem) => void;
+  onRejectJoin: (application: RegistrationApplicationItem) => void;
+  onApproveOrg: (application: RegistrationApplicationItem) => void;
+  onRejectOrg: (application: RegistrationApplicationItem) => void;
+}) {
+  return (
+    <Space direction="vertical" size="large" style={{ display: 'flex' }}>
+      <Card size="small" title="Join requests">
+        <Table
+          rowKey="id"
+          loading={loading}
+          dataSource={applications.orgApplications}
+          pagination={false}
+          columns={[
+            { title: 'Email', dataIndex: 'email', key: 'email' },
+            { title: 'Name', key: 'name', render: (_, row) => `${row.firstName} ${row.lastName}` },
+            { title: 'Status', dataIndex: 'status', key: 'status' },
+            {
+              title: 'Actions',
+              key: 'actions',
+              render: (_, row) => (
+                <Space>
+                  <Button size="small" onClick={() => onApproveJoin(row)}>
+                    Approve
+                  </Button>
+                  <Button size="small" danger onClick={() => onRejectJoin(row)}>
+                    Reject
+                  </Button>
+                </Space>
+              ),
+            },
+          ]}
+          locale={{ emptyText: <Empty description="No join requests" /> }}
+        />
+      </Card>
+
+      {canManagePlatform ? (
+        <Card size="small" title="New organization requests">
+          <Table
+            rowKey="id"
+            loading={loading}
+            dataSource={applications.platformApplications}
+            pagination={false}
+            columns={[
+              { title: 'Email', dataIndex: 'email', key: 'email' },
+              {
+                title: 'Organization',
+                key: 'org',
+                render: (_, row) => `${row.requestedOrgName ?? '-'} (${row.requestedOrgSlug ?? '-'})`,
+              },
+              { title: 'Status', dataIndex: 'status', key: 'status' },
+              {
+                title: 'Actions',
+                key: 'actions',
+                render: (_, row) => (
+                  <Space>
+                    <Button size="small" onClick={() => onApproveOrg(row)}>
+                      Approve
+                    </Button>
+                    <Button size="small" danger onClick={() => onRejectOrg(row)}>
+                      Reject
+                    </Button>
+                  </Space>
+                ),
+              },
+            ]}
+            locale={{ emptyText: <Empty description="No organization requests" /> }}
+          />
+        </Card>
+      ) : null}
+    </Space>
+  );
+}
+
+function ApproveJoinApplicationModal({
+  open,
+  application,
+  roles,
+  onClose,
+  onApprove,
+}: {
+  open: boolean;
+  application: RegistrationApplicationItem | null;
+  roles: RoleListItem[];
+  onClose: () => void;
+  onApprove: (
+    application: RegistrationApplicationItem,
+    input: { primaryRoleId: string; roleIds: string[] },
+  ) => Promise<void>;
+}) {
+  const [form] = Form.useForm<{ primaryRoleId: string; roleIds: string[] }>();
+
+  useEffect(() => {
+    if (!application) {
+      form.resetFields();
+      return;
+    }
+
+    const analystRole =
+      roles.find((role) => role.name.toLowerCase() === 'analyst') ?? roles[0];
+    if (analystRole) {
+      form.setFieldsValue({
+        primaryRoleId: analystRole.id,
+        roleIds: [analystRole.id],
+      });
+    }
+  }, [application, form, roles]);
+
+  return (
+    <Modal
+      open={open}
+      title={application ? `Approve ${application.email}` : 'Approve join request'}
+      onCancel={onClose}
+      onOk={() => void form.submit()}
+    >
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={(values) => {
+          if (!application) {
+            return;
+          }
+          void onApprove(application, values);
+        }}
+      >
+        <Form.Item label="Primary role" name="primaryRoleId" rules={[{ required: true }]}>
+          <Select options={roles.map((role) => ({ value: role.id, label: role.name }))} />
+        </Form.Item>
+        <Form.Item label="Role bundle" name="roleIds" rules={[{ required: true }]}>
+          <Select
+            mode="multiple"
+            options={roles.map((role) => ({ value: role.id, label: role.name }))}
+          />
+        </Form.Item>
+      </Form>
+    </Modal>
   );
 }

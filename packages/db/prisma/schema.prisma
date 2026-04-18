@@ -67,6 +67,10 @@ model Org {
   userDigestDeliverySchedules          UserDigestDeliverySchedule[]
   contentSubscriptionCatalog           ContentSubscriptionCatalog[]
   userContentSubscriptions             UserContentSubscription[]
+  invites                              OrgInvite[]
+  registrationApplications             RegistrationApplication[]
+  oidcConfig                           OrgOidcConfig?
+  authChallenges                       AuthChallenge[]
   situationMonitorMonitors             SituationMonitorMonitor[]
   archiveArticleClassifications        ArchiveArticleClassification[]
   processedArticleTermHourly           ProcessedArticleTermHourly[]
@@ -87,20 +91,43 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  memberships              Membership[]
-  auditLogs                AuditLog[]
-  refreshTokens            RefreshToken[]
-  crawlTasks               CrawlTask[]                @relation("CrawlTaskCreatedBy")
-  dashboardsCreated        Dashboard[]                @relation("DashboardCreatedBy")
-  alertRulesCreated        AlertRule[]                @relation("AlertRuleCreatedBy")
-  alertChannelsCreated     AlertNotificationChannel[] @relation("AlertChannelCreatedBy")
-  contentSubscriptions     UserContentSubscription[]
-  systemSettingsUpdated    SystemSetting[]            @relation("SystemSettingUpdatedBy")
-  rateLimitPoliciesUpdated RateLimitPolicy[]          @relation("RateLimitPolicyUpdatedBy")
-  notifications            Notification[]
+  memberships                   Membership[]
+  auditLogs                     AuditLog[]
+  refreshTokens                 RefreshToken[]
+  globalRoles                   GlobalRoleAssignment[]
+  issuedInvites                 OrgInvite[]                @relation("OrgInviteCreatedBy")
+  acceptedInvites               OrgInvite[]                @relation("OrgInviteAcceptedBy")
+  reviewedRegistrationApplications RegistrationApplication[] @relation("RegistrationApplicationReviewedBy")
+  passwordResetTokens           PasswordResetToken[]
+  authChallenges                AuthChallenge[]
+  totpFactor                    UserTotpFactor?
+  recoveryCodes                 UserRecoveryCode[]
+  crawlTasks                    CrawlTask[]                @relation("CrawlTaskCreatedBy")
+  dashboardsCreated             Dashboard[]                @relation("DashboardCreatedBy")
+  alertRulesCreated             AlertRule[]                @relation("AlertRuleCreatedBy")
+  alertChannelsCreated          AlertNotificationChannel[] @relation("AlertChannelCreatedBy")
+  contentSubscriptions          UserContentSubscription[]
+  systemSettingsUpdated         SystemSetting[]            @relation("SystemSettingUpdatedBy")
+  rateLimitPoliciesUpdated      RateLimitPolicy[]          @relation("RateLimitPolicyUpdatedBy")
+  notifications                 Notification[]
   userSettings             UserSetting[]
   userDigestDeliverySchedules UserDigestDeliverySchedule[]
   situationMonitorMonitors SituationMonitorMonitor[]
+}
+
+enum GlobalRole {
+  platform_admin
+}
+
+model GlobalRoleAssignment {
+  id        String     @id @default(cuid())
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  role      GlobalRole
+  createdAt DateTime   @default(now())
+
+  @@unique([userId, role])
+  @@index([role, createdAt])
 }
 
 model Role {
@@ -113,6 +140,7 @@ model Role {
   permissions     RolePermission[]
   memberships     Membership[]
   membershipRoles MembershipRole[]
+  primaryInvites  OrgInvite[]
 
   @@unique([id, orgId])
   @@unique([orgId, name])
@@ -1564,6 +1592,158 @@ model RefreshToken {
   userAgent String?
 
   @@index([userId])
+}
+
+enum OrgInviteStatus {
+  pending
+  accepted
+  revoked
+}
+
+model OrgInvite {
+  id            String          @id @default(cuid())
+  org           Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId         String
+  email         String
+  firstName     String?
+  lastName      String?
+  primaryRole   Role            @relation(fields: [primaryRoleId, orgId], references: [id, orgId], onDelete: Restrict)
+  primaryRoleId String
+  roleIds       Json
+  invitedBy     User?           @relation("OrgInviteCreatedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedById   String?
+  acceptedBy    User?           @relation("OrgInviteAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
+  acceptedById  String?
+  tokenHash     String          @unique
+  status        OrgInviteStatus @default(pending)
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  revokedAt     DateTime?
+  metadata      Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  generatedForApplications RegistrationApplication[]
+
+  @@index([orgId, status, createdAt])
+  @@index([orgId, email, status])
+  @@index([expiresAt])
+}
+
+enum RegistrationApplicationType {
+  new_org
+  join_org
+}
+
+enum RegistrationApplicationStatus {
+  pending
+  approved
+  rejected
+}
+
+model RegistrationApplication {
+  id                   String                        @id @default(cuid())
+  type                 RegistrationApplicationType
+  status               RegistrationApplicationStatus @default(pending)
+  email                String
+  firstName            String
+  lastName             String
+  org                  Org?                          @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  orgId                String?
+  requestedOrgName     String?
+  requestedOrgSlug     String?
+  requestedDescription String?
+  decisionReason       String?
+  generatedInvite      OrgInvite?                    @relation(fields: [generatedInviteId], references: [id], onDelete: SetNull)
+  generatedInviteId    String?
+  reviewedBy           User?                         @relation("RegistrationApplicationReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedById         String?
+  reviewedAt           DateTime?
+  metadata             Json?
+  createdAt            DateTime                      @default(now())
+  updatedAt            DateTime                      @updatedAt
+
+  @@index([status, type, createdAt])
+  @@index([orgId, status, type, createdAt])
+  @@index([email, status, createdAt])
+}
+
+model PasswordResetToken {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  tokenHash   String   @unique
+  ipAddress   String?
+  userAgent   String?
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+enum AuthChallengeType {
+  mfa_login
+  sso_handoff
+}
+
+model AuthChallenge {
+  id         String            @id @default(cuid())
+  type       AuthChallengeType
+  user       User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String?
+  org        Org?              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId      String?
+  payload    Json
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime          @default(now())
+
+  @@index([type, expiresAt])
+  @@index([userId, type, expiresAt])
+}
+
+model UserTotpFactor {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String   @unique
+  secret      Json
+  label       String?
+  enrolledAt  DateTime @default(now())
+  verifiedAt  DateTime?
+  disabledAt  DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model UserRecoveryCode {
+  id         String   @id @default(cuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  codeHash   String   @unique
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, usedAt, createdAt])
+}
+
+model OrgOidcConfig {
+  id           String   @id @default(cuid())
+  org          Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId        String   @unique
+  enabled      Boolean  @default(false)
+  issuerUrl    String
+  discoveryUrl String?
+  clientId     String
+  clientSecret Json?
+  scopes       Json?
+  buttonLabel  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([enabled, updatedAt])
 }
 
 enum EconomicDataValueType {

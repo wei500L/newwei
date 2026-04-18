@@ -7,6 +7,8 @@ type SessionOrganization = {
   isActive?: boolean;
 };
 
+type GlobalRole = string;
+
 declare module "next-auth" {
   interface Session {
     accessToken: string;
@@ -33,6 +35,9 @@ declare module "next-auth" {
       isActive?: boolean;
       planTier?: string | null;
       subscriptionStatus?: string | null;
+      globalRoles?: GlobalRole[];
+      mfaEnabled?: boolean;
+      mfaRequired?: boolean;
       image?: string | null;
     };
   }

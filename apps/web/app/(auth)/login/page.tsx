@@ -11,6 +11,8 @@ import { z } from "zod";
 
 import { createApiClient, syncApiSessionCache } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
+import { env } from "@/lib/env";
+import type { BackendLoginResponse, BackendMfaChallengeResponse } from "@/lib/auth";
 
 const { Title, Text } = Typography;
 const DEFAULT_SEND_CODE_COOLDOWN_SECONDS = 90;
@@ -69,6 +71,8 @@ interface SendLoginCodeResponse {
   cooldownSeconds?: number;
 }
 
+type LoginResponse = BackendLoginResponse | BackendMfaChallengeResponse;
+
 function applyFormFieldErrors<T extends object>(
   form: FormInstance<T>,
   fieldErrors: Record<string, string[] | undefined>,
@@ -98,6 +102,10 @@ export default function LoginPage() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [codeCooldown, setCodeCooldown] = useState(0);
+  const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
+  const [mfaLoading, setMfaLoading] = useState(false);
+  const [mfaError, setMfaError] = useState<string | null>(null);
+  const [mfaForm] = Form.useForm<{ code: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionExpired = searchParams.get("sessionExpired") === "1";
@@ -120,6 +128,34 @@ export default function LoginPage() {
     router.push(redirectTo);
   };
 
+  const signInWithHandoff = async (payload: BackendLoginResponse) => {
+    const result = await signIn("handoff", {
+      accessToken: payload.accessToken,
+      refreshToken: payload.refreshToken,
+      expiresIn: String(payload.expiresIn),
+      userJson: JSON.stringify(payload.user),
+      organizationsJson: JSON.stringify(payload.organizations ?? []),
+      redirect: false,
+    });
+
+    if (result?.error) {
+      throw new Error(result.error);
+    }
+
+    await syncApiSessionCache().catch(() => null);
+    redirectAfterLogin();
+  };
+
+  const handleLoginResponse = async (response: LoginResponse) => {
+    if ("mfaRequired" in response && response.mfaRequired) {
+      setMfaChallengeId(response.authChallengeId);
+      setMfaError(null);
+      return;
+    }
+
+    await signInWithHandoff(response as BackendLoginResponse);
+  };
+
   const onPasswordLogin = async (values: PasswordLoginFormValues) => {
     const parsed = buildPasswordLoginSchema(t).safeParse(values);
     if (!parsed.success) {
@@ -135,26 +171,12 @@ export default function LoginPage() {
     try {
       setPasswordLoading(true);
       setPasswordError(null);
-      const result = await signIn("credentials", {
+      const response = await apiClient.post<LoginResponse>("auth/login", {
         email: payload.email,
         password: payload.password,
         ...(payload.orgId ? { orgId: payload.orgId } : {}),
-        redirect: false,
       });
-
-      if (result?.error) {
-        setPasswordError(
-          process.env.NODE_ENV === "production"
-            ? t("auth.login.error.invalidCredentials")
-            : t("auth.login.error.invalidCredentialsWithReason", {
-                reason: result.error,
-              }),
-        );
-        return;
-      }
-
-      await syncApiSessionCache().catch(() => null);
-      redirectAfterLogin();
+      await handleLoginResponse(response.data);
     } catch (error) {
       captureClientError("Password login failed", error);
       setPasswordError(t("common.error.unexpected"));
@@ -178,26 +200,12 @@ export default function LoginPage() {
     try {
       setCodeLoginLoading(true);
       setCodeError(null);
-      const result = await signIn("email-code", {
+      const response = await apiClient.post<LoginResponse>("auth/login-with-code", {
         email: payload.email,
         code: payload.code,
         ...(payload.orgId ? { orgId: payload.orgId } : {}),
-        redirect: false,
       });
-
-      if (result?.error) {
-        setCodeError(
-          process.env.NODE_ENV === "production"
-            ? t("auth.login.error.invalidCode")
-            : t("auth.login.error.invalidCodeWithReason", {
-                reason: result.error,
-              }),
-        );
-        return;
-      }
-
-      await syncApiSessionCache().catch(() => null);
-      redirectAfterLogin();
+      await handleLoginResponse(response.data);
     } catch (error) {
       captureClientError("Code login failed", error);
       setCodeError(t("common.error.unexpected"));
@@ -237,6 +245,44 @@ export default function LoginPage() {
     }
   };
 
+  const onVerifyMfa = async (values: { code: string }) => {
+    if (!mfaChallengeId) {
+      return;
+    }
+
+    try {
+      setMfaLoading(true);
+      setMfaError(null);
+      const response = await apiClient.post<BackendLoginResponse>(
+        "auth/mfa/verify-login",
+        {
+          challengeId: mfaChallengeId,
+          code: values.code,
+        },
+      );
+      await signInWithHandoff(response.data);
+    } catch (error) {
+      captureClientError("MFA verification failed", error);
+      setMfaError(t("auth.login.error.invalidCode"));
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
+  const handleSsoLogin = () => {
+    const orgId =
+      passwordForm.getFieldValue("orgId") ?? codeForm.getFieldValue("orgId");
+    if (!orgId || !String(orgId).trim()) {
+      messageApi.error("Organization is required for SSO");
+      return;
+    }
+    window.location.assign(
+      `${env.apiBaseUrl}/auth/sso/oidc/start?org=${encodeURIComponent(
+        String(orgId).trim(),
+      )}`,
+    );
+  };
+
   return (
     <div className="auth-card">
       {contextHolder}
@@ -244,6 +290,14 @@ export default function LoginPage() {
         {t("auth.login.title")}
       </Title>
       <Text type="secondary">{t("auth.login.subtitle")}</Text>
+      <div style={{ marginTop: "0.5rem" }}>
+        <Button type="link" onClick={() => router.push("/register")} style={{ paddingInline: 0 }}>
+          Register
+        </Button>
+        <Button type="link" onClick={() => router.push("/forgot-password")} style={{ paddingInline: 0, marginLeft: 12 }}>
+          Forgot password?
+        </Button>
+      </div>
       <div style={{ marginTop: "1.5rem" }}>
         {sessionExpired ? (
           <Alert
@@ -423,6 +477,38 @@ export default function LoginPage() {
           },
         ]}
       />
+      <Button block style={{ marginTop: "0.75rem" }} onClick={handleSsoLogin}>
+        Continue with SSO
+      </Button>
+      {mfaChallengeId ? (
+        <div style={{ marginTop: "1rem" }}>
+          <Alert
+            type="info"
+            showIcon
+            message="Multi-factor authentication required"
+            style={{ marginBottom: "0.75rem" }}
+          />
+          <Form form={mfaForm} layout="vertical" onFinish={onVerifyMfa}>
+            <Form.Item
+              label="Authenticator code or recovery code"
+              name="code"
+              rules={[{ required: true, message: "Enter your MFA code" }]}
+            >
+              <Input size="large" />
+            </Form.Item>
+            {mfaError ? (
+              <Form.Item>
+                <Alert type="error" showIcon message={mfaError} />
+              </Form.Item>
+            ) : null}
+            <Form.Item>
+              <Button type="primary" htmlType="submit" block loading={mfaLoading}>
+                Verify and continue
+              </Button>
+            </Form.Item>
+          </Form>
+        </div>
+      ) : null}
     </div>
   );
 }

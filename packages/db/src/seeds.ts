@@ -184,14 +184,16 @@ export const seed = async ({
       passwordHash,
       firstName: normalizedAdminFirstName,
       lastName: normalizedAdminLastName,
-      isActive: true
+      isActive: true,
+      emailVerified: new Date()
     },
     create: {
       email: normalizedAdminEmail,
       passwordHash,
       firstName: normalizedAdminFirstName,
       lastName: normalizedAdminLastName,
-      isActive: true
+      isActive: true,
+      emailVerified: new Date()
     }
   });
 
@@ -213,6 +215,53 @@ export const seed = async ({
       userId: adminUser.id,
       orgId: org.id,
       roleId: adminRole.id
+    }
+  });
+
+  await prisma.membershipRole.upsert({
+    where: {
+      membershipId_roleId: {
+        membershipId: (
+          await prisma.membership.findUniqueOrThrow({
+            where: {
+              userId_orgId: {
+                userId: adminUser.id,
+                orgId: org.id
+              }
+            }
+          })
+        ).id,
+        roleId: adminRole.id
+      }
+    },
+    update: {},
+    create: {
+      membershipId: (
+        await prisma.membership.findUniqueOrThrow({
+          where: {
+            userId_orgId: {
+              userId: adminUser.id,
+              orgId: org.id
+            }
+          }
+        })
+      ).id,
+      orgId: org.id,
+      roleId: adminRole.id
+    }
+  });
+
+  await prisma.globalRoleAssignment.upsert({
+    where: {
+      userId_role: {
+        userId: adminUser.id,
+        role: "platform_admin"
+      }
+    },
+    update: {},
+    create: {
+      userId: adminUser.id,
+      role: "platform_admin"
     }
   });
 

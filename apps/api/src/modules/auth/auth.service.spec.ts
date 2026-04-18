@@ -24,6 +24,9 @@ const prismaMock = {
     update: jest.fn(),
     updateMany: jest.fn(),
   },
+  globalRoleAssignment: {
+    findMany: jest.fn(),
+  },
   auditLog: {
     create: jest.fn(),
   },
@@ -104,6 +107,20 @@ const emailServiceMock = {
   buildVerificationCodeTextTemplate: jest.fn().mockReturnValue("code"),
 } as any;
 
+const platformAccessMock = {
+  getGlobalRoles: jest.fn().mockResolvedValue([]),
+} as any;
+
+const mfaServiceMock = {
+  getStatus: jest.fn().mockResolvedValue({
+    enabled: false,
+    recoveryCodesRemaining: 0,
+  }),
+  shouldRequireMfa: jest.fn().mockResolvedValue(false),
+  createLoginChallenge: jest.fn(),
+  consumeLoginChallenge: jest.fn(),
+} as any;
+
 describe("AuthService", () => {
   let service: AuthService;
 
@@ -142,6 +159,12 @@ describe("AuthService", () => {
     });
     cacheMock.setIfAbsent = jest.fn().mockResolvedValue(true);
     cacheMock.incr = jest.fn().mockResolvedValue(1);
+    platformAccessMock.getGlobalRoles = jest.fn().mockResolvedValue([]);
+    mfaServiceMock.getStatus = jest.fn().mockResolvedValue({
+      enabled: false,
+      recoveryCodesRemaining: 0,
+    });
+    mfaServiceMock.shouldRequireMfa = jest.fn().mockResolvedValue(false);
     service = new AuthService(
       prismaMock,
       envMock,
@@ -155,6 +178,8 @@ describe("AuthService", () => {
       orgServiceMock,
       storageServiceMock,
       emailServiceMock,
+      platformAccessMock,
+      mfaServiceMock,
     );
   });
 
@@ -444,6 +469,38 @@ describe("AuthService", () => {
       roleIds: ["role-1"],
       permissions: ["items.read"],
       isActive: true,
+    });
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      emailVerified: null,
+      pendingEmail: null,
+      firstName: "Test",
+      lastName: "User",
+      avatarUrl: null,
+      lastLoginAt: null,
+      isActive: true,
+      memberships: [
+        {
+          orgId: "org-1",
+          isActive: true,
+          org: {
+            id: "org-1",
+            isActive: true,
+            subscription: null,
+          },
+          roleId: "role-1",
+          role: {
+            name: "admin",
+            permissions: [
+              {
+                permission: { name: "items.read" },
+              },
+            ],
+          },
+          roles: [],
+        },
+      ],
     });
     jest
       .spyOn(service as any, "signRefreshToken")
