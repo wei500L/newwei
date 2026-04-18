@@ -53,6 +53,7 @@ import {
   KNOWLEDGE_GRAPH_MIN_DEPTH,
   KNOWLEDGE_GRAPH_MIN_NODES,
   KNOWLEDGE_GRAPH_RELATION_TYPES,
+  normalizeKnowledgeGraphSeedType,
   parseKnowledgeGraphExplorerParams,
   type KnowledgeGraphRelationType,
   type KnowledgeGraphSeedType
@@ -132,7 +133,10 @@ export function KnowledgeGraphContent() {
   const authenticated = sessionStatus === "authenticated";
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canReadDashboards = permissions.includes("dashboards.read");
+  const canReadItems = permissions.includes("items.read");
   const [seedDraft, setSeedDraft] = useState("");
+  const [depthDraft, setDepthDraft] = useState(KNOWLEDGE_GRAPH_DEFAULT_MAX_DEPTH);
+  const [maxNodesDraft, setMaxNodesDraft] = useState(KNOWLEDGE_GRAPH_DEFAULT_MAX_NODES);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -149,6 +153,14 @@ export function KnowledgeGraphContent() {
   useEffect(() => {
     setSeedDraft(routeState.seedName);
   }, [routeState.seedName]);
+
+  useEffect(() => {
+    setDepthDraft(routeState.maxDepth);
+  }, [routeState.maxDepth]);
+
+  useEffect(() => {
+    setMaxNodesDraft(routeState.maxNodes);
+  }, [routeState.maxNodes]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -222,6 +234,9 @@ export function KnowledgeGraphContent() {
   });
   const { pending: refreshingEvidence, run: refreshEvidence } = usePendingAction(
     async () => {
+      if (!canReadItems) {
+        return;
+      }
       if (refetchEvidence) {
         await refetchEvidence();
         return;
@@ -315,7 +330,7 @@ export function KnowledgeGraphContent() {
   }, [graphData, selectedEdge]);
 
   useEffect(() => {
-    if (!selectedEdgeId) {
+    if (!selectedEdgeId || !canReadItems) {
       return;
     }
     void loadEvidence({
@@ -324,7 +339,7 @@ export function KnowledgeGraphContent() {
         limit: KNOWLEDGE_GRAPH_DEFAULT_EVIDENCE_LIMIT
       }
     });
-  }, [loadEvidence, selectedEdgeId]);
+  }, [canReadItems, loadEvidence, selectedEdgeId]);
 
   useEffect(() => {
     if (!graphData) {
@@ -539,14 +554,23 @@ export function KnowledgeGraphContent() {
             <Text type="secondary">
               {t("pages.knowledgeGraph.controls.depth", { defaultValue: "Depth" })}
             </Text>
-            <Text>{routeState.maxDepth}</Text>
+            <Text>{depthDraft}</Text>
           </div>
           <Slider
             min={KNOWLEDGE_GRAPH_MIN_DEPTH}
             max={KNOWLEDGE_GRAPH_MAX_DEPTH}
             step={1}
-            value={routeState.maxDepth}
-            onChange={(value) => replaceRouteState({ maxDepth: value })}
+            value={depthDraft}
+            onChange={(value) => {
+              if (typeof value === "number") {
+                setDepthDraft(value);
+              }
+            }}
+            onChangeComplete={(value) => {
+              if (typeof value === "number") {
+                replaceRouteState({ maxDepth: value });
+              }
+            }}
           />
         </div>
         <div className="flex flex-col gap-2">
@@ -554,14 +578,23 @@ export function KnowledgeGraphContent() {
             <Text type="secondary">
               {t("pages.knowledgeGraph.controls.maxNodes", { defaultValue: "Max nodes" })}
             </Text>
-            <Text>{routeState.maxNodes}</Text>
+            <Text>{maxNodesDraft}</Text>
           </div>
           <Slider
             min={KNOWLEDGE_GRAPH_MIN_NODES}
             max={KNOWLEDGE_GRAPH_MAX_NODES}
             step={25}
-            value={routeState.maxNodes}
-            onChange={(value) => replaceRouteState({ maxNodes: value })}
+            value={maxNodesDraft}
+            onChange={(value) => {
+              if (typeof value === "number") {
+                setMaxNodesDraft(value);
+              }
+            }}
+            onChangeComplete={(value) => {
+              if (typeof value === "number") {
+                replaceRouteState({ maxNodes: value });
+              }
+            }}
           />
         </div>
       </div>
@@ -608,7 +641,12 @@ export function KnowledgeGraphContent() {
         <Button
           type="primary"
           icon={<AppstoreOutlined />}
-          onClick={() => replaceRouteState({ seedName: selectedNode.name })}
+          onClick={() =>
+            replaceRouteState({
+              seedName: selectedNode.name,
+              seedType: normalizeKnowledgeGraphSeedType(selectedNode.type)
+            })
+          }
         >
           {t("pages.knowledgeGraph.actions.centerNode", { defaultValue: "Set as seed" })}
         </Button>
@@ -705,6 +743,7 @@ export function KnowledgeGraphContent() {
           size="small"
           icon={<ReloadOutlined />}
           loading={refreshingEvidence}
+          disabled={!canReadItems}
           onClick={() => {
             void refreshEvidence();
           }}
@@ -712,7 +751,18 @@ export function KnowledgeGraphContent() {
           {t("dashboard.actions.retryFetch", { defaultValue: "Retry fetch" })}
         </Button>
       </div>
-      {evidenceError ? (
+      {!canReadItems ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("pages.knowledgeGraph.details.evidencePermissionTitle", {
+            defaultValue: "Evidence is restricted"
+          })}
+          description={t("pages.knowledgeGraph.details.evidencePermissionDescription", {
+            defaultValue: "Viewing edge evidence requires the items.read permission."
+          })}
+        />
+      ) : evidenceError ? (
         <RequestErrorBanner
           error={evidenceError}
           presentation="banner"

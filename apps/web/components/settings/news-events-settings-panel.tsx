@@ -251,6 +251,10 @@ export function NewsEventsSettingsPanel() {
     UPDATE_NEWS_EVENT_SETTINGS_MUTATION,
   );
   const watchedClusteringMode = Form.useWatch("clusteringMode", form);
+  const watchedBertopicMinItemsPerGroup = Form.useWatch(
+    "bertopicMinItemsPerGroup",
+    form,
+  );
   const watchedLowConfidenceThreshold = Form.useWatch(
     "timelineLowConfidenceThreshold",
     form,
@@ -798,9 +802,10 @@ export function NewsEventsSettingsPanel() {
                   defaultValue: "BERTopic max items per request",
                 })}
                 name="bertopicMaxItemsPerRequest"
+                dependencies={["bertopicMinItemsPerGroup"]}
                 extra={t("settings.newsEvents.hints.bertopicMaxItemsPerRequest", {
                   defaultValue:
-                    "Upper bound for each BERTopic request to control CPU and memory pressure on the model service.",
+                    "Upper bound for each BERTopic request to control CPU and memory pressure on the model service. Must be greater than or equal to the min items per group.",
                 })}
                 rules={[
                   {
@@ -809,9 +814,43 @@ export function NewsEventsSettingsPanel() {
                       defaultValue: "Required",
                     }),
                   },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      const minItemsPerGroup = Number(
+                        getFieldValue("bertopicMinItemsPerGroup"),
+                      );
+                      if (
+                        !Number.isFinite(value) ||
+                        !Number.isFinite(minItemsPerGroup) ||
+                        value >= minItemsPerGroup
+                      ) {
+                        return Promise.resolve();
+                      }
+                      return Promise.reject(
+                        new Error(
+                          t(
+                            "settings.newsEvents.validation.bertopicMaxItemsMustBeAtLeastMinGroup",
+                            {
+                              defaultValue:
+                                "BERTopic max items per request must be greater than or equal to min items per group.",
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  }),
                 ]}
               >
-                <InputNumber min={2} max={500} step={1} style={{ width: "100%" }} />
+                <InputNumber
+                  min={
+                    typeof watchedBertopicMinItemsPerGroup === "number"
+                      ? Math.max(2, watchedBertopicMinItemsPerGroup)
+                      : 2
+                  }
+                  max={500}
+                  step={1}
+                  style={{ width: "100%" }}
+                />
               </Form.Item>
 
               <Form.Item

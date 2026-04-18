@@ -314,4 +314,102 @@ describe("UserDigestDeliveryService", () => {
       }),
     );
   });
+
+  it("continues processing later schedules when one user's digest generation fails", async () => {
+    prisma.userDigestDeliverySchedule.findMany.mockResolvedValue([
+      {
+        id: "schedule-1",
+        orgId: "org-1",
+        userId: "user-1",
+        timezone: "Asia/Shanghai",
+        sendHour: 8,
+        sendMinute: 30,
+        nextRunAt: new Date("2026-04-18T00:30:00.000Z"),
+        user: {
+          id: "user-1",
+          email: "user-1@example.com",
+          emailVerified: new Date("2026-04-18T00:00:00.000Z"),
+          isActive: true,
+          firstName: "Ada",
+        },
+      },
+      {
+        id: "schedule-2",
+        orgId: "org-1",
+        userId: "user-2",
+        timezone: "Asia/Shanghai",
+        sendHour: 8,
+        sendMinute: 35,
+        nextRunAt: new Date("2026-04-18T00:35:00.000Z"),
+        user: {
+          id: "user-2",
+          email: "user-2@example.com",
+          emailVerified: new Date("2026-04-18T00:00:00.000Z"),
+          isActive: true,
+          firstName: "Grace",
+        },
+      },
+    ]);
+    digestService.generateDigest
+      .mockRejectedValueOnce(new Error("Digest query failed"))
+      .mockResolvedValueOnce({
+        version: 1,
+        generatedAt: "2026-04-18T00:36:00.000Z",
+        windowStart: "2026-04-15T00:00:00.000Z",
+        windowEnd: "2026-04-18T00:00:00.000Z",
+        preference: {
+          version: 1,
+          focusEntities: [],
+          focusTopics: [],
+          windowDays: 3,
+          maxEvents: 8,
+          includeIndicators: true,
+          maxIndicatorsPerEvent: 5,
+        },
+        events: [
+          {
+            eventId: "event-1",
+            title: "Macro risk",
+            summary: "Summary 1",
+            primaryTopic: "macro",
+            primaryEntity: "ACME",
+            startAt: "2026-04-17T00:00:00.000Z",
+            lastAt: "2026-04-18T00:20:00.000Z",
+            itemCount: 4,
+            representativeUrl: "https://example.com/story-1",
+          },
+        ],
+      });
+
+    const summary = await service.runDueDeliveriesForOrg(
+      "org-1",
+      new Date("2026-04-18T00:36:00.000Z"),
+    );
+
+    expect(summary).toEqual({
+      dueCount: 2,
+      sentCount: 1,
+      emptyCount: 0,
+      failedCount: 1,
+    });
+    expect(emailService.send).toHaveBeenCalledTimes(1);
+    expect(prisma.userDigestDeliverySchedule.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "schedule-1" },
+        data: expect.objectContaining({
+          lastStatus: "failed",
+          lastError: "Digest query failed",
+        }),
+      }),
+    );
+    expect(prisma.userDigestDeliverySchedule.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "schedule-2" },
+        data: expect.objectContaining({
+          lastStatus: "sent",
+          lastError: null,
+        }),
+      }),
+    );
+  });
 });

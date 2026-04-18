@@ -182,7 +182,7 @@ export class KnowledgeGraphResolver {
     }));
   }
 
-  @HasPermission("dashboards.read")
+  @HasPermission("items.read")
   @Query(() => [KnowledgeGraphEdgeEvidenceItemModel])
   async knowledgeGraphEdgeEvidence(
     @Context("req") req: GqlRequest,

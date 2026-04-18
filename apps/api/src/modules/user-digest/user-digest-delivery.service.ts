@@ -205,7 +205,7 @@ export class UserDigestDeliveryService {
     };
 
     for (const schedule of schedules) {
-      const status = await this.processDueSchedule(schedule, now);
+      const status = await this.processDueScheduleSafely(schedule, now);
       if (status === UserDigestDeliveryStatus.sent) {
         summary.sentCount += 1;
       } else if (status === UserDigestDeliveryStatus.empty_notified) {
@@ -216,6 +216,22 @@ export class UserDigestDeliveryService {
     }
 
     return summary;
+  }
+
+  private async processDueScheduleSafely(
+    schedule: DueScheduleRecord,
+    now: Date,
+  ): Promise<UserDigestDeliveryStatus> {
+    try {
+      return await this.processDueSchedule(schedule, now);
+    } catch (error) {
+      return this.failDueSchedule(
+        schedule,
+        now,
+        error,
+        "Failed to process user digest delivery",
+      );
+    }
   }
 
   private async processDueSchedule(
@@ -302,32 +318,57 @@ export class UserDigestDeliveryService {
 
       return UserDigestDeliveryStatus.sent;
     } catch (error) {
-      const errorMessage = this.toErrorMessage(error);
-      this.logger.warn(
-        {
-          error,
-          orgId: schedule.orgId,
-          userId: schedule.userId,
-          targetEmail: schedule.user.email,
-        },
+      return this.failDueSchedule(
+        schedule,
+        now,
+        error,
         "Failed to deliver user digest email",
       );
-      await this.prisma.userDigestDeliverySchedule.update({
-        where: { id: schedule.id },
-        data: {
-          nextRunAt,
-          lastStatus: UserDigestDeliveryStatus.failed,
-          lastStatusAt: now,
-          lastError: errorMessage,
-        },
-      });
-      await this.safeNotifyFailure(schedule.orgId, schedule.userId, {
-        link: "/today",
-        targetEmail: schedule.user.email,
-        message: errorMessage,
-      });
-      return UserDigestDeliveryStatus.failed;
     }
+  }
+
+  private async failDueSchedule(
+    schedule: DueScheduleRecord,
+    now: Date,
+    error: unknown,
+    logMessage: string,
+  ): Promise<UserDigestDeliveryStatus> {
+    const errorMessage = this.toErrorMessage(error);
+    const nextRunAt = this.computeNextRunAt(
+      {
+        timezone: schedule.timezone,
+        sendHour: schedule.sendHour,
+        sendMinute: schedule.sendMinute,
+      },
+      now,
+    );
+
+    this.logger.warn(
+      {
+        error,
+        orgId: schedule.orgId,
+        userId: schedule.userId,
+        targetEmail: schedule.user.email,
+      },
+      logMessage,
+    );
+
+    await this.prisma.userDigestDeliverySchedule.update({
+      where: { id: schedule.id },
+      data: {
+        nextRunAt,
+        lastStatus: UserDigestDeliveryStatus.failed,
+        lastStatusAt: now,
+        lastError: errorMessage,
+      },
+    });
+    await this.safeNotifyFailure(schedule.orgId, schedule.userId, {
+      link: "/today",
+      targetEmail: schedule.user.email,
+      message: errorMessage,
+    });
+
+    return UserDigestDeliveryStatus.failed;
   }
 
   private async safeNotifyReady(

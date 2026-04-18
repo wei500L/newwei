@@ -80,9 +80,7 @@ export class NewsEventClusteringRecoveryService {
     return {
       modelService: {
         ready: Boolean(
-          modelService.enabled &&
-            modelService.baseUrl &&
-            modelService.hasToken,
+          modelService.enabled && modelService.baseUrl && modelService.hasToken,
         ),
         enabled: modelService.enabled,
         baseUrl: modelService.baseUrl,
@@ -111,29 +109,11 @@ export class NewsEventClusteringRecoveryService {
       throw new BadRequestException("Failure group is already processing");
     }
     if (failure.status === "resolved" || failure.status === "ignored") {
-      throw new BadRequestException(
-        "Failure group can no longer be recovered",
-      );
+      throw new BadRequestException("Failure group can no longer be recovered");
     }
 
     const traceId = ensureTraceId(getCurrentTraceId());
     const jobId = `news-event-llm-backfill:${groupId}:${randomUUID()}`;
-    await this.queue.add(
-      "llm_backfill",
-      {
-        jobType: "llm_backfill",
-        orgId,
-        actorId,
-        groupId,
-        traceId,
-      },
-      {
-        jobId,
-        removeOnComplete: true,
-        attempts: 1,
-      },
-    );
-
     const queued = await this.failures.markLlmBackfillQueued({
       orgId,
       actorId,
@@ -141,6 +121,37 @@ export class NewsEventClusteringRecoveryService {
       jobId,
       model: readiness.llmBackfill.model,
     });
+
+    try {
+      await this.queue.add(
+        "llm_backfill",
+        {
+          jobType: "llm_backfill",
+          orgId,
+          actorId,
+          groupId,
+          traceId,
+        },
+        {
+          jobId,
+          removeOnComplete: true,
+          attempts: 1,
+        },
+      );
+    } catch (error) {
+      await this.failures.markLlmBackfillFailed({
+        orgId,
+        groupId,
+        processedCount: 0,
+        totalCount: queued.progressTotalCount,
+        errorMessage: this.getErrorMessage(
+          error,
+          "Failed to enqueue LLM backfill job",
+        ),
+        model: readiness.llmBackfill.model,
+      });
+      throw error;
+    }
 
     await writeTaskLogBestEffort({
       queue: "news_event_clustering_recovery",
@@ -151,7 +162,7 @@ export class NewsEventClusteringRecoveryService {
       data: {
         groupId,
         model: readiness.llmBackfill.model,
-        itemCount: failure.items.length,
+        itemCount: queued.progressTotalCount,
       },
     });
 
@@ -344,7 +355,9 @@ export class NewsEventClusteringRecoveryService {
     if (!targetEventId) {
       throw new Error("LLM backfill response did not include an eventId");
     }
-    const candidate = candidates.find((entry) => entry.eventId === targetEventId);
+    const candidate = candidates.find(
+      (entry) => entry.eventId === targetEventId,
+    );
     if (!candidate) {
       throw new Error("LLM backfill selected an unknown event candidate");
     }
@@ -463,7 +476,9 @@ export class NewsEventClusteringRecoveryService {
     return hash.digest("hex").slice(0, 16);
   }
 
-  private toSignal(item: NewsEventClusteringFailureRecord["items"][number]): NewsSignal {
+  private toSignal(
+    item: NewsEventClusteringFailureRecord["items"][number],
+  ): NewsSignal {
     const timestamp =
       item.publishedAt ?? item.crawlAt ?? item.processedAt ?? new Date();
     return {
@@ -490,5 +505,9 @@ export class NewsEventClusteringRecoveryService {
     }
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private getErrorMessage(error: unknown, fallback: string) {
+    return error instanceof Error ? error.message : fallback;
   }
 }

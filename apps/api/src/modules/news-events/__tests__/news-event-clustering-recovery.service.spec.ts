@@ -108,6 +108,9 @@ describe("NewsEventClusteringRecoveryService", () => {
         removeOnComplete: true,
       }),
     );
+    expect(
+      failures.markLlmBackfillQueued.mock.invocationCallOrder[0],
+    ).toBeLessThan(queue.add.mock.invocationCallOrder[0]);
     expect(failures.markLlmBackfillQueued).toHaveBeenCalledWith(
       expect.objectContaining({
         orgId: "org-1",
@@ -124,6 +127,31 @@ describe("NewsEventClusteringRecoveryService", () => {
         lastRecoveryModel: "openai/gpt-4.1-mini",
       }),
     );
+  });
+
+  it("reverts the failure group when queue publish fails", async () => {
+    failures.getFailureGroupOrThrow.mockResolvedValue({
+      status: "pending",
+      items: [{ processedArticleId: "pa-1" }],
+    });
+    failures.markLlmBackfillQueued.mockResolvedValue({
+      progressTotalCount: 1,
+      attemptCount: 2,
+    });
+    queue.add.mockRejectedValue(new Error("BullMQ unavailable"));
+
+    await expect(
+      service.enqueueLlmBackfill("org-1", "admin-1", "group-1"),
+    ).rejects.toThrow("BullMQ unavailable");
+
+    expect(failures.markLlmBackfillFailed).toHaveBeenCalledWith({
+      orgId: "org-1",
+      groupId: "group-1",
+      processedCount: 0,
+      totalCount: 1,
+      errorMessage: "BullMQ unavailable",
+      model: "openai/gpt-4.1-mini",
+    });
   });
 
   it("rejects queueing when llm readiness is unavailable", async () => {

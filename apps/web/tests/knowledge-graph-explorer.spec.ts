@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildKnowledgeGraphExplorerHref,
+  normalizeKnowledgeGraphSeedType,
   parseKnowledgeGraphExplorerParams
 } from "../lib/knowledge-graph-explorer";
 
@@ -28,5 +29,10 @@ describe("knowledge graph explorer route helpers", () => {
         relationTypes: ["supplies", "affects_company"]
       })
     ).toBe("/knowledge-graph?seed=Acme&seedType=company&relations=supplies%2Caffects_company");
+  });
+
+  it("normalizes node types before deep-linking from graph selections", () => {
+    expect(normalizeKnowledgeGraphSeedType("Industry")).toBe("industry");
+    expect(normalizeKnowledgeGraphSeedType("unknown")).toBeUndefined();
   });
 });

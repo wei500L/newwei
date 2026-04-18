@@ -39,12 +39,13 @@ describe("resolveActiveItemKey", () => {
 });
 
 describe("buildActionRailNavConfig", () => {
-  it("adds the standalone knowledge graph page to the main analysis navigation", () => {
+  it("gates the standalone knowledge graph page behind dashboard access", () => {
     const source = fs.readFileSync(
       path.resolve(__dirname, "../app/(app)/components/action-rail.tsx"),
       "utf8"
     );
 
+    expect(source).toContain("if (canViewDashboards)");
     expect(source).toContain('key: "/knowledge-graph"');
     expect(source).toContain('path: "/knowledge-graph"');
     expect(source).toContain('t("nav.main.knowledgeGraph"');

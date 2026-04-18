@@ -184,4 +184,19 @@ describe("NewsEventsSettingsService", () => {
     );
     expect(cacheMock.set).toHaveBeenCalled();
   });
+
+  it("keeps bertopic max items per request at or above the min group size", async () => {
+    const updated = await service.updateSettings("org-2", "admin-1", {
+      clusteringMode: "bertopic_primary",
+      bertopicMinItemsPerGroup: 24,
+      bertopicMaxItemsPerRequest: 6,
+    } as any);
+
+    expect(updated).toEqual(
+      expect.objectContaining({
+        bertopicMinItemsPerGroup: 24,
+        bertopicMaxItemsPerRequest: 24,
+      }),
+    );
+  });
 });

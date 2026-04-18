@@ -14,7 +14,10 @@ import { DashboardChart } from "@/components/echart";
 import { useGetKnowledgeGraphSubgraphQuery, useKnowledgeGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { usePendingAction } from "@/hooks/use-pending-action";
-import { buildKnowledgeGraphExplorerHref } from "@/lib/knowledge-graph-explorer";
+import {
+  buildKnowledgeGraphExplorerHref,
+  normalizeKnowledgeGraphSeedType
+} from "@/lib/knowledge-graph-explorer";
 
 const { Text } = Typography;
 
@@ -612,7 +615,12 @@ export function KnowledgeGraph() {
               </Text>
             </div>
             <Space wrap>
-              <Link href={buildKnowledgeGraphExplorerHref({ seedName: selectedNode.name })}>
+              <Link
+                href={buildKnowledgeGraphExplorerHref({
+                  seedName: selectedNode.name,
+                  seedType: normalizeKnowledgeGraphSeedType(selectedNode.type)
+                })}
+              >
                 <Button>
                   {t("pages.knowledgeGraph.actions.openExplorer", { defaultValue: "Open explorer" })}
                 </Button>

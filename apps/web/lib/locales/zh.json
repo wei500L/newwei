@@ -2076,6 +2076,8 @@
         "confidence": "置信度",
         "evidenceTitle": "证据",
         "evidenceConfidence": "证据",
+        "evidencePermissionTitle": "证据受限",
+        "evidencePermissionDescription": "查看边证据需要具备 items.read 权限。",
         "untitledArticle": "未命名文章",
         "noEvidence": "该边暂无证据记录。",
         "properties": "属性",
@@ -4195,6 +4197,7 @@
       },
       "validation": {
         "required": "必填",
+        "bertopicMaxItemsMustBeAtLeastMinGroup": "BERTopic 单次请求上限必须大于或等于最小分组数量。",
         "lowMustBeAtMostHigh": "低置信度阈值必须小于或等于高置信度阈值。",
         "highMustBeAtLeastLow": "高置信度阈值必须大于或等于低置信度阈值。"
       },

@@ -1,6 +1,4 @@
-import {
-  NewsEventClusteringFailureModel,
-} from "@modular/mongo";
+import { NewsEventClusteringFailureModel } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
 import {
   BadRequestException,
@@ -198,31 +196,38 @@ export class NewsEventClusteringFailureService {
     return groupId;
   }
 
-  async getOverview(orgId: string): Promise<NewsEventClusteringFailureOverview> {
-    const [pendingCount, processingCount, resolvedCount, ignoredCount, latestFailure] =
-      await Promise.all([
-        NewsEventClusteringFailureModel.countDocuments({
-          orgId,
-          status: "pending",
-        }),
-        NewsEventClusteringFailureModel.countDocuments({
-          orgId,
-          status: "processing",
-        }),
-        NewsEventClusteringFailureModel.countDocuments({
-          orgId,
-          status: "resolved",
-        }),
-        NewsEventClusteringFailureModel.countDocuments({
-          orgId,
-          status: "ignored",
-        }),
-        NewsEventClusteringFailureModel.findOne({ orgId })
-          .sort({ createdAt: -1 })
-          .select({ createdAt: 1 })
-          .lean()
-          .exec(),
-      ]);
+  async getOverview(
+    orgId: string,
+  ): Promise<NewsEventClusteringFailureOverview> {
+    const [
+      pendingCount,
+      processingCount,
+      resolvedCount,
+      ignoredCount,
+      latestFailure,
+    ] = await Promise.all([
+      NewsEventClusteringFailureModel.countDocuments({
+        orgId,
+        status: "pending",
+      }),
+      NewsEventClusteringFailureModel.countDocuments({
+        orgId,
+        status: "processing",
+      }),
+      NewsEventClusteringFailureModel.countDocuments({
+        orgId,
+        status: "resolved",
+      }),
+      NewsEventClusteringFailureModel.countDocuments({
+        orgId,
+        status: "ignored",
+      }),
+      NewsEventClusteringFailureModel.findOne({ orgId })
+        .sort({ createdAt: -1 })
+        .select({ createdAt: 1 })
+        .lean()
+        .exec(),
+    ]);
 
     return {
       pendingCount,
@@ -306,36 +311,60 @@ export class NewsEventClusteringFailureService {
     jobId: string;
     model: string | null;
   }) {
-    const row = await this.getFailureGroupOrThrow(input.orgId, input.groupId);
-    if (row.status === "processing") {
-      throw new BadRequestException("Failure group is already processing");
-    }
-    if (row.status === "resolved" || row.status === "ignored") {
-      throw new BadRequestException(
-        "Failure group can no longer be recovered",
-      );
-    }
-
     const startedAt = new Date();
-    const attemptCount = row.attemptCount + 1;
-    const progressTotalCount = row.items.length;
-
-    await NewsEventClusteringFailureModel.updateOne(
-      { orgId: input.orgId, groupId: input.groupId },
+    const row = await NewsEventClusteringFailureModel.findOneAndUpdate(
+      {
+        orgId: input.orgId,
+        groupId: input.groupId,
+        status: "pending",
+      },
       {
         $set: {
           status: "processing",
-          attemptCount,
           lastAttemptAt: startedAt,
           lastError: null,
           activeJobId: input.jobId,
           progressProcessedCount: 0,
-          progressTotalCount,
+          progressTotalCount: 0,
           lastRecoveryModel: input.model,
           resolvedAt: null,
           resolvedById: null,
           resolutionMode: null,
           resolvedEventIds: [],
+        },
+        $inc: {
+          attemptCount: 1,
+        },
+      },
+      { new: true },
+    )
+      .lean()
+      .exec();
+
+    if (!row) {
+      const existing = await this.getFailureGroupOrThrow(
+        input.orgId,
+        input.groupId,
+      );
+      if (existing.status === "processing") {
+        throw new BadRequestException("Failure group is already processing");
+      }
+      if (existing.status === "resolved" || existing.status === "ignored") {
+        throw new BadRequestException(
+          "Failure group can no longer be recovered",
+        );
+      }
+      throw new BadRequestException("Failure group is not ready for recovery");
+    }
+
+    const attemptCount = Math.max(0, Number(row.attemptCount ?? 0));
+    const progressTotalCount = Array.isArray(row.items) ? row.items.length : 0;
+
+    await NewsEventClusteringFailureModel.updateOne(
+      { orgId: input.orgId, groupId: input.groupId },
+      {
+        $set: {
+          progressTotalCount,
         },
       },
     ).exec();
@@ -436,6 +465,13 @@ export class NewsEventClusteringFailureService {
     if (!row) {
       throw new NotFoundException("News event clustering failure not found");
     }
+    const status = row.status ?? "pending";
+    if (status === "processing") {
+      throw new BadRequestException("Failure group is already processing");
+    }
+    if (status === "resolved" || status === "ignored") {
+      throw new BadRequestException("Failure group can no longer be recovered");
+    }
 
     const startedAt = new Date();
     const nextAttemptCount = Math.max(0, Number(row.attemptCount ?? 0)) + 1;
@@ -530,7 +566,10 @@ export class NewsEventClusteringFailureService {
         message,
       });
 
-      this.logger.warn({ err: error, orgId, groupId }, "Vector backfill failed");
+      this.logger.warn(
+        { err: error, orgId, groupId },
+        "Vector backfill failed",
+      );
       throw error;
     }
   }
@@ -624,7 +663,9 @@ export class NewsEventClusteringFailureService {
       ),
       progressTotalCount: Math.max(0, Number(row.progressTotalCount ?? 0)),
       lastRecoveryModel: row.lastRecoveryModel ?? null,
-      resolvedAt: row.resolvedAt ? new Date(row.resolvedAt).toISOString() : null,
+      resolvedAt: row.resolvedAt
+        ? new Date(row.resolvedAt).toISOString()
+        : null,
       resolutionMode: row.resolutionMode ?? null,
       resolvedEventIds: Array.isArray(row.resolvedEventIds)
         ? row.resolvedEventIds.filter(

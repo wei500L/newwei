@@ -743,6 +743,72 @@ export class NewsEventsService {
     });
   }
 
+  async assignNewsSignalToSpecificEventWithSettings(
+    orgId: string,
+    eventId: string,
+    signal: NewsSignal,
+    settings: NewsEventSettings,
+    options?: {
+      similarity?: number | null;
+      assignedBy?: NewsEventAssignmentMethod;
+    },
+  ) {
+    const normalizedEventId = this.normalizeOptionalString(eventId);
+    if (!normalizedEventId) {
+      return this.assignNewsSignalToEvent(orgId, signal, settings);
+    }
+
+    const targetEvent = await this.prisma.newsEvent.findFirst({
+      where: {
+        orgId,
+        id: normalizedEventId,
+        status: NewsEventStatus.active,
+      },
+      select: {
+        id: true,
+        language: true,
+        metadata: true,
+      },
+    });
+    if (!targetEvent) {
+      return this.assignNewsSignalToEvent(orgId, signal, settings);
+    }
+
+    const similarity =
+      typeof options?.similarity === "number" && Number.isFinite(options.similarity)
+        ? options.similarity
+        : 0;
+    const languageAdjusted = this.applyLanguagePenalty(
+      similarity,
+      this.normalizeOptionalString(signal.language),
+      this.normalizeOptionalString(targetEvent.language),
+      settings,
+    );
+    const categoryAdjusted = await this.applyCategoryGate(
+      orgId,
+      languageAdjusted,
+      signal,
+      targetEvent.metadata,
+      settings,
+    );
+    if (
+      categoryAdjusted === null ||
+      categoryAdjusted < settings.vectorMinScore
+    ) {
+      return this.assignNewsSignalToEvent(orgId, signal, settings);
+    }
+
+    return this.assignNewsSignalToSpecificEvent(
+      orgId,
+      normalizedEventId,
+      signal,
+      {
+        ...options,
+        similarity: categoryAdjusted,
+      },
+    );
+  }
+
   async assignNewsSignalToNewEvent(
     orgId: string,
     signal: NewsSignal,

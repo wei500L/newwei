@@ -23,17 +23,17 @@ jest.mock("../../observability/task-log.writer", () => ({
   writeTaskLogBestEffort: jest.fn(async () => undefined),
 }));
 
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 
 import { NewsEventClusteringFailureService } from "../news-event-clustering-failure.service";
 
-const createLeanExecChain = <T,>(value: T) => ({
+const createLeanExecChain = <T>(value: T) => ({
   lean: jest.fn().mockReturnValue({
     exec: jest.fn().mockResolvedValue(value),
   }),
 });
 
-const createExecChain = <T,>(value: T) => ({
+const createExecChain = <T>(value: T) => ({
   exec: jest.fn().mockResolvedValue(value),
 });
 
@@ -51,6 +51,96 @@ describe("NewsEventClusteringFailureService", () => {
   beforeEach(() => {
     jest.resetAllMocks();
     service = new NewsEventClusteringFailureService(eventsMock, settingsMock);
+  });
+
+  it("atomically marks a pending failure group as processing for llm backfill", async () => {
+    modelMocks.findOneAndUpdate.mockReturnValue(
+      createLeanExecChain({
+        orgId: "org-1",
+        groupId: "group-1",
+        status: "processing",
+        attemptCount: 2,
+        items: [
+          {
+            processedArticleId: "pa-1",
+          },
+          {
+            processedArticleId: "pa-2",
+          },
+        ],
+      }),
+    );
+    modelMocks.updateOne.mockReturnValue(
+      createExecChain({ acknowledged: true }),
+    );
+
+    const result = await service.markLlmBackfillQueued({
+      orgId: "org-1",
+      actorId: "admin-1",
+      groupId: "group-1",
+      jobId: "job-1",
+      model: "openai/gpt-4.1-mini",
+    });
+
+    expect(modelMocks.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        orgId: "org-1",
+        groupId: "group-1",
+        status: "pending",
+      },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          status: "processing",
+          activeJobId: "job-1",
+          progressProcessedCount: 0,
+          progressTotalCount: 0,
+          lastRecoveryModel: "openai/gpt-4.1-mini",
+        }),
+        $inc: {
+          attemptCount: 1,
+        },
+      }),
+      { new: true },
+    );
+    expect(modelMocks.updateOne).toHaveBeenCalledWith(
+      { orgId: "org-1", groupId: "group-1" },
+      {
+        $set: {
+          progressTotalCount: 2,
+        },
+      },
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        attemptCount: 2,
+        progressTotalCount: 2,
+      }),
+    );
+  });
+
+  it("rejects llm backfill queueing when the group is already processing", async () => {
+    modelMocks.findOneAndUpdate.mockReturnValue(createLeanExecChain(null));
+    modelMocks.findOne.mockReturnValue(
+      createLeanExecChain({
+        orgId: "org-1",
+        groupId: "group-1",
+        status: "processing",
+        attemptCount: 1,
+        items: [],
+      }),
+    );
+
+    await expect(
+      service.markLlmBackfillQueued({
+        orgId: "org-1",
+        actorId: "admin-1",
+        groupId: "group-1",
+        jobId: "job-1",
+        model: "openai/gpt-4.1-mini",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(modelMocks.updateOne).not.toHaveBeenCalled();
   });
 
   it("resolves a failure group through vector backfill", async () => {
@@ -100,7 +190,9 @@ describe("NewsEventClusteringFailureService", () => {
         ],
       }),
     );
-    modelMocks.updateOne.mockReturnValue(createExecChain({ acknowledged: true }));
+    modelMocks.updateOne.mockReturnValue(
+      createExecChain({ acknowledged: true }),
+    );
     eventsMock.assignNewsSignalToEvent
       .mockResolvedValueOnce({ eventId: "evt-2", created: true })
       .mockResolvedValueOnce({ eventId: "evt-1", created: false });
@@ -140,8 +232,36 @@ describe("NewsEventClusteringFailureService", () => {
     modelMocks.findOne.mockReturnValue(createLeanExecChain(null));
 
     await expect(
-      service.resolveFailureGroupByVectorBackfill("org-1", "admin-1", "missing"),
+      service.resolveFailureGroupByVectorBackfill(
+        "org-1",
+        "admin-1",
+        "missing",
+      ),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("rejects vector backfill when the failure group is already processing", async () => {
+    modelMocks.findOne.mockReturnValue(
+      createLeanExecChain({
+        orgId: "org-1",
+        groupId: "group-1",
+        status: "processing",
+        attemptCount: 1,
+        items: [],
+      }),
+    );
+
+    await expect(
+      service.resolveFailureGroupByVectorBackfill(
+        "org-1",
+        "admin-1",
+        "group-1",
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(settingsMock.getSettings).not.toHaveBeenCalled();
+    expect(eventsMock.assignNewsSignalToEvent).not.toHaveBeenCalled();
+    expect(modelMocks.updateOne).not.toHaveBeenCalled();
   });
 
   it("marks a failure group as ignored and returns a normalized summary", async () => {

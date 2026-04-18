@@ -166,6 +166,7 @@ export function UserDigestPanel() {
   const [digest, setDigest] = useState<UserDigestV1 | null>(null);
   const [delivery, setDelivery] = useState<UserDigestDeliverySettingsV1>(DEFAULT_DELIVERY);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [deliveryErrorMessage, setDeliveryErrorMessage] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [deliveryModalOpen, setDeliveryModalOpen] = useState(false);
   const [browserTimezone] = useState<string>(() => {
@@ -210,12 +211,15 @@ export function UserDigestPanel() {
 
   const loadDelivery = useCallback(async () => {
     setLoadingDelivery(true);
+    setDeliveryErrorMessage(null);
     try {
       const response = await apiClient.get<UserDigestDeliverySettingsV1>("user-digest/delivery");
       setDelivery(response.data ?? DEFAULT_DELIVERY);
     } catch (err) {
       captureClientError("Failed to load user digest delivery settings", err);
-      setErrorMessage(t("pages.digest.deliveryLoadFailed", { defaultValue: "Failed to load digest delivery settings." }));
+      setDeliveryErrorMessage(
+        t("pages.digest.deliveryLoadFailed", { defaultValue: "Failed to load digest delivery settings." })
+      );
     } finally {
       setLoadingDelivery(false);
     }
@@ -400,6 +404,14 @@ export function UserDigestPanel() {
                     {t("pages.digest.delivery.openProfile", { defaultValue: "Open profile" })}
                   </Button>
                 }
+              />
+            ) : null}
+
+            {deliveryErrorMessage ? (
+              <Alert
+                type="warning"
+                showIcon
+                message={deliveryErrorMessage}
               />
             ) : null}
 

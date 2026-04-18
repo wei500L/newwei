@@ -2076,6 +2076,8 @@
         "confidence": "Confidence",
         "evidenceTitle": "Evidence",
         "evidenceConfidence": "Evidence",
+        "evidencePermissionTitle": "Evidence is restricted",
+        "evidencePermissionDescription": "Viewing edge evidence requires the items.read permission.",
         "untitledArticle": "Untitled article",
         "noEvidence": "No evidence records were found for this edge.",
         "properties": "Properties",
@@ -4195,6 +4197,7 @@
       },
       "validation": {
         "required": "Required",
+        "bertopicMaxItemsMustBeAtLeastMinGroup": "BERTopic max items per request must be greater than or equal to min items per group.",
         "lowMustBeAtMostHigh": "Low confidence threshold must be less than or equal to high confidence threshold.",
         "highMustBeAtLeastLow": "High confidence threshold must be greater than or equal to low confidence threshold."
       },

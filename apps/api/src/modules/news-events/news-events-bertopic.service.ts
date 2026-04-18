@@ -189,10 +189,11 @@ export class NewsEventsBertopicService {
               ? this.cosineSimilarity(representative.embedding, member.embedding)
               : 0;
           if ((anchor.eventId ?? "").trim() && similarity >= settings.vectorMinScore) {
-            const result = await this.events.assignNewsSignalToSpecificEvent(
+            const result = await this.events.assignNewsSignalToSpecificEventWithSettings(
               orgId,
               anchor.eventId,
               member.signal,
+              settings,
               {
                 similarity,
                 assignedBy: NewsEventAssignmentMethod.manual,

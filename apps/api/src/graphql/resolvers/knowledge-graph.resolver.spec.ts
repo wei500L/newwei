@@ -1,4 +1,5 @@
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
+import { PERMISSIONS_KEY, PermissionsMode } from "../../common/decorators/permissions.decorator";
 
 import { KnowledgeGraphResolver } from "./knowledge-graph.resolver";
 
@@ -9,7 +10,7 @@ const sampleUser: AuthenticatedUser = {
   lastName: "User",
   orgId: "org-1",
   roleIds: ["role-1"],
-  permissions: ["dashboards.read"]
+  permissions: ["dashboards.read", "items.read"]
 };
 
 describe("KnowledgeGraphResolver", () => {
@@ -108,5 +109,14 @@ describe("KnowledgeGraphResolver", () => {
     await expect(
       resolver.knowledgeGraphEdgeEvidence({} as any, "edge-1", undefined)
     ).rejects.toThrow("Unauthenticated");
+  });
+
+  it("requires items.read for edge evidence access", () => {
+    expect(
+      Reflect.getMetadata(PERMISSIONS_KEY, KnowledgeGraphResolver.prototype.knowledgeGraphEdgeEvidence)
+    ).toEqual({
+      permissions: ["items.read"],
+      mode: PermissionsMode.Any
+    });
   });
 });

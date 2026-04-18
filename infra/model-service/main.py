@@ -279,7 +279,9 @@ def cluster_topics(
         min_cluster_size = max(2, min(min_topic_size, len(documents)))
         min_samples = max(1, min(5, min_cluster_size - 1))
         n_neighbors = max(2, min(10, len(documents) - 1))
-        n_components = max(2, min(5, embeddings.shape[1] - 1, len(documents) - 1))
+        max_umap_components = max(1, len(documents) - 2)
+        n_components = max(1, min(5, embeddings.shape[1] - 1, max_umap_components))
+        umap_init = "random" if len(documents) <= n_components + 1 else "spectral"
 
         topic_model = BERTopic(
             embedding_model=None,
@@ -289,6 +291,7 @@ def cluster_topics(
             umap_model=UMAP(
                 n_neighbors=n_neighbors,
                 n_components=n_components,
+                init=umap_init,
                 min_dist=0.0,
                 metric="cosine",
                 low_memory=True,

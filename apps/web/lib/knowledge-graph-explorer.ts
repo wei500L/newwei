@@ -53,7 +53,9 @@ function clampInteger(value: string | null, minimum: number, maximum: number, fa
   return Math.min(maximum, Math.max(minimum, parsed));
 }
 
-function normalizeSeedType(value: string | null): KnowledgeGraphSeedType | undefined {
+export function normalizeKnowledgeGraphSeedType(
+  value: string | null | undefined
+): KnowledgeGraphSeedType | undefined {
   if (!value) {
     return undefined;
   }
@@ -86,7 +88,7 @@ export function parseKnowledgeGraphExplorerParams(
 
   return {
     seedName,
-    seedType: normalizeSeedType(searchParams.get("seedType")),
+    seedType: normalizeKnowledgeGraphSeedType(searchParams.get("seedType")),
     maxDepth: clampInteger(
       searchParams.get("depth"),
       KNOWLEDGE_GRAPH_MIN_DEPTH,

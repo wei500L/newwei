@@ -293,6 +293,21 @@ export class NewsEventsSettingsService {
       rawTimelineLowConfidenceThreshold,
       rawTimelineHighConfidenceThreshold,
     );
+    const bertopicMinItemsPerGroup = this.clampInt(
+      value.bertopicMinItemsPerGroup,
+      MIN_BERTOPIC_MIN_ITEMS_PER_GROUP,
+      MAX_BERTOPIC_MIN_ITEMS_PER_GROUP,
+      defaults.bertopicMinItemsPerGroup,
+    );
+    const bertopicMaxItemsPerRequest = Math.max(
+      bertopicMinItemsPerGroup,
+      this.clampInt(
+        value.bertopicMaxItemsPerRequest,
+        MIN_BERTOPIC_MAX_ITEMS_PER_REQUEST,
+        MAX_BERTOPIC_MAX_ITEMS_PER_REQUEST,
+        defaults.bertopicMaxItemsPerRequest,
+      ),
+    );
 
     return {
       enabled:
@@ -309,18 +324,8 @@ export class NewsEventsSettingsService {
         value.clusteringMode,
         defaults.clusteringMode,
       ),
-      bertopicMinItemsPerGroup: this.clampInt(
-        value.bertopicMinItemsPerGroup,
-        MIN_BERTOPIC_MIN_ITEMS_PER_GROUP,
-        MAX_BERTOPIC_MIN_ITEMS_PER_GROUP,
-        defaults.bertopicMinItemsPerGroup,
-      ),
-      bertopicMaxItemsPerRequest: this.clampInt(
-        value.bertopicMaxItemsPerRequest,
-        MIN_BERTOPIC_MAX_ITEMS_PER_REQUEST,
-        MAX_BERTOPIC_MAX_ITEMS_PER_REQUEST,
-        defaults.bertopicMaxItemsPerRequest,
-      ),
+      bertopicMinItemsPerGroup,
+      bertopicMaxItemsPerRequest,
       bertopicMinTopicSize: this.clampInt(
         value.bertopicMinTopicSize,
         MIN_BERTOPIC_MIN_TOPIC_SIZE,

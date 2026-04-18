@@ -122,12 +122,16 @@ export function buildActionRailNavConfig(
       label: t("nav.main.map", { defaultValue: "Map" }),
       path: "/map",
     },
-    {
-      key: "/knowledge-graph",
-      icon: <ClusterOutlined />,
-      label: t("nav.main.knowledgeGraph", { defaultValue: "Knowledge Graph" }),
-      path: "/knowledge-graph",
-    },
+    ...(canViewDashboards
+      ? [
+          {
+            key: "/knowledge-graph",
+            icon: <ClusterOutlined />,
+            label: t("nav.main.knowledgeGraph", { defaultValue: "Knowledge Graph" }),
+            path: "/knowledge-graph",
+          },
+        ]
+      : []),
     {
       key: "/finance",
       icon: <FundOutlined />,

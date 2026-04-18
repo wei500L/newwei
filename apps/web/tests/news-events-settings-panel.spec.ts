@@ -19,5 +19,7 @@ describe("news events settings panel llm recovery wiring", () => {
     expect(source).toContain("Open LLM gateway settings");
     expect(source).toContain("progressProcessedCount");
     expect(source).toContain("lastRecoveryModel");
+    expect(source).toContain("bertopicMaxItemsMustBeAtLeastMinGroup");
+    expect(source).toContain('dependencies={["bertopicMinItemsPerGroup"]}');
   });
 });

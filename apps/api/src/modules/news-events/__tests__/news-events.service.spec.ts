@@ -488,6 +488,114 @@ describe("NewsEventsService", () => {
     expect(tx.newsEvent.create).not.toHaveBeenCalled();
   });
 
+  it("falls back to general assignment when gated specific-event merge is rejected", async () => {
+    const prisma = {
+      newsEvent: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "event-1",
+          language: "en",
+          metadata: { classification: { legacyCategory: "politics" } },
+        }),
+      },
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const service = new NewsEventsService(prisma as any, vectorClient as any);
+    const assignGeneralSpy = jest
+      .spyOn(service, "assignNewsSignalToEvent")
+      .mockResolvedValue({ eventId: "event-new", created: true });
+    const assignSpecificSpy = jest.spyOn(service, "assignNewsSignalToSpecificEvent");
+
+    const result = await service.assignNewsSignalToSpecificEventWithSettings(
+      "org-1",
+      "event-1",
+      {
+        articleId: "a-1",
+        processedArticleId: "pa-1",
+        processedItemId: "pi-1",
+        timestamp: new Date("2026-01-03T00:00:00.000Z"),
+        language: "en",
+        title: "t",
+        summary: "s",
+        topics: [],
+        entities: [],
+        sentiment: null,
+        qualityScore: null,
+        legacyCategory: "finance",
+        categoryPath: "finance/markets",
+        categoryConfidence: 0.92,
+      },
+      makeSettings(),
+      {
+        similarity: 0.95,
+        assignedBy: NewsEventAssignmentMethod.manual,
+      },
+    );
+
+    expect(result).toEqual({ eventId: "event-new", created: true });
+    expect(assignGeneralSpy).toHaveBeenCalledWith(
+      "org-1",
+      expect.objectContaining({ processedArticleId: "pa-1" }),
+      expect.any(Object),
+    );
+    expect(assignSpecificSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps gated specific-event merges when the target event passes classification checks", async () => {
+    const prisma = {
+      newsEvent: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "event-1",
+          language: "en",
+          metadata: { classification: { legacyCategory: "finance" } },
+        }),
+      },
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const service = new NewsEventsService(prisma as any, vectorClient as any);
+    const assignGeneralSpy = jest.spyOn(service, "assignNewsSignalToEvent");
+    const assignSpecificSpy = jest
+      .spyOn(service, "assignNewsSignalToSpecificEvent")
+      .mockResolvedValue({ eventId: "event-1", created: true });
+
+    const result = await service.assignNewsSignalToSpecificEventWithSettings(
+      "org-1",
+      "event-1",
+      {
+        articleId: "a-1",
+        processedArticleId: "pa-1",
+        processedItemId: "pi-1",
+        timestamp: new Date("2026-01-03T00:00:00.000Z"),
+        language: "en",
+        title: "t",
+        summary: "s",
+        topics: [],
+        entities: [],
+        sentiment: null,
+        qualityScore: null,
+        legacyCategory: "finance",
+        categoryPath: "finance/markets",
+        categoryConfidence: 0.92,
+      },
+      makeSettings(),
+      {
+        similarity: 0.95,
+        assignedBy: NewsEventAssignmentMethod.manual,
+      },
+    );
+
+    expect(result).toEqual({ eventId: "event-1", created: true });
+    expect(assignSpecificSpy).toHaveBeenCalledWith(
+      "org-1",
+      "event-1",
+      expect.objectContaining({ processedArticleId: "pa-1" }),
+      expect.objectContaining({
+        assignedBy: NewsEventAssignmentMethod.manual,
+        similarity: 0.95,
+      }),
+    );
+    expect(assignGeneralSpy).not.toHaveBeenCalled();
+  });
+
   it("allows listEvents to fetch up to 300 candidates for downstream filtering", async () => {
     const prisma = {
       newsEvent: {
