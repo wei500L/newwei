@@ -8,6 +8,22 @@ import {
 import { UserNewsBehaviorService } from "./user-news-behavior.service";
 
 describe("UserNewsBehaviorService", () => {
+  const createPrismaMock = () => ({
+    $transaction: jest.fn(async (operations: unknown[]) => Promise.all(operations as Promise<unknown>[])),
+    userNewsBehaviorAggregate: {
+      upsert: jest.fn().mockResolvedValue(undefined),
+      count: jest.fn().mockResolvedValue(0),
+      createMany: jest.fn().mockResolvedValue({ count: 0 }),
+      findMany: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    userNewsSimilaritySnapshot: {
+      upsert: jest.fn().mockResolvedValue(undefined),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+  });
+
   beforeEach(() => {
     jest.useFakeTimers().setSystemTime(new Date("2026-04-18T12:00:00.000Z"));
   });
@@ -23,7 +39,8 @@ describe("UserNewsBehaviorService", () => {
       expire: jest.fn().mockResolvedValue(undefined),
       del: jest.fn().mockResolvedValue(undefined),
     };
-    const service = new UserNewsBehaviorService(cache as any);
+    const prisma = createPrismaMock();
+    const service = new UserNewsBehaviorService(cache as any, prisma as any);
 
     await service.record({
       orgId: "org-1",
@@ -62,6 +79,12 @@ describe("UserNewsBehaviorService", () => {
         userId: "user-1",
       }),
     );
+    expect(prisma.userNewsBehaviorAggregate.upsert).toHaveBeenCalled();
+    expect(prisma.userNewsSimilaritySnapshot.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: { dirty: true },
+      }),
+    );
   });
 
   it("aggregates positive, negative, and legacy fallback scores", async () => {
@@ -98,7 +121,7 @@ describe("UserNewsBehaviorService", () => {
       set: jest.fn().mockResolvedValue(undefined),
       hgetall,
     };
-    const service = new UserNewsBehaviorService(cache as any);
+    const service = new UserNewsBehaviorService(cache as any, createPrismaMock() as any);
 
     const profile = await service.getProfile("org-1", "user-1");
 
@@ -116,7 +139,8 @@ describe("UserNewsBehaviorService", () => {
     const cache = {
       delMany: jest.fn().mockResolvedValue(1),
     };
-    const service = new UserNewsBehaviorService(cache as any);
+    const prisma = createPrismaMock();
+    const service = new UserNewsBehaviorService(cache as any, prisma as any);
 
     await service.clearProfile("org-1", "user-1");
 
@@ -137,5 +161,63 @@ describe("UserNewsBehaviorService", () => {
         }),
       ]),
     );
+    expect(prisma.userNewsBehaviorAggregate.deleteMany).toHaveBeenCalledWith({
+      where: { orgId: "org-1", userId: "user-1" },
+    });
+    expect(prisma.userNewsSimilaritySnapshot.deleteMany).toHaveBeenCalledWith({
+      where: { orgId: "org-1", userId: "user-1" },
+    });
+  });
+
+  it("builds a collaborative profile from similar-user aggregates", async () => {
+    const prisma = createPrismaMock();
+    prisma.userNewsBehaviorAggregate.count.mockResolvedValue(1);
+    prisma.userNewsSimilaritySnapshot.findUnique
+      .mockResolvedValueOnce({
+        dirty: false,
+        computedAt: new Date("2026-04-18T11:00:00.000Z"),
+        neighbors: [
+          { userId: "user-2", similarity: 0.8, sharedSignals: 4 },
+          { userId: "user-3", similarity: 0.5, sharedSignals: 3 },
+        ],
+      });
+    prisma.userNewsBehaviorAggregate.findMany.mockResolvedValue([
+      {
+        userId: "user-2",
+        signalType: "topic",
+        signalKey: "ai",
+        score: 4,
+        lastInteractedAt: new Date("2026-04-18T10:00:00.000Z"),
+      },
+      {
+        userId: "user-2",
+        signalType: "item",
+        signalKey: "item-1",
+        score: 3,
+        lastInteractedAt: new Date("2026-04-18T10:00:00.000Z"),
+      },
+      {
+        userId: "user-3",
+        signalType: "domain",
+        signalKey: "example.com",
+        score: 2,
+        lastInteractedAt: new Date("2026-04-17T12:00:00.000Z"),
+      },
+    ]);
+    const cache = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(undefined),
+      hgetall: jest.fn().mockResolvedValue({}),
+      withLock: jest.fn(),
+    };
+    const service = new UserNewsBehaviorService(cache as any, prisma as any);
+
+    const profile = await service.getCollaborativeProfile("org-1", "user-1");
+
+    expect(profile.neighbors).toHaveLength(2);
+    expect(profile.topics.ai).toBeGreaterThan(0);
+    expect(profile.items["item-1"]).toBeGreaterThan(0);
+    expect(profile.domains["example.com"]).toBeGreaterThan(0);
+    expect(profile.degraded).toBe(false);
   });
 });

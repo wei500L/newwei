@@ -70,6 +70,8 @@ model Org {
   userDigestDeliverySchedules          UserDigestDeliverySchedule[]
   contentSubscriptionCatalog           ContentSubscriptionCatalog[]
   userContentSubscriptions             UserContentSubscription[]
+  userNewsBehaviorAggregates           UserNewsBehaviorAggregate[]
+  userNewsSimilaritySnapshots          UserNewsSimilaritySnapshot[]
   invites                              OrgInvite[]
   registrationApplications             RegistrationApplication[]
   oidcConfig                           OrgOidcConfig?
@@ -121,6 +123,8 @@ model User {
   analysisCommentsCreated       AnalysisComment[]          @relation("AnalysisCommentCreatedBy")
   userDigestDeliverySchedules   UserDigestDeliverySchedule[]
   situationMonitorMonitors      SituationMonitorMonitor[]
+  userNewsBehaviorAggregates    UserNewsBehaviorAggregate[]
+  userNewsSimilaritySnapshots   UserNewsSimilaritySnapshot[]
 }
 
 enum GlobalRole {
@@ -748,6 +752,42 @@ model UserSetting {
   @@index([orgId, key])
 }
 
+model UserNewsBehaviorAggregate {
+  id               String                     @id @default(cuid())
+  org              Org                        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId            String
+  user             User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           String
+  signalType       UserNewsBehaviorSignalType
+  signalKey        String
+  score            Float
+  lastInteractedAt DateTime
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+
+  @@unique([orgId, userId, signalType, signalKey])
+  @@index([orgId, signalType, signalKey])
+  @@index([orgId, userId, updatedAt])
+  @@index([orgId, userId, lastInteractedAt])
+}
+
+model UserNewsSimilaritySnapshot {
+  id         String   @id @default(cuid())
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId      String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  dirty      Boolean  @default(true)
+  computedAt DateTime?
+  neighbors  Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([orgId, userId])
+  @@index([orgId, dirty, computedAt])
+  @@index([orgId, updatedAt])
+}
+
 model SavedAnalysisView {
   id          String                 @id @default(cuid())
   org         Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -861,6 +901,15 @@ enum ContentSubscriptionSource {
   recommendation
   related
   legacy
+}
+
+enum UserNewsBehaviorSignalType {
+  source
+  topic
+  entity
+  item
+  event
+  domain
 }
 
 enum SituationMonitorMonitorKind {

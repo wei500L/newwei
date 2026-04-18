@@ -8,6 +8,7 @@ import type { AuthenticatedUser } from "../auth/auth.service";
 import { NewsAggregatorService } from "./news-aggregator.service"
 import { NewsnowDomesticOpinionIndexService } from "./newsnow-domestic-opinion-index.service";
 import { NewsnowHottestAnalysisService } from "./newsnow-hottest-analysis.service";
+import { NewsnowRecommendedService } from "./newsnow-recommended.service";
 
 interface BatchFetchDto {
   sources?: string[]
@@ -17,6 +18,11 @@ interface PersonalizedOrderDto {
   column?: string
   sources?: string[]
   settings?: Record<string, unknown>
+}
+
+interface RecommendedFeedQueryDto {
+  limit?: string;
+  latest?: string;
 }
 
 const SOURCE_ID_PATTERN = /^[a-z0-9_-]+$/i
@@ -29,6 +35,7 @@ export class NewsAggregatorController {
     private readonly newsAggregatorService: NewsAggregatorService,
     private readonly hottestAnalysisService: NewsnowHottestAnalysisService,
     private readonly domesticOpinionIndexService: NewsnowDomesticOpinionIndexService,
+    private readonly recommendedService: NewsnowRecommendedService,
   ) {}
 
   @Public()
@@ -110,6 +117,20 @@ export class NewsAggregatorController {
   ) {
     return this.domesticOpinionIndexService.getDomesticOpinionIndex(user.orgId, {
       hours: this.parseOptionalPositiveInt(hours, "hours", 1, 168),
+    })
+  }
+
+  @Permissions("items.read")
+  @Get("recommended")
+  getRecommendedFeed(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: RecommendedFeedQueryDto,
+  ) {
+    return this.recommendedService.getRecommendedFeed({
+      orgId: user.orgId,
+      userId: user.id,
+      limit: this.parseOptionalPositiveInt(query?.limit, "limit", 1, 100),
+      forceRefresh: this.parseBooleanFlag(query?.latest),
     })
   }
 

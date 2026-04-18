@@ -13,6 +13,7 @@ import { NewsnowActiveSourceRegistryService } from "./newsnow-active-source-regi
 import { NewsnowDomesticOpinionIndexService } from "./newsnow-domestic-opinion-index.service";
 import { NewsnowHottestAnalysisSchedulerService } from "./newsnow-hottest-analysis.scheduler.service";
 import { NewsnowHottestAnalysisService } from "./newsnow-hottest-analysis.service";
+import { NewsnowRecommendedService } from "./newsnow-recommended.service";
 import { NewsnowRealtimeDispatcher } from "./newsnow-realtime.dispatcher";
 import { NewsnowSourceWarmSchedulerService } from "./newsnow-source-warm.scheduler.service";
 import { NewsnowGateway } from "./newsnow.gateway";
@@ -33,6 +34,7 @@ import { NewsnowGateway } from "./newsnow.gateway";
     NewsnowActiveSourceRegistryService,
     NewsnowHottestAnalysisSchedulerService,
     NewsnowHottestAnalysisService,
+    NewsnowRecommendedService,
     NewsnowRealtimeDispatcher,
     NewsnowSourceWarmSchedulerService,
     NewsnowGateway,
@@ -43,6 +45,7 @@ import { NewsnowGateway } from "./newsnow.gateway";
     NewsnowDomesticOpinionIndexService,
     NewsnowActiveSourceRegistryService,
     NewsnowHottestAnalysisService,
+    NewsnowRecommendedService,
     NewsnowRealtimeDispatcher,
   ],
 })

@@ -24,6 +24,7 @@ describe('newsnow header model', () => {
       'focus',
       'hottest',
       'realtime',
+      'recommended',
       'domestic',
       'world',
     ]);

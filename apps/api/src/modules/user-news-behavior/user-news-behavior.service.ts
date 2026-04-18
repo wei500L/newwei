@@ -1,6 +1,8 @@
+import { Prisma, UserNewsBehaviorSignalType } from "@prisma/client";
 import { Injectable } from "@nestjs/common";
 
 import { CacheService } from "../cache/cache.service";
+import { PrismaService } from "../config/prisma.service";
 
 import type { UserNewsBehaviorEventType } from "./dto/record-user-news-behavior.dto";
 import {
@@ -38,6 +40,22 @@ const MAX_ID_LENGTH = 128;
 const MAX_TERMS_PER_DIMENSION = 8;
 const LEGACY_FALLBACK_SCALE = 0.18;
 const LEGACY_FALLBACK_ACTION_THRESHOLD = 2;
+const SIMILARITY_NEIGHBOR_LIMIT = 50;
+const SIMILARITY_CANDIDATE_LIMIT = 80;
+const SIMILARITY_TOP_SIGNALS = 24;
+const SIMILARITY_MIN_SHARED_SIGNALS = 3;
+const SIMILARITY_SNAPSHOT_TTL_MS = 6 * 60 * 60 * 1000;
+const SIMILARITY_LOCK_TTL_MS = 30_000;
+const SIMILARITY_SCORE_HALF_LIFE_DAYS = 90;
+
+const PERSISTED_SIGNAL_DIMENSIONS = [
+  "sources",
+  "topics",
+  "entities",
+  "items",
+  "events",
+  "domains",
+] as const;
 
 type UserNewsBehaviorScoreRecord = Record<string, number>;
 
@@ -68,9 +86,30 @@ export interface UserNewsBehaviorProfile {
   };
 }
 
+export interface UserNewsSimilarityNeighbor {
+  userId: string;
+  similarity: number;
+  sharedSignals: number;
+}
+
+export interface UserNewsCollaborativeProfile {
+  sources: UserNewsBehaviorScoreRecord;
+  topics: UserNewsBehaviorScoreRecord;
+  entities: UserNewsBehaviorScoreRecord;
+  items: UserNewsBehaviorScoreRecord;
+  events: UserNewsBehaviorScoreRecord;
+  domains: UserNewsBehaviorScoreRecord;
+  neighbors: UserNewsSimilarityNeighbor[];
+  degraded: boolean;
+  computedAt: string | null;
+}
+
 @Injectable()
 export class UserNewsBehaviorService {
-  constructor(private readonly cache: CacheService) {}
+  constructor(
+    private readonly cache: CacheService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async record(input: {
     orgId: string;
@@ -97,6 +136,11 @@ export class UserNewsBehaviorService {
       userId: input.userId,
       dayKey: today,
     });
+    const aggregateDeltas: {
+      signalType: UserNewsBehaviorSignalType;
+      signalKey: string;
+      delta: number;
+    }[] = [];
 
     const ops: Promise<unknown>[] = [];
 
@@ -109,6 +153,11 @@ export class UserNewsBehaviorService {
         ),
       );
       if (source) {
+        aggregateDeltas.push({
+          signalType: UserNewsBehaviorSignalType.source,
+          signalKey: source,
+          delta: positiveWeight,
+        });
         ops.push(
           this.cache.hincrby(
             dailyKey,
@@ -118,6 +167,11 @@ export class UserNewsBehaviorService {
         );
       }
       if (itemId) {
+        aggregateDeltas.push({
+          signalType: UserNewsBehaviorSignalType.item,
+          signalKey: itemId,
+          delta: positiveWeight,
+        });
         ops.push(
           this.cache.hincrby(
             dailyKey,
@@ -127,6 +181,11 @@ export class UserNewsBehaviorService {
         );
       }
       if (eventId) {
+        aggregateDeltas.push({
+          signalType: UserNewsBehaviorSignalType.event,
+          signalKey: eventId,
+          delta: positiveWeight,
+        });
         ops.push(
           this.cache.hincrby(
             dailyKey,
@@ -136,6 +195,11 @@ export class UserNewsBehaviorService {
         );
       }
       if (domain) {
+        aggregateDeltas.push({
+          signalType: UserNewsBehaviorSignalType.domain,
+          signalKey: domain,
+          delta: positiveWeight,
+        });
         ops.push(
           this.cache.hincrby(
             dailyKey,
@@ -145,6 +209,11 @@ export class UserNewsBehaviorService {
         );
       }
       for (const term of topics) {
+        aggregateDeltas.push({
+          signalType: UserNewsBehaviorSignalType.topic,
+          signalKey: term,
+          delta: positiveWeight,
+        });
         ops.push(
           this.cache.hincrby(
             dailyKey,
@@ -154,6 +223,11 @@ export class UserNewsBehaviorService {
         );
       }
       for (const term of entities) {
+        aggregateDeltas.push({
+          signalType: UserNewsBehaviorSignalType.entity,
+          signalKey: term,
+          delta: positiveWeight,
+        });
         ops.push(
           this.cache.hincrby(
             dailyKey,
@@ -175,6 +249,11 @@ export class UserNewsBehaviorService {
 
       if (input.type === "not_interested") {
         if (itemId) {
+          aggregateDeltas.push({
+            signalType: UserNewsBehaviorSignalType.item,
+            signalKey: itemId,
+            delta: -negativeWeight,
+          });
           ops.push(
             this.cache.hincrby(
               dailyKey,
@@ -183,6 +262,11 @@ export class UserNewsBehaviorService {
             ),
           );
         } else if (eventId) {
+          aggregateDeltas.push({
+            signalType: UserNewsBehaviorSignalType.event,
+            signalKey: eventId,
+            delta: -negativeWeight,
+          });
           ops.push(
             this.cache.hincrby(
               dailyKey,
@@ -191,6 +275,11 @@ export class UserNewsBehaviorService {
             ),
           );
         } else if (source) {
+          aggregateDeltas.push({
+            signalType: UserNewsBehaviorSignalType.source,
+            signalKey: source,
+            delta: -negativeWeight,
+          });
           ops.push(
             this.cache.hincrby(
               dailyKey,
@@ -199,6 +288,11 @@ export class UserNewsBehaviorService {
             ),
           );
         } else if (topics[0]) {
+          aggregateDeltas.push({
+            signalType: UserNewsBehaviorSignalType.topic,
+            signalKey: topics[0],
+            delta: -negativeWeight,
+          });
           ops.push(
             this.cache.hincrby(
               dailyKey,
@@ -207,6 +301,11 @@ export class UserNewsBehaviorService {
             ),
           );
         } else if (entities[0]) {
+          aggregateDeltas.push({
+            signalType: UserNewsBehaviorSignalType.entity,
+            signalKey: entities[0],
+            delta: -negativeWeight,
+          });
           ops.push(
             this.cache.hincrby(
               dailyKey,
@@ -219,6 +318,11 @@ export class UserNewsBehaviorService {
 
       if (input.type === "unsubscribe") {
         if (topics[0]) {
+          aggregateDeltas.push({
+            signalType: UserNewsBehaviorSignalType.topic,
+            signalKey: topics[0],
+            delta: -negativeWeight,
+          });
           ops.push(
             this.cache.hincrby(
               dailyKey,
@@ -228,6 +332,11 @@ export class UserNewsBehaviorService {
           );
         }
         if (entities[0]) {
+          aggregateDeltas.push({
+            signalType: UserNewsBehaviorSignalType.entity,
+            signalKey: entities[0],
+            delta: -negativeWeight,
+          });
           ops.push(
             this.cache.hincrby(
               dailyKey,
@@ -244,6 +353,11 @@ export class UserNewsBehaviorService {
       this.cache.expire(dailyKey, USER_NEWS_BEHAVIOR_V2_RETENTION_SECONDS),
       this.cache.del(this.buildProfileCacheKey(input.orgId, input.userId)),
     ]);
+    await this.persistAggregateDeltas(
+      input.orgId,
+      input.userId,
+      aggregateDeltas,
+    );
 
     return { recorded: true };
   }
@@ -270,6 +384,14 @@ export class UserNewsBehaviorService {
       ...v2Keys,
       this.buildProfileCacheKey(orgId, userId),
     ]);
+    await this.prisma.$transaction([
+      this.prisma.userNewsBehaviorAggregate.deleteMany({
+        where: { orgId, userId },
+      }),
+      this.prisma.userNewsSimilaritySnapshot.deleteMany({
+        where: { orgId, userId },
+      }),
+    ]);
     return { cleared: true };
   }
 
@@ -281,6 +403,596 @@ export class UserNewsBehaviorService {
       net: profile.net,
       meta: profile.meta,
     };
+  }
+
+  async getCollaborativeProfile(
+    orgId: string,
+    userId: string,
+  ): Promise<UserNewsCollaborativeProfile> {
+    const snapshot = await this.getSimilaritySnapshot(orgId, userId);
+    if (snapshot.neighbors.length === 0) {
+      return {
+        sources: {},
+        topics: {},
+        entities: {},
+        items: {},
+        events: {},
+        domains: {},
+        neighbors: [],
+        degraded: snapshot.degraded,
+        computedAt: snapshot.computedAt,
+      };
+    }
+
+    const similarityByUserId = new Map(
+      snapshot.neighbors.map((neighbor) => [neighbor.userId, neighbor.similarity] as const),
+    );
+    const rows = await this.prisma.userNewsBehaviorAggregate.findMany({
+      where: {
+        orgId,
+        userId: { in: snapshot.neighbors.map((neighbor) => neighbor.userId) },
+      },
+      select: {
+        userId: true,
+        signalType: true,
+        signalKey: true,
+        score: true,
+        lastInteractedAt: true,
+      },
+    });
+
+    const collaborative = this.createEmptyScoreDimensions();
+    for (const row of rows) {
+      const similarity = similarityByUserId.get(row.userId) ?? 0;
+      if (similarity <= 0 || row.score <= 0) {
+        continue;
+      }
+      const dimension = this.mapSignalTypeToDimension(row.signalType);
+      if (!dimension) {
+        continue;
+      }
+      const decayedScore = this.toDecayedScore(row.score, row.lastInteractedAt);
+      if (decayedScore <= 0) {
+        continue;
+      }
+      collaborative[dimension][row.signalKey] =
+        (collaborative[dimension][row.signalKey] ?? 0) +
+        Number((decayedScore * similarity).toFixed(4));
+    }
+
+    return {
+      sources: this.limitScoreRecord(collaborative.sources),
+      topics: this.limitScoreRecord(collaborative.topics),
+      entities: this.limitScoreRecord(collaborative.entities),
+      items: this.limitScoreRecord(collaborative.items),
+      events: this.limitScoreRecord(collaborative.events),
+      domains: this.limitScoreRecord(collaborative.domains),
+      neighbors: snapshot.neighbors,
+      degraded: snapshot.degraded,
+      computedAt: snapshot.computedAt,
+    };
+  }
+
+  private async persistAggregateDeltas(
+    orgId: string,
+    userId: string,
+    deltas: {
+      signalType: UserNewsBehaviorSignalType;
+      signalKey: string;
+      delta: number;
+    }[],
+  ) {
+    const merged = new Map<string, {
+      signalType: UserNewsBehaviorSignalType;
+      signalKey: string;
+      delta: number;
+    }>();
+    for (const delta of deltas) {
+      if (!delta.signalKey || Math.abs(delta.delta) <= 0.0001) {
+        continue;
+      }
+      const key = `${delta.signalType}:${delta.signalKey}`;
+      const existing = merged.get(key);
+      if (existing) {
+        existing.delta = Number((existing.delta + delta.delta).toFixed(4));
+      } else {
+        merged.set(key, { ...delta });
+      }
+    }
+    if (merged.size === 0) {
+      return;
+    }
+
+    const now = new Date();
+    await this.prisma.$transaction(
+      Array.from(merged.values()).map((delta) =>
+        this.prisma.userNewsBehaviorAggregate.upsert({
+          where: {
+            orgId_userId_signalType_signalKey: {
+              orgId,
+              userId,
+              signalType: delta.signalType,
+              signalKey: delta.signalKey,
+            },
+          },
+          create: {
+            orgId,
+            userId,
+            signalType: delta.signalType,
+            signalKey: delta.signalKey,
+            score: delta.delta,
+            lastInteractedAt: now,
+          },
+          update: {
+            score: {
+              increment: delta.delta,
+            },
+            lastInteractedAt: now,
+          },
+        }),
+      ),
+    );
+    await this.markSimilaritySnapshotDirty(orgId, userId);
+  }
+
+  private async markSimilaritySnapshotDirty(orgId: string, userId: string) {
+    await this.prisma.userNewsSimilaritySnapshot.upsert({
+      where: {
+        orgId_userId: {
+          orgId,
+          userId,
+        },
+      },
+      create: {
+        orgId,
+        userId,
+        dirty: true,
+      },
+      update: {
+        dirty: true,
+      },
+    });
+  }
+
+  private async ensurePersistentAggregateBackfill(orgId: string, userId: string) {
+    const existingCount = await this.prisma.userNewsBehaviorAggregate.count({
+      where: { orgId, userId },
+    });
+    if (existingCount > 0) {
+      return;
+    }
+
+    const profile = await this.getProfile(orgId, userId);
+    const now = new Date();
+    const data = PERSISTED_SIGNAL_DIMENSIONS.flatMap((dimension) =>
+      Object.entries(profile.net[dimension] ?? {})
+        .filter(([, score]) => Math.abs(score) > 0.0001)
+        .map(([signalKey, score]) => ({
+          orgId,
+          userId,
+          signalType: this.mapDimensionToSignalType(dimension),
+          signalKey,
+          score: Number(score.toFixed(4)),
+          lastInteractedAt: now,
+        })),
+    );
+    if (data.length === 0) {
+      return;
+    }
+
+    await this.prisma.userNewsBehaviorAggregate.createMany({
+      data,
+      skipDuplicates: true,
+    });
+    await this.markSimilaritySnapshotDirty(orgId, userId);
+  }
+
+  private async getSimilaritySnapshot(orgId: string, userId: string): Promise<{
+    neighbors: UserNewsSimilarityNeighbor[];
+    degraded: boolean;
+    computedAt: string | null;
+  }> {
+    await this.ensurePersistentAggregateBackfill(orgId, userId);
+
+    const existing = await this.prisma.userNewsSimilaritySnapshot.findUnique({
+      where: {
+        orgId_userId: {
+          orgId,
+          userId,
+        },
+      },
+      select: {
+        dirty: true,
+        computedAt: true,
+        neighbors: true,
+      },
+    });
+
+    if (this.isSimilaritySnapshotFresh(existing)) {
+      return {
+        neighbors: this.parseSimilarityNeighbors(existing?.neighbors),
+        degraded: false,
+        computedAt: existing?.computedAt?.toISOString() ?? null,
+      };
+    }
+
+    try {
+      const refreshed = await this.refreshSimilaritySnapshot(orgId, userId);
+      return {
+        neighbors: refreshed.neighbors,
+        degraded: false,
+        computedAt: refreshed.computedAt,
+      };
+    } catch {
+      return {
+        neighbors: this.parseSimilarityNeighbors(existing?.neighbors),
+        degraded: true,
+        computedAt: existing?.computedAt?.toISOString() ?? null,
+      };
+    }
+  }
+
+  private isSimilaritySnapshotFresh(
+    snapshot:
+      | {
+          dirty: boolean;
+          computedAt: Date | null;
+          neighbors: unknown;
+        }
+      | null
+      | undefined,
+  ) {
+    if (!snapshot || snapshot.dirty || !(snapshot.computedAt instanceof Date)) {
+      return false;
+    }
+    return Date.now() - snapshot.computedAt.getTime() <= SIMILARITY_SNAPSHOT_TTL_MS;
+  }
+
+  private async refreshSimilaritySnapshot(
+    orgId: string,
+    userId: string,
+  ): Promise<{ neighbors: UserNewsSimilarityNeighbor[]; computedAt: string }> {
+    const lockKey = `user-news-behavior:similarity:${orgId}:${userId}`;
+    const locked = await this.cache.withLock(
+      lockKey,
+      SIMILARITY_LOCK_TTL_MS,
+      async () => {
+        const targetRows = await this.prisma.userNewsBehaviorAggregate.findMany({
+          where: { orgId, userId },
+          select: {
+            signalType: true,
+            signalKey: true,
+            score: true,
+            lastInteractedAt: true,
+          },
+        });
+
+        const neighbors = await this.computeSimilarityNeighbors(
+          orgId,
+          userId,
+          targetRows,
+        );
+        const computedAt = new Date();
+        const serializedNeighbors = neighbors as unknown as Prisma.InputJsonValue;
+
+        await this.prisma.userNewsSimilaritySnapshot.upsert({
+          where: {
+            orgId_userId: {
+              orgId,
+              userId,
+            },
+          },
+          create: {
+            orgId,
+            userId,
+            dirty: false,
+            computedAt,
+            neighbors: serializedNeighbors,
+          },
+          update: {
+            dirty: false,
+            computedAt,
+            neighbors: serializedNeighbors,
+          },
+        });
+
+        return {
+          neighbors,
+          computedAt: computedAt.toISOString(),
+        };
+      },
+    );
+
+    if (locked) {
+      return locked;
+    }
+
+    const snapshot = await this.prisma.userNewsSimilaritySnapshot.findUnique({
+      where: {
+        orgId_userId: {
+          orgId,
+          userId,
+        },
+      },
+      select: {
+        dirty: true,
+        computedAt: true,
+        neighbors: true,
+      },
+    });
+    if (this.isSimilaritySnapshotFresh(snapshot)) {
+      return {
+        neighbors: this.parseSimilarityNeighbors(snapshot?.neighbors),
+        computedAt: snapshot?.computedAt?.toISOString() ?? new Date().toISOString(),
+      };
+    }
+
+    const targetRows = await this.prisma.userNewsBehaviorAggregate.findMany({
+      where: { orgId, userId },
+      select: {
+        signalType: true,
+        signalKey: true,
+        score: true,
+        lastInteractedAt: true,
+      },
+    });
+    const neighbors = await this.computeSimilarityNeighbors(orgId, userId, targetRows);
+    return {
+      neighbors,
+      computedAt: new Date().toISOString(),
+    };
+  }
+
+  private async computeSimilarityNeighbors(
+    orgId: string,
+    userId: string,
+    targetRows: {
+      signalType: UserNewsBehaviorSignalType;
+      signalKey: string;
+      score: number;
+      lastInteractedAt: Date;
+    }[],
+  ): Promise<UserNewsSimilarityNeighbor[]> {
+    const targetVector = new Map<string, number>();
+    let targetNorm = 0;
+    for (const row of targetRows) {
+      const weighted = this.toDecayedScore(row.score, row.lastInteractedAt);
+      if (Math.abs(weighted) <= 0.0001) {
+        continue;
+      }
+      const key = `${row.signalType}:${row.signalKey}`;
+      targetVector.set(key, weighted);
+      targetNorm += weighted * weighted;
+    }
+    if (targetVector.size === 0 || targetNorm <= 0) {
+      return [];
+    }
+
+    const topSignals = Array.from(targetVector.entries())
+      .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+      .slice(0, SIMILARITY_TOP_SIGNALS)
+      .map(([key]) => {
+        const [signalType, ...rest] = key.split(":");
+        return {
+          signalType: signalType as UserNewsBehaviorSignalType,
+          signalKey: rest.join(":"),
+        };
+      });
+    if (topSignals.length === 0) {
+      return [];
+    }
+
+    const sharedRows = await this.prisma.userNewsBehaviorAggregate.findMany({
+      where: {
+        orgId,
+        userId: { not: userId },
+        OR: topSignals.map((signal) => ({
+          signalType: signal.signalType,
+          signalKey: signal.signalKey,
+        })),
+      },
+      select: {
+        userId: true,
+        signalType: true,
+        signalKey: true,
+        score: true,
+        lastInteractedAt: true,
+      },
+    });
+
+    const previewByUserId = new Map<string, { sharedSignals: Set<string>; sharedDot: number }>();
+    for (const row of sharedRows) {
+      const key = `${row.signalType}:${row.signalKey}`;
+      const targetValue = targetVector.get(key);
+      if (targetValue === undefined) {
+        continue;
+      }
+      const candidateValue = this.toDecayedScore(row.score, row.lastInteractedAt);
+      if (Math.abs(candidateValue) <= 0.0001) {
+        continue;
+      }
+      const preview = previewByUserId.get(row.userId) ?? {
+        sharedSignals: new Set<string>(),
+        sharedDot: 0,
+      };
+      preview.sharedSignals.add(key);
+      preview.sharedDot += targetValue * candidateValue;
+      previewByUserId.set(row.userId, preview);
+    }
+
+    const candidateUserIds = Array.from(previewByUserId.entries())
+      .filter(([, preview]) => preview.sharedSignals.size >= SIMILARITY_MIN_SHARED_SIGNALS)
+      .sort((left, right) => {
+        if (right[1].sharedSignals.size !== left[1].sharedSignals.size) {
+          return right[1].sharedSignals.size - left[1].sharedSignals.size;
+        }
+        return right[1].sharedDot - left[1].sharedDot;
+      })
+      .slice(0, SIMILARITY_CANDIDATE_LIMIT)
+      .map(([candidateUserId]) => candidateUserId);
+    if (candidateUserIds.length === 0) {
+      return [];
+    }
+
+    const candidateRows = await this.prisma.userNewsBehaviorAggregate.findMany({
+      where: {
+        orgId,
+        userId: { in: candidateUserIds },
+      },
+      select: {
+        userId: true,
+        signalType: true,
+        signalKey: true,
+        score: true,
+        lastInteractedAt: true,
+      },
+    });
+
+    const rowsByUserId = new Map<string, typeof candidateRows>();
+    for (const row of candidateRows) {
+      const bucket = rowsByUserId.get(row.userId) ?? [];
+      bucket.push(row);
+      rowsByUserId.set(row.userId, bucket);
+    }
+
+    const neighbors = candidateUserIds
+      .map((candidateUserId) => {
+        const rows = rowsByUserId.get(candidateUserId) ?? [];
+        const preview = previewByUserId.get(candidateUserId);
+        if (!preview || rows.length === 0) {
+          return null;
+        }
+        let dot = 0;
+        let candidateNorm = 0;
+        for (const row of rows) {
+          const candidateValue = this.toDecayedScore(row.score, row.lastInteractedAt);
+          if (Math.abs(candidateValue) <= 0.0001) {
+            continue;
+          }
+          candidateNorm += candidateValue * candidateValue;
+          const key = `${row.signalType}:${row.signalKey}`;
+          const targetValue = targetVector.get(key);
+          if (targetValue !== undefined) {
+            dot += targetValue * candidateValue;
+          }
+        }
+        if (candidateNorm <= 0 || dot <= 0) {
+          return null;
+        }
+        const similarity = dot / Math.sqrt(targetNorm * candidateNorm);
+        if (!Number.isFinite(similarity) || similarity <= 0) {
+          return null;
+        }
+        return {
+          userId: candidateUserId,
+          similarity: Number(similarity.toFixed(4)),
+          sharedSignals: preview.sharedSignals.size,
+        };
+      })
+      .filter((neighbor): neighbor is UserNewsSimilarityNeighbor => Boolean(neighbor))
+      .sort((left, right) => {
+        if (right.similarity !== left.similarity) {
+          return right.similarity - left.similarity;
+        }
+        if (right.sharedSignals !== left.sharedSignals) {
+          return right.sharedSignals - left.sharedSignals;
+        }
+        return left.userId.localeCompare(right.userId);
+      })
+      .slice(0, SIMILARITY_NEIGHBOR_LIMIT);
+
+    return neighbors;
+  }
+
+  private parseSimilarityNeighbors(value: unknown): UserNewsSimilarityNeighbor[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const neighbors = value
+      .map((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          return null;
+        }
+        const record = entry as Record<string, unknown>;
+        const userId = this.normalizeId(
+          typeof record.userId === "string" ? record.userId : undefined,
+        );
+        const similarity =
+          typeof record.similarity === "number" && Number.isFinite(record.similarity)
+            ? Number(record.similarity.toFixed(4))
+            : 0;
+        const sharedSignals =
+          typeof record.sharedSignals === "number" && Number.isFinite(record.sharedSignals)
+            ? Math.max(0, Math.floor(record.sharedSignals))
+            : 0;
+        if (!userId || similarity <= 0 || sharedSignals < SIMILARITY_MIN_SHARED_SIGNALS) {
+          return null;
+        }
+        return {
+          userId,
+          similarity,
+          sharedSignals,
+        };
+      })
+      .filter((neighbor): neighbor is UserNewsSimilarityNeighbor => Boolean(neighbor))
+      .sort((left, right) => right.similarity - left.similarity)
+      .slice(0, SIMILARITY_NEIGHBOR_LIMIT);
+    return neighbors;
+  }
+
+  private toDecayedScore(score: number, lastInteractedAt: Date): number {
+    if (!Number.isFinite(score) || Math.abs(score) <= 0.0001) {
+      return 0;
+    }
+    if (!(lastInteractedAt instanceof Date)) {
+      return Number(score.toFixed(4));
+    }
+    const ageDays = Math.max(
+      0,
+      (Date.now() - lastInteractedAt.getTime()) / (24 * 60 * 60 * 1000),
+    );
+    const decay = Math.pow(0.5, ageDays / SIMILARITY_SCORE_HALF_LIFE_DAYS);
+    return Number((score * decay).toFixed(4));
+  }
+
+  private mapDimensionToSignalType(
+    dimension: (typeof PERSISTED_SIGNAL_DIMENSIONS)[number],
+  ): UserNewsBehaviorSignalType {
+    switch (dimension) {
+      case "sources":
+        return UserNewsBehaviorSignalType.source;
+      case "topics":
+        return UserNewsBehaviorSignalType.topic;
+      case "entities":
+        return UserNewsBehaviorSignalType.entity;
+      case "items":
+        return UserNewsBehaviorSignalType.item;
+      case "events":
+        return UserNewsBehaviorSignalType.event;
+      case "domains":
+        return UserNewsBehaviorSignalType.domain;
+    }
+  }
+
+  private mapSignalTypeToDimension(
+    signalType: UserNewsBehaviorSignalType,
+  ): (typeof PERSISTED_SIGNAL_DIMENSIONS)[number] | null {
+    switch (signalType) {
+      case UserNewsBehaviorSignalType.source:
+        return "sources";
+      case UserNewsBehaviorSignalType.topic:
+        return "topics";
+      case UserNewsBehaviorSignalType.entity:
+        return "entities";
+      case UserNewsBehaviorSignalType.item:
+        return "items";
+      case UserNewsBehaviorSignalType.event:
+        return "events";
+      case UserNewsBehaviorSignalType.domain:
+        return "domains";
+      default:
+        return null;
+    }
   }
 
   private parseScoreRecord(

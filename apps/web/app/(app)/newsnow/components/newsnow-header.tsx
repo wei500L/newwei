@@ -99,6 +99,7 @@ export function NewsnowHeader() {
     () => buildNewsnowHeaderTabs(pathname, metadata),
     [metadata, pathname],
   );
+  const isRecommendedTab = pathname === "/newsnow/recommended";
   const realtimeSummary = useMemo(
     () =>
       buildNewsnowRealtimeSummary({
@@ -199,20 +200,22 @@ export function NewsnowHeader() {
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
               <div className="flex min-w-0 flex-col gap-2.5 md:flex-row md:flex-wrap md:items-stretch">
-                <div className={`${controlShellClassName} min-w-0`}>
-                  <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                    <span className={controlLabelClassName}>排序</span>
-                    <Segmented
-                      size="small"
-                      value={activeSortMode}
-                      options={[
-                        { label: "手动", value: "manual" },
-                        { label: "个性化", value: "personalized" },
-                      ]}
-                      onChange={(value) => setSortMode(value as "manual" | "personalized")}
-                    />
+                {isRecommendedTab ? null : (
+                  <div className={`${controlShellClassName} min-w-0`}>
+                    <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                      <span className={controlLabelClassName}>排序</span>
+                      <Segmented
+                        size="small"
+                        value={activeSortMode}
+                        options={[
+                          { label: "手动", value: "manual" },
+                          { label: "个性化", value: "personalized" },
+                        ]}
+                        onChange={(value) => setSortMode(value as "manual" | "personalized")}
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className={`${controlShellClassName} min-w-0`}>
                   <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">

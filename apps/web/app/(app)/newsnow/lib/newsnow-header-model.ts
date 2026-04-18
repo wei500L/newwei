@@ -1,11 +1,12 @@
 import type { NewsnowSortMode } from '../store/newsnow-store';
 
-const RESERVED_COLUMN_KEYS = new Set(['focus', 'hottest', 'realtime']);
+const RESERVED_COLUMN_KEYS = new Set(['focus', 'hottest', 'realtime', 'recommended']);
 
 const STATIC_TABS = [
   { key: 'focus', name: '关注' },
   { key: 'hottest', name: '最热' },
   { key: 'realtime', name: '实时' },
+  { key: 'recommended', name: '推荐' },
 ] as const;
 
 export const NEWSNOW_UTILITY_LINKS = [
