@@ -173,7 +173,7 @@ export function AppProviders({ children }: PropsWithChildren) {
     if (!stored && typeof navigator !== "undefined") {
       const browserLocale = resolveLocale(navigator.language);
       if (browserLocale !== resolveLocale(i18nInstance.language)) {
-        void i18nInstance.changeLanguage(browserLocale);
+        void changeLanguage(browserLocale);
       }
     }
   }, []);

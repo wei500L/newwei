@@ -2535,7 +2535,7 @@
         "embeddingScore": "Embedding",
         "rerankScore": "Rerank",
         "fused": "Fusion",
-        "open": "打开事件详情"
+        "open": "Open event details"
       },
       "preparation": {
         "failedTitle": "Archive background preparation failed",

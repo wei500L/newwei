@@ -124,7 +124,7 @@ export default function LoginPage() {
   }, [codeCooldown]);
 
   const redirectAfterLogin = () => {
-    const redirectTo = searchParams.get("callbackUrl") ?? "/dashboard";
+    const redirectTo = searchParams.get("callbackUrl") ?? "/welcome";
     router.push(redirectTo);
   };
 

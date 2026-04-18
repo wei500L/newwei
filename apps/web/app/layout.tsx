@@ -1,7 +1,9 @@
+import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 
 import { ThemeProvider } from "@/hooks/use-theme";
 import { auth } from "@/lib/auth";
+import { LANGUAGE_COOKIE_KEY, resolveLocale } from "@/lib/i18n";
 
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
@@ -20,9 +22,10 @@ export default async function RootLayout({
 }: {
   children: ReactNode;
 }) {
-  const session = await auth();
+  const [session, cookieStore] = await Promise.all([auth(), cookies()]);
+  const htmlLang = resolveLocale(cookieStore.get(LANGUAGE_COOKIE_KEY)?.value);
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={htmlLang} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
       </head>

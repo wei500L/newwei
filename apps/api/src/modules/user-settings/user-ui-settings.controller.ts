@@ -5,6 +5,7 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
+import { UpdateOnboardingUiSettingsDto } from "./dto/onboarding-ui-settings.dto";
 import { UpdateNewsnowUiSettingsDto } from "./dto/newsnow-ui-settings.dto";
 import { UpdateRssReaderUiSettingsDto } from "./dto/rss-reader-ui-settings.dto";
 import { UpdateSituationMonitorUiSettingsDto } from "./dto/situation-monitor-ui-settings.dto";
@@ -104,5 +105,19 @@ export class UserUiSettingsController {
     @Body() body: UpdateRssReaderUiSettingsDto,
   ) {
     return this.settings.updateRssReaderUiSettings(user.orgId, user.id, body);
+  }
+
+  @Get("onboarding")
+  @Header("Cache-Control", "no-store")
+  async getOnboardingUiSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.settings.getOnboardingUiSettings(user.orgId, user.id);
+  }
+
+  @Put("onboarding")
+  async updateOnboardingUiSettings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: UpdateOnboardingUiSettingsDto,
+  ) {
+    return this.settings.updateOnboardingUiSettings(user.orgId, user.id, body);
   }
 }

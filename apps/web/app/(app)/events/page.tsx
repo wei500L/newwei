@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { fetchGraphql } from "@/lib/server-graphql";
 
+import { OnboardingPageVisit } from "../components/onboarding-page-visit";
 import type { NewsEventListItem } from "./events-content";
 import { EventsContent } from "./events-content";
 
@@ -131,6 +132,13 @@ export default async function EventsPage({
     },
     accessToken: session.accessToken
   });
-
-  return <EventsContent initialData={initialData ?? null} />;
+  return (
+    <OnboardingPageVisit
+      step="events"
+      title="Event clustering"
+      description="Events combine source corroboration, credibility, and recency so you can scan one storyline instead of dozens of raw headlines."
+    >
+      <EventsContent initialData={initialData ?? null} />
+    </OnboardingPageVisit>
+  );
 }

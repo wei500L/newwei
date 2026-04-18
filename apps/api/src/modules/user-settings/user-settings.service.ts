@@ -17,6 +17,7 @@ const KEY_WAR_MAP_SETTINGS = "ui:war-map:settings:v1";
 const KEY_SPACETIME_TIMELINE_SETTINGS = "ui:spacetime-timeline:settings:v1";
 const KEY_NEWSNOW_SETTINGS = "ui:newsnow:settings:v1";
 const KEY_RSS_READER_SETTINGS = "ui:rss-reader:settings:v1";
+const KEY_ONBOARDING_SETTINGS = "ui:onboarding:settings:v1";
 
 const MAX_MONITORS = 20;
 const MAX_LAYOUT_ITEMS_PER_BREAKPOINT = 64;
@@ -27,6 +28,8 @@ const MAX_NEWSNOW_AFFINITIES = 300;
 const MAX_RSS_READER_SOURCE_IDS = 500;
 const MAX_RSS_READER_LANGUAGE_FILTERS = 24;
 const NEWSNOW_SOURCE_ID_PATTERN = /^[a-z0-9_-]{1,64}$/i;
+const ONBOARDING_KEY_PATTERN = /^[a-z0-9_-]{1,64}$/i;
+const ONBOARDING_STEP_KEYS = ["today", "events", "map", "finance"] as const;
 
 export interface SituationMonitorUiSettingsResponse {
   version: 1;
@@ -132,6 +135,23 @@ export interface RssReaderUiSettingsResponse {
   settings: RssReaderUiSettings | null;
 }
 
+export type OnboardingStepKey = (typeof ONBOARDING_STEP_KEYS)[number];
+
+export interface OnboardingUiSettings {
+  completed: boolean;
+  dismissed: boolean;
+  checklist: Record<OnboardingStepKey, boolean>;
+  completedTours: Partial<Record<OnboardingStepKey, boolean>>;
+}
+
+export interface OnboardingUiSettingsResponse {
+  version: 1;
+  updatedAt: {
+    settings?: string;
+  };
+  settings: OnboardingUiSettings | null;
+}
+
 export function createDefaultNewsnowUiSettings(): NewsnowUiSettings {
   return {
     focusSources: [],
@@ -151,6 +171,20 @@ export function createDefaultRssReaderUiSettings(): RssReaderUiSettings {
     translationProvider: "deeplx",
     targetLanguage: "zh-CN",
     showOriginalContent: false,
+  };
+}
+
+export function createDefaultOnboardingUiSettings(): OnboardingUiSettings {
+  return {
+    completed: false,
+    dismissed: false,
+    checklist: {
+      today: false,
+      events: false,
+      map: false,
+      finance: false,
+    },
+    completedTours: {},
   };
 }
 
@@ -883,6 +917,52 @@ export function normalizeRssReaderUiSettings(
   };
 }
 
+export function normalizeOnboardingUiSettings(
+  value: unknown,
+): OnboardingUiSettings {
+  const defaults = createDefaultOnboardingUiSettings();
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return defaults;
+  }
+
+  const record = value as Record<string, unknown>;
+  const checklist = { ...defaults.checklist };
+  const rawChecklist =
+    record.checklist &&
+    typeof record.checklist === "object" &&
+    !Array.isArray(record.checklist)
+      ? (record.checklist as Record<string, unknown>)
+      : {};
+
+  for (const key of ONBOARDING_STEP_KEYS) {
+    checklist[key] = rawChecklist[key] === true;
+  }
+
+  const completedTours: Partial<Record<OnboardingStepKey, boolean>> = {};
+  const rawTours =
+    record.completedTours &&
+    typeof record.completedTours === "object" &&
+    !Array.isArray(record.completedTours)
+      ? (record.completedTours as Record<string, unknown>)
+      : {};
+
+  for (const key of ONBOARDING_STEP_KEYS) {
+    if (rawTours[key] === true && ONBOARDING_KEY_PATTERN.test(key)) {
+      completedTours[key] = true;
+    }
+  }
+
+  const allChecklistComplete = ONBOARDING_STEP_KEYS.every((key) => checklist[key]);
+
+  return {
+    completed: record.completed === true || allChecklistComplete,
+    dismissed: record.dismissed === true,
+    checklist,
+    completedTours,
+  };
+}
+
 @Injectable()
 export class UserSettingsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -1166,6 +1246,48 @@ export class UserSettingsService {
     }
 
     return this.getRssReaderUiSettings(orgId, userId);
+  }
+
+  async getOnboardingUiSettings(
+    orgId: string,
+    userId: string,
+  ): Promise<OnboardingUiSettingsResponse> {
+    const record = await this.prisma.userSetting.findUnique({
+      where: {
+        orgId_userId_key: {
+          orgId,
+          userId,
+          key: KEY_ONBOARDING_SETTINGS,
+        },
+      },
+      select: { key: true, value: true, updatedAt: true },
+    });
+
+    return {
+      version: 1,
+      updatedAt: {
+        ...(record ? { settings: record.updatedAt.toISOString() } : {}),
+      },
+      settings: record ? normalizeOnboardingUiSettings(record.value) : null,
+    };
+  }
+
+  async updateOnboardingUiSettings(
+    orgId: string,
+    userId: string,
+    input: { settings?: Record<string, unknown> },
+  ): Promise<OnboardingUiSettingsResponse> {
+    if (input.settings !== undefined) {
+      const settings = normalizeOnboardingUiSettings(input.settings);
+      await this.upsert(
+        orgId,
+        userId,
+        KEY_ONBOARDING_SETTINGS,
+        this.toPrismaJson(settings),
+      );
+    }
+
+    return this.getOnboardingUiSettings(orgId, userId);
   }
 
   private async upsert(
