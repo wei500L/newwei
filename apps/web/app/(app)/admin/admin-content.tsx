@@ -164,6 +164,20 @@ export function AdminContent() {
       icon: LineChartOutlined,
     },
     {
+      key: "searchTelemetry",
+      title: t("adminConsole.links.searchTelemetry.title", {
+        defaultValue: "Search Telemetry",
+      }),
+      description: t("adminConsole.links.searchTelemetry.description", {
+        defaultValue:
+          "Inspect archive search submissions, query friction, and load-more usage",
+      }),
+      href: "/admin/search-telemetry",
+      permission: "settings.manage",
+      group: "monitoring",
+      icon: LineChartOutlined,
+    },
+    {
       key: "knowledgeGraphReview",
       title: t("adminConsole.links.knowledgeGraphReview.title", {
         defaultValue: "Knowledge Graph Review",

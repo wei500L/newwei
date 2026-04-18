@@ -65,6 +65,8 @@ import {
 import { safeHttpUrl } from "@/lib/url";
 import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
 
+import { PipelineRecoveryCard } from "./pipeline-recovery-card";
+
 interface ItemDetailProps {
   itemId: string;
 }
@@ -391,7 +393,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken],
   );
-  const { data, loading, error } = useItemQuery({
+  const { data, loading, error, refetch } = useItemQuery({
     variables: { id: itemId },
   });
   const [showDelayHint, setShowDelayHint] = useState(false);
@@ -1882,6 +1884,14 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
             />
           </Space>
         </Card>
+      ) : null}
+
+      {item?.meta?.id ? (
+        <PipelineRecoveryCard
+          itemMetaId={item.meta.id}
+          currentRawItemId={item.raw?.id}
+          onActionComplete={refetch}
+        />
       ) : null}
 
       <Card className="content-card" title={t("items.detail.payloadTitle")}>

@@ -1,7 +1,7 @@
 "use client";
 
-import { KnowledgeGraphContent } from "./knowledge-graph-content";
+import { KnowledgeGraphWorkspace } from "./knowledge-graph-workspace";
 
 export default function KnowledgeGraphPage() {
-  return <KnowledgeGraphContent />;
+  return <KnowledgeGraphWorkspace />;
 }

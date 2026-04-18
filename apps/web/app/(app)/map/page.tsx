@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { WarMap } from "@/app/(app)/dashboard/charts/war-map";
 
 import { OnboardingPageVisit } from "../components/onboarding-page-visit";
+import { GeocodeLookupCard } from "./geocode-lookup-card";
 
 export default function MapPage() {
   const { t } = useTranslation();
@@ -28,6 +29,7 @@ export default function MapPage() {
             })}
           </Typography.Text>
         </div>
+        <GeocodeLookupCard />
         <div className="glass-panel border border-[var(--border)] flex flex-col gap-4 overflow-hidden p-4 sm:p-5">
           <Typography.Text className="text-sm text-slate-600 sm:text-base">
             {t("pages.map.overlay", {
