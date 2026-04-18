@@ -8,6 +8,8 @@ import { useCallback, useEffect, useMemo, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
 import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
+import { AnnotationPanel } from "@/components/analysis/annotation-panel";
+import { AnalysisToolbar } from "@/components/analysis/analysis-toolbar";
 import { useTheme } from "@/hooks/use-theme";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
@@ -154,6 +156,10 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const savedViewId = useMemo(() => {
+    const value = searchParams.get("savedView")?.trim();
+    return value ? value : null;
+  }, [searchParams]);
   // Note: Event details are now displayed on dedicated page /events/[id]
   // Drawer removed to enable URL sharing and proper back button behavior
 
@@ -400,6 +406,17 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
           </Button>
         </Space>
       </Space>
+
+      <AnalysisToolbar
+        surface="events"
+        exportTarget="events"
+        queryString={searchParams.toString()}
+        savedViewId={savedViewId}
+      />
+
+      {savedViewId ? (
+        <AnnotationPanel subjectType="saved_view" subjectId={savedViewId} />
+      ) : null}
 
       <Card className="content-card">
         <div className="flex flex-col gap-3">

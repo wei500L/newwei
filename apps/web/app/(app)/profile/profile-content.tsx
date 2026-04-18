@@ -5,6 +5,7 @@ import {
   Alert,
   Button,
   Card,
+  Divider,
   Form,
   Input,
   Spin,
@@ -43,14 +44,29 @@ interface EmailBindingFormValues {
   code: string;
 }
 
+interface ProfileFormValues {
+  firstName: string;
+  lastName: string;
+}
+
+interface ChangePasswordFormValues {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
 export function ProfileContent() {
   const { t } = useTranslation();
   const { data: session, status, update } = useSession();
+  const [profileForm] = Form.useForm<ProfileFormValues>();
+  const [passwordForm] = Form.useForm<ChangePasswordFormValues>();
   const [emailForm] = Form.useForm<EmailBindingFormValues>();
   const [messageApi, contextHolder] = message.useMessage();
   const [uploading, setUploading] = useState(false);
   const [sendingEmailCode, setSendingEmailCode] = useState(false);
   const [verifyingEmail, setVerifyingEmail] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const [emailCodeCooldown, setEmailCodeCooldown] = useState(0);
   const [pendingEmailHint, setPendingEmailHint] = useState<string | null>(null);
 
@@ -77,6 +93,13 @@ export function ProfileContent() {
     }
     emailForm.setFieldsValue({ email: displayEmail });
   }, [displayEmail, emailForm]);
+
+  useEffect(() => {
+    profileForm.setFieldsValue({
+      firstName: user?.firstName ?? "",
+      lastName: user?.lastName ?? "",
+    });
+  }, [profileForm, user?.firstName, user?.lastName]);
 
   useEffect(() => {
     if (emailCodeCooldown <= 0) {
@@ -217,6 +240,74 @@ export function ProfileContent() {
     }
   }, [apiClient, emailForm, messageApi, t, update]);
 
+  const handleSaveProfile = useCallback(async () => {
+    try {
+      const values = await profileForm.validateFields();
+      setSavingProfile(true);
+      const response = await apiClient.patch<AuthenticatedUser>("auth/profile", {
+        firstName: values.firstName.trim(),
+        lastName: values.lastName.trim(),
+      });
+      await update({ user: response.data });
+      messageApi.success(
+        t("profile.details.success", {
+          defaultValue: "Profile updated.",
+        }),
+      );
+    } catch (error) {
+      const validationError =
+        typeof error === "object" &&
+        error !== null &&
+        "errorFields" in error &&
+        Array.isArray((error as { errorFields?: unknown }).errorFields);
+      if (validationError) {
+        return;
+      }
+      captureClientError("Failed to update profile details", error);
+      messageApi.error(
+        t("profile.details.failed", {
+          defaultValue: "Failed to update profile.",
+        }),
+      );
+    } finally {
+      setSavingProfile(false);
+    }
+  }, [apiClient, messageApi, profileForm, t, update]);
+
+  const handleChangePassword = useCallback(async () => {
+    try {
+      const values = await passwordForm.validateFields();
+      setChangingPassword(true);
+      await apiClient.post("auth/change-password", {
+        currentPassword: values.currentPassword,
+        newPassword: values.newPassword,
+      });
+      passwordForm.resetFields();
+      messageApi.success(
+        t("profile.password.success", {
+          defaultValue: "Password changed. Please use the new password next time you sign in.",
+        }),
+      );
+    } catch (error) {
+      const validationError =
+        typeof error === "object" &&
+        error !== null &&
+        "errorFields" in error &&
+        Array.isArray((error as { errorFields?: unknown }).errorFields);
+      if (validationError) {
+        return;
+      }
+      captureClientError("Failed to change password", error);
+      messageApi.error(
+        t("profile.password.failed", {
+          defaultValue: "Failed to change password.",
+        }),
+      );
+    } finally {
+      setChangingPassword(false);
+    }
+  }, [apiClient, messageApi, passwordForm, t]);
+
   if (status === "loading") {
     return (
       <div
@@ -282,6 +373,152 @@ export function ProfileContent() {
             {t("profile.avatar.requirements")}
           </Typography.Text>
         </div>
+        <Divider style={{ margin: 0 }} />
+        <div className="flex flex-col gap-2">
+          <Typography.Text strong>
+            {t("profile.details.title", { defaultValue: "Profile details" })}
+          </Typography.Text>
+          <Typography.Paragraph type="secondary">
+            {t("profile.details.description", {
+              defaultValue:
+                "Update how your name appears across saved views, comments, and collaboration surfaces.",
+            })}
+          </Typography.Paragraph>
+          <Form form={profileForm} layout="vertical">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Form.Item
+                label={t("profile.details.firstName", {
+                  defaultValue: "First name",
+                })}
+                name="firstName"
+                rules={[
+                  {
+                    required: true,
+                    message: t("profile.details.firstNameRequired", {
+                      defaultValue: "Enter a first name.",
+                    }),
+                  },
+                ]}
+              >
+                <Input maxLength={80} autoComplete="given-name" size="large" />
+              </Form.Item>
+              <Form.Item
+                label={t("profile.details.lastName", {
+                  defaultValue: "Last name",
+                })}
+                name="lastName"
+                rules={[
+                  {
+                    required: true,
+                    message: t("profile.details.lastNameRequired", {
+                      defaultValue: "Enter a last name.",
+                    }),
+                  },
+                ]}
+              >
+                <Input maxLength={80} autoComplete="family-name" size="large" />
+              </Form.Item>
+            </div>
+            <Button
+              type="primary"
+              onClick={() => void handleSaveProfile()}
+              loading={savingProfile}
+            >
+              {t("profile.details.save", { defaultValue: "Save profile" })}
+            </Button>
+          </Form>
+        </div>
+        <Divider style={{ margin: 0 }} />
+        <div className="flex flex-col gap-2">
+          <Typography.Text strong>
+            {t("profile.password.title", { defaultValue: "Change password" })}
+          </Typography.Text>
+          <Typography.Paragraph type="secondary">
+            {t("profile.password.description", {
+              defaultValue:
+                "Changing your password revokes existing refresh tokens and secures future sessions.",
+            })}
+          </Typography.Paragraph>
+          <Form form={passwordForm} layout="vertical">
+            <Form.Item
+              label={t("profile.password.current", {
+                defaultValue: "Current password",
+              })}
+              name="currentPassword"
+              rules={[
+                {
+                  required: true,
+                  message: t("profile.password.currentRequired", {
+                    defaultValue: "Enter your current password.",
+                  }),
+                },
+              ]}
+            >
+              <Input.Password autoComplete="current-password" size="large" />
+            </Form.Item>
+            <Form.Item
+              label={t("profile.password.new", { defaultValue: "New password" })}
+              name="newPassword"
+              rules={[
+                {
+                  required: true,
+                  message: t("profile.password.newRequired", {
+                    defaultValue: "Enter a new password.",
+                  }),
+                },
+                {
+                  min: 8,
+                  message: t("profile.password.newMin", {
+                    defaultValue: "Password must be at least 8 characters.",
+                  }),
+                },
+              ]}
+            >
+              <Input.Password autoComplete="new-password" size="large" />
+            </Form.Item>
+            <Form.Item
+              label={t("profile.password.confirm", {
+                defaultValue: "Confirm new password",
+              })}
+              name="confirmPassword"
+              dependencies={["newPassword"]}
+              rules={[
+                {
+                  required: true,
+                  message: t("profile.password.confirmRequired", {
+                    defaultValue: "Confirm the new password.",
+                  }),
+                },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    if (!value || getFieldValue("newPassword") === value) {
+                      return Promise.resolve();
+                    }
+                    return Promise.reject(
+                      new Error(
+                        t("profile.password.confirmMismatch", {
+                          defaultValue: "Passwords do not match.",
+                        }),
+                      ),
+                    );
+                  },
+                }),
+              ]}
+            >
+              <Input.Password autoComplete="new-password" size="large" />
+            </Form.Item>
+            <Button
+              type="primary"
+              onClick={() => void handleChangePassword()}
+              loading={changingPassword}
+            >
+              {t("profile.password.submit", {
+                defaultValue: "Change password",
+              })}
+            </Button>
+          </Form>
+        </div>
+        <Divider style={{ margin: 0 }} />
         <div className="flex flex-col gap-2">
           <Typography.Text strong>
             {t("profile.emailBinding.title")}

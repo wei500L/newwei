@@ -8,6 +8,7 @@ import {
   DashboardOutlined,
   ExclamationCircleOutlined,
   FundOutlined,
+  FolderOpenOutlined,
   GlobalOutlined,
   HistoryOutlined,
   ReadOutlined,
@@ -64,6 +65,7 @@ export function buildActionRailNavConfig(
     permissions.includes("dashboards.write") ||
     permissions.includes("alerts.manage");
   const canViewDashboards = permissions.includes("dashboards.read");
+  const canUseAnalysis = permissions.includes("analysis.read") || permissions.includes("analysis.write");
 
   const mainNavItems: ActionItem[] = [
     {
@@ -150,6 +152,16 @@ export function buildActionRailNavConfig(
       label: t("nav.main.search", { defaultValue: "Search" }),
       path: "/search",
     },
+    ...(canUseAnalysis
+      ? [
+          {
+            key: "/analysis",
+            icon: <FolderOpenOutlined />,
+            label: t("nav.main.analysis", { defaultValue: "Analysis" }),
+            path: "/analysis",
+          },
+        ]
+      : []),
   ];
 
   if (canUseAssistant) {

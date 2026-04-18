@@ -19,6 +19,7 @@ import { ApiGraphqlModule } from "./graphql/graphql.module";
 import { AkshareModule } from "./modules/akshare/akshare.module";
 import { AlertsModule } from "./modules/alerts/alerts.module";
 import { AnalysisModule } from "./modules/analysis/analysis.module";
+import { AnalysisWorkspaceModule } from "./modules/analysis-workspace/analysis-workspace.module";
 import { ArchiveModule } from "./modules/archive/archive.module";
 import { AssistantModule } from "./modules/assistant/assistant.module";
 import { AuditModule } from "./modules/audit/audit.module";
@@ -87,6 +88,7 @@ const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
     AkshareModule,
     AlertsModule,
     AnalysisModule,
+    AnalysisWorkspaceModule,
     AssistantModule,
     RealtimeSignalsModule,
     SearchTelemetryModule,

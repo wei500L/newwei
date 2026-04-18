@@ -43,6 +43,7 @@ import {
   SendVerificationDto,
   VerifyEmailDto,
 } from "./dto/email-verification.dto";
+import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginWithCodeDto, SendLoginCodeDto } from "./dto/login-with-code.dto";
 import { LoginDto } from "./dto/login.dto";
 import { LogoutDto } from "./dto/logout.dto";
@@ -512,6 +513,22 @@ export class AuthController {
     @Body() body: UpdateProfileDto,
   ) {
     return this.authService.updateProfile(user.id, user.orgId, body);
+  }
+
+  @Post("change-password")
+  @HttpCode(200)
+  @AllowAuthenticated()
+  async changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: ChangePasswordDto,
+  ) {
+    await this.authService.changePassword(
+      user.id,
+      user.orgId,
+      body.currentPassword,
+      body.newPassword,
+    );
+    return { ok: true };
   }
 
   @Get("me")

@@ -28,6 +28,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { emitSituationMonitorMonitorsUpdated } from "@/app/(app)/situation-monitor/utils/monitor-events";
+import { AnnotationPanel } from "@/components/analysis/annotation-panel";
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { MarkdownViewer } from "@/components/markdown-viewer";
@@ -1898,6 +1899,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           />
         )}
       </Card>
+
+      <AnnotationPanel subjectType="item" subjectId={itemId} />
     </div>
   );
 }

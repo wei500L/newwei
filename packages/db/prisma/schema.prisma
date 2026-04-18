@@ -64,6 +64,9 @@ model Org {
   rssTranslationMetricsDaily           RssTranslationMetricsDaily[]
   observabilitySnapshots               ObservabilitySnapshot[]
   userSettings                         UserSetting[]
+  savedAnalysisViews                   SavedAnalysisView[]
+  analysisThreads                      AnalysisThread[]
+  analysisComments                     AnalysisComment[]
   userDigestDeliverySchedules          UserDigestDeliverySchedule[]
   contentSubscriptionCatalog           ContentSubscriptionCatalog[]
   userContentSubscriptions             UserContentSubscription[]
@@ -110,9 +113,14 @@ model User {
   systemSettingsUpdated         SystemSetting[]            @relation("SystemSettingUpdatedBy")
   rateLimitPoliciesUpdated      RateLimitPolicy[]          @relation("RateLimitPolicyUpdatedBy")
   notifications                 Notification[]
-  userSettings             UserSetting[]
-  userDigestDeliverySchedules UserDigestDeliverySchedule[]
-  situationMonitorMonitors SituationMonitorMonitor[]
+  userSettings                  UserSetting[]
+  savedAnalysisViewsCreated     SavedAnalysisView[]        @relation("SavedAnalysisViewCreatedBy")
+  savedAnalysisViewsUpdated     SavedAnalysisView[]        @relation("SavedAnalysisViewUpdatedBy")
+  analysisThreadsCreated        AnalysisThread[]           @relation("AnalysisThreadCreatedBy")
+  analysisThreadsUpdated        AnalysisThread[]           @relation("AnalysisThreadUpdatedBy")
+  analysisCommentsCreated       AnalysisComment[]          @relation("AnalysisCommentCreatedBy")
+  userDigestDeliverySchedules   UserDigestDeliverySchedule[]
+  situationMonitorMonitors      SituationMonitorMonitor[]
 }
 
 enum GlobalRole {
@@ -740,6 +748,62 @@ model UserSetting {
   @@index([orgId, key])
 }
 
+model SavedAnalysisView {
+  id          String                 @id @default(cuid())
+  org         Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId       String
+  createdBy   User                   @relation("SavedAnalysisViewCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdById String
+  updatedBy   User                   @relation("SavedAnalysisViewUpdatedBy", fields: [updatedById], references: [id], onDelete: Cascade)
+  updatedById String
+  title       String
+  description String?
+  surface     SavedAnalysisSurface
+  routePath   String
+  queryState  Json
+  visibility  SavedAnalysisVisibility @default(private)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  @@index([orgId, surface, visibility, updatedAt])
+  @@index([orgId, createdById, updatedAt])
+}
+
+model AnalysisThread {
+  id           String              @id @default(cuid())
+  org          Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId        String
+  createdBy    User                @relation("AnalysisThreadCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdById  String
+  updatedBy    User                @relation("AnalysisThreadUpdatedBy", fields: [updatedById], references: [id], onDelete: Cascade)
+  updatedById  String
+  subjectType  AnalysisSubjectType
+  subjectId    String
+  noteMarkdown String?
+  comments     AnalysisComment[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@unique([orgId, subjectType, subjectId])
+  @@index([orgId, updatedAt])
+}
+
+model AnalysisComment {
+  id           String         @id @default(cuid())
+  org          Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId        String
+  thread       AnalysisThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  threadId     String
+  createdBy    User           @relation("AnalysisCommentCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdById  String
+  bodyMarkdown String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([orgId, threadId, createdAt])
+  @@index([threadId, createdAt])
+}
+
 model UserDigestDeliverySchedule {
   id           String                     @id @default(cuid())
   org          Org                        @relation(fields: [orgId], references: [id])
@@ -768,6 +832,23 @@ enum UserDigestDeliveryStatus {
   sent
   empty_notified
   failed
+}
+
+enum SavedAnalysisSurface {
+  search
+  items
+  events
+}
+
+enum SavedAnalysisVisibility {
+  private
+  org_shared
+}
+
+enum AnalysisSubjectType {
+  saved_view
+  item
+  event
 }
 
 enum ContentSubscriptionKind {

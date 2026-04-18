@@ -1235,7 +1235,27 @@ export class AuthService {
     orgId: string | undefined,
     input: UpdateProfileDto,
   ) {
-    const updates: { avatarUrl?: string | null } = {};
+    const updates: {
+      firstName?: string;
+      lastName?: string;
+      avatarUrl?: string | null;
+    } = {};
+
+    if (input.firstName !== undefined) {
+      const trimmed = input.firstName.trim();
+      if (!trimmed) {
+        throw new BadRequestException("First name cannot be empty");
+      }
+      updates.firstName = trimmed;
+    }
+
+    if (input.lastName !== undefined) {
+      const trimmed = input.lastName.trim();
+      if (!trimmed) {
+        throw new BadRequestException("Last name cannot be empty");
+      }
+      updates.lastName = trimmed;
+    }
 
     if (input.avatarUrl !== undefined) {
       const trimmed = input.avatarUrl.trim();
@@ -1261,6 +1281,58 @@ export class AuthService {
 
     await this.invalidateProfileCache(userId, orgId);
     return this.getUserProfile(userId, orgId);
+  }
+
+  async changePassword(
+    userId: string,
+    orgId: string | undefined,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    const currentTrimmed = currentPassword.trim();
+    const nextTrimmed = newPassword.trim();
+    if (!currentTrimmed || !nextTrimmed) {
+      throw new BadRequestException("Password fields are required");
+    }
+    if (currentTrimmed === nextTrimmed) {
+      throw new BadRequestException(
+        "New password must be different from current password",
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        passwordHash: true,
+      },
+    });
+    if (!user) {
+      throw new UnauthorizedException("Invalid credentials");
+    }
+
+    const passwordValid = await bcrypt.compare(
+      currentTrimmed,
+      user.passwordHash,
+    );
+    if (!passwordValid) {
+      throw new UnauthorizedException("Invalid credentials");
+    }
+
+    const passwordHash = await bcrypt.hash(nextTrimmed, 10);
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+    ]);
+
+    await this.invalidateProfileCache(userId, orgId);
   }
 
   async getUserProfile(userId: string, orgId?: string) {

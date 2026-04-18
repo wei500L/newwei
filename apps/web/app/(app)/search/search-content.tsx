@@ -33,6 +33,8 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { ItemsView } from "@/app/(app)/items/items-view";
+import { AnnotationPanel } from "@/components/analysis/annotation-panel";
+import { AnalysisToolbar } from "@/components/analysis/analysis-toolbar";
 import {
   EnhancedSearchBox,
   type SearchSuggestionStatus,
@@ -258,6 +260,10 @@ export function SearchContent() {
   const [loadingMoreByVertical, setLoadingMoreByVertical] = useState<
     Partial<Record<ArchiveVertical, boolean>>
   >({});
+  const savedViewId = useMemo(() => {
+    const value = searchParams.get("savedView")?.trim();
+    return value ? value : null;
+  }, [searchParams]);
 
   const query = (searchParams.get("q") ?? "").trim();
   const [searchInput, setSearchInput] = useState(query);
@@ -720,6 +726,17 @@ export function SearchContent() {
           })}
         </Typography.Text>
       </Space>
+
+      <AnalysisToolbar
+        surface="search"
+        exportTarget="search"
+        queryString={searchParams.toString()}
+        savedViewId={savedViewId}
+      />
+
+      {savedViewId ? (
+        <AnnotationPanel subjectType="saved_view" subjectId={savedViewId} />
+      ) : null}
 
       <Card className="content-card">
         <Space direction="vertical" size={12} style={{ width: "100%" }}>

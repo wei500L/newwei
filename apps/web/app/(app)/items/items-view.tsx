@@ -37,6 +37,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
+import { AnnotationPanel } from "@/components/analysis/annotation-panel";
+import { AnalysisToolbar } from "@/components/analysis/analysis-toolbar";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import {
   EnhancedSearchBox,
@@ -959,6 +961,10 @@ export function ItemsView({
   const urlPageSize = clampItemsPageSize(urlRawPageSize);
   const urlRanking = searchParams.get("ranking");
   const urlOrder = searchParams.get(ITEMS_ORDER_QUERY_KEY);
+  const savedViewId = useMemo(() => {
+    const value = searchParams.get("savedView")?.trim();
+    return value ? value : null;
+  }, [searchParams]);
 
   // Local State (UI + query source of truth)
   const [searchInput, setSearchInput] = useState(urlSearch);
@@ -2350,6 +2356,17 @@ export function ItemsView({
               {t("items.quickNav.events")}
             </Button>
           </div>
+        ) : null}
+
+        <AnalysisToolbar
+          surface="items"
+          exportTarget="items"
+          queryString={searchParams.toString()}
+          savedViewId={savedViewId}
+        />
+
+        {savedViewId ? (
+          <AnnotationPanel subjectType="saved_view" subjectId={savedViewId} />
         ) : null}
 
         {/* Header Controls */}
