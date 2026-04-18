@@ -2,6 +2,7 @@ export type SituationMonitorMatchReasonCode =
   | "keyword"
   | "topic"
   | "entity"
+  | "source"
   | "semantic"
   | "rerank"
   | "geo";
@@ -76,6 +77,8 @@ export interface StoredSituationMonitor {
   rawKeywords: string[];
   approvedTopics: string[];
   approvedEntities: string[];
+  approvedSources: string[];
+  approvedGeos: string[];
   approvedLexicalTerms: string[];
   rejectedSuggestions: SituationMonitorRejectedSuggestions;
   location?: SituationMonitorLocation;

@@ -45,6 +45,8 @@ export function getDefaultMonitorReasonLabel(
       return 'Topic matched';
     case 'entity':
       return 'Entity matched';
+    case 'source':
+      return 'Source matched';
     case 'semantic':
       return 'Semantic recall';
     case 'rerank':

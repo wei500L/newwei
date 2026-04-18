@@ -1,23 +1,23 @@
-import { ProcessedItemModel } from '@modular/mongo';
-import { createLogger } from '@modular/utils';
-import { Injectable } from '@nestjs/common';
+import { ProcessedItemModel } from "@modular/mongo";
+import { createLogger, extractCountryCodeFromText } from "@modular/utils";
+import { Injectable } from "@nestjs/common";
 import {
   ContentSubscriptionKind,
   ContentSubscriptionSource,
   Prisma,
-} from '@prisma/client';
+} from "@prisma/client";
 
-import { toPrismaJsonValue } from '../../common/prisma-json';
-import { CacheService } from '../cache/cache.service';
-import { PrismaService } from '../config/prisma.service';
-import { LiteLlmService } from '../news-pipeline/litellm.service';
+import { toPrismaJsonValue } from "../../common/prisma-json";
+import { CacheService } from "../cache/cache.service";
+import { PrismaService } from "../config/prisma.service";
+import { LiteLlmService } from "../news-pipeline/litellm.service";
 import {
   NewsClassificationSettingsService,
   type NewsClassificationTaxonomyNode,
-} from '../news-pipeline/news-classification-settings.service';
-import { SituationMonitorMonitorsService } from '../situation-monitor/situation-monitor-monitors.service';
-import { USER_DIGEST_PREFERENCE_KEY } from '../user-digest/user-digest.constants';
-import { UserNewsBehaviorService } from '../user-news-behavior/user-news-behavior.service';
+} from "../news-pipeline/news-classification-settings.service";
+import { SituationMonitorMonitorsService } from "../situation-monitor/situation-monitor-monitors.service";
+import { USER_DIGEST_PREFERENCE_KEY } from "../user-digest/user-digest.constants";
+import { UserNewsBehaviorService } from "../user-news-behavior/user-news-behavior.service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CATALOG_WINDOW_DAYS = 90;
@@ -27,18 +27,38 @@ const CATALOG_SYNC_LOCK_TTL_MS = 15 * 60 * 1000;
 const CATALOG_MAX_CANDIDATES_PER_KIND = 240;
 const CATALOG_PERSIST_BATCH_SIZE = 64;
 const CATALOG_LIST_LIMIT = 200;
-const UNCATEGORIZED_TAXONOMY_FILTER = '__uncategorized__';
+const UNCATEGORIZED_TAXONOMY_FILTER = "__uncategorized__";
 const EMBEDDING_BATCH_SIZE = 64;
 const RECOMMENDATION_LIMIT = 12;
 const RECOMMENDATION_CANDIDATE_LIMIT = 48;
 const RELATED_TOPIC_LIMIT = 8;
 const RELATED_TOPIC_CANDIDATE_LIMIT = 36;
 const USER_CONTENT_SUBSCRIPTION_LIMIT_PER_KIND = 50;
-const USER_CONTENT_SUBSCRIPTION_MIGRATION_KEY = 'ai:content-subscription:migrated:v1';
+const USER_CONTENT_SUBSCRIPTION_MIGRATION_KEY =
+  "ai:content-subscription:migrated:v1";
+const CONTENT_SUBSCRIPTION_KIND_SOURCE = "source" as ContentSubscriptionKind;
+const CONTENT_SUBSCRIPTION_KIND_KEYWORD = "keyword" as ContentSubscriptionKind;
+const CONTENT_SUBSCRIPTION_KIND_GEO = "geo" as ContentSubscriptionKind;
 
 const CONTENT_SUBSCRIPTION_KINDS = [
   ContentSubscriptionKind.topic,
   ContentSubscriptionKind.entity,
+  CONTENT_SUBSCRIPTION_KIND_SOURCE,
+  CONTENT_SUBSCRIPTION_KIND_KEYWORD,
+  CONTENT_SUBSCRIPTION_KIND_GEO,
+] as const;
+
+const CATALOG_SYNC_KINDS = [
+  ContentSubscriptionKind.topic,
+  ContentSubscriptionKind.entity,
+  CONTENT_SUBSCRIPTION_KIND_SOURCE,
+  CONTENT_SUBSCRIPTION_KIND_GEO,
+] as const;
+
+const RECOMMENDATION_KINDS = [
+  ContentSubscriptionKind.topic,
+  ContentSubscriptionKind.entity,
+  CONTENT_SUBSCRIPTION_KIND_SOURCE,
 ] as const;
 
 interface CatalogCandidate {
@@ -66,6 +86,18 @@ interface TaxonomyDescriptor {
   nodes: NewsClassificationTaxonomyNode[];
   byPath: Map<string, NewsClassificationTaxonomyNode>;
   documents: { path: string; text: string }[];
+}
+
+export interface DigestSubscriptionValues {
+  focusTopics: string[];
+  focusEntities: string[];
+  focusKeywords: string[];
+  focusSources: { sourceId: string; displayValue: string }[];
+  focusGeos: {
+    normalizedValue: string;
+    displayValue: string;
+    countryCodeAlpha2?: string;
+  }[];
 }
 
 export interface ContentSubscriptionItem {
@@ -119,7 +151,12 @@ export interface ContentSubscriptionBatchResultItem {
   taxonomyPath: string | null;
   taxonomyDisplayName: string | null;
   taxonomyLabels: string[];
-  status: 'subscribed' | 'already_subscribed' | 'deleted' | 'not_found' | 'limit_reached';
+  status:
+    | "subscribed"
+    | "already_subscribed"
+    | "deleted"
+    | "not_found"
+    | "limit_reached";
 }
 
 export interface ContentSubscriptionBatchResponse {
@@ -130,7 +167,9 @@ export interface ContentSubscriptionBatchResponse {
 
 @Injectable()
 export class UserContentSubscriptionsService {
-  private readonly logger = createLogger({ name: 'user-content-subscriptions' });
+  private readonly logger = createLogger({
+    name: "user-content-subscriptions",
+  });
 
   constructor(
     private readonly prisma: PrismaService,
@@ -147,20 +186,20 @@ export class UserContentSubscriptionsService {
   ): Promise<ContentSubscriptionListResponse> {
     await this.ensureLegacyMigration(orgId, userId);
     const taxonomy = await this.getTaxonomyDescriptor(orgId);
-    const ownership = await this.monitors.buildSubscriptionOwnershipMap(orgId, userId);
+    const ownership = await this.monitors.buildSubscriptionOwnershipMap(
+      orgId,
+      userId,
+    );
     const rows = await this.prisma.userContentSubscription.findMany({
       where: { orgId, userId },
       orderBy: [
-        { taxonomyPath: 'asc' },
-        { kind: 'asc' },
-        { displayValue: 'asc' },
+        { taxonomyPath: "asc" },
+        { kind: "asc" },
+        { displayValue: "asc" },
       ],
     });
 
-    const counts: Record<ContentSubscriptionKind, number> = {
-      [ContentSubscriptionKind.topic]: 0,
-      [ContentSubscriptionKind.entity]: 0,
-    };
+    const counts = this.createEmptyCounts();
 
     const items = rows.map((row) => {
       counts[row.kind] += 1;
@@ -204,14 +243,11 @@ export class UserContentSubscriptionsService {
     const taxonomy = await this.getTaxonomyDescriptor(orgId);
     const normalized = this.normalizeInputEntries(input.subscriptions ?? []);
     if (normalized.length === 0) {
-      return this.buildBatchResponse([], {
-        [ContentSubscriptionKind.topic]: await this.prisma.userContentSubscription.count({
-          where: { orgId, userId, kind: ContentSubscriptionKind.topic },
-        }),
-        [ContentSubscriptionKind.entity]: await this.prisma.userContentSubscription.count({
-          where: { orgId, userId, kind: ContentSubscriptionKind.entity },
-        }),
-      }, taxonomy.byPath);
+      return this.buildBatchResponse(
+        [],
+        await this.readSubscriptionCounts(orgId, userId),
+        taxonomy.byPath,
+      );
     }
 
     const existingRows = await this.prisma.userContentSubscription.findMany({
@@ -225,34 +261,53 @@ export class UserContentSubscriptionsService {
       },
     });
     const existingByKey = new Map(
-      existingRows.map((row) => [this.subscriptionKey(row.kind, row.normalizedValue), row]),
+      existingRows.map((row) => [
+        this.subscriptionKey(row.kind, row.normalizedValue),
+        row,
+      ]),
     );
 
-    const counts: Record<ContentSubscriptionKind, number> = {
-      [ContentSubscriptionKind.topic]: await this.prisma.userContentSubscription.count({
-        where: { orgId, userId, kind: ContentSubscriptionKind.topic },
-      }),
-      [ContentSubscriptionKind.entity]: await this.prisma.userContentSubscription.count({
-        where: { orgId, userId, kind: ContentSubscriptionKind.entity },
-      }),
-    };
+    const counts = await this.readSubscriptionCounts(orgId, userId);
 
     const resolutions = await this.resolveCatalogEntries(orgId, normalized);
     const resolutionByKey = new Map(
-      resolutions.map((entry) => [this.subscriptionKey(entry.kind, entry.normalizedValue), entry]),
+      resolutions.map((entry) => [
+        this.subscriptionKey(entry.kind, entry.normalizedValue),
+        entry,
+      ]),
     );
 
     const results: ContentSubscriptionBatchResultItem[] = [];
     for (const entry of normalized) {
       const key = this.subscriptionKey(entry.kind, entry.normalizedValue);
       const existing = existingByKey.get(key);
-      const resolution = resolutionByKey.get(key) ?? this.toAdHocResolution(entry, taxonomy.settingsVersion);
+      const resolution =
+        resolutionByKey.get(key) ??
+        this.toAdHocResolution(entry, taxonomy.settingsVersion);
       if (existing) {
-        results.push(this.toBatchResult('already_subscribed', existing.kind, existing.normalizedValue, existing.displayValue, existing.taxonomyPath, taxonomy.byPath));
+        results.push(
+          this.toBatchResult(
+            "already_subscribed",
+            existing.kind,
+            existing.normalizedValue,
+            existing.displayValue,
+            existing.taxonomyPath,
+            taxonomy.byPath,
+          ),
+        );
         continue;
       }
       if (counts[entry.kind] >= USER_CONTENT_SUBSCRIPTION_LIMIT_PER_KIND) {
-        results.push(this.toBatchResult('limit_reached', entry.kind, entry.normalizedValue, resolution.displayValue, resolution.taxonomyPath, taxonomy.byPath));
+        results.push(
+          this.toBatchResult(
+            "limit_reached",
+            entry.kind,
+            entry.normalizedValue,
+            resolution.displayValue,
+            resolution.taxonomyPath,
+            taxonomy.byPath,
+          ),
+        );
         continue;
       }
 
@@ -270,7 +325,16 @@ export class UserContentSubscriptionsService {
         },
       });
       counts[entry.kind] += 1;
-      results.push(this.toBatchResult('subscribed', created.kind, created.normalizedValue, created.displayValue, created.taxonomyPath, taxonomy.byPath));
+      results.push(
+        this.toBatchResult(
+          "subscribed",
+          created.kind,
+          created.normalizedValue,
+          created.displayValue,
+          created.taxonomyPath,
+          taxonomy.byPath,
+        ),
+      );
     }
 
     await this.monitors.reconcileContentSubscriptionSync(orgId, userId);
@@ -292,14 +356,11 @@ export class UserContentSubscriptionsService {
     const taxonomy = await this.getTaxonomyDescriptor(orgId);
     const normalized = this.normalizeInputEntries(input.subscriptions ?? []);
     if (normalized.length === 0) {
-      return this.buildBatchResponse([], {
-        [ContentSubscriptionKind.topic]: await this.prisma.userContentSubscription.count({
-          where: { orgId, userId, kind: ContentSubscriptionKind.topic },
-        }),
-        [ContentSubscriptionKind.entity]: await this.prisma.userContentSubscription.count({
-          where: { orgId, userId, kind: ContentSubscriptionKind.entity },
-        }),
-      }, taxonomy.byPath);
+      return this.buildBatchResponse(
+        [],
+        await this.readSubscriptionCounts(orgId, userId),
+        taxonomy.byPath,
+      );
     }
 
     const existingRows = await this.prisma.userContentSubscription.findMany({
@@ -313,7 +374,10 @@ export class UserContentSubscriptionsService {
       },
     });
     const existingByKey = new Map(
-      existingRows.map((row) => [this.subscriptionKey(row.kind, row.normalizedValue), row]),
+      existingRows.map((row) => [
+        this.subscriptionKey(row.kind, row.normalizedValue),
+        row,
+      ]),
     );
 
     if (existingRows.length > 0) {
@@ -327,9 +391,11 @@ export class UserContentSubscriptionsService {
     }
 
     const results = normalized.map((entry) => {
-      const existing = existingByKey.get(this.subscriptionKey(entry.kind, entry.normalizedValue));
+      const existing = existingByKey.get(
+        this.subscriptionKey(entry.kind, entry.normalizedValue),
+      );
       return this.toBatchResult(
-        existing ? 'deleted' : 'not_found',
+        existing ? "deleted" : "not_found",
         entry.kind,
         entry.normalizedValue,
         existing?.displayValue ?? entry.displayValue,
@@ -354,6 +420,13 @@ export class UserContentSubscriptionsService {
   ): Promise<ContentSubscriptionCatalogResponse> {
     await this.ensureCatalogFresh(orgId);
     const taxonomy = await this.getTaxonomyDescriptor(orgId);
+    if (options?.kind === CONTENT_SUBSCRIPTION_KIND_KEYWORD) {
+      return {
+        limit: this.normalizeCatalogLimit(options.limit),
+        taxonomyVersion: taxonomy.settingsVersion,
+        items: [],
+      };
+    }
     const since = new Date(Date.now() - CATALOG_WINDOW_DAYS * DAY_MS);
     const limit = this.normalizeCatalogLimit(options?.limit);
     const taxonomyPathFilter = options?.taxonomyPath?.trim();
@@ -371,7 +444,11 @@ export class UserContentSubscriptionsService {
         ? {
             OR: [
               { displayValue: { contains: options.query.trim() } },
-              { normalizedValue: { contains: this.normalizeValue(options.query).normalizedValue } },
+              {
+                normalizedValue: {
+                  contains: this.normalizeValue(options.query).normalizedValue,
+                },
+              },
             ],
           }
         : {}),
@@ -379,7 +456,11 @@ export class UserContentSubscriptionsService {
 
     const rows = await this.prisma.contentSubscriptionCatalog.findMany({
       where,
-      orderBy: [{ count: 'desc' }, { lastSeenAt: 'desc' }, { displayValue: 'asc' }],
+      orderBy: [
+        { count: "desc" },
+        { lastSeenAt: "desc" },
+        { displayValue: "asc" },
+      ],
       take: limit,
     });
 
@@ -399,24 +480,34 @@ export class UserContentSubscriptionsService {
     await this.ensureCatalogFresh(orgId);
 
     const taxonomy = await this.getTaxonomyDescriptor(orgId);
-    const profile = await this.behavior.getPersonalizationProfile(orgId, userId);
+    const profile = await this.behavior.getPersonalizationProfile(
+      orgId,
+      userId,
+    );
     const subscribedRows = await this.prisma.userContentSubscription.findMany({
       where: { orgId, userId },
       select: { kind: true, normalizedValue: true },
     });
     const subscribed = new Set(
-      subscribedRows.map((row) => this.subscriptionKey(row.kind, row.normalizedValue)),
+      subscribedRows.map((row) =>
+        this.subscriptionKey(row.kind, row.normalizedValue),
+      ),
     );
 
-    const candidateRows = await this.prisma.contentSubscriptionCatalog.findMany({
-      where: {
-        orgId,
-        count: { gte: CATALOG_MIN_COUNT },
-        lastSeenAt: { gte: new Date(Date.now() - CATALOG_WINDOW_DAYS * DAY_MS) },
+    const candidateRows = await this.prisma.contentSubscriptionCatalog.findMany(
+      {
+        where: {
+          orgId,
+          kind: { in: [...RECOMMENDATION_KINDS] },
+          count: { gte: CATALOG_MIN_COUNT },
+          lastSeenAt: {
+            gte: new Date(Date.now() - CATALOG_WINDOW_DAYS * DAY_MS),
+          },
+        },
+        orderBy: [{ count: "desc" }, { lastSeenAt: "desc" }],
+        take: RECOMMENDATION_CANDIDATE_LIMIT * 4,
       },
-      orderBy: [{ count: 'desc' }, { lastSeenAt: 'desc' }],
-      take: RECOMMENDATION_CANDIDATE_LIMIT * 4,
-    });
+    );
 
     const negativeTopicKeys = new Set(Object.keys(profile.negative.topics));
     const negativeEntityKeys = new Set(Object.keys(profile.negative.entities));
@@ -447,7 +538,9 @@ export class UserContentSubscriptionsService {
       };
     }
 
-    const fallbackTop = availableCandidates.slice(0, limit).map((row) => this.mapCatalogRow(row, taxonomy.byPath));
+    const fallbackTop = availableCandidates
+      .slice(0, limit)
+      .map((row) => this.mapCatalogRow(row, taxonomy.byPath));
     const queryText = this.buildRecommendationQuery(profile);
     if (!queryText) {
       return {
@@ -457,7 +550,11 @@ export class UserContentSubscriptionsService {
       };
     }
 
-    const embeddingRanked = await this.rankCatalogRowsByEmbedding(orgId, queryText, availableCandidates);
+    const embeddingRanked = await this.rankCatalogRowsByEmbedding(
+      orgId,
+      queryText,
+      availableCandidates,
+    );
     if (embeddingRanked.length === 0) {
       return {
         limit,
@@ -466,10 +563,16 @@ export class UserContentSubscriptionsService {
       };
     }
 
-    const reranked = await this.tryRerankCatalogRows(orgId, queryText, embeddingRanked.slice(0, RECOMMENDATION_CANDIDATE_LIMIT));
+    const reranked = await this.tryRerankCatalogRows(
+      orgId,
+      queryText,
+      embeddingRanked.slice(0, RECOMMENDATION_CANDIDATE_LIMIT),
+    );
     const ordered = (reranked.length > 0 ? reranked : embeddingRanked)
       .slice(0, limit)
-      .map((entry) => this.mapCatalogRow(entry.row, taxonomy.byPath, entry.score));
+      .map((entry) =>
+        this.mapCatalogRow(entry.row, taxonomy.byPath, entry.score),
+      );
 
     return {
       limit,
@@ -493,7 +596,9 @@ export class UserContentSubscriptionsService {
     return {
       limit: normalized.length,
       taxonomyVersion: taxonomy.settingsVersion,
-      items: resolved.map((entry) => this.mapCatalogResolution(entry, taxonomy.byPath)),
+      items: resolved.map((entry) =>
+        this.mapCatalogResolution(entry, taxonomy.byPath),
+      ),
     };
   }
 
@@ -533,11 +638,14 @@ export class UserContentSubscriptionsService {
       };
     }
 
-    const subscribedTopicRows = await this.prisma.userContentSubscription.findMany({
-      where: { orgId, userId, kind: ContentSubscriptionKind.topic },
-      select: { normalizedValue: true },
-    });
-    const subscribed = new Set(subscribedTopicRows.map((row) => row.normalizedValue));
+    const subscribedTopicRows =
+      await this.prisma.userContentSubscription.findMany({
+        where: { orgId, userId, kind: ContentSubscriptionKind.topic },
+        select: { normalizedValue: true },
+      });
+    const subscribed = new Set(
+      subscribedTopicRows.map((row) => row.normalizedValue),
+    );
     const where: Prisma.ContentSubscriptionCatalogWhereInput = {
       orgId,
       kind: ContentSubscriptionKind.topic,
@@ -545,15 +653,21 @@ export class UserContentSubscriptionsService {
       lastSeenAt: { gte: new Date(Date.now() - CATALOG_WINDOW_DAYS * DAY_MS) },
       normalizedValue: { not: current.normalizedValue },
       ...(current.taxonomyPath
-        ? { taxonomyPath: { startsWith: this.taxonomyBranchPrefix(current.taxonomyPath) } }
+        ? {
+            taxonomyPath: {
+              startsWith: this.taxonomyBranchPrefix(current.taxonomyPath),
+            },
+          }
         : {}),
     };
     const candidates = await this.prisma.contentSubscriptionCatalog.findMany({
       where,
-      orderBy: [{ count: 'desc' }, { lastSeenAt: 'desc' }],
+      orderBy: [{ count: "desc" }, { lastSeenAt: "desc" }],
       take: RELATED_TOPIC_CANDIDATE_LIMIT * 3,
     });
-    const filtered = candidates.filter((row) => !subscribed.has(row.normalizedValue));
+    const filtered = candidates.filter(
+      (row) => !subscribed.has(row.normalizedValue),
+    );
     if (filtered.length === 0) {
       return {
         limit,
@@ -564,20 +678,29 @@ export class UserContentSubscriptionsService {
 
     const queryText = [
       `related topic: ${current.displayValue}`,
-      current.taxonomyPath ? `taxonomy: ${current.taxonomyPath}` : '',
+      current.taxonomyPath ? `taxonomy: ${current.taxonomyPath}` : "",
     ]
       .filter(Boolean)
-      .join('\n');
+      .join("\n");
     const embeddingRanked = await this.rankCatalogRowsByVector(
       current.embeddingVector,
       filtered,
       RELATED_TOPIC_CANDIDATE_LIMIT,
     );
-    const fallbackRanked = embeddingRanked.length > 0 ? embeddingRanked : filtered.slice(0, limit).map((row) => ({ row, score: row.count }));
-    const reranked = await this.tryRerankCatalogRows(orgId, queryText, fallbackRanked.slice(0, RELATED_TOPIC_CANDIDATE_LIMIT));
+    const fallbackRanked =
+      embeddingRanked.length > 0
+        ? embeddingRanked
+        : filtered.slice(0, limit).map((row) => ({ row, score: row.count }));
+    const reranked = await this.tryRerankCatalogRows(
+      orgId,
+      queryText,
+      fallbackRanked.slice(0, RELATED_TOPIC_CANDIDATE_LIMIT),
+    );
     const ordered = (reranked.length > 0 ? reranked : fallbackRanked)
       .slice(0, limit)
-      .map((entry) => this.mapCatalogRow(entry.row, taxonomy.byPath, entry.score));
+      .map((entry) =>
+        this.mapCatalogRow(entry.row, taxonomy.byPath, entry.score),
+      );
 
     return {
       limit,
@@ -616,11 +739,27 @@ export class UserContentSubscriptionsService {
   }
 
   async getDigestPreferenceValues(orgId: string, userId: string) {
+    const values = await this.getDigestSubscriptionValues(orgId, userId);
+    return {
+      focusTopics: values.focusTopics,
+      focusEntities: values.focusEntities,
+    };
+  }
+
+  async getDigestSubscriptionValues(
+    orgId: string,
+    userId: string,
+  ): Promise<DigestSubscriptionValues> {
     await this.ensureLegacyMigration(orgId, userId);
     const rows = await this.prisma.userContentSubscription.findMany({
       where: { orgId, userId },
-      orderBy: [{ kind: 'asc' }, { displayValue: 'asc' }],
-      select: { kind: true, displayValue: true },
+      orderBy: [{ kind: "asc" }, { displayValue: "asc" }],
+      select: {
+        kind: true,
+        normalizedValue: true,
+        displayValue: true,
+        metadata: true,
+      },
     });
 
     return {
@@ -630,6 +769,27 @@ export class UserContentSubscriptionsService {
       focusEntities: rows
         .filter((row) => row.kind === ContentSubscriptionKind.entity)
         .map((row) => row.displayValue),
+      focusKeywords: rows
+        .filter((row) => row.kind === CONTENT_SUBSCRIPTION_KIND_KEYWORD)
+        .map((row) => row.displayValue),
+      focusSources: rows
+        .filter((row) => row.kind === CONTENT_SUBSCRIPTION_KIND_SOURCE)
+        .map((row) => ({
+          sourceId: row.normalizedValue,
+          displayValue: row.displayValue,
+        })),
+      focusGeos: rows
+        .filter((row) => row.kind === CONTENT_SUBSCRIPTION_KIND_GEO)
+        .map((row) => {
+          const metadata = this.parseRecord(row.metadata);
+          return {
+            normalizedValue: row.normalizedValue,
+            displayValue: row.displayValue,
+            ...(typeof metadata?.countryCodeAlpha2 === "string"
+              ? { countryCodeAlpha2: metadata.countryCodeAlpha2 }
+              : {}),
+          };
+        }),
     };
   }
 
@@ -660,11 +820,19 @@ export class UserContentSubscriptionsService {
     });
 
     const record =
-      legacy?.value && typeof legacy.value === 'object' && !Array.isArray(legacy.value)
+      legacy?.value &&
+      typeof legacy.value === "object" &&
+      !Array.isArray(legacy.value)
         ? (legacy.value as Record<string, unknown>)
         : {};
-    const focusTopics = this.normalizeStringArray(record.focusTopics, USER_CONTENT_SUBSCRIPTION_LIMIT_PER_KIND);
-    const focusEntities = this.normalizeStringArray(record.focusEntities, USER_CONTENT_SUBSCRIPTION_LIMIT_PER_KIND);
+    const focusTopics = this.normalizeStringArray(
+      record.focusTopics,
+      USER_CONTENT_SUBSCRIPTION_LIMIT_PER_KIND,
+    );
+    const focusEntities = this.normalizeStringArray(
+      record.focusEntities,
+      USER_CONTENT_SUBSCRIPTION_LIMIT_PER_KIND,
+    );
 
     if (focusTopics.length > 0) {
       await this.replaceSubscriptionsByKind(
@@ -732,18 +900,26 @@ export class UserContentSubscriptionsService {
     }
 
     const existingKeys = new Set(currentRows.map((row) => row.normalizedValue));
-    const missing = normalized.filter((entry) => !existingKeys.has(entry.normalizedValue));
+    const missing = normalized.filter(
+      (entry) => !existingKeys.has(entry.normalizedValue),
+    );
     if (missing.length === 0) {
       return;
     }
 
     const resolved = await this.resolveCatalogEntries(orgId, missing);
     const resolvedByKey = new Map(
-      resolved.map((entry) => [this.subscriptionKey(entry.kind, entry.normalizedValue), entry]),
+      resolved.map((entry) => [
+        this.subscriptionKey(entry.kind, entry.normalizedValue),
+        entry,
+      ]),
     );
 
     for (const entry of missing) {
-      const resolution = resolvedByKey.get(this.subscriptionKey(entry.kind, entry.normalizedValue)) ?? this.toAdHocResolution(entry, taxonomy.settingsVersion);
+      const resolution =
+        resolvedByKey.get(
+          this.subscriptionKey(entry.kind, entry.normalizedValue),
+        ) ?? this.toAdHocResolution(entry, taxonomy.settingsVersion);
       await this.prisma.userContentSubscription.create({
         data: {
           orgId,
@@ -785,42 +961,73 @@ export class UserContentSubscriptionsService {
   }
 
   private async syncCatalog(orgId: string) {
-    const [topicCandidates, entityCandidates, taxonomy] = await Promise.all([
+    const [
+      topicCandidates,
+      entityCandidates,
+      sourceCandidates,
+      geoCandidates,
+      taxonomy,
+    ] = await Promise.all([
       this.loadTopicCandidates(orgId),
       this.loadEntityCandidates(orgId),
+      this.loadSourceCandidates(orgId),
+      this.loadGeoCandidates(orgId),
       this.getTaxonomyDescriptor(orgId),
     ]);
-    const merged = [...topicCandidates, ...entityCandidates]
-      .sort((a, b) => b.count - a.count || b.lastSeenAt.getTime() - a.lastSeenAt.getTime())
-      .slice(0, CATALOG_MAX_CANDIDATES_PER_KIND * 2);
+    const merged = [
+      ...topicCandidates,
+      ...entityCandidates,
+      ...sourceCandidates,
+      ...geoCandidates,
+    ]
+      .sort(
+        (a, b) =>
+          b.count - a.count || b.lastSeenAt.getTime() - a.lastSeenAt.getTime(),
+      )
+      .slice(0, CATALOG_MAX_CANDIDATES_PER_KIND * CATALOG_SYNC_KINDS.length);
     if (merged.length === 0) {
       await this.persistCatalogSnapshot(orgId, []);
       return;
     }
 
-    const classified = await this.classifyCatalogCandidates(orgId, merged, taxonomy);
-    const classifiedByKey = new Map(
-      classified.map((entry) => [this.subscriptionKey(entry.kind, entry.normalizedValue), entry]),
+    const classified = await this.classifyCatalogCandidates(
+      orgId,
+      merged,
+      taxonomy,
     );
-    const nextRows: Prisma.ContentSubscriptionCatalogCreateManyInput[] = merged.map((candidate) => {
-      const key = this.subscriptionKey(candidate.kind, candidate.normalizedValue);
-      const resolved = classifiedByKey.get(key) ?? this.toAdHocResolution(candidate, taxonomy.settingsVersion);
-      return {
-        orgId,
-        kind: candidate.kind,
-        normalizedValue: candidate.normalizedValue,
-        displayValue: candidate.displayValue,
-        count: candidate.count,
-        lastSeenAt: candidate.lastSeenAt,
-        taxonomyPath: resolved.taxonomyPath,
-        taxonomyVersion: resolved.taxonomyVersion,
-        embeddingModel: resolved.embeddingModel,
-        embeddingVector: resolved.embeddingVector
-          ? toPrismaJsonValue(resolved.embeddingVector)
-          : Prisma.JsonNull,
-        metadata: toPrismaJsonValue(candidate.metadata ?? resolved.metadata ?? {}),
-      };
-    });
+    const classifiedByKey = new Map(
+      classified.map((entry) => [
+        this.subscriptionKey(entry.kind, entry.normalizedValue),
+        entry,
+      ]),
+    );
+    const nextRows: Prisma.ContentSubscriptionCatalogCreateManyInput[] =
+      merged.map((candidate) => {
+        const key = this.subscriptionKey(
+          candidate.kind,
+          candidate.normalizedValue,
+        );
+        const resolved =
+          classifiedByKey.get(key) ??
+          this.toAdHocResolution(candidate, taxonomy.settingsVersion);
+        return {
+          orgId,
+          kind: candidate.kind,
+          normalizedValue: candidate.normalizedValue,
+          displayValue: candidate.displayValue,
+          count: candidate.count,
+          lastSeenAt: candidate.lastSeenAt,
+          taxonomyPath: resolved.taxonomyPath,
+          taxonomyVersion: resolved.taxonomyVersion,
+          embeddingModel: resolved.embeddingModel,
+          embeddingVector: resolved.embeddingVector
+            ? toPrismaJsonValue(resolved.embeddingVector)
+            : Prisma.JsonNull,
+          metadata: toPrismaJsonValue(
+            candidate.metadata ?? resolved.metadata ?? {},
+          ),
+        };
+      });
 
     await this.persistCatalogSnapshot(orgId, nextRows);
   }
@@ -833,7 +1040,7 @@ export class UserContentSubscriptionsService {
       await tx.contentSubscriptionCatalog.deleteMany({
         where: {
           orgId,
-          kind: { in: [...CONTENT_SUBSCRIPTION_KINDS] },
+          kind: { in: [...CATALOG_SYNC_KINDS] },
         },
       });
 
@@ -868,11 +1075,17 @@ export class UserContentSubscriptionsService {
       },
     });
     const existingByKey = new Map(
-      rows.map((row) => [this.subscriptionKey(row.kind, row.normalizedValue), row]),
+      rows.map((row) => [
+        this.subscriptionKey(row.kind, row.normalizedValue),
+        row,
+      ]),
     );
 
     const missing = normalized.filter(
-      (entry) => !existingByKey.has(this.subscriptionKey(entry.kind, entry.normalizedValue)),
+      (entry) =>
+        !existingByKey.has(
+          this.subscriptionKey(entry.kind, entry.normalizedValue),
+        ),
     );
     const classifiedMissing =
       missing.length > 0
@@ -889,7 +1102,10 @@ export class UserContentSubscriptionsService {
           )
         : [];
     const missingByKey = new Map(
-      classifiedMissing.map((entry) => [this.subscriptionKey(entry.kind, entry.normalizedValue), entry]),
+      classifiedMissing.map((entry) => [
+        this.subscriptionKey(entry.kind, entry.normalizedValue),
+        entry,
+      ]),
     );
 
     return normalized.map((entry) => {
@@ -907,7 +1123,10 @@ export class UserContentSubscriptionsService {
           metadata: this.parseRecord(existing.metadata),
         } satisfies CatalogResolution;
       }
-      return missingByKey.get(key) ?? this.toAdHocResolution(entry, taxonomy.settingsVersion);
+      return (
+        missingByKey.get(key) ??
+        this.toAdHocResolution(entry, taxonomy.settingsVersion)
+      );
     });
   }
 
@@ -916,8 +1135,27 @@ export class UserContentSubscriptionsService {
     candidates: CatalogCandidate[],
     taxonomy: TaxonomyDescriptor,
   ): Promise<CatalogResolution[]> {
-    if (candidates.length === 0 || taxonomy.documents.length === 0) {
-      return candidates.map((candidate) => this.toAdHocResolution(candidate, taxonomy.settingsVersion));
+    const taxonomyCandidates = candidates.filter(
+      (candidate) =>
+        candidate.kind === ContentSubscriptionKind.topic ||
+        candidate.kind === ContentSubscriptionKind.entity,
+    );
+    const passthroughCandidates = candidates.filter(
+      (candidate) =>
+        candidate.kind !== ContentSubscriptionKind.topic &&
+        candidate.kind !== ContentSubscriptionKind.entity,
+    );
+
+    if (taxonomyCandidates.length === 0) {
+      return passthroughCandidates.map((candidate) =>
+        this.toAdHocResolution(candidate, taxonomy.settingsVersion),
+      );
+    }
+
+    if (taxonomy.documents.length === 0) {
+      return candidates.map((candidate) =>
+        this.toAdHocResolution(candidate, taxonomy.settingsVersion),
+      );
     }
 
     let taxonomyEmbeddings: { path: string; vector: number[] }[] = [];
@@ -928,8 +1166,8 @@ export class UserContentSubscriptionsService {
         orgId,
         input: taxonomy.documents.map((entry) => entry.text),
         metadata: {
-          source: 'content-subscriptions',
-          stage: 'taxonomy-catalog',
+          source: "content-subscriptions",
+          stage: "taxonomy-catalog",
         },
       });
       embeddingModel = taxonomyResponse.model ?? null;
@@ -937,7 +1175,7 @@ export class UserContentSubscriptionsService {
       for (const row of taxonomyResponse.data ?? []) {
         if (
           !row ||
-          typeof row.index !== 'number' ||
+          typeof row.index !== "number" ||
           !Array.isArray(row.embedding) ||
           row.embedding.length === 0
         ) {
@@ -953,25 +1191,48 @@ export class UserContentSubscriptionsService {
           }
           return { path: entry.path, vector: this.normalizeVector(vector) };
         })
-        .filter((entry): entry is { path: string; vector: number[] } => Boolean(entry));
+        .filter((entry): entry is { path: string; vector: number[] } =>
+          Boolean(entry),
+        );
     } catch (error) {
-      this.logger.warn({ err: error, orgId }, 'Failed to embed taxonomy documents for content catalog classification');
-      return candidates.map((candidate) => {
-        const fallbackPath = this.classifyByKeyword(candidate.displayValue, taxonomy.nodes);
-        return this.toAdHocResolution(candidate, taxonomy.settingsVersion, fallbackPath);
-      });
+      this.logger.warn(
+        { err: error, orgId },
+        "Failed to embed taxonomy documents for content catalog classification",
+      );
+      return [
+        ...taxonomyCandidates.map((candidate) => {
+          const fallbackPath = this.classifyByKeyword(
+            candidate.displayValue,
+            taxonomy.nodes,
+          );
+          return this.toAdHocResolution(
+            candidate,
+            taxonomy.settingsVersion,
+            fallbackPath,
+          );
+        }),
+        ...passthroughCandidates.map((candidate) =>
+          this.toAdHocResolution(candidate, taxonomy.settingsVersion),
+        ),
+      ];
     }
 
-    const results: CatalogResolution[] = [];
-    for (const chunk of this.chunkArray(candidates, EMBEDDING_BATCH_SIZE)) {
+    const results: CatalogResolution[] = passthroughCandidates.map(
+      (candidate) =>
+        this.toAdHocResolution(candidate, taxonomy.settingsVersion),
+    );
+    for (const chunk of this.chunkArray(
+      taxonomyCandidates,
+      EMBEDDING_BATCH_SIZE,
+    )) {
       try {
         const response = await this.liteLlm.embedding({
           orgId,
           model: embeddingModel ?? undefined,
           input: chunk.map((entry) => this.catalogEmbeddingText(entry)),
           metadata: {
-            source: 'content-subscriptions',
-            stage: 'catalog-item',
+            source: "content-subscriptions",
+            stage: "catalog-item",
           },
         });
         const model = response.model ?? embeddingModel;
@@ -979,7 +1240,7 @@ export class UserContentSubscriptionsService {
         for (const row of response.data ?? []) {
           if (
             !row ||
-            typeof row.index !== 'number' ||
+            typeof row.index !== "number" ||
             !Array.isArray(row.embedding) ||
             row.embedding.length === 0
           ) {
@@ -989,7 +1250,9 @@ export class UserContentSubscriptionsService {
         }
         for (const [index, candidate] of chunk.entries()) {
           const vector = vectorByIndex.get(index);
-          const normalizedVector = Array.isArray(vector) ? this.normalizeVector(vector) : [];
+          const normalizedVector = Array.isArray(vector)
+            ? this.normalizeVector(vector)
+            : [];
           const bestPath =
             normalizedVector.length > 0
               ? this.pickBestTaxonomyPath(normalizedVector, taxonomyEmbeddings)
@@ -1001,12 +1264,16 @@ export class UserContentSubscriptionsService {
             taxonomyPath: bestPath,
             taxonomyVersion: taxonomy.settingsVersion,
             embeddingModel: model ?? null,
-            embeddingVector: normalizedVector.length > 0 ? normalizedVector : null,
+            embeddingVector:
+              normalizedVector.length > 0 ? normalizedVector : null,
             metadata: candidate.metadata,
           });
         }
       } catch (error) {
-        this.logger.warn({ err: error, orgId }, 'Failed to embed content subscription catalog candidates');
+        this.logger.warn(
+          { err: error, orgId },
+          "Failed to embed content subscription catalog candidates",
+        );
         for (const candidate of chunk) {
           results.push(
             this.toAdHocResolution(
@@ -1022,7 +1289,9 @@ export class UserContentSubscriptionsService {
     return results;
   }
 
-  private async loadTopicCandidates(orgId: string): Promise<CatalogCandidate[]> {
+  private async loadTopicCandidates(
+    orgId: string,
+  ): Promise<CatalogCandidate[]> {
     const since = new Date(Date.now() - CATALOG_WINDOW_DAYS * DAY_MS);
     const rows = await ProcessedItemModel.aggregate<{
       _id?: string | null;
@@ -1032,8 +1301,8 @@ export class UserContentSubscriptionsService {
       {
         $match: {
           orgId,
-          status: 'completed',
-          'result.topics.0': { $exists: true },
+          status: "completed",
+          "result.topics.0": { $exists: true },
         },
       },
       {
@@ -1048,13 +1317,13 @@ export class UserContentSubscriptionsService {
         $addFields: {
           activityAt: {
             $ifNull: [
-              '$sortAt',
+              "$sortAt",
               {
                 $convert: {
-                  input: '$result.published_at',
-                  to: 'date',
-                  onError: { $ifNull: ['$ingestedAt', '$createdAt'] },
-                  onNull: { $ifNull: ['$ingestedAt', '$createdAt'] },
+                  input: "$result.published_at",
+                  to: "date",
+                  onError: { $ifNull: ["$ingestedAt", "$createdAt"] },
+                  onNull: { $ifNull: ["$ingestedAt", "$createdAt"] },
                 },
               },
             ],
@@ -1067,13 +1336,13 @@ export class UserContentSubscriptionsService {
         },
       },
       {
-        $unwind: '$result.topics',
+        $unwind: "$result.topics",
       },
       {
         $group: {
-          _id: '$result.topics',
+          _id: "$result.topics",
           count: { $sum: 1 },
-          lastSeenAt: { $max: '$activityAt' },
+          lastSeenAt: { $max: "$activityAt" },
         },
       },
       {
@@ -1090,7 +1359,10 @@ export class UserContentSubscriptionsService {
       if (!normalized.normalizedValue) {
         continue;
       }
-      const key = this.subscriptionKey(ContentSubscriptionKind.topic, normalized.normalizedValue);
+      const key = this.subscriptionKey(
+        ContentSubscriptionKind.topic,
+        normalized.normalizedValue,
+      );
       const current = merged.get(key);
       if (!current) {
         merged.set(key, {
@@ -1098,23 +1370,32 @@ export class UserContentSubscriptionsService {
           normalizedValue: normalized.normalizedValue,
           displayValue: normalized.displayValue,
           count: this.toPositiveInt(row.count),
-          lastSeenAt: row.lastSeenAt instanceof Date ? row.lastSeenAt : new Date(),
+          lastSeenAt:
+            row.lastSeenAt instanceof Date ? row.lastSeenAt : new Date(),
         });
         continue;
       }
       current.count += this.toPositiveInt(row.count);
-      if (row.lastSeenAt instanceof Date && row.lastSeenAt > current.lastSeenAt) {
+      if (
+        row.lastSeenAt instanceof Date &&
+        row.lastSeenAt > current.lastSeenAt
+      ) {
         current.lastSeenAt = row.lastSeenAt;
       }
     }
 
     return Array.from(merged.values())
       .filter((entry) => entry.count >= CATALOG_MIN_COUNT)
-      .sort((a, b) => b.count - a.count || b.lastSeenAt.getTime() - a.lastSeenAt.getTime())
+      .sort(
+        (a, b) =>
+          b.count - a.count || b.lastSeenAt.getTime() - a.lastSeenAt.getTime(),
+      )
       .slice(0, CATALOG_MAX_CANDIDATES_PER_KIND);
   }
 
-  private async loadEntityCandidates(orgId: string): Promise<CatalogCandidate[]> {
+  private async loadEntityCandidates(
+    orgId: string,
+  ): Promise<CatalogCandidate[]> {
     const since = new Date(Date.now() - CATALOG_WINDOW_DAYS * DAY_MS);
     const kgRows = await this.prisma.$queryRaw<
       {
@@ -1159,8 +1440,8 @@ export class UserContentSubscriptionsService {
       {
         $match: {
           orgId,
-          status: 'completed',
-          'result.entities.0': { $exists: true },
+          status: "completed",
+          "result.entities.0": { $exists: true },
         },
       },
       {
@@ -1175,13 +1456,13 @@ export class UserContentSubscriptionsService {
         $addFields: {
           activityAt: {
             $ifNull: [
-              '$sortAt',
+              "$sortAt",
               {
                 $convert: {
-                  input: '$result.published_at',
-                  to: 'date',
-                  onError: { $ifNull: ['$ingestedAt', '$createdAt'] },
-                  onNull: { $ifNull: ['$ingestedAt', '$createdAt'] },
+                  input: "$result.published_at",
+                  to: "date",
+                  onError: { $ifNull: ["$ingestedAt", "$createdAt"] },
+                  onNull: { $ifNull: ["$ingestedAt", "$createdAt"] },
                 },
               },
             ],
@@ -1194,14 +1475,14 @@ export class UserContentSubscriptionsService {
         },
       },
       {
-        $unwind: '$result.entities',
+        $unwind: "$result.entities",
       },
       {
         $group: {
-          _id: '$result.entities.name',
-          entityType: { $max: '$result.entities.type' },
+          _id: "$result.entities.name",
+          entityType: { $max: "$result.entities.type" },
           count: { $sum: 1 },
-          lastSeenAt: { $max: '$activityAt' },
+          lastSeenAt: { $max: "$activityAt" },
         },
       },
       {
@@ -1231,7 +1512,97 @@ export class UserContentSubscriptionsService {
 
     return Array.from(merged.values())
       .filter((entry) => entry.count >= CATALOG_MIN_COUNT)
-      .sort((a, b) => b.count - a.count || b.lastSeenAt.getTime() - a.lastSeenAt.getTime())
+      .sort(
+        (a, b) =>
+          b.count - a.count || b.lastSeenAt.getTime() - a.lastSeenAt.getTime(),
+      )
+      .slice(0, CATALOG_MAX_CANDIDATES_PER_KIND);
+  }
+
+  private async loadSourceCandidates(
+    orgId: string,
+  ): Promise<CatalogCandidate[]> {
+    const since = new Date(Date.now() - CATALOG_WINDOW_DAYS * DAY_MS);
+    const grouped = await this.prisma.article.groupBy({
+      by: ["sourceId"],
+      where: {
+        orgId,
+        sourceId: { not: null },
+        crawlAt: { gte: since },
+      },
+      _count: { _all: true },
+      _max: { crawlAt: true },
+    });
+
+    const sourceIds = grouped
+      .map((row) =>
+        typeof row.sourceId === "string" ? row.sourceId.trim() : "",
+      )
+      .filter((value) => value.length > 0);
+    if (sourceIds.length === 0) {
+      return [];
+    }
+
+    const sources = await this.prisma.newsSource.findMany({
+      where: { orgId, id: { in: sourceIds } },
+      select: {
+        id: true,
+        name: true,
+        url: true,
+        language: true,
+        config: true,
+      },
+    });
+    const sourceById = new Map(sources.map((row) => [row.id, row]));
+
+    const candidates: CatalogCandidate[] = [];
+    for (const row of grouped) {
+      const sourceId =
+        typeof row.sourceId === "string" ? row.sourceId.trim() : "";
+      if (!sourceId) {
+        continue;
+      }
+      const source = sourceById.get(sourceId);
+      if (!source) {
+        continue;
+      }
+      candidates.push({
+        kind: CONTENT_SUBSCRIPTION_KIND_SOURCE,
+        normalizedValue: source.id,
+        displayValue: source.name.trim() || source.id,
+        count: this.toPositiveInt(row._count?._all),
+        lastSeenAt: row._max.crawlAt ?? new Date(),
+        metadata: this.buildSourceMetadata(source),
+      });
+    }
+
+    return candidates
+      .filter((entry) => entry.count >= CATALOG_MIN_COUNT)
+      .sort(
+        (a, b) =>
+          b.count - a.count || b.lastSeenAt.getTime() - a.lastSeenAt.getTime(),
+      )
+      .slice(0, CATALOG_MAX_CANDIDATES_PER_KIND);
+  }
+
+  private async loadGeoCandidates(orgId: string): Promise<CatalogCandidate[]> {
+    const since = new Date(Date.now() - CATALOG_WINDOW_DAYS * DAY_MS);
+    const [locationRows, regionRows] = await Promise.all([
+      this.loadGeoCandidateRows(orgId, since, "location"),
+      this.loadGeoCandidateRows(orgId, since, "region"),
+    ]);
+
+    const merged = new Map<string, CatalogCandidate>();
+    for (const row of [...locationRows, ...regionRows]) {
+      this.mergeGeoCandidate(merged, row);
+    }
+
+    return Array.from(merged.values())
+      .filter((entry) => entry.count >= CATALOG_MIN_COUNT)
+      .sort(
+        (a, b) =>
+          b.count - a.count || b.lastSeenAt.getTime() - a.lastSeenAt.getTime(),
+      )
       .slice(0, CATALOG_MAX_CANDIDATES_PER_KIND);
   }
 
@@ -1249,9 +1620,13 @@ export class UserContentSubscriptionsService {
       return;
     }
 
-    const key = this.subscriptionKey(ContentSubscriptionKind.entity, normalized.normalizedValue);
+    const key = this.subscriptionKey(
+      ContentSubscriptionKind.entity,
+      normalized.normalizedValue,
+    );
     const count = this.toPositiveInt(row.count);
-    const lastSeenAt = row.lastSeenAt instanceof Date ? row.lastSeenAt : new Date();
+    const lastSeenAt =
+      row.lastSeenAt instanceof Date ? row.lastSeenAt : new Date();
     const existing = target.get(key);
     if (existing) {
       existing.count += count;
@@ -1259,9 +1634,14 @@ export class UserContentSubscriptionsService {
         existing.lastSeenAt = lastSeenAt;
       }
       const existingEntityType =
-        typeof existing.metadata?.entityType === 'string' ? existing.metadata.entityType : null;
+        typeof existing.metadata?.entityType === "string"
+          ? existing.metadata.entityType
+          : null;
       if (!existingEntityType && row.entityType) {
-        existing.metadata = { ...(existing.metadata ?? {}), entityType: row.entityType };
+        existing.metadata = {
+          ...(existing.metadata ?? {}),
+          entityType: row.entityType,
+        };
       }
       return;
     }
@@ -1276,30 +1656,181 @@ export class UserContentSubscriptionsService {
     });
   }
 
-  private async getTaxonomyDescriptor(orgId: string): Promise<TaxonomyDescriptor> {
+  private async loadGeoCandidateRows(
+    orgId: string,
+    since: Date,
+    field: "location" | "region",
+  ): Promise<
+    {
+      _id?: string | null;
+      count: number;
+      lastSeenAt: Date;
+    }[]
+  > {
+    return ProcessedItemModel.aggregate<{
+      _id?: string | null;
+      count: number;
+      lastSeenAt: Date;
+    }>([
+      {
+        $match: {
+          orgId,
+          status: "completed",
+          [`result.${field}`]: { $exists: true, $ne: null },
+        },
+      },
+      {
+        $project: {
+          createdAt: 1,
+          ingestedAt: 1,
+          sortAt: 1,
+          result: 1,
+        },
+      },
+      {
+        $addFields: {
+          activityAt: {
+            $ifNull: [
+              "$sortAt",
+              {
+                $convert: {
+                  input: "$result.published_at",
+                  to: "date",
+                  onError: { $ifNull: ["$ingestedAt", "$createdAt"] },
+                  onNull: { $ifNull: ["$ingestedAt", "$createdAt"] },
+                },
+              },
+            ],
+          },
+        },
+      },
+      {
+        $match: {
+          activityAt: { $gte: since },
+        },
+      },
+      {
+        $group: {
+          _id: `$result.${field}`,
+          count: { $sum: 1 },
+          lastSeenAt: { $max: "$activityAt" },
+        },
+      },
+      {
+        $sort: { count: -1, lastSeenAt: -1 },
+      },
+      {
+        $limit: CATALOG_MAX_CANDIDATES_PER_KIND * 4,
+      },
+    ]);
+  }
+
+  private mergeGeoCandidate(
+    target: Map<string, CatalogCandidate>,
+    row: {
+      _id?: string | null;
+      count: number | bigint | null | undefined;
+      lastSeenAt: Date | null | undefined;
+    },
+  ) {
+    const normalized = this.normalizeValue(row._id);
+    if (!normalized.normalizedValue) {
+      return;
+    }
+
+    const key = this.subscriptionKey(
+      CONTENT_SUBSCRIPTION_KIND_GEO,
+      normalized.normalizedValue,
+    );
+    const count = this.toPositiveInt(row.count);
+    const lastSeenAt =
+      row.lastSeenAt instanceof Date ? row.lastSeenAt : new Date();
+    const countryCodeAlpha2 =
+      extractCountryCodeFromText(normalized.displayValue) ?? undefined;
+    const metadata = countryCodeAlpha2 ? { countryCodeAlpha2 } : undefined;
+    const existing = target.get(key);
+
+    if (existing) {
+      existing.count += count;
+      if (lastSeenAt > existing.lastSeenAt) {
+        existing.lastSeenAt = lastSeenAt;
+      }
+      if (!existing.metadata && metadata) {
+        existing.metadata = metadata;
+      }
+      return;
+    }
+
+    target.set(key, {
+      kind: CONTENT_SUBSCRIPTION_KIND_GEO,
+      normalizedValue: normalized.normalizedValue,
+      displayValue: normalized.displayValue,
+      count,
+      lastSeenAt,
+      metadata,
+    });
+  }
+
+  private buildSourceMetadata(source: {
+    id: string;
+    url: string;
+    language: string | null;
+    config: Prisma.JsonValue | null;
+  }) {
+    const config =
+      source.config &&
+      typeof source.config === "object" &&
+      !Array.isArray(source.config)
+        ? (source.config as Record<string, unknown>)
+        : null;
+    const seed =
+      config?.seed &&
+      typeof config.seed === "object" &&
+      !Array.isArray(config.seed)
+        ? (config.seed as Record<string, unknown>)
+        : null;
+    const feedUrl =
+      typeof seed?.feedUrl === "string" && seed.feedUrl.trim().length > 0
+        ? seed.feedUrl.trim()
+        : undefined;
+
+    return {
+      sourceId: source.id,
+      siteUrl: source.url,
+      ...(feedUrl ? { feedUrl } : {}),
+      ...(source.language ? { language: source.language } : {}),
+    };
+  }
+
+  private async getTaxonomyDescriptor(
+    orgId: string,
+  ): Promise<TaxonomyDescriptor> {
     const settings = await this.settings.getSettings(orgId);
     const nodes = Array.isArray(settings.taxonomy) ? settings.taxonomy : [];
     return {
       settingsVersion: settings.taxonomyVersion,
       nodes,
       byPath: new Map(nodes.map((node) => [node.path, node])),
-      documents: nodes.map((node) => ({ path: node.path, text: this.taxonomyDocument(node) })),
+      documents: nodes.map((node) => ({
+        path: node.path,
+        text: this.taxonomyDocument(node),
+      })),
     };
   }
 
   private taxonomyDocument(node: NewsClassificationTaxonomyNode): string {
-    const keywords = node.keywords.join(', ');
-    const synonyms = node.synonyms.join(', ');
+    const keywords = node.keywords.join(", ");
+    const synonyms = node.synonyms.join(", ");
     return [
       `path=${node.path}`,
       `legacy=${node.legacyCategory}`,
       `name=${node.displayName}`,
       `description=${node.description}`,
-      keywords ? `keywords=${keywords}` : '',
-      synonyms ? `synonyms=${synonyms}` : '',
+      keywords ? `keywords=${keywords}` : "",
+      synonyms ? `synonyms=${synonyms}` : "",
     ]
       .filter((entry) => entry.length > 0)
-      .join('\n');
+      .join("\n");
   }
 
   private mapSubscriptionRow(
@@ -1356,7 +1887,7 @@ export class UserContentSubscriptionsService {
       taxonomyDisplayName: taxonomyInfo.displayName,
       taxonomyLabels: taxonomyInfo.labels,
       metadata: this.parseRecord(row.metadata),
-      ...(typeof score === 'number' && Number.isFinite(score) ? { score } : {}),
+      ...(typeof score === "number" && Number.isFinite(score) ? { score } : {}),
     };
   }
 
@@ -1376,19 +1907,31 @@ export class UserContentSubscriptionsService {
       taxonomyDisplayName: taxonomyInfo.displayName,
       taxonomyLabels: taxonomyInfo.labels,
       metadata: row.metadata,
-      ...(typeof score === 'number' && Number.isFinite(score) ? { score } : {}),
+      ...(typeof score === "number" && Number.isFinite(score) ? { score } : {}),
     };
   }
 
   private async readSubscriptionCounts(orgId: string, userId: string) {
+    const grouped = await this.prisma.userContentSubscription.groupBy({
+      by: ["kind"],
+      where: { orgId, userId },
+      _count: { _all: true },
+    });
+    const counts = this.createEmptyCounts();
+    for (const row of grouped) {
+      counts[row.kind] = this.toPositiveInt(row._count?._all);
+    }
+    return counts;
+  }
+
+  private createEmptyCounts(): Record<ContentSubscriptionKind, number> {
     return {
-      [ContentSubscriptionKind.topic]: await this.prisma.userContentSubscription.count({
-        where: { orgId, userId, kind: ContentSubscriptionKind.topic },
-      }),
-      [ContentSubscriptionKind.entity]: await this.prisma.userContentSubscription.count({
-        where: { orgId, userId, kind: ContentSubscriptionKind.entity },
-      }),
-    } satisfies Record<ContentSubscriptionKind, number>;
+      [ContentSubscriptionKind.topic]: 0,
+      [ContentSubscriptionKind.entity]: 0,
+      [CONTENT_SUBSCRIPTION_KIND_SOURCE]: 0,
+      [CONTENT_SUBSCRIPTION_KIND_KEYWORD]: 0,
+      [CONTENT_SUBSCRIPTION_KIND_GEO]: 0,
+    };
   }
 
   private buildBatchResponse(
@@ -1401,14 +1944,18 @@ export class UserContentSubscriptionsService {
       counts,
       items: items.map((item) => ({
         ...item,
-        taxonomyDisplayName: this.taxonomyInfo(item.taxonomyPath, taxonomyByPath).displayName,
-        taxonomyLabels: this.taxonomyInfo(item.taxonomyPath, taxonomyByPath).labels,
+        taxonomyDisplayName: this.taxonomyInfo(
+          item.taxonomyPath,
+          taxonomyByPath,
+        ).displayName,
+        taxonomyLabels: this.taxonomyInfo(item.taxonomyPath, taxonomyByPath)
+          .labels,
       })),
     };
   }
 
   private toBatchResult(
-    status: ContentSubscriptionBatchResultItem['status'],
+    status: ContentSubscriptionBatchResultItem["status"],
     kind: ContentSubscriptionKind,
     normalizedValue: string,
     displayValue: string,
@@ -1437,12 +1984,14 @@ export class UserContentSubscriptionsService {
     const node = taxonomyByPath.get(taxonomyPath);
     return {
       displayName: node?.displayName ?? taxonomyPath,
-      labels: taxonomyPath.split('/').filter(Boolean),
+      labels: taxonomyPath.split("/").filter(Boolean),
     };
   }
 
   private buildRecommendationQuery(
-    profile: Awaited<ReturnType<UserNewsBehaviorService["getPersonalizationProfile"]>>,
+    profile: Awaited<
+      ReturnType<UserNewsBehaviorService["getPersonalizationProfile"]>
+    >,
   ) {
     const topicBits = this.topEntries(profile.positive.topics, 8);
     const entityBits = this.topEntries(profile.positive.entities, 8);
@@ -1450,13 +1999,13 @@ export class UserContentSubscriptionsService {
     const domainBits = this.topEntries(profile.positive.domains, 4);
 
     const parts = [
-      topicBits.length > 0 ? `topics: ${topicBits.join(', ')}` : '',
-      entityBits.length > 0 ? `entities: ${entityBits.join(', ')}` : '',
-      sourceBits.length > 0 ? `sources: ${sourceBits.join(', ')}` : '',
-      domainBits.length > 0 ? `domains: ${domainBits.join(', ')}` : '',
+      topicBits.length > 0 ? `topics: ${topicBits.join(", ")}` : "",
+      entityBits.length > 0 ? `entities: ${entityBits.join(", ")}` : "",
+      sourceBits.length > 0 ? `sources: ${sourceBits.join(", ")}` : "",
+      domainBits.length > 0 ? `domains: ${domainBits.join(", ")}` : "",
     ].filter(Boolean);
 
-    return parts.join('\n');
+    return parts.join("\n");
   }
 
   private topEntries(record: Record<string, number>, limit: number) {
@@ -1485,18 +2034,27 @@ export class UserContentSubscriptionsService {
         orgId,
         input: queryText,
         metadata: {
-          source: 'content-subscriptions',
-          stage: 'recommendation-query',
+          source: "content-subscriptions",
+          stage: "recommendation-query",
         },
       });
       const vector = response.data?.[0]?.embedding;
-      const normalized = Array.isArray(vector) ? this.normalizeVector(vector) : [];
+      const normalized = Array.isArray(vector)
+        ? this.normalizeVector(vector)
+        : [];
       if (normalized.length === 0) {
         return [] as { row: (typeof rows)[number]; score: number }[];
       }
-      return this.rankCatalogRowsByVector(normalized, rows, RECOMMENDATION_CANDIDATE_LIMIT);
+      return this.rankCatalogRowsByVector(
+        normalized,
+        rows,
+        RECOMMENDATION_CANDIDATE_LIMIT,
+      );
     } catch (error) {
-      this.logger.warn({ err: error, orgId }, 'Failed to embed recommendation query');
+      this.logger.warn(
+        { err: error, orgId },
+        "Failed to embed recommendation query",
+      );
       return [];
     }
   }
@@ -1528,19 +2086,28 @@ export class UserContentSubscriptionsService {
         documents,
         topN: Math.min(rows.length, RECOMMENDATION_CANDIDATE_LIMIT),
         metadata: {
-          source: 'content-subscriptions',
-          stage: 'rerank',
+          source: "content-subscriptions",
+          stage: "rerank",
         },
       });
       const scored = (rerank.results ?? [])
         .map((entry) => {
           const row = rows[entry.index];
-          if (!row || typeof entry.score !== 'number' || !Number.isFinite(entry.score)) {
+          if (
+            !row ||
+            typeof entry.score !== "number" ||
+            !Number.isFinite(entry.score)
+          ) {
             return null;
           }
           return { row: row.row, score: entry.score };
         })
-        .filter((entry): entry is { row: (typeof rows)[number]['row']; score: number } => Boolean(entry));
+        .filter(
+          (
+            entry,
+          ): entry is { row: (typeof rows)[number]["row"]; score: number } =>
+            Boolean(entry),
+        );
 
       if (scored.length === 0) {
         return [];
@@ -1555,16 +2122,21 @@ export class UserContentSubscriptionsService {
         }))
         .sort((a, b) => b.score - a.score || b.row.count - a.row.count);
     } catch (error) {
-      this.logger.warn({ err: error, orgId }, 'Failed to rerank content subscription candidates');
+      this.logger.warn(
+        { err: error, orgId },
+        "Failed to rerank content subscription candidates",
+      );
       return [];
     }
   }
 
-  private rankCatalogRowsByVector<TRow extends { embeddingVector: Prisma.JsonValue | null; count: number; lastSeenAt: Date }>(
-    vector: number[] | null,
-    rows: TRow[],
-    limit: number,
-  ) {
+  private rankCatalogRowsByVector<
+    TRow extends {
+      embeddingVector: Prisma.JsonValue | null;
+      count: number;
+      lastSeenAt: Date;
+    },
+  >(vector: number[] | null, rows: TRow[], limit: number) {
     if (!Array.isArray(vector) || vector.length === 0) {
       return [] as { row: TRow; score: number }[];
     }
@@ -1580,7 +2152,12 @@ export class UserContentSubscriptionsService {
         };
       })
       .filter((entry): entry is { row: TRow; score: number } => Boolean(entry))
-      .sort((a, b) => b.score - a.score || b.row.count - a.row.count || b.row.lastSeenAt.getTime() - a.row.lastSeenAt.getTime())
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          b.row.count - a.row.count ||
+          b.row.lastSeenAt.getTime() - a.row.lastSeenAt.getTime(),
+      )
       .slice(0, limit);
   }
 
@@ -1588,12 +2165,21 @@ export class UserContentSubscriptionsService {
     return [
       `kind=${candidate.kind}`,
       `name=${candidate.displayValue}`,
-      candidate.kind === ContentSubscriptionKind.entity && candidate.metadata?.entityType
+      candidate.kind === ContentSubscriptionKind.entity &&
+      candidate.metadata?.entityType
         ? `entityType=${String(candidate.metadata.entityType)}`
-        : '',
+        : "",
+      candidate.kind === CONTENT_SUBSCRIPTION_KIND_SOURCE &&
+      candidate.metadata?.sourceId
+        ? `sourceId=${String(candidate.metadata.sourceId)}`
+        : "",
+      candidate.kind === CONTENT_SUBSCRIPTION_KIND_GEO &&
+      candidate.metadata?.countryCodeAlpha2
+        ? `country=${String(candidate.metadata.countryCodeAlpha2)}`
+        : "",
     ]
       .filter(Boolean)
-      .join('\n');
+      .join("\n");
   }
 
   private catalogRerankDocument(candidate: {
@@ -1607,12 +2193,20 @@ export class UserContentSubscriptionsService {
     return [
       `kind=${candidate.kind}`,
       `name=${candidate.displayValue}`,
-      candidate.taxonomyPath ? `taxonomy=${candidate.taxonomyPath}` : '',
-      typeof metadata?.entityType === 'string' ? `entityType=${metadata.entityType}` : '',
+      candidate.taxonomyPath ? `taxonomy=${candidate.taxonomyPath}` : "",
+      typeof metadata?.entityType === "string"
+        ? `entityType=${metadata.entityType}`
+        : "",
+      typeof metadata?.sourceId === "string"
+        ? `sourceId=${metadata.sourceId}`
+        : "",
+      typeof metadata?.countryCodeAlpha2 === "string"
+        ? `country=${metadata.countryCodeAlpha2}`
+        : "",
       `count=${candidate.count}`,
     ]
       .filter(Boolean)
-      .join('\n');
+      .join("\n");
   }
 
   private pickBestTaxonomyPath(
@@ -1634,7 +2228,10 @@ export class UserContentSubscriptionsService {
     return bestPath;
   }
 
-  private classifyByKeyword(value: string, taxonomy: NewsClassificationTaxonomyNode[]) {
+  private classifyByKeyword(
+    value: string,
+    taxonomy: NewsClassificationTaxonomyNode[],
+  ) {
     const text = value.trim().toLowerCase();
     if (!text) {
       return null;
@@ -1642,7 +2239,12 @@ export class UserContentSubscriptionsService {
     let bestPath: string | null = null;
     let bestScore = 0;
     for (const node of taxonomy) {
-      const signals = [node.displayName, node.description, ...node.keywords, ...node.synonyms];
+      const signals = [
+        node.displayName,
+        node.description,
+        ...node.keywords,
+        ...node.synonyms,
+      ];
       let score = 0;
       for (const signal of signals) {
         const normalized = signal.trim().toLowerCase();
@@ -1681,7 +2283,10 @@ export class UserContentSubscriptionsService {
       if (!CONTENT_SUBSCRIPTION_KINDS.includes(entry.kind)) {
         continue;
       }
-      const value = this.normalizeValue(entry.value ?? entry.displayValue ?? entry.normalizedValue);
+      const value = this.normalizeValue(
+        entry.value ?? entry.displayValue ?? entry.normalizedValue,
+        entry.kind,
+      );
       if (!value.normalizedValue) {
         continue;
       }
@@ -1700,14 +2305,17 @@ export class UserContentSubscriptionsService {
     return normalized;
   }
 
-  private normalizeValue(value: unknown) {
-    if (typeof value !== 'string') {
-      return { normalizedValue: '', displayValue: '' };
+  private normalizeValue(value: unknown, kind?: ContentSubscriptionKind) {
+    if (typeof value !== "string") {
+      return { normalizedValue: "", displayValue: "" };
     }
-    const displayValue = value.trim().replace(/\s+/g, ' ').slice(0, 128);
+    const displayValue = value.trim().replace(/\s+/g, " ").slice(0, 128);
     return {
       displayValue,
-      normalizedValue: displayValue.toLowerCase(),
+      normalizedValue:
+        kind === CONTENT_SUBSCRIPTION_KIND_SOURCE
+          ? displayValue
+          : displayValue.toLowerCase(),
     };
   }
 
@@ -1729,27 +2337,30 @@ export class UserContentSubscriptionsService {
     return out;
   }
 
-  private subscriptionKey(kind: ContentSubscriptionKind, normalizedValue: string) {
+  private subscriptionKey(
+    kind: ContentSubscriptionKind,
+    normalizedValue: string,
+  ) {
     return `${kind}:${normalizedValue}`;
   }
 
   private taxonomyBranchPrefix(path: string) {
-    const parts = path.split('/').filter(Boolean);
-    return parts.length >= 2 ? parts.slice(0, 2).join('/') : path;
+    const parts = path.split("/").filter(Boolean);
+    return parts.length >= 2 ? parts.slice(0, 2).join("/") : path;
   }
 
   private toPositiveInt(value: number | bigint | null | undefined) {
-    if (typeof value === 'bigint') {
+    if (typeof value === "bigint") {
       return value > 0n ? Number(value) : 0;
     }
-    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
       return Math.round(value);
     }
     return 0;
   }
 
   private normalizeCatalogLimit(limit: number | undefined) {
-    if (typeof limit !== 'number' || !Number.isFinite(limit)) {
+    if (typeof limit !== "number" || !Number.isFinite(limit)) {
       return CATALOG_LIST_LIMIT;
     }
     return Math.min(Math.max(Math.floor(limit), 1), CATALOG_LIST_LIMIT);
@@ -1782,13 +2393,15 @@ export class UserContentSubscriptionsService {
       return null;
     }
     const normalized = value
-      .map((entry) => (typeof entry === 'number' && Number.isFinite(entry) ? entry : null))
+      .map((entry) =>
+        typeof entry === "number" && Number.isFinite(entry) ? entry : null,
+      )
       .filter((entry): entry is number => entry !== null);
     return normalized.length > 0 ? normalized : null;
   }
 
   private parseRecord(value: Prisma.JsonValue | null) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
       return null;
     }
     return value as Record<string, unknown>;
@@ -1803,7 +2416,9 @@ export class UserContentSubscriptionsService {
   }
 
   private normalizeVector(vector: number[]) {
-    const magnitude = Math.sqrt(vector.reduce((sum, entry) => sum + entry * entry, 0));
+    const magnitude = Math.sqrt(
+      vector.reduce((sum, entry) => sum + entry * entry, 0),
+    );
     if (!Number.isFinite(magnitude) || magnitude <= 0) {
       return [];
     }

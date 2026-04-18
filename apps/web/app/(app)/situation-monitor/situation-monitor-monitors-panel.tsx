@@ -881,173 +881,204 @@ export function SituationMonitorMonitorsPanel({
                 }),
                 monitors.length,
               ),
-              children: monitorsLoading && monitors.length === 0 ? (
-                <div className="py-6 text-center">
-                  <Spin />
-                </div>
-              ) : sortedMonitors.length === 0 ? (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description={t("situationMonitor.monitors.empty", {
-                    defaultValue: "No monitors yet.",
-                  })}
-                />
-              ) : (
-                <List
-                  size="small"
-                  dataSource={sortedMonitors}
-                  renderItem={(monitor) => (
-                    <List.Item
-                      actions={[
-                        <Space key="actions" size="small">
-                          <Switch
-                            checked={monitor.enabled}
-                            onChange={(enabled) =>
-                              void handleToggle(monitor, enabled)
-                            }
-                          />
-                          <Button
-                            size="small"
-                            icon={<EditOutlined />}
-                            {...interactiveControlProps}
-                            onClick={() => openEdit(monitor)}
-                          >
-                            {t("common.edit", { defaultValue: "Edit" })}
-                          </Button>
-                          {monitor.kind === "manual" ? (
-                            <Popconfirm
-                              title={t(
-                                "situationMonitor.monitors.deleteConfirm",
-                                {
-                                  defaultValue: "Delete this monitor?",
-                                },
-                              )}
-                              okText={t("common.delete", {
-                                defaultValue: "Delete",
-                              })}
-                              cancelText={t("common.cancel", {
-                                defaultValue: "Cancel",
-                              })}
-                              onConfirm={() => void handleDelete(monitor.id)}
+              children:
+                monitorsLoading && monitors.length === 0 ? (
+                  <div className="py-6 text-center">
+                    <Spin />
+                  </div>
+                ) : sortedMonitors.length === 0 ? (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={t("situationMonitor.monitors.empty", {
+                      defaultValue: "No monitors yet.",
+                    })}
+                  />
+                ) : (
+                  <List
+                    size="small"
+                    dataSource={sortedMonitors}
+                    renderItem={(monitor) => (
+                      <List.Item
+                        actions={[
+                          <Space key="actions" size="small">
+                            <Switch
+                              checked={monitor.enabled}
+                              onChange={(enabled) =>
+                                void handleToggle(monitor, enabled)
+                              }
+                            />
+                            <Button
+                              size="small"
+                              icon={<EditOutlined />}
+                              {...interactiveControlProps}
+                              onClick={() => openEdit(monitor)}
                             >
+                              {t("common.edit", { defaultValue: "Edit" })}
+                            </Button>
+                            {monitor.kind === "manual" ? (
+                              <Popconfirm
+                                title={t(
+                                  "situationMonitor.monitors.deleteConfirm",
+                                  {
+                                    defaultValue: "Delete this monitor?",
+                                  },
+                                )}
+                                okText={t("common.delete", {
+                                  defaultValue: "Delete",
+                                })}
+                                cancelText={t("common.cancel", {
+                                  defaultValue: "Cancel",
+                                })}
+                                onConfirm={() => void handleDelete(monitor.id)}
+                              >
                                 <Button
                                   danger
                                   size="small"
                                   icon={<DeleteOutlined />}
                                   {...interactiveControlProps}
                                 >
-                                  {t("common.delete", { defaultValue: "Delete" })}
+                                  {t("common.delete", {
+                                    defaultValue: "Delete",
+                                  })}
                                 </Button>
-                            </Popconfirm>
-                          ) : null}
-                        </Space>,
-                      ]}
-                    >
-                      <Space
-                        direction="vertical"
-                        size={6}
-                        style={{ width: "100%" }}
+                              </Popconfirm>
+                            ) : null}
+                          </Space>,
+                        ]}
                       >
-                        <Space size={10} wrap>
-                          {monitor.color ? (
-                            <span
-                              aria-hidden
-                              style={{
-                                width: 10,
-                                height: 10,
-                                borderRadius: 999,
-                                background: monitor.color,
-                                display: "inline-block",
-                                border: "1px solid rgba(0,0,0,0.15)",
-                              }}
-                            />
+                        <Space
+                          direction="vertical"
+                          size={6}
+                          style={{ width: "100%" }}
+                        >
+                          <Space size={10} wrap>
+                            {monitor.color ? (
+                              <span
+                                aria-hidden
+                                style={{
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: 999,
+                                  background: monitor.color,
+                                  display: "inline-block",
+                                  border: "1px solid rgba(0,0,0,0.15)",
+                                }}
+                              />
+                            ) : null}
+                            <Typography.Text strong>
+                              {monitor.name}
+                            </Typography.Text>
+                            <Tag
+                              color={
+                                monitor.kind === "system_sync"
+                                  ? "purple"
+                                  : "blue"
+                              }
+                            >
+                              {monitor.kind === "system_sync"
+                                ? t("situationMonitor.monitors.systemSync", {
+                                    defaultValue: "System sync",
+                                  })
+                                : t("situationMonitor.monitors.manual", {
+                                    defaultValue: "Manual",
+                                  })}
+                            </Tag>
+                            <Tag color={monitor.enabled ? "green" : "default"}>
+                              {monitor.enabled
+                                ? t("common.enabled", {
+                                    defaultValue: "ENABLED",
+                                  })
+                                : t("common.disabled", {
+                                    defaultValue: "DISABLED",
+                                  })}
+                            </Tag>
+                            <Tag color="geekblue">
+                              {matchCounts[monitor.id] ?? 0}
+                            </Tag>
+                            {monitor.queryEmbeddingModel ? (
+                              <Tag>{monitor.queryEmbeddingModel}</Tag>
+                            ) : null}
+                          </Space>
+                          {monitor.rawKeywords.length > 0 ? (
+                            <Space size={6} wrap>
+                              {monitor.rawKeywords.map((keyword) => (
+                                <Tag key={`${monitor.id}:keyword:${keyword}`}>
+                                  {keyword}
+                                </Tag>
+                              ))}
+                            </Space>
                           ) : null}
-                          <Typography.Text strong>
-                            {monitor.name}
-                          </Typography.Text>
-                          <Tag
-                            color={
-                              monitor.kind === "system_sync" ? "purple" : "blue"
-                            }
-                          >
-                            {monitor.kind === "system_sync"
-                              ? t("situationMonitor.monitors.systemSync", {
-                                  defaultValue: "System sync",
-                                })
-                              : t("situationMonitor.monitors.manual", {
-                                  defaultValue: "Manual",
-                                })}
-                          </Tag>
-                          <Tag color={monitor.enabled ? "green" : "default"}>
-                            {monitor.enabled
-                              ? t("common.enabled", { defaultValue: "ENABLED" })
-                              : t("common.disabled", {
-                                  defaultValue: "DISABLED",
-                                })}
-                          </Tag>
-                          <Tag color="geekblue">
-                            {matchCounts[monitor.id] ?? 0}
-                          </Tag>
-                          {monitor.queryEmbeddingModel ? (
-                            <Tag>{monitor.queryEmbeddingModel}</Tag>
+                          {monitor.approvedTopics.length > 0 ? (
+                            <Space size={6} wrap>
+                              {monitor.approvedTopics.map((topic) => (
+                                <Tag
+                                  key={`${monitor.id}:topic:${topic}`}
+                                  color="blue"
+                                >
+                                  {topic}
+                                </Tag>
+                              ))}
+                            </Space>
                           ) : null}
-                        </Space>
-                        {monitor.rawKeywords.length > 0 ? (
-                          <Space size={6} wrap>
-                            {monitor.rawKeywords.map((keyword) => (
-                              <Tag key={`${monitor.id}:keyword:${keyword}`}>
-                                {keyword}
-                              </Tag>
-                            ))}
-                          </Space>
-                        ) : null}
-                        {monitor.approvedTopics.length > 0 ? (
-                          <Space size={6} wrap>
-                            {monitor.approvedTopics.map((topic) => (
-                              <Tag
-                                key={`${monitor.id}:topic:${topic}`}
-                                color="blue"
-                              >
-                                {topic}
-                              </Tag>
-                            ))}
-                          </Space>
-                        ) : null}
-                        {monitor.approvedEntities.length > 0 ? (
-                          <Space size={6} wrap>
-                            {monitor.approvedEntities.map((entity) => (
-                              <Tag
-                                key={`${monitor.id}:entity:${entity}`}
-                                color="purple"
-                              >
-                                {entity}
-                              </Tag>
-                            ))}
-                          </Space>
-                        ) : null}
-                        {monitor.location ? (
+                          {monitor.approvedEntities.length > 0 ? (
+                            <Space size={6} wrap>
+                              {monitor.approvedEntities.map((entity) => (
+                                <Tag
+                                  key={`${monitor.id}:entity:${entity}`}
+                                  color="purple"
+                                >
+                                  {entity}
+                                </Tag>
+                              ))}
+                            </Space>
+                          ) : null}
+                          {monitor.approvedSources.length > 0 ? (
+                            <Space size={6} wrap>
+                              {monitor.approvedSources.map((source) => (
+                                <Tag
+                                  key={`${monitor.id}:source:${source}`}
+                                  color="gold"
+                                >
+                                  {source}
+                                </Tag>
+                              ))}
+                            </Space>
+                          ) : null}
+                          {monitor.approvedGeos.length > 0 ? (
+                            <Space size={6} wrap>
+                              {monitor.approvedGeos.map((geo) => (
+                                <Tag
+                                  key={`${monitor.id}:geo:${geo}`}
+                                  color="cyan"
+                                >
+                                  {geo}
+                                </Tag>
+                              ))}
+                            </Space>
+                          ) : null}
+                          {monitor.location ? (
+                            <Typography.Text type="secondary">
+                              <EnvironmentOutlined /> {monitor.location.name} (
+                              {monitor.location.lat.toFixed(2)},{" "}
+                              {monitor.location.lng.toFixed(2)})
+                            </Typography.Text>
+                          ) : null}
                           <Typography.Text type="secondary">
-                            <EnvironmentOutlined /> {monitor.location.name} (
-                            {monitor.location.lat.toFixed(2)},{" "}
-                            {monitor.location.lng.toFixed(2)})
+                            {t("situationMonitor.monitors.updatedAt", {
+                              defaultValue: "Updated {{time}}",
+                              time: formatDateTime(monitor.updatedAt, locale, {
+                                month: "2-digit",
+                                day: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              }),
+                            })}
                           </Typography.Text>
-                        ) : null}
-                        <Typography.Text type="secondary">
-                          {t("situationMonitor.monitors.updatedAt", {
-                            defaultValue: "Updated {{time}}",
-                            time: formatDateTime(monitor.updatedAt, locale, {
-                              month: "2-digit",
-                              day: "2-digit",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            }),
-                          })}
-                        </Typography.Text>
-                      </Space>
-                    </List.Item>
-                  )}
-                />
-              ),
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
+                ),
             },
             {
               key: "matches",
@@ -1330,6 +1361,38 @@ export function SituationMonitorMonitorsPanel({
                     {editingMonitor.approvedEntities.map((entity) => (
                       <Tag key={`system-entity:${entity}`} color="purple">
                         {entity}
+                      </Tag>
+                    ))}
+                  </Space>
+                </Space>
+              ) : null}
+              {editingMonitor.approvedSources.length > 0 ? (
+                <Space direction="vertical" size={6}>
+                  <Typography.Text strong>
+                    {t("subscriptions.content.kindSources", {
+                      defaultValue: "Sources",
+                    })}
+                  </Typography.Text>
+                  <Space size={6} wrap>
+                    {editingMonitor.approvedSources.map((source) => (
+                      <Tag key={`system-source:${source}`} color="gold">
+                        {source}
+                      </Tag>
+                    ))}
+                  </Space>
+                </Space>
+              ) : null}
+              {editingMonitor.approvedGeos.length > 0 ? (
+                <Space direction="vertical" size={6}>
+                  <Typography.Text strong>
+                    {t("subscriptions.content.kindGeos", {
+                      defaultValue: "Geos",
+                    })}
+                  </Typography.Text>
+                  <Space size={6} wrap>
+                    {editingMonitor.approvedGeos.map((geo) => (
+                      <Tag key={`system-geo:${geo}`} color="cyan">
+                        {geo}
                       </Tag>
                     ))}
                   </Space>

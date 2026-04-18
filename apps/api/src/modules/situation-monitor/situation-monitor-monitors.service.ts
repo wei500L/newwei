@@ -59,6 +59,9 @@ const RERANK_INCLUDE_THRESHOLD = 0.55;
 const RERANK_SHORTLIST_LIMIT = 8;
 const SYSTEM_SYNC_MONITOR_NAME = "Subscription Sync";
 const SYSTEM_SYNC_MONITOR_COLOR = "#9254de";
+const CONTENT_SUBSCRIPTION_KIND_SOURCE = "source" as ContentSubscriptionKind;
+const CONTENT_SUBSCRIPTION_KIND_KEYWORD = "keyword" as ContentSubscriptionKind;
+const CONTENT_SUBSCRIPTION_KIND_GEO = "geo" as ContentSubscriptionKind;
 
 interface MonitorLocation {
   name: string;
@@ -83,6 +86,8 @@ export interface StoredMonitorDto {
   rawKeywords: string[];
   approvedTopics: string[];
   approvedEntities: string[];
+  approvedSources: string[];
+  approvedGeos: string[];
   approvedLexicalTerms: string[];
   rejectedSuggestions: RejectedSuggestionState;
   location?: MonitorLocation;
@@ -125,6 +130,8 @@ interface NormalizedMonitorRecord {
   rawKeywords: string[];
   approvedTopics: string[];
   approvedEntities: string[];
+  approvedSources: string[];
+  approvedGeos: string[];
   approvedLexicalTerms: string[];
   rejectedSuggestions: RejectedSuggestionState;
   location?: MonitorLocation;
@@ -210,6 +217,8 @@ export class SituationMonitorMonitorsService {
       rawKeywords,
       approvedTopics: [],
       approvedEntities: [],
+      approvedSources: [],
+      approvedGeos: [],
       approvedLexicalTerms: [],
       location: locationResolution ?? undefined,
     });
@@ -1033,6 +1042,35 @@ export class SituationMonitorMonitorsService {
       });
     }
 
+    const sourceHits = collectSetHits(monitor.approvedSources, [
+      candidate.source,
+    ]);
+    if (sourceHits.length > 0) {
+      matchedTerms.push(...sourceHits);
+      reasons.push({
+        code: "source",
+        label: "Source matched",
+        matchedValues: sourceHits,
+      });
+    }
+
+    const geoSubscriptionHits = collectSetHits(monitor.approvedGeos, [
+      candidate.location ?? "",
+      candidate.title,
+      candidate.summary ?? "",
+      ...candidate.extraTexts,
+      ...candidate.topics,
+      ...candidate.entities,
+    ]);
+    if (geoSubscriptionHits.length > 0) {
+      matchedTerms.push(...geoSubscriptionHits);
+      reasons.push({
+        code: "geo",
+        label: "Geo subscription matched",
+        matchedValues: geoSubscriptionHits,
+      });
+    }
+
     const geoStatus = this.resolveGeoStatus(monitor, candidate, haystack);
     let baseScore = 0;
     if (keywordHits.length > 0) {
@@ -1043,6 +1081,12 @@ export class SituationMonitorMonitorsService {
     }
     if (entityHits.length > 0) {
       baseScore += 0.18;
+    }
+    if (sourceHits.length > 0) {
+      baseScore += 0.18;
+    }
+    if (geoSubscriptionHits.length > 0) {
+      baseScore += 0.12;
     }
     if (geoStatus === "matched") {
       baseScore += 0.08;
@@ -1258,6 +1302,15 @@ export class SituationMonitorMonitorsService {
           !manualOwned.has(this.subscriptionKey(row.kind, row.normalizedValue)),
       )
       .map((row) => row.displayValue);
+    const keywordSubscriptions = subscriptions
+      .filter((row) => row.kind === CONTENT_SUBSCRIPTION_KIND_KEYWORD)
+      .map((row) => row.displayValue);
+    const sourceSubscriptions = subscriptions
+      .filter((row) => row.kind === CONTENT_SUBSCRIPTION_KIND_SOURCE)
+      .map((row) => row.displayValue);
+    const geoSubscriptions = subscriptions
+      .filter((row) => row.kind === CONTENT_SUBSCRIPTION_KIND_GEO)
+      .map((row) => row.displayValue);
 
     const approvedTopics = normalizeStringList(
       orphanTopics,
@@ -1267,17 +1320,28 @@ export class SituationMonitorMonitorsService {
       orphanEntities,
       MAX_APPROVED_SUGGESTIONS,
     );
+    const approvedSources = normalizeStringList(
+      sourceSubscriptions,
+      MAX_APPROVED_SUGGESTIONS,
+    );
+    const approvedGeos = normalizeStringList(
+      geoSubscriptions,
+      MAX_APPROVED_SUGGESTIONS,
+    );
+    const rawKeywords = normalizeKeywordList(keywordSubscriptions);
     const approvedLexicalTerms = normalizeStringList(
-      orphanTopics.concat(orphanEntities),
+      orphanTopics.concat(orphanEntities, keywordSubscriptions),
       MAX_APPROVED_TERMS,
     );
     const embeddingPayload = await this.buildQueryEmbedding(
       orgId,
       this.buildQueryText({
         name: SYSTEM_SYNC_MONITOR_NAME,
-        rawKeywords: [],
+        rawKeywords,
         approvedTopics,
         approvedEntities,
+        approvedSources,
+        approvedGeos,
         approvedLexicalTerms,
       }),
     );
@@ -1286,9 +1350,11 @@ export class SituationMonitorMonitorsService {
       name: SYSTEM_SYNC_MONITOR_NAME,
       enabled: true,
       color: SYSTEM_SYNC_MONITOR_COLOR,
-      rawKeywords: toPrismaJsonValue([]),
+      rawKeywords: toPrismaJsonValue(rawKeywords),
       approvedTopics: toPrismaJsonValue(approvedTopics),
       approvedEntities: toPrismaJsonValue(approvedEntities),
+      approvedSources: toPrismaJsonValue(approvedSources),
+      approvedGeos: toPrismaJsonValue(approvedGeos),
       approvedLexicalTerms: toPrismaJsonValue(approvedLexicalTerms),
       rejectedSuggestions: toPrismaJsonValue({
         topics: [],
@@ -1367,6 +1433,8 @@ export class SituationMonitorMonitorsService {
           rawKeywords,
           approvedTopics: [],
           approvedEntities: [],
+          approvedSources: [],
+          approvedGeos: [],
           approvedLexicalTerms: rawKeywords,
           location,
         }),
@@ -1420,7 +1488,10 @@ export class SituationMonitorMonitorsService {
   }
 
   private normalizeMonitorRow(
-    row: Prisma.SituationMonitorMonitorGetPayload<Record<string, never>>,
+    row: Prisma.SituationMonitorMonitorGetPayload<Record<string, never>> & {
+      approvedSources?: Prisma.JsonValue | null;
+      approvedGeos?: Prisma.JsonValue | null;
+    },
   ): NormalizedMonitorRecord {
     return {
       id: row.id,
@@ -1438,6 +1509,14 @@ export class SituationMonitorMonitorsService {
       ),
       approvedEntities: parseStringArray(
         row.approvedEntities,
+        MAX_APPROVED_SUGGESTIONS,
+      ),
+      approvedSources: parseStringArray(
+        row.approvedSources ?? null,
+        MAX_APPROVED_SUGGESTIONS,
+      ),
+      approvedGeos: parseStringArray(
+        row.approvedGeos ?? null,
         MAX_APPROVED_SUGGESTIONS,
       ),
       approvedLexicalTerms: parseStringArray(
@@ -1478,6 +1557,8 @@ export class SituationMonitorMonitorsService {
       rawKeywords: string[];
       approvedTopics?: string[];
       approvedEntities?: string[];
+      approvedSources?: string[];
+      approvedGeos?: string[];
       approvedLexicalTerms?: string[];
       rejectedTopics?: string[];
       rejectedEntities?: string[];
@@ -1501,6 +1582,14 @@ export class SituationMonitorMonitorsService {
     );
     const approvedEntities = normalizeStringList(
       input.approvedEntities ?? [],
+      MAX_APPROVED_SUGGESTIONS,
+    );
+    const approvedSources = normalizeStringList(
+      input.approvedSources ?? [],
+      MAX_APPROVED_SUGGESTIONS,
+    );
+    const approvedGeos = normalizeStringList(
+      input.approvedGeos ?? [],
       MAX_APPROVED_SUGGESTIONS,
     );
     const approvedLexicalTerms = normalizeStringList(
@@ -1529,6 +1618,8 @@ export class SituationMonitorMonitorsService {
         rawKeywords,
         approvedTopics,
         approvedEntities,
+        approvedSources,
+        approvedGeos,
         approvedLexicalTerms,
         location: location ?? undefined,
       }),
@@ -1541,6 +1632,8 @@ export class SituationMonitorMonitorsService {
       rawKeywords: toPrismaJsonValue(rawKeywords),
       approvedTopics: toPrismaJsonValue(approvedTopics),
       approvedEntities: toPrismaJsonValue(approvedEntities),
+      approvedSources: toPrismaJsonValue(approvedSources),
+      approvedGeos: toPrismaJsonValue(approvedGeos),
       approvedLexicalTerms: toPrismaJsonValue(approvedLexicalTerms),
       rejectedSuggestions: toPrismaJsonValue(rejectedSuggestions),
       locationName: location?.name ?? null,
@@ -1597,6 +1690,8 @@ export class SituationMonitorMonitorsService {
     rawKeywords: string[];
     approvedTopics: string[];
     approvedEntities: string[];
+    approvedSources: string[];
+    approvedGeos: string[];
     approvedLexicalTerms: string[];
     location?: MonitorLocation;
   }) {
@@ -1610,6 +1705,12 @@ export class SituationMonitorMonitorsService {
         : "",
       input.approvedEntities.length > 0
         ? `entities=${input.approvedEntities.join(", ")}`
+        : "",
+      input.approvedSources.length > 0
+        ? `sources=${input.approvedSources.join(", ")}`
+        : "",
+      input.approvedGeos.length > 0
+        ? `geos=${input.approvedGeos.join(", ")}`
         : "",
       input.approvedLexicalTerms.length > 0
         ? `lexical=${input.approvedLexicalTerms.join(", ")}`

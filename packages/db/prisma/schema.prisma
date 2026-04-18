@@ -894,6 +894,9 @@ enum AnalysisSubjectType {
 enum ContentSubscriptionKind {
   topic
   entity
+  source
+  keyword
+  geo
 }
 
 enum ContentSubscriptionSource {
@@ -952,6 +955,8 @@ model SituationMonitorMonitor {
   rawKeywords          Json
   approvedTopics       Json
   approvedEntities     Json
+  approvedSources      Json?
+  approvedGeos         Json?
   approvedLexicalTerms Json
   rejectedSuggestions  Json?
   locationName         String?

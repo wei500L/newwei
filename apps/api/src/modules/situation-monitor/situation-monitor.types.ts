@@ -39,7 +39,8 @@ export interface SituationMonitorEventCluster {
   mixedSource: boolean;
 }
 
-export interface SituationMonitorAlertHeadline extends SituationMonitorHeadline {
+export interface SituationMonitorAlertHeadline
+  extends SituationMonitorHeadline {
   severity: "critical" | "elevated";
 }
 
@@ -53,7 +54,10 @@ export interface SituationMonitorWorldLeader {
   party?: string;
   focus?: string[];
   matchCount: number;
-  headlines: Pick<SituationMonitorHeadline, "title" | "titleZh" | "link" | "source" | "timestamp">[];
+  headlines: Pick<
+    SituationMonitorHeadline,
+    "title" | "titleZh" | "link" | "source" | "timestamp"
+  >[];
 }
 
 export interface SituationMonitorSituationPanel {
@@ -64,7 +68,10 @@ export interface SituationMonitorSituationPanel {
   subtitleZh?: string;
   level: "monitoring" | "elevated" | "critical";
   status: "MONITORING" | "ELEVATED" | "CRITICAL";
-  headlines: Pick<SituationMonitorHeadline, "title" | "titleZh" | "link" | "source" | "timestamp">[];
+  headlines: Pick<
+    SituationMonitorHeadline,
+    "title" | "titleZh" | "link" | "source" | "timestamp"
+  >[];
 }
 
 export interface SituationMonitorMarketItem {
@@ -159,12 +166,13 @@ export interface SituationMonitorTensionPair {
 }
 
 export type SituationMonitorMatchReasonCode =
-  | 'keyword'
-  | 'topic'
-  | 'entity'
-  | 'semantic'
-  | 'rerank'
-  | 'geo';
+  | "keyword"
+  | "topic"
+  | "entity"
+  | "source"
+  | "semantic"
+  | "rerank"
+  | "geo";
 
 export interface SituationMonitorMatchReason {
   code: SituationMonitorMatchReasonCode;
@@ -174,23 +182,23 @@ export interface SituationMonitorMatchReason {
 }
 
 export type SituationMonitorMatchGeoStatus =
-  | 'not_configured'
-  | 'matched'
-  | 'country_match'
-  | 'conflict'
-  | 'unresolved';
+  | "not_configured"
+  | "matched"
+  | "country_match"
+  | "conflict"
+  | "unresolved";
 
 export interface SituationMonitorMatchResult {
   itemKey: string;
   itemType:
-    | 'headline'
-    | 'alert'
-    | 'situation'
-    | 'telegram'
-    | 'oref_alert'
-    | 'oref_history';
+    | "headline"
+    | "alert"
+    | "situation"
+    | "telegram"
+    | "oref_alert"
+    | "oref_history";
   monitorId: string;
-  monitorKind: 'manual' | 'system_sync';
+  monitorKind: "manual" | "system_sync";
   monitorName: string;
   monitorColor?: string;
   score: number;

@@ -40,6 +40,7 @@ import {
   type ContentSubscriptionBatchResponse,
   type ContentSubscriptionCatalogItem,
   type ContentSubscriptionCatalogResponse,
+  type ContentSubscriptionKind,
 } from "@/lib/content-subscriptions";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import {
@@ -63,7 +64,10 @@ import {
   type TranslateRssItemsMutationVariables,
 } from "@/lib/rss-translation";
 import { safeHttpUrl } from "@/lib/url";
-import { estimateReadingTimeMinutes, useUserNewsReadMilestones } from "@/lib/use-user-news-read-milestones";
+import {
+  estimateReadingTimeMinutes,
+  useUserNewsReadMilestones,
+} from "@/lib/use-user-news-read-milestones";
 import {
   shareTrackedNewsLink,
   trackUserNewsBehavior,
@@ -347,7 +351,7 @@ function hasDigestSubscription(
 }
 
 function buildDigestSubscriptionKey(
-  kind: "topic" | "entity",
+  kind: ContentSubscriptionKind,
   value: string,
 ): string {
   return `${kind}:${value.trim().toLowerCase()}`;
@@ -619,7 +623,10 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     () =>
       estimateReadingTimeMinutes(
         [resolvedSummary, ...resolvedKeyPoints, resolvedArticleContent]
-          .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+          .filter(
+            (entry): entry is string =>
+              typeof entry === "string" && entry.trim().length > 0,
+          )
           .join("\n\n"),
       ),
     [resolvedArticleContent, resolvedKeyPoints, resolvedSummary],

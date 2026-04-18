@@ -1,4 +1,9 @@
-export type ContentSubscriptionKind = 'topic' | 'entity';
+export type ContentSubscriptionKind =
+  | 'topic'
+  | 'entity'
+  | 'source'
+  | 'keyword'
+  | 'geo';
 
 export interface ContentSubscriptionItem {
   id: string;

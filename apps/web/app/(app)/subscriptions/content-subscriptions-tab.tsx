@@ -54,9 +54,17 @@ const DATE_TIME_FORMAT = {
   minute: "2-digit",
 } as const;
 const UNCATEGORIZED_TAXONOMY_FILTER = "__uncategorized__";
+const CONTENT_SUBSCRIPTION_KIND_ORDER: ContentSubscriptionKind[] = [
+  "topic",
+  "entity",
+  "source",
+  "keyword",
+  "geo",
+];
 
 interface GroupedItems<
   T extends {
+    kind: ContentSubscriptionKind;
     taxonomyPath: string | null;
     taxonomyDisplayName: string | null;
     taxonomyLabels: string[];
@@ -66,6 +74,84 @@ interface GroupedItems<
   title: string;
   labels: string[];
   items: T[];
+}
+
+function getContentSubscriptionKindLabel(
+  kind: ContentSubscriptionKind,
+  t: ReturnType<typeof useTranslation>["t"],
+) {
+  switch (kind) {
+    case "topic":
+      return t("subscriptions.content.kindTopics", {
+        defaultValue: "Topics",
+      });
+    case "entity":
+      return t("subscriptions.content.kindEntities", {
+        defaultValue: "Entities",
+      });
+    case "source":
+      return t("subscriptions.content.kindSources", {
+        defaultValue: "Sources",
+      });
+    case "keyword":
+      return t("subscriptions.content.kindKeywords", {
+        defaultValue: "Keywords",
+      });
+    case "geo":
+      return t("subscriptions.content.kindGeos", {
+        defaultValue: "Geos",
+      });
+  }
+}
+
+function getContentSubscriptionKindColor(kind: ContentSubscriptionKind) {
+  switch (kind) {
+    case "topic":
+      return "blue";
+    case "entity":
+      return "purple";
+    case "source":
+      return "gold";
+    case "keyword":
+      return "green";
+    case "geo":
+      return "cyan";
+  }
+}
+
+function parseKeywordEntries(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\n,]/)
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, 10);
+}
+
+function toMetadataRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function buildSubscriptionSearchText(item: ContentSubscriptionItem) {
+  const metadata = toMetadataRecord(item.metadata);
+  return [
+    item.displayValue,
+    item.normalizedValue,
+    item.taxonomyDisplayName ?? "",
+    ...(item.taxonomyLabels ?? []),
+    typeof metadata?.sourceId === "string" ? metadata.sourceId : "",
+    typeof metadata?.language === "string" ? metadata.language : "",
+    typeof metadata?.countryCodeAlpha2 === "string"
+      ? metadata.countryCodeAlpha2
+      : "",
+  ]
+    .join(" ")
+    .toLowerCase();
 }
 
 export function ContentSubscriptionsTab({
@@ -90,6 +176,8 @@ export function ContentSubscriptionsTab({
   const [recommendations, setRecommendations] =
     useState<ContentSubscriptionCatalogResponse | null>(null);
   const [subscriptionQuery, setSubscriptionQuery] = useState("");
+  const [keywordInput, setKeywordInput] = useState("");
+  const [addingKeywords, setAddingKeywords] = useState(false);
   const [catalogInput, setCatalogInput] = useState("");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogKind, setCatalogKind] = useState<
@@ -234,13 +322,10 @@ export function ContentSubscriptionsTab({
           message: t("subscriptions.content.loadFailed", {
             defaultValue: "Failed to load content subscriptions.",
           }),
-          description: t(
-            "subscriptions.content.loadFailedDescription",
-            {
-              defaultValue:
-                "The subscriptions list could not be loaded. Retry to restore the latest subscription state.",
-            },
-          ),
+          description: t("subscriptions.content.loadFailedDescription", {
+            defaultValue:
+              "The subscriptions list could not be loaded. Retry to restore the latest subscription state.",
+          }),
         });
         message.error(
           t("subscriptions.content.loadFailed", {
@@ -290,16 +375,9 @@ export function ContentSubscriptionsTab({
     if (!query) {
       return subscriptions?.items ?? [];
     }
-    return (subscriptions?.items ?? []).filter((item) => {
-      return [
-        item.displayValue,
-        item.taxonomyDisplayName ?? "",
-        ...(item.taxonomyLabels ?? []),
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(query);
-    });
+    return (subscriptions?.items ?? []).filter((item) =>
+      buildSubscriptionSearchText(item).includes(query),
+    );
   }, [subscriptionQuery, subscriptions?.items]);
 
   const subscriptionGroups = useMemo(
@@ -339,6 +417,129 @@ export function ContentSubscriptionsTab({
       ),
     );
   }, [catalog?.items, selectedCatalogKeys]);
+
+  const trackSubscriptionRemoval = useCallback(
+    (
+      item: Pick<
+        ContentSubscriptionItem,
+        "kind" | "displayValue" | "normalizedValue"
+      >,
+    ) => {
+      if (item.kind === "topic") {
+        void trackUserNewsBehavior({
+          type: "unsubscribe",
+          topics: [item.displayValue],
+        });
+        return;
+      }
+      if (item.kind === "entity") {
+        void trackUserNewsBehavior({
+          type: "unsubscribe",
+          entities: [item.displayValue],
+        });
+        return;
+      }
+      if (item.kind === "source") {
+        void trackUserNewsBehavior({
+          type: "unsubscribe",
+          source: item.normalizedValue,
+        });
+      }
+    },
+    [],
+  );
+
+  const renderMetadata = useCallback(
+    (item: { kind: ContentSubscriptionKind; metadata?: unknown }) => {
+      const metadata = toMetadataRecord(item.metadata);
+      if (!metadata) {
+        return null;
+      }
+
+      const tags: Array<{ key: string; label: string }> = [];
+      if (item.kind === "source") {
+        if (typeof metadata.sourceId === "string") {
+          tags.push({
+            key: "sourceId",
+            label: t("subscriptions.content.metadataSourceId", {
+              defaultValue: "ID {{value}}",
+              value: metadata.sourceId,
+            }),
+          });
+        }
+        if (typeof metadata.language === "string") {
+          tags.push({
+            key: "language",
+            label: t("subscriptions.content.metadataLanguage", {
+              defaultValue: "Language {{value}}",
+              value: metadata.language,
+            }),
+          });
+        }
+      }
+      if (
+        item.kind === "geo" &&
+        typeof metadata.countryCodeAlpha2 === "string"
+      ) {
+        tags.push({
+          key: "country",
+          label: t("subscriptions.content.metadataCountry", {
+            defaultValue: "Country {{value}}",
+            value: metadata.countryCodeAlpha2,
+          }),
+        });
+      }
+
+      const links: Array<{ key: string; label: string }> = [];
+      if (item.kind === "source" && typeof metadata.siteUrl === "string") {
+        links.push({
+          key: "siteUrl",
+          label: t("subscriptions.content.metadataSite", {
+            defaultValue: "Site {{value}}",
+            value: metadata.siteUrl,
+          }),
+        });
+      }
+      if (item.kind === "source" && typeof metadata.feedUrl === "string") {
+        links.push({
+          key: "feedUrl",
+          label: t("subscriptions.content.metadataFeed", {
+            defaultValue: "Feed {{value}}",
+            value: metadata.feedUrl,
+          }),
+        });
+      }
+
+      if (tags.length === 0 && links.length === 0) {
+        return null;
+      }
+
+      return (
+        <Space direction="vertical" size={4}>
+          {tags.length > 0 ? (
+            <Space wrap size={[4, 4]}>
+              {tags.map((entry) => (
+                <Tag key={`${item.kind}:${entry.key}`}>{entry.label}</Tag>
+              ))}
+            </Space>
+          ) : null}
+          {links.length > 0 ? (
+            <Space direction="vertical" size={0}>
+              {links.map((entry) => (
+                <Typography.Text
+                  key={`${item.kind}:${entry.key}`}
+                  type="secondary"
+                >
+                  {entry.label}
+                </Typography.Text>
+              ))}
+            </Space>
+          ) : null}
+        </Space>
+      );
+    },
+    [t],
+  );
 
   useEffect(() => {
     const availableKeys = new Set(
@@ -380,18 +581,13 @@ export function ContentSubscriptionsTab({
         {
           subscriptions: removableSelectedSubscriptionItems.map((item) => ({
             kind: item.kind,
-            value: item.displayValue,
+            value: item.normalizedValue,
           })),
         },
       );
-      removableSelectedSubscriptionItems.forEach((item) => {
-        void trackUserNewsBehavior({
-          type: "unsubscribe",
-          ...(item.kind === "topic"
-            ? { topics: [item.displayValue] }
-            : { entities: [item.displayValue] }),
-        });
-      });
+      removableSelectedSubscriptionItems.forEach((item) =>
+        trackSubscriptionRemoval(item),
+      );
       message.success(
         t("subscriptions.content.batchRemoved", {
           defaultValue: "Subscriptions removed.",
@@ -415,6 +611,7 @@ export function ContentSubscriptionsTab({
     removableSelectedSubscriptionItems,
     selectedSubscriptionItems,
     t,
+    trackSubscriptionRemoval,
   ]);
 
   const openOwnerMonitor = useCallback(
@@ -444,7 +641,7 @@ export function ContentSubscriptionsTab({
         {
           subscriptions: items.map((item) => ({
             kind: item.kind,
-            value: item.displayValue,
+            value: item.normalizedValue,
             source,
           })),
         },
@@ -490,6 +687,72 @@ export function ContentSubscriptionsTab({
     }
   };
 
+  const handleAddKeywords = useCallback(
+    async (value: string) => {
+      const keywords = parseKeywordEntries(value);
+      if (keywords.length === 0) {
+        return;
+      }
+
+      setAddingKeywords(true);
+      try {
+        const response = await apiClient.post<ContentSubscriptionBatchResponse>(
+          "user-content-subscriptions/batch-upsert",
+          {
+            subscriptions: keywords.map((keyword) => ({
+              kind: "keyword",
+              value: keyword,
+              source: "manual",
+            })),
+          },
+        );
+        const subscribedCount = (response.data?.items ?? []).filter(
+          (item) => item.status === "subscribed",
+        ).length;
+        const limitReached = (response.data?.items ?? []).some(
+          (item) => item.status === "limit_reached",
+        );
+
+        if (subscribedCount > 0) {
+          message.success(
+            t("subscriptions.content.keywordsAdded", {
+              defaultValue: "Added {{count}} keyword subscriptions.",
+              count: subscribedCount,
+            }),
+          );
+          setKeywordInput("");
+        } else if (limitReached) {
+          message.warning(
+            t("subscriptions.content.limitReached", {
+              defaultValue: "Subscription limit reached for this type.",
+            }),
+          );
+        } else {
+          message.info(
+            t("subscriptions.content.noChanges", {
+              defaultValue: "No new subscriptions were added.",
+            }),
+          );
+        }
+
+        await refreshSubscriptionViews();
+        if (subscribedCount > 0) {
+          emitSituationMonitorMonitorsUpdated("subscriptions");
+        }
+      } catch (error) {
+        captureClientError("Failed to add keyword subscriptions", error);
+        message.error(
+          t("subscriptions.content.keywordAddFailed", {
+            defaultValue: "Failed to add keyword subscriptions.",
+          }),
+        );
+      } finally {
+        setAddingKeywords(false);
+      }
+    },
+    [apiClient, message, refreshSubscriptionViews, t],
+  );
+
   if (!accessToken) {
     return (
       <ChartEmptyState
@@ -516,22 +779,18 @@ export function ContentSubscriptionsTab({
           <Typography.Text type="secondary">
             {t("subscriptions.content.summary", {
               defaultValue:
-                "Manage personalized topic and entity subscriptions, browse by taxonomy, and add AI-ranked recommendations.",
+                "Manage personalized topic, entity, source, keyword, and geo subscriptions, browse the catalog, and add AI-ranked recommendations.",
             })}
           </Typography.Text>
           <Space wrap size={[8, 8]}>
-            <Tag color="blue">
-              {t("subscriptions.content.topicCount", {
-                defaultValue: "Topics: {{count}}",
-                count: subscriptions?.counts.topic ?? 0,
-              })}
-            </Tag>
-            <Tag color="purple">
-              {t("subscriptions.content.entityCount", {
-                defaultValue: "Entities: {{count}}",
-                count: subscriptions?.counts.entity ?? 0,
-              })}
-            </Tag>
+            {CONTENT_SUBSCRIPTION_KIND_ORDER.map((kind) => (
+              <Tag key={kind} color={getContentSubscriptionKindColor(kind)}>
+                {t(`subscriptions.content.${kind}Count`, {
+                  defaultValue: `${getContentSubscriptionKindLabel(kind, t)}: {{count}}`,
+                  count: subscriptions?.counts[kind] ?? 0,
+                })}
+              </Tag>
+            ))}
             <Tag>
               {t("subscriptions.content.limitLabel", {
                 defaultValue: "Per type limit: {{count}}",
@@ -570,7 +829,8 @@ export function ContentSubscriptionsTab({
               value={subscriptionQuery}
               onChange={(event) => setSubscriptionQuery(event.target.value)}
               placeholder={t("subscriptions.content.searchPlaceholder", {
-                defaultValue: "Search subscribed topics or entities",
+                defaultValue:
+                  "Search subscribed topics, entities, sources, keywords, or geos",
               })}
               style={{ width: 260 }}
             />
@@ -665,9 +925,9 @@ export function ContentSubscriptionsTab({
                               {item.displayValue}
                             </Typography.Text>
                             <Tag
-                              color={item.kind === "topic" ? "blue" : "purple"}
+                              color={getContentSubscriptionKindColor(item.kind)}
                             >
-                              {item.kind}
+                              {getContentSubscriptionKindLabel(item.kind, t)}
                             </Tag>
                             {item.taxonomyDisplayName ? (
                               <Tag>{item.taxonomyDisplayName}</Tag>
@@ -702,6 +962,7 @@ export function ContentSubscriptionsTab({
                               ))}
                             </Space>
                           ) : null}
+                          {renderMetadata(item)}
                           {item.manualMonitorOwned ? (
                             <Typography.Text type="secondary">
                               {t("subscriptions.content.monitorOwnedHint", {
@@ -723,8 +984,37 @@ export function ContentSubscriptionsTab({
 
       <Card
         className="content-card"
+        title={t("subscriptions.content.keywordComposerTitle", {
+          defaultValue: "Add keyword subscriptions",
+        })}
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Typography.Text type="secondary">
+            {t("subscriptions.content.keywordComposerDescription", {
+              defaultValue:
+                "Keywords are manual-only subscriptions. They do not appear in the catalog or AI recommendations.",
+            })}
+          </Typography.Text>
+          <Input.Search
+            allowClear
+            enterButton={t("subscriptions.content.keywordComposerAction", {
+              defaultValue: "Add keywords",
+            })}
+            value={keywordInput}
+            onChange={(event) => setKeywordInput(event.target.value)}
+            onSearch={(value) => void handleAddKeywords(value)}
+            loading={addingKeywords}
+            placeholder={t("subscriptions.content.keywordComposerPlaceholder", {
+              defaultValue: "Enter keywords or phrases, separated by commas",
+            })}
+          />
+        </Space>
+      </Card>
+
+      <Card
+        className="content-card"
         title={t("subscriptions.content.catalogTitle", {
-          defaultValue: "Browse by category",
+          defaultValue: "Browse catalog",
         })}
         extra={
           <Space size="small">
@@ -750,6 +1040,18 @@ export function ContentSubscriptionsTab({
                     defaultValue: "Entities",
                   }),
                 },
+                {
+                  value: "source",
+                  label: t("subscriptions.content.kindSources", {
+                    defaultValue: "Sources",
+                  }),
+                },
+                {
+                  value: "geo",
+                  label: t("subscriptions.content.kindGeos", {
+                    defaultValue: "Geos",
+                  }),
+                },
               ]}
               onChange={(value) => setCatalogKind(value)}
             />
@@ -759,7 +1061,8 @@ export function ContentSubscriptionsTab({
               onChange={(event) => setCatalogInput(event.target.value)}
               onSearch={(value) => setCatalogQuery(value)}
               placeholder={t("subscriptions.content.catalogSearch", {
-                defaultValue: "Search the subscription catalog",
+                defaultValue:
+                  "Search catalog topics, entities, sources, or geos",
               })}
               style={{ width: 260 }}
             />
@@ -875,11 +1178,14 @@ export function ContentSubscriptionsTab({
                                   {item.displayValue}
                                 </Typography.Text>
                                 <Tag
-                                  color={
-                                    item.kind === "topic" ? "blue" : "purple"
-                                  }
+                                  color={getContentSubscriptionKindColor(
+                                    item.kind,
+                                  )}
                                 >
-                                  {item.kind}
+                                  {getContentSubscriptionKindLabel(
+                                    item.kind,
+                                    t,
+                                  )}
                                 </Tag>
                                 {item.taxonomyDisplayName ? (
                                   <Tag>{item.taxonomyDisplayName}</Tag>
@@ -901,6 +1207,7 @@ export function ContentSubscriptionsTab({
                                   ),
                                 })}
                               </Typography.Text>
+                              {renderMetadata(item)}
                             </Space>
                           </Space>
                         </List.Item>
@@ -998,8 +1305,10 @@ export function ContentSubscriptionsTab({
                           <Typography.Text strong>
                             {item.displayValue}
                           </Typography.Text>
-                          <Tag color={item.kind === "topic" ? "blue" : "purple"}>
-                            {item.kind}
+                          <Tag
+                            color={getContentSubscriptionKindColor(item.kind)}
+                          >
+                            {getContentSubscriptionKindLabel(item.kind, t)}
                           </Tag>
                           {item.taxonomyDisplayName ? (
                             <Tag>{item.taxonomyDisplayName}</Tag>
@@ -1022,6 +1331,7 @@ export function ContentSubscriptionsTab({
                               })}
                             </Typography.Text>
                           ) : null}
+                          {renderMetadata(item)}
                         </Space>
                       }
                     />
@@ -1044,15 +1354,10 @@ export function ContentSubscriptionsTab({
       await apiClient.post<ContentSubscriptionBatchResponse>(
         "user-content-subscriptions/batch-delete",
         {
-          subscriptions: [{ kind: item.kind, value: item.displayValue }],
+          subscriptions: [{ kind: item.kind, value: item.normalizedValue }],
         },
       );
-      void trackUserNewsBehavior({
-        type: "unsubscribe",
-        ...(item.kind === "topic"
-          ? { topics: [item.displayValue] }
-          : { entities: [item.displayValue] }),
-      });
+      trackSubscriptionRemoval(item);
       setSelectedSubscriptionKeys((current) =>
         current.filter(
           (entry) =>
@@ -1080,6 +1385,7 @@ export function ContentSubscriptionsTab({
 
 function groupByTaxonomy<
   T extends {
+    kind: ContentSubscriptionKind;
     taxonomyPath: string | null;
     taxonomyDisplayName: string | null;
     taxonomyLabels: string[];
