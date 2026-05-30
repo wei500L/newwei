@@ -4,8 +4,15 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import {
+  createLocalJWKSet,
+  jwtVerify,
+  type JSONWebKeySet,
+  type JWTPayload,
+} from "jose";
 import crypto from "node:crypto";
 
+import { validateSsrfUrlAsync } from "../../common/validators/ssrf-url.validator";
 import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
@@ -17,6 +24,8 @@ interface OidcDiscoveryDocument {
   issuer: string;
   authorization_endpoint: string;
   token_endpoint: string;
+  jwks_uri: string;
+  id_token_signing_alg_values_supported?: string[];
 }
 
 interface OidcStatePayload {
@@ -25,7 +34,27 @@ interface OidcStatePayload {
   nonce: string;
 }
 
+interface OidcIdTokenClaims extends JWTPayload {
+  nonce?: unknown;
+  email?: unknown;
+  email_verified?: unknown;
+  azp?: unknown;
+}
+
 const OIDC_STATE_TTL_SECONDS = 10 * 60;
+const OIDC_CLOCK_TOLERANCE_SECONDS = 60;
+const OIDC_PUBLIC_ID_TOKEN_ALGORITHMS = [
+  "RS256",
+  "RS384",
+  "RS512",
+  "PS256",
+  "PS384",
+  "PS512",
+  "ES256",
+  "ES384",
+  "ES512",
+  "EdDSA",
+];
 
 @Injectable()
 export class OidcAuthService {
@@ -234,25 +263,12 @@ export class OidcAuthService {
       throw new UnauthorizedException("OIDC response missing id_token");
     }
 
-    const claims = this.decodeJwtPayload(tokenPayload.id_token) as {
-      iss?: string;
-      aud?: string | string[];
-      exp?: number;
-      nonce?: string;
-      email?: string;
-      email_verified?: boolean;
-    };
-    const audience = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-    if (
-      claims.iss !== discovery.issuer ||
-      !audience.includes(org.oidcConfig.clientId) ||
-      claims.nonce !== cachedState.nonce ||
-      !claims.email ||
-      claims.exp === undefined ||
-      claims.exp * 1000 < Date.now()
-    ) {
-      throw new UnauthorizedException("OIDC identity token validation failed");
-    }
+    const claims = await this.verifyIdToken({
+      idToken: tokenPayload.id_token,
+      discovery,
+      clientId: org.oidcConfig.clientId,
+      nonce: cachedState.nonce,
+    });
 
     const user = await this.prisma.user.findUnique({
       where: {
@@ -324,11 +340,41 @@ export class OidcAuthService {
     const discoveryUrl =
       config.discoveryUrl?.trim() ||
       `${config.issuerUrl.replace(/\/$/, "")}/.well-known/openid-configuration`;
-    const response = await fetch(discoveryUrl);
+    const validatedDiscoveryUrl = await this.assertAllowedOidcUrl(
+      discoveryUrl,
+      "discovery",
+    );
+    const response = await fetch(validatedDiscoveryUrl);
     if (!response.ok) {
       throw new BadRequestException("Failed to load OIDC discovery document");
     }
-    return (await response.json()) as OidcDiscoveryDocument;
+    const discovery = (await response.json()) as OidcDiscoveryDocument;
+    if (
+      !this.isNonEmptyString(discovery.issuer) ||
+      !this.isNonEmptyString(discovery.authorization_endpoint) ||
+      !this.isNonEmptyString(discovery.token_endpoint) ||
+      !this.isNonEmptyString(discovery.jwks_uri)
+    ) {
+      throw new BadRequestException("OIDC discovery document is invalid");
+    }
+
+    if (
+      this.normalizeIssuerUrl(discovery.issuer) !==
+      this.normalizeIssuerUrl(config.issuerUrl)
+    ) {
+      throw new BadRequestException(
+        "OIDC discovery issuer does not match configured issuer",
+      );
+    }
+
+    await this.assertAllowedOidcUrl(
+      discovery.authorization_endpoint,
+      "authorization",
+    );
+    await this.assertAllowedOidcUrl(discovery.token_endpoint, "token");
+    await this.assertAllowedOidcUrl(discovery.jwks_uri, "JWKS");
+
+    return discovery;
   }
 
   private readScopes(value: Prisma.JsonValue | null | undefined) {
@@ -364,16 +410,108 @@ export class OidcAuthService {
       .replace(/=+$/g, "");
   }
 
-  private decodeJwtPayload(token: string) {
-    const [, payload] = token.split(".");
-    if (!payload) {
-      throw new UnauthorizedException("OIDC token is invalid");
+  private async verifyIdToken(params: {
+    idToken: string;
+    discovery: OidcDiscoveryDocument;
+    clientId: string;
+    nonce: string;
+  }) {
+    try {
+      const jwksUrl = await this.assertAllowedOidcUrl(
+        params.discovery.jwks_uri,
+        "JWKS",
+      );
+      const response = await fetch(jwksUrl);
+      if (!response.ok) {
+        throw new Error("Failed to load OIDC JWKS");
+      }
+
+      const jwks = (await response.json()) as JSONWebKeySet;
+      if (!Array.isArray(jwks.keys)) {
+        throw new Error("OIDC JWKS is invalid");
+      }
+
+      const { payload } = await jwtVerify<OidcIdTokenClaims>(
+        params.idToken,
+        createLocalJWKSet(jwks),
+        {
+          issuer: params.discovery.issuer,
+          audience: params.clientId,
+          algorithms: OIDC_PUBLIC_ID_TOKEN_ALGORITHMS,
+          clockTolerance: OIDC_CLOCK_TOLERANCE_SECONDS,
+          requiredClaims: ["exp", "sub", "nonce", "email"],
+        },
+      );
+
+      this.assertValidVerifiedClaims(payload, params.clientId, params.nonce);
+      return payload;
+    } catch {
+      throw new UnauthorizedException("OIDC identity token validation failed");
     }
-    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized.padEnd(
-      normalized.length + ((4 - (normalized.length % 4)) % 4),
-      "=",
-    );
-    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+  }
+
+  private assertValidVerifiedClaims(
+    claims: OidcIdTokenClaims,
+    clientId: string,
+    nonce: string,
+  ): asserts claims is OidcIdTokenClaims & { email: string; nonce: string } {
+    if (
+      claims.nonce !== nonce ||
+      typeof claims.email !== "string" ||
+      claims.email.trim().length === 0
+    ) {
+      throw new UnauthorizedException("OIDC identity token validation failed");
+    }
+
+    const audience = Array.isArray(claims.aud)
+      ? claims.aud
+      : claims.aud
+        ? [claims.aud]
+        : [];
+    if (
+      claims.azp !== undefined &&
+      (typeof claims.azp !== "string" || claims.azp !== clientId)
+    ) {
+      throw new UnauthorizedException("OIDC identity token validation failed");
+    }
+    if (audience.length > 1 && claims.azp !== clientId) {
+      throw new UnauthorizedException("OIDC identity token validation failed");
+    }
+  }
+
+  private async assertAllowedOidcUrl(rawUrl: string, label: string) {
+    let url: URL;
+    try {
+      url = new URL(rawUrl);
+    } catch {
+      throw new BadRequestException(`OIDC ${label} URL is invalid`);
+    }
+
+    if (url.protocol !== "https:") {
+      throw new BadRequestException(`OIDC ${label} URL must use HTTPS`);
+    }
+
+    const validation = await validateSsrfUrlAsync(url.toString());
+    if (!validation.valid) {
+      throw new BadRequestException(`OIDC ${label} URL is not allowed`);
+    }
+
+    return url;
+  }
+
+  private normalizeIssuerUrl(value: string) {
+    const trimmed = value.trim();
+    try {
+      const url = new URL(trimmed);
+      url.hash = "";
+      url.search = "";
+      return url.toString().replace(/\/+$/, "");
+    } catch {
+      return trimmed.replace(/\/+$/, "");
+    }
+  }
+
+  private isNonEmptyString(value: unknown): value is string {
+    return typeof value === "string" && value.trim().length > 0;
   }
 }
