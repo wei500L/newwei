@@ -4,6 +4,7 @@ import { Button, Form, Input, Typography, message } from "antd";
 import { useState } from "react";
 
 import { createApiClient } from "@/lib/api-client";
+import { classifyRequestError } from "@/lib/request-error";
 
 export default function ForgotPasswordPage() {
   const apiClient = createApiClient();
@@ -24,8 +25,12 @@ export default function ForgotPasswordPage() {
           try {
             await apiClient.post("auth/password/forgot", values);
             messageApi.success("If the account exists, a reset link has been sent.");
-          } catch {
-            messageApi.error("Failed to request password reset");
+          } catch (error) {
+            if (classifyRequestError(error).kind === "rateLimit") {
+              messageApi.error("Too many reset requests. Please try again later.");
+            } else {
+              messageApi.error("Failed to request password reset");
+            }
           } finally {
             setLoading(false);
           }

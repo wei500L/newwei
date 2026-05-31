@@ -1,3 +1,5 @@
+import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
+
 import { PasswordResetService } from "./password-reset.service";
 
 describe("PasswordResetService", () => {
@@ -21,6 +23,10 @@ describe("PasswordResetService", () => {
     send: jest.fn(),
   } as any;
 
+  const actionRateLimitMock = {
+    enforcePasswordResetRequest: jest.fn(),
+  } as any;
+
   let service: PasswordResetService;
 
   beforeEach(() => {
@@ -29,7 +35,55 @@ describe("PasswordResetService", () => {
       async (callback: (tx: typeof prismaMock) => Promise<unknown>) =>
         callback(prismaMock),
     );
-    service = new PasswordResetService(prismaMock, emailServiceMock);
+    actionRateLimitMock.enforcePasswordResetRequest = jest
+      .fn()
+      .mockResolvedValue(undefined);
+    service = new PasswordResetService(
+      prismaMock,
+      emailServiceMock,
+      actionRateLimitMock,
+    );
+  });
+
+  it("enforces rate limits before looking up a reset account", async () => {
+    actionRateLimitMock.enforcePasswordResetRequest.mockRejectedValue(
+      new TooManyRequestsException("Too many password reset requests"),
+    );
+
+    await expect(
+      service.requestReset({
+        email: "user@example.com",
+        ipAddress: "203.0.113.10",
+        baseUrl: "http://localhost:3000",
+      }),
+    ).rejects.toThrow(TooManyRequestsException);
+
+    expect(actionRateLimitMock.enforcePasswordResetRequest).toHaveBeenCalledWith(
+      "user@example.com",
+      "203.0.113.10",
+    );
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.passwordResetToken.create).not.toHaveBeenCalled();
+    expect(emailServiceMock.send).not.toHaveBeenCalled();
+  });
+
+  it("keeps a uniform response for unknown emails after consuming quota", async () => {
+    prismaMock.user.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.requestReset({
+        email: "missing@example.com",
+        ipAddress: "203.0.113.10",
+        baseUrl: "http://localhost:3000",
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(actionRateLimitMock.enforcePasswordResetRequest).toHaveBeenCalledWith(
+      "missing@example.com",
+      "203.0.113.10",
+    );
+    expect(prismaMock.passwordResetToken.create).not.toHaveBeenCalled();
+    expect(emailServiceMock.send).not.toHaveBeenCalled();
   });
 
   it("marks every active reset token as used after a successful reset", async () => {

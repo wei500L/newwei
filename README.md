@@ -386,6 +386,7 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml u
 - 登录限流：`RATE_LIMIT_LOGIN` / `RATE_LIMIT_LOGIN_WINDOW`
 - 抓取任务创建限流：`RATE_LIMIT_CRAWL_TASK_CREATE` / `RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW`
 - RBAC 写操作限流：`RATE_LIMIT_RBAC_WRITE` / `RATE_LIMIT_RBAC_WRITE_WINDOW`
+- 忘记密码限流：`Settings → Rate Limit Policies` 中的 `auth.password_reset`，默认每邮箱 3 次、每 IP 10 次、窗口 900 秒
 - 环境变量仅提供兜底默认值，推荐在控制台 `Settings → Rate Limits` 动态调整并写入数据库
 
 ## API 文档入口

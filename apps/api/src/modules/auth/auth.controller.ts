@@ -20,6 +20,7 @@ import { AllowAuthenticated } from "../../common/decorators/allow-authenticated.
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { Public } from "../../common/decorators/public.decorator";
+import { resolveRequestIp } from "../../common/request-ip";
 import { EnvService } from "../config/config.service";
 import { StorageService } from "../storage/storage.service";
 
@@ -169,7 +170,7 @@ export class AuthController {
       "http://localhost:3000";
     return this.passwordResetService.requestReset({
       email: body.email,
-      ipAddress: req.ip,
+      ipAddress: resolveRequestIp(req),
       userAgent: req.get("user-agent") ?? undefined,
       baseUrl,
     });

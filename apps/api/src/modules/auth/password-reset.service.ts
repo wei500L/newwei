@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { ActionRateLimitService } from "../cache/action-rate-limit.service";
 import { PrismaService } from "../config/prisma.service";
 import { EmailService } from "../email/email.service";
 
@@ -22,6 +23,7 @@ export class PasswordResetService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
+    private readonly actionRateLimit: ActionRateLimitService,
   ) {}
 
   async requestReset(params: {
@@ -30,6 +32,10 @@ export class PasswordResetService {
     userAgent?: string;
     baseUrl: string;
   }) {
+    await this.actionRateLimit.enforcePasswordResetRequest(
+      params.email,
+      params.ipAddress,
+    );
     const normalizedEmail = normalizeEmailAddress(params.email);
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },

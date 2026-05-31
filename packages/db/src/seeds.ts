@@ -18,6 +18,7 @@ export interface SeedOptions {
 }
 
 const NEWS_INDICATOR_SETTINGS_KEY_PREFIX = "news_indicator_association_settings:";
+const PASSWORD_RESET_RATE_LIMIT_FEATURE = "auth.password_reset";
 
 async function seedNewsIndicatorSettings(input: { orgId: string; updatedById?: string | null }) {
   const key = `${NEWS_INDICATOR_SETTINGS_KEY_PREFIX}${input.orgId}`;
@@ -68,6 +69,25 @@ async function seedNewsIndicatorSettings(input: { orgId: string; updatedById?: s
         cacheTtlSeconds: 120
       },
       description: `News indicator association settings (org=${input.orgId})`,
+      ...(input.updatedById ? { updatedById: input.updatedById } : {})
+    }
+  });
+}
+
+async function seedPasswordResetRateLimitPolicy(input: {
+  updatedById?: string | null;
+}) {
+  await prisma.rateLimitPolicy.upsert({
+    where: { feature: PASSWORD_RESET_RATE_LIMIT_FEATURE },
+    update: {},
+    create: {
+      feature: PASSWORD_RESET_RATE_LIMIT_FEATURE,
+      userLimit: 3,
+      ipLimit: 10,
+      windowSeconds: 900,
+      enabled: true,
+      description:
+        "Password reset requests; user limit applies per normalized email.",
       ...(input.updatedById ? { updatedById: input.updatedById } : {})
     }
   });
@@ -266,6 +286,7 @@ export const seed = async ({
   });
 
   await seedNewsIndicatorSettings({ orgId: org.id, updatedById: adminUser.id });
+  await seedPasswordResetRateLimitPolicy({ updatedById: adminUser.id });
 
   return org;
 };
