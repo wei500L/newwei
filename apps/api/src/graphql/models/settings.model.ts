@@ -25,7 +25,6 @@ export enum NewsExtractionPipelineModeModel {
 
 export enum NewsExtractionProviderIdModel {
   llm = "llm",
-  external_http = "external_http",
 }
 
 export enum NewsEventClusteringModeModel {

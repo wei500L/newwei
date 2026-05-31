@@ -13,7 +13,6 @@ export enum NewsExtractionPipelineMode {
 
 export enum NewsExtractionProviderId {
   llm = "llm",
-  external_http = "external_http",
 }
 
 export interface NewsExtractionPreflightGateSettings {
@@ -323,11 +322,9 @@ export class NewsExtractionSettingsService {
     value: unknown,
     fallback: NewsExtractionProviderId,
   ): NewsExtractionProviderId {
-    return value === NewsExtractionProviderId.external_http
-      ? NewsExtractionProviderId.external_http
-      : value === NewsExtractionProviderId.llm
-        ? NewsExtractionProviderId.llm
-        : fallback;
+    return value === NewsExtractionProviderId.llm
+      ? NewsExtractionProviderId.llm
+      : fallback;
   }
 
   private clampFloat(

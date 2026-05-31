@@ -1969,7 +1969,6 @@ type NewsExtractionPreflightGateSettingsModel {
 }
 
 enum NewsExtractionProviderId {
-  external_http
   llm
 }
 

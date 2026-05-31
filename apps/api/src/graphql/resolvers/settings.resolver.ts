@@ -895,19 +895,15 @@ export class SettingsResolver {
   }
 
   private toNewsExtractionProviderIdModel(
-    value: NewsExtractionProviderId,
+    _value: NewsExtractionProviderId,
   ): NewsExtractionProviderIdModel {
-    return value === NewsExtractionProviderId.external_http
-      ? NewsExtractionProviderIdModel.external_http
-      : NewsExtractionProviderIdModel.llm;
+    return NewsExtractionProviderIdModel.llm;
   }
 
   private toNewsExtractionProviderId(
-    value: NewsExtractionProviderIdModel,
+    _value: NewsExtractionProviderIdModel,
   ): NewsExtractionProviderId {
-    return value === NewsExtractionProviderIdModel.external_http
-      ? NewsExtractionProviderId.external_http
-      : NewsExtractionProviderId.llm;
+    return NewsExtractionProviderId.llm;
   }
 
   private toSourcePolicyModel(

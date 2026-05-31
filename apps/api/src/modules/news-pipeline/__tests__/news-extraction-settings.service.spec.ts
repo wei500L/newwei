@@ -115,7 +115,7 @@ describe("NewsExtractionSettingsService", () => {
         entities: false,
       },
       providers: {
-        clean: NewsExtractionProviderId.external_http,
+        clean: "external_http" as unknown as NewsExtractionProviderId,
       },
     });
 
@@ -140,7 +140,7 @@ describe("NewsExtractionSettingsService", () => {
         kg: true,
       },
       providers: {
-        clean: NewsExtractionProviderId.external_http,
+        clean: NewsExtractionProviderId.llm,
         entities: NewsExtractionProviderId.llm,
         sentiment: NewsExtractionProviderId.llm,
         kg: NewsExtractionProviderId.llm,
@@ -160,6 +160,32 @@ describe("NewsExtractionSettingsService", () => {
         updatedById: "user-1",
         description: "News extraction settings (org=org-1)",
       },
+    });
+  });
+
+  it("normalizes legacy external_http providers from stored settings to llm", async () => {
+    prismaMock.systemSetting.findUnique = jest.fn().mockResolvedValue({
+      value: {
+        providers: {
+          clean: "external_http",
+          entities: "external_http",
+          sentiment: "external_http",
+          kg: "external_http",
+        },
+      },
+    });
+    const service = new NewsExtractionSettingsService(
+      prismaMock as any,
+      cacheMock as any,
+    );
+
+    const settings = await service.getSettings("org-1");
+
+    expect(settings.providers).toEqual({
+      clean: NewsExtractionProviderId.llm,
+      entities: NewsExtractionProviderId.llm,
+      sentiment: NewsExtractionProviderId.llm,
+      kg: NewsExtractionProviderId.llm,
     });
   });
 });

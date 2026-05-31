@@ -2324,7 +2324,6 @@ export type NewsExtractionPreflightGateSettingsModel = {
 };
 
 export enum NewsExtractionProviderId {
-  ExternalHttp = 'external_http',
   Llm = 'llm'
 }
 
