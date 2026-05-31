@@ -20,6 +20,7 @@ import { NewsEventClusteringRecoveryService } from "../news-event-clustering-rec
 describe("NewsEventClusteringRecoveryService", () => {
   const failures = {
     getFailureGroupOrThrow: jest.fn(),
+    listPendingAutoRetryCandidates: jest.fn(),
     markLlmBackfillQueued: jest.fn(),
     updateLlmBackfillProgress: jest.fn(),
     markLlmBackfillResolved: jest.fn(),
@@ -160,6 +161,95 @@ describe("NewsEventClusteringRecoveryService", () => {
     await expect(
       service.enqueueLlmBackfill("org-1", "admin-1", "group-1"),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("automatically queues pending failure groups for llm backfill", async () => {
+    failures.listPendingAutoRetryCandidates.mockResolvedValue([
+      {
+        orgId: "org-1",
+        groupId: "group-1",
+        attemptCount: 0,
+        itemCount: 1,
+        lastAttemptAt: null,
+      },
+      {
+        orgId: "org-2",
+        groupId: "group-2",
+        attemptCount: 1,
+        itemCount: 2,
+        lastAttemptAt: new Date("2026-04-18T00:00:00.000Z"),
+      },
+    ]);
+    failures.getFailureGroupOrThrow.mockResolvedValue({
+      status: "pending",
+      items: [{ processedArticleId: "pa-1" }],
+    });
+    failures.markLlmBackfillQueued
+      .mockResolvedValueOnce({
+        progressTotalCount: 1,
+        attemptCount: 1,
+      })
+      .mockResolvedValueOnce({
+        progressTotalCount: 2,
+        attemptCount: 2,
+      });
+
+    const result = await service.enqueuePendingLlmBackfills({
+      limit: 10,
+      retryAfterMs: 60_000,
+    });
+
+    expect(failures.listPendingAutoRetryCandidates).toHaveBeenCalledWith({
+      limit: 10,
+      retryAfterMs: 60_000,
+    });
+    expect(queue.add).toHaveBeenCalledTimes(2);
+    expect(queue.add).toHaveBeenCalledWith(
+      "llm_backfill",
+      expect.objectContaining({
+        orgId: "org-1",
+        actorId: "system:news-event-clustering-recovery",
+        groupId: "group-1",
+        trigger: "auto",
+      }),
+      expect.objectContaining({
+        attempts: 1,
+        removeOnComplete: true,
+      }),
+    );
+    expect(queue.add).toHaveBeenCalledWith(
+      "llm_backfill",
+      expect.objectContaining({
+        orgId: "org-2",
+        actorId: "system:news-event-clustering-recovery",
+        groupId: "group-2",
+        trigger: "auto",
+      }),
+      expect.any(Object),
+    );
+    expect(result).toEqual({
+      scanned: 2,
+      queued: 2,
+      skipped: 0,
+      failed: 0,
+      skippedNotReady: false,
+    });
+  });
+
+  it("does not scan pending failures when automatic llm backfill is not ready", async () => {
+    llmGatewaySettings.getActiveConfig.mockResolvedValueOnce(null);
+
+    const result = await service.enqueuePendingLlmBackfills();
+
+    expect(failures.listPendingAutoRetryCandidates).not.toHaveBeenCalled();
+    expect(queue.add).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      scanned: 0,
+      queued: 0,
+      skipped: 0,
+      failed: 0,
+      skippedNotReady: true,
+    });
   });
 
   it("processes an llm backfill job and resolves the failure group", async () => {

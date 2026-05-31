@@ -10,4 +10,5 @@ export interface NewsEventClusteringRecoveryJobPayload {
   actorId: string;
   groupId: string;
   traceId: string;
+  trigger?: "manual" | "auto";
 }

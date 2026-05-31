@@ -32,6 +32,9 @@ import {
 } from "./news-events-settings.service";
 
 const logger = createLogger({ name: "news-event-clustering-recovery" });
+const AUTO_BACKFILL_ACTOR_ID = "system:news-event-clustering-recovery";
+const AUTO_BACKFILL_BATCH_SIZE = 25;
+const AUTO_BACKFILL_RETRY_AFTER_MS = 15 * 60 * 1000;
 
 const LLM_BACKFILL_DECISION_SCHEMA = z.object({
   action: z.enum(["assign_existing", "create_new"]),
@@ -98,13 +101,93 @@ export class NewsEventClusteringRecoveryService {
 
   async enqueueLlmBackfill(orgId: string, actorId: string, groupId: string) {
     const readiness = await this.getReadiness();
+    return this.enqueueLlmBackfillWithReadiness({
+      orgId,
+      actorId,
+      groupId,
+      readiness,
+      trigger: "manual",
+    });
+  }
+
+  async enqueuePendingLlmBackfills(options?: {
+    limit?: number;
+    retryAfterMs?: number;
+  }) {
+    const readiness = await this.getReadiness();
     if (!readiness.llmBackfill.ready) {
+      return {
+        scanned: 0,
+        queued: 0,
+        skipped: 0,
+        failed: 0,
+        skippedNotReady: true,
+      };
+    }
+
+    const candidates = await this.failures.listPendingAutoRetryCandidates({
+      limit: options?.limit ?? AUTO_BACKFILL_BATCH_SIZE,
+      retryAfterMs: options?.retryAfterMs ?? AUTO_BACKFILL_RETRY_AFTER_MS,
+    });
+
+    let queued = 0;
+    let skipped = 0;
+    let failed = 0;
+    for (const candidate of candidates) {
+      try {
+        await this.enqueueLlmBackfillWithReadiness({
+          orgId: candidate.orgId,
+          actorId: AUTO_BACKFILL_ACTOR_ID,
+          groupId: candidate.groupId,
+          readiness,
+          trigger: "auto",
+        });
+        queued += 1;
+      } catch (error) {
+        if (error instanceof BadRequestException) {
+          skipped += 1;
+          continue;
+        }
+        failed += 1;
+        logger.warn(
+          {
+            err: error,
+            orgId: candidate.orgId,
+            groupId: candidate.groupId,
+          },
+          "Failed to automatically enqueue news event clustering LLM backfill",
+        );
+      }
+    }
+
+    return {
+      scanned: candidates.length,
+      queued,
+      skipped,
+      failed,
+      skippedNotReady: false,
+    };
+  }
+
+  private async enqueueLlmBackfillWithReadiness(input: {
+    orgId: string;
+    actorId: string;
+    groupId: string;
+    readiness: Awaited<
+      ReturnType<NewsEventClusteringRecoveryService["getReadiness"]>
+    >;
+    trigger: "manual" | "auto";
+  }) {
+    if (!input.readiness.llmBackfill.ready) {
       throw new BadRequestException(
         "LLM gateway completion profile is not ready for manual backfill",
       );
     }
 
-    const failure = await this.failures.getFailureGroupOrThrow(orgId, groupId);
+    const failure = await this.failures.getFailureGroupOrThrow(
+      input.orgId,
+      input.groupId,
+    );
     if (failure.status === "processing") {
       throw new BadRequestException("Failure group is already processing");
     }
@@ -113,13 +196,13 @@ export class NewsEventClusteringRecoveryService {
     }
 
     const traceId = ensureTraceId(getCurrentTraceId());
-    const jobId = `news-event-llm-backfill:${groupId}:${randomUUID()}`;
+    const jobId = `news-event-llm-backfill:${input.groupId}:${randomUUID()}`;
     const queued = await this.failures.markLlmBackfillQueued({
-      orgId,
-      actorId,
-      groupId,
+      orgId: input.orgId,
+      actorId: input.actorId,
+      groupId: input.groupId,
       jobId,
-      model: readiness.llmBackfill.model,
+      model: input.readiness.llmBackfill.model,
     });
 
     try {
@@ -127,10 +210,11 @@ export class NewsEventClusteringRecoveryService {
         "llm_backfill",
         {
           jobType: "llm_backfill",
-          orgId,
-          actorId,
-          groupId,
+          orgId: input.orgId,
+          actorId: input.actorId,
+          groupId: input.groupId,
           traceId,
+          trigger: input.trigger,
         },
         {
           jobId,
@@ -140,15 +224,15 @@ export class NewsEventClusteringRecoveryService {
       );
     } catch (error) {
       await this.failures.markLlmBackfillFailed({
-        orgId,
-        groupId,
+        orgId: input.orgId,
+        groupId: input.groupId,
         processedCount: 0,
         totalCount: queued.progressTotalCount,
         errorMessage: this.getErrorMessage(
           error,
           "Failed to enqueue LLM backfill job",
         ),
-        model: readiness.llmBackfill.model,
+        model: input.readiness.llmBackfill.model,
       });
       throw error;
     }
@@ -156,23 +240,24 @@ export class NewsEventClusteringRecoveryService {
     await writeTaskLogBestEffort({
       queue: "news_event_clustering_recovery",
       jobId,
-      orgId,
+      orgId: input.orgId,
       stage: "llm_backfill_queue",
       status: "pending",
       data: {
-        groupId,
-        model: readiness.llmBackfill.model,
+        groupId: input.groupId,
+        model: input.readiness.llmBackfill.model,
         itemCount: queued.progressTotalCount,
+        trigger: input.trigger,
       },
     });
 
     return {
-      groupId,
+      groupId: input.groupId,
       status: "processing" as const,
       activeJobId: jobId,
       progressProcessedCount: 0,
       progressTotalCount: queued.progressTotalCount,
-      lastRecoveryModel: readiness.llmBackfill.model,
+      lastRecoveryModel: input.readiness.llmBackfill.model,
       attemptCount: queued.attemptCount,
     };
   }
@@ -212,6 +297,7 @@ export class NewsEventClusteringRecoveryService {
         groupId: payload.groupId,
         itemCount: totalCount,
         model: readiness.llmBackfill.model,
+        trigger: payload.trigger ?? "manual",
       },
     });
 
@@ -266,6 +352,7 @@ export class NewsEventClusteringRecoveryService {
           processedCount,
           totalCount,
           model: readiness.llmBackfill.model,
+          trigger: payload.trigger ?? "manual",
           resolvedEventIds: Array.from(resolvedEventIds.values()).sort(),
           resolvedAt: resolvedAt.toISOString(),
         },
@@ -293,6 +380,7 @@ export class NewsEventClusteringRecoveryService {
           processedCount,
           totalCount,
           model: readiness.llmBackfill.model,
+          trigger: payload.trigger ?? "manual",
         },
       });
       logger.warn(

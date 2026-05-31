@@ -85,7 +85,16 @@ export interface NewsEventClusteringFailureRecord {
   resolvedEventIds: string[];
 }
 
+export interface NewsEventClusteringAutoRetryCandidate {
+  orgId: string;
+  groupId: string;
+  attemptCount: number;
+  itemCount: number;
+  lastAttemptAt: Date | null;
+}
+
 interface NewsEventClusteringFailureSummaryRow {
+  orgId?: string | null;
   groupId?: string | null;
   status?: NewsEventClusteringFailureStatus | null;
   clusteringMode?: string | null;
@@ -257,6 +266,44 @@ export class NewsEventClusteringFailureService {
       .lean()
       .exec();
     return rows.map((row) => this.toSummary(row));
+  }
+
+  async listPendingAutoRetryCandidates(options?: {
+    limit?: number;
+    retryAfterMs?: number;
+    now?: Date;
+  }): Promise<NewsEventClusteringAutoRetryCandidate[]> {
+    const limit = Math.min(Math.max(options?.limit ?? 25, 1), 100);
+    const retryAfterMs = Math.max(options?.retryAfterMs ?? 15 * 60 * 1000, 0);
+    const now = options?.now ?? new Date();
+    const retryBefore = new Date(now.getTime() - retryAfterMs);
+    const rows = await NewsEventClusteringFailureModel.find({
+      status: "pending",
+      clusteringMode: "bertopic_primary",
+      itemCount: { $gt: 0 },
+      $or: [{ lastAttemptAt: null }, { lastAttemptAt: { $lte: retryBefore } }],
+    })
+      .sort({ lastAttemptAt: 1, createdAt: 1 })
+      .limit(limit)
+      .select({
+        orgId: 1,
+        groupId: 1,
+        attemptCount: 1,
+        itemCount: 1,
+        lastAttemptAt: 1,
+      })
+      .lean()
+      .exec();
+
+    return rows
+      .map((row) => ({
+        orgId: this.normalizeRowString(row.orgId),
+        groupId: this.normalizeRowString(row.groupId),
+        attemptCount: Math.max(0, Number(row.attemptCount ?? 0)),
+        itemCount: Math.max(0, Number(row.itemCount ?? 0)),
+        lastAttemptAt: row.lastAttemptAt ? new Date(row.lastAttemptAt) : null,
+      }))
+      .filter((row) => row.orgId && row.groupId);
   }
 
   async getFailureGroupOrThrow(
@@ -635,6 +682,13 @@ export class NewsEventClusteringFailureService {
       categoryPath: item.categoryPath,
       categoryConfidence: item.categoryConfidence,
     };
+  }
+
+  private normalizeRowString(value: string | null | undefined) {
+    if (typeof value !== "string") {
+      return "";
+    }
+    return value.trim();
   }
 
   private toSummary(

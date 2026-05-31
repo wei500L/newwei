@@ -37,6 +37,21 @@ const createExecChain = <T>(value: T) => ({
   exec: jest.fn().mockResolvedValue(value),
 });
 
+const createQueryChain = <T>(value: T) => {
+  const chain = {
+    sort: jest.fn(),
+    limit: jest.fn(),
+    select: jest.fn(),
+    lean: jest.fn(),
+    exec: jest.fn().mockResolvedValue(value),
+  };
+  chain.sort.mockReturnValue(chain);
+  chain.limit.mockReturnValue(chain);
+  chain.select.mockReturnValue(chain);
+  chain.lean.mockReturnValue(chain);
+  return chain;
+};
+
 describe("NewsEventClusteringFailureService", () => {
   const eventsMock = {
     assignNewsSignalToEvent: jest.fn(),
@@ -138,6 +153,73 @@ describe("NewsEventClusteringFailureService", () => {
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(modelMocks.updateOne).not.toHaveBeenCalled();
+  });
+
+  it("lists pending failure groups that are eligible for automatic retry", async () => {
+    const now = new Date("2026-04-18T00:30:00.000Z");
+    modelMocks.find.mockReturnValue(
+      createQueryChain([
+        {
+          orgId: " org-1 ",
+          groupId: "group-1",
+          attemptCount: 0,
+          itemCount: 3,
+          lastAttemptAt: null,
+        },
+        {
+          orgId: "org-2",
+          groupId: "group-2",
+          attemptCount: 2,
+          itemCount: 1,
+          lastAttemptAt: new Date("2026-04-18T00:00:00.000Z"),
+        },
+      ]),
+    );
+
+    const result = await service.listPendingAutoRetryCandidates({
+      limit: 10,
+      retryAfterMs: 15 * 60 * 1000,
+      now,
+    });
+
+    expect(modelMocks.find).toHaveBeenCalledWith({
+      status: "pending",
+      clusteringMode: "bertopic_primary",
+      itemCount: { $gt: 0 },
+      $or: [
+        { lastAttemptAt: null },
+        { lastAttemptAt: { $lte: new Date("2026-04-18T00:15:00.000Z") } },
+      ],
+    });
+    const chain = modelMocks.find.mock.results[0]?.value;
+    expect(chain.sort).toHaveBeenCalledWith({
+      lastAttemptAt: 1,
+      createdAt: 1,
+    });
+    expect(chain.limit).toHaveBeenCalledWith(10);
+    expect(chain.select).toHaveBeenCalledWith({
+      orgId: 1,
+      groupId: 1,
+      attemptCount: 1,
+      itemCount: 1,
+      lastAttemptAt: 1,
+    });
+    expect(result).toEqual([
+      {
+        orgId: "org-1",
+        groupId: "group-1",
+        attemptCount: 0,
+        itemCount: 3,
+        lastAttemptAt: null,
+      },
+      {
+        orgId: "org-2",
+        groupId: "group-2",
+        attemptCount: 2,
+        itemCount: 1,
+        lastAttemptAt: new Date("2026-04-18T00:00:00.000Z"),
+      },
+    ]);
   });
 
   it("resolves a failure group through vector backfill", async () => {

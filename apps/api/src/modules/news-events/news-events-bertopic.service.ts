@@ -281,7 +281,7 @@ export class NewsEventsBertopicService {
 
       logger.warn(
         { err: error, orgId, requestId, groupId, chunkSize: chunk.length },
-        "BERTopic chunk failed and was queued for manual vector backfill",
+        "BERTopic chunk failed and was queued for clustering recovery",
       );
       return { assigned: 0, queuedForManual: chunk.length };
     }

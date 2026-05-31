@@ -11,6 +11,7 @@ import { NewsEventClusteringAdminController } from "./news-event-clustering-admi
 import { NewsEventClusteringFailureService } from "./news-event-clustering-failure.service";
 import { NewsEventClusteringRecoveryProcessor } from "./news-event-clustering-recovery.processor";
 import { NewsEventClusteringRecoveryQueueCleanupService } from "./news-event-clustering-recovery-queue-cleanup.service";
+import { NewsEventClusteringRecoverySchedulerService } from "./news-event-clustering-recovery-scheduler.service";
 import {
   NEWS_EVENT_CLUSTERING_RECOVERY_QUEUE,
   NEWS_EVENT_CLUSTERING_RECOVERY_QUEUE_NAME,
@@ -36,6 +37,7 @@ import { NewsEventsService } from "./news-events.service";
     NewsEventClusteringRecoveryService,
     NewsEventClusteringRecoveryProcessor,
     NewsEventClusteringRecoveryQueueCleanupService,
+    NewsEventClusteringRecoverySchedulerService,
     NewsEventsBertopicService,
     NewsEventBriefService,
     NewsEventsIngestionService,
