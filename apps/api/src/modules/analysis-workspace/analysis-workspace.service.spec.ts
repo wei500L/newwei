@@ -1,6 +1,7 @@
 import {
   Prisma,
   AnalysisSubjectType,
+  AnalysisTaskPriority,
   SavedAnalysisSurface,
   SavedAnalysisVisibility,
 } from ".prisma/client";
@@ -19,6 +20,34 @@ const prismaMock = {
   },
   analysisComment: {
     create: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+  analysisBoard: {
+    count: jest.fn(),
+    create: jest.fn(),
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn(),
+  },
+  analysisBoardColumn: {
+    count: jest.fn(),
+    create: jest.fn(),
+    createMany: jest.fn(),
+    delete: jest.fn(),
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn(),
+  },
+  analysisTaskCard: {
+    create: jest.fn(),
+    delete: jest.fn(),
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  membership: {
+    findFirst: jest.fn(),
   },
   itemMeta: {
     findFirst: jest.fn(),
@@ -26,6 +55,7 @@ const prismaMock = {
   newsEvent: {
     findFirst: jest.fn(),
   },
+  $transaction: jest.fn(),
 } as any;
 
 function createService() {
@@ -98,11 +128,62 @@ function createThreadRow(overrides?: Partial<any>) {
   };
 }
 
+function createUserSummary(overrides?: Partial<any>) {
+  return {
+    id: "user-1",
+    email: "user@example.com",
+    firstName: "User",
+    lastName: "One",
+    avatarUrl: null,
+    ...overrides,
+  };
+}
+
+function createBoardSummaryRow(overrides?: Partial<any>) {
+  return {
+    id: "board-1",
+    title: "Team board",
+    description: null,
+    archivedAt: null,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    createdBy: createUserSummary(),
+    updatedBy: createUserSummary(),
+    _count: { columns: 5, tasks: 0 },
+    ...overrides,
+  };
+}
+
+function createTaskRow(overrides?: Partial<any>) {
+  return {
+    id: "task-1",
+    boardId: "board-1",
+    columnId: "column-1",
+    title: "Check source",
+    bodyMarkdown: null,
+    priority: AnalysisTaskPriority.normal,
+    assigneeId: null,
+    assignee: null,
+    linkedSubjectType: null,
+    linkedSubjectId: null,
+    dueAt: null,
+    sortOrder: 1000,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    createdBy: createUserSummary(),
+    updatedBy: createUserSummary(),
+    ...overrides,
+  };
+}
+
 describe("AnalysisWorkspaceService", () => {
   let service: AnalysisWorkspaceService;
 
   beforeEach(() => {
     jest.resetAllMocks();
+    prismaMock.$transaction.mockImplementation(async (callback: (tx: unknown) => unknown) =>
+      callback(prismaMock),
+    );
     service = createService();
   });
 
@@ -233,5 +314,91 @@ describe("AnalysisWorkspaceService", () => {
       include: expect.any(Object),
     });
     expect(row.bodyMarkdown).toBe("first comment");
+  });
+
+  it("creates default board columns when listing boards for an empty org", async () => {
+    prismaMock.analysisBoard.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    prismaMock.analysisBoard.create.mockResolvedValue({ id: "board-1" });
+    prismaMock.analysisBoard.findMany.mockResolvedValue([
+      createBoardSummaryRow(),
+    ]);
+
+    const rows = await service.listBoards("org-1", {
+      id: "user-1",
+      permissions: [],
+    });
+
+    expect(prismaMock.analysisBoard.create).toHaveBeenCalledWith({
+      data: {
+        orgId: "org-1",
+        createdById: "user-1",
+        updatedById: "user-1",
+        title: "Team board",
+      },
+      select: { id: true },
+    });
+    expect(prismaMock.analysisBoardColumn.createMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({ boardId: "board-1", title: "Backlog" }),
+        expect.objectContaining({ boardId: "board-1", title: "Done", isDone: true }),
+      ]),
+    });
+    expect(rows[0]?.taskCount).toBe(0);
+  });
+
+  it("creates an analysis task linked to a saved view and validates assignee membership", async () => {
+    prismaMock.analysisBoard.findFirst.mockResolvedValue({ id: "board-1" });
+    prismaMock.analysisBoardColumn.findFirst.mockResolvedValue({
+      id: "column-1",
+      boardId: "board-1",
+    });
+    prismaMock.savedAnalysisView.findFirst.mockResolvedValue(
+      createSavedViewRow({ id: "view-1", createdById: "user-1" }),
+    );
+    prismaMock.membership.findFirst.mockResolvedValue({ userId: "assignee-1" });
+    prismaMock.analysisTaskCard.findFirst.mockResolvedValue({ sortOrder: 1000 });
+    prismaMock.analysisTaskCard.create.mockResolvedValue(
+      createTaskRow({
+        assigneeId: "assignee-1",
+        linkedSubjectType: "saved_view",
+        linkedSubjectId: "view-1",
+      }),
+    );
+
+    const row = await service.createTask(
+      "org-1",
+      { id: "user-1", permissions: [] },
+      "board-1",
+      {
+        title: "Check source",
+        columnId: "column-1",
+        assigneeId: "assignee-1",
+        linkedSubjectType: "saved_view",
+        linkedSubjectId: "view-1",
+      },
+    );
+
+    expect(prismaMock.membership.findFirst).toHaveBeenCalledWith({
+      where: {
+        orgId: "org-1",
+        userId: "assignee-1",
+        isActive: true,
+        user: { isActive: true },
+      },
+      select: { userId: true },
+    });
+    expect(prismaMock.analysisTaskCard.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        boardId: "board-1",
+        columnId: "column-1",
+        assigneeId: "assignee-1",
+        linkedSubjectType: "saved_view",
+        linkedSubjectId: "view-1",
+      }),
+      include: expect.any(Object),
+    });
+    expect(row.commentCount).toBe(0);
   });
 });

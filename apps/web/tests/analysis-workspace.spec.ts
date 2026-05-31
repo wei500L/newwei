@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildAnalysisSubjectHref,
   buildSavedViewHref,
   formatAnalysisActorName,
   sanitizeAnalysisQueryString,
@@ -37,5 +38,13 @@ describe("analysis workspace helpers", () => {
         avatarUrl: null,
       }),
     ).toBe("analyst@example.com");
+  });
+
+  it("builds linked subject routes for task cards", () => {
+    expect(buildAnalysisSubjectHref("item", "item-1")).toBe("/items/item-1");
+    expect(buildAnalysisSubjectHref("event", "event-1")).toBe("/events/event-1");
+    expect(buildAnalysisSubjectHref("saved_view", "view-1")).toBe(
+      "/analysis?savedView=view-1",
+    );
   });
 });

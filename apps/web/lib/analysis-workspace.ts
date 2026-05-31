@@ -1,6 +1,8 @@
 export type SavedAnalysisSurface = "search" | "items" | "events";
 export type SavedAnalysisVisibility = "private" | "org_shared";
-export type AnalysisSubjectType = "saved_view" | "item" | "event";
+export type AnalysisSubjectType = "saved_view" | "item" | "event" | "analysis_task";
+export type AnalysisTaskLinkedSubjectType = "saved_view" | "item" | "event";
+export type AnalysisTaskPriority = "low" | "normal" | "high" | "urgent";
 
 export interface AnalysisUserSummary {
   id: string;
@@ -50,6 +52,70 @@ export interface AnalysisThread {
   comments: AnalysisComment[];
 }
 
+export interface AnalysisBoardSummary {
+  id: string;
+  title: string;
+  description?: string | null;
+  archivedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: AnalysisUserSummary;
+  updatedBy: AnalysisUserSummary;
+  columnCount: number;
+  taskCount: number;
+}
+
+export interface AnalysisTaskCard {
+  id: string;
+  boardId: string;
+  columnId: string;
+  title: string;
+  bodyMarkdown?: string | null;
+  priority: AnalysisTaskPriority;
+  assigneeId?: string | null;
+  assignee?: AnalysisUserSummary | null;
+  linkedSubjectType?: AnalysisTaskLinkedSubjectType | null;
+  linkedSubjectId?: string | null;
+  dueAt?: string | null;
+  sortOrder: number;
+  commentCount: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: AnalysisUserSummary;
+  updatedBy: AnalysisUserSummary;
+}
+
+export interface AnalysisBoardColumn {
+  id: string;
+  title: string;
+  color?: string | null;
+  sortOrder: number;
+  isDone: boolean;
+  createdAt: string;
+  updatedAt: string;
+  tasks: AnalysisTaskCard[];
+}
+
+export interface AnalysisBoardDetail {
+  id: string;
+  title: string;
+  description?: string | null;
+  archivedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: AnalysisUserSummary;
+  updatedBy: AnalysisUserSummary;
+  columns: AnalysisBoardColumn[];
+}
+
+export interface AnalysisMemberSummary {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  avatarUrl?: string | null;
+}
+
 export function sanitizeAnalysisQueryString(
   input?: string | URLSearchParams | { toString(): string } | null,
 ) {
@@ -95,6 +161,22 @@ export function formatAnalysisActorName(actor: AnalysisUserSummary) {
   return displayName || actor.email;
 }
 
+export function buildAnalysisSubjectHref(
+  subjectType?: AnalysisTaskLinkedSubjectType | null,
+  subjectId?: string | null,
+) {
+  if (!subjectType || !subjectId) {
+    return null;
+  }
+  if (subjectType === "saved_view") {
+    return `/analysis?savedView=${encodeURIComponent(subjectId)}`;
+  }
+  if (subjectType === "item") {
+    return `/items/${encodeURIComponent(subjectId)}`;
+  }
+  return `/events/${encodeURIComponent(subjectId)}`;
+}
+
 export function downloadBlob(blob: Blob, filename: string) {
   const url = window.URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -105,4 +187,3 @@ export function downloadBlob(blob: Blob, filename: string) {
   anchor.remove();
   window.URL.revokeObjectURL(url);
 }
-

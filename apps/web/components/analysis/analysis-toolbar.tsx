@@ -27,6 +27,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
+import { CreateAnalysisTaskButton } from "@/components/analysis/create-analysis-task-button";
 import { captureClientError } from "@/lib/client-telemetry";
 import {
   buildSavedViewPath,
@@ -336,6 +337,16 @@ export function AnalysisToolbar({
                 defaultValue: "Copy link",
               })}
             </Button>
+          ) : null}
+          {savedViewId ? (
+            <CreateAnalysisTaskButton
+              subjectType="saved_view"
+              subjectId={savedViewId}
+              defaultTitle={savedView?.title}
+              buttonText={t("analysis.toolbar.createTask", {
+                defaultValue: "Create task",
+              })}
+            />
           ) : null}
           <Button
             icon={<DownloadOutlined />}

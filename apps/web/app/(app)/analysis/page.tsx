@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 
-import { AnalysisLibrary } from "./analysis-library";
+import { AnalysisWorkspace } from "./analysis-workspace";
 
 export default async function AnalysisPage() {
   const session = await auth();
@@ -10,5 +10,5 @@ export default async function AnalysisPage() {
     redirect("/login");
   }
 
-  return <AnalysisLibrary />;
+  return <AnalysisWorkspace />;
 }

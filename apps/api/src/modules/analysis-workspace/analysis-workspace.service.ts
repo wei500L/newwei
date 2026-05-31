@@ -7,6 +7,8 @@ import {
 } from "@nestjs/common";
 import {
   AnalysisSubjectType,
+  AnalysisTaskLinkedSubjectType,
+  AnalysisTaskPriority,
   NewsEventStatus,
   Prisma,
   PrismaClient,
@@ -39,6 +41,15 @@ import { NewsEventsSettingsService } from "../news-events/news-events-settings.s
 
 const MAX_EXPORT_ROWS = 5000;
 const EVENT_DEDUPE_WINDOW_MS = 5 * 24 * 60 * 60 * 1000;
+const SORT_STEP = 1000;
+const DEFAULT_BOARD_TITLE = "Team board";
+const DEFAULT_BOARD_COLUMNS = [
+  { title: "Backlog", color: "default", isDone: false },
+  { title: "Triage", color: "orange", isDone: false },
+  { title: "In progress", color: "blue", isDone: false },
+  { title: "Review", color: "purple", isDone: false },
+  { title: "Done", color: "green", isDone: true },
+] as const;
 const USER_SUMMARY_SELECT = {
   id: true,
   email: true,
@@ -70,6 +81,48 @@ const THREAD_INCLUDE = {
     },
   },
 } satisfies Prisma.AnalysisThreadInclude;
+const TASK_INCLUDE = {
+  createdBy: {
+    select: USER_SUMMARY_SELECT,
+  },
+  updatedBy: {
+    select: USER_SUMMARY_SELECT,
+  },
+  assignee: {
+    select: USER_SUMMARY_SELECT,
+  },
+} satisfies Prisma.AnalysisTaskCardInclude;
+const BOARD_DETAIL_INCLUDE = {
+  createdBy: {
+    select: USER_SUMMARY_SELECT,
+  },
+  updatedBy: {
+    select: USER_SUMMARY_SELECT,
+  },
+  columns: {
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    include: {
+      tasks: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        include: TASK_INCLUDE,
+      },
+    },
+  },
+} satisfies Prisma.AnalysisBoardInclude;
+const BOARD_SUMMARY_INCLUDE = {
+  createdBy: {
+    select: USER_SUMMARY_SELECT,
+  },
+  updatedBy: {
+    select: USER_SUMMARY_SELECT,
+  },
+  _count: {
+    select: {
+      columns: true,
+      tasks: true,
+    },
+  },
+} satisfies Prisma.AnalysisBoardInclude;
 
 interface AnalysisActor {
   id: string;
@@ -93,9 +146,25 @@ type CommentRecord = Prisma.AnalysisCommentGetPayload<{
     };
   };
 }>;
+type BoardSummaryRecord = Prisma.AnalysisBoardGetPayload<{
+  include: typeof BOARD_SUMMARY_INCLUDE;
+}>;
+type BoardDetailRecord = Prisma.AnalysisBoardGetPayload<{
+  include: typeof BOARD_DETAIL_INCLUDE;
+}>;
+type BoardDetailColumn = BoardDetailRecord["columns"][number];
+type BoardDetailTask = BoardDetailColumn["tasks"][number];
+type TaskRecord = Prisma.AnalysisTaskCardGetPayload<{
+  include: typeof TASK_INCLUDE;
+}>;
 type AnalysisWorkspacePrismaClient = Pick<
   PrismaClient,
-  "savedAnalysisView" | "analysisThread" | "analysisComment"
+  | "savedAnalysisView"
+  | "analysisThread"
+  | "analysisComment"
+  | "analysisBoard"
+  | "analysisBoardColumn"
+  | "analysisTaskCard"
 >;
 type AnalysisWorkspaceTransactionClient = Prisma.TransactionClient &
   AnalysisWorkspacePrismaClient;
@@ -322,6 +391,435 @@ export class AnalysisWorkspaceService {
     });
 
     return { ok: true };
+  }
+
+  async listBoards(orgId: string, user: AnalysisActor) {
+    await this.ensureDefaultBoard(orgId, user);
+    const rows = await this.analysisPrisma.analysisBoard.findMany({
+      where: { orgId, archivedAt: null },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      include: BOARD_SUMMARY_INCLUDE,
+    });
+    return rows.map((row: BoardSummaryRecord) => this.toBoardSummary(row));
+  }
+
+  async getBoard(orgId: string, user: AnalysisActor, boardId: string) {
+    await this.ensureDefaultBoard(orgId, user);
+    const row = await this.analysisPrisma.analysisBoard.findFirst({
+      where: { orgId, id: boardId, archivedAt: null },
+      include: BOARD_DETAIL_INCLUDE,
+    });
+    if (!row) {
+      throw new NotFoundException("Analysis board not found");
+    }
+    const commentCounts = await this.loadTaskCommentCounts(
+      orgId,
+      this.collectTaskIds(row),
+    );
+    return this.toBoardDetail(row, commentCounts);
+  }
+
+  async createBoard(
+    orgId: string,
+    user: AnalysisActor,
+    input: { title: string; description?: string },
+  ) {
+    const title = this.normalizeRequiredText(input.title, 120, "title");
+    const description = this.normalizeOptionalText(
+      input.description,
+      1000,
+      "description",
+    );
+    const board = await this.prisma.$transaction(async (prismaTx) => {
+      const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      const row = await tx.analysisBoard.create({
+        data: {
+          orgId,
+          createdById: user.id,
+          updatedById: user.id,
+          title,
+          description,
+        },
+        select: { id: true },
+      });
+      await this.createDefaultColumns(tx, orgId, row.id);
+      return row;
+    });
+    return this.getBoard(orgId, user, board.id);
+  }
+
+  async updateBoard(
+    orgId: string,
+    user: AnalysisActor,
+    boardId: string,
+    input: { title?: string; description?: string },
+  ) {
+    await this.assertBoardActive(orgId, boardId);
+    const data: Record<string, unknown> = { updatedById: user.id };
+    if (input.title !== undefined) {
+      data.title = this.normalizeRequiredText(input.title, 120, "title");
+    }
+    if (input.description !== undefined) {
+      data.description = this.normalizeOptionalText(
+        input.description,
+        1000,
+        "description",
+      );
+    }
+    await this.analysisPrisma.analysisBoard.update({
+      where: { id: boardId },
+      data,
+    });
+    return this.getBoard(orgId, user, boardId);
+  }
+
+  async archiveBoard(orgId: string, user: AnalysisActor, boardId: string) {
+    await this.assertBoardActive(orgId, boardId);
+    const activeCount = await this.analysisPrisma.analysisBoard.count({
+      where: { orgId, archivedAt: null },
+    });
+    if (activeCount <= 1) {
+      throw new BadRequestException("Cannot archive the last analysis board");
+    }
+    await this.analysisPrisma.analysisBoard.update({
+      where: { id: boardId },
+      data: { archivedAt: new Date(), updatedById: user.id },
+    });
+    return { ok: true };
+  }
+
+  async createColumn(
+    orgId: string,
+    user: AnalysisActor,
+    boardId: string,
+    input: { title: string; color?: string; isDone?: boolean },
+  ) {
+    await this.assertBoardActive(orgId, boardId);
+    const title = this.normalizeRequiredText(input.title, 80, "title");
+    const color = this.normalizeOptionalText(input.color, 32, "color");
+    const lastColumn = await this.analysisPrisma.analysisBoardColumn.findFirst({
+      where: { orgId, boardId },
+      orderBy: [{ sortOrder: "desc" }, { createdAt: "desc" }],
+      select: { sortOrder: true },
+    });
+    await this.analysisPrisma.analysisBoardColumn.create({
+      data: {
+        orgId,
+        boardId,
+        title,
+        color,
+        isDone: input.isDone ?? false,
+        sortOrder: (lastColumn?.sortOrder ?? 0) + SORT_STEP,
+      },
+    });
+    await this.analysisPrisma.analysisBoard.update({
+      where: { id: boardId },
+      data: { updatedById: user.id },
+    });
+    return this.getBoard(orgId, user, boardId);
+  }
+
+  async updateColumn(
+    orgId: string,
+    user: AnalysisActor,
+    columnId: string,
+    input: { title?: string; color?: string; isDone?: boolean },
+  ) {
+    const column = await this.assertColumnActive(orgId, columnId);
+    const data: Record<string, unknown> = {};
+    if (input.title !== undefined) {
+      data.title = this.normalizeRequiredText(input.title, 80, "title");
+    }
+    if (input.color !== undefined) {
+      data.color = this.normalizeOptionalText(input.color, 32, "color");
+    }
+    if (input.isDone !== undefined) {
+      data.isDone = input.isDone;
+    }
+    await this.analysisPrisma.analysisBoardColumn.update({
+      where: { id: column.id },
+      data,
+    });
+    await this.analysisPrisma.analysisBoard.update({
+      where: { id: column.boardId },
+      data: { updatedById: user.id },
+    });
+    return this.getBoard(orgId, user, column.boardId);
+  }
+
+  async deleteColumn(
+    orgId: string,
+    user: AnalysisActor,
+    columnId: string,
+    moveCardsToColumnId: string,
+  ) {
+    const column = await this.assertColumnActive(orgId, columnId);
+    if (columnId === moveCardsToColumnId) {
+      throw new BadRequestException("Target column must be different");
+    }
+    const [columnCount, target] = await Promise.all([
+      this.analysisPrisma.analysisBoardColumn.count({
+        where: { orgId, boardId: column.boardId },
+      }),
+      this.analysisPrisma.analysisBoardColumn.findFirst({
+        where: { orgId, id: moveCardsToColumnId, boardId: column.boardId },
+        select: { id: true },
+      }),
+    ]);
+    if (columnCount <= 1) {
+      throw new BadRequestException("Cannot delete the last board column");
+    }
+    if (!target) {
+      throw new NotFoundException("Target analysis board column not found");
+    }
+    await this.prisma.$transaction(async (prismaTx) => {
+      const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      await tx.analysisTaskCard.updateMany({
+        where: { orgId, columnId },
+        data: { columnId: target.id, updatedById: user.id },
+      });
+      await tx.analysisBoardColumn.delete({ where: { id: columnId } });
+      await this.reindexColumnTasks(tx, orgId, target.id);
+      await tx.analysisBoard.update({
+        where: { id: column.boardId },
+        data: { updatedById: user.id },
+      });
+    });
+    return this.getBoard(orgId, user, column.boardId);
+  }
+
+  async reorderColumns(
+    orgId: string,
+    user: AnalysisActor,
+    boardId: string,
+    columnIds: string[],
+  ) {
+    await this.assertBoardActive(orgId, boardId);
+    const uniqueIds = Array.from(new Set(columnIds));
+    const columns = await this.analysisPrisma.analysisBoardColumn.findMany({
+      where: { orgId, boardId },
+      select: { id: true },
+    });
+    const existingIds = columns
+      .map((column: { id: string }) => column.id)
+      .sort();
+    if (
+      uniqueIds.length !== existingIds.length ||
+      uniqueIds.sort().join("\0") !== existingIds.join("\0")
+    ) {
+      throw new BadRequestException("Column order must include every board column");
+    }
+    await this.prisma.$transaction(async (prismaTx) => {
+      const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      await Promise.all(
+        columnIds.map((id, index) =>
+          tx.analysisBoardColumn.update({
+            where: { id },
+            data: { sortOrder: (index + 1) * SORT_STEP },
+          }),
+        ),
+      );
+      await tx.analysisBoard.update({
+        where: { id: boardId },
+        data: { updatedById: user.id },
+      });
+    });
+    return this.getBoard(orgId, user, boardId);
+  }
+
+  async createTask(
+    orgId: string,
+    user: AnalysisActor,
+    boardId: string,
+    input: {
+      title: string;
+      bodyMarkdown?: string;
+      priority?: AnalysisTaskPriority;
+      columnId?: string;
+      assigneeId?: string | null;
+      linkedSubjectType?: AnalysisTaskLinkedSubjectType | null;
+      linkedSubjectId?: string | null;
+      dueAt?: string | null;
+    },
+  ) {
+    await this.assertBoardActive(orgId, boardId);
+    const column = input.columnId
+      ? await this.assertColumnActive(orgId, input.columnId, boardId)
+      : await this.getFirstBoardColumn(orgId, boardId);
+    const linkedSubject = await this.resolveLinkedSubject(
+      orgId,
+      user.id,
+      input.linkedSubjectType,
+      input.linkedSubjectId,
+    );
+    const assigneeId = await this.resolveAssigneeId(orgId, input.assigneeId);
+    const lastTask = await this.analysisPrisma.analysisTaskCard.findFirst({
+      where: { orgId, columnId: column.id },
+      orderBy: [{ sortOrder: "desc" }, { createdAt: "desc" }],
+      select: { sortOrder: true },
+    });
+    const task = await this.analysisPrisma.analysisTaskCard.create({
+      data: {
+        orgId,
+        boardId,
+        columnId: column.id,
+        createdById: user.id,
+        updatedById: user.id,
+        title: this.normalizeRequiredText(input.title, 160, "title"),
+        bodyMarkdown: this.normalizeOptionalText(
+          input.bodyMarkdown,
+          10000,
+          "bodyMarkdown",
+        ),
+        priority: input.priority ?? AnalysisTaskPriority.normal,
+        assigneeId,
+        linkedSubjectType: linkedSubject?.type,
+        linkedSubjectId: linkedSubject?.id,
+        dueAt: this.normalizeOptionalDate(input.dueAt, "dueAt"),
+        sortOrder: (lastTask?.sortOrder ?? 0) + SORT_STEP,
+      },
+      include: TASK_INCLUDE,
+    });
+    await this.analysisPrisma.analysisBoard.update({
+      where: { id: boardId },
+      data: { updatedById: user.id },
+    });
+    return this.toTaskResponse(task, new Map<string, number>());
+  }
+
+  async updateTask(
+    orgId: string,
+    user: AnalysisActor,
+    taskId: string,
+    input: {
+      title?: string;
+      bodyMarkdown?: string | null;
+      priority?: AnalysisTaskPriority;
+      assigneeId?: string | null;
+      linkedSubjectType?: AnalysisTaskLinkedSubjectType | null;
+      linkedSubjectId?: string | null;
+      dueAt?: string | null;
+    },
+  ) {
+    const existing = await this.assertTaskActive(orgId, taskId);
+    const data: Record<string, unknown> = { updatedById: user.id };
+    if (input.title !== undefined) {
+      data.title = this.normalizeRequiredText(input.title, 160, "title");
+    }
+    if (input.bodyMarkdown !== undefined) {
+      data.bodyMarkdown = this.normalizeOptionalText(
+        input.bodyMarkdown ?? undefined,
+        10000,
+        "bodyMarkdown",
+      );
+    }
+    if (input.priority !== undefined) {
+      data.priority = input.priority;
+    }
+    if (input.assigneeId !== undefined) {
+      data.assigneeId = await this.resolveAssigneeId(orgId, input.assigneeId);
+    }
+    if (
+      input.linkedSubjectType !== undefined ||
+      input.linkedSubjectId !== undefined
+    ) {
+      const linkedSubject = await this.resolveLinkedSubject(
+        orgId,
+        user.id,
+        input.linkedSubjectType,
+        input.linkedSubjectId,
+      );
+      data.linkedSubjectType = linkedSubject?.type ?? null;
+      data.linkedSubjectId = linkedSubject?.id ?? null;
+    }
+    if (input.dueAt !== undefined) {
+      data.dueAt = this.normalizeOptionalDate(input.dueAt, "dueAt");
+    }
+    const task = await this.analysisPrisma.analysisTaskCard.update({
+      where: { id: existing.id },
+      data,
+      include: TASK_INCLUDE,
+    });
+    await this.analysisPrisma.analysisBoard.update({
+      where: { id: existing.boardId },
+      data: { updatedById: user.id },
+    });
+    const commentCounts = await this.loadTaskCommentCounts(orgId, [task.id]);
+    return this.toTaskResponse(task, commentCounts);
+  }
+
+  async deleteTask(orgId: string, user: AnalysisActor, taskId: string) {
+    const existing = await this.assertTaskActive(orgId, taskId);
+    await this.prisma.$transaction(async (prismaTx) => {
+      const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      const thread = await tx.analysisThread.findFirst({
+        where: {
+          orgId,
+          subjectType: AnalysisSubjectType.analysis_task,
+          subjectId: taskId,
+        },
+        select: { id: true },
+      });
+      if (thread) {
+        await tx.analysisComment.deleteMany({
+          where: { orgId, threadId: thread.id },
+        });
+        await tx.analysisThread.delete({ where: { id: thread.id } });
+      }
+      await tx.analysisTaskCard.delete({ where: { id: existing.id } });
+      await this.reindexColumnTasks(tx, orgId, existing.columnId);
+      await tx.analysisBoard.update({
+        where: { id: existing.boardId },
+        data: { updatedById: user.id },
+      });
+    });
+    return { ok: true };
+  }
+
+  async moveTask(
+    orgId: string,
+    user: AnalysisActor,
+    taskId: string,
+    input: { targetColumnId: string; targetIndex: number },
+  ) {
+    const task = await this.assertTaskActive(orgId, taskId);
+    const targetColumn = await this.assertColumnActive(
+      orgId,
+      input.targetColumnId,
+      task.boardId,
+    );
+    await this.prisma.$transaction(async (prismaTx) => {
+      const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      const targetTasks = await tx.analysisTaskCard.findMany({
+        where: { orgId, columnId: targetColumn.id },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        select: { id: true },
+      });
+      const targetOrder = targetTasks
+        .map((entry: { id: string }) => entry.id)
+        .filter((id: string) => id !== task.id);
+      const targetIndex = Math.max(
+        0,
+        Math.min(input.targetIndex, targetOrder.length),
+      );
+      targetOrder.splice(targetIndex, 0, task.id);
+      await tx.analysisTaskCard.update({
+        where: { id: task.id },
+        data: {
+          columnId: targetColumn.id,
+          updatedById: user.id,
+        },
+      });
+      await this.reindexColumnTasks(tx, orgId, targetColumn.id, targetOrder);
+      if (task.columnId !== targetColumn.id) {
+        await this.reindexColumnTasks(tx, orgId, task.columnId);
+      }
+      await tx.analysisBoard.update({
+        where: { id: task.boardId },
+        data: { updatedById: user.id },
+      });
+    });
+    return this.getBoard(orgId, user, task.boardId);
   }
 
   async getThread(
@@ -640,6 +1138,218 @@ export class AnalysisWorkspaceService {
     );
   }
 
+  private async ensureDefaultBoard(orgId: string, user: AnalysisActor) {
+    const existing = await this.analysisPrisma.analysisBoard.findFirst({
+      where: { orgId, archivedAt: null },
+      orderBy: [{ createdAt: "asc" }],
+      select: { id: true },
+    });
+    if (existing) {
+      return existing;
+    }
+    return this.prisma.$transaction(async (prismaTx) => {
+      const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      const raceWinner = await tx.analysisBoard.findFirst({
+        where: { orgId, archivedAt: null },
+        orderBy: [{ createdAt: "asc" }],
+        select: { id: true },
+      });
+      if (raceWinner) {
+        return raceWinner;
+      }
+      const board = await tx.analysisBoard.create({
+        data: {
+          orgId,
+          createdById: user.id,
+          updatedById: user.id,
+          title: DEFAULT_BOARD_TITLE,
+        },
+        select: { id: true },
+      });
+      await this.createDefaultColumns(tx, orgId, board.id);
+      return board;
+    });
+  }
+
+  private async createDefaultColumns(
+    tx: AnalysisWorkspaceTransactionClient,
+    orgId: string,
+    boardId: string,
+  ) {
+    await tx.analysisBoardColumn.createMany({
+      data: DEFAULT_BOARD_COLUMNS.map((column, index) => ({
+        orgId,
+        boardId,
+        title: column.title,
+        color: column.color,
+        isDone: column.isDone,
+        sortOrder: (index + 1) * SORT_STEP,
+      })),
+    });
+  }
+
+  private async assertBoardActive(orgId: string, boardId: string) {
+    const board = await this.analysisPrisma.analysisBoard.findFirst({
+      where: { orgId, id: boardId, archivedAt: null },
+      select: { id: true },
+    });
+    if (!board) {
+      throw new NotFoundException("Analysis board not found");
+    }
+    return board;
+  }
+
+  private async assertColumnActive(
+    orgId: string,
+    columnId: string,
+    boardId?: string,
+  ) {
+    const column = await this.analysisPrisma.analysisBoardColumn.findFirst({
+      where: {
+        orgId,
+        id: columnId,
+        ...(boardId ? { boardId } : {}),
+        board: { archivedAt: null },
+      },
+      select: { id: true, boardId: true },
+    });
+    if (!column) {
+      throw new NotFoundException("Analysis board column not found");
+    }
+    return column;
+  }
+
+  private async getFirstBoardColumn(orgId: string, boardId: string) {
+    const column = await this.analysisPrisma.analysisBoardColumn.findFirst({
+      where: { orgId, boardId, board: { archivedAt: null } },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      select: { id: true, boardId: true },
+    });
+    if (!column) {
+      throw new BadRequestException("Analysis board has no columns");
+    }
+    return column;
+  }
+
+  private async assertTaskActive(orgId: string, taskId: string) {
+    const task = await this.analysisPrisma.analysisTaskCard.findFirst({
+      where: {
+        orgId,
+        id: taskId,
+        board: { archivedAt: null },
+      },
+      select: { id: true, boardId: true, columnId: true },
+    });
+    if (!task) {
+      throw new NotFoundException("Analysis task not found");
+    }
+    return task;
+  }
+
+  private async resolveAssigneeId(
+    orgId: string,
+    assigneeId?: string | null,
+  ): Promise<string | null> {
+    const normalized = assigneeId?.trim();
+    if (!normalized) {
+      return null;
+    }
+    const membership = await this.prisma.membership.findFirst({
+      where: {
+        orgId,
+        userId: normalized,
+        isActive: true,
+        user: { isActive: true },
+      },
+      select: { userId: true },
+    });
+    if (!membership) {
+      throw new BadRequestException("Assignee must be an active org member");
+    }
+    return membership.userId;
+  }
+
+  private async resolveLinkedSubject(
+    orgId: string,
+    userId: string,
+    subjectType?: AnalysisTaskLinkedSubjectType | null,
+    subjectId?: string | null,
+  ): Promise<{ type: AnalysisTaskLinkedSubjectType; id: string } | null> {
+    const normalizedSubjectId = subjectId?.trim();
+    if (!subjectType && !normalizedSubjectId) {
+      return null;
+    }
+    if (!subjectType || !normalizedSubjectId) {
+      throw new BadRequestException(
+        "linkedSubjectType and linkedSubjectId must be provided together",
+      );
+    }
+    await this.assertSubjectReadable(
+      orgId,
+      userId,
+      subjectType as unknown as AnalysisSubjectType,
+      normalizedSubjectId,
+    );
+    return { type: subjectType, id: normalizedSubjectId };
+  }
+
+  private async reindexColumnTasks(
+    tx: AnalysisWorkspaceTransactionClient,
+    orgId: string,
+    columnId: string,
+    orderedTaskIds?: string[],
+  ) {
+    const taskIds =
+      orderedTaskIds ??
+      (
+        await tx.analysisTaskCard.findMany({
+          where: { orgId, columnId },
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+          select: { id: true },
+        })
+      ).map((task: { id: string }) => task.id);
+    await Promise.all(
+      taskIds.map((id: string, index: number) =>
+        tx.analysisTaskCard.update({
+          where: { id },
+          data: { sortOrder: (index + 1) * SORT_STEP },
+        }),
+      ),
+    );
+  }
+
+  private collectTaskIds(board: BoardDetailRecord): string[] {
+    return board.columns.flatMap((column: BoardDetailColumn) =>
+      column.tasks.map((task: BoardDetailTask) => task.id),
+    );
+  }
+
+  private async loadTaskCommentCounts(
+    orgId: string,
+    taskIds: string[],
+  ): Promise<Map<string, number>> {
+    if (taskIds.length === 0) {
+      return new Map<string, number>();
+    }
+    const rows = await this.analysisPrisma.analysisThread.findMany({
+      where: {
+        orgId,
+        subjectType: AnalysisSubjectType.analysis_task,
+        subjectId: { in: taskIds },
+      },
+      select: {
+        subjectId: true,
+        _count: { select: { comments: true } },
+      },
+    });
+    return new Map(
+      rows.map((row: { subjectId: string; _count: { comments: number } }) => [
+        row.subjectId,
+        row._count.comments,
+      ]),
+    );
+  }
+
   private threadInclude(): typeof THREAD_INCLUDE {
     return THREAD_INCLUDE;
   }
@@ -658,6 +1368,74 @@ export class AnalysisWorkspaceService {
       createdBy: this.toUserSummary(row.createdBy),
       updatedBy: this.toUserSummary(row.updatedBy),
       canEdit: false,
+    };
+  }
+
+  private toBoardSummary(row: BoardSummaryRecord) {
+    return {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      archivedAt: row.archivedAt?.toISOString() ?? null,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+      createdBy: this.toUserSummary(row.createdBy),
+      updatedBy: this.toUserSummary(row.updatedBy),
+      columnCount: row._count.columns,
+      taskCount: row._count.tasks,
+    };
+  }
+
+  private toBoardDetail(
+    row: BoardDetailRecord,
+    commentCounts: Map<string, number>,
+  ) {
+    return {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      archivedAt: row.archivedAt?.toISOString() ?? null,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+      createdBy: this.toUserSummary(row.createdBy),
+      updatedBy: this.toUserSummary(row.updatedBy),
+      columns: row.columns.map((column: BoardDetailColumn) => ({
+        id: column.id,
+        title: column.title,
+        color: column.color,
+        sortOrder: column.sortOrder,
+        isDone: column.isDone,
+        createdAt: column.createdAt.toISOString(),
+        updatedAt: column.updatedAt.toISOString(),
+        tasks: column.tasks.map((task: BoardDetailTask) =>
+          this.toTaskResponse(task, commentCounts),
+        ),
+      })),
+    };
+  }
+
+  private toTaskResponse(
+    task: TaskRecord,
+    commentCounts: Map<string, number>,
+  ) {
+    return {
+      id: task.id,
+      boardId: task.boardId,
+      columnId: task.columnId,
+      title: task.title,
+      bodyMarkdown: task.bodyMarkdown,
+      priority: task.priority,
+      assigneeId: task.assigneeId,
+      assignee: task.assignee ? this.toUserSummary(task.assignee) : null,
+      linkedSubjectType: task.linkedSubjectType,
+      linkedSubjectId: task.linkedSubjectId,
+      dueAt: task.dueAt?.toISOString() ?? null,
+      sortOrder: task.sortOrder,
+      commentCount: commentCounts.get(task.id) ?? 0,
+      createdAt: task.createdAt.toISOString(),
+      updatedAt: task.updatedAt.toISOString(),
+      createdBy: this.toUserSummary(task.createdBy),
+      updatedBy: this.toUserSummary(task.updatedBy),
     };
   }
 
@@ -784,6 +1562,17 @@ export class AnalysisWorkspaceService {
       return;
     }
 
+    if (subjectType === AnalysisSubjectType.analysis_task) {
+      const task = await this.analysisPrisma.analysisTaskCard.findFirst({
+        where: { orgId, id: subjectId, board: { archivedAt: null } },
+        select: { id: true },
+      });
+      if (!task) {
+        throw new NotFoundException("Analysis subject not found");
+      }
+      return;
+    }
+
     const event = await this.prisma.newsEvent.findFirst({
       where: { orgId, id: subjectId },
       select: { id: true },
@@ -833,6 +1622,20 @@ export class AnalysisWorkspaceService {
       throw new BadRequestException(`${field} is too long`);
     }
     return trimmed;
+  }
+
+  private normalizeOptionalDate(
+    value: string | null | undefined,
+    field: string,
+  ): Date | null {
+    if (value === undefined || value === null || value.trim() === "") {
+      return null;
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException(`${field} must be a valid date`);
+    }
+    return date;
   }
 
   private normalizeRoutePath(routePath: string) {

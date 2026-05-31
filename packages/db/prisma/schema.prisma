@@ -68,6 +68,9 @@ model Org {
   savedAnalysisViews                   SavedAnalysisView[]
   analysisThreads                      AnalysisThread[]
   analysisComments                     AnalysisComment[]
+  analysisBoards                       AnalysisBoard[]
+  analysisBoardColumns                 AnalysisBoardColumn[]
+  analysisTaskCards                    AnalysisTaskCard[]
   userDigestDeliverySchedules          UserDigestDeliverySchedule[]
   contentSubscriptionCatalog           ContentSubscriptionCatalog[]
   userContentSubscriptions             UserContentSubscription[]
@@ -142,6 +145,11 @@ model User {
   analysisThreadsCreated        AnalysisThread[]           @relation("AnalysisThreadCreatedBy")
   analysisThreadsUpdated        AnalysisThread[]           @relation("AnalysisThreadUpdatedBy")
   analysisCommentsCreated       AnalysisComment[]          @relation("AnalysisCommentCreatedBy")
+  analysisBoardsCreated         AnalysisBoard[]            @relation("AnalysisBoardCreatedBy")
+  analysisBoardsUpdated         AnalysisBoard[]            @relation("AnalysisBoardUpdatedBy")
+  analysisTaskCardsCreated      AnalysisTaskCard[]         @relation("AnalysisTaskCardCreatedBy")
+  analysisTaskCardsUpdated      AnalysisTaskCard[]         @relation("AnalysisTaskCardUpdatedBy")
+  analysisTaskCardsAssigned     AnalysisTaskCard[]         @relation("AnalysisTaskCardAssignedTo")
   userDigestDeliverySchedules   UserDigestDeliverySchedule[]
   situationMonitorMonitors      SituationMonitorMonitor[]
   userNewsBehaviorAggregates    UserNewsBehaviorAggregate[]
@@ -865,6 +873,75 @@ model AnalysisComment {
   @@index([threadId, createdAt])
 }
 
+model AnalysisBoard {
+  id          String                @id @default(cuid())
+  org         Org                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId       String
+  createdBy   User                  @relation("AnalysisBoardCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdById String
+  updatedBy   User                  @relation("AnalysisBoardUpdatedBy", fields: [updatedById], references: [id], onDelete: Cascade)
+  updatedById String
+  title       String
+  description String?
+  archivedAt  DateTime?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  columns AnalysisBoardColumn[]
+  tasks   AnalysisTaskCard[]
+
+  @@index([orgId, archivedAt, updatedAt])
+  @@index([orgId, createdById, updatedAt])
+}
+
+model AnalysisBoardColumn {
+  id        String             @id @default(cuid())
+  org       Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId     String
+  board     AnalysisBoard      @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  boardId   String
+  title     String
+  color     String?
+  sortOrder Int                @default(0)
+  isDone    Boolean            @default(false)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  tasks AnalysisTaskCard[]
+
+  @@index([orgId, boardId, sortOrder])
+  @@index([boardId, sortOrder])
+}
+
+model AnalysisTaskCard {
+  id                String                         @id @default(cuid())
+  org               Org                            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId             String
+  board             AnalysisBoard                  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  boardId           String
+  column            AnalysisBoardColumn            @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  columnId          String
+  createdBy         User                           @relation("AnalysisTaskCardCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdById       String
+  updatedBy         User                           @relation("AnalysisTaskCardUpdatedBy", fields: [updatedById], references: [id], onDelete: Cascade)
+  updatedById       String
+  assignee          User?                          @relation("AnalysisTaskCardAssignedTo", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assigneeId        String?
+  title             String
+  bodyMarkdown      String?
+  priority          AnalysisTaskPriority           @default(normal)
+  linkedSubjectType AnalysisTaskLinkedSubjectType?
+  linkedSubjectId   String?
+  dueAt             DateTime?
+  sortOrder         Int                            @default(0)
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
+
+  @@index([orgId, boardId, columnId, sortOrder])
+  @@index([orgId, assigneeId, updatedAt])
+  @@index([orgId, linkedSubjectType, linkedSubjectId])
+}
+
 model UserDigestDeliverySchedule {
   id           String                     @id @default(cuid())
   org          Org                        @relation(fields: [orgId], references: [id])
@@ -907,6 +984,20 @@ enum SavedAnalysisVisibility {
 }
 
 enum AnalysisSubjectType {
+  saved_view
+  item
+  event
+  analysis_task
+}
+
+enum AnalysisTaskPriority {
+  low
+  normal
+  high
+  urgent
+}
+
+enum AnalysisTaskLinkedSubjectType {
   saved_view
   item
   event

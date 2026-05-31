@@ -25,10 +25,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { MarkdownViewer } from "@/components/markdown-viewer";
+import { CreateAnalysisTaskButton } from "@/components/analysis/create-analysis-task-button";
 import { createApiClient } from "@/lib/api-client";
 import {
   formatAnalysisActorName,
   type AnalysisSubjectType,
+  type AnalysisTaskLinkedSubjectType,
   type AnalysisThread,
 } from "@/lib/analysis-workspace";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -60,6 +62,7 @@ export function AnnotationPanel({
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canWrite = permissions.includes("analysis.write");
   const canManageUsers = permissions.includes("users.write");
+  const canCreateTaskForSubject = canWrite && subjectType !== "analysis_task";
   const currentUserId = session?.user?.id ?? null;
   const locale = resolveLocale(i18n.language);
   const apiClient = useMemo(
@@ -222,6 +225,17 @@ export function AnnotationPanel({
             description={t("analysis.annotations.readOnlyDescription", {
               defaultValue:
                 "You can read shared notes and comments, but writing requires analysis.write permission.",
+            })}
+          />
+        ) : null}
+
+        {canCreateTaskForSubject ? (
+          <CreateAnalysisTaskButton
+            subjectType={subjectType as AnalysisTaskLinkedSubjectType}
+            subjectId={subjectId}
+            defaultTitle={title}
+            buttonText={t("analysis.annotations.createTask", {
+              defaultValue: "Create task",
             })}
           />
         ) : null}
