@@ -42,7 +42,7 @@ describe("NewsExtractionSettingsService", () => {
     const settings = await service.getSettings("org-1");
 
     expect(settings).toEqual({
-      pipelineMode: NewsExtractionPipelineMode.legacy,
+      pipelineMode: NewsExtractionPipelineMode.staged,
       preflightGate: {
         enabled: true,
         minWordCount: 120,
@@ -66,6 +66,28 @@ describe("NewsExtractionSettingsService", () => {
         sentiment: NewsExtractionProviderId.llm,
         kg: NewsExtractionProviderId.llm,
       },
+    });
+  });
+
+  it("preserves explicitly configured legacy mode", async () => {
+    prismaMock.systemSetting.findUnique = jest.fn().mockResolvedValue({
+      value: {
+        pipelineMode: NewsExtractionPipelineMode.legacy,
+      },
+    });
+    const service = new NewsExtractionSettingsService(
+      prismaMock as any,
+      cacheMock as any,
+    );
+
+    const settings = await service.getSettings("org-1");
+
+    expect(settings.pipelineMode).toBe(NewsExtractionPipelineMode.legacy);
+    expect(settings.preflightGate).toEqual({
+      enabled: true,
+      minWordCount: 120,
+      rejectBotChallenge: true,
+      rejectListLike: true,
     });
   });
 

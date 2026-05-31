@@ -518,6 +518,73 @@ describe("NewsPipelineService", () => {
     expect(stageCalls).toHaveLength(0);
   });
 
+  it("uses staged preflight gate when extraction settings default to staged", async () => {
+    extractionSettingsService.getSettings.mockResolvedValueOnce({
+      pipelineMode: NewsExtractionPipelineMode.staged,
+      preflightGate: {
+        enabled: true,
+        minWordCount: 120,
+        rejectBotChallenge: true,
+        rejectListLike: true,
+      },
+      postCleanGate: {
+        enabled: true,
+        minQualityScore: 0.35,
+        minCleanedChars: 400,
+        requireSummary: true,
+      },
+      capabilities: {
+        entities: true,
+        sentiment: true,
+        kg: true,
+      },
+      providers: {
+        clean: "llm",
+        entities: "llm",
+        sentiment: "llm",
+        kg: "llm",
+      },
+    });
+
+    await service.process(job, raw);
+    await flushOutbox();
+
+    expect(liteLlm.acompletion).not.toHaveBeenCalled();
+    expect(TaskLogModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: "preflight",
+        data: expect.objectContaining({
+          reason: "insufficient_word_count",
+          stageMeta: expect.objectContaining({
+            status: "rejected",
+            reason: "insufficient_word_count",
+          }),
+        }),
+      }),
+    );
+    const processedUpdate = (ProcessedItemModel.findOneAndUpdate as jest.Mock)
+      .mock.calls[0]?.[1] as { $set?: { result?: Record<string, any> } };
+    expect(processedUpdate.$set?.result?.stage_meta).toEqual(
+      expect.objectContaining({
+        preflight: expect.objectContaining({
+          status: "rejected",
+          reason: "insufficient_word_count",
+        }),
+        clean: expect.objectContaining({
+          status: "skipped",
+          reason: "preflight_rejected",
+        }),
+        quality_gate: expect.objectContaining({
+          status: "skipped",
+          reason: "preflight_rejected",
+        }),
+      }),
+    );
+    expect(processedUpdate.$set?.result?.removed_noise_types).toContain(
+      "insufficient_word_count",
+    );
+  });
+
   it("rejects llm extraction settings inside crawl options", () => {
     expect(() =>
       (service as any).buildCrawlTaskOptions({

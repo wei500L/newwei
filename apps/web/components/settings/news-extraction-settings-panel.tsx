@@ -84,12 +84,12 @@ export function NewsExtractionSettingsPanel() {
             <Select
               options={[
                 {
-                  label: t("settings.newsExtraction.pipelineModeLegacy"),
-                  value: "legacy",
-                },
-                {
                   label: t("settings.newsExtraction.pipelineModeStaged"),
                   value: "staged",
+                },
+                {
+                  label: t("settings.newsExtraction.pipelineModeLegacy"),
+                  value: "legacy",
                 },
               ]}
             />

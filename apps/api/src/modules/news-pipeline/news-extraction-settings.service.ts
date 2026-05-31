@@ -179,7 +179,7 @@ export class NewsExtractionSettingsService {
 
   private getFallbackSettings(): NewsExtractionSettings {
     return {
-      pipelineMode: NewsExtractionPipelineMode.legacy,
+      pipelineMode: NewsExtractionPipelineMode.staged,
       preflightGate: {
         enabled: true,
         minWordCount: 120,
