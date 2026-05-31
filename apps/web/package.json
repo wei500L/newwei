@@ -14,6 +14,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "i18n:check": "node scripts/i18n-check.js",
+    "i18n:extract-defaults": "node scripts/i18n-extract-defaults.js --write",
     "i18n:sync": "node scripts/i18n-sync.js",
     "i18n:audit": "node scripts/i18n-audit.js",
     "test": "vitest run"

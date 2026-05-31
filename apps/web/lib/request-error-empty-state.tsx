@@ -67,97 +67,76 @@ export const buildRequestErrorEmptyState = ({
       case "network":
         return {
           variant: "offline" as const,
-          title: t("dashboard.dataOffline.title", { defaultValue: "Offline" }),
-          description: t("dashboard.dataOffline.description", {
-            defaultValue: "Cannot reach the service. Check your connection and retry."
-          })
+          title: t("dashboard.dataOffline.title"),
+          description: t("dashboard.dataOffline.description")
         };
       case "auth":
         return {
           variant: "permission" as const,
-          title: t("auth.sessionExpired", { defaultValue: "Session expired" }),
-          description: t("auth.login.sessionExpired", {
-            defaultValue: "Your session has expired. Please sign in again."
-          }),
-          actionLabel: t("auth.login.submit", { defaultValue: "Sign in" }),
+          title: t("auth.sessionExpired"),
+          description: t("auth.login.sessionExpired"),
+          actionLabel: t("auth.login.submit"),
           onAction: () => window.location.assign(getLoginHref())
         };
       case "permission":
         return {
           variant: "permission" as const,
-          title: t("common.accessDenied", { defaultValue: "Access denied" }),
-          description: t("common.accessDeniedDescription", {
-            defaultValue:
-              "You don't have permission to view this data. Contact an administrator if you need access."
-          })
+          title: t("common.accessDenied"),
+          description: t("common.accessDeniedDescription")
         };
       case "timeout":
         return {
           variant: "delayed" as const,
-          title: t("common.requestTimeoutTitle", { defaultValue: "Request timed out" }),
-          description: t("common.requestTimeoutDescription", {
-            defaultValue: "The request took too long. Please retry in a moment."
-          })
+          title: t("common.requestTimeoutTitle"),
+          description: t("common.requestTimeoutDescription")
         };
       case "rateLimit":
         return {
           variant: "delayed" as const,
-          title: t("common.rateLimitedTitle", { defaultValue: "Too many requests" }),
-          description: t("common.rateLimitedDescription", {
-            defaultValue: "You hit a rate limit. Please wait a bit and try again."
-          })
+          title: t("common.rateLimitedTitle"),
+          description: t("common.rateLimitedDescription")
         };
       case "notFound":
         return {
           variant: "error" as const,
-          title: t("common.notFoundTitle", { defaultValue: "Not found" }),
-          description: t("common.notFoundDescription", {
-            defaultValue: "The requested resource is not available."
-          })
+          title: t("common.notFoundTitle"),
+          description: t("common.notFoundDescription")
         };
       case "validation":
         return {
           variant: "error" as const,
-          title: t("common.invalidInput", { defaultValue: "Invalid input." }),
+          title: t("common.invalidInput"),
           description:
             apiError.message ||
-            t("common.invalidRequestDescription", {
-              defaultValue: "The request is invalid. Please adjust your input and retry."
-            })
+            t("common.invalidRequestDescription")
         };
       case "conflict":
         return {
           variant: "error" as const,
-          title: t("common.conflictTitle", { defaultValue: "Conflict" }),
+          title: t("common.conflictTitle"),
           description:
             apiError.message ||
-            t("common.conflictDescription", {
-              defaultValue: "The request conflicts with the current state. Please refresh and retry."
-            })
+            t("common.conflictDescription")
         };
       case "cancelled":
         return {
           variant: "empty" as const,
-          title: t("common.requestCancelledTitle", { defaultValue: "Request cancelled" }),
-          description: t("common.requestCancelledDescription", {
-            defaultValue: "The request was cancelled."
-          })
+          title: t("common.requestCancelledTitle"),
+          description: t("common.requestCancelledDescription")
         };
       case "service":
         return {
           variant: "error" as const,
-          title: t("common.requestFailed", { defaultValue: "Request failed" }),
-          description: t("common.serviceUnavailable", {
-            defaultValue: "Service is unavailable. Please try again."
-          })
+          title: t("common.requestFailed"),
+          description: t("common.serviceUnavailable")
         };
       case "unknown":
       default:
         return {
           variant: "error" as const,
-          title: t("common.requestFailed", { defaultValue: "Request failed" }),
+          title: t("common.requestFailed"),
           description:
-            apiError.message || t("common.unexpectedError", { defaultValue: "Unexpected error" })
+            apiError.message || t("common.unexpectedError")
         };
     }
   })();
@@ -179,7 +158,7 @@ export const buildRequestErrorEmptyState = ({
   const actionLabel =
     actionLabelOverride ??
     base.actionLabel ??
-    (shouldShowRetry ? t("common.retry", { defaultValue: "Retry" }) : undefined);
+    (shouldShowRetry ? t("common.retry") : undefined);
   const onAction = base.onAction ?? (shouldShowRetry ? onRetry : undefined);
 
   const descriptionNode: ReactNode =

@@ -652,7 +652,11 @@
     "unavailable": "不可用",
     "totalCount": "共 {{count}}",
     "minimize": "最小化",
-    "justNow": "刚刚"
+    "justNow": "刚刚",
+    "hide": "隐藏",
+    "notInterested": "不感兴趣",
+    "no": "否",
+    "yes": "是"
   },
   "orgSwitcher": {
     "error": {
@@ -2042,7 +2046,8 @@
       "subscriptions": "订阅与通知",
       "profile": "个人中心",
       "situationMonitor": "态势监控",
-      "assistant": "助手"
+      "assistant": "助手",
+      "analysis": "分析"
     },
     "adminGroup": "管理",
     "commandRunSearch": "搜索全部条目",
@@ -2068,7 +2073,39 @@
       "overlay": "预警与新闻态势概览",
       "demoBadge": "演示",
       "demoNote": "当前为演示指标，待接入真实预警地理上下文。",
-      "empty": "所选范围内没有告警或带地理标记的新闻信号。"
+      "empty": "所选范围内没有告警或带地理标记的新闻信号。",
+      "geocode": {
+        "empty": "该查询未返回地理编码结果。",
+        "loadFailed": "地理编码查询失败。",
+        "title": "地理编码查询",
+        "description": "使用后端流水线相同的地理编码服务，将地点或区域解析为坐标。",
+        "fields": {
+          "query": "地点查询",
+          "countryCode": "国家代码"
+        },
+        "validation": {
+          "queryRequired": "请输入地点查询。"
+        },
+        "placeholders": {
+          "query": "上海、南海、布鲁塞尔、Texas...",
+          "countryCode": "可选 ISO alpha-2 代码，例如 CN 或 US"
+        },
+        "actions": {
+          "lookup": "解析坐标",
+          "copyCoordinates": "复制坐标",
+          "openMap": "在地图中打开"
+        },
+        "labels": {
+          "result": "结果",
+          "provider": "服务提供方",
+          "country": "国家",
+          "bounds": "边界"
+        },
+        "messages": {
+          "copied": "坐标已复制。",
+          "copyFailed": "复制坐标失败。"
+        }
+      }
     },
     "knowledgeGraph": {
       "title": "知识图谱探索",
@@ -2142,7 +2179,9 @@
         "upstream_of": "上游于",
         "downstream_of": "下游于",
         "has_ticker": "关联代码"
-      }
+      },
+      "notFoundTitle": "未找到",
+      "notFoundDescription": "未找到该实体的图谱数据"
     },
     "search": {
       "title": "搜索",
@@ -2624,6 +2663,34 @@
         "focusEntitiesPlaceholder": "输入实体",
         "includeIndicators": "包含指标关联",
         "maxIndicatorsPerEvent": "每事件最大指标数"
+      },
+      "deliveryLoadFailed": "加载摘要投递设置失败。",
+      "deliverySaved": "投递计划已保存。",
+      "deliverySaveFailed": "保存投递计划失败。",
+      "deliveryStatus": {
+        "sent": "上次运行已发送",
+        "failed": "上次运行失败",
+        "empty": "没有摘要条目",
+        "idle": "空闲"
+      },
+      "delivery": {
+        "customize": "投递计划",
+        "enabled": "投递已开启",
+        "disabled": "投递已关闭",
+        "schedule": "计划",
+        "nextRunAt": "下次运行",
+        "emailRequired": "启用定时摘要投递前，请先在个人资料中验证邮箱。",
+        "openProfile": "打开个人资料",
+        "lastError": "上次投递错误",
+        "title": "摘要投递计划",
+        "description": "每天将当前滚动摘要发送到已验证邮箱，并在通知中心记录投递结果。",
+        "targetEmail": "目标邮箱",
+        "enabledLabel": "启用每日投递",
+        "verifyFirst": "邮箱验证后才能启用。",
+        "time": "投递时间",
+        "timezone": "时区",
+        "timezonePlaceholder": "选择 IANA 时区",
+        "lastSentAt": "上次邮件发送时间"
       }
     },
     "newsIndicator": {
@@ -2714,6 +2781,41 @@
     "situationMonitor": {
       "title": "态势监控",
       "subtitle": "基于近期条目，汇总相关性、叙事与关键人物。"
+    },
+    "welcome": {
+      "skipToChecklist": "跳到清单",
+      "eyebrow": "新手引导",
+      "title": "用四个短步骤熟悉工作台。",
+      "description": "工作台承载大量数据。本指南会带你快速走过最关键页面，让控制台后续使用更可预期。",
+      "progress": "进度",
+      "enterWorkspace": "进入工作台",
+      "skipForNow": "暂时跳过",
+      "status": {
+        "done": "已完成",
+        "start": "开始"
+      },
+      "steps": {
+        "today": {
+          "label": "今日",
+          "title": "阅读每日简报",
+          "description": "从精选概览开始，在一个页面中掌握最重要的更新。"
+        },
+        "events": {
+          "label": "事件",
+          "title": "查看实时事件",
+          "description": "了解事件模型如何把报道、置信度和交叉佐证聚合到同一信息流。"
+        },
+        "map": {
+          "label": "地图",
+          "title": "浏览地图",
+          "description": "打开区域地图，了解预警和地理关联新闻正在哪些位置聚集。"
+        },
+        "finance": {
+          "label": "金融",
+          "title": "检查市场信号",
+          "description": "查看金融工作区中的宏观脉搏、板块热度和 K 线背景。"
+        }
+      }
     }
   },
   "adminConsole": {
@@ -2791,6 +2893,10 @@
       "knowledgeGraphReview": {
         "title": "知识图谱审核",
         "description": "审核低置信度知识图谱关系并记录人工反馈"
+      },
+      "searchTelemetry": {
+        "title": "搜索遥测",
+        "description": "查看归档搜索提交、查询摩擦和加载更多使用情况"
       }
     },
     "metrics": {
@@ -3863,6 +3969,20 @@
         "body": "{{window}} 时间窗内触发了分类质量阈值，请前往系统监控查看详情。",
         "latency": "延迟指标：{{summary}}",
         "gate": "分类门控：{{summary}}"
+      },
+      "userDigestReady": {
+        "title": "每日摘要已就绪",
+        "body": "已通过邮件发送 {{count}} 个摘要事件{{generatedSuffix}}。",
+        "generatedSuffix": "，生成时间 {{value}}"
+      },
+      "userDigestEmpty": {
+        "title": "每日摘要没有新条目",
+        "body": "当前窗口没有匹配的摘要事件。下一次投递检查已安排。"
+      },
+      "userDigestDeliveryFailed": {
+        "title": "每日摘要投递失败",
+        "body": "系统无法发送摘要邮件。请检查投递设置后稍后重试。",
+        "bodyWithEmail": "目标 {{email}}。{{detail}}"
       }
     },
     "unreadCount_one": "{{count}} 条未读通知",
@@ -4222,7 +4342,11 @@
         "timelineMaxCategoryDistributionItems": "类别分布最大项数",
         "timelineMaxPhaseSummaries": "阶段摘要最大数量",
         "timelinePresetCustomDistanceThreshold": "模板自定义判定阈值",
-        "cacheTtlSeconds": "缓存 TTL（秒）"
+        "cacheTtlSeconds": "缓存 TTL（秒）",
+        "clusteringMode": "聚类模式",
+        "bertopicMinItemsPerGroup": "BERTopic 每组最少条目数",
+        "bertopicMaxItemsPerRequest": "BERTopic 单次请求最大条目数",
+        "bertopicMinTopicSize": "BERTopic 最小主题大小"
       },
       "hints": {
         "ingestionEnabled": "控制定时入库任务。",
@@ -4244,13 +4368,22 @@
         "timelineCrossCategoryWarningShare": "当非主导类别占比超过该阈值时触发跨类别告警。",
         "timelineMaxCategoryDistributionItems": "限制时间线/分类分布元数据返回的类别项数量。",
         "timelineMaxPhaseSummaries": "每个事件可生成的阶段化摘要上限。",
-        "timelinePresetCustomDistanceThreshold": "当最接近模板的距离超过该值时，模板识别结果显示为“自定义”。"
+        "timelinePresetCustomDistanceThreshold": "当最接近模板的距离超过该值时，模板识别结果显示为“自定义”。",
+        "clusteringMode": "仅使用向量分配，或先运行 BERTopic，并将硬失败加入自动 LLM 恢复队列。",
+        "bertopicMinItemsPerGroup": "低于该大小的语言 + embedding 模型分组会跳过 BERTopic，直接使用向量分配。",
+        "bertopicMaxItemsPerRequest": "控制模型服务 CPU 和内存压力的单次 BERTopic 请求上限，必须大于或等于每组最少条目数。",
+        "bertopicMinTopicSize": "传给 BERTopic/HDBSCAN 的最小本地聚类规模，低于该值的主题会被丢弃。"
       },
       "messages": {
         "saved": "已保存",
         "saveFailed": "保存失败",
         "loadFailed": "加载设置失败",
-        "presetApplied": "已应用模板。点击保存后生效。"
+        "presetApplied": "已应用模板。点击保存后生效。",
+        "clusteringAdminLoadFailed": "加载 BERTopic 聚类诊断失败。",
+        "llmBackfillQueued": "LLM 回填已入队。",
+        "llmBackfillFailed": "LLM 回填入队失败。",
+        "failureIgnored": "失败分组已忽略。",
+        "failureIgnoreFailed": "忽略失败分组失败。"
       },
       "validation": {
         "required": "必填",
@@ -4259,14 +4392,17 @@
         "highMustBeAtLeastLow": "高置信度阈值必须大于或等于低置信度阈值。"
       },
       "sections": {
-        "timelineClassification": "时间线分类与主题漂移"
+        "timelineClassification": "时间线分类与主题漂移",
+        "clustering": "聚类",
+        "clusteringQueue": "BERTopic 失败队列"
       },
       "clusteringQueue": {
         "notice": {
           "title": "自动恢复路径",
           "ready": "LLM 自动恢复已就绪。待处理分组会由调度器自动重试；手动回填会立即将该分组入队。",
           "notReady": "LLM 自动恢复被阻塞。请先配置可用的 LLM 网关补全配置，待处理分组才能重试。",
-          "automation": "调度器：每 {{interval}} 扫描一次，重试退避 {{backoff}}，每次最多处理 {{batchSize}} 个分组。"
+          "automation": "调度器：每 {{interval}} 扫描一次，重试退避 {{backoff}}，每次最多处理 {{batchSize}} 个分组。",
+          "body": "只有 BERTopic 请求硬失败会进入此队列。小分组、缺失 embedding 和离群点仍会自动回退到标准向量分配。"
         },
         "automation": {
           "minutes": "{{count}} 分钟",
@@ -4276,13 +4412,50 @@
           "nextTick": "下次调度自动重试",
           "eligible": "已满足自动重试条件",
           "after": "{{time}} 后自动重试"
-        }
+        },
+        "columns": {
+          "group": "分组",
+          "status": "状态",
+          "items": "条目",
+          "recovery": "恢复",
+          "samples": "样本",
+          "actions": "操作"
+        },
+        "actions": {
+          "llmBackfill": "LLM 回填",
+          "ignore": "忽略",
+          "openLlmGateway": "打开 LLM 网关设置"
+        },
+        "overview": {
+          "pending": "待处理",
+          "processing": "处理中",
+          "resolved": "已解决",
+          "ignored": "已忽略",
+          "latest": "最近失败"
+        },
+        "empty": "暂无 BERTopic 失败队列。"
       },
       "presets": {
         "conservative": "保守",
         "balanced": "平衡",
         "aggressive": "激进",
         "custom": "自定义"
+      },
+      "options": {
+        "clusteringMode": {
+          "vector": "仅向量",
+          "bertopicPrimary": "BERTopic 优先"
+        }
+      },
+      "clusteringMode": {
+        "notice": {
+          "title": "BERTopic 执行路径",
+          "ready": "模型服务凭据可用。BERTopic 会在向量回退前运行。",
+          "notReady": "模型服务尚未完整配置。BERTopic 请求将失败，受影响分组会进入管理员审核队列。"
+        },
+        "actions": {
+          "modelService": "打开模型服务设置"
+        }
       }
     },
     "newsClassification": {
@@ -6096,6 +6269,32 @@
       "download": "下载数据导出",
       "success": "数据导出已下载。",
       "failed": "数据导出下载失败。"
+    },
+    "details": {
+      "success": "个人资料已更新。",
+      "failed": "更新个人资料失败。",
+      "title": "个人资料详情",
+      "description": "更新你在保存视图、评论和协作界面中的姓名显示方式。",
+      "firstName": "名",
+      "firstNameRequired": "请输入名。",
+      "lastName": "姓",
+      "lastNameRequired": "请输入姓。",
+      "save": "保存个人资料"
+    },
+    "password": {
+      "success": "密码已修改。下次登录请使用新密码。",
+      "failed": "修改密码失败。",
+      "title": "修改密码",
+      "description": "修改密码会撤销现有刷新令牌，并保护后续会话。",
+      "current": "当前密码",
+      "currentRequired": "请输入当前密码。",
+      "new": "新密码",
+      "newRequired": "请输入新密码。",
+      "newMin": "密码至少 8 个字符。",
+      "confirm": "确认新密码",
+      "confirmRequired": "请确认新密码。",
+      "confirmMismatch": "两次输入的密码不一致。",
+      "submit": "修改密码"
     }
   },
   "systemSettings": {
@@ -6591,6 +6790,24 @@
         "resetContent": "将删除已保存的覆盖配置并回退到环境变量默认值，是否继续？",
         "confirm": "确认",
         "cancel": "取消"
+      },
+      "diagnostics": {
+        "title": "运行时诊断",
+        "configured": "已配置",
+        "incomplete": "未完整配置",
+        "backoffActive": "退避生效中",
+        "available": "可处理请求",
+        "labels": {
+          "snapshot": "快照",
+          "source": "生效来源",
+          "baseUrl": "生效 Base URL",
+          "timeout": "超时",
+          "maxRetries": "最大重试次数",
+          "fallback": "回退到 Mongo",
+          "consecutiveFailures": "连续失败次数",
+          "unavailableUntil": "不可用至",
+          "lastFailureAt": "最近失败"
+        }
       }
     },
     "modelService": {
@@ -6815,12 +7032,16 @@
           "entities": "实体偏好",
           "domains": "域名偏好",
           "items": "深读偏好",
-          "events": "事件偏好"
+          "events": "事件偏好",
+          "combined": "合并",
+          "positive": "正向",
+          "negative": "负向"
         },
         "empty": "暂无画像数据",
         "clearAction": "清空画像",
         "clearConfirmTitle": "确认清空行为画像？",
-        "clearConfirmDescription": "会删除当前用户累计的来源/主题/实体/深读/事件偏好。"
+        "clearConfirmDescription": "会删除当前用户累计的来源/主题/实体/深读/事件偏好。",
+        "legacyFallback": "由于 v2 画像仍较稀疏，旧版行为回退仍在参与计算。"
       },
       "unsaved": {
         "title": "存在未保存变更",
@@ -7779,14 +8000,16 @@
         "knowledgeGraphIngestionOrgConcurrency": "知识图谱入库组织并发数",
         "sentimentSnapshotOrgConcurrency": "情绪快照组织并发数",
         "newsnowHottestAnalysisOrgConcurrency": "NewsNow 热榜分析组织并发数",
-        "classificationQualityAlertOrgConcurrency": "分类质量告警组织并发数"
+        "classificationQualityAlertOrgConcurrency": "分类质量告警组织并发数",
+        "userDigestDeliveryOrgConcurrency": "用户摘要投递组织并发数"
       },
       "hints": {
         "newsEventsIngestionOrgConcurrency": "新闻事件入库 cron 一次最多可并行处理多少个组织。",
         "knowledgeGraphIngestionOrgConcurrency": "知识图谱入库 cron 一次最多可并行处理多少个组织。",
         "sentimentSnapshotOrgConcurrency": "情绪快照重建 cron 一次最多可并行处理多少个组织。",
         "newsnowHottestAnalysisOrgConcurrency": "在共享全局快照准备完成后，NewsNow 热榜分析调度器一次最多可刷新多少个组织。",
-        "classificationQualityAlertOrgConcurrency": "分类质量告警调度器一次最多可评估多少个组织。"
+        "classificationQualityAlertOrgConcurrency": "分类质量告警调度器一次最多可评估多少个组织。",
+        "userDigestDeliveryOrgConcurrency": "用户摘要邮件调度器一次可处理的组织数量。"
       }
     }
   },
@@ -7865,6 +8088,92 @@
       "emptyDescription": "运行相关性或异常分析以生成结果。",
       "generating": "生成中",
       "pending": "待处理"
+    },
+    "library": {
+      "loadFailed": "加载保存视图失败。",
+      "copySuccess": "视图链接已复制。",
+      "copyFailed": "复制链接失败。",
+      "deleteSuccess": "保存视图已删除。",
+      "deleteFailed": "删除保存视图失败。",
+      "title": "分析库",
+      "subtitle": "重新打开保存视图、复制组织内部链接，并管理共享分析状态。",
+      "scope": {
+        "all": "全部",
+        "mine": "我的",
+        "shared": "共享"
+      },
+      "surface": {
+        "all": "全部界面"
+      },
+      "empty": "当前筛选条件下没有保存视图。",
+      "open": "打开视图",
+      "copy": "复制链接",
+      "deleteTitle": "删除此保存视图？",
+      "noDescription": "未填写说明。",
+      "updatedBy": "由 {{name}} 更新"
+    },
+    "workspace": {
+      "title": "分析工作台",
+      "subtitle": "协调共享看板、保存视图和任务讨论。"
+    },
+    "toolbar": {
+      "updateSuccess": "保存视图已更新。",
+      "createSuccess": "保存视图已创建。",
+      "saveFailed": "保存视图失败。",
+      "exportFailed": "导出 CSV 失败。",
+      "copySuccess": "分享链接已复制。",
+      "copyFailed": "复制链接失败。",
+      "title": "分析工作台",
+      "shared": "组织共享",
+      "private": "私有",
+      "editable": "你可以编辑此视图",
+      "savedDescription": "此保存的分析视图可重新打开、导出，并与团队讨论。",
+      "unsavedDescription": "将当前筛选保存为内部视图、导出结果集，或继续进入分析库。",
+      "updatedBy": "最近由 {{name}} 更新",
+      "permissionTitle": "只读访问",
+      "permissionDescription": "保存视图、导出 CSV 和注释需要 analysis.write 权限。",
+      "library": "分析库",
+      "share": "复制链接",
+      "createTask": "创建任务",
+      "export": "导出 CSV",
+      "update": "更新视图",
+      "save": "保存视图",
+      "updateModalTitle": "更新保存的分析视图",
+      "createModalTitle": "保存当前分析视图",
+      "fields": {
+        "title": "标题",
+        "titleRequired": "请输入标题。",
+        "titlePlaceholder": "南海观察列表",
+        "description": "说明",
+        "descriptionPlaceholder": "说明此保存视图跟踪的内容及其重要性。",
+        "visibility": "可见性"
+      }
+    },
+    "annotations": {
+      "loadFailed": "加载注释失败。",
+      "noteSaved": "共享笔记已保存。",
+      "noteSaveFailed": "保存笔记失败。",
+      "commentSaved": "评论已添加。",
+      "commentSaveFailed": "保存评论失败。",
+      "commentUpdated": "评论已更新。",
+      "commentUpdateFailed": "更新评论失败。",
+      "commentDeleted": "评论已删除。",
+      "commentDeleteFailed": "删除评论失败。",
+      "title": "共享注释",
+      "readOnlyTitle": "只读注释",
+      "readOnlyDescription": "你可以阅读共享笔记和评论，但写入需要 analysis.write 权限。",
+      "createTask": "创建任务",
+      "noteTitle": "共享笔记",
+      "notePlaceholder": "记录假设、证据缺口和下一步行动。",
+      "saveNote": "保存笔记",
+      "updatedAt": "更新于 {{time}}",
+      "noteEmpty": "暂无共享笔记。",
+      "commentsTitle": "评论",
+      "deleteTitle": "删除此评论？",
+      "commentsEmpty": "暂无评论。",
+      "newComment": "添加评论",
+      "commentPlaceholder": "指出佐证缺口、后续问题或任务安排。",
+      "addComment": "发布评论"
     }
   },
   "orgAdmin": {
@@ -9189,7 +9498,38 @@
       "fullTextTitle": "正文",
       "languageNoticeTitle": "语言提示",
       "languageNoticeDescription": "检测到文章语言为 {{language}}，该内容可能尚未翻译为中文。",
-      "fullTextEmpty": "暂无可展示的翻译正文。"
+      "fullTextEmpty": "暂无可展示的翻译正文。",
+      "pipelineRecovery": {
+        "errors": {
+          "loadFailed": "加载流水线恢复运行记录失败。",
+          "actionFailed": "流水线恢复操作失败。"
+        },
+        "messages": {
+          "replaySuccess": "流水线重放已入队。",
+          "rollbackSuccess": "流水线回滚已创建。"
+        },
+        "confirm": {
+          "replayTitle": "重放此流水线运行？",
+          "rollbackTitle": "回滚到此原始条目？",
+          "replayBody": "这会克隆选中的原始条目，并重新加入流水线队列。",
+          "rollbackBody": "这会重置流水线状态，使选中的原始条目重新变为待处理。"
+        },
+        "actions": {
+          "replay": "重放",
+          "rollback": "回滚",
+          "replayCurrent": "重放当前原始条目",
+          "rollbackCurrent": "回滚当前原始条目"
+        },
+        "title": "流水线恢复",
+        "description": "查看此条目的近期处理运行记录，并在不离开详情页的情况下触发重放或回滚。",
+        "labels": {
+          "itemStatus": "条目状态",
+          "mongoRef": "当前原始引用",
+          "updatedAt": "更新时间",
+          "stageErrors": "近期阶段错误"
+        },
+        "empty": "未找到此条目的近期流水线运行记录。"
+      }
     },
     "columns": {
       "name": "标题",
@@ -10757,5 +11097,130 @@
     },
     "title": "新闻抓取 Frontier 控制台",
     "subtitle": "管理站点画像，查看种子优先与 frontier 轨迹，并排查抓取成功、降级或失败的原因。"
+  },
+  "admin": {
+    "searchTelemetry": {
+      "errors": {
+        "loadFailed": "加载搜索遥测失败。"
+      },
+      "chart": {
+        "total": "事件总数",
+        "loadMore": "加载更多",
+        "title": "每日趋势",
+        "empty": "所选范围内没有每日遥测行。"
+      },
+      "columns": {
+        "event": "事件",
+        "count": "数量",
+        "surface": "界面",
+        "bucket": "分桶",
+        "vertical": "垂直领域"
+      },
+      "permissions": "搜索遥测仅限管理员访问。",
+      "title": "搜索遥测",
+      "description": "按时间查看归档搜索提交、短查询摩擦和加载更多使用情况。",
+      "filters": {
+        "surfaceUnavailable": "由于存储的遥测目前仅包含聚合的每日事件计数，界面筛选暂不可用。"
+      },
+      "metrics": {
+        "totalEvents": "事件总数",
+        "activeDays": "跟踪天数",
+        "averageDaily": "日均事件数"
+      },
+      "tables": {
+        "events": "事件汇总",
+        "surfaces": "界面汇总",
+        "queryLength": "查询长度分桶",
+        "verticals": "加载更多垂直领域"
+      }
+    }
+  },
+  "entities": {
+    "intelligence": {
+      "resolveFailed": "未找到匹配的知识图谱实体。",
+      "openCard": "打开情报卡片",
+      "generatedAt": "生成时间",
+      "relationships": "关系",
+      "mentions": "近期提及",
+      "events": "近期事件",
+      "negativeRatio": "负面占比",
+      "neighborhood": "邻域",
+      "sentiment": "情绪",
+      "avgSentiment": "平均情绪",
+      "evidence": "证据",
+      "articles": "文章"
+    }
+  },
+  "knowledgeGraph": {
+    "impact": {
+      "scenarios": {
+        "executive": {
+          "title": "高管变动",
+          "description": "评估公司领导层变动时，哪些实体或工具敞口最大。"
+        },
+        "commodity": {
+          "title": "大宗商品波动",
+          "description": "追踪大宗商品冲击可能带来的下游受益方、受损方和相关实体。"
+        },
+        "policy": {
+          "title": "政策事件",
+          "description": "找出受新政策、监管或官方指令影响最大的实体和行业。"
+        }
+      },
+      "fields": {
+        "companyName": "公司名称",
+        "commodityName": "大宗商品名称",
+        "policyName": "政策或事件名称",
+        "maxCandidates": "最大候选数",
+        "includeLprSnapshot": "包含 LPR 快照"
+      },
+      "placeholders": {
+        "companyName": "输入上市公司或组织",
+        "commodityName": "输入大宗商品、能源产品或原材料",
+        "policyName": "输入政策关键词或命名政策事件"
+      },
+      "errors": {
+        "seedRequired": "运行影响分析前请输入种子。",
+        "loadFailed": "加载影响分析失败。",
+        "title": "影响分析失败"
+      },
+      "permissions": {
+        "title": "知识图谱影响分析需要仪表盘访问权限。"
+      },
+      "disabled": {
+        "title": "知识图谱分析已被管理员禁用。"
+      },
+      "title": "实体影响分析",
+      "description": "基于知识图谱运行情景分析，呈现可能的下游敞口链路。",
+      "validation": {
+        "seedRequired": "此字段必填。"
+      },
+      "actions": {
+        "run": "运行影响分析",
+        "openExplorer": "在探索页打开"
+      },
+      "empty": "选择一个情景并运行分析，以查看候选影响链。",
+      "summary": {
+        "seed": "种子",
+        "scenario": "情景",
+        "generatedAt": "生成时间",
+        "candidates": "候选项"
+      },
+      "chain": {
+        "title": "链路",
+        "nodes": "节点",
+        "edges": "边"
+      },
+      "candidate": {
+        "score": "评分"
+      },
+      "properties": "实体属性"
+    },
+    "workspace": {
+      "tabs": {
+        "explorer": "探索",
+        "impact": "影响分析"
+      }
+    }
   }
 }

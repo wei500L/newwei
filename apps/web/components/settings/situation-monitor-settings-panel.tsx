@@ -316,23 +316,17 @@ function getProviderReadinessMeta(
     case "configured":
       return {
         color: "green",
-        label: t("systemSettings.situationMonitor.status.configured", {
-          defaultValue: "Configured",
-        }),
+        label: t("systemSettings.situationMonitor.status.configured"),
       };
     case "disabled":
       return {
         color: "default",
-        label: t("systemSettings.situationMonitor.status.disabled", {
-          defaultValue: "Disabled",
-        }),
+        label: t("systemSettings.situationMonitor.status.disabled"),
       };
     default:
       return {
         color: "orange",
-        label: t("systemSettings.situationMonitor.status.notConfigured", {
-          defaultValue: "Not configured",
-        }),
+        label: t("systemSettings.situationMonitor.status.notConfigured"),
       };
   }
 }
@@ -430,9 +424,7 @@ export function SituationMonitorSettingsPanel() {
         externalSnapshotStatus: nextStatus,
       }));
       messageApi.success(
-        t("systemSettings.situationMonitor.snapshot.refreshSuccess", {
-          defaultValue: "Rebuilt the Situation Monitor external snapshot.",
-        }),
+        t("systemSettings.situationMonitor.snapshot.refreshSuccess"),
       );
     } catch (error) {
       captureClientError(
@@ -441,10 +433,7 @@ export function SituationMonitorSettingsPanel() {
       );
       messageApi.error(
         extractApiError(error).message ||
-          t("systemSettings.situationMonitor.snapshot.refreshFailed", {
-            defaultValue:
-              "Failed to rebuild the Situation Monitor external snapshot.",
-          }),
+          t("systemSettings.situationMonitor.snapshot.refreshFailed"),
       );
     } finally {
       setExternalSnapshotRefreshing(false);
@@ -695,17 +684,13 @@ export function SituationMonitorSettingsPanel() {
       setTelegramAuthExpiresAt(null);
       setTelegramAuthCodeViaApp(false);
       messageApi.success(
-        t("systemSettings.situationMonitor.messages.telegramSessionCleared", {
-          defaultValue: "Telegram session cleared and polling disabled.",
-        })
+        t("systemSettings.situationMonitor.messages.telegramSessionCleared")
       );
     } catch (error) {
       captureClientError("Failed to clear telegram session", error);
       messageApi.error(
         extractApiError(error).message ||
-          t("systemSettings.situationMonitor.errors.telegramAuthClearFailed", {
-            defaultValue: "Failed to clear saved Telegram session.",
-          })
+          t("systemSettings.situationMonitor.errors.telegramAuthClearFailed")
       );
     } finally {
       setTelegramAuthClearing(false);
@@ -763,10 +748,7 @@ export function SituationMonitorSettingsPanel() {
     `systemSettings.situationMonitor.status.liveHlsProxySources.${settings.liveHlsProxyCnbcSource}`,
     { defaultValue: settings.liveHlsProxyCnbcSource }
   );
-  const globalSignalHint = t("systemSettings.situationMonitor.status.globalSignalHint", {
-    defaultValue:
-      "Telegram and OREF are global shared signals. Any signed-in user with items.read can view the same feed and updates.",
-  });
+  const globalSignalHint = t("systemSettings.situationMonitor.status.globalSignalHint");
   const monitoringSettingsHref = buildAdminSettingsHref({
     page: "monitoring",
     panel: "situation-monitor",
@@ -829,32 +811,21 @@ export function SituationMonitorSettingsPanel() {
             icon={<ArrowLeftOutlined />}
             onClick={() => router.push("/situation-monitor")}
           >
-            {t("systemSettings.situationMonitor.actions.backToMonitor", {
-              defaultValue: "Back to Situation Monitor",
-            })}
+            {t("systemSettings.situationMonitor.actions.backToMonitor")}
           </Button>
           <Button href={monitoringSettingsHref}>
-            {t("systemSettings.situationMonitor.actions.openMonitoringSettings", {
-              defaultValue: "Open monitoring settings",
-            })}
+            {t("systemSettings.situationMonitor.actions.openMonitoringSettings")}
           </Button>
         </Space>
 
         <Alert
           type="info"
           showIcon
-          message={t("systemSettings.situationMonitor.readiness.title", {
-            defaultValue: "Situation Monitor readiness",
-          })}
-          description={t("systemSettings.situationMonitor.readiness.description", {
-            defaultValue:
-              "These settings directly affect Situation Monitor refresh, Telegram, OREF, Finnhub, and FRED data availability.",
-          })}
+          message={t("systemSettings.situationMonitor.readiness.title")}
+          description={t("systemSettings.situationMonitor.readiness.description")}
         />
 
-        <Card size="small" title={t("systemSettings.situationMonitor.readiness.providers", {
-          defaultValue: "Provider readiness",
-        })}>
+        <Card size="small" title={t("systemSettings.situationMonitor.readiness.providers")}>
           <Space direction="vertical" size="small" style={{ display: "flex" }}>
             <Space wrap>
               <Typography.Text strong>Telegram</Typography.Text>
@@ -868,21 +839,13 @@ export function SituationMonitorSettingsPanel() {
               <Tag color={orefReadinessMeta.color}>{orefReadinessMeta.label}</Tag>
               <Tag color="blue">
                 {settings.orefProxyAuthSource === "env"
-                  ? t("systemSettings.situationMonitor.status.apiKeySources.env", {
-                      defaultValue: "env",
-                    })
-                  : t("systemSettings.situationMonitor.status.apiKeySources.none", {
-                      defaultValue: "none",
-                    })}
+                  ? t("systemSettings.situationMonitor.status.apiKeySources.env")
+                  : t("systemSettings.situationMonitor.status.apiKeySources.none")}
               </Tag>
               <Tag>
                 {settings.orefEnabled
-                  ? t("systemSettings.situationMonitor.status.enabled", {
-                      defaultValue: "Enabled",
-                    })
-                  : t("systemSettings.situationMonitor.status.disabled", {
-                      defaultValue: "Disabled",
-                    })}
+                  ? t("systemSettings.situationMonitor.status.enabled")
+                  : t("systemSettings.situationMonitor.status.disabled")}
               </Tag>
             </Space>
             <Space wrap>
@@ -897,9 +860,7 @@ export function SituationMonitorSettingsPanel() {
             </Space>
             <Space wrap>
               <Button href={newsSourceSchedulerHref}>
-                {t("systemSettings.situationMonitor.actions.openSchedulerSettings", {
-                  defaultValue: "Open scheduler settings",
-                })}
+                {t("systemSettings.situationMonitor.actions.openSchedulerSettings")}
               </Button>
             </Space>
           </Space>
@@ -907,9 +868,7 @@ export function SituationMonitorSettingsPanel() {
 
         <Card
           size="small"
-          title={t("systemSettings.situationMonitor.snapshot.title", {
-            defaultValue: "GDELT snapshot scheduler",
-          })}
+          title={t("systemSettings.situationMonitor.snapshot.title")}
         >
           <Space direction="vertical" size="small" style={{ display: "flex" }}>
             <Space wrap>
@@ -919,52 +878,42 @@ export function SituationMonitorSettingsPanel() {
               </Tag>
               {externalSnapshotStatus.stale ? (
                 <Tag color="volcano">
-                  {t("systemSettings.situationMonitor.snapshot.stale", {
-                    defaultValue: "STALE",
-                  })}
+                  {t("systemSettings.situationMonitor.snapshot.stale")}
                 </Tag>
               ) : null}
               <Tag>
                 {t("systemSettings.situationMonitor.snapshot.interval", {
-                  defaultValue: "Every {{count}} min",
                   count: externalSnapshotStatus.intervalMinutes,
                 })}
               </Tag>
               <Tag>
                 {t("systemSettings.situationMonitor.snapshot.history", {
-                  defaultValue: "{{count}} day history",
                   count: externalSnapshotStatus.historyRetentionDays,
                 })}
               </Tag>
             </Space>
             <Typography.Text type="secondary">
               {t("systemSettings.situationMonitor.snapshot.generatedAt", {
-                defaultValue: "Last generated: {{time}}",
                 time: formatSnapshotDate(externalSnapshotStatus.generatedAt),
               })}
             </Typography.Text>
             <Typography.Text type="secondary">
               {t("systemSettings.situationMonitor.snapshot.lastFullSuccess", {
-                defaultValue: "Last full success: {{time}}",
                 time: formatSnapshotDate(externalSnapshotStatus.lastFullSuccessAt),
               })}
             </Typography.Text>
             <Typography.Text type="secondary">
               {t("systemSettings.situationMonitor.snapshot.lastNonSuccess", {
-                defaultValue: "Last partial/failure: {{time}}",
                 time: formatSnapshotDate(externalSnapshotStatus.lastNonSuccessAt),
               })}
             </Typography.Text>
             <Typography.Text type="secondary">
               {t("systemSettings.situationMonitor.snapshot.nextScheduled", {
-                defaultValue: "Next scheduled run: {{time}}",
                 time: formatSnapshotDate(externalSnapshotStatus.nextScheduledAt),
               })}
             </Typography.Text>
             <Typography.Text type="secondary">
               {t("systemSettings.situationMonitor.snapshot.coverage", {
-                defaultValue:
-                  "Available categories: {{count}} / 6. Active warnings: {{warnings}}.",
                 count: externalSnapshotStatus.availableCategoryCount,
                 warnings: externalSnapshotStatus.warningCount,
               })}
@@ -972,7 +921,6 @@ export function SituationMonitorSettingsPanel() {
             <Space wrap>
               <Tag>
                 {t("systemSettings.situationMonitor.snapshot.successRate", {
-                  defaultValue: "24h success {{value}}",
                   value: formatMetricValue(
                     externalSnapshotStatus.rolling24hSuccessRate,
                     "%",
@@ -981,13 +929,11 @@ export function SituationMonitorSettingsPanel() {
               </Tag>
               <Tag>
                 {t("systemSettings.situationMonitor.snapshot.rateLimitedCount", {
-                  defaultValue: "24h rate limits {{value}}",
                   value: externalSnapshotStatus.rolling24hRateLimitedCount,
                 })}
               </Tag>
               <Tag>
                 {t("systemSettings.situationMonitor.snapshot.averageCoverage", {
-                  defaultValue: "24h avg categories {{value}} / 6",
                   value: formatMetricValue(
                     externalSnapshotStatus.rolling24hAverageAvailableCategoryCount,
                   ),
@@ -1012,9 +958,7 @@ export function SituationMonitorSettingsPanel() {
                 onClick={() => void loadSettings()}
                 loading={loading}
               >
-                {t("systemSettings.situationMonitor.snapshot.refreshStatus", {
-                  defaultValue: "Refresh status",
-                })}
+                {t("systemSettings.situationMonitor.snapshot.refreshStatus")}
               </Button>
               <Button
                 type="primary"
@@ -1022,9 +966,7 @@ export function SituationMonitorSettingsPanel() {
                 loading={externalSnapshotRefreshing}
                 disabled={!externalSnapshotStatus.enabled}
               >
-                {t("systemSettings.situationMonitor.snapshot.forceRefresh", {
-                  defaultValue: "Rebuild external snapshot",
-                })}
+                {t("systemSettings.situationMonitor.snapshot.forceRefresh")}
               </Button>
             </Space>
           </Space>
@@ -1032,59 +974,48 @@ export function SituationMonitorSettingsPanel() {
 
         <Card
           size="small"
-          title={t("systemSettings.situationMonitor.quality.title", {
-            defaultValue: "Analysis quality",
-          })}
+          title={t("systemSettings.situationMonitor.quality.title")}
         >
           {!qualitySummary ? (
             <Typography.Text type="secondary">
-              {t("systemSettings.situationMonitor.quality.empty", {
-                defaultValue: "Quality metrics are not available yet.",
-              })}
+              {t("systemSettings.situationMonitor.quality.empty")}
             </Typography.Text>
           ) : (
             <Space direction="vertical" size="small" style={{ display: "flex" }}>
               <Space wrap>
                 <Tag color="geekblue">
                   {t("systemSettings.situationMonitor.quality.articles", {
-                    defaultValue: "Articles {{count}}",
                     count: qualitySummary.articleCount,
                   })}
                 </Tag>
                 <Tag color="cyan">
                   {t("systemSettings.situationMonitor.quality.clusters", {
-                    defaultValue: "Clusters {{count}}",
                     count: qualitySummary.clusterCount,
                   })}
                 </Tag>
                 <Tag color="green">
                   {t("systemSettings.situationMonitor.quality.mixed", {
-                    defaultValue: "Mixed {{count}}",
                     count: qualitySummary.mixedSourceClusterCount,
                   })}
                 </Tag>
                 <Tag>
                   {t("systemSettings.situationMonitor.quality.mode", {
-                    defaultValue: "Mode {{value}}",
                     value: qualitySummary.mode.toUpperCase(),
                   })}
                 </Tag>
               </Space>
               <Typography.Text type="secondary">
                 {t("systemSettings.situationMonitor.quality.generatedAt", {
-                  defaultValue: "Last computed: {{time}}",
                   time: formatSnapshotDate(qualitySummary.generatedAt),
                 })}
               </Typography.Text>
               <Typography.Text type="secondary">
                 {t("systemSettings.situationMonitor.quality.window", {
-                  defaultValue: "Window: {{hours}}h",
                   hours: qualitySummary.windowHours,
                 })}
               </Typography.Text>
               <Typography.Text type="secondary">
                 {t("systemSettings.situationMonitor.quality.dedupe", {
-                  defaultValue: "Dedupe ratio: {{value}}",
                   value:
                     qualitySummary.dedupeRatio === null
                       ? "--"
@@ -1093,7 +1024,6 @@ export function SituationMonitorSettingsPanel() {
               </Typography.Text>
               <Typography.Text type="secondary">
                 {t("systemSettings.situationMonitor.quality.avgSources", {
-                  defaultValue: "Avg sources / cluster: {{value}}",
                   value: formatMetricValue(qualitySummary.avgSourcesPerCluster),
                 })}
               </Typography.Text>
@@ -1125,7 +1055,7 @@ export function SituationMonitorSettingsPanel() {
           <Tag color={telegramEnabledColor}>{telegramEnabledLabel}</Tag>
           <Popover content={globalSignalHint}>
             <Tag color="default" className="cursor-help">
-              {t("systemSettings.situationMonitor.status.globalSignalLabel", { defaultValue: "GLOBAL SHARED" })} <InfoCircleOutlined />
+              {t("systemSettings.situationMonitor.status.globalSignalLabel")} <InfoCircleOutlined />
             </Tag>
           </Popover>
         </Space>
@@ -1272,13 +1202,8 @@ export function SituationMonitorSettingsPanel() {
           type="info"
           showIcon
           style={{ marginBottom: "1rem" }}
-          message={t("systemSettings.situationMonitor.sharedProviders.title", {
-            defaultValue: "Shared financial data providers",
-          })}
-          description={t("systemSettings.situationMonitor.sharedProviders.description", {
-            defaultValue:
-              "Finnhub and FRED keys are now used by the shared economic data mainline. Situation Monitor, GraphQL economic data, dashboards, and alerts all reuse the same provider credentials and stored time series.",
-          })}
+          message={t("systemSettings.situationMonitor.sharedProviders.title")}
+          description={t("systemSettings.situationMonitor.sharedProviders.description")}
         />
 
         <Form.Item
@@ -1593,9 +1518,7 @@ export function SituationMonitorSettingsPanel() {
             loading={telegramAuthClearing}
             disabled={!settings.hasTelegramSession || telegramAuthCompleting}
           >
-            {t("systemSettings.situationMonitor.actions.telegramClearSavedSession", {
-              defaultValue: "Clear saved Telegram session",
-            })}
+            {t("systemSettings.situationMonitor.actions.telegramClearSavedSession")}
           </Button>
         </Space>
 

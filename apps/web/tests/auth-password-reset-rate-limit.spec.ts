@@ -13,7 +13,7 @@ describe("forgot password rate limit handling", () => {
     const source = read("app/(auth)/forgot-password/page.tsx");
 
     expect(source).toContain("classifyRequestError(error).kind === \"rateLimit\"");
-    expect(source).toContain("Too many reset requests. Please try again later.");
-    expect(source).toContain("Failed to request password reset");
+    expect(source).toContain("auth.forgot.rateLimited");
+    expect(source).toContain("auth.forgot.failed");
   });
 });

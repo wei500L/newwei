@@ -252,12 +252,12 @@ describe("war-map page wiring", () => {
     expect(source).toContain(
       '<WarMap className="min-h-0 w-full" layoutVariant="standalone" />',
     );
-    expect(source).toContain('className="flex flex-col gap-6 pb-6"');
+    expect(source).toContain('className="flex flex-col gap-4 pb-6 sm:gap-6"');
     expect(source).toContain(
-      'className="glass-panel border border-[var(--border)] flex flex-col gap-4 p-5"',
+      'className="glass-panel border border-[var(--border)] flex flex-col gap-4 overflow-hidden p-4 sm:p-5"',
     );
-    expect(source).toContain("OpenSky flight activity");
-    expect(source).toContain("Signals, News & Flights");
+    expect(source).toContain('t("pages.map.subtitle")');
+    expect(source).toContain('t("pages.map.overlay")');
   });
 
   it("wires dashboard stream coverage for map news and layers", () => {
@@ -344,12 +344,12 @@ describe("war-map page wiring", () => {
     expect(source).toContain(
       'const flightsScope = readSummaryString(flightsSummary, "scope");',
     );
-    expect(source).toContain('defaultValue: "Flight source"');
-    expect(source).toContain('defaultValue: "OpenSky"');
-    expect(source).toContain('defaultValue: "Military / possible military"');
+    expect(source).toContain('t("dashboard.charts.warMap.stats.flightSource")');
+    expect(source).toContain('t("dashboard.charts.warMap.stats.flightSourceOpensky")');
+    expect(source).toContain('t("dashboard.charts.warMap.stats.flightScopeMilitary")');
     expect(source).toContain("flightBudgetLimited");
     expect(source).toContain(
-      "temporarily limited to preserve the daily credit budget",
+      "dashboard.charts.warMap.stats.flightBudgetLimited",
     );
     expect(source).toContain(
       "const flightMode = useWarMapSettingsStore((state) => state.flightMode);",
@@ -377,27 +377,27 @@ describe("war-map page wiring", () => {
     expect(controlsSource).toContain(
       'onClick={() => transport.onAisModeChange("all")}',
     );
-    expect(controlsSource.indexOf('defaultValue: "All vessels"')).toBeLessThan(
-      controlsSource.indexOf('defaultValue: "Candidate vessels"'),
+    expect(controlsSource.indexOf('t("dashboard.charts.warMap.stats.aisModeAll")')).toBeLessThan(
+      controlsSource.indexOf('t("dashboard.charts.warMap.stats.aisModeMilitary")'),
     );
-    expect(controlsSource).toContain('defaultValue: "Candidate vessels"');
-    expect(controlsSource).toContain('defaultValue: "Highlight candidates"');
+    expect(controlsSource).toContain('t("dashboard.charts.warMap.stats.aisModeMilitary")');
+    expect(controlsSource).toContain('dashboard.charts.warMap.stats.aisHighlightCandidates');
     expect(controlsSource).toContain("aisCandidatesOnlyActiveHint");
     expect(controlsSource).toContain("aisDensityOnlyActiveHint");
-    expect(controlsSource).toContain('defaultValue: "Switch to All vessels"');
+    expect(controlsSource).toContain("dashboard.charts.warMap.overlay.aisShowAllAction");
     expect(source).toContain('id: "wm-ais-density-zones"');
-    expect(source).toContain("Aggregated AIS hotspot, not individual vessels.");
     expect(source).toContain(
-      "Aggregated AIS chokepoint signal, not individual vessels.",
+      "dashboard.charts.warMap.stats.aisDensityAggregateHint",
+    );
+    expect(source).toContain(
+      "dashboard.charts.warMap.stats.aisDisruptionAggregateHint",
     );
     expect(source).toContain("isAisViewportEmptyStateActive({");
     expect(source).toContain('id: "wm-ais-vessels"');
     expect(source).toContain("getAngle: resolveVesselIconAngle");
+    expect(source).toContain('t("dashboard.charts.warMap.stats.aisViewportEmpty")');
     expect(source).toContain(
-      'defaultValue: "Viewport has no vessel positions"',
-    );
-    expect(source).toContain(
-      "All vessels is active, but this viewport currently has no individual ship positions in the live snapshot.",
+      "dashboard.charts.warMap.stats.aisViewportEmpty",
     );
     expect(controlsSource).toContain("transport.aisViewportEmptyStateActive");
     expect(controlsSource).toContain("transport.aisViewportEmptyStateHint");
@@ -439,17 +439,17 @@ describe("war-map page wiring", () => {
     expect(source).toContain(
       "!mapLoadError && (!mapReady || (anyLoading && !hasData));",
     );
-    expect(source).toContain('defaultValue: "Loading map base layer…"');
-    expect(source).toContain('defaultValue: "Refreshing {{count}} chains"');
+    expect(source).toContain('t("dashboard.charts.warMap.status.loadingMap")');
+    expect(source).toContain('t("dashboard.charts.warMap.status.refreshingChains"');
     expect(overlayModelSource).toContain(
-      'defaultValue: "Latest stream update"',
+      't("dashboard.charts.warMap.overlay.latestStreamUpdate")',
     );
     expect(overlayModelSource).toContain(
-      'defaultValue: "No stream update yet"',
+      't("dashboard.charts.warMap.overlay.noRecentMessage")',
     );
-    expect(overlayModelSource).toContain('defaultValue: "Awaiting refresh"');
-    expect(source).toContain('defaultValue: "Awaiting first refresh"');
-    expect(source).toContain('defaultValue: "Last updated {{value}}"');
+    expect(overlayModelSource).toContain('t("dashboard.charts.warMap.overlay.awaitingRefresh")');
+    expect(source).toContain('t("dashboard.charts.warMap.status.waitingData")');
+    expect(source).toContain('t("dashboard.charts.warMap.overlay.updatedSummary"');
     expect(refreshBlock).not.toContain("refreshRangeAnchor();");
     expect(refreshBlock).toContain("eventsQuery.refetch()");
     expect(refreshBlock).toContain("newsQuery.refetch()");

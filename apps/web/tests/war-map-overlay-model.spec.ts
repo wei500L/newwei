@@ -5,17 +5,12 @@ import {
   buildWarMapOverlayViewModel,
   resolveOverlayDensity,
 } from "../app/(app)/dashboard/charts/war-map/war-map-overlay-model";
+import { translateTestKey } from "./i18n-test-utils";
 
 const t = (
-  _key: string,
-  options?: { defaultValue?: string; [key: string]: unknown },
-) =>
-  typeof options?.defaultValue === "string"
-    ? options.defaultValue.replace(/\{\{(\w+)\}\}/g, (_match, token) => {
-        const value = options[token];
-        return value == null ? `{{${token}}}` : String(value);
-      })
-    : _key;
+  key: string,
+  options?: Record<string, unknown>,
+) => translateTestKey(key, options);
 
 describe("war-map overlay model", () => {
   it("resolves density from container breakpoints", () => {

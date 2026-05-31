@@ -77,17 +77,17 @@ describe("situation monitor interaction wiring", () => {
     );
 
     expect(contentSource).toContain("warnings: coreData.warnings ?? [],");
-    expect(contentSource).toContain('defaultValue: "Summary"');
-    expect(contentSource).toContain('defaultValue: "Coverage"');
-    expect(contentSource).toContain('defaultValue: "Next actions"');
-    expect(contentSource).toContain('defaultValue: "ARTICLES {{count}}"');
-    expect(contentSource).toContain('defaultValue: "CLUSTERS {{count}}"');
-    expect(contentSource).toContain('defaultValue: "INT {{count}}"');
-    expect(contentSource).toContain('defaultValue: "EXT {{count}}"');
-    expect(contentSource).toContain('defaultValue: "MIXED {{count}}"');
+    expect(contentSource).toContain('t("situationMonitor.summary.title")');
+    expect(contentSource).toContain('t("situationMonitor.coverage.title")');
+    expect(contentSource).toContain('t("situationMonitor.actions.title")');
+    expect(contentSource).toContain('t("situationMonitor.summary.articles"');
+    expect(contentSource).toContain('t("situationMonitor.summary.clusters"');
+    expect(contentSource).toContain('t("situationMonitor.summary.internal"');
+    expect(contentSource).toContain('t("situationMonitor.summary.external"');
+    expect(contentSource).toContain('t("situationMonitor.summary.mixedClusters"');
     expect(contentSource).toContain("coverageSummary?.visibleCategoryCount");
     expect(contentSource).toContain("data?.clusters?.[category]");
-    expect(contentSource).toContain('defaultValue: "View raw articles"');
+    expect(contentSource).toContain('t("situationMonitor.feeds.viewRawArticles")');
     expect(contentSource).toContain("toggleClusterExpansion(cluster.id)");
     expect(contentSource).toContain(
       "onPointerDown={stopSituationMonitorInteractiveEvent}",
@@ -99,16 +99,16 @@ describe("situation monitor interaction wiring", () => {
     expect(contentSource).toContain(
       "data?.externalSnapshot?.categories?.[category]",
     );
-    expect(contentSource).toContain('defaultValue: "FRESH {{count}}"');
-    expect(contentSource).toContain('defaultValue: "REUSED {{count}}"');
-    expect(contentSource).toContain('defaultValue: "REUSED"');
-    expect(contentSource).toContain("Open News Sources");
-    expect(contentSource).toContain("Open Situation Monitor Settings");
+    expect(contentSource).toContain('t("situationMonitor.snapshot.freshCategories"');
+    expect(contentSource).toContain('t("situationMonitor.snapshot.reusedCategories"');
+    expect(contentSource).toContain('t("situationMonitor.snapshot.reusedCategory")');
+    expect(contentSource).toContain('t("situationMonitor.actions.openNewsSources")');
+    expect(contentSource).toContain('t("situationMonitor.actions.openSettings")');
     expect(contentSource).toContain("insightsWarnings.map((warning) => (");
     expect(contentSource).toContain(
-      "Internal monitoring is not configured yet.",
+      "situationMonitor.empty.generic.title",
     );
-    expect(contentSource).toContain("Current window is too narrow.");
+    expect(contentSource).toContain("situationMonitor.scopeRecovery.title");
     expect(contentSource).not.toContain(
       "No internal Situation Monitor items are available yet.",
     );
@@ -138,8 +138,8 @@ describe("situation monitor interaction wiring", () => {
     const globalsSource = read("app/globals.css");
 
     expect(contentSource).toContain('resizeHandles={["s", "se"]}');
-    expect(contentSource).toContain("pull the bottom edge to change height");
-    expect(contentSource).toContain("Restore default size");
+    expect(contentSource).toContain("sm-layout-panel-tools");
+    expect(contentSource).toContain("situationMonitor.layout.resetPanelSize");
     expect(contentSource).toContain("data-panel-id={panel.id}");
     expect(contentSource).toContain("setLayoutPreviewItem({ ...nextItem });");
     expect(globalsSource).toContain(

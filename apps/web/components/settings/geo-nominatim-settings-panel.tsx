@@ -139,15 +139,11 @@ export function GeoNominatimSettingsPanel() {
       setTestAttempted(true);
       if (!result) {
         messageApi.info(
-          t("systemSettings.geoNominatim.test.noResult", {
-            defaultValue: "No geocoding result was returned for this query.",
-          }),
+          t("systemSettings.geoNominatim.test.noResult"),
         );
       } else {
         messageApi.success(
-          t("systemSettings.geoNominatim.test.success", {
-            defaultValue: "Geocoding test completed.",
-          }),
+          t("systemSettings.geoNominatim.test.success"),
         );
       }
     } catch (error) {
@@ -255,9 +251,7 @@ export function GeoNominatimSettingsPanel() {
         <Alert
           type="info"
           showIcon
-          message={t("systemSettings.geoNominatim.test.noResult", {
-            defaultValue: "No geocoding result was returned for this query.",
-          })}
+          message={t("systemSettings.geoNominatim.test.noResult")}
           style={{ marginBottom: "1rem" }}
         />
       ) : null}

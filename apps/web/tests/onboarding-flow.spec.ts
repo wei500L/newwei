@@ -34,6 +34,17 @@ describe("onboarding flow wiring", () => {
     expect(source).toContain('/finance?${ONBOARDING_MODE_QUERY_KEY}=1&${ONBOARDING_TOUR_QUERY_KEY}=finance');
   });
 
+  it("localizes the welcome copy through i18n resources", () => {
+    const source = fs.readFileSync(welcomePagePath, "utf8");
+
+    expect(source).toContain('import { useTranslation } from "react-i18next";');
+    expect(source).toContain("const { t } = useTranslation();");
+    expect(source).toContain('t("pages.welcome.title")');
+    expect(source).not.toContain("Read the daily briefing");
+    expect(source).not.toContain("Learn the workspace in four short stops.");
+    expect(source).not.toContain("Enter workspace");
+  });
+
   it("does not clear a skipped onboarding dismissal when a guided page is visited", () => {
     const source = fs.readFileSync(onboardingBoundaryPath, "utf8");
     const markChecklistSection =

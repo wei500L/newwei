@@ -1,6 +1,6 @@
 const path = require('node:path');
 
-const { flattenKeys } = require('./i18n-utils');
+const { collectTranslationDefaultValueUsages, flattenKeys } = require('./i18n-utils');
 
 function flattenValues(object, prefix = '') {
   const result = new Map();
@@ -49,6 +49,7 @@ function main() {
   const zhKeys = flattenKeys(zh);
   const enValues = flattenValues(en);
   const zhValues = flattenValues(zh);
+  const { staticDefaults, dynamicDefaults } = collectTranslationDefaultValueUsages(appRootDir);
 
   const cjkInEn = [];
   for (const [key, value] of enValues.entries()) {
@@ -72,6 +73,8 @@ function main() {
   }
 
   console.log('[i18n] Audit:');
+  console.log(`- Static translation defaultValue entries: ${staticDefaults.length}`);
+  console.log(`- Dynamic translation defaultValue fallbacks: ${dynamicDefaults.length}`);
   console.log(`- en.json CJK strings: ${cjkInEn.length}`);
   console.log(`- zh.json English-ish strings: ${englishishInZh.length}`);
   console.log(`- Exact same strings (en == zh): ${sameStrings.length}`);
@@ -102,4 +105,3 @@ function main() {
 }
 
 main();
-

@@ -269,30 +269,20 @@ export function VectorServiceSettingsPanel() {
       {diagnostics ? (
         <Card
           size="small"
-          title={t("systemSettings.vectorService.diagnostics.title", {
-            defaultValue: "Runtime diagnostics",
-          })}
+          title={t("systemSettings.vectorService.diagnostics.title")}
           style={{ marginBottom: "1rem" }}
         >
           <Space direction="vertical" size="small" style={{ width: "100%" }}>
             <Space wrap>
               <Tag color={diagnostics.configured ? "green" : "orange"}>
                 {diagnostics.configured
-                  ? t("systemSettings.vectorService.diagnostics.configured", {
-                      defaultValue: "Configured",
-                    })
-                  : t("systemSettings.vectorService.diagnostics.incomplete", {
-                      defaultValue: "Incomplete",
-                    })}
+                  ? t("systemSettings.vectorService.diagnostics.configured")
+                  : t("systemSettings.vectorService.diagnostics.incomplete")}
               </Tag>
               <Tag color={diagnostics.temporarilyUnavailable ? "red" : "green"}>
                 {diagnostics.temporarilyUnavailable
-                  ? t("systemSettings.vectorService.diagnostics.backoffActive", {
-                      defaultValue: "Backoff active",
-                    })
-                  : t("systemSettings.vectorService.diagnostics.available", {
-                      defaultValue: "Available for requests",
-                    })}
+                  ? t("systemSettings.vectorService.diagnostics.backoffActive")
+                  : t("systemSettings.vectorService.diagnostics.available")}
               </Tag>
               <Tag>{diagnostics.lastOperation ?? "idle"}</Tag>
             </Space>
@@ -308,65 +298,47 @@ export function VectorServiceSettingsPanel() {
 
             <Descriptions column={1} size="small" bordered>
               <Descriptions.Item
-                label={t("systemSettings.vectorService.diagnostics.labels.snapshot", {
-                  defaultValue: "Snapshot",
-                })}
+                label={t("systemSettings.vectorService.diagnostics.labels.snapshot")}
               >
                 {diagnostics.snapshotAt}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("systemSettings.vectorService.diagnostics.labels.source", {
-                  defaultValue: "Effective source",
-                })}
+                label={t("systemSettings.vectorService.diagnostics.labels.source")}
               >
                 {diagnostics.source}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("systemSettings.vectorService.diagnostics.labels.baseUrl", {
-                  defaultValue: "Effective base URL",
-                })}
+                label={t("systemSettings.vectorService.diagnostics.labels.baseUrl")}
               >
                 {diagnostics.baseUrl ?? "-"}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("systemSettings.vectorService.diagnostics.labels.timeout", {
-                  defaultValue: "Timeout",
-                })}
+                label={t("systemSettings.vectorService.diagnostics.labels.timeout")}
               >
                 {diagnostics.timeoutMs} ms
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("systemSettings.vectorService.diagnostics.labels.maxRetries", {
-                  defaultValue: "Max retries",
-                })}
+                label={t("systemSettings.vectorService.diagnostics.labels.maxRetries")}
               >
                 {diagnostics.maxRetries}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("systemSettings.vectorService.diagnostics.labels.fallback", {
-                  defaultValue: "Fallback to Mongo",
-                })}
+                label={t("systemSettings.vectorService.diagnostics.labels.fallback")}
               >
                 {diagnostics.fallbackToMongo ? "true" : "false"}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("systemSettings.vectorService.diagnostics.labels.consecutiveFailures", {
-                  defaultValue: "Consecutive failures",
-                })}
+                label={t("systemSettings.vectorService.diagnostics.labels.consecutiveFailures")}
               >
                 {diagnostics.consecutiveFailures}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("systemSettings.vectorService.diagnostics.labels.unavailableUntil", {
-                  defaultValue: "Unavailable until",
-                })}
+                label={t("systemSettings.vectorService.diagnostics.labels.unavailableUntil")}
               >
                 {diagnostics.unavailableUntil ?? "-"}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("systemSettings.vectorService.diagnostics.labels.lastFailureAt", {
-                  defaultValue: "Last failure",
-                })}
+                label={t("systemSettings.vectorService.diagnostics.labels.lastFailureAt")}
               >
                 {diagnostics.lastFailureAt ?? "-"}
               </Descriptions.Item>

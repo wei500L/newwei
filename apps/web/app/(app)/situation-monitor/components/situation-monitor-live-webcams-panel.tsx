@@ -80,15 +80,13 @@ export function SituationMonitorLiveWebcamsPanel() {
   }, [region]);
 
   const inactiveReason = activation.hidden
-    ? t("situationMonitor.liveWebcams.hidden", { defaultValue: "Background tab: webcams paused." })
-    : t("situationMonitor.liveWebcams.idle", {
-        defaultValue: "Idle pause: move mouse or press key to resume webcams.",
-      });
+    ? t("situationMonitor.liveWebcams.hidden")
+    : t("situationMonitor.liveWebcams.idle");
 
   return (
     <div ref={rootRef} className="h-full">
       <Card
-        title={t("situationMonitor.liveWebcams.title", { defaultValue: "Live Webcams" })}
+        title={t("situationMonitor.liveWebcams.title")}
         className="sm-panel-card glass-panel border border-[var(--border)] h-full"
         size="small"
       >

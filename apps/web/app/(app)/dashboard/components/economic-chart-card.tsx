@@ -182,7 +182,7 @@ export function EconomicChartCard({
             >
                <BulbOutlined style={{ color: token.colorPrimary }} />
                <Typography.Text style={{ fontSize: 13, color: token.colorTextSecondary }}>
-                 {t("dashboard.insight.label", { defaultValue: "Insight" })}: {stats.insight}
+                 {t("dashboard.insight.label")}: {stats.insight}
                </Typography.Text>
             </Flex>
           )}
@@ -190,10 +190,8 @@ export function EconomicChartCard({
       ) : (
         <ChartEmptyState
           className="h-[360px]"
-          title={t("dashboard.charts.noDataRange", { defaultValue: "No Data Found for Selected Range" })}
-          description={t("dashboard.dataEmptyHint", {
-            defaultValue: "No data for the selected range. Try expanding the range."
-          })}
+          title={t("dashboard.charts.noDataRange")}
+          description={t("dashboard.dataEmptyHint")}
         />
       )}
     </Card>

@@ -97,7 +97,6 @@ export function NotificationCenter() {
         uniqueTitles.length === 1
           ? uniqueTitles[0]
           : t("notifications.live.batchMessage", {
-              defaultValue: "{{count}} new notifications · {{titles}}",
               count: uniqueTitles.length,
               titles:
                 uniqueTitles.slice(0, 3).join(" · ") ||
@@ -378,9 +377,7 @@ export function NotificationCenter() {
           <Button
             type="text"
             icon={<BellOutlined />}
-            aria-label={t("notifications.title", {
-              defaultValue: "Notifications",
-            })}
+            aria-label={t("notifications.title")}
             className="inline-flex h-8 w-8 items-center justify-center p-0"
           />
         </Badge>

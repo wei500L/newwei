@@ -69,9 +69,7 @@ export function AdminSettingsWorkspaceLayout({
     return (
       <Card
         className="content-card"
-        title={t('adminSettings.workspace.title', {
-          defaultValue: 'Settings Workspace',
-        })}
+        title={t('adminSettings.workspace.title')}
       >
         <Alert
           type="warning"
@@ -87,9 +85,7 @@ export function AdminSettingsWorkspaceLayout({
       <div className="xl:hidden">
         <Card className="content-card">
           <Typography.Text strong>
-            {t('adminSettings.workspace.title', {
-              defaultValue: 'Settings Workspace',
-            })}
+            {t('adminSettings.workspace.title')}
           </Typography.Text>
           <div className="mt-3">
             <Select
@@ -105,9 +101,7 @@ export function AdminSettingsWorkspaceLayout({
               options={[
                 {
                   value: 'overview',
-                  label: t('adminSettings.workspace.overview', {
-                    defaultValue: 'Overview',
-                  }),
+                  label: t('adminSettings.workspace.overview'),
                 },
                 ...visiblePages.map((page) => ({
                   value: page.id,
@@ -125,18 +119,13 @@ export function AdminSettingsWorkspaceLayout({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <Typography.Title level={5} style={{ margin: 0 }}>
-                  {t('adminSettings.workspace.title', {
-                    defaultValue: 'Settings Workspace',
-                  })}
+                  {t('adminSettings.workspace.title')}
                 </Typography.Title>
                 <Typography.Paragraph
                   type="secondary"
                   style={{ marginBottom: 0, marginTop: 8 }}
                 >
-                  {t('adminSettings.workspace.description', {
-                    defaultValue:
-                      'Browse settings by domain instead of navigating a single oversized tab strip.',
-                  })}
+                  {t('adminSettings.workspace.description')}
                 </Typography.Paragraph>
               </div>
               <Tag>{visiblePages.length}</Tag>
@@ -146,13 +135,8 @@ export function AdminSettingsWorkspaceLayout({
               <NavButton
                 active={activePageId === null}
                 href="/admin/settings"
-                label={t('adminSettings.workspace.overview', {
-                  defaultValue: 'Overview',
-                })}
-                description={t('adminSettings.workspace.overviewDescription', {
-                  defaultValue:
-                    'See available domains, common shortcuts, and quick entry points.',
-                })}
+                label={t('adminSettings.workspace.overview')}
+                description={t('adminSettings.workspace.overviewDescription')}
               />
               {visiblePages.map((page) => (
                 <NavButton

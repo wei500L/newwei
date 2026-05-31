@@ -224,18 +224,12 @@ const resolveMatchOriginLabel = (
   t: ReturnType<typeof useTranslation>["t"],
 ) => {
   if (origin === "HYBRID") {
-    return t("pages.search.archive.originHybrid", {
-      defaultValue: "混合",
-    });
+    return t("pages.search.archive.originHybrid");
   }
   if (origin === "SEMANTIC") {
-    return t("pages.search.archive.originSemantic", {
-      defaultValue: "语义",
-    });
+    return t("pages.search.archive.originSemantic");
   }
-  return t("pages.search.archive.originLexical", {
-    defaultValue: "词法",
-  });
+  return t("pages.search.archive.originLexical");
 };
 
 const stripSearchFilterParams = (params: URLSearchParams) => {
@@ -717,13 +711,10 @@ export function SearchContent() {
     <div className="flex flex-col gap-4">
       <Space direction="vertical" size={2}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("pages.search.title", { defaultValue: "Search" })}
+          {t("pages.search.title")}
         </Typography.Title>
         <Typography.Text type="secondary">
-          {t("pages.search.subtitle", {
-            defaultValue:
-              "Search across processed items and historical headlines.",
-          })}
+          {t("pages.search.subtitle")}
         </Typography.Text>
       </Space>
 
@@ -746,10 +737,7 @@ export function SearchContent() {
             onSearch={handleSearchSubmit}
             navigateOnSearch={false}
             onSuggestionStatusChange={setSuggestionStatus}
-            placeholder={t("pages.search.searchPlaceholder", {
-              defaultValue:
-                "Search news, topics, entities, or historical headlines...",
-            })}
+            placeholder={t("pages.search.searchPlaceholder")}
           />
 
           <Space wrap size={[8, 8]}>
@@ -757,15 +745,11 @@ export function SearchContent() {
               value={mode}
               options={[
                 {
-                  label: t("pages.search.mode.items", {
-                    defaultValue: "Items",
-                  }),
+                  label: t("pages.search.mode.items"),
                   value: "items",
                 },
                 {
-                  label: t("pages.search.mode.headlines", {
-                    defaultValue: "History Headlines",
-                  }),
+                  label: t("pages.search.mode.headlines"),
                   value: "headlines",
                 },
               ]}
@@ -774,9 +758,7 @@ export function SearchContent() {
             {query ? (
               <Tooltip title={query}>
                 <Tag color="blue">
-                  {t("pages.search.featureCurrentQuery", {
-                    defaultValue: "Current query",
-                  })}
+                  {t("pages.search.featureCurrentQuery")}
                   : {queryPreview}
                 </Tag>
               </Tooltip>
@@ -784,9 +766,7 @@ export function SearchContent() {
             {mode === "headlines" ? (
               <Tag color="gold">
                 <HistoryOutlined />{" "}
-                {t("pages.search.mode.headlinesHint", {
-                  defaultValue: "Archive headlines mode",
-                })}
+                {t("pages.search.mode.headlinesHint")}
               </Tag>
             ) : null}
           </Space>
@@ -796,82 +776,57 @@ export function SearchContent() {
       <Alert
         type="info"
         showIcon
-        message={t("pages.search.noticeTitle", {
-          defaultValue: "Search scope",
-        })}
-        description={t("pages.search.noticeDescription", {
-          defaultValue:
-            "Searches titles, summaries, topics, entities, locations, and external IDs.",
-        })}
+        message={t("pages.search.noticeTitle")}
+        description={t("pages.search.noticeDescription")}
       />
 
       <Alert
         type="success"
         showIcon
         icon={<BulbOutlined />}
-        message={t("pages.search.featuresTitle", {
-          defaultValue: "Active search capabilities",
-        })}
+        message={t("pages.search.featuresTitle")}
         description={
           <Space direction="vertical" size={6}>
             <Space wrap size={[8, 8]}>
               <Tag color="processing">
-                {t("pages.search.featureServerSuggestions", {
-                  defaultValue: "Server suggestions",
-                })}
+                {t("pages.search.featureServerSuggestions")}
                 {suggestionStatus ? ` (${suggestionStatus.total})` : ""}
               </Tag>
               <Tag color="geekblue">
-                {t("pages.search.featureSemanticSuggestions", {
-                  defaultValue:
-                    "Semantic suggestions (Embeddings + Vector recall)",
-                })}
+                {t("pages.search.featureSemanticSuggestions")}
               </Tag>
               {suggestionStatus?.loading ? (
                 <Tag color="blue">
-                  {t("pages.search.featureSuggestionsLoading", {
-                    defaultValue: "Suggestions loading...",
-                  })}
+                  {t("pages.search.featureSuggestionsLoading")}
                 </Tag>
               ) : null}
               <Tag color="cyan">
-                {t("pages.search.featureLocalHistory", {
-                  defaultValue: "Local history guidance",
-                })}
+                {t("pages.search.featureLocalHistory")}
               </Tag>
               {shouldShowHotTopics ? (
                 <Tag color="gold">
-                  {t("pages.search.featureHotTopics", {
-                    defaultValue: "Hot topics quick start",
-                  })}
+                  {t("pages.search.featureHotTopics")}
                 </Tag>
               ) : null}
               {hasSemanticSuggestions ? (
                 <Tag color="green">
-                  {t("pages.search.featureSemanticReady", {
-                    defaultValue: "Semantic suggestions active",
-                  })}
+                  {t("pages.search.featureSemanticReady")}
                 </Tag>
               ) : hasSuggestionPrefix ? (
                 <Tag>
-                  {t("pages.search.featureSemanticPending", {
-                    defaultValue: "Keep typing to trigger semantic suggestions",
-                  })}
+                  {t("pages.search.featureSemanticPending")}
                 </Tag>
               ) : null}
               {!suggestionStatus?.loading &&
               hasSuggestionPrefix &&
               suggestionStatus?.total === 0 ? (
                 <Tag>
-                  {t("pages.search.featureSuggestionsEmpty", {
-                    defaultValue: "No server suggestions for current prefix",
-                  })}
+                  {t("pages.search.featureSuggestionsEmpty")}
                 </Tag>
               ) : null}
               {hasSemanticSuggestions ? (
                 <Tag color="volcano">
                   {t("pages.search.featureSemanticBreakdown", {
-                    defaultValue: "Semantic {{semantic}} + Hybrid {{hybrid}}",
                     semantic: suggestionStatus?.semanticCount ?? 0,
                     hybrid: suggestionStatus?.hybridCount ?? 0,
                   })}
@@ -879,30 +834,19 @@ export function SearchContent() {
               ) : null}
               {activeRankingMode === "relevance" ? (
                 <Tag color="purple">
-                  {t("pages.search.featureRankingRelevance", {
-                    defaultValue:
-                      "Result ranking: Relevance (rerank if available)",
-                  })}
+                  {t("pages.search.featureRankingRelevance")}
                 </Tag>
               ) : null}
               {activeRankingMode === "recency" ? (
                 <Tag color="orange">
-                  {t("pages.search.featureRankingRecency", {
-                    defaultValue: "Result ranking: Recency",
-                  })}
+                  {t("pages.search.featureRankingRecency")}
                 </Tag>
               ) : null}
             </Space>
             <Typography.Text>
               {shouldShowHotTopics
-                ? t("pages.search.modeIdleHint", {
-                    defaultValue:
-                      "No query detected. Use hot topics or recent searches to start quickly.",
-                  })
-                : t("pages.search.modeActiveHint", {
-                    defaultValue:
-                      "Semantic and lexical suggestions are being used to guide your next query refinement.",
-                  })}
+                ? t("pages.search.modeIdleHint")
+                : t("pages.search.modeActiveHint")}
             </Typography.Text>
           </Space>
         }
@@ -912,9 +856,7 @@ export function SearchContent() {
         <Alert
           type="info"
           showIcon
-          message={t("pages.search.recentSearches", {
-            defaultValue: "Recent searches",
-          })}
+          message={t("pages.search.recentSearches")}
           description={
             <Space wrap size={[8, 8]}>
               {recentSearches.slice(0, 6).map((value) => (
@@ -937,13 +879,10 @@ export function SearchContent() {
       {shouldShowHotTopics ? (
         <Space direction="vertical" size={8}>
           <Typography.Text type="secondary">
-            {t("pages.search.hotTopics", { defaultValue: "Hot topics" })}
+            {t("pages.search.hotTopics")}
           </Typography.Text>
           <Typography.Text type="secondary">
-            {t("pages.search.hotTopicsHint", {
-              defaultValue:
-                "Click a topic to fill the query and start searching immediately.",
-            })}
+            {t("pages.search.hotTopicsHint")}
           </Typography.Text>
           {hotTopicsLoading && hotTopics.length === 0 ? (
             <Skeleton active paragraph={{ rows: 1 }} title={false} />
@@ -966,12 +905,8 @@ export function SearchContent() {
           ) : (
             <Typography.Text type="secondary">
               {hotTopicsError
-                ? t("pages.search.hotTopicsLoadFailed", {
-                    defaultValue: "Failed to load hot topics.",
-                  })
-                : t("pages.search.hotTopicsEmpty", {
-                    defaultValue: "No hot topics available yet.",
-                  })}
+                ? t("pages.search.hotTopicsLoadFailed")
+                : t("pages.search.hotTopicsEmpty")}
             </Typography.Text>
           )}
 
@@ -979,9 +914,7 @@ export function SearchContent() {
             <Space direction="vertical" size={8}>
               <Space align="center" size={8}>
                 <Typography.Text type="secondary">
-                  {t("pages.search.recentSearches", {
-                    defaultValue: "Recent searches",
-                  })}
+                  {t("pages.search.recentSearches")}
                 </Typography.Text>
                 <Button
                   size="small"
@@ -989,9 +922,7 @@ export function SearchContent() {
                   onClick={handleRecentSearchClear}
                   style={{ paddingInline: 0 }}
                 >
-                  {t("pages.search.clearHistory", {
-                    defaultValue: "Clear history",
-                  })}
+                  {t("pages.search.clearHistory")}
                 </Button>
               </Space>
               <Space wrap size={[8, 8]}>
@@ -1023,9 +954,7 @@ export function SearchContent() {
       ) : (
         <Card
           className="content-card"
-          title={t("pages.search.archive.title", {
-            defaultValue: "History Headlines",
-          })}
+          title={t("pages.search.archive.title")}
         >
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <Space wrap size={[8, 8]}>
@@ -1056,20 +985,16 @@ export function SearchContent() {
                 onChange={(values) => updateArchiveParams({ weights: values })}
                 style={{ minWidth: 220 }}
                 maxTagCount="responsive"
-                placeholder={t("pages.search.archive.weightsPlaceholder", {
-                  defaultValue: "All weights",
-                })}
+                placeholder={t("pages.search.archive.weightsPlaceholder")}
               />
               <Button
                 onClick={() => refetchArchiveDigest()}
                 loading={archiveDigestLoading}
               >
-                {t("common.refresh", { defaultValue: "Refresh" })}
+                {t("common.refresh")}
               </Button>
               <Button onClick={() => router.push(fullArchiveHref)}>
-                {t("pages.search.archive.openFull", {
-                  defaultValue: "Open Full Archive",
-                })}
+                {t("pages.search.archive.openFull")}
               </Button>
             </Space>
 
@@ -1077,9 +1002,7 @@ export function SearchContent() {
               <Alert
                 type="error"
                 showIcon
-                message={t("pages.search.archive.loadFailedTitle", {
-                  defaultValue: "Failed to load archive headlines",
-                })}
+                message={t("pages.search.archive.loadFailedTitle")}
                 description={archiveDigestError.message}
               />
             ) : null}
@@ -1087,14 +1010,10 @@ export function SearchContent() {
               <Alert
                 type="info"
                 showIcon
-                message={t("pages.search.archive.queryTooShortTitle", {
-                  defaultValue: "Need more query text",
-                })}
+                message={t("pages.search.archive.queryTooShortTitle")}
                 description={t(
                   "pages.search.archive.queryTooShortDescription",
                   {
-                    defaultValue:
-                      "Enter at least {{min}} characters to enable semantic headline search. Showing latest archive headlines for current filters.",
                     min: MIN_HEADLINES_QUERY_LENGTH,
                   },
                 )}
@@ -1108,16 +1027,12 @@ export function SearchContent() {
             ) : archiveTotalCount === 0 ? (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t("pages.search.archive.empty", {
-                  defaultValue:
-                    "No historical headlines found for current filters.",
-                })}
+                description={t("pages.search.archive.empty")}
               />
             ) : (
               <div className="flex flex-col gap-4">
                 <Typography.Text type="secondary">
                   {t("pages.search.archive.count", {
-                    defaultValue: "{{count}} headlines matched",
                     count: archiveTotalCount,
                   })}
                 </Typography.Text>
@@ -1137,9 +1052,7 @@ export function SearchContent() {
                             const summary =
                               item.summary?.trim() ||
                               item.title?.trim() ||
-                              t("pages.search.archive.untitled", {
-                                defaultValue: "Untitled headline",
-                              });
+                              t("pages.search.archive.untitled");
                             const relevancePercent =
                               typeof item.relevanceScore === "number"
                                 ? Math.round(item.relevanceScore * 100)
@@ -1188,7 +1101,6 @@ export function SearchContent() {
                                   {relevancePercent !== null ? (
                                     <Tag color="cyan">
                                       {t("pages.search.archive.relevance", {
-                                        defaultValue: "Relevance {{percent}}%",
                                         percent: relevancePercent,
                                       })}
                                     </Tag>
@@ -1226,9 +1138,7 @@ export function SearchContent() {
                                 )}
                                 onClick={() => handleHeadlinesLoadMore(group)}
                               >
-                                {t("pages.search.archive.loadMore", {
-                                  defaultValue: "Load more",
-                                })}
+                                {t("pages.search.archive.loadMore")}
                               </Button>
                             </Space>
                           ) : null}

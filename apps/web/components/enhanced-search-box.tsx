@@ -329,28 +329,18 @@ export function EnhancedSearchBox({
     switch (suggestionFeedbackState) {
       case "minChars":
         return t("search.feedback.minChars", {
-          defaultValue: "Type {{remaining}} more character(s) to search",
           remaining: suggestionRemainingChars,
         });
       case "debouncing":
-        return t("search.feedback.debouncing", {
-          defaultValue: "Waiting for you to finish typing...",
-        });
+        return t("search.feedback.debouncing");
       case "loading":
-        return t("search.feedback.loading", {
-          defaultValue: "Searching...",
-        });
+        return t("search.feedback.loading");
       case "error":
-        return t("search.feedback.error", {
-          defaultValue: "Search is temporarily unavailable. Please retry.",
-        });
+        return t("search.feedback.error");
       case "empty":
-        return t("search.feedback.empty", {
-          defaultValue: "No suggestions for current input.",
-        });
+        return t("search.feedback.empty");
       case "ready":
         return t("search.feedback.ready", {
-          defaultValue: "{{count}} suggestion(s) available",
           count: serverSuggestions.length,
         });
       default:
@@ -373,13 +363,13 @@ export function EnhancedSearchBox({
     (type: SearchSuggestionType) => {
       switch (type) {
         case SearchSuggestionType.Topic:
-          return t("search.suggestions.topics", { defaultValue: "Topics" });
+          return t("search.suggestions.topics");
         case SearchSuggestionType.Region:
-          return t("search.suggestions.regions", { defaultValue: "Regions" });
+          return t("search.suggestions.regions");
         case SearchSuggestionType.Sentiment:
-          return t("search.suggestions.sentiments", { defaultValue: "Sentiments" });
+          return t("search.suggestions.sentiments");
         case SearchSuggestionType.Source:
-          return t("search.suggestions.sources", { defaultValue: "Sources" });
+          return t("search.suggestions.sources");
         default:
           return type;
       }
@@ -405,12 +395,12 @@ export function EnhancedSearchBox({
   const suggestionOriginLabel = useCallback(
     (origin: SearchSuggestionOrigin) => {
       if (origin === "HYBRID") {
-        return t("search.suggestions.originHybrid", { defaultValue: "Hybrid" });
+        return t("search.suggestions.originHybrid");
       }
       if (origin === "SEMANTIC") {
-        return t("search.suggestions.originSemantic", { defaultValue: "Semantic" });
+        return t("search.suggestions.originSemantic");
       }
-      return t("search.suggestions.originLexical", { defaultValue: "Lexical" });
+      return t("search.suggestions.originLexical");
     },
     [t]
   );
@@ -486,7 +476,7 @@ export function EnhancedSearchBox({
         suggestions.push({
           label: (
             <div className="text-xs text-gray-400 px-2 py-1">
-              {t("search.recent", { defaultValue: "Recent Searches" })}
+              {t("search.recent")}
             </div>
           ),
           value: `${HEADER_OPTION_PREFIX}_history`,
@@ -516,7 +506,7 @@ export function EnhancedSearchBox({
       suggestions.push({
         label: (
           <div className="text-xs text-gray-400 px-2 py-1">
-            {t("search.recent", { defaultValue: "Recent Searches" })}
+            {t("search.recent")}
           </div>
         ),
         value: `${HEADER_OPTION_PREFIX}_history`,
@@ -540,7 +530,7 @@ export function EnhancedSearchBox({
       suggestions.push({
         label: (
           <div className="text-xs text-gray-400 px-2 py-1">
-            {t("search.suggestions.server", { defaultValue: "Semantic Suggestions" })}
+            {t("search.suggestions.server")}
           </div>
         ),
         value: `${HEADER_OPTION_PREFIX}_server`,
@@ -589,7 +579,7 @@ export function EnhancedSearchBox({
         suggestions.push({
           label: (
             <div className="text-xs text-gray-400 px-2 py-1">
-              {t("search.suggestions.syntax", { defaultValue: "Advanced Syntax" })}
+              {t("search.suggestions.syntax")}
             </div>
           ),
           value: `${HEADER_OPTION_PREFIX}_syntax`,
@@ -616,7 +606,7 @@ export function EnhancedSearchBox({
         <div className="flex items-center gap-2 px-2 py-1 text-blue-500">
           <SearchOutlined />
           <span>
-            {t("search.searchFor", { defaultValue: "Search for" })} &quot;{rawValue}&quot;
+            {t("search.searchFor")} &quot;{rawValue}&quot;
           </span>
         </div>
       ),
@@ -690,40 +680,38 @@ export function EnhancedSearchBox({
   const syntaxHelpContent = (
     <div className="max-w-xs">
       <p className="text-xs text-gray-500 mb-2">
-        {t("search.syntax.description", {
-          defaultValue: "Use these operators for advanced search:",
-        })}
+        {t("search.syntax.description")}
       </p>
       <ul className="text-xs space-y-1">
         <li>
           <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">topic:AI</code> -{" "}
-          {t("search.syntax.topic", { defaultValue: "Filter by topic" })}
+          {t("search.syntax.topic")}
         </li>
         <li>
           <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">region:US</code> -{" "}
-          {t("search.syntax.region", { defaultValue: "Filter by region" })}
+          {t("search.syntax.region")}
         </li>
         <li>
           <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">sentiment:positive</code>{" "}
-          - {t("search.syntax.sentiment", { defaultValue: "Filter by sentiment" })}
+          - {t("search.syntax.sentiment")}
         </li>
         <li>
           <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">from:2024-01-01</code>{" "}
-          - {t("search.syntax.from", { defaultValue: "Start date" })}
+          - {t("search.syntax.from")}
         </li>
         <li>
           <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">to:2024-12-31</code> -{" "}
-          {t("search.syntax.to", { defaultValue: "End date" })}
+          {t("search.syntax.to")}
         </li>
         <li>
           <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">source:Reuters</code>{" "}
-          - {t("search.syntax.source", { defaultValue: "Filter by source" })}
+          - {t("search.syntax.source")}
         </li>
         <li>
           <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">
             &quot;exact phrase&quot;
           </code>{" "}
-          - {t("search.syntax.phrase", { defaultValue: "Exact phrase match" })}
+          - {t("search.syntax.phrase")}
         </li>
       </ul>
     </div>
@@ -748,9 +736,7 @@ export function EnhancedSearchBox({
           <Input
             placeholder={
               placeholder ||
-              t("search.placeholder", {
-                defaultValue: "Search news, topics, or events...",
-              })
+              t("search.placeholder")
             }
             allowClear
             className="pl-10 pr-20 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 hover:border-gray-300 focus:border-blue-500 transition-all rounded-lg"

@@ -162,12 +162,8 @@ export function AnalysisToolbar({
       setSaveOpen(false);
       messageApi.success(
         savedView?.id && savedView.canEdit
-          ? t("analysis.toolbar.updateSuccess", {
-              defaultValue: "Saved view updated.",
-            })
-          : t("analysis.toolbar.createSuccess", {
-              defaultValue: "Saved view created.",
-            }),
+          ? t("analysis.toolbar.updateSuccess")
+          : t("analysis.toolbar.createSuccess"),
       );
       router.replace(
         buildSavedViewPath(pathname, sanitizedQueryString, nextView.id),
@@ -184,9 +180,7 @@ export function AnalysisToolbar({
       }
       captureClientError("Failed to save analysis view", error);
       messageApi.error(
-        t("analysis.toolbar.saveFailed", {
-          defaultValue: "Failed to save view.",
-        }),
+        t("analysis.toolbar.saveFailed"),
       );
     } finally {
       setSaving(false);
@@ -215,9 +209,7 @@ export function AnalysisToolbar({
     } catch (error) {
       captureClientError("Failed to export analysis CSV", error);
       messageApi.error(
-        t("analysis.toolbar.exportFailed", {
-          defaultValue: "Failed to export CSV.",
-        }),
+        t("analysis.toolbar.exportFailed"),
       );
     } finally {
       setExporting(false);
@@ -233,16 +225,12 @@ export function AnalysisToolbar({
       const target = buildSavedViewPath(pathname, sanitizedQueryString, savedViewId);
       await navigator.clipboard.writeText(`${window.location.origin}${target}`);
       messageApi.success(
-        t("analysis.toolbar.copySuccess", {
-          defaultValue: "Share link copied.",
-        }),
+        t("analysis.toolbar.copySuccess"),
       );
     } catch (error) {
       captureClientError("Failed to copy analysis share link", error);
       messageApi.error(
-        t("analysis.toolbar.copyFailed", {
-          defaultValue: "Failed to copy link.",
-        }),
+        t("analysis.toolbar.copyFailed"),
       );
     } finally {
       setCopying(false);
@@ -256,27 +244,19 @@ export function AnalysisToolbar({
         <div className="min-w-0 flex-1">
           <Space wrap size={[8, 8]}>
             <Typography.Text strong>
-              {t("analysis.toolbar.title", {
-                defaultValue: "Analysis workspace",
-              })}
+              {t("analysis.toolbar.title")}
             </Typography.Text>
             <Tag color="blue">{surface}</Tag>
             {savedView ? (
               <Tag color={savedView.visibility === "org_shared" ? "gold" : "default"}>
                 {savedView.visibility === "org_shared"
-                  ? t("analysis.toolbar.shared", {
-                      defaultValue: "Org shared",
-                    })
-                  : t("analysis.toolbar.private", {
-                      defaultValue: "Private",
-                    })}
+                  ? t("analysis.toolbar.shared")
+                  : t("analysis.toolbar.private")}
               </Tag>
             ) : null}
             {savedView && savedView.canEdit ? (
               <Tag color="processing">
-                {t("analysis.toolbar.editable", {
-                  defaultValue: "You can edit this view",
-                })}
+                {t("analysis.toolbar.editable")}
               </Tag>
             ) : null}
           </Space>
@@ -286,19 +266,12 @@ export function AnalysisToolbar({
           >
             {savedView
               ? savedView.description ||
-                t("analysis.toolbar.savedDescription", {
-                  defaultValue:
-                    "This saved analysis view can be reopened, exported, and discussed with your team.",
-                })
-              : t("analysis.toolbar.unsavedDescription", {
-                  defaultValue:
-                    "Save the current filters as an internal view, export the result set, or continue into the analysis library.",
-                })}
+                t("analysis.toolbar.savedDescription")
+              : t("analysis.toolbar.unsavedDescription")}
           </Typography.Paragraph>
           {savedView ? (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {t("analysis.toolbar.updatedBy", {
-                defaultValue: "Last updated by {{name}}",
                 name: formatAnalysisActorName(savedView.updatedBy),
               })}
             </Typography.Text>
@@ -308,13 +281,8 @@ export function AnalysisToolbar({
               style={{ marginTop: 12 }}
               type="info"
               showIcon
-              message={t("analysis.toolbar.permissionTitle", {
-                defaultValue: "Read-only access",
-              })}
-              description={t("analysis.toolbar.permissionDescription", {
-                defaultValue:
-                  "Saving views, exporting CSV, and annotations require analysis.write permission.",
-              })}
+              message={t("analysis.toolbar.permissionTitle")}
+              description={t("analysis.toolbar.permissionDescription")}
             />
           ) : null}
         </div>
@@ -322,9 +290,7 @@ export function AnalysisToolbar({
         <Space wrap>
           <Link href="/analysis">
             <Button icon={<FolderOpenOutlined />}>
-              {t("analysis.toolbar.library", {
-                defaultValue: "Analysis library",
-              })}
+              {t("analysis.toolbar.library")}
             </Button>
           </Link>
           {savedViewId ? (
@@ -333,9 +299,7 @@ export function AnalysisToolbar({
               onClick={() => void handleCopyLink()}
               loading={copying}
             >
-              {t("analysis.toolbar.share", {
-                defaultValue: "Copy link",
-              })}
+              {t("analysis.toolbar.share")}
             </Button>
           ) : null}
           {savedViewId ? (
@@ -343,9 +307,7 @@ export function AnalysisToolbar({
               subjectType="saved_view"
               subjectId={savedViewId}
               defaultTitle={savedView?.title}
-              buttonText={t("analysis.toolbar.createTask", {
-                defaultValue: "Create task",
-              })}
+              buttonText={t("analysis.toolbar.createTask")}
             />
           ) : null}
           <Button
@@ -354,9 +316,7 @@ export function AnalysisToolbar({
             loading={exporting}
             disabled={!canWrite}
           >
-            {t("analysis.toolbar.export", {
-              defaultValue: "Export CSV",
-            })}
+            {t("analysis.toolbar.export")}
           </Button>
           <Button
             type="primary"
@@ -366,12 +326,8 @@ export function AnalysisToolbar({
             loading={loadingView}
           >
             {savedView?.id && savedView.canEdit
-              ? t("analysis.toolbar.update", {
-                  defaultValue: "Update view",
-                })
-              : t("analysis.toolbar.save", {
-                  defaultValue: "Save view",
-                })}
+              ? t("analysis.toolbar.update")
+              : t("analysis.toolbar.save")}
           </Button>
         </Space>
       </div>
@@ -379,59 +335,43 @@ export function AnalysisToolbar({
       <Modal
         open={saveOpen}
         title={savedView?.id && savedView.canEdit
-          ? t("analysis.toolbar.updateModalTitle", {
-              defaultValue: "Update saved analysis view",
-            })
-          : t("analysis.toolbar.createModalTitle", {
-              defaultValue: "Save current analysis view",
-            })}
+          ? t("analysis.toolbar.updateModalTitle")
+          : t("analysis.toolbar.createModalTitle")}
         onOk={() => void handleSave()}
         okText={savedView?.id && savedView.canEdit
-          ? t("common.save", { defaultValue: "Save" })
-          : t("analysis.toolbar.save", { defaultValue: "Save view" })}
+          ? t("common.save")
+          : t("analysis.toolbar.save")}
         confirmLoading={saving}
         onCancel={() => setSaveOpen(false)}
       >
         <Form layout="vertical" form={form}>
           <Form.Item
-            label={t("analysis.toolbar.fields.title", {
-              defaultValue: "Title",
-            })}
+            label={t("analysis.toolbar.fields.title")}
             name="title"
             rules={[
               {
                 required: true,
-                message: t("analysis.toolbar.fields.titleRequired", {
-                  defaultValue: "Enter a title.",
-                }),
+                message: t("analysis.toolbar.fields.titleRequired"),
               },
             ]}
           >
             <Input
               maxLength={120}
-              placeholder={t("analysis.toolbar.fields.titlePlaceholder", {
-                defaultValue: "South China Sea watchlist",
-              })}
+              placeholder={t("analysis.toolbar.fields.titlePlaceholder")}
             />
           </Form.Item>
           <Form.Item
-            label={t("analysis.toolbar.fields.description", {
-              defaultValue: "Description",
-            })}
+            label={t("analysis.toolbar.fields.description")}
             name="description"
           >
             <Input.TextArea
               rows={3}
               maxLength={1000}
-              placeholder={t("analysis.toolbar.fields.descriptionPlaceholder", {
-                defaultValue: "What this saved view tracks and why it matters.",
-              })}
+              placeholder={t("analysis.toolbar.fields.descriptionPlaceholder")}
             />
           </Form.Item>
           <Form.Item
-            label={t("analysis.toolbar.fields.visibility", {
-              defaultValue: "Visibility",
-            })}
+            label={t("analysis.toolbar.fields.visibility")}
             name="visibility"
             initialValue="private"
           >
@@ -439,15 +379,11 @@ export function AnalysisToolbar({
               options={[
                 {
                   value: "private",
-                  label: t("analysis.toolbar.private", {
-                    defaultValue: "Private",
-                  }),
+                  label: t("analysis.toolbar.private"),
                 },
                 {
                   value: "org_shared",
-                  label: t("analysis.toolbar.shared", {
-                    defaultValue: "Org shared",
-                  }),
+                  label: t("analysis.toolbar.shared"),
                 },
               ]}
             />

@@ -4,6 +4,7 @@ import {
   buildAisRuntimeFeedbackAlert,
   formatAisRuntimeReason,
 } from "../lib/realtime-signals-runtime";
+import { translateTestKey } from "./i18n-test-utils";
 
 const AIS_REASON_TRANSLATIONS: Record<string, string> = {
   "systemSettings.realtimeSignals.runtime.aisReason.ais_snapshot_missing_vessels_contract":
@@ -12,9 +13,7 @@ const AIS_REASON_TRANSLATIONS: Record<string, string> = {
 
 const t = (key: string, options?: Record<string, unknown>) => {
   const translated = AIS_REASON_TRANSLATIONS[key];
-  const base =
-    translated ??
-    (typeof options?.defaultValue === "string" ? options.defaultValue : key);
+  const base = translated ?? translateTestKey(key, options);
   return base.replace(/\{\{(\w+)\}\}/g, (_match, token: string) =>
     String(options?.[token] ?? `{{${token}}}`),
   );
@@ -65,7 +64,7 @@ describe("realtime signals runtime helpers", () => {
     expect(alert).toEqual({
       type: "error",
       message:
-        "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
+        "AIS relay is receiving reports, but vessel snapshots are not being retained.",
       description:
         "Seen 200 reports, processed 0, retained candidates 3. Check relay parsing and snapshot retention logic.",
     });

@@ -652,7 +652,11 @@
     "unavailable": "Unavailable",
     "totalCount": "Total {{count}}",
     "minimize": "Minimize",
-    "justNow": "just now"
+    "justNow": "just now",
+    "hide": "Hide",
+    "notInterested": "Not interested",
+    "no": "No",
+    "yes": "Yes"
   },
   "orgSwitcher": {
     "error": {
@@ -2042,7 +2046,8 @@
       "subscriptions": "Subscriptions & Notifications",
       "profile": "Profile",
       "situationMonitor": "Situation Monitor",
-      "assistant": "Assistant"
+      "assistant": "Assistant",
+      "analysis": "Analysis"
     },
     "adminGroup": "Admin",
     "commandRunSearch": "Search all items",
@@ -2068,7 +2073,39 @@
       "overlay": "Alert & News Signals Overview",
       "demoBadge": "Demo",
       "demoNote": "Demo indicators until alert geo context is connected.",
-      "empty": "No alerts or geo-tagged news signals in the selected range."
+      "empty": "No alerts or geo-tagged news signals in the selected range.",
+      "geocode": {
+        "empty": "No geocode result was returned for this query.",
+        "loadFailed": "Failed to geocode this query.",
+        "title": "Geocode Lookup",
+        "description": "Resolve a place or region to coordinates using the same geocoding service used by the backend pipeline.",
+        "fields": {
+          "query": "Location query",
+          "countryCode": "Country code"
+        },
+        "validation": {
+          "queryRequired": "Enter a location query."
+        },
+        "placeholders": {
+          "query": "Shanghai, South China Sea, Brussels, Texas...",
+          "countryCode": "Optional ISO alpha-2 code, e.g. CN or US"
+        },
+        "actions": {
+          "lookup": "Resolve coordinates",
+          "copyCoordinates": "Copy coordinates",
+          "openMap": "Open in map"
+        },
+        "labels": {
+          "result": "Result",
+          "provider": "Provider",
+          "country": "Country",
+          "bounds": "Bounds"
+        },
+        "messages": {
+          "copied": "Coordinates copied.",
+          "copyFailed": "Failed to copy coordinates."
+        }
+      }
     },
     "knowledgeGraph": {
       "title": "Knowledge Graph Explorer",
@@ -2142,7 +2179,9 @@
         "upstream_of": "Upstream of",
         "downstream_of": "Downstream of",
         "has_ticker": "Has ticker"
-      }
+      },
+      "notFoundTitle": "Not found",
+      "notFoundDescription": "No graph data found for this entity"
     },
     "search": {
       "title": "Search",
@@ -2624,6 +2663,34 @@
         "focusEntitiesPlaceholder": "Enter entities",
         "includeIndicators": "Include indicators",
         "maxIndicatorsPerEvent": "Max indicators per event"
+      },
+      "deliveryLoadFailed": "Failed to load digest delivery settings.",
+      "deliverySaved": "Delivery schedule saved.",
+      "deliverySaveFailed": "Failed to save delivery schedule.",
+      "deliveryStatus": {
+        "sent": "Last run sent",
+        "failed": "Last run failed",
+        "empty": "No digest items",
+        "idle": "Idle"
+      },
+      "delivery": {
+        "customize": "Delivery schedule",
+        "enabled": "Delivery on",
+        "disabled": "Delivery off",
+        "schedule": "Schedule",
+        "nextRunAt": "Next run",
+        "emailRequired": "Verify your email in Profile before enabling scheduled digest delivery.",
+        "openProfile": "Open profile",
+        "lastError": "Last delivery error",
+        "title": "Digest Delivery Schedule",
+        "description": "Send the current rolling digest to your verified email once per day, and also record the result in Notification Center.",
+        "targetEmail": "Target email",
+        "enabledLabel": "Enable daily delivery",
+        "verifyFirst": "Email verification is required before this can be enabled.",
+        "time": "Delivery time",
+        "timezone": "Timezone",
+        "timezonePlaceholder": "Select an IANA timezone",
+        "lastSentAt": "Last email sent"
       }
     },
     "newsIndicator": {
@@ -2714,6 +2781,41 @@
     "situationMonitor": {
       "title": "Situation Monitor",
       "subtitle": "Correlation, narratives, and key figures across your recent items."
+    },
+    "welcome": {
+      "skipToChecklist": "Skip to checklist",
+      "eyebrow": "Onboarding",
+      "title": "Learn the workspace in four short stops.",
+      "description": "The workspace is data-dense by design. This guide pushes you through the pages that matter most so the rest of the console feels predictable.",
+      "progress": "Progress",
+      "enterWorkspace": "Enter workspace",
+      "skipForNow": "Skip for now",
+      "status": {
+        "done": "Done",
+        "start": "Start"
+      },
+      "steps": {
+        "today": {
+          "label": "Today",
+          "title": "Read the daily briefing",
+          "description": "Start with the curated overview that pulls the most important updates into one page."
+        },
+        "events": {
+          "label": "Events",
+          "title": "Review live events",
+          "description": "See how the event model groups coverage, confidence, and corroboration into one feed."
+        },
+        "map": {
+          "label": "Map",
+          "title": "Scan the map",
+          "description": "Open the regional map to understand where alerts and geo-linked news are accumulating."
+        },
+        "finance": {
+          "label": "Finance",
+          "title": "Check market signals",
+          "description": "Inspect the finance workspace for macro pulse, sector heat, and candlestick context."
+        }
+      }
     }
   },
   "adminConsole": {
@@ -2791,6 +2893,10 @@
       "knowledgeGraphReview": {
         "title": "Knowledge Graph Review",
         "description": "Review low-confidence knowledge graph relations and record human feedback"
+      },
+      "searchTelemetry": {
+        "title": "Search Telemetry",
+        "description": "Inspect archive search submissions, query friction, and load-more usage"
       }
     },
     "metrics": {
@@ -3864,6 +3970,20 @@
         "body": "Classification quality thresholds were exceeded in the {{window}} window. Review system monitoring for details.",
         "latency": "Latency: {{summary}}",
         "gate": "Category gates: {{summary}}"
+      },
+      "userDigestReady": {
+        "title": "Daily digest ready",
+        "body": "Emailed {{count}} digest event(s){{generatedSuffix}}.",
+        "generatedSuffix": " at {{value}}"
+      },
+      "userDigestEmpty": {
+        "title": "Daily digest has no new items",
+        "body": "No digest events matched your current window. The next delivery check is already scheduled."
+      },
+      "userDigestDeliveryFailed": {
+        "title": "Daily digest delivery failed",
+        "body": "The system could not send your digest email. Review your delivery settings and try again later.",
+        "bodyWithEmail": "Target {{email}}. {{detail}}"
       }
     },
     "type": {
@@ -4222,7 +4342,11 @@
         "timelineMaxCategoryDistributionItems": "Max category distribution items",
         "timelineMaxPhaseSummaries": "Max phase summaries",
         "timelinePresetCustomDistanceThreshold": "Preset custom distance threshold",
-        "cacheTtlSeconds": "Cache TTL (seconds)"
+        "cacheTtlSeconds": "Cache TTL (seconds)",
+        "clusteringMode": "Clustering mode",
+        "bertopicMinItemsPerGroup": "BERTopic min items per group",
+        "bertopicMaxItemsPerRequest": "BERTopic max items per request",
+        "bertopicMinTopicSize": "BERTopic min topic size"
       },
       "hints": {
         "ingestionEnabled": "Controls scheduled ingestion jobs.",
@@ -4244,13 +4368,22 @@
         "timelineCrossCategoryWarningShare": "Trigger a cross-category warning when non-dominant categories exceed this share.",
         "timelineMaxCategoryDistributionItems": "Limit of category slices returned by timeline/category-distribution metadata.",
         "timelineMaxPhaseSummaries": "Upper bound for staged timeline summaries generated per event.",
-        "timelinePresetCustomDistanceThreshold": "When the closest preset distance is above this threshold, preset matching is shown as Custom."
+        "timelinePresetCustomDistanceThreshold": "When the closest preset distance is above this threshold, preset matching is shown as Custom.",
+        "clusteringMode": "Use vector assignment only, or run BERTopic first and queue hard failures for automatic LLM recovery.",
+        "bertopicMinItemsPerGroup": "Language + embedding-model groups below this size skip BERTopic and use vector assignment directly.",
+        "bertopicMaxItemsPerRequest": "Upper bound for each BERTopic request to control CPU and memory pressure on the model service. Must be greater than or equal to the min items per group.",
+        "bertopicMinTopicSize": "Minimum local cluster size passed through to BERTopic/HDBSCAN before a topic is kept."
       },
       "messages": {
         "saved": "Saved",
         "saveFailed": "Failed to save",
         "loadFailed": "Failed to load settings",
-        "presetApplied": "Preset applied. Save changes to persist."
+        "presetApplied": "Preset applied. Save changes to persist.",
+        "clusteringAdminLoadFailed": "Failed to load BERTopic clustering diagnostics.",
+        "llmBackfillQueued": "LLM backfill queued.",
+        "llmBackfillFailed": "Failed to queue LLM backfill.",
+        "failureIgnored": "Failure group ignored.",
+        "failureIgnoreFailed": "Failed to ignore failure group."
       },
       "validation": {
         "required": "Required",
@@ -4259,14 +4392,17 @@
         "highMustBeAtLeastLow": "High confidence threshold must be greater than or equal to low confidence threshold."
       },
       "sections": {
-        "timelineClassification": "Timeline classification & drift"
+        "timelineClassification": "Timeline classification & drift",
+        "clustering": "Clustering",
+        "clusteringQueue": "BERTopic failure queue"
       },
       "clusteringQueue": {
         "notice": {
           "title": "Automatic recovery path",
           "ready": "Automatic LLM recovery is ready. Pending groups are retried by the scheduler; manual backfill queues a group immediately.",
           "notReady": "Automatic LLM recovery is blocked. Configure an active LLM gateway completion profile before pending groups can be retried.",
-          "automation": "Scheduler: every {{interval}}, retry backoff {{backoff}}, up to {{batchSize}} groups per tick."
+          "automation": "Scheduler: every {{interval}}, retry backoff {{backoff}}, up to {{batchSize}} groups per tick.",
+          "body": "Only hard BERTopic request failures enter this queue. Small groups, missing embeddings, and outliers still fall back to the standard vector assignment automatically."
         },
         "automation": {
           "minutes": "{{count}} min",
@@ -4276,13 +4412,50 @@
           "nextTick": "Auto retry on next scheduler tick",
           "eligible": "Auto retry eligible now",
           "after": "Auto retry after {{time}}"
-        }
+        },
+        "columns": {
+          "group": "Group",
+          "status": "Status",
+          "items": "Items",
+          "recovery": "Recovery",
+          "samples": "Samples",
+          "actions": "Actions"
+        },
+        "actions": {
+          "llmBackfill": "LLM backfill",
+          "ignore": "Ignore",
+          "openLlmGateway": "Open LLM gateway settings"
+        },
+        "overview": {
+          "pending": "Pending",
+          "processing": "Processing",
+          "resolved": "Resolved",
+          "ignored": "Ignored",
+          "latest": "Latest failure"
+        },
+        "empty": "No queued BERTopic failures."
       },
       "presets": {
         "conservative": "Conservative",
         "balanced": "Balanced",
         "aggressive": "Aggressive",
         "custom": "Custom"
+      },
+      "options": {
+        "clusteringMode": {
+          "vector": "Vector only",
+          "bertopicPrimary": "BERTopic primary"
+        }
+      },
+      "clusteringMode": {
+        "notice": {
+          "title": "BERTopic execution path",
+          "ready": "Model service credentials are available. BERTopic will run before vector fallback.",
+          "notReady": "Model service is not fully configured. BERTopic requests will fail and affected groups will enter the admin review queue."
+        },
+        "actions": {
+          "modelService": "Open model service settings"
+        }
       }
     },
     "newsClassification": {
@@ -6096,6 +6269,32 @@
       "download": "Download data export",
       "success": "Data export downloaded.",
       "failed": "Failed to download data export."
+    },
+    "details": {
+      "success": "Profile updated.",
+      "failed": "Failed to update profile.",
+      "title": "Profile details",
+      "description": "Update how your name appears across saved views, comments, and collaboration surfaces.",
+      "firstName": "First name",
+      "firstNameRequired": "Enter a first name.",
+      "lastName": "Last name",
+      "lastNameRequired": "Enter a last name.",
+      "save": "Save profile"
+    },
+    "password": {
+      "success": "Password changed. Please use the new password next time you sign in.",
+      "failed": "Failed to change password.",
+      "title": "Change password",
+      "description": "Changing your password revokes existing refresh tokens and secures future sessions.",
+      "current": "Current password",
+      "currentRequired": "Enter your current password.",
+      "new": "New password",
+      "newRequired": "Enter a new password.",
+      "newMin": "Password must be at least 8 characters.",
+      "confirm": "Confirm new password",
+      "confirmRequired": "Confirm the new password.",
+      "confirmMismatch": "Passwords do not match.",
+      "submit": "Change password"
     }
   },
   "systemSettings": {
@@ -6591,6 +6790,24 @@
         "resetContent": "Remove stored overrides and revert to env values?",
         "confirm": "Confirm",
         "cancel": "Cancel"
+      },
+      "diagnostics": {
+        "title": "Runtime diagnostics",
+        "configured": "Configured",
+        "incomplete": "Incomplete",
+        "backoffActive": "Backoff active",
+        "available": "Available for requests",
+        "labels": {
+          "snapshot": "Snapshot",
+          "source": "Effective source",
+          "baseUrl": "Effective base URL",
+          "timeout": "Timeout",
+          "maxRetries": "Max retries",
+          "fallback": "Fallback to Mongo",
+          "consecutiveFailures": "Consecutive failures",
+          "unavailableUntil": "Unavailable until",
+          "lastFailureAt": "Last failure"
+        }
       }
     },
     "modelService": {
@@ -6815,12 +7032,16 @@
           "entities": "Entities",
           "domains": "Domains",
           "items": "Items",
-          "events": "Events"
+          "events": "Events",
+          "combined": "Combined",
+          "positive": "Positive",
+          "negative": "Negative"
         },
         "empty": "No profile data",
         "clearAction": "Clear profile",
         "clearConfirmTitle": "Clear behavior profile?",
-        "clearConfirmDescription": "This removes accumulated source/topic/entity/item/event preferences for the current user."
+        "clearConfirmDescription": "This removes accumulated source/topic/entity/item/event preferences for the current user.",
+        "legacyFallback": "Legacy behavior fallback is still contributing because the v2 profile is sparse."
       },
       "unsaved": {
         "title": "Unsaved changes",
@@ -7779,14 +8000,16 @@
         "knowledgeGraphIngestionOrgConcurrency": "Knowledge graph ingestion org concurrency",
         "sentimentSnapshotOrgConcurrency": "Sentiment snapshot org concurrency",
         "newsnowHottestAnalysisOrgConcurrency": "NewsNow hottest analysis org concurrency",
-        "classificationQualityAlertOrgConcurrency": "Classification quality alert org concurrency"
+        "classificationQualityAlertOrgConcurrency": "Classification quality alert org concurrency",
+        "userDigestDeliveryOrgConcurrency": "User digest delivery org concurrency"
       },
       "hints": {
         "newsEventsIngestionOrgConcurrency": "How many orgs the news-events ingestion cron may process at once.",
         "knowledgeGraphIngestionOrgConcurrency": "How many orgs the knowledge-graph ingestion cron may process at once.",
         "sentimentSnapshotOrgConcurrency": "How many orgs the sentiment snapshot rebuild cron may process at once.",
         "newsnowHottestAnalysisOrgConcurrency": "How many orgs the NewsNow hottest-analysis scheduler may refresh at once after the shared global snapshot is prepared.",
-        "classificationQualityAlertOrgConcurrency": "How many orgs the classification quality alert scheduler may evaluate at once."
+        "classificationQualityAlertOrgConcurrency": "How many orgs the classification quality alert scheduler may evaluate at once.",
+        "userDigestDeliveryOrgConcurrency": "How many orgs the user digest email scheduler may process at once."
       }
     }
   },
@@ -7865,7 +8088,93 @@
       "generating": "Generating",
       "pending": "Pending"
     },
-    "runPermissionRequired": "You can view results, but you don't have permission to run new analyses."
+    "runPermissionRequired": "You can view results, but you don't have permission to run new analyses.",
+    "library": {
+      "loadFailed": "Failed to load saved views.",
+      "copySuccess": "View link copied.",
+      "copyFailed": "Failed to copy link.",
+      "deleteSuccess": "Saved view deleted.",
+      "deleteFailed": "Failed to delete saved view.",
+      "title": "Analysis library",
+      "subtitle": "Reopen saved views, copy org-internal links, and manage shared analysis state.",
+      "scope": {
+        "all": "All",
+        "mine": "Mine",
+        "shared": "Shared"
+      },
+      "surface": {
+        "all": "All surfaces"
+      },
+      "empty": "No saved views for the current filter.",
+      "open": "Open view",
+      "copy": "Copy link",
+      "deleteTitle": "Delete this saved view?",
+      "noDescription": "No description provided.",
+      "updatedBy": "Updated by {{name}}"
+    },
+    "workspace": {
+      "title": "Analysis workspace",
+      "subtitle": "Coordinate shared boards, saved views, and task discussions."
+    },
+    "toolbar": {
+      "updateSuccess": "Saved view updated.",
+      "createSuccess": "Saved view created.",
+      "saveFailed": "Failed to save view.",
+      "exportFailed": "Failed to export CSV.",
+      "copySuccess": "Share link copied.",
+      "copyFailed": "Failed to copy link.",
+      "title": "Analysis workspace",
+      "shared": "Org shared",
+      "private": "Private",
+      "editable": "You can edit this view",
+      "savedDescription": "This saved analysis view can be reopened, exported, and discussed with your team.",
+      "unsavedDescription": "Save the current filters as an internal view, export the result set, or continue into the analysis library.",
+      "updatedBy": "Last updated by {{name}}",
+      "permissionTitle": "Read-only access",
+      "permissionDescription": "Saving views, exporting CSV, and annotations require analysis.write permission.",
+      "library": "Analysis library",
+      "share": "Copy link",
+      "createTask": "Create task",
+      "export": "Export CSV",
+      "update": "Update view",
+      "save": "Save view",
+      "updateModalTitle": "Update saved analysis view",
+      "createModalTitle": "Save current analysis view",
+      "fields": {
+        "title": "Title",
+        "titleRequired": "Enter a title.",
+        "titlePlaceholder": "South China Sea watchlist",
+        "description": "Description",
+        "descriptionPlaceholder": "What this saved view tracks and why it matters.",
+        "visibility": "Visibility"
+      }
+    },
+    "annotations": {
+      "loadFailed": "Failed to load annotations.",
+      "noteSaved": "Shared note saved.",
+      "noteSaveFailed": "Failed to save note.",
+      "commentSaved": "Comment added.",
+      "commentSaveFailed": "Failed to save comment.",
+      "commentUpdated": "Comment updated.",
+      "commentUpdateFailed": "Failed to update comment.",
+      "commentDeleted": "Comment deleted.",
+      "commentDeleteFailed": "Failed to delete comment.",
+      "title": "Shared annotations",
+      "readOnlyTitle": "Read-only annotations",
+      "readOnlyDescription": "You can read shared notes and comments, but writing requires analysis.write permission.",
+      "createTask": "Create task",
+      "noteTitle": "Shared note",
+      "notePlaceholder": "Capture hypotheses, evidence gaps, and next steps.",
+      "saveNote": "Save note",
+      "updatedAt": "Updated {{time}}",
+      "noteEmpty": "No shared note yet.",
+      "commentsTitle": "Comments",
+      "deleteTitle": "Delete this comment?",
+      "commentsEmpty": "No comments yet.",
+      "newComment": "Add comment",
+      "commentPlaceholder": "Call out corroboration gaps, follow-up questions, or tasking.",
+      "addComment": "Post comment"
+    }
   },
   "orgAdmin": {
     "loading": "Loading",
@@ -9189,7 +9498,38 @@
       "fullTextTitle": "Article text",
       "languageNoticeTitle": "Language notice",
       "languageNoticeDescription": "Detected language is {{language}}. This article may not have been translated to Chinese yet.",
-      "fullTextEmpty": "No translated article text available."
+      "fullTextEmpty": "No translated article text available.",
+      "pipelineRecovery": {
+        "errors": {
+          "loadFailed": "Failed to load pipeline recovery runs.",
+          "actionFailed": "Pipeline recovery action failed."
+        },
+        "messages": {
+          "replaySuccess": "Pipeline replay queued.",
+          "rollbackSuccess": "Pipeline rollback created."
+        },
+        "confirm": {
+          "replayTitle": "Replay this pipeline run?",
+          "rollbackTitle": "Rollback to this raw item?",
+          "replayBody": "This clones the selected raw item and requeues the pipeline.",
+          "rollbackBody": "This resets the pipeline state so the selected raw item becomes pending again."
+        },
+        "actions": {
+          "replay": "Replay",
+          "rollback": "Rollback",
+          "replayCurrent": "Replay current raw item",
+          "rollbackCurrent": "Rollback current raw item"
+        },
+        "title": "Pipeline Recovery",
+        "description": "Inspect recent processed runs for this item and trigger replay or rollback without leaving the item detail page.",
+        "labels": {
+          "itemStatus": "Item status",
+          "mongoRef": "Current raw ref",
+          "updatedAt": "Updated",
+          "stageErrors": "Recent stage errors"
+        },
+        "empty": "No recent pipeline runs found for this item."
+      }
     },
     "columns": {
       "name": "Title",
@@ -10757,5 +11097,130 @@
     },
     "title": "News Crawl Frontier Console",
     "subtitle": "Operate site profiles, inspect seed-first and frontier traces, and debug why capture succeeded, degraded, or failed."
+  },
+  "admin": {
+    "searchTelemetry": {
+      "errors": {
+        "loadFailed": "Failed to load search telemetry."
+      },
+      "chart": {
+        "total": "Total events",
+        "loadMore": "Load more",
+        "title": "Daily trend",
+        "empty": "No daily telemetry rows for the selected range."
+      },
+      "columns": {
+        "event": "Event",
+        "count": "Count",
+        "surface": "Surface",
+        "bucket": "Bucket",
+        "vertical": "Vertical"
+      },
+      "permissions": "Search telemetry is restricted to administrators.",
+      "title": "Search Telemetry",
+      "description": "Inspect archive search submissions, short-query friction, and load-more usage over time.",
+      "filters": {
+        "surfaceUnavailable": "Surface filtering is temporarily unavailable because the stored telemetry only includes aggregate daily event counters."
+      },
+      "metrics": {
+        "totalEvents": "Total events",
+        "activeDays": "Tracked days",
+        "averageDaily": "Avg events / day"
+      },
+      "tables": {
+        "events": "Event totals",
+        "surfaces": "Surface totals",
+        "queryLength": "Query length buckets",
+        "verticals": "Load-more verticals"
+      }
+    }
+  },
+  "entities": {
+    "intelligence": {
+      "resolveFailed": "No matching knowledge graph entity found.",
+      "openCard": "Open Intelligence Card",
+      "generatedAt": "Generated at",
+      "relationships": "Relationships",
+      "mentions": "Recent mentions",
+      "events": "Recent events",
+      "negativeRatio": "Negative ratio",
+      "neighborhood": "Neighborhood",
+      "sentiment": "Sentiment",
+      "avgSentiment": "Average sentiment",
+      "evidence": "Evidence",
+      "articles": "Articles"
+    }
+  },
+  "knowledgeGraph": {
+    "impact": {
+      "scenarios": {
+        "executive": {
+          "title": "Executive change",
+          "description": "Estimate which entities or instruments are most exposed when leadership changes at a company."
+        },
+        "commodity": {
+          "title": "Commodity move",
+          "description": "Trace likely downstream winners, losers, and exposed entities from a commodity shock."
+        },
+        "policy": {
+          "title": "Policy event",
+          "description": "Surface the entities and sectors most affected by a new policy, regulation, or official directive."
+        }
+      },
+      "fields": {
+        "companyName": "Company name",
+        "commodityName": "Commodity name",
+        "policyName": "Policy or event name",
+        "maxCandidates": "Max candidates",
+        "includeLprSnapshot": "Include LPR snapshot"
+      },
+      "placeholders": {
+        "companyName": "Enter a listed company or organization",
+        "commodityName": "Enter a commodity, energy product, or raw material",
+        "policyName": "Enter a policy keyword or named policy event"
+      },
+      "errors": {
+        "seedRequired": "Enter a seed before running the impact analysis.",
+        "loadFailed": "Failed to load impact analysis.",
+        "title": "Impact analysis failed"
+      },
+      "permissions": {
+        "title": "Knowledge graph impact requires dashboard access."
+      },
+      "disabled": {
+        "title": "Knowledge graph analysis is disabled by an administrator."
+      },
+      "title": "Entity Impact Analysis",
+      "description": "Run scenario analysis on top of the knowledge graph to surface likely downstream exposure chains.",
+      "validation": {
+        "seedRequired": "This field is required."
+      },
+      "actions": {
+        "run": "Run impact analysis",
+        "openExplorer": "Open in explorer"
+      },
+      "empty": "Pick a scenario and run an analysis to inspect candidate impact chains.",
+      "summary": {
+        "seed": "Seed",
+        "scenario": "Scenario",
+        "generatedAt": "Generated at",
+        "candidates": "Candidates"
+      },
+      "chain": {
+        "title": "Chain",
+        "nodes": "Nodes",
+        "edges": "Edges"
+      },
+      "candidate": {
+        "score": "Score"
+      },
+      "properties": "Entity properties"
+    },
+    "workspace": {
+      "tabs": {
+        "explorer": "Explorer",
+        "impact": "Impact Analysis"
+      }
+    }
   }
 }

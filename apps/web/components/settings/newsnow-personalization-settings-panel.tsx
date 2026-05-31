@@ -738,9 +738,7 @@ export function NewsnowPersonalizationSettingsPanel() {
         <Alert
           type="info"
           showIcon
-          message={t('systemSettings.newsnowPersonalization.behaviorProfile.legacyFallback', {
-            defaultValue: 'Legacy behavior fallback is still contributing because the v2 profile is sparse.',
-          })}
+          message={t('systemSettings.newsnowPersonalization.behaviorProfile.legacyFallback')}
           style={{ marginBottom: '0.75rem' }}
         />
       ) : null}
@@ -765,7 +763,6 @@ export function NewsnowPersonalizationSettingsPanel() {
               size="small"
               title={`${section.label} · ${t(
                 'systemSettings.newsnowPersonalization.behaviorProfile.sections.combined',
-                { defaultValue: 'Combined' },
               )}`}
               loading={behaviorProfileLoading}
             >
@@ -825,9 +822,7 @@ export function NewsnowPersonalizationSettingsPanel() {
               <Space direction="vertical" size={10} style={{ width: '100%' }}>
                 <div>
                   <Typography.Text strong>
-                    {t('systemSettings.newsnowPersonalization.behaviorProfile.sections.positive', {
-                      defaultValue: 'Positive',
-                    })}
+                    {t('systemSettings.newsnowPersonalization.behaviorProfile.sections.positive')}
                   </Typography.Text>
                   {positiveEntries.length > 0 ? (
                     <Space direction="vertical" size={6} style={{ width: '100%', marginTop: 6 }}>
@@ -851,9 +846,7 @@ export function NewsnowPersonalizationSettingsPanel() {
                 </div>
                 <div>
                   <Typography.Text strong>
-                    {t('systemSettings.newsnowPersonalization.behaviorProfile.sections.negative', {
-                      defaultValue: 'Negative',
-                    })}
+                    {t('systemSettings.newsnowPersonalization.behaviorProfile.sections.negative')}
                   </Typography.Text>
                   {negativeEntries.length > 0 ? (
                     <Space direction="vertical" size={6} style={{ width: '100%', marginTop: 6 }}>
@@ -885,9 +878,6 @@ export function NewsnowPersonalizationSettingsPanel() {
           size="small"
           title={t(
             'systemSettings.newsnowPersonalization.behaviorProfile.decayTitle',
-            {
-              defaultValue: 'Recency decay',
-            },
           )}
           style={{ marginBottom: '1rem' }}
         >
@@ -897,7 +887,6 @@ export function NewsnowPersonalizationSettingsPanel() {
                 {t(
                   'systemSettings.newsnowPersonalization.behaviorProfile.decayPolicy',
                   {
-                    defaultValue: '{{halfLifeDays}}d half-life',
                     halfLifeDays: behaviorProfile.meta.decayPolicy.halfLifeDays,
                   },
                 )}
@@ -909,7 +898,6 @@ export function NewsnowPersonalizationSettingsPanel() {
                 {t(
                   'systemSettings.newsnowPersonalization.behaviorProfile.averageDecay',
                   {
-                    defaultValue: 'avg {{value}}%',
                     value: (band.weight * 100).toFixed(0),
                   },
                 )}

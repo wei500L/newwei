@@ -126,27 +126,17 @@ export function SectorHeatmap() {
   const { echartsTheme, colors, fontFamily } = useChartTheme();
   const { selectedSector, setSelectedSector } = useDashboardFiltersStore();
   const { exporting: exportingCsv, label: csvLabel, exportCsv } = useCsvExport();
-  const emptyTitle = t("dashboard.dataEmpty", { defaultValue: "No data" });
-  const emptyHint = t("dashboard.dataEmptyHint", {
-    defaultValue: "No data for the selected range. Try expanding the range."
-  });
-  const rangeLabel = t("dashboard.charts.rangeLabel", { defaultValue: "Range" });
-  const windowLabelText = t("dashboard.charts.windowLabel", { defaultValue: "Window" });
-  const sourceLabel = t("dashboard.charts.sourceLabel", { defaultValue: "Source" });
-  const aggregationWindowSnapshot = t("dashboard.charts.aggregationWindowSnapshot", {
-    defaultValue: "Aggregation: window snapshot",
-  });
-  const noSourceFieldsLabel = t("dashboard.charts.sectorHeatmapNoSourceFields", {
-    defaultValue: "no source fields",
-  });
-  const unknownItemLabel = t("dashboard.charts.sectorHeatmapUnknownItem", {
-    defaultValue: "Unknown item",
-  });
-  const genericHeatmapErrorLabel = t("dashboard.charts.sectorHeatmapError", {
-    defaultValue: "Sector heatmap error",
-  });
-  const valueLabel = t("dashboard.charts.sectorHeatmapValueLabel", { defaultValue: "Value" });
-  const changeLabel = t("dashboard.charts.sectorHeatmapChangeLabel", { defaultValue: "Change" });
+  const emptyTitle = t("dashboard.dataEmpty");
+  const emptyHint = t("dashboard.dataEmptyHint");
+  const rangeLabel = t("dashboard.charts.rangeLabel");
+  const windowLabelText = t("dashboard.charts.windowLabel");
+  const sourceLabel = t("dashboard.charts.sourceLabel");
+  const aggregationWindowSnapshot = t("dashboard.charts.aggregationWindowSnapshot");
+  const noSourceFieldsLabel = t("dashboard.charts.sectorHeatmapNoSourceFields");
+  const unknownItemLabel = t("dashboard.charts.sectorHeatmapUnknownItem");
+  const genericHeatmapErrorLabel = t("dashboard.charts.sectorHeatmapError");
+  const valueLabel = t("dashboard.charts.sectorHeatmapValueLabel");
+  const changeLabel = t("dashboard.charts.sectorHeatmapChangeLabel");
   const startLabel = formatDateForFilename(start);
   const endLabel = formatDateForFilename(end);
   const windowLabel = `${startLabel} - ${endLabel}`;
@@ -427,16 +417,11 @@ export function SectorHeatmap() {
         <div className="h-[300px] transition-all duration-300">
           <ChartEmptyState
             variant="error"
-            title={t("dashboard.charts.sectorHeatmapConfigErrorTitle", {
-              defaultValue: "Sector heatmap configuration error"
-            })}
+            title={t("dashboard.charts.sectorHeatmapConfigErrorTitle")}
             description={
               <div className="flex flex-col items-center gap-1">
                 <span>
-                  {t("dashboard.charts.sectorHeatmapConfigErrorDescription", {
-                    defaultValue:
-                      "Some economic indicators have no matching source field for the heatmap."
-                  })}
+                  {t("dashboard.charts.sectorHeatmapConfigErrorDescription")}
                 </span>
                 <span className="font-mono text-[10px] opacity-80">
                   code: DASHBOARD_SECTOR_HEATMAP_FIELD_MAPPING_MISMATCH
@@ -451,9 +436,7 @@ export function SectorHeatmap() {
                 ) : null}
               </div>
             }
-            actionLabel={t("dashboard.actions.retryFetch", {
-              defaultValue: "Retry fetch"
-            })}
+            actionLabel={t("dashboard.actions.retryFetch")}
             actionLoading={refreshingHeatmap}
             onAction={() => {
               void refreshHeatmap();
@@ -470,9 +453,7 @@ export function SectorHeatmap() {
         void refreshHeatmap();
       },
       actionLoading: refreshingHeatmap,
-      actionLabelOverride: t("dashboard.actions.retryFetch", {
-        defaultValue: "Retry fetch"
-      }),
+      actionLabelOverride: t("dashboard.actions.retryFetch"),
     });
     return (
       <div className="h-[300px] transition-all duration-300">
@@ -511,15 +492,15 @@ export function SectorHeatmap() {
           {windowLabelText}: {windowLabel}
         </Tag>
         <Tag color="default" className="text-xs">
-          {t("dashboard.charts.dataStats.points", { defaultValue: "Points" })}:{" "}
+          {t("dashboard.charts.dataStats.points")}:{" "}
           {heatmapStats.filteredCells.toLocaleString(locale)} / {heatmapStats.totalCells.toLocaleString(locale)}
         </Tag>
         <Tag color="default" className="text-xs">
-          {t("dashboard.charts.sectorHeatmapStats.sectors", { defaultValue: "Sectors" })}:{" "}
+          {t("dashboard.charts.sectorHeatmapStats.sectors")}:{" "}
           {heatmapStats.uniqueSectors.toLocaleString(locale)}
         </Tag>
         <Tag color="default" className="text-xs">
-          {t("dashboard.charts.sectorHeatmapStats.grid", { defaultValue: "Grid" })}: {heatmapStats.xLabels}x{heatmapStats.yLabels}
+          {t("dashboard.charts.sectorHeatmapStats.grid")}: {heatmapStats.xLabels}x{heatmapStats.yLabels}
         </Tag>
         {selectedSector ? (
           <Tag
@@ -529,8 +510,7 @@ export function SectorHeatmap() {
             onClose={() => setSelectedSector(null)}
           >
             {t("dashboard.charts.sectorSelected", {
-              sector: selectedSector,
-              defaultValue: `Selected: ${selectedSector}`
+              sector: selectedSector
             })}
             {typeof heatmapStats.selectedCells === "number"
               ? ` (${heatmapStats.selectedCells.toLocaleString(locale)})`
@@ -543,8 +523,7 @@ export function SectorHeatmap() {
         {updatedAtLabel ? (
           <Tag color="default" className="text-xs">
             {t("dashboard.updatedAt", {
-              time: updatedAtLabel,
-              defaultValue: "Updated: {{time}}"
+              time: updatedAtLabel
             })}
           </Tag>
         ) : null}
@@ -555,8 +534,7 @@ export function SectorHeatmap() {
             title={heatmapWarningTitle}
           >
             {t("dashboard.charts.sectorHeatmapFallbackWarning", {
-              count: heatmapWarnings.length,
-              defaultValue: "Fallback fields: {{count}}"
+              count: heatmapWarnings.length
             })}
           </Tag>
         ) : null}
@@ -595,7 +573,7 @@ export function SectorHeatmap() {
                   const newSelection = selectedSector === sectorName ? null : sectorName;
                   setSelectedSector(newSelection);
                   if (newSelection) {
-                    message.info(t("dashboard.charts.sectorSelected", { sector: newSelection, defaultValue: `Selected: ${newSelection}` }));
+                    message.info(t("dashboard.charts.sectorSelected", { sector: newSelection }));
                   }
                 }
               }

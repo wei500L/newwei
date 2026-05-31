@@ -20,7 +20,7 @@ describe("realtime signals settings panel wiring", () => {
     expect(source).toContain("openskyWarningRemainingPct");
     expect(source).toContain("openskyCriticalRemainingPct");
     expect(source).toContain("openskyBudget?.recentDays");
-    expect(source).toContain("OpenSky budget & schedule");
+    expect(source).toContain("systemSettings.realtimeSignals.runtime.openskyBudget.title");
     expect(source).toContain("effectiveMilitaryIntervalSec");
     expect(source).toContain("configuredIntervalSec");
   });

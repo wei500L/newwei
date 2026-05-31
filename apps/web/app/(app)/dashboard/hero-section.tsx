@@ -108,11 +108,9 @@ export function HeroSection({
 }: HeroSectionProps) {
   const { t } = useTranslation();
   const theme = useChartTheme();
-  const notAvailableLabel = t("common.notAvailable", { defaultValue: "Not available" });
-  const emptyTitle = t("dashboard.charts.noDataRange", { defaultValue: "No Data Found for Selected Range" });
-  const emptyDescription = t("dashboard.hero.emptyDescription", {
-    defaultValue: "Hero metrics are unavailable for the selected time range."
-  });
+  const notAvailableLabel = t("common.notAvailable");
+  const emptyTitle = t("dashboard.charts.noDataRange");
+  const emptyDescription = t("dashboard.hero.emptyDescription");
 
   const metrics = useMemo<HeroMetric[]>(() => {
     const conflict = processSeries(conflictData);
@@ -123,7 +121,7 @@ export function HeroSection({
     return [
       {
         key: "global-conflict-index",
-        title: t("dashboard.hero.globalConflictIndex", "Global Conflict Index"),
+        title: t("dashboard.hero.globalConflictIndex"),
         value: conflict.value,
         trend: conflict.trend,
         data: conflict.history,
@@ -132,7 +130,7 @@ export function HeroSection({
       },
       {
         key: "market-sentiment",
-        title: t("dashboard.hero.marketSentiment", "Market Sentiment"),
+        title: t("dashboard.hero.marketSentiment"),
         value: market.value,
         trend: market.trend,
         data: market.history,
@@ -141,7 +139,7 @@ export function HeroSection({
       },
       {
         key: "resource-scarcity",
-        title: t("dashboard.hero.resourceScarcity", "Resource Scarcity"),
+        title: t("dashboard.hero.resourceScarcity"),
         value: resource.value,
         trend: resource.trend,
         data: resource.history,
@@ -150,7 +148,7 @@ export function HeroSection({
       },
       {
         key: "supply-chain-stability",
-        title: t("dashboard.hero.supplyChain", "Supply Chain Stability"),
+        title: t("dashboard.hero.supplyChain"),
         value: supply.value,
         trend: supply.trend,
         data: supply.history,
@@ -231,7 +229,7 @@ export function HeroSection({
                 ) : (
                   <Typography.Text type="secondary" className="text-xs">
                     {metric.hasData
-                      ? t("dashboard.hero.insufficientData", { defaultValue: "Not enough data points" })
+                      ? t("dashboard.hero.insufficientData")
                       : notAvailableLabel}
                   </Typography.Text>
                 )}

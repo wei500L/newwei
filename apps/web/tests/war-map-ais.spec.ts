@@ -26,10 +26,16 @@ describe("war-map AIS helpers", () => {
       mmsi: "123456789",
       name: "USS Example",
       shipType: 55,
+      shipTypeLabel: undefined,
+      shipTypeLabelZh: undefined,
+      vesselRole: undefined,
+      vesselRoleZh: undefined,
+      isMilitaryCandidate: false,
       heading: 182.4,
       speed: 21.6,
       course: 184,
       observedAt: "2026-03-16T12:00:00.000Z",
+      sourceUpdatedAt: undefined,
       description: "Candidate vessel",
     });
   });
@@ -101,10 +107,16 @@ describe("war-map AIS helpers", () => {
       name: "示例号",
       description: "候选舰船",
       shipType: undefined,
+      shipTypeLabel: undefined,
+      shipTypeLabelZh: undefined,
+      vesselRole: undefined,
+      vesselRoleZh: undefined,
+      isMilitaryCandidate: false,
       heading: undefined,
       speed: undefined,
       course: undefined,
       observedAt: undefined,
+      sourceUpdatedAt: undefined,
     });
 
     expect(

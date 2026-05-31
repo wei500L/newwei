@@ -22,17 +22,17 @@ export function MarketContent() {
     () => [
       {
         key: "overview",
-        label: t("finance.market.overview", { defaultValue: "Market Overview" }),
+        label: t("finance.market.overview"),
         content: <MarketOverview />
       },
       {
         key: "monitor",
-        label: t("finance.market.monitor", { defaultValue: "Key Monitor" }),
+        label: t("finance.market.monitor"),
         content: <KeyMonitorPage />
       },
       {
         key: "associations",
-        label: t("finance.market.associations", { defaultValue: "News ↔ Indicators" }),
+        label: t("finance.market.associations"),
         content: <NewsIndicatorAssociations />
       }
     ],

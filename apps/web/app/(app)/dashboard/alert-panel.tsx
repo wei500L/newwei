@@ -89,11 +89,8 @@ export function AlertPanel() {
     return (
       <ChartEmptyState
         variant="permission"
-        title={t("common.accessDenied", { defaultValue: "Access denied" })}
-        description={t("common.accessDeniedDescription", {
-          defaultValue:
-            "You don't have permission to view this data. Contact an administrator if you need access."
-        })}
+        title={t("common.accessDenied")}
+        description={t("common.accessDeniedDescription")}
       />
     );
   }
@@ -102,18 +99,14 @@ export function AlertPanel() {
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <Alert
         type={canManageAlerts ? "info" : "warning"}
-        message={t("alerts.center.configNotice.title", {
-          defaultValue: "Alert rules are managed in Admin"
-        })}
+        message={t("alerts.center.configNotice.title")}
         description={
           canManageAlerts ? (
             <Link href="/admin/alerts">
-              {t("alerts.center.configNotice.link", { defaultValue: "Open alert configuration" })}
+              {t("alerts.center.configNotice.link")}
             </Link>
           ) : (
-            t("alerts.center.configNotice.description", {
-              defaultValue: "Alert rule configuration is limited to administrators."
-            })
+            t("alerts.center.configNotice.description")
           )
         }
       />
@@ -125,11 +118,9 @@ export function AlertPanel() {
             presentation="banner"
             variant="error"
             className="mb-3"
-            title={t("alerts.events.loadFailedTitle", { defaultValue: "Failed to load alert events" })}
+            title={t("alerts.events.loadFailedTitle")}
             description={error instanceof Error ? error.message : String(error)}
-            actionLabel={t("dashboard.actions.retryFetch", {
-              defaultValue: "Retry fetch"
-            })}
+            actionLabel={t("dashboard.actions.retryFetch")}
             actionLoading={refreshingEvents}
             onAction={() => {
               void refreshEvents();
@@ -142,10 +133,8 @@ export function AlertPanel() {
         ) : events.length === 0 ? (
           <ChartEmptyState
             className="h-auto py-6"
-            title={t("alerts.events.emptyTitle", { defaultValue: "No alerts yet" })}
-            description={t("alerts.events.emptyDescription", {
-              defaultValue: "Alerts will appear here once a rule triggers.",
-            })}
+            title={t("alerts.events.emptyTitle")}
+            description={t("alerts.events.emptyDescription")}
           />
         ) : (
           <List

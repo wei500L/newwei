@@ -582,18 +582,14 @@ export function AkshareGatewaySettingsPanel() {
         });
         await refetchFetchConfigs();
         messageApi.success(
-          t("systemSettings.akshare.providers.updated", {
-            defaultValue: "Provider item updated.",
-          }),
+          t("systemSettings.akshare.providers.updated"),
         );
       } catch (error) {
         captureClientError("Failed to update economic provider config", error);
         messageApi.error(
           error instanceof Error && error.message
             ? error.message
-            : t("systemSettings.akshare.providers.updateFailed", {
-                defaultValue: "Failed to update provider item.",
-              }),
+            : t("systemSettings.akshare.providers.updateFailed"),
         );
       } finally {
         setUpdatingProviderSlug(null);
@@ -806,7 +802,7 @@ export function AkshareGatewaySettingsPanel() {
                   </Typography.Text>
                   <div>
                     {presetStatusLoading
-                      ? t("common.loading", { defaultValue: "Loading..." })
+                      ? t("common.loading")
                       : formattedPresetLastRunAt}
                   </div>
                 </Card>
@@ -848,9 +844,7 @@ export function AkshareGatewaySettingsPanel() {
       {canManageEconomicData ? (
         <Card
           size="small"
-          title={t("systemSettings.akshare.providers.title", {
-            defaultValue: "Financial data providers",
-          })}
+          title={t("systemSettings.akshare.providers.title")}
           style={{ marginTop: "1rem" }}
           extra={
             <Button
@@ -865,10 +859,7 @@ export function AkshareGatewaySettingsPanel() {
           }
         >
           <Typography.Paragraph type="secondary">
-            {t("systemSettings.akshare.providers.description", {
-              defaultValue:
-                "Shows non-Akshare provider items now managed by the economic data mainline, including API key readiness and latest fetch status.",
-            })}
+            {t("systemSettings.akshare.providers.description")}
           </Typography.Paragraph>
           <Table
             size="small"
@@ -878,7 +869,7 @@ export function AkshareGatewaySettingsPanel() {
             dataSource={providerRows}
             columns={[
               {
-                title: t("common.name", { defaultValue: "Name" }),
+                title: t("common.name"),
                 dataIndex: "displayName",
                 key: "displayName",
                 render: (value: string, row) => (
@@ -891,9 +882,7 @@ export function AkshareGatewaySettingsPanel() {
                 ),
               },
               {
-                title: t("systemSettings.akshare.providers.provider", {
-                  defaultValue: "Provider",
-                }),
+                title: t("systemSettings.akshare.providers.provider"),
                 dataIndex: "providerKind",
                 key: "providerKind",
                 width: 120,
@@ -902,9 +891,7 @@ export function AkshareGatewaySettingsPanel() {
                 ),
               },
               {
-                title: t("systemSettings.akshare.providers.scope", {
-                  defaultValue: "Mainline role",
-                }),
+                title: t("systemSettings.akshare.providers.scope"),
                 key: "scope",
                 width: 180,
                 render: (_: unknown, row) => (
@@ -915,18 +902,14 @@ export function AkshareGatewaySettingsPanel() {
                 ),
               },
               {
-                title: t("systemSettings.akshare.providers.secret", {
-                  defaultValue: "Secret",
-                }),
+                title: t("systemSettings.akshare.providers.secret"),
                 key: "secret",
                 width: 180,
                 render: (_: unknown, row) => {
                   if (!row.requiresSecret) {
                     return (
                       <Tag color="default">
-                        {t("systemSettings.akshare.providers.notRequired", {
-                          defaultValue: "Not required",
-                        })}
+                        {t("systemSettings.akshare.providers.notRequired")}
                       </Tag>
                     );
                   }
@@ -935,20 +918,14 @@ export function AkshareGatewaySettingsPanel() {
                       {row.requiresSecret}
                       {" · "}
                       {row.secretConfigured
-                        ? t("systemSettings.akshare.providers.configured", {
-                            defaultValue: "configured",
-                          })
-                        : t("systemSettings.akshare.providers.missing", {
-                            defaultValue: "missing",
-                          })}
+                        ? t("systemSettings.akshare.providers.configured")
+                        : t("systemSettings.akshare.providers.missing")}
                     </Tag>
                   );
                 },
               },
               {
-                title: t("systemSettings.akshare.providers.schedule", {
-                  defaultValue: "Schedule",
-                }),
+                title: t("systemSettings.akshare.providers.schedule"),
                 key: "schedule",
                 width: 220,
                 render: (_: unknown, row) => (
@@ -989,9 +966,7 @@ export function AkshareGatewaySettingsPanel() {
                 ),
               },
               {
-                title: t("systemSettings.akshare.providers.latestStatus", {
-                  defaultValue: "Latest status",
-                }),
+                title: t("systemSettings.akshare.providers.latestStatus"),
                 key: "latestStatus",
                 width: 240,
                 render: (_: unknown, row) => (

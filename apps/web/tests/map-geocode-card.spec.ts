@@ -19,6 +19,6 @@ describe("map geocode card wiring", () => {
     const source = read("app/(app)/map/geocode-lookup-card.tsx");
 
     expect(source).toContain("geo/geocode");
-    expect(source).toContain("Open in map");
+    expect(source).toContain("pages.map.geocode.actions.openMap");
   });
 });

@@ -66,9 +66,7 @@ export function AnalysisLibrary() {
     } catch (error) {
       captureClientError("Failed to load analysis library", error);
       messageApi.error(
-        t("analysis.library.loadFailed", {
-          defaultValue: "Failed to load saved views.",
-        }),
+        t("analysis.library.loadFailed"),
       );
     } finally {
       setLoading(false);
@@ -89,16 +87,12 @@ export function AnalysisLibrary() {
           `${window.location.origin}${buildSavedViewHref(view)}`,
         );
         messageApi.success(
-          t("analysis.library.copySuccess", {
-            defaultValue: "View link copied.",
-          }),
+          t("analysis.library.copySuccess"),
         );
       } catch (error) {
         captureClientError("Failed to copy saved view link", error);
         messageApi.error(
-          t("analysis.library.copyFailed", {
-            defaultValue: "Failed to copy link.",
-          }),
+          t("analysis.library.copyFailed"),
         );
       }
     },
@@ -111,16 +105,12 @@ export function AnalysisLibrary() {
         await apiClient.delete(`analysis/views/${viewId}`);
         setViews((current) => current.filter((entry) => entry.id !== viewId));
         messageApi.success(
-          t("analysis.library.deleteSuccess", {
-            defaultValue: "Saved view deleted.",
-          }),
+          t("analysis.library.deleteSuccess"),
         );
       } catch (error) {
         captureClientError("Failed to delete saved view", error);
         messageApi.error(
-          t("analysis.library.deleteFailed", {
-            defaultValue: "Failed to delete saved view.",
-          }),
+          t("analysis.library.deleteFailed"),
         );
       }
     },
@@ -132,15 +122,10 @@ export function AnalysisLibrary() {
       {contextHolder}
       <Space direction="vertical" size={2}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("analysis.library.title", {
-            defaultValue: "Analysis library",
-          })}
+          {t("analysis.library.title")}
         </Typography.Title>
         <Typography.Text type="secondary">
-          {t("analysis.library.subtitle", {
-            defaultValue:
-              "Reopen saved views, copy org-internal links, and manage shared analysis state.",
-          })}
+          {t("analysis.library.subtitle")}
         </Typography.Text>
       </Space>
 
@@ -151,9 +136,9 @@ export function AnalysisLibrary() {
               value={scope}
               onChange={(value) => setScope(value as ViewScope)}
               options={[
-                { label: t("analysis.library.scope.all", { defaultValue: "All" }), value: "all" },
-                { label: t("analysis.library.scope.mine", { defaultValue: "Mine" }), value: "mine" },
-                { label: t("analysis.library.scope.shared", { defaultValue: "Shared" }), value: "shared" },
+                { label: t("analysis.library.scope.all"), value: "all" },
+                { label: t("analysis.library.scope.mine"), value: "mine" },
+                { label: t("analysis.library.scope.shared"), value: "shared" },
               ]}
             />
             <Select
@@ -161,7 +146,7 @@ export function AnalysisLibrary() {
               value={surface}
               onChange={(value) => setSurface(value as SavedAnalysisSurface | "all")}
               options={[
-                { value: "all", label: t("analysis.library.surface.all", { defaultValue: "All surfaces" }) },
+                { value: "all", label: t("analysis.library.surface.all") },
                 { value: "search", label: "search" },
                 { value: "items", label: "items" },
                 { value: "events", label: "events" },
@@ -169,7 +154,7 @@ export function AnalysisLibrary() {
             />
           </Space>
           <Button onClick={() => void loadViews()} loading={loading}>
-            {t("common.refresh", { defaultValue: "Refresh" })}
+            {t("common.refresh")}
           </Button>
         </div>
       </Card>
@@ -178,9 +163,7 @@ export function AnalysisLibrary() {
         {views.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={t("analysis.library.empty", {
-              defaultValue: "No saved views for the current filter.",
-            })}
+            description={t("analysis.library.empty")}
           />
         ) : (
           <List
@@ -192,9 +175,7 @@ export function AnalysisLibrary() {
                 actions={[
                   <a key="open" href={buildSavedViewHref(view)}>
                     <FolderOpenOutlined />{" "}
-                    {t("analysis.library.open", {
-                      defaultValue: "Open view",
-                    })}
+                    {t("analysis.library.open")}
                   </a>,
                   <Button
                     key="copy"
@@ -202,17 +183,13 @@ export function AnalysisLibrary() {
                     onClick={() => void handleCopy(view)}
                     icon={<LinkOutlined />}
                   >
-                    {t("analysis.library.copy", {
-                      defaultValue: "Copy link",
-                    })}
+                    {t("analysis.library.copy")}
                   </Button>,
                   ...(canWrite && view.canEdit
                     ? [
                         <Popconfirm
                           key="delete"
-                          title={t("analysis.library.deleteTitle", {
-                            defaultValue: "Delete this saved view?",
-                          })}
+                          title={t("analysis.library.deleteTitle")}
                           onConfirm={() => void handleDelete(view.id)}
                         >
                           <Button
@@ -220,7 +197,7 @@ export function AnalysisLibrary() {
                             danger
                             icon={<DeleteOutlined />}
                           >
-                            {t("common.delete", { defaultValue: "Delete" })}
+                            {t("common.delete")}
                           </Button>
                         </Popconfirm>,
                       ]
@@ -240,15 +217,12 @@ export function AnalysisLibrary() {
                   description={
                     <Space direction="vertical" size={4}>
                       <Typography.Text type="secondary">
-                        {view.description || t("analysis.library.noDescription", {
-                          defaultValue: "No description provided.",
-                        })}
+                        {view.description || t("analysis.library.noDescription")}
                       </Typography.Text>
                       <Space wrap size={[8, 4]}>
                         <Tag>{view.routePath}</Tag>
                         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                           {t("analysis.library.updatedBy", {
-                            defaultValue: "Updated by {{name}}",
                             name: formatAnalysisActorName(view.updatedBy),
                           })}
                         </Typography.Text>

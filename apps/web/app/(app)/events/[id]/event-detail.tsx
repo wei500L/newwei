@@ -650,12 +650,8 @@ export function EventDetail({ eventId }: { eventId: string }) {
       <Alert
         type="error"
         showIcon
-        message={t("pages.events.detail.loadFailed", {
-          defaultValue: "Failed to load event.",
-        })}
-        description={t("common.serviceUnavailable", {
-          defaultValue: "Service is unavailable. Please try again.",
-        })}
+        message={t("pages.events.detail.loadFailed")}
+        description={t("common.serviceUnavailable")}
       />
     );
   }
@@ -664,9 +660,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
     return (
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description={t("pages.events.detail.notFound", {
-          defaultValue: "Event not found.",
-        })}
+        description={t("pages.events.detail.notFound")}
       />
     );
   }
@@ -685,31 +679,17 @@ export function EventDetail({ eventId }: { eventId: string }) {
     corroborated: false,
   };
   const sourceTypeLabelMap: Record<NewsEvent["sourceType"], string> = {
-    all: t("pages.events.filters.sourceType.all", { defaultValue: "All" }),
-    authoritative: t("pages.events.filters.sourceType.authoritative", {
-      defaultValue: "Authoritative",
-    }),
-    mixed: t("pages.events.filters.sourceType.mixed", {
-      defaultValue: "Mixed",
-    }),
-    blog: t("pages.events.filters.sourceType.blog", { defaultValue: "Blog" }),
-    unknown: t("pages.events.filters.sourceType.unknown", {
-      defaultValue: "Unknown",
-    }),
+    all: t("pages.events.filters.sourceType.all"),
+    authoritative: t("pages.events.filters.sourceType.authoritative"),
+    mixed: t("pages.events.filters.sourceType.mixed"),
+    blog: t("pages.events.filters.sourceType.blog"),
+    unknown: t("pages.events.filters.sourceType.unknown"),
   };
   const credibilitySummary = sourceEvidence.corroborated
-    ? t("pages.events.detail.credibilityStrong", {
-        defaultValue:
-          "Cross-source corroboration detected. Confidence is relatively strong.",
-      })
+    ? t("pages.events.detail.credibilityStrong")
     : sourceEvidence.uniqueSourceCount <= 1
-      ? t("pages.events.detail.credibilityWeak", {
-          defaultValue: "Single-source signal. Treat this as preliminary.",
-        })
-      : t("pages.events.detail.credibilityMedium", {
-          defaultValue:
-            "Multiple sources exist, but corroboration is still limited.",
-        });
+      ? t("pages.events.detail.credibilityWeak")
+      : t("pages.events.detail.credibilityMedium");
 
   const trackEventBehavior = (input: {
     type: "view" | "click" | "open_item";
@@ -823,9 +803,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
       return (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={t("common.notAvailable", {
-            defaultValue: "Not available",
-          })}
+          description={t("common.notAvailable")}
         />
       );
     }
@@ -851,9 +829,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
       return (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={t("common.notAvailable", {
-            defaultValue: "Not available",
-          })}
+          description={t("common.notAvailable")}
         />
       );
     }
@@ -873,7 +849,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
             {
               title: (
                 <Link href="/events">
-                  {t("pages.events.title", { defaultValue: "News Events" })}
+                  {t("pages.events.title")}
                 </Link>
               ),
             },
@@ -887,7 +863,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
             type="link"
             onClick={() => router.push("/events")}
           >
-            {t("common.back", { defaultValue: "Back" })}
+            {t("common.back")}
           </Button>
           <Typography.Title level={4} style={{ margin: 0 }}>
             {title}
@@ -902,14 +878,12 @@ export function EventDetail({ eventId }: { eventId: string }) {
             {statusLabel}
           </Tag>
           <Tag>
-            {t("pages.events.drawer.items", { defaultValue: "Items" })}:{" "}
+            {t("pages.events.drawer.items")}:{" "}
             {event.itemCount}
           </Tag>
           {isFutureEvent ? (
             <Tag color="cyan" icon={<CalendarOutlined />}>
-              {t("pages.events.fields.futureEvent", {
-                defaultValue: "Scheduled",
-              })}
+              {t("pages.events.fields.futureEvent")}
             </Tag>
           ) : null}
           {language ? <Tag color="blue">{language}</Tag> : null}
@@ -929,7 +903,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
 
         <Space wrap size={[12, 0]}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t("pages.events.fields.startAt", { defaultValue: "Start" })}:{" "}
+            {t("pages.events.fields.startAt")}:{" "}
             <Tooltip
               title={`${startTooltip}${startRelative ? ` (${startRelative})` : ""}`}
             >
@@ -942,7 +916,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
             </Tooltip>
           </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t("pages.events.fields.lastAt", { defaultValue: "Last" })}:{" "}
+            {t("pages.events.fields.lastAt")}:{" "}
             <Tooltip
               title={`${lastTooltip}${lastRelative ? ` (${lastRelative})` : ""}`}
             >
@@ -958,9 +932,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
             ) : null}
             {isFutureEvent ? (
               <span className="ml-1" style={futureEventHintStyle}>
-                {t("pages.events.fields.futureEventHint", {
-                  defaultValue: "Future event",
-                })}
+                {t("pages.events.fields.futureEventHint")}
               </span>
             ) : null}
           </Typography.Text>
@@ -976,14 +948,12 @@ export function EventDetail({ eventId }: { eventId: string }) {
       <Card size="small" className="content-card">
         <Space direction="vertical" size={8} className="w-full">
           <Typography.Text strong>
-            {t("pages.events.detail.credibilityCardTitle", {
-              defaultValue: "Credibility signal",
-            })}
+            {t("pages.events.detail.credibilityCardTitle")}
           </Typography.Text>
           <div className="flex flex-wrap gap-2">
             <EventSignalCard
               tone="heat"
-              label={t("pages.events.fields.heat", { defaultValue: "Heat" })}
+              label={t("pages.events.fields.heat")}
               value={event.heatScore.toFixed(1)}
               percent={heatPercent}
               minWidth={168}
@@ -991,9 +961,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
             />
             <EventSignalCard
               tone="credibility"
-              label={t("pages.events.fields.credibility", {
-                defaultValue: "Credibility",
-              })}
+              label={t("pages.events.fields.credibility")}
               value={Math.round(event.credibilityScore)}
               percent={credibilityPercent}
               minWidth={168}
@@ -1002,35 +970,25 @@ export function EventDetail({ eventId }: { eventId: string }) {
           </div>
           <Space wrap size={[8, 8]}>
             <Tag>
-              {t("pages.events.fields.sourceType", {
-                defaultValue: "Source type",
-              })}
+              {t("pages.events.fields.sourceType")}
               : {sourceTypeLabelMap[event.sourceType] ?? event.sourceType}
             </Tag>
             <Tag>
-              {t("pages.events.detail.uniqueSources", {
-                defaultValue: "Unique sources",
-              })}
+              {t("pages.events.detail.uniqueSources")}
               : {sourceEvidence.uniqueSourceCount}
             </Tag>
             <Tag>
-              {t("pages.events.detail.authoritativeSources", {
-                defaultValue: "Authoritative",
-              })}
+              {t("pages.events.detail.authoritativeSources")}
               : {sourceEvidence.authoritativeSourceCount}
             </Tag>
             <Tag>
-              {t("pages.events.detail.blogSources", { defaultValue: "Blog" })}:{" "}
+              {t("pages.events.detail.blogSources")}:{" "}
               {sourceEvidence.blogSourceCount}
             </Tag>
             <Tag color={sourceEvidence.corroborated ? "green" : "orange"}>
               {sourceEvidence.corroborated
-                ? t("pages.events.detail.corroboratedYes", {
-                    defaultValue: "Corroborated",
-                  })
-                : t("pages.events.detail.corroboratedNo", {
-                    defaultValue: "Needs corroboration",
-                  })}
+                ? t("pages.events.detail.corroboratedYes")
+                : t("pages.events.detail.corroboratedNo")}
             </Tag>
           </Space>
           <Typography.Text type="secondary">
@@ -1043,13 +1001,11 @@ export function EventDetail({ eventId }: { eventId: string }) {
         <Space direction="vertical" className="w-full" size="middle">
           <Space wrap>
             <Button onClick={() => refetch()} loading={loading}>
-              {t("common.refresh", { defaultValue: "Refresh" })}
+              {t("common.refresh")}
             </Button>
             {representativeUrl ? (
               <a href={representativeUrl} target="_blank" rel="noreferrer">
-                {t("pages.events.drawer.openOriginal", {
-                  defaultValue: "Open",
-                })}
+                {t("pages.events.drawer.openOriginal")}
               </a>
             ) : null}
             {representativeProcessed?.itemMetaId ? (
@@ -1067,9 +1023,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                   router.push(`/items/${representativeProcessed.itemMetaId}`);
                 }}
               >
-                {t("pages.events.detail.openItem", {
-                  defaultValue: "Open item",
-                })}
+                {t("pages.events.detail.openItem")}
               </Button>
             ) : null}
           </Space>
@@ -1080,9 +1034,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
             items={[
               {
                 key: "brief",
-                label: t("pages.events.detail.tabs.brief", {
-                  defaultValue: "Detailed summary",
-                }),
+                label: t("pages.events.detail.tabs.brief"),
                 children: (
                   <div className="flex flex-col gap-4">
                     <Space wrap>
@@ -1097,15 +1049,11 @@ export function EventDetail({ eventId }: { eventId: string }) {
                         }
                         loading={briefQuery.loading && !brief}
                       >
-                        {t("pages.events.detail.refreshBrief", {
-                          defaultValue: "Refresh detailed summary",
-                        })}
+                        {t("pages.events.detail.refreshBrief")}
                       </Button>
                       {brief?.generatedAt ? (
                         <Tag>
-                          {t("pages.events.detail.generatedAt", {
-                            defaultValue: "Generated",
-                          })}
+                          {t("pages.events.detail.generatedAt")}
                           :{" "}
                           {formatDateTime(brief.generatedAt, locale, {
                             dateStyle: "medium",
@@ -1116,9 +1064,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                       ) : null}
                       {brief?.sources?.length ? (
                         <Tag>
-                          {t("pages.events.detail.briefSources", {
-                            defaultValue: "Sources",
-                          })}
+                          {t("pages.events.detail.briefSources")}
                           : {brief.sources.length}
                         </Tag>
                       ) : null}
@@ -1128,32 +1074,22 @@ export function EventDetail({ eventId }: { eventId: string }) {
                       <Alert
                         type="error"
                         showIcon
-                        message={t("pages.events.detail.briefLoadFailed", {
-                          defaultValue: "Failed to load detailed summary.",
-                        })}
-                        description={t("common.serviceUnavailable", {
-                          defaultValue:
-                            "Service is unavailable. Please try again.",
-                        })}
+                        message={t("pages.events.detail.briefLoadFailed")}
+                        description={t("common.serviceUnavailable")}
                       />
                     ) : briefQuery.loading && !brief ? (
                       <Skeleton active paragraph={{ rows: 10 }} />
                     ) : !brief ? (
                       <Empty
                         image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description={t("pages.events.detail.briefEmpty", {
-                          defaultValue:
-                            "Detailed summary is not available yet. Click refresh to generate.",
-                        })}
+                        description={t("pages.events.detail.briefEmpty")}
                       />
                     ) : (
                       <div className="flex flex-col gap-4">
                         <Card
                           size="small"
                           className="content-card"
-                          title={t("pages.events.detail.detailedSummary", {
-                            defaultValue: "Detailed summary",
-                          })}
+                          title={t("pages.events.detail.detailedSummary")}
                         >
                           {renderDetailedSummary(brief.detailedSummary)}
                         </Card>
@@ -1161,9 +1097,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                         <Card
                           size="small"
                           className="content-card"
-                          title={t("pages.events.detail.tldr", {
-                            defaultValue: "TL;DR",
-                          })}
+                          title={t("pages.events.detail.tldr")}
                         >
                           <Typography.Paragraph style={{ marginBottom: 0 }}>
                             {brief.tldr}
@@ -1174,18 +1108,14 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           <Card
                             size="small"
                             className="content-card"
-                            title={t("pages.events.detail.keyPoints", {
-                              defaultValue: "Key points",
-                            })}
+                            title={t("pages.events.detail.keyPoints")}
                           >
                             {renderPointList(brief.keyPoints)}
                           </Card>
                           <Card
                             size="small"
                             className="content-card"
-                            title={t("pages.events.detail.whyMatters", {
-                              defaultValue: "Why it matters",
-                            })}
+                            title={t("pages.events.detail.whyMatters")}
                           >
                             {renderPointList(brief.whyItMatters)}
                           </Card>
@@ -1195,9 +1125,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           <Card
                             size="small"
                             className="content-card"
-                            title={t("pages.events.detail.latestUpdate", {
-                              defaultValue: "Latest update",
-                            })}
+                            title={t("pages.events.detail.latestUpdate")}
                           >
                             {brief.latestUpdate
                               ? renderPointList([brief.latestUpdate])
@@ -1206,9 +1134,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           <Card
                             size="small"
                             className="content-card"
-                            title={t("pages.events.detail.watch", {
-                              defaultValue: "What to watch",
-                            })}
+                            title={t("pages.events.detail.watch")}
                           >
                             {renderPointList(brief.whatToWatch)}
                           </Card>
@@ -1219,18 +1145,14 @@ export function EventDetail({ eventId }: { eventId: string }) {
                             <Card
                               size="small"
                               className="content-card"
-                              title={t("pages.events.detail.consensus", {
-                                defaultValue: "Consensus",
-                              })}
+                              title={t("pages.events.detail.consensus")}
                             >
                               {renderPointList(brief.comparison.consensus)}
                             </Card>
                             <Card
                               size="small"
                               className="content-card"
-                              title={t("pages.events.detail.divergence", {
-                                defaultValue: "Divergence",
-                              })}
+                              title={t("pages.events.detail.divergence")}
                             >
                               {renderPointList(brief.comparison.divergence)}
                             </Card>
@@ -1241,9 +1163,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           <Alert
                             type="info"
                             showIcon
-                            message={t("pages.events.detail.limitations", {
-                              defaultValue: "Limitations",
-                            })}
+                            message={t("pages.events.detail.limitations")}
                             description={brief.limitations}
                           />
                         ) : null}
@@ -1251,9 +1171,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                         <Card
                           size="small"
                           className="content-card"
-                          title={t("pages.events.detail.sourcesTitle", {
-                            defaultValue: "Sources",
-                          })}
+                          title={t("pages.events.detail.sourcesTitle")}
                         >
                           <List
                             size="small"
@@ -1302,9 +1220,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                   }}
                                   disabled={!source.processedItemId}
                                 >
-                                  {t("pages.events.detail.openLlm", {
-                                    defaultValue: "LLM content",
-                                  })}
+                                  {t("pages.events.detail.openLlm")}
                                 </Button>,
                               ];
 
@@ -1323,9 +1239,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                       });
                                     }}
                                   >
-                                    {t("pages.events.drawer.openOriginal", {
-                                      defaultValue: "Open",
-                                    })}
+                                    {t("pages.events.drawer.openOriginal")}
                                   </a>,
                                 );
                               }
@@ -1407,16 +1321,12 @@ export function EventDetail({ eventId }: { eventId: string }) {
               },
               {
                 key: "narrative",
-                label: t("pages.events.detail.tabs.narrative", {
-                  defaultValue: "Narrative",
-                }),
+                label: t("pages.events.detail.tabs.narrative"),
                 children: (
                   <div className="flex flex-col gap-4">
                     <div>
                       <Typography.Title level={5} style={{ marginBottom: 8 }}>
-                        {t("pages.events.detail.representativeTitle", {
-                          defaultValue: "Representative article (LLM)",
-                        })}
+                        {t("pages.events.detail.representativeTitle")}
                       </Typography.Title>
 
                       {!representativeProcessedItemId ? (
@@ -1424,10 +1334,6 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           image={Empty.PRESENTED_IMAGE_SIMPLE}
                           description={t(
                             "pages.events.detail.noRepresentative",
-                            {
-                              defaultValue:
-                                "No representative processed item available yet.",
-                            },
                           )}
                         />
                       ) : representativeProcessedError ? (
@@ -1436,15 +1342,8 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           showIcon
                           message={t(
                             "pages.events.detail.representativeLoadFailed",
-                            {
-                              defaultValue:
-                                "Failed to load representative article.",
-                            },
                           )}
-                          description={t("common.serviceUnavailable", {
-                            defaultValue:
-                              "Service is unavailable. Please try again.",
-                          })}
+                          description={t("common.serviceUnavailable")}
                         />
                       ) : representativeProcessedLoading ? (
                         <Skeleton active paragraph={{ rows: 8 }} />
@@ -1453,10 +1352,6 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           image={Empty.PRESENTED_IMAGE_SIMPLE}
                           description={t(
                             "pages.events.detail.representativeMissing",
-                            {
-                              defaultValue:
-                                "Representative processed item not found.",
-                            },
                           )}
                         />
                       ) : !hasRepresentativeNarrative ? (
@@ -1464,10 +1359,6 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           image={Empty.PRESENTED_IMAGE_SIMPLE}
                           description={t(
                             "pages.events.detail.representativeEmpty",
-                            {
-                              defaultValue:
-                                "No LLM content available for the representative article.",
-                            },
                           )}
                         />
                       ) : (
@@ -1476,15 +1367,9 @@ export function EventDetail({ eventId }: { eventId: string }) {
                             <Alert
                               type="warning"
                               showIcon
-                              message={t("items.detail.markdownFallback", {
-                                defaultValue: "Markdown fallback",
-                              })}
+                              message={t("items.detail.markdownFallback")}
                               description={t(
                                 "items.detail.markdownFallbackTooltip",
-                                {
-                                  defaultValue:
-                                    "LLM response omitted cleaned_markdown; showing crawled markdown as fallback.",
-                                },
                               )}
                             />
                           ) : null}
@@ -1538,12 +1423,8 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                   onClick={() => setMarkdownExpanded((v) => !v)}
                                 >
                                   {markdownExpanded
-                                    ? t("common.collapse", {
-                                        defaultValue: "Show less",
-                                      })
-                                    : t("common.expand", {
-                                        defaultValue: "Show more",
-                                      })}
+                                    ? t("common.collapse")
+                                    : t("common.expand")}
                                 </Button>
                               ) : null}
                               <div
@@ -1569,9 +1450,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
 
                     <div>
                       <Typography.Title level={5} style={{ marginBottom: 8 }}>
-                        {t("pages.events.drawer.tabs.timeline", {
-                          defaultValue: "Timeline",
-                        })}
+                        {t("pages.events.drawer.tabs.timeline")}
                       </Typography.Title>
 
                       {event.topicDriftWarning ? (
@@ -1579,15 +1458,10 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           type="warning"
                           showIcon
                           style={{ marginBottom: 12 }}
-                          message={t("pages.events.detail.topicDrift", {
-                            defaultValue: "Topic drift detected",
-                          })}
+                          message={t("pages.events.detail.topicDrift")}
                           description={
                             event.topicDriftSummary ??
-                            t("pages.events.detail.topicDriftDescription", {
-                              defaultValue:
-                                "Category distribution changed significantly across timeline buckets.",
-                            })
+                            t("pages.events.detail.topicDriftDescription")
                           }
                         />
                       ) : null}
@@ -1596,9 +1470,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                         <Card
                           size="small"
                           style={{ marginBottom: 12 }}
-                          title={t("pages.events.detail.timelinePhases", {
-                            defaultValue: "Timeline phases",
-                          })}
+                          title={t("pages.events.detail.timelinePhases")}
                         >
                           <Space
                             direction="vertical"
@@ -1640,10 +1512,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                       {timeline.length === 0 ? (
                         <Empty
                           image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          description={t("pages.events.drawer.timelineEmpty", {
-                            defaultValue:
-                              "No timeline entries yet. Enable timeline generation and wait for the scheduled job.",
-                          })}
+                          description={t("pages.events.drawer.timelineEmpty")}
                         />
                       ) : (
                         <List
@@ -1674,9 +1543,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                       </Typography.Text>
                                       {referencedIds.length > 0 ? (
                                         <Tag>
-                                          {t("pages.events.drawer.references", {
-                                            defaultValue: "Refs",
-                                          })}
+                                          {t("pages.events.drawer.references")}
                                           : {referencedIds.length}
                                         </Tag>
                                       ) : null}
@@ -1695,24 +1562,18 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                                 : "default"
                                           }
                                         >
-                                          {t("pages.events.detail.confidence", {
-                                            defaultValue: "Confidence",
-                                          })}
+                                          {t("pages.events.detail.confidence")}
                                           : {confidence}
                                         </Tag>
                                       ) : null}
                                       {isAnchor ? (
                                         <Tag color="success">
-                                          {t("pages.events.detail.anchor", {
-                                            defaultValue: "Anchor",
-                                          })}
+                                          {t("pages.events.detail.anchor")}
                                         </Tag>
                                       ) : null}
                                       {isTentative ? (
                                         <Tag color="warning">
-                                          {t("pages.events.detail.tentative", {
-                                            defaultValue: "Tentative",
-                                          })}
+                                          {t("pages.events.detail.tentative")}
                                         </Tag>
                                       ) : null}
                                     </Space>
@@ -1763,16 +1624,12 @@ export function EventDetail({ eventId }: { eventId: string }) {
               },
               {
                 key: "articles",
-                label: t("pages.events.drawer.tabs.articles", {
-                  defaultValue: "Articles",
-                }),
+                label: t("pages.events.drawer.tabs.articles"),
                 children:
                   items.length === 0 ? (
                     <Empty
                       image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description={t("pages.events.drawer.itemsEmpty", {
-                        defaultValue: "No articles in this event yet.",
-                      })}
+                      description={t("pages.events.drawer.itemsEmpty")}
                     />
                   ) : (
                     <List
@@ -1783,9 +1640,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                         const similarity = formatSimilarity(item.similarity);
                         const sourceLabel =
                           processed.article.sourceLabel?.trim() ?? "";
-                        const ingestedLabel = t("items.time.ingested", {
-                          defaultValue: "Ingested",
-                        });
+                        const ingestedLabel = t("items.time.ingested");
                         const publishedAt = processed.publishedAt ?? null;
                         const ingestedAt =
                           processed.article.crawlAt ??
@@ -1794,7 +1649,6 @@ export function EventDetail({ eventId }: { eventId: string }) {
                         const canOpenLlm = Boolean(item.processedItemId);
                         const llmButtonLabel = t(
                           "pages.events.detail.openLlm",
-                          { defaultValue: "LLM content" },
                         );
 
                         const openLlm = () => {
@@ -1833,9 +1687,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                     target="_blank"
                                     rel="noreferrer"
                                   >
-                                    {t("pages.events.drawer.openOriginal", {
-                                      defaultValue: "Open",
-                                    })}
+                                    {t("pages.events.drawer.openOriginal")}
                                   </a>
                                 ) : null}
                               </Space>
@@ -1915,30 +1767,22 @@ export function EventDetail({ eventId }: { eventId: string }) {
         }}
         title={
           selectedTitle ??
-          t("pages.events.detail.articleDrawerTitle", {
-            defaultValue: "LLM content",
-          })
+          t("pages.events.detail.articleDrawerTitle")
         }
       >
         {selectedProcessedQuery.error ? (
           <Alert
             type="error"
             showIcon
-            message={t("pages.events.detail.articleLoadFailed", {
-              defaultValue: "Failed to load article.",
-            })}
-            description={t("common.serviceUnavailable", {
-              defaultValue: "Service is unavailable. Please try again.",
-            })}
+            message={t("pages.events.detail.articleLoadFailed")}
+            description={t("common.serviceUnavailable")}
           />
         ) : selectedProcessedQuery.loading && selectedProcessedItemId ? (
           <Skeleton active paragraph={{ rows: 10 }} />
         ) : !selectedProcessed ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={t("pages.events.detail.articleNotFound", {
-              defaultValue: "Processed item not found.",
-            })}
+            description={t("pages.events.detail.articleNotFound")}
           />
         ) : (
           <Space direction="vertical" size="middle" className="w-full">
@@ -1955,23 +1799,17 @@ export function EventDetail({ eventId }: { eventId: string }) {
                     router.push(`/items/${selectedProcessed.itemMetaId}`);
                   }}
                 >
-                  {t("pages.events.detail.openItem", {
-                    defaultValue: "Open item",
-                  })}
+                  {t("pages.events.detail.openItem")}
                 </Button>
               ) : null}
               {selectedUrl ? (
                 <a href={selectedUrl} target="_blank" rel="noreferrer">
-                  {t("pages.events.drawer.openOriginal", {
-                    defaultValue: "Open",
-                  })}
+                  {t("pages.events.drawer.openOriginal")}
                 </a>
               ) : null}
               {selectedMarkdownFallbackUsed ? (
                 <Tag color="orange">
-                  {t("items.detail.markdownFallback", {
-                    defaultValue: "Markdown fallback",
-                  })}
+                  {t("items.detail.markdownFallback")}
                 </Tag>
               ) : null}
             </Space>
@@ -2016,9 +1854,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
             ) : (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t("pages.events.detail.articleEmpty", {
-                  defaultValue: "No LLM content available.",
-                })}
+                description={t("pages.events.detail.articleEmpty")}
               />
             )}
           </Space>

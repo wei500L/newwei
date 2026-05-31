@@ -478,21 +478,14 @@ function CrawlSettingsForm({
       ? "full_page"
       : "default";
   const ingestHint = canWriteItems
-    ? t("crawl.settings.ingestToItemsHint", {
-        defaultValue:
-          "New crawl results will be converted into Items and queued for LLM processing.",
-      })
-    : t("crawl.settings.ingestToItemsNoPermission", {
-        defaultValue: "Requires items.write permission.",
-      });
+    ? t("crawl.settings.ingestToItemsHint")
+    : t("crawl.settings.ingestToItemsNoPermission");
   return (
     <>
       {/* Moved displayName and url to Step 1 */}
 
       <Form.Item
-        label={t("crawl.settings.ingestToItems", {
-          defaultValue: "Auto send to Items",
-        })}
+        label={t("crawl.settings.ingestToItems")}
         name="ingestToItems"
         valuePropName="checked"
         extra={ingestHint}
@@ -516,10 +509,7 @@ function CrawlSettingsForm({
       <Form.Item
         label={t("crawl.settings.concurrency")}
         name="concurrency"
-        extra={t("crawl.settings.concurrencyHint", {
-          defaultValue:
-            "Per-task crawl request fan-out. Separate from admin queue max concurrency, and the server clamps it to the service crawl concurrency cap.",
-        })}
+        extra={t("crawl.settings.concurrencyHint")}
       >
         <InputNumber
           min={1}
@@ -767,29 +757,19 @@ function CrawlSettingsForm({
         }
       />
       <Card
-        title={t("crawl.optimization.title", {
-          defaultValue: "Crawl optimization",
-        })}
+        title={t("crawl.optimization.title")}
         size="small"
         style={{ marginBottom: 16 }}
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          {t("crawl.optimization.description", {
-            defaultValue:
-              "Tune discovery and markdown quality without using LLMs during crawling.",
-          })}
+          {t("crawl.optimization.description")}
         </Typography.Paragraph>
         <Alert
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          message={t("crawl.optimization.noLlmTitle", {
-            defaultValue: "No LLM in crawl stage",
-          })}
-          description={t("crawl.optimization.noLlmDescription", {
-            defaultValue:
-              "Use Crawl4AI for deterministic fetch + cleaning only. Run LLM summarization or analysis in downstream pipeline stages.",
-          })}
+          message={t("crawl.optimization.noLlmTitle")}
+          description={t("crawl.optimization.noLlmDescription")}
         />
         <Form.Item
           label={t("crawl.settings.qualityProfile")}
@@ -940,14 +920,9 @@ function CrawlSettingsForm({
               <Switch />
             </Form.Item>
             <Form.Item
-              label={t("crawl.detailExpansion.minPublishTimeConfidence", {
-                defaultValue: "Min publish time confidence",
-              })}
+              label={t("crawl.detailExpansion.minPublishTimeConfidence")}
               name={["detailExpansion", "minPublishTimeConfidence"]}
-              extra={t("crawl.detailExpansion.minPublishTimeConfidenceHint", {
-                defaultValue:
-                  "Prioritize URLs with stronger publish-time signals (0~1).",
-              })}
+              extra={t("crawl.detailExpansion.minPublishTimeConfidenceHint")}
             >
               <InputNumber
                 min={0}
@@ -957,42 +932,26 @@ function CrawlSettingsForm({
               />
             </Form.Item>
             <Form.Item
-              label={t("crawl.detailExpansion.preferFitMarkdownForQuality", {
-                defaultValue: "Prefer fit markdown for quality",
-              })}
+              label={t("crawl.detailExpansion.preferFitMarkdownForQuality")}
               name={["detailExpansion", "preferFitMarkdownForQuality"]}
               valuePropName="checked"
               extra={t(
                 "crawl.detailExpansion.preferFitMarkdownForQualityHint",
-                {
-                  defaultValue:
-                    "Use fit_markdown first for low-signal/list-like quality assessment.",
-                },
               )}
             >
               <Switch />
             </Form.Item>
             <Form.Item
-              label={t("crawl.detailExpansion.excludeUrlPatterns", {
-                defaultValue: "Exclude URL patterns",
-              })}
+              label={t("crawl.detailExpansion.excludeUrlPatterns")}
               name={["detailExpansion", "excludeUrlPatterns"]}
-              extra={t("crawl.detailExpansion.excludeUrlPatternsHint", {
-                defaultValue:
-                  "Optional patterns to block detail expansion (supports wildcard * and regex /.../).",
-              })}
+              extra={t("crawl.detailExpansion.excludeUrlPatternsHint")}
             >
               <Select mode="tags" tokenSeparators={[","]} />
             </Form.Item>
             <Form.Item
-              label={t("crawl.detailExpansion.includeUrlPatterns", {
-                defaultValue: "Include URL patterns",
-              })}
+              label={t("crawl.detailExpansion.includeUrlPatterns")}
               name={["detailExpansion", "includeUrlPatterns"]}
-              extra={t("crawl.detailExpansion.includeUrlPatternsHint", {
-                defaultValue:
-                  "Optional allowlist. If set, only matching URLs are followed.",
-              })}
+              extra={t("crawl.detailExpansion.includeUrlPatternsHint")}
             >
               <Select mode="tags" tokenSeparators={[","]} />
             </Form.Item>
@@ -1036,66 +995,43 @@ function CrawlSettingsForm({
         <Switch />
       </Form.Item>
       <Card
-        title={t("crawl.settings.politeness.title", {
-          defaultValue: "Politeness & stability",
-        })}
+        title={t("crawl.settings.politeness.title")}
         size="small"
         style={{ marginBottom: 16 }}
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          {t("crawl.settings.politeness.description", {
-            defaultValue:
-              "Use conservative delays and concurrency settings to improve crawl stability across news sites.",
-          })}
+          {t("crawl.settings.politeness.description")}
         </Typography.Paragraph>
         <Form.Item
-          label={t("crawl.settings.politeness.meanDelay", {
-            defaultValue: "Mean delay (ms)",
-          })}
+          label={t("crawl.settings.politeness.meanDelay")}
           name="meanDelayMs"
-          extra={t("crawl.settings.politeness.meanDelayHint", {
-            defaultValue:
-              "Average randomized pause between requests in batch crawling.",
-          })}
+          extra={t("crawl.settings.politeness.meanDelayHint")}
         >
           <InputNumber
             min={0}
             max={10000}
             step={50}
             style={{ width: "100%" }}
-            placeholder={t("crawl.settings.politeness.placeholders.meanDelay", {
-              defaultValue: "Enter mean delay",
-            })}
+            placeholder={t("crawl.settings.politeness.placeholders.meanDelay")}
           />
         </Form.Item>
         <Form.Item
-          label={t("crawl.settings.politeness.maxRange", {
-            defaultValue: "Delay jitter (ms)",
-          })}
+          label={t("crawl.settings.politeness.maxRange")}
           name="maxDelayRangeMs"
-          extra={t("crawl.settings.politeness.maxRangeHint", {
-            defaultValue: "Random delay range added around the mean delay.",
-          })}
+          extra={t("crawl.settings.politeness.maxRangeHint")}
         >
           <InputNumber
             min={0}
             max={10000}
             step={50}
             style={{ width: "100%" }}
-            placeholder={t("crawl.settings.politeness.placeholders.maxRange", {
-              defaultValue: "Enter jitter range",
-            })}
+            placeholder={t("crawl.settings.politeness.placeholders.maxRange")}
           />
         </Form.Item>
         <Form.Item
-          label={t("crawl.settings.politeness.semaphoreCount", {
-            defaultValue: "Internal semaphore",
-          })}
+          label={t("crawl.settings.politeness.semaphoreCount")}
           name="semaphoreCount"
-          extra={t("crawl.settings.politeness.semaphoreCountHint", {
-            defaultValue:
-              "Max parallel internal operations within a crawl run.",
-          })}
+          extra={t("crawl.settings.politeness.semaphoreCountHint")}
         >
           <InputNumber
             min={1}
@@ -1103,9 +1039,6 @@ function CrawlSettingsForm({
             style={{ width: "100%" }}
             placeholder={t(
               "crawl.settings.politeness.placeholders.semaphoreCount",
-              {
-                defaultValue: "Enter semaphore count",
-              },
             )}
           />
         </Form.Item>
@@ -1205,97 +1138,63 @@ function CrawlSettingsForm({
           />
         </Form.Item>
         <Form.Item
-          label={t("crawl.dynamic.waitUntil", {
-            defaultValue: "Navigation wait condition",
-          })}
+          label={t("crawl.dynamic.waitUntil")}
           name="waitUntil"
-          extra={t("crawl.dynamic.waitUntilHint", {
-            defaultValue:
-              "Choose when Crawl4AI treats navigation as finished. For JS-heavy pages, networkidle is usually safer.",
-          })}
+          extra={t("crawl.dynamic.waitUntilHint")}
         >
           <Select
             allowClear
-            placeholder={t("crawl.dynamic.placeholders.waitUntil", {
-              defaultValue: "Select wait condition",
-            })}
+            placeholder={t("crawl.dynamic.placeholders.waitUntil")}
             options={[
               {
                 value: "domcontentloaded",
-                label: t("crawl.dynamic.waitUntilOptions.domcontentloaded", {
-                  defaultValue: "DOMContentLoaded",
-                }),
+                label: t("crawl.dynamic.waitUntilOptions.domcontentloaded"),
               },
               {
                 value: "load",
-                label: t("crawl.dynamic.waitUntilOptions.load", {
-                  defaultValue: "Load",
-                }),
+                label: t("crawl.dynamic.waitUntilOptions.load"),
               },
               {
                 value: "networkidle",
-                label: t("crawl.dynamic.waitUntilOptions.networkidle", {
-                  defaultValue: "Network idle",
-                }),
+                label: t("crawl.dynamic.waitUntilOptions.networkidle"),
               },
               {
                 value: "commit",
-                label: t("crawl.dynamic.waitUntilOptions.commit", {
-                  defaultValue: "Commit",
-                }),
+                label: t("crawl.dynamic.waitUntilOptions.commit"),
               },
             ]}
           />
         </Form.Item>
         <Form.Item
-          label={t("crawl.dynamic.pageTimeout", {
-            defaultValue: "Page timeout (ms)",
-          })}
+          label={t("crawl.dynamic.pageTimeout")}
           name="pageTimeoutMs"
-          extra={t("crawl.dynamic.pageTimeoutHint", {
-            defaultValue:
-              "Hard limit for page loading and JS execution in milliseconds.",
-          })}
+          extra={t("crawl.dynamic.pageTimeoutHint")}
         >
           <InputNumber
             min={1000}
             max={180000}
             style={{ width: "100%" }}
-            placeholder={t("crawl.dynamic.placeholders.pageTimeout", {
-              defaultValue: "Enter page timeout",
-            })}
+            placeholder={t("crawl.dynamic.placeholders.pageTimeout")}
           />
         </Form.Item>
         <Form.Item
-          label={t("crawl.dynamic.delayBeforeReturnHtml", {
-            defaultValue: "Post-load delay (ms)",
-          })}
+          label={t("crawl.dynamic.delayBeforeReturnHtml")}
           name="delayBeforeReturnHtmlMs"
-          extra={t("crawl.dynamic.delayBeforeReturnHtmlHint", {
-            defaultValue:
-              "Extra wait before returning HTML, useful for late-rendered article bodies.",
-          })}
+          extra={t("crawl.dynamic.delayBeforeReturnHtmlHint")}
         >
           <InputNumber
             min={0}
             max={30000}
             step={100}
             style={{ width: "100%" }}
-            placeholder={t("crawl.dynamic.placeholders.delayBeforeReturnHtml", {
-              defaultValue: "Enter post-load delay",
-            })}
+            placeholder={t("crawl.dynamic.placeholders.delayBeforeReturnHtml")}
           />
         </Form.Item>
         <Form.Item
-          label={t("crawl.dynamic.removeForms", {
-            defaultValue: "Remove forms",
-          })}
+          label={t("crawl.dynamic.removeForms")}
           name="removeForms"
           valuePropName="checked"
-          extra={t("crawl.dynamic.removeFormsHint", {
-            defaultValue:
-              "Strip form elements before markdown conversion to reduce newsletter/login noise.",
-          })}
+          extra={t("crawl.dynamic.removeFormsHint")}
         >
           <Switch />
         </Form.Item>
@@ -2153,9 +2052,6 @@ function CrawlSettingsForm({
                         <Form.Item
                           label={t(
                             "crawl.detailExpansion.minPublishTimeConfidence",
-                            {
-                              defaultValue: "Min publish time confidence",
-                            },
                           )}
                           name={[
                             field.name,
@@ -2165,10 +2061,6 @@ function CrawlSettingsForm({
                           ]}
                           extra={t(
                             "crawl.detailExpansion.minPublishTimeConfidenceHint",
-                            {
-                              defaultValue:
-                                "Prioritize URLs with stronger publish-time signals (0~1).",
-                            },
                           )}
                         >
                           <InputNumber
@@ -2181,9 +2073,6 @@ function CrawlSettingsForm({
                         <Form.Item
                           label={t(
                             "crawl.detailExpansion.preferFitMarkdownForQuality",
-                            {
-                              defaultValue: "Prefer fit markdown for quality",
-                            },
                           )}
                           name={[
                             field.name,
@@ -2194,18 +2083,12 @@ function CrawlSettingsForm({
                           valuePropName="checked"
                           extra={t(
                             "crawl.detailExpansion.preferFitMarkdownForQualityHint",
-                            {
-                              defaultValue:
-                                "Use fit_markdown first for low-signal/list-like quality assessment.",
-                            },
                           )}
                         >
                           <Switch />
                         </Form.Item>
                         <Form.Item
-                          label={t("crawl.detailExpansion.excludeUrlPatterns", {
-                            defaultValue: "Exclude URL patterns",
-                          })}
+                          label={t("crawl.detailExpansion.excludeUrlPatterns")}
                           name={[
                             field.name,
                             "options",
@@ -2214,18 +2097,12 @@ function CrawlSettingsForm({
                           ]}
                           extra={t(
                             "crawl.detailExpansion.excludeUrlPatternsHint",
-                            {
-                              defaultValue:
-                                "Optional patterns to block detail expansion (supports wildcard * and regex /.../).",
-                            },
                           )}
                         >
                           <Select mode="tags" tokenSeparators={[","]} />
                         </Form.Item>
                         <Form.Item
-                          label={t("crawl.detailExpansion.includeUrlPatterns", {
-                            defaultValue: "Include URL patterns",
-                          })}
+                          label={t("crawl.detailExpansion.includeUrlPatterns")}
                           name={[
                             field.name,
                             "options",
@@ -2234,10 +2111,6 @@ function CrawlSettingsForm({
                           ]}
                           extra={t(
                             "crawl.detailExpansion.includeUrlPatternsHint",
-                            {
-                              defaultValue:
-                                "Optional allowlist. If set, only matching URLs are followed.",
-                            },
                           )}
                         >
                           <Select mode="tags" tokenSeparators={[","]} />
@@ -2630,66 +2503,47 @@ function CrawlSettingsForm({
                   />
                 </Form.Item>
                 <Form.Item
-                  label={t("crawl.dynamic.waitUntil", {
-                    defaultValue: "Navigation wait condition",
-                  })}
+                  label={t("crawl.dynamic.waitUntil")}
                   name={[field.name, "options", "waitUntil"]}
                 >
                   <Select
                     allowClear
-                    placeholder={t("crawl.dynamic.placeholders.waitUntil", {
-                      defaultValue: "Select wait condition",
-                    })}
+                    placeholder={t("crawl.dynamic.placeholders.waitUntil")}
                     options={[
                       {
                         value: "domcontentloaded",
                         label: t(
                           "crawl.dynamic.waitUntilOptions.domcontentloaded",
-                          {
-                            defaultValue: "DOMContentLoaded",
-                          },
                         ),
                       },
                       {
                         value: "load",
-                        label: t("crawl.dynamic.waitUntilOptions.load", {
-                          defaultValue: "Load",
-                        }),
+                        label: t("crawl.dynamic.waitUntilOptions.load"),
                       },
                       {
                         value: "networkidle",
-                        label: t("crawl.dynamic.waitUntilOptions.networkidle", {
-                          defaultValue: "Network idle",
-                        }),
+                        label: t("crawl.dynamic.waitUntilOptions.networkidle"),
                       },
                       {
                         value: "commit",
-                        label: t("crawl.dynamic.waitUntilOptions.commit", {
-                          defaultValue: "Commit",
-                        }),
+                        label: t("crawl.dynamic.waitUntilOptions.commit"),
                       },
                     ]}
                   />
                 </Form.Item>
                 <Form.Item
-                  label={t("crawl.dynamic.pageTimeout", {
-                    defaultValue: "Page timeout (ms)",
-                  })}
+                  label={t("crawl.dynamic.pageTimeout")}
                   name={[field.name, "options", "pageTimeoutMs"]}
                 >
                   <InputNumber
                     min={1000}
                     max={180000}
                     style={{ width: "100%" }}
-                    placeholder={t("crawl.dynamic.placeholders.pageTimeout", {
-                      defaultValue: "Enter page timeout",
-                    })}
+                    placeholder={t("crawl.dynamic.placeholders.pageTimeout")}
                   />
                 </Form.Item>
                 <Form.Item
-                  label={t("crawl.dynamic.delayBeforeReturnHtml", {
-                    defaultValue: "Post-load delay (ms)",
-                  })}
+                  label={t("crawl.dynamic.delayBeforeReturnHtml")}
                   name={[field.name, "options", "delayBeforeReturnHtmlMs"]}
                 >
                   <InputNumber
@@ -2699,16 +2553,11 @@ function CrawlSettingsForm({
                     style={{ width: "100%" }}
                     placeholder={t(
                       "crawl.dynamic.placeholders.delayBeforeReturnHtml",
-                      {
-                        defaultValue: "Enter post-load delay",
-                      },
                     )}
                   />
                 </Form.Item>
                 <Form.Item
-                  label={t("crawl.settings.politeness.meanDelay", {
-                    defaultValue: "Mean delay (ms)",
-                  })}
+                  label={t("crawl.settings.politeness.meanDelay")}
                   name={[field.name, "options", "meanDelayMs"]}
                 >
                   <InputNumber
@@ -2718,16 +2567,11 @@ function CrawlSettingsForm({
                     style={{ width: "100%" }}
                     placeholder={t(
                       "crawl.settings.politeness.placeholders.meanDelay",
-                      {
-                        defaultValue: "Enter mean delay",
-                      },
                     )}
                   />
                 </Form.Item>
                 <Form.Item
-                  label={t("crawl.settings.politeness.maxRange", {
-                    defaultValue: "Delay jitter (ms)",
-                  })}
+                  label={t("crawl.settings.politeness.maxRange")}
                   name={[field.name, "options", "maxDelayRangeMs"]}
                 >
                   <InputNumber
@@ -2737,16 +2581,11 @@ function CrawlSettingsForm({
                     style={{ width: "100%" }}
                     placeholder={t(
                       "crawl.settings.politeness.placeholders.maxRange",
-                      {
-                        defaultValue: "Enter jitter range",
-                      },
                     )}
                   />
                 </Form.Item>
                 <Form.Item
-                  label={t("crawl.settings.politeness.semaphoreCount", {
-                    defaultValue: "Internal semaphore",
-                  })}
+                  label={t("crawl.settings.politeness.semaphoreCount")}
                   name={[field.name, "options", "semaphoreCount"]}
                 >
                   <InputNumber
@@ -2755,16 +2594,11 @@ function CrawlSettingsForm({
                     style={{ width: "100%" }}
                     placeholder={t(
                       "crawl.settings.politeness.placeholders.semaphoreCount",
-                      {
-                        defaultValue: "Enter semaphore count",
-                      },
                     )}
                   />
                 </Form.Item>
                 <Form.Item
-                  label={t("crawl.dynamic.removeForms", {
-                    defaultValue: "Remove forms",
-                  })}
+                  label={t("crawl.dynamic.removeForms")}
                   name={[field.name, "options", "removeForms"]}
                   valuePropName="checked"
                 >
@@ -2824,32 +2658,23 @@ function BrowserConfigForm({
   return (
     <>
       <Form.Item
-        label={t("crawl.browser.headless", { defaultValue: "Headless mode" })}
+        label={t("crawl.browser.headless")}
         name="headlessMode"
-        extra={t("crawl.browser.headlessHint", {
-          defaultValue:
-            "Auto lets defaults decide. Headed mode (headless=false) may require Xvfb/DISPLAY inside the crawl4ai container.",
-        })}
+        extra={t("crawl.browser.headlessHint")}
       >
         <Select
           options={[
             {
               value: "auto",
-              label: t("crawl.browser.headlessModes.auto", {
-                defaultValue: "Auto",
-              }),
+              label: t("crawl.browser.headlessModes.auto"),
             },
             {
               value: "headless",
-              label: t("crawl.browser.headlessModes.headless", {
-                defaultValue: "Headless",
-              }),
+              label: t("crawl.browser.headlessModes.headless"),
             },
             {
               value: "headed",
-              label: t("crawl.browser.headlessModes.headed", {
-                defaultValue: "Headed (Xvfb)",
-              }),
+              label: t("crawl.browser.headlessModes.headed"),
             },
           ]}
         />
@@ -2859,51 +2684,29 @@ function BrowserConfigForm({
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message={t("crawl.browser.headedWarningTitle", {
-            defaultValue: "Headed mode requires Xvfb",
-          })}
+          message={t("crawl.browser.headedWarningTitle")}
           description={
             <Space direction="vertical" size={2}>
               <Typography.Text>
-                {t("crawl.browser.headedWarning", {
-                  defaultValue:
-                    "If crawl4ai logs contain 'cannot open display', switch back to Headless or enable Xvfb/DISPLAY in your crawl4ai container.",
-                })}
+                {t("crawl.browser.headedWarning")}
               </Typography.Text>
               <Typography.Text type="secondary">
-                {t("crawl.runtimeGuide.noAutoBootstrap", {
-                  defaultValue:
-                    "This console only provides guidance and does not auto-start Xvfb for you.",
-                })}
+                {t("crawl.runtimeGuide.noAutoBootstrap")}
               </Typography.Text>
               <Typography.Text type="secondary">
-                {t("crawl.runtimeGuide.principleBody", {
-                  defaultValue:
-                    "When headless=false, Chromium needs a display server. Xvfb provides a virtual X11 display (for example :99) so headed rendering can run in containers without a physical monitor.",
-                })}
+                {t("crawl.runtimeGuide.principleBody")}
               </Typography.Text>
               <Typography.Text strong>
-                {t("crawl.runtimeGuide.stepsTitle", {
-                  defaultValue: "Recommended checks",
-                })}
+                {t("crawl.runtimeGuide.stepsTitle")}
               </Typography.Text>
               <Typography.Text type="secondary">
-                {`1. ${t("crawl.runtimeGuide.step1", {
-                  defaultValue:
-                    "Prefer Headless for routine crawls, and use Headed only when anti-bot scenarios need it.",
-                })}`}
+                {`1. ${t("crawl.runtimeGuide.step1")}`}
               </Typography.Text>
               <Typography.Text type="secondary">
-                {`2. ${t("crawl.runtimeGuide.step2", {
-                  defaultValue:
-                    "When using Headed, ensure Xvfb/DISPLAY are configured in the crawl4ai container.",
-                })}`}
+                {`2. ${t("crawl.runtimeGuide.step2")}`}
               </Typography.Text>
               <Typography.Text type="secondary">
-                {`3. ${t("crawl.runtimeGuide.step3", {
-                  defaultValue:
-                    "If display errors persist, switch this task back to Headless first, then verify container env settings.",
-                })}`}
+                {`3. ${t("crawl.runtimeGuide.step3")}`}
               </Typography.Text>
             </Space>
           }
@@ -2918,47 +2721,31 @@ function BrowserConfigForm({
         <Switch />
       </Form.Item>
       <Form.Item
-        label={t("crawl.browser.magicMode", {
-          defaultValue: "Stealth (Magic) mode",
-        })}
+        label={t("crawl.browser.magicMode")}
         name="enableStealthMode"
         valuePropName="checked"
-        extra={t("crawl.browser.magicModeHint", {
-          defaultValue:
-            "Maps to crawl4ai magic=true for anti-detection behavior.",
-        })}
+        extra={t("crawl.browser.magicModeHint")}
       >
         <Switch />
       </Form.Item>
       <Form.Item
-        label={t("crawl.browser.antiBotMode", {
-          defaultValue: "Anti-bot retry mode",
-        })}
+        label={t("crawl.browser.antiBotMode")}
         name="antiBotMode"
-        extra={t("crawl.browser.antiBotModeHint", {
-          defaultValue:
-            "Auto retries when challenge pages are detected. Enabled forces anti-bot retry when crawl failures exist; Disabled skips this pipeline.",
-        })}
+        extra={t("crawl.browser.antiBotModeHint")}
       >
         <Select
           options={[
             {
               value: "auto",
-              label: t("crawl.browser.antiBotModes.auto", {
-                defaultValue: "Auto (recommended)",
-              }),
+              label: t("crawl.browser.antiBotModes.auto"),
             },
             {
               value: "enabled",
-              label: t("crawl.browser.antiBotModes.enabled", {
-                defaultValue: "Enabled",
-              }),
+              label: t("crawl.browser.antiBotModes.enabled"),
             },
             {
               value: "disabled",
-              label: t("crawl.browser.antiBotModes.disabled", {
-                defaultValue: "Disabled",
-              }),
+              label: t("crawl.browser.antiBotModes.disabled"),
             },
           ]}
         />
@@ -3191,15 +2978,10 @@ function BrowserConfigForm({
         </Typography.Title>
         <Space style={{ marginBottom: 8 }}>
           <Button size="small" onClick={applyAutoBrowserHeaders}>
-            {t("crawl.browser.headers.autoFillSecCh", {
-              defaultValue: "Auto-fill Sec-CH headers",
-            })}
+            {t("crawl.browser.headers.autoFillSecCh")}
           </Button>
           <Typography.Text type="secondary">
-            {t("crawl.browser.headers.autoFillSecChHint", {
-              defaultValue:
-                "Adds sec-fetch defaults and, when User-Agent is deterministic Chromium, matching sec-ch headers if missing.",
-            })}
+            {t("crawl.browser.headers.autoFillSecChHint")}
           </Typography.Text>
         </Space>
         <Form.List name="browserHeaders">
@@ -3350,20 +3132,13 @@ function BrowserConfigForm({
           showIcon
           message={
             proxyIssues.length > 0
-              ? t("crawl.proxy.unsupportedLegacyTitle", {
-                  defaultValue: "Unsupported legacy proxy configuration detected",
-                })
-              : t("crawl.proxy.disabledTitle", {
-                  defaultValue: "Custom upstream proxies are disabled",
-                })
+              ? t("crawl.proxy.unsupportedLegacyTitle")
+              : t("crawl.proxy.disabledTitle")
           }
           description={
             proxyIssues.length > 0
               ? formatPolicyIssues(proxyIssues, t)
-              : t("crawl.proxy.disabledDescription", {
-                  defaultValue:
-                    "Task crawl no longer accepts proxyUrl or proxyConfig. Remove any legacy proxy fields before submitting.",
-                })
+              : t("crawl.proxy.disabledDescription")
           }
         />
       </Card>

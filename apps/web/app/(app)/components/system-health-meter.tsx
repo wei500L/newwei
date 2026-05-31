@@ -32,34 +32,20 @@ const buildStateLabel = (
 ): string => {
   switch (state) {
     case "healthy":
-      return t("dashboard.systemStatus.states.healthy", {
-        defaultValue: "Healthy",
-      });
+      return t("dashboard.systemStatus.states.healthy");
     case "warning":
-      return t("dashboard.systemStatus.states.warning", {
-        defaultValue: "Warning",
-      });
+      return t("dashboard.systemStatus.states.warning");
     case "critical":
-      return t("dashboard.systemStatus.states.critical", {
-        defaultValue: "Critical",
-      });
+      return t("dashboard.systemStatus.states.critical");
     case "loading":
-      return t("dashboard.systemStatus.states.loading", {
-        defaultValue: "Loading",
-      });
+      return t("dashboard.systemStatus.states.loading");
     case "unauthorized":
-      return t("dashboard.systemStatus.states.unauthorized", {
-        defaultValue: "Restricted",
-      });
+      return t("dashboard.systemStatus.states.unauthorized");
     case "unavailable":
-      return t("dashboard.systemStatus.states.unavailable", {
-        defaultValue: "Unavailable",
-      });
+      return t("dashboard.systemStatus.states.unavailable");
     case "unknown":
     default:
-      return t("dashboard.systemStatus.states.unknown", {
-        defaultValue: "Unknown",
-      });
+      return t("dashboard.systemStatus.states.unknown");
   }
 };
 
@@ -127,7 +113,6 @@ export function SystemHealthMeter({
   const resolvedAriaLabel =
     ariaLabel ??
     t("dashboard.systemStatus.aria.score", {
-      defaultValue: "System health {{state}} {{score}} out of 100",
       state: label,
       score: assessment.score ?? 0,
     });
@@ -168,12 +153,9 @@ export function SystemHealthMeter({
         >
           {assessment.score !== null
             ? t("dashboard.systemStatus.scoreValue", {
-                defaultValue: "{{score}}/100",
                 score: assessment.score,
               })
-            : t("dashboard.systemStatus.scorePending", {
-                defaultValue: "--/100",
-              })}
+            : t("dashboard.systemStatus.scorePending")}
         </span>
       </div>
     </div>

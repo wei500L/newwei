@@ -251,13 +251,10 @@ export function OrgAdminContent() {
       if (!nextActive) {
         const confirmed = await new Promise<boolean>((resolve) => {
           Modal.confirm({
-            title: t("orgAdmin.confirmDisable.title", { defaultValue: "Disable organization?" }),
-            content: t("orgAdmin.confirmDisable.description", {
-              defaultValue:
-                "Disabling an organization will block logins and API access for that org until re-enabled."
-            }),
-            okText: t("common.confirm", { defaultValue: "Confirm" }),
-            cancelText: t("common.cancel", { defaultValue: "Cancel" }),
+            title: t("orgAdmin.confirmDisable.title"),
+            content: t("orgAdmin.confirmDisable.description"),
+            okText: t("common.confirm"),
+            cancelText: t("common.cancel"),
             okButtonProps: { danger: true },
             onOk: () => resolve(true),
             onCancel: () => resolve(false)
@@ -283,7 +280,7 @@ export function OrgAdminContent() {
     try {
       if (!org.isActive) {
         messageApi.error(
-          t("orgAdmin.errors.switchDisabled", { defaultValue: "Cannot switch to a disabled org" })
+          t("orgAdmin.errors.switchDisabled")
         );
         return;
       }
@@ -294,7 +291,7 @@ export function OrgAdminContent() {
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { error?: string; details?: string };
-        messageApi.error(payload.details ?? payload.error ?? t("orgAdmin.errors.switchFailed", { defaultValue: "Switch failed" }));
+        messageApi.error(payload.details ?? payload.error ?? t("orgAdmin.errors.switchFailed"));
         return;
       }
       const data = (await response.json()) as BackendLoginResponse;
@@ -316,7 +313,7 @@ export function OrgAdminContent() {
       );
     } catch (error) {
       captureClientError("Switch org failed", error);
-      messageApi.error(t("orgAdmin.errors.switchFailed", { defaultValue: "Switch failed" }));
+      messageApi.error(t("orgAdmin.errors.switchFailed"));
     }
   };
 
@@ -346,7 +343,7 @@ export function OrgAdminContent() {
                     disabled={!org.isActive || org.id === currentOrgId}
                     onClick={() => handleSwitchOrg(org)}
                   >
-                    {org.id === currentOrgId ? t("orgAdmin.current", { defaultValue: "Current" }) : t("orgAdmin.switch", { defaultValue: "Switch" })}
+                    {org.id === currentOrgId ? t("orgAdmin.current") : t("orgAdmin.switch")}
                   </Button>,
                   <Button
                     key="edit"
@@ -376,7 +373,7 @@ export function OrgAdminContent() {
                     <Space>
                       <Typography.Text strong>{org.name}</Typography.Text>
                       {org.id === currentOrgId ? (
-                        <Tag color="blue">{t("orgAdmin.current", { defaultValue: "Current" })}</Tag>
+                        <Tag color="blue">{t("orgAdmin.current")}</Tag>
                       ) : null}
                       <Tag color={org.isActive ? "green" : "red"}>
                         {org.isActive
@@ -431,11 +428,11 @@ export function OrgAdminContent() {
                 ),
               },
               {
-                title: t("orgAdmin.columns.current", { defaultValue: "Current" }),
+                title: t("orgAdmin.columns.current"),
                 key: "current",
                 render: (_: unknown, org: OrgRow) =>
                   org.id === currentOrgId ? (
-                    <Tag color="blue">{t("orgAdmin.current", { defaultValue: "Current" })}</Tag>
+                    <Tag color="blue">{t("orgAdmin.current")}</Tag>
                   ) : (
                     <Typography.Text type="secondary">—</Typography.Text>
                   )
@@ -464,7 +461,7 @@ export function OrgAdminContent() {
                       disabled={!org.isActive || org.id === currentOrgId}
                       onClick={() => handleSwitchOrg(org)}
                     >
-                      {org.id === currentOrgId ? t("orgAdmin.current", { defaultValue: "Current" }) : t("orgAdmin.switch", { defaultValue: "Switch" })}
+                      {org.id === currentOrgId ? t("orgAdmin.current") : t("orgAdmin.switch")}
                     </Button>
                     <Button
                       size="small"

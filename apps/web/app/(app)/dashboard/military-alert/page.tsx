@@ -130,7 +130,7 @@ export default function MilitaryAlertPage() {
       valueFormatter: (value: number) =>
         typeof value === "number"
           ? `${value.toFixed(2)}%`
-          : t("common.notAvailable", { defaultValue: "N/A" }),
+          : t("common.notAvailable"),
     },
     xAxis: { type: "category", data: agBarData.map((item) => item.name) },
     yAxis: { type: "value", axisLabel: { formatter: "{value}%" } },
@@ -220,11 +220,11 @@ export default function MilitaryAlertPage() {
                               daily:
                                 typeof item.dailyChange === "number"
                                   ? item.dailyChange.toFixed(2)
-                                  : t("common.notAvailable", { defaultValue: "N/A" }),
+                                  : t("common.notAvailable"),
                               threeDay:
                                 typeof item.swing3d === "number"
                                   ? item.swing3d.toFixed(2)
-                                  : t("common.notAvailable", { defaultValue: "N/A" }),
+                                  : t("common.notAvailable"),
                             })}
                           </Typography.Text>
                         }

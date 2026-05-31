@@ -177,9 +177,9 @@ export function EntityIntelligenceCard({
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
-      toast.success(t("common.copied", { defaultValue: "Copied" }));
+      toast.success(t("common.copied"));
     } catch {
-      toast.error(t("common.copyFailed", { defaultValue: "Copy failed" }));
+      toast.error(t("common.copyFailed"));
     }
   };
 
@@ -191,11 +191,8 @@ export function EntityIntelligenceCard({
     return (
       <ChartEmptyState
         variant="permission"
-        title={t("common.accessDenied", { defaultValue: "Access denied" })}
-        description={t("common.accessDeniedDescription", {
-          defaultValue:
-            "You don't have permission to view this data. Contact an administrator if you need access.",
-        })}
+        title={t("common.accessDenied")}
+        description={t("common.accessDeniedDescription")}
       />
     );
   }
@@ -208,11 +205,9 @@ export function EntityIntelligenceCard({
     return (
       <ChartEmptyState
         variant="error"
-        title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+        title={t("dashboard.dataAbnormal")}
         description={error.message}
-        actionLabel={t("dashboard.actions.retryFetch", {
-          defaultValue: "Retry fetch",
-        })}
+        actionLabel={t("dashboard.actions.retryFetch")}
         onAction={() => {
           void refetchCard();
         }}
@@ -223,12 +218,8 @@ export function EntityIntelligenceCard({
   if (!card) {
     return (
       <ChartEmptyState
-        title={t("pages.knowledgeGraph.notFoundTitle", {
-          defaultValue: "Not found",
-        })}
-        description={t("pages.knowledgeGraph.notFoundDescription", {
-          defaultValue: "No graph data found for this entity",
-        })}
+        title={t("pages.knowledgeGraph.notFoundTitle")}
+        description={t("pages.knowledgeGraph.notFoundDescription")}
       />
     );
   }
@@ -244,7 +235,7 @@ export function EntityIntelligenceCard({
         <Space direction="vertical" size={8} className="min-w-0">
           <Link href="/knowledge-graph" className="inline-flex items-center gap-2 text-sm">
             <ArrowLeftOutlined />
-            {t("nav.main.knowledgeGraph", { defaultValue: "Knowledge Graph" })}
+            {t("nav.main.knowledgeGraph")}
           </Link>
           <div>
             <Space wrap align="center">
@@ -258,9 +249,7 @@ export function EntityIntelligenceCard({
               </Tag>
             </Space>
             <Text type="secondary">
-              {t("entities.intelligence.generatedAt", {
-                defaultValue: "Generated at",
-              })}{" "}
+              {t("entities.intelligence.generatedAt")}{" "}
               {dayjs(card.generatedAt).format("YYYY-MM-DD HH:mm")}
             </Text>
           </div>
@@ -279,19 +268,15 @@ export function EntityIntelligenceCard({
             onChange={handleWindowChange}
           />
           <Button icon={<SearchOutlined />} href={searchHref}>
-            {t("pages.knowledgeGraph.actions.openSearch", {
-              defaultValue: "Open search",
-            })}
+            {t("pages.knowledgeGraph.actions.openSearch")}
           </Button>
           <Button icon={<ShareAltOutlined />} href={explorerHref}>
-            {t("pages.knowledgeGraph.actions.openExplorer", {
-              defaultValue: "Open in explorer",
-            })}
+            {t("pages.knowledgeGraph.actions.openExplorer")}
           </Button>
           <Button icon={<CopyOutlined />} onClick={() => void copyLink()}>
-            {t("common.copy", { defaultValue: "Copy" })}
+            {t("common.copy")}
           </Button>
-          <Tooltip title={t("dashboard.actions.retryFetch", { defaultValue: "Retry fetch" })}>
+          <Tooltip title={t("dashboard.actions.retryFetch")}>
             <Button
               icon={<ReloadOutlined />}
               onClick={() => {
@@ -315,33 +300,25 @@ export function EntityIntelligenceCard({
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
           <Statistic
-            title={t("entities.intelligence.relationships", {
-              defaultValue: "Relationships",
-            })}
+            title={t("entities.intelligence.relationships")}
             value={card.metrics.relationshipCount}
           />
         </Card>
         <Card>
           <Statistic
-            title={t("entities.intelligence.mentions", {
-              defaultValue: "Recent mentions",
-            })}
+            title={t("entities.intelligence.mentions")}
             value={card.metrics.mentionedArticleCount}
           />
         </Card>
         <Card>
           <Statistic
-            title={t("entities.intelligence.events", {
-              defaultValue: "Recent events",
-            })}
+            title={t("entities.intelligence.events")}
             value={card.metrics.recentEventCount}
           />
         </Card>
         <Card>
           <Statistic
-            title={t("entities.intelligence.negativeRatio", {
-              defaultValue: "Negative ratio",
-            })}
+            title={t("entities.intelligence.negativeRatio")}
             value={formatPercent(card.metrics.negativeRatio)}
           />
         </Card>
@@ -350,9 +327,7 @@ export function EntityIntelligenceCard({
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
         <Space direction="vertical" size="large" className="w-full">
           <Card
-            title={t("entities.intelligence.neighborhood", {
-              defaultValue: "Neighborhood",
-            })}
+            title={t("entities.intelligence.neighborhood")}
           >
             <div className="flex flex-wrap gap-3">
               {card.neighborhood.nodes.map((node) => {
@@ -378,9 +353,7 @@ export function EntityIntelligenceCard({
           </Card>
 
           <Card
-            title={t("entities.intelligence.relationships", {
-              defaultValue: "Relationships",
-            })}
+            title={t("entities.intelligence.relationships")}
           >
             <List
               dataSource={card.relationships}
@@ -388,9 +361,7 @@ export function EntityIntelligenceCard({
                 emptyText: (
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description={t("dashboard.charts.entityGraph.noRelatedEntities", {
-                      defaultValue: "No related entities found.",
-                    })}
+                    description={t("dashboard.charts.entityGraph.noRelatedEntities")}
                   />
                 ),
               }}
@@ -418,21 +389,15 @@ export function EntityIntelligenceCard({
                     description={
                       <Space wrap>
                         <Text type="secondary">
-                          {t("pages.knowledgeGraph.details.confidence", {
-                            defaultValue: "Confidence",
-                          })}
+                          {t("pages.knowledgeGraph.details.confidence")}
                           : {relationship.edge.confidence.toFixed(2)}
                         </Text>
                         <Text type="secondary">
-                          {t("pages.knowledgeGraph.details.weight", {
-                            defaultValue: "Weight",
-                          })}
+                          {t("pages.knowledgeGraph.details.weight")}
                           : {relationship.edge.weight.toFixed(2)}
                         </Text>
                         <Text type="secondary">
-                          {t("pages.knowledgeGraph.details.evidenceTitle", {
-                            defaultValue: "Evidence",
-                          })}
+                          {t("pages.knowledgeGraph.details.evidenceTitle")}
                           : {relationship.evidenceCount}
                         </Text>
                       </Space>
@@ -446,25 +411,19 @@ export function EntityIntelligenceCard({
 
         <Space direction="vertical" size="large" className="w-full">
           <Card
-            title={t("entities.intelligence.sentiment", {
-              defaultValue: "Sentiment",
-            })}
+            title={t("entities.intelligence.sentiment")}
           >
             <Space direction="vertical" className="w-full">
               <Descriptions size="small" column={1}>
                 <Descriptions.Item
-                  label={t("entities.intelligence.avgSentiment", {
-                    defaultValue: "Average sentiment",
-                  })}
+                  label={t("entities.intelligence.avgSentiment")}
                 >
                   <Text style={{ color: getSentimentColor(card.metrics.avgSentiment) }}>
                     {formatScore(card.metrics.avgSentiment)}
                   </Text>
                 </Descriptions.Item>
                 <Descriptions.Item
-                  label={t("entities.intelligence.negativeRatio", {
-                    defaultValue: "Negative ratio",
-                  })}
+                  label={t("entities.intelligence.negativeRatio")}
                 >
                   {formatPercent(card.metrics.negativeRatio)}
                 </Descriptions.Item>
@@ -497,9 +456,7 @@ export function EntityIntelligenceCard({
           </Card>
 
           <Card
-            title={t("entities.intelligence.evidence", {
-              defaultValue: "Evidence",
-            })}
+            title={t("entities.intelligence.evidence")}
             loading={evidenceLoading && !evidence}
           >
             {evidenceError ? (
@@ -514,18 +471,14 @@ export function EntityIntelligenceCard({
               <Alert
                 type="warning"
                 showIcon
-                message={t("pages.knowledgeGraph.details.evidencePermissionTitle", {
-                  defaultValue: "Evidence is restricted",
-                })}
+                message={t("pages.knowledgeGraph.details.evidencePermissionTitle")}
               />
             ) : (
               <Space direction="vertical" className="w-full">
                 <List
                   header={
                     <Text strong>
-                      {t("entities.intelligence.events", {
-                        defaultValue: "Recent events",
-                      })}
+                      {t("entities.intelligence.events")}
                     </Text>
                   }
                   dataSource={evidence?.events ?? []}
@@ -553,9 +506,7 @@ export function EntityIntelligenceCard({
                 <List
                   header={
                     <Text strong>
-                      {t("entities.intelligence.articles", {
-                        defaultValue: "Articles",
-                      })}
+                      {t("entities.intelligence.articles")}
                     </Text>
                   }
                   dataSource={evidence?.articles ?? []}

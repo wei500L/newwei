@@ -37,10 +37,10 @@ describe("content subscriptions resilience wiring", () => {
     );
     expect(source).toContain("Promise.allSettled([");
     expect(source).toContain(
-      "Failed to load content subscription recommendations",
+      "subscriptions.content.recommendationsLoadFailed",
     );
     expect(source).toContain(
-      "Changes were saved, but the latest subscription list could not be reloaded.",
+      "subscriptions.content.refreshFailedAfterMutation",
     );
     expect(source).toContain("<Alert");
     expect(source).toContain(

@@ -188,7 +188,7 @@ export function UserDigestPanel() {
       setPreference(response.data ?? EMPTY_PREFERENCE);
     } catch (err) {
       captureClientError("Failed to load user digest preference", err);
-      setErrorMessage(t("pages.digest.preferenceLoadFailed", { defaultValue: "Failed to load digest preference." }));
+      setErrorMessage(t("pages.digest.preferenceLoadFailed"));
     } finally {
       setLoadingPreference(false);
     }
@@ -202,7 +202,7 @@ export function UserDigestPanel() {
       setDigest(response.data ?? null);
     } catch (err) {
       captureClientError("Failed to load user digest", err);
-      setErrorMessage(t("pages.digest.loadFailed", { defaultValue: "Failed to generate digest." }));
+      setErrorMessage(t("pages.digest.loadFailed"));
       setDigest(null);
     } finally {
       setLoadingDigest(false);
@@ -218,7 +218,7 @@ export function UserDigestPanel() {
     } catch (err) {
       captureClientError("Failed to load user digest delivery settings", err);
       setDeliveryErrorMessage(
-        t("pages.digest.deliveryLoadFailed", { defaultValue: "Failed to load digest delivery settings." })
+        t("pages.digest.deliveryLoadFailed")
       );
     } finally {
       setLoadingDelivery(false);
@@ -256,12 +256,12 @@ export function UserDigestPanel() {
       const response = await apiClient.put<UserDigestPreferenceV1>("user-digest/preference", payload);
       const updated = response.data ?? preference;
       setPreference(updated);
-      messageApi.success(t("pages.digest.saved", { defaultValue: "Saved." }));
+      messageApi.success(t("pages.digest.saved"));
       setModalOpen(false);
       await loadDigest();
     } catch (err) {
       captureClientError("Failed to save user digest preference", err);
-      messageApi.error(t("pages.digest.saveFailed", { defaultValue: "Failed to save." }));
+      messageApi.error(t("pages.digest.saveFailed"));
     } finally {
       setSavingPreference(false);
     }
@@ -279,11 +279,11 @@ export function UserDigestPanel() {
         }
       );
       setDelivery(response.data ?? delivery);
-      messageApi.success(t("pages.digest.deliverySaved", { defaultValue: "Delivery schedule saved." }));
+      messageApi.success(t("pages.digest.deliverySaved"));
       setDeliveryModalOpen(false);
     } catch (err) {
       captureClientError("Failed to save user digest delivery settings", err);
-      messageApi.error(t("pages.digest.deliverySaveFailed", { defaultValue: "Failed to save delivery schedule." }));
+      messageApi.error(t("pages.digest.deliverySaveFailed"));
     } finally {
       setSavingDelivery(false);
     }
@@ -295,10 +295,10 @@ export function UserDigestPanel() {
   const preferenceSummary = useMemo(() => {
     const focusBits: string[] = [];
     if (preference.focusTopics.length > 0) {
-      focusBits.push(`${t("pages.digest.focusTopics", { defaultValue: "Topics" })}: ${preference.focusTopics.length}`);
+      focusBits.push(`${t("pages.digest.focusTopics")}: ${preference.focusTopics.length}`);
     }
     if (preference.focusEntities.length > 0) {
-      focusBits.push(`${t("pages.digest.focusEntities", { defaultValue: "Entities" })}: ${preference.focusEntities.length}`);
+      focusBits.push(`${t("pages.digest.focusEntities")}: ${preference.focusEntities.length}`);
     }
     return focusBits.length > 0 ? focusBits.join(" · ") : null;
   }, [preference.focusEntities.length, preference.focusTopics.length, t]);
@@ -314,12 +314,12 @@ export function UserDigestPanel() {
           : "default";
   const deliveryStatusLabel =
     delivery.lastStatus === "sent"
-      ? t("pages.digest.deliveryStatus.sent", { defaultValue: "Last run sent" })
+      ? t("pages.digest.deliveryStatus.sent")
       : delivery.lastStatus === "failed"
-        ? t("pages.digest.deliveryStatus.failed", { defaultValue: "Last run failed" })
+        ? t("pages.digest.deliveryStatus.failed")
         : delivery.lastStatus === "empty_notified"
-          ? t("pages.digest.deliveryStatus.empty", { defaultValue: "No digest items" })
-          : t("pages.digest.deliveryStatus.idle", { defaultValue: "Idle" });
+          ? t("pages.digest.deliveryStatus.empty")
+          : t("pages.digest.deliveryStatus.idle");
 
   return (
     <>
@@ -327,20 +327,20 @@ export function UserDigestPanel() {
       <AuraBentoCard className="p-4" squish={false}>
         <div className="flex items-center justify-between mb-4">
           <Typography.Title level={5} style={{ margin: 0 }}>
-            {t("pages.digest.title", { defaultValue: "Personalized Digest" })}
+            {t("pages.digest.title")}
           </Typography.Title>
           <Space>
             <Button onClick={() => loadDigest()} loading={loadingDigest} size="small">
-              {t("common.refresh", { defaultValue: "Refresh" })}
+              {t("common.refresh")}
             </Button>
             <Button onClick={() => router.push('/subscriptions?tab=content')} size="small">
-              {t("pages.digest.manageSubscriptions", { defaultValue: "Manage subscriptions" })}
+              {t("pages.digest.manageSubscriptions")}
             </Button>
             <Button onClick={handleOpenDeliveryModal} disabled={loadingDelivery} size="small">
-              {t("pages.digest.delivery.customize", { defaultValue: "Delivery schedule" })}
+              {t("pages.digest.delivery.customize")}
             </Button>
             <Button onClick={handleOpenModal} disabled={loadingPreference} size="small">
-              {t("pages.digest.customize", { defaultValue: "Customize" })}
+              {t("pages.digest.customize")}
             </Button>
           </Space>
         </div>
@@ -354,39 +354,39 @@ export function UserDigestPanel() {
           <div className="flex flex-col gap-3">
             <Space wrap size={[8, 8]}>
               <Tag>
-                {t("pages.digest.window", { defaultValue: "Window" })}: {digest.preference.windowDays}d
+                {t("pages.digest.window")}: {digest.preference.windowDays}d
               </Tag>
               <Tag>
-                {t("pages.digest.maxEvents", { defaultValue: "Max events" })}: {digest.preference.maxEvents}
+                {t("pages.digest.maxEvents")}: {digest.preference.maxEvents}
               </Tag>
               {digest.preference.includeIndicators ? (
                 <Tag color="green">
-                  {t("pages.digest.indicatorsOn", { defaultValue: "Indicators on" })}
+                  {t("pages.digest.indicatorsOn")}
                 </Tag>
               ) : (
-                <Tag color="default">{t("pages.digest.indicatorsOff", { defaultValue: "Indicators off" })}</Tag>
+                <Tag color="default">{t("pages.digest.indicatorsOff")}</Tag>
               )}
               {preferenceSummary ? <Tag>{preferenceSummary}</Tag> : null}
               {generatedAt ? (
                 <Tag>
-                  {t("pages.digest.generatedAt", { defaultValue: "Generated" })}:{" "}
+                  {t("pages.digest.generatedAt")}:{" "}
                   {formatDateTime(generatedAt, locale, { dateStyle: "medium", timeStyle: "short" })}
                 </Tag>
               ) : null}
               <Tag color={delivery.enabled ? "blue" : "default"}>
                 {delivery.enabled
-                  ? t("pages.digest.delivery.enabled", { defaultValue: "Delivery on" })
-                  : t("pages.digest.delivery.disabled", { defaultValue: "Delivery off" })}
+                  ? t("pages.digest.delivery.enabled")
+                  : t("pages.digest.delivery.disabled")}
               </Tag>
               {delivery.enabled ? (
                 <Tag>
-                  {t("pages.digest.delivery.schedule", { defaultValue: "Schedule" })}: {delivery.time} · {delivery.timezone}
+                  {t("pages.digest.delivery.schedule")}: {delivery.time} · {delivery.timezone}
                 </Tag>
               ) : null}
               <Tag color={deliveryStatusColor}>{deliveryStatusLabel}</Tag>
               {delivery.nextRunAt ? (
                 <Tag>
-                  {t("pages.digest.delivery.nextRunAt", { defaultValue: "Next run" })}:{" "}
+                  {t("pages.digest.delivery.nextRunAt")}:{" "}
                   {formatDateTime(delivery.nextRunAt, locale, { dateStyle: "medium", timeStyle: "short" })}
                 </Tag>
               ) : null}
@@ -396,12 +396,10 @@ export function UserDigestPanel() {
               <Alert
                 type="info"
                 showIcon
-                message={t("pages.digest.delivery.emailRequired", {
-                  defaultValue: "Verify your email in Profile before enabling scheduled digest delivery.",
-                })}
+                message={t("pages.digest.delivery.emailRequired")}
                 action={
                   <Button size="small" onClick={() => router.push("/profile")}>
-                    {t("pages.digest.delivery.openProfile", { defaultValue: "Open profile" })}
+                    {t("pages.digest.delivery.openProfile")}
                   </Button>
                 }
               />
@@ -419,7 +417,7 @@ export function UserDigestPanel() {
               <Alert
                 type="warning"
                 showIcon
-                message={t("pages.digest.delivery.lastError", { defaultValue: "Last delivery error" })}
+                message={t("pages.digest.delivery.lastError")}
                 description={delivery.lastError}
               />
             ) : null}
@@ -427,12 +425,10 @@ export function UserDigestPanel() {
             {events.length === 0 ? (
               <Empty
                 image={<EmptyDigestSvg />}
-                description={t("pages.digest.empty", {
-                  defaultValue: "No digest events yet. Enable News Events ingestion and wait for it to backfill."
-                })}
+                description={t("pages.digest.empty")}
               >
                 <Button type="primary" onClick={() => router.push("/events")}>
-                  {t("pages.digest.emptyCta", { defaultValue: "View events" })}
+                  {t("pages.digest.emptyCta")}
                 </Button>
               </Empty>
             ) : (
@@ -457,7 +453,7 @@ export function UserDigestPanel() {
                       extra={
                         url ? (
                           <a href={url} target="_blank" rel="noreferrer">
-                            {t("pages.digest.openSource", { defaultValue: "Open" })}
+                            {t("pages.digest.openSource")}
                           </a>
                         ) : null
                       }
@@ -466,7 +462,7 @@ export function UserDigestPanel() {
                         title={
                           <Space wrap size={[6, 6]}>
                             <Typography.Text strong>{title}</Typography.Text>
-                            <Tag>{t("pages.digest.items", { defaultValue: "Items" })}: {event.itemCount}</Tag>
+                            <Tag>{t("pages.digest.items")}: {event.itemCount}</Tag>
                             {topic ? <Tag color="geekblue">{topic}</Tag> : null}
                             {entity ? <Tag color="purple">{entity}</Tag> : null}
                             <Tag>
@@ -485,13 +481,13 @@ export function UserDigestPanel() {
                             <Space wrap size={[6, 6]}>
                               {topicSentiment ? (
                                 <Tag color="blue">
-                                  {t("pages.digest.topicSentiment", { defaultValue: "Topic sentiment" })}:{" "}
+                                  {t("pages.digest.topicSentiment")}:{" "}
                                   {formatSigned(topicSentiment.avgScore) ?? "-"} / {percent(topicSentiment.negativeRatio) ?? "-"}
                                 </Tag>
                               ) : null}
                               {entitySentiment ? (
                                 <Tag color="purple">
-                                  {t("pages.digest.entitySentiment", { defaultValue: "Entity sentiment" })}:{" "}
+                                  {t("pages.digest.entitySentiment")}:{" "}
                                   {formatSigned(entitySentiment.avgScore) ?? "-"} / {percent(entitySentiment.negativeRatio) ?? "-"}
                                 </Tag>
                               ) : null}
@@ -519,7 +515,7 @@ export function UserDigestPanel() {
           <div className="py-6 flex justify-center">
             <Empty
               image={<EmptyDigestSvg />}
-              description={t("pages.digest.empty", { defaultValue: "No digest yet." })}
+              description={t("pages.digest.empty")}
             />
           </div>
         )}
@@ -527,12 +523,12 @@ export function UserDigestPanel() {
 
       <Modal
         open={modalOpen}
-        title={t("pages.digest.preferences.title", { defaultValue: "Digest Preferences" })}
+        title={t("pages.digest.preferences.title")}
         onCancel={() => setModalOpen(false)}
         confirmLoading={savingPreference}
         okButtonProps={{ htmlType: "submit", form: "user-digest-preference-form" }}
-        okText={t("common.saveChanges", { defaultValue: "Save changes" })}
-        cancelText={t("common.cancel", { defaultValue: "Cancel" })}
+        okText={t("common.saveChanges")}
+        cancelText={t("common.cancel")}
         destroyOnHidden
       >
         <Form
@@ -547,35 +543,33 @@ export function UserDigestPanel() {
           onFinish={handleSavePreference}
         >
           <Typography.Paragraph type="secondary">
-            {t("pages.digest.preferences.contentSubscriptionHint", {
-              defaultValue: "Topic and entity subscriptions now live in My Subscriptions > Content subscriptions.",
-            })}
+            {t("pages.digest.preferences.contentSubscriptionHint")}
           </Typography.Paragraph>
 
           <Form.Item
-            label={t("pages.digest.preferences.windowDays", { defaultValue: "Window days" })}
+            label={t("pages.digest.preferences.windowDays")}
             name="windowDays"
-            rules={[{ required: true, message: t("pages.digest.preferences.required", { defaultValue: "Required" }) }]}
+            rules={[{ required: true, message: t("pages.digest.preferences.required") }]}
           >
             <InputNumber min={1} max={30} style={{ width: "100%" }} />
           </Form.Item>
 
           <Form.Item
-            label={t("pages.digest.preferences.maxEvents", { defaultValue: "Max events" })}
+            label={t("pages.digest.preferences.maxEvents")}
             name="maxEvents"
-            rules={[{ required: true, message: t("pages.digest.preferences.required", { defaultValue: "Required" }) }]}
+            rules={[{ required: true, message: t("pages.digest.preferences.required") }]}
           >
             <InputNumber min={1} max={30} style={{ width: "100%" }} />
           </Form.Item>
 
-          <Form.Item label={t("pages.digest.preferences.includeIndicators", { defaultValue: "Include indicators" })} name="includeIndicators" valuePropName="checked">
+          <Form.Item label={t("pages.digest.preferences.includeIndicators")} name="includeIndicators" valuePropName="checked">
             <Switch />
           </Form.Item>
 
           <Form.Item
-            label={t("pages.digest.preferences.maxIndicatorsPerEvent", { defaultValue: "Max indicators per event" })}
+            label={t("pages.digest.preferences.maxIndicatorsPerEvent")}
             name="maxIndicatorsPerEvent"
-            rules={[{ required: true, message: t("pages.digest.preferences.required", { defaultValue: "Required" }) }]}
+            rules={[{ required: true, message: t("pages.digest.preferences.required") }]}
           >
             <InputNumber min={0} max={50} style={{ width: "100%" }} />
           </Form.Item>
@@ -584,12 +578,12 @@ export function UserDigestPanel() {
 
       <Modal
         open={deliveryModalOpen}
-        title={t("pages.digest.delivery.title", { defaultValue: "Digest Delivery Schedule" })}
+        title={t("pages.digest.delivery.title")}
         onCancel={() => setDeliveryModalOpen(false)}
         confirmLoading={savingDelivery}
         okButtonProps={{ htmlType: "submit", form: "user-digest-delivery-form" }}
-        okText={t("common.saveChanges", { defaultValue: "Save changes" })}
-        cancelText={t("common.cancel", { defaultValue: "Cancel" })}
+        okText={t("common.saveChanges")}
+        cancelText={t("common.cancel")}
         destroyOnHidden
       >
         <Form
@@ -604,27 +598,22 @@ export function UserDigestPanel() {
           }}
         >
           <Typography.Paragraph type="secondary">
-            {t("pages.digest.delivery.description", {
-              defaultValue:
-                "Send the current rolling digest to your verified email once per day, and also record the result in Notification Center.",
-            })}
+            {t("pages.digest.delivery.description")}
           </Typography.Paragraph>
 
           <Form.Item
-            label={t("pages.digest.delivery.targetEmail", { defaultValue: "Target email" })}
+            label={t("pages.digest.delivery.targetEmail")}
           >
-            <Typography.Text>{delivery.targetEmail || t("common.notAvailable", { defaultValue: "N/A" })}</Typography.Text>
+            <Typography.Text>{delivery.targetEmail || t("common.notAvailable")}</Typography.Text>
           </Form.Item>
 
           <Form.Item
-            label={t("pages.digest.delivery.enabledLabel", { defaultValue: "Enable daily delivery" })}
+            label={t("pages.digest.delivery.enabledLabel")}
             name="enabled"
             valuePropName="checked"
             extra={
               !delivery.emailVerified
-                ? t("pages.digest.delivery.verifyFirst", {
-                    defaultValue: "Email verification is required before this can be enabled.",
-                  })
+                ? t("pages.digest.delivery.verifyFirst")
                 : undefined
             }
           >
@@ -632,31 +621,29 @@ export function UserDigestPanel() {
           </Form.Item>
 
           <Form.Item
-            label={t("pages.digest.delivery.time", { defaultValue: "Delivery time" })}
+            label={t("pages.digest.delivery.time")}
             name="time"
-            rules={[{ required: true, message: t("pages.digest.preferences.required", { defaultValue: "Required" }) }]}
+            rules={[{ required: true, message: t("pages.digest.preferences.required") }]}
           >
             <TimePicker format="HH:mm" minuteStep={5} style={{ width: "100%" }} />
           </Form.Item>
 
           <Form.Item
-            label={t("pages.digest.delivery.timezone", { defaultValue: "Timezone" })}
+            label={t("pages.digest.delivery.timezone")}
             name="timezone"
-            rules={[{ required: true, message: t("pages.digest.preferences.required", { defaultValue: "Required" }) }]}
+            rules={[{ required: true, message: t("pages.digest.preferences.required") }]}
           >
             <Select
               showSearch
               options={timezoneOptions}
               optionFilterProp="label"
-              placeholder={t("pages.digest.delivery.timezonePlaceholder", {
-                defaultValue: "Select an IANA timezone",
-              })}
+              placeholder={t("pages.digest.delivery.timezonePlaceholder")}
             />
           </Form.Item>
 
           {delivery.lastSentAt ? (
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              {t("pages.digest.delivery.lastSentAt", { defaultValue: "Last email sent" })}:{" "}
+              {t("pages.digest.delivery.lastSentAt")}:{" "}
               {formatDateTime(delivery.lastSentAt, locale, { dateStyle: "medium", timeStyle: "short" })}
             </Typography.Paragraph>
           ) : null}

@@ -585,9 +585,7 @@ export function QualityContent() {
         captureClientError("Failed to load quality overview", error);
         if (!silent) {
           messageApi.error(
-            t("quality.errors.loadFailed", {
-              defaultValue: "Failed to load quality dashboard.",
-            }),
+            t("quality.errors.loadFailed"),
           );
           setTaskLogsSummary(null);
         }
@@ -675,9 +673,7 @@ export function QualityContent() {
         captureClientError("Failed to load classification quality", error);
         if (!silent) {
           messageApi.error(
-            t("quality.classification.errors.loadFailed", {
-              defaultValue: "Failed to load classification quality.",
-            }),
+            t("quality.classification.errors.loadFailed"),
           );
         }
       } finally {
@@ -784,9 +780,7 @@ export function QualityContent() {
       } catch (error) {
         captureClientError("Failed to load classification source items", error);
         messageApi.error(
-          t("quality.classification.errors.sourceItems", {
-            defaultValue: "Failed to load source drilldown items.",
-          }),
+          t("quality.classification.errors.sourceItems"),
         );
       } finally {
         setClassificationSourceItemsLoading(false);
@@ -824,9 +818,7 @@ export function QualityContent() {
           },
         );
         messageApi.success(
-          t("quality.classification.review.success", {
-            defaultValue: "Review decision submitted.",
-          }),
+          t("quality.classification.review.success"),
         );
         await load({ silent: true, tab: "classification" });
       } catch (error) {
@@ -835,9 +827,7 @@ export function QualityContent() {
           error,
         );
         messageApi.error(
-          t("quality.classification.review.error", {
-            defaultValue: "Failed to submit review decision.",
-          }),
+          t("quality.classification.review.error"),
         );
       } finally {
         setClassificationReviewSubmitting(false);
@@ -864,9 +854,7 @@ export function QualityContent() {
             : undefined,
         });
         messageApi.success(
-          t("quality.classification.review.batchSuccess", {
-            defaultValue: "Batch review submitted.",
-          }),
+          t("quality.classification.review.batchSuccess"),
         );
         setClassificationSelectedReviewIds([]);
         await load({ silent: true, tab: "classification" });
@@ -876,9 +864,7 @@ export function QualityContent() {
           error,
         );
         messageApi.error(
-          t("quality.classification.review.batchError", {
-            defaultValue: "Failed to submit batch review.",
-          }),
+          t("quality.classification.review.batchError"),
         );
       } finally {
         setClassificationReviewSubmitting(false);
@@ -1098,18 +1084,18 @@ export function QualityContent() {
     PipelineQualitySummary["failureTypes"][number]
   > = [
     {
-      title: t("quality.columns.stage", { defaultValue: "Stage" }),
+      title: t("quality.columns.stage"),
       dataIndex: "stage",
       key: "stage",
     },
     {
-      title: t("quality.columns.error", { defaultValue: "Error" }),
+      title: t("quality.columns.error"),
       dataIndex: "errorName",
       key: "errorName",
       render: (value: string) => <Tag>{value}</Tag>,
     },
     {
-      title: t("quality.columns.count", { defaultValue: "Count" }),
+      title: t("quality.columns.count"),
       dataIndex: "count",
       key: "count",
     },
@@ -1119,7 +1105,7 @@ export function QualityContent() {
     NonNullable<PipelineQualitySummary["llmModels"]>[number]
   > = [
     {
-      title: t("quality.llm.columns.model", { defaultValue: "Model" }),
+      title: t("quality.llm.columns.model"),
       dataIndex: "model",
       key: "model",
       render: (value: string) => (
@@ -1129,29 +1115,27 @@ export function QualityContent() {
       ),
     },
     {
-      title: t("quality.llm.columns.count", { defaultValue: "Count" }),
+      title: t("quality.llm.columns.count"),
       dataIndex: "count",
       key: "count",
       width: 120,
     },
     {
-      title: t("quality.llm.columns.avgLatency", {
-        defaultValue: "Avg latency",
-      }),
+      title: t("quality.llm.columns.avgLatency"),
       dataIndex: "avgLatencyMs",
       key: "avgLatencyMs",
       render: (value: number | null) =>
         typeof value === "number" ? `${msToSeconds(value)}s` : "-",
     },
     {
-      title: t("quality.llm.columns.avgCost", { defaultValue: "Avg cost" }),
+      title: t("quality.llm.columns.avgCost"),
       dataIndex: "avgCostUsd",
       key: "avgCostUsd",
       render: (value: number | null) =>
         typeof value === "number" ? `$${value.toFixed(3)}` : "-",
     },
     {
-      title: t("quality.llm.columns.avgTokens", { defaultValue: "Avg tokens" }),
+      title: t("quality.llm.columns.avgTokens"),
       dataIndex: "avgTotalTokens",
       key: "avgTotalTokens",
       render: (value: number | null) =>
@@ -1168,7 +1152,7 @@ export function QualityContent() {
 
   const taskLogColumns: ColumnsType<TaskLogRecord> = [
     {
-      title: t("quality.taskLogs.columns.time", { defaultValue: "Time" }),
+      title: t("quality.taskLogs.columns.time"),
       dataIndex: "createdAt",
       key: "createdAt",
       width: 180,
@@ -1182,19 +1166,19 @@ export function QualityContent() {
       },
     },
     {
-      title: t("quality.taskLogs.columns.queue", { defaultValue: "Queue" }),
+      title: t("quality.taskLogs.columns.queue"),
       dataIndex: "queue",
       key: "queue",
       render: (value: string) => <Tag>{value}</Tag>,
     },
     {
-      title: t("quality.taskLogs.columns.stage", { defaultValue: "Stage" }),
+      title: t("quality.taskLogs.columns.stage"),
       dataIndex: "stage",
       key: "stage",
       render: (value: string) => <Tag>{value}</Tag>,
     },
     {
-      title: t("quality.taskLogs.columns.status", { defaultValue: "Status" }),
+      title: t("quality.taskLogs.columns.status"),
       dataIndex: "status",
       key: "status",
       width: 120,
@@ -1203,7 +1187,7 @@ export function QualityContent() {
       ),
     },
     {
-      title: t("quality.taskLogs.columns.message", { defaultValue: "Message" }),
+      title: t("quality.taskLogs.columns.message"),
       dataIndex: "message",
       key: "message",
       render: (_: unknown, record) => {
@@ -1220,7 +1204,7 @@ export function QualityContent() {
       },
     },
     {
-      title: t("quality.taskLogs.columns.jobId", { defaultValue: "Job" }),
+      title: t("quality.taskLogs.columns.jobId"),
       dataIndex: "jobId",
       key: "jobId",
       width: 220,
@@ -1236,9 +1220,7 @@ export function QualityContent() {
     TaskLogsSummary["topErrors"][number]
   > = [
     {
-      title: t("quality.taskLogs.summary.columns.queue", {
-        defaultValue: "Queue",
-      }),
+      title: t("quality.taskLogs.summary.columns.queue"),
       dataIndex: "queue",
       key: "queue",
       render: (value: string, record) => (
@@ -1255,9 +1237,7 @@ export function QualityContent() {
       ),
     },
     {
-      title: t("quality.taskLogs.summary.columns.stage", {
-        defaultValue: "Stage",
-      }),
+      title: t("quality.taskLogs.summary.columns.stage"),
       dataIndex: "stage",
       key: "stage",
       render: (value: string, record) => (
@@ -1275,25 +1255,19 @@ export function QualityContent() {
       ),
     },
     {
-      title: t("quality.taskLogs.summary.columns.error", {
-        defaultValue: "Error",
-      }),
+      title: t("quality.taskLogs.summary.columns.error"),
       dataIndex: "errorName",
       key: "errorName",
       render: (value: string) => <Tag color="red">{value}</Tag>,
     },
     {
-      title: t("quality.taskLogs.summary.columns.count", {
-        defaultValue: "Count",
-      }),
+      title: t("quality.taskLogs.summary.columns.count"),
       dataIndex: "count",
       key: "count",
       width: 120,
     },
     {
-      title: t("quality.taskLogs.summary.columns.sample", {
-        defaultValue: "Sample",
-      }),
+      title: t("quality.taskLogs.summary.columns.sample"),
       dataIndex: "sampleMessage",
       key: "sampleMessage",
       render: (value: string | null) => (
@@ -1308,7 +1282,7 @@ export function QualityContent() {
     NewsSourceQualitySummary["topFailingSources"][number]
   > = [
     {
-      title: t("quality.sources.columns.name", { defaultValue: "Source" }),
+      title: t("quality.sources.columns.name"),
       dataIndex: "name",
       key: "name",
       render: (_, record) => (
@@ -1321,27 +1295,23 @@ export function QualityContent() {
       ),
     },
     {
-      title: t("quality.sources.columns.failedJobs", {
-        defaultValue: "Failed jobs",
-      }),
+      title: t("quality.sources.columns.failedJobs"),
       dataIndex: "failedJobs",
       key: "failedJobs",
     },
     {
-      title: t("quality.sources.columns.streak", {
-        defaultValue: "Failure streak",
-      }),
+      title: t("quality.sources.columns.streak"),
       dataIndex: "consecutiveFailures",
       key: "consecutiveFailures",
     },
     {
-      title: t("quality.sources.columns.circuit", { defaultValue: "Circuit" }),
+      title: t("quality.sources.columns.circuit"),
       dataIndex: "circuitOpenUntil",
       key: "circuitOpenUntil",
       render: (value: string | null) =>
         value ? (
           <Tag color="orange">
-            {t("quality.sources.circuitOpen", { defaultValue: "OPEN" })}
+            {t("quality.sources.circuitOpen")}
           </Tag>
         ) : (
           <Tag>OK</Tag>
@@ -1363,9 +1333,7 @@ export function QualityContent() {
     ClassificationQualitySummary["methodDistribution"][number]
   > = [
     {
-      title: t("quality.classification.methods.columns.group", {
-        defaultValue: "Method group",
-      }),
+      title: t("quality.classification.methods.columns.group"),
       dataIndex: "group",
       key: "group",
       render: (value: "llm_embedding_rerank" | "rule_fallback") => (
@@ -1377,17 +1345,13 @@ export function QualityContent() {
       ),
     },
     {
-      title: t("quality.classification.methods.columns.count", {
-        defaultValue: "Count",
-      }),
+      title: t("quality.classification.methods.columns.count"),
       dataIndex: "count",
       key: "count",
       width: 120,
     },
     {
-      title: t("quality.classification.methods.columns.share", {
-        defaultValue: "Share",
-      }),
+      title: t("quality.classification.methods.columns.share"),
       dataIndex: "share",
       key: "share",
       width: 160,
@@ -1399,25 +1363,19 @@ export function QualityContent() {
     ClassificationQualitySummary["confidenceHistogram"][number]
   > = [
     {
-      title: t("quality.classification.histogram.columns.bucket", {
-        defaultValue: "Confidence bucket",
-      }),
+      title: t("quality.classification.histogram.columns.bucket"),
       dataIndex: "bucket",
       key: "bucket",
       width: 160,
     },
     {
-      title: t("quality.classification.histogram.columns.count", {
-        defaultValue: "Count",
-      }),
+      title: t("quality.classification.histogram.columns.count"),
       dataIndex: "count",
       key: "count",
       width: 120,
     },
     {
-      title: t("quality.classification.histogram.columns.distribution", {
-        defaultValue: "Distribution",
-      }),
+      title: t("quality.classification.histogram.columns.distribution"),
       key: "distribution",
       render: (_, record) => (
         <Progress
@@ -1438,9 +1396,7 @@ export function QualityContent() {
     ClassificationQualitySummary["confidenceTrend"][number]
   > = [
     {
-      title: t("quality.classification.trend.columns.time", {
-        defaultValue: "Bucket",
-      }),
+      title: t("quality.classification.trend.columns.time"),
       dataIndex: "bucketStart",
       key: "bucketStart",
       render: (value: string) => {
@@ -1449,17 +1405,13 @@ export function QualityContent() {
       },
     },
     {
-      title: t("quality.classification.trend.columns.total", {
-        defaultValue: "Total",
-      }),
+      title: t("quality.classification.trend.columns.total"),
       dataIndex: "total",
       key: "total",
       width: 100,
     },
     {
-      title: t("quality.classification.trend.columns.avgConfidence", {
-        defaultValue: "Avg confidence",
-      }),
+      title: t("quality.classification.trend.columns.avgConfidence"),
       dataIndex: "avgConfidence",
       key: "avgConfidence",
       width: 150,
@@ -1467,9 +1419,7 @@ export function QualityContent() {
         typeof value === "number" ? value.toFixed(3) : "-",
     },
     {
-      title: t("quality.classification.trend.columns.lowConfidence", {
-        defaultValue: "Low confidence",
-      }),
+      title: t("quality.classification.trend.columns.lowConfidence"),
       dataIndex: "lowConfidenceCount",
       key: "lowConfidenceCount",
       width: 150,
@@ -1480,9 +1430,7 @@ export function QualityContent() {
     ClassificationQualitySummary["lowConfidenceSources"][number]
   > = [
     {
-      title: t("quality.classification.sources.columns.source", {
-        defaultValue: "Source",
-      }),
+      title: t("quality.classification.sources.columns.source"),
       dataIndex: "sourceName",
       key: "sourceName",
       render: (_, record) => (
@@ -1504,34 +1452,26 @@ export function QualityContent() {
       ),
     },
     {
-      title: t("quality.classification.sources.columns.lowCount", {
-        defaultValue: "Low confidence",
-      }),
+      title: t("quality.classification.sources.columns.lowCount"),
       dataIndex: "lowConfidenceCount",
       key: "lowConfidenceCount",
       width: 140,
     },
     {
-      title: t("quality.classification.sources.columns.total", {
-        defaultValue: "Total",
-      }),
+      title: t("quality.classification.sources.columns.total"),
       dataIndex: "total",
       key: "total",
       width: 100,
     },
     {
-      title: t("quality.classification.sources.columns.lowRate", {
-        defaultValue: "Low rate",
-      }),
+      title: t("quality.classification.sources.columns.lowRate"),
       dataIndex: "lowConfidenceRate",
       key: "lowConfidenceRate",
       width: 120,
       render: (value: number) => `${toPercent(value) ?? 0}%`,
     },
     {
-      title: t("quality.classification.sources.columns.avg", {
-        defaultValue: "Avg confidence",
-      }),
+      title: t("quality.classification.sources.columns.avg"),
       dataIndex: "avgConfidence",
       key: "avgConfidence",
       width: 140,
@@ -1539,9 +1479,7 @@ export function QualityContent() {
         typeof value === "number" ? value.toFixed(3) : "-",
     },
     {
-      title: t("quality.classification.sources.columns.actions", {
-        defaultValue: "Actions",
-      }),
+      title: t("quality.classification.sources.columns.actions"),
       key: "actions",
       width: 140,
       render: (_, record) => (
@@ -1554,9 +1492,7 @@ export function QualityContent() {
             )
           }
         >
-          {t("quality.classification.sources.actions.drilldown", {
-            defaultValue: "Drilldown",
-          })}
+          {t("quality.classification.sources.actions.drilldown")}
         </Button>
       ),
     },
@@ -1566,9 +1502,7 @@ export function QualityContent() {
     ClassificationSourceItemsResponse["items"][number]
   > = [
     {
-      title: t("quality.classification.drilldown.columns.time", {
-        defaultValue: "Time",
-      }),
+      title: t("quality.classification.drilldown.columns.time"),
       dataIndex: "createdAt",
       key: "createdAt",
       width: 180,
@@ -1578,9 +1512,7 @@ export function QualityContent() {
       },
     },
     {
-      title: t("quality.classification.drilldown.columns.title", {
-        defaultValue: "Article",
-      }),
+      title: t("quality.classification.drilldown.columns.title"),
       dataIndex: "articleTitle",
       key: "articleTitle",
       render: (_, record) => (
@@ -1608,18 +1540,14 @@ export function QualityContent() {
       ),
     },
     {
-      title: t("quality.classification.drilldown.columns.path", {
-        defaultValue: "Category path",
-      }),
+      title: t("quality.classification.drilldown.columns.path"),
       dataIndex: "categoryPath",
       key: "categoryPath",
       width: 180,
       render: (value: string | null) => <Tag>{value || "unknown"}</Tag>,
     },
     {
-      title: t("quality.classification.drilldown.columns.confidence", {
-        defaultValue: "Confidence",
-      }),
+      title: t("quality.classification.drilldown.columns.confidence"),
       dataIndex: "confidence",
       key: "confidence",
       width: 120,
@@ -1627,9 +1555,7 @@ export function QualityContent() {
         typeof value === "number" ? value.toFixed(3) : "-",
     },
     {
-      title: t("quality.classification.drilldown.columns.method", {
-        defaultValue: "Method",
-      }),
+      title: t("quality.classification.drilldown.columns.method"),
       dataIndex: "method",
       key: "method",
       width: 150,
@@ -1641,18 +1567,14 @@ export function QualityContent() {
     ClassificationQualitySummary["sourceCategoryBreakdown"][number]
   > = [
     {
-      title: t("quality.classification.sourceCategory.columns.sourceType", {
-        defaultValue: "Source type",
-      }),
+      title: t("quality.classification.sourceCategory.columns.sourceType"),
       dataIndex: "sourceType",
       key: "sourceType",
       width: 140,
       render: (value: string) => <Tag>{value}</Tag>,
     },
     {
-      title: t("quality.classification.sourceCategory.columns.categoryPrefix", {
-        defaultValue: "Category prefix",
-      }),
+      title: t("quality.classification.sourceCategory.columns.categoryPrefix"),
       dataIndex: "categoryPrefix",
       key: "categoryPrefix",
       render: (value: string) => (
@@ -1666,9 +1588,7 @@ export function QualityContent() {
       ),
     },
     {
-      title: t("quality.classification.sourceCategory.columns.count", {
-        defaultValue: "Count",
-      }),
+      title: t("quality.classification.sourceCategory.columns.count"),
       dataIndex: "count",
       key: "count",
       width: 120,
@@ -1687,9 +1607,7 @@ export function QualityContent() {
 
   const classificationReviewColumns: ColumnsType<ClassificationReviewItem> = [
     {
-      title: t("quality.classification.review.columns.time", {
-        defaultValue: "Time",
-      }),
+      title: t("quality.classification.review.columns.time"),
       dataIndex: "createdAt",
       key: "createdAt",
       width: 180,
@@ -1699,9 +1617,7 @@ export function QualityContent() {
       },
     },
     {
-      title: t("quality.classification.review.columns.article", {
-        defaultValue: "Article",
-      }),
+      title: t("quality.classification.review.columns.article"),
       key: "article",
       render: (_, record) => (
         <Space direction="vertical" size={2}>
@@ -1728,9 +1644,7 @@ export function QualityContent() {
       ),
     },
     {
-      title: t("quality.classification.review.columns.predicted", {
-        defaultValue: "Predicted",
-      }),
+      title: t("quality.classification.review.columns.predicted"),
       key: "predicted",
       width: 220,
       render: (_, record) => (
@@ -1747,9 +1661,7 @@ export function QualityContent() {
       ),
     },
     {
-      title: t("quality.classification.review.columns.candidates", {
-        defaultValue: "Candidates",
-      }),
+      title: t("quality.classification.review.columns.candidates"),
       key: "candidates",
       width: 280,
       render: (_, record) => (
@@ -1767,9 +1679,7 @@ export function QualityContent() {
       ),
     },
     {
-      title: t("quality.classification.review.columns.status", {
-        defaultValue: "Status",
-      }),
+      title: t("quality.classification.review.columns.status"),
       dataIndex: "status",
       key: "status",
       width: 120,
@@ -1778,9 +1688,7 @@ export function QualityContent() {
       ),
     },
     {
-      title: t("quality.classification.review.columns.actions", {
-        defaultValue: "Actions",
-      }),
+      title: t("quality.classification.review.columns.actions"),
       key: "actions",
       width: 250,
       render: (_, record) => (
@@ -1792,9 +1700,7 @@ export function QualityContent() {
             }
             loading={classificationReviewSubmitting}
           >
-            {t("quality.classification.review.actions.approve", {
-              defaultValue: "Approve",
-            })}
+            {t("quality.classification.review.actions.approve")}
           </Button>
           <Button
             size="small"
@@ -1804,18 +1710,14 @@ export function QualityContent() {
             }
             loading={classificationReviewSubmitting}
           >
-            {t("quality.classification.review.actions.reject", {
-              defaultValue: "Reject",
-            })}
+            {t("quality.classification.review.actions.reject")}
           </Button>
           <Button
             size="small"
             type="dashed"
             onClick={() => {
               const correctedPath = window.prompt(
-                t("quality.classification.review.correct.prompt", {
-                  defaultValue: "Input corrected category path",
-                }),
+                t("quality.classification.review.correct.prompt"),
                 record.predictedCategoryPath || "",
               );
               if (!correctedPath || !correctedPath.trim()) {
@@ -1829,9 +1731,7 @@ export function QualityContent() {
             }}
             loading={classificationReviewSubmitting}
           >
-            {t("quality.classification.review.actions.correct", {
-              defaultValue: "Correct",
-            })}
+            {t("quality.classification.review.actions.correct")}
           </Button>
         </Space>
       ),
@@ -1845,16 +1745,14 @@ export function QualityContent() {
           <Alert
             type="error"
             showIcon
-            message={t("quality.liveUpdates.error", { defaultValue: "Error" })}
+            message={t("quality.liveUpdates.error")}
             description={liveError}
           />
         ) : null}
 
         <Space direction="vertical" size={4}>
           <Typography.Text type="secondary">
-            {t("quality.liveUpdates.details.lastEvent", {
-              defaultValue: "Last event",
-            })}
+            {t("quality.liveUpdates.details.lastEvent")}
           </Typography.Text>
           {liveLastEvent ? (
             <Space direction="vertical" size={2} style={{ width: "100%" }}>
@@ -1877,7 +1775,7 @@ export function QualityContent() {
             </Space>
           ) : (
             <Typography.Text type="secondary">
-              {t("common.noData", { defaultValue: "No data" })}
+              {t("common.noData")}
             </Typography.Text>
           )}
         </Space>
@@ -1886,9 +1784,7 @@ export function QualityContent() {
 
         <Space direction="vertical" size={6} style={{ width: "100%" }}>
           <Typography.Text type="secondary">
-            {t("quality.liveUpdates.details.refreshOn", {
-              defaultValue: "Refresh on",
-            })}
+            {t("quality.liveUpdates.details.refreshOn")}
           </Typography.Text>
           <Space direction="vertical" size={4} style={{ width: "100%" }}>
             {LIVE_EVENT_SOURCES.map((source) => (
@@ -1924,9 +1820,7 @@ export function QualityContent() {
           </Space>
           <Space>
             <Button size="small" onClick={resetLiveCounters}>
-              {t("quality.liveUpdates.details.resetCounters", {
-                defaultValue: "Reset counters",
-              })}
+              {t("quality.liveUpdates.details.resetCounters")}
             </Button>
           </Space>
         </Space>
@@ -1948,7 +1842,7 @@ export function QualityContent() {
     return (
       <Card
         className="content-card"
-        title={t("quality.title", { defaultValue: "Data Quality" })}
+        title={t("quality.title")}
       >
         <Alert
           type="warning"
@@ -1969,13 +1863,10 @@ export function QualityContent() {
         >
           <Space direction="vertical" size={2}>
             <Typography.Title level={4} style={{ margin: 0 }}>
-              {t("quality.title", { defaultValue: "Data Quality" })}
+              {t("quality.title")}
             </Typography.Title>
             <Typography.Text type="secondary">
-              {t("quality.subtitle", {
-                defaultValue:
-                  "Pipeline success, latency, and source reliability.",
-              })}
+              {t("quality.subtitle")}
             </Typography.Text>
           </Space>
           <Space>
@@ -1985,27 +1876,25 @@ export function QualityContent() {
               options={[
                 {
                   value: 60,
-                  label: t("quality.windows.60m", { defaultValue: "Last 60m" }),
+                  label: t("quality.windows.60m"),
                 },
                 {
                   value: 240,
-                  label: t("quality.windows.4h", { defaultValue: "Last 4h" }),
+                  label: t("quality.windows.4h"),
                 },
                 {
                   value: 1440,
-                  label: t("quality.windows.24h", { defaultValue: "Last 24h" }),
+                  label: t("quality.windows.24h"),
                 },
               ]}
               style={{ minWidth: 160 }}
             />
             <Button onClick={() => void load()} loading={loading}>
-              {t("common.refresh", { defaultValue: "Refresh" })}
+              {t("common.refresh")}
             </Button>
             <Space size={6} wrap>
               <Typography.Text type="secondary">
-                {t("quality.autoRefresh.label", {
-                  defaultValue: "Auto refresh",
-                })}
+                {t("quality.autoRefresh.label")}
               </Typography.Text>
               <Switch
                 checked={autoRefreshEnabled}
@@ -2025,9 +1914,7 @@ export function QualityContent() {
             </Space>
             <Space size={6} wrap>
               <Typography.Text type="secondary">
-                {t("quality.liveUpdates.label", {
-                  defaultValue: "Live updates",
-                })}
+                {t("quality.liveUpdates.label")}
               </Typography.Text>
               <Switch
                 checked={liveUpdatesEnabled}
@@ -2052,20 +1939,12 @@ export function QualityContent() {
                     }
                   >
                     {liveError
-                      ? t("quality.liveUpdates.error", {
-                          defaultValue: "Error",
-                        })
+                      ? t("quality.liveUpdates.error")
                       : liveStatus === "connected"
-                        ? t("quality.liveUpdates.connected", {
-                            defaultValue: "Live",
-                          })
+                        ? t("quality.liveUpdates.connected")
                         : liveStatus === "connecting"
-                          ? t("quality.liveUpdates.connecting", {
-                              defaultValue: "Connecting",
-                            })
-                          : t("quality.liveUpdates.disconnected", {
-                              defaultValue: "Disconnected",
-                            })}
+                          ? t("quality.liveUpdates.connecting")
+                          : t("quality.liveUpdates.disconnected")}
                     {liveStatus === "connected" && liveEventCount > 0
                       ? ` · ${liveEventCount}`
                       : ""}
@@ -2079,7 +1958,6 @@ export function QualityContent() {
         {lastUpdatedAt ? (
           <Typography.Text type="secondary">
             {t("quality.updatedAt", {
-              defaultValue: "Updated at: {{time}}",
               time: new Date(lastUpdatedAt).toLocaleString(),
             })}
           </Typography.Text>
@@ -2089,17 +1967,13 @@ export function QualityContent() {
           <Alert
             showIcon
             type="info"
-            message={t("quality.liveUpdates.stale.title", {
-              defaultValue: "New live events arrived after the last refresh.",
-            })}
+            message={t("quality.liveUpdates.stale.title")}
             description={t("quality.liveUpdates.stale.description", {
-              defaultValue:
-                "Overview data is stale for: {{sources}}. Refresh now or enable refresh-on-event for those sources.",
               sources: dirtyLiveSources.join(", "),
             })}
             action={
               <Button size="small" onClick={() => void load()}>
-                {t("common.refresh", { defaultValue: "Refresh" })}
+                {t("common.refresh")}
               </Button>
             }
           />
@@ -2110,15 +1984,13 @@ export function QualityContent() {
           onChange={(key) => setActiveTab(key as QualityTab)}
         >
           <Tabs.TabPane
-            tab={t("quality.tabs.overview", { defaultValue: "Overview" })}
+            tab={t("quality.tabs.overview")}
             key="overview"
           >
             <Space direction="vertical" style={{ width: "100%" }} size="large">
               <Card
                 className="content-card"
-                title={t("quality.pipeline.title", {
-                  defaultValue: "Pipeline",
-                })}
+                title={t("quality.pipeline.title")}
                 loading={loading}
               >
                 {pipeline ? (
@@ -2130,33 +2002,25 @@ export function QualityContent() {
                     <Row gutter={[16, 16]}>
                       <Col xs={12} md={6}>
                         <Statistic
-                          title={t("quality.pipeline.total", {
-                            defaultValue: "Total",
-                          })}
+                          title={t("quality.pipeline.total")}
                           value={pipeline.totals.total}
                         />
                       </Col>
                       <Col xs={12} md={6}>
                         <Statistic
-                          title={t("quality.pipeline.completed", {
-                            defaultValue: "Completed",
-                          })}
+                          title={t("quality.pipeline.completed")}
                           value={pipeline.totals.completed}
                         />
                       </Col>
                       <Col xs={12} md={6}>
                         <Statistic
-                          title={t("quality.pipeline.failed", {
-                            defaultValue: "Failed",
-                          })}
+                          title={t("quality.pipeline.failed")}
                           value={pipeline.totals.failed}
                         />
                       </Col>
                       <Col xs={12} md={6}>
                         <Statistic
-                          title={t("quality.pipeline.successRate", {
-                            defaultValue: "Success rate",
-                          })}
+                          title={t("quality.pipeline.successRate")}
                           value={
                             pipeline.successRate !== null
                               ? Math.round(pipeline.successRate * 1000) / 10
@@ -2169,9 +2033,7 @@ export function QualityContent() {
                       </Col>
                       <Col xs={12} md={6}>
                         <Statistic
-                          title={t("quality.pipeline.llmLatency", {
-                            defaultValue: "Avg LLM latency",
-                          })}
+                          title={t("quality.pipeline.llmLatency")}
                           value={
                             pipeline.averageLatencyMs !== null
                               ? Math.round(pipeline.averageLatencyMs / 100) / 10
@@ -2184,9 +2046,7 @@ export function QualityContent() {
                       </Col>
                       <Col xs={12} md={6}>
                         <Statistic
-                          title={t("quality.pipeline.ingestP50", {
-                            defaultValue: "Ingest p50",
-                          })}
+                          title={t("quality.pipeline.ingestP50")}
                           value={msToSeconds(
                             pipeline.ingestionLatencyMs?.p50Ms,
                           )}
@@ -2199,9 +2059,7 @@ export function QualityContent() {
                       </Col>
                       <Col xs={12} md={6}>
                         <Statistic
-                          title={t("quality.pipeline.ingestP90", {
-                            defaultValue: "Ingest p90",
-                          })}
+                          title={t("quality.pipeline.ingestP90")}
                           value={msToSeconds(
                             pipeline.ingestionLatencyMs?.p90Ms,
                           )}
@@ -2214,9 +2072,7 @@ export function QualityContent() {
                       </Col>
                       <Col xs={12} md={6}>
                         <Statistic
-                          title={t("quality.pipeline.outboxOldest", {
-                            defaultValue: "Outbox oldest",
-                          })}
+                          title={t("quality.pipeline.outboxOldest")}
                           value={pipeline.outbox?.oldestAgeMinutes ?? undefined}
                           suffix={
                             pipeline.outbox?.oldestAgeMinutes != null
@@ -2230,15 +2086,11 @@ export function QualityContent() {
                     {pipeline.outbox ? (
                       <Space wrap>
                         <Tag>
-                          {t("quality.pipeline.outbox.pending", {
-                            defaultValue: "Outbox pending",
-                          })}
+                          {t("quality.pipeline.outbox.pending")}
                           : {pipeline.outbox.totals.pending}
                         </Tag>
                         <Tag>
-                          {t("quality.pipeline.outbox.processing", {
-                            defaultValue: "Outbox processing",
-                          })}
+                          {t("quality.pipeline.outbox.processing")}
                           : {pipeline.outbox.totals.processing}
                         </Tag>
                         <Tag
@@ -2248,9 +2100,7 @@ export function QualityContent() {
                               : "default"
                           }
                         >
-                          {t("quality.pipeline.outbox.failed", {
-                            defaultValue: "Outbox failed",
-                          })}
+                          {t("quality.pipeline.outbox.failed")}
                           : {pipeline.outbox.totals.failed}
                         </Tag>
                         <Tag
@@ -2260,9 +2110,7 @@ export function QualityContent() {
                               : "default"
                           }
                         >
-                          {t("quality.pipeline.outbox.dead", {
-                            defaultValue: "Outbox dead",
-                          })}
+                          {t("quality.pipeline.outbox.dead")}
                           : {pipeline.outbox.totals.dead}
                         </Tag>
                         <Tag
@@ -2272,9 +2120,7 @@ export function QualityContent() {
                               : "default"
                           }
                         >
-                          {t("quality.pipeline.outbox.stale", {
-                            defaultValue: "Outbox stale",
-                          })}
+                          {t("quality.pipeline.outbox.stale")}
                           : {pipeline.outbox.totals.staleProcessing}
                         </Tag>
                       </Space>
@@ -2282,16 +2128,14 @@ export function QualityContent() {
                   </Space>
                 ) : (
                   <Typography.Text type="secondary">
-                    {t("common.empty", { defaultValue: "Empty" })}
+                    {t("common.empty")}
                   </Typography.Text>
                 )}
               </Card>
 
               <Card
                 className="content-card"
-                title={t("quality.pipeline.failures", {
-                  defaultValue: "Top Failures",
-                })}
+                title={t("quality.pipeline.failures")}
                 loading={loading}
               >
                 <Table
@@ -2305,7 +2149,7 @@ export function QualityContent() {
 
               <Card
                 className="content-card"
-                title={t("quality.llm.title", { defaultValue: "LLM" })}
+                title={t("quality.llm.title")}
                 loading={loading}
               >
                 <Table
@@ -2319,22 +2163,18 @@ export function QualityContent() {
 
               <Card
                 className="content-card"
-                title={t("quality.taskLogs.title", {
-                  defaultValue: "Task logs",
-                })}
+                title={t("quality.taskLogs.title")}
                 loading={loading}
                 extra={
                   <Space>
                     <Button href={openTaskLogsHref}>
-                      {t("adminLogs.openTaskLogs", {
-                        defaultValue: "Open Logs",
-                      })}
+                      {t("adminLogs.openTaskLogs")}
                     </Button>
                     <Button
                       onClick={() => void load({ tab: "overview" })}
                       loading={loading}
                     >
-                      {t("common.refresh", { defaultValue: "Refresh" })}
+                      {t("common.refresh")}
                     </Button>
                   </Space>
                 }
@@ -2348,10 +2188,7 @@ export function QualityContent() {
                     type="secondary"
                     style={{ marginBottom: 0 }}
                   >
-                    {t("adminLogs.task.summaryCardDescription", {
-                      defaultValue:
-                        "Showing task-log totals from the last 60 minutes and the most recent failed records. Open the logs workspace for full filtering, pagination, and raw details.",
-                    })}
+                    {t("adminLogs.task.summaryCardDescription")}
                   </Typography.Paragraph>
 
                   {taskLogsSummary ? (
@@ -2363,9 +2200,7 @@ export function QualityContent() {
                       <Row gutter={[16, 16]}>
                         <Col xs={12} md={4}>
                           <Statistic
-                            title={t("quality.taskLogs.summary.totals.total", {
-                              defaultValue: "Total logs",
-                            })}
+                            title={t("quality.taskLogs.summary.totals.total")}
                             value={taskLogsSummary.totals.total}
                           />
                         </Col>
@@ -2373,7 +2208,6 @@ export function QualityContent() {
                           <Statistic
                             title={t(
                               "quality.taskLogs.summary.totals.pending",
-                              { defaultValue: "Pending" },
                             )}
                             value={taskLogsSummary.totals.pending}
                           />
@@ -2382,7 +2216,6 @@ export function QualityContent() {
                           <Statistic
                             title={t(
                               "quality.taskLogs.summary.totals.processing",
-                              { defaultValue: "Processing" },
                             )}
                             value={taskLogsSummary.totals.processing}
                           />
@@ -2391,16 +2224,13 @@ export function QualityContent() {
                           <Statistic
                             title={t(
                               "quality.taskLogs.summary.totals.completed",
-                              { defaultValue: "Completed" },
                             )}
                             value={taskLogsSummary.totals.completed}
                           />
                         </Col>
                         <Col xs={12} md={4}>
                           <Statistic
-                            title={t("quality.taskLogs.summary.totals.failed", {
-                              defaultValue: "Failed",
-                            })}
+                            title={t("quality.taskLogs.summary.totals.failed")}
                             value={taskLogsSummary.totals.failed}
                             valueStyle={
                               taskLogsSummary.totals.failed > 0
@@ -2421,9 +2251,7 @@ export function QualityContent() {
                           pagination={{ pageSize: 5, showSizeChanger: false }}
                           size={screens.md ? "middle" : "small"}
                           title={() =>
-                            t("quality.taskLogs.summary.title", {
-                              defaultValue: "Top errors",
-                            })
+                            t("quality.taskLogs.summary.title")
                           }
                         />
                       ) : null}
@@ -2437,10 +2265,7 @@ export function QualityContent() {
                     pagination={false}
                     size={screens.md ? "middle" : "small"}
                     locale={{
-                      emptyText: t("adminLogs.task.summary.empty", {
-                        defaultValue:
-                          "No recent failed task logs in the current window.",
-                      }),
+                      emptyText: t("adminLogs.task.summary.empty"),
                     }}
                   />
                 </Space>
@@ -2448,9 +2273,7 @@ export function QualityContent() {
 
               <Card
                 className="content-card"
-                title={t("quality.sources.title", {
-                  defaultValue: "Source Reliability",
-                })}
+                title={t("quality.sources.title")}
                 loading={loading}
               >
                 {sources ? (
@@ -2462,33 +2285,25 @@ export function QualityContent() {
                     <Row gutter={[16, 16]}>
                       <Col xs={12} md={6}>
                         <Statistic
-                          title={t("quality.sources.total", {
-                            defaultValue: "Total sources",
-                          })}
+                          title={t("quality.sources.total")}
                           value={sources.totals.total}
                         />
                       </Col>
                       <Col xs={12} md={6}>
                         <Statistic
-                          title={t("quality.sources.active", {
-                            defaultValue: "Active",
-                          })}
+                          title={t("quality.sources.active")}
                           value={sources.totals.active}
                         />
                       </Col>
                       <Col xs={12} md={6}>
                         <Statistic
-                          title={t("quality.sources.failing", {
-                            defaultValue: "Failing",
-                          })}
+                          title={t("quality.sources.failing")}
                           value={sources.totals.failing}
                         />
                       </Col>
                       <Col xs={12} md={6}>
                         <Statistic
-                          title={t("quality.sources.circuitOpen", {
-                            defaultValue: "Circuit open",
-                          })}
+                          title={t("quality.sources.circuitOpen")}
                           value={sources.totals.circuitOpen}
                         />
                       </Col>
@@ -2503,7 +2318,7 @@ export function QualityContent() {
                   </Space>
                 ) : (
                   <Typography.Text type="secondary">
-                    {t("common.empty", { defaultValue: "Empty" })}
+                    {t("common.empty")}
                   </Typography.Text>
                 )}
               </Card>
@@ -2511,17 +2326,13 @@ export function QualityContent() {
           </Tabs.TabPane>
 
           <Tabs.TabPane
-            tab={t("quality.tabs.classification", {
-              defaultValue: "Classification",
-            })}
+            tab={t("quality.tabs.classification")}
             key="classification"
           >
             <Space direction="vertical" style={{ width: "100%" }} size="large">
               <Card
                 className="content-card"
-                title={t("quality.classification.title", {
-                  defaultValue: "Classification Quality",
-                })}
+                title={t("quality.classification.title")}
                 loading={loading}
               >
                 <Space
@@ -2531,9 +2342,7 @@ export function QualityContent() {
                 >
                   <Space wrap>
                     <Typography.Text type="secondary">
-                      {t("quality.classification.window.label", {
-                        defaultValue: "Time window",
-                      })}
+                      {t("quality.classification.window.label")}
                     </Typography.Text>
                     <Select
                       value={classificationWindow}
@@ -2543,21 +2352,15 @@ export function QualityContent() {
                       options={[
                         {
                           value: "1h",
-                          label: t("quality.classification.window.1h", {
-                            defaultValue: "Last 1h",
-                          }),
+                          label: t("quality.classification.window.1h"),
                         },
                         {
                           value: "24h",
-                          label: t("quality.classification.window.24h", {
-                            defaultValue: "Last 24h",
-                          }),
+                          label: t("quality.classification.window.24h"),
                         },
                         {
                           value: "7d",
-                          label: t("quality.classification.window.7d", {
-                            defaultValue: "Last 7d",
-                          }),
+                          label: t("quality.classification.window.7d"),
                         },
                       ]}
                       style={{ width: 160 }}
@@ -2566,7 +2369,7 @@ export function QualityContent() {
                       onClick={() => void load({ tab: "classification" })}
                       loading={loading}
                     >
-                      {t("common.refresh", { defaultValue: "Refresh" })}
+                      {t("common.refresh")}
                     </Button>
                   </Space>
 
@@ -2574,9 +2377,7 @@ export function QualityContent() {
                   classificationFilterCategoryPrefix ? (
                     <Space wrap>
                       <Typography.Text type="secondary">
-                        {t("quality.classification.filters.active", {
-                          defaultValue: "Active filters",
-                        })}
+                        {t("quality.classification.filters.active")}
                         :
                       </Typography.Text>
                       {classificationFilterSourceId ? (
@@ -2584,9 +2385,7 @@ export function QualityContent() {
                           closable
                           onClose={() => setClassificationFilterSourceId(null)}
                         >
-                          {t("quality.classification.filters.source", {
-                            defaultValue: "Source",
-                          })}
+                          {t("quality.classification.filters.source")}
                           : {classificationFilterSourceId}
                         </Tag>
                       ) : null}
@@ -2597,9 +2396,7 @@ export function QualityContent() {
                             setClassificationFilterCategoryPrefix(null)
                           }
                         >
-                          {t("quality.classification.filters.category", {
-                            defaultValue: "Category",
-                          })}
+                          {t("quality.classification.filters.category")}
                           : {classificationFilterCategoryPrefix}
                         </Tag>
                       ) : null}
@@ -2610,9 +2407,7 @@ export function QualityContent() {
                           setClassificationFilterCategoryPrefix(null);
                         }}
                       >
-                        {t("quality.classification.filters.clear", {
-                          defaultValue: "Clear filters",
-                        })}
+                        {t("quality.classification.filters.clear")}
                       </Button>
                     </Space>
                   ) : null}
@@ -2622,9 +2417,7 @@ export function QualityContent() {
                       <Row gutter={[16, 16]}>
                         <Col xs={12} md={6}>
                           <Statistic
-                            title={t("quality.classification.stats.total", {
-                              defaultValue: "Total classified",
-                            })}
+                            title={t("quality.classification.stats.total")}
                             value={classification.totalItems}
                           />
                         </Col>
@@ -2632,7 +2425,6 @@ export function QualityContent() {
                           <Statistic
                             title={t(
                               "quality.classification.stats.pendingReviews",
-                              { defaultValue: "Pending review" },
                             )}
                             value={classification.pendingReviewCount}
                           />
@@ -2641,7 +2433,6 @@ export function QualityContent() {
                           <Statistic
                             title={t(
                               "quality.classification.stats.gateRejectRate",
-                              { defaultValue: "Gate reject rate" },
                             )}
                             value={toPercent(
                               classification.categoryGate.rejectRate,
@@ -2653,7 +2444,6 @@ export function QualityContent() {
                           <Statistic
                             title={t(
                               "quality.classification.stats.gatePenalizedRate",
-                              { defaultValue: "Gate penalized rate" },
                             )}
                             value={toPercent(
                               classification.categoryGate.penalizedRate,
@@ -2718,7 +2508,7 @@ export function QualityContent() {
                     </>
                   ) : (
                     <Typography.Text type="secondary">
-                      {t("common.empty", { defaultValue: "Empty" })}
+                      {t("common.empty")}
                     </Typography.Text>
                   )}
                 </Space>
@@ -2728,9 +2518,7 @@ export function QualityContent() {
                 <Col xs={24} xl={12}>
                   <Card
                     className="content-card"
-                    title={t("quality.classification.histogram.title", {
-                      defaultValue: "Confidence Histogram",
-                    })}
+                    title={t("quality.classification.histogram.title")}
                     loading={loading}
                   >
                     <Table
@@ -2745,9 +2533,7 @@ export function QualityContent() {
                 <Col xs={24} xl={12}>
                   <Card
                     className="content-card"
-                    title={t("quality.classification.trend.title", {
-                      defaultValue: "Confidence Trend",
-                    })}
+                    title={t("quality.classification.trend.title")}
                     loading={loading}
                   >
                     <Table
@@ -2763,9 +2549,7 @@ export function QualityContent() {
 
               <Card
                 className="content-card"
-                title={t("quality.classification.latency.title", {
-                  defaultValue: "Classification Latency & Gate",
-                })}
+                title={t("quality.classification.latency.title")}
                 loading={loading}
               >
                 {classification ? (
@@ -2914,24 +2698,20 @@ export function QualityContent() {
                       pagination={{ pageSize: 10, showSizeChanger: false }}
                       size={screens.md ? "middle" : "small"}
                       title={() =>
-                        t("quality.classification.sourceCategory.title", {
-                          defaultValue: "Source × Category Breakdown",
-                        })
+                        t("quality.classification.sourceCategory.title")
                       }
                     />
                   </Space>
                 ) : (
                   <Typography.Text type="secondary">
-                    {t("common.empty", { defaultValue: "Empty" })}
+                    {t("common.empty")}
                   </Typography.Text>
                 )}
               </Card>
 
               <Card
                 className="content-card"
-                title={t("quality.classification.review.title", {
-                  defaultValue: "Review Queue",
-                })}
+                title={t("quality.classification.review.title")}
                 loading={loading}
               >
                 <Space
@@ -2941,9 +2721,7 @@ export function QualityContent() {
                 >
                   <Space wrap>
                     <Typography.Text type="secondary">
-                      {t("quality.classification.review.onlyPending", {
-                        defaultValue: "Only pending",
-                      })}
+                      {t("quality.classification.review.onlyPending")}
                     </Typography.Text>
                     <Switch
                       checked={classificationReviewOnlyPending}
@@ -2955,7 +2733,7 @@ export function QualityContent() {
                       onClick={() => void load({ tab: "classification" })}
                       loading={loading}
                     >
-                      {t("common.refresh", { defaultValue: "Refresh" })}
+                      {t("common.refresh")}
                     </Button>
                   </Space>
                   <Space wrap>
@@ -2966,9 +2744,7 @@ export function QualityContent() {
                         void submitClassificationBatchDecision("approved")
                       }
                     >
-                      {t("quality.classification.review.batch.approve", {
-                        defaultValue: "Batch approve",
-                      })}
+                      {t("quality.classification.review.batch.approve")}
                     </Button>
                     <Button
                       danger
@@ -2978,9 +2754,7 @@ export function QualityContent() {
                         void submitClassificationBatchDecision("rejected")
                       }
                     >
-                      {t("quality.classification.review.batch.reject", {
-                        defaultValue: "Batch reject",
-                      })}
+                      {t("quality.classification.review.batch.reject")}
                     </Button>
                     <Button
                       type="dashed"
@@ -2990,10 +2764,6 @@ export function QualityContent() {
                         const correctedPath = window.prompt(
                           t(
                             "quality.classification.review.correct.batchPrompt",
-                            {
-                              defaultValue:
-                                "Input corrected category path for selected items",
-                            },
                           ),
                           "",
                         );
@@ -3006,9 +2776,7 @@ export function QualityContent() {
                         );
                       }}
                     >
-                      {t("quality.classification.review.batch.correct", {
-                        defaultValue: "Batch correct",
-                      })}
+                      {t("quality.classification.review.batch.correct")}
                     </Button>
                   </Space>
                   <Table
@@ -3032,9 +2800,7 @@ export function QualityContent() {
 
               <Card
                 className="content-card"
-                title={t("quality.classification.sources.title", {
-                  defaultValue: "Low Confidence Sources TOP10",
-                })}
+                title={t("quality.classification.sources.title")}
                 loading={loading}
               >
                 <Table
@@ -3049,9 +2815,7 @@ export function QualityContent() {
               {classificationDrilldownSourceId ? (
                 <Card
                   className="content-card"
-                  title={t("quality.classification.drilldown.title", {
-                    defaultValue: "Source Drilldown",
-                  })}
+                  title={t("quality.classification.drilldown.title")}
                   extra={
                     <Typography.Text type="secondary">
                       {classificationDrilldownSourceName ||
@@ -3086,9 +2850,7 @@ export function QualityContent() {
                         disabled={!classificationSourceItemsCursor}
                         loading={classificationSourceItemsLoading}
                       >
-                        {t("quality.classification.drilldown.loadMore", {
-                          defaultValue: "Load more",
-                        })}
+                        {t("quality.classification.drilldown.loadMore")}
                       </Button>
                       <Button
                         onClick={() => {
@@ -3098,9 +2860,7 @@ export function QualityContent() {
                           setClassificationSourceItemsCursor(null);
                         }}
                       >
-                        {t("quality.classification.drilldown.close", {
-                          defaultValue: "Close",
-                        })}
+                        {t("quality.classification.drilldown.close")}
                       </Button>
                     </Space>
                   </Space>

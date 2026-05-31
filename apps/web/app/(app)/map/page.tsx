@@ -20,21 +20,16 @@ export default function MapPage() {
       <div className="flex flex-col gap-4 pb-6 sm:gap-6">
         <div className="flex flex-col gap-3">
           <Typography.Title level={4} style={{ margin: 0 }}>
-            {t("pages.map.title", { defaultValue: "Regional Signals Map" })}
+            {t("pages.map.title")}
           </Typography.Title>
           <Typography.Text type="secondary">
-            {t("pages.map.subtitle", {
-              defaultValue:
-                "Alerts, geo-tagged news, and OpenSky flight activity by region.",
-            })}
+            {t("pages.map.subtitle")}
           </Typography.Text>
         </div>
         <GeocodeLookupCard />
         <div className="glass-panel border border-[var(--border)] flex flex-col gap-4 overflow-hidden p-4 sm:p-5">
           <Typography.Text className="text-sm text-slate-600 sm:text-base">
-            {t("pages.map.overlay", {
-              defaultValue: "Signals, News & Flights",
-            })}
+            {t("pages.map.overlay")}
           </Typography.Text>
           <WarMap className="min-h-0 w-full" layoutVariant="standalone" />
         </div>

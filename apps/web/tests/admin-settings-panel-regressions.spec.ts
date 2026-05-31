@@ -66,7 +66,7 @@ describe('admin settings panel regressions', () => {
 
     expect(source).toContain('recoveryAutomation');
     expect(source).toContain('getAutoRetryFeedback');
-    expect(source).toContain('Auto retry on next scheduler tick');
-    expect(source).toContain('Scheduler: every {{interval}}, retry backoff {{backoff}}, up to {{batchSize}} groups per tick.');
+    expect(source).toContain('settings.newsEvents.clusteringQueue.automation.nextTick');
+    expect(source).toContain('settings.newsEvents.clusteringQueue.notice.automation');
   });
 });

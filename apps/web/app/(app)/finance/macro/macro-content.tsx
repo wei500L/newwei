@@ -20,12 +20,12 @@ export function MacroContent() {
     () => [
       {
         key: "overview",
-        label: t("finance.macro.overview", { defaultValue: "Macro Overview" }),
+        label: t("finance.macro.overview"),
         content: <EconomicMediumPage />
       },
       {
         key: "long",
-        label: t("finance.macro.longTerm", { defaultValue: "Long-term Trends" }),
+        label: t("finance.macro.longTerm"),
         content: <EconomicLongPage />
       }
     ],

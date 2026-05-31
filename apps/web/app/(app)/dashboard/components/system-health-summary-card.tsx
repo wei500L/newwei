@@ -92,9 +92,7 @@ export function SystemHealthSummaryCard({
   const secondaryAction = canManageSettings
     ? {
         icon: <SettingOutlined />,
-        label: t("dashboard.systemStatus.actions.openSystemSettings", {
-          defaultValue: "Open system settings",
-        }),
+        label: t("dashboard.systemStatus.actions.openSystemSettings"),
         onClick: () =>
           router.push(
             buildAdminSettingsHref({
@@ -106,38 +104,25 @@ export function SystemHealthSummaryCard({
     : canViewCrawlTasks
       ? {
           icon: <RadarChartOutlined />,
-          label: t("dashboard.systemStatus.actions.openCrawlTasks", {
-            defaultValue: "Open crawl tasks",
-          }),
+          label: t("dashboard.systemStatus.actions.openCrawlTasks"),
           onClick: () => router.push("/admin/ops/crawl-tasks"),
         }
       : null;
 
   const description = (() => {
     if (!canManageQueue) {
-      return t("dashboard.systemStatus.restrictedDescription", {
-        defaultValue: "Queue metrics require the queue.manage permission.",
-      });
+      return t("dashboard.systemStatus.restrictedDescription");
     }
 
     switch (assessment.state) {
       case "loading":
-        return t("dashboard.systemStatus.loadingDescription", {
-          defaultValue: "Fetching the latest queue snapshot.",
-        });
+        return t("dashboard.systemStatus.loadingDescription");
       case "unavailable":
-        return t("dashboard.systemStatus.unavailableDescription", {
-          defaultValue: "Queue metrics are currently unavailable.",
-        });
+        return t("dashboard.systemStatus.unavailableDescription");
       case "unknown":
-        return t("dashboard.systemStatus.unknownDescription", {
-          defaultValue: "No queue snapshot has been reported yet.",
-        });
+        return t("dashboard.systemStatus.unknownDescription");
       default:
-        return t("dashboard.systemStatus.summaryDescription", {
-          defaultValue:
-            "Weighted health based on failed, active, delayed, and waiting load.",
-        });
+        return t("dashboard.systemStatus.summaryDescription");
     }
   })();
 
@@ -152,17 +137,12 @@ export function SystemHealthSummaryCard({
     primaryPressure &&
     primaryPressure.contributionPercent > 0
       ? t("dashboard.systemStatus.primaryPressure", {
-          defaultValue:
-            "Primary pressure is {{metric}} at {{pressure}}% intensity, driving {{contribution}}% of the current risk.",
           metric: primaryPressureLabel,
           pressure: primaryPressure.pressurePercent,
           contribution: primaryPressure.contributionPercent,
         })
       : assessment.score !== null
-        ? t("dashboard.systemStatus.lowPressure", {
-            defaultValue:
-              "Pressure remains broadly contained across all tracked queues.",
-          })
+        ? t("dashboard.systemStatus.lowPressure")
         : description;
 
   const headerContent = (
@@ -170,9 +150,7 @@ export function SystemHealthSummaryCard({
       <div className="flex min-w-0 flex-1 flex-col gap-2 text-left">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-            {t("dashboard.systemStatus.title", {
-              defaultValue: "System status",
-            })}
+            {t("dashboard.systemStatus.title")}
           </span>
           <Tag color={levelTagColor}>
             {t(`dashboard.systemStatus.states.${assessment.state}`, {
@@ -182,15 +160,13 @@ export function SystemHealthSummaryCard({
           {canManageQueue ? (
             <Tag color={queueLive ? "success" : "default"}>
               {queueLive
-                ? t("dashboard.queue.live", { defaultValue: "Live" })
-                : t("dashboard.queue.offline", { defaultValue: "Offline" })}
+                ? t("dashboard.queue.live")
+                : t("dashboard.queue.offline")}
             </Tag>
           ) : null}
           {hasCachedError && assessment.counts ? (
             <Tag color="warning">
-              {t("dashboard.systemStatus.cachedData", {
-                defaultValue: "Cached snapshot",
-              })}
+              {t("dashboard.systemStatus.cachedData")}
             </Tag>
           ) : null}
         </div>
@@ -215,9 +191,7 @@ export function SystemHealthSummaryCard({
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
           aria-controls={detailsId}
-          aria-label={t("dashboard.systemStatus.aria.toggleDetails", {
-            defaultValue: "Toggle system status details",
-          })}
+          aria-label={t("dashboard.systemStatus.aria.toggleDetails")}
         >
           {headerContent}
         </button>
@@ -232,8 +206,6 @@ export function SystemHealthSummaryCard({
           assessment={assessment}
           className="max-w-full"
           ariaLabel={t("dashboard.systemStatus.aria.summary", {
-            defaultValue:
-              "Dashboard system health {{state}} {{score}} out of 100",
             state: t(`dashboard.systemStatus.states.${assessment.state}`, {
               defaultValue: assessment.state,
             }),
@@ -262,10 +234,7 @@ export function SystemHealthSummaryCard({
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white/35 px-4 py-3 text-sm text-slate-600">
-            {t("dashboard.systemStatus.restrictedBody", {
-              defaultValue:
-                "Queue-level counters stay hidden until the account has queue.manage access.",
-            })}
+            {t("dashboard.systemStatus.restrictedBody")}
           </div>
         )}
 
@@ -275,10 +244,7 @@ export function SystemHealthSummaryCard({
             className="grid gap-3 border-t border-[var(--border)] pt-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
           >
             <div className="text-sm text-slate-600">
-              {t("dashboard.systemStatus.expandedHint", {
-                defaultValue:
-                  "Use the quick actions below to expose the full queue panel or jump into deeper system controls.",
-              })}
+              {t("dashboard.systemStatus.expandedHint")}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button
@@ -287,12 +253,8 @@ export function SystemHealthSummaryCard({
                 onClick={() => setShowSystemStats(!showSystemStats)}
               >
                 {showSystemStats
-                  ? t("dashboard.systemStatus.actions.hideFullPanel", {
-                      defaultValue: "Hide full queue panel",
-                    })
-                  : t("dashboard.systemStatus.actions.showFullPanel", {
-                      defaultValue: "Show full queue panel",
-                    })}
+                  ? t("dashboard.systemStatus.actions.hideFullPanel")
+                  : t("dashboard.systemStatus.actions.showFullPanel")}
               </Button>
               {secondaryAction ? (
                 <Button

@@ -77,12 +77,8 @@ export function WarMapOverlayRail({
   const usesLegendDock = layoutVariant === "standalone";
   const streamStatus = summaryStatusCards.find((card) => card.key === "stream");
   const dataStatus = summaryStatusCards.find((card) => card.key === "data");
-  const controlsLabel = t("dashboard.charts.warMap.overlay.controls", {
-    defaultValue: "Controls",
-  });
-  const legendLabel = t("dashboard.charts.warMap.legend.title", {
-    defaultValue: "Legend",
-  });
+  const controlsLabel = t("dashboard.charts.warMap.overlay.controls");
+  const legendLabel = t("dashboard.charts.warMap.legend.title");
   const controlsActive = openOverlayPanel === "controls";
   const legendActive = !usesLegendDock && openOverlayPanel === "legend";
   const showQuickLegend =
@@ -203,15 +199,11 @@ export function WarMapOverlayRail({
                   {legendLabel}
                 </Typography.Text>
                 <Typography.Text className="mt-0.5 block text-[11px] leading-4 text-slate-600 dark:text-slate-300">
-                  {t("dashboard.charts.warMap.legend.quickLegendCompactHint", {
-                    defaultValue: "Active symbol cues",
-                  })}
+                  {t("dashboard.charts.warMap.legend.quickLegendCompactHint")}
                 </Typography.Text>
               </div>
               <Tooltip
-                title={t("dashboard.charts.warMap.overlay.openFullLegend", {
-                  defaultValue: "Open full legend",
-                })}
+                title={t("dashboard.charts.warMap.overlay.openFullLegend")}
               >
                 <Button
                   size="small"
@@ -259,7 +251,6 @@ export function WarMapOverlayRail({
                   onClick={onToggleLegend}
                 >
                   {t("dashboard.charts.warMap.legend.moreItems", {
-                    defaultValue: "+{{count}} more",
                     count: hiddenQuickLegendCount,
                   })}
                 </Button>
@@ -271,9 +262,7 @@ export function WarMapOverlayRail({
           className={`${OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME} pointer-events-auto flex w-full items-center justify-end gap-2 px-2 py-2`}
         >
           <Tooltip
-            title={t("dashboard.actions.fetchLatest", {
-              defaultValue: "Refresh",
-            })}
+            title={t("dashboard.actions.fetchLatest")}
           >
             <Button
               size="small"
@@ -289,9 +278,7 @@ export function WarMapOverlayRail({
               onClick={onRefresh}
             >
               {showActionLabels
-                ? t("dashboard.actions.fetchLatest", {
-                    defaultValue: "Refresh",
-                  })
+                ? t("dashboard.actions.fetchLatest")
                 : null}
             </Button>
           </Tooltip>

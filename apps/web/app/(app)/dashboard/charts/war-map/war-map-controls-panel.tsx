@@ -272,9 +272,7 @@ function getSummaryMetricLabel(
   t: WarMapTranslateFn,
 ): string {
   if (card.key === "layers") {
-    return t("dashboard.charts.warMap.layers", {
-      defaultValue: "Layers",
-    });
+    return t("dashboard.charts.warMap.layers");
   }
 
   return card.label;
@@ -286,22 +284,14 @@ function getSummaryMetricDetail(
 ): string {
   switch (card.key) {
     case "signals":
-      return t("dashboard.charts.warMap.overlay.signalDensityShort", {
-        defaultValue: "active",
-      });
+      return t("dashboard.charts.warMap.overlay.signalDensityShort");
     case "news":
-      return t("dashboard.charts.warMap.overlay.newsCoverageShort", {
-        defaultValue: "mapped",
-      });
+      return t("dashboard.charts.warMap.overlay.newsCoverageShort");
     case "monitors":
-      return t("dashboard.charts.warMap.overlay.monitorCoverageShort", {
-        defaultValue: "tracked",
-      });
+      return t("dashboard.charts.warMap.overlay.monitorCoverageShort");
     case "layers":
     default:
-      return t("dashboard.charts.warMap.overlay.layerCoverageShort", {
-        defaultValue: "visible",
-      });
+      return t("dashboard.charts.warMap.overlay.layerCoverageShort");
   }
 }
 
@@ -461,17 +451,13 @@ function LegendInteractionStrip({
     <div className="rounded-[16px] border border-slate-200/70 bg-white/[0.68] px-3 py-2.5 shadow-[0_8px_16px_-20px_rgba(15,23,42,0.08)] dark:border-slate-700/75 dark:bg-slate-950/[0.48] dark:shadow-[0_8px_16px_-20px_rgba(2,6,23,0.46)]">
       <div className="min-w-0">
         <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
-          {t("dashboard.charts.warMap.legend.interactionTitle", {
-            defaultValue: "Interaction",
-          })}
+          {t("dashboard.charts.warMap.legend.interactionTitle")}
         </Typography.Text>
         <Typography.Text
           type="secondary"
           className="mt-0.5 block text-[10px] leading-[1rem]"
         >
-          {t("dashboard.charts.warMap.legend.quickLegendHint", {
-            defaultValue: "Hover to preview. Click to pin.",
-          })}
+          {t("dashboard.charts.warMap.legend.quickLegendHint")}
         </Typography.Text>
       </div>
       <div className="mt-2.5 grid gap-1.5 sm:grid-cols-3">
@@ -599,17 +585,13 @@ function ControlsHeaderSummary({
     <div className={containerClassName}>
       <div className="flex flex-wrap items-center gap-2">
         <Tooltip
-          title={`${t("dashboard.charts.warMap.stats.window", {
-            defaultValue: "Window",
-          })}: ${windowLabel}`}
+          title={`${t("dashboard.charts.warMap.stats.window")}: ${windowLabel}`}
         >
           <span
             className={`${OVERLAY_PANEL_CHIP_CLASS_NAME} whitespace-nowrap px-2.5`}
           >
             <span className="font-medium text-slate-500 dark:text-slate-400">
-              {t("dashboard.charts.warMap.stats.window", {
-                defaultValue: "Window",
-              })}
+              {t("dashboard.charts.warMap.stats.window")}
             </span>
             <span className="font-semibold text-slate-900 dark:text-slate-50">
               {windowLabel}
@@ -707,9 +689,7 @@ function ViewSection({
       >
         <div className={OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME}>
           <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
-            {t("dashboard.charts.warMap.presets.title", {
-              defaultValue: "Regions",
-            })}
+            {t("dashboard.charts.warMap.presets.title")}
           </Typography.Text>
           <div className={OVERLAY_PANEL_OPTION_GRID_CLASS_NAME}>
             {view.presets.map((preset) => (
@@ -725,9 +705,7 @@ function ViewSection({
         </div>
         <div className={OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME}>
           <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
-            {t("dashboard.charts.warMap.stats.window", {
-              defaultValue: "Window",
-            })}
+            {t("dashboard.charts.warMap.stats.window")}
           </Typography.Text>
           <div className={OVERLAY_PANEL_OPTION_GRID_CLASS_NAME}>
             {view.timeRanges.map((preset) => (
@@ -744,9 +722,7 @@ function ViewSection({
       </div>
       <div className={OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME}>
         <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
-          {t("dashboard.charts.warMap.layers", {
-            defaultValue: "Layers",
-          })}
+          {t("dashboard.charts.warMap.layers")}
         </Typography.Text>
         <div className="mt-3">{view.layerVisibilityControls}</div>
       </div>
@@ -757,7 +733,7 @@ function ViewSection({
         style={{ padding: 0, height: "auto" }}
         onClick={view.onResetLayers}
       >
-        {t("common.reset", { defaultValue: "Reset" })}
+        {t("common.reset")}
       </Button>
     </div>
   );
@@ -780,52 +756,23 @@ function TransportSection({
     .slice(0, 4);
   const aisHighlightCandidatesHint = t(
     "dashboard.charts.warMap.overlay.aisHighlightCandidatesHint",
-    {
-      defaultValue:
-        "Highlight rule-based government and military AIS candidates on top of the full vessel layer.",
-    },
   );
   const aisCandidatesOnlyHint = t(
     "dashboard.charts.warMap.overlay.aisCandidatesOnlyHint",
-    {
-      defaultValue:
-        "Candidate vessels shows a filtered subset based on AIS name and ship-type rules, not a complete vessel inventory.",
-    },
   );
   const aisAllVesselsHint = t(
     "dashboard.charts.warMap.overlay.aisAllVesselsHint",
-    {
-      defaultValue:
-        "All vessels shows the full AIS vessel snapshot for the current viewport.",
-    },
   );
   const aisSectionDescription = t(
     transport.aisAllModeDegraded
       ? "dashboard.charts.warMap.overlay.aisSectionDescriptionUnavailable"
       : "dashboard.charts.warMap.overlay.aisSectionDescription",
-    transport.aisAllModeDegraded
-      ? {
-          defaultValue:
-            "All vessels stays selected, but live vessel snapshots are temporarily unavailable. Aggregated maritime signals remain visible until the relay recovers.",
-        }
-      : {
-          defaultValue:
-            "Start with the full vessel layer, then switch to filtered candidate or density views when you need narrower maritime signals.",
-        },
   );
   const aisAllUnavailableInlineHint = t(
     "dashboard.charts.warMap.overlay.aisAllUnavailableInlineHint",
-    {
-      defaultValue:
-        "All vessels is active, but relay vessel snapshots are missing so only aggregated maritime signals are available.",
-    },
   );
   const flightsSectionDescription = t(
     "dashboard.charts.warMap.overlay.flightsSectionDescription",
-    {
-      defaultValue:
-        "Review OpenSky air traffic scope and switch between military-focused and broader flight coverage.",
-    },
   );
 
   return (
@@ -845,12 +792,8 @@ function TransportSection({
       >
         <div className={AIS_SECTION_CARD_CLASS_NAME}>
           <TransportSectionHeader
-            eyebrow={t("dashboard.charts.warMap.overlay.maritimeEyebrow", {
-              defaultValue: "Maritime",
-            })}
-            title={t("dashboard.charts.warMap.layerNames.ais", {
-              defaultValue: "AIS traffic",
-            })}
+            eyebrow={t("dashboard.charts.warMap.overlay.maritimeEyebrow")}
+            title={t("dashboard.charts.warMap.layerNames.ais")}
             description={aisSectionDescription}
           />
           {transport.aisLayerVisible ? (
@@ -865,26 +808,20 @@ function TransportSection({
                   }
                   onClick={() => transport.onAisModeChange("all")}
                 >
-                  {t("dashboard.charts.warMap.stats.aisModeAll", {
-                    defaultValue: "All vessels",
-                  })}
+                  {t("dashboard.charts.warMap.stats.aisModeAll")}
                 </ControlsChoiceButton>
                 <ControlsChoiceButton
                   active={transport.aisMode === "military"}
                   tooltip={aisCandidatesOnlyHint}
                   onClick={() => transport.onAisModeChange("military")}
                 >
-                  {t("dashboard.charts.warMap.stats.aisModeMilitary", {
-                    defaultValue: "Candidate vessels",
-                  })}
+                  {t("dashboard.charts.warMap.stats.aisModeMilitary")}
                 </ControlsChoiceButton>
                 <ControlsChoiceButton
                   active={transport.aisMode === "density"}
                   onClick={() => transport.onAisModeChange("density")}
                 >
-                  {t("dashboard.charts.warMap.stats.aisModeDensity", {
-                    defaultValue: "Density only",
-                  })}
+                  {t("dashboard.charts.warMap.stats.aisModeDensity")}
                 </ControlsChoiceButton>
               </div>
               {transport.aisAllModeDegraded ? (
@@ -900,10 +837,6 @@ function TransportSection({
                   <Typography.Text className="block text-inherit">
                     {t(
                       "dashboard.charts.warMap.overlay.aisCandidatesOnlyActiveHint",
-                      {
-                        defaultValue:
-                          "Candidate vessels is a filtered subset. Some ships are intentionally hidden in this mode.",
-                      },
                     )}
                   </Typography.Text>
                   <Button
@@ -915,9 +848,7 @@ function TransportSection({
                     style={{ padding: 0, height: "auto", marginTop: 8 }}
                     onClick={() => transport.onAisModeChange("all")}
                   >
-                    {t("dashboard.charts.warMap.overlay.aisShowAllAction", {
-                      defaultValue: "Switch to All vessels",
-                    })}
+                    {t("dashboard.charts.warMap.overlay.aisShowAllAction")}
                   </Button>
                 </div>
               ) : null}
@@ -926,10 +857,6 @@ function TransportSection({
                   <Typography.Text className="block text-inherit">
                     {t(
                       "dashboard.charts.warMap.overlay.aisDensityOnlyActiveHint",
-                      {
-                        defaultValue:
-                          "Density only summarizes chokepoints and hotspots instead of showing individual ships.",
-                      },
                     )}
                   </Typography.Text>
                   <Button
@@ -941,9 +868,7 @@ function TransportSection({
                     style={{ padding: 0, height: "auto", marginTop: 8 }}
                     onClick={() => transport.onAisModeChange("all")}
                   >
-                    {t("dashboard.charts.warMap.overlay.aisShowAllAction", {
-                      defaultValue: "Switch to All vessels",
-                    })}
+                    {t("dashboard.charts.warMap.overlay.aisShowAllAction")}
                   </Button>
                 </div>
               ) : null}
@@ -958,9 +883,7 @@ function TransportSection({
                       )
                     }
                   >
-                    {t("dashboard.charts.warMap.stats.aisHighlightCandidates", {
-                      defaultValue: "Highlight candidates",
-                    })}
+                    {t("dashboard.charts.warMap.stats.aisHighlightCandidates")}
                   </ControlsChoiceButton>
                 </div>
               ) : null}
@@ -978,9 +901,7 @@ function TransportSection({
                     color={transport.aisSourceStatusColor}
                     className={OVERLAY_STATUS_TAG_CLASS_NAME}
                   >
-                    {t("dashboard.charts.warMap.layerNames.ais", {
-                      defaultValue: "AIS traffic",
-                    })}
+                    {t("dashboard.charts.warMap.layerNames.ais")}
                     : {transport.aisSourceStatusLabel}
                   </Tag>
                 </Tooltip>
@@ -990,9 +911,7 @@ function TransportSection({
                       color="volcano"
                       className={OVERLAY_STATUS_TAG_CLASS_NAME}
                     >
-                      {t("dashboard.charts.warMap.stats.aisIssue", {
-                        defaultValue: "Relay issue",
-                      })}
+                      {t("dashboard.charts.warMap.stats.aisIssue")}
                     </Tag>
                   </Tooltip>
                 ) : null}
@@ -1022,12 +941,8 @@ function TransportSection({
                       }
                     >
                       {transport.aisHighlightCandidates
-                        ? t("dashboard.charts.warMap.stats.aisHighlightOn", {
-                            defaultValue: "Candidates highlighted",
-                          })
-                        : t("dashboard.charts.warMap.stats.aisHighlightOff", {
-                            defaultValue: "Candidates not highlighted",
-                          })}
+                        ? t("dashboard.charts.warMap.stats.aisHighlightOn")
+                        : t("dashboard.charts.warMap.stats.aisHighlightOff")}
                     </Tag>
                   </Tooltip>
                 ) : null}
@@ -1042,9 +957,7 @@ function TransportSection({
                     }
                   >
                     <Tag color="blue" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
-                      {t("dashboard.charts.warMap.stats.aisTrackedVessels", {
-                        defaultValue: "Tracked vessels",
-                      })}
+                      {t("dashboard.charts.warMap.stats.aisTrackedVessels")}
                       : {transport.aisRelayVesselCount}
                     </Tag>
                   </Tooltip>
@@ -1055,9 +968,6 @@ function TransportSection({
                       transport.aisSnapshotExact
                         ? `${t(
                             "dashboard.charts.warMap.stats.aisSnapshotUpdated",
-                            {
-                              defaultValue: "AIS updated",
-                            },
                           )}: ${transport.aisSnapshotExact}`
                         : undefined
                     }
@@ -1072,9 +982,7 @@ function TransportSection({
                           : OVERLAY_NEUTRAL_TAG_CLASS_NAME
                       }
                     >
-                      {t("dashboard.charts.warMap.stats.aisSnapshotUpdated", {
-                        defaultValue: "AIS updated",
-                      })}
+                      {t("dashboard.charts.warMap.stats.aisSnapshotUpdated")}
                       : {transport.aisSnapshotRelative}
                     </Tag>
                   </Tooltip>
@@ -1132,9 +1040,7 @@ function TransportSection({
                       color="orange"
                       className={OVERLAY_STATUS_TAG_CLASS_NAME}
                     >
-                      {t("dashboard.charts.warMap.stats.aisDisruptions", {
-                        defaultValue: "Disruptions",
-                      })}
+                      {t("dashboard.charts.warMap.stats.aisDisruptions")}
                       : {transport.aisDisruptionsCount}
                     </Tag>
                   </Tooltip>
@@ -1146,9 +1052,7 @@ function TransportSection({
                       color="magenta"
                       className={OVERLAY_STATUS_TAG_CLASS_NAME}
                     >
-                      {t("dashboard.charts.warMap.stats.aisAllUnavailable", {
-                        defaultValue: "All vessels unavailable",
-                      })}
+                      {t("dashboard.charts.warMap.stats.aisAllUnavailable")}
                     </Tag>
                   </Tooltip>
                 ) : null}
@@ -1168,10 +1072,7 @@ function TransportSection({
             </>
           ) : (
             <Typography.Text type="secondary" className="text-xs">
-              {t("dashboard.charts.warMap.overlay.aisStatusHint", {
-                defaultValue:
-                  "Enable the AIS layer to inspect vessel source, freshness, and disruption signals.",
-              })}
+              {t("dashboard.charts.warMap.overlay.aisStatusHint")}
             </Typography.Text>
           )}
           <AisReferenceSection
@@ -1182,12 +1083,8 @@ function TransportSection({
         </div>
         <div className={FLIGHTS_SECTION_CARD_CLASS_NAME}>
           <TransportSectionHeader
-            eyebrow={t("dashboard.charts.warMap.overlay.airEyebrow", {
-              defaultValue: "Air",
-            })}
-            title={t("dashboard.charts.warMap.overlay.flights", {
-              defaultValue: "Flights",
-            })}
+            eyebrow={t("dashboard.charts.warMap.overlay.airEyebrow")}
+            title={t("dashboard.charts.warMap.overlay.flights")}
             description={flightsSectionDescription}
           />
           <div className={OVERLAY_PANEL_OPTION_GRID_CLASS_NAME}>
@@ -1195,17 +1092,13 @@ function TransportSection({
               active={transport.flightMode === "military"}
               onClick={() => transport.onFlightModeChange("military")}
             >
-              {t("dashboard.charts.warMap.stats.flightModeMilitary", {
-                defaultValue: "Military focus",
-              })}
+              {t("dashboard.charts.warMap.stats.flightModeMilitary")}
             </ControlsChoiceButton>
             <ControlsChoiceButton
               active={transport.flightMode === "all"}
               onClick={() => transport.onFlightModeChange("all")}
             >
-              {t("dashboard.charts.warMap.stats.flightModeAll", {
-                defaultValue: "All flights",
-              })}
+              {t("dashboard.charts.warMap.stats.flightModeAll")}
             </ControlsChoiceButton>
           </div>
           <Space size={[8, 8]} wrap className="mt-3">
@@ -1254,9 +1147,7 @@ function TransportSection({
                   }
                   className={OVERLAY_STATUS_TAG_CLASS_NAME}
                 >
-                  {t("dashboard.charts.warMap.stats.flights", {
-                    defaultValue: "Flights",
-                  })}
+                  {t("dashboard.charts.warMap.stats.flights")}
                   : {transport.flightsReturnedCount}
                   {typeof transport.flightsSnapshotCount === "number"
                     ? `/${transport.flightsSnapshotCount}`
@@ -1268,10 +1159,7 @@ function TransportSection({
               </Tooltip>
             ) : (
               <Typography.Text type="secondary" className="text-xs">
-                {t("dashboard.charts.warMap.overlay.flightStatusHint", {
-                  defaultValue:
-                    "Flight source badges appear when the layer is visible.",
-                })}
+                {t("dashboard.charts.warMap.overlay.flightStatusHint")}
               </Typography.Text>
             )}
           </Space>
@@ -1284,9 +1172,7 @@ function TransportSection({
         disabled={!transport.canAnalyzeCurrentView}
         onClick={transport.onAnalyzeCurrentView}
       >
-        {t("dashboard.charts.warMap.actions.analyzeCurrentView", {
-          defaultValue: "Analyze current view",
-        })}
+        {t("dashboard.charts.warMap.actions.analyzeCurrentView")}
       </Button>
     </div>
   );
@@ -1304,15 +1190,10 @@ function AisReferenceSection({
   return (
     <div className="mt-4 rounded-2xl border border-[var(--border)] bg-white/70 px-4 py-4 dark:bg-slate-950/55">
       <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
-        {t("dashboard.charts.warMap.legend.aisTitle", {
-          defaultValue: "AIS",
-        })}
+        {t("dashboard.charts.warMap.legend.aisTitle")}
       </Typography.Text>
       <Typography.Text type="secondary" className="mt-2 block text-xs">
-        {t("dashboard.charts.warMap.overlay.transportLegendHint", {
-          defaultValue:
-            "Need symbol meanings? Use the AIS reference before changing modes.",
-        })}
+        {t("dashboard.charts.warMap.overlay.transportLegendHint")}
       </Typography.Text>
       <LegendItemsGrid items={items} compact />
       <Button
@@ -1322,9 +1203,7 @@ function AisReferenceSection({
         style={{ padding: 0, height: "auto" }}
         onClick={onOpenLegend}
       >
-        {t("dashboard.charts.warMap.overlay.openFullLegend", {
-          defaultValue: "Open full legend",
-        })}
+        {t("dashboard.charts.warMap.overlay.openFullLegend")}
       </Button>
     </div>
   );
@@ -1401,9 +1280,7 @@ function LegendSection({
   return (
     <div className="flex w-full flex-col gap-3">
       <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
-        {t("dashboard.charts.warMap.legend.title", {
-          defaultValue: "Legend",
-        })}
+        {t("dashboard.charts.warMap.legend.title")}
       </Typography.Text>
       <LegendInteractionStrip items={interactionLegendItems} t={t} />
       <LegendSectionsList
@@ -1415,9 +1292,7 @@ function LegendSection({
       />
       <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white/62 px-3 py-2.5 dark:bg-slate-950/48">
         <Typography.Text type="secondary" className="text-xs">
-          {t("dashboard.charts.warMap.legend.radius", {
-            defaultValue: "Larger marks indicate stronger local concentration.",
-          })}
+          {t("dashboard.charts.warMap.legend.radius")}
         </Typography.Text>
       </div>
     </div>
@@ -1444,23 +1319,19 @@ export function WarMapLegendPanel({
               strong
               className="block text-base text-slate-900 dark:text-slate-100"
             >
-              {t("dashboard.charts.warMap.legend.title", {
-                defaultValue: "Legend",
-              })}
+              {t("dashboard.charts.warMap.legend.title")}
             </Typography.Text>
             <Typography.Text
               type="secondary"
               className="mt-1 block text-[12px] leading-5"
             >
-              {t("dashboard.charts.warMap.legend.quickLegendHint", {
-                defaultValue: "Hover to preview. Click to pin.",
-              })}
+              {t("dashboard.charts.warMap.legend.quickLegendHint")}
             </Typography.Text>
           </div>
           {onClose ? (
             <Button
               type="default"
-              aria-label={t("common.close", { defaultValue: "Close" })}
+              aria-label={t("common.close")}
               className={resolveOverlayButtonClassName({
                 tone: "neutral",
                 iconOnly: true,
@@ -1483,9 +1354,7 @@ export function WarMapLegendPanel({
               style={{ padding: 0, height: "auto", fontSize: 11 }}
               onClick={() => onLegendItemFocus?.(null)}
             >
-              {t("dashboard.charts.warMap.legend.clearFocus", {
-                defaultValue: "Clear focus",
-              })}
+              {t("dashboard.charts.warMap.legend.clearFocus")}
             </Button>
           ) : null}
         </div>
@@ -1579,17 +1448,13 @@ export function WarMapLegendDock({
               strong
               className="block text-base text-slate-900 dark:text-slate-100"
             >
-              {t("dashboard.charts.warMap.legend.title", {
-                defaultValue: "Legend",
-              })}
+              {t("dashboard.charts.warMap.legend.title")}
             </Typography.Text>
             <Typography.Text
               type="secondary"
               className="mt-1 block text-[12px] leading-5"
             >
-              {t("dashboard.charts.warMap.legend.quickLegendHint", {
-                defaultValue: "Hover to preview. Click to pin.",
-              })}
+              {t("dashboard.charts.warMap.legend.quickLegendHint")}
             </Typography.Text>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
@@ -1604,9 +1469,7 @@ export function WarMapLegendDock({
                 style={{ padding: 0, height: "auto", fontSize: 11 }}
                 onClick={() => onLegendItemFocus?.(null)}
               >
-                {t("dashboard.charts.warMap.legend.clearFocus", {
-                  defaultValue: "Clear focus",
-                })}
+                {t("dashboard.charts.warMap.legend.clearFocus")}
               </Button>
             ) : null}
           </div>
@@ -1813,7 +1676,7 @@ export function WarMapControlsPanel({
           {showCloseButton ? (
             <Button
               type="default"
-              aria-label={t("common.close", { defaultValue: "Close" })}
+              aria-label={t("common.close")}
               className={resolveOverlayButtonClassName({
                 tone: "neutral",
                 iconOnly: true,

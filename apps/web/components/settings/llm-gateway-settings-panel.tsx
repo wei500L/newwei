@@ -1166,23 +1166,17 @@ export function LlmGatewaySettingsPanel() {
     const labels: string[] = [];
     if (governanceTrafficBindings.completion) {
       labels.push(
-        t("settings.llmGateway.proxyGovernance.bindings.completion", {
-          defaultValue: "Completion",
-        }),
+        t("settings.llmGateway.proxyGovernance.bindings.completion"),
       );
     }
     if (governanceTrafficBindings.embedding) {
       labels.push(
-        t("settings.llmGateway.proxyGovernance.bindings.embedding", {
-          defaultValue: "Embedding",
-        }),
+        t("settings.llmGateway.proxyGovernance.bindings.embedding"),
       );
     }
     if (governanceTrafficBindings.rerank) {
       labels.push(
-        t("settings.llmGateway.proxyGovernance.bindings.rerank", {
-          defaultValue: "Rerank",
-        }),
+        t("settings.llmGateway.proxyGovernance.bindings.rerank"),
       );
     }
     return labels;
@@ -1211,40 +1205,23 @@ export function LlmGatewaySettingsPanel() {
     if (proxyGovernanceSettings?.managedRuntimeKeyState === "available") {
       return t(
         "settings.llmGateway.proxyGovernance.status.keyStates.available",
-        {
-          defaultValue: "Readable",
-        },
       );
     }
     if (proxyGovernanceSettings?.managedRuntimeKeyState === "unreadable") {
       return t(
         "settings.llmGateway.proxyGovernance.status.keyStates.unreadable",
-        {
-          defaultValue: "Unreadable",
-        },
       );
     }
-    return t("settings.llmGateway.proxyGovernance.status.keyStates.missing", {
-      defaultValue: "Missing",
-    });
+    return t("settings.llmGateway.proxyGovernance.status.keyStates.missing");
   }, [proxyGovernanceSettings?.managedRuntimeKeyState, t]);
   const governanceNoneLabel = t(
     "settings.llmGateway.proxyGovernance.status.tags.noneLowercase",
-    {
-      defaultValue: "none",
-    },
   );
   const governanceReadyLabel = t(
     "settings.llmGateway.proxyGovernance.status.tags.readyLowercase",
-    {
-      defaultValue: "ready",
-    },
   );
   const governanceNotSelectedLabel = t(
     "settings.llmGateway.proxyGovernance.status.tags.notSelected",
-    {
-      defaultValue: "not selected",
-    },
   );
   const governancePreflightBlockingCount =
     proxyGovernancePreflight?.blockingIssues.length ?? 0;
@@ -1282,9 +1259,6 @@ export function LlmGatewaySettingsPanel() {
       actions.push(
         t(
           "settings.llmGateway.proxyGovernance.recommendedActions.enableAfterPreflight",
-          {
-            defaultValue: "Enable governance after preflight passes.",
-          },
         ),
       );
     }
@@ -1292,9 +1266,6 @@ export function LlmGatewaySettingsPanel() {
       actions.push(
         t(
           "settings.llmGateway.proxyGovernance.recommendedActions.resolveBlocking",
-          {
-            defaultValue: "Resolve blocking preflight issues before saving.",
-          },
         ),
       );
     }
@@ -1305,9 +1276,6 @@ export function LlmGatewaySettingsPanel() {
       actions.push(
         t(
           "settings.llmGateway.proxyGovernance.recommendedActions.bindCompletion",
-          {
-            defaultValue: "Bind completion traffic to the governed profile.",
-          },
         ),
       );
     }
@@ -1319,10 +1287,6 @@ export function LlmGatewaySettingsPanel() {
       actions.push(
         t(
           "settings.llmGateway.proxyGovernance.recommendedActions.bindEmbedding",
-          {
-            defaultValue:
-              "Bind embedding traffic if this profile should govern embeddings.",
-          },
         ),
       );
     }
@@ -1332,20 +1296,13 @@ export function LlmGatewaySettingsPanel() {
       !proxyGovernancePreflight.trafficBindings.rerank
     ) {
       actions.push(
-        t("settings.llmGateway.proxyGovernance.recommendedActions.bindRerank", {
-          defaultValue:
-            "Bind rerank traffic if this profile should govern rerank.",
-        }),
+        t("settings.llmGateway.proxyGovernance.recommendedActions.bindRerank"),
       );
     }
     if (proxyGovernanceSettings?.managedRuntimeKeyState === "unreadable") {
       actions.push(
         t(
           "settings.llmGateway.proxyGovernance.recommendedActions.restoreSecretDecryption",
-          {
-            defaultValue:
-              "Restore secret decryption so the managed runtime key can be read.",
-          },
         ),
       );
     }
@@ -1353,10 +1310,6 @@ export function LlmGatewaySettingsPanel() {
       actions.push(
         t(
           "settings.llmGateway.proxyGovernance.recommendedActions.verifyRuntimeTraffic",
-          {
-            defaultValue:
-              "Verify real runtime traffic is reaching the governed target profile.",
-          },
         ),
       );
     }
@@ -1364,10 +1317,6 @@ export function LlmGatewaySettingsPanel() {
       actions.push(
         t(
           "settings.llmGateway.proxyGovernance.recommendedActions.removeProfileKeyCallers",
-          {
-            defaultValue:
-              "Remove remaining profile-key callers hitting the governed target profile.",
-          },
         ),
       );
     }
@@ -1375,10 +1324,6 @@ export function LlmGatewaySettingsPanel() {
       actions.push(
         t(
           "settings.llmGateway.proxyGovernance.recommendedActions.reviewDailyBudget",
-          {
-            defaultValue:
-              "Review the 24h budget because observed governed spend is nearing the configured cap.",
-          },
         ),
       );
     }
@@ -1401,16 +1346,9 @@ export function LlmGatewaySettingsPanel() {
         color: "default",
         label: t(
           "settings.llmGateway.proxyGovernance.status.preflightStates.noTargetSelected.label",
-          {
-            defaultValue: "No target selected",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.status.preflightStates.noTargetSelected.description",
-          {
-            defaultValue:
-              "Select a LiteLLM profile before running governance preflight.",
-          },
         ),
       };
     }
@@ -1419,16 +1357,9 @@ export function LlmGatewaySettingsPanel() {
         color: "default",
         label: t(
           "settings.llmGateway.proxyGovernance.status.preflightStates.notChecked.label",
-          {
-            defaultValue: "Not checked",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.status.preflightStates.notChecked.description",
-          {
-            defaultValue:
-              "Run preflight to confirm this target can be governed.",
-          },
         ),
       };
     }
@@ -1437,15 +1368,10 @@ export function LlmGatewaySettingsPanel() {
         color: "red",
         label: t(
           "settings.llmGateway.proxyGovernance.status.preflightStates.blocked.label",
-          {
-            defaultValue: "Blocked",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.status.preflightStates.blocked.description",
           {
-            defaultValue:
-              "{{blocking}} blocking issue(s), {{warnings}} warning(s).",
             blocking: governancePreflightBlockingCount,
             warnings: governancePreflightWarningCount,
           },
@@ -1457,14 +1383,10 @@ export function LlmGatewaySettingsPanel() {
         color: "gold",
         label: t(
           "settings.llmGateway.proxyGovernance.status.preflightStates.readyWithWarnings.label",
-          {
-            defaultValue: "Ready with warnings",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.status.preflightStates.readyWithWarnings.description",
           {
-            defaultValue: "{{warnings}} warning(s) still worth resolving.",
             warnings: governancePreflightWarningCount,
           },
         ),
@@ -1474,16 +1396,9 @@ export function LlmGatewaySettingsPanel() {
       color: "green",
       label: t(
         "settings.llmGateway.proxyGovernance.status.preflightStates.ready.label",
-        {
-          defaultValue: "Ready",
-        },
       ),
       description: t(
         "settings.llmGateway.proxyGovernance.status.preflightStates.ready.description",
-        {
-          defaultValue:
-            "Selected target is healthy enough to enable managed governance.",
-        },
       ),
     };
   }, [
@@ -1499,16 +1414,9 @@ export function LlmGatewaySettingsPanel() {
         color: "default",
         label: t(
           "settings.llmGateway.proxyGovernance.status.runtimeStates.directMode.label",
-          {
-            defaultValue: "Direct mode",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.status.runtimeStates.directMode.description",
-          {
-            defaultValue:
-              "Runtime traffic is still expected to authenticate with profile credentials.",
-          },
         ),
       };
     }
@@ -1517,16 +1425,9 @@ export function LlmGatewaySettingsPanel() {
         color: "red",
         label: t(
           "settings.llmGateway.proxyGovernance.status.runtimeStates.failClosed.label",
-          {
-            defaultValue: "Fail closed",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.status.runtimeStates.failClosed.description",
-          {
-            defaultValue:
-              "Governed traffic will fail until the managed runtime key can be decrypted.",
-          },
         ),
       };
     }
@@ -1535,16 +1436,9 @@ export function LlmGatewaySettingsPanel() {
         color: "default",
         label: t(
           "settings.llmGateway.proxyGovernance.status.runtimeStates.noRecentTraffic.label",
-          {
-            defaultValue: "No recent traffic",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.status.runtimeStates.noRecentTraffic.description",
-          {
-            defaultValue:
-              "No requests were observed for the governed target in the last 24h.",
-          },
         ),
       };
     }
@@ -1553,16 +1447,9 @@ export function LlmGatewaySettingsPanel() {
         color: "gold",
         label: t(
           "settings.llmGateway.proxyGovernance.status.runtimeStates.noGovernedTraffic.label",
-          {
-            defaultValue: "No governed traffic",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.status.runtimeStates.noGovernedTraffic.description",
-          {
-            defaultValue:
-              "The target saw requests, but none used the managed LiteLLM runtime key.",
-          },
         ),
       };
     }
@@ -1571,16 +1458,9 @@ export function LlmGatewaySettingsPanel() {
         color: "gold",
         label: t(
           "settings.llmGateway.proxyGovernance.status.runtimeStates.mixedTraffic.label",
-          {
-            defaultValue: "Mixed traffic",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.status.runtimeStates.mixedTraffic.description",
-          {
-            defaultValue:
-              "Both governed and direct profile-key traffic are still hitting the governed target.",
-          },
         ),
       };
     }
@@ -1588,16 +1468,9 @@ export function LlmGatewaySettingsPanel() {
       color: "green",
       label: t(
         "settings.llmGateway.proxyGovernance.status.runtimeStates.governedTrafficObserved.label",
-        {
-          defaultValue: "Governed traffic observed",
-        },
       ),
       description: t(
         "settings.llmGateway.proxyGovernance.status.runtimeStates.governedTrafficObserved.description",
-        {
-          defaultValue:
-            "Recent requests are reaching the target through the managed LiteLLM runtime key.",
-        },
       ),
     };
   }, [
@@ -1613,33 +1486,18 @@ export function LlmGatewaySettingsPanel() {
         key: "enforcement",
         title: t(
           "settings.llmGateway.proxyGovernance.status.cards.enforcement",
-          {
-            defaultValue: "Enforcement",
-          },
         ),
         value:
           proxyGovernanceSettings?.enabled === true
-            ? t("settings.llmGateway.proxyGovernance.summary.enabled", {
-                defaultValue: "Enforced",
-              })
-            : t("settings.llmGateway.proxyGovernance.summary.disabled", {
-                defaultValue: "Disabled",
-              }),
+            ? t("settings.llmGateway.proxyGovernance.summary.enabled")
+            : t("settings.llmGateway.proxyGovernance.summary.disabled"),
         description:
           proxyGovernanceSettings?.enabled === true
             ? t(
                 "settings.llmGateway.proxyGovernance.status.cards.enforcementEnabledDescription",
-                {
-                  defaultValue:
-                    "LiteLLM should enforce budgets and concurrency on runtime traffic.",
-                },
               )
             : t(
                 "settings.llmGateway.proxyGovernance.status.cards.enforcementDisabledDescription",
-                {
-                  defaultValue:
-                    "Saving profiles changes config only. Runtime traffic still uses profile credentials.",
-                },
               ),
         tagColor:
           proxyGovernanceSettings?.enabled === true ? "green" : "default",
@@ -1647,37 +1505,24 @@ export function LlmGatewaySettingsPanel() {
           proxyGovernanceSettings?.adminKeyConfigured === true
             ? t(
                 "settings.llmGateway.proxyGovernance.status.tags.adminKeyReady",
-                {
-                  defaultValue: "Admin key ready",
-                },
               )
             : t(
                 "settings.llmGateway.proxyGovernance.status.tags.adminKeyMissing",
-                {
-                  defaultValue: "Admin key missing",
-                },
               ),
       },
       {
         key: "target",
-        title: t("settings.llmGateway.proxyGovernance.status.cards.target", {
-          defaultValue: "Governed target",
-        }),
+        title: t("settings.llmGateway.proxyGovernance.status.cards.target"),
         value:
           selectedGovernanceProfile?.name ??
           proxyGovernanceSettings?.targetProfileName ??
           proxyGovernanceSettings?.targetProfileId ??
-          t("settings.llmGateway.proxyGovernance.status.tags.none", {
-            defaultValue: "None",
-          }),
+          t("settings.llmGateway.proxyGovernance.status.tags.none"),
         description:
           selectedGovernanceProfile?.apiBase ??
           proxyGovernanceSettings?.apiBase ??
           t(
             "settings.llmGateway.proxyGovernance.status.cards.targetDescriptionEmpty",
-            {
-              defaultValue: "No proxy target selected.",
-            },
           ),
         tagColor:
           (selectedGovernanceProfile ?? governedTargetProfile)?.enabled ===
@@ -1688,29 +1533,22 @@ export function LlmGatewaySettingsPanel() {
           ? t(
               "settings.llmGateway.proxyGovernance.status.tags.trafficBindings",
               {
-                defaultValue: "Traffic: {{value}}",
                 value: governanceTrafficLabels.join(", "),
               },
             )
           : t(
               "settings.llmGateway.proxyGovernance.status.tags.noRuntimeBindings",
-              {
-                defaultValue: "No runtime bindings",
-              },
             ),
       },
       {
         key: "preflight",
-        title: t("settings.llmGateway.proxyGovernance.status.cards.preflight", {
-          defaultValue: "Preflight",
-        }),
+        title: t("settings.llmGateway.proxyGovernance.status.cards.preflight"),
         value: governancePreflightStatusMeta.label,
         description: governancePreflightStatusMeta.description,
         tagColor: governancePreflightStatusMeta.color,
         tagLabel: t(
           "settings.llmGateway.proxyGovernance.status.tags.preflightCounts",
           {
-            defaultValue: "{{blocking}} blocking / {{warnings}} warning",
             blocking: governancePreflightBlockingCount,
             warnings: governancePreflightWarningCount,
           },
@@ -1718,16 +1556,13 @@ export function LlmGatewaySettingsPanel() {
       },
       {
         key: "runtime",
-        title: t("settings.llmGateway.proxyGovernance.status.cards.runtime", {
-          defaultValue: "Runtime path",
-        }),
+        title: t("settings.llmGateway.proxyGovernance.status.cards.runtime"),
         value: governanceRuntimeStatusMeta.label,
         description: governanceRuntimeStatusMeta.description,
         tagColor: governanceRuntimeStatusMeta.color,
         tagLabel: t(
           "settings.llmGateway.proxyGovernance.status.tags.runtimeCounts",
           {
-            defaultValue: "{{governed}} governed / {{direct}} direct",
             governed:
               governanceUsage24h.governanceBreakdown.governedRequestCount.toLocaleString(),
             direct:
@@ -1763,15 +1598,10 @@ export function LlmGatewaySettingsPanel() {
         type: "error",
         title: t(
           "settings.llmGateway.proxyGovernance.attention.preflightBlocked.title",
-          {
-            defaultValue: "Preflight is blocking enablement",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.attention.preflightBlocked.description",
           {
-            defaultValue:
-              "{{count}} required check(s) still fail for the selected target.",
             count: governancePreflightBlockingCount,
           },
         ),
@@ -1783,16 +1613,9 @@ export function LlmGatewaySettingsPanel() {
         type: "error",
         title: t(
           "settings.llmGateway.proxyGovernance.attention.managedKeyUnreadable.title",
-          {
-            defaultValue: "Managed runtime key is unreadable",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.attention.managedKeyUnreadable.description",
-          {
-            defaultValue:
-              "Governed traffic will fail closed until secret decryption is restored.",
-          },
         ),
       });
     }
@@ -1805,16 +1628,9 @@ export function LlmGatewaySettingsPanel() {
         type: "error",
         title: t(
           "settings.llmGateway.proxyGovernance.attention.noBindings.title",
-          {
-            defaultValue: "No governed traffic binding is active",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.attention.noBindings.description",
-          {
-            defaultValue:
-              "Completion, embedding, or rerank traffic must point at the governed target for LiteLLM enforcement to matter.",
-          },
         ),
       });
     }
@@ -1824,16 +1640,9 @@ export function LlmGatewaySettingsPanel() {
         type: "warning",
         title: t(
           "settings.llmGateway.proxyGovernance.attention.zeroGoverned.title",
-          {
-            defaultValue: "No governed requests observed",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.attention.zeroGoverned.description",
-          {
-            defaultValue:
-              "The governed target saw no managed-runtime-key requests in the last 24h.",
-          },
         ),
       });
     }
@@ -1843,9 +1652,6 @@ export function LlmGatewaySettingsPanel() {
         type: "warning",
         title: t(
           "settings.llmGateway.proxyGovernance.attention.directTraffic.title",
-          {
-            defaultValue: "Direct traffic still bypasses managed governance",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.attention.directTraffic.description",
@@ -1861,15 +1667,10 @@ export function LlmGatewaySettingsPanel() {
         type: "warning",
         title: t(
           "settings.llmGateway.proxyGovernance.attention.dayBudget.title",
-          {
-            defaultValue: "24h spend is near the configured cap",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.attention.dayBudget.description",
           {
-            defaultValue:
-              "{{value}} of the daily governed budget has been observed.",
             value: formatObservedPercent(governanceObservedDayBudgetRatio),
           },
         ),
@@ -1881,15 +1682,10 @@ export function LlmGatewaySettingsPanel() {
         type: "warning",
         title: t(
           "settings.llmGateway.proxyGovernance.attention.monthBudget.title",
-          {
-            defaultValue: "30d spend is near the configured cap",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.attention.monthBudget.description",
           {
-            defaultValue:
-              "{{value}} of the monthly governed budget has been observed.",
             value: formatObservedPercent(governanceObservedMonthBudgetRatio),
           },
         ),
@@ -1904,16 +1700,9 @@ export function LlmGatewaySettingsPanel() {
         type: "success",
         title: t(
           "settings.llmGateway.proxyGovernance.attention.readyToEnable.title",
-          {
-            defaultValue: "Governance is ready to enable",
-          },
         ),
         description: t(
           "settings.llmGateway.proxyGovernance.attention.readyToEnable.description",
-          {
-            defaultValue:
-              "Preflight is passing for the current target profile.",
-          },
         ),
       });
     }
@@ -2146,9 +1935,7 @@ export function LlmGatewaySettingsPanel() {
       setProxyLbErrorMessage(
         messageText
           ? messageText
-          : t("settings.llmGateway.proxyLoadBalancing.errors.loadFailed", {
-              defaultValue: "Failed to load balancing settings",
-            }),
+          : t("settings.llmGateway.proxyLoadBalancing.errors.loadFailed"),
       );
     } finally {
       setProxyLbLoading(false);
@@ -2188,9 +1975,7 @@ export function LlmGatewaySettingsPanel() {
       setProxyGovernanceErrorMessage(
         messageText
           ? messageText
-          : t("settings.llmGateway.proxyGovernance.errors.loadFailed", {
-              defaultValue: "Failed to load LiteLLM proxy governance settings",
-            }),
+          : t("settings.llmGateway.proxyGovernance.errors.loadFailed"),
       );
     } finally {
       setProxyGovernanceLoading(false);
@@ -2278,10 +2063,7 @@ export function LlmGatewaySettingsPanel() {
         setGovernanceUsageProfileId(profileId);
         setGovernanceUsageErrorMessage(
           formatApiErrorMessage(error) ??
-            t("settings.llmGateway.proxyGovernance.errors.usageFailed", {
-              defaultValue:
-                "Failed to load observed LiteLLM governance usage summary",
-            }),
+            t("settings.llmGateway.proxyGovernance.errors.usageFailed"),
         );
       } finally {
         setGovernanceUsageLoading(false);
@@ -2370,9 +2152,7 @@ export function LlmGatewaySettingsPanel() {
           maxParallelRequests: data?.maxParallelRequests ?? 16,
         });
         messageApi.success(
-          t("settings.llmGateway.proxyGovernance.messages.saved", {
-            defaultValue: "LiteLLM proxy governance settings saved",
-          }),
+          t("settings.llmGateway.proxyGovernance.messages.saved"),
         );
       } catch (error) {
         captureClientError(
@@ -2383,10 +2163,7 @@ export function LlmGatewaySettingsPanel() {
         setProxyGovernanceErrorMessage(
           messageText
             ? messageText
-            : t("settings.llmGateway.proxyGovernance.errors.saveFailed", {
-                defaultValue:
-                  "Failed to save LiteLLM proxy governance settings",
-              }),
+            : t("settings.llmGateway.proxyGovernance.errors.saveFailed"),
         );
       } finally {
         setProxyGovernanceSaving(false);
@@ -2404,21 +2181,15 @@ export function LlmGatewaySettingsPanel() {
 
   const resetProxyGovernanceSettings = useCallback(() => {
     Modal.confirm({
-      title: t("settings.llmGateway.proxyGovernance.reset.modal.title", {
-        defaultValue: "Reset LiteLLM proxy governance?",
-      }),
+      title: t("settings.llmGateway.proxyGovernance.reset.modal.title"),
       content: (
         <Space direction="vertical" size={8} style={{ display: "flex" }}>
           <Typography.Text>
-            {t("settings.llmGateway.proxyGovernance.reset.modal.content", {
-              defaultValue:
-                "This disables the managed runtime key and restores the default governance thresholds.",
-            })}
+            {t("settings.llmGateway.proxyGovernance.reset.modal.content")}
           </Typography.Text>
           <Space wrap>
             <Tag color="geekblue">
               {t("settings.llmGateway.proxyGovernance.reset.targetProfile", {
-                defaultValue: "Target profile: {{value}}",
                 value:
                   proxyGovernanceSettings?.targetProfileName ??
                   proxyGovernanceSettings?.targetProfileId ??
@@ -2427,14 +2198,12 @@ export function LlmGatewaySettingsPanel() {
             </Tag>
             <Tag color="blue">
               {t("settings.llmGateway.proxyGovernance.reset.team", {
-                defaultValue: "Managed team: {{value}}",
                 value:
                   proxyGovernanceSettings?.managedTeamId ?? governanceNoneLabel,
               })}
             </Tag>
             <Tag color="purple">
               {t("settings.llmGateway.proxyGovernance.reset.key", {
-                defaultValue: "Runtime key: {{value}}",
                 value:
                   proxyGovernanceSettings?.managedRuntimeKeyAlias ??
                   governanceNoneLabel,
@@ -2443,8 +2212,8 @@ export function LlmGatewaySettingsPanel() {
           </Space>
         </Space>
       ),
-      okText: t("common.reset", { defaultValue: "Reset" }),
-      cancelText: t("common.cancel", { defaultValue: "Cancel" }),
+      okText: t("common.reset"),
+      cancelText: t("common.cancel"),
       okButtonProps: { danger: true },
       onOk: async () => {
         setProxyGovernanceResetting(true);
@@ -2466,9 +2235,7 @@ export function LlmGatewaySettingsPanel() {
             maxParallelRequests: data?.maxParallelRequests ?? 16,
           });
           messageApi.success(
-            t("settings.llmGateway.proxyGovernance.reset.messages.done", {
-              defaultValue: "LiteLLM proxy governance reset",
-            }),
+            t("settings.llmGateway.proxyGovernance.reset.messages.done"),
           );
         } catch (error) {
           captureClientError(
@@ -2479,10 +2246,7 @@ export function LlmGatewaySettingsPanel() {
           setProxyGovernanceErrorMessage(
             messageText
               ? messageText
-              : t("settings.llmGateway.proxyGovernance.reset.errors.failed", {
-                  defaultValue:
-                    "Failed to reset LiteLLM proxy governance settings",
-                }),
+              : t("settings.llmGateway.proxyGovernance.reset.errors.failed"),
           );
         } finally {
           setProxyGovernanceResetting(false);
@@ -2503,21 +2267,15 @@ export function LlmGatewaySettingsPanel() {
 
   const rotateProxyGovernanceKey = useCallback(() => {
     Modal.confirm({
-      title: t("settings.llmGateway.proxyGovernance.rotate.title", {
-        defaultValue: "Rotate LiteLLM managed runtime key?",
-      }),
+      title: t("settings.llmGateway.proxyGovernance.rotate.title"),
       content: (
         <Space direction="vertical" size={8} style={{ display: "flex" }}>
           <Typography.Text>
-            {t("settings.llmGateway.proxyGovernance.rotate.confirm", {
-              defaultValue:
-                "A new runtime key will be issued in LiteLLM and the old managed key will be blocked.",
-            })}
+            {t("settings.llmGateway.proxyGovernance.rotate.confirm")}
           </Typography.Text>
           <Space wrap>
             <Tag color="geekblue">
               {t("settings.llmGateway.proxyGovernance.rotate.targetProfile", {
-                defaultValue: "Target profile: {{value}}",
                 value:
                   selectedGovernanceProfile?.name ??
                   proxyGovernanceSettings?.targetProfileName ??
@@ -2527,14 +2285,12 @@ export function LlmGatewaySettingsPanel() {
             </Tag>
             <Tag color="blue">
               {t("settings.llmGateway.proxyGovernance.rotate.team", {
-                defaultValue: "Managed team: {{value}}",
                 value:
                   proxyGovernanceSettings?.managedTeamId ?? governanceNoneLabel,
               })}
             </Tag>
             <Tag color="purple">
               {t("settings.llmGateway.proxyGovernance.rotate.key", {
-                defaultValue: "Current key alias: {{value}}",
                 value:
                   proxyGovernanceSettings?.managedRuntimeKeyAlias ??
                   governanceNoneLabel,
@@ -2543,10 +2299,8 @@ export function LlmGatewaySettingsPanel() {
           </Space>
         </Space>
       ),
-      okText: t("settings.llmGateway.proxyGovernance.actions.rotate", {
-        defaultValue: "Rotate runtime key",
-      }),
-      cancelText: t("common.cancel", { defaultValue: "Cancel" }),
+      okText: t("settings.llmGateway.proxyGovernance.actions.rotate"),
+      cancelText: t("common.cancel"),
       onOk: async () => {
         setProxyGovernanceRotating(true);
         setProxyGovernanceErrorMessage(null);
@@ -2567,9 +2321,7 @@ export function LlmGatewaySettingsPanel() {
             maxParallelRequests: data?.maxParallelRequests ?? 16,
           });
           messageApi.success(
-            t("settings.llmGateway.proxyGovernance.rotate.messages.done", {
-              defaultValue: "Managed LiteLLM runtime key rotated",
-            }),
+            t("settings.llmGateway.proxyGovernance.rotate.messages.done"),
           );
         } catch (error) {
           captureClientError(
@@ -2580,9 +2332,7 @@ export function LlmGatewaySettingsPanel() {
           setProxyGovernanceErrorMessage(
             messageText
               ? messageText
-              : t("settings.llmGateway.proxyGovernance.rotate.errors.failed", {
-                  defaultValue: "Failed to rotate LiteLLM managed runtime key",
-                }),
+              : t("settings.llmGateway.proxyGovernance.rotate.errors.failed"),
           );
         } finally {
           setProxyGovernanceRotating(false);
@@ -2671,9 +2421,7 @@ export function LlmGatewaySettingsPanel() {
               : undefined,
         });
         messageApi.success(
-          t("settings.llmGateway.proxyLoadBalancing.messages.saved", {
-            defaultValue: "Load balancing settings saved",
-          }),
+          t("settings.llmGateway.proxyLoadBalancing.messages.saved"),
         );
       } catch (error) {
         captureClientError(
@@ -2684,9 +2432,7 @@ export function LlmGatewaySettingsPanel() {
         setProxyLbErrorMessage(
           messageText
             ? messageText
-            : t("settings.llmGateway.proxyLoadBalancing.errors.saveFailed", {
-                defaultValue: "Failed to save load balancing settings",
-              }),
+            : t("settings.llmGateway.proxyLoadBalancing.errors.saveFailed"),
         );
       } finally {
         setProxyLbSaving(false);
@@ -2697,13 +2443,8 @@ export function LlmGatewaySettingsPanel() {
 
   const resetProxyLbSettings = useCallback(() => {
     Modal.confirm({
-      title: t("settings.llmGateway.proxyLoadBalancing.reset.modal.title", {
-        defaultValue: "Reset load balancing settings?",
-      }),
-      content: t("settings.llmGateway.proxyLoadBalancing.reset.modal.content", {
-        defaultValue:
-          "This removes DB-managed load balancing config. LiteLLM startup will keep load balancing disabled until you save settings again.",
-      }),
+      title: t("settings.llmGateway.proxyLoadBalancing.reset.modal.title"),
+      content: t("settings.llmGateway.proxyLoadBalancing.reset.modal.content"),
       okText: t("common.confirm"),
       cancelText: t("common.cancel"),
       okButtonProps: { danger: true },
@@ -2736,9 +2477,7 @@ export function LlmGatewaySettingsPanel() {
                 : undefined,
           });
           messageApi.success(
-            t("settings.llmGateway.proxyLoadBalancing.reset.messages.done", {
-              defaultValue: "Load balancing settings reset",
-            }),
+            t("settings.llmGateway.proxyLoadBalancing.reset.messages.done"),
           );
         } catch (error) {
           captureClientError(
@@ -2751,9 +2490,6 @@ export function LlmGatewaySettingsPanel() {
               ? messageText
               : t(
                   "settings.llmGateway.proxyLoadBalancing.reset.errors.failed",
-                  {
-                    defaultValue: "Failed to reset load balancing settings",
-                  },
                 ),
           );
         } finally {
@@ -2840,9 +2576,7 @@ export function LlmGatewaySettingsPanel() {
         setProxyLbTestErrorMessage(
           messageText
             ? messageText
-            : t("settings.llmGateway.proxyStatus.errors.lbTestFailed", {
-                defaultValue: "负载均衡测试失败",
-              }),
+            : t("settings.llmGateway.proxyStatus.errors.lbTestFailed"),
         );
       } finally {
         setProxyLbTesting((current) =>
@@ -2993,10 +2727,7 @@ export function LlmGatewaySettingsPanel() {
   ) => {
     if (isGovernedProfileLocked(profile.id)) {
       messageApi.warning(
-        t("settings.llmGateway.proxyGovernance.table.lockedHint", {
-          defaultValue:
-            "This profile is the active LiteLLM governance target. Change governance target or disable governance before editing, deleting, or disabling it.",
-        }),
+        t("settings.llmGateway.proxyGovernance.table.lockedHint"),
       );
       return;
     }
@@ -3009,11 +2740,9 @@ export function LlmGatewaySettingsPanel() {
     ) {
       const shouldDisable = await new Promise<boolean>((resolve) => {
         Modal.confirm({
-          title: t("settings.llmGateway.modal.disableTitle", {
-            defaultValue: "确认禁用该 Profile？",
-          }),
+          title: t("settings.llmGateway.modal.disableTitle"),
           okButtonProps: { danger: true },
-          okText: t("common.disable", { defaultValue: "禁用" }),
+          okText: t("common.disable"),
           cancelText: t("common.cancel"),
           content: (
             <Space
@@ -3023,32 +2752,22 @@ export function LlmGatewaySettingsPanel() {
             >
               <Typography.Text>
                 {t("settings.llmGateway.modal.disableContent", {
-                  defaultValue: "即将禁用：{{name}}",
                   name: profile.name,
                 })}
               </Typography.Text>
               {wasCompletionActive ? (
                 <Typography.Text type="secondary">
-                  {t("settings.llmGateway.modal.disableActiveHint", {
-                    defaultValue:
-                      "该 Profile 当前为对话/补全的 Active 配置。禁用后将自动取消 Active Profile，并回退到默认配置。",
-                  })}
+                  {t("settings.llmGateway.modal.disableActiveHint")}
                 </Typography.Text>
               ) : null}
               {wasEmbeddingActive ? (
                 <Typography.Text type="secondary">
-                  {t("settings.llmGateway.modal.disableEmbeddingHint", {
-                    defaultValue:
-                      "该 Profile 当前为 Embeddings 的 Active 配置。禁用后将自动取消 Embeddings Active，并回退到 follow_completion 或默认配置。",
-                  })}
+                  {t("settings.llmGateway.modal.disableEmbeddingHint")}
                 </Typography.Text>
               ) : null}
               {wasRerankActive ? (
                 <Typography.Text type="secondary">
-                  {t("settings.llmGateway.modal.disableRerankHint", {
-                    defaultValue:
-                      "该 Profile 当前为 Reranker 的 Active 配置。禁用后将自动取消 Reranker Active，并回退到 follow_completion 或默认配置。",
-                  })}
+                  {t("settings.llmGateway.modal.disableRerankHint")}
                 </Typography.Text>
               ) : null}
             </Space>
@@ -3119,9 +2838,7 @@ export function LlmGatewaySettingsPanel() {
       });
       await loadSettings();
       messageApi.success(
-        t("settings.llmGateway.embeddingActive.messages.activated", {
-          defaultValue: "Embeddings 配置已更新",
-        }),
+        t("settings.llmGateway.embeddingActive.messages.activated"),
       );
     } catch (error) {
       captureClientError(
@@ -3142,9 +2859,7 @@ export function LlmGatewaySettingsPanel() {
         messageApi.error(
           messageText
             ? messageText
-            : t("settings.llmGateway.embeddingActive.errors.activateFailed", {
-                defaultValue: "更新 Embeddings 配置失败",
-              }),
+            : t("settings.llmGateway.embeddingActive.errors.activateFailed"),
         );
       }
     } finally {
@@ -3164,9 +2879,7 @@ export function LlmGatewaySettingsPanel() {
       });
       await loadSettings();
       messageApi.success(
-        t("settings.llmGateway.rerankActive.messages.activated", {
-          defaultValue: "Reranker 配置已更新",
-        }),
+        t("settings.llmGateway.rerankActive.messages.activated"),
       );
     } catch (error) {
       captureClientError("Failed to activate rerank gateway profile", error);
@@ -3184,9 +2897,7 @@ export function LlmGatewaySettingsPanel() {
         messageApi.error(
           messageText
             ? messageText
-            : t("settings.llmGateway.rerankActive.errors.activateFailed", {
-                defaultValue: "更新 Reranker 配置失败",
-              }),
+            : t("settings.llmGateway.rerankActive.errors.activateFailed"),
         );
       }
     } finally {
@@ -3197,10 +2908,7 @@ export function LlmGatewaySettingsPanel() {
   const handleDelete = async (profile: LlmGatewayProfile) => {
     if (isGovernedProfileLocked(profile.id)) {
       messageApi.warning(
-        t("settings.llmGateway.proxyGovernance.table.lockedHint", {
-          defaultValue:
-            "This profile is the active LiteLLM governance target. Change governance target or disable governance before editing, deleting, or disabling it.",
-        }),
+        t("settings.llmGateway.proxyGovernance.table.lockedHint"),
       );
       return;
     }
@@ -3218,10 +2926,7 @@ export function LlmGatewaySettingsPanel() {
           </Typography.Text>
           {wasCompletionActive || wasEmbeddingActive || wasRerankActive ? (
             <Typography.Text type="secondary">
-              {t("settings.llmGateway.modal.deleteActiveHint", {
-                defaultValue:
-                  "该 Profile 当前正在使用中（Active）。删除后将取消相应的 Active 配置，并回退到默认策略。",
-              })}
+              {t("settings.llmGateway.modal.deleteActiveHint")}
             </Typography.Text>
           ) : null}
         </Space>
@@ -3383,9 +3088,7 @@ export function LlmGatewaySettingsPanel() {
 
       const columns: ColumnsType<ModelInfoRow> = [
         {
-          title: t("settings.llmGateway.proxyModelInfo.columns.model", {
-            defaultValue: "模型",
-          }),
+          title: t("settings.llmGateway.proxyModelInfo.columns.model"),
           dataIndex: "modelName",
           key: "modelName",
           render: (value: string) => (
@@ -3395,9 +3098,7 @@ export function LlmGatewaySettingsPanel() {
           ),
         },
         {
-          title: t("settings.llmGateway.proxyModelInfo.columns.deployments", {
-            defaultValue: "Deployments",
-          }),
+          title: t("settings.llmGateway.proxyModelInfo.columns.deployments"),
           dataIndex: "deployments",
           key: "deployments",
           width: 140,
@@ -3406,9 +3107,7 @@ export function LlmGatewaySettingsPanel() {
           ),
         },
         {
-          title: t("settings.llmGateway.proxyModelInfo.columns.details", {
-            defaultValue: "详情",
-          }),
+          title: t("settings.llmGateway.proxyModelInfo.columns.details"),
           key: "details",
           render: (_: unknown, record: ModelInfoRow) => {
             const parts: string[] = [];
@@ -3447,18 +3146,13 @@ export function LlmGatewaySettingsPanel() {
 
             <Typography.Text type="secondary">
               {t("settings.llmGateway.proxyModelInfo.summary", {
-                defaultValue:
-                  "模型组：{{groups}}，Deployments：{{deployments}}",
                 groups: rows.length,
                 deployments: totalDeployments,
               })}
             </Typography.Text>
 
             <Typography.Text type="secondary">
-              {t("settings.llmGateway.proxyModelInfo.hint", {
-                defaultValue:
-                  "同一个模型出现多个 Deployments 时，LiteLLM Proxy 会在它们之间自动分发请求。",
-              })}
+              {t("settings.llmGateway.proxyModelInfo.hint")}
             </Typography.Text>
 
             <Table<ModelInfoRow>
@@ -3539,7 +3233,6 @@ export function LlmGatewaySettingsPanel() {
 
       openProxyModelInfoModal(
         t("settings.llmGateway.proxyModelInfo.modal.title", {
-          defaultValue: "LiteLLM Proxy 模型详情：{{name}}",
           name: profile.name,
         }),
         result?.apiBase ?? profile.apiBase,
@@ -3555,9 +3248,7 @@ export function LlmGatewaySettingsPanel() {
       messageApi.error(
         messageText
           ? messageText
-          : t("settings.llmGateway.proxyStatus.errors.modelInfoFailed", {
-              defaultValue: "获取 Proxy 模型详情失败",
-            }),
+          : t("settings.llmGateway.proxyStatus.errors.modelInfoFailed"),
       );
     } finally {
       setLoadingProxyModelInfo((current) =>
@@ -3610,18 +3301,14 @@ export function LlmGatewaySettingsPanel() {
 
         {result.apiSurfaceUsed ? (
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            {t("settings.llmGateway.test.labels.apiSurface", {
-              defaultValue: "API surface",
-            })}
+            {t("settings.llmGateway.test.labels.apiSurface")}
             : <Typography.Text code>{result.apiSurfaceUsed}</Typography.Text>
           </Typography.Paragraph>
         ) : null}
 
         {result.authModeUsed ? (
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            {t("settings.llmGateway.test.labels.authMode", {
-              defaultValue: "Auth mode",
-            })}
+            {t("settings.llmGateway.test.labels.authMode")}
             : <Typography.Text code>{result.authModeUsed}</Typography.Text>
           </Typography.Paragraph>
         ) : null}
@@ -3630,15 +3317,11 @@ export function LlmGatewaySettingsPanel() {
           <Alert
             type="warning"
             showIcon
-            message={`${t("settings.llmGateway.test.labels.compatibility", {
-              defaultValue: "Compatibility",
-            })}: ${result.compatibilityError.code}`}
+            message={`${t("settings.llmGateway.test.labels.compatibility")}: ${result.compatibilityError.code}`}
             description={
               <Space direction="vertical" size={2} style={{ width: "100%" }}>
                 <Typography.Text>
-                  {t("settings.llmGateway.test.labels.field", {
-                    defaultValue: "field",
-                  })}
+                  {t("settings.llmGateway.test.labels.field")}
                   :{" "}
                   <Typography.Text code>
                     {result.compatibilityError.incompatibleField}
@@ -3702,9 +3385,7 @@ export function LlmGatewaySettingsPanel() {
               <Alert
                 type="warning"
                 showIcon
-                message={`${t("settings.llmGateway.test.labels.compatibility", {
-                  defaultValue: "Compatibility",
-                })}: ${result.completionError.compatibilityError.code}`}
+                message={`${t("settings.llmGateway.test.labels.compatibility")}: ${result.completionError.compatibilityError.code}`}
                 description={result.completionError.compatibilityError.hint}
               />
             ) : null}
@@ -3756,9 +3437,7 @@ export function LlmGatewaySettingsPanel() {
               <Alert
                 type="warning"
                 showIcon
-                message={`${t("settings.llmGateway.test.labels.compatibility", {
-                  defaultValue: "Compatibility",
-                })}: ${result.embeddingError.compatibilityError.code}`}
+                message={`${t("settings.llmGateway.test.labels.compatibility")}: ${result.embeddingError.compatibilityError.code}`}
                 description={result.embeddingError.compatibilityError.hint}
               />
             ) : null}
@@ -3771,17 +3450,13 @@ export function LlmGatewaySettingsPanel() {
               level={5}
               style={{ marginBottom: 0, marginTop: 8 }}
             >
-              {t("settings.llmGateway.test.sections.rerank", {
-                defaultValue: "Rerank",
-              })}
+              {t("settings.llmGateway.test.sections.rerank")}
             </Typography.Title>
             <Space wrap>
               <Tag color="blue">{result.rerank.model}</Tag>
               <Tag>{result.rerank.latencyMs}ms</Tag>
               <Tag>
-                {t("settings.llmGateway.test.labels.topN", {
-                  defaultValue: "topN",
-                })}
+                {t("settings.llmGateway.test.labels.topN")}
                 : {result.rerank.topN}
               </Tag>
               {typeof result.rerank.costUsd === "number" ? (
@@ -3802,9 +3477,6 @@ export function LlmGatewaySettingsPanel() {
                   (entry) =>
                     `#${entry.index} ${t(
                       "settings.llmGateway.test.labels.score",
-                      {
-                        defaultValue: "score",
-                      },
                     )}: ${entry.score.toFixed(4)}`,
                 )
                 .join("\n")}
@@ -3816,9 +3488,7 @@ export function LlmGatewaySettingsPanel() {
               level={5}
               style={{ marginBottom: 0, marginTop: 8 }}
             >
-              {t("settings.llmGateway.test.sections.rerank", {
-                defaultValue: "Rerank",
-              })}
+              {t("settings.llmGateway.test.sections.rerank")}
             </Typography.Title>
             {renderGatewayErrorMeta(result.rerankError)}
             <Alert type="error" showIcon message={result.rerankError.message} />
@@ -3826,9 +3496,7 @@ export function LlmGatewaySettingsPanel() {
               <Alert
                 type="warning"
                 showIcon
-                message={`${t("settings.llmGateway.test.labels.compatibility", {
-                  defaultValue: "Compatibility",
-                })}: ${result.rerankError.compatibilityError.code}`}
+                message={`${t("settings.llmGateway.test.labels.compatibility")}: ${result.rerankError.compatibilityError.code}`}
                 description={result.rerankError.compatibilityError.hint}
               />
             ) : null}
@@ -3870,41 +3538,30 @@ export function LlmGatewaySettingsPanel() {
             <Tag color="blue">{result.model}</Tag>
             <Tag color={result.failed > 0 ? "red" : "green"}>
               {t("settings.llmGateway.proxyLbTest.summary.success", {
-                defaultValue: "Success",
                 n: result.succeeded,
               })}
               : {result.succeeded}
             </Tag>
             <Tag color={result.failed > 0 ? "red" : "default"}>
-              {t("settings.llmGateway.proxyLbTest.summary.failed", {
-                defaultValue: "Failed",
-              })}
+              {t("settings.llmGateway.proxyLbTest.summary.failed")}
               : {result.failed}
             </Tag>
             <Tag>
-              {t("settings.llmGateway.proxyLbTest.summary.duration", {
-                defaultValue: "Duration",
-              })}
+              {t("settings.llmGateway.proxyLbTest.summary.duration")}
               : {result.durationMs}ms
             </Tag>
             <Tag>
-              {t("settings.llmGateway.proxyLbTest.summary.deployments", {
-                defaultValue: "Model IDs",
-              })}
+              {t("settings.llmGateway.proxyLbTest.summary.deployments")}
               : {Object.keys(result.modelIdDistribution ?? {}).length}
             </Tag>
             <Tag>
-              {t("settings.llmGateway.proxyLbTest.summary.apiBases", {
-                defaultValue: "API bases",
-              })}
+              {t("settings.llmGateway.proxyLbTest.summary.apiBases")}
               : {Object.keys(result.modelApiBaseDistribution ?? {}).length}
             </Tag>
           </Space>
 
           <Typography.Text type="secondary">
-            {t("settings.llmGateway.proxyLbTest.sections.modelIds", {
-              defaultValue: "Model ID distribution",
-            })}
+            {t("settings.llmGateway.proxyLbTest.sections.modelIds")}
           </Typography.Text>
           <Table
             size="small"
@@ -3913,9 +3570,7 @@ export function LlmGatewaySettingsPanel() {
             pagination={{ pageSize: 5, hideOnSinglePage: true }}
             columns={[
               {
-                title: t("settings.llmGateway.proxyLbTest.columns.id", {
-                  defaultValue: "ID",
-                }),
+                title: t("settings.llmGateway.proxyLbTest.columns.id"),
                 dataIndex: "id",
                 key: "id",
                 render: (value: string) => (
@@ -3925,17 +3580,13 @@ export function LlmGatewaySettingsPanel() {
                 ),
               },
               {
-                title: t("settings.llmGateway.proxyLbTest.columns.count", {
-                  defaultValue: "Count",
-                }),
+                title: t("settings.llmGateway.proxyLbTest.columns.count"),
                 dataIndex: "count",
                 key: "count",
                 width: 100,
               },
               {
-                title: t("settings.llmGateway.proxyLbTest.columns.ratio", {
-                  defaultValue: "Share",
-                }),
+                title: t("settings.llmGateway.proxyLbTest.columns.ratio"),
                 dataIndex: "ratio",
                 key: "ratio",
                 width: 120,
@@ -3945,9 +3596,7 @@ export function LlmGatewaySettingsPanel() {
           />
 
           <Typography.Text type="secondary">
-            {t("settings.llmGateway.proxyLbTest.sections.apiBases", {
-              defaultValue: "API base distribution",
-            })}
+            {t("settings.llmGateway.proxyLbTest.sections.apiBases")}
           </Typography.Text>
           <Table
             size="small"
@@ -3956,9 +3605,7 @@ export function LlmGatewaySettingsPanel() {
             pagination={{ pageSize: 5, hideOnSinglePage: true }}
             columns={[
               {
-                title: t("settings.llmGateway.proxyLbTest.columns.apiBase", {
-                  defaultValue: "API base",
-                }),
+                title: t("settings.llmGateway.proxyLbTest.columns.apiBase"),
                 dataIndex: "id",
                 key: "id",
                 render: (value: string) => (
@@ -3968,17 +3615,13 @@ export function LlmGatewaySettingsPanel() {
                 ),
               },
               {
-                title: t("settings.llmGateway.proxyLbTest.columns.count", {
-                  defaultValue: "Count",
-                }),
+                title: t("settings.llmGateway.proxyLbTest.columns.count"),
                 dataIndex: "count",
                 key: "count",
                 width: 100,
               },
               {
-                title: t("settings.llmGateway.proxyLbTest.columns.ratio", {
-                  defaultValue: "Share",
-                }),
+                title: t("settings.llmGateway.proxyLbTest.columns.ratio"),
                 dataIndex: "ratio",
                 key: "ratio",
                 width: 120,
@@ -3990,9 +3633,7 @@ export function LlmGatewaySettingsPanel() {
           {result.callIdSamples?.length ? (
             <>
               <Typography.Text type="secondary">
-                {t("settings.llmGateway.proxyLbTest.sections.callIds", {
-                  defaultValue: "Call ID samples",
-                })}
+                {t("settings.llmGateway.proxyLbTest.sections.callIds")}
               </Typography.Text>
               <Space wrap>
                 {result.callIdSamples.map((value) => (
@@ -4009,9 +3650,7 @@ export function LlmGatewaySettingsPanel() {
           {result.errors?.length ? (
             <>
               <Typography.Text type="secondary">
-                {t("settings.llmGateway.proxyLbTest.sections.errors", {
-                  defaultValue: "Errors",
-                })}
+                {t("settings.llmGateway.proxyLbTest.sections.errors")}
               </Typography.Text>
               <Space
                 direction="vertical"
@@ -4353,23 +3992,17 @@ export function LlmGatewaySettingsPanel() {
               ) : null}
               {settings.embeddingActiveId === record.id && record.enabled ? (
                 <Tag color="purple">
-                  {t("settings.llmGateway.embeddingActive.tag", {
-                    defaultValue: "Embeddings",
-                  })}
+                  {t("settings.llmGateway.embeddingActive.tag")}
                 </Tag>
               ) : null}
               {settings.rerankActiveId === record.id && record.enabled ? (
                 <Tag color="gold">
-                  {t("settings.llmGateway.rerankActive.tag", {
-                    defaultValue: "Reranker",
-                  })}
+                  {t("settings.llmGateway.rerankActive.tag")}
                 </Tag>
               ) : null}
               {governed ? (
                 <Tag color="geekblue">
-                  {t("settings.llmGateway.proxyGovernance.table.lockedTag", {
-                    defaultValue: "Governed target",
-                  })}
+                  {t("settings.llmGateway.proxyGovernance.table.lockedTag")}
                 </Tag>
               ) : null}
             </Space>
@@ -4393,9 +4026,7 @@ export function LlmGatewaySettingsPanel() {
       ),
     },
     {
-      title: t("settings.llmGateway.columns.assistantModel", {
-        defaultValue: "Assistant model",
-      }),
+      title: t("settings.llmGateway.columns.assistantModel"),
       dataIndex: "assistantModel",
       key: "assistantModel",
       responsive: ["xl"],
@@ -4423,9 +4054,7 @@ export function LlmGatewaySettingsPanel() {
         ),
     },
     {
-      title: t("settings.llmGateway.columns.rerankModel", {
-        defaultValue: "Rerank model",
-      }),
+      title: t("settings.llmGateway.columns.rerankModel"),
       dataIndex: "rerankModel",
       key: "rerankModel",
       responsive: ["xl"],
@@ -4439,9 +4068,7 @@ export function LlmGatewaySettingsPanel() {
         ),
     },
     {
-      title: t("settings.llmGateway.columns.compatibility", {
-        defaultValue: "Compatibility",
-      }),
+      title: t("settings.llmGateway.columns.compatibility"),
       key: "compatibility",
       responsive: ["xl"],
       render: (_: unknown, record) => (
@@ -4449,22 +4076,14 @@ export function LlmGatewaySettingsPanel() {
           <Tag>{`api:${record.apiSurface}`}</Tag>
           <Tag color={record.assistantWebSearchEnabled ? "blue" : "default"}>
             {record.assistantWebSearchEnabled
-              ? t("settings.llmGateway.columns.assistantWebSearchOn", {
-                  defaultValue: "assistant:web-search:on",
-                })
-              : t("settings.llmGateway.columns.assistantWebSearchOff", {
-                  defaultValue: "assistant:web-search:off",
-                })}
+              ? t("settings.llmGateway.columns.assistantWebSearchOn")
+              : t("settings.llmGateway.columns.assistantWebSearchOff")}
           </Tag>
           <Tag>{`response_format:${record.responseFormatMode}`}</Tag>
           <Tag color={record.sendMetadata ? "green" : "default"}>
             {record.sendMetadata
-              ? t("settings.llmGateway.columns.metadataOn", {
-                  defaultValue: "metadata:on",
-                })
-              : t("settings.llmGateway.columns.metadataOff", {
-                  defaultValue: "metadata:off",
-                })}
+              ? t("settings.llmGateway.columns.metadataOn")
+              : t("settings.llmGateway.columns.metadataOff")}
           </Tag>
         </Space>
       ),
@@ -4480,9 +4099,7 @@ export function LlmGatewaySettingsPanel() {
           </Tag>
           {isGovernedProfileLocked(record.id) ? (
             <Tag color="gold">
-              {t("settings.llmGateway.proxyGovernance.table.lockedStatus", {
-                defaultValue: "Locked by governance",
-              })}
+              {t("settings.llmGateway.proxyGovernance.table.lockedStatus")}
             </Tag>
           ) : null}
         </Space>
@@ -4507,10 +4124,7 @@ export function LlmGatewaySettingsPanel() {
       render: (_: unknown, record) => {
         const governed = isGovernedProfileLocked(record.id);
         const governedHint = governed
-          ? t("settings.llmGateway.proxyGovernance.table.lockedHint", {
-              defaultValue:
-                "This profile is the active LiteLLM governance target. Change governance target or disable governance before editing, deleting, or disabling it.",
-            })
+          ? t("settings.llmGateway.proxyGovernance.table.lockedHint")
           : undefined;
         return (
           <Space wrap>
@@ -4687,9 +4301,7 @@ export function LlmGatewaySettingsPanel() {
                   onClick={() => void handleProxyModelInfo(statusProfile)}
                   loading={loadingProxyModelInfo === statusProfile.id}
                 >
-                  {t("settings.llmGateway.proxyStatus.actions.modelInfo", {
-                    defaultValue: "模型详情",
-                  })}
+                  {t("settings.llmGateway.proxyStatus.actions.modelInfo")}
                 </Button>
                 <Button
                   size="small"
@@ -4699,22 +4311,16 @@ export function LlmGatewaySettingsPanel() {
                   {t("settings.llmGateway.proxyStatus.actions.models")}
                 </Button>
                 <Button size="small" onClick={openProxyLbWizard}>
-                  {t("settings.llmGateway.proxyStatus.actions.loadBalancing", {
-                    defaultValue: "负载均衡配置",
-                  })}
+                  {t("settings.llmGateway.proxyStatus.actions.loadBalancing")}
                 </Button>
                 <Button size="small" onClick={openProxyGovernanceWizard}>
-                  {t("settings.llmGateway.proxyStatus.actions.governance", {
-                    defaultValue: "预算/并发治理",
-                  })}
+                  {t("settings.llmGateway.proxyStatus.actions.governance")}
                 </Button>
                 <Button
                   size="small"
                   onClick={() => openProxyLbTest(statusProfile)}
                 >
-                  {t("settings.llmGateway.proxyStatus.actions.lbTest", {
-                    defaultValue: "负载均衡测试",
-                  })}
+                  {t("settings.llmGateway.proxyStatus.actions.lbTest")}
                 </Button>
               </Space>
 
@@ -4782,9 +4388,6 @@ export function LlmGatewaySettingsPanel() {
                   showIcon
                   message={t(
                     "settings.llmGateway.proxyGovernance.summary.title",
-                    {
-                      defaultValue: "LiteLLM proxy governance",
-                    },
                   )}
                   description={
                     <Space
@@ -4793,10 +4396,7 @@ export function LlmGatewaySettingsPanel() {
                       style={{ display: "flex" }}
                     >
                       <Typography.Text type="secondary">
-                        {t("settings.llmGateway.proxyGovernance.summary.body", {
-                          defaultValue:
-                            "Budgets and concurrency are enforced by LiteLLM Proxy. The application only keeps business-level request logs.",
-                        })}
+                        {t("settings.llmGateway.proxyGovernance.summary.body")}
                       </Typography.Text>
                       <div style={governanceMetricGridStyle}>
                         {governanceOverviewCards.map((card) => (
@@ -4832,22 +4432,15 @@ export function LlmGatewaySettingsPanel() {
                           {proxyGovernanceSettings.enabled
                             ? t(
                                 "settings.llmGateway.proxyGovernance.summary.enabled",
-                                {
-                                  defaultValue: "Enforced",
-                                },
                               )
                             : t(
                                 "settings.llmGateway.proxyGovernance.summary.disabled",
-                                {
-                                  defaultValue: "Disabled",
-                                },
                               )}
                         </Tag>
                         <Tag color="blue">
                           {t(
                             "settings.llmGateway.proxyGovernance.summary.targetProfile",
                             {
-                              defaultValue: "Target profile: {{value}}",
                               value:
                                 proxyGovernanceSettings.targetProfileName ??
                                 proxyGovernanceSettings.targetProfileId ??
@@ -4859,7 +4452,6 @@ export function LlmGatewaySettingsPanel() {
                           {t(
                             "settings.llmGateway.proxyGovernance.summary.key",
                             {
-                              defaultValue: "Managed key: {{value}}",
                               value:
                                 proxyGovernanceSettings.managedRuntimeKeyAlias ??
                                 governanceKeyStateLabel,
@@ -4870,7 +4462,6 @@ export function LlmGatewaySettingsPanel() {
                           {t(
                             "settings.llmGateway.proxyGovernance.summary.parallel",
                             {
-                              defaultValue: "Parallel: {{value}}",
                               value:
                                 proxyGovernanceSettings.maxParallelRequests,
                             },
@@ -4880,7 +4471,6 @@ export function LlmGatewaySettingsPanel() {
                           {t(
                             "settings.llmGateway.proxyGovernance.summary.dayBudget",
                             {
-                              defaultValue: "24h: ${{value}}",
                               value:
                                 proxyGovernanceSettings.dailyBudgetUsd.toFixed(
                                   4,
@@ -4892,7 +4482,6 @@ export function LlmGatewaySettingsPanel() {
                           {t(
                             "settings.llmGateway.proxyGovernance.summary.monthBudget",
                             {
-                              defaultValue: "30d: ${{value}}",
                               value:
                                 proxyGovernanceSettings.monthlyBudgetUsd.toFixed(
                                   4,
@@ -4908,7 +4497,6 @@ export function LlmGatewaySettingsPanel() {
                               {t(
                                 "settings.llmGateway.proxyGovernance.summary.binding",
                                 {
-                                  defaultValue: "Traffic: {{value}}",
                                   value: label,
                                 },
                               )}
@@ -4918,10 +4506,6 @@ export function LlmGatewaySettingsPanel() {
                           <Tag color="orange">
                             {t(
                               "settings.llmGateway.proxyGovernance.summary.bindingMissing",
-                              {
-                                defaultValue:
-                                  "Selected target is not serving completion, embedding, or rerank traffic",
-                              },
                             )}
                           </Tag>
                         )}
@@ -4930,8 +4514,6 @@ export function LlmGatewaySettingsPanel() {
                         {t(
                           "settings.llmGateway.proxyGovernance.summary.observedDetails",
                           {
-                            defaultValue:
-                              "24h governed spend {{governed}}, direct spend {{direct}}, requests {{requests}}, p95 latency {{latency}}.",
                             governed: formatObservedCurrency(
                               governanceUsage24h.governanceBreakdown
                                 .governedCostUsd,
@@ -4975,10 +4557,6 @@ export function LlmGatewaySettingsPanel() {
                         <Typography.Text type="secondary">
                           {t(
                             "settings.llmGateway.proxyGovernance.summary.observedLoading",
-                            {
-                              defaultValue:
-                                "Loading observed request usage for the governed profile.",
-                            },
                           )}
                         </Typography.Text>
                       ) : null}
@@ -4992,7 +4570,6 @@ export function LlmGatewaySettingsPanel() {
                           {t(
                             "settings.llmGateway.proxyGovernance.summary.syncedAt",
                             {
-                              defaultValue: "Last synced: {{value}}",
                               value: new Date(
                                 proxyGovernanceSettings.lastSyncedAt,
                               ).toLocaleString(),
@@ -5009,10 +4586,6 @@ export function LlmGatewaySettingsPanel() {
                         <Typography.Text type="warning">
                           {t(
                             "settings.llmGateway.proxyGovernance.summary.adminMissing",
-                            {
-                              defaultValue:
-                                "LITELLM_MASTER_KEY is not configured, so governance cannot be synced to LiteLLM yet.",
-                            },
                           )}
                         </Typography.Text>
                       ) : null}
@@ -5035,33 +4608,24 @@ export function LlmGatewaySettingsPanel() {
                           : "default"
                       }
                     >
-                      {t("settings.llmGateway.proxyStatus.loadBalancing", {
-                        defaultValue: "Load balancing",
-                      })}
+                      {t("settings.llmGateway.proxyStatus.loadBalancing")}
                       :{" "}
                       {statusProfileProxyModelInfo.loadBalancedGroups > 0
                         ? t("common.enabled")
                         : t("common.disabled")}
                     </Tag>
                     <Tag>
-                      {t("settings.llmGateway.proxyStatus.modelGroups", {
-                        defaultValue: "Model groups",
-                      })}
+                      {t("settings.llmGateway.proxyStatus.modelGroups")}
                       : {statusProfileProxyModelInfo.groups}
                     </Tag>
                     <Tag>
-                      {t("settings.llmGateway.proxyStatus.deployments", {
-                        defaultValue: "Deployments",
-                      })}
+                      {t("settings.llmGateway.proxyStatus.deployments")}
                       : {statusProfileProxyModelInfo.deployments}
                     </Tag>
                     {statusProfileProxyModelInfo.loadBalancedGroups > 0 ? (
                       <Tag color="green">
                         {t(
                           "settings.llmGateway.proxyStatus.loadBalancedGroups",
-                          {
-                            defaultValue: "Balanced groups",
-                          },
                         )}
                         : {statusProfileProxyModelInfo.loadBalancedGroups}
                       </Tag>
@@ -5069,7 +4633,6 @@ export function LlmGatewaySettingsPanel() {
                   </Space>
                   <Typography.Text type="secondary">
                     {t("settings.llmGateway.proxyModelInfo.checkedAt", {
-                      defaultValue: "模型详情检测时间：{{time}}",
                       time: new Date(
                         statusProfileProxyModelInfo.checkedAt,
                       ).toLocaleString(),
@@ -5078,10 +4641,7 @@ export function LlmGatewaySettingsPanel() {
                 </Space>
               ) : (
                 <Typography.Text type="secondary">
-                  {t("settings.llmGateway.proxyModelInfo.notChecked", {
-                    defaultValue:
-                      "尚未检测模型 Deployments，点击“模型详情”查看负载均衡情况。",
-                  })}
+                  {t("settings.llmGateway.proxyModelInfo.notChecked")}
                 </Typography.Text>
               )}
 
@@ -5097,18 +4657,14 @@ export function LlmGatewaySettingsPanel() {
                         statusProfileProxyLbTest.failed > 0 ? "red" : "green"
                       }
                     >
-                      {t("settings.llmGateway.proxyLbTest.summary.title", {
-                        defaultValue: "LB test",
-                      })}
+                      {t("settings.llmGateway.proxyLbTest.summary.title")}
                       :{" "}
                       {statusProfileProxyLbTest.failed > 0
                         ? t("common.failed")
                         : t("common.success")}
                     </Tag>
                     <Tag>
-                      {t("settings.llmGateway.proxyLbTest.summary.succeeded", {
-                        defaultValue: "Succeeded",
-                      })}
+                      {t("settings.llmGateway.proxyLbTest.summary.succeeded")}
                       : {statusProfileProxyLbTest.succeeded}
                     </Tag>
                     <Tag
@@ -5116,33 +4672,24 @@ export function LlmGatewaySettingsPanel() {
                         statusProfileProxyLbTest.failed > 0 ? "red" : "default"
                       }
                     >
-                      {t("settings.llmGateway.proxyLbTest.summary.failed", {
-                        defaultValue: "Failed",
-                      })}
+                      {t("settings.llmGateway.proxyLbTest.summary.failed")}
                       : {statusProfileProxyLbTest.failed}
                     </Tag>
                     <Tag>
-                      {t("settings.llmGateway.proxyLbTest.summary.modelIds", {
-                        defaultValue: "Model IDs",
-                      })}
+                      {t("settings.llmGateway.proxyLbTest.summary.modelIds")}
                       : {statusProfileProxyLbTest.modelIds}
                     </Tag>
                     <Tag>
-                      {t("settings.llmGateway.proxyLbTest.summary.apiBases", {
-                        defaultValue: "API bases",
-                      })}
+                      {t("settings.llmGateway.proxyLbTest.summary.apiBases")}
                       : {statusProfileProxyLbTest.apiBases}
                     </Tag>
                     <Tag>
-                      {t("settings.llmGateway.proxyLbTest.summary.duration", {
-                        defaultValue: "Duration",
-                      })}
+                      {t("settings.llmGateway.proxyLbTest.summary.duration")}
                       : {statusProfileProxyLbTest.durationMs}ms
                     </Tag>
                   </Space>
                   <Typography.Text type="secondary">
                     {t("settings.llmGateway.proxyLbTest.checkedAt", {
-                      defaultValue: "负载均衡测试时间：{{time}}",
                       time: new Date(
                         statusProfileProxyLbTest.checkedAt,
                       ).toLocaleString(),
@@ -5177,22 +4724,15 @@ export function LlmGatewaySettingsPanel() {
 
         <Card
           size="small"
-          title={t("settings.llmGateway.embeddingActive.title", {
-            defaultValue: "Embeddings 网关",
-          })}
+          title={t("settings.llmGateway.embeddingActive.title")}
         >
           <Space direction="vertical" size="small" style={{ display: "flex" }}>
             <Typography.Text type="secondary">
-              {t("settings.llmGateway.embeddingActive.hint", {
-                defaultValue:
-                  "用于 Embeddings / 向量化请求（可与对话模型使用不同的网关和模型）。",
-              })}
+              {t("settings.llmGateway.embeddingActive.hint")}
             </Typography.Text>
 
             <Typography.Text type="secondary">
-              {t("settings.llmGateway.embeddingActive.currentCompletion", {
-                defaultValue: "当前对话模型配置",
-              })}
+              {t("settings.llmGateway.embeddingActive.currentCompletion")}
               :{" "}
               {completionActiveProfile ? (
                 <Typography.Text>
@@ -5207,21 +4747,15 @@ export function LlmGatewaySettingsPanel() {
             </Typography.Text>
 
             <Typography.Text type="secondary">
-              {t("settings.llmGateway.embeddingActive.currentEmbedding", {
-                defaultValue: "当前 Embeddings 配置",
-              })}
+              {t("settings.llmGateway.embeddingActive.currentEmbedding")}
               :{" "}
               {embeddingResolved.kind === "default" ? (
                 <Space size={6} wrap>
                   <Typography.Text>
-                    {t("settings.llmGateway.embeddingActive.default", {
-                      defaultValue: "默认 Profile（MySQL）",
-                    })}
+                    {t("settings.llmGateway.embeddingActive.default")}
                   </Typography.Text>
                   <Tag>
-                    {t("settings.llmGateway.embeddingActive.defaultTag", {
-                      defaultValue: "默认",
-                    })}
+                    {t("settings.llmGateway.embeddingActive.defaultTag")}
                   </Tag>
                 </Space>
               ) : embeddingActiveProfile ? (
@@ -5232,28 +4766,20 @@ export function LlmGatewaySettingsPanel() {
                   {settings.embeddingActiveId ? (
                     settings.embeddingActiveId === settings.activeId ? (
                       <Tag color="purple">
-                        {t("settings.llmGateway.embeddingActive.lockedSame", {
-                          defaultValue: "显式锁定（当前与对话一致）",
-                        })}
+                        {t("settings.llmGateway.embeddingActive.lockedSame")}
                       </Tag>
                     ) : (
                       <Tag color="purple">
-                        {t("settings.llmGateway.embeddingActive.independent", {
-                          defaultValue: "独立配置",
-                        })}
+                        {t("settings.llmGateway.embeddingActive.independent")}
                       </Tag>
                     )
                   ) : completionActiveProfile ? (
                     <Tag>
-                      {t("settings.llmGateway.embeddingActive.following", {
-                        defaultValue: "跟随对话模型",
-                      })}
+                      {t("settings.llmGateway.embeddingActive.following")}
                     </Tag>
                   ) : (
                     <Tag>
-                      {t("settings.llmGateway.embeddingActive.default", {
-                        defaultValue: "默认配置",
-                      })}
+                      {t("settings.llmGateway.embeddingActive.default")}
                     </Tag>
                   )}
                   {embeddingActiveProfile.embeddingModel ? (
@@ -5264,18 +4790,12 @@ export function LlmGatewaySettingsPanel() {
                     <Tag>
                       {t(
                         "settings.llmGateway.embeddingActive.inheritEmbeddingModel",
-                        {
-                          defaultValue: "继承默认 Embedding 模型",
-                        },
                       )}
                     </Tag>
                   ) : (
                     <Tag color="red">
                       {t(
                         "settings.llmGateway.embeddingActive.missingEmbeddingModel",
-                        {
-                          defaultValue: "未配置 Embedding 模型",
-                        },
                       )}
                     </Tag>
                   )}
@@ -5287,18 +4807,13 @@ export function LlmGatewaySettingsPanel() {
 
             <Form layout="inline" style={{ width: "100%" }}>
               <Form.Item
-                label={t("settings.llmGateway.embeddingActive.selectLabel", {
-                  defaultValue: "切换 Embeddings 网关",
-                })}
+                label={t("settings.llmGateway.embeddingActive.selectLabel")}
                 style={{ flex: 1, minWidth: 260 }}
               >
                 <Select
                   value={embeddingSelectValue}
                   placeholder={t(
                     "settings.llmGateway.embeddingActive.selectPlaceholder",
-                    {
-                      defaultValue: "选择用于 Embeddings 的网关 Profile",
-                    },
                   )}
                   loading={loading || embeddingActivating}
                   options={[
@@ -5311,21 +4826,16 @@ export function LlmGatewaySettingsPanel() {
                               ? t(
                                   "settings.llmGateway.embeddingActive.followCompletion",
                                   {
-                                    defaultValue: "跟随对话模型（{{name}}）",
                                     name: completionActiveProfile.name,
                                   },
                                 )
                               : t(
                                   "settings.llmGateway.embeddingActive.followCompletionEmpty",
-                                  {
-                                    defaultValue: "跟随对话模型（当前未启用）",
-                                  },
                                 )}
                           </Typography.Text>
                           <Tag>
                             {t(
                               "settings.llmGateway.embeddingActive.followTag",
-                              { defaultValue: "跟随" },
                             )}
                           </Tag>
                         </Space>
@@ -5338,17 +4848,11 @@ export function LlmGatewaySettingsPanel() {
                           <Typography.Text>
                             {t(
                               "settings.llmGateway.embeddingActive.useDefault",
-                              {
-                                defaultValue: "使用 MySQL 默认 Profile",
-                              },
                             )}
                           </Typography.Text>
                           <Tag>
                             {t(
                               "settings.llmGateway.embeddingActive.defaultTag",
-                              {
-                                defaultValue: "默认",
-                              },
                             )}
                           </Tag>
                         </Space>
@@ -5366,16 +4870,11 @@ export function LlmGatewaySettingsPanel() {
                             <Tag color="red">
                               {t(
                                 "settings.llmGateway.embeddingActive.missingEmbeddingModelShort",
-                                {
-                                  defaultValue: "缺少 Embedding 模型",
-                                },
                               )}
                             </Tag>
                           ) : (
                             <Tag color="purple">
-                              {t("settings.llmGateway.embeddingActive.tag", {
-                                defaultValue: "Embeddings",
-                              })}
+                              {t("settings.llmGateway.embeddingActive.tag")}
                             </Tag>
                           )}
                         </Space>
@@ -5436,10 +4935,6 @@ export function LlmGatewaySettingsPanel() {
                 showIcon
                 message={t(
                   "settings.llmGateway.embeddingActive.noEligibleProfiles",
-                  {
-                    defaultValue:
-                      "暂无可用的 Embeddings Profile：请先在某个 Profile 中填写 Embedding 模型并启用。",
-                  },
                 )}
               />
             ) : null}
@@ -5448,22 +4943,15 @@ export function LlmGatewaySettingsPanel() {
 
         <Card
           size="small"
-          title={t("settings.llmGateway.rerankActive.title", {
-            defaultValue: "Rerank 网关",
-          })}
+          title={t("settings.llmGateway.rerankActive.title")}
         >
           <Space direction="vertical" size="small" style={{ display: "flex" }}>
             <Typography.Text type="secondary">
-              {t("settings.llmGateway.rerankActive.hint", {
-                defaultValue:
-                  "用于 Rerank / 重排序请求（可与对话模型使用不同的网关和模型）。",
-              })}
+              {t("settings.llmGateway.rerankActive.hint")}
             </Typography.Text>
 
             <Typography.Text type="secondary">
-              {t("settings.llmGateway.rerankActive.currentCompletion", {
-                defaultValue: "当前对话模型配置",
-              })}
+              {t("settings.llmGateway.rerankActive.currentCompletion")}
               :{" "}
               {completionActiveProfile ? (
                 <Typography.Text>
@@ -5478,21 +4966,15 @@ export function LlmGatewaySettingsPanel() {
             </Typography.Text>
 
             <Typography.Text type="secondary">
-              {t("settings.llmGateway.rerankActive.currentRerank", {
-                defaultValue: "当前 Rerank 配置",
-              })}
+              {t("settings.llmGateway.rerankActive.currentRerank")}
               :{" "}
               {rerankResolved.kind === "default" ? (
                 <Space size={6} wrap>
                   <Typography.Text>
-                    {t("settings.llmGateway.rerankActive.default", {
-                      defaultValue: "默认 Profile（MySQL）",
-                    })}
+                    {t("settings.llmGateway.rerankActive.default")}
                   </Typography.Text>
                   <Tag>
-                    {t("settings.llmGateway.rerankActive.defaultTag", {
-                      defaultValue: "默认",
-                    })}
+                    {t("settings.llmGateway.rerankActive.defaultTag")}
                   </Tag>
                 </Space>
               ) : rerankActiveProfile ? (
@@ -5501,28 +4983,20 @@ export function LlmGatewaySettingsPanel() {
                   {settings.rerankActiveId ? (
                     settings.rerankActiveId === settings.activeId ? (
                       <Tag color="gold">
-                        {t("settings.llmGateway.rerankActive.lockedSame", {
-                          defaultValue: "显式锁定（当前与对话一致）",
-                        })}
+                        {t("settings.llmGateway.rerankActive.lockedSame")}
                       </Tag>
                     ) : (
                       <Tag color="gold">
-                        {t("settings.llmGateway.rerankActive.independent", {
-                          defaultValue: "独立配置",
-                        })}
+                        {t("settings.llmGateway.rerankActive.independent")}
                       </Tag>
                     )
                   ) : completionActiveProfile ? (
                     <Tag>
-                      {t("settings.llmGateway.rerankActive.following", {
-                        defaultValue: "跟随对话模型",
-                      })}
+                      {t("settings.llmGateway.rerankActive.following")}
                     </Tag>
                   ) : (
                     <Tag>
-                      {t("settings.llmGateway.rerankActive.default", {
-                        defaultValue: "默认配置",
-                      })}
+                      {t("settings.llmGateway.rerankActive.default")}
                     </Tag>
                   )}
                   {rerankActiveProfile.rerankModel ? (
@@ -5533,9 +5007,6 @@ export function LlmGatewaySettingsPanel() {
                     <Tag color="red">
                       {t(
                         "settings.llmGateway.rerankActive.missingRerankModel",
-                        {
-                          defaultValue: "未配置 Rerank 模型",
-                        },
                       )}
                     </Tag>
                   )}
@@ -5547,18 +5018,13 @@ export function LlmGatewaySettingsPanel() {
 
             <Form layout="inline" style={{ width: "100%" }}>
               <Form.Item
-                label={t("settings.llmGateway.rerankActive.selectLabel", {
-                  defaultValue: "切换 Rerank 网关",
-                })}
+                label={t("settings.llmGateway.rerankActive.selectLabel")}
                 style={{ flex: 1, minWidth: 260 }}
               >
                 <Select
                   value={rerankSelectValue}
                   placeholder={t(
                     "settings.llmGateway.rerankActive.selectPlaceholder",
-                    {
-                      defaultValue: "选择用于 Rerank 的网关 Profile",
-                    },
                   )}
                   loading={loading || rerankActivating}
                   options={[
@@ -5571,21 +5037,15 @@ export function LlmGatewaySettingsPanel() {
                               ? t(
                                   "settings.llmGateway.rerankActive.followCompletion",
                                   {
-                                    defaultValue: "跟随对话模型（{{name}}）",
                                     name: completionActiveProfile.name,
                                   },
                                 )
                               : t(
                                   "settings.llmGateway.rerankActive.followCompletionEmpty",
-                                  {
-                                    defaultValue: "跟随对话模型（当前未启用）",
-                                  },
                                 )}
                           </Typography.Text>
                           <Tag>
-                            {t("settings.llmGateway.rerankActive.followTag", {
-                              defaultValue: "跟随",
-                            })}
+                            {t("settings.llmGateway.rerankActive.followTag")}
                           </Tag>
                         </Space>
                       ),
@@ -5595,14 +5055,10 @@ export function LlmGatewaySettingsPanel() {
                       label: (
                         <Space size={6} wrap>
                           <Typography.Text>
-                            {t("settings.llmGateway.rerankActive.useDefault", {
-                              defaultValue: "使用 MySQL 默认 Profile",
-                            })}
+                            {t("settings.llmGateway.rerankActive.useDefault")}
                           </Typography.Text>
                           <Tag>
-                            {t("settings.llmGateway.rerankActive.defaultTag", {
-                              defaultValue: "默认",
-                            })}
+                            {t("settings.llmGateway.rerankActive.defaultTag")}
                           </Tag>
                         </Space>
                       ),
@@ -5619,16 +5075,11 @@ export function LlmGatewaySettingsPanel() {
                             <Tag color="red">
                               {t(
                                 "settings.llmGateway.rerankActive.missingRerankModelShort",
-                                {
-                                  defaultValue: "缺少 Rerank 模型",
-                                },
                               )}
                             </Tag>
                           ) : (
                             <Tag color="gold">
-                              {t("settings.llmGateway.rerankActive.tag", {
-                                defaultValue: "Reranker",
-                              })}
+                              {t("settings.llmGateway.rerankActive.tag")}
                             </Tag>
                           )}
                         </Space>
@@ -5687,10 +5138,6 @@ export function LlmGatewaySettingsPanel() {
                 showIcon
                 message={t(
                   "settings.llmGateway.rerankActive.noEligibleProfiles",
-                  {
-                    defaultValue:
-                      "暂无可用的 Rerank Profile：请先在某个 Profile 中填写 Rerank 模型并启用。",
-                  },
                 )}
               />
             ) : null}
@@ -5800,44 +5247,27 @@ export function LlmGatewaySettingsPanel() {
           <Form.Item
             label={t("settings.llmGateway.fields.model")}
             name="model"
-            extra={t("settings.llmGateway.hints.modelOptional", {
-              defaultValue:
-                "可选：仅用于对话/补全请求；只配置 Embeddings 网关时可以留空。",
-            })}
+            extra={t("settings.llmGateway.hints.modelOptional")}
           >
             <Input allowClear placeholder="openai/gpt-4o-mini" />
           </Form.Item>
           <Form.Item
-            label={t("settings.llmGateway.fields.assistantModel", {
-              defaultValue: "Assistant model",
-            })}
+            label={t("settings.llmGateway.fields.assistantModel")}
             name="assistantModel"
-            extra={t("settings.llmGateway.hints.assistantModel", {
-              defaultValue:
-                "Optional: used only by AI Assistant (/assistant), and does not affect news pipeline model routing.",
-            })}
+            extra={t("settings.llmGateway.hints.assistantModel")}
           >
             <Input allowClear placeholder="openai/gpt-4.1-mini" />
           </Form.Item>
           <Form.Item
             name="assistantWebSearchEnabled"
             valuePropName="checked"
-            label={t("settings.llmGateway.fields.assistantWebSearchEnabled", {
-              defaultValue: "Assistant web search",
-            })}
+            label={t("settings.llmGateway.fields.assistantWebSearchEnabled")}
             extra={
               createAssistantWebSearchDisabled
                 ? t(
                     "settings.llmGateway.hints.assistantWebSearchRequiresResponses",
-                    {
-                      defaultValue:
-                        "Unavailable now because API surface is chat_completions. Set API surface to responses first.",
-                    },
                   )
-                : t("settings.llmGateway.hints.assistantWebSearchEnabled", {
-                    defaultValue:
-                      "Enable web search for /assistant on this profile. Requires API surface = responses.",
-                  })
+                : t("settings.llmGateway.hints.assistantWebSearchEnabled")
             }
           >
             <Switch disabled={createAssistantWebSearchDisabled} />
@@ -5849,45 +5279,27 @@ export function LlmGatewaySettingsPanel() {
             <Input placeholder="openai/text-embedding-3-small" />
           </Form.Item>
           <Form.Item
-            label={t("settings.llmGateway.fields.rerankModel", {
-              defaultValue: "Rerank model",
-            })}
+            label={t("settings.llmGateway.fields.rerankModel")}
             name="rerankModel"
-            extra={t("settings.llmGateway.hints.rerankModel", {
-              defaultValue:
-                "Optional: used by rerank endpoint (/v1/rerank). Required if this profile is explicitly activated for reranking.",
-            })}
+            extra={t("settings.llmGateway.hints.rerankModel")}
           >
             <Input allowClear placeholder="cohere/rerank-v3.5" />
           </Form.Item>
           <Form.Item
-            label={t("settings.llmGateway.fields.rerankFallbackModels", {
-              defaultValue: "Rerank backup models",
-            })}
+            label={t("settings.llmGateway.fields.rerankFallbackModels")}
             name="rerankFallbackModels"
-            extra={t("settings.llmGateway.hints.rerankFallbackModels", {
-              defaultValue: "Tried in order when rerankModel fails.",
-            })}
+            extra={t("settings.llmGateway.hints.rerankFallbackModels")}
           >
             <Input
               placeholder={t(
                 "settings.llmGateway.placeholders.rerankFallbackModels",
-                {
-                  defaultValue:
-                    "comma-separated, e.g. cohere/rerank-v3.0,cohere/rerank-english-v3.0",
-                },
               )}
             />
           </Form.Item>
           <Form.Item
-            label={t("settings.llmGateway.fields.apiSurface", {
-              defaultValue: "API surface",
-            })}
+            label={t("settings.llmGateway.fields.apiSurface")}
             name="apiSurface"
-            extra={t("settings.llmGateway.hints.apiSurface", {
-              defaultValue:
-                "Select which completion endpoint runtime should call: /v1/chat/completions or /v1/responses.",
-            })}
+            extra={t("settings.llmGateway.hints.apiSurface")}
           >
             <Select
               options={[
@@ -6012,24 +5424,16 @@ export function LlmGatewaySettingsPanel() {
           <Form.Item
             label={
               <span>
-                {t("settings.llmGateway.fields.responseFormatMode", {
-                  defaultValue: "response_format mode",
-                })}
+                {t("settings.llmGateway.fields.responseFormatMode")}
                 <Tooltip
-                  title={t("settings.llmGateway.tooltips.responseFormatMode", {
-                    defaultValue:
-                      "json_schema: 发送完整 JSON Schema 结构，支持结构化输出（OpenAI/Claude等）。json_object: 仅要求返回 JSON，不指定结构（Gemini等）。none: 不发送 response_format（兼容旧模型）。",
-                  })}
+                  title={t("settings.llmGateway.tooltips.responseFormatMode")}
                 >
                   <QuestionCircleOutlined style={helpIconStyle} />
                 </Tooltip>
               </span>
             }
             name="responseFormatMode"
-            extra={t("settings.llmGateway.hints.responseFormatMode", {
-              defaultValue:
-                "Controls runtime response_format strategy: json_schema, json_object, or none.",
-            })}
+            extra={t("settings.llmGateway.hints.responseFormatMode")}
           >
             <Select
               options={[
@@ -6045,23 +5449,15 @@ export function LlmGatewaySettingsPanel() {
             valuePropName="checked"
             label={
               <span>
-                {t("settings.llmGateway.fields.sendMetadata", {
-                  defaultValue: "Send metadata",
-                })}
+                {t("settings.llmGateway.fields.sendMetadata")}
                 <Tooltip
-                  title={t("settings.llmGateway.tooltips.sendMetadata", {
-                    defaultValue:
-                      "开启时，请求会携带 metadata 字段用于追踪（适合 LiteLLM Proxy）。关闭后，请求将不包含 metadata（提高与 OpenAI/Gemini 等直连的兼容性）。",
-                  })}
+                  title={t("settings.llmGateway.tooltips.sendMetadata")}
                 >
                   <QuestionCircleOutlined style={helpIconStyle} />
                 </Tooltip>
               </span>
             }
-            extra={t("settings.llmGateway.hints.sendMetadata", {
-              defaultValue:
-                "When disabled, metadata will be omitted from upstream requests.",
-            })}
+            extra={t("settings.llmGateway.hints.sendMetadata")}
           >
             <Switch />
           </Form.Item>
@@ -6169,44 +5565,27 @@ export function LlmGatewaySettingsPanel() {
           <Form.Item
             label={t("settings.llmGateway.fields.model")}
             name="model"
-            extra={t("settings.llmGateway.hints.modelOptional", {
-              defaultValue:
-                "可选：仅用于对话/补全请求；只配置 Embeddings 网关时可以留空。",
-            })}
+            extra={t("settings.llmGateway.hints.modelOptional")}
           >
             <Input allowClear />
           </Form.Item>
           <Form.Item
-            label={t("settings.llmGateway.fields.assistantModel", {
-              defaultValue: "Assistant model",
-            })}
+            label={t("settings.llmGateway.fields.assistantModel")}
             name="assistantModel"
-            extra={t("settings.llmGateway.hints.assistantModel", {
-              defaultValue:
-                "Optional: used only by AI Assistant (/assistant), and does not affect news pipeline model routing.",
-            })}
+            extra={t("settings.llmGateway.hints.assistantModel")}
           >
             <Input allowClear />
           </Form.Item>
           <Form.Item
             name="assistantWebSearchEnabled"
             valuePropName="checked"
-            label={t("settings.llmGateway.fields.assistantWebSearchEnabled", {
-              defaultValue: "Assistant web search",
-            })}
+            label={t("settings.llmGateway.fields.assistantWebSearchEnabled")}
             extra={
               editAssistantWebSearchDisabled
                 ? t(
                     "settings.llmGateway.hints.assistantWebSearchRequiresResponses",
-                    {
-                      defaultValue:
-                        "Unavailable now because API surface is chat_completions. Set API surface to responses first.",
-                    },
                   )
-                : t("settings.llmGateway.hints.assistantWebSearchEnabled", {
-                    defaultValue:
-                      "Enable web search for /assistant on this profile. Requires API surface = responses.",
-                  })
+                : t("settings.llmGateway.hints.assistantWebSearchEnabled")
             }
           >
             <Switch disabled={editAssistantWebSearchDisabled} />
@@ -6218,45 +5597,27 @@ export function LlmGatewaySettingsPanel() {
             <Input allowClear />
           </Form.Item>
           <Form.Item
-            label={t("settings.llmGateway.fields.rerankModel", {
-              defaultValue: "Rerank model",
-            })}
+            label={t("settings.llmGateway.fields.rerankModel")}
             name="rerankModel"
-            extra={t("settings.llmGateway.hints.rerankModel", {
-              defaultValue:
-                "Optional: used by rerank endpoint (/v1/rerank). Required if this profile is explicitly activated for reranking.",
-            })}
+            extra={t("settings.llmGateway.hints.rerankModel")}
           >
             <Input allowClear />
           </Form.Item>
           <Form.Item
-            label={t("settings.llmGateway.fields.rerankFallbackModels", {
-              defaultValue: "Rerank backup models",
-            })}
+            label={t("settings.llmGateway.fields.rerankFallbackModels")}
             name="rerankFallbackModels"
-            extra={t("settings.llmGateway.hints.rerankFallbackModels", {
-              defaultValue: "Tried in order when rerankModel fails.",
-            })}
+            extra={t("settings.llmGateway.hints.rerankFallbackModels")}
           >
             <Input
               placeholder={t(
                 "settings.llmGateway.placeholders.rerankFallbackModels",
-                {
-                  defaultValue:
-                    "comma-separated, e.g. cohere/rerank-v3.0,cohere/rerank-english-v3.0",
-                },
               )}
             />
           </Form.Item>
           <Form.Item
-            label={t("settings.llmGateway.fields.apiSurface", {
-              defaultValue: "API surface",
-            })}
+            label={t("settings.llmGateway.fields.apiSurface")}
             name="apiSurface"
-            extra={t("settings.llmGateway.hints.apiSurface", {
-              defaultValue:
-                "Select which completion endpoint runtime should call: /v1/chat/completions or /v1/responses.",
-            })}
+            extra={t("settings.llmGateway.hints.apiSurface")}
           >
             <Select
               options={[
@@ -6379,24 +5740,16 @@ export function LlmGatewaySettingsPanel() {
           <Form.Item
             label={
               <span>
-                {t("settings.llmGateway.fields.responseFormatMode", {
-                  defaultValue: "response_format mode",
-                })}
+                {t("settings.llmGateway.fields.responseFormatMode")}
                 <Tooltip
-                  title={t("settings.llmGateway.tooltips.responseFormatMode", {
-                    defaultValue:
-                      "json_schema: 发送完整 JSON Schema 结构，支持结构化输出（OpenAI/Claude等）。json_object: 仅要求返回 JSON，不指定结构（Gemini等）。none: 不发送 response_format（兼容旧模型）。",
-                  })}
+                  title={t("settings.llmGateway.tooltips.responseFormatMode")}
                 >
                   <QuestionCircleOutlined style={helpIconStyle} />
                 </Tooltip>
               </span>
             }
             name="responseFormatMode"
-            extra={t("settings.llmGateway.hints.responseFormatMode", {
-              defaultValue:
-                "Controls runtime response_format strategy: json_schema, json_object, or none.",
-            })}
+            extra={t("settings.llmGateway.hints.responseFormatMode")}
           >
             <Select
               options={[
@@ -6412,23 +5765,15 @@ export function LlmGatewaySettingsPanel() {
             valuePropName="checked"
             label={
               <span>
-                {t("settings.llmGateway.fields.sendMetadata", {
-                  defaultValue: "Send metadata",
-                })}
+                {t("settings.llmGateway.fields.sendMetadata")}
                 <Tooltip
-                  title={t("settings.llmGateway.tooltips.sendMetadata", {
-                    defaultValue:
-                      "开启时，请求会携带 metadata 字段用于追踪（适合 LiteLLM Proxy）。关闭后，请求将不包含 metadata（提高与 OpenAI/Gemini 等直连的兼容性）。",
-                  })}
+                  title={t("settings.llmGateway.tooltips.sendMetadata")}
                 >
                   <QuestionCircleOutlined style={helpIconStyle} />
                 </Tooltip>
               </span>
             }
-            extra={t("settings.llmGateway.hints.sendMetadata", {
-              defaultValue:
-                "When disabled, metadata will be omitted from upstream requests.",
-            })}
+            extra={t("settings.llmGateway.hints.sendMetadata")}
           >
             <Switch />
           </Form.Item>
@@ -6501,14 +5846,9 @@ export function LlmGatewaySettingsPanel() {
           </Typography.Paragraph>
 
           <Form.Item
-            label={t("settings.llmGateway.test.fields.authMode", {
-              defaultValue: "Auth mode",
-            })}
+            label={t("settings.llmGateway.test.fields.authMode")}
             name="authMode"
-            extra={t("settings.llmGateway.test.hints.authMode", {
-              defaultValue:
-                "profile_key validates the profile credential. managed_runtime_key validates the governed runtime credential actually used in production.",
-            })}
+            extra={t("settings.llmGateway.test.hints.authMode")}
           >
             <Select
               options={[
@@ -6526,14 +5866,10 @@ export function LlmGatewaySettingsPanel() {
           </Form.Item>
 
           <Form.Item
-            label={t("settings.llmGateway.test.fields.includeCompletion", {
-              defaultValue: "测试对话/补全",
-            })}
+            label={t("settings.llmGateway.test.fields.includeCompletion")}
             name="includeCompletion"
             valuePropName="checked"
-            extra={t("settings.llmGateway.test.hints.includeCompletion", {
-              defaultValue: "关闭后仅测试 Embeddings。",
-            })}
+            extra={t("settings.llmGateway.test.hints.includeCompletion")}
           >
             <Switch />
           </Form.Item>
@@ -6562,9 +5898,7 @@ export function LlmGatewaySettingsPanel() {
           </Form.Item>
 
           <Form.Item
-            label={t("settings.llmGateway.test.fields.apiSurface", {
-              defaultValue: "API Surface",
-            })}
+            label={t("settings.llmGateway.test.fields.apiSurface")}
             name="apiSurface"
           >
             <Select
@@ -6579,14 +5913,9 @@ export function LlmGatewaySettingsPanel() {
           <Form.Item
             label={
               <span>
-                {t("settings.llmGateway.test.fields.responseFormatMode", {
-                  defaultValue: "response_format probe",
-                })}
+                {t("settings.llmGateway.test.fields.responseFormatMode")}
                 <Tooltip
-                  title={t("settings.llmGateway.tooltips.responseFormatMode", {
-                    defaultValue:
-                      "json_schema: 发送完整 JSON Schema 结构，支持结构化输出（OpenAI/Claude等）。json_object: 仅要求返回 JSON，不指定结构（Gemini等）。none: 不发送 response_format（兼容旧模型）。",
-                  })}
+                  title={t("settings.llmGateway.tooltips.responseFormatMode")}
                 >
                   <QuestionCircleOutlined style={helpIconStyle} />
                 </Tooltip>
@@ -6607,14 +5936,9 @@ export function LlmGatewaySettingsPanel() {
           <Form.Item
             label={
               <span>
-                {t("settings.llmGateway.test.fields.includeMetadataProbe", {
-                  defaultValue: "Include metadata probe",
-                })}
+                {t("settings.llmGateway.test.fields.includeMetadataProbe")}
                 <Tooltip
-                  title={t("settings.llmGateway.tooltips.sendMetadata", {
-                    defaultValue:
-                      "开启时，请求会携带 metadata 字段用于追踪（适合 LiteLLM Proxy）。关闭后，请求将不包含 metadata（提高与 OpenAI/Gemini 等直连的兼容性）。",
-                  })}
+                  title={t("settings.llmGateway.tooltips.sendMetadata")}
                 >
                   <QuestionCircleOutlined style={helpIconStyle} />
                 </Tooltip>
@@ -6659,27 +5983,18 @@ export function LlmGatewaySettingsPanel() {
           </Form.Item>
 
           <Form.Item
-            label={t("settings.llmGateway.test.fields.includeRerank", {
-              defaultValue: "Test rerank",
-            })}
+            label={t("settings.llmGateway.test.fields.includeRerank")}
             name="includeRerank"
             valuePropName="checked"
-            extra={t("settings.llmGateway.test.hints.includeRerank", {
-              defaultValue: "When enabled, runs /v1/rerank probe.",
-            })}
+            extra={t("settings.llmGateway.test.hints.includeRerank")}
           >
             <Switch />
           </Form.Item>
 
           <Form.Item
-            label={t("settings.llmGateway.test.fields.rerankModel", {
-              defaultValue: "Rerank model override",
-            })}
+            label={t("settings.llmGateway.test.fields.rerankModel")}
             name="rerankModel"
-            extra={t("settings.llmGateway.test.hints.rerankModel", {
-              defaultValue:
-                "Leave empty to use the profile rerank model + backup rerank models.",
-            })}
+            extra={t("settings.llmGateway.test.hints.rerankModel")}
           >
             <Input
               allowClear
@@ -6689,26 +6004,19 @@ export function LlmGatewaySettingsPanel() {
           </Form.Item>
 
           <Form.Item
-            label={t("settings.llmGateway.test.fields.rerankQuery", {
-              defaultValue: "Rerank query",
-            })}
+            label={t("settings.llmGateway.test.fields.rerankQuery")}
             name="rerankQuery"
           >
             <Input
               disabled={!includeRerank}
               placeholder={t(
                 "settings.llmGateway.test.placeholders.rerankQuery",
-                {
-                  defaultValue: "latest US inflation outlook and Fed policy",
-                },
               )}
             />
           </Form.Item>
 
           <Form.Item
-            label={t("settings.llmGateway.test.fields.rerankDocuments", {
-              defaultValue: "Rerank documents",
-            })}
+            label={t("settings.llmGateway.test.fields.rerankDocuments")}
             name="rerankDocuments"
           >
             <Input.TextArea
@@ -6716,10 +6024,6 @@ export function LlmGatewaySettingsPanel() {
               autoSize={{ minRows: 3, maxRows: 8 }}
               placeholder={t(
                 "settings.llmGateway.test.placeholders.rerankDocuments",
-                {
-                  defaultValue:
-                    "One document per line. Leave empty to use default probe documents.",
-                },
               )}
             />
           </Form.Item>
@@ -6743,7 +6047,6 @@ export function LlmGatewaySettingsPanel() {
         title={
           proxyLbTestProfile
             ? t("settings.llmGateway.proxyLbTest.modal.title", {
-                defaultValue: "LiteLLM Proxy 负载均衡测试：{{name}}",
                 name: proxyLbTestProfile.name,
               })
             : undefined
@@ -6767,9 +6070,7 @@ export function LlmGatewaySettingsPanel() {
                 : false
             }
           >
-            {t("settings.llmGateway.proxyLbTest.actions.run", {
-              defaultValue: "运行测试",
-            })}
+            {t("settings.llmGateway.proxyLbTest.actions.run")}
           </Button>,
         ]}
       >
@@ -6792,22 +6093,16 @@ export function LlmGatewaySettingsPanel() {
           </Typography.Paragraph>
 
           <Form.Item
-            label={t("settings.llmGateway.proxyLbTest.fields.model", {
-              defaultValue: "模型覆盖",
-            })}
+            label={t("settings.llmGateway.proxyLbTest.fields.model")}
             name="model"
-            extra={t("settings.llmGateway.proxyLbTest.hints.model", {
-              defaultValue: "留空则使用 Profile 的默认模型。",
-            })}
+            extra={t("settings.llmGateway.proxyLbTest.hints.model")}
           >
             <Input allowClear placeholder={proxyLbTestProfile?.model ?? ""} />
           </Form.Item>
 
           <Space wrap style={{ display: "flex" }}>
             <Form.Item
-              label={t("settings.llmGateway.proxyLbTest.fields.attempts", {
-                defaultValue: "请求次数",
-              })}
+              label={t("settings.llmGateway.proxyLbTest.fields.attempts")}
               name="attempts"
               style={{ minWidth: 200, flex: 1 }}
             >
@@ -6819,9 +6114,7 @@ export function LlmGatewaySettingsPanel() {
               />
             </Form.Item>
             <Form.Item
-              label={t("settings.llmGateway.proxyLbTest.fields.concurrency", {
-                defaultValue: "并发",
-              })}
+              label={t("settings.llmGateway.proxyLbTest.fields.concurrency")}
               name="concurrency"
               style={{ minWidth: 200, flex: 1 }}
             >
@@ -6835,13 +6128,9 @@ export function LlmGatewaySettingsPanel() {
           </Space>
 
           <Form.Item
-            label={t("settings.llmGateway.proxyLbTest.fields.prompt", {
-              defaultValue: "Prompt",
-            })}
+            label={t("settings.llmGateway.proxyLbTest.fields.prompt")}
             name="prompt"
-            extra={t("settings.llmGateway.proxyLbTest.hints.prompt", {
-              defaultValue: '留空会使用默认的 "Say \\"OK\\" and nothing else."',
-            })}
+            extra={t("settings.llmGateway.proxyLbTest.hints.prompt")}
           >
             <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
           </Form.Item>
@@ -6864,9 +6153,7 @@ export function LlmGatewaySettingsPanel() {
       </Modal>
 
       <Modal
-        title={t("settings.llmGateway.proxyGovernance.modal.title", {
-          defaultValue: "LiteLLM Proxy 预算/并发治理",
-        })}
+        title={t("settings.llmGateway.proxyGovernance.modal.title")}
         open={proxyGovernanceOpen}
         onCancel={() => {
           setProxyGovernanceOpen(false);
@@ -6889,7 +6176,7 @@ export function LlmGatewaySettingsPanel() {
             onClick={() => void loadProxyGovernanceSettings()}
             loading={proxyGovernanceLoading}
           >
-            {t("common.refresh", { defaultValue: "刷新" })}
+            {t("common.refresh")}
           </Button>,
           <Button
             key="rotate"
@@ -6902,9 +6189,7 @@ export function LlmGatewaySettingsPanel() {
               !proxyGovernanceSettings?.enabled
             }
           >
-            {t("settings.llmGateway.proxyGovernance.actions.rotate", {
-              defaultValue: "轮换运行时 Key",
-            })}
+            {t("settings.llmGateway.proxyGovernance.actions.rotate")}
           </Button>,
           <Button
             key="reset"
@@ -6913,7 +6198,7 @@ export function LlmGatewaySettingsPanel() {
             loading={proxyGovernanceResetting}
             disabled={proxyGovernanceSaving || proxyGovernanceRotating}
           >
-            {t("common.reset", { defaultValue: "重置" })}
+            {t("common.reset")}
           </Button>,
           <Button
             key="save"
@@ -6934,10 +6219,7 @@ export function LlmGatewaySettingsPanel() {
         <Spin spinning={proxyGovernanceLoading}>
           <Space direction="vertical" size="middle" style={{ display: "flex" }}>
             <Typography.Text type="secondary">
-              {t("settings.llmGateway.proxyGovernance.hint", {
-                defaultValue:
-                  "LiteLLM Proxy is the single enforcement plane for runtime budgets and concurrency. The application keeps feature-level request logs only.",
-              })}
+              {t("settings.llmGateway.proxyGovernance.hint")}
             </Typography.Text>
 
             {proxyGovernanceSettings ? (
@@ -6950,14 +6232,11 @@ export function LlmGatewaySettingsPanel() {
                       : "info"
                 }
                 showIcon
-                message={t("settings.llmGateway.proxyGovernance.status.title", {
-                  defaultValue: "Managed LiteLLM runtime key",
-                })}
+                message={t("settings.llmGateway.proxyGovernance.status.title")}
                 description={
                   <Space direction="vertical" size="middle">
                     <Typography.Text type="secondary">
                       {t("settings.llmGateway.proxyGovernance.status.apiBase", {
-                        defaultValue: "Proxy API base: {{value}}",
                         value:
                           proxyGovernanceSettings.apiBase ??
                           governanceNotSelectedLabel,
@@ -6975,7 +6254,6 @@ export function LlmGatewaySettingsPanel() {
                         {t(
                           "settings.llmGateway.proxyGovernance.status.targetProfile",
                           {
-                            defaultValue: "Target profile: {{value}}",
                             value:
                               proxyGovernanceSettings.targetProfileName ??
                               proxyGovernanceSettings.targetProfileId ??
@@ -6985,7 +6263,6 @@ export function LlmGatewaySettingsPanel() {
                       </Tag>
                       <Tag color="blue">
                         {t("settings.llmGateway.proxyGovernance.status.team", {
-                          defaultValue: "Team: {{value}}",
                           value:
                             proxyGovernanceSettings.managedTeamId ??
                             governanceNoneLabel,
@@ -6993,7 +6270,6 @@ export function LlmGatewaySettingsPanel() {
                       </Tag>
                       <Tag color="purple">
                         {t("settings.llmGateway.proxyGovernance.status.key", {
-                          defaultValue: "Key: {{value}}",
                           value:
                             proxyGovernanceSettings.managedRuntimeKeyAlias ??
                             (proxyGovernanceSettings.hasManagedRuntimeKey
@@ -7050,7 +6326,6 @@ export function LlmGatewaySettingsPanel() {
                         {t(
                           "settings.llmGateway.proxyGovernance.status.syncedAt",
                           {
-                            defaultValue: "Last synced: {{value}}",
                             value: new Date(
                               proxyGovernanceSettings.lastSyncedAt,
                             ).toLocaleString(),
@@ -7062,10 +6337,6 @@ export function LlmGatewaySettingsPanel() {
                       <Typography.Text type="warning">
                         {t(
                           "settings.llmGateway.proxyGovernance.status.adminMissing",
-                          {
-                            defaultValue:
-                              "Set LITELLM_MASTER_KEY on both API and LiteLLM before enabling managed governance.",
-                          },
                         )}
                       </Typography.Text>
                     ) : null}
@@ -7089,9 +6360,7 @@ export function LlmGatewaySettingsPanel() {
 
             <Card
               size="small"
-              title={t("settings.llmGateway.proxyGovernance.preflight.title", {
-                defaultValue: "启用前检查",
-              })}
+              title={t("settings.llmGateway.proxyGovernance.preflight.title")}
               extra={
                 <Button
                   size="small"
@@ -7102,7 +6371,7 @@ export function LlmGatewaySettingsPanel() {
                   }
                   loading={proxyGovernancePreflightLoading}
                 >
-                  {t("common.refresh", { defaultValue: "Refresh" })}
+                  {t("common.refresh")}
                 </Button>
               }
             >
@@ -7112,10 +6381,7 @@ export function LlmGatewaySettingsPanel() {
                 style={{ display: "flex" }}
               >
                 <Typography.Text type="secondary">
-                  {t("settings.llmGateway.proxyGovernance.preflight.hint", {
-                    defaultValue:
-                      "Before enabling managed governance, confirm the selected LiteLLM profile is healthy and actually serving runtime traffic.",
-                  })}
+                  {t("settings.llmGateway.proxyGovernance.preflight.hint")}
                 </Typography.Text>
                 <Space wrap>
                   <Tag
@@ -7124,7 +6390,6 @@ export function LlmGatewaySettingsPanel() {
                     {t(
                       "settings.llmGateway.proxyGovernance.preflight.targetProfile",
                       {
-                        defaultValue: "Target profile: {{value}}",
                         value:
                           selectedGovernanceProfile?.name ??
                           governanceNoneLabel,
@@ -7135,7 +6400,6 @@ export function LlmGatewaySettingsPanel() {
                     {t(
                       "settings.llmGateway.proxyGovernance.preflight.apiBase",
                       {
-                        defaultValue: "API base: {{value}}",
                         value:
                           proxyGovernancePreflight?.apiBase ??
                           selectedGovernanceProfile?.apiBase ??
@@ -7155,7 +6419,6 @@ export function LlmGatewaySettingsPanel() {
                     {t(
                       "settings.llmGateway.proxyGovernance.preflight.bindings",
                       {
-                        defaultValue: "Traffic bindings: {{value}}",
                         value:
                           proxyGovernancePreflight?.trafficBindings
                             .completion ||
@@ -7166,26 +6429,17 @@ export function LlmGatewaySettingsPanel() {
                                   .completion
                                   ? t(
                                       "settings.llmGateway.proxyGovernance.bindings.completion",
-                                      {
-                                        defaultValue: "Completion",
-                                      },
                                     )
                                   : null,
                                 proxyGovernancePreflight?.trafficBindings
                                   .embedding
                                   ? t(
                                       "settings.llmGateway.proxyGovernance.bindings.embedding",
-                                      {
-                                        defaultValue: "Embedding",
-                                      },
                                     )
                                   : null,
                                 proxyGovernancePreflight?.trafficBindings.rerank
                                   ? t(
                                       "settings.llmGateway.proxyGovernance.bindings.rerank",
-                                      {
-                                        defaultValue: "Rerank",
-                                      },
                                     )
                                   : null,
                               ]
@@ -7208,22 +6462,14 @@ export function LlmGatewaySettingsPanel() {
                       proxyGovernancePreflight.canEnable
                         ? t(
                             "settings.llmGateway.proxyGovernance.preflight.summary.ready",
-                            {
-                              defaultValue: "Governance can be enabled",
-                            },
                           )
                         : t(
                             "settings.llmGateway.proxyGovernance.preflight.summary.blocked",
-                            {
-                              defaultValue: "Governance enablement is blocked",
-                            },
                           )
                     }
                     description={t(
                       "settings.llmGateway.proxyGovernance.preflight.summary.counts",
                       {
-                        defaultValue:
-                          "Blocking issues {{blocking}}; warnings {{warnings}}.",
                         blocking: governancePreflightBlockingCount,
                         warnings: governancePreflightWarningCount,
                       },
@@ -7237,10 +6483,6 @@ export function LlmGatewaySettingsPanel() {
                         ? undefined
                         : t(
                             "settings.llmGateway.proxyGovernance.preflight.actions.bindCompletionDisabled",
-                            {
-                              defaultValue:
-                                "Select a target profile before binding completion traffic.",
-                            },
                           )
                     }
                   >
@@ -7270,15 +6512,9 @@ export function LlmGatewaySettingsPanel() {
                       {governanceTrafficBindings.completion
                         ? t(
                             "settings.llmGateway.proxyGovernance.preflight.actions.bindCompletionDone",
-                            {
-                              defaultValue: "Completion 已绑定",
-                            },
                           )
                         : t(
                             "settings.llmGateway.proxyGovernance.preflight.actions.bindCompletion",
-                            {
-                              defaultValue: "绑定 Completion",
-                            },
                           )}
                     </Button>
                   </Tooltip>
@@ -7288,10 +6524,6 @@ export function LlmGatewaySettingsPanel() {
                         ? undefined
                         : t(
                             "settings.llmGateway.proxyGovernance.preflight.actions.bindEmbeddingDisabled",
-                            {
-                              defaultValue:
-                                "This profile needs an embedding model before it can receive embedding traffic.",
-                            },
                           )
                     }
                   >
@@ -7320,15 +6552,9 @@ export function LlmGatewaySettingsPanel() {
                       {governanceTrafficBindings.embedding
                         ? t(
                             "settings.llmGateway.proxyGovernance.preflight.actions.bindEmbeddingDone",
-                            {
-                              defaultValue: "Embedding 已绑定",
-                            },
                           )
                         : t(
                             "settings.llmGateway.proxyGovernance.preflight.actions.bindEmbedding",
-                            {
-                              defaultValue: "绑定 Embedding",
-                            },
                           )}
                     </Button>
                   </Tooltip>
@@ -7338,10 +6564,6 @@ export function LlmGatewaySettingsPanel() {
                         ? undefined
                         : t(
                             "settings.llmGateway.proxyGovernance.preflight.actions.bindRerankDisabled",
-                            {
-                              defaultValue:
-                                "This profile needs a rerank model before it can receive rerank traffic.",
-                            },
                           )
                     }
                   >
@@ -7366,15 +6588,9 @@ export function LlmGatewaySettingsPanel() {
                       {governanceTrafficBindings.rerank
                         ? t(
                             "settings.llmGateway.proxyGovernance.preflight.actions.bindRerankDone",
-                            {
-                              defaultValue: "Rerank 已绑定",
-                            },
                           )
                         : t(
                             "settings.llmGateway.proxyGovernance.preflight.actions.bindRerank",
-                            {
-                              defaultValue: "绑定 Rerank",
-                            },
                           )}
                     </Button>
                   </Tooltip>
@@ -7383,9 +6599,6 @@ export function LlmGatewaySettingsPanel() {
                   <Typography.Text type="secondary">
                     {t(
                       "settings.llmGateway.proxyGovernance.preflight.loading",
-                      {
-                        defaultValue: "Loading governance preflight checks.",
-                      },
                     )}
                   </Typography.Text>
                 ) : null}
@@ -7408,7 +6621,6 @@ export function LlmGatewaySettingsPanel() {
                       {t(
                         "settings.llmGateway.proxyGovernance.preflight.liveliness",
                         {
-                          defaultValue: "Liveliness: {{value}}",
                           value: proxyGovernancePreflight.health.liveliness.ok
                             ? "ok"
                             : "failed",
@@ -7425,7 +6637,6 @@ export function LlmGatewaySettingsPanel() {
                       {t(
                         "settings.llmGateway.proxyGovernance.preflight.readiness",
                         {
-                          defaultValue: "Readiness: {{value}}",
                           value: proxyGovernancePreflight.health.readiness.ok
                             ? "ok"
                             : "failed",
@@ -7436,7 +6647,6 @@ export function LlmGatewaySettingsPanel() {
                       {t(
                         "settings.llmGateway.proxyGovernance.preflight.checkedAt",
                         {
-                          defaultValue: "Checked: {{value}}",
                           value: new Date(
                             proxyGovernancePreflight.health.checkedAt,
                           ).toLocaleString(),
@@ -7465,9 +6675,6 @@ export function LlmGatewaySettingsPanel() {
                     showIcon
                     message={t(
                       "settings.llmGateway.proxyGovernance.preflight.nextActions",
-                      {
-                        defaultValue: "Recommended next actions",
-                      },
                     )}
                     description={
                       <Space
@@ -7489,9 +6696,7 @@ export function LlmGatewaySettingsPanel() {
 
             <Card
               size="small"
-              title={t("settings.llmGateway.proxyGovernance.observed.title", {
-                defaultValue: "观测到的运行态用量",
-              })}
+              title={t("settings.llmGateway.proxyGovernance.observed.title")}
               extra={
                 <Button
                   size="small"
@@ -7504,7 +6709,7 @@ export function LlmGatewaySettingsPanel() {
                   }
                   loading={governanceUsageLoading}
                 >
-                  {t("common.refresh", { defaultValue: "Refresh" })}
+                  {t("common.refresh")}
                 </Button>
               }
             >
@@ -7514,17 +6719,13 @@ export function LlmGatewaySettingsPanel() {
                 style={{ display: "flex" }}
               >
                 <Typography.Text type="secondary">
-                  {t("settings.llmGateway.proxyGovernance.observed.hint", {
-                    defaultValue:
-                      "This is derived from business request logs for the selected LiteLLM profile. LiteLLM still performs the actual enforcement.",
-                  })}
+                  {t("settings.llmGateway.proxyGovernance.observed.hint")}
                 </Typography.Text>
                 <Space wrap>
                   <Tag color="blue">
                     {t(
                       "settings.llmGateway.proxyGovernance.observed.daySpend",
                       {
-                        defaultValue: "Governed 24h spend: {{value}}",
                         value: formatObservedCurrency(
                           governanceUsage24h.governanceBreakdown
                             .governedCostUsd,
@@ -7536,7 +6737,6 @@ export function LlmGatewaySettingsPanel() {
                     {t(
                       "settings.llmGateway.proxyGovernance.observed.dayDirect",
                       {
-                        defaultValue: "Direct 24h spend: {{value}}",
                         value: formatObservedCurrency(
                           governanceUsage24h.governanceBreakdown.directCostUsd,
                         ),
@@ -7547,7 +6747,6 @@ export function LlmGatewaySettingsPanel() {
                     {t(
                       "settings.llmGateway.proxyGovernance.observed.monthSpend",
                       {
-                        defaultValue: "Governed 30d spend: {{value}}",
                         value: formatObservedCurrency(
                           governanceUsage30d.governanceBreakdown
                             .governedCostUsd,
@@ -7559,7 +6758,6 @@ export function LlmGatewaySettingsPanel() {
                     {t(
                       "settings.llmGateway.proxyGovernance.observed.monthDirect",
                       {
-                        defaultValue: "Direct 30d spend: {{value}}",
                         value: formatObservedCurrency(
                           governanceUsage30d.governanceBreakdown.directCostUsd,
                         ),
@@ -7572,9 +6770,6 @@ export function LlmGatewaySettingsPanel() {
                     <Typography.Text type="secondary">
                       {t(
                         "settings.llmGateway.proxyGovernance.observed.cards.governedRatio",
-                        {
-                          defaultValue: "Governed share",
-                        },
                       )}
                     </Typography.Text>
                     <Typography.Title level={5} style={{ margin: "8px 0 4px" }}>
@@ -7584,7 +6779,6 @@ export function LlmGatewaySettingsPanel() {
                       {t(
                         "settings.llmGateway.proxyGovernance.observed.cards.governedRatioDetail",
                         {
-                          defaultValue: "{{governed}} of {{total}} requests",
                           governed:
                             governanceUsage24h.governanceBreakdown.governedRequestCount.toLocaleString(),
                           total:
@@ -7597,9 +6791,6 @@ export function LlmGatewaySettingsPanel() {
                     <Typography.Text type="secondary">
                       {t(
                         "settings.llmGateway.proxyGovernance.observed.cards.managedKeyRequests",
-                        {
-                          defaultValue: "Managed-key requests",
-                        },
                       )}
                     </Typography.Text>
                     <Typography.Title level={5} style={{ margin: "8px 0 4px" }}>
@@ -7608,9 +6799,6 @@ export function LlmGatewaySettingsPanel() {
                     <Typography.Text type="secondary">
                       {t(
                         "settings.llmGateway.proxyGovernance.observed.cards.managedKeyRequestsDetail",
-                        {
-                          defaultValue: "24h managed-runtime-key requests",
-                        },
                       )}
                     </Typography.Text>
                   </div>
@@ -7618,9 +6806,6 @@ export function LlmGatewaySettingsPanel() {
                     <Typography.Text type="secondary">
                       {t(
                         "settings.llmGateway.proxyGovernance.observed.cards.profileKeyRequests",
-                        {
-                          defaultValue: "Profile-key requests",
-                        },
                       )}
                     </Typography.Text>
                     <Typography.Title level={5} style={{ margin: "8px 0 4px" }}>
@@ -7629,9 +6814,6 @@ export function LlmGatewaySettingsPanel() {
                     <Typography.Text type="secondary">
                       {t(
                         "settings.llmGateway.proxyGovernance.observed.cards.profileKeyRequestsDetail",
-                        {
-                          defaultValue: "24h profile-key requests",
-                        },
                       )}
                     </Typography.Text>
                   </div>
@@ -7639,9 +6821,6 @@ export function LlmGatewaySettingsPanel() {
                     <Typography.Text type="secondary">
                       {t(
                         "settings.llmGateway.proxyGovernance.observed.cards.successRate",
-                        {
-                          defaultValue: "24h success rate",
-                        },
                       )}
                     </Typography.Text>
                     <Typography.Title level={5} style={{ margin: "8px 0 4px" }}>
@@ -7665,9 +6844,6 @@ export function LlmGatewaySettingsPanel() {
                   type="inner"
                   title={t(
                     "settings.llmGateway.proxyGovernance.observed.budgetPressure",
-                    {
-                      defaultValue: "Observed budget pressure",
-                    },
                   )}
                 >
                   <Space
@@ -7678,10 +6854,6 @@ export function LlmGatewaySettingsPanel() {
                     <Typography.Text type="secondary">
                       {t(
                         "settings.llmGateway.proxyGovernance.observed.budgetPressureHint",
-                        {
-                          defaultValue:
-                            "Derived from app-side governed request logs. LiteLLM remains the source of truth for real enforcement.",
-                        },
                       )}
                     </Typography.Text>
                     <div>
@@ -7695,10 +6867,6 @@ export function LlmGatewaySettingsPanel() {
                         <Typography.Text>
                           {t(
                             "settings.llmGateway.proxyGovernance.observed.dayBudgetProgress",
-                            {
-                              defaultValue:
-                                "24h governed spend vs configured cap",
-                            },
                           )}
                         </Typography.Text>
                         <Typography.Text type="secondary">
@@ -7729,10 +6897,6 @@ export function LlmGatewaySettingsPanel() {
                         <Typography.Text>
                           {t(
                             "settings.llmGateway.proxyGovernance.observed.monthBudgetProgress",
-                            {
-                              defaultValue:
-                                "30d governed spend vs configured cap",
-                            },
                           )}
                         </Typography.Text>
                         <Typography.Text type="secondary">
@@ -7765,9 +6929,6 @@ export function LlmGatewaySettingsPanel() {
                         <Typography.Text>
                           {t(
                             "settings.llmGateway.proxyGovernance.observed.directLeakage",
-                            {
-                              defaultValue: "24h direct request leakage",
-                            },
                           )}
                         </Typography.Text>
                         <Typography.Text type="secondary">
@@ -7788,8 +6949,6 @@ export function LlmGatewaySettingsPanel() {
                   {t(
                     "settings.llmGateway.proxyGovernance.observed.dayDetails",
                     {
-                      defaultValue:
-                        "24h requests {{requests}}, tokens {{tokens}}, success rate {{successRate}}%, errors {{errors}}, p95 latency {{latency}}.",
                       requests:
                         governanceUsage24h.totals.requestCount.toLocaleString(),
                       tokens: formatObservedTokens(
@@ -7810,8 +6969,6 @@ export function LlmGatewaySettingsPanel() {
                   {t(
                     "settings.llmGateway.proxyGovernance.observed.monthDetails",
                     {
-                      defaultValue:
-                        "30d requests {{requests}}, tokens {{tokens}}, success rate {{successRate}}%, errors {{errors}}, avg latency {{latency}}.",
                       requests:
                         governanceUsage30d.totals.requestCount.toLocaleString(),
                       tokens: formatObservedTokens(
@@ -7832,8 +6989,6 @@ export function LlmGatewaySettingsPanel() {
                   {t(
                     "settings.llmGateway.proxyGovernance.observed.authModeDetails",
                     {
-                      defaultValue:
-                        "24h managed-runtime-key requests {{managed}}, profile-key requests {{direct}}.",
                       managed:
                         governanceUsage24h.governanceBreakdown.managedRuntimeKeyRequestCount.toLocaleString(),
                       direct:
@@ -7848,10 +7003,6 @@ export function LlmGatewaySettingsPanel() {
                     showIcon
                     message={t(
                       "settings.llmGateway.proxyGovernance.observed.runtimeKeyUnreadable",
-                      {
-                        defaultValue:
-                          "Managed runtime key is unreadable, so governed traffic will fail closed until secret decryption is fixed.",
-                      },
                     )}
                   />
                 ) : null}
@@ -7861,10 +7012,6 @@ export function LlmGatewaySettingsPanel() {
                     showIcon
                     message={t(
                       "settings.llmGateway.proxyGovernance.observed.zeroGoverned",
-                      {
-                        defaultValue:
-                          "No governed requests were observed in the last 24h.",
-                      },
                     )}
                   />
                 ) : null}
@@ -7874,16 +7021,10 @@ export function LlmGatewaySettingsPanel() {
                     showIcon
                     message={t(
                       "settings.llmGateway.proxyGovernance.observed.directRequests",
-                      {
-                        defaultValue:
-                          "Direct profile-key requests are still reaching the governed target profile.",
-                      },
                     )}
                     description={t(
                       "settings.llmGateway.proxyGovernance.observed.directRequestsDetails",
                       {
-                        defaultValue:
-                          "Direct requests: {{count}}, governed requests: {{governed}} in the last 24h.",
                         count:
                           governanceUsage24h.governanceBreakdown
                             .directRequestCount,
@@ -7900,19 +7041,13 @@ export function LlmGatewaySettingsPanel() {
                     showIcon
                     message={t(
                       "settings.llmGateway.proxyGovernance.observed.leadingErrorTitle",
-                      {
-                        defaultValue: "最近最常见的错误",
-                      },
                     )}
                     description={`${governanceUsage24h.leadingError.message} (${governanceUsage24h.leadingError.count.toLocaleString()} requests in the last 24h)`}
                   />
                 ) : null}
                 {governanceUsageLoading ? (
                   <Typography.Text type="secondary">
-                    {t("settings.llmGateway.proxyGovernance.observed.loading", {
-                      defaultValue:
-                        "Loading observed usage for the selected profile.",
-                    })}
+                    {t("settings.llmGateway.proxyGovernance.observed.loading")}
                   </Typography.Text>
                 ) : null}
                 {governanceUsageErrorMessage ? (
@@ -7934,9 +7069,7 @@ export function LlmGatewaySettingsPanel() {
               <Form.Item
                 name="enabled"
                 valuePropName="checked"
-                label={t("settings.llmGateway.proxyGovernance.fields.enabled", {
-                  defaultValue: "Enable LiteLLM-enforced runtime governance",
-                })}
+                label={t("settings.llmGateway.proxyGovernance.fields.enabled")}
               >
                 <Switch />
               </Form.Item>
@@ -7945,9 +7078,6 @@ export function LlmGatewaySettingsPanel() {
                 <Form.Item
                   label={t(
                     "settings.llmGateway.proxyGovernance.fields.targetProfileId",
-                    {
-                      defaultValue: "Target LiteLLM profile",
-                    },
                   )}
                   name="targetProfileId"
                   style={{ minWidth: 280, flex: 1 }}
@@ -7956,10 +7086,6 @@ export function LlmGatewaySettingsPanel() {
                       required: proxyGovernanceEnabled,
                       message: t(
                         "settings.llmGateway.proxyGovernance.validation.targetProfileRequired",
-                        {
-                          defaultValue:
-                            "Select the LiteLLM gateway profile that governance should manage",
-                        },
                       ),
                     },
                   ]}
@@ -7969,18 +7095,12 @@ export function LlmGatewaySettingsPanel() {
                     options={governanceTargetProfiles}
                     placeholder={t(
                       "settings.llmGateway.proxyGovernance.placeholders.targetProfileId",
-                      {
-                        defaultValue: "Choose an enabled LiteLLM profile",
-                      },
                     )}
                   />
                 </Form.Item>
                 <Form.Item
                   label={t(
                     "settings.llmGateway.proxyGovernance.fields.dailyBudgetUsd",
-                    {
-                      defaultValue: "24h budget (USD)",
-                    },
                   )}
                   name="dailyBudgetUsd"
                   style={{ minWidth: 200, flex: 1 }}
@@ -7997,9 +7117,6 @@ export function LlmGatewaySettingsPanel() {
                 <Form.Item
                   label={t(
                     "settings.llmGateway.proxyGovernance.fields.monthlyBudgetUsd",
-                    {
-                      defaultValue: "30d budget (USD)",
-                    },
                   )}
                   name="monthlyBudgetUsd"
                   style={{ minWidth: 200, flex: 1 }}
@@ -8016,19 +7133,12 @@ export function LlmGatewaySettingsPanel() {
                 <Form.Item
                   label={t(
                     "settings.llmGateway.proxyGovernance.fields.maxParallelRequests",
-                    {
-                      defaultValue: "Max parallel requests",
-                    },
                   )}
                   name="maxParallelRequests"
                   style={{ minWidth: 200, flex: 1 }}
                   rules={[{ required: true }]}
                   extra={t(
                     "settings.llmGateway.proxyGovernance.hints.maxParallelRequests",
-                    {
-                      defaultValue:
-                        "Applies only to the managed LiteLLM runtime key when governance is enabled. It does not change app-side worker concurrency or proxy test concurrency.",
-                    },
                   )}
                 >
                   <InputNumber
@@ -8045,9 +7155,7 @@ export function LlmGatewaySettingsPanel() {
       </Modal>
 
       <Modal
-        title={t("settings.llmGateway.proxyLoadBalancing.modal.title", {
-          defaultValue: "LiteLLM Proxy 负载均衡配置",
-        })}
+        title={t("settings.llmGateway.proxyLoadBalancing.modal.title")}
         open={proxyLbOpen}
         onCancel={() => {
           setProxyLbOpen(false);
@@ -8064,7 +7172,7 @@ export function LlmGatewaySettingsPanel() {
             onClick={() => void loadProxyLbSettings()}
             loading={proxyLbLoading}
           >
-            {t("common.refresh", { defaultValue: "刷新" })}
+            {t("common.refresh")}
           </Button>,
           <Button
             key="reset"
@@ -8073,7 +7181,7 @@ export function LlmGatewaySettingsPanel() {
             loading={proxyLbResetting}
             disabled={proxyLbSaving}
           >
-            {t("common.reset", { defaultValue: "重置" })}
+            {t("common.reset")}
           </Button>,
           <Button
             key="save"
@@ -8089,10 +7197,7 @@ export function LlmGatewaySettingsPanel() {
         <Spin spinning={proxyLbLoading}>
           <Space direction="vertical" size="middle" style={{ display: "flex" }}>
             <Typography.Text type="secondary">
-              {t("settings.llmGateway.proxyLoadBalancing.hint", {
-                defaultValue:
-                  "Store load-balancing settings in MySQL. Restart the litellm service after saving to apply changes.",
-              })}
+              {t("settings.llmGateway.proxyLoadBalancing.hint")}
             </Typography.Text>
 
             {proxyLbSettings ? (
@@ -8103,15 +7208,9 @@ export function LlmGatewaySettingsPanel() {
                   proxyLbSettings.enabled
                     ? t(
                         "settings.llmGateway.proxyLoadBalancing.status.enabled",
-                        {
-                          defaultValue: "DB-managed load balancing enabled",
-                        },
                       )
                     : t(
                         "settings.llmGateway.proxyLoadBalancing.status.disabled",
-                        {
-                          defaultValue: "DB-managed load balancing disabled",
-                        },
                       )
                 }
                 description={
@@ -8120,7 +7219,6 @@ export function LlmGatewaySettingsPanel() {
                       {t(
                         "settings.llmGateway.proxyLoadBalancing.status.openaiKeys",
                         {
-                          defaultValue: "OpenAI keys: {{count}}",
                           count: proxyLbSettings.openai.keysCount,
                         },
                       )}
@@ -8129,7 +7227,6 @@ export function LlmGatewaySettingsPanel() {
                       {t(
                         "settings.llmGateway.proxyLoadBalancing.status.anthropicKeys",
                         {
-                          defaultValue: "Anthropic keys: {{count}}",
                           count: proxyLbSettings.anthropicKeysCount,
                         },
                       )}
@@ -8138,9 +7235,6 @@ export function LlmGatewaySettingsPanel() {
                       <Tag color="orange">
                         {t(
                           "settings.llmGateway.proxyLoadBalancing.status.restartRequired",
-                          {
-                            defaultValue: "Restart required",
-                          },
                         )}
                       </Tag>
                     ) : null}
@@ -8168,17 +7262,10 @@ export function LlmGatewaySettingsPanel() {
                   <span>
                     {t(
                       "settings.llmGateway.proxyLoadBalancing.fields.enabled",
-                      {
-                        defaultValue: "Enable DB load balancing",
-                      },
                     )}
                     <Tooltip
                       title={t(
                         "settings.llmGateway.proxyLoadBalancing.tooltips.enabled",
-                        {
-                          defaultValue:
-                            "When enabled, LiteLLM startup reads and applies load-balancing settings from MySQL.",
-                        },
                       )}
                     >
                       <QuestionCircleOutlined style={helpIconStyle} />
@@ -8194,17 +7281,10 @@ export function LlmGatewaySettingsPanel() {
                   <span>
                     {t(
                       "settings.llmGateway.proxyLoadBalancing.fields.openaiKeys",
-                      {
-                        defaultValue: "OPENAI_API_KEYS",
-                      },
                     )}
                     <Tooltip
                       title={t(
                         "settings.llmGateway.proxyLoadBalancing.tooltips.openaiKeys",
-                        {
-                          defaultValue:
-                            "OpenAI upstream keys stored in MySQL. Leave empty to keep existing keys. Inputting values replaces the stored list.",
-                        },
                       )}
                     >
                       <QuestionCircleOutlined style={helpIconStyle} />
@@ -8214,10 +7294,6 @@ export function LlmGatewaySettingsPanel() {
                 name="openaiKeys"
                 extra={t(
                   "settings.llmGateway.proxyLoadBalancing.hints.openaiKeys",
-                  {
-                    defaultValue:
-                      "Comma/newline separated. Leave empty to keep existing OpenAI keys. Manage fingerprints in Assistant Safety panel.",
-                  },
                 )}
               >
                 <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
@@ -8238,17 +7314,10 @@ export function LlmGatewaySettingsPanel() {
                   <span>
                     {t(
                       "settings.llmGateway.proxyLoadBalancing.fields.anthropicKeys",
-                      {
-                        defaultValue: "ANTHROPIC_API_KEYS",
-                      },
                     )}
                     <Tooltip
                       title={t(
                         "settings.llmGateway.proxyLoadBalancing.tooltips.anthropicKeys",
-                        {
-                          defaultValue:
-                            "Anthropic upstream keys stored in MySQL. Input values to replace. Use clear switch below to remove all stored Anthropic keys.",
-                        },
                       )}
                     >
                       <QuestionCircleOutlined style={helpIconStyle} />
@@ -8258,10 +7327,6 @@ export function LlmGatewaySettingsPanel() {
                 name="anthropicKeys"
                 extra={t(
                   "settings.llmGateway.proxyLoadBalancing.hints.anthropicKeys",
-                  {
-                    defaultValue:
-                      "Comma/newline separated. Leave empty to keep current Anthropic keys.",
-                  },
                 )}
               >
                 <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
@@ -8272,9 +7337,6 @@ export function LlmGatewaySettingsPanel() {
                 valuePropName="checked"
                 label={t(
                   "settings.llmGateway.proxyLoadBalancing.fields.clearAnthropicKeys",
-                  {
-                    defaultValue: "Clear stored Anthropic keys",
-                  },
                 )}
               >
                 <Switch />
@@ -8298,17 +7360,10 @@ export function LlmGatewaySettingsPanel() {
                     <span>
                       {t(
                         "settings.llmGateway.proxyLoadBalancing.fields.routingStrategy",
-                        {
-                          defaultValue: "routing_strategy",
-                        },
                       )}
                       <Tooltip
                         title={t(
                           "settings.llmGateway.proxyLoadBalancing.tooltips.routingStrategy",
-                          {
-                            defaultValue:
-                              "simple-shuffle randomizes deployments. least-busy prefers lower in-flight load. usage-based-routing balances by token usage. latency-based-routing prefers lower-latency deployments.",
-                          },
                         )}
                       >
                         <QuestionCircleOutlined style={helpIconStyle} />
@@ -8338,17 +7393,10 @@ export function LlmGatewaySettingsPanel() {
                     <span>
                       {t(
                         "settings.llmGateway.proxyLoadBalancing.fields.deploymentRpm",
-                        {
-                          defaultValue: "LITELLM_DEPLOYMENT_RPM",
-                        },
                       )}
                       <Tooltip
                         title={t(
                           "settings.llmGateway.proxyLoadBalancing.tooltips.deploymentRpm",
-                          {
-                            defaultValue:
-                              "Default per-deployment RPM injected into generated config when deployment-level rpm is not set.",
-                          },
                         )}
                       >
                         <QuestionCircleOutlined style={helpIconStyle} />
@@ -8370,17 +7418,10 @@ export function LlmGatewaySettingsPanel() {
                     <span>
                       {t(
                         "settings.llmGateway.proxyLoadBalancing.fields.deploymentTpm",
-                        {
-                          defaultValue: "LITELLM_DEPLOYMENT_TPM",
-                        },
                       )}
                       <Tooltip
                         title={t(
                           "settings.llmGateway.proxyLoadBalancing.tooltips.deploymentTpm",
-                          {
-                            defaultValue:
-                              "Default per-deployment TPM injected into generated config when deployment-level tpm is not set.",
-                          },
                         )}
                       >
                         <QuestionCircleOutlined style={helpIconStyle} />
@@ -8405,17 +7446,10 @@ export function LlmGatewaySettingsPanel() {
                     <span>
                       {t(
                         "settings.llmGateway.proxyLoadBalancing.fields.redisHost",
-                        {
-                          defaultValue: "LITELLM_REDIS_HOST",
-                        },
                       )}
                       <Tooltip
                         title={t(
                           "settings.llmGateway.proxyLoadBalancing.tooltips.redisHost",
-                          {
-                            defaultValue:
-                              "Redis host used by LiteLLM router to share runtime state across workers/instances.",
-                          },
                         )}
                       >
                         <QuestionCircleOutlined style={helpIconStyle} />
@@ -8429,9 +7463,6 @@ export function LlmGatewaySettingsPanel() {
                       required: true,
                       message: t(
                         "settings.llmGateway.proxyLoadBalancing.validation.redisHost",
-                        {
-                          defaultValue: "Redis host is required",
-                        },
                       ),
                     },
                   ]}
@@ -8443,17 +7474,10 @@ export function LlmGatewaySettingsPanel() {
                     <span>
                       {t(
                         "settings.llmGateway.proxyLoadBalancing.fields.redisPort",
-                        {
-                          defaultValue: "LITELLM_REDIS_PORT",
-                        },
                       )}
                       <Tooltip
                         title={t(
                           "settings.llmGateway.proxyLoadBalancing.tooltips.redisPort",
-                          {
-                            defaultValue:
-                              "Redis TCP port used by LiteLLM router.",
-                          },
                         )}
                       >
                         <QuestionCircleOutlined style={helpIconStyle} />
@@ -8475,17 +7499,10 @@ export function LlmGatewaySettingsPanel() {
                     <span>
                       {t(
                         "settings.llmGateway.proxyLoadBalancing.fields.redisPassword",
-                        {
-                          defaultValue: "LITELLM_REDIS_PASSWORD",
-                        },
                       )}
                       <Tooltip
                         title={t(
                           "settings.llmGateway.proxyLoadBalancing.tooltips.redisPassword",
-                          {
-                            defaultValue:
-                              "Redis password stored in MySQL. Leave empty to clear or keep unchanged depending on current value and your save action.",
-                          },
                         )}
                       >
                         <QuestionCircleOutlined style={helpIconStyle} />

@@ -1305,9 +1305,7 @@ export function WarMap({
       const safeUrl = typeof url === "string" ? safeHttpUrl(url) : null;
       if (!safeUrl) {
         toast.warning(
-          t("dashboard.charts.warMap.missingNewsUrl", {
-            defaultValue: "No link available for this news marker.",
-          }),
+          t("dashboard.charts.warMap.missingNewsUrl"),
         );
         return;
       }
@@ -1647,9 +1645,7 @@ export function WarMap({
   const handleAnalyzeCurrentView = useCallback(async () => {
     if (!canRunAnalysis) {
       toast.warning(
-        t("analysis.runPermissionRequired", {
-          defaultValue: "You do not have permission to run analyses.",
-        }),
+        t("analysis.runPermissionRequired"),
       );
       return;
     }
@@ -1660,10 +1656,7 @@ export function WarMap({
     ];
     if (transportKinds.length === 0) {
       toast.warning(
-        t("dashboard.charts.warMap.actions.enableTransportLayers", {
-          defaultValue:
-            "Enable the flight or AIS layer before requesting transport analysis.",
-        }),
+        t("dashboard.charts.warMap.actions.enableTransportLayers"),
       );
       return;
     }
@@ -1680,15 +1673,11 @@ export function WarMap({
         },
       });
       toast.success(
-        t("dashboard.charts.warMap.actions.analyzeCurrentViewSubmitted", {
-          defaultValue: "Transport analysis submitted for the current view.",
-        }),
+        t("dashboard.charts.warMap.actions.analyzeCurrentViewSubmitted"),
       );
     } catch (error) {
       toast.error(
-        t("dashboard.charts.warMap.actions.analyzeCurrentViewFailed", {
-          defaultValue: "Failed to submit transport analysis.",
-        }),
+        t("dashboard.charts.warMap.actions.analyzeCurrentViewFailed"),
       );
       captureClientError("Failed to submit transport analysis.", error, {
         tags: {
@@ -1843,9 +1832,7 @@ export function WarMap({
       const query = (object.query ?? object.label).trim();
       if (!query) {
         toast.warning(
-          t("dashboard.charts.warMap.missingMonitorQuery", {
-            defaultValue: "No keywords available for this monitor.",
-          }),
+          t("dashboard.charts.warMap.missingMonitorQuery"),
         );
         return;
       }
@@ -2438,8 +2425,6 @@ export function WarMap({
                       count: cluster.count,
                     })
                   : t("dashboard.charts.warMap.tooltip.clusterLayer", {
-                      defaultValue:
-                        "{{count}} {{layer}} items. Click to zoom in.",
                       count: cluster.count,
                       layer: layerLabel,
                     }),
@@ -2511,9 +2496,7 @@ export function WarMap({
 
         const label = getWarMapAisLabel(
           aisProperties,
-          t("dashboard.charts.warMap.layerNames.ais", {
-            defaultValue: "AIS traffic",
-          }),
+          t("dashboard.charts.warMap.layerNames.ais"),
         );
 
         if (aisProperties.featureKind === "vessel") {
@@ -2549,12 +2532,8 @@ export function WarMap({
               aisProperties.sourceUpdatedAt ?? aisDataset.updatedAt,
             description:
               effectiveAisMode === "military"
-                ? t("dashboard.charts.warMap.stats.aisMilitaryCandidates", {
-                    defaultValue: "Military / government candidate vessel",
-                  })
-                : t("dashboard.charts.warMap.stats.aisVessels", {
-                    defaultValue: "AIS vessel",
-                  }),
+                ? t("dashboard.charts.warMap.stats.aisMilitaryCandidates")
+                : t("dashboard.charts.warMap.stats.aisVessels"),
           });
           continue;
         }
@@ -2583,9 +2562,7 @@ export function WarMap({
             description:
               aisProperties.description ??
               aisProperties.note ??
-              t("dashboard.charts.warMap.stats.aisDensityAggregateHint", {
-                defaultValue: "Aggregated AIS hotspot, not individual vessels.",
-              }),
+              t("dashboard.charts.warMap.stats.aisDensityAggregateHint"),
           });
           continue;
         }
@@ -2621,10 +2598,7 @@ export function WarMap({
           sourceUpdatedAt: aisDataset.updatedAt,
           description:
             aisProperties.description ??
-            t("dashboard.charts.warMap.stats.aisDisruptionAggregateHint", {
-              defaultValue:
-                "Aggregated AIS chokepoint signal, not individual vessels.",
-            }),
+            t("dashboard.charts.warMap.stats.aisDisruptionAggregateHint"),
         });
       }
 
@@ -2826,9 +2800,7 @@ export function WarMap({
           interactionKey: selectionKey,
           lat: cluster.lat,
           lng: cluster.lng,
-          label: t("dashboard.charts.warMap.panel.signalsTitle", {
-            defaultValue: "Nearby signals",
-          }),
+          label: t("dashboard.charts.warMap.panel.signalsTitle"),
           kind: "event-cluster",
           selectionKey,
           color: severityColor(leadSeverity),
@@ -2838,7 +2810,6 @@ export function WarMap({
           isCluster: true,
           clusterCount: cluster.count,
           description: t("dashboard.charts.warMap.tooltip.clusterSignals", {
-            defaultValue: "{{count}} nearby signals. Click to inspect.",
             count: cluster.count,
           }),
         };
@@ -2903,9 +2874,7 @@ export function WarMap({
         interactionKey: selectionKey,
         lat: cluster.lat,
         lng: cluster.lng,
-        label: t("dashboard.charts.warMap.panel.newsTitle", {
-          defaultValue: "Nearby news",
-        }),
+        label: t("dashboard.charts.warMap.panel.newsTitle"),
         kind: "news-cluster",
         selectionKey,
         color: hasGeocodedPoint ? [21, 128, 61, 176] : [8, 145, 178, 160],
@@ -2915,7 +2884,6 @@ export function WarMap({
         isCluster: true,
         clusterCount: cluster.count,
         description: t("dashboard.charts.warMap.tooltip.clusterNews", {
-          defaultValue: "{{count}} nearby news items. Click to inspect.",
           count: cluster.count,
         }),
       };
@@ -2967,7 +2935,6 @@ export function WarMap({
           const count = object.clusterCount ?? 0;
           return {
             text: t("dashboard.charts.warMap.tooltip.clusterSignals", {
-              defaultValue: "{{count}} nearby signals. Click to inspect.",
               count,
             }),
           };
@@ -2976,7 +2943,6 @@ export function WarMap({
           const count = object.clusterCount ?? 0;
           return {
             text: t("dashboard.charts.warMap.tooltip.clusterNews", {
-              defaultValue: "{{count}} nearby news items. Click to inspect.",
               count,
             }),
           };
@@ -2999,8 +2965,6 @@ export function WarMap({
                     count,
                   })
                 : t("dashboard.charts.warMap.tooltip.clusterLayer", {
-                    defaultValue:
-                      "{{count}} {{layer}} items. Click to zoom in.",
                     count,
                     layer: layerLabel,
                   }),
@@ -3011,22 +2975,14 @@ export function WarMap({
           object.publishedAt ?? object.ingestedAt ?? object.latestAt;
         const latestLabel =
           object.kind === "event"
-            ? t("dashboard.charts.warMap.panel.latest", {
-                defaultValue: "Latest",
-              })
+            ? t("dashboard.charts.warMap.panel.latest")
             : object.kind === "layer" &&
                 (object.layerId === "flights" || object.layerId === "ais")
-              ? t("dashboard.charts.warMap.tooltip.observed", {
-                  defaultValue: "Observed",
-                })
+              ? t("dashboard.charts.warMap.tooltip.observed")
               : object.publishedAt
-                ? t("dashboard.charts.warMap.tooltip.published", {
-                    defaultValue: "Published",
-                  })
+                ? t("dashboard.charts.warMap.tooltip.published")
                 : object.ingestedAt
-                  ? t("dashboard.charts.warMap.tooltip.ingested", {
-                      defaultValue: "Ingested",
-                    })
+                  ? t("dashboard.charts.warMap.tooltip.ingested")
                   : null;
 
         const formattedTimestamp = latestTimestamp
@@ -3042,30 +2998,22 @@ export function WarMap({
         }
         if (object.kind === "event" && object.severity) {
           lines.push(
-            `${t("dashboard.charts.warMap.tooltip.severity", {
-              defaultValue: "Severity",
-            })}: ${t(`dashboard.charts.warMap.stats.${object.severity}`, {
+            `${t("dashboard.charts.warMap.tooltip.severity")}: ${t(`dashboard.charts.warMap.stats.${object.severity}`, {
               defaultValue: object.severity,
             })}`,
           );
         }
         if (object.kind === "event") {
           lines.push(
-            `${t("dashboard.charts.warMap.tooltip.alerts", {
-              defaultValue: "Alerts",
-            })}: ${object.alertCount ?? 0}`,
+            `${t("dashboard.charts.warMap.tooltip.alerts")}: ${object.alertCount ?? 0}`,
           );
           lines.push(
-            `${t("dashboard.charts.warMap.stats.news", {
-              defaultValue: "News",
-            })}: ${object.newsCount ?? 0}`,
+            `${t("dashboard.charts.warMap.stats.news")}: ${object.newsCount ?? 0}`,
           );
         }
         if (object.kind === "news" && object.locationLabel) {
           lines.push(
-            `${t("dashboard.charts.warMap.tooltip.location", {
-              defaultValue: "Location",
-            })}: ${object.locationLabel}`,
+            `${t("dashboard.charts.warMap.tooltip.location")}: ${object.locationLabel}`,
           );
         }
         if (object.kind === "layer" && object.layerId === "ais") {
@@ -3075,131 +3023,93 @@ export function WarMap({
             }
             if (object.shipTypeLabelZh || object.shipTypeLabel) {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.shipType", {
-                  defaultValue: "Ship type",
-                })}: ${object.shipTypeLabelZh ?? object.shipTypeLabel}`,
+                `${t("dashboard.charts.warMap.tooltip.shipType")}: ${object.shipTypeLabelZh ?? object.shipTypeLabel}`,
               );
             } else if (typeof object.shipType === "number") {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.shipType", {
-                  defaultValue: "Ship type",
-                })}: ${formatAisShipTypeLabel(object.shipType)}`,
+                `${t("dashboard.charts.warMap.tooltip.shipType")}: ${formatAisShipTypeLabel(object.shipType)}`,
               );
             }
             if (object.vesselRoleZh || object.vesselRole) {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.type", {
-                  defaultValue: "Type",
-                })}: ${object.vesselRoleZh ?? object.vesselRole}`,
+                `${t("dashboard.charts.warMap.tooltip.type")}: ${object.vesselRoleZh ?? object.vesselRole}`,
               );
             }
             if (typeof object.heading === "number") {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.heading", {
-                  defaultValue: "Heading",
-                })}: ${Math.round(object.heading)}°`,
+                `${t("dashboard.charts.warMap.tooltip.heading")}: ${Math.round(object.heading)}°`,
               );
             }
             if (typeof object.speed === "number") {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.speed", {
-                  defaultValue: "Speed",
-                })}: ${Math.round(object.speed)} kn`,
+                `${t("dashboard.charts.warMap.tooltip.speed")}: ${Math.round(object.speed)} kn`,
               );
             }
             if (typeof object.course === "number") {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.course", {
-                  defaultValue: "Course",
-                })}: ${Math.round(object.course)}°`,
+                `${t("dashboard.charts.warMap.tooltip.course")}: ${Math.round(object.course)}°`,
               );
             }
           } else if (object.aisFeatureKind === "density") {
             lines.push(
               object.description ??
-                t("dashboard.charts.warMap.stats.aisDensityAggregateHint", {
-                  defaultValue:
-                    "Aggregated AIS hotspot, not individual vessels.",
-                }),
+                t("dashboard.charts.warMap.stats.aisDensityAggregateHint"),
             );
             if (typeof object.intensity === "number") {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.intensity", {
-                  defaultValue: "Intensity",
-                })}: ${object.intensity.toFixed(2)}`,
+                `${t("dashboard.charts.warMap.tooltip.intensity")}: ${object.intensity.toFixed(2)}`,
               );
             }
             if (typeof object.deltaPct === "number") {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.change", {
-                  defaultValue: "Change",
-                })}: ${object.deltaPct > 0 ? "+" : ""}${Math.round(object.deltaPct)}%`,
+                `${t("dashboard.charts.warMap.tooltip.change")}: ${object.deltaPct > 0 ? "+" : ""}${Math.round(object.deltaPct)}%`,
               );
             }
             if (typeof object.shipsPerDay === "number") {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.shipsPerDay", {
-                  defaultValue: "Ships/day",
-                })}: ${Math.round(object.shipsPerDay)}`,
+                `${t("dashboard.charts.warMap.tooltip.shipsPerDay")}: ${Math.round(object.shipsPerDay)}`,
               );
             }
           } else if (object.aisFeatureKind === "disruption") {
             lines.push(
               object.description ??
-                t("dashboard.charts.warMap.stats.aisDisruptionAggregateHint", {
-                  defaultValue:
-                    "Aggregated AIS chokepoint signal, not individual vessels.",
-                }),
+                t("dashboard.charts.warMap.stats.aisDisruptionAggregateHint"),
             );
             if (object.disruptionType) {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.type", {
-                  defaultValue: "Type",
-                })}: ${object.disruptionType}`,
+                `${t("dashboard.charts.warMap.tooltip.type")}: ${object.disruptionType}`,
               );
             }
             if (object.severity) {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.severity", {
-                  defaultValue: "Severity",
-                })}: ${t(`dashboard.charts.warMap.stats.${object.severity}`, {
+                `${t("dashboard.charts.warMap.tooltip.severity")}: ${t(`dashboard.charts.warMap.stats.${object.severity}`, {
                   defaultValue: object.severity,
                 })}`,
               );
             }
             if (typeof object.vesselCount === "number") {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.vessels", {
-                  defaultValue: "Vessels",
-                })}: ${object.vesselCount}`,
+                `${t("dashboard.charts.warMap.tooltip.vessels")}: ${object.vesselCount}`,
               );
             }
             if (typeof object.changePct === "number") {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.change", {
-                  defaultValue: "Change",
-                })}: ${object.changePct > 0 ? "+" : ""}${Math.round(object.changePct)}%`,
+                `${t("dashboard.charts.warMap.tooltip.change")}: ${object.changePct > 0 ? "+" : ""}${Math.round(object.changePct)}%`,
               );
             }
             if (typeof object.darkShips === "number") {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.darkShips", {
-                  defaultValue: "Dark ships",
-                })}: ${object.darkShips}`,
+                `${t("dashboard.charts.warMap.tooltip.darkShips")}: ${object.darkShips}`,
               );
             }
             if (typeof object.windowHours === "number") {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.window", {
-                  defaultValue: "Window",
-                })}: ${object.windowHours}h`,
+                `${t("dashboard.charts.warMap.tooltip.window")}: ${object.windowHours}h`,
               );
             }
             if (object.region) {
               lines.push(
-                `${t("dashboard.charts.warMap.tooltip.region", {
-                  defaultValue: "Region",
-                })}: ${object.region}`,
+                `${t("dashboard.charts.warMap.tooltip.region")}: ${object.region}`,
               );
             }
           }
@@ -3210,58 +3120,42 @@ export function WarMap({
           }
           if (object.displayCategoryZh || object.displayCategory) {
             lines.push(
-              `${t("dashboard.charts.warMap.tooltip.type", {
-                defaultValue: "Type",
-              })}: ${object.displayCategoryZh ?? object.displayCategory}`,
+              `${t("dashboard.charts.warMap.tooltip.type")}: ${object.displayCategoryZh ?? object.displayCategory}`,
             );
           }
           if (object.roleZh || object.role) {
             lines.push(
-              `${t("dashboard.charts.warMap.tooltip.role", {
-                defaultValue: "Role",
-              })}: ${object.roleZh ?? object.role}`,
+              `${t("dashboard.charts.warMap.tooltip.role")}: ${object.roleZh ?? object.role}`,
             );
           }
           if (object.registration) {
             lines.push(
-              `${t("dashboard.charts.warMap.tooltip.registration", {
-                defaultValue: "Registration",
-              })}: ${object.registration}`,
+              `${t("dashboard.charts.warMap.tooltip.registration")}: ${object.registration}`,
             );
           }
           if (object.aircraftType) {
             lines.push(
-              `${t("dashboard.charts.warMap.tooltip.aircraftType", {
-                defaultValue: "Type",
-              })}: ${object.aircraftType}`,
+              `${t("dashboard.charts.warMap.tooltip.aircraftType")}: ${object.aircraftType}`,
             );
           }
           if (object.countryCode || object.countryName) {
             lines.push(
-              `${t("dashboard.charts.warMap.tooltip.country", {
-                defaultValue: "Country",
-              })}: ${object.countryName ? `${object.countryName}${object.countryCode ? ` (${object.countryCode})` : ""}` : object.countryCode}`,
+              `${t("dashboard.charts.warMap.tooltip.country")}: ${object.countryName ? `${object.countryName}${object.countryCode ? ` (${object.countryCode})` : ""}` : object.countryCode}`,
             );
           }
           if (typeof object.heading === "number") {
             lines.push(
-              `${t("dashboard.charts.warMap.tooltip.heading", {
-                defaultValue: "Heading",
-              })}: ${Math.round(object.heading)}°`,
+              `${t("dashboard.charts.warMap.tooltip.heading")}: ${Math.round(object.heading)}°`,
             );
           }
           if (typeof object.altitudeFt === "number") {
             lines.push(
-              `${t("dashboard.charts.warMap.tooltip.altitude", {
-                defaultValue: "Altitude",
-              })}: ${Math.round(object.altitudeFt)} ft`,
+              `${t("dashboard.charts.warMap.tooltip.altitude")}: ${Math.round(object.altitudeFt)} ft`,
             );
           }
           if (typeof object.groundSpeedKt === "number") {
             lines.push(
-              `${t("dashboard.charts.warMap.tooltip.speed", {
-                defaultValue: "Speed",
-              })}: ${Math.round(object.groundSpeedKt)} kt`,
+              `${t("dashboard.charts.warMap.tooltip.speed")}: ${Math.round(object.groundSpeedKt)} kt`,
             );
           }
         }
@@ -3274,9 +3168,7 @@ export function WarMap({
           object.sourceUpdatedAt
         ) {
           lines.push(
-            `${t("dashboard.charts.warMap.tooltip.updated", {
-              defaultValue: "Updated",
-            })}: ${formatDateTime(object.sourceUpdatedAt, locale, {
+            `${t("dashboard.charts.warMap.tooltip.updated")}: ${formatDateTime(object.sourceUpdatedAt, locale, {
               dateStyle: "medium",
               timeStyle: "short",
             })}`,
@@ -3284,9 +3176,7 @@ export function WarMap({
         }
         if (object.kind === "news") {
           lines.push(
-            t("dashboard.charts.warMap.tooltip.clickInspect", {
-              defaultValue: "Click to inspect details",
-            }),
+            t("dashboard.charts.warMap.tooltip.clickInspect"),
           );
         }
         return { text: lines.join("\n") };
@@ -3389,21 +3279,15 @@ export function WarMap({
   const flightsBudget = readFlightBudgetSummary(flightsSummary);
   const flightsSourceLabel =
     flightsSource === "opensky"
-      ? t("dashboard.charts.warMap.stats.flightSourceOpensky", {
-          defaultValue: "OpenSky",
-        })
+      ? t("dashboard.charts.warMap.stats.flightSourceOpensky")
       : flightsSource
         ? flightsSource.toUpperCase()
         : undefined;
   const flightsScopeLabel =
     flightsScope === "military"
-      ? t("dashboard.charts.warMap.stats.flightScopeMilitary", {
-          defaultValue: "Military / possible military",
-        })
+      ? t("dashboard.charts.warMap.stats.flightScopeMilitary")
       : flightsScope === "all"
-        ? t("dashboard.charts.warMap.stats.flightScopeAll", {
-            defaultValue: "All flights",
-          })
+        ? t("dashboard.charts.warMap.stats.flightScopeAll")
         : flightsScope;
   const flightsSourceBadgeLabel =
     flightsSourceLabel && flightsScopeLabel
@@ -3413,7 +3297,6 @@ export function WarMap({
     typeof flightsSnapshotCount === "number" &&
     typeof flightsRawCount === "number"
       ? t("dashboard.charts.warMap.stats.flightCoverage", {
-          defaultValue: "Positioned {{positioned}} / Raw {{raw}}",
           positioned: flightsSnapshotCount,
           raw: flightsRawCount,
         })
@@ -3421,72 +3304,43 @@ export function WarMap({
   const flightsRawLabel =
     typeof flightsRawCount === "number"
       ? t("dashboard.charts.warMap.stats.flightsRaw", {
-          defaultValue: "raw {{count}}",
           count: flightsRawCount,
         })
       : null;
   const flightsBudgetReason =
     flightsFreshness === "budget_limited"
       ? flightsBudget.statusReasonCode === "opensky_budget_critical"
-        ? t("dashboard.charts.warMap.stats.flightBudgetLimitedCritical", {
-            defaultValue:
-              "OpenSky all-flight mode is limited and military polling is using the night interval to preserve daily credits.",
-          })
+        ? t("dashboard.charts.warMap.stats.flightBudgetLimitedCritical")
         : flightsBudget.statusReasonCode === "opensky_budget_exhausted"
-          ? t("dashboard.charts.warMap.stats.flightBudgetLimitedExhausted", {
-              defaultValue:
-                "OpenSky daily credit budget is exhausted. All-flight mode is paused until the next HKT day begins.",
-            })
+          ? t("dashboard.charts.warMap.stats.flightBudgetLimitedExhausted")
           : flightsBudget.statusReasonCode ===
               "opensky_budget_insufficient_credits"
             ? t(
                 "dashboard.charts.warMap.stats.flightBudgetLimitedInsufficient",
-                {
-                  defaultValue:
-                    "OpenSky does not have enough remaining daily credits for this viewport request.",
-                },
               )
-            : t("dashboard.charts.warMap.stats.flightBudgetLimited", {
-                defaultValue:
-                  "OpenSky all-flight mode is temporarily limited to preserve the daily credit budget.",
-              })
+            : t("dashboard.charts.warMap.stats.flightBudgetLimited")
       : null;
   const flightsTooltipText = [
     flightsSourceLabel
-      ? `${t("dashboard.charts.warMap.stats.flightSource", {
-          defaultValue: "Flight source",
-        })}: ${flightsSourceLabel}`
+      ? `${t("dashboard.charts.warMap.stats.flightSource")}: ${flightsSourceLabel}`
       : null,
     flightsScopeLabel
-      ? `${t("dashboard.charts.warMap.stats.flightScope", {
-          defaultValue: "Scope",
-        })}: ${flightsScopeLabel}`
+      ? `${t("dashboard.charts.warMap.stats.flightScope")}: ${flightsScopeLabel}`
       : null,
     flightsCoverageLabel
-      ? `${t("dashboard.charts.warMap.stats.flightCoverageLabel", {
-          defaultValue: "Coverage",
-        })}: ${flightsCoverageLabel}`
+      ? `${t("dashboard.charts.warMap.stats.flightCoverageLabel")}: ${flightsCoverageLabel}`
       : null,
     typeof flightsReturnedCount === "number"
-      ? `${t("dashboard.charts.warMap.stats.flightRendered", {
-          defaultValue: "Rendered",
-        })}: ${flightsReturnedCount}${typeof flightsMaxReturned === "number" ? ` / ${flightsMaxReturned}` : ""}`
+      ? `${t("dashboard.charts.warMap.stats.flightRendered")}: ${flightsReturnedCount}${typeof flightsMaxReturned === "number" ? ` / ${flightsMaxReturned}` : ""}`
       : null,
     flightsSourceEndpoint
-      ? `${t("dashboard.charts.warMap.stats.flightEndpoint", {
-          defaultValue: "Endpoint",
-        })}: ${flightsSourceEndpoint}`
+      ? `${t("dashboard.charts.warMap.stats.flightEndpoint")}: ${flightsSourceEndpoint}`
       : null,
     flightsFreshness === "zoom_required"
-      ? t("dashboard.charts.warMap.stats.flightZoomRequired", {
-          defaultValue:
-            "Zoom in to request all-flight OpenSky data for the current viewport.",
-        })
+      ? t("dashboard.charts.warMap.stats.flightZoomRequired")
       : null,
     flightsFreshness === "not_configured"
-      ? t("dashboard.charts.warMap.stats.flightNotConfigured", {
-          defaultValue: "OpenSky OAuth client credentials are not configured.",
-        })
+      ? t("dashboard.charts.warMap.stats.flightNotConfigured")
       : flightsFreshness === "budget_limited"
         ? flightsBudgetReason
         : null,
@@ -3494,20 +3348,17 @@ export function WarMap({
     typeof flightsBudget.remainingCredits === "number" &&
     typeof flightsBudget.dailyBudget === "number"
       ? t("dashboard.charts.warMap.stats.flightBudgetRemaining", {
-          defaultValue: "Remaining {{remaining}} / {{budget}} credits",
           remaining: flightsBudget.remainingCredits,
           budget: flightsBudget.dailyBudget,
         })
       : null,
     flightsFreshness === "budget_limited" && flightsBudget.dateHkt
       ? t("dashboard.charts.warMap.stats.flightBudgetReset", {
-          defaultValue: "Budget day {{date}} HKT. Resets at 00:00 HKT.",
           date: flightsBudget.dateHkt,
         })
       : null,
     flightsFreshness === "budget_limited" && flightsBudget.degradationLevel
       ? t("dashboard.charts.warMap.stats.flightBudgetDegradation", {
-          defaultValue: "Degradation: {{value}}",
           value: flightsBudget.degradationLevel,
         })
       : null,
@@ -3550,14 +3401,9 @@ export function WarMap({
   );
   const aisResolvedBlockedReason =
     aisBlockedReasonCode === "missing_vessels_snapshot"
-      ? t("dashboard.charts.warMap.stats.aisAllUnavailableHint", {
-          defaultValue:
-            "All vessels mode will unlock after the relay exposes vessels[] in its snapshot payload.",
-        })
+      ? t("dashboard.charts.warMap.stats.aisAllUnavailableHint")
       : aisBlockedReasonCode === "snapshot_unavailable"
-        ? t("dashboard.charts.warMap.stats.aisSnapshotUnavailable", {
-            defaultValue: "AIS snapshot is not available yet.",
-          })
+        ? t("dashboard.charts.warMap.stats.aisSnapshotUnavailable")
         : aisBlockedReason;
   const aisViewportEmptyStateActive =
     layerVisibility.ais &&
@@ -3568,15 +3414,10 @@ export function WarMap({
       renderedVesselCount: aisRenderedVesselCount,
     });
   const aisViewportEmptyStateLabel = aisViewportEmptyStateActive
-    ? t("dashboard.charts.warMap.stats.aisViewportEmpty", {
-        defaultValue: "Viewport has no vessel positions",
-      })
+    ? t("dashboard.charts.warMap.stats.aisViewportEmpty")
     : null;
   const aisViewportEmptyStateHint = aisViewportEmptyStateActive
-    ? t("dashboard.charts.warMap.stats.aisViewportEmptyHint", {
-        defaultValue:
-          "All vessels is active, but this viewport currently has no individual ship positions in the live snapshot. Pan toward nearby shipping lanes or zoom out to return to aggregated chokepoints.",
-      })
+    ? t("dashboard.charts.warMap.stats.aisViewportEmptyHint")
     : null;
   const aisSnapshotRelative = aisSnapshotUpdatedAt
     ? formatWarMapRelativeTimestamp(aisSnapshotUpdatedAt, locale, nowMs)
@@ -3595,162 +3436,93 @@ export function WarMap({
           ? "gold"
           : "cyan";
   const aisSourceStatusLabel = !aisConfigured
-    ? t("dashboard.charts.warMap.stats.aisNotConfigured", {
-        defaultValue: "AIS not configured",
-      })
+    ? t("dashboard.charts.warMap.stats.aisNotConfigured")
     : aisHasIssue
-        ? t("dashboard.charts.warMap.stats.aisDegraded", {
-            defaultValue: "Degraded",
-          })
+        ? t("dashboard.charts.warMap.stats.aisDegraded")
         : !aisConnected
-          ? t("dashboard.charts.warMap.stats.aisDisconnected", {
-              defaultValue: "AIS disconnected",
-            })
+          ? t("dashboard.charts.warMap.stats.aisDisconnected")
         : aisFreshness === "stale"
-          ? t("dashboard.charts.warMap.status.stale", {
-              defaultValue: "Stale",
-            })
-          : t("dashboard.stream.status.live", {
-              defaultValue: "Live",
-            });
+          ? t("dashboard.charts.warMap.status.stale")
+          : t("dashboard.stream.status.live");
   const aisPreferredModeLabel =
     aisMode === "all"
-      ? t("dashboard.charts.warMap.stats.aisModeAll", {
-          defaultValue: "All vessels",
-        })
+      ? t("dashboard.charts.warMap.stats.aisModeAll")
       : aisMode === "density"
-        ? t("dashboard.charts.warMap.stats.aisModeDensity", {
-            defaultValue: "Density only",
-          })
-        : t("dashboard.charts.warMap.stats.aisModeMilitary", {
-            defaultValue: "Candidate vessels",
-          });
+        ? t("dashboard.charts.warMap.stats.aisModeDensity")
+        : t("dashboard.charts.warMap.stats.aisModeMilitary");
   const aisEffectiveModeLabel = aisPreferredModeLabel;
   const aisHighlightedCandidateCount =
     effectiveAisMode === "all"
       ? staticDeckData.aisHighlightedCandidateCount
       : undefined;
   const aisTooltipText = [
-    `${t("dashboard.charts.warMap.layerNames.ais", {
-      defaultValue: "AIS traffic",
-    })}: ${aisSourceStatusLabel}`,
+    `${t("dashboard.charts.warMap.layerNames.ais")}: ${aisSourceStatusLabel}`,
     aisResolvedStatusReason,
-    `${t("dashboard.charts.warMap.stats.mode", {
-      defaultValue: "Mode",
-    })}: ${aisEffectiveModeLabel}`,
+    `${t("dashboard.charts.warMap.stats.mode")}: ${aisEffectiveModeLabel}`,
     effectiveAisMode === "all"
-      ? t("dashboard.charts.warMap.overlay.aisAllVesselsHint", {
-          defaultValue:
-            "All vessels shows the full AIS vessel snapshot for the current viewport.",
-        })
+      ? t("dashboard.charts.warMap.overlay.aisAllVesselsHint")
       : effectiveAisMode === "military"
-        ? t("dashboard.charts.warMap.overlay.aisCandidatesOnlyHint", {
-            defaultValue:
-              "Candidate vessels shows a filtered subset based on AIS name and ship-type rules, not a complete vessel inventory.",
-          })
+        ? t("dashboard.charts.warMap.overlay.aisCandidatesOnlyHint")
         : null,
     effectiveAisMode === "all"
       ? aisHighlightCandidates
-        ? t("dashboard.charts.warMap.overlay.aisHighlightCandidatesHint", {
-            defaultValue:
-              "Rule-based government and military candidates are highlighted on top of the full vessel layer.",
-          })
-        : t("dashboard.charts.warMap.overlay.aisHighlightCandidatesOffHint", {
-            defaultValue:
-              "Candidate highlighting is currently off; all vessels remain visible.",
-          })
+        ? t("dashboard.charts.warMap.overlay.aisHighlightCandidatesHint")
+        : t("dashboard.charts.warMap.overlay.aisHighlightCandidatesOffHint")
       : null,
     aisViewportEmptyStateHint,
     typeof aisRelayVesselCount === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisTrackedVessels", {
-          defaultValue: "Tracked vessels",
-        })}: ${aisRelayVesselCount}`
+      ? `${t("dashboard.charts.warMap.stats.aisTrackedVessels")}: ${aisRelayVesselCount}`
       : null,
     typeof aisViewportVesselCount === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisViewportVessels", {
-          defaultValue: "Viewport vessels",
-        })}: ${aisViewportVesselCount}`
+      ? `${t("dashboard.charts.warMap.stats.aisViewportVessels")}: ${aisViewportVesselCount}`
       : null,
     typeof aisRenderedVesselCount === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisRenderedVessels", {
-          defaultValue: "Rendered vessels",
-        })}: ${aisRenderedVesselCount}`
+      ? `${t("dashboard.charts.warMap.stats.aisRenderedVessels")}: ${aisRenderedVesselCount}`
       : null,
     typeof aisHighlightedCandidateCount === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisHighlightedCandidates", {
-          defaultValue: "Highlighted candidates",
-        })}: ${aisHighlightedCandidateCount}`
+      ? `${t("dashboard.charts.warMap.stats.aisHighlightedCandidates")}: ${aisHighlightedCandidateCount}`
       : null,
     typeof aisMaxReturned === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisViewportCap", {
-          defaultValue: "Viewport cap",
-        })}: ${aisMaxReturned}`
+      ? `${t("dashboard.charts.warMap.stats.aisViewportCap")}: ${aisMaxReturned}`
       : null,
     aisTruncated
-      ? t("dashboard.charts.warMap.stats.aisViewportTruncated", {
-          defaultValue:
-            "Viewport is truncated after per-cell sampling to preserve map readability.",
-        })
+      ? t("dashboard.charts.warMap.stats.aisViewportTruncated")
       : null,
     typeof aisCandidateCount === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisCandidates", {
-          defaultValue: "Candidates",
-        })}: ${aisCandidateCount}`
+      ? `${t("dashboard.charts.warMap.stats.aisCandidates")}: ${aisCandidateCount}`
       : null,
     typeof aisDensityCount === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisDensityZones", {
-          defaultValue: "Density zones",
-        })}: ${aisDensityCount}`
+      ? `${t("dashboard.charts.warMap.stats.aisDensityZones")}: ${aisDensityCount}`
       : null,
     typeof aisDisruptionsCount === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisDisruptions", {
-          defaultValue: "Disruptions",
-        })}: ${aisDisruptionsCount}`
+      ? `${t("dashboard.charts.warMap.stats.aisDisruptions")}: ${aisDisruptionsCount}`
       : null,
     typeof aisMessageCount === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisMessages", {
-          defaultValue: "Messages",
-        })}: ${aisMessageCount}`
+      ? `${t("dashboard.charts.warMap.stats.aisMessages")}: ${aisMessageCount}`
       : null,
     typeof aisPositionReportsSeen === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisPositionReportsSeen", {
-          defaultValue: "Reports seen",
-        })}: ${aisPositionReportsSeen}`
+      ? `${t("dashboard.charts.warMap.stats.aisPositionReportsSeen")}: ${aisPositionReportsSeen}`
       : null,
     typeof aisPositionReportsProcessed === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisPositionReportsProcessed", {
-          defaultValue: "Reports processed",
-        })}: ${aisPositionReportsProcessed}`
+      ? `${t("dashboard.charts.warMap.stats.aisPositionReportsProcessed")}: ${aisPositionReportsProcessed}`
       : null,
     typeof aisIgnoredPositionReports === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisIgnoredPositionReports", {
-          defaultValue: "Reports ignored",
-        })}: ${aisIgnoredPositionReports}`
+      ? `${t("dashboard.charts.warMap.stats.aisIgnoredPositionReports")}: ${aisIgnoredPositionReports}`
       : null,
     typeof aisParseErrors === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisParseErrors", {
-          defaultValue: "Parse errors",
-        })}: ${aisParseErrors}`
+      ? `${t("dashboard.charts.warMap.stats.aisParseErrors")}: ${aisParseErrors}`
       : null,
     typeof aisDroppedMessages === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisDroppedMessages", {
-          defaultValue: "Dropped messages",
-        })}: ${aisDroppedMessages}`
+      ? `${t("dashboard.charts.warMap.stats.aisDroppedMessages")}: ${aisDroppedMessages}`
       : null,
     typeof aisClientCount === "number"
-      ? `${t("dashboard.charts.warMap.stats.aisClients", {
-          defaultValue: "Relay clients",
-        })}: ${aisClientCount}`
+      ? `${t("dashboard.charts.warMap.stats.aisClients")}: ${aisClientCount}`
       : null,
     aisSourceEndpoint
-      ? `${t("dashboard.charts.warMap.stats.aisSourceEndpoint", {
-          defaultValue: "Endpoint",
-        })}: ${aisSourceEndpoint}`
+      ? `${t("dashboard.charts.warMap.stats.aisSourceEndpoint")}: ${aisSourceEndpoint}`
       : null,
     aisSnapshotExact
-      ? `${t("dashboard.charts.warMap.stats.aisSnapshotUpdated", {
-          defaultValue: "AIS updated",
-        })}: ${aisSnapshotExact}`
+      ? `${t("dashboard.charts.warMap.stats.aisSnapshotUpdated")}: ${aisSnapshotExact}`
       : null,
     aisResolvedBlockedReason ?? null,
   ]
@@ -3760,22 +3532,14 @@ export function WarMap({
     effectiveAisMode === "all" && aisAllVesselsAvailable === false;
   const aisAllModeDegradedLabel = aisAllModeDegraded
     ? (aisResolvedBlockedReason ??
-      t("dashboard.charts.warMap.stats.aisAllUnavailable", {
-        defaultValue: "All vessels mode is waiting for relay vessel snapshots.",
-      }))
+      t("dashboard.charts.warMap.stats.aisAllUnavailable"))
     : null;
   const aisPrimaryCountLabel =
     effectiveAisMode === "density"
-      ? t("dashboard.charts.warMap.stats.aisDensityZones", {
-          defaultValue: "Density zones",
-        })
+      ? t("dashboard.charts.warMap.stats.aisDensityZones")
       : effectiveAisMode === "military"
-        ? t("dashboard.charts.warMap.stats.aisCandidates", {
-            defaultValue: "Candidates",
-          })
-        : t("dashboard.charts.warMap.stats.aisViewportVessels", {
-            defaultValue: "Viewport vessels",
-          });
+        ? t("dashboard.charts.warMap.stats.aisCandidates")
+        : t("dashboard.charts.warMap.stats.aisViewportVessels");
   const aisPrimaryCountValue =
     effectiveAisMode === "density"
       ? aisDensityCount
@@ -3784,85 +3548,53 @@ export function WarMap({
         : (aisViewportVesselCount ?? aisRenderedVesselCount);
   const aisHighlightCountLabel =
     effectiveAisMode === "all" && aisHighlightCandidates
-      ? t("dashboard.charts.warMap.stats.aisHighlightedCandidates", {
-          defaultValue: "Highlighted candidates",
-        })
+      ? t("dashboard.charts.warMap.stats.aisHighlightedCandidates")
       : undefined;
   const transportLegendState = useMemo<WarMapTransportLegendState>(() => {
     const flightsUnavailableReason =
       layerVisibility.flights && flightsReturnedCount === 0
         ? flightsFreshness === "zoom_required"
-          ? t("dashboard.charts.warMap.legend.flightZoomRequired", {
-              defaultValue: "Zoom in for live aircraft markers.",
-            })
+          ? t("dashboard.charts.warMap.legend.flightZoomRequired")
           : flightsFreshness === "not_configured"
-            ? t("dashboard.charts.warMap.legend.flightNotConfigured", {
-                defaultValue: "OpenSky credentials are not configured.",
-              })
+            ? t("dashboard.charts.warMap.legend.flightNotConfigured")
             : flightsFreshness === "budget_limited"
-              ? t("dashboard.charts.warMap.legend.flightBudgetLimited", {
-                  defaultValue:
-                    "Live aircraft markers are paused by the current OpenSky budget policy.",
-                })
+              ? t("dashboard.charts.warMap.legend.flightBudgetLimited")
               : flightsFreshness === "stale"
-                ? t("dashboard.charts.warMap.legend.flightStale", {
-                    defaultValue: "Latest aircraft snapshot is stale.",
-                  })
-                : t("dashboard.charts.warMap.legend.flightMissing", {
-                    defaultValue: "Live aircraft snapshot is not available.",
-                  })
+                ? t("dashboard.charts.warMap.legend.flightStale")
+                : t("dashboard.charts.warMap.legend.flightMissing")
         : null;
     const aisAllModeReason =
       layerVisibility.ais && aisAllModeDegraded
         ? (aisAllModeDegradedLabel ??
-          t("dashboard.charts.warMap.legend.aisAggregatedOnly", {
-            defaultValue:
-              "Live vessel snapshots are unavailable. Aggregated AIS signals remain visible.",
-          }))
+          t("dashboard.charts.warMap.legend.aisAggregatedOnly"))
         : null;
     const aisViewportReason =
       layerVisibility.ais && aisViewportEmptyStateActive
         ? (aisViewportEmptyStateHint ??
-          t("dashboard.charts.warMap.legend.aisViewportEmpty", {
-            defaultValue: "This viewport currently has no live vessel markers.",
-          }))
+          t("dashboard.charts.warMap.legend.aisViewportEmpty"))
         : null;
 
     const statusHintLines = [
       flightsUnavailableReason
-        ? `${t("dashboard.charts.warMap.overlay.flights", {
-            defaultValue: "Flights",
-          })}: ${flightsUnavailableReason}`
+        ? `${t("dashboard.charts.warMap.overlay.flights")}: ${flightsUnavailableReason}`
         : null,
       aisAllModeReason
-        ? `${t("dashboard.charts.warMap.layerNames.ais", {
-            defaultValue: "AIS traffic",
-          })}: ${aisAllModeReason}`
+        ? `${t("dashboard.charts.warMap.layerNames.ais")}: ${aisAllModeReason}`
         : null,
       !aisAllModeReason && aisViewportReason
-        ? `${t("dashboard.charts.warMap.layerNames.ais", {
-            defaultValue: "AIS traffic",
-          })}: ${aisViewportReason}`
+        ? `${t("dashboard.charts.warMap.layerNames.ais")}: ${aisViewportReason}`
         : null,
     ].filter((value): value is string => Boolean(value));
 
     const sectionStatusLabel =
       flightsUnavailableReason && aisAllModeReason
-        ? t("dashboard.charts.warMap.legend.transportLimited", {
-            defaultValue: "Live markers limited",
-          })
+        ? t("dashboard.charts.warMap.legend.transportLimited")
         : aisAllModeReason
-          ? t("dashboard.charts.warMap.legend.transportAggregatedOnly", {
-              defaultValue: "Aggregated only",
-            })
+          ? t("dashboard.charts.warMap.legend.transportAggregatedOnly")
           : flightsUnavailableReason
-            ? t("dashboard.charts.warMap.legend.transportFlightsLimited", {
-                defaultValue: "Flights limited",
-              })
+            ? t("dashboard.charts.warMap.legend.transportFlightsLimited")
             : aisViewportReason
-              ? t("dashboard.charts.warMap.legend.transportViewportEmpty", {
-                  defaultValue: "Viewport empty",
-                })
+              ? t("dashboard.charts.warMap.legend.transportViewportEmpty")
               : undefined;
 
     const flightCountLabel =
@@ -3896,9 +3628,7 @@ export function WarMap({
               aisAllModeReason ??
               aisViewportReason ??
               (effectiveAisMode === "all"
-                ? t("dashboard.charts.warMap.legend.quickColorByCategory", {
-                    defaultValue: "Color shows vessel category",
-                  })
+                ? t("dashboard.charts.warMap.legend.quickColorByCategory")
                 : undefined),
             countLabel: aisPrimaryCountLabelValue,
             tone:
@@ -3932,90 +3662,70 @@ export function WarMap({
   const chainStatuses = [
     {
       key: "signals",
-      label: t("dashboard.charts.warMap.stats.signals", {
-        defaultValue: "Signals",
-      }),
+      label: t("dashboard.charts.warMap.stats.signals"),
       fetching: eventsQuery.isFetching,
       error: Boolean(eventsQuery.error),
       ready: Boolean(eventsQuery.data),
       errorMessage: getErrorMessage(eventsQuery.error),
       dataUpdatedAt: eventsQuery.dataUpdatedAt || undefined,
       sourceUpdatedAt: eventsQuery.data?.updatedAt,
-      sourceUpdatedLabel: t("dashboard.charts.warMap.stats.signalsUpdated", {
-        defaultValue: "Signals updated",
-      }),
+      sourceUpdatedLabel: t("dashboard.charts.warMap.stats.signalsUpdated"),
     },
     {
       key: "news",
-      label: t("dashboard.charts.warMap.stats.news", { defaultValue: "News" }),
+      label: t("dashboard.charts.warMap.stats.news"),
       fetching: newsQuery.isFetching,
       error: Boolean(newsQuery.error),
       ready: Boolean(newsQuery.data),
       errorMessage: getErrorMessage(newsQuery.error),
       dataUpdatedAt: newsQuery.dataUpdatedAt || undefined,
       sourceUpdatedAt: newsQuery.data?.updatedAt,
-      sourceUpdatedLabel: t("dashboard.charts.warMap.stats.newsUpdated", {
-        defaultValue: "News updated",
-      }),
+      sourceUpdatedLabel: t("dashboard.charts.warMap.stats.newsUpdated"),
     },
     {
       key: "layers",
-      label: t("dashboard.charts.warMap.layers", { defaultValue: "Layers" }),
+      label: t("dashboard.charts.warMap.layers"),
       fetching: layersQuery.isFetching,
       error: Boolean(layersQuery.error),
       ready: Boolean(layersQuery.data),
       errorMessage: getErrorMessage(layersQuery.error),
       dataUpdatedAt: layersQuery.dataUpdatedAt || undefined,
       sourceUpdatedAt: layersQuery.data?.updatedAt,
-      sourceUpdatedLabel: t("dashboard.charts.warMap.stats.layersUpdated", {
-        defaultValue: "Layers updated",
-      }),
+      sourceUpdatedLabel: t("dashboard.charts.warMap.stats.layersUpdated"),
     },
     {
       key: "monitors",
-      label: t("dashboard.charts.warMap.stats.monitors", {
-        defaultValue: "Monitors",
-      }),
+      label: t("dashboard.charts.warMap.stats.monitors"),
       fetching: monitorsQuery.isFetching,
       error: Boolean(monitorsQuery.error),
       ready: Boolean(monitorsQuery.data),
       errorMessage: getErrorMessage(monitorsQuery.error),
       dataUpdatedAt: monitorsQuery.dataUpdatedAt || undefined,
       sourceUpdatedAt: monitorsQuery.dataUpdatedAt || undefined,
-      sourceUpdatedLabel: t("dashboard.charts.warMap.stats.monitorsUpdated", {
-        defaultValue: "Monitors updated",
-      }),
+      sourceUpdatedLabel: t("dashboard.charts.warMap.stats.monitorsUpdated"),
     },
   ] as const;
   const showBootOverlay =
     !mapLoadError && (!mapReady || (anyLoading && !hasData));
   const bootOverlayLabel = !mapReady
-    ? t("dashboard.charts.warMap.status.loadingMap", {
-        defaultValue: "Loading map base layer…",
-      })
-    : t("dashboard.charts.warMap.status.loadingData", {
-        defaultValue: "Loading map data…",
-      });
+    ? t("dashboard.charts.warMap.status.loadingMap")
+    : t("dashboard.charts.warMap.status.loadingData");
   const hasFatalDataError = !anyLoading && errors.length > 0 && !hasData;
   const fatalOverlay = mapLoadError
     ? {
         title: mapLoadError.title,
         description: mapLoadError.description,
-        actionLabel: t("common.retry", { defaultValue: "Retry" }),
+        actionLabel: t("common.retry"),
         actionLoading: false,
         onAction: retryMapLoad,
       }
     : hasFatalDataError
       ? {
-          title: t("dashboard.dataAbnormal", { defaultValue: "Data error" }),
+          title: t("dashboard.dataAbnormal"),
           description:
             getErrorMessage(errors[0]) ??
-            t("common.serviceUnavailable", {
-              defaultValue: "Service is unavailable. Please try again.",
-            }),
-          actionLabel: t("dashboard.actions.retryFetch", {
-            defaultValue: "Retry fetch",
-          }),
+            t("common.serviceUnavailable"),
+          actionLabel: t("dashboard.actions.retryFetch"),
           actionLoading: refreshingMapData,
           onAction: () => {
             void refreshMapData();
@@ -4063,12 +3773,10 @@ export function WarMap({
         : "green";
   const streamStatusLabel =
     resolvedStreamState.status !== "live"
-      ? t("dashboard.stream.status.offline", { defaultValue: "Offline" })
+      ? t("dashboard.stream.status.offline")
       : streamLagging
-        ? t("dashboard.charts.warMap.status.lagging", {
-            defaultValue: "Lagging",
-          })
-        : t("dashboard.stream.status.live", { defaultValue: "Live" });
+        ? t("dashboard.charts.warMap.status.lagging")
+        : t("dashboard.stream.status.live");
   const refreshingChainCount = chainStatuses.filter(
     (status) => status.fetching,
   ).length;
@@ -4087,20 +3795,16 @@ export function WarMap({
           ? "gold"
           : "blue";
   const dataStatusLabel = !latestQueryUpdatedAt
-    ? t("dashboard.charts.warMap.status.waitingData", {
-        defaultValue: "Awaiting first refresh",
-      })
+    ? t("dashboard.charts.warMap.status.waitingData")
     : anyFetching
       ? t("dashboard.charts.warMap.status.refreshingChains", {
-          defaultValue: "Refreshing {{count}} chains",
           count: Math.max(refreshingChainCount, 1),
         })
       : t("dashboard.charts.warMap.overlay.updatedSummary", {
-          defaultValue: "Last updated {{value}}",
           value:
             latestQueryUpdatedRelative ??
             latestQueryUpdatedExact ??
-            t("common.justNow", { defaultValue: "just now" }),
+            t("common.justNow"),
         });
   const detailedChainStatuses = chainStatuses.map((status) => {
     const isStale =
@@ -4108,22 +3812,14 @@ export function WarMap({
       !status.fetching &&
       nowMs - (status.dataUpdatedAt ?? 0) > DATA_REFRESH_STALE_MS;
     const stateLabel = status.error
-      ? t("dashboard.charts.warMap.status.error", { defaultValue: "Error" })
+      ? t("dashboard.charts.warMap.status.error")
       : status.fetching
-        ? t("dashboard.charts.warMap.status.refreshing", {
-            defaultValue: "Refreshing",
-          })
+        ? t("dashboard.charts.warMap.status.refreshing")
         : !status.ready
-          ? t("dashboard.charts.warMap.status.waiting", {
-              defaultValue: "Waiting",
-            })
+          ? t("dashboard.charts.warMap.status.waiting")
           : isStale
-            ? t("dashboard.charts.warMap.status.stale", {
-                defaultValue: "Stale",
-              })
-            : t("dashboard.charts.warMap.status.updated", {
-                defaultValue: "Updated",
-              });
+            ? t("dashboard.charts.warMap.status.stale")
+            : t("dashboard.charts.warMap.status.updated");
     const relativeUpdated = status.dataUpdatedAt
       ? formatWarMapRelativeTimestamp(status.dataUpdatedAt, locale, nowMs)
       : null;
@@ -4149,9 +3845,7 @@ export function WarMap({
     const tooltipLines = [
       `${status.label}: ${stateLabel}`,
       exactUpdated
-        ? `${t("dashboard.charts.warMap.overlay.lastUpdatedLabel", {
-            defaultValue: "Last updated",
-          })}: ${exactUpdated}`
+        ? `${t("dashboard.charts.warMap.overlay.lastUpdatedLabel")}: ${exactUpdated}`
         : null,
       sourceUpdated ? `${status.sourceUpdatedLabel}: ${sourceUpdated}` : null,
       status.errorMessage ?? null,
@@ -4166,20 +3860,16 @@ export function WarMap({
 
   const hasNonFatalDataError = errors.length > 0 && hasData;
   const summaryDataLabel = !latestQueryUpdatedAt
-    ? t("dashboard.charts.warMap.status.waitingData", {
-        defaultValue: "Awaiting first refresh",
-      })
+    ? t("dashboard.charts.warMap.status.waitingData")
     : anyFetching
       ? t("dashboard.charts.warMap.status.refreshingChains", {
-          defaultValue: "Refreshing {{count}} chains",
           count: Math.max(refreshingChainCount, 1),
         })
       : t("dashboard.charts.warMap.overlay.updatedSummary", {
-          defaultValue: "Last updated {{value}}",
           value:
             latestQueryUpdatedRelative ??
             latestQueryUpdatedExact ??
-            t("common.justNow", { defaultValue: "just now" }),
+            t("common.justNow"),
         });
   const overlayLayout = useMemo(
     () =>
@@ -4541,9 +4231,7 @@ export function WarMap({
               <Space size={8}>
                 <Spin size="small" />
                 <Typography.Text type="secondary">
-                  {t("dashboard.charts.warMap.status.preparing", {
-                    defaultValue: "Preparing map…",
-                  })}
+                  {t("dashboard.charts.warMap.status.preparing")}
                 </Typography.Text>
               </Space>
             </div>
@@ -4702,10 +4390,7 @@ export function WarMap({
           {!anyLoading && !errors.length && !hasData && mapReady ? (
             <div className="absolute inset-0 flex items-center justify-center">
               <ChartEmptyState
-                description={t("pages.map.empty", {
-                  defaultValue:
-                    "No alerts or geo-tagged news signals in the selected range.",
-                })}
+                description={t("pages.map.empty")}
               />
             </div>
           ) : null}

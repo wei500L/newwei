@@ -714,12 +714,10 @@ export function AnalysisWorkspace() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <Space direction="vertical" size={2}>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            {t("analysis.workspace.title", { defaultValue: "Analysis workspace" })}
+            {t("analysis.workspace.title")}
           </Typography.Title>
           <Typography.Text type="secondary">
-            {t("analysis.workspace.subtitle", {
-              defaultValue: "Coordinate shared boards, saved views, and task discussions.",
-            })}
+            {t("analysis.workspace.subtitle")}
           </Typography.Text>
         </Space>
         <Space wrap>

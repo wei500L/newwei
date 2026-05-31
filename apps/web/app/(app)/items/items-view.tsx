@@ -1205,7 +1205,6 @@ export function ItemsView({
           scrollToFirstRowOnChange: true,
         }
       : undefined;
-  const listTableVirtualEnabled = Boolean(listTableScroll);
   const effectiveSortMode = sortMode === "default" ? activeSortMode : sortMode;
   const orderQueryValue =
     sortMode !== "default"
@@ -2223,7 +2222,6 @@ export function ItemsView({
               dataSource={pageData}
               loading={loading}
               size="large"
-              virtual={listTableVirtualEnabled}
               scroll={listTableScroll}
               pagination={{
                 current: page,

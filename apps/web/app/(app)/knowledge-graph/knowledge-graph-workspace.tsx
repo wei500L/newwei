@@ -25,16 +25,12 @@ export function KnowledgeGraphWorkspace() {
     () => [
       {
         key: "explorer",
-        label: t("knowledgeGraph.workspace.tabs.explorer", {
-          defaultValue: "Explorer",
-        }),
+        label: t("knowledgeGraph.workspace.tabs.explorer"),
         children: <KnowledgeGraphContent />,
       },
       {
         key: "impact",
-        label: t("knowledgeGraph.workspace.tabs.impact", {
-          defaultValue: "Impact Analysis",
-        }),
+        label: t("knowledgeGraph.workspace.tabs.impact"),
         children: <KnowledgeGraphImpactContent />,
       },
     ],

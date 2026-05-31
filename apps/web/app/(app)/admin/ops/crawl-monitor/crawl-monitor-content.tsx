@@ -747,10 +747,7 @@ export function CrawlMonitorContent({
       return (
         <Space direction="vertical" size={2}>
           <Typography.Text type="secondary">
-            {t("crawl.monitor.troubleshoot.notFound", {
-              defaultValue:
-                "Crawl4AI monitoring endpoints are missing. This usually means the crawl4ai image tag is wrong/too old (Docker Hub :latest is a common culprit). Prefer the floating Docker Hub tag :0 or a recent release tag.",
-            })}
+            {t("crawl.monitor.troubleshoot.notFound")}
           </Typography.Text>
           <Typography.Text code>
             CRAWL4AI_IMAGE=unclecode/crawl4ai:0
@@ -766,10 +763,7 @@ export function CrawlMonitorContent({
       return (
         <Space direction="vertical" size={2}>
           <Typography.Text type="secondary">
-            {t("crawl.monitor.troubleshoot.baseUrlMissing", {
-              defaultValue:
-                "CRAWL4AI_BASE_URL is not configured for the web runtime. Set it and restart the web server.",
-            })}
+            {t("crawl.monitor.troubleshoot.baseUrlMissing")}
           </Typography.Text>
           <Typography.Text code>
             CRAWL4AI_BASE_URL=http://crawl4ai:11235
@@ -785,10 +779,7 @@ export function CrawlMonitorContent({
       return (
         <Space direction="vertical" size={2}>
           <Typography.Text type="secondary">
-            {t("crawl.monitor.troubleshoot.upstreamUnavailable", {
-              defaultValue:
-                "Crawl4AI is not reachable from the web server. Ensure the extras profile is running, then check the crawl4ai container logs.",
-            })}
+            {t("crawl.monitor.troubleshoot.upstreamUnavailable")}
           </Typography.Text>
           <Typography.Text code>
             pnpm docker:up:extras -d crawl4ai
@@ -801,10 +792,7 @@ export function CrawlMonitorContent({
     if (pollErrorInfo.kind === "timeout") {
       return (
         <Typography.Text type="secondary">
-          {t("crawl.monitor.troubleshoot.timeout", {
-            defaultValue:
-              "Monitor request timed out. Crawl4AI may be overloaded or starting up. Check container health and try again.",
-          })}
+          {t("crawl.monitor.troubleshoot.timeout")}
         </Typography.Text>
       );
     }
@@ -815,10 +803,7 @@ export function CrawlMonitorContent({
     ) {
       return (
         <Typography.Text type="secondary">
-          {t("crawl.monitor.troubleshoot.auth", {
-            defaultValue:
-              "Access denied. Make sure you are logged in and have crawl.read/crawl.write permissions.",
-          })}
+          {t("crawl.monitor.troubleshoot.auth")}
         </Typography.Text>
       );
     }
@@ -836,13 +821,13 @@ export function CrawlMonitorContent({
     try {
       await navigator.clipboard.writeText(normalizedDashboardUrl);
       messageApi.success(
-        t("crawl.monitor.copied", { defaultValue: "Copied dashboard URL." }),
+        t("crawl.monitor.copied"),
       );
     } catch (error) {
       messageApi.error(
         error instanceof Error
           ? error.message
-          : t("crawl.monitor.copyFailed", { defaultValue: "Copy failed." }),
+          : t("crawl.monitor.copyFailed"),
       );
     }
   };
@@ -853,13 +838,13 @@ export function CrawlMonitorContent({
         `${window.location.origin}/api/crawl4ai/monitor/health`,
       );
       messageApi.success(
-        t("crawl.monitor.apiCopied", { defaultValue: "Copied API base URL." }),
+        t("crawl.monitor.apiCopied"),
       );
     } catch (error) {
       messageApi.error(
         error instanceof Error
           ? error.message
-          : t("crawl.monitor.copyFailed", { defaultValue: "Copy failed." }),
+          : t("crawl.monitor.copyFailed"),
       );
     }
   };
@@ -869,13 +854,13 @@ export function CrawlMonitorContent({
     try {
       await navigator.clipboard.writeText(wsUrl);
       messageApi.success(
-        t("crawl.monitor.wsCopied", { defaultValue: "Copied WebSocket URL." }),
+        t("crawl.monitor.wsCopied"),
       );
     } catch (error) {
       messageApi.error(
         error instanceof Error
           ? error.message
-          : t("crawl.monitor.copyFailed", { defaultValue: "Copy failed." }),
+          : t("crawl.monitor.copyFailed"),
       );
     }
   };
@@ -946,15 +931,13 @@ export function CrawlMonitorContent({
       }
 
       messageApi.success(
-        t("crawl.monitor.refresh.success", { defaultValue: "Refreshed." }),
+        t("crawl.monitor.refresh.success"),
       );
     } catch (error) {
       messageApi.error(
         error instanceof Error
           ? error.message
-          : t("crawl.monitor.refresh.failed", {
-              defaultValue: "Refresh failed.",
-            }),
+          : t("crawl.monitor.refresh.failed"),
       );
     } finally {
       setRefreshing(false);
@@ -1075,9 +1058,7 @@ export function CrawlMonitorContent({
     if (!wsUrl) {
       setWsStatus("error");
       setWsError(
-        t("crawl.monitor.ws.missingUrl", {
-          defaultValue: "WebSocket URL not available.",
-        }),
+        t("crawl.monitor.ws.missingUrl"),
       );
       return;
     }
@@ -1109,10 +1090,7 @@ export function CrawlMonitorContent({
         }
         setWsStatus("error");
         setWsError(
-          t("crawl.monitor.ws.timeout", {
-            defaultValue:
-              "WebSocket connection timed out. Retrying automatically...",
-          }),
+          t("crawl.monitor.ws.timeout"),
         );
         ws.close();
       }, WS_CONNECT_TIMEOUT_MS);
@@ -1162,7 +1140,7 @@ export function CrawlMonitorContent({
         }
         setWsStatus("error");
         setWsError(
-          t("crawl.monitor.ws.error", { defaultValue: "WebSocket error." }),
+          t("crawl.monitor.ws.error"),
         );
       };
 
@@ -1182,9 +1160,7 @@ export function CrawlMonitorContent({
         );
         setWsStatus("reconnecting");
         setWsError(
-          t("crawl.monitor.ws.reconnecting", {
-            defaultValue: "Disconnected. Reconnecting...",
-          }),
+          t("crawl.monitor.ws.reconnecting"),
         );
         reconnectTimeoutId.current = window.setTimeout(
           () => connectWebSocket(),
@@ -1196,7 +1172,7 @@ export function CrawlMonitorContent({
       setWsError(
         error instanceof Error
           ? error.message
-          : t("crawl.monitor.ws.error", { defaultValue: "WebSocket error." }),
+          : t("crawl.monitor.ws.error"),
       );
     }
   }, [t, wsUrl]);
@@ -1212,9 +1188,7 @@ export function CrawlMonitorContent({
   const openRequestDetails = useCallback(
     (payload: unknown) => {
       openDetailModal(
-        t("crawl.monitor.details.request", {
-          defaultValue: "Request details",
-        }),
+        t("crawl.monitor.details.request"),
         payload,
       );
     },
@@ -1228,13 +1202,13 @@ export function CrawlMonitorContent({
         safeJsonStringify(detailModal.payload),
       );
       messageApi.success(
-        t("crawl.monitor.details.copied", { defaultValue: "Copied." }),
+        t("crawl.monitor.details.copied"),
       );
     } catch (error) {
       messageApi.error(
         error instanceof Error
           ? error.message
-          : t("crawl.monitor.copyFailed", { defaultValue: "Copy failed." }),
+          : t("crawl.monitor.copyFailed"),
       );
     }
   }, [detailModal, messageApi, t]);
@@ -1449,9 +1423,7 @@ export function CrawlMonitorContent({
 
     return {
       title: {
-        text: t("crawl.monitor.endpoints.chartTitle", {
-          defaultValue: "Top endpoints (by count)",
-        }),
+        text: t("crawl.monitor.endpoints.chartTitle"),
         left: 8,
         top: 8,
         textStyle: { fontSize: 12, fontWeight: 600 },
@@ -1497,59 +1469,51 @@ export function CrawlMonitorContent({
     if (mode === "polling") {
       return (
         <Tag color={pollError ? "red" : "green"}>
-          {t("crawl.monitor.transport.polling", { defaultValue: "Polling" })}
+          {t("crawl.monitor.transport.polling")}
         </Tag>
       );
     }
     if (wsStatus === "connected") {
       return (
         <Tag color="green">
-          {t("crawl.monitor.ws.connected", { defaultValue: "WS connected" })}
+          {t("crawl.monitor.ws.connected")}
         </Tag>
       );
     }
     if (wsStatus === "connecting") {
       return (
         <Tag color="blue">
-          {t("crawl.monitor.ws.connecting", { defaultValue: "WS connecting" })}
+          {t("crawl.monitor.ws.connecting")}
         </Tag>
       );
     }
     if (wsStatus === "reconnecting") {
       return (
         <Tag color="orange">
-          {t("crawl.monitor.ws.reconnectingShort", {
-            defaultValue: "WS reconnecting",
-          })}
+          {t("crawl.monitor.ws.reconnectingShort")}
         </Tag>
       );
     }
     if (wsStatus === "error") {
       return (
         <Tag color="red">
-          {t("crawl.monitor.ws.errorShort", { defaultValue: "WS error" })}
+          {t("crawl.monitor.ws.errorShort")}
         </Tag>
       );
     }
-    return <Tag>{t("crawl.monitor.ws.idle", { defaultValue: "WS idle" })}</Tag>;
+    return <Tag>{t("crawl.monitor.ws.idle")}</Tag>;
   })();
 
   const handleCleanup = () => {
     Modal.confirm({
-      title: t("crawl.monitor.actions.cleanup.title", {
-        defaultValue: "Run cleanup now?",
-      }),
-      content: t("crawl.monitor.actions.cleanup.description", {
-        defaultValue: "This will trigger Crawl4AI janitor cleanup immediately.",
-      }),
-      okText: t("common.confirm", { defaultValue: "Confirm" }),
-      cancelText: t("common.cancel", { defaultValue: "Cancel" }),
+      title: t("crawl.monitor.actions.cleanup.title"),
+      content: t("crawl.monitor.actions.cleanup.description"),
+      okText: t("common.confirm"),
+      cancelText: t("common.cancel"),
       onOk: async () => {
         await postMonitorJson("actions/cleanup");
         messageApi.success(
-          t("crawl.monitor.actions.cleanup.success", {
-            defaultValue: "Cleanup triggered.",
-          }),
+          t("crawl.monitor.actions.cleanup.success"),
         );
       },
     });
@@ -1557,20 +1521,14 @@ export function CrawlMonitorContent({
 
   const handleResetStats = () => {
     Modal.confirm({
-      title: t("crawl.monitor.actions.reset.title", {
-        defaultValue: "Reset monitoring stats?",
-      }),
-      content: t("crawl.monitor.actions.reset.description", {
-        defaultValue: "This will reset accumulated monitoring statistics.",
-      }),
-      okText: t("common.confirm", { defaultValue: "Confirm" }),
-      cancelText: t("common.cancel", { defaultValue: "Cancel" }),
+      title: t("crawl.monitor.actions.reset.title"),
+      content: t("crawl.monitor.actions.reset.description"),
+      okText: t("common.confirm"),
+      cancelText: t("common.cancel"),
       onOk: async () => {
         await postMonitorJson("stats/reset");
         messageApi.success(
-          t("crawl.monitor.actions.reset.success", {
-            defaultValue: "Stats reset.",
-          }),
+          t("crawl.monitor.actions.reset.success"),
         );
       },
     });
@@ -1588,25 +1546,20 @@ export function CrawlMonitorContent({
     Modal.confirm({
       title:
         action === "kill_browser"
-          ? t("crawl.monitor.actions.kill.title", {
-              defaultValue: "Kill browser?",
-            })
-          : t("crawl.monitor.actions.restart.title", {
-              defaultValue: "Restart browser?",
-            }),
+          ? t("crawl.monitor.actions.kill.title")
+          : t("crawl.monitor.actions.restart.title"),
       content: t("crawl.monitor.actions.targetSig", {
-        defaultValue: "Target signature: {{sig}}",
         sig: label,
       }),
-      okText: t("common.confirm", { defaultValue: "Confirm" }),
-      cancelText: t("common.cancel", { defaultValue: "Cancel" }),
+      okText: t("common.confirm"),
+      cancelText: t("common.cancel"),
       onOk: async () => {
         await postMonitorJson(`actions/${action}`, {
           sig: shortSig || undefined,
           browser_id: target.browserId || undefined,
         });
         messageApi.success(
-          t("crawl.monitor.actions.success", { defaultValue: "Action sent." }),
+          t("crawl.monitor.actions.success"),
         );
       },
     });
@@ -1651,9 +1604,7 @@ export function CrawlMonitorContent({
 
   const completedRequestColumns: ColumnsType<{ key: string; item: unknown }> = [
     {
-      title: t("crawl.monitor.requests.columns.endpoint", {
-        defaultValue: "Endpoint",
-      }),
+      title: t("crawl.monitor.requests.columns.endpoint"),
       dataIndex: "item",
       key: "endpoint",
       render: (value: unknown) => {
@@ -1666,7 +1617,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.requests.columns.url", { defaultValue: "URL" }),
+      title: t("crawl.monitor.requests.columns.url"),
       dataIndex: "item",
       key: "url",
       render: (value: unknown) => {
@@ -1685,9 +1636,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.requests.columns.status", {
-        defaultValue: "Status",
-      }),
+      title: t("crawl.monitor.requests.columns.status"),
       dataIndex: "item",
       key: "status",
       width: 110,
@@ -1706,9 +1655,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.requests.columns.latency", {
-        defaultValue: "Latency (ms)",
-      }),
+      title: t("crawl.monitor.requests.columns.latency"),
       dataIndex: "item",
       key: "latency",
       width: 140,
@@ -1728,7 +1675,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.requests.columns.http", { defaultValue: "HTTP" }),
+      title: t("crawl.monitor.requests.columns.http"),
       dataIndex: "item",
       key: "http",
       width: 90,
@@ -1748,9 +1695,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.requests.columns.poolHit", {
-        defaultValue: "Pool hit",
-      }),
+      title: t("crawl.monitor.requests.columns.poolHit"),
       dataIndex: "item",
       key: "poolHit",
       width: 110,
@@ -1763,9 +1708,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.requests.columns.memory", {
-        defaultValue: "Memory Δ (MB)",
-      }),
+      title: t("crawl.monitor.requests.columns.memory"),
       dataIndex: "item",
       key: "memory",
       width: 140,
@@ -1784,7 +1727,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("common.view", { defaultValue: "View" }),
+      title: t("common.view"),
       key: "view",
       width: 90,
       render: (_: unknown, record) => (
@@ -1792,16 +1735,14 @@ export function CrawlMonitorContent({
           size="small"
           type="link"
           aria-haspopup="dialog"
-          aria-label={t("crawl.monitor.details.openRequest", {
-            defaultValue: "Open request details",
-          })}
+          aria-label={t("crawl.monitor.details.openRequest")}
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
             openRequestDetails(record.item);
           }}
         >
-          {t("common.view", { defaultValue: "View" })}
+          {t("common.view")}
         </Button>
       ),
     },
@@ -1816,7 +1757,7 @@ export function CrawlMonitorContent({
 
   const browserColumns: ColumnsType<{ key: string; item: unknown }> = [
     {
-      title: t("crawl.monitor.browsers.columns.type", { defaultValue: "Type" }),
+      title: t("crawl.monitor.browsers.columns.type"),
       dataIndex: "item",
       key: "type",
       width: 120,
@@ -1836,9 +1777,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.browsers.columns.signature", {
-        defaultValue: "Signature",
-      }),
+      title: t("crawl.monitor.browsers.columns.signature"),
       dataIndex: "item",
       key: "signature",
       render: (value: unknown) => {
@@ -1864,7 +1803,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.browsers.columns.age", { defaultValue: "Age" }),
+      title: t("crawl.monitor.browsers.columns.age"),
       dataIndex: "item",
       key: "age",
       width: 140,
@@ -1878,7 +1817,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.browsers.columns.hits", { defaultValue: "Hits" }),
+      title: t("crawl.monitor.browsers.columns.hits"),
       dataIndex: "item",
       key: "hits",
       width: 90,
@@ -1893,9 +1832,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.browsers.columns.idle", {
-        defaultValue: "Idle (s)",
-      }),
+      title: t("crawl.monitor.browsers.columns.idle"),
       dataIndex: "item",
       key: "idle",
       width: 110,
@@ -1910,9 +1847,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.browsers.columns.memory", {
-        defaultValue: "Memory (MB)",
-      }),
+      title: t("crawl.monitor.browsers.columns.memory"),
       dataIndex: "item",
       key: "memory",
       width: 130,
@@ -1927,9 +1862,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.browsers.columns.lastUsed", {
-        defaultValue: "Last used",
-      }),
+      title: t("crawl.monitor.browsers.columns.lastUsed"),
       dataIndex: "item",
       key: "lastUsed",
       width: 140,
@@ -1941,9 +1874,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.browsers.columns.actions", {
-        defaultValue: "Actions",
-      }),
+      title: t("crawl.monitor.browsers.columns.actions"),
       dataIndex: "item",
       key: "actions",
       width: 220,
@@ -1960,14 +1891,12 @@ export function CrawlMonitorContent({
               type="link"
               onClick={() =>
                 openDetailModal(
-                  t("crawl.monitor.details.browser", {
-                    defaultValue: "Browser details",
-                  }),
+                  t("crawl.monitor.details.browser"),
                   value,
                 )
               }
             >
-              {t("common.view", { defaultValue: "View" })}
+              {t("common.view")}
             </Button>
             {canManage && (signature || browserId) ? (
               <>
@@ -1980,9 +1909,7 @@ export function CrawlMonitorContent({
                     })
                   }
                 >
-                  {t("crawl.monitor.actions.restart.button", {
-                    defaultValue: "Restart",
-                  })}
+                  {t("crawl.monitor.actions.restart.button")}
                 </Button>
                 <Button
                   danger
@@ -1994,9 +1921,7 @@ export function CrawlMonitorContent({
                     })
                   }
                 >
-                  {t("crawl.monitor.actions.kill.button", {
-                    defaultValue: "Kill",
-                  })}
+                  {t("crawl.monitor.actions.kill.button")}
                 </Button>
               </>
             ) : null}
@@ -2012,16 +1937,12 @@ export function CrawlMonitorContent({
     stats: unknown;
   }> = [
     {
-      title: t("crawl.monitor.endpoints.columns.endpoint", {
-        defaultValue: "Endpoint",
-      }),
+      title: t("crawl.monitor.endpoints.columns.endpoint"),
       dataIndex: "endpoint",
       key: "endpoint",
     },
     {
-      title: t("crawl.monitor.endpoints.columns.count", {
-        defaultValue: "Count",
-      }),
+      title: t("crawl.monitor.endpoints.columns.count"),
       dataIndex: "stats",
       key: "count",
       width: 110,
@@ -2033,9 +1954,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.endpoints.columns.latency", {
-        defaultValue: "Avg latency (ms)",
-      }),
+      title: t("crawl.monitor.endpoints.columns.latency"),
       dataIndex: "stats",
       key: "avg_latency_ms",
       width: 150,
@@ -2049,9 +1968,7 @@ export function CrawlMonitorContent({
       },
     },
     {
-      title: t("crawl.monitor.endpoints.columns.success", {
-        defaultValue: "Success %",
-      }),
+      title: t("crawl.monitor.endpoints.columns.success"),
       dataIndex: "stats",
       key: "success_rate_percent",
       width: 130,
@@ -2088,7 +2005,7 @@ export function CrawlMonitorContent({
         style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
       >
         <Typography.Text type="secondary">
-          {t("common.loading", { defaultValue: "Loading..." })}
+          {t("common.loading")}
         </Typography.Text>
       </div>
     );
@@ -2098,7 +2015,7 @@ export function CrawlMonitorContent({
     return (
       <Card
         className="content-card"
-        title={t("crawl.monitor.title", { defaultValue: "Crawl Monitor" })}
+        title={t("crawl.monitor.title")}
       >
         <Alert
           type="warning"
@@ -2121,9 +2038,7 @@ export function CrawlMonitorContent({
           <Space>
             <Typography.Text>{detailModal?.title}</Typography.Text>
             <Button size="small" onClick={handleCopyDetail}>
-              {t("crawl.monitor.details.copyJson", {
-                defaultValue: "Copy JSON",
-              })}
+              {t("crawl.monitor.details.copyJson")}
             </Button>
           </Space>
         }
@@ -2143,63 +2058,52 @@ export function CrawlMonitorContent({
       </Modal>
       <Space direction="vertical" size={2}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("crawl.monitor.title", { defaultValue: "Crawl4AI Monitor" })}
+          {t("crawl.monitor.title")}
         </Typography.Title>
         <Typography.Text type="secondary">
-          {t("crawl.monitor.subtitle", {
-            defaultValue:
-              "Interactive dashboard with live system metrics and browser pool visibility.",
-          })}
+          {t("crawl.monitor.subtitle")}
         </Typography.Text>
       </Space>
 
       <Card
         className="content-card"
-        title={t("crawl.monitor.dashboardTitle", {
-          defaultValue: "Monitoring Dashboard",
-        })}
+        title={t("crawl.monitor.dashboardTitle")}
         extra={
           <Space>
             <Button onClick={handleRefreshNow} loading={refreshing}>
-              {t("common.refresh", { defaultValue: "Refresh" })}
+              {t("common.refresh")}
             </Button>
             <Segmented
               value={mode}
               onChange={(value) => setMode(value as TransportMode)}
               options={[
                 {
-                  label: t("crawl.monitor.transport.ws", {
-                    defaultValue: "WebSocket",
-                  }),
+                  label: t("crawl.monitor.transport.ws"),
                   value: "ws",
                   disabled: !wsUrl,
                 },
                 {
-                  label: t("crawl.monitor.transport.polling", {
-                    defaultValue: "Polling",
-                  }),
+                  label: t("crawl.monitor.transport.polling"),
                   value: "polling",
                 },
               ]}
             />
             {connectionTag}
             <Button onClick={handleCopyApi}>
-              {t("crawl.monitor.copyApi", { defaultValue: "Copy API" })}
+              {t("crawl.monitor.copyApi")}
             </Button>
             <Button onClick={handleCopyWs} disabled={!wsUrl}>
-              {t("crawl.monitor.copyWs", { defaultValue: "Copy WS" })}
+              {t("crawl.monitor.copyWs")}
             </Button>
             <Button onClick={handleCopy} disabled={!normalizedDashboardUrl}>
-              {t("crawl.monitor.copyLink", { defaultValue: "Copy link" })}
+              {t("crawl.monitor.copyLink")}
             </Button>
             <Button
               type="primary"
               onClick={handleOpen}
               disabled={!normalizedDashboardUrl}
             >
-              {t("crawl.monitor.openInNewTab", {
-                defaultValue: "Open in new tab",
-              })}
+              {t("crawl.monitor.openInNewTab")}
             </Button>
           </Space>
         }
@@ -2207,13 +2111,8 @@ export function CrawlMonitorContent({
         {!normalizedDashboardUrl ? (
           <Alert
             type="warning"
-            message={t("crawl.monitor.missingUrl.title", {
-              defaultValue: "Dashboard URL not configured",
-            })}
-            description={t("crawl.monitor.missingUrl.description", {
-              defaultValue:
-                "Set CRAWL4AI_DASHBOARD_URL (recommended in Docker) or CRAWL4AI_BASE_URL, then reload this page.",
-            })}
+            message={t("crawl.monitor.missingUrl.title")}
+            description={t("crawl.monitor.missingUrl.description")}
           />
         ) : null}
 
@@ -2221,28 +2120,19 @@ export function CrawlMonitorContent({
           <Alert
             type="warning"
             showIcon
-            message={t("crawl.monitor.ws.warningTitle", {
-              defaultValue: "WebSocket connection issue",
-            })}
+            message={t("crawl.monitor.ws.warningTitle")}
             description={
               <Space direction="vertical" size={2}>
                 <div>{wsError}</div>
                 <Typography.Text type="secondary">
-                  {t("crawl.monitor.ws.fallbackHint", {
-                    defaultValue:
-                      "Tip: Polling uses the authenticated server-side proxy and often works even when WebSocket is blocked by CORS/origin rules.",
-                  })}
+                  {t("crawl.monitor.ws.fallbackHint")}
                 </Typography.Text>
                 <Space>
                   <Button onClick={() => connectWebSocket()}>
-                    {t("crawl.monitor.ws.reconnectNow", {
-                      defaultValue: "Reconnect now",
-                    })}
+                    {t("crawl.monitor.ws.reconnectNow")}
                   </Button>
                   <Button onClick={() => setMode("polling")}>
-                    {t("crawl.monitor.ws.switchToPolling", {
-                      defaultValue: "Switch to Polling",
-                    })}
+                    {t("crawl.monitor.ws.switchToPolling")}
                   </Button>
                 </Space>
               </Space>
@@ -2254,9 +2144,7 @@ export function CrawlMonitorContent({
           <Alert
             type="warning"
             showIcon
-            message={t("crawl.monitor.polling.warningTitle", {
-              defaultValue: "Polling failed",
-            })}
+            message={t("crawl.monitor.polling.warningTitle")}
             description={
               <Space direction="vertical" size={2}>
                 <div>{pollErrorInfo?.message ?? pollError}</div>
@@ -2272,7 +2160,7 @@ export function CrawlMonitorContent({
 
         <Typography.Paragraph style={{ marginBottom: 12, marginTop: 12 }}>
           <Typography.Text type="secondary">
-            {t("crawl.monitor.lastUpdate", { defaultValue: "Last update:" })}{" "}
+            {t("crawl.monitor.lastUpdate")}{" "}
             {receivedAtLabel}
           </Typography.Text>
           {monitor?.payloadTimestamp ? (
@@ -2280,9 +2168,7 @@ export function CrawlMonitorContent({
               {" "}
               <Typography.Text type="secondary">
                 (
-                {t("crawl.monitor.payloadTimestamp", {
-                  defaultValue: "server:",
-                })}{" "}
+                {t("crawl.monitor.payloadTimestamp")}{" "}
                 {String(monitor.payloadTimestamp)})
               </Typography.Text>
             </>
@@ -2294,18 +2180,14 @@ export function CrawlMonitorContent({
           items={[
             {
               key: "overview",
-              label: t("crawl.monitor.tabs.overview", {
-                defaultValue: "Overview",
-              }),
+              label: t("crawl.monitor.tabs.overview"),
               children: (
                 <Space direction="vertical" size={16} style={{ width: "100%" }}>
                   <Row gutter={[16, 16]}>
                     <Col xs={24} md={8}>
                       <Card
                         size="small"
-                        title={t("crawl.monitor.overview.container", {
-                          defaultValue: "Container",
-                        })}
+                        title={t("crawl.monitor.overview.container")}
                       >
                         <Row gutter={[16, 12]}>
                           <Col span={12}>
@@ -2342,9 +2224,7 @@ export function CrawlMonitorContent({
                     <Col xs={24} md={8}>
                       <Card
                         size="small"
-                        title={t("crawl.monitor.overview.pool", {
-                          defaultValue: "Browser pool",
-                        })}
+                        title={t("crawl.monitor.overview.pool")}
                       >
                         <Row gutter={[16, 12]}>
                           <Col span={8}>
@@ -2361,17 +2241,13 @@ export function CrawlMonitorContent({
                           </Col>
                           <Col span={12}>
                             <Statistic
-                              title={t("crawl.monitor.overview.totalBrowsers", {
-                                defaultValue: "Total",
-                              })}
+                              title={t("crawl.monitor.overview.totalBrowsers")}
                               value={browserTotal ?? "-"}
                             />
                           </Col>
                           <Col span={12}>
                             <Statistic
-                              title={t("crawl.monitor.overview.reuseRate", {
-                                defaultValue: "Reuse rate",
-                              })}
+                              title={t("crawl.monitor.overview.reuseRate")}
                               value={browserReuseRate ?? "-"}
                               suffix={
                                 typeof browserReuseRate === "number"
@@ -2386,32 +2262,24 @@ export function CrawlMonitorContent({
                     <Col xs={24} md={8}>
                       <Card
                         size="small"
-                        title={t("crawl.monitor.overview.requests", {
-                          defaultValue: "Requests",
-                        })}
+                        title={t("crawl.monitor.overview.requests")}
                       >
                         <Row gutter={[16, 12]}>
                           <Col span={8}>
                             <Statistic
-                              title={t("crawl.monitor.overview.active", {
-                                defaultValue: "Active",
-                              })}
+                              title={t("crawl.monitor.overview.active")}
                               value={activeRequests.length}
                             />
                           </Col>
                           <Col span={8}>
                             <Statistic
-                              title={t("crawl.monitor.overview.completed", {
-                                defaultValue: "Completed",
-                              })}
+                              title={t("crawl.monitor.overview.completed")}
                               value={completedRequests.length}
                             />
                           </Col>
                           <Col span={8}>
                             <Statistic
-                              title={t("crawl.monitor.overview.errors", {
-                                defaultValue: "Errors",
-                              })}
+                              title={t("crawl.monitor.overview.errors")}
                               value={
                                 errors === undefined
                                   ? "-"
@@ -2421,17 +2289,13 @@ export function CrawlMonitorContent({
                           </Col>
                           <Col span={12}>
                             <Statistic
-                              title={t("crawl.monitor.overview.totalRequests", {
-                                defaultValue: "Total requests",
-                              })}
+                              title={t("crawl.monitor.overview.totalRequests")}
                               value={overviewTotalRequests ?? "-"}
                             />
                           </Col>
                           <Col span={12}>
                             <Statistic
-                              title={t("crawl.monitor.overview.avgLatency", {
-                                defaultValue: "Avg latency",
-                              })}
+                              title={t("crawl.monitor.overview.avgLatency")}
                               value={overviewAvgLatency ?? "-"}
                               suffix={
                                 typeof overviewAvgLatency === "number"
@@ -2442,9 +2306,7 @@ export function CrawlMonitorContent({
                           </Col>
                           <Col span={12}>
                             <Statistic
-                              title={t("crawl.monitor.overview.successRate", {
-                                defaultValue: "Success rate",
-                              })}
+                              title={t("crawl.monitor.overview.successRate")}
                               value={overviewSuccessRate ?? "-"}
                               suffix={
                                 typeof overviewSuccessRate === "number"
@@ -2455,9 +2317,7 @@ export function CrawlMonitorContent({
                           </Col>
                           <Col span={12}>
                             <Statistic
-                              title={t("crawl.monitor.overview.browserMemory", {
-                                defaultValue: "Pool memory",
-                              })}
+                              title={t("crawl.monitor.overview.browserMemory")}
                               value={browserMemoryMb ?? "-"}
                               suffix={
                                 typeof browserMemoryMb === "number"
@@ -2473,21 +2333,15 @@ export function CrawlMonitorContent({
 
                   <Card
                     size="small"
-                    title={t("crawl.monitor.overview.runtime", {
-                      defaultValue: "Browser runtime (Xvfb)",
-                    })}
+                    title={t("crawl.monitor.overview.runtime")}
                     extra={
                       runtimeProbe?.xvfb?.supported === true ? (
                         <Tag color="green">
-                          {t("crawl.monitor.runtime.headedOk", {
-                            defaultValue: "Headed OK",
-                          })}
+                          {t("crawl.monitor.runtime.headedOk")}
                         </Tag>
                       ) : runtimeProbe?.headed ? (
                         <Tag color="red">
-                          {t("crawl.monitor.runtime.headedFailed", {
-                            defaultValue: "Headed failed",
-                          })}
+                          {t("crawl.monitor.runtime.headedFailed")}
                         </Tag>
                       ) : null
                     }
@@ -2496,9 +2350,7 @@ export function CrawlMonitorContent({
                       <Alert
                         type="warning"
                         showIcon
-                        message={t("crawl.monitor.runtime.unavailable", {
-                          defaultValue: "Runtime probe unavailable",
-                        })}
+                        message={t("crawl.monitor.runtime.unavailable")}
                         description={runtimeProbeError}
                       />
                     ) : runtimeProbe ? (
@@ -2510,18 +2362,14 @@ export function CrawlMonitorContent({
                         <Row gutter={[16, 12]}>
                           <Col xs={24} md={8}>
                             <Statistic
-                              title={t("crawl.monitor.runtime.headless", {
-                                defaultValue: "Headless (headless=true)",
-                              })}
+                              title={t("crawl.monitor.runtime.headless")}
                               value={runtimeProbe.headless.ok ? "OK" : "FAILED"}
                               suffix={`${runtimeProbe.headless.durationMs}ms`}
                             />
                           </Col>
                           <Col xs={24} md={8}>
                             <Statistic
-                              title={t("crawl.monitor.runtime.headed", {
-                                defaultValue: "Headed (headless=false)",
-                              })}
+                              title={t("crawl.monitor.runtime.headed")}
                               value={runtimeProbe.headed.ok ? "OK" : "FAILED"}
                               suffix={
                                 typeof runtimeProbe.headed.durationMs ===
@@ -2533,9 +2381,7 @@ export function CrawlMonitorContent({
                           </Col>
                           <Col xs={24} md={8}>
                             <Statistic
-                              title={t("crawl.monitor.runtime.ssrfProxy", {
-                                defaultValue: "Worker SSRF proxy",
-                              })}
+                              title={t("crawl.monitor.runtime.ssrfProxy")}
                               value={
                                 ssrfProxyStatus === "healthy"
                                   ? "OK"
@@ -2556,9 +2402,7 @@ export function CrawlMonitorContent({
 
                         {runtimeProbe.xvfbEnv?.enabled ? (
                           <Typography.Text type="secondary">
-                            {t("crawl.monitor.runtime.env", {
-                              defaultValue: "Env:",
-                            })}{" "}
+                            {t("crawl.monitor.runtime.env")}{" "}
                             <Typography.Text code>
                               CRAWL4AI_XVFB_ENABLED=
                               {runtimeProbe.xvfbEnv.enabled}
@@ -2580,9 +2424,7 @@ export function CrawlMonitorContent({
 
                         {ssrfProxyState.url ? (
                           <Typography.Text type="secondary">
-                            {t("crawl.monitor.runtime.proxyEnv", {
-                              defaultValue: "Proxy:",
-                            })}{" "}
+                            {t("crawl.monitor.runtime.proxyEnv")}{" "}
                             <Typography.Text code>
                               CRAWL4AI_SSRF_PROXY_URL={ssrfProxyState.url}
                             </Typography.Text>
@@ -2593,16 +2435,11 @@ export function CrawlMonitorContent({
                           <Alert
                             type="warning"
                             showIcon
-                            message={t("crawl.monitor.runtime.ssrfProxyRiskTitle", {
-                              defaultValue: "Worker-side SSRF proxy is disabled",
-                            })}
+                            message={t("crawl.monitor.runtime.ssrfProxyRiskTitle")}
                             description={
                               <Space direction="vertical" size={2}>
                                 <Typography.Text>
-                                  {t("crawl.monitor.runtime.ssrfProxyRiskBody", {
-                                    defaultValue:
-                                      "CRAWL4AI_SSRF_PROXY_URL is not configured. API-side URL validation still runs, but the worker no longer pins/blocks DNS resolution at fetch time, so DNS rebinding protection is incomplete.",
-                                  })}
+                                  {t("crawl.monitor.runtime.ssrfProxyRiskBody")}
                                 </Typography.Text>
                                 <Typography.Text code>
                                   CRAWL4AI_SSRF_PROXY_URL=http://127.0.0.1:18080
@@ -2614,10 +2451,7 @@ export function CrawlMonitorContent({
                           <Alert
                             type="warning"
                             showIcon
-                            message={t("crawl.monitor.runtime.ssrfProxyFailedTitle", {
-                              defaultValue:
-                                "Worker-side SSRF proxy is configured but unreachable",
-                            })}
+                            message={t("crawl.monitor.runtime.ssrfProxyFailedTitle")}
                             description={
                               <Space direction="vertical" size={2}>
                                 {ssrfProxyState.error ? (
@@ -2628,10 +2462,7 @@ export function CrawlMonitorContent({
                                   </Typography.Text>
                                 ) : null}
                                 <Typography.Text type="secondary">
-                                  {t("crawl.monitor.runtime.ssrfProxyFailedBody", {
-                                    defaultValue:
-                                      "Crawl4AI accepted the proxy configuration, but the browser could not use it. Verify the local proxy process is started inside the crawl4ai container and recreate the service if needed.",
-                                  })}
+                                  {t("crawl.monitor.runtime.ssrfProxyFailedBody")}
                                 </Typography.Text>
                               </Space>
                             }
@@ -2648,17 +2479,10 @@ export function CrawlMonitorContent({
                             showIcon
                             message={
                               runtimeHeadedIssue === "display"
-                                ? t("crawl.runtimeGuide.displayIssueTitle", {
-                                    defaultValue:
-                                      "Detected DISPLAY/Xvfb dependency issue",
-                                  })
+                                ? t("crawl.runtimeGuide.displayIssueTitle")
                                 : runtimeHeadedIssue === "timeout"
-                                  ? t("crawl.runtimeGuide.timeoutIssueTitle", {
-                                      defaultValue: "Headed runtime timed out",
-                                    })
-                                  : t("crawl.monitor.runtime.headedFailed", {
-                                      defaultValue: "Headed failed",
-                                    })
+                                  ? t("crawl.runtimeGuide.timeoutIssueTitle")
+                                  : t("crawl.monitor.runtime.headedFailed")
                             }
                             description={
                               <Space direction="vertical" size={2}>
@@ -2671,28 +2495,16 @@ export function CrawlMonitorContent({
                                 ) : null}
                                 <Typography.Text type="secondary">
                                   {runtimeHeadedIssue === "display"
-                                    ? t("crawl.runtimeGuide.displayIssueHint", {
-                                        defaultValue:
-                                          "Headed runtime failed because DISPLAY/Xvfb is unavailable. Enable Xvfb in crawl4ai or switch this task to Headless.",
-                                      })
+                                    ? t("crawl.runtimeGuide.displayIssueHint")
                                     : runtimeHeadedIssue === "timeout"
                                       ? t(
                                           "crawl.runtimeGuide.timeoutIssueHint",
-                                          {
-                                            defaultValue:
-                                              "Display may be ready, but browser startup/navigation timed out. Check crawl4ai load and timeout settings.",
-                                          },
                                         )
-                                      : t("crawl.monitor.runtime.hint", {
-                                          defaultValue:
-                                            "If headed mode fails with DISPLAY/Xvfb errors, enable Xvfb in docker-compose or switch sources to Headless.",
-                                        })}
+                                      : t("crawl.monitor.runtime.hint")}
                                 </Typography.Text>
                                 <details>
                                   <summary>
-                                    {t("crawl.runtimeGuide.stepsTitle", {
-                                      defaultValue: "Recommended checks",
-                                    })}
+                                    {t("crawl.runtimeGuide.stepsTitle")}
                                   </summary>
                                   <Space
                                     direction="vertical"
@@ -2700,34 +2512,19 @@ export function CrawlMonitorContent({
                                     style={{ marginTop: 6 }}
                                   >
                                     <Typography.Text type="secondary">
-                                      {t("crawl.runtimeGuide.noAutoBootstrap", {
-                                        defaultValue:
-                                          "This console only provides guidance and does not auto-start Xvfb for you.",
-                                      })}
+                                      {t("crawl.runtimeGuide.noAutoBootstrap")}
                                     </Typography.Text>
                                     <Typography.Text type="secondary">
-                                      {t("crawl.runtimeGuide.principleBody", {
-                                        defaultValue:
-                                          "When headless=false, Chromium needs a display server. Xvfb provides a virtual X11 display (for example :99) so headed rendering can run in containers without a physical monitor.",
-                                      })}
+                                      {t("crawl.runtimeGuide.principleBody")}
                                     </Typography.Text>
                                     <Typography.Text type="secondary">
-                                      {`1. ${t("crawl.runtimeGuide.step1", {
-                                        defaultValue:
-                                          "Prefer Headless for routine crawls, and use Headed only when anti-bot scenarios need it.",
-                                      })}`}
+                                      {`1. ${t("crawl.runtimeGuide.step1")}`}
                                     </Typography.Text>
                                     <Typography.Text type="secondary">
-                                      {`2. ${t("crawl.runtimeGuide.step2", {
-                                        defaultValue:
-                                          "When using Headed, ensure Xvfb/DISPLAY are configured in the crawl4ai container.",
-                                      })}`}
+                                      {`2. ${t("crawl.runtimeGuide.step2")}`}
                                     </Typography.Text>
                                     <Typography.Text type="secondary">
-                                      {`3. ${t("crawl.runtimeGuide.step3", {
-                                        defaultValue:
-                                          "If display errors persist, switch this task back to Headless first, then verify container env settings.",
-                                      })}`}
+                                      {`3. ${t("crawl.runtimeGuide.step3")}`}
                                     </Typography.Text>
                                   </Space>
                                 </details>
@@ -2738,9 +2535,7 @@ export function CrawlMonitorContent({
                       </Space>
                     ) : (
                       <Typography.Text type="secondary">
-                        {t("crawl.monitor.runtime.loading", {
-                          defaultValue: "Loading...",
-                        })}
+                        {t("crawl.monitor.runtime.loading")}
                       </Typography.Text>
                     )}
                   </Card>
@@ -2748,15 +2543,11 @@ export function CrawlMonitorContent({
                   {canManage ? (
                     <Card
                       size="small"
-                      title={t("crawl.monitor.actions.title", {
-                        defaultValue: "Actions",
-                      })}
+                      title={t("crawl.monitor.actions.title")}
                     >
                       <Space wrap>
                         <Button onClick={handleCleanup}>
-                          {t("crawl.monitor.actions.cleanup.button", {
-                            defaultValue: "Cleanup",
-                          })}
+                          {t("crawl.monitor.actions.cleanup.button")}
                         </Button>
                         <Button
                           onClick={() =>
@@ -2765,14 +2556,10 @@ export function CrawlMonitorContent({
                             })
                           }
                         >
-                          {t("crawl.monitor.actions.restartPermanent.button", {
-                            defaultValue: "Restart permanent",
-                          })}
+                          {t("crawl.monitor.actions.restartPermanent.button")}
                         </Button>
                         <Button onClick={handleResetStats}>
-                          {t("crawl.monitor.actions.reset.button", {
-                            defaultValue: "Reset stats",
-                          })}
+                          {t("crawl.monitor.actions.reset.button")}
                         </Button>
                       </Space>
                     </Card>
@@ -2782,15 +2569,10 @@ export function CrawlMonitorContent({
                     <Alert
                       type="info"
                       showIcon
-                      message={t("crawl.monitor.dashboardHint.title", {
-                        defaultValue: "Built-in dashboard",
-                      })}
+                      message={t("crawl.monitor.dashboardHint.title")}
                       description={
                         <Typography.Text type="secondary">
-                          {t("crawl.monitor.dashboardHint.description", {
-                            defaultValue:
-                              "Use the Built-in tab to view Crawl4AI's original dashboard UI.",
-                          })}
+                          {t("crawl.monitor.dashboardHint.description")}
                         </Typography.Text>
                       }
                     />
@@ -2800,16 +2582,12 @@ export function CrawlMonitorContent({
             },
             {
               key: "requests",
-              label: t("crawl.monitor.tabs.requests", {
-                defaultValue: "Requests",
-              }),
+              label: t("crawl.monitor.tabs.requests"),
               children: (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
                   <Card
                     size="small"
-                    title={t("crawl.monitor.requests.activeTitle", {
-                      defaultValue: "Active requests",
-                    })}
+                    title={t("crawl.monitor.requests.activeTitle")}
                   >
                     <Table
                       size="small"
@@ -2818,9 +2596,7 @@ export function CrawlMonitorContent({
                       onRow={requestRowProps}
                       columns={[
                         {
-                          title: t("crawl.monitor.requests.columns.endpoint", {
-                            defaultValue: "Endpoint",
-                          }),
+                          title: t("crawl.monitor.requests.columns.endpoint"),
                           dataIndex: "item",
                           key: "endpoint",
                           render: (value: unknown) => {
@@ -2837,9 +2613,7 @@ export function CrawlMonitorContent({
                           },
                         },
                         {
-                          title: t("crawl.monitor.requests.columns.url", {
-                            defaultValue: "URL",
-                          }),
+                          title: t("crawl.monitor.requests.columns.url"),
                           dataIndex: "item",
                           key: "url",
                           render: (value: unknown) => {
@@ -2850,9 +2624,7 @@ export function CrawlMonitorContent({
                           },
                         },
                         {
-                          title: t("crawl.monitor.requests.columns.elapsed", {
-                            defaultValue: "Elapsed",
-                          }),
+                          title: t("crawl.monitor.requests.columns.elapsed"),
                           dataIndex: "item",
                           key: "elapsed",
                           width: 140,
@@ -2869,9 +2641,7 @@ export function CrawlMonitorContent({
                           },
                         },
                         {
-                          title: t("crawl.monitor.requests.columns.memory", {
-                            defaultValue: "Memory Δ (MB)",
-                          }),
+                          title: t("crawl.monitor.requests.columns.memory"),
                           dataIndex: "item",
                           key: "memory",
                           width: 140,
@@ -2891,7 +2661,7 @@ export function CrawlMonitorContent({
                           },
                         },
                         {
-                          title: t("common.view", { defaultValue: "View" }),
+                          title: t("common.view"),
                           key: "view",
                           width: 90,
                           render: (_: unknown, record: { item: unknown }) => (
@@ -2901,9 +2671,6 @@ export function CrawlMonitorContent({
                               aria-haspopup="dialog"
                               aria-label={t(
                                 "crawl.monitor.details.openRequest",
-                                {
-                                  defaultValue: "Open request details",
-                                },
                               )}
                               onClick={(event) => {
                                 event.preventDefault();
@@ -2911,7 +2678,7 @@ export function CrawlMonitorContent({
                                 openRequestDetails(record.item);
                               }}
                             >
-                              {t("common.view", { defaultValue: "View" })}
+                              {t("common.view")}
                             </Button>
                           ),
                         },
@@ -2921,9 +2688,7 @@ export function CrawlMonitorContent({
 
                   <Card
                     size="small"
-                    title={t("crawl.monitor.requests.completedTitle", {
-                      defaultValue: "Completed requests",
-                    })}
+                    title={t("crawl.monitor.requests.completedTitle")}
                     extra={
                       <Segmented
                         value={completedFilter}
@@ -2934,15 +2699,15 @@ export function CrawlMonitorContent({
                         }
                         options={[
                           {
-                            label: `${t("crawl.monitor.requests.filters.all", { defaultValue: "All" })} (${completedRequests.length})`,
+                            label: `${t("crawl.monitor.requests.filters.all")} (${completedRequests.length})`,
                             value: "all",
                           },
                           {
-                            label: `${t("crawl.monitor.requests.filters.success", { defaultValue: "Success" })} (${completedCounts.success})`,
+                            label: `${t("crawl.monitor.requests.filters.success")} (${completedCounts.success})`,
                             value: "success",
                           },
                           {
-                            label: `${t("crawl.monitor.requests.filters.error", { defaultValue: "Error" })} (${completedCounts.error})`,
+                            label: `${t("crawl.monitor.requests.filters.error")} (${completedCounts.error})`,
                             value: "error",
                           },
                         ]}
@@ -2962,21 +2727,14 @@ export function CrawlMonitorContent({
             },
             {
               key: "browsers",
-              label: t("crawl.monitor.tabs.browsers", {
-                defaultValue: "Browsers",
-              }),
+              label: t("crawl.monitor.tabs.browsers"),
               children: (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
                   <Alert
                     type="info"
                     showIcon
-                    message={t("crawl.monitor.browsers.hint.title", {
-                      defaultValue: "Browser pool visibility",
-                    })}
-                    description={t("crawl.monitor.browsers.hint.description", {
-                      defaultValue:
-                        "Shows permanent/hot/cold pools and lets admins restart/kill browsers.",
-                    })}
+                    message={t("crawl.monitor.browsers.hint.title")}
+                    description={t("crawl.monitor.browsers.hint.description")}
                   />
                   <Table
                     size="small"
@@ -2992,21 +2750,14 @@ export function CrawlMonitorContent({
             },
             {
               key: "endpoints",
-              label: t("crawl.monitor.tabs.endpoints", {
-                defaultValue: "Endpoints",
-              }),
+              label: t("crawl.monitor.tabs.endpoints"),
               children: (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
                   <Alert
                     type="info"
                     showIcon
-                    message={t("crawl.monitor.endpoints.hint.title", {
-                      defaultValue: "Per-endpoint stats",
-                    })}
-                    description={t("crawl.monitor.endpoints.hint.description", {
-                      defaultValue:
-                        "Counts, average latency, and success rate per Crawl4AI API endpoint.",
-                    })}
+                    message={t("crawl.monitor.endpoints.hint.title")}
+                    description={t("crawl.monitor.endpoints.hint.description")}
                   />
                   {endpointsChartOption ? (
                     <Card size="small">
@@ -3028,18 +2779,14 @@ export function CrawlMonitorContent({
             },
             {
               key: "timeline",
-              label: t("crawl.monitor.tabs.timeline", {
-                defaultValue: "Timeline",
-              }),
+              label: t("crawl.monitor.tabs.timeline"),
               children: (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
                   {memorySeries ? (
                     <Card size="small">
                       <DashboardChart
                         option={buildLineOption(
-                          t("crawl.monitor.timeline.memory", {
-                            defaultValue: "Memory",
-                          }),
+                          t("crawl.monitor.timeline.memory"),
                           memorySeries.labels,
                           memorySeries.values,
                           chartTheme.colors.accent,
@@ -3053,9 +2800,7 @@ export function CrawlMonitorContent({
                     <Alert
                       type="warning"
                       showIcon
-                      message={t("crawl.monitor.timeline.missing", {
-                        defaultValue: "Timeline data not available.",
-                      })}
+                      message={t("crawl.monitor.timeline.missing")}
                     />
                   )}
 
@@ -3063,9 +2808,7 @@ export function CrawlMonitorContent({
                     <Card size="small">
                       <DashboardChart
                         option={buildLineOption(
-                          t("crawl.monitor.timeline.requests", {
-                            defaultValue: "Requests rate",
-                          }),
+                          t("crawl.monitor.timeline.requests"),
                           requestSeries.labels,
                           requestSeries.values,
                           chartTheme.colors.bullish,
@@ -3081,9 +2824,7 @@ export function CrawlMonitorContent({
                     <Card size="small">
                       <DashboardChart
                         option={buildBrowserOption(
-                          t("crawl.monitor.timeline.browsers", {
-                            defaultValue: "Browser pool",
-                          }),
+                          t("crawl.monitor.timeline.browsers"),
                           browserSeries.labels,
                           {
                             permanent: browserSeries.permanent,
@@ -3107,23 +2848,19 @@ export function CrawlMonitorContent({
             },
             {
               key: "logs",
-              label: t("crawl.monitor.tabs.logs", { defaultValue: "Logs" }),
+              label: t("crawl.monitor.tabs.logs"),
               children: (
                 <Row gutter={[16, 16]}>
                   <Col xs={24} md={12}>
                     <Card
                       size="small"
-                      title={t("crawl.monitor.logs.errors", {
-                        defaultValue: "Recent errors",
-                      })}
+                      title={t("crawl.monitor.logs.errors")}
                     >
                       <List
                         size="small"
                         dataSource={normalizeLogList(errors)}
                         locale={{
-                          emptyText: t("common.empty", {
-                            defaultValue: "Empty",
-                          }),
+                          emptyText: t("common.empty"),
                         }}
                         renderItem={(item) => (
                           <List.Item>
@@ -3140,17 +2877,13 @@ export function CrawlMonitorContent({
                   <Col xs={24} md={12}>
                     <Card
                       size="small"
-                      title={t("crawl.monitor.logs.janitor", {
-                        defaultValue: "Janitor events",
-                      })}
+                      title={t("crawl.monitor.logs.janitor")}
                     >
                       <List
                         size="small"
                         dataSource={normalizeLogList(janitor)}
                         locale={{
-                          emptyText: t("common.empty", {
-                            defaultValue: "Empty",
-                          }),
+                          emptyText: t("common.empty"),
                         }}
                         renderItem={(item) => (
                           <List.Item>
@@ -3169,16 +2902,12 @@ export function CrawlMonitorContent({
             },
             {
               key: "builtin",
-              label: t("crawl.monitor.tabs.builtin", {
-                defaultValue: "Built-in",
-              }),
+              label: t("crawl.monitor.tabs.builtin"),
               children: normalizedDashboardUrl ? (
                 <>
                   <Typography.Paragraph style={{ marginBottom: 12 }}>
                     <Typography.Text type="secondary">
-                      {t("crawl.monitor.currentUrl", {
-                        defaultValue: "Current dashboard URL:",
-                      })}{" "}
+                      {t("crawl.monitor.currentUrl")}{" "}
                     </Typography.Text>
                     <Typography.Link
                       href={normalizedDashboardUrl}
@@ -3203,29 +2932,21 @@ export function CrawlMonitorContent({
               ) : (
                 <Alert
                   type="warning"
-                  message={t("crawl.monitor.missingUrl.title", {
-                    defaultValue: "Dashboard URL not configured",
-                  })}
-                  description={t("crawl.monitor.missingUrl.description", {
-                    defaultValue:
-                      "Set CRAWL4AI_DASHBOARD_URL (recommended in Docker) or CRAWL4AI_BASE_URL, then reload this page.",
-                  })}
+                  message={t("crawl.monitor.missingUrl.title")}
+                  description={t("crawl.monitor.missingUrl.description")}
                 />
               ),
             },
             {
               key: "raw",
-              label: t("crawl.monitor.tabs.raw", { defaultValue: "Raw" }),
+              label: t("crawl.monitor.tabs.raw"),
               children: (
                 <Card size="small">
                   <Typography.Paragraph
                     type="secondary"
                     style={{ marginBottom: 12 }}
                   >
-                    {t("crawl.monitor.raw.description", {
-                      defaultValue:
-                        "Raw monitoring payload for debugging (best-effort normalization).",
-                    })}
+                    {t("crawl.monitor.raw.description")}
                   </Typography.Paragraph>
                   <pre
                     style={{

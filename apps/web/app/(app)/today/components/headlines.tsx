@@ -73,9 +73,7 @@ export function Headlines() {
   const items = data?.items?.edges?.map((e) => e.node) ?? [];
   const heroItem = items[0];
   const subItems = items.slice(1, 4);
-  const publishedUnknown = t("items.time.publishedUnknown", {
-    defaultValue: "Published time unknown"
-  });
+  const publishedUnknown = t("items.time.publishedUnknown");
 
   if (loading) {
     return (
@@ -119,7 +117,7 @@ export function Headlines() {
         <div className="absolute bottom-0 left-0 p-6 z-20 w-full">
           <div className="flex items-center gap-2 mb-2">
             <span className="bg-blue-500 text-white text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider">
-              {t("pages.today.headline", { defaultValue: "Headline" })}
+              {t("pages.today.headline")}
             </span>
             {heroItem.rawPreview?.sourceName && (
               <span className="text-white/70 text-xs">{heroItem.rawPreview.sourceName}</span>
@@ -140,7 +138,7 @@ export function Headlines() {
             ) : null}
           </div>
           <div className="flex items-center text-blue-300 text-xs font-medium gap-1">
-            {t("common.readMore", { defaultValue: "Read full story" })} <ArrowRightOutlined />
+            {t("common.readMore")} <ArrowRightOutlined />
           </div>
         </div>
       </div>

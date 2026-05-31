@@ -16,7 +16,7 @@ describe("news events settings panel llm recovery wiring", () => {
     );
     expect(source).toContain("/failures/${groupId}/llm-backfill");
     expect(source).toContain("llmBackfillReady");
-    expect(source).toContain("Open LLM gateway settings");
+    expect(source).toContain("settings.newsEvents.clusteringQueue.actions.openLlmGateway");
     expect(source).toContain("progressProcessedCount");
     expect(source).toContain("lastRecoveryModel");
     expect(source).toContain("bertopicMaxItemsMustBeAtLeastMinGroup");

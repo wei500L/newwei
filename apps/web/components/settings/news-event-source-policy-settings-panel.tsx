@@ -874,10 +874,7 @@ export function NewsEventSourcePolicySettingsPanel() {
   const revisionDiff = diffData?.newsEventSourcePolicyRevisionDiff ?? null;
   const resolveSyncWarningMessage = (code: string) => {
     if (code === "CACHE_WRITE_FAILED") {
-      return t("settings.newsEventSourcePolicy.syncWarnings.cacheWriteFailed", {
-        defaultValue:
-          "Configuration is saved, but cache refresh failed. New rules may apply after cache retries or TTL expiration.",
-      });
+      return t("settings.newsEventSourcePolicy.syncWarnings.cacheWriteFailed");
     }
     return code;
   };
@@ -908,69 +905,44 @@ export function NewsEventSourcePolicySettingsPanel() {
     if (code === "POLICY_CACHE_STALE") {
       return t(
         "settings.newsEventSourcePolicy.degraded.reasonPolicyCacheStale",
-        {
-          defaultValue: "policy cache is stale",
-        },
       );
     }
     if (code === "PRESET_CACHE_STALE") {
       return t(
         "settings.newsEventSourcePolicy.degraded.reasonPresetCacheStale",
-        {
-          defaultValue: "preset cache is stale",
-        },
       );
     }
     if (code === "POLICY_CACHE_READ_FAILED") {
       return t(
         "settings.newsEventSourcePolicy.degraded.reasonPolicyCacheReadFailed",
-        {
-          defaultValue: "policy cache read failed",
-        },
       );
     }
     if (code === "PRESET_CACHE_READ_FAILED") {
       return t(
         "settings.newsEventSourcePolicy.degraded.reasonPresetCacheReadFailed",
-        {
-          defaultValue: "preset cache read failed",
-        },
       );
     }
     if (code === "POLICY_DB_READ_FAILED") {
       return t(
         "settings.newsEventSourcePolicy.degraded.reasonPolicyDbReadFailed",
-        {
-          defaultValue: "policy DB read failed",
-        },
       );
     }
     if (code === "PRESET_DB_READ_FAILED") {
       return t(
         "settings.newsEventSourcePolicy.degraded.reasonPresetDbReadFailed",
-        {
-          defaultValue: "preset DB read failed",
-        },
       );
     }
     if (code === "POLICY_CACHE_MISS") {
       return t(
         "settings.newsEventSourcePolicy.degraded.reasonPolicyCacheMiss",
-        {
-          defaultValue: "policy cache is missing",
-        },
       );
     }
     if (code === "PRESET_CACHE_MISS") {
       return t(
         "settings.newsEventSourcePolicy.degraded.reasonPresetCacheMiss",
-        {
-          defaultValue: "preset cache is missing",
-        },
       );
     }
     return t("settings.newsEventSourcePolicy.degraded.reasonUnknown", {
-      defaultValue: "unknown issue: {{code}}",
       code,
     });
   };
@@ -986,15 +958,9 @@ export function NewsEventSourcePolicySettingsPanel() {
     NewsEventSourcePolicyRevisionOperation,
     string
   > = {
-    update: t("settings.newsEventSourcePolicy.history.operationUpdate", {
-      defaultValue: "Update",
-    }),
-    rollback: t("settings.newsEventSourcePolicy.history.operationRollback", {
-      defaultValue: "Rollback",
-    }),
-    reset: t("settings.newsEventSourcePolicy.history.operationReset", {
-      defaultValue: "Reset",
-    }),
+    update: t("settings.newsEventSourcePolicy.history.operationUpdate"),
+    rollback: t("settings.newsEventSourcePolicy.history.operationRollback"),
+    reset: t("settings.newsEventSourcePolicy.history.operationReset"),
   };
 
   const conflictDescription = useMemo(() => {
@@ -1006,7 +972,6 @@ export function NewsEventSourcePolicySettingsPanel() {
     if (currentPolicy.warnings.domainConflicts.length > 0) {
       conflictParts.push(
         t("settings.newsEventSourcePolicy.conflicts.domainList", {
-          defaultValue: "Domain conflicts: {{value}}",
           value: currentPolicy.warnings.domainConflicts.join(", "),
         }),
       );
@@ -1014,7 +979,6 @@ export function NewsEventSourcePolicySettingsPanel() {
     if (currentPolicy.warnings.labelConflicts.length > 0) {
       conflictParts.push(
         t("settings.newsEventSourcePolicy.conflicts.labelList", {
-          defaultValue: "Label conflicts: {{value}}",
           value: currentPolicy.warnings.labelConflicts.join(", "),
         }),
       );
@@ -1058,10 +1022,7 @@ export function NewsEventSourcePolicySettingsPanel() {
   const handleSubmit = async (values: FormValues) => {
     if (!currentPolicy) {
       messageApi.error(
-        t("settings.newsEventSourcePolicy.messages.saveBlockedBeforeLoad", {
-          defaultValue:
-            "Current policy is not loaded yet. Please refresh and try again.",
-        }),
+        t("settings.newsEventSourcePolicy.messages.saveBlockedBeforeLoad"),
       );
       return;
     }
@@ -1084,34 +1045,24 @@ export function NewsEventSourcePolicySettingsPanel() {
       form.setFieldValue("note", "");
       await refetch();
       messageApi.success(
-        t("settings.newsEventSourcePolicy.messages.saved", {
-          defaultValue: "Saved",
-        }),
+        t("settings.newsEventSourcePolicy.messages.saved"),
       );
       if (syncWarnings.length > 0) {
         messageApi.warning(
-          t("settings.newsEventSourcePolicy.messages.savedWithWarnings", {
-            defaultValue:
-              "Saved, but cache synchronization is degraded. Please check warnings.",
-          }),
+          t("settings.newsEventSourcePolicy.messages.savedWithWarnings"),
         );
       }
     } catch (err) {
       if (hasErrorKeyword(err, STALE_POLICY_REVISION_ERROR)) {
         await refetch();
         messageApi.warning(
-          t("settings.newsEventSourcePolicy.messages.concurrentUpdate", {
-            defaultValue:
-              "Policy was changed by another admin. Latest version has been reloaded. Please review and save again.",
-          }),
+          t("settings.newsEventSourcePolicy.messages.concurrentUpdate"),
         );
         return;
       }
       captureClientError("Failed to save news event source policy", err);
       messageApi.error(
-        t("settings.newsEventSourcePolicy.messages.saveFailed", {
-          defaultValue: "Failed to save",
-        }),
+        t("settings.newsEventSourcePolicy.messages.saveFailed"),
       );
     }
   };
@@ -1135,18 +1086,12 @@ export function NewsEventSourcePolicySettingsPanel() {
       presetForm.setFieldValue("note", "");
       await refetchPresets();
       messageApi.success(
-        t("settings.newsEventSourcePolicy.messages.presetsSaved", {
-          defaultValue: "Presets saved",
-        }),
+        t("settings.newsEventSourcePolicy.messages.presetsSaved"),
       );
       if (syncWarnings.length > 0) {
         messageApi.warning(
           t(
             "settings.newsEventSourcePolicy.messages.presetsSavedWithWarnings",
-            {
-              defaultValue:
-                "Presets saved, but cache synchronization is degraded. Please check warnings.",
-            },
           ),
         );
       }
@@ -1154,10 +1099,7 @@ export function NewsEventSourcePolicySettingsPanel() {
       if (hasErrorKeyword(err, STALE_POLICY_PRESET_ERROR)) {
         await refetchPresets();
         messageApi.warning(
-          t("settings.newsEventSourcePolicy.messages.concurrentPresetUpdate", {
-            defaultValue:
-              "Preset library was changed by another admin. Latest presets have been reloaded.",
-          }),
+          t("settings.newsEventSourcePolicy.messages.concurrentPresetUpdate"),
         );
         return;
       }
@@ -1166,9 +1108,7 @@ export function NewsEventSourcePolicySettingsPanel() {
         err,
       );
       messageApi.error(
-        t("settings.newsEventSourcePolicy.messages.presetsSaveFailed", {
-          defaultValue: "Failed to save presets",
-        }),
+        t("settings.newsEventSourcePolicy.messages.presetsSaveFailed"),
       );
     }
   };
@@ -1176,14 +1116,11 @@ export function NewsEventSourcePolicySettingsPanel() {
   const handleRollback = (revision: number) => {
     let noteValue = "";
     Modal.confirm({
-      title: t("settings.newsEventSourcePolicy.history.rollbackConfirmTitle", {
-        defaultValue: "Rollback source policy",
-      }),
+      title: t("settings.newsEventSourcePolicy.history.rollbackConfirmTitle"),
       content: (
         <Space direction="vertical" style={{ width: "100%" }}>
           <Typography.Text>
             {t("settings.newsEventSourcePolicy.history.rollbackConfirmBody", {
-              defaultValue: "Rollback to revision #{{revision}}?",
               revision,
             })}
           </Typography.Text>
@@ -1193,9 +1130,6 @@ export function NewsEventSourcePolicySettingsPanel() {
             autoSize={{ minRows: 2, maxRows: 4 }}
             placeholder={t(
               "settings.newsEventSourcePolicy.history.notePlaceholder",
-              {
-                defaultValue: "Optional change note",
-              },
             )}
             onChange={(event) => {
               noteValue = event.target.value ?? "";
@@ -1220,26 +1154,18 @@ export function NewsEventSourcePolicySettingsPanel() {
           setPolicyRuntimeSyncWarnings(syncWarnings);
           await refetch();
           messageApi.success(
-            t("settings.newsEventSourcePolicy.messages.rollbackSaved", {
-              defaultValue: "Rollback applied",
-            }),
+            t("settings.newsEventSourcePolicy.messages.rollbackSaved"),
           );
           if (syncWarnings.length > 0) {
             messageApi.warning(
-              t("settings.newsEventSourcePolicy.messages.savedWithWarnings", {
-                defaultValue:
-                  "Saved, but cache synchronization is degraded. Please check warnings.",
-              }),
+              t("settings.newsEventSourcePolicy.messages.savedWithWarnings"),
             );
           }
         } catch (err) {
           if (hasErrorKeyword(err, STALE_POLICY_REVISION_ERROR)) {
             await refetch();
             messageApi.warning(
-              t("settings.newsEventSourcePolicy.messages.concurrentUpdate", {
-                defaultValue:
-                  "Policy was changed by another admin. Latest version has been reloaded. Please review and save again.",
-              }),
+              t("settings.newsEventSourcePolicy.messages.concurrentUpdate"),
             );
             return;
           }
@@ -1248,9 +1174,7 @@ export function NewsEventSourcePolicySettingsPanel() {
             err,
           );
           messageApi.error(
-            t("settings.newsEventSourcePolicy.messages.rollbackFailed", {
-              defaultValue: "Failed to rollback",
-            }),
+            t("settings.newsEventSourcePolicy.messages.rollbackFailed"),
           );
         }
       },
@@ -1260,25 +1184,17 @@ export function NewsEventSourcePolicySettingsPanel() {
   const handleReset = () => {
     if (!currentPolicy) {
       messageApi.error(
-        t("settings.newsEventSourcePolicy.messages.saveBlockedBeforeLoad", {
-          defaultValue:
-            "Current policy is not loaded yet. Please refresh and try again.",
-        }),
+        t("settings.newsEventSourcePolicy.messages.saveBlockedBeforeLoad"),
       );
       return;
     }
     let noteValue = "";
     Modal.confirm({
-      title: t("settings.newsEventSourcePolicy.history.resetConfirmTitle", {
-        defaultValue: "Reset source policy",
-      }),
+      title: t("settings.newsEventSourcePolicy.history.resetConfirmTitle"),
       content: (
         <Space direction="vertical" style={{ width: "100%" }}>
           <Typography.Text>
-            {t("settings.newsEventSourcePolicy.history.resetConfirmBody", {
-              defaultValue:
-                "Reset to system defaults and clear custom overrides?",
-            })}
+            {t("settings.newsEventSourcePolicy.history.resetConfirmBody")}
           </Typography.Text>
           <Input.TextArea
             maxLength={NOTE_MAX_LENGTH}
@@ -1286,9 +1202,6 @@ export function NewsEventSourcePolicySettingsPanel() {
             autoSize={{ minRows: 2, maxRows: 4 }}
             placeholder={t(
               "settings.newsEventSourcePolicy.history.notePlaceholder",
-              {
-                defaultValue: "Optional change note",
-              },
             )}
             onChange={(event) => {
               noteValue = event.target.value ?? "";
@@ -1313,34 +1226,24 @@ export function NewsEventSourcePolicySettingsPanel() {
           setPolicyRuntimeSyncWarnings(syncWarnings);
           await refetch();
           messageApi.success(
-            t("settings.newsEventSourcePolicy.messages.resetSaved", {
-              defaultValue: "Reset completed",
-            }),
+            t("settings.newsEventSourcePolicy.messages.resetSaved"),
           );
           if (syncWarnings.length > 0) {
             messageApi.warning(
-              t("settings.newsEventSourcePolicy.messages.savedWithWarnings", {
-                defaultValue:
-                  "Saved, but cache synchronization is degraded. Please check warnings.",
-              }),
+              t("settings.newsEventSourcePolicy.messages.savedWithWarnings"),
             );
           }
         } catch (err) {
           if (hasErrorKeyword(err, STALE_POLICY_REVISION_ERROR)) {
             await refetch();
             messageApi.warning(
-              t("settings.newsEventSourcePolicy.messages.concurrentUpdate", {
-                defaultValue:
-                  "Policy was changed by another admin. Latest version has been reloaded. Please review and save again.",
-              }),
+              t("settings.newsEventSourcePolicy.messages.concurrentUpdate"),
             );
             return;
           }
           captureClientError("Failed to reset news event source policy", err);
           messageApi.error(
-            t("settings.newsEventSourcePolicy.messages.resetFailed", {
-              defaultValue: "Failed to reset",
-            }),
+            t("settings.newsEventSourcePolicy.messages.resetFailed"),
           );
         }
       },
@@ -1355,7 +1258,6 @@ export function NewsEventSourcePolicySettingsPanel() {
         .map((entry) => ({
           value: entry.revision,
           label: t("settings.newsEventSourcePolicy.history.revisionLabel", {
-            defaultValue: "Revision #{{revision}}",
             revision: entry.revision,
           }),
         })),
@@ -1370,9 +1272,6 @@ export function NewsEventSourcePolicySettingsPanel() {
       {
         label: t(
           "settings.newsEventSourcePolicy.history.deltaAuthoritativeDomainsAdd",
-          {
-            defaultValue: "+ Authoritative domains",
-          },
         ),
         values: revisionDiff.authoritativeDomainsAdd,
         color: "blue" as const,
@@ -1380,9 +1279,6 @@ export function NewsEventSourcePolicySettingsPanel() {
       {
         label: t(
           "settings.newsEventSourcePolicy.history.deltaAuthoritativeDomainsRemove",
-          {
-            defaultValue: "- Authoritative domains",
-          },
         ),
         values: revisionDiff.authoritativeDomainsRemove,
         color: "red" as const,
@@ -1390,9 +1286,6 @@ export function NewsEventSourcePolicySettingsPanel() {
       {
         label: t(
           "settings.newsEventSourcePolicy.history.deltaAuthoritativeLabelsAdd",
-          {
-            defaultValue: "+ Authoritative labels",
-          },
         ),
         values: revisionDiff.authoritativeLabelsAdd,
         color: "blue" as const,
@@ -1400,43 +1293,30 @@ export function NewsEventSourcePolicySettingsPanel() {
       {
         label: t(
           "settings.newsEventSourcePolicy.history.deltaAuthoritativeLabelsRemove",
-          {
-            defaultValue: "- Authoritative labels",
-          },
         ),
         values: revisionDiff.authoritativeLabelsRemove,
         color: "red" as const,
       },
       {
-        label: t("settings.newsEventSourcePolicy.history.deltaBlogDomainsAdd", {
-          defaultValue: "+ Blog domains",
-        }),
+        label: t("settings.newsEventSourcePolicy.history.deltaBlogDomainsAdd"),
         values: revisionDiff.blogDomainsAdd,
         color: "orange" as const,
       },
       {
         label: t(
           "settings.newsEventSourcePolicy.history.deltaBlogDomainsRemove",
-          {
-            defaultValue: "- Blog domains",
-          },
         ),
         values: revisionDiff.blogDomainsRemove,
         color: "green" as const,
       },
       {
-        label: t("settings.newsEventSourcePolicy.history.deltaBlogLabelsAdd", {
-          defaultValue: "+ Blog labels",
-        }),
+        label: t("settings.newsEventSourcePolicy.history.deltaBlogLabelsAdd"),
         values: revisionDiff.blogLabelsAdd,
         color: "orange" as const,
       },
       {
         label: t(
           "settings.newsEventSourcePolicy.history.deltaBlogLabelsRemove",
-          {
-            defaultValue: "- Blog labels",
-          },
         ),
         values: revisionDiff.blogLabelsRemove,
         color: "green" as const,
@@ -1483,7 +1363,6 @@ export function NewsEventSourcePolicySettingsPanel() {
           />
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {t("settings.newsEventSourcePolicy.degraded.autoRefresh", {
-              defaultValue: "Auto refresh status ({{seconds}}s)",
               seconds: Math.round(SYNC_STATUS_POLL_INTERVAL_MS / 1000),
             })}
           </Typography.Text>
@@ -1492,14 +1371,11 @@ export function NewsEventSourcePolicySettingsPanel() {
             onClick={handleRefreshSyncStatus}
             loading={syncStatusLoading}
           >
-            {t("settings.newsEventSourcePolicy.degraded.refreshStatus", {
-              defaultValue: "Refresh status",
-            })}
+            {t("settings.newsEventSourcePolicy.degraded.refreshStatus")}
           </Button>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {syncStatusLastRefreshedAt
               ? t("settings.newsEventSourcePolicy.degraded.lastRefreshAt", {
-                  defaultValue: "Last refreshed: {{time}}",
                   time:
                     formatDateTime(syncStatusLastRefreshedAt, locale, {
                       year: "2-digit",
@@ -1510,23 +1386,16 @@ export function NewsEventSourcePolicySettingsPanel() {
                       timeZoneName: "short",
                     }) || "--",
                 })
-              : t("settings.newsEventSourcePolicy.degraded.lastRefreshNever", {
-                  defaultValue: "Last refreshed: --",
-                })}
+              : t("settings.newsEventSourcePolicy.degraded.lastRefreshNever")}
           </Typography.Text>
         </Space>
         {degradedStatusEnabled ? (
           <Tooltip
             title={t("settings.newsEventSourcePolicy.degraded.tooltip", {
-              defaultValue:
-                "Degraded: source policy synchronization has issues ({{reasons}}).",
               reasons:
                 degradedStatusReasonsText ||
                 t(
                   "settings.newsEventSourcePolicy.degraded.reasonUnknownShort",
-                  {
-                    defaultValue: "unknown",
-                  },
                 ),
             })}
           >
@@ -1534,30 +1403,20 @@ export function NewsEventSourcePolicySettingsPanel() {
               color={degradedStatusCritical ? "error" : "warning"}
               style={{ marginInlineEnd: 0 }}
             >
-              {t("settings.newsEventSourcePolicy.degraded.badge", {
-                defaultValue: "Degraded",
-              })}
+              {t("settings.newsEventSourcePolicy.degraded.badge")}
             </Tag>
           </Tooltip>
         ) : null}
       </div>
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
-        {t("settings.newsEventSourcePolicy.description", {
-          defaultValue:
-            "Maintain authoritative and low-trust source lists for timeline authority filtering. Changes take effect on the next event query.",
-        })}
+        {t("settings.newsEventSourcePolicy.description")}
       </Typography.Paragraph>
 
       <Alert
         type="info"
         showIcon
-        message={t("settings.newsEventSourcePolicy.notice.title", {
-          defaultValue: "Real-time effect",
-        })}
-        description={t("settings.newsEventSourcePolicy.notice.body", {
-          defaultValue:
-            "After saving, source classification is refreshed immediately in backend cache and applied to newly fetched timeline events.",
-        })}
+        message={t("settings.newsEventSourcePolicy.notice.title")}
+        description={t("settings.newsEventSourcePolicy.notice.body")}
         style={{ marginBottom: "1rem" }}
       />
 
@@ -1566,13 +1425,11 @@ export function NewsEventSourcePolicySettingsPanel() {
           type="success"
           showIcon
           message={t("settings.newsEventSourcePolicy.history.activeRevision", {
-            defaultValue: "Active revision: #{{revision}}",
             revision: currentPolicy.activeRevision,
           })}
           description={
             currentPolicy.updatedAt
               ? t("settings.newsEventSourcePolicy.history.updatedAt", {
-                  defaultValue: "Updated at: {{value}}",
                   value: dayjs(currentPolicy.updatedAt).format(
                     "YYYY-MM-DD HH:mm:ss",
                   ),
@@ -1587,9 +1444,7 @@ export function NewsEventSourcePolicySettingsPanel() {
         <Alert
           type="warning"
           showIcon
-          message={t("settings.newsEventSourcePolicy.conflicts.title", {
-            defaultValue: "Whitelist/blacklist conflicts detected",
-          })}
+          message={t("settings.newsEventSourcePolicy.conflicts.title")}
           description={conflictDescription}
           style={{ marginBottom: "1rem" }}
         />
@@ -1599,9 +1454,7 @@ export function NewsEventSourcePolicySettingsPanel() {
         <Alert
           type="warning"
           showIcon
-          message={t("settings.newsEventSourcePolicy.syncWarnings.title", {
-            defaultValue: "Cache synchronization warning",
-          })}
+          message={t("settings.newsEventSourcePolicy.syncWarnings.title")}
           description={policySyncWarnings
             .map((code) => resolveSyncWarningMessage(code))
             .join(" | ")}
@@ -1613,9 +1466,7 @@ export function NewsEventSourcePolicySettingsPanel() {
         <Alert
           type="error"
           showIcon
-          message={t("settings.newsEventSourcePolicy.messages.loadFailed", {
-            defaultValue: "Failed to load source policy",
-          })}
+          message={t("settings.newsEventSourcePolicy.messages.loadFailed")}
           description={error.message}
           style={{ marginBottom: "1rem" }}
         />
@@ -1626,16 +1477,11 @@ export function NewsEventSourcePolicySettingsPanel() {
           type="info"
           showIcon
           style={{ marginBottom: "1rem" }}
-          message={t("settings.newsEventSourcePolicy.presets.quickApplyTitle", {
-            defaultValue: "Apply preset library to current policy",
-          })}
+          message={t("settings.newsEventSourcePolicy.presets.quickApplyTitle")}
           description={
             <Space direction="vertical" size={8} style={{ width: "100%" }}>
               <Typography.Text type="secondary">
-                {t("settings.newsEventSourcePolicy.presets.quickApplyHint", {
-                  defaultValue:
-                    "These entries come from backend preset library and can be updated below.",
-                })}
+                {t("settings.newsEventSourcePolicy.presets.quickApplyHint")}
               </Typography.Text>
               <Space wrap>
                 <Button
@@ -1653,9 +1499,6 @@ export function NewsEventSourcePolicySettingsPanel() {
                 >
                   {t(
                     "settings.newsEventSourcePolicy.presets.authoritativeDomains",
-                    {
-                      defaultValue: "Append authority domains",
-                    },
                   )}
                 </Button>
                 <Button
@@ -1673,9 +1516,6 @@ export function NewsEventSourcePolicySettingsPanel() {
                 >
                   {t(
                     "settings.newsEventSourcePolicy.presets.authoritativeLabels",
-                    {
-                      defaultValue: "Append authority labels",
-                    },
                   )}
                 </Button>
                 <Button
@@ -1691,9 +1531,7 @@ export function NewsEventSourcePolicySettingsPanel() {
                     (currentPresets?.blogDomains.length ?? 0) === 0
                   }
                 >
-                  {t("settings.newsEventSourcePolicy.presets.blogDomains", {
-                    defaultValue: "Append low-trust domains",
-                  })}
+                  {t("settings.newsEventSourcePolicy.presets.blogDomains")}
                 </Button>
                 <Button
                   size="small"
@@ -1705,9 +1543,7 @@ export function NewsEventSourcePolicySettingsPanel() {
                     (currentPresets?.blogLabels.length ?? 0) === 0
                   }
                 >
-                  {t("settings.newsEventSourcePolicy.presets.blogLabels", {
-                    defaultValue: "Append low-trust labels",
-                  })}
+                  {t("settings.newsEventSourcePolicy.presets.blogLabels")}
                 </Button>
               </Space>
             </Space>
@@ -1717,16 +1553,10 @@ export function NewsEventSourcePolicySettingsPanel() {
         <Form.Item
           label={t(
             "settings.newsEventSourcePolicy.fields.authoritativeDomains",
-            {
-              defaultValue: "Authoritative domains whitelist",
-            },
           )}
           name="authoritativeDomains"
           extra={t(
             "settings.newsEventSourcePolicy.hints.authoritativeDomains",
-            {
-              defaultValue: "Examples: reuters.com, bloomberg.com, ft.com",
-            },
           )}
         >
           <Select
@@ -1735,9 +1565,6 @@ export function NewsEventSourcePolicySettingsPanel() {
             options={toOptions(authoritativeDomainOptions)}
             placeholder={t(
               "settings.newsEventSourcePolicy.placeholders.authoritativeDomains",
-              {
-                defaultValue: "Enter domains",
-              },
             )}
           />
         </Form.Item>
@@ -1745,15 +1572,9 @@ export function NewsEventSourcePolicySettingsPanel() {
         <Form.Item
           label={t(
             "settings.newsEventSourcePolicy.fields.authoritativeLabels",
-            {
-              defaultValue: "Authoritative source labels whitelist",
-            },
           )}
           name="authoritativeLabels"
-          extra={t("settings.newsEventSourcePolicy.hints.authoritativeLabels", {
-            defaultValue:
-              "Examples: Reuters, Financial Times, Associated Press",
-          })}
+          extra={t("settings.newsEventSourcePolicy.hints.authoritativeLabels")}
         >
           <Select
             mode="tags"
@@ -1761,21 +1582,14 @@ export function NewsEventSourcePolicySettingsPanel() {
             options={toOptions(authoritativeLabelOptions)}
             placeholder={t(
               "settings.newsEventSourcePolicy.placeholders.authoritativeLabels",
-              {
-                defaultValue: "Enter source labels",
-              },
             )}
           />
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEventSourcePolicy.fields.blogDomains", {
-            defaultValue: "Blog/Social domains blacklist",
-          })}
+          label={t("settings.newsEventSourcePolicy.fields.blogDomains")}
           name="blogDomains"
-          extra={t("settings.newsEventSourcePolicy.hints.blogDomains", {
-            defaultValue: "Examples: medium.com, substack.com, x.com",
-          })}
+          extra={t("settings.newsEventSourcePolicy.hints.blogDomains")}
         >
           <Select
             mode="tags"
@@ -1783,21 +1597,14 @@ export function NewsEventSourcePolicySettingsPanel() {
             options={toOptions(blogDomainOptions)}
             placeholder={t(
               "settings.newsEventSourcePolicy.placeholders.blogDomains",
-              {
-                defaultValue: "Enter domains",
-              },
             )}
           />
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEventSourcePolicy.fields.blogLabels", {
-            defaultValue: "Blog/Social source labels blacklist",
-          })}
+          label={t("settings.newsEventSourcePolicy.fields.blogLabels")}
           name="blogLabels"
-          extra={t("settings.newsEventSourcePolicy.hints.blogLabels", {
-            defaultValue: "Examples: newsletter, creator, influencer",
-          })}
+          extra={t("settings.newsEventSourcePolicy.hints.blogLabels")}
         >
           <Select
             mode="tags"
@@ -1805,30 +1612,20 @@ export function NewsEventSourcePolicySettingsPanel() {
             options={toOptions(blogLabelOptions)}
             placeholder={t(
               "settings.newsEventSourcePolicy.placeholders.blogLabels",
-              {
-                defaultValue: "Enter source labels",
-              },
             )}
           />
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEventSourcePolicy.fields.note", {
-            defaultValue: "Change note (optional)",
-          })}
+          label={t("settings.newsEventSourcePolicy.fields.note")}
           name="note"
-          extra={t("settings.newsEventSourcePolicy.hints.note", {
-            defaultValue:
-              "This note is stored in revision history to help track why a change was made.",
-          })}
+          extra={t("settings.newsEventSourcePolicy.hints.note")}
         >
           <Input.TextArea
             maxLength={NOTE_MAX_LENGTH}
             showCount
             autoSize={{ minRows: 2, maxRows: 4 }}
-            placeholder={t("settings.newsEventSourcePolicy.placeholders.note", {
-              defaultValue: "Describe this change briefly",
-            })}
+            placeholder={t("settings.newsEventSourcePolicy.placeholders.note")}
           />
         </Form.Item>
 
@@ -1839,10 +1636,10 @@ export function NewsEventSourcePolicySettingsPanel() {
             loading={saving}
             disabled={loading || !policyLoaded}
           >
-            {t("common.saveChanges", { defaultValue: "Save changes" })}
+            {t("common.saveChanges")}
           </Button>
           <Button onClick={() => void refetch()}>
-            {t("common.refresh", { defaultValue: "Refresh" })}
+            {t("common.refresh")}
           </Button>
           <Button
             danger
@@ -1850,26 +1647,19 @@ export function NewsEventSourcePolicySettingsPanel() {
             loading={resetting}
             disabled={loading || !policyLoaded}
           >
-            {t("settings.newsEventSourcePolicy.actions.resetDefaults", {
-              defaultValue: "Reset to defaults",
-            })}
+            {t("settings.newsEventSourcePolicy.actions.resetDefaults")}
           </Button>
         </Space>
       </Form>
 
       <Typography.Title level={5} style={{ marginTop: "1.5rem" }}>
-        {t("settings.newsEventSourcePolicy.presets.title", {
-          defaultValue: "Preset library",
-        })}
+        {t("settings.newsEventSourcePolicy.presets.title")}
       </Typography.Title>
       <Typography.Paragraph
         type="secondary"
         style={{ marginBottom: "0.75rem" }}
       >
-        {t("settings.newsEventSourcePolicy.presets.description", {
-          defaultValue:
-            "Manage reusable whitelist/blacklist preset entries in backend database. Saving this section does not directly change active policy until you apply and save policy above.",
-        })}
+        {t("settings.newsEventSourcePolicy.presets.description")}
       </Typography.Paragraph>
 
       {presetError ? (
@@ -1878,9 +1668,6 @@ export function NewsEventSourcePolicySettingsPanel() {
           showIcon
           message={t(
             "settings.newsEventSourcePolicy.messages.presetsLoadFailed",
-            {
-              defaultValue: "Failed to load presets",
-            },
           )}
           description={presetError.message}
           style={{ marginBottom: "1rem" }}
@@ -1891,9 +1678,7 @@ export function NewsEventSourcePolicySettingsPanel() {
         <Alert
           type="warning"
           showIcon
-          message={t("settings.newsEventSourcePolicy.syncWarnings.title", {
-            defaultValue: "Cache synchronization warning",
-          })}
+          message={t("settings.newsEventSourcePolicy.syncWarnings.title")}
           description={presetSyncWarnings
             .map((code) => resolveSyncWarningMessage(code))
             .join(" | ")}
@@ -1907,7 +1692,6 @@ export function NewsEventSourcePolicySettingsPanel() {
           showIcon
           style={{ marginBottom: "1rem" }}
           message={t("settings.newsEventSourcePolicy.presets.updatedAt", {
-            defaultValue: "Preset updated at: {{value}}",
             value: dayjs(currentPresets.updatedAt).format(
               "YYYY-MM-DD HH:mm:ss",
             ),
@@ -1919,16 +1703,10 @@ export function NewsEventSourcePolicySettingsPanel() {
         <Form.Item
           label={t(
             "settings.newsEventSourcePolicy.fields.authoritativeDomains",
-            {
-              defaultValue: "Authoritative domains whitelist",
-            },
           )}
           name="authoritativeDomains"
           extra={t(
             "settings.newsEventSourcePolicy.hints.authoritativeDomains",
-            {
-              defaultValue: "Examples: reuters.com, bloomberg.com, ft.com",
-            },
           )}
         >
           <Select
@@ -1937,9 +1715,6 @@ export function NewsEventSourcePolicySettingsPanel() {
             options={toOptions(presetAuthoritativeDomainOptions)}
             placeholder={t(
               "settings.newsEventSourcePolicy.placeholders.authoritativeDomains",
-              {
-                defaultValue: "Enter domains",
-              },
             )}
           />
         </Form.Item>
@@ -1947,15 +1722,9 @@ export function NewsEventSourcePolicySettingsPanel() {
         <Form.Item
           label={t(
             "settings.newsEventSourcePolicy.fields.authoritativeLabels",
-            {
-              defaultValue: "Authoritative source labels whitelist",
-            },
           )}
           name="authoritativeLabels"
-          extra={t("settings.newsEventSourcePolicy.hints.authoritativeLabels", {
-            defaultValue:
-              "Examples: Reuters, Financial Times, Associated Press",
-          })}
+          extra={t("settings.newsEventSourcePolicy.hints.authoritativeLabels")}
         >
           <Select
             mode="tags"
@@ -1963,21 +1732,14 @@ export function NewsEventSourcePolicySettingsPanel() {
             options={toOptions(presetAuthoritativeLabelOptions)}
             placeholder={t(
               "settings.newsEventSourcePolicy.placeholders.authoritativeLabels",
-              {
-                defaultValue: "Enter source labels",
-              },
             )}
           />
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEventSourcePolicy.fields.blogDomains", {
-            defaultValue: "Blog/Social domains blacklist",
-          })}
+          label={t("settings.newsEventSourcePolicy.fields.blogDomains")}
           name="blogDomains"
-          extra={t("settings.newsEventSourcePolicy.hints.blogDomains", {
-            defaultValue: "Examples: medium.com, substack.com, x.com",
-          })}
+          extra={t("settings.newsEventSourcePolicy.hints.blogDomains")}
         >
           <Select
             mode="tags"
@@ -1985,21 +1747,14 @@ export function NewsEventSourcePolicySettingsPanel() {
             options={toOptions(presetBlogDomainOptions)}
             placeholder={t(
               "settings.newsEventSourcePolicy.placeholders.blogDomains",
-              {
-                defaultValue: "Enter domains",
-              },
             )}
           />
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEventSourcePolicy.fields.blogLabels", {
-            defaultValue: "Blog/Social source labels blacklist",
-          })}
+          label={t("settings.newsEventSourcePolicy.fields.blogLabels")}
           name="blogLabels"
-          extra={t("settings.newsEventSourcePolicy.hints.blogLabels", {
-            defaultValue: "Examples: newsletter, creator, influencer",
-          })}
+          extra={t("settings.newsEventSourcePolicy.hints.blogLabels")}
         >
           <Select
             mode="tags"
@@ -2007,30 +1762,20 @@ export function NewsEventSourcePolicySettingsPanel() {
             options={toOptions(presetBlogLabelOptions)}
             placeholder={t(
               "settings.newsEventSourcePolicy.placeholders.blogLabels",
-              {
-                defaultValue: "Enter source labels",
-              },
             )}
           />
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEventSourcePolicy.fields.note", {
-            defaultValue: "Change note (optional)",
-          })}
+          label={t("settings.newsEventSourcePolicy.fields.note")}
           name="note"
-          extra={t("settings.newsEventSourcePolicy.hints.note", {
-            defaultValue:
-              "This note is stored in revision history to help track why a change was made.",
-          })}
+          extra={t("settings.newsEventSourcePolicy.hints.note")}
         >
           <Input.TextArea
             maxLength={NOTE_MAX_LENGTH}
             showCount
             autoSize={{ minRows: 2, maxRows: 4 }}
-            placeholder={t("settings.newsEventSourcePolicy.placeholders.note", {
-              defaultValue: "Describe this change briefly",
-            })}
+            placeholder={t("settings.newsEventSourcePolicy.placeholders.note")}
           />
         </Form.Item>
 
@@ -2041,20 +1786,16 @@ export function NewsEventSourcePolicySettingsPanel() {
             loading={presetSaving}
             disabled={presetLoading}
           >
-            {t("settings.newsEventSourcePolicy.actions.savePresets", {
-              defaultValue: "Save presets",
-            })}
+            {t("settings.newsEventSourcePolicy.actions.savePresets")}
           </Button>
           <Button onClick={() => void refetchPresets()} loading={presetLoading}>
-            {t("common.refresh", { defaultValue: "Refresh" })}
+            {t("common.refresh")}
           </Button>
         </Space>
       </Form>
 
       <Typography.Title level={5} style={{ marginTop: "1.5rem" }}>
-        {t("settings.newsEventSourcePolicy.history.title", {
-          defaultValue: "Recent policy revisions",
-        })}
+        {t("settings.newsEventSourcePolicy.history.title")}
       </Typography.Title>
 
       <List
@@ -2062,9 +1803,7 @@ export function NewsEventSourcePolicySettingsPanel() {
         bordered
         dataSource={currentPolicy?.revisions ?? []}
         locale={{
-          emptyText: t("settings.newsEventSourcePolicy.history.empty", {
-            defaultValue: "No revisions yet",
-          }),
+          emptyText: t("settings.newsEventSourcePolicy.history.empty"),
         }}
         renderItem={(entry) => {
           const { addCount, removeCount } = summarizeDelta(entry.delta);
@@ -2073,9 +1812,6 @@ export function NewsEventSourcePolicySettingsPanel() {
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaAuthoritativeDomainsAdd",
-                {
-                  defaultValue: "+ Authoritative domains",
-                },
               ),
               values: entry.delta.authoritativeDomainsAdd,
               color: "blue" as const,
@@ -2083,9 +1819,6 @@ export function NewsEventSourcePolicySettingsPanel() {
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaAuthoritativeDomainsRemove",
-                {
-                  defaultValue: "- Authoritative domains",
-                },
               ),
               values: entry.delta.authoritativeDomainsRemove,
               color: "red" as const,
@@ -2093,9 +1826,6 @@ export function NewsEventSourcePolicySettingsPanel() {
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaAuthoritativeLabelsAdd",
-                {
-                  defaultValue: "+ Authoritative labels",
-                },
               ),
               values: entry.delta.authoritativeLabelsAdd,
               color: "blue" as const,
@@ -2103,9 +1833,6 @@ export function NewsEventSourcePolicySettingsPanel() {
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaAuthoritativeLabelsRemove",
-                {
-                  defaultValue: "- Authoritative labels",
-                },
               ),
               values: entry.delta.authoritativeLabelsRemove,
               color: "red" as const,
@@ -2113,9 +1840,6 @@ export function NewsEventSourcePolicySettingsPanel() {
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaBlogDomainsAdd",
-                {
-                  defaultValue: "+ Blog domains",
-                },
               ),
               values: entry.delta.blogDomainsAdd,
               color: "orange" as const,
@@ -2123,9 +1847,6 @@ export function NewsEventSourcePolicySettingsPanel() {
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaBlogDomainsRemove",
-                {
-                  defaultValue: "- Blog domains",
-                },
               ),
               values: entry.delta.blogDomainsRemove,
               color: "green" as const,
@@ -2133,9 +1854,6 @@ export function NewsEventSourcePolicySettingsPanel() {
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaBlogLabelsAdd",
-                {
-                  defaultValue: "+ Blog labels",
-                },
               ),
               values: entry.delta.blogLabelsAdd,
               color: "orange" as const,
@@ -2143,9 +1861,6 @@ export function NewsEventSourcePolicySettingsPanel() {
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaBlogLabelsRemove",
-                {
-                  defaultValue: "- Blog labels",
-                },
               ),
               values: entry.delta.blogLabelsRemove,
               color: "green" as const,
@@ -2159,9 +1874,7 @@ export function NewsEventSourcePolicySettingsPanel() {
                 isActive
                   ? [
                       <Tag color="green" key="active">
-                        {t("settings.newsEventSourcePolicy.history.activeTag", {
-                          defaultValue: "Active",
-                        })}
+                        {t("settings.newsEventSourcePolicy.history.activeTag")}
                       </Tag>,
                     ]
                   : [
@@ -2173,9 +1886,6 @@ export function NewsEventSourcePolicySettingsPanel() {
                       >
                         {t(
                           "settings.newsEventSourcePolicy.history.rollbackAction",
-                          {
-                            defaultValue: "Rollback",
-                          },
                         )}
                       </Button>,
                     ]
@@ -2188,7 +1898,6 @@ export function NewsEventSourcePolicySettingsPanel() {
                       {t(
                         "settings.newsEventSourcePolicy.history.revisionLabel",
                         {
-                          defaultValue: "Revision #{{revision}}",
                           revision: entry.revision,
                         },
                       )}
@@ -2200,7 +1909,6 @@ export function NewsEventSourcePolicySettingsPanel() {
                     {entry.actorId ? (
                       <Typography.Text type="secondary">
                         {t("settings.newsEventSourcePolicy.history.actor", {
-                          defaultValue: "Actor: {{value}}",
                           value: entry.actorId,
                         })}
                       </Typography.Text>
@@ -2213,7 +1921,6 @@ export function NewsEventSourcePolicySettingsPanel() {
                       {t(
                         "settings.newsEventSourcePolicy.history.deltaSummary",
                         {
-                          defaultValue: "Adds: {{adds}}, Removes: {{removes}}",
                           adds: addCount,
                           removes: removeCount,
                         },
@@ -2225,7 +1932,6 @@ export function NewsEventSourcePolicySettingsPanel() {
                         style={{ fontSize: 12 }}
                       >
                         {t("settings.newsEventSourcePolicy.history.note", {
-                          defaultValue: "Note: {{note}}",
                           note: entry.note,
                         })}
                       </Typography.Text>
@@ -2263,7 +1969,6 @@ export function NewsEventSourcePolicySettingsPanel() {
                                     {t(
                                       "settings.newsEventSourcePolicy.history.moreItems",
                                       {
-                                        defaultValue: "+{{count}} more",
                                         count: remaining,
                                       },
                                     )}
@@ -2284,18 +1989,13 @@ export function NewsEventSourcePolicySettingsPanel() {
       />
 
       <Typography.Title level={5} style={{ marginTop: "1.5rem" }}>
-        {t("settings.newsEventSourcePolicy.history.diffTitle", {
-          defaultValue: "Revision diff compare",
-        })}
+        {t("settings.newsEventSourcePolicy.history.diffTitle")}
       </Typography.Title>
       <Typography.Paragraph
         type="secondary"
         style={{ marginBottom: "0.75rem" }}
       >
-        {t("settings.newsEventSourcePolicy.history.diffDescription", {
-          defaultValue:
-            "Compare effective policy lists between two revisions to review exactly what changed.",
-        })}
+        {t("settings.newsEventSourcePolicy.history.diffDescription")}
       </Typography.Paragraph>
 
       <Space wrap size={[8, 8]} style={{ marginBottom: "0.75rem" }}>
@@ -2304,23 +2004,17 @@ export function NewsEventSourcePolicySettingsPanel() {
           value={baseRevision ?? undefined}
           options={revisionOptions}
           onChange={(value) => setBaseRevision(value)}
-          placeholder={t("settings.newsEventSourcePolicy.history.diffBase", {
-            defaultValue: "Base revision",
-          })}
+          placeholder={t("settings.newsEventSourcePolicy.history.diffBase")}
         />
         <Select
           style={{ minWidth: 180 }}
           value={targetRevision ?? undefined}
           options={revisionOptions}
           onChange={(value) => setTargetRevision(value)}
-          placeholder={t("settings.newsEventSourcePolicy.history.diffTarget", {
-            defaultValue: "Target revision",
-          })}
+          placeholder={t("settings.newsEventSourcePolicy.history.diffTarget")}
         />
         <Button onClick={handleSwapDiffRevisions}>
-          {t("settings.newsEventSourcePolicy.history.diffSwap", {
-            defaultValue: "Swap",
-          })}
+          {t("settings.newsEventSourcePolicy.history.diffSwap")}
         </Button>
       </Space>
 
@@ -2328,9 +2022,7 @@ export function NewsEventSourcePolicySettingsPanel() {
         <Alert
           type="error"
           showIcon
-          message={t("settings.newsEventSourcePolicy.history.diffLoadFailed", {
-            defaultValue: "Failed to load revision diff",
-          })}
+          message={t("settings.newsEventSourcePolicy.history.diffLoadFailed")}
           description={diffError.message}
           style={{ marginBottom: "0.75rem" }}
         />
@@ -2366,7 +2058,6 @@ export function NewsEventSourcePolicySettingsPanel() {
                   {remaining > 0 ? (
                     <Tag>
                       {t("settings.newsEventSourcePolicy.history.moreItems", {
-                        defaultValue: "+{{count}} more",
                         count: remaining,
                       })}
                     </Tag>
@@ -2379,10 +2070,7 @@ export function NewsEventSourcePolicySettingsPanel() {
       ) : (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={t("settings.newsEventSourcePolicy.history.diffEmpty", {
-            defaultValue:
-              "No effective list changes between selected revisions",
-          })}
+          description={t("settings.newsEventSourcePolicy.history.diffEmpty")}
         />
       )}
     </>

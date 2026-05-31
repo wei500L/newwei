@@ -257,9 +257,7 @@ export function ProfileContent() {
       });
       await update({ user: response.data });
       messageApi.success(
-        t("profile.details.success", {
-          defaultValue: "Profile updated.",
-        }),
+        t("profile.details.success"),
       );
     } catch (error) {
       const validationError =
@@ -272,9 +270,7 @@ export function ProfileContent() {
       }
       captureClientError("Failed to update profile details", error);
       messageApi.error(
-        t("profile.details.failed", {
-          defaultValue: "Failed to update profile.",
-        }),
+        t("profile.details.failed"),
       );
     } finally {
       setSavingProfile(false);
@@ -291,9 +287,7 @@ export function ProfileContent() {
       });
       passwordForm.resetFields();
       messageApi.success(
-        t("profile.password.success", {
-          defaultValue: "Password changed. Please use the new password next time you sign in.",
-        }),
+        t("profile.password.success"),
       );
     } catch (error) {
       const validationError =
@@ -306,9 +300,7 @@ export function ProfileContent() {
       }
       captureClientError("Failed to change password", error);
       messageApi.error(
-        t("profile.password.failed", {
-          defaultValue: "Failed to change password.",
-        }),
+        t("profile.password.failed"),
       );
     } finally {
       setChangingPassword(false);
@@ -332,16 +324,12 @@ export function ProfileContent() {
         filenameFromContentDisposition(contentDisposition) ?? fallbackFilename,
       );
       messageApi.success(
-        t("profile.dataExport.success", {
-          defaultValue: "Data export downloaded.",
-        }),
+        t("profile.dataExport.success"),
       );
     } catch (error) {
       captureClientError("Failed to export user data", error);
       messageApi.error(
-        t("profile.dataExport.failed", {
-          defaultValue: "Failed to download data export.",
-        }),
+        t("profile.dataExport.failed"),
       );
     } finally {
       setExportingData(false);
@@ -416,43 +404,32 @@ export function ProfileContent() {
         <Divider style={{ margin: 0 }} />
         <div className="flex flex-col gap-2">
           <Typography.Text strong>
-            {t("profile.details.title", { defaultValue: "Profile details" })}
+            {t("profile.details.title")}
           </Typography.Text>
           <Typography.Paragraph type="secondary">
-            {t("profile.details.description", {
-              defaultValue:
-                "Update how your name appears across saved views, comments, and collaboration surfaces.",
-            })}
+            {t("profile.details.description")}
           </Typography.Paragraph>
           <Form form={profileForm} layout="vertical">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Form.Item
-                label={t("profile.details.firstName", {
-                  defaultValue: "First name",
-                })}
+                label={t("profile.details.firstName")}
                 name="firstName"
                 rules={[
                   {
                     required: true,
-                    message: t("profile.details.firstNameRequired", {
-                      defaultValue: "Enter a first name.",
-                    }),
+                    message: t("profile.details.firstNameRequired"),
                   },
                 ]}
               >
                 <Input maxLength={80} autoComplete="given-name" size="large" />
               </Form.Item>
               <Form.Item
-                label={t("profile.details.lastName", {
-                  defaultValue: "Last name",
-                })}
+                label={t("profile.details.lastName")}
                 name="lastName"
                 rules={[
                   {
                     required: true,
-                    message: t("profile.details.lastNameRequired", {
-                      defaultValue: "Enter a last name.",
-                    }),
+                    message: t("profile.details.lastNameRequired"),
                   },
                 ]}
               >
@@ -464,70 +441,55 @@ export function ProfileContent() {
               onClick={() => void handleSaveProfile()}
               loading={savingProfile}
             >
-              {t("profile.details.save", { defaultValue: "Save profile" })}
+              {t("profile.details.save")}
             </Button>
           </Form>
         </div>
         <Divider style={{ margin: 0 }} />
         <div className="flex flex-col gap-2">
           <Typography.Text strong>
-            {t("profile.password.title", { defaultValue: "Change password" })}
+            {t("profile.password.title")}
           </Typography.Text>
           <Typography.Paragraph type="secondary">
-            {t("profile.password.description", {
-              defaultValue:
-                "Changing your password revokes existing refresh tokens and secures future sessions.",
-            })}
+            {t("profile.password.description")}
           </Typography.Paragraph>
           <Form form={passwordForm} layout="vertical">
             <Form.Item
-              label={t("profile.password.current", {
-                defaultValue: "Current password",
-              })}
+              label={t("profile.password.current")}
               name="currentPassword"
               rules={[
                 {
                   required: true,
-                  message: t("profile.password.currentRequired", {
-                    defaultValue: "Enter your current password.",
-                  }),
+                  message: t("profile.password.currentRequired"),
                 },
               ]}
             >
               <Input.Password autoComplete="current-password" size="large" />
             </Form.Item>
             <Form.Item
-              label={t("profile.password.new", { defaultValue: "New password" })}
+              label={t("profile.password.new")}
               name="newPassword"
               rules={[
                 {
                   required: true,
-                  message: t("profile.password.newRequired", {
-                    defaultValue: "Enter a new password.",
-                  }),
+                  message: t("profile.password.newRequired"),
                 },
                 {
                   min: 8,
-                  message: t("profile.password.newMin", {
-                    defaultValue: "Password must be at least 8 characters.",
-                  }),
+                  message: t("profile.password.newMin"),
                 },
               ]}
             >
               <Input.Password autoComplete="new-password" size="large" />
             </Form.Item>
             <Form.Item
-              label={t("profile.password.confirm", {
-                defaultValue: "Confirm new password",
-              })}
+              label={t("profile.password.confirm")}
               name="confirmPassword"
               dependencies={["newPassword"]}
               rules={[
                 {
                   required: true,
-                  message: t("profile.password.confirmRequired", {
-                    defaultValue: "Confirm the new password.",
-                  }),
+                  message: t("profile.password.confirmRequired"),
                 },
                 ({ getFieldValue }) => ({
                   validator(_, value) {
@@ -536,9 +498,7 @@ export function ProfileContent() {
                     }
                     return Promise.reject(
                       new Error(
-                        t("profile.password.confirmMismatch", {
-                          defaultValue: "Passwords do not match.",
-                        }),
+                        t("profile.password.confirmMismatch"),
                       ),
                     );
                   },
@@ -552,33 +512,24 @@ export function ProfileContent() {
               onClick={() => void handleChangePassword()}
               loading={changingPassword}
             >
-              {t("profile.password.submit", {
-                defaultValue: "Change password",
-              })}
+              {t("profile.password.submit")}
             </Button>
           </Form>
         </div>
         <Divider style={{ margin: 0 }} />
         <div className="flex flex-col gap-2">
           <Typography.Text strong>
-            {t("profile.dataExport.title", {
-              defaultValue: "Data export",
-            })}
+            {t("profile.dataExport.title")}
           </Typography.Text>
           <Typography.Paragraph type="secondary">
-            {t("profile.dataExport.description", {
-              defaultValue:
-                "Download a machine-readable JSON copy of your account, settings, subscriptions, personalization, saved analysis, notifications, and assistant records for this organization.",
-            })}
+            {t("profile.dataExport.description")}
           </Typography.Paragraph>
           <Button
             icon={<DownloadOutlined />}
             onClick={() => void handleExportUserData()}
             loading={exportingData}
           >
-            {t("profile.dataExport.download", {
-              defaultValue: "Download data export",
-            })}
+            {t("profile.dataExport.download")}
           </Button>
         </div>
         <Divider style={{ margin: 0 }} />

@@ -94,9 +94,7 @@ export function ArchivePreparationSettingsPanel() {
     } catch (error) {
       captureClientError("Failed to load archive preparation settings", error);
       setErrorMessage(
-        t("systemSettings.archivePreparation.errors.loadFailed", {
-          defaultValue: "Failed to load archive preparation settings.",
-        }),
+        t("systemSettings.archivePreparation.errors.loadFailed"),
       );
     } finally {
       setLoading(false);
@@ -132,17 +130,13 @@ export function ArchivePreparationSettingsPanel() {
       );
       applySettings(response.data ?? EMPTY_SETTINGS);
       messageApi.success(
-        t("systemSettings.archivePreparation.messages.saved", {
-          defaultValue: "Archive preparation settings saved.",
-        }),
+        t("systemSettings.archivePreparation.messages.saved"),
       );
     } catch (error) {
       captureClientError("Failed to save archive preparation settings", error);
       messageApi.error(
         extractApiError(error).message ||
-          t("systemSettings.archivePreparation.errors.saveFailed", {
-            defaultValue: "Failed to save archive preparation settings.",
-          }),
+          t("systemSettings.archivePreparation.errors.saveFailed"),
       );
     } finally {
       setSaving(false);
@@ -151,14 +145,10 @@ export function ArchivePreparationSettingsPanel() {
 
   const handleReset = () => {
     Modal.confirm({
-      title: t("systemSettings.archivePreparation.modal.resetTitle", {
-        defaultValue: "Reset archive preparation settings?",
-      }),
-      content: t("systemSettings.archivePreparation.modal.resetBody", {
-        defaultValue: "This restores the default low-memory batch and concurrency limits.",
-      }),
-      okText: t("common.reset", { defaultValue: "Reset" }),
-      cancelText: t("common.cancel", { defaultValue: "Cancel" }),
+      title: t("systemSettings.archivePreparation.modal.resetTitle"),
+      content: t("systemSettings.archivePreparation.modal.resetBody"),
+      okText: t("common.reset"),
+      cancelText: t("common.cancel"),
       okButtonProps: { danger: true },
       onOk: async () => {
         setResetting(true);
@@ -169,16 +159,12 @@ export function ArchivePreparationSettingsPanel() {
           );
           applySettings(response.data ?? EMPTY_SETTINGS);
           messageApi.success(
-            t("systemSettings.archivePreparation.messages.reset", {
-              defaultValue: "Archive preparation settings reset.",
-            }),
+            t("systemSettings.archivePreparation.messages.reset"),
           );
         } catch (error) {
           captureClientError("Failed to reset archive preparation settings", error);
           messageApi.error(
-            t("systemSettings.archivePreparation.errors.resetFailed", {
-              defaultValue: "Failed to reset archive preparation settings.",
-            }),
+            t("systemSettings.archivePreparation.errors.resetFailed"),
           );
         } finally {
           setResetting(false);
@@ -199,23 +185,15 @@ export function ArchivePreparationSettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
-        {t("systemSettings.archivePreparation.description", {
-          defaultValue:
-            "Control archive background preparation batch sizes and embedding/rerank concurrency. Lower values reduce memory and rate-limit pressure.",
-        })}
+        {t("systemSettings.archivePreparation.description")}
       </Typography.Paragraph>
 
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: "1rem" }}
-        message={t("systemSettings.archivePreparation.notice.title", {
-          defaultValue: "Background-only preparation",
-        })}
-        description={t("systemSettings.archivePreparation.notice.body", {
-          defaultValue:
-            "These limits apply only to archive preparation workers. Model selection still follows the active LLM gateway embedding/rerank profiles.",
-        })}
+        message={t("systemSettings.archivePreparation.notice.title")}
+        description={t("systemSettings.archivePreparation.notice.body")}
       />
 
       {errorMessage ? (
@@ -223,9 +201,7 @@ export function ArchivePreparationSettingsPanel() {
       ) : null}
 
       <Card
-        title={t("systemSettings.archivePreparation.cardTitle", {
-          defaultValue: "Archive preparation settings",
-        })}
+        title={t("systemSettings.archivePreparation.cardTitle")}
         extra={
           <Space>
             <Typography.Text type="secondary">
@@ -234,12 +210,10 @@ export function ArchivePreparationSettingsPanel() {
               })}
             </Typography.Text>
             <Button danger onClick={handleReset} loading={resetting}>
-              {t("common.reset", { defaultValue: "Reset" })}
+              {t("common.reset")}
             </Button>
             <Button onClick={() => void loadStatus()} loading={statusLoading}>
-              {t("systemSettings.archivePreparation.actions.refreshStatus", {
-                defaultValue: "Refresh status",
-              })}
+              {t("systemSettings.archivePreparation.actions.refreshStatus")}
             </Button>
           </Space>
         }
@@ -247,9 +221,7 @@ export function ArchivePreparationSettingsPanel() {
         <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={EMPTY_SETTINGS}>
           <Space wrap style={{ display: "flex" }}>
             <Form.Item
-              label={t("systemSettings.archivePreparation.fields.jobBatchSize", {
-                defaultValue: "Job batch size",
-              })}
+              label={t("systemSettings.archivePreparation.fields.jobBatchSize")}
               name="jobBatchSize"
               rules={[{ required: true }]}
               style={{ minWidth: 220, flex: 1 }}
@@ -257,9 +229,7 @@ export function ArchivePreparationSettingsPanel() {
               <InputNumber min={1} max={100} style={{ width: "100%" }} />
             </Form.Item>
             <Form.Item
-              label={t("systemSettings.archivePreparation.fields.embeddingBatchSize", {
-                defaultValue: "Embedding batch size",
-              })}
+              label={t("systemSettings.archivePreparation.fields.embeddingBatchSize")}
               name="embeddingBatchSize"
               rules={[{ required: true }]}
               style={{ minWidth: 220, flex: 1 }}
@@ -270,9 +240,7 @@ export function ArchivePreparationSettingsPanel() {
 
           <Space wrap style={{ display: "flex" }}>
             <Form.Item
-              label={t("systemSettings.archivePreparation.fields.embeddingMaxConcurrency", {
-                defaultValue: "Embedding max concurrency",
-              })}
+              label={t("systemSettings.archivePreparation.fields.embeddingMaxConcurrency")}
               name="embeddingMaxConcurrency"
               rules={[{ required: true }]}
               style={{ minWidth: 220, flex: 1 }}
@@ -280,9 +248,7 @@ export function ArchivePreparationSettingsPanel() {
               <InputNumber min={1} max={8} style={{ width: "100%" }} />
             </Form.Item>
             <Form.Item
-              label={t("systemSettings.archivePreparation.fields.rerankMaxConcurrency", {
-                defaultValue: "Rerank max concurrency",
-              })}
+              label={t("systemSettings.archivePreparation.fields.rerankMaxConcurrency")}
               name="rerankMaxConcurrency"
               rules={[{ required: true }]}
               style={{ minWidth: 220, flex: 1 }}
@@ -295,36 +261,28 @@ export function ArchivePreparationSettingsPanel() {
             type="warning"
             showIcon
             style={{ marginBottom: "1rem" }}
-            message={t("systemSettings.archivePreparation.hint.title", {
-              defaultValue: "Recommended starting point",
-            })}
-            description={t("systemSettings.archivePreparation.hint.body", {
-              defaultValue:
-                "Start with batch size 20 and concurrency 1/1. Increase gradually only after confirming the rerank RPM budget is stable.",
-            })}
+            message={t("systemSettings.archivePreparation.hint.title")}
+            description={t("systemSettings.archivePreparation.hint.body")}
           />
 
           <Space>
             <Button type="primary" htmlType="submit" loading={saving}>
-              {t("common.save", { defaultValue: "Save" })}
+              {t("common.save")}
             </Button>
             <Button onClick={() => void loadSettings()}>
-              {t("common.refresh", { defaultValue: "Refresh" })}
+              {t("common.refresh")}
             </Button>
           </Space>
         </Form>
       </Card>
 
       <Card
-        title={t("systemSettings.archivePreparation.ops.title", {
-          defaultValue: "Operational visibility",
-        })}
+        title={t("systemSettings.archivePreparation.ops.title")}
         style={{ marginTop: "1rem" }}
         extra={
           opsStatus ? (
             <Typography.Text type="secondary">
               {t("systemSettings.archivePreparation.ops.updatedAt", {
-                defaultValue: "Updated {{value}}",
                 value: new Date(opsStatus.updatedAt).toLocaleString(),
               })}
             </Typography.Text>
@@ -334,31 +292,26 @@ export function ArchivePreparationSettingsPanel() {
         <Space wrap size={[8, 8]} style={{ marginBottom: "1rem" }}>
           <Tag color={opsStatus && opsStatus.pending > 0 ? "processing" : "green"}>
             {t("systemSettings.archivePreparation.ops.pending", {
-              defaultValue: "Pending: {{count}}",
               count: opsStatus?.pending ?? 0,
             })}
           </Tag>
           <Tag>
             {t("systemSettings.archivePreparation.ops.active", {
-              defaultValue: "Active: {{count}}",
               count: opsStatus?.counts.active ?? 0,
             })}
           </Tag>
           <Tag>
             {t("systemSettings.archivePreparation.ops.waiting", {
-              defaultValue: "Waiting: {{count}}",
               count: opsStatus?.counts.waiting ?? 0,
             })}
           </Tag>
           <Tag color={(opsStatus?.counts.failed ?? 0) > 0 ? "volcano" : "default"}>
             {t("systemSettings.archivePreparation.ops.failed", {
-              defaultValue: "Failed: {{count}}",
               count: opsStatus?.counts.failed ?? 0,
             })}
           </Tag>
           <Tag>
             {t("systemSettings.archivePreparation.ops.completed", {
-              defaultValue: "Completed: {{count}}",
               count: opsStatus?.counts.completed ?? 0,
             })}
           </Tag>
@@ -369,9 +322,7 @@ export function ArchivePreparationSettingsPanel() {
             type="warning"
             showIcon
             style={{ marginBottom: "1rem" }}
-            message={t("systemSettings.archivePreparation.ops.latestFailure", {
-              defaultValue: "Latest failure",
-            })}
+            message={t("systemSettings.archivePreparation.ops.latestFailure")}
             description={opsStatus.recentStatuses.find((item) => item.state === "FAILED")?.errorMessage}
           />
         ) : null}
@@ -379,9 +330,7 @@ export function ArchivePreparationSettingsPanel() {
         <div className="flex flex-col gap-3">
           {(opsStatus?.recentStatuses ?? []).length === 0 ? (
             <Typography.Text type="secondary">
-              {t("systemSettings.archivePreparation.ops.empty", {
-                defaultValue: "No recent archive preparation activity.",
-              })}
+              {t("systemSettings.archivePreparation.ops.empty")}
             </Typography.Text>
           ) : (
             opsStatus?.recentStatuses.map((item) => (
@@ -397,11 +346,9 @@ export function ArchivePreparationSettingsPanel() {
                     <Typography.Text strong>
                       {item.scope === "digest"
                         ? t("systemSettings.archivePreparation.ops.scopeDigest", {
-                            defaultValue: "Digest {{value}}",
                             value: item.scopeValue,
                           })
                         : t("systemSettings.archivePreparation.ops.scopeCalendar", {
-                            defaultValue: "Calendar {{value}}",
                             value: item.scopeValue,
                           })}
                     </Typography.Text>

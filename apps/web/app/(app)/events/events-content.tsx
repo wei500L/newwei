@@ -311,7 +311,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
     () =>
       [3, 7, 14, 30, 90].map((days) => ({
         value: days,
-        label: t("pages.events.filters.windowOption", { defaultValue: "{{days}} days", days })
+        label: t("pages.events.filters.windowOption", { days })
       })),
     [t]
   );
@@ -319,39 +319,39 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
     () =>
       [10, 20, 30, 50, 100].map((value) => ({
         value,
-        label: t("pages.events.filters.limitOption", { defaultValue: "{{value}} events", value })
+        label: t("pages.events.filters.limitOption", { value })
       })),
     [t]
   );
   const statusOptions = useMemo(
     () => [
-      { value: "active", label: t("pages.events.filters.status.active", { defaultValue: "Active" }) },
-      { value: "archived", label: t("pages.events.filters.status.archived", { defaultValue: "Archived" }) },
-      { value: "all", label: t("pages.events.filters.status.all", { defaultValue: "All" }) }
+      { value: "active", label: t("pages.events.filters.status.active") },
+      { value: "archived", label: t("pages.events.filters.status.archived") },
+      { value: "all", label: t("pages.events.filters.status.all") }
     ],
     [t]
   );
   const sortOptions = useMemo(
     () => [
-      { value: "latest", label: t("pages.events.filters.sort.latest", { defaultValue: "Latest" }) },
-      { value: "heat", label: t("pages.events.filters.sort.heat", { defaultValue: "Heat" }) },
+      { value: "latest", label: t("pages.events.filters.sort.latest") },
+      { value: "heat", label: t("pages.events.filters.sort.heat") },
       {
         value: "credibility",
-        label: t("pages.events.filters.sort.credibility", { defaultValue: "Credibility" })
+        label: t("pages.events.filters.sort.credibility")
       }
     ],
     [t]
   );
   const sourceTypeOptions = useMemo(
     () => [
-      { value: "all", label: t("pages.events.filters.sourceType.all", { defaultValue: "All" }) },
+      { value: "all", label: t("pages.events.filters.sourceType.all") },
       {
         value: "authoritative",
-        label: t("pages.events.filters.sourceType.authoritative", { defaultValue: "Authoritative" })
+        label: t("pages.events.filters.sourceType.authoritative")
       },
-      { value: "mixed", label: t("pages.events.filters.sourceType.mixed", { defaultValue: "Mixed" }) },
-      { value: "blog", label: t("pages.events.filters.sourceType.blog", { defaultValue: "Blog" }) },
-      { value: "unknown", label: t("pages.events.filters.sourceType.unknown", { defaultValue: "Unknown" }) }
+      { value: "mixed", label: t("pages.events.filters.sourceType.mixed") },
+      { value: "blog", label: t("pages.events.filters.sourceType.blog") },
+      { value: "unknown", label: t("pages.events.filters.sourceType.unknown") }
     ],
     [t]
   );
@@ -361,7 +361,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
         value,
         label:
           value === 0
-            ? t("pages.events.filters.noMin", { defaultValue: "No minimum" })
+            ? t("pages.events.filters.noMin")
             : `>= ${value}`
       })),
     [t]
@@ -372,7 +372,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
         value,
         label:
           value === 0
-            ? t("pages.events.filters.noMin", { defaultValue: "No minimum" })
+            ? t("pages.events.filters.noMin")
             : `>= ${value}`
       })),
     [t]
@@ -383,26 +383,24 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
       <Space direction="vertical" size={2}>
         <Space align="center" wrap size={[8, 6]}>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            {t("pages.events.title", { defaultValue: "News Events" })}
+            {t("pages.events.title")}
           </Typography.Title>
           <Tooltip title={`${timeZone} (${timeZoneLabel || timeZone})`}>
             <Tag>{timeZoneLabel || timeZone}</Tag>
           </Tooltip>
         </Space>
         <Typography.Text type="secondary">
-          {t("pages.events.subtitle", {
-            defaultValue: "Clustered storylines built from processed news articles."
-          })}
+          {t("pages.events.subtitle")}
         </Typography.Text>
         <Space wrap size={[8, 8]}>
           <Button size="small" onClick={() => router.push("/news-hub")}>
-            {t("pages.events.quickNav.hub", { defaultValue: "News Hub" })}
+            {t("pages.events.quickNav.hub")}
           </Button>
           <Button size="small" onClick={() => router.push("/newsnow/hottest")}>
-            {t("pages.events.quickNav.newsnow", { defaultValue: "实时热榜" })}
+            {t("pages.events.quickNav.newsnow")}
           </Button>
           <Button size="small" onClick={() => router.push("/items")}>
-            {t("pages.events.quickNav.items", { defaultValue: "深度文章" })}
+            {t("pages.events.quickNav.items")}
           </Button>
         </Space>
       </Space>
@@ -422,10 +420,10 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
         <div className="flex flex-col gap-3">
           <div className="flex flex-col md:flex-row md:items-center gap-3 justify-between">
             <Space wrap size="small">
-              <Tooltip title={t("pages.events.filters.windowHelp", { defaultValue: "Time window for listing events." })}>
+              <Tooltip title={t("pages.events.filters.windowHelp")}>
                 <Space size={6}>
                   <Typography.Text type="secondary">
-                    {t("pages.events.filters.window", { defaultValue: "Window" })}
+                    {t("pages.events.filters.window")}
                   </Typography.Text>
                   <Select
                     size="small"
@@ -438,7 +436,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
               </Tooltip>
 
               <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.events.filters.status.label", { defaultValue: "Status" })}</Typography.Text>
+                <Typography.Text type="secondary">{t("pages.events.filters.status.label")}</Typography.Text>
                 <Select
                   size="small"
                   value={status}
@@ -449,7 +447,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
               </Space>
 
               <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.events.filters.limit", { defaultValue: "Limit" })}</Typography.Text>
+                <Typography.Text type="secondary">{t("pages.events.filters.limit")}</Typography.Text>
                 <Select
                   size="small"
                   value={limit}
@@ -460,7 +458,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
               </Space>
 
               <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.events.filters.sort.label", { defaultValue: "Sort" })}</Typography.Text>
+                <Typography.Text type="secondary">{t("pages.events.filters.sort.label")}</Typography.Text>
                 <Select
                   size="small"
                   value={sortBy}
@@ -471,7 +469,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
               </Space>
 
               <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.events.filters.sourceType.label", { defaultValue: "Source type" })}</Typography.Text>
+                <Typography.Text type="secondary">{t("pages.events.filters.sourceType.label")}</Typography.Text>
                 <Select
                   size="small"
                   value={sourceType}
@@ -482,7 +480,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
               </Space>
 
               <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.events.filters.minHeat", { defaultValue: "Min heat" })}</Typography.Text>
+                <Typography.Text type="secondary">{t("pages.events.filters.minHeat")}</Typography.Text>
                 <Select
                   size="small"
                   value={minHeatScore}
@@ -493,7 +491,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
               </Space>
 
               <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.events.filters.minCredibility", { defaultValue: "Min credibility" })}</Typography.Text>
+                <Typography.Text type="secondary">{t("pages.events.filters.minCredibility")}</Typography.Text>
                 <Select
                   size="small"
                   value={minCredibilityScore}
@@ -512,7 +510,6 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                   }}
                 >
                   {t("pages.events.filters.entityActive", {
-                    defaultValue: "Entity: {{entity}}",
                     entity: entityFilter
                   })}
                 </Tag>
@@ -520,14 +517,14 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
             </Space>
 
             <Button onClick={() => refetch()} loading={loading}>
-              {t("common.refresh", { defaultValue: "Refresh" })}
+              {t("common.refresh")}
             </Button>
           </div>
 
           {error ? (
             <Typography.Text type="danger">
-              {t("pages.events.loadFailed", { defaultValue: "Failed to load events." })}{" "}
-              {t("common.serviceUnavailable", { defaultValue: "Service is unavailable. Please try again." })}
+              {t("pages.events.loadFailed")}{" "}
+              {t("common.serviceUnavailable")}
             </Typography.Text>
           ) : null}
 
@@ -536,9 +533,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
           ) : sortedEvents.length === 0 ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t("pages.events.empty", {
-                defaultValue: "No events yet. Enable ingestion in System Settings and wait for the scheduled job."
-              })}
+              description={t("pages.events.empty")}
             >
               <Button
                 type="primary"
@@ -551,7 +546,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                   )
                 }
               >
-                {t("pages.events.emptyCta", { defaultValue: "Open system settings" })}
+                {t("pages.events.emptyCta")}
               </Button>
             </Empty>
           ) : (
@@ -563,16 +558,16 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                 const topic = event.primaryTopic?.trim() ?? "";
                 const entity = event.primaryEntity?.trim() ?? "";
                 const language = event.language?.trim() ?? "";
-                const startLabel = t("pages.events.fields.startAt", { defaultValue: "Start" });
-                const lastLabel = t("pages.events.fields.lastAt", { defaultValue: "Last" });
-                const itemCountLabel = t("pages.events.fields.items", { defaultValue: "Items" });
+                const startLabel = t("pages.events.fields.startAt");
+                const lastLabel = t("pages.events.fields.lastAt");
+                const itemCountLabel = t("pages.events.fields.items");
                 const eventStatusLabel = t(`pages.events.status.${event.status}`, { defaultValue: event.status });
-                const heatLabel = t("pages.events.fields.heat", { defaultValue: "Heat" });
-                const credibilityLabel = t("pages.events.fields.credibility", { defaultValue: "Credibility" });
-                const sourcesLabel = t("pages.events.fields.sources", { defaultValue: "Sources" });
-                const sourceTypeLabel = t("pages.events.fields.sourceType", { defaultValue: "Type" });
-                const futureEventLabel = t("pages.events.fields.futureEvent", { defaultValue: "Scheduled" });
-                const futureEventHint = t("pages.events.fields.futureEventHint", { defaultValue: "Future event" });
+                const heatLabel = t("pages.events.fields.heat");
+                const credibilityLabel = t("pages.events.fields.credibility");
+                const sourcesLabel = t("pages.events.fields.sources");
+                const sourceTypeLabel = t("pages.events.fields.sourceType");
+                const futureEventLabel = t("pages.events.fields.futureEvent");
+                const futureEventHint = t("pages.events.fields.futureEventHint");
 
                 const startDate = formatDateTime(event.startAt, locale, {
                   year: "numeric",
@@ -616,10 +611,10 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                     style={rowStyle}
                     actions={[
                       <Button key="open" type="link" onClick={() => router.push(`/events/${event.id}`)}>
-                        {t("pages.events.actions.open", { defaultValue: "Open" })}
+                        {t("pages.events.actions.open")}
                       </Button>,
                       <Button key="brief" type="link" onClick={() => router.push(`/events/${event.id}?tab=brief`)}>
-                        {t("pages.events.actions.brief", { defaultValue: "Detailed summary" })}
+                        {t("pages.events.actions.brief")}
                       </Button>
                     ]}
                   >
@@ -634,7 +629,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                             <Tag color={event.status === "active" ? "green" : "default"}>{eventStatusLabel}</Tag>
                             {event.breaking ? (
                               <Tag color="volcano">
-                                {t("pages.events.fields.breaking", { defaultValue: "Breaking" })}
+                                {t("pages.events.fields.breaking")}
                               </Tag>
                             ) : null}
                             {isFutureEvent ? (
@@ -668,7 +663,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                             </Tag>
                             {event.sourceEvidence.corroborated ? (
                               <Tag color="success">
-                                {t("pages.events.fields.corroborated", { defaultValue: "Corroborated" })}
+                                {t("pages.events.fields.corroborated")}
                               </Tag>
                             ) : null}
                             {language ? <Tag color="blue">{language}</Tag> : null}

@@ -89,9 +89,7 @@ export function SearchTelemetryContent() {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : t("admin.searchTelemetry.errors.loadFailed", {
-              defaultValue: "Failed to load search telemetry.",
-            }),
+          : t("admin.searchTelemetry.errors.loadFailed"),
       );
     } finally {
       setLoading(false);
@@ -125,9 +123,7 @@ export function SearchTelemetryContent() {
       series: [
         {
           type: "line",
-          name: t("admin.searchTelemetry.chart.total", {
-            defaultValue: "Total events",
-          }),
+          name: t("admin.searchTelemetry.chart.total"),
           smooth: true,
           lineStyle: { width: 3, color: chartTheme.colors.primary },
           itemStyle: { color: chartTheme.colors.primary },
@@ -136,9 +132,7 @@ export function SearchTelemetryContent() {
         },
         {
           type: "line",
-          name: t("admin.searchTelemetry.chart.loadMore", {
-            defaultValue: "Load more",
-          }),
+          name: t("admin.searchTelemetry.chart.loadMore"),
           smooth: true,
           lineStyle: { width: 2, color: chartTheme.colors.accent },
           itemStyle: { color: chartTheme.colors.accent },
@@ -183,12 +177,12 @@ export function SearchTelemetryContent() {
 
   const eventColumns: ColumnsType<{ key: string; count: number }> = [
     {
-      title: t("admin.searchTelemetry.columns.event", { defaultValue: "Event" }),
+      title: t("admin.searchTelemetry.columns.event"),
       dataIndex: "key",
       key: "key",
     },
     {
-      title: t("admin.searchTelemetry.columns.count", { defaultValue: "Count" }),
+      title: t("admin.searchTelemetry.columns.count"),
       dataIndex: "count",
       key: "count",
     },
@@ -196,14 +190,12 @@ export function SearchTelemetryContent() {
 
   const pairColumns: ColumnsType<{ key: string; count: number }> = [
     {
-      title: t("admin.searchTelemetry.columns.surface", {
-        defaultValue: "Surface",
-      }),
+      title: t("admin.searchTelemetry.columns.surface"),
       dataIndex: "key",
       key: "key",
     },
     {
-      title: t("admin.searchTelemetry.columns.count", { defaultValue: "Count" }),
+      title: t("admin.searchTelemetry.columns.count"),
       dataIndex: "count",
       key: "count",
     },
@@ -218,9 +210,7 @@ export function SearchTelemetryContent() {
       <Alert
         type="warning"
         showIcon
-        message={t("admin.searchTelemetry.permissions", {
-          defaultValue: "Search telemetry is restricted to administrators.",
-        })}
+        message={t("admin.searchTelemetry.permissions")}
       />
     );
   }
@@ -231,15 +221,10 @@ export function SearchTelemetryContent() {
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <div>
             <Typography.Title level={4} style={{ marginBottom: 8 }}>
-              {t("admin.searchTelemetry.title", {
-                defaultValue: "Search Telemetry",
-              })}
+              {t("admin.searchTelemetry.title")}
             </Typography.Title>
             <Typography.Text type="secondary">
-              {t("admin.searchTelemetry.description", {
-                defaultValue:
-                  "Inspect archive search submissions, short-query friction, and load-more usage over time.",
-              })}
+              {t("admin.searchTelemetry.description")}
             </Typography.Text>
           </div>
 
@@ -266,10 +251,7 @@ export function SearchTelemetryContent() {
           <Alert
             type="info"
             showIcon
-            message={t("admin.searchTelemetry.filters.surfaceUnavailable", {
-              defaultValue:
-                "Surface filtering is temporarily unavailable because the stored telemetry only includes aggregate daily event counters.",
-            })}
+            message={t("admin.searchTelemetry.filters.surfaceUnavailable")}
           />
 
           {errorMessage ? (
@@ -280,9 +262,7 @@ export function SearchTelemetryContent() {
             <Col xs={24} md={8}>
               <Card>
                 <Statistic
-                  title={t("admin.searchTelemetry.metrics.totalEvents", {
-                    defaultValue: "Total events",
-                  })}
+                  title={t("admin.searchTelemetry.metrics.totalEvents")}
                   value={summary.totals.totalEvents}
                   loading={loading}
                 />
@@ -291,9 +271,7 @@ export function SearchTelemetryContent() {
             <Col xs={24} md={8}>
               <Card>
                 <Statistic
-                  title={t("admin.searchTelemetry.metrics.activeDays", {
-                    defaultValue: "Tracked days",
-                  })}
+                  title={t("admin.searchTelemetry.metrics.activeDays")}
                   value={summary.daily.length}
                   loading={loading}
                 />
@@ -302,9 +280,7 @@ export function SearchTelemetryContent() {
             <Col xs={24} md={8}>
               <Card>
                 <Statistic
-                  title={t("admin.searchTelemetry.metrics.averageDaily", {
-                    defaultValue: "Avg events / day",
-                  })}
+                  title={t("admin.searchTelemetry.metrics.averageDaily")}
                   value={
                     summary.daily.length > 0
                       ? (summary.totals.totalEvents / summary.daily.length).toFixed(1)
@@ -320,9 +296,7 @@ export function SearchTelemetryContent() {
 
       <Card
         className="content-card"
-        title={t("admin.searchTelemetry.chart.title", {
-          defaultValue: "Daily trend",
-        })}
+        title={t("admin.searchTelemetry.chart.title")}
       >
         {dailyTrendOption ? (
           <DashboardChart
@@ -334,9 +308,7 @@ export function SearchTelemetryContent() {
           <Alert
             type="info"
             showIcon
-            message={t("admin.searchTelemetry.chart.empty", {
-              defaultValue: "No daily telemetry rows for the selected range.",
-            })}
+            message={t("admin.searchTelemetry.chart.empty")}
           />
         )}
       </Card>
@@ -345,9 +317,7 @@ export function SearchTelemetryContent() {
         <Col xs={24} xl={12}>
           <Card
             className="content-card"
-            title={t("admin.searchTelemetry.tables.events", {
-              defaultValue: "Event totals",
-            })}
+            title={t("admin.searchTelemetry.tables.events")}
           >
             <Table
               size="small"
@@ -362,9 +332,7 @@ export function SearchTelemetryContent() {
         <Col xs={24} xl={12}>
           <Card
             className="content-card"
-            title={t("admin.searchTelemetry.tables.surfaces", {
-              defaultValue: "Surface totals",
-            })}
+            title={t("admin.searchTelemetry.tables.surfaces")}
           >
             <Table
               size="small"
@@ -379,25 +347,19 @@ export function SearchTelemetryContent() {
         <Col xs={24} xl={12}>
           <Card
             className="content-card"
-            title={t("admin.searchTelemetry.tables.queryLength", {
-              defaultValue: "Query length buckets",
-            })}
+            title={t("admin.searchTelemetry.tables.queryLength")}
           >
             <Table
               size="small"
               pagination={false}
               columns={[
                 {
-                  title: t("admin.searchTelemetry.columns.bucket", {
-                    defaultValue: "Bucket",
-                  }),
+                  title: t("admin.searchTelemetry.columns.bucket"),
                   dataIndex: "bucket",
                   key: "bucket",
                 },
                 {
-                  title: t("admin.searchTelemetry.columns.count", {
-                    defaultValue: "Count",
-                  }),
+                  title: t("admin.searchTelemetry.columns.count"),
                   dataIndex: "count",
                   key: "count",
                 },
@@ -411,25 +373,19 @@ export function SearchTelemetryContent() {
         <Col xs={24} xl={12}>
           <Card
             className="content-card"
-            title={t("admin.searchTelemetry.tables.verticals", {
-              defaultValue: "Load-more verticals",
-            })}
+            title={t("admin.searchTelemetry.tables.verticals")}
           >
             <Table
               size="small"
               pagination={false}
               columns={[
                 {
-                  title: t("admin.searchTelemetry.columns.vertical", {
-                    defaultValue: "Vertical",
-                  }),
+                  title: t("admin.searchTelemetry.columns.vertical"),
                   dataIndex: "vertical",
                   key: "vertical",
                 },
                 {
-                  title: t("admin.searchTelemetry.columns.count", {
-                    defaultValue: "Count",
-                  }),
+                  title: t("admin.searchTelemetry.columns.count"),
                   dataIndex: "count",
                   key: "count",
                 },

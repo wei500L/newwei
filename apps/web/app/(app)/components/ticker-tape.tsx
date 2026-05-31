@@ -77,10 +77,10 @@ export function TickerTape() {
     };
 
     const resolved = [
-      buildItem(t("dashboard.hero.marketSentiment", { defaultValue: "Market Sentiment" }), data.market),
-      buildItem(t("dashboard.hero.globalConflictIndex", { defaultValue: "Conflict Index" }), data.conflict),
-      buildItem(t("dashboard.hero.resourceScarcity", { defaultValue: "Resource Scarcity" }), data.resource),
-      buildItem(t("dashboard.hero.supplyChain", { defaultValue: "Supply Stability" }), data.supply)
+      buildItem(t("dashboard.hero.marketSentiment"), data.market),
+      buildItem(t("dashboard.hero.globalConflictIndex"), data.conflict),
+      buildItem(t("dashboard.hero.resourceScarcity"), data.resource),
+      buildItem(t("dashboard.hero.supplyChain"), data.supply)
     ];
     return resolved.filter(
       (item): item is { label: string; value: number; trend: number; unit: string | null } => Boolean(item)
@@ -90,18 +90,16 @@ export function TickerTape() {
   if (items.length === 0) {
     const message =
       accessState.kind === "forbidden"
-        ? t("dashboard.ticker.permissionRequired", {
-            defaultValue: "Economic metrics require economicdata.read",
-          })
+        ? t("dashboard.ticker.permissionRequired")
         : loading
-          ? t("dashboard.ticker.loading", { defaultValue: "Loading metrics..." })
+          ? t("dashboard.ticker.loading")
           : error
-            ? t("dashboard.ticker.unavailable", { defaultValue: "Metrics unavailable" })
-            : t("dashboard.ticker.empty", { defaultValue: "No metrics yet" });
+            ? t("dashboard.ticker.unavailable")
+            : t("dashboard.ticker.empty");
     const errorMessage = error ? (error instanceof Error ? error.message : String(error)) : null;
     const titleParts = [`Range ${range}`, windowLabel];
     if (accessState.kind === "forbidden") {
-      titleParts.unshift(t("common.accessDenied", { defaultValue: "Access denied" }));
+      titleParts.unshift(t("common.accessDenied"));
     } else if (hasData) {
       titleParts.unshift(bucketTitle);
     }

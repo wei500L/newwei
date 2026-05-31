@@ -13,7 +13,7 @@ describe("vector service diagnostics wiring", () => {
     const source = read("components/settings/vector-service-settings-panel.tsx");
 
     expect(source).toContain("system-settings/vector-service/diagnostics");
-    expect(source).toContain("Runtime diagnostics");
-    expect(source).toContain("Consecutive failures");
+    expect(source).toContain("systemSettings.vectorService.diagnostics.title");
+    expect(source).toContain("systemSettings.vectorService.diagnostics.labels.consecutiveFailures");
   });
 });

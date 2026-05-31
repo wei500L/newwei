@@ -149,7 +149,7 @@ export default function EconomicShortPage() {
         const formattedScore =
           typeof score === "number"
             ? score
-            : t("common.notAvailable", { defaultValue: "N/A" });
+            : t("common.notAvailable");
         return t("dashboard.economicShort.heatmap.tooltip", {
           defaultValue: heatmapTooltipDefault,
           period: bucket.label,

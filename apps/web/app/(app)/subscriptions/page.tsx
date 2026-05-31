@@ -502,49 +502,41 @@ export default function SubscriptionsPage() {
     const evidenceTags = [
       typeof event?.metricValue === "number"
         ? t("notifications.evidence.value", {
-            defaultValue: "Value: {{value}}",
             value: formatEvidenceNumber(event.metricValue),
           })
         : null,
       typeof event?.changePercent === "number"
         ? t("notifications.evidence.change", {
-            defaultValue: "Change: {{value}}",
             value: `${formatEvidenceNumber(event.changePercent)}%`,
           })
         : null,
       source
         ? t("notifications.evidence.source", {
-            defaultValue: "Source: {{value}}",
             value: source,
           })
         : null,
       itemName
         ? t("notifications.evidence.item", {
-            defaultValue: "Item: {{value}}",
             value: itemName,
           })
         : null,
       country
         ? t("notifications.evidence.country", {
-            defaultValue: "Country: {{value}}",
             value: country,
           })
         : null,
       resource
         ? t("notifications.evidence.resource", {
-            defaultValue: "Resource: {{value}}",
             value: resource,
           })
         : null,
       action
         ? t("notifications.evidence.action", {
-            defaultValue: "Action: {{value}}",
             value: action,
           })
         : null,
       statusesValue
         ? t("notifications.evidence.statuses", {
-            defaultValue: "Statuses: {{value}}",
             value: statusesValue,
           })
         : null,
@@ -555,7 +547,7 @@ export default function SubscriptionsPage() {
       event?.changeWindowMin ?? toNumber(context?.windowMinutes);
     const windowLabel =
       windowMinutes !== undefined && windowMinutes !== null
-        ? t("notifications.evidence.windowMinutes", "{{count}} min", {
+        ? t("notifications.evidence.windowMinutes", {
             count: Math.trunc(windowMinutes),
           })
         : t("common.notAvailable");
@@ -578,7 +570,6 @@ export default function SubscriptionsPage() {
       <Space direction="vertical" size={2}>
         <Typography.Text type="secondary">
           {t("alerts.events.triggerReason", {
-            defaultValue: "Trigger {{reason}}",
             reason: fallbackTriggerReason,
           })}
         </Typography.Text>
@@ -592,19 +583,15 @@ export default function SubscriptionsPage() {
           </Space>
         ) : (
           <Typography.Text type="secondary">
-            {t("alerts.events.evidenceEmpty", {
-              defaultValue: "No evidence fields.",
-            })}
+            {t("alerts.events.evidenceEmpty")}
           </Typography.Text>
         )}
         <Typography.Text type="secondary">
           {t("alerts.events.window", {
-            defaultValue: "Window {{window}}",
             window: windowLabel,
           })}
           {" · "}
           {t("alerts.rules.threshold", {
-            defaultValue: "Threshold {{threshold}}",
             threshold: thresholdSummary,
           })}
         </Typography.Text>
@@ -657,16 +644,12 @@ export default function SubscriptionsPage() {
           },
         });
         message.success(
-          t("subscriptions.channelCreated", {
-            defaultValue: "Channel created",
-          }),
+          t("subscriptions.channelCreated"),
         );
       } else {
         if (!values.id) {
           message.error(
-            t("subscriptions.channelMissingId", {
-              defaultValue: "Channel id is missing. Reopen the dialog and try again.",
-            }),
+            t("subscriptions.channelMissingId"),
           );
           return;
         }
@@ -682,9 +665,7 @@ export default function SubscriptionsPage() {
           },
         });
         message.success(
-          t("subscriptions.channelUpdated", {
-            defaultValue: "Channel updated",
-          }),
+          t("subscriptions.channelUpdated"),
         );
       }
       closeChannelModal();
@@ -705,9 +686,7 @@ export default function SubscriptionsPage() {
         });
       }
       message.warning(
-        t("subscriptions.channelValidationFailed", {
-          defaultValue: "Fill in the required fields before saving.",
-        }),
+        t("subscriptions.channelValidationFailed"),
       );
     };
 
@@ -715,7 +694,7 @@ export default function SubscriptionsPage() {
     try {
       await deleteChannel({ variables: { channelId } });
       message.success(
-        t("subscriptions.channelDeleted", { defaultValue: "Channel deleted" }),
+        t("subscriptions.channelDeleted"),
       );
       await refetchChannels();
       await refetchRules();
@@ -754,9 +733,7 @@ export default function SubscriptionsPage() {
     const metricSlug = activeRule.metricSlug.trim();
     if (!metricSlug) {
       message.error(
-        t("alerts.config.errors.metricSlugRequired", {
-          defaultValue: "Metric slug is required.",
-        }),
+        t("alerts.config.errors.metricSlugRequired"),
       );
       return;
     }
@@ -813,9 +790,7 @@ export default function SubscriptionsPage() {
         },
       });
       message.success(
-        t("subscriptions.ruleUpdated", {
-          defaultValue: "Rule subscriptions updated",
-        }),
+        t("subscriptions.ruleUpdated"),
       );
       setRuleModalOpen(false);
       await Promise.all([
@@ -848,9 +823,7 @@ export default function SubscriptionsPage() {
       title={
         <Space size="middle" align="center">
           <Typography.Text strong>
-            {t("subscriptions.rulesTitle", {
-              defaultValue: "Rule Subscriptions",
-            })}
+            {t("subscriptions.rulesTitle")}
           </Typography.Text>
         </Space>
       }
@@ -872,11 +845,8 @@ export default function SubscriptionsPage() {
       {authenticated && !canReadAlerts ? (
         <ChartEmptyState
           variant="permission"
-          title={t("common.accessDenied", { defaultValue: "Access denied" })}
-          description={t("common.accessDeniedDescription", {
-            defaultValue:
-              "You don't have permission to view this data. Contact an administrator if you need access.",
-          })}
+          title={t("common.accessDenied")}
+          description={t("common.accessDeniedDescription")}
         />
       ) : isRulesInitialLoading || isEventsInitialLoading ? (
         <Skeleton active paragraph={{ rows: 4 }} />
@@ -884,9 +854,7 @@ export default function SubscriptionsPage() {
         <List
           dataSource={rules}
           locale={{
-            emptyText: t("subscriptions.rulesEmpty", {
-              defaultValue: "No alert rules configured.",
-            }),
+            emptyText: t("subscriptions.rulesEmpty"),
           }}
           renderItem={(rule) => {
             const ruleMetadata = toRecord(rule.metadata);
@@ -917,7 +885,6 @@ export default function SubscriptionsPage() {
                       {isRuleMuted ? (
                         <Tag color="gold">
                           {t("subscriptions.mutedUntil", {
-                            defaultValue: "Muted until {{time}}",
                             time: ruleMuteUntil?.format("YYYY-MM-DD HH:mm"),
                           })}
                         </Tag>
@@ -928,7 +895,6 @@ export default function SubscriptionsPage() {
                     <Space direction="vertical" size={2}>
                       <Typography.Text type="secondary">
                         {t("alerts.rules.threshold", {
-                          defaultValue: "Threshold {{threshold}}",
                           threshold: buildThresholdSummary(
                             rule.operator,
                             rule.thresholdValue ?? undefined,
@@ -940,14 +906,12 @@ export default function SubscriptionsPage() {
                       </Typography.Text>
                       <Typography.Text type="secondary">
                         {t("alerts.center.detail.window", {
-                          defaultValue: "Window {{minutes}} min",
                           minutes:
                             rule.changeWindowMin ?? t("common.notAvailable"),
                         })}
                       </Typography.Text>
                       <Typography.Text type="secondary">
                         {t("subscriptions.ruleCooldown", {
-                          defaultValue: "Cooldown {{seconds}}s",
                           seconds: rule.cooldownSeconds,
                         })}
                       </Typography.Text>
@@ -958,16 +922,12 @@ export default function SubscriptionsPage() {
                           ))
                         ) : (
                           <Typography.Text type="secondary">
-                            {t("subscriptions.channelsEmpty", {
-                              defaultValue: "No alert channels configured.",
-                            })}
+                            {t("subscriptions.channelsEmpty")}
                           </Typography.Text>
                         )}
                       </Space>
                       <Typography.Text type="secondary">
                         {t("subscriptions.ruleNotifications", {
-                          defaultValue:
-                            "Notifications {{count}} · Latest {{time}}",
                           count: ruleNotifications.length,
                           time: latestNotificationTime,
                         })}
@@ -983,7 +943,7 @@ export default function SubscriptionsPage() {
                       setRuleModalOpen(true);
                     }}
                   >
-                    {t("subscriptions.manageRule", { defaultValue: "Manage" })}
+                    {t("subscriptions.manageRule")}
                   </Button>
                 ) : null}
               </List.Item>
@@ -1000,9 +960,7 @@ export default function SubscriptionsPage() {
       title={
         <Space size="middle" align="center">
           <Typography.Text strong>
-            {t("subscriptions.channelsTitle", {
-              defaultValue: "Alert Channels",
-            })}
+            {t("subscriptions.channelsTitle")}
           </Typography.Text>
         </Space>
       }
@@ -1029,7 +987,7 @@ export default function SubscriptionsPage() {
                 setChannelModalOpen(true);
               }}
             >
-              {t("subscriptions.addChannel", { defaultValue: "Add channel" })}
+              {t("subscriptions.addChannel")}
             </Button>
           ) : null}
         </Space>
@@ -1038,11 +996,8 @@ export default function SubscriptionsPage() {
       {authenticated && !canReadAlerts ? (
         <ChartEmptyState
           variant="permission"
-          title={t("common.accessDenied", { defaultValue: "Access denied" })}
-          description={t("common.accessDeniedDescription", {
-            defaultValue:
-              "You don't have permission to view this data. Contact an administrator if you need access.",
-          })}
+          title={t("common.accessDenied")}
+          description={t("common.accessDeniedDescription")}
         />
       ) : isChannelsInitialLoading ? (
         <Skeleton active paragraph={{ rows: 3 }} />
@@ -1050,9 +1005,7 @@ export default function SubscriptionsPage() {
         <List
           dataSource={channels}
           locale={{
-            emptyText: t("subscriptions.channelsEmpty", {
-              defaultValue: "No alert channels configured.",
-            }),
+            emptyText: t("subscriptions.channelsEmpty"),
           }}
           renderItem={(channel) => (
             <List.Item
@@ -1080,9 +1033,7 @@ export default function SubscriptionsPage() {
                       </Button>,
                       <Popconfirm
                         key="delete"
-                        title={t("subscriptions.deleteChannelConfirm", {
-                          defaultValue: "Delete this channel?",
-                        })}
+                        title={t("subscriptions.deleteChannelConfirm")}
                         onConfirm={() => void handleDeleteChannel(channel.id)}
                       >
                         <Button size="small" danger loading={deletingChannel}>
@@ -1112,12 +1063,9 @@ export default function SubscriptionsPage() {
                   const intervalSeconds = extractNotifyIntervalSeconds(config);
                   const intervalLabel = intervalSeconds
                     ? t("subscriptions.notifyEvery", {
-                        defaultValue: "Every {{minutes}} min",
                         minutes: Math.max(1, Math.round(intervalSeconds / 60)),
                       })
-                    : t("subscriptions.notifyImmediate", {
-                        defaultValue: "Immediate",
-                      });
+                    : t("subscriptions.notifyImmediate");
                   return (
                     <Space direction="vertical" size={0}>
                       <Typography.Text type="secondary">
@@ -1125,12 +1073,10 @@ export default function SubscriptionsPage() {
                       </Typography.Text>
                       <Typography.Text type="secondary">
                         {t("subscriptions.channelFrequency", {
-                          defaultValue: "Frequency: {{frequency}}",
                           frequency: intervalLabel,
                         })}
                         {isMuted
                           ? ` · ${t("subscriptions.mutedUntil", {
-                              defaultValue: "Muted until {{time}}",
                               time: muteUntil?.format("YYYY-MM-DD HH:mm"),
                             })}`
                           : ""}
@@ -1152,9 +1098,7 @@ export default function SubscriptionsPage() {
       title={
         <Space size="middle" align="center">
           <Typography.Text strong>
-            {t("subscriptions.notificationsTitle", {
-              defaultValue: "Notifications",
-            })}
+            {t("subscriptions.notificationsTitle")}
           </Typography.Text>
           <Badge count={unreadCount} size="small" />
         </Space>
@@ -1282,13 +1226,10 @@ export default function SubscriptionsPage() {
     <div className="flex flex-col gap-6">
       <Space direction="vertical" size={2}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("subscriptions.title", { defaultValue: "My Subscriptions" })}
+          {t("subscriptions.title")}
         </Typography.Title>
         <Typography.Text type="secondary">
-          {t("subscriptions.subtitle", {
-            defaultValue:
-              "Review content subscriptions, alert rules, channels, and notification history in one place.",
-          })}
+          {t("subscriptions.subtitle")}
         </Typography.Text>
       </Space>
 
@@ -1298,9 +1239,7 @@ export default function SubscriptionsPage() {
         items={[
           {
             key: "content",
-            label: t("subscriptions.content.tabTitle", {
-              defaultValue: "Content subscriptions",
-            }),
+            label: t("subscriptions.content.tabTitle"),
             children: (
               <ContentSubscriptionsTab
                 accessToken={session?.accessToken}
@@ -1310,23 +1249,17 @@ export default function SubscriptionsPage() {
           },
           {
             key: "rules",
-            label: t("subscriptions.rulesTitle", {
-              defaultValue: "Rule Subscriptions",
-            }),
+            label: t("subscriptions.rulesTitle"),
             children: rulesTabContent,
           },
           {
             key: "channels",
-            label: t("subscriptions.channelsTitle", {
-              defaultValue: "Alert Channels",
-            }),
+            label: t("subscriptions.channelsTitle"),
             children: channelsTabContent,
           },
           {
             key: "notifications",
-            label: t("subscriptions.notificationsTitle", {
-              defaultValue: "Notifications",
-            }),
+            label: t("subscriptions.notificationsTitle"),
             children: notificationsTabContent,
           },
         ]}
@@ -1335,13 +1268,13 @@ export default function SubscriptionsPage() {
       <Modal
         title={
           channelModalMode === "create"
-            ? t("subscriptions.addChannel", { defaultValue: "Add channel" })
-            : t("subscriptions.editChannel", { defaultValue: "Edit channel" })
+            ? t("subscriptions.addChannel")
+            : t("subscriptions.editChannel")
         }
         open={channelModalOpen}
         onCancel={closeChannelModal}
         okText={t("common.save")}
-        cancelText={t("common.cancel", { defaultValue: "Cancel" })}
+        cancelText={t("common.cancel")}
         okButtonProps={{
           htmlType: "submit",
           form: CHANNEL_MODAL_FORM_ID,
@@ -1361,28 +1294,24 @@ export default function SubscriptionsPage() {
             <Input type="hidden" />
           </Form.Item>
           <Form.Item
-            label={t("alerts.channels.fields.name", { defaultValue: "Name" })}
+            label={t("alerts.channels.fields.name")}
             name="name"
             rules={[
               {
                 required: true,
-                message: t("alerts.channels.validation.nameRequired", {
-                  defaultValue: "Enter a channel name.",
-                }),
+                message: t("alerts.channels.validation.nameRequired"),
               },
             ]}
           >
             <Input autoComplete="off" />
           </Form.Item>
           <Form.Item
-            label={t("alerts.channels.fields.type", { defaultValue: "Type" })}
+            label={t("alerts.channels.fields.type")}
             name="type"
             rules={[
               {
                 required: true,
-                message: t("alerts.channels.validation.typeRequired", {
-                  defaultValue: "Select a channel type.",
-                }),
+                message: t("alerts.channels.validation.typeRequired"),
               },
             ]}
           >
@@ -1390,97 +1319,76 @@ export default function SubscriptionsPage() {
               disabled={channelModalMode === "edit"}
               options={[
                 {
-                  label: t("alerts.channels.types.webhook", {
-                    defaultValue: "Webhook",
-                  }),
+                  label: t("alerts.channels.types.webhook"),
                   value: "webhook",
                 },
                 {
-                  label: t("alerts.channels.types.email", {
-                    defaultValue: "Email",
-                  }),
+                  label: t("alerts.channels.types.email"),
                   value: "email",
                 },
               ]}
             />
           </Form.Item>
           <Form.Item
-            label={t("alerts.channels.fields.target", {
-              defaultValue: "Target",
-            })}
+            label={t("alerts.channels.fields.target")}
             name="target"
             rules={[
               {
                 required: true,
-                message: t("alerts.channels.validation.targetRequired", {
-                  defaultValue: "Enter a delivery target.",
-                }),
+                message: t("alerts.channels.validation.targetRequired"),
               },
             ]}
           >
             <Input autoComplete="off" />
           </Form.Item>
           <Form.Item
-            label={t("subscriptions.channelActive", {
-              defaultValue: "Enabled",
-            })}
+            label={t("subscriptions.channelActive")}
             name="isActive"
             valuePropName="checked"
           >
             <Switch />
           </Form.Item>
           <Form.Item
-            label={t("subscriptions.channelMuteUntil", {
-              defaultValue: "Mute until",
-            })}
+            label={t("subscriptions.channelMuteUntil")}
             name="muteUntil"
           >
             <DatePicker showTime allowClear style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item
-            label={t("subscriptions.channelNotifyInterval", {
-              defaultValue: "Notification frequency",
-            })}
+            label={t("subscriptions.channelNotifyInterval")}
             name="notifyIntervalSeconds"
           >
             <Select
               allowClear
-              placeholder={t("subscriptions.notifyImmediate", {
-                defaultValue: "Immediate",
-              })}
+              placeholder={t("subscriptions.notifyImmediate")}
               options={[
                 {
                   value: 300,
                   label: t("subscriptions.notifyEvery", {
-                    defaultValue: "Every {{minutes}} min",
                     minutes: 5,
                   }),
                 },
                 {
                   value: 900,
                   label: t("subscriptions.notifyEvery", {
-                    defaultValue: "Every {{minutes}} min",
                     minutes: 15,
                   }),
                 },
                 {
                   value: 3600,
                   label: t("subscriptions.notifyEvery", {
-                    defaultValue: "Every {{minutes}} min",
                     minutes: 60,
                   }),
                 },
                 {
                   value: 21600,
                   label: t("subscriptions.notifyEvery", {
-                    defaultValue: "Every {{minutes}} min",
                     minutes: 360,
                   }),
                 },
                 {
                   value: 86400,
                   label: t("subscriptions.notifyEvery", {
-                    defaultValue: "Every {{minutes}} min",
                     minutes: 1440,
                   }),
                 },
@@ -1497,7 +1405,7 @@ export default function SubscriptionsPage() {
         component={false}
       >
         <Modal
-          title={t("subscriptions.manageRule", { defaultValue: "Manage rule" })}
+          title={t("subscriptions.manageRule")}
           open={ruleModalOpen}
           onCancel={() => setRuleModalOpen(false)}
           okText={t("common.save")}
@@ -1506,16 +1414,12 @@ export default function SubscriptionsPage() {
           destroyOnHidden
         >
           <Form.Item
-            label={t("alerts.config.fields.channels", {
-              defaultValue: "Channels",
-            })}
+            label={t("alerts.config.fields.channels")}
             name="channelIds"
           >
             <Select
               mode="multiple"
-              placeholder={t("alerts.config.fields.channelsPlaceholder", {
-                defaultValue: "Select channels",
-              })}
+              placeholder={t("alerts.config.fields.channelsPlaceholder")}
               options={channels.map((channel) => ({
                 label: `${channel.name}${channel.isActive ? "" : ` (${t("common.disabled")})`}`,
                 value: channel.id,
@@ -1523,17 +1427,13 @@ export default function SubscriptionsPage() {
             />
           </Form.Item>
           <Form.Item
-            label={t("alerts.config.fields.muteUntil", {
-              defaultValue: "Mute until",
-            })}
+            label={t("alerts.config.fields.muteUntil")}
             name="muteUntil"
           >
             <DatePicker showTime allowClear style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item
-            label={t("alerts.config.fields.notifyAllMembers", {
-              defaultValue: "Notify all members",
-            })}
+            label={t("alerts.config.fields.notifyAllMembers")}
             name="notifyAllMembers"
             valuePropName="checked"
           >

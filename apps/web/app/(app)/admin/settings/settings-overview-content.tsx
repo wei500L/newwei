@@ -33,9 +33,7 @@ export function AdminSettingsOverviewContent() {
     return (
       <Card
         className="content-card"
-        title={t('adminSettings.workspace.title', {
-          defaultValue: 'Settings Workspace',
-        })}
+        title={t('adminSettings.workspace.title')}
       >
         <Alert
           type="warning"
@@ -51,24 +49,17 @@ export function AdminSettingsOverviewContent() {
       <Card className="content-card">
         <Space direction="vertical" size={8}>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            {t('adminSettings.workspace.title', {
-              defaultValue: 'Settings Workspace',
-            })}
+            {t('adminSettings.workspace.title')}
           </Typography.Title>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            {t('adminSettings.workspace.summary', {
-              defaultValue:
-                'Administrative settings are grouped by domain so high-risk controls are easier to find and operate.',
-            })}
+            {t('adminSettings.workspace.summary')}
           </Typography.Paragraph>
         </Space>
       </Card>
 
       <div>
         <Typography.Title level={5}>
-          {t('adminSettings.workspace.quickLinks', {
-            defaultValue: 'Quick links',
-          })}
+          {t('adminSettings.workspace.quickLinks')}
         </Typography.Title>
         {featuredLinks.length === 0 ? (
           <Card className="content-card">
@@ -87,9 +78,7 @@ export function AdminSettingsOverviewContent() {
                   <Card className="content-card h-full">
                     <Space direction="vertical" size={10} className="w-full">
                       <Tag>
-                        {t('adminSettings.workspace.quickLinkTag', {
-                          defaultValue: 'Shortcut',
-                        })}
+                        {t('adminSettings.workspace.quickLinkTag')}
                       </Tag>
                       <div>
                         <Typography.Title level={5} style={{ marginBottom: 6 }}>
@@ -104,9 +93,7 @@ export function AdminSettingsOverviewContent() {
                         </Typography.Paragraph>
                       </div>
                       <Button type="link" className="!px-0" href={href}>
-                        {t('adminSettings.workspace.open', {
-                          defaultValue: 'Open',
-                        })}
+                        {t('adminSettings.workspace.open')}
                         <ArrowRightOutlined />
                       </Button>
                     </Space>
@@ -120,9 +107,7 @@ export function AdminSettingsOverviewContent() {
 
       <div>
         <Typography.Title level={5}>
-          {t('adminSettings.workspace.domains', {
-            defaultValue: 'Settings domains',
-          })}
+          {t('adminSettings.workspace.domains')}
         </Typography.Title>
         <Row gutter={[16, 16]}>
           {pageCards.map(({ page, panels }) => {
@@ -153,9 +138,7 @@ export function AdminSettingsOverviewContent() {
                       ))}
                     </div>
                     <Button type="primary" href={href}>
-                      {t('adminSettings.workspace.enterDomain', {
-                        defaultValue: 'Open domain',
-                      })}
+                      {t('adminSettings.workspace.enterDomain')}
                     </Button>
                   </Space>
                 </Card>

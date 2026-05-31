@@ -163,15 +163,11 @@ export const buildPipelineOutboxTypeOptions = (
 ): { value: PipelineOutboxType; label: string }[] => [
   {
     value: "processed_item",
-    label: t("alerts.config.pipeline.outboxTypes.processedItem", {
-      defaultValue: "Processed item delivery",
-    }),
+    label: t("alerts.config.pipeline.outboxTypes.processedItem"),
   },
   {
     value: "cleanup_crawl_results",
-    label: t("alerts.config.pipeline.outboxTypes.cleanupCrawlResults", {
-      defaultValue: "Crawl cleanup",
-    }),
+    label: t("alerts.config.pipeline.outboxTypes.cleanupCrawlResults"),
   },
 ];
 

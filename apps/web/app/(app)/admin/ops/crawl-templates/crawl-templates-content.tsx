@@ -188,9 +188,7 @@ export function CrawlTemplatesContent() {
     } catch (error) {
       captureClientError("Failed to load crawl templates", error);
       messageApi.error(
-        t("crawlTemplates.errors.loadFailed", {
-          defaultValue: "Failed to load crawl templates.",
-        }),
+        t("crawlTemplates.errors.loadFailed"),
       );
     } finally {
       setLoading(false);
@@ -462,12 +460,8 @@ export function CrawlTemplatesContent() {
       }
       messageApi.success(
         currentEditing
-          ? t("crawlTemplates.messages.updated", {
-              defaultValue: "Template updated.",
-            })
-          : t("crawlTemplates.messages.created", {
-              defaultValue: "Template created.",
-            }),
+          ? t("crawlTemplates.messages.updated")
+          : t("crawlTemplates.messages.created"),
       );
       setModalState({ open: false, editing: null, initialValues: {} });
       await loadTemplates();
@@ -476,9 +470,7 @@ export function CrawlTemplatesContent() {
       messageApi.error(
         error instanceof Error
           ? error.message
-          : t("crawlTemplates.errors.saveFailed", {
-              defaultValue: "Failed to save crawl template.",
-            }),
+          : t("crawlTemplates.errors.saveFailed"),
       );
     } finally {
       setSaving(false);
@@ -487,28 +479,20 @@ export function CrawlTemplatesContent() {
 
   const handleDelete = (template: CrawlTemplateRecord) => {
     Modal.confirm({
-      title: t("crawlTemplates.delete.title", {
-        defaultValue: "Delete template?",
-      }),
-      content: t("crawlTemplates.delete.description", {
-        defaultValue: "News sources using this template will stop applying it.",
-      }),
+      title: t("crawlTemplates.delete.title"),
+      content: t("crawlTemplates.delete.description"),
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
           await apiClient.delete(`admin/crawl-templates/${template.id}`);
           await loadTemplates();
           messageApi.success(
-            t("crawlTemplates.messages.deleted", {
-              defaultValue: "Template deleted.",
-            }),
+            t("crawlTemplates.messages.deleted"),
           );
         } catch (error) {
           captureClientError("Failed to delete crawl template", error);
           messageApi.error(
-            t("crawlTemplates.errors.deleteFailed", {
-              defaultValue: "Failed to delete template.",
-            }),
+            t("crawlTemplates.errors.deleteFailed"),
           );
         }
       },
@@ -521,7 +505,7 @@ export function CrawlTemplatesContent() {
         style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
       >
         <Typography.Text type="secondary">
-          {t("common.loading", { defaultValue: "Loading..." })}
+          {t("common.loading")}
         </Typography.Text>
       </div>
     );
@@ -531,7 +515,7 @@ export function CrawlTemplatesContent() {
     return (
       <Card
         className="content-card"
-        title={t("crawlTemplates.title", { defaultValue: "Crawl Templates" })}
+        title={t("crawlTemplates.title")}
       >
         <Alert
           type="warning"
@@ -565,17 +549,13 @@ export function CrawlTemplatesContent() {
     if (options.antiBotMode === "enabled") {
       tags.push(
         <Tag key="antiBotMode" color="volcano">
-          {t("crawlTemplates.fields.antiBotModeEnabled", {
-            defaultValue: "Anti-bot retry: Enabled",
-          })}
+          {t("crawlTemplates.fields.antiBotModeEnabled")}
         </Tag>,
       );
     } else if (options.antiBotMode === "disabled") {
       tags.push(
         <Tag key="antiBotMode" color="default">
-          {t("crawlTemplates.fields.antiBotModeDisabled", {
-            defaultValue: "Anti-bot retry: Disabled",
-          })}
+          {t("crawlTemplates.fields.antiBotModeDisabled")}
         </Tag>,
       );
     }
@@ -660,14 +640,14 @@ export function CrawlTemplatesContent() {
       </Space>
     ) : (
       <Typography.Text type="secondary">
-        {t("crawlTemplates.columns.strategyEmpty", { defaultValue: "Default" })}
+        {t("crawlTemplates.columns.strategyEmpty")}
       </Typography.Text>
     );
   };
 
   const columns: ColumnsType<CrawlTemplateRecord> = [
     {
-      title: t("crawlTemplates.columns.name", { defaultValue: "Name" }),
+      title: t("crawlTemplates.columns.name"),
       dataIndex: "name",
       key: "name",
       render: (value: string, record) => (
@@ -685,35 +665,35 @@ export function CrawlTemplatesContent() {
       ),
     },
     {
-      title: t("crawlTemplates.columns.strategy", { defaultValue: "Strategy" }),
+      title: t("crawlTemplates.columns.strategy"),
       key: "strategy",
       render: (_: unknown, record) => renderTemplateStrategy(record),
     },
     {
-      title: t("crawlTemplates.columns.status", { defaultValue: "Status" }),
+      title: t("crawlTemplates.columns.status"),
       dataIndex: "isActive",
       key: "isActive",
       render: (value: boolean) => (
         <Tag color={value ? "green" : "default"}>
           {value
-            ? t("common.enabled", { defaultValue: "Enabled" })
-            : t("common.disabled", { defaultValue: "Disabled" })}
+            ? t("common.enabled")
+            : t("common.disabled")}
         </Tag>
       ),
     },
     {
-      title: t("common.actions", { defaultValue: "Actions" }),
+      title: t("common.actions"),
       key: "actions",
       render: (_, record) => (
         <Space>
           {canManage ? (
             <Button size="small" onClick={() => openEdit(record)}>
-              {t("common.edit", { defaultValue: "Edit" })}
+              {t("common.edit")}
             </Button>
           ) : null}
           {canManage ? (
             <Button size="small" danger onClick={() => handleDelete(record)}>
-              {t("common.delete", { defaultValue: "Delete" })}
+              {t("common.delete")}
             </Button>
           ) : null}
         </Space>
@@ -726,13 +706,11 @@ export function CrawlTemplatesContent() {
       {contextHolder}
       <Card
         className="content-card"
-        title={t("crawlTemplates.title", { defaultValue: "Crawl Templates" })}
+        title={t("crawlTemplates.title")}
         extra={
           canManage ? (
             <Button type="primary" onClick={openCreate}>
-              {t("crawlTemplates.actions.new", {
-                defaultValue: "New template",
-              })}
+              {t("crawlTemplates.actions.new")}
             </Button>
           ) : null
         }
@@ -741,9 +719,7 @@ export function CrawlTemplatesContent() {
           <Input
             id="crawl-templates-search"
             name="crawlTemplatesSearch"
-            placeholder={t("crawlTemplates.searchPlaceholder", {
-              defaultValue: "Search templates",
-            })}
+            placeholder={t("crawlTemplates.searchPlaceholder")}
             allowClear
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -766,10 +742,8 @@ export function CrawlTemplatesContent() {
         open={modalState.open}
         title={
           modalState.editing
-            ? t("crawlTemplates.actions.edit", {
-                defaultValue: "Edit template",
-              })
-            : t("crawlTemplates.actions.new", { defaultValue: "New template" })
+            ? t("crawlTemplates.actions.edit")
+            : t("crawlTemplates.actions.new")
         }
         onCancel={() => {
           setModalState({ open: false, editing: null, initialValues: {} });
@@ -788,153 +762,110 @@ export function CrawlTemplatesContent() {
         >
           <Form.Item
             name="name"
-            label={t("crawlTemplates.fields.name", { defaultValue: "Name" })}
+            label={t("crawlTemplates.fields.name")}
             rules={[{ required: true }]}
           >
             <Input />
           </Form.Item>
           <Form.Item
             name="description"
-            label={t("crawlTemplates.fields.description", {
-              defaultValue: "Description",
-            })}
+            label={t("crawlTemplates.fields.description")}
           >
             <Input />
           </Form.Item>
           <Form.Item
             name="isActive"
-            label={t("crawlTemplates.fields.active", {
-              defaultValue: "Active",
-            })}
+            label={t("crawlTemplates.fields.active")}
             valuePropName="checked"
           >
             <Switch />
           </Form.Item>
 
           <Typography.Title level={5} style={{ marginBottom: 0 }}>
-            {t("crawlTemplates.sections.commonOptions", {
-              defaultValue: "Common Options",
-            })}
+            {t("crawlTemplates.sections.commonOptions")}
           </Typography.Title>
 
           <Alert
             type="warning"
             showIcon
             style={{ marginBottom: 12 }}
-            message={t("crawlTemplates.proxy.disabledTitle", {
-              defaultValue: "Custom upstream proxies are disabled",
-            })}
-            description={t("crawlTemplates.proxy.disabledDescription", {
-              defaultValue:
-                "Do not store proxyUrl or proxyConfig in template crawlOptions. Legacy proxy fields remain visible in JSON and block save until removed.",
-            })}
+            message={t("crawlTemplates.proxy.disabledTitle")}
+            description={t("crawlTemplates.proxy.disabledDescription")}
           />
           <Form.Item
             name="userAgent"
-            label={t("crawlTemplates.fields.userAgent", {
-              defaultValue: "User Agent",
-            })}
+            label={t("crawlTemplates.fields.userAgent")}
           >
             <Input />
           </Form.Item>
           <Form.Item
             name="headlessMode"
-            label={t("crawlTemplates.fields.headless", {
-              defaultValue: "Headless mode",
-            })}
-            tooltip={t("crawlTemplates.fields.headlessHint", {
-              defaultValue:
-                "Headed mode (headless=false) may require Xvfb/DISPLAY in the crawl4ai container; if you see 'cannot open display' errors, switch back to Headless or enable Xvfb in docker-compose.",
-            })}
+            label={t("crawlTemplates.fields.headless")}
+            tooltip={t("crawlTemplates.fields.headlessHint")}
           >
             <Select
               options={[
                 {
                   value: "auto",
-                  label: t("crawlTemplates.headless.auto", {
-                    defaultValue: "Auto",
-                  }),
+                  label: t("crawlTemplates.headless.auto"),
                 },
                 {
                   value: "headless",
-                  label: t("crawlTemplates.headless.headless", {
-                    defaultValue: "Headless",
-                  }),
+                  label: t("crawlTemplates.headless.headless"),
                 },
                 {
                   value: "headed",
-                  label: t("crawlTemplates.headless.headed", {
-                    defaultValue: "Headed (Xvfb)",
-                  }),
+                  label: t("crawlTemplates.headless.headed"),
                 },
               ]}
             />
           </Form.Item>
           <Form.Item
             name="enableStealthMode"
-            label={t("crawlTemplates.fields.stealth", {
-              defaultValue: "Stealth mode",
-            })}
+            label={t("crawlTemplates.fields.stealth")}
             valuePropName="checked"
           >
             <Switch />
           </Form.Item>
           <Form.Item
             name="enableUndetectedBrowser"
-            label={t("crawlTemplates.fields.undetected", {
-              defaultValue: "Undetected browser",
-            })}
+            label={t("crawlTemplates.fields.undetected")}
             valuePropName="checked"
           >
             <Switch />
           </Form.Item>
           <Form.Item
             name="antiBotMode"
-            label={t("crawlTemplates.fields.antiBotMode", {
-              defaultValue: "Anti-bot retry mode",
-            })}
-            tooltip={t("crawlTemplates.fields.antiBotModeHint", {
-              defaultValue:
-                "Auto removes crawlOptions.antiBotMode. Enabled/Disabled explicitly control anti-bot retry when failures occur.",
-            })}
+            label={t("crawlTemplates.fields.antiBotMode")}
+            tooltip={t("crawlTemplates.fields.antiBotModeHint")}
           >
             <Select
               options={[
                 {
                   value: "auto",
-                  label: t("crawlTemplates.triState.auto", {
-                    defaultValue: "Auto (inherit)",
-                  }),
+                  label: t("crawlTemplates.triState.auto"),
                 },
                 {
                   value: "enabled",
-                  label: t("crawlTemplates.triState.enable", {
-                    defaultValue: "Enabled",
-                  }),
+                  label: t("crawlTemplates.triState.enable"),
                 },
                 {
                   value: "disabled",
-                  label: t("crawlTemplates.triState.disable", {
-                    defaultValue: "Disabled",
-                  }),
+                  label: t("crawlTemplates.triState.disable"),
                 },
               ]}
             />
           </Form.Item>
           <Form.Item
             name="includeImages"
-            label={t("crawlTemplates.fields.images", {
-              defaultValue: "Include images",
-            })}
+            label={t("crawlTemplates.fields.images")}
             valuePropName="checked"
           >
             <Switch />
           </Form.Item>
           <Form.Item
             name="qualityProfile"
-            label={t("crawlTemplates.fields.qualityProfile", {
-              defaultValue: "Quality profile",
-            })}
+            label={t("crawlTemplates.fields.qualityProfile")}
           >
             <Select
               options={[
@@ -942,60 +873,43 @@ export function CrawlTemplatesContent() {
                   value: "quality_first",
                   label: t(
                     "crawl.settings.qualityProfileOptions.qualityFirst",
-                    {
-                      defaultValue: "Quality first (RAG)",
-                    },
                   ),
                 },
                 {
                   value: "balanced",
-                  label: t("crawl.settings.qualityProfileOptions.balanced", {
-                    defaultValue: "Balanced",
-                  }),
+                  label: t("crawl.settings.qualityProfileOptions.balanced"),
                 },
                 {
                   value: "speed_first",
-                  label: t("crawl.settings.qualityProfileOptions.speedFirst", {
-                    defaultValue: "Speed first",
-                  }),
+                  label: t("crawl.settings.qualityProfileOptions.speedFirst"),
                 },
               ]}
             />
           </Form.Item>
           <Form.Item
             name="pageTypeHint"
-            label={t("crawlTemplates.fields.pageTypeHint", {
-              defaultValue: "Page type hint",
-            })}
+            label={t("crawlTemplates.fields.pageTypeHint")}
           >
             <Select
               options={[
                 {
                   value: "auto",
-                  label: t("crawl.settings.pageTypeHintOptions.auto", {
-                    defaultValue: "Auto detect",
-                  }),
+                  label: t("crawl.settings.pageTypeHintOptions.auto"),
                 },
                 {
                   value: "list",
-                  label: t("crawl.settings.pageTypeHintOptions.list", {
-                    defaultValue: "List page",
-                  }),
+                  label: t("crawl.settings.pageTypeHintOptions.list"),
                 },
                 {
                   value: "detail",
-                  label: t("crawl.settings.pageTypeHintOptions.detail", {
-                    defaultValue: "Detail page",
-                  }),
+                  label: t("crawl.settings.pageTypeHintOptions.detail"),
                 },
               ]}
             />
           </Form.Item>
           <Form.Item
             name="autoExpandDetails"
-            label={t("crawlTemplates.fields.autoExpandDetails", {
-              defaultValue: "Auto expand details",
-            })}
+            label={t("crawlTemplates.fields.autoExpandDetails")}
             valuePropName="checked"
           >
             <Switch />
@@ -1011,17 +925,13 @@ export function CrawlTemplatesContent() {
                 <>
                   <Form.Item
                     name="maxDetailUrls"
-                    label={t("crawl.detailExpansion.maxDetailUrls", {
-                      defaultValue: "Max detail URLs",
-                    })}
+                    label={t("crawl.detailExpansion.maxDetailUrls")}
                   >
                     <InputNumber min={1} max={30} style={{ width: "100%" }} />
                   </Form.Item>
                   <Form.Item
                     name="minRelevanceScore"
-                    label={t("crawl.detailExpansion.minRelevanceScore", {
-                      defaultValue: "Min relevance score",
-                    })}
+                    label={t("crawl.detailExpansion.minRelevanceScore")}
                   >
                     <InputNumber
                       min={0}
@@ -1032,18 +942,14 @@ export function CrawlTemplatesContent() {
                   </Form.Item>
                   <Form.Item
                     name="requireSameDomain"
-                    label={t("crawl.detailExpansion.requireSameDomain", {
-                      defaultValue: "Require same domain",
-                    })}
+                    label={t("crawl.detailExpansion.requireSameDomain")}
                     valuePropName="checked"
                   >
                     <Switch />
                   </Form.Item>
                   <Form.Item
                     name="allowExternalLinks"
-                    label={t("crawl.detailExpansion.allowExternalLinks", {
-                      defaultValue: "Allow external links",
-                    })}
+                    label={t("crawl.detailExpansion.allowExternalLinks")}
                     valuePropName="checked"
                   >
                     <Switch />
@@ -1052,16 +958,9 @@ export function CrawlTemplatesContent() {
                     name="minPublishTimeConfidence"
                     label={t(
                       "crawl.detailExpansion.minPublishTimeConfidence",
-                      {
-                        defaultValue: "Min publish time confidence",
-                      },
                     )}
                     tooltip={t(
                       "crawl.detailExpansion.minPublishTimeConfidenceHint",
-                      {
-                        defaultValue:
-                          "Only prioritize links that look like publish-time-stamped detail pages (0~1).",
-                      },
                     )}
                   >
                     <InputNumber
@@ -1075,16 +974,9 @@ export function CrawlTemplatesContent() {
                     name="preferFitMarkdownForQuality"
                     label={t(
                       "crawl.detailExpansion.preferFitMarkdownForQuality",
-                      {
-                        defaultValue: "Prefer fit markdown for quality",
-                      },
                     )}
                     tooltip={t(
                       "crawl.detailExpansion.preferFitMarkdownForQualityHint",
-                      {
-                        defaultValue:
-                          "Use fit_markdown first when evaluating low-signal/list-like pages.",
-                      },
                     )}
                     valuePropName="checked"
                   >
@@ -1092,25 +984,15 @@ export function CrawlTemplatesContent() {
                   </Form.Item>
                   <Form.Item
                     name="excludeUrlPatterns"
-                    label={t("crawl.detailExpansion.excludeUrlPatterns", {
-                      defaultValue: "Exclude URL patterns",
-                    })}
-                    tooltip={t("crawl.detailExpansion.excludeUrlPatternsHint", {
-                      defaultValue:
-                        "One pattern per line. Supports wildcard * and regex /.../.",
-                    })}
+                    label={t("crawl.detailExpansion.excludeUrlPatterns")}
+                    tooltip={t("crawl.detailExpansion.excludeUrlPatternsHint")}
                   >
                     <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
                   </Form.Item>
                   <Form.Item
                     name="includeUrlPatterns"
-                    label={t("crawl.detailExpansion.includeUrlPatterns", {
-                      defaultValue: "Include URL patterns",
-                    })}
-                    tooltip={t("crawl.detailExpansion.includeUrlPatternsHint", {
-                      defaultValue:
-                        "Optional allowlist. If set, only URLs matching these patterns are followed.",
-                    })}
+                    label={t("crawl.detailExpansion.includeUrlPatterns")}
+                    tooltip={t("crawl.detailExpansion.includeUrlPatternsHint")}
                   >
                     <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
                   </Form.Item>
@@ -1123,9 +1005,7 @@ export function CrawlTemplatesContent() {
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            message={t("crawlTemplates.hints.noLlmTitle", {
-              defaultValue: "No LLM in crawl stage",
-            })}
+            message={t("crawlTemplates.hints.noLlmTitle")}
             description={t("crawlTemplates.hints.noLlmDescription", {
               defaultValue: CRAWL4AI_LLM_OPTION_GUARD_MESSAGE,
             })}
@@ -1162,31 +1042,22 @@ export function CrawlTemplatesContent() {
                       messageApi.error(
                         error instanceof Error
                           ? error.message
-                          : t("common.operationFailed", {
-                              defaultValue: "Operation failed.",
-                            }),
+                          : t("common.operationFailed"),
                       );
                     }
                   }}
                 >
-                  {t("crawl.browser.headers.autoFillSecCh", {
-                    defaultValue: "Auto-fill Sec-CH headers",
-                  })}
+                  {t("crawl.browser.headers.autoFillSecCh")}
                 </Button>
                 <Typography.Text type="secondary">
-                  {t("crawl.browser.headers.autoFillSecChHint", {
-                    defaultValue:
-                      "Adds sec-fetch defaults and, when User-Agent is deterministic Chromium, matching sec-ch headers if missing.",
-                  })}
+                  {t("crawl.browser.headers.autoFillSecChHint")}
                 </Typography.Text>
               </Space>
             )}
           </Form.Item>
           <Form.Item
             name="crawlOptionsJson"
-            label={t("crawlTemplates.fields.advancedJson", {
-              defaultValue: "Advanced crawl options (JSON)",
-            })}
+            label={t("crawlTemplates.fields.advancedJson")}
             validateTrigger="onBlur"
             rules={[
               {

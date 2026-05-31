@@ -518,8 +518,6 @@ function summarizeRuntimeContext(
       return t(
         "systemSettings.realtimeSignals.runtime.contextSummary.opensky",
         {
-          defaultValue:
-            "scope={{scope}}, military={{military}}, raw={{raw}}, current={{current}}, map={{map}}",
           scope: str(resolvedContext.scope) ?? "military",
           military: num(resolvedContext.militaryCount) ?? 0,
           raw:
@@ -541,13 +539,8 @@ function summarizeRuntimeContext(
       return aisDiagnostics?.configured === false
         ? t(
             "systemSettings.realtimeSignals.runtime.contextSummary.aisNotConfigured",
-            {
-              defaultValue: "AIS relay root URL not configured",
-            },
           )
         : t("systemSettings.realtimeSignals.runtime.contextSummary.ais", {
-            defaultValue:
-              "disruptions={{disruptions}}, density={{density}}, vessels={{vessels}}, seen={{seen}}, processed={{processed}}, ignored={{ignored}}, parse={{parse}}",
             disruptions: aisDiagnostics?.disruptionsCount ?? 0,
             density: aisDiagnostics?.densityRegions ?? 0,
             vessels: aisDiagnostics?.vesselCount ?? 0,
@@ -561,14 +554,12 @@ function summarizeRuntimeContext(
         return t(
           "systemSettings.realtimeSignals.runtime.contextSummary.unrestGdeltOnly",
           {
-            defaultValue: "mode=gdelt-only, gdelt={{gdelt}}, total={{total}}",
             gdelt: num(resolvedContext.gdeltCount) ?? 0,
             total: num(resolvedContext.unrestCount) ?? 0,
           },
         );
       }
       return t("systemSettings.realtimeSignals.runtime.contextSummary.unrest", {
-        defaultValue: "acled={{acled}}, gdelt={{gdelt}}, total={{total}}",
         acled: num(resolvedContext.acledCount) ?? 0,
         gdelt: num(resolvedContext.gdeltCount) ?? 0,
         total: num(resolvedContext.unrestCount) ?? 0,
@@ -577,20 +568,14 @@ function summarizeRuntimeContext(
       return resolvedContext.configured === false
         ? t(
             "systemSettings.realtimeSignals.runtime.contextSummary.outagesNotConfigured",
-            {
-              defaultValue: "Cloudflare token not configured",
-            },
           )
         : t("systemSettings.realtimeSignals.runtime.contextSummary.outages", {
-            defaultValue: "outages={{outages}}",
             outages: num(resolvedContext.outages) ?? 0,
           });
     case "keyword_spike":
       return t(
         "systemSettings.realtimeSignals.runtime.contextSummary.keywordSpike",
         {
-          defaultValue:
-            "recent={{recent}}, baseline={{baseline}}, spikes={{spikes}}",
           recent: num(resolvedContext.recentArticleCount) ?? 0,
           baseline: num(resolvedContext.baselineArticleCount) ?? 0,
           spikes: Array.isArray(resolvedContext.spikes)
@@ -602,7 +587,6 @@ function summarizeRuntimeContext(
       return t(
         "systemSettings.realtimeSignals.runtime.contextSummary.pizzint",
         {
-          defaultValue: "defcon={{defcon}}, open={{open}}, spikes={{spikes}}",
           defcon: num(resolvedContext.defcon) ?? 0,
           open: num(resolvedContext.openLocations) ?? 0,
           spikes: num(resolvedContext.activeSpikes) ?? 0,
@@ -612,7 +596,6 @@ function summarizeRuntimeContext(
       return t(
         "systemSettings.realtimeSignals.runtime.contextSummary.gdeltTension",
         {
-          defaultValue: "pairs={{pairs}}, window={{start}}..{{end}}",
           pairs: Array.isArray(resolvedContext.tensions)
             ? resolvedContext.tensions.length
             : 0,
@@ -624,7 +607,6 @@ function summarizeRuntimeContext(
       return t(
         "systemSettings.realtimeSignals.runtime.contextSummary.polymarketLeads",
         {
-          defaultValue: "leads={{leads}}",
           leads: Array.isArray(resolvedContext.leads)
             ? resolvedContext.leads.length
             : 0,
@@ -718,28 +700,19 @@ function buildRuntimeFeedbackAlert(
       type: "warning" as const,
       message: t(
         "systemSettings.realtimeSignals.runtime.feedback.outagesRateLimited.title",
-        {
-          defaultValue:
-            "Cloudflare Radar outages source is currently rate limited.",
-        },
       ),
       description: `${t(
         "systemSettings.realtimeSignals.runtime.feedback.outagesRateLimited.body",
         {
-          defaultValue:
-            "The API is honoring the upstream limit window and will not retry before {{time}}.",
           time:
             nextEligibleAt ??
-            t("systemSettings.realtimeSignals.status.notConfigured", {
-              defaultValue: "Not configured",
-            }),
+            t("systemSettings.realtimeSignals.status.notConfigured"),
         },
       )}${
         retryAfterValue
           ? ` ${t(
               "systemSettings.realtimeSignals.runtime.feedback.retryAfterWindow",
               {
-                defaultValue: "Retry-After requested {{value}} of backoff.",
                 value: retryAfterValue,
               },
             )}`
@@ -809,9 +782,7 @@ export function RealtimeSignalsSettingsPanel() {
     } catch (error) {
       captureClientError("Failed to load realtime signals diagnostics", error);
       setDiagnosticsError(
-        t("systemSettings.realtimeSignals.runtime.errors.loadFailed", {
-          defaultValue: "Failed to load runtime diagnostics.",
-        }),
+        t("systemSettings.realtimeSignals.runtime.errors.loadFailed"),
       );
     } finally {
       setDiagnosticsLoading(false);
@@ -971,12 +942,8 @@ export function RealtimeSignalsSettingsPanel() {
       : t("systemSettings.realtimeSignals.status.env");
   const acledApiDisabled = !settings.acledApiEnabled;
   const acledApiStatusLabel = settings.acledApiEnabled
-    ? t("systemSettings.realtimeSignals.status.acledApiEnabled", {
-        defaultValue: "Available",
-      })
-    : t("systemSettings.realtimeSignals.status.acledApiDisabled", {
-        defaultValue: "Disabled for now",
-      });
+    ? t("systemSettings.realtimeSignals.status.acledApiEnabled")
+    : t("systemSettings.realtimeSignals.status.acledApiDisabled");
   const runtimeSettingsSource = diagnostics?.settingsSource ?? "unknown";
   const runtimeSettingsSourceColor =
     runtimeSettingsSource === "db"
@@ -1031,17 +998,13 @@ export function RealtimeSignalsSettingsPanel() {
   const secretStatusRows = [
     {
       key: "aisRelaySharedSecret",
-      label: t("systemSettings.realtimeSignals.status.aisRelaySharedSecret", {
-        defaultValue: "AIS relay shared secret",
-      }),
+      label: t("systemSettings.realtimeSignals.status.aisRelaySharedSecret"),
       has: settings.hasAisRelaySharedSecret,
       source: settings.aisRelaySharedSecretSource,
     },
     {
       key: "openskyClientSecret",
-      label: t("systemSettings.realtimeSignals.status.openskyClientSecret", {
-        defaultValue: "OpenSky client secret",
-      }),
+      label: t("systemSettings.realtimeSignals.status.openskyClientSecret"),
       has: settings.hasOpenskyClientSecret,
       source: settings.openskyClientSecretSource,
     },
@@ -1073,9 +1036,6 @@ export function RealtimeSignalsSettingsPanel() {
 
   const openskySourceName = t(
     "systemSettings.realtimeSignals.sources.opensky",
-    {
-      defaultValue: "OpenSky military flights",
-    },
   );
   const sourceStatusRows = [
     {
@@ -1154,15 +1114,10 @@ export function RealtimeSignalsSettingsPanel() {
   const openskyBudget = diagnostics?.openskyBudget;
   const openskyBudgetPeriodLabel =
     openskyBudget?.currentPeriod === "day"
-      ? t("systemSettings.realtimeSignals.runtime.openskyBudget.periods.day", {
-          defaultValue: "HKT day",
-        })
+      ? t("systemSettings.realtimeSignals.runtime.openskyBudget.periods.day")
       : openskyBudget?.currentPeriod === "night"
         ? t(
             "systemSettings.realtimeSignals.runtime.openskyBudget.periods.night",
-            {
-              defaultValue: "HKT night",
-            },
           )
         : "—";
   const openskyBudgetDegradationLabel = openskyBudget
@@ -1175,35 +1130,19 @@ export function RealtimeSignalsSettingsPanel() {
     : "—";
   const openskyBudgetErrorBreakdown = openskyBudget
     ? [
-        `${t("systemSettings.realtimeSignals.runtime.openskyErrorKind.auth", {
-          defaultValue: "auth",
-        })} ${openskyBudget.authErrorCalls}`,
+        `${t("systemSettings.realtimeSignals.runtime.openskyErrorKind.auth")} ${openskyBudget.authErrorCalls}`,
         `${t(
           "systemSettings.realtimeSignals.runtime.openskyErrorKind.rate_limited",
-          {
-            defaultValue: "rate_limited",
-          },
         )} ${openskyBudget.rateLimitedErrorCalls}`,
-        `${t("systemSettings.realtimeSignals.runtime.openskyErrorKind.server", {
-          defaultValue: "server",
-        })} ${openskyBudget.serverErrorCalls}`,
+        `${t("systemSettings.realtimeSignals.runtime.openskyErrorKind.server")} ${openskyBudget.serverErrorCalls}`,
         `${t(
           "systemSettings.realtimeSignals.runtime.openskyErrorKind.timeout",
-          {
-            defaultValue: "timeout",
-          },
         )} ${openskyBudget.timeoutErrorCalls}`,
         `${t(
           "systemSettings.realtimeSignals.runtime.openskyErrorKind.network",
-          {
-            defaultValue: "network",
-          },
         )} ${openskyBudget.networkErrorCalls}`,
         `${t(
           "systemSettings.realtimeSignals.runtime.openskyErrorKind.unknown",
-          {
-            defaultValue: "unknown",
-          },
         )} ${openskyBudget.unknownErrorCalls}`,
       ].join(" / ")
     : "—";
@@ -1212,9 +1151,6 @@ export function RealtimeSignalsSettingsPanel() {
       {
         title: t(
           "systemSettings.realtimeSignals.runtime.openskyBudget.table.date",
-          {
-            defaultValue: "Date (HKT)",
-          },
         ),
         dataIndex: "dateHkt",
         key: "dateHkt",
@@ -1222,9 +1158,6 @@ export function RealtimeSignalsSettingsPanel() {
       {
         title: t(
           "systemSettings.realtimeSignals.runtime.openskyBudget.table.usedCredits",
-          {
-            defaultValue: "Used",
-          },
         ),
         dataIndex: "usedCredits",
         key: "usedCredits",
@@ -1232,9 +1165,6 @@ export function RealtimeSignalsSettingsPanel() {
       {
         title: t(
           "systemSettings.realtimeSignals.runtime.openskyBudget.table.militaryCredits",
-          {
-            defaultValue: "Military",
-          },
         ),
         dataIndex: "militaryCredits",
         key: "militaryCredits",
@@ -1242,9 +1172,6 @@ export function RealtimeSignalsSettingsPanel() {
       {
         title: t(
           "systemSettings.realtimeSignals.runtime.openskyBudget.table.allCredits",
-          {
-            defaultValue: "All",
-          },
         ),
         dataIndex: "allCredits",
         key: "allCredits",
@@ -1252,9 +1179,6 @@ export function RealtimeSignalsSettingsPanel() {
       {
         title: t(
           "systemSettings.realtimeSignals.runtime.openskyBudget.table.calls",
-          {
-            defaultValue: "Calls",
-          },
         ),
         dataIndex: "requestCount",
         key: "requestCount",
@@ -1303,9 +1227,6 @@ export function RealtimeSignalsSettingsPanel() {
             <Statistic
               title={t(
                 "systemSettings.realtimeSignals.overview.enabledSources",
-                {
-                  defaultValue: "Enabled sources",
-                },
               )}
               value={enabledSourceCount}
               suffix={`/ ${sourceStatusRows.length}`}
@@ -1317,9 +1238,6 @@ export function RealtimeSignalsSettingsPanel() {
             <Statistic
               title={t(
                 "systemSettings.realtimeSignals.overview.disabledSources",
-                {
-                  defaultValue: "Disabled sources",
-                },
               )}
               value={disabledSourceCount}
             />
@@ -1330,9 +1248,6 @@ export function RealtimeSignalsSettingsPanel() {
             <Statistic
               title={t(
                 "systemSettings.realtimeSignals.overview.fastestInterval",
-                {
-                  defaultValue: "Fastest interval",
-                },
               )}
               value={fastestEnabledInterval ?? "—"}
               suffix={fastestEnabledInterval ? "sec" : undefined}
@@ -1344,9 +1259,6 @@ export function RealtimeSignalsSettingsPanel() {
             <Statistic
               title={t(
                 "systemSettings.realtimeSignals.overview.configuredSecrets",
-                {
-                  defaultValue: "Configured secrets",
-                },
               )}
               value={configuredSecretCount}
               suffix={`/ ${secretStatusRows.length}`}
@@ -1369,36 +1281,28 @@ export function RealtimeSignalsSettingsPanel() {
         </Space>
         <Space wrap>
           <Typography.Text type="secondary">
-            {t("systemSettings.realtimeSignals.status.openskyBaseUrl", {
-              defaultValue: "OpenSky base URL",
-            })}
+            {t("systemSettings.realtimeSignals.status.openskyBaseUrl")}
           </Typography.Text>
           <Tag color="geekblue">
             {settings.openskyBaseUrl ||
               t("systemSettings.realtimeSignals.status.notConfigured")}
           </Tag>
           <Typography.Text type="secondary">
-            {t("systemSettings.realtimeSignals.status.openskyTokenUrl", {
-              defaultValue: "OpenSky token URL",
-            })}
+            {t("systemSettings.realtimeSignals.status.openskyTokenUrl")}
           </Typography.Text>
           <Tag color="geekblue">
             {settings.openskyTokenUrl ||
               t("systemSettings.realtimeSignals.status.notConfigured")}
           </Tag>
           <Typography.Text type="secondary">
-            {t("systemSettings.realtimeSignals.status.aisRelayBaseUrl", {
-              defaultValue: "AIS relay root URL",
-            })}
+            {t("systemSettings.realtimeSignals.status.aisRelayBaseUrl")}
           </Typography.Text>
           <Tag color="geekblue">
             {settings.aisRelayBaseUrl ||
               t("systemSettings.realtimeSignals.status.notConfigured")}
           </Tag>
           <Typography.Text type="secondary">
-            {t("systemSettings.realtimeSignals.status.openskyClientId", {
-              defaultValue: "OpenSky client ID",
-            })}
+            {t("systemSettings.realtimeSignals.status.openskyClientId")}
           </Typography.Text>
           <Tag color="geekblue">
             {settings.openskyClientId ||
@@ -1424,9 +1328,7 @@ export function RealtimeSignalsSettingsPanel() {
           </Tag>
           {acledApiDisabled ? (
             <Typography.Text type="secondary">
-              {t("systemSettings.realtimeSignals.alerts.acledDisabled.inline", {
-                defaultValue: "Open myACLED does not include API access.",
-              })}
+              {t("systemSettings.realtimeSignals.alerts.acledDisabled.inline")}
             </Typography.Text>
           ) : null}
         </Space>
@@ -1510,21 +1412,15 @@ export function RealtimeSignalsSettingsPanel() {
         <Divider style={{ margin: "8px 0" }} />
 
         <Typography.Text type="secondary">
-          {t("systemSettings.realtimeSignals.status.sourceSnapshot", {
-            defaultValue: "Source snapshot",
-          })}
+          {t("systemSettings.realtimeSignals.status.sourceSnapshot")}
         </Typography.Text>
         <Space wrap size={[8, 8]}>
           {sourceStatusRows.map((row) => (
             <Tag key={row.key} color={row.enabled ? "green" : "default"}>
               {row.sourceName} ·{" "}
               {row.enabled
-                ? t("systemSettings.realtimeSignals.status.enabled", {
-                    defaultValue: "Enabled",
-                  })
-                : t("systemSettings.realtimeSignals.status.disabled", {
-                    defaultValue: "Disabled",
-                  })}
+                ? t("systemSettings.realtimeSignals.status.enabled")
+                : t("systemSettings.realtimeSignals.status.disabled")}
               {row.intervalLabel ? ` · ${row.intervalLabel}` : ""}
             </Tag>
           ))}
@@ -1533,23 +1429,18 @@ export function RealtimeSignalsSettingsPanel() {
 
       <Card
         size="small"
-        title={t("systemSettings.realtimeSignals.runtime.title", {
-          defaultValue: "Runtime diagnostics",
-        })}
+        title={t("systemSettings.realtimeSignals.runtime.title")}
         extra={
           <Space wrap>
             {diagnostics ? (
               <Tag color={runtimeSettingsSourceColor}>
-                {t("systemSettings.realtimeSignals.runtime.settingsSource", {
-                  defaultValue: "Settings source",
-                })}
+                {t("systemSettings.realtimeSignals.runtime.settingsSource")}
                 : {runtimeSettingsSourceLabel}
               </Tag>
             ) : null}
             {diagnostics?.checkedAt ? (
               <Typography.Text type="secondary">
                 {t("systemSettings.realtimeSignals.runtime.checkedAt", {
-                  defaultValue: "Last checked: {{time}}",
                   time: formatTimestamp(diagnostics.checkedAt),
                 })}
               </Typography.Text>
@@ -1558,7 +1449,7 @@ export function RealtimeSignalsSettingsPanel() {
               onClick={() => void loadDiagnostics()}
               loading={diagnosticsLoading}
             >
-              {t("common.refresh", { defaultValue: "Refresh" })}
+              {t("common.refresh")}
             </Button>
           </Space>
         }
@@ -1580,16 +1471,9 @@ export function RealtimeSignalsSettingsPanel() {
             style={{ marginBottom: "1rem" }}
             message={t(
               "systemSettings.realtimeSignals.runtime.settingsSourceUnknown.title",
-              {
-                defaultValue: "Settings source could not be resolved.",
-              },
             )}
             description={t(
               "systemSettings.realtimeSignals.runtime.settingsSourceUnknown.body",
-              {
-                defaultValue:
-                  "Runtime diagnostics are still shown, but the system could not confirm whether the effective realtime settings came from DB overrides or env defaults for this request.",
-              },
             )}
           />
         ) : null}
@@ -1600,7 +1484,6 @@ export function RealtimeSignalsSettingsPanel() {
             showIcon
             style={{ marginBottom: "1rem" }}
             message={t("systemSettings.realtimeSignals.runtime.issues", {
-              defaultValue: "Detected {{count}} runtime issue(s).",
               count: runtimeIssues.length,
             })}
             description={
@@ -1624,10 +1507,7 @@ export function RealtimeSignalsSettingsPanel() {
             type="info"
             showIcon
             style={{ marginBottom: "1rem" }}
-            message={t("systemSettings.realtimeSignals.runtime.warnings", {
-              defaultValue:
-                "Some sources are enabled but not fully configured.",
-            })}
+            message={t("systemSettings.realtimeSignals.runtime.warnings")}
             description={
               <Space wrap size={[8, 8]}>
                 {runtimeWarnings.map((row) => (
@@ -1652,9 +1532,6 @@ export function RealtimeSignalsSettingsPanel() {
                   <Statistic
                     title={t(
                       "systemSettings.realtimeSignals.runtime.summary.healthy",
-                      {
-                        defaultValue: "Healthy sources",
-                      },
                     )}
                     value={
                       diagnostics.sources.filter((row) => row.status === "ok")
@@ -1669,9 +1546,6 @@ export function RealtimeSignalsSettingsPanel() {
                   <Statistic
                     title={t(
                       "systemSettings.realtimeSignals.runtime.summary.issues",
-                      {
-                        defaultValue: "Issue sources",
-                      },
                     )}
                     value={runtimeIssues.length}
                   />
@@ -1682,16 +1556,11 @@ export function RealtimeSignalsSettingsPanel() {
                   <Statistic
                     title={t(
                       "systemSettings.realtimeSignals.runtime.summary.markerReadiness",
-                      {
-                        defaultValue: "News markers",
-                      },
                     )}
                     value={
                       diagnostics.markerReadiness.newsMarkersReady
-                        ? t("common.ok", { defaultValue: "OK" })
-                        : t("common.unavailable", {
-                            defaultValue: "Unavailable",
-                          })
+                        ? t("common.ok")
+                        : t("common.unavailable")
                     }
                   />
                 </Card>
@@ -1701,9 +1570,6 @@ export function RealtimeSignalsSettingsPanel() {
                   <Statistic
                     title={t(
                       "systemSettings.realtimeSignals.runtime.summary.pizzint",
-                      {
-                        defaultValue: "PizzINT DEFCON",
-                      },
                     )}
                     value={diagnostics.insight.pizzint?.defcon ?? "—"}
                   />
@@ -1715,9 +1581,6 @@ export function RealtimeSignalsSettingsPanel() {
               size="small"
               title={t(
                 "systemSettings.realtimeSignals.runtime.openskyBudget.title",
-                {
-                  defaultValue: "OpenSky budget & schedule",
-                },
               )}
             >
               <Space
@@ -1729,18 +1592,12 @@ export function RealtimeSignalsSettingsPanel() {
                   <Tag color="geekblue">
                     {t(
                       "systemSettings.realtimeSignals.runtime.openskyBudget.date",
-                      {
-                        defaultValue: "Date",
-                      },
                     )}
                     : {openskyBudget?.dateHkt ?? "—"}
                   </Tag>
                   <Tag color="purple">
                     {t(
                       "systemSettings.realtimeSignals.runtime.openskyBudget.timezone",
-                      {
-                        defaultValue: "Timezone",
-                      },
                     )}
                     : {openskyBudget?.timezone ?? "Asia/Hong_Kong"}
                   </Tag>
@@ -1751,9 +1608,6 @@ export function RealtimeSignalsSettingsPanel() {
                   >
                     {t(
                       "systemSettings.realtimeSignals.runtime.openskyBudget.degradationLabel",
-                      {
-                        defaultValue: "Degradation",
-                      },
                     )}
                     : {openskyBudgetDegradationLabel}
                   </Tag>
@@ -1761,9 +1615,6 @@ export function RealtimeSignalsSettingsPanel() {
                     <Tag color="magenta">
                       {t(
                         "systemSettings.realtimeSignals.runtime.openskyBudget.allModeBlocked",
-                        {
-                          defaultValue: "All mode limited",
-                        },
                       )}
                     </Tag>
                   ) : null}
@@ -1775,9 +1626,6 @@ export function RealtimeSignalsSettingsPanel() {
                       <Statistic
                         title={t(
                           "systemSettings.realtimeSignals.runtime.openskyBudget.dailyBudget",
-                          {
-                            defaultValue: "Daily budget",
-                          },
                         )}
                         value={openskyBudget?.dailyBudget ?? "—"}
                       />
@@ -1788,9 +1636,6 @@ export function RealtimeSignalsSettingsPanel() {
                       <Statistic
                         title={t(
                           "systemSettings.realtimeSignals.runtime.openskyBudget.usedCredits",
-                          {
-                            defaultValue: "Used credits",
-                          },
                         )}
                         value={openskyBudget?.usedCredits ?? "—"}
                         suffix={
@@ -1806,9 +1651,6 @@ export function RealtimeSignalsSettingsPanel() {
                       <Statistic
                         title={t(
                           "systemSettings.realtimeSignals.runtime.openskyBudget.remainingCredits",
-                          {
-                            defaultValue: "Remaining credits",
-                          },
                         )}
                         value={openskyBudget?.remainingCredits ?? "—"}
                         suffix={
@@ -1824,9 +1666,6 @@ export function RealtimeSignalsSettingsPanel() {
                       <Statistic
                         title={t(
                           "systemSettings.realtimeSignals.runtime.openskyBudget.currentPeriod",
-                          {
-                            defaultValue: "Current period",
-                          },
                         )}
                         value={openskyBudgetPeriodLabel}
                       />
@@ -1838,9 +1677,6 @@ export function RealtimeSignalsSettingsPanel() {
                   <Descriptions.Item
                     label={t(
                       "systemSettings.realtimeSignals.runtime.openskyBudget.effectiveInterval",
-                      {
-                        defaultValue: "Effective military interval",
-                      },
                     )}
                   >
                     {typeof openskyBudget?.effectiveMilitaryIntervalSec ===
@@ -1851,9 +1687,6 @@ export function RealtimeSignalsSettingsPanel() {
                   <Descriptions.Item
                     label={t(
                       "systemSettings.realtimeSignals.runtime.openskyBudget.configuredSchedule",
-                      {
-                        defaultValue: "Configured HKT schedule",
-                      },
                     )}
                   >
                     {openskyBudget
@@ -1863,9 +1696,6 @@ export function RealtimeSignalsSettingsPanel() {
                   <Descriptions.Item
                     label={t(
                       "systemSettings.realtimeSignals.runtime.openskyBudget.calls",
-                      {
-                        defaultValue: "Today calls",
-                      },
                     )}
                   >
                     {openskyBudget
@@ -1875,9 +1705,6 @@ export function RealtimeSignalsSettingsPanel() {
                   <Descriptions.Item
                     label={t(
                       "systemSettings.realtimeSignals.runtime.openskyBudget.errorBreakdown",
-                      {
-                        defaultValue: "Error breakdown",
-                      },
                     )}
                   >
                     {openskyBudgetErrorBreakdown}
@@ -1885,24 +1712,15 @@ export function RealtimeSignalsSettingsPanel() {
                   <Descriptions.Item
                     label={t(
                       "systemSettings.realtimeSignals.runtime.openskyBudget.resetAt",
-                      {
-                        defaultValue: "Daily reset",
-                      },
                     )}
                   >
                     {t(
                       "systemSettings.realtimeSignals.runtime.openskyBudget.resetAtValue",
-                      {
-                        defaultValue: "00:00 HKT",
-                      },
                     )}
                   </Descriptions.Item>
                   <Descriptions.Item
                     label={t(
                       "systemSettings.realtimeSignals.runtime.openskyBudget.blockedCounts",
-                      {
-                        defaultValue: "Budget blocks",
-                      },
                     )}
                   >
                     {openskyBudget
@@ -1927,16 +1745,9 @@ export function RealtimeSignalsSettingsPanel() {
                 showIcon
                 message={t(
                   "systemSettings.realtimeSignals.runtime.markerWarning.title",
-                  {
-                    defaultValue: "War Map news markers are not ready.",
-                  },
                 )}
                 description={t(
                   "systemSettings.realtimeSignals.runtime.markerWarning.body",
-                  {
-                    defaultValue:
-                      "Recent processed articles with location data are empty, so news markers will stay blank until the content pipeline produces geo-tagged results.",
-                  },
                 )}
               />
             ) : null}
@@ -1947,17 +1758,11 @@ export function RealtimeSignalsSettingsPanel() {
               bordered
               title={t(
                 "systemSettings.realtimeSignals.runtime.markerReadiness",
-                {
-                  defaultValue: "Marker readiness",
-                },
               )}
             >
               <Descriptions.Item
                 label={t(
                   "systemSettings.realtimeSignals.runtime.markerWindow",
-                  {
-                    defaultValue: "Lookback window",
-                  },
                 )}
               >
                 {diagnostics.markerReadiness.windowHours}h
@@ -1965,9 +1770,6 @@ export function RealtimeSignalsSettingsPanel() {
               <Descriptions.Item
                 label={t(
                   "systemSettings.realtimeSignals.runtime.markerRecentArticles",
-                  {
-                    defaultValue: "Recent processed articles",
-                  },
                 )}
               >
                 {diagnostics.markerReadiness.recentProcessedArticles}
@@ -1975,9 +1777,6 @@ export function RealtimeSignalsSettingsPanel() {
               <Descriptions.Item
                 label={t(
                   "systemSettings.realtimeSignals.runtime.markerRecentArticlesWithLocation",
-                  {
-                    defaultValue: "Recent articles with location",
-                  },
                 )}
               >
                 {
@@ -1988,9 +1787,6 @@ export function RealtimeSignalsSettingsPanel() {
               <Descriptions.Item
                 label={t(
                   "systemSettings.realtimeSignals.runtime.markerRecentMongo",
-                  {
-                    defaultValue: "Recent Mongo processed items",
-                  },
                 )}
               >
                 {diagnostics.markerReadiness.recentMongoProcessedItems}
@@ -1998,9 +1794,6 @@ export function RealtimeSignalsSettingsPanel() {
               <Descriptions.Item
                 label={t(
                   "systemSettings.realtimeSignals.runtime.markerRecentMongoWithLocation",
-                  {
-                    defaultValue: "Recent Mongo items with location",
-                  },
                 )}
               >
                 {
@@ -2011,9 +1804,6 @@ export function RealtimeSignalsSettingsPanel() {
               <Descriptions.Item
                 label={t(
                   "systemSettings.realtimeSignals.runtime.markerLatestArticle",
-                  {
-                    defaultValue: "Latest processed article",
-                  },
                 )}
               >
                 {formatTimestamp(
@@ -2023,9 +1813,6 @@ export function RealtimeSignalsSettingsPanel() {
               <Descriptions.Item
                 label={t(
                   "systemSettings.realtimeSignals.runtime.markerLatestMongo",
-                  {
-                    defaultValue: "Latest processed item",
-                  },
                 )}
               >
                 {formatTimestamp(
@@ -2040,9 +1827,6 @@ export function RealtimeSignalsSettingsPanel() {
                   <Statistic
                     title={t(
                       "systemSettings.realtimeSignals.runtime.insight.keywordSpikes",
-                      {
-                        defaultValue: "Keyword spikes",
-                      },
                     )}
                     value={diagnostics.insight.keywordSpikes.length}
                   />
@@ -2053,9 +1837,6 @@ export function RealtimeSignalsSettingsPanel() {
                   <Statistic
                     title={t(
                       "systemSettings.realtimeSignals.runtime.insight.predictionLeads",
-                      {
-                        defaultValue: "Prediction leads",
-                      },
                     )}
                     value={diagnostics.insight.predictionLeads.length}
                   />
@@ -2066,9 +1847,6 @@ export function RealtimeSignalsSettingsPanel() {
                   <Statistic
                     title={t(
                       "systemSettings.realtimeSignals.runtime.insight.tensions",
-                      {
-                        defaultValue: "Tension pairs",
-                      },
                     )}
                     value={diagnostics.insight.tensions.length}
                   />
@@ -2170,9 +1948,6 @@ export function RealtimeSignalsSettingsPanel() {
                             <Tag color="gold">
                               {t(
                                 "systemSettings.realtimeSignals.runtime.unrestModeGdeltOnly",
-                                {
-                                  defaultValue: "GDELT-only",
-                                },
                               )}
                             </Tag>
                           ) : null}
@@ -2184,7 +1959,6 @@ export function RealtimeSignalsSettingsPanel() {
                               ? t(
                                   "systemSettings.realtimeSignals.runtime.effectiveIntervalTag",
                                   {
-                                    defaultValue: "effective {{value}}s",
                                     value: row.intervalSec,
                                   },
                                 )
@@ -2195,7 +1969,6 @@ export function RealtimeSignalsSettingsPanel() {
                               {t(
                                 "systemSettings.realtimeSignals.runtime.configuredIntervalTag",
                                 {
-                                  defaultValue: "base {{value}}s",
                                   value: row.configuredIntervalSec,
                                 },
                               )}
@@ -2213,27 +1986,18 @@ export function RealtimeSignalsSettingsPanel() {
                           <Typography.Text strong>
                             {t(
                               "systemSettings.realtimeSignals.runtime.latestValue",
-                              {
-                                defaultValue: "Latest",
-                              },
                             )}
                             : {row.latestValue ?? "—"}
                           </Typography.Text>
                           <Typography.Text type="secondary">
                             {t(
                               "systemSettings.realtimeSignals.runtime.previousValue",
-                              {
-                                defaultValue: "Previous",
-                              },
                             )}
                             : {row.previousValue ?? "—"}
                           </Typography.Text>
                           <Typography.Text type="secondary">
                             {t(
                               "systemSettings.realtimeSignals.runtime.changePercent",
-                              {
-                                defaultValue: "Change",
-                              },
                             )}
                             :{" "}
                             {typeof row.changePercent === "number"
@@ -2250,10 +2014,6 @@ export function RealtimeSignalsSettingsPanel() {
                           <Typography.Text type="secondary">
                             {t(
                               "systemSettings.realtimeSignals.runtime.unrestAcledDisabled",
-                              {
-                                defaultValue:
-                                  "ACLED API is disabled. Unrest events currently use GDELT only.",
-                              },
                             )}
                           </Typography.Text>
                         ) : null}
@@ -2266,9 +2026,6 @@ export function RealtimeSignalsSettingsPanel() {
                             >
                               {t(
                                 "systemSettings.realtimeSignals.runtime.openskySnapshotFreshness",
-                                {
-                                  defaultValue: "Snapshot",
-                                },
                               )}
                               :{" "}
                               {t(
@@ -2281,27 +2038,18 @@ export function RealtimeSignalsSettingsPanel() {
                             <Tag>
                               {t(
                                 "systemSettings.realtimeSignals.runtime.openskyMapPoints",
-                                {
-                                  defaultValue: "Map points",
-                                },
                               )}
                               : {openskySnapshot.snapshotValidPositionCount}
                             </Tag>
                             <Tag>
                               {t(
                                 "systemSettings.realtimeSignals.runtime.openskyCurrentValidPoints",
-                                {
-                                  defaultValue: "Current valid",
-                                },
                               )}
                               : {openskySnapshot.currentValidPositionCount}
                             </Tag>
                             <Tag>
                               {t(
                                 "systemSettings.realtimeSignals.runtime.openskyDroppedStale",
-                                {
-                                  defaultValue: "Dropped stale",
-                                },
                               )}
                               : {openskySnapshot.droppedStalePositionCount}
                             </Tag>
@@ -2313,9 +2061,6 @@ export function RealtimeSignalsSettingsPanel() {
                               <Tag>
                                 {t(
                                   "systemSettings.realtimeSignals.runtime.aisTrackedVessels",
-                                  {
-                                    defaultValue: "Tracked vessels",
-                                  },
                                 )}
                                 : {aisTrackedVessels}
                               </Tag>
@@ -2324,9 +2069,6 @@ export function RealtimeSignalsSettingsPanel() {
                               <Tag>
                                 {t(
                                   "systemSettings.realtimeSignals.runtime.aisCandidates",
-                                  {
-                                    defaultValue: "Candidates",
-                                  },
                                 )}
                                 : {aisCandidates}
                               </Tag>
@@ -2335,9 +2077,6 @@ export function RealtimeSignalsSettingsPanel() {
                               <Tag>
                                 {t(
                                   "systemSettings.realtimeSignals.runtime.aisReportsSeen",
-                                  {
-                                    defaultValue: "Reports seen",
-                                  },
                                 )}
                                 : {aisReportsSeen}
                               </Tag>
@@ -2346,9 +2085,6 @@ export function RealtimeSignalsSettingsPanel() {
                               <Tag color="green">
                                 {t(
                                   "systemSettings.realtimeSignals.runtime.aisReportsProcessed",
-                                  {
-                                    defaultValue: "Reports processed",
-                                  },
                                 )}
                                 : {aisReportsProcessed}
                               </Tag>
@@ -2361,9 +2097,6 @@ export function RealtimeSignalsSettingsPanel() {
                               >
                                 {t(
                                   "systemSettings.realtimeSignals.runtime.aisReportsIgnored",
-                                  {
-                                    defaultValue: "Reports ignored",
-                                  },
                                 )}
                                 : {aisReportsIgnored}
                               </Tag>
@@ -2376,9 +2109,6 @@ export function RealtimeSignalsSettingsPanel() {
                               >
                                 {t(
                                   "systemSettings.realtimeSignals.runtime.aisParseErrors",
-                                  {
-                                    defaultValue: "Parse errors",
-                                  },
                                 )}
                                 : {aisParseErrors}
                               </Tag>
@@ -2389,9 +2119,6 @@ export function RealtimeSignalsSettingsPanel() {
                           <Typography.Text type="secondary">
                             {t(
                               "systemSettings.realtimeSignals.runtime.openskyLatestObservedAt",
-                              {
-                                defaultValue: "Latest observed",
-                              },
                             )}
                             :{" "}
                             {formatTimestamp(openskySnapshot.latestObservedAt)}
@@ -2405,9 +2132,6 @@ export function RealtimeSignalsSettingsPanel() {
                           <Typography.Text type="secondary">
                             {t(
                               "systemSettings.realtimeSignals.runtime.openskySnapshotUpdatedAt",
-                              {
-                                defaultValue: "Snapshot updated",
-                              },
                             )}
                             :{" "}
                             {formatTimestamp(openskySnapshot.snapshotUpdatedAt)}
@@ -2422,10 +2146,6 @@ export function RealtimeSignalsSettingsPanel() {
                             showIcon
                             message={t(
                               "systemSettings.realtimeSignals.runtime.openskyRetainedPrevious",
-                              {
-                                defaultValue:
-                                  "Using the previous OpenSky snapshot because the latest fetch returned no usable positions.",
-                              },
                             )}
                           />
                         ) : null}
@@ -2449,25 +2169,16 @@ export function RealtimeSignalsSettingsPanel() {
                             showIcon
                             message={t(
                               "systemSettings.realtimeSignals.runtime.aisRelayDiagnostics",
-                              {
-                                defaultValue: "AIS relay diagnostics",
-                              },
                             )}
                             description={[
                               aisLastUpstreamError
                                 ? `${t(
                                     "systemSettings.realtimeSignals.runtime.aisLastUpstreamError",
-                                    {
-                                      defaultValue: "Last upstream error",
-                                    },
                                   )}: ${aisLastUpstreamError}`
                                 : null,
                               aisLastParseError
                                 ? `${t(
                                     "systemSettings.realtimeSignals.runtime.aisLastParseError",
-                                    {
-                                      defaultValue: "Last parse error",
-                                    },
                                   )}: ${aisLastParseError}`
                                 : null,
                             ]
@@ -2481,36 +2192,24 @@ export function RealtimeSignalsSettingsPanel() {
                           <Tag>
                             {t(
                               "systemSettings.realtimeSignals.runtime.lastRunAt",
-                              {
-                                defaultValue: "Last run",
-                              },
                             )}
                             : {formatTimestamp(row.lastRunAt)}
                           </Tag>
                           <Tag>
                             {t(
                               "systemSettings.realtimeSignals.runtime.lastAttemptAt",
-                              {
-                                defaultValue: "Last attempt",
-                              },
                             )}
                             : {formatTimestamp(row.lastAttemptAt)}
                           </Tag>
                           <Tag>
                             {t(
                               "systemSettings.realtimeSignals.runtime.nextEligibleAt",
-                              {
-                                defaultValue: "Next eligible",
-                              },
                             )}
                             : {formatTimestamp(row.nextEligibleAt)}
                           </Tag>
                           <Tag>
                             {t(
                               "systemSettings.realtimeSignals.runtime.lastSuccessAt",
-                              {
-                                defaultValue: "Last success",
-                              },
                             )}
                             : {formatTimestamp(row.lastSuccessAt)}
                           </Tag>
@@ -2532,9 +2231,6 @@ export function RealtimeSignalsSettingsPanel() {
                               <Tag color="gold">
                                 {t(
                                   "systemSettings.realtimeSignals.runtime.retryAfter",
-                                  {
-                                    defaultValue: "Retry-After",
-                                  },
                                 )}
                                 : {`${row.lastRateLimit.retryAfterSec}s`}
                               </Tag>
@@ -2547,33 +2243,21 @@ export function RealtimeSignalsSettingsPanel() {
                             showIcon
                             message={t(
                               "systemSettings.realtimeSignals.runtime.rateLimit",
-                              {
-                                defaultValue: "Rate limit diagnostics",
-                              },
                             )}
                             description={[
                               row.lastRateLimit.rateLimit
                                 ? `${t(
                                     "systemSettings.realtimeSignals.runtime.rateLimitHeader",
-                                    {
-                                      defaultValue: "RateLimit",
-                                    },
                                   )}: ${row.lastRateLimit.rateLimit}`
                                 : null,
                               row.lastRateLimit.rateLimitPolicy
                                 ? `${t(
                                     "systemSettings.realtimeSignals.runtime.rateLimitPolicy",
-                                    {
-                                      defaultValue: "RateLimit-Policy",
-                                    },
                                   )}: ${row.lastRateLimit.rateLimitPolicy}`
                                 : null,
                               row.lastRateLimit.cfRay
                                 ? `${t(
                                     "systemSettings.realtimeSignals.runtime.cfRay",
-                                    {
-                                      defaultValue: "CF-Ray",
-                                    },
                                   )}: ${row.lastRateLimit.cfRay}`
                                 : null,
                             ]
@@ -2587,9 +2271,6 @@ export function RealtimeSignalsSettingsPanel() {
                             showIcon
                             message={t(
                               "systemSettings.realtimeSignals.runtime.lastError",
-                              {
-                                defaultValue: "Last error",
-                              },
                             )}
                             description={`${row.lastError}${row.lastErrorAt ? ` (${formatTimestamp(row.lastErrorAt)})` : ""}`}
                           />
@@ -2613,9 +2294,7 @@ export function RealtimeSignalsSettingsPanel() {
           </div>
         ) : (
           <Typography.Text type="secondary">
-            {t("systemSettings.realtimeSignals.runtime.empty", {
-              defaultValue: "Runtime diagnostics have not been loaded yet.",
-            })}
+            {t("systemSettings.realtimeSignals.runtime.empty")}
           </Typography.Text>
         )}
       </Card>
@@ -2758,15 +2437,10 @@ export function RealtimeSignalsSettingsPanel() {
         })}
 
         <Typography.Title level={5}>
-          {t("systemSettings.realtimeSignals.sections.openskyBudget", {
-            defaultValue: "OpenSky budget & schedule",
-          })}
+          {t("systemSettings.realtimeSignals.sections.openskyBudget")}
         </Typography.Title>
         <Typography.Paragraph type="secondary">
-          {t("systemSettings.realtimeSignals.hints.openskyBudget", {
-            defaultValue:
-              "Configure the HKT day/night polling profile and the daily credit guardrails used to protect OpenSky /states/all usage.",
-          })}
+          {t("systemSettings.realtimeSignals.hints.openskyBudget")}
         </Typography.Paragraph>
         <Space wrap style={{ display: "flex", width: "100%" }}>
           <Form.Item
@@ -2782,9 +2456,6 @@ export function RealtimeSignalsSettingsPanel() {
           <Form.Item
             label={t(
               "systemSettings.realtimeSignals.fields.openskyDailyCreditBudget",
-              {
-                defaultValue: "OpenSky daily credit budget",
-              },
             )}
             name="openskyDailyCreditBudget"
             style={{ minWidth: 280, flex: 1 }}
@@ -2793,9 +2464,6 @@ export function RealtimeSignalsSettingsPanel() {
                 required: true,
                 message: t(
                   "systemSettings.realtimeSignals.validation.openskyDailyCreditBudget",
-                  {
-                    defaultValue: "Daily credit budget is required",
-                  },
                 ),
               },
               {
@@ -2819,26 +2487,17 @@ export function RealtimeSignalsSettingsPanel() {
           <Form.Item
             label={t(
               "systemSettings.realtimeSignals.fields.openskyDayIntervalSec",
-              {
-                defaultValue: "OpenSky day interval (sec)",
-              },
             )}
             name="openskyDayIntervalSec"
             style={{ minWidth: 280, flex: 1 }}
             extra={t(
               "systemSettings.realtimeSignals.hints.openskyDayIntervalSec",
-              {
-                defaultValue: "Applied during HKT daytime.",
-              },
             )}
             rules={[
               {
                 required: true,
                 message: t(
                   "systemSettings.realtimeSignals.validation.openskyDayIntervalSec",
-                  {
-                    defaultValue: "Day interval is required",
-                  },
                 ),
               },
               {
@@ -2862,27 +2521,17 @@ export function RealtimeSignalsSettingsPanel() {
           <Form.Item
             label={t(
               "systemSettings.realtimeSignals.fields.openskyNightIntervalSec",
-              {
-                defaultValue: "OpenSky night interval (sec)",
-              },
             )}
             name="openskyNightIntervalSec"
             style={{ minWidth: 280, flex: 1 }}
             extra={t(
               "systemSettings.realtimeSignals.hints.openskyNightIntervalSec",
-              {
-                defaultValue:
-                  "Applied during HKT nighttime and critical budget mode.",
-              },
             )}
             rules={[
               {
                 required: true,
                 message: t(
                   "systemSettings.realtimeSignals.validation.openskyNightIntervalSec",
-                  {
-                    defaultValue: "Night interval is required",
-                  },
                 ),
               },
               {
@@ -2906,9 +2555,6 @@ export function RealtimeSignalsSettingsPanel() {
           <Form.Item
             label={t(
               "systemSettings.realtimeSignals.fields.openskyDayStartHourHkt",
-              {
-                defaultValue: "HKT day start hour",
-              },
             )}
             name="openskyDayStartHourHkt"
             style={{ minWidth: 280, flex: 1 }}
@@ -2917,9 +2563,6 @@ export function RealtimeSignalsSettingsPanel() {
                 required: true,
                 message: t(
                   "systemSettings.realtimeSignals.validation.openskyDayStartHourHkt",
-                  {
-                    defaultValue: "Day start hour is required",
-                  },
                 ),
               },
               {
@@ -2938,9 +2581,6 @@ export function RealtimeSignalsSettingsPanel() {
           <Form.Item
             label={t(
               "systemSettings.realtimeSignals.fields.openskyNightStartHourHkt",
-              {
-                defaultValue: "HKT night start hour",
-              },
             )}
             name="openskyNightStartHourHkt"
             style={{ minWidth: 280, flex: 1 }}
@@ -2949,9 +2589,6 @@ export function RealtimeSignalsSettingsPanel() {
                 required: true,
                 message: t(
                   "systemSettings.realtimeSignals.validation.openskyNightStartHourHkt",
-                  {
-                    defaultValue: "Night start hour is required",
-                  },
                 ),
               },
               {
@@ -2970,9 +2607,6 @@ export function RealtimeSignalsSettingsPanel() {
           <Form.Item
             label={t(
               "systemSettings.realtimeSignals.fields.openskyWarningRemainingPct",
-              {
-                defaultValue: "Warning threshold remaining (%)",
-              },
             )}
             name="openskyWarningRemainingPct"
             style={{ minWidth: 280, flex: 1 }}
@@ -2981,9 +2615,6 @@ export function RealtimeSignalsSettingsPanel() {
                 required: true,
                 message: t(
                   "systemSettings.realtimeSignals.validation.openskyWarningRemainingPct",
-                  {
-                    defaultValue: "Warning threshold is required",
-                  },
                 ),
               },
               {
@@ -3002,9 +2633,6 @@ export function RealtimeSignalsSettingsPanel() {
           <Form.Item
             label={t(
               "systemSettings.realtimeSignals.fields.openskyCriticalRemainingPct",
-              {
-                defaultValue: "Critical threshold remaining (%)",
-              },
             )}
             name="openskyCriticalRemainingPct"
             style={{ minWidth: 280, flex: 1 }}
@@ -3013,9 +2641,6 @@ export function RealtimeSignalsSettingsPanel() {
                 required: true,
                 message: t(
                   "systemSettings.realtimeSignals.validation.openskyCriticalRemainingPct",
-                  {
-                    defaultValue: "Critical threshold is required",
-                  },
                 ),
               },
               {
@@ -3167,77 +2792,45 @@ export function RealtimeSignalsSettingsPanel() {
           style={{ marginBottom: "1rem" }}
           message={t(
             "systemSettings.realtimeSignals.alerts.aisRelayPurpose.title",
-            {
-              defaultValue:
-                "AIS relay address means the aggregation service root",
-            },
           )}
           description={t(
             "systemSettings.realtimeSignals.alerts.aisRelayPurpose.body",
-            {
-              defaultValue:
-                "This is not a generic proxy. The backend calls `/ais/snapshot` on the AIS relay service and expects structured `disruptions` and `density` data. The Polymarket proxy setting below is separate.",
-            },
           )}
         />
         <Space wrap style={{ display: "flex", width: "100%" }}>
           <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.openskyBaseUrl", {
-              defaultValue: "OpenSky base URL",
-            })}
+            label={t("systemSettings.realtimeSignals.fields.openskyBaseUrl")}
             name="openskyBaseUrl"
             style={{ minWidth: 280, flex: 1 }}
-            extra={t("systemSettings.realtimeSignals.hints.openskyBaseUrl", {
-              defaultValue: "REST API base URL for OpenSky state queries.",
-            })}
+            extra={t("systemSettings.realtimeSignals.hints.openskyBaseUrl")}
           >
             <Input
               placeholder={t(
                 "systemSettings.realtimeSignals.placeholders.openskyBaseUrl",
-                {
-                  defaultValue: "https://opensky-network.org/api",
-                },
               )}
             />
           </Form.Item>
           <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.openskyTokenUrl", {
-              defaultValue: "OpenSky token URL",
-            })}
+            label={t("systemSettings.realtimeSignals.fields.openskyTokenUrl")}
             name="openskyTokenUrl"
             style={{ minWidth: 280, flex: 1 }}
-            extra={t("systemSettings.realtimeSignals.hints.openskyTokenUrl", {
-              defaultValue:
-                "OAuth token endpoint used for client-credentials authentication.",
-            })}
+            extra={t("systemSettings.realtimeSignals.hints.openskyTokenUrl")}
           >
             <Input
               placeholder={t(
                 "systemSettings.realtimeSignals.placeholders.openskyTokenUrl",
-                {
-                  defaultValue:
-                    "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
-                },
               )}
             />
           </Form.Item>
           <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.aisRelayBaseUrl", {
-              defaultValue: "AIS relay root URL",
-            })}
+            label={t("systemSettings.realtimeSignals.fields.aisRelayBaseUrl")}
             name="aisRelayBaseUrl"
             style={{ minWidth: 280, flex: 1 }}
-            extra={t("systemSettings.realtimeSignals.hints.aisRelayBaseUrl", {
-              defaultValue:
-                "Root URL of the AIS aggregation service. For Docker Compose, use `http://ais-relay:3004`.",
-            })}
+            extra={t("systemSettings.realtimeSignals.hints.aisRelayBaseUrl")}
           >
             <Input
               placeholder={t(
                 "systemSettings.realtimeSignals.placeholders.aisRelayBaseUrl",
-                {
-                  defaultValue: "http://ais-relay:3004",
-                },
               )}
             />
           </Form.Item>
@@ -3272,17 +2865,9 @@ export function RealtimeSignalsSettingsPanel() {
           style={{ marginBottom: "1rem" }}
           message={t(
             "systemSettings.realtimeSignals.alerts.aisCredentials.title",
-            {
-              defaultValue:
-                "Most AIS setups only need the relay shared secret here",
-            },
           )}
           description={t(
             "systemSettings.realtimeSignals.alerts.aisCredentials.body",
-            {
-              defaultValue:
-                "Set the relay shared secret to match `AIS_RELAY_SHARED_SECRET` on the AIS relay service. The relay reads `AISSTREAM_API_KEY` from its own environment.",
-            },
           )}
         />
         {acledApiDisabled ? (
@@ -3292,16 +2877,9 @@ export function RealtimeSignalsSettingsPanel() {
             style={{ marginBottom: "1rem" }}
             message={t(
               "systemSettings.realtimeSignals.alerts.acledDisabled.title",
-              {
-                defaultValue: "ACLED API is disabled for now",
-              },
             )}
             description={t(
               "systemSettings.realtimeSignals.alerts.acledDisabled.body",
-              {
-                defaultValue:
-                  "Open myACLED does not include API access. ACLED credentials remain visible for future use, and unrest events currently run in GDELT-only mode.",
-              },
             )}
           />
         ) : null}
@@ -3309,17 +2887,10 @@ export function RealtimeSignalsSettingsPanel() {
           <Form.Item
             label={t(
               "systemSettings.realtimeSignals.fields.aisRelaySharedSecret",
-              {
-                defaultValue: "AIS relay shared secret",
-              },
             )}
             name="aisRelaySharedSecret"
             extra={t(
               "systemSettings.realtimeSignals.hints.aisRelaySharedSecret",
-              {
-                defaultValue:
-                  "Shared auth secret expected by the AIS relay service.",
-              },
             )}
           >
             <Input.Password
@@ -3330,30 +2901,20 @@ export function RealtimeSignalsSettingsPanel() {
             />
           </Form.Item>
           <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.openskyClientId", {
-              defaultValue: "OpenSky client ID",
-            })}
+            label={t("systemSettings.realtimeSignals.fields.openskyClientId")}
             name="openskyClientId"
-            extra={t("systemSettings.realtimeSignals.hints.openskyClientId", {
-              defaultValue: "OAuth client ID used for OpenSky access tokens.",
-            })}
+            extra={t("systemSettings.realtimeSignals.hints.openskyClientId")}
           >
             <Input
               autoComplete="username"
               placeholder={t(
                 "systemSettings.realtimeSignals.placeholders.openskyClientId",
-                {
-                  defaultValue: "client-id",
-                },
               )}
             />
           </Form.Item>
           <Form.Item
             label={t(
               "systemSettings.realtimeSignals.fields.openskyClientSecret",
-              {
-                defaultValue: "OpenSky client secret",
-              },
             )}
             name="openskyClientSecret"
           >

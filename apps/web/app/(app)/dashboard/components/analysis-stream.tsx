@@ -56,35 +56,18 @@ export function AnalysisStream() {
     () => refetch(),
   );
 
-  const title = t("dashboard.analysisStream.title", {
-    defaultValue: "Analysis Stream",
-  });
+  const title = t("dashboard.analysisStream.title");
   const updatesLabel = t("dashboard.analysisStream.updates", {
-    defaultValue: "{{count}} updates",
     count: results.length,
   });
-  const loadingLabel = t("dashboard.analysisStream.loading", {
-    defaultValue: "Preparing analysis stream...",
-  });
-  const emptyLabel = t("dashboard.analysisStream.empty", {
-    defaultValue: "No analysis updates yet.",
-  });
-  const summaryUnavailableLabel = t("dashboard.analysisStream.summaryUnavailable", {
-    defaultValue: "Summary unavailable",
-  });
-  const unexpectedErrorLabel = t("common.unexpectedError", {
-    defaultValue: "Unexpected error",
-  });
-  const subscriptionErrorLabel = t("dashboard.analysisStream.subscriptionError", {
-    defaultValue: "Live updates disconnected",
-  });
-  const liveModeLabel = t("dashboard.analysisStream.mode.live", { defaultValue: "Live" });
-  const offlineModeLabel = t("dashboard.analysisStream.mode.offline", {
-    defaultValue: "Offline",
-  });
-  const liveRecoveredToastLabel = t("dashboard.analysisStream.liveRecoveredToast", {
-    defaultValue: "Live updates reconnected.",
-  });
+  const loadingLabel = t("dashboard.analysisStream.loading");
+  const emptyLabel = t("dashboard.analysisStream.empty");
+  const summaryUnavailableLabel = t("dashboard.analysisStream.summaryUnavailable");
+  const unexpectedErrorLabel = t("common.unexpectedError");
+  const subscriptionErrorLabel = t("dashboard.analysisStream.subscriptionError");
+  const liveModeLabel = t("dashboard.analysisStream.mode.live");
+  const offlineModeLabel = t("dashboard.analysisStream.mode.offline");
+  const liveRecoveredToastLabel = t("dashboard.analysisStream.liveRecoveredToast");
 
   const lastOfflineRef = useRef<boolean | null>(null);
   useEffect(() => {
@@ -172,12 +155,10 @@ export function AnalysisStream() {
                     void refreshResults();
                   }}
                 >
-                  {t("dashboard.actions.fetchLatest", {
-                    defaultValue: "Pull latest data"
-                  })}
+                  {t("dashboard.actions.fetchLatest")}
                 </Button>
                 <Button size="small" type="primary" onClick={retrySubscription}>
-                  {t("common.retry", { defaultValue: "Retry" })}
+                  {t("common.retry")}
                 </Button>
               </div>
             </div>
@@ -242,17 +223,14 @@ export function AnalysisStream() {
       <ChartEmptyState
         presentation="center"
         variant="permission"
-        title={t("common.accessDenied", { defaultValue: "Access denied" })}
-        description={t("common.accessDeniedDescription", {
-          defaultValue:
-            "You don't have permission to view this data. Contact an administrator if you need access."
-        })}
+        title={t("common.accessDenied")}
+        description={t("common.accessDeniedDescription")}
       />
     </div>
   ) : (
     <div className="flex flex-col h-full glass-panel overflow-hidden relative text-sm">
       <div className="flex flex-1 items-center justify-center px-4 py-6 text-xs text-slate-500">
-        {t("auth.login.required", { defaultValue: "Please sign in to view this panel." })}
+        {t("auth.login.required")}
       </div>
     </div>
   );

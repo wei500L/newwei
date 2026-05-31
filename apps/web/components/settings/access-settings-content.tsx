@@ -973,9 +973,7 @@ export function AccessSettingsContent() {
     return (
       <Card
         className="content-card"
-        title={t('adminConsole.links.settings.title', {
-          defaultValue: 'Access Settings',
-        })}
+        title={t('adminConsole.links.settings.title')}
       >
         {messageContext}
         <Alert
@@ -991,9 +989,7 @@ export function AccessSettingsContent() {
     return (
       <Card
         className="content-card"
-        title={t('adminConsole.links.settings.title', {
-          defaultValue: 'Access Settings',
-        })}
+        title={t('adminConsole.links.settings.title')}
       >
         {messageContext}
         <Alert
@@ -1014,9 +1010,7 @@ export function AccessSettingsContent() {
     return (
       <Card
         className="content-card"
-        title={t('adminConsole.links.settings.title', {
-          defaultValue: 'Access Settings',
-        })}
+        title={t('adminConsole.links.settings.title')}
       >
         {messageContext}
         <Alert
@@ -1032,16 +1026,11 @@ export function AccessSettingsContent() {
     <div className="space-y-6">
       <Card
         className="content-card"
-        title={t('adminConsole.links.settings.title', {
-          defaultValue: 'Access Settings',
-        })}
+        title={t('adminConsole.links.settings.title')}
       >
         {messageContext}
         <Typography.Paragraph type="secondary" style={{ marginBottom: '1rem' }}>
-          {t('adminConsole.links.settings.description', {
-            defaultValue:
-              'Manage users, roles, permissions, and recent login access history.',
-          })}
+          {t('adminConsole.links.settings.description')}
         </Typography.Paragraph>
         {metaError ? (
           <Alert

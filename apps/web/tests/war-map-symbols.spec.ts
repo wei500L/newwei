@@ -12,9 +12,10 @@ import {
   matchesWarMapLegendItem,
   selectVisibleQuickLegendItems,
 } from "../app/(app)/dashboard/charts/war-map/war-map-symbols";
+import { translateTestKey } from "./i18n-test-utils";
 
-const t = (key: string, options?: { defaultValue?: string }) =>
-  options?.defaultValue ?? key;
+const t = (key: string, options?: Record<string, unknown>) =>
+  translateTestKey(key, options);
 
 describe("war-map symbols", () => {
   it("normalizes theme colors to hex", () => {
@@ -159,18 +160,18 @@ describe("war-map symbols", () => {
       expect.objectContaining({
         key: "hover",
         state: "hover",
-        label: "Hover preview",
+        label: "Hover focus",
       }),
       expect.objectContaining({
         key: "selected",
         state: "selected",
-        label: "Pinned focus",
+        label: "Selected",
       }),
       expect.objectContaining({
         key: "cluster",
         state: "cluster",
         countLabel: "12",
-        label: "Cluster",
+        label: "Cluster badge",
       }),
     ]);
   });

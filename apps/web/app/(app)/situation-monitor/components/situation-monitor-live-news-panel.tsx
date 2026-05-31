@@ -470,10 +470,8 @@ export function SituationMonitorLiveNewsPanel() {
   );
 
   const inactiveReason = activation.hidden
-    ? t("situationMonitor.liveNews.hidden", { defaultValue: "Background tab: stream paused." })
-    : t("situationMonitor.liveNews.idle", {
-        defaultValue: "Idle pause: move mouse or press key to resume.",
-      });
+    ? t("situationMonitor.liveNews.hidden")
+    : t("situationMonitor.liveNews.idle");
 
   const handleToggleChannel = useCallback(
     (channelId: string, checked: boolean) => {
@@ -545,7 +543,7 @@ export function SituationMonitorLiveNewsPanel() {
   return (
     <div ref={rootRef} className="h-full">
       <Card
-        title={t("situationMonitor.liveNews.title", { defaultValue: "Live News" })}
+        title={t("situationMonitor.liveNews.title")}
         className="sm-panel-card glass-panel border border-[var(--border)] h-full"
         size="small"
       >
@@ -562,9 +560,7 @@ export function SituationMonitorLiveNewsPanel() {
           ))}
 
           <Tooltip
-            title={t("situationMonitor.liveNews.manageHint", {
-              defaultValue: "Manage visible channels and drag to reorder.",
-            })}
+            title={t("situationMonitor.liveNews.manageHint")}
           >
             <Button
               size="small"
@@ -572,13 +568,12 @@ export function SituationMonitorLiveNewsPanel() {
               {...interactiveControlProps}
               onClick={() => setManageOpen(true)}
             >
-              {t("situationMonitor.liveNews.manage", { defaultValue: "Manage" })}
+              {t("situationMonitor.liveNews.manage")}
             </Button>
           </Tooltip>
 
           <Tag color="default">
             {t("situationMonitor.liveNews.visibleCount", {
-              defaultValue: "Showing {{count}} / {{max}}",
               count: channels.length,
               max: DEFAULT_MAX_VISIBLE_CHANNELS,
             })}
@@ -591,9 +586,7 @@ export function SituationMonitorLiveNewsPanel() {
           <Alert
             type="info"
             showIcon
-            message={t("situationMonitor.liveNews.noChannelSelected", {
-              defaultValue: "No channel selected for this region.",
-            })}
+            message={t("situationMonitor.liveNews.noChannelSelected")}
           />
         ) : (
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -612,27 +605,13 @@ export function SituationMonitorLiveNewsPanel() {
                       : undefined
                   }
                   onHlsFailure={markChannelHlsFailure}
-                  fallbackLabel={t("situationMonitor.liveNews.hlsFallback", {
-                    defaultValue: "HLS fallback",
-                  })}
-                  cooldownLabel={t("situationMonitor.liveNews.hlsCooldown", {
-                    defaultValue: "HLS cooldown",
-                  })}
-                  hlsOnlyLabel={t("situationMonitor.liveNews.hlsOnly", {
-                    defaultValue: "HLS only",
-                  })}
-                  proxyUnavailableLabel={t("situationMonitor.liveNews.proxyUnavailable", {
-                    defaultValue: "Proxy unavailable",
-                  })}
-                  resolvingYoutubeLabel={t("situationMonitor.liveNews.resolvingYoutube", {
-                    defaultValue: "Resolving live stream...",
-                  })}
-                  youtubeUnavailableLabel={t("situationMonitor.liveNews.youtubeUnavailable", {
-                    defaultValue: "YouTube live unavailable",
-                  })}
-                  unavailableLabel={t("situationMonitor.liveNews.unavailable", {
-                    defaultValue: "Stream paused",
-                  })}
+                  fallbackLabel={t("situationMonitor.liveNews.hlsFallback")}
+                  cooldownLabel={t("situationMonitor.liveNews.hlsCooldown")}
+                  hlsOnlyLabel={t("situationMonitor.liveNews.hlsOnly")}
+                  proxyUnavailableLabel={t("situationMonitor.liveNews.proxyUnavailable")}
+                  resolvingYoutubeLabel={t("situationMonitor.liveNews.resolvingYoutube")}
+                  youtubeUnavailableLabel={t("situationMonitor.liveNews.youtubeUnavailable")}
+                  unavailableLabel={t("situationMonitor.liveNews.unavailable")}
                 />
               </div>
             ))}
@@ -640,22 +619,20 @@ export function SituationMonitorLiveNewsPanel() {
         )}
 
         <Modal
-          title={t("situationMonitor.liveNews.manage", { defaultValue: "Manage channels" })}
+          title={t("situationMonitor.liveNews.manage")}
           open={manageOpen}
           onCancel={() => setManageOpen(false)}
           footer={[
             <Button key="reset" onClick={handleResetRegion}>
-              {t("situationMonitor.liveNews.resetRegion", { defaultValue: "Reset region" })}
+              {t("situationMonitor.liveNews.resetRegion")}
             </Button>,
             <Button key="close" type="primary" onClick={() => setManageOpen(false)}>
-              {t("common.close", { defaultValue: "Close" })}
+              {t("common.close")}
             </Button>,
           ]}
         >
           <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-            {t("situationMonitor.liveNews.manageHint", {
-              defaultValue: "Manage visible channels and drag to reorder.",
-            })}
+            {t("situationMonitor.liveNews.manageHint")}
           </Typography.Paragraph>
 
           <div className="max-h-[360px] overflow-auto pr-1">
@@ -696,7 +673,7 @@ export function SituationMonitorLiveNewsPanel() {
                     <Typography.Text>{channel.name}</Typography.Text>
                     {visible ? (
                       <Tag color="blue">
-                        {t("situationMonitor.liveNews.inGrid", { defaultValue: "In grid" })}
+                        {t("situationMonitor.liveNews.inGrid")}
                       </Tag>
                     ) : null}
                   </Space>

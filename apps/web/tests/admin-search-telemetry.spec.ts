@@ -20,8 +20,8 @@ describe("admin search telemetry wiring", () => {
     const source = read("app/(app)/admin/search-telemetry/search-telemetry-content.tsx");
 
     expect(source).toContain("admin/search-telemetry/summary");
-    expect(source).toContain("Daily trend");
+    expect(source).toContain("admin.searchTelemetry.chart.title");
     expect(source).not.toContain("surface !== \"all\"");
-    expect(source).toContain("Surface filtering is temporarily unavailable");
+    expect(source).toContain("admin.searchTelemetry.filters.surfaceUnavailable");
   });
 });

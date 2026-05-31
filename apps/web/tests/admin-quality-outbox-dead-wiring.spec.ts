@@ -14,6 +14,6 @@ describe("admin quality outbox dead wiring", () => {
 
     expect(source).toContain("pipeline.outbox.totals.dead");
     expect(source).toContain('t("quality.pipeline.outbox.dead"');
-    expect(source).toContain('defaultValue: "Outbox dead"');
+    expect(source).not.toContain('defaultValue: "Outbox dead"');
   });
 });

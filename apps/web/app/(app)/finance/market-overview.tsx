@@ -32,12 +32,10 @@ export function MarketOverview() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("finance.market.overviewTitle", { defaultValue: "Market Overview" })}
+          {t("finance.market.overviewTitle")}
         </Typography.Title>
         <Typography.Text type="secondary">
-          {t("finance.market.overviewSubtitle", {
-            defaultValue: "Track macro and market signals across the selected time range."
-          })}
+          {t("finance.market.overviewSubtitle")}
         </Typography.Text>
         <TimeRangeControls
           appliedGranularity={appliedHeroGranularityInfo.coarsest}
@@ -49,11 +47,8 @@ export function MarketOverview() {
         <ChartEmptyState
           className="h-auto"
           variant="permission"
-          title={t("common.accessDenied", { defaultValue: "Access denied" })}
-          description={t("finance.market.permissionRequired", {
-            defaultValue:
-              "Market overview hero metrics require the economicdata.read permission.",
-          })}
+          title={t("common.accessDenied")}
+          description={t("finance.market.permissionRequired")}
         />
       ) : heroError && !heroHasData ? (
         <RequestErrorBanner
@@ -85,7 +80,7 @@ export function MarketOverview() {
       ) : (
         <ChartEmptyState
           className="h-auto"
-          description={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+          description={t("dashboard.dataEmpty")}
         />
       )}
 
@@ -99,13 +94,13 @@ export function MarketOverview() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <Card
-          title={t("finance.market.sectorHeatmap", { defaultValue: "Sector Heatmap" })}
+          title={t("finance.market.sectorHeatmap")}
           className="content-card xl:col-span-2"
         >
           <SectorHeatmap />
         </Card>
         <Card
-          title={t("finance.market.candlestick", { defaultValue: "Candlestick" })}
+          title={t("finance.market.candlestick")}
           className="content-card"
         >
           <FinancialCandlestick />

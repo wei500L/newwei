@@ -445,12 +445,8 @@ export const NewsnowCard = memo(function NewsnowCard({
   const sourceErrorTitle = useMemo(
     () =>
       isRuntimeSecretRequiredError
-        ? t('pages.newsnow.runtimeSecrets.requiredTitle', {
-            defaultValue: 'Missing runtime secret',
-          })
-        : t('pages.newsnow.source.fetchFailed', {
-            defaultValue: 'Failed to fetch source',
-          }),
+        ? t('pages.newsnow.runtimeSecrets.requiredTitle')
+        : t('pages.newsnow.source.fetchFailed'),
     [isRuntimeSecretRequiredError, t],
   );
   const runtimeSecretRequiredKeysLabel = useMemo(() => {
@@ -458,31 +454,24 @@ export const NewsnowCard = memo(function NewsnowCard({
       return null;
     }
     return t('pages.newsnow.runtimeSecrets.requiredKeys', {
-      defaultValue: 'Required keys: {{keys}}',
       keys: sourceError.requiredKeys.join(', '),
     });
   }, [isRuntimeSecretRequiredError, sourceError?.requiredKeys, t]);
   const runtimeSecretsLinkLabel = useMemo(() => {
     if (runtimeSecretPrimaryKey) {
       return t('pages.newsnow.runtimeSecrets.openSettingsWithKey', {
-        defaultValue: 'Go to System Settings > News source secrets (Suggested: {{key}})',
         key: runtimeSecretPrimaryKey,
       });
     }
-    return t('pages.newsnow.runtimeSecrets.openSettings', {
-      defaultValue: 'Go to System Settings > News source secrets',
-    });
+    return t('pages.newsnow.runtimeSecrets.openSettings');
   }, [runtimeSecretPrimaryKey, t]);
   const runtimeSecretsEmptyLabel = useMemo(() => {
     if (runtimeSecretPrimaryKey) {
       return t('pages.newsnow.runtimeSecrets.maybeRequiredWithKey', {
-        defaultValue: 'This source may require a runtime secret first (Suggested: {{key}})',
         key: runtimeSecretPrimaryKey,
       });
     }
-    return t('pages.newsnow.runtimeSecrets.maybeRequired', {
-      defaultValue: 'This source may require a runtime secret first',
-    });
+    return t('pages.newsnow.runtimeSecrets.maybeRequired');
   }, [runtimeSecretPrimaryKey, t]);
 
   useEffect(() => {
@@ -1282,17 +1271,17 @@ export const NewsnowCard = memo(function NewsnowCard({
               ) : null}
               {data?.updatedTime && freshness.level === "fresh" ? (
                 <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                  {t("common.freshnessFresh", { defaultValue: "Fresh" })}
+                  {t("common.freshnessFresh")}
                 </span>
               ) : null}
               {data?.updatedTime && freshness.level === "aging" ? (
                 <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-                  {t("common.freshnessWarm", { defaultValue: "Warm" })} {freshnessDelayLabel}
+                  {t("common.freshnessWarm")} {freshnessDelayLabel}
                 </span>
               ) : null}
               {data?.updatedTime && freshness.level === "stale" ? (
                 <span className="rounded-full bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
-                  {t("common.freshnessStale", { defaultValue: "Stale" })} {freshnessDelayLabel}
+                  {t("common.freshnessStale")} {freshnessDelayLabel}
                 </span>
               ) : null}
             </div>
@@ -1345,7 +1334,7 @@ export const NewsnowCard = memo(function NewsnowCard({
               items: [
                 {
                   key: "hide-source",
-                  label: t("common.hide", { defaultValue: "Hide" }),
+                  label: t("common.hide"),
                   onClick: () => {
                     hideSessionBehaviorKey("newsnowSources", sourceBehaviorKey);
                     setIsSourceHidden(true);
@@ -1353,9 +1342,7 @@ export const NewsnowCard = memo(function NewsnowCard({
                 },
                 {
                   key: "not-interested-source",
-                  label: t("common.notInterested", {
-                    defaultValue: "Not interested",
-                  }),
+                  label: t("common.notInterested"),
                   onClick: () => {
                     hideSessionBehaviorKey("newsnowSources", sourceBehaviorKey);
                     setIsSourceHidden(true);
@@ -1373,7 +1360,7 @@ export const NewsnowCard = memo(function NewsnowCard({
               size="small"
               icon={<MoreOutlined />}
               className="h-7 w-7 text-[var(--secondary-foreground)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
-              aria-label={t("common.actions", { defaultValue: "Actions" })}
+              aria-label={t("common.actions")}
             />
           </Dropdown>
           <Tooltip title={dragDisabled ? "智能排序中已禁用拖动" : "拖动排序"}>

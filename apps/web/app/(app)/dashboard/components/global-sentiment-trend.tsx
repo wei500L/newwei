@@ -46,12 +46,10 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
   const theme = useChartTheme();
   const { range, start, end } = useDashboardRangeStore();
   const windowLabel = formatDashboardWindowLabel(start, end);
-  const positiveLabel = t("items.sentiment.positive", { defaultValue: "Positive" });
-  const neutralLabel = t("items.sentiment.neutral", { defaultValue: "Neutral" });
-  const negativeLabel = t("items.sentiment.negative", { defaultValue: "Negative" });
-  const aggregateLabel = t("dashboard.sentiment.aggregateLabel", {
-    defaultValue: "Sentiment (aggregate)",
-  });
+  const positiveLabel = t("items.sentiment.positive");
+  const neutralLabel = t("items.sentiment.neutral");
+  const negativeLabel = t("items.sentiment.negative");
+  const aggregateLabel = t("dashboard.sentiment.aggregateLabel");
   const preparedSeries = useMemo(
     () => prepareGlobalSentimentTrendSeries(data ?? []),
     [data]
@@ -297,7 +295,7 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
 
   return (
     <Card 
-      title={t("dashboard.sentiment.title", "Global Sentiment Trend")} 
+      title={t("dashboard.sentiment.title")} 
       loading={loading}
       className="h-full shadow-sm"
       variant="borderless"
@@ -305,9 +303,7 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
         <Space size={6} wrap>
           {isFallbackMode ? (
             <Tag color="gold" className="text-xs">
-              {t("dashboard.sentiment.fallbackSeries", {
-                defaultValue: "Fallback: aggregated sentiment"
-              })}
+              {t("dashboard.sentiment.fallbackSeries")}
             </Tag>
           ) : null}
           <Tag color="default" className="text-xs">

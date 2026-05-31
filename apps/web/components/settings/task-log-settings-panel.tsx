@@ -60,9 +60,7 @@ export function TaskLogSettingsPanel() {
     } catch (error) {
       captureClientError("Failed to load task log settings", error);
       setErrorMessage(
-        t("systemSettings.taskLogs.errors.loadFailed", {
-          defaultValue: "Failed to load task log settings.",
-        }),
+        t("systemSettings.taskLogs.errors.loadFailed"),
       );
     } finally {
       setLoading(false);
@@ -83,17 +81,13 @@ export function TaskLogSettingsPanel() {
       );
       applySettings(response.data);
       messageApi.success(
-        t("systemSettings.taskLogs.messages.saved", {
-          defaultValue: "Task log retention settings saved.",
-        }),
+        t("systemSettings.taskLogs.messages.saved"),
       );
     } catch (error) {
       captureClientError("Failed to save task log settings", error);
       messageApi.error(
         extractApiError(error).message ||
-          t("systemSettings.taskLogs.errors.saveFailed", {
-            defaultValue: "Failed to save task log settings.",
-          }),
+          t("systemSettings.taskLogs.errors.saveFailed"),
       );
     } finally {
       setSaving(false);
@@ -102,15 +96,10 @@ export function TaskLogSettingsPanel() {
 
   const handleReset = () => {
     Modal.confirm({
-      title: t("systemSettings.taskLogs.modal.resetTitle", {
-        defaultValue: "Reset task log retention?",
-      }),
-      content: t("systemSettings.taskLogs.modal.resetBody", {
-        defaultValue:
-          "This restores the default task-log retention window and reapplies the MongoDB TTL index.",
-      }),
-      okText: t("common.reset", { defaultValue: "Reset" }),
-      cancelText: t("common.cancel", { defaultValue: "Cancel" }),
+      title: t("systemSettings.taskLogs.modal.resetTitle"),
+      content: t("systemSettings.taskLogs.modal.resetBody"),
+      okText: t("common.reset"),
+      cancelText: t("common.cancel"),
       okButtonProps: { danger: true },
       onOk: async () => {
         setResetting(true);
@@ -121,16 +110,12 @@ export function TaskLogSettingsPanel() {
           );
           applySettings(response.data);
           messageApi.success(
-            t("systemSettings.taskLogs.messages.reset", {
-              defaultValue: "Task log retention settings reset.",
-            }),
+            t("systemSettings.taskLogs.messages.reset"),
           );
         } catch (error) {
           captureClientError("Failed to reset task log settings", error);
           messageApi.error(
-            t("systemSettings.taskLogs.errors.resetFailed", {
-              defaultValue: "Failed to reset task log settings.",
-            }),
+            t("systemSettings.taskLogs.errors.resetFailed"),
           );
         } finally {
           setResetting(false);
@@ -151,23 +136,15 @@ export function TaskLogSettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
-        {t("systemSettings.taskLogs.description", {
-          defaultValue:
-            "Control how long task logs remain in MongoDB. Hot-path task logs now retain summary and terminal events instead of dense process noise.",
-        })}
+        {t("systemSettings.taskLogs.description")}
       </Typography.Paragraph>
 
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: "1rem" }}
-        message={t("systemSettings.taskLogs.notice.title", {
-          defaultValue: "Summary-first retention",
-        })}
-        description={t("systemSettings.taskLogs.notice.body", {
-          defaultValue:
-            "Retention is enforced by a MongoDB TTL index. Crawl task detail, queue recovery, and admin logs keep terminal and summary records; transient retry and batch noise is not retained as separate writes.",
-        })}
+        message={t("systemSettings.taskLogs.notice.title")}
+        description={t("systemSettings.taskLogs.notice.body")}
       />
 
       {errorMessage ? (
@@ -184,23 +161,16 @@ export function TaskLogSettingsPanel() {
         style={{ display: "flex", marginBottom: "1rem", flexWrap: "wrap" }}
       >
         <Typography.Text strong>
-          {t("systemSettings.taskLogs.status.label", {
-            defaultValue: "Current source",
-          })}
+          {t("systemSettings.taskLogs.status.label")}
           :{" "}
         </Typography.Text>
         <Tag color={settings.source === "db" ? "blue" : "default"}>
           {settings.source === "db"
-            ? t("systemSettings.taskLogs.status.db", {
-                defaultValue: "Database override",
-              })
-            : t("systemSettings.taskLogs.status.default", {
-                defaultValue: "Environment default",
-              })}
+            ? t("systemSettings.taskLogs.status.db")
+            : t("systemSettings.taskLogs.status.default")}
         </Tag>
         <Typography.Text>
           {t("systemSettings.taskLogs.status.currentDays", {
-            defaultValue: "Current retention: {{days}} days",
             days: settings.retentionDays,
           })}
         </Typography.Text>
@@ -208,24 +178,18 @@ export function TaskLogSettingsPanel() {
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
-          label={t("systemSettings.taskLogs.fields.retentionDays", {
-            defaultValue: "Retention days",
-          })}
+          label={t("systemSettings.taskLogs.fields.retentionDays")}
           name="retentionDays"
           rules={[
             {
               required: true,
-              message: t("systemSettings.taskLogs.validation.retentionRequired", {
-                defaultValue: "Retention days is required.",
-              }),
+              message: t("systemSettings.taskLogs.validation.retentionRequired"),
             },
             {
               type: "number",
               min: 1,
               max: 3650,
-              message: t("systemSettings.taskLogs.validation.retentionRange", {
-                defaultValue: "Retention must be between 1 and 3650 days.",
-              }),
+              message: t("systemSettings.taskLogs.validation.retentionRange"),
             },
           ]}
           extra={
@@ -236,19 +200,16 @@ export function TaskLogSettingsPanel() {
         </Form.Item>
 
         <Typography.Paragraph type="secondary" style={{ marginTop: "-0.5rem" }}>
-          {t("systemSettings.taskLogs.hints.retentionDays", {
-            defaultValue:
-              "Applied to the MongoDB TTL index immediately after save and on server startup.",
-          })}
+          {t("systemSettings.taskLogs.hints.retentionDays")}
         </Typography.Paragraph>
 
         <Form.Item style={{ marginBottom: 0 }}>
           <Space wrap>
             <Button type="primary" htmlType="submit" loading={saving}>
-              {t("common.saveChanges", { defaultValue: "Save changes" })}
+              {t("common.saveChanges")}
             </Button>
             <Button danger onClick={handleReset} loading={resetting}>
-              {t("common.reset", { defaultValue: "Reset" })}
+              {t("common.reset")}
             </Button>
           </Space>
         </Form.Item>

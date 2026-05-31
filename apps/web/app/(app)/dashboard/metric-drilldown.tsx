@@ -115,43 +115,23 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
   const { data: session } = useSession();
   const { isDark } = useTheme();
   const chartTheme = useChartTheme();
-  const rangeLabel = t("dashboard.drilldown.rangeLabel", { defaultValue: "Range" });
-  const rangeToLabel = t("dashboard.drilldown.rangeTo", { defaultValue: "to" });
-  const unitLabel = t("dashboard.drilldown.unitLabel", { defaultValue: "Unit" });
-  const aggregationLabel = t("dashboard.drilldown.aggregationLabel", {
-    defaultValue: "Aggregation",
-  });
-  const bucketLabel = t("dashboard.drilldown.bucketLabel", { defaultValue: "Bucket" });
-  const eventsLabel = t("dashboard.drilldown.eventsLabel", { defaultValue: "Events" });
-  const unknownCountryLabel = t("dashboard.drilldown.unknownCountry", {
-    defaultValue: "Unknown",
-  });
-  const mapLoadingLabel = t("dashboard.drilldown.mapLoading", {
-    defaultValue: "Loading map geometry...",
-  });
-  const mapInitializingLabel = t("dashboard.drilldown.mapInitializing", {
-    defaultValue: "Initializing basemap...",
-  });
-  const mapLoadFailedLabel = t("dashboard.drilldown.mapLoadFailed", {
-    defaultValue: "Failed to load map",
-  });
-  const highLabel = t("dashboard.drilldown.high", { defaultValue: "High" });
-  const lowLabel = t("dashboard.drilldown.low", { defaultValue: "Low" });
-  const currentValueLabel = t("dashboard.drilldown.currentValue", {
-    defaultValue: "Current",
-  });
-  const thresholdLabel = t("dashboard.drilldown.threshold", {
-    defaultValue: "Threshold",
-  });
-  const recentChangeLabel = t("dashboard.drilldown.recentChange", {
-    defaultValue: "Change",
-  });
-  const noHistoryTitle = t("dashboard.drilldown.noHistoryTitle", {
-    defaultValue: "No history in selected range",
-  });
-  const noHistoryDescription = t("dashboard.drilldown.noHistoryDescription", {
-    defaultValue: "This metric has no historical samples for the selected period.",
-  });
+  const rangeLabel = t("dashboard.drilldown.rangeLabel");
+  const rangeToLabel = t("dashboard.drilldown.rangeTo");
+  const unitLabel = t("dashboard.drilldown.unitLabel");
+  const aggregationLabel = t("dashboard.drilldown.aggregationLabel");
+  const bucketLabel = t("dashboard.drilldown.bucketLabel");
+  const eventsLabel = t("dashboard.drilldown.eventsLabel");
+  const unknownCountryLabel = t("dashboard.drilldown.unknownCountry");
+  const mapLoadingLabel = t("dashboard.drilldown.mapLoading");
+  const mapInitializingLabel = t("dashboard.drilldown.mapInitializing");
+  const mapLoadFailedLabel = t("dashboard.drilldown.mapLoadFailed");
+  const highLabel = t("dashboard.drilldown.high");
+  const lowLabel = t("dashboard.drilldown.low");
+  const currentValueLabel = t("dashboard.drilldown.currentValue");
+  const thresholdLabel = t("dashboard.drilldown.threshold");
+  const recentChangeLabel = t("dashboard.drilldown.recentChange");
+  const noHistoryTitle = t("dashboard.drilldown.noHistoryTitle");
+  const noHistoryDescription = t("dashboard.drilldown.noHistoryDescription");
   const surface = resolveMetricDrilldownSurface(isDark);
   const { range, start: rangeStart, end: rangeEnd } = useDashboardRangeStore();
   const mapStyleUrl = useMemo(() => resolveMapStyleUrl(isDark), [isDark]);
@@ -615,7 +595,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           <span>{title}</span>
           <Badge
             status="processing"
-            text={t("dashboard.drilldown.liveAnalysis", "Live Analysis")}
+            text={t("dashboard.drilldown.liveAnalysis")}
             className="ml-2"
           />
         </div>
@@ -637,7 +617,6 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           <Typography.Paragraph type="secondary" className="mb-6 text-slate-600 dark:text-slate-300">
             {t(
               "dashboard.drilldown.description",
-              "Detailed analysis and historical trend for {{metric}}",
               { metric: title },
             )}
           </Typography.Paragraph>
@@ -661,7 +640,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
             <Col span={24}>
               <Card
                 size="small"
-                title={t("dashboard.drilldown.historicalTrend", "Historical Trend Analysis")}
+                title={t("dashboard.drilldown.historicalTrend")}
                 variant="borderless"
                 className={surface.sectionCardClassName}
               >
@@ -687,7 +666,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
               <Card
                 title={
                   <>
-                    <GlobalOutlined /> {t("dashboard.drilldown.geoImpact", "Geographic Impact")}
+                    <GlobalOutlined /> {t("dashboard.drilldown.geoImpact")}
                   </>
                 }
                 variant="borderless"
@@ -735,7 +714,6 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                   <div className="mt-2 text-center text-xs text-slate-500 dark:text-slate-400">
                     {t(
                       "dashboard.drilldown.noGeoData",
-                      "No geographic data detected in recent alerts.",
                     )}
                   </div>
                 ) : null}
@@ -747,7 +725,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                 title={
                   <>
                     <UnorderedListOutlined />{" "}
-                    {t("dashboard.drilldown.relatedSignals", "Related Signals")}
+                    {t("dashboard.drilldown.relatedSignals")}
                   </>
                 }
                 variant="borderless"
@@ -824,7 +802,6 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                   <div className="py-8 text-center text-slate-500 dark:text-slate-400">
                     {t(
                       "dashboard.drilldown.noSignals",
-                      "No related alert signals for this metric in the selected period.",
                     )}
                   </div>
                 )}

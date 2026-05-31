@@ -81,9 +81,7 @@ export function AnnotationPanel({
     } catch (error) {
       captureClientError("Failed to load analysis thread", error);
       messageApi.error(
-        t("analysis.annotations.loadFailed", {
-          defaultValue: "Failed to load annotations.",
-        }),
+        t("analysis.annotations.loadFailed"),
       );
     } finally {
       setLoading(false);
@@ -109,16 +107,12 @@ export function AnnotationPanel({
       setThread(response.data);
       setNoteDraft(response.data?.noteMarkdown ?? "");
       messageApi.success(
-        t("analysis.annotations.noteSaved", {
-          defaultValue: "Shared note saved.",
-        }),
+        t("analysis.annotations.noteSaved"),
       );
     } catch (error) {
       captureClientError("Failed to save analysis note", error);
       messageApi.error(
-        t("analysis.annotations.noteSaveFailed", {
-          defaultValue: "Failed to save note.",
-        }),
+        t("analysis.annotations.noteSaveFailed"),
       );
     } finally {
       setSavingNote(false);
@@ -138,16 +132,12 @@ export function AnnotationPanel({
       setNewComment("");
       await loadThread();
       messageApi.success(
-        t("analysis.annotations.commentSaved", {
-          defaultValue: "Comment added.",
-        }),
+        t("analysis.annotations.commentSaved"),
       );
     } catch (error) {
       captureClientError("Failed to create analysis comment", error);
       messageApi.error(
-        t("analysis.annotations.commentSaveFailed", {
-          defaultValue: "Failed to save comment.",
-        }),
+        t("analysis.annotations.commentSaveFailed"),
       );
     } finally {
       setSavingComment(false);
@@ -167,16 +157,12 @@ export function AnnotationPanel({
         setEditingCommentId(null);
         await loadThread();
         messageApi.success(
-          t("analysis.annotations.commentUpdated", {
-            defaultValue: "Comment updated.",
-          }),
+          t("analysis.annotations.commentUpdated"),
         );
       } catch (error) {
         captureClientError("Failed to update analysis comment", error);
         messageApi.error(
-          t("analysis.annotations.commentUpdateFailed", {
-            defaultValue: "Failed to update comment.",
-          }),
+          t("analysis.annotations.commentUpdateFailed"),
         );
       }
     },
@@ -189,16 +175,12 @@ export function AnnotationPanel({
         await apiClient.delete(`analysis/comments/${commentId}`);
         await loadThread();
         messageApi.success(
-          t("analysis.annotations.commentDeleted", {
-            defaultValue: "Comment deleted.",
-          }),
+          t("analysis.annotations.commentDeleted"),
         );
       } catch (error) {
         captureClientError("Failed to delete analysis comment", error);
         messageApi.error(
-          t("analysis.annotations.commentDeleteFailed", {
-            defaultValue: "Failed to delete comment.",
-          }),
+          t("analysis.annotations.commentDeleteFailed"),
         );
       }
     },
@@ -208,9 +190,7 @@ export function AnnotationPanel({
   return (
     <Card
       className="content-card"
-      title={title ?? t("analysis.annotations.title", {
-        defaultValue: "Shared annotations",
-      })}
+      title={title ?? t("analysis.annotations.title")}
       loading={loading}
     >
       {contextHolder}
@@ -219,13 +199,8 @@ export function AnnotationPanel({
           <Alert
             type="info"
             showIcon
-            message={t("analysis.annotations.readOnlyTitle", {
-              defaultValue: "Read-only annotations",
-            })}
-            description={t("analysis.annotations.readOnlyDescription", {
-              defaultValue:
-                "You can read shared notes and comments, but writing requires analysis.write permission.",
-            })}
+            message={t("analysis.annotations.readOnlyTitle")}
+            description={t("analysis.annotations.readOnlyDescription")}
           />
         ) : null}
 
@@ -234,17 +209,13 @@ export function AnnotationPanel({
             subjectType={subjectType as AnalysisTaskLinkedSubjectType}
             subjectId={subjectId}
             defaultTitle={title}
-            buttonText={t("analysis.annotations.createTask", {
-              defaultValue: "Create task",
-            })}
+            buttonText={t("analysis.annotations.createTask")}
           />
         ) : null}
 
         <div>
           <Typography.Text strong>
-            {t("analysis.annotations.noteTitle", {
-              defaultValue: "Shared note",
-            })}
+            {t("analysis.annotations.noteTitle")}
           </Typography.Text>
           {canWrite ? (
             <Space direction="vertical" size="small" style={{ width: "100%", marginTop: 12 }}>
@@ -253,9 +224,7 @@ export function AnnotationPanel({
                 onChange={(event) => setNoteDraft(event.target.value)}
                 rows={6}
                 maxLength={20000}
-                placeholder={t("analysis.annotations.notePlaceholder", {
-                  defaultValue: "Capture hypotheses, evidence gaps, and next steps.",
-                })}
+                placeholder={t("analysis.annotations.notePlaceholder")}
               />
               <Space>
                 <Button
@@ -264,14 +233,11 @@ export function AnnotationPanel({
                   onClick={() => void handleSaveNote()}
                   loading={savingNote}
                 >
-                  {t("analysis.annotations.saveNote", {
-                    defaultValue: "Save note",
-                  })}
+                  {t("analysis.annotations.saveNote")}
                 </Button>
                 {thread?.updatedAt ? (
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     {t("analysis.annotations.updatedAt", {
-                      defaultValue: "Updated {{time}}",
                       time: formatDateTime(thread.updatedAt, locale, {
                         dateStyle: "medium",
                         timeStyle: "short",
@@ -288,9 +254,7 @@ export function AnnotationPanel({
           ) : (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t("analysis.annotations.noteEmpty", {
-                defaultValue: "No shared note yet.",
-              })}
+              description={t("analysis.annotations.noteEmpty")}
             />
           )}
         </div>
@@ -298,9 +262,7 @@ export function AnnotationPanel({
         <div>
           <Space align="center">
             <Typography.Text strong>
-              {t("analysis.annotations.commentsTitle", {
-                defaultValue: "Comments",
-              })}
+              {t("analysis.annotations.commentsTitle")}
             </Typography.Text>
             <Tag>{thread?.comments.length ?? 0}</Tag>
           </Space>
@@ -329,7 +291,7 @@ export function AnnotationPanel({
                                   icon={<SaveOutlined />}
                                   onClick={() => void handleUpdateComment(comment.id)}
                                 >
-                                  {t("common.save", { defaultValue: "Save" })}
+                                  {t("common.save")}
                                 </Button>
                               ) : (
                                 <Button
@@ -344,18 +306,16 @@ export function AnnotationPanel({
                                     setEditingCommentId(comment.id);
                                   }}
                                 >
-                                  {t("common.edit", { defaultValue: "Edit" })}
+                                  {t("common.edit")}
                                 </Button>
                               ),
                               <Popconfirm
                                 key="delete"
-                                title={t("analysis.annotations.deleteTitle", {
-                                  defaultValue: "Delete this comment?",
-                                })}
+                                title={t("analysis.annotations.deleteTitle")}
                                 onConfirm={() => void handleDeleteComment(comment.id)}
                               >
                                 <Button type="link" danger icon={<DeleteOutlined />}>
-                                  {t("common.delete", { defaultValue: "Delete" })}
+                                  {t("common.delete")}
                                 </Button>
                               </Popconfirm>,
                             ]
@@ -386,7 +346,7 @@ export function AnnotationPanel({
                           <Button
                             onClick={() => setEditingCommentId(null)}
                           >
-                            {t("common.cancel", { defaultValue: "Cancel" })}
+                            {t("common.cancel")}
                           </Button>
                         </Space>
                       ) : (
@@ -399,27 +359,21 @@ export function AnnotationPanel({
             ) : (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t("analysis.annotations.commentsEmpty", {
-                  defaultValue: "No comments yet.",
-                })}
+                description={t("analysis.annotations.commentsEmpty")}
               />
             )}
           </div>
           {canWrite ? (
             <Form layout="vertical" style={{ marginTop: 16 }}>
               <Form.Item
-                label={t("analysis.annotations.newComment", {
-                  defaultValue: "Add comment",
-                })}
+                label={t("analysis.annotations.newComment")}
               >
                 <Input.TextArea
                   rows={4}
                   maxLength={5000}
                   value={newComment}
                   onChange={(event) => setNewComment(event.target.value)}
-                  placeholder={t("analysis.annotations.commentPlaceholder", {
-                    defaultValue: "Call out corroboration gaps, follow-up questions, or tasking.",
-                  })}
+                  placeholder={t("analysis.annotations.commentPlaceholder")}
                 />
               </Form.Item>
               <Button
@@ -427,9 +381,7 @@ export function AnnotationPanel({
                 onClick={() => void handleCreateComment()}
                 loading={savingComment}
               >
-                {t("analysis.annotations.addComment", {
-                  defaultValue: "Post comment",
-                })}
+                {t("analysis.annotations.addComment")}
               </Button>
             </Form>
           ) : null}

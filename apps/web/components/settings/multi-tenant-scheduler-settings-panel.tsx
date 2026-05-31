@@ -105,9 +105,7 @@ export function MultiTenantSchedulerSettingsPanel() {
       );
       const messageText =
         extractApiError(error).message ||
-        t("systemSettings.multiTenantSchedulers.errors.loadFailed", {
-          defaultValue: "Failed to load multi-tenant scheduler settings.",
-        });
+        t("systemSettings.multiTenantSchedulers.errors.loadFailed");
       setErrorMessage(messageText);
       applySettings(DEFAULT_SETTINGS);
     } finally {
@@ -132,9 +130,7 @@ export function MultiTenantSchedulerSettingsPanel() {
         );
       applySettings(response.data);
       messageApi.success(
-        t("systemSettings.multiTenantSchedulers.messages.saved", {
-          defaultValue: "Multi-tenant scheduler settings saved.",
-        }),
+        t("systemSettings.multiTenantSchedulers.messages.saved"),
       );
     } catch (error) {
       captureClientError(
@@ -143,9 +139,7 @@ export function MultiTenantSchedulerSettingsPanel() {
       );
       const messageText =
         extractApiError(error).message ||
-        t("systemSettings.multiTenantSchedulers.errors.saveFailed", {
-          defaultValue: "Failed to save multi-tenant scheduler settings.",
-        });
+        t("systemSettings.multiTenantSchedulers.errors.saveFailed");
       setErrorMessage(messageText);
       messageApi.error(messageText);
     } finally {
@@ -166,33 +160,21 @@ export function MultiTenantSchedulerSettingsPanel() {
   const sourceColor = settings?.source === "db" ? "green" : "default";
   const sourceLabel =
     settings?.source === "db"
-      ? t("systemSettings.multiTenantSchedulers.status.saved", {
-          defaultValue: "Saved override",
-        })
-      : t("systemSettings.multiTenantSchedulers.status.default", {
-          defaultValue: "Default",
-        });
+      ? t("systemSettings.multiTenantSchedulers.status.saved")
+      : t("systemSettings.multiTenantSchedulers.status.default");
 
   return (
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
-        {t("systemSettings.multiTenantSchedulers.description", {
-          defaultValue:
-            "Control how many organizations each background cron can process in parallel. Org-level locks still keep single-flight execution per tenant.",
-        })}
+        {t("systemSettings.multiTenantSchedulers.description")}
       </Typography.Paragraph>
 
       <Alert
         type="info"
         showIcon
-        message={t("systemSettings.multiTenantSchedulers.notice.title", {
-          defaultValue: "Scheduler fan-out policy",
-        })}
-        description={t("systemSettings.multiTenantSchedulers.notice.body", {
-          defaultValue:
-            "These limits apply per cron tick. Higher values reduce end-to-end tick latency, but also increase concurrent load on Redis, MySQL, MongoDB, and downstream services.",
-        })}
+        message={t("systemSettings.multiTenantSchedulers.notice.title")}
+        description={t("systemSettings.multiTenantSchedulers.notice.body")}
         style={{ marginBottom: "1rem" }}
       />
 
@@ -207,9 +189,7 @@ export function MultiTenantSchedulerSettingsPanel() {
 
       <Space wrap style={{ display: "flex", marginBottom: "1rem" }}>
         <Typography.Text>
-          {t("systemSettings.multiTenantSchedulers.status.label", {
-            defaultValue: "Settings source",
-          })}
+          {t("systemSettings.multiTenantSchedulers.status.label")}
         </Typography.Text>
         <Tag color={sourceColor}>{sourceLabel}</Tag>
       </Space>
@@ -219,16 +199,9 @@ export function MultiTenantSchedulerSettingsPanel() {
           name="newsEventsIngestionOrgConcurrency"
           label={t(
             "systemSettings.multiTenantSchedulers.fields.newsEventsIngestionOrgConcurrency",
-            {
-              defaultValue: "News events ingestion org concurrency",
-            },
           )}
           extra={t(
             "systemSettings.multiTenantSchedulers.hints.newsEventsIngestionOrgConcurrency",
-            {
-              defaultValue:
-                "How many orgs the news-events ingestion cron may process at once.",
-            },
           )}
         >
           <InputNumber min={1} max={16} style={{ width: "100%" }} />
@@ -238,16 +211,9 @@ export function MultiTenantSchedulerSettingsPanel() {
           name="knowledgeGraphIngestionOrgConcurrency"
           label={t(
             "systemSettings.multiTenantSchedulers.fields.knowledgeGraphIngestionOrgConcurrency",
-            {
-              defaultValue: "Knowledge graph ingestion org concurrency",
-            },
           )}
           extra={t(
             "systemSettings.multiTenantSchedulers.hints.knowledgeGraphIngestionOrgConcurrency",
-            {
-              defaultValue:
-                "How many orgs the knowledge-graph ingestion cron may process at once.",
-            },
           )}
         >
           <InputNumber min={1} max={16} style={{ width: "100%" }} />
@@ -257,16 +223,9 @@ export function MultiTenantSchedulerSettingsPanel() {
           name="sentimentSnapshotOrgConcurrency"
           label={t(
             "systemSettings.multiTenantSchedulers.fields.sentimentSnapshotOrgConcurrency",
-            {
-              defaultValue: "Sentiment snapshot org concurrency",
-            },
           )}
           extra={t(
             "systemSettings.multiTenantSchedulers.hints.sentimentSnapshotOrgConcurrency",
-            {
-              defaultValue:
-                "How many orgs the sentiment snapshot rebuild cron may process at once.",
-            },
           )}
         >
           <InputNumber min={1} max={16} style={{ width: "100%" }} />
@@ -276,16 +235,9 @@ export function MultiTenantSchedulerSettingsPanel() {
           name="newsnowHottestAnalysisOrgConcurrency"
           label={t(
             "systemSettings.multiTenantSchedulers.fields.newsnowHottestAnalysisOrgConcurrency",
-            {
-              defaultValue: "NewsNow hottest analysis org concurrency",
-            },
           )}
           extra={t(
             "systemSettings.multiTenantSchedulers.hints.newsnowHottestAnalysisOrgConcurrency",
-            {
-              defaultValue:
-                "How many orgs the NewsNow hottest-analysis scheduler may refresh at once after the shared global snapshot is prepared.",
-            },
           )}
         >
           <InputNumber min={1} max={16} style={{ width: "100%" }} />
@@ -295,16 +247,9 @@ export function MultiTenantSchedulerSettingsPanel() {
           name="classificationQualityAlertOrgConcurrency"
           label={t(
             "systemSettings.multiTenantSchedulers.fields.classificationQualityAlertOrgConcurrency",
-            {
-              defaultValue: "Classification quality alert org concurrency",
-            },
           )}
           extra={t(
             "systemSettings.multiTenantSchedulers.hints.classificationQualityAlertOrgConcurrency",
-            {
-              defaultValue:
-                "How many orgs the classification quality alert scheduler may evaluate at once.",
-            },
           )}
         >
           <InputNumber min={1} max={16} style={{ width: "100%" }} />
@@ -314,23 +259,16 @@ export function MultiTenantSchedulerSettingsPanel() {
           name="userDigestDeliveryOrgConcurrency"
           label={t(
             "systemSettings.multiTenantSchedulers.fields.userDigestDeliveryOrgConcurrency",
-            {
-              defaultValue: "User digest delivery org concurrency",
-            },
           )}
           extra={t(
             "systemSettings.multiTenantSchedulers.hints.userDigestDeliveryOrgConcurrency",
-            {
-              defaultValue:
-                "How many orgs the user digest email scheduler may process at once.",
-            },
           )}
         >
           <InputNumber min={1} max={16} style={{ width: "100%" }} />
         </Form.Item>
 
         <Button type="primary" htmlType="submit" loading={saving}>
-          {t("common.saveChanges", { defaultValue: "Save changes" })}
+          {t("common.saveChanges")}
         </Button>
       </Form>
     </>

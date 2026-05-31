@@ -292,18 +292,14 @@ export function NewsSourceRuntimeSecretsPanel() {
     () => [
       {
         level: 'required' as const,
-        title: t('systemSettings.newsSourceRuntimeSecrets.sections.required', {
-          defaultValue: 'Required secrets',
-        }),
+        title: t('systemSettings.newsSourceRuntimeSecrets.sections.required'),
         sources: quickAddSources.filter(
           ([, metadata]) => getRuntimeSecretRequirementLevel(metadata) === 'required',
         ),
       },
       {
         level: 'optional' as const,
-        title: t('systemSettings.newsSourceRuntimeSecrets.sections.optional', {
-          defaultValue: 'Optional overrides',
-        }),
+        title: t('systemSettings.newsSourceRuntimeSecrets.sections.optional'),
         sources: quickAddSources.filter(
           ([, metadata]) => getRuntimeSecretRequirementLevel(metadata) === 'optional',
         ),
@@ -407,7 +403,6 @@ export function NewsSourceRuntimeSecretsPanel() {
         focusRow(existingRow.rowKey, sourceId);
         messageApi.info(
           t('systemSettings.newsSourceRuntimeSecrets.messages.focusedExisting', {
-            defaultValue: 'Existing entry focused: {{sourceId}} / {{key}}',
             sourceId,
             key: existingRow.key || preferredKey || '-',
           }),
@@ -721,9 +716,7 @@ export function NewsSourceRuntimeSecretsPanel() {
               ) : null}
               {!record.persisted ? (
                 <Tag color="gold">
-                  {t('systemSettings.newsSourceRuntimeSecrets.status.draft', {
-                    defaultValue: 'Draft',
-                  })}
+                  {t('systemSettings.newsSourceRuntimeSecrets.status.draft')}
                 </Tag>
               ) : null}
               {sourceDescription ? (
@@ -732,7 +725,6 @@ export function NewsSourceRuntimeSecretsPanel() {
               {supportedKeys.length > 0 ? (
                 <Typography.Text type="secondary">
                   {t('systemSettings.newsSourceRuntimeSecrets.hints.suggestedKeys', {
-                    defaultValue: 'Suggested keys: {{keys}}',
                     keys: supportedKeys.join(', '),
                   })}
                 </Typography.Text>
@@ -740,7 +732,6 @@ export function NewsSourceRuntimeSecretsPanel() {
               {envFallbackKeys.length > 0 ? (
                 <Typography.Text type="secondary">
                   {t('systemSettings.newsSourceRuntimeSecrets.hints.envFallback', {
-                    defaultValue: 'Env fallback: {{keys}}',
                     keys: envFallbackKeys.join(', '),
                   })}
                 </Typography.Text>
@@ -778,15 +769,12 @@ export function NewsSourceRuntimeSecretsPanel() {
               {requiredAnyOfKeys.length > 0 ? (
                 <Typography.Text type="secondary">
                   {t('systemSettings.newsSourceRuntimeSecrets.hints.requiredAnyOf', {
-                    defaultValue: 'Need one of: {{keys}}',
                     keys: requiredAnyOfKeys.join(', '),
                   })}
                 </Typography.Text>
               ) : sourceSupportsRuntimeSecrets(sourceMetadata) ? (
                 <Typography.Text type="secondary">
-                  {t('systemSettings.newsSourceRuntimeSecrets.hints.optionalOverride', {
-                    defaultValue: 'This source supports optional runtime-secret overrides.',
-                  })}
+                  {t('systemSettings.newsSourceRuntimeSecrets.hints.optionalOverride')}
                 </Typography.Text>
               ) : null}
             </Space>
@@ -879,14 +867,10 @@ export function NewsSourceRuntimeSecretsPanel() {
         : t("systemSettings.newsSourceRuntimeSecrets.status.unavailable");
   const emptyState = hasViewFilters ? (
     <Empty
-      description={t('systemSettings.newsSourceRuntimeSecrets.emptyFiltered', {
-        defaultValue: 'No entries match the current source search or filters.',
-      })}
+      description={t('systemSettings.newsSourceRuntimeSecrets.emptyFiltered')}
     >
       <Button onClick={resetViewFilters}>
-        {t('systemSettings.newsSourceRuntimeSecrets.filters.clear', {
-          defaultValue: 'Clear filters',
-        })}
+        {t('systemSettings.newsSourceRuntimeSecrets.filters.clear')}
       </Button>
     </Empty>
   ) : (
@@ -920,23 +904,18 @@ export function NewsSourceRuntimeSecretsPanel() {
           {(showOnlyConfiguredSources || showOnlyRequiredSources) ? (
             <Tag color="blue">
               {t('systemSettings.newsSourceRuntimeSecrets.status.visibleCount', {
-                defaultValue: 'Visible: {{count}}',
                 count: visibleRows.length,
               })}
             </Tag>
           ) : null}
           {showOnlyConfiguredSources ? (
             <Tag color="geekblue">
-              {t('systemSettings.newsSourceRuntimeSecrets.filters.onlyConfigured', {
-                defaultValue: 'Configured only',
-              })}
+              {t('systemSettings.newsSourceRuntimeSecrets.filters.onlyConfigured')}
             </Tag>
           ) : null}
           {showOnlyRequiredSources ? (
             <Tag color="purple">
-              {t('systemSettings.newsSourceRuntimeSecrets.filters.onlyRequired', {
-                defaultValue: 'Required only',
-              })}
+              {t('systemSettings.newsSourceRuntimeSecrets.filters.onlyRequired')}
             </Tag>
           ) : null}
           {removed.length > 0 ? (
@@ -991,16 +970,12 @@ export function NewsSourceRuntimeSecretsPanel() {
               requiredOnly: showOnlyRequiredSources,
             });
           }}
-          placeholder={t('systemSettings.newsSourceRuntimeSecrets.filters.search', {
-            defaultValue: 'Search source ID / name / key',
-          })}
+          placeholder={t('systemSettings.newsSourceRuntimeSecrets.filters.search')}
           style={{ width: 280 }}
         />
         {hasViewFilters ? (
           <Button onClick={resetViewFilters}>
-            {t('systemSettings.newsSourceRuntimeSecrets.filters.clear', {
-              defaultValue: 'Clear filters',
-            })}
+            {t('systemSettings.newsSourceRuntimeSecrets.filters.clear')}
           </Button>
         ) : null}
         <Space size={6}>
@@ -1017,9 +992,7 @@ export function NewsSourceRuntimeSecretsPanel() {
             }}
           />
           <Typography.Text>
-            {t('systemSettings.newsSourceRuntimeSecrets.filters.onlyConfigured', {
-              defaultValue: 'Configured only',
-            })}
+            {t('systemSettings.newsSourceRuntimeSecrets.filters.onlyConfigured')}
           </Typography.Text>
         </Space>
         <Space size={6}>
@@ -1036,9 +1009,7 @@ export function NewsSourceRuntimeSecretsPanel() {
             }}
           />
           <Typography.Text>
-            {t('systemSettings.newsSourceRuntimeSecrets.filters.onlyRequired', {
-              defaultValue: 'Required only',
-            })}
+            {t('systemSettings.newsSourceRuntimeSecrets.filters.onlyRequired')}
           </Typography.Text>
         </Space>
       </Space>
@@ -1046,9 +1017,7 @@ export function NewsSourceRuntimeSecretsPanel() {
       {quickAddSections.length > 0 ? (
         <Space direction="vertical" size="small" style={{ display: 'flex', marginBottom: '1rem' }}>
           <Typography.Text type="secondary">
-            {t('systemSettings.newsSourceRuntimeSecrets.actions.quickAdd', {
-              defaultValue: 'Quick add supported sources',
-            })}
+            {t('systemSettings.newsSourceRuntimeSecrets.actions.quickAdd')}
           </Typography.Text>
           {quickAddSections.map((section) => (
             <Space key={section.level} direction="vertical" size={4} style={{ display: 'flex' }}>
@@ -1069,9 +1038,7 @@ export function NewsSourceRuntimeSecretsPanel() {
                       </Button>
                       {isConfigured ? (
                         <Tag color="green">
-                          {t('systemSettings.newsSourceRuntimeSecrets.status.configured', {
-                            defaultValue: 'Configured',
-                          })}
+                          {t('systemSettings.newsSourceRuntimeSecrets.status.configured')}
                         </Tag>
                       ) : null}
                     </Space>
@@ -1093,9 +1060,7 @@ export function NewsSourceRuntimeSecretsPanel() {
             }}
             items={groupedVisibleRows.map((group) => {
               const sourceName = group.isDraftGroup
-                ? t('systemSettings.newsSourceRuntimeSecrets.groups.unassignedDrafts', {
-                    defaultValue: 'Draft entries',
-                  })
+                ? t('systemSettings.newsSourceRuntimeSecrets.groups.unassignedDrafts')
                 : group.metadata?.name?.trim() || group.sourceId;
               const requirementColor =
                 group.isDraftGroup
@@ -1107,17 +1072,11 @@ export function NewsSourceRuntimeSecretsPanel() {
                     : 'default';
               const requirementLabel =
                 group.isDraftGroup
-                  ? t('systemSettings.newsSourceRuntimeSecrets.status.draft', {
-                      defaultValue: 'Draft',
-                    })
+                  ? t('systemSettings.newsSourceRuntimeSecrets.status.draft')
                   : group.requirementLevel === 'required'
-                  ? t('systemSettings.newsSourceRuntimeSecrets.sections.required', {
-                      defaultValue: 'Required secrets',
-                    })
+                  ? t('systemSettings.newsSourceRuntimeSecrets.sections.required')
                   : group.requirementLevel === 'optional'
-                    ? t('systemSettings.newsSourceRuntimeSecrets.sections.optional', {
-                        defaultValue: 'Optional overrides',
-                      })
+                    ? t('systemSettings.newsSourceRuntimeSecrets.sections.optional')
                     : t('systemSettings.newsSourceRuntimeSecrets.status.notStored');
 
               return {
@@ -1131,20 +1090,17 @@ export function NewsSourceRuntimeSecretsPanel() {
                     <Tag color={requirementColor}>{requirementLabel}</Tag>
                     <Tag>
                       {t('systemSettings.newsSourceRuntimeSecrets.groups.totalCount', {
-                        defaultValue: 'Keys: {{count}}',
                         count: group.totalCount,
                       })}
                     </Tag>
                     <Tag color="green">
                       {t('systemSettings.newsSourceRuntimeSecrets.groups.persistedCount', {
-                        defaultValue: 'Configured: {{count}}',
                         count: group.persistedCount,
                       })}
                     </Tag>
                     {group.draftCount > 0 ? (
                       <Tag color="gold">
                         {t('systemSettings.newsSourceRuntimeSecrets.groups.draftCount', {
-                          defaultValue: 'Drafts: {{count}}',
                           count: group.draftCount,
                         })}
                       </Tag>

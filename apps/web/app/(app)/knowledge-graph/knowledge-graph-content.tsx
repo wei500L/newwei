@@ -487,15 +487,13 @@ export function KnowledgeGraphContent() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
         <Text type="secondary">
-          {t("pages.knowledgeGraph.controls.seed", { defaultValue: "Seed entity" })}
+          {t("pages.knowledgeGraph.controls.seed")}
         </Text>
         <Space.Compact className="w-full">
           <Input
             value={seedDraft}
             allowClear
-            placeholder={t("pages.knowledgeGraph.controls.seedPlaceholder", {
-              defaultValue: "Search a company, policy, commodity, or organization"
-            })}
+            placeholder={t("pages.knowledgeGraph.controls.seedPlaceholder")}
             onChange={(event) => setSeedDraft(event.target.value)}
             onPressEnter={() => replaceRouteState({ seedName: seedDraft.trim() })}
           />
@@ -505,19 +503,19 @@ export function KnowledgeGraphContent() {
             loading={loading}
             onClick={() => replaceRouteState({ seedName: seedDraft.trim() })}
           >
-            {t("common.search", { defaultValue: "Search" })}
+            {t("common.search")}
           </Button>
         </Space.Compact>
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="flex flex-col gap-2">
           <Text type="secondary">
-            {t("pages.knowledgeGraph.controls.seedType", { defaultValue: "Seed type" })}
+            {t("pages.knowledgeGraph.controls.seedType")}
           </Text>
           <Select
             allowClear
             value={routeState.seedType}
-            placeholder={t("pages.knowledgeGraph.controls.seedTypeAny", { defaultValue: "Any type" })}
+            placeholder={t("pages.knowledgeGraph.controls.seedTypeAny")}
             options={NODE_TYPE_OPTIONS.map((option) => ({
               value: option.value,
               label: t(`pages.knowledgeGraph.nodeTypes.${option.value}`, {
@@ -529,14 +527,12 @@ export function KnowledgeGraphContent() {
         </div>
         <div className="flex flex-col gap-2">
           <Text type="secondary">
-            {t("pages.knowledgeGraph.controls.relations", { defaultValue: "Relation types" })}
+            {t("pages.knowledgeGraph.controls.relations")}
           </Text>
           <Select
             mode="multiple"
             value={routeState.relationTypes}
-            placeholder={t("pages.knowledgeGraph.controls.relationsAny", {
-              defaultValue: "All relation types"
-            })}
+            placeholder={t("pages.knowledgeGraph.controls.relationsAny")}
             options={KNOWLEDGE_GRAPH_RELATION_TYPES.map((value) => ({
               value,
               label: t(`pages.knowledgeGraph.relations.${value}`, {
@@ -553,7 +549,7 @@ export function KnowledgeGraphContent() {
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <Text type="secondary">
-              {t("pages.knowledgeGraph.controls.depth", { defaultValue: "Depth" })}
+              {t("pages.knowledgeGraph.controls.depth")}
             </Text>
             <Text>{depthDraft}</Text>
           </div>
@@ -577,7 +573,7 @@ export function KnowledgeGraphContent() {
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <Text type="secondary">
-              {t("pages.knowledgeGraph.controls.maxNodes", { defaultValue: "Max nodes" })}
+              {t("pages.knowledgeGraph.controls.maxNodes")}
             </Text>
             <Text>{maxNodesDraft}</Text>
           </div>
@@ -601,7 +597,7 @@ export function KnowledgeGraphContent() {
       </div>
       <Space wrap>
         <Button icon={<ReloadOutlined />} onClick={rerunLayout} disabled={!graphData}>
-          {t("pages.knowledgeGraph.actions.reflow", { defaultValue: "Reflow layout" })}
+          {t("pages.knowledgeGraph.actions.reflow")}
         </Button>
         <Button
           onClick={() =>
@@ -614,7 +610,7 @@ export function KnowledgeGraphContent() {
             })
           }
         >
-          {t("common.reset", { defaultValue: "Reset" })}
+          {t("common.reset")}
         </Button>
       </Space>
     </div>
@@ -634,7 +630,7 @@ export function KnowledgeGraphContent() {
           </Text>
         </div>
         <Tag color="blue">
-          {t("pages.knowledgeGraph.details.degree", { defaultValue: "Degree" })}:{" "}
+          {t("pages.knowledgeGraph.details.degree")}:{" "}
           {graphData?.degreeMap.get(selectedNode.id) ?? 0}
         </Tag>
       </div>
@@ -649,46 +645,44 @@ export function KnowledgeGraphContent() {
             })
           }
         >
-          {t("pages.knowledgeGraph.actions.centerNode", { defaultValue: "Set as seed" })}
+          {t("pages.knowledgeGraph.actions.centerNode")}
         </Button>
         <Button
           icon={<IdcardOutlined />}
           onClick={() => router.push(`/entities/${encodeURIComponent(selectedNode.id)}`)}
         >
-          {t("entities.intelligence.openCard", {
-            defaultValue: "Open Intelligence Card",
-          })}
+          {t("entities.intelligence.openCard")}
         </Button>
         <Button
           icon={<SearchOutlined />}
           onClick={() => window.open(`/search?q=${encodeURIComponent(selectedNode.name)}`, "_blank", "noopener")}
         >
-          {t("pages.knowledgeGraph.actions.openSearch", { defaultValue: "Open search" })}
+          {t("pages.knowledgeGraph.actions.openSearch")}
         </Button>
         <Button
           icon={<CopyOutlined />}
           onClick={() => {
             void navigator.clipboard
               .writeText(selectedNode.name)
-              .then(() => toast.success(t("common.copied", { defaultValue: "Copied" })))
-              .catch(() => toast.error(t("common.copyFailed", { defaultValue: "Copy failed" })));
+              .then(() => toast.success(t("common.copied")))
+              .catch(() => toast.error(t("common.copyFailed")));
           }}
         >
-          {t("common.copy", { defaultValue: "Copy" })}
+          {t("common.copy")}
         </Button>
       </Space>
       <Descriptions size="small" column={1} bordered>
-        <Descriptions.Item label={t("pages.knowledgeGraph.details.nodeId", { defaultValue: "Node ID" })}>
+        <Descriptions.Item label={t("pages.knowledgeGraph.details.nodeId")}>
           <Text code>{selectedNode.id}</Text>
         </Descriptions.Item>
-        <Descriptions.Item label={t("pages.knowledgeGraph.details.type", { defaultValue: "Type" })}>
+        <Descriptions.Item label={t("pages.knowledgeGraph.details.type")}>
           {t(`pages.knowledgeGraph.nodeTypes.${selectedNode.type}`, {
             defaultValue: formatKnowledgeGraphLabel(selectedNode.type)
           })}
         </Descriptions.Item>
       </Descriptions>
       {selectedNode.properties ? (
-        <Card size="small" title={t("pages.knowledgeGraph.details.properties", { defaultValue: "Properties" })}>
+        <Card size="small" title={t("pages.knowledgeGraph.details.properties")}>
           <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-slate-700">
             {formatJson(selectedNode.properties)}
           </pre>
@@ -696,9 +690,7 @@ export function KnowledgeGraphContent() {
       ) : (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={t("pages.knowledgeGraph.details.noProperties", {
-            defaultValue: "No structured properties for this node."
-          })}
+          description={t("pages.knowledgeGraph.details.noProperties")}
         />
       )}
     </Space>
@@ -717,28 +709,28 @@ export function KnowledgeGraphContent() {
         </div>
         <Space direction="vertical" size={4}>
           <Tag color="green">
-            {t("pages.knowledgeGraph.details.confidence", { defaultValue: "Confidence" })}:{" "}
+            {t("pages.knowledgeGraph.details.confidence")}:{" "}
             {selectedEdgeDisplay.confidence.toFixed(2)}
           </Tag>
           <Tag color="purple">
-            {t("pages.knowledgeGraph.details.weight", { defaultValue: "Weight" })}:{" "}
+            {t("pages.knowledgeGraph.details.weight")}:{" "}
             {selectedEdgeDisplay.weight.toFixed(2)}
           </Tag>
         </Space>
       </div>
       <Descriptions size="small" column={1} bordered>
-        <Descriptions.Item label={t("pages.knowledgeGraph.details.edgeId", { defaultValue: "Edge ID" })}>
+        <Descriptions.Item label={t("pages.knowledgeGraph.details.edgeId")}>
           <Text code>{selectedEdgeDisplay.id}</Text>
         </Descriptions.Item>
-        <Descriptions.Item label={t("pages.knowledgeGraph.details.from", { defaultValue: "From" })}>
+        <Descriptions.Item label={t("pages.knowledgeGraph.details.from")}>
           {selectedEdgeDisplay.sourceName}
         </Descriptions.Item>
-        <Descriptions.Item label={t("pages.knowledgeGraph.details.to", { defaultValue: "To" })}>
+        <Descriptions.Item label={t("pages.knowledgeGraph.details.to")}>
           {selectedEdgeDisplay.targetName}
         </Descriptions.Item>
       </Descriptions>
       {selectedEdgeDisplay.properties ? (
-        <Card size="small" title={t("pages.knowledgeGraph.details.properties", { defaultValue: "Properties" })}>
+        <Card size="small" title={t("pages.knowledgeGraph.details.properties")}>
           <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-slate-700">
             {formatJson(selectedEdgeDisplay.properties)}
           </pre>
@@ -746,7 +738,7 @@ export function KnowledgeGraphContent() {
       ) : null}
       <div className="flex items-center justify-between gap-3">
         <Title level={5} style={{ margin: 0 }}>
-          {t("pages.knowledgeGraph.details.evidenceTitle", { defaultValue: "Evidence" })}
+          {t("pages.knowledgeGraph.details.evidenceTitle")}
         </Title>
         <Button
           size="small"
@@ -757,19 +749,15 @@ export function KnowledgeGraphContent() {
             void refreshEvidence();
           }}
         >
-          {t("dashboard.actions.retryFetch", { defaultValue: "Retry fetch" })}
+          {t("dashboard.actions.retryFetch")}
         </Button>
       </div>
       {!canReadItems ? (
         <Alert
           type="warning"
           showIcon
-          message={t("pages.knowledgeGraph.details.evidencePermissionTitle", {
-            defaultValue: "Evidence is restricted"
-          })}
-          description={t("pages.knowledgeGraph.details.evidencePermissionDescription", {
-            defaultValue: "Viewing edge evidence requires the items.read permission."
-          })}
+          message={t("pages.knowledgeGraph.details.evidencePermissionTitle")}
+          description={t("pages.knowledgeGraph.details.evidencePermissionDescription")}
         />
       ) : evidenceError ? (
         <RequestErrorBanner
@@ -802,9 +790,7 @@ export function KnowledgeGraphContent() {
                         rel="noreferrer"
                       >
                         {item.article.title ??
-                          t("pages.knowledgeGraph.details.untitledArticle", {
-                            defaultValue: "Untitled article"
-                          })}
+                          t("pages.knowledgeGraph.details.untitledArticle")}
                       </a>
                       <div className="mt-1 text-xs text-slate-500">
                         {dayjs(item.article.crawlAt).format("YYYY-MM-DD HH:mm")}
@@ -813,9 +799,7 @@ export function KnowledgeGraphContent() {
                     <Space size={4} wrap>
                       {typeof item.confidence === "number" ? (
                         <Tag color="blue">
-                          {t("pages.knowledgeGraph.details.evidenceConfidence", {
-                            defaultValue: "Evidence"
-                          })}{" "}
+                          {t("pages.knowledgeGraph.details.evidenceConfidence")}{" "}
                           {item.confidence.toFixed(2)}
                         </Tag>
                       ) : null}
@@ -838,7 +822,7 @@ export function KnowledgeGraphContent() {
                     <a href={item.article.url} target="_blank" rel="noreferrer">
                       <Space size={4}>
                         <LinkOutlined />
-                        <span>{t("pages.knowledgeGraph.actions.openArticle", { defaultValue: "Open article" })}</span>
+                        <span>{t("pages.knowledgeGraph.actions.openArticle")}</span>
                       </Space>
                     </a>
                   </div>
@@ -850,18 +834,14 @@ export function KnowledgeGraphContent() {
       ) : (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={t("pages.knowledgeGraph.details.noEvidence", {
-            defaultValue: "No evidence records were found for this edge."
-          })}
+          description={t("pages.knowledgeGraph.details.noEvidence")}
         />
       )}
     </Space>
   ) : (
     <Empty
       image={Empty.PRESENTED_IMAGE_SIMPLE}
-      description={t("pages.knowledgeGraph.details.empty", {
-        defaultValue: "Select a node or edge to inspect details."
-      })}
+      description={t("pages.knowledgeGraph.details.empty")}
     />
   );
 
@@ -874,10 +854,8 @@ export function KnowledgeGraphContent() {
       <div className="min-h-[520px]">
         <ChartEmptyState
           variant="permission"
-          title={t("common.accessDenied", { defaultValue: "Access denied" })}
-          description={t("common.accessDeniedDescription", {
-            defaultValue: "You don't have permission to view this data. Contact an administrator if you need access."
-          })}
+          title={t("common.accessDenied")}
+          description={t("common.accessDeniedDescription")}
         />
       </div>
     );
@@ -892,9 +870,9 @@ export function KnowledgeGraphContent() {
       <div className="min-h-[520px]">
         <ChartEmptyState
           variant="error"
-          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          title={t("dashboard.dataAbnormal")}
           description={settingsError.message}
-          actionLabel={t("dashboard.actions.retryFetch", { defaultValue: "Retry fetch" })}
+          actionLabel={t("dashboard.actions.retryFetch")}
           actionLoading={refreshingSettings}
           onAction={() => {
             void refreshSettings();
@@ -909,10 +887,8 @@ export function KnowledgeGraphContent() {
       <div className="min-h-[520px]">
         <ChartEmptyState
           variant="offline"
-          title={t("dashboard.charts.knowledgeGraphDisabledTitle", { defaultValue: "Disabled" })}
-          description={t("dashboard.charts.knowledgeGraphDisabledDescription", {
-            defaultValue: "Disabled by admin"
-          })}
+          title={t("dashboard.charts.knowledgeGraphDisabledTitle")}
+          description={t("dashboard.charts.knowledgeGraphDisabledDescription")}
         />
       </div>
     );
@@ -924,34 +900,30 @@ export function KnowledgeGraphContent() {
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <Title level={4} style={{ margin: 0 }}>
-              {t("pages.knowledgeGraph.title", { defaultValue: "Knowledge Graph Explorer" })}
+              {t("pages.knowledgeGraph.title")}
             </Title>
             <Text type="secondary">
-              {t("pages.knowledgeGraph.subtitle", {
-                defaultValue: "Explore entity relationships, inspect edge evidence, and pivot graph searches without leaving the console."
-              })}
+              {t("pages.knowledgeGraph.subtitle")}
             </Text>
           </div>
           {isMobile ? (
             <Button icon={<FilterOutlined />} onClick={() => setFiltersOpen(true)}>
-              {t("pages.knowledgeGraph.actions.filters", { defaultValue: "Filters" })}
+              {t("pages.knowledgeGraph.actions.filters")}
             </Button>
           ) : null}
         </div>
         <Space wrap>
           <Tag color="geekblue">
-            {t("pages.knowledgeGraph.meta.scope", { defaultValue: "Scope" })}:{" "}
-            {routeState.seedName || t("pages.knowledgeGraph.meta.scopeEmpty", { defaultValue: "No seed selected" })}
+            {t("pages.knowledgeGraph.meta.scope")}:{" "}
+            {routeState.seedName || t("pages.knowledgeGraph.meta.scopeEmpty")}
           </Tag>
           <Tag color="default">
-            {t("pages.knowledgeGraph.meta.time", { defaultValue: "Time" })}:{" "}
-            {t("pages.knowledgeGraph.meta.notRangeFiltered", {
-              defaultValue: "Not range-filtered"
-            })}
+            {t("pages.knowledgeGraph.meta.time")}:{" "}
+            {t("pages.knowledgeGraph.meta.notRangeFiltered")}
           </Tag>
           {routeState.relationTypes.length > 0 ? (
             <Tag color="purple">
-              {t("pages.knowledgeGraph.meta.relationCount", { defaultValue: "Relations" })}:{" "}
+              {t("pages.knowledgeGraph.meta.relationCount")}:{" "}
               {routeState.relationTypes.length}
             </Tag>
           ) : null}
@@ -976,10 +948,8 @@ export function KnowledgeGraphContent() {
       {!routeState.seedName ? (
         <div className="glass-panel flex min-h-[540px] items-center justify-center border border-[var(--border)] p-6">
           <ChartEmptyState
-            title={t("dashboard.charts.knowledgeGraphEmptyTitle", { defaultValue: "No data" })}
-            description={t("pages.knowledgeGraph.emptyDescription", {
-              defaultValue: "Enter a seed entity to load a graph and inspect its evidence-backed relationships."
-            })}
+            title={t("dashboard.charts.knowledgeGraphEmptyTitle")}
+            description={t("pages.knowledgeGraph.emptyDescription")}
           />
         </div>
       ) : loading ? (
@@ -992,13 +962,13 @@ export function KnowledgeGraphContent() {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <Space wrap>
                 <Tag color="blue">
-                  {t("pages.knowledgeGraph.meta.nodes", { defaultValue: "Nodes" })}: {graph?.metadata.totalNodes ?? 0}
+                  {t("pages.knowledgeGraph.meta.nodes")}: {graph?.metadata.totalNodes ?? 0}
                 </Tag>
                 <Tag color="cyan">
-                  {t("pages.knowledgeGraph.meta.edges", { defaultValue: "Edges" })}: {graph?.metadata.totalEdges ?? 0}
+                  {t("pages.knowledgeGraph.meta.edges")}: {graph?.metadata.totalEdges ?? 0}
                 </Tag>
                 <Tag color="default">
-                  {t("pages.knowledgeGraph.meta.generatedAt", { defaultValue: "Generated" })}:{" "}
+                  {t("pages.knowledgeGraph.meta.generatedAt")}:{" "}
                   {graph?.metadata.generatedAt
                     ? dayjs(graph.metadata.generatedAt).format("YYYY-MM-DD HH:mm")
                     : "-"}
@@ -1007,7 +977,7 @@ export function KnowledgeGraphContent() {
               <Button icon={<ReloadOutlined />} onClick={() => {
                 void refreshGraph();
               }} loading={refreshingGraph}>
-                {t("dashboard.actions.fetchLatest", { defaultValue: "Fetch latest" })}
+                {t("dashboard.actions.fetchLatest")}
               </Button>
             </div>
             <div
@@ -1022,10 +992,8 @@ export function KnowledgeGraphContent() {
       ) : (
         <div className="glass-panel flex min-h-[540px] items-center justify-center border border-[var(--border)] p-6">
           <ChartEmptyState
-            title={t("dashboard.charts.knowledgeGraphNotFoundTitle", { defaultValue: "Not found" })}
-            description={t("dashboard.charts.knowledgeGraphNotFoundDescription", {
-              defaultValue: "No graph data found for this entity"
-            })}
+            title={t("dashboard.charts.knowledgeGraphNotFoundTitle")}
+            description={t("dashboard.charts.knowledgeGraphNotFoundDescription")}
           />
         </div>
       )}
@@ -1033,14 +1001,12 @@ export function KnowledgeGraphContent() {
       <Alert
         type="info"
         showIcon
-        message={t("pages.knowledgeGraph.meta.notRangeFiltered", {
-          defaultValue: "This graph is currently not filtered by dashboard time range."
-        })}
+        message={t("pages.knowledgeGraph.meta.notRangeFiltered")}
       />
 
       <Drawer
         open={filtersOpen}
-        title={t("pages.knowledgeGraph.actions.filters", { defaultValue: "Filters" })}
+        title={t("pages.knowledgeGraph.actions.filters")}
         placement="bottom"
         height="80vh"
         onClose={() => setFiltersOpen(false)}
@@ -1049,7 +1015,7 @@ export function KnowledgeGraphContent() {
       </Drawer>
       <Drawer
         open={detailDrawerOpen && isMobile && Boolean(selectedNode || selectedEdgeDisplay)}
-        title={t("pages.knowledgeGraph.details.drawerTitle", { defaultValue: "Graph details" })}
+        title={t("pages.knowledgeGraph.details.drawerTitle")}
         placement="bottom"
         height="78vh"
         onClose={() => setDetailDrawerOpen(false)}

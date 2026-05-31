@@ -17,6 +17,7 @@ function createDeferred<T>() {
 
 describe('api-client session cache', () => {
   beforeEach(async () => {
+    vi.resetModules();
     vi.stubGlobal('window', {});
     process.env.NEXT_PUBLIC_API_BASE_URL = 'https://example.com';
     getSessionMock.mockReset();

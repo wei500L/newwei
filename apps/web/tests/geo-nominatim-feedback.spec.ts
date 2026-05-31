@@ -14,11 +14,11 @@ describe('geo nominatim test feedback wiring', () => {
     expect(source).toContain('const [testAttempted, setTestAttempted] = useState(false);');
     expect(source).toContain('setTestAttempted(true);');
     expect(source).toContain('testAttempted && !testErrorMessage && !testResult');
-    expect(source).toContain('No geocoding result was returned for this query.');
+    expect(source).toContain('systemSettings.geoNominatim.test.noResult');
   });
 
   it('surfaces explicit success feedback for successful test runs', () => {
     expect(source).toContain('messageApi.success(');
-    expect(source).toContain('Geocoding test completed.');
+    expect(source).toContain('systemSettings.geoNominatim.test.success');
   });
 });

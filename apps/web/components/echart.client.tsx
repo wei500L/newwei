@@ -827,7 +827,7 @@ export function DashboardChart({
     const chart = chartRef.current ?? (await initPromiseRef.current);
     if (!chart) {
       toast.error(
-        t("dashboard.charts.exportFailed", { defaultValue: "Export failed" }),
+        t("dashboard.charts.exportFailed"),
       );
       return;
     }
@@ -854,13 +854,11 @@ export function DashboardChart({
         `${sanitizeFilename(exportFilename ?? "chart", "chart")}.png`,
       );
       toast.success(
-        t("dashboard.charts.exportSuccess", {
-          defaultValue: "Export completed",
-        }),
+        t("dashboard.charts.exportSuccess"),
       );
     } catch {
       toast.error(
-        t("dashboard.charts.exportFailed", { defaultValue: "Export failed" }),
+        t("dashboard.charts.exportFailed"),
       );
     } finally {
       setExporting(false);
@@ -868,8 +866,8 @@ export function DashboardChart({
   };
 
   const exportLabel = exporting
-    ? t("dashboard.charts.exporting", { defaultValue: "Exporting..." })
-    : t("dashboard.charts.exportImage", { defaultValue: "Export Image" });
+    ? t("dashboard.charts.exporting")
+    : t("dashboard.charts.exportImage");
 
   const renderActions = showExportImage || actions;
   const actionClassName = supportsHover

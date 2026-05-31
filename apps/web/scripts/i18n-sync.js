@@ -17,6 +17,7 @@ function pickDefaultValue(defaults) {
 }
 
 function main() {
+  const copyEnToZh = process.argv.includes('--copy-en-to-zh');
   const appRootDir = path.join(__dirname, '..');
   const localesDir = path.join(appRootDir, 'lib', 'locales');
   const enPath = path.join(localesDir, 'en.json');
@@ -33,6 +34,7 @@ function main() {
   let enAdded = 0;
   let zhAdded = 0;
   let warnings = 0;
+  const missingZh = [];
 
   for (const [key, info] of used.entries()) {
     if (!hasTranslationKey(enKeys, key)) {
@@ -56,6 +58,10 @@ function main() {
     if (!hasTranslationKey(zhKeys, key)) {
       const value = getDeepOwn(en, key);
       if (value === undefined) continue;
+      if (!copyEnToZh) {
+        missingZh.push({ key, value });
+        continue;
+      }
       const result = setDeepIfMissing(zh, key, value);
       if (!result.ok) {
         warnings++;
@@ -70,6 +76,14 @@ function main() {
   fs.writeFileSync(zhPath, `${JSON.stringify(zh, null, 2)}\n`);
 
   console.log(`[i18n] Synced: en +${enAdded}, zh +${zhAdded}${warnings ? `, warnings ${warnings}` : ''}`);
+  if (missingZh.length) {
+    console.error('[i18n] Missing zh translations. Add translated values, or pass --copy-en-to-zh for a temporary legacy fallback:');
+    for (const item of missingZh.slice(0, 80)) {
+      console.error(`- ${item.key}: ${JSON.stringify(item.value)}`);
+    }
+    if (missingZh.length > 80) console.error(`... and ${missingZh.length - 80} more`);
+    process.exit(1);
+  }
 }
 
 main();

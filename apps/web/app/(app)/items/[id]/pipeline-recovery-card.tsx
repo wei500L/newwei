@@ -115,9 +115,7 @@ export function PipelineRecoveryCard({
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : t("items.detail.pipelineRecovery.errors.loadFailed", {
-              defaultValue: "Failed to load pipeline recovery runs.",
-            }),
+          : t("items.detail.pipelineRecovery.errors.loadFailed"),
       );
     } finally {
       setLoading(false);
@@ -144,12 +142,8 @@ export function PipelineRecoveryCard({
       );
       messageApi.success(
         action === "replay"
-          ? t("items.detail.pipelineRecovery.messages.replaySuccess", {
-              defaultValue: "Pipeline replay queued.",
-            })
-          : t("items.detail.pipelineRecovery.messages.rollbackSuccess", {
-              defaultValue: "Pipeline rollback created.",
-            }),
+          ? t("items.detail.pipelineRecovery.messages.replaySuccess")
+          : t("items.detail.pipelineRecovery.messages.rollbackSuccess"),
       );
       await loadRuns();
       await onActionComplete?.();
@@ -159,9 +153,7 @@ export function PipelineRecoveryCard({
       messageApi.error(
         error instanceof Error
           ? error.message
-          : t("items.detail.pipelineRecovery.errors.actionFailed", {
-              defaultValue: "Pipeline recovery action failed.",
-            }),
+          : t("items.detail.pipelineRecovery.errors.actionFailed"),
       );
       return null;
     } finally {
@@ -173,30 +165,16 @@ export function PipelineRecoveryCard({
     Modal.confirm({
       title:
         action === "replay"
-          ? t("items.detail.pipelineRecovery.confirm.replayTitle", {
-              defaultValue: "Replay this pipeline run?",
-            })
-          : t("items.detail.pipelineRecovery.confirm.rollbackTitle", {
-              defaultValue: "Rollback to this raw item?",
-            }),
+          ? t("items.detail.pipelineRecovery.confirm.replayTitle")
+          : t("items.detail.pipelineRecovery.confirm.rollbackTitle"),
       content:
         action === "replay"
-          ? t("items.detail.pipelineRecovery.confirm.replayBody", {
-              defaultValue:
-                "This clones the selected raw item and requeues the pipeline.",
-            })
-          : t("items.detail.pipelineRecovery.confirm.rollbackBody", {
-              defaultValue:
-                "This resets the pipeline state so the selected raw item becomes pending again.",
-            }),
+          ? t("items.detail.pipelineRecovery.confirm.replayBody")
+          : t("items.detail.pipelineRecovery.confirm.rollbackBody"),
       okText:
         action === "replay"
-          ? t("items.detail.pipelineRecovery.actions.replay", {
-              defaultValue: "Replay",
-            })
-          : t("items.detail.pipelineRecovery.actions.rollback", {
-              defaultValue: "Rollback",
-            }),
+          ? t("items.detail.pipelineRecovery.actions.replay")
+          : t("items.detail.pipelineRecovery.actions.rollback"),
       onOk: async () => {
         await runAction(action, rawItemId);
       },
@@ -212,13 +190,11 @@ export function PipelineRecoveryCard({
       {contextHolder}
       <Card
         className="content-card"
-        title={t("items.detail.pipelineRecovery.title", {
-          defaultValue: "Pipeline Recovery",
-        })}
+        title={t("items.detail.pipelineRecovery.title")}
         extra={
           <Space wrap>
             <Button onClick={() => void loadRuns()} loading={loading}>
-              {t("common.refresh", { defaultValue: "Refresh" })}
+              {t("common.refresh")}
             </Button>
             <Button
               type="primary"
@@ -226,9 +202,7 @@ export function PipelineRecoveryCard({
               loading={actionKey === "replay:current"}
               disabled={!currentRawItemId}
             >
-              {t("items.detail.pipelineRecovery.actions.replayCurrent", {
-                defaultValue: "Replay current raw item",
-              })}
+              {t("items.detail.pipelineRecovery.actions.replayCurrent")}
             </Button>
             <Button
               danger
@@ -236,19 +210,14 @@ export function PipelineRecoveryCard({
               loading={actionKey === "rollback:current"}
               disabled={!currentRawItemId}
             >
-              {t("items.detail.pipelineRecovery.actions.rollbackCurrent", {
-                defaultValue: "Rollback current raw item",
-              })}
+              {t("items.detail.pipelineRecovery.actions.rollbackCurrent")}
             </Button>
           </Space>
         }
       >
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <Typography.Text type="secondary">
-            {t("items.detail.pipelineRecovery.description", {
-              defaultValue:
-                "Inspect recent processed runs for this item and trigger replay or rollback without leaving the item detail page.",
-            })}
+            {t("items.detail.pipelineRecovery.description")}
           </Typography.Text>
 
           {errorMessage ? (
@@ -258,16 +227,12 @@ export function PipelineRecoveryCard({
           {data ? (
             <Descriptions column={{ xs: 1, lg: 2 }} bordered size="small">
               <Descriptions.Item
-                label={t("items.detail.pipelineRecovery.labels.itemStatus", {
-                  defaultValue: "Item status",
-                })}
+                label={t("items.detail.pipelineRecovery.labels.itemStatus")}
               >
                 <Tag color={getStatusColor(data.itemStatus)}>{data.itemStatus}</Tag>
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("items.detail.pipelineRecovery.labels.mongoRef", {
-                  defaultValue: "Current raw ref",
-                })}
+                label={t("items.detail.pipelineRecovery.labels.mongoRef")}
               >
                 {data.mongoRef}
               </Descriptions.Item>
@@ -280,9 +245,7 @@ export function PipelineRecoveryCard({
             locale={{
               emptyText: (
                 <Empty
-                  description={t("items.detail.pipelineRecovery.empty", {
-                    defaultValue: "No recent pipeline runs found for this item.",
-                  })}
+                  description={t("items.detail.pipelineRecovery.empty")}
                 />
               ),
             }}
@@ -311,9 +274,7 @@ export function PipelineRecoveryCard({
                         </Space>
                         <Typography.Text strong>{run.rawItemId}</Typography.Text>
                         <Typography.Text type="secondary">
-                          {t("items.detail.pipelineRecovery.labels.updatedAt", {
-                            defaultValue: "Updated",
-                          })}
+                          {t("items.detail.pipelineRecovery.labels.updatedAt")}
                           : {run.updatedAt}
                         </Typography.Text>
                       </Space>
@@ -322,9 +283,7 @@ export function PipelineRecoveryCard({
                           onClick={() => confirmAction("replay", run.rawItemId)}
                           loading={actionKey === `replay:${run.rawItemId}`}
                         >
-                          {t("items.detail.pipelineRecovery.actions.replay", {
-                            defaultValue: "Replay",
-                          })}
+                          {t("items.detail.pipelineRecovery.actions.replay")}
                         </Button>
                         <Button
                           danger
@@ -333,9 +292,7 @@ export function PipelineRecoveryCard({
                           }
                           loading={actionKey === `rollback:${run.rawItemId}`}
                         >
-                          {t("items.detail.pipelineRecovery.actions.rollback", {
-                            defaultValue: "Rollback",
-                          })}
+                          {t("items.detail.pipelineRecovery.actions.rollback")}
                         </Button>
                       </Space>
                     </Space>
@@ -352,9 +309,7 @@ export function PipelineRecoveryCard({
                       <Alert
                         type="warning"
                         showIcon
-                        message={t("items.detail.pipelineRecovery.labels.stageErrors", {
-                          defaultValue: "Recent stage errors",
-                        })}
+                        message={t("items.detail.pipelineRecovery.labels.stageErrors")}
                         description={run.stages
                           .filter((stage) => stage.error?.message)
                           .map(

@@ -8,5 +8,5 @@ export default async function SystemSettingsPage() {
     redirect("/login");
   }
 
-  redirect("/settings/security");
+  redirect("/admin/settings");
 }

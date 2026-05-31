@@ -968,82 +968,44 @@ export function resolveWarMapLegendLabel(
 ): string {
   switch (symbolKey) {
     case "signal-high":
-      return t("dashboard.charts.warMap.legend.signalHigh", {
-        defaultValue: "Signal / high severity",
-      });
+      return t("dashboard.charts.warMap.legend.signalHigh");
     case "signal-medium":
-      return t("dashboard.charts.warMap.legend.signalMedium", {
-        defaultValue: "Signal / medium severity",
-      });
+      return t("dashboard.charts.warMap.legend.signalMedium");
     case "signal-low":
-      return t("dashboard.charts.warMap.legend.signalLow", {
-        defaultValue: "Signal / low severity",
-      });
+      return t("dashboard.charts.warMap.legend.signalLow");
     case "news-geocoded":
-      return t("dashboard.charts.warMap.legend.newsGeocoded", {
-        defaultValue: "Geo-tagged news",
-      });
+      return t("dashboard.charts.warMap.legend.newsGeocoded");
     case "news-fallback":
-      return t("dashboard.charts.warMap.legend.newsFallback", {
-        defaultValue: "Country fallback news",
-      });
+      return t("dashboard.charts.warMap.legend.newsFallback");
     case "monitor":
-      return t("dashboard.charts.warMap.legend.monitor", {
-        defaultValue: "Situation monitor",
-      });
+      return t("dashboard.charts.warMap.legend.monitor");
     case "flight":
-      return t("dashboard.charts.warMap.legend.flight", {
-        defaultValue: "Flight activity",
-      });
+      return t("dashboard.charts.warMap.legend.flight");
     case "ais-vessel-military":
-      return t("dashboard.charts.warMap.legend.aisMilitary", {
-        defaultValue: "Military / government",
-      });
+      return t("dashboard.charts.warMap.legend.aisMilitary");
     case "ais-vessel-fishing":
-      return t("dashboard.charts.warMap.legend.aisFishing", {
-        defaultValue: "Fishing",
-      });
+      return t("dashboard.charts.warMap.legend.aisFishing");
     case "ais-vessel-passenger":
-      return t("dashboard.charts.warMap.legend.aisPassenger", {
-        defaultValue: "Passenger",
-      });
+      return t("dashboard.charts.warMap.legend.aisPassenger");
     case "ais-vessel-cargo":
-      return t("dashboard.charts.warMap.legend.aisCargo", {
-        defaultValue: "Cargo",
-      });
+      return t("dashboard.charts.warMap.legend.aisCargo");
     case "ais-vessel-tanker":
-      return t("dashboard.charts.warMap.legend.aisTanker", {
-        defaultValue: "Tanker",
-      });
+      return t("dashboard.charts.warMap.legend.aisTanker");
     case "ais-vessel-other":
-      return t("dashboard.charts.warMap.legend.aisOther", {
-        defaultValue: "Other / unknown",
-      });
+      return t("dashboard.charts.warMap.legend.aisOther");
     case "ais-vessel-generic":
-      return t("dashboard.charts.warMap.legend.aisAllVesselsQuick", {
-        defaultValue: "AIS vessels",
-      });
+      return t("dashboard.charts.warMap.legend.aisAllVesselsQuick");
     case "ais-density":
-      return t("dashboard.charts.warMap.legend.aisDensity", {
-        defaultValue: "Traffic density zone",
-      });
+      return t("dashboard.charts.warMap.legend.aisDensity");
     case "ais-disruption-high":
-      return t("dashboard.charts.warMap.legend.aisDisruptionHigh", {
-        defaultValue: "Disruption / high",
-      });
+      return t("dashboard.charts.warMap.legend.aisDisruptionHigh");
     case "ais-disruption-medium":
-      return t("dashboard.charts.warMap.legend.aisDisruptionMedium", {
-        defaultValue: "Disruption / medium",
-      });
+      return t("dashboard.charts.warMap.legend.aisDisruptionMedium");
     case "ais-disruption-low":
-      return t("dashboard.charts.warMap.legend.aisDisruptionLow", {
-        defaultValue: "Disruption / low",
-      });
+      return t("dashboard.charts.warMap.legend.aisDisruptionLow");
     case "generic-point":
     default:
-      return t("dashboard.charts.warMap.legend.otherPointLayer", {
-        defaultValue: "Other point layer",
-      });
+      return t("dashboard.charts.warMap.legend.otherPointLayer");
   }
 }
 
@@ -1125,9 +1087,7 @@ export function buildWarMapQuickLegendItems({
         {
           key: "ais-disruption",
           symbolKey: "ais-disruption-high",
-          label: t("dashboard.charts.warMap.legend.aisDisruptionQuick", {
-            defaultValue: "AIS disruption",
-          }),
+          label: t("dashboard.charts.warMap.legend.aisDisruptionQuick"),
           note: transportState?.aisDisruption?.note,
           countLabel: transportState?.aisDisruption?.countLabel,
           tone: transportState?.aisDisruption?.tone,
@@ -1146,9 +1106,7 @@ export function buildWarMapQuickLegendItems({
           label: resolveWarMapLegendLabel("ais-vessel-generic", t),
           note:
             transportState?.aisPrimary?.note ??
-            t("dashboard.charts.warMap.legend.quickColorByCategory", {
-              defaultValue: "Color shows vessel category",
-            }),
+            t("dashboard.charts.warMap.legend.quickColorByCategory"),
           countLabel: transportState?.aisPrimary?.countLabel,
           tone: transportState?.aisPrimary?.tone,
           matchSymbolKeys: [
@@ -1164,9 +1122,7 @@ export function buildWarMapQuickLegendItems({
         {
           key: "ais-disruption",
           symbolKey: "ais-disruption-high",
-          label: t("dashboard.charts.warMap.legend.aisDisruptionQuick", {
-            defaultValue: "AIS disruption",
-          }),
+          label: t("dashboard.charts.warMap.legend.aisDisruptionQuick"),
           note: transportState?.aisDisruption?.note,
           countLabel: transportState?.aisDisruption?.countLabel,
           tone: transportState?.aisDisruption?.tone,
@@ -1191,9 +1147,7 @@ export function buildWarMapQuickLegendItems({
         {
           key: "ais-disruption",
           symbolKey: "ais-disruption-high",
-          label: t("dashboard.charts.warMap.legend.aisDisruptionQuick", {
-            defaultValue: "AIS disruption",
-          }),
+          label: t("dashboard.charts.warMap.legend.aisDisruptionQuick"),
           note: transportState?.aisDisruption?.note,
           countLabel: transportState?.aisDisruption?.countLabel,
           tone: transportState?.aisDisruption?.tone,
@@ -1230,12 +1184,8 @@ export function buildWarMapLegendSections({
   const sections: WarMapLegendSection[] = [
     {
       key: "signals",
-      title: t("dashboard.charts.warMap.legend.signalsTitle", {
-        defaultValue: "Signals",
-      }),
-      description: t("dashboard.charts.warMap.legend.signalsHint", {
-        defaultValue: "Color indicates urgency.",
-      }),
+      title: t("dashboard.charts.warMap.legend.signalsTitle"),
+      description: t("dashboard.charts.warMap.legend.signalsHint"),
       defaultExpanded: true,
       items: ["signal-high", "signal-medium", "signal-low"].map(
         (symbolKey) => ({
@@ -1248,13 +1198,8 @@ export function buildWarMapLegendSections({
     },
     {
       key: "transport",
-      title: t("dashboard.charts.warMap.legend.transportTitle", {
-        defaultValue: "Air & Sea",
-      }),
-      description: t("dashboard.charts.warMap.legend.transportHint", {
-        defaultValue:
-          "Aircraft, vessels, density zones, and disruptions use dedicated shapes.",
-      }),
+      title: t("dashboard.charts.warMap.legend.transportTitle"),
+      description: t("dashboard.charts.warMap.legend.transportHint"),
       statusLabel: transportState?.sectionStatusLabel,
       statusTone: transportState?.sectionStatusTone,
       statusHint: transportState?.sectionStatusHint,
@@ -1263,13 +1208,8 @@ export function buildWarMapLegendSections({
     },
     {
       key: "news",
-      title: t("dashboard.charts.warMap.legend.newsTitle", {
-        defaultValue: "News & Monitoring",
-      }),
-      description: t("dashboard.charts.warMap.legend.newsHint", {
-        defaultValue:
-          "Solid marks are precise locations; hollow marks are fallback locations.",
-      }),
+      title: t("dashboard.charts.warMap.legend.newsTitle"),
+      description: t("dashboard.charts.warMap.legend.newsHint"),
       defaultExpanded: true,
       items: [
         {
@@ -1422,13 +1362,8 @@ export function buildWarMapLegendSections({
   if (activePointLayers.length > 0) {
     sections.push({
       key: "other-point-layers",
-      title: t("dashboard.charts.warMap.legend.otherLayersTitle", {
-        defaultValue: "Other Active Point Layers",
-      }),
-      description: t("dashboard.charts.warMap.legend.otherLayersHint", {
-        defaultValue:
-          "Custom point overlays reuse the shared map symbol style.",
-      }),
+      title: t("dashboard.charts.warMap.legend.otherLayersTitle"),
+      description: t("dashboard.charts.warMap.legend.otherLayersHint"),
       defaultExpanded: false,
       items: activePointLayers.map((item) => ({
         key: item.key,
@@ -1453,18 +1388,14 @@ export function buildWarMapInteractionLegendItems({
       key: "hover",
       symbolKey: "signal-medium",
       state: "hover",
-      label: t("dashboard.charts.warMap.legend.hoverState", {
-        defaultValue: "Hover preview",
-      }),
+      label: t("dashboard.charts.warMap.legend.hoverState"),
       matchSymbolKeys: ["signal-medium"],
     },
     {
       key: "selected",
       symbolKey: "signal-medium",
       state: "selected",
-      label: t("dashboard.charts.warMap.legend.selectedState", {
-        defaultValue: "Pinned focus",
-      }),
+      label: t("dashboard.charts.warMap.legend.selectedState"),
       matchSymbolKeys: ["signal-medium"],
     },
     {
@@ -1472,9 +1403,7 @@ export function buildWarMapInteractionLegendItems({
       symbolKey: "signal-medium",
       state: "cluster",
       countLabel: "12",
-      label: t("dashboard.charts.warMap.legend.clusterState", {
-        defaultValue: "Cluster",
-      }),
+      label: t("dashboard.charts.warMap.legend.clusterState"),
       matchSymbolKeys: ["signal-medium"],
     },
   ];

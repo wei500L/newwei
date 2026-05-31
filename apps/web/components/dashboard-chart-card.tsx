@@ -68,18 +68,14 @@ export function DashboardChartCard({
       {state === "error" ? (
         <ChartEmptyState
           variant="error"
-          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          title={t("dashboard.dataAbnormal")}
           description={
             errorDescription ??
-            t("common.serviceUnavailable", {
-              defaultValue: "Service is unavailable. Please try again."
-            })
+            t("common.serviceUnavailable")
           }
           actionLabel={
             onRetry
-              ? t("dashboard.actions.retryFetch", {
-                  defaultValue: "Retry fetch"
-                })
+              ? t("dashboard.actions.retryFetch")
               : undefined
           }
           onAction={onRetry}
@@ -101,7 +97,7 @@ export function DashboardChartCard({
       ) : (
         <Empty
           description={
-            emptyDescription ?? t("dashboard.dataEmpty", { defaultValue: "No data" })
+            emptyDescription ?? t("dashboard.dataEmpty")
           }
         />
       )}

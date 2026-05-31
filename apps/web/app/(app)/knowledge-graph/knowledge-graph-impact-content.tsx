@@ -235,52 +235,25 @@ export function KnowledgeGraphImpactContent() {
   const scenarioMeta = useMemo(
     () => ({
       executive_change: {
-        title: t("knowledgeGraph.impact.scenarios.executive.title", {
-          defaultValue: "Executive change",
-        }),
-        description: t("knowledgeGraph.impact.scenarios.executive.description", {
-          defaultValue:
-            "Estimate which entities or instruments are most exposed when leadership changes at a company.",
-        }),
-        fieldLabel: t("knowledgeGraph.impact.fields.companyName", {
-          defaultValue: "Company name",
-        }),
+        title: t("knowledgeGraph.impact.scenarios.executive.title"),
+        description: t("knowledgeGraph.impact.scenarios.executive.description"),
+        fieldLabel: t("knowledgeGraph.impact.fields.companyName"),
         fieldName: "companyName" as const,
-        placeholder: t("knowledgeGraph.impact.placeholders.companyName", {
-          defaultValue: "Enter a listed company or organization",
-        }),
+        placeholder: t("knowledgeGraph.impact.placeholders.companyName"),
       },
       commodity_move: {
-        title: t("knowledgeGraph.impact.scenarios.commodity.title", {
-          defaultValue: "Commodity move",
-        }),
-        description: t("knowledgeGraph.impact.scenarios.commodity.description", {
-          defaultValue:
-            "Trace likely downstream winners, losers, and exposed entities from a commodity shock.",
-        }),
-        fieldLabel: t("knowledgeGraph.impact.fields.commodityName", {
-          defaultValue: "Commodity name",
-        }),
+        title: t("knowledgeGraph.impact.scenarios.commodity.title"),
+        description: t("knowledgeGraph.impact.scenarios.commodity.description"),
+        fieldLabel: t("knowledgeGraph.impact.fields.commodityName"),
         fieldName: "commodityName" as const,
-        placeholder: t("knowledgeGraph.impact.placeholders.commodityName", {
-          defaultValue: "Enter a commodity, energy product, or raw material",
-        }),
+        placeholder: t("knowledgeGraph.impact.placeholders.commodityName"),
       },
       policy_event: {
-        title: t("knowledgeGraph.impact.scenarios.policy.title", {
-          defaultValue: "Policy event",
-        }),
-        description: t("knowledgeGraph.impact.scenarios.policy.description", {
-          defaultValue:
-            "Surface the entities and sectors most affected by a new policy, regulation, or official directive.",
-        }),
-        fieldLabel: t("knowledgeGraph.impact.fields.policyName", {
-          defaultValue: "Policy or event name",
-        }),
+        title: t("knowledgeGraph.impact.scenarios.policy.title"),
+        description: t("knowledgeGraph.impact.scenarios.policy.description"),
+        fieldLabel: t("knowledgeGraph.impact.fields.policyName"),
         fieldName: "policyName" as const,
-        placeholder: t("knowledgeGraph.impact.placeholders.policyName", {
-          defaultValue: "Enter a policy keyword or named policy event",
-        }),
+        placeholder: t("knowledgeGraph.impact.placeholders.policyName"),
       },
     }),
     [t],
@@ -294,9 +267,7 @@ export function KnowledgeGraphImpactContent() {
       typeof seedValue === "string" ? seedValue.trim() : "";
     if (!normalizedSeed) {
       setErrorMessage(
-        t("knowledgeGraph.impact.errors.seedRequired", {
-          defaultValue: "Enter a seed before running the impact analysis.",
-        }),
+        t("knowledgeGraph.impact.errors.seedRequired"),
       );
       return;
     }
@@ -337,9 +308,7 @@ export function KnowledgeGraphImpactContent() {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : t("knowledgeGraph.impact.errors.loadFailed", {
-              defaultValue: "Failed to load impact analysis.",
-            }),
+          : t("knowledgeGraph.impact.errors.loadFailed"),
       );
     } finally {
       setLoading(false);
@@ -364,9 +333,7 @@ export function KnowledgeGraphImpactContent() {
       <Alert
         type="warning"
         showIcon
-        message={t("knowledgeGraph.impact.permissions.title", {
-          defaultValue: "Knowledge graph impact requires dashboard access.",
-        })}
+        message={t("knowledgeGraph.impact.permissions.title")}
       />
     );
   }
@@ -380,9 +347,7 @@ export function KnowledgeGraphImpactContent() {
       <Alert
         type="info"
         showIcon
-        message={t("knowledgeGraph.impact.disabled.title", {
-          defaultValue: "Knowledge graph analysis is disabled by an administrator.",
-        })}
+        message={t("knowledgeGraph.impact.disabled.title")}
       />
     );
   }
@@ -393,15 +358,10 @@ export function KnowledgeGraphImpactContent() {
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <div>
             <Title level={4} style={{ marginBottom: 8 }}>
-              {t("knowledgeGraph.impact.title", {
-                defaultValue: "Entity Impact Analysis",
-              })}
+              {t("knowledgeGraph.impact.title")}
             </Title>
             <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              {t("knowledgeGraph.impact.description", {
-                defaultValue:
-                  "Run scenario analysis on top of the knowledge graph to surface likely downstream exposure chains.",
-              })}
+              {t("knowledgeGraph.impact.description")}
             </Paragraph>
           </div>
 
@@ -447,9 +407,7 @@ export function KnowledgeGraphImpactContent() {
               rules={[
                 {
                   required: true,
-                  message: t("knowledgeGraph.impact.validation.seedRequired", {
-                    defaultValue: "This field is required.",
-                  }),
+                  message: t("knowledgeGraph.impact.validation.seedRequired"),
                 },
               ]}
             >
@@ -458,9 +416,7 @@ export function KnowledgeGraphImpactContent() {
 
             <Space wrap align="start" style={{ display: "flex" }}>
               <Form.Item
-                label={t("knowledgeGraph.impact.fields.maxCandidates", {
-                  defaultValue: "Max candidates",
-                })}
+                label={t("knowledgeGraph.impact.fields.maxCandidates")}
                 name="maxCandidates"
                 style={{ minWidth: 220 }}
               >
@@ -469,9 +425,7 @@ export function KnowledgeGraphImpactContent() {
 
               {scenario === "policy_event" ? (
                 <Form.Item
-                  label={t("knowledgeGraph.impact.fields.includeLprSnapshot", {
-                    defaultValue: "Include LPR snapshot",
-                  })}
+                  label={t("knowledgeGraph.impact.fields.includeLprSnapshot")}
                   name="includeLprSnapshot"
                   valuePropName="checked"
                 >
@@ -480,11 +434,11 @@ export function KnowledgeGraphImpactContent() {
                     buttonStyle="solid"
                     options={[
                       {
-                        label: t("common.no", { defaultValue: "No" }),
+                        label: t("common.no"),
                         value: false,
                       },
                       {
-                        label: t("common.yes", { defaultValue: "Yes" }),
+                        label: t("common.yes"),
                         value: true,
                       },
                     ]}
@@ -495,9 +449,7 @@ export function KnowledgeGraphImpactContent() {
 
             <Space wrap>
               <Button type="primary" htmlType="submit" loading={loading}>
-                {t("knowledgeGraph.impact.actions.run", {
-                  defaultValue: "Run impact analysis",
-                })}
+                {t("knowledgeGraph.impact.actions.run")}
               </Button>
               <Button
                 onClick={() => {
@@ -506,7 +458,7 @@ export function KnowledgeGraphImpactContent() {
                   setErrorMessage(null);
                 }}
               >
-                {t("common.reset", { defaultValue: "Reset" })}
+                {t("common.reset")}
               </Button>
             </Space>
           </Form>
@@ -517,9 +469,7 @@ export function KnowledgeGraphImpactContent() {
         <Alert
           type="error"
           showIcon
-          message={t("knowledgeGraph.impact.errors.title", {
-            defaultValue: "Impact analysis failed",
-          })}
+          message={t("knowledgeGraph.impact.errors.title")}
           description={errorMessage}
         />
       ) : null}
@@ -527,10 +477,7 @@ export function KnowledgeGraphImpactContent() {
       {!analysis && !loading ? (
         <Card className="content-card">
           <Empty
-            description={t("knowledgeGraph.impact.empty", {
-              defaultValue:
-                "Pick a scenario and run an analysis to inspect candidate impact chains.",
-            })}
+            description={t("knowledgeGraph.impact.empty")}
           />
         </Card>
       ) : null}
@@ -540,9 +487,7 @@ export function KnowledgeGraphImpactContent() {
           <Card className="content-card">
             <Descriptions column={{ xs: 1, lg: 2 }} bordered size="small">
               <Descriptions.Item
-                label={t("knowledgeGraph.impact.summary.seed", {
-                  defaultValue: "Seed",
-                })}
+                label={t("knowledgeGraph.impact.summary.seed")}
               >
                 <Space wrap>
                   <Text strong>{analysis.seed.name}</Text>
@@ -550,23 +495,17 @@ export function KnowledgeGraphImpactContent() {
                 </Space>
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("knowledgeGraph.impact.summary.scenario", {
-                  defaultValue: "Scenario",
-                })}
+                label={t("knowledgeGraph.impact.summary.scenario")}
               >
                 {analysis.scenario}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("knowledgeGraph.impact.summary.generatedAt", {
-                  defaultValue: "Generated at",
-                })}
+                label={t("knowledgeGraph.impact.summary.generatedAt")}
               >
                 {analysis.generatedAt}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("knowledgeGraph.impact.summary.candidates", {
-                  defaultValue: "Candidates",
-                })}
+                label={t("knowledgeGraph.impact.summary.candidates")}
               >
                 {analysis.candidates.length}
               </Descriptions.Item>
@@ -579,9 +518,7 @@ export function KnowledgeGraphImpactContent() {
               const metadataJson = formatJson(candidate.entity.properties);
               const collapseItems = candidate.chains.map((chain, chainIndex) => ({
                 key: `${candidate.entity.id}-${chainIndex}`,
-                label: `${t("knowledgeGraph.impact.chain.title", {
-                  defaultValue: "Chain",
-                })} ${chainIndex + 1}: ${chain.reason}`,
+                label: `${t("knowledgeGraph.impact.chain.title")} ${chainIndex + 1}: ${chain.reason}`,
                 children: (
                   <Space
                     direction="vertical"
@@ -589,9 +526,7 @@ export function KnowledgeGraphImpactContent() {
                     style={{ width: "100%" }}
                   >
                     <Text type="secondary">
-                      {t("knowledgeGraph.impact.chain.nodes", {
-                        defaultValue: "Nodes",
-                      })}
+                      {t("knowledgeGraph.impact.chain.nodes")}
                     </Text>
                     <Space wrap>
                       {chain.nodes.map((node) => (
@@ -601,9 +536,7 @@ export function KnowledgeGraphImpactContent() {
                       ))}
                     </Space>
                     <Text type="secondary">
-                      {t("knowledgeGraph.impact.chain.edges", {
-                        defaultValue: "Edges",
-                      })}
+                      {t("knowledgeGraph.impact.chain.edges")}
                     </Text>
                     <Space wrap>
                       {chain.edges.map((edge) => (
@@ -640,9 +573,7 @@ export function KnowledgeGraphImpactContent() {
                             <Tag color="blue">#{index + 1}</Tag>
                             <Tag>{candidate.kind}</Tag>
                             <Tag color="geekblue">
-                              {t("knowledgeGraph.impact.candidate.score", {
-                                defaultValue: "Score",
-                              })}{" "}
+                              {t("knowledgeGraph.impact.candidate.score")}{" "}
                               {candidate.score.toFixed(3)}
                             </Tag>
                           </Space>
@@ -659,9 +590,7 @@ export function KnowledgeGraphImpactContent() {
                             )
                           }
                         >
-                          {t("knowledgeGraph.impact.actions.openExplorer", {
-                            defaultValue: "Open in explorer",
-                          })}
+                          {t("knowledgeGraph.impact.actions.openExplorer")}
                         </Button>
                       </Space>
 
@@ -673,9 +602,7 @@ export function KnowledgeGraphImpactContent() {
                           items={[
                             {
                               key: `${candidate.entity.id}-properties`,
-                              label: t("knowledgeGraph.impact.properties", {
-                                defaultValue: "Entity properties",
-                              }),
+                              label: t("knowledgeGraph.impact.properties"),
                               children: (
                                 <pre className="max-h-[240px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
                                   {metadataJson}

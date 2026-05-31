@@ -52,7 +52,7 @@ export function DashboardsContent() {
       message.error(
         error instanceof Error
           ? error.message
-          : t("dashboard.editor.saveFailed", { defaultValue: "Failed to save dashboard." })
+          : t("dashboard.editor.saveFailed")
       );
     }
   };
@@ -62,12 +62,12 @@ export function DashboardsContent() {
       await deleteDashboard({ variables: { id } });
       await refetch();
       setActiveId(null);
-      message.success(t("dashboard.editor.deleted", { defaultValue: "Dashboard deleted." }));
+      message.success(t("dashboard.editor.deleted"));
     } catch (error) {
       message.error(
         error instanceof Error
           ? error.message
-          : t("dashboard.editor.deleteFailed", { defaultValue: "Failed to delete dashboard." })
+          : t("dashboard.editor.deleteFailed")
       );
     }
   };
@@ -82,7 +82,7 @@ export function DashboardsContent() {
 
   if (!canManageDashboards) {
     return (
-      <Card className="content-card" title={t("dashboard.admin.title", { defaultValue: "Dashboard Config" })}>
+      <Card className="content-card" title={t("dashboard.admin.title")}>
         <Alert
           type="warning"
           message={t("settings.adminOnly.title")}
@@ -101,7 +101,7 @@ export function DashboardsContent() {
     <div className="flex flex-col gap-6">
       <Space align="center" size="middle">
         <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("dashboard.admin.title", { defaultValue: "Dashboard Config" })}
+          {t("dashboard.admin.title")}
         </Typography.Title>
         <Button size="small" onClick={() => void refetch()}>
           {t("common.refresh")}
@@ -112,11 +112,11 @@ export function DashboardsContent() {
             setActiveId(null);
           }}
         >
-          {t("dashboard.admin.new", { defaultValue: "New dashboard" })}
+          {t("dashboard.admin.new")}
         </Button>
         <Select
           style={{ minWidth: 220 }}
-          placeholder={t("dashboard.admin.select", { defaultValue: "Select dashboard" })}
+          placeholder={t("dashboard.admin.select")}
           value={activeId ?? undefined}
           options={options}
           onChange={(value) => setActiveId(value)}

@@ -76,9 +76,7 @@ export function GeocodeLookupCard() {
       setResult(response.data?.result ?? null);
       if (!response.data?.result) {
         setErrorMessage(
-          t("pages.map.geocode.empty", {
-            defaultValue: "No geocode result was returned for this query.",
-          }),
+          t("pages.map.geocode.empty"),
         );
       }
     } catch (error) {
@@ -87,9 +85,7 @@ export function GeocodeLookupCard() {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : t("pages.map.geocode.loadFailed", {
-              defaultValue: "Failed to geocode this query.",
-            }),
+          : t("pages.map.geocode.loadFailed"),
       );
     } finally {
       setLoading(false);
@@ -99,17 +95,12 @@ export function GeocodeLookupCard() {
   return (
     <Card
       className="content-card"
-      title={t("pages.map.geocode.title", {
-        defaultValue: "Geocode Lookup",
-      })}
+      title={t("pages.map.geocode.title")}
     >
       {contextHolder}
       <Space direction="vertical" size="middle" style={{ width: "100%" }}>
         <Typography.Text type="secondary">
-          {t("pages.map.geocode.description", {
-            defaultValue:
-              "Resolve a place or region to coordinates using the same geocoding service used by the backend pipeline.",
-          })}
+          {t("pages.map.geocode.description")}
         </Typography.Text>
 
         <Form
@@ -120,45 +111,33 @@ export function GeocodeLookupCard() {
           }}
         >
           <Form.Item
-            label={t("pages.map.geocode.fields.query", {
-              defaultValue: "Location query",
-            })}
+            label={t("pages.map.geocode.fields.query")}
             name="query"
             rules={[
               {
                 required: true,
-                message: t("pages.map.geocode.validation.queryRequired", {
-                  defaultValue: "Enter a location query.",
-                }),
+                message: t("pages.map.geocode.validation.queryRequired"),
               },
             ]}
           >
             <Input
-              placeholder={t("pages.map.geocode.placeholders.query", {
-                defaultValue: "Shanghai, South China Sea, Brussels, Texas...",
-              })}
+              placeholder={t("pages.map.geocode.placeholders.query")}
             />
           </Form.Item>
 
           <Form.Item
-            label={t("pages.map.geocode.fields.countryCode", {
-              defaultValue: "Country code",
-            })}
+            label={t("pages.map.geocode.fields.countryCode")}
             name="countryCodeAlpha2"
           >
             <Input
               maxLength={2}
-              placeholder={t("pages.map.geocode.placeholders.countryCode", {
-                defaultValue: "Optional ISO alpha-2 code, e.g. CN or US",
-              })}
+              placeholder={t("pages.map.geocode.placeholders.countryCode")}
             />
           </Form.Item>
 
           <Space wrap>
             <Button type="primary" htmlType="submit" loading={loading}>
-              {t("pages.map.geocode.actions.lookup", {
-                defaultValue: "Resolve coordinates",
-              })}
+              {t("pages.map.geocode.actions.lookup")}
             </Button>
             <Button
               onClick={() => {
@@ -167,7 +146,7 @@ export function GeocodeLookupCard() {
                 setErrorMessage(null);
               }}
             >
-              {t("common.reset", { defaultValue: "Reset" })}
+              {t("common.reset")}
             </Button>
           </Space>
         </Form>
@@ -184,16 +163,12 @@ export function GeocodeLookupCard() {
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
             <Descriptions bordered size="small" column={{ xs: 1, lg: 2 }}>
               <Descriptions.Item
-                label={t("pages.map.geocode.labels.result", {
-                  defaultValue: "Result",
-                })}
+                label={t("pages.map.geocode.labels.result")}
               >
                 {result.displayName ?? result.query}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("pages.map.geocode.labels.provider", {
-                  defaultValue: "Provider",
-                })}
+                label={t("pages.map.geocode.labels.provider")}
               >
                 <Tag>{result.provider}</Tag>
               </Descriptions.Item>
@@ -204,22 +179,16 @@ export function GeocodeLookupCard() {
                 {result.lng.toFixed(6)}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("pages.map.geocode.labels.country", {
-                  defaultValue: "Country",
-                })}
+                label={t("pages.map.geocode.labels.country")}
               >
-                {result.countryCodeAlpha2 ?? t("common.notAvailable", {
-                  defaultValue: "N/A",
-                })}
+                {result.countryCodeAlpha2 ?? t("common.notAvailable")}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("pages.map.geocode.labels.bounds", {
-                  defaultValue: "Bounds",
-                })}
+                label={t("pages.map.geocode.labels.bounds")}
               >
                 {result.bounds
                   ? `${result.bounds.minLat.toFixed(3)}, ${result.bounds.minLng.toFixed(3)} → ${result.bounds.maxLat.toFixed(3)}, ${result.bounds.maxLng.toFixed(3)}`
-                  : t("common.notAvailable", { defaultValue: "N/A" })}
+                  : t("common.notAvailable")}
               </Descriptions.Item>
             </Descriptions>
 
@@ -231,29 +200,21 @@ export function GeocodeLookupCard() {
                       `${result.lat}, ${result.lng}`,
                     );
                     messageApi.success(
-                      t("pages.map.geocode.messages.copied", {
-                        defaultValue: "Coordinates copied.",
-                      }),
+                      t("pages.map.geocode.messages.copied"),
                     );
                   } catch (error) {
                     captureClientError("Failed to copy geocode coordinates", error);
                     messageApi.error(
-                      t("pages.map.geocode.messages.copyFailed", {
-                        defaultValue: "Failed to copy coordinates.",
-                      }),
+                      t("pages.map.geocode.messages.copyFailed"),
                     );
                   }
                 }}
               >
-                {t("pages.map.geocode.actions.copyCoordinates", {
-                  defaultValue: "Copy coordinates",
-                })}
+                {t("pages.map.geocode.actions.copyCoordinates")}
               </Button>
               {openStreetMapHref ? (
                 <Button href={openStreetMapHref} target="_blank" rel="noreferrer">
-                  {t("pages.map.geocode.actions.openMap", {
-                    defaultValue: "Open in map",
-                  })}
+                  {t("pages.map.geocode.actions.openMap")}
                 </Button>
               ) : null}
             </Space>

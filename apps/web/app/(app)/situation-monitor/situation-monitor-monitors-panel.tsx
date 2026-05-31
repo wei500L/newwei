@@ -299,34 +299,24 @@ function buildSuggestionExplanation(
   if (suggestion.reason === "lexical") {
     return terms.length > 0
       ? t("situationMonitor.monitors.previewExplanation.lexicalWithTerms", {
-          defaultValue: "Keyword overlap: {{terms}}",
           terms: termsLabel,
         })
-      : t("situationMonitor.monitors.previewExplanation.lexical", {
-          defaultValue: "Lexical overlap with your monitor input.",
-        });
+      : t("situationMonitor.monitors.previewExplanation.lexical");
   }
 
   if (suggestion.reason === "semantic") {
     return terms.length > 0
       ? t("situationMonitor.monitors.previewExplanation.semanticWithTerms", {
-          defaultValue: "Embedding recall related to: {{terms}}",
           terms: termsLabel,
         })
-      : t("situationMonitor.monitors.previewExplanation.semantic", {
-          defaultValue: "Embedding recall found a close semantic match.",
-        });
+      : t("situationMonitor.monitors.previewExplanation.semantic");
   }
 
   return terms.length > 0
     ? t("situationMonitor.monitors.previewExplanation.rerankWithTerms", {
-        defaultValue:
-          "Semantic recall from {{terms}}, then rerank confirmed relevance.",
         terms: termsLabel,
       })
-    : t("situationMonitor.monitors.previewExplanation.rerank", {
-        defaultValue: "Rerank confirmed this suggestion after semantic recall.",
-      });
+    : t("situationMonitor.monitors.previewExplanation.rerank");
 }
 
 function getMatchItemHref(match: SituationMonitorMatchResult) {
@@ -425,9 +415,7 @@ export function SituationMonitorMonitorsPanel({
       lastMonitorsErrorRef.current = null;
       return;
     }
-    const nextMessage = t("situationMonitor.monitors.loadFailed", {
-      defaultValue: "Failed to load monitors.",
-    });
+    const nextMessage = t("situationMonitor.monitors.loadFailed");
     if (lastMonitorsErrorRef.current === nextMessage) {
       return;
     }
@@ -581,14 +569,10 @@ export function SituationMonitorMonitorsPanel({
         });
       }
       message.success(
-        t("situationMonitor.monitors.previewReady", {
-          defaultValue: "Suggestions refreshed. Confirm what you want to keep.",
-        }),
+        t("situationMonitor.monitors.previewReady"),
       );
     } catch {
-      const errorText = t("situationMonitor.monitors.previewFailed", {
-        defaultValue: "Failed to analyze monitor keywords.",
-      });
+      const errorText = t("situationMonitor.monitors.previewFailed");
       setPreviewError(errorText);
       message.error(errorText);
     } finally {
@@ -615,9 +599,7 @@ export function SituationMonitorMonitorsPanel({
     if (!isSystemSync && previewFingerprint !== currentFingerprint) {
       await handlePreview();
       message.info(
-        t("situationMonitor.monitors.reviewBeforeSave", {
-          defaultValue: "Review the refreshed suggestions, then save again.",
-        }),
+        t("situationMonitor.monitors.reviewBeforeSave"),
       );
       return;
     }
@@ -670,9 +652,7 @@ export function SituationMonitorMonitorsPanel({
           },
         );
         message.success(
-          t("situationMonitor.monitors.updated", {
-            defaultValue: "Monitor updated.",
-          }),
+          t("situationMonitor.monitors.updated"),
         );
       } else {
         await apiClient.post("situation-monitor/monitors", {
@@ -690,18 +670,14 @@ export function SituationMonitorMonitorsPanel({
           location: resolvedLocation,
         });
         message.success(
-          t("situationMonitor.monitors.created", {
-            defaultValue: "Monitor created.",
-          }),
+          t("situationMonitor.monitors.created"),
         );
       }
       closeModal();
       await refreshAfterMutation();
     } catch {
       message.error(
-        t("situationMonitor.monitors.saveFailed", {
-          defaultValue: "Failed to save monitor.",
-        }),
+        t("situationMonitor.monitors.saveFailed"),
       );
     } finally {
       setSubmitting(false);
@@ -729,9 +705,7 @@ export function SituationMonitorMonitorsPanel({
         await refreshAfterMutation();
       } catch {
         message.error(
-          t("situationMonitor.monitors.toggleFailed", {
-            defaultValue: "Failed to update monitor status.",
-          }),
+          t("situationMonitor.monitors.toggleFailed"),
         );
       }
     },
@@ -743,16 +717,12 @@ export function SituationMonitorMonitorsPanel({
       try {
         await apiClient.delete(`situation-monitor/monitors/${monitorId}`);
         message.success(
-          t("situationMonitor.monitors.deleted", {
-            defaultValue: "Monitor deleted.",
-          }),
+          t("situationMonitor.monitors.deleted"),
         );
         await refreshAfterMutation();
       } catch {
         message.error(
-          t("situationMonitor.monitors.deleteFailed", {
-            defaultValue: "Failed to delete monitor.",
-          }),
+          t("situationMonitor.monitors.deleteFailed"),
         );
       }
     },
@@ -769,7 +739,7 @@ export function SituationMonitorMonitorsPanel({
           t(`situationMonitor.monitors.reason.${reason}`, {
             defaultValue: getDefaultMonitorReasonLabel(reason),
           }),
-        t("situationMonitor.monitors.kept", { defaultValue: "kept" }),
+        t("situationMonitor.monitors.kept"),
       ),
     [preview?.suggestedTopics, selectedSuggestions.topics, t],
   );
@@ -784,7 +754,7 @@ export function SituationMonitorMonitorsPanel({
           t(`situationMonitor.monitors.reason.${reason}`, {
             defaultValue: getDefaultMonitorReasonLabel(reason),
           }),
-        t("situationMonitor.monitors.kept", { defaultValue: "kept" }),
+        t("situationMonitor.monitors.kept"),
       ),
     [preview?.suggestedEntities, selectedSuggestions.entities, t],
   );
@@ -799,7 +769,7 @@ export function SituationMonitorMonitorsPanel({
           t(`situationMonitor.monitors.reason.${reason}`, {
             defaultValue: getDefaultMonitorReasonLabel(reason),
           }),
-        t("situationMonitor.monitors.kept", { defaultValue: "kept" }),
+        t("situationMonitor.monitors.kept"),
       ),
     [preview?.suggestedLexicalTerms, selectedSuggestions.lexicalTerms, t],
   );
@@ -812,15 +782,11 @@ export function SituationMonitorMonitorsPanel({
   if (!session?.accessToken) {
     return (
       <Card
-        title={t("situationMonitor.monitors.title", {
-          defaultValue: "My Monitors",
-        })}
+        title={t("situationMonitor.monitors.title")}
         className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       >
         <Typography.Text type="secondary">
-          {t("common.unauthorized", {
-            defaultValue: "You are not signed in.",
-          })}
+          {t("common.unauthorized")}
         </Typography.Text>
       </Card>
     );
@@ -828,9 +794,7 @@ export function SituationMonitorMonitorsPanel({
 
   return (
     <Card
-      title={t("situationMonitor.monitors.title", {
-        defaultValue: "My Monitors",
-      })}
+      title={t("situationMonitor.monitors.title")}
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       extra={
         <Space size="small">
@@ -840,7 +804,7 @@ export function SituationMonitorMonitorsPanel({
             {...interactiveControlProps}
             onClick={() => void refetchMonitors()}
           >
-            {t("common.refresh", { defaultValue: "Refresh" })}
+            {t("common.refresh")}
           </Button>
           <Button
             size="small"
@@ -848,16 +812,13 @@ export function SituationMonitorMonitorsPanel({
             {...interactiveControlProps}
             onClick={openCreate}
           >
-            {t("situationMonitor.monitors.add", { defaultValue: "Add" })}
+            {t("situationMonitor.monitors.add")}
           </Button>
         </Space>
       }
     >
       <Typography.Text type="secondary">
-        {t("situationMonitor.monitors.hint", {
-          defaultValue:
-            "Keywords are expanded with approved topics, entities, semantic recall, rerank, and optional location constraints.",
-        })}
+        {t("situationMonitor.monitors.hint")}
       </Typography.Text>
 
       <div className="mt-3">
@@ -866,9 +827,7 @@ export function SituationMonitorMonitorsPanel({
             showIcon
             type="error"
             className="mb-3"
-            message={t("situationMonitor.monitors.loadFailed", {
-              defaultValue: "Failed to load monitors.",
-            })}
+            message={t("situationMonitor.monitors.loadFailed")}
           />
         ) : null}
         <Tabs
@@ -876,9 +835,7 @@ export function SituationMonitorMonitorsPanel({
             {
               key: "monitors",
               label: buildTabsLabel(
-                t("situationMonitor.monitors.tab", {
-                  defaultValue: "Monitors",
-                }),
+                t("situationMonitor.monitors.tab"),
                 monitors.length,
               ),
               children:
@@ -889,9 +846,7 @@ export function SituationMonitorMonitorsPanel({
                 ) : sortedMonitors.length === 0 ? (
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description={t("situationMonitor.monitors.empty", {
-                      defaultValue: "No monitors yet.",
-                    })}
+                    description={t("situationMonitor.monitors.empty")}
                   />
                 ) : (
                   <List
@@ -913,22 +868,15 @@ export function SituationMonitorMonitorsPanel({
                               {...interactiveControlProps}
                               onClick={() => openEdit(monitor)}
                             >
-                              {t("common.edit", { defaultValue: "Edit" })}
+                              {t("common.edit")}
                             </Button>
                             {monitor.kind === "manual" ? (
                               <Popconfirm
                                 title={t(
                                   "situationMonitor.monitors.deleteConfirm",
-                                  {
-                                    defaultValue: "Delete this monitor?",
-                                  },
                                 )}
-                                okText={t("common.delete", {
-                                  defaultValue: "Delete",
-                                })}
-                                cancelText={t("common.cancel", {
-                                  defaultValue: "Cancel",
-                                })}
+                                okText={t("common.delete")}
+                                cancelText={t("common.cancel")}
                                 onConfirm={() => void handleDelete(monitor.id)}
                               >
                                 <Button
@@ -937,9 +885,7 @@ export function SituationMonitorMonitorsPanel({
                                   icon={<DeleteOutlined />}
                                   {...interactiveControlProps}
                                 >
-                                  {t("common.delete", {
-                                    defaultValue: "Delete",
-                                  })}
+                                  {t("common.delete")}
                                 </Button>
                               </Popconfirm>
                             ) : null}
@@ -976,21 +922,13 @@ export function SituationMonitorMonitorsPanel({
                               }
                             >
                               {monitor.kind === "system_sync"
-                                ? t("situationMonitor.monitors.systemSync", {
-                                    defaultValue: "System sync",
-                                  })
-                                : t("situationMonitor.monitors.manual", {
-                                    defaultValue: "Manual",
-                                  })}
+                                ? t("situationMonitor.monitors.systemSync")
+                                : t("situationMonitor.monitors.manual")}
                             </Tag>
                             <Tag color={monitor.enabled ? "green" : "default"}>
                               {monitor.enabled
-                                ? t("common.enabled", {
-                                    defaultValue: "ENABLED",
-                                  })
-                                : t("common.disabled", {
-                                    defaultValue: "DISABLED",
-                                  })}
+                                ? t("common.enabled")
+                                : t("common.disabled")}
                             </Tag>
                             <Tag color="geekblue">
                               {matchCounts[monitor.id] ?? 0}
@@ -1065,7 +1003,6 @@ export function SituationMonitorMonitorsPanel({
                           ) : null}
                           <Typography.Text type="secondary">
                             {t("situationMonitor.monitors.updatedAt", {
-                              defaultValue: "Updated {{time}}",
                               time: formatDateTime(monitor.updatedAt, locale, {
                                 month: "2-digit",
                                 day: "2-digit",
@@ -1083,9 +1020,7 @@ export function SituationMonitorMonitorsPanel({
             {
               key: "matches",
               label: buildTabsLabel(
-                t("situationMonitor.monitors.matchesTab", {
-                  defaultValue: "Matches",
-                }),
+                t("situationMonitor.monitors.matchesTab"),
                 matches.length,
                 matches.length ? "red" : "default",
               ),
@@ -1093,9 +1028,7 @@ export function SituationMonitorMonitorsPanel({
                 sortedMatches.length === 0 ? (
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description={t("situationMonitor.monitors.noMatches", {
-                      defaultValue: "No matches yet.",
-                    })}
+                    description={t("situationMonitor.monitors.noMatches")}
                   />
                 ) : (
                   <List
@@ -1152,9 +1085,6 @@ export function SituationMonitorMonitorsPanel({
                                   {...interactiveControlProps}
                                   aria-label={t(
                                     "situationMonitor.headlines.openItem",
-                                    {
-                                      defaultValue: "Open item",
-                                    },
                                   )}
                                   onClick={() =>
                                     window.open(
@@ -1261,15 +1191,9 @@ export function SituationMonitorMonitorsPanel({
           title={
             editingMonitor
               ? editingMonitor.kind === "system_sync"
-                ? t("situationMonitor.monitors.systemSyncTitle", {
-                    defaultValue: "Subscription sync monitor",
-                  })
-                : t("situationMonitor.monitors.editTitle", {
-                    defaultValue: "Edit monitor",
-                  })
-              : t("situationMonitor.monitors.createTitle", {
-                  defaultValue: "Create monitor",
-                })
+                ? t("situationMonitor.monitors.systemSyncTitle")
+                : t("situationMonitor.monitors.editTitle")
+              : t("situationMonitor.monitors.createTitle")
           }
           open={modalOpen}
           onCancel={closeModal}
@@ -1277,8 +1201,8 @@ export function SituationMonitorMonitorsPanel({
           okButtonProps={{ loading: submitting }}
           okText={
             editingMonitor
-              ? t("common.save", { defaultValue: "Save" })
-              : t("common.create", { defaultValue: "Create" })
+              ? t("common.save")
+              : t("common.create")
           }
           destroyOnHidden
           footer={[
@@ -1288,13 +1212,11 @@ export function SituationMonitorMonitorsPanel({
                 onClick={() => void handlePreview()}
                 loading={previewLoading}
               >
-                {t("situationMonitor.monitors.preview", {
-                  defaultValue: "Analyze",
-                })}
+                {t("situationMonitor.monitors.preview")}
               </Button>
             ) : null,
             <Button key="cancel" onClick={closeModal}>
-              {t("common.cancel", { defaultValue: "Cancel" })}
+              {t("common.cancel")}
             </Button>,
             <Button
               key="submit"
@@ -1303,8 +1225,8 @@ export function SituationMonitorMonitorsPanel({
               loading={submitting}
             >
               {editingMonitor
-                ? t("common.save", { defaultValue: "Save" })
-                : t("common.create", { defaultValue: "Create" })}
+                ? t("common.save")
+                : t("common.create")}
             </Button>,
           ]}
         >
@@ -1313,23 +1235,16 @@ export function SituationMonitorMonitorsPanel({
               <Alert
                 type="info"
                 showIcon
-                message={t("situationMonitor.monitors.systemSyncHint", {
-                  defaultValue:
-                    "This monitor mirrors content subscriptions that are not owned by a manual monitor. Only styling and enablement are editable here.",
-                })}
+                message={t("situationMonitor.monitors.systemSyncHint")}
               />
               <Form.Item
-                label={t("situationMonitor.monitors.fields.name", {
-                  defaultValue: "Name",
-                })}
+                label={t("situationMonitor.monitors.fields.name")}
                 name="name"
               >
                 <Input disabled />
               </Form.Item>
               <Form.Item
-                label={t("situationMonitor.monitors.fields.color", {
-                  defaultValue: "Color (optional)",
-                })}
+                label={t("situationMonitor.monitors.fields.color")}
                 name="color"
               >
                 <Input placeholder="#9254de" allowClear />
@@ -1337,9 +1252,7 @@ export function SituationMonitorMonitorsPanel({
               {editingMonitor.approvedTopics.length > 0 ? (
                 <Space direction="vertical" size={6}>
                   <Typography.Text strong>
-                    {t("subscriptions.content.kindTopics", {
-                      defaultValue: "Topics",
-                    })}
+                    {t("subscriptions.content.kindTopics")}
                   </Typography.Text>
                   <Space size={6} wrap>
                     {editingMonitor.approvedTopics.map((topic) => (
@@ -1353,9 +1266,7 @@ export function SituationMonitorMonitorsPanel({
               {editingMonitor.approvedEntities.length > 0 ? (
                 <Space direction="vertical" size={6}>
                   <Typography.Text strong>
-                    {t("subscriptions.content.kindEntities", {
-                      defaultValue: "Entities",
-                    })}
+                    {t("subscriptions.content.kindEntities")}
                   </Typography.Text>
                   <Space size={6} wrap>
                     {editingMonitor.approvedEntities.map((entity) => (
@@ -1369,9 +1280,7 @@ export function SituationMonitorMonitorsPanel({
               {editingMonitor.approvedSources.length > 0 ? (
                 <Space direction="vertical" size={6}>
                   <Typography.Text strong>
-                    {t("subscriptions.content.kindSources", {
-                      defaultValue: "Sources",
-                    })}
+                    {t("subscriptions.content.kindSources")}
                   </Typography.Text>
                   <Space size={6} wrap>
                     {editingMonitor.approvedSources.map((source) => (
@@ -1385,9 +1294,7 @@ export function SituationMonitorMonitorsPanel({
               {editingMonitor.approvedGeos.length > 0 ? (
                 <Space direction="vertical" size={6}>
                   <Typography.Text strong>
-                    {t("subscriptions.content.kindGeos", {
-                      defaultValue: "Geos",
-                    })}
+                    {t("subscriptions.content.kindGeos")}
                   </Typography.Text>
                   <Space size={6} wrap>
                     {editingMonitor.approvedGeos.map((geo) => (
@@ -1402,38 +1309,28 @@ export function SituationMonitorMonitorsPanel({
           ) : (
             <Space direction="vertical" size={12} style={{ width: "100%" }}>
               <Form.Item
-                label={t("situationMonitor.monitors.fields.name", {
-                  defaultValue: "Name",
-                })}
+                label={t("situationMonitor.monitors.fields.name")}
                 name="name"
                 rules={[
                   {
                     required: true,
-                    message: t("situationMonitor.monitors.validation.name", {
-                      defaultValue: "Enter a name.",
-                    }),
+                    message: t("situationMonitor.monitors.validation.name"),
                   },
                 ]}
               >
                 <Input
-                  placeholder={t("situationMonitor.monitors.namePlaceholder", {
-                    defaultValue: "e.g. Supply chain disruption",
-                  })}
+                  placeholder={t("situationMonitor.monitors.namePlaceholder")}
                 />
               </Form.Item>
               <Form.Item
-                label={t("situationMonitor.monitors.fields.keywords", {
-                  defaultValue: "Keywords",
-                })}
+                label={t("situationMonitor.monitors.fields.keywords")}
                 name="rawKeywords"
                 rules={[
                   {
                     validator: async (_, value: unknown) => {
                       if (normalizeKeywords(value).length === 0) {
                         throw new Error(
-                          t("situationMonitor.monitors.validation.keywords", {
-                            defaultValue: "Add at least one keyword.",
-                          }),
+                          t("situationMonitor.monitors.validation.keywords"),
                         );
                       }
                     },
@@ -1445,41 +1342,25 @@ export function SituationMonitorMonitorsPanel({
                   tokenSeparators={[",", "\n"]}
                   placeholder={t(
                     "situationMonitor.monitors.keywordsPlaceholder",
-                    {
-                      defaultValue: "Type keywords and press Enter",
-                    },
                   )}
                   options={[]}
                 />
               </Form.Item>
               <Form.Item
-                label={t("situationMonitor.monitors.fields.color", {
-                  defaultValue: "Color (optional)",
-                })}
+                label={t("situationMonitor.monitors.fields.color")}
                 name="color"
-                extra={t("situationMonitor.monitors.colorHint", {
-                  defaultValue:
-                    "Hex color like #1f3b7b. Leave empty for default.",
-                })}
+                extra={t("situationMonitor.monitors.colorHint")}
               >
                 <Input placeholder="#1f3b7b" allowClear />
               </Form.Item>
               <Form.Item
-                label={t("situationMonitor.monitors.fields.locationName", {
-                  defaultValue: "Location (optional)",
-                })}
+                label={t("situationMonitor.monitors.fields.locationName")}
                 name="locationName"
-                extra={t("situationMonitor.monitors.locationHint", {
-                  defaultValue:
-                    "Use a place name to bias geo matching and conflict filtering.",
-                })}
+                extra={t("situationMonitor.monitors.locationHint")}
               >
                 <Input
                   placeholder={t(
                     "situationMonitor.monitors.locationNamePlaceholder",
-                    {
-                      defaultValue: "e.g. Taipei",
-                    },
                   )}
                   allowClear
                 />
@@ -1492,10 +1373,7 @@ export function SituationMonitorMonitorsPanel({
               <Alert
                 type="info"
                 showIcon
-                message={t("situationMonitor.monitors.previewHint", {
-                  defaultValue:
-                    "Run Analyze after changing keywords or location, then confirm which topics, entities, and lexical expansions should be saved.",
-                })}
+                message={t("situationMonitor.monitors.previewHint")}
               />
 
               {previewLoading ? (
@@ -1507,9 +1385,7 @@ export function SituationMonitorMonitorsPanel({
               {preview?.locationResolution ? (
                 <Space direction="vertical" size={4}>
                   <Typography.Text strong>
-                    {t("situationMonitor.monitors.locationResolved", {
-                      defaultValue: "Resolved location",
-                    })}
+                    {t("situationMonitor.monitors.locationResolved")}
                   </Typography.Text>
                   <Typography.Text type="secondary">
                     <EnvironmentOutlined /> {preview.locationResolution.name} (
@@ -1532,9 +1408,7 @@ export function SituationMonitorMonitorsPanel({
 
               <Space direction="vertical" size={8} style={{ width: "100%" }}>
                 <Typography.Text strong>
-                  {t("subscriptions.content.kindTopics", {
-                    defaultValue: "Topics",
-                  })}
+                  {t("subscriptions.content.kindTopics")}
                 </Typography.Text>
                 {topicOptions && topicOptions.length > 0 ? (
                   <Checkbox.Group
@@ -1549,18 +1423,14 @@ export function SituationMonitorMonitorsPanel({
                   />
                 ) : (
                   <Typography.Text type="secondary">
-                    {t("situationMonitor.monitors.noTopicSuggestions", {
-                      defaultValue: "No topic suggestions yet.",
-                    })}
+                    {t("situationMonitor.monitors.noTopicSuggestions")}
                   </Typography.Text>
                 )}
               </Space>
 
               <Space direction="vertical" size={8} style={{ width: "100%" }}>
                 <Typography.Text strong>
-                  {t("subscriptions.content.kindEntities", {
-                    defaultValue: "Entities",
-                  })}
+                  {t("subscriptions.content.kindEntities")}
                 </Typography.Text>
                 {entityOptions && entityOptions.length > 0 ? (
                   <Checkbox.Group
@@ -1575,24 +1445,17 @@ export function SituationMonitorMonitorsPanel({
                   />
                 ) : (
                   <Typography.Text type="secondary">
-                    {t("situationMonitor.monitors.noEntitySuggestions", {
-                      defaultValue: "No entity suggestions yet.",
-                    })}
+                    {t("situationMonitor.monitors.noEntitySuggestions")}
                   </Typography.Text>
                 )}
               </Space>
 
               <Space direction="vertical" size={8} style={{ width: "100%" }}>
                 <Typography.Text strong>
-                  {t("situationMonitor.monitors.lexicalTerms", {
-                    defaultValue: "Lexical expansions",
-                  })}
+                  {t("situationMonitor.monitors.lexicalTerms")}
                 </Typography.Text>
                 <Typography.Text type="secondary">
-                  {t("situationMonitor.monitors.lexicalHint", {
-                    defaultValue:
-                      "Base keywords are always kept. Select extra lexical terms you want to persist.",
-                  })}
+                  {t("situationMonitor.monitors.lexicalHint")}
                 </Typography.Text>
                 {lexicalOptions && lexicalOptions.length > 0 ? (
                   <Checkbox.Group
@@ -1607,9 +1470,7 @@ export function SituationMonitorMonitorsPanel({
                   />
                 ) : (
                   <Typography.Text type="secondary">
-                    {t("situationMonitor.monitors.noLexicalSuggestions", {
-                      defaultValue: "No lexical expansions yet.",
-                    })}
+                    {t("situationMonitor.monitors.noLexicalSuggestions")}
                   </Typography.Text>
                 )}
               </Space>

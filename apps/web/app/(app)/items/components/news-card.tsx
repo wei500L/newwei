@@ -315,12 +315,12 @@ export function NewsCard({
   const moreActionItems = [
     {
       key: "hide",
-      label: t("common.hide", { defaultValue: "Hide" }),
+      label: t("common.hide"),
       onClick: handleHideItem,
     },
     {
       key: "not-interested",
-      label: t("common.notInterested", { defaultValue: "Not interested" }),
+      label: t("common.notInterested"),
       onClick: handleNotInterested,
     },
   ];
@@ -629,7 +629,7 @@ export function NewsCard({
                   type="text"
                   size="small"
                   icon={<MoreOutlined />}
-                  aria-label={t("common.actions", { defaultValue: "Actions" })}
+                  aria-label={t("common.actions")}
                 />
               </Dropdown>
             ) : null}

@@ -49,7 +49,7 @@ export function HotTopics() {
     return (
       <AuraBentoCard className="p-4" squish={false}>
         <div className="flex items-center gap-2 mb-4 font-semibold text-sm">
-          <FireOutlined className="text-orange-500" /> {t("pages.today.hotTopics", { defaultValue: "Hot Topics" })}
+          <FireOutlined className="text-orange-500" /> {t("pages.today.hotTopics")}
         </div>
         <Skeleton active paragraph={{ rows: 4 }} />
       </AuraBentoCard>
@@ -63,7 +63,7 @@ export function HotTopics() {
   return (
     <AuraBentoCard className="p-4 flex flex-col" squish={false}>
       <div className="flex items-center gap-2 mb-3 font-semibold text-sm">
-        <FireOutlined className="text-orange-500" /> {t("pages.today.hotTopics", { defaultValue: "Hot Topics" })}
+        <FireOutlined className="text-orange-500" /> {t("pages.today.hotTopics")}
       </div>
       <div className="flex flex-col gap-1">
         {topics.map((topic, index) => {

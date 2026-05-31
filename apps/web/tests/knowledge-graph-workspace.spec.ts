@@ -22,6 +22,6 @@ describe("knowledge graph workspace wiring", () => {
     expect(source).toContain("getExecutiveChangeImpact");
     expect(source).toContain("getCommodityMoveImpact");
     expect(source).toContain("getPolicyEventImpact");
-    expect(source).toContain("Open in explorer");
+    expect(source).toContain("knowledgeGraph.impact.actions.openExplorer");
   });
 });

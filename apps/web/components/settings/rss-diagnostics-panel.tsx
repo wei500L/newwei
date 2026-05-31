@@ -195,9 +195,7 @@ export function RssDiagnosticsPanel() {
       captureClientError("Failed to load RSS diagnostics", error);
       const messageText =
         extractApiError(error).message ||
-        t("settings.rssDiagnostics.errors.loadFailed", {
-          defaultValue: "Failed to load RSS diagnostics.",
-        });
+        t("settings.rssDiagnostics.errors.loadFailed");
       setErrorMessage(messageText);
       messageApi.error(messageText);
     } finally {
@@ -223,21 +221,15 @@ export function RssDiagnosticsPanel() {
         setBackfillResult(response.data);
         messageApi.success(
           dryRun
-            ? t("settings.rssDiagnostics.messages.dryRunDone", {
-                defaultValue: "Backfill dry-run finished.",
-              })
-            : t("settings.rssDiagnostics.messages.backfillDone", {
-                defaultValue: "Backfill completed.",
-              }),
+            ? t("settings.rssDiagnostics.messages.dryRunDone")
+            : t("settings.rssDiagnostics.messages.backfillDone"),
         );
         await loadDiagnostics();
       } catch (error) {
         captureClientError("Failed to run RSS sourceId backfill", error);
         const messageText =
           extractApiError(error).message ||
-          t("settings.rssDiagnostics.errors.backfillFailed", {
-            defaultValue: "Failed to execute backfill.",
-          });
+          t("settings.rssDiagnostics.errors.backfillFailed");
         messageApi.error(messageText);
       } finally {
         setRunningBackfill(false);
@@ -258,21 +250,15 @@ export function RssDiagnosticsPanel() {
           radius: ["45%", "70%"],
           data: [
             {
-              name: t("settings.rssDiagnostics.visibility.processed", {
-                defaultValue: "Visible (Processed)",
-              }),
+              name: t("settings.rssDiagnostics.visibility.processed"),
               value: chain.visibility.visibleByProcessed,
             },
             {
-              name: t("settings.rssDiagnostics.visibility.articleFallback", {
-                defaultValue: "Visible (Article Fallback)",
-              }),
+              name: t("settings.rssDiagnostics.visibility.articleFallback"),
               value: chain.visibility.visibleByArticleFallback,
             },
             {
-              name: t("settings.rssDiagnostics.visibility.hidden", {
-                defaultValue: "Hidden",
-              }),
+              name: t("settings.rssDiagnostics.visibility.hidden"),
               value: chain.visibility.hiddenSources,
             },
           ],
@@ -292,18 +278,10 @@ export function RssDiagnosticsPanel() {
       xAxis: {
         type: "category",
         data: [
-          t("settings.rssDiagnostics.pipeline.queued", {
-            defaultValue: "Queued",
-          }),
-          t("settings.rssDiagnostics.pipeline.running", {
-            defaultValue: "Running",
-          }),
-          t("settings.rssDiagnostics.pipeline.completed", {
-            defaultValue: "Completed",
-          }),
-          t("settings.rssDiagnostics.pipeline.failed", {
-            defaultValue: "Failed",
-          }),
+          t("settings.rssDiagnostics.pipeline.queued"),
+          t("settings.rssDiagnostics.pipeline.running"),
+          t("settings.rssDiagnostics.pipeline.completed"),
+          t("settings.rssDiagnostics.pipeline.failed"),
         ],
         axisLabel: { color: colors.foreground },
       },
@@ -334,9 +312,7 @@ export function RssDiagnosticsPanel() {
   const sourceColumns = useMemo<ColumnsType<RssDiagnosticsSourceRow>>(
     () => [
       {
-        title: t("settings.rssDiagnostics.table.source", {
-          defaultValue: "Source",
-        }),
+        title: t("settings.rssDiagnostics.table.source"),
         dataIndex: "name",
         key: "name",
         width: 240,
@@ -348,48 +324,34 @@ export function RssDiagnosticsPanel() {
         ),
       },
       {
-        title: t("settings.rssDiagnostics.table.visibility", {
-          defaultValue: "Visibility",
-        }),
+        title: t("settings.rssDiagnostics.table.visibility"),
         dataIndex: "visibility",
         key: "visibility",
         width: 170,
         render: (value: SourceVisibility) => (
           <Tag color={visibilityColor(value)}>
             {value === "processed"
-              ? t("settings.rssDiagnostics.visibility.processed", {
-                  defaultValue: "Processed",
-                })
+              ? t("settings.rssDiagnostics.visibility.processed")
               : value === "article_fallback"
-                ? t("settings.rssDiagnostics.visibility.articleFallbackShort", {
-                    defaultValue: "Article Fallback",
-                  })
-                : t("settings.rssDiagnostics.visibility.hidden", {
-                    defaultValue: "Hidden",
-                  })}
+                ? t("settings.rssDiagnostics.visibility.articleFallbackShort")
+                : t("settings.rssDiagnostics.visibility.hidden")}
           </Tag>
         ),
       },
       {
-        title: t("settings.rssDiagnostics.table.processedCount", {
-          defaultValue: "Processed",
-        }),
+        title: t("settings.rssDiagnostics.table.processedCount"),
         dataIndex: "itemCountByProcessed",
         key: "itemCountByProcessed",
         width: 110,
       },
       {
-        title: t("settings.rssDiagnostics.table.articleCount", {
-          defaultValue: "Articles",
-        }),
+        title: t("settings.rssDiagnostics.table.articleCount"),
         dataIndex: "itemCountByArticle",
         key: "itemCountByArticle",
         width: 110,
       },
       {
-        title: t("settings.rssDiagnostics.table.jobs24h", {
-          defaultValue: "Jobs(24h)",
-        }),
+        title: t("settings.rssDiagnostics.table.jobs24h"),
         key: "jobs24h",
         width: 210,
         render: (_, row) => (
@@ -402,9 +364,7 @@ export function RssDiagnosticsPanel() {
         ),
       },
       {
-        title: t("settings.rssDiagnostics.table.issues", {
-          defaultValue: "Issues",
-        }),
+        title: t("settings.rssDiagnostics.table.issues"),
         dataIndex: "issues",
         key: "issues",
         render: (issues: string[]) => {
@@ -433,22 +393,17 @@ export function RssDiagnosticsPanel() {
       {
         title: t(
           "settings.rssDiagnostics.backfill.unresolved.processedItemId",
-          { defaultValue: "Processed Item ID" },
         ),
         dataIndex: "processedItemId",
         key: "processedItemId",
       },
       {
-        title: t("settings.rssDiagnostics.backfill.unresolved.itemMetaId", {
-          defaultValue: "Item Meta ID",
-        }),
+        title: t("settings.rssDiagnostics.backfill.unresolved.itemMetaId"),
         dataIndex: "itemMetaId",
         key: "itemMetaId",
       },
       {
-        title: t("settings.rssDiagnostics.backfill.unresolved.reason", {
-          defaultValue: "Reason",
-        }),
+        title: t("settings.rssDiagnostics.backfill.unresolved.reason"),
         dataIndex: "reason",
         key: "reason",
       },
@@ -462,23 +417,16 @@ export function RssDiagnosticsPanel() {
       <Card>
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <Typography.Title level={5} style={{ margin: 0 }}>
-            {t("settings.rssDiagnostics.title", {
-              defaultValue: "RSS Chain Diagnostics",
-            })}
+            {t("settings.rssDiagnostics.title")}
           </Typography.Title>
           <Typography.Text type="secondary">
-            {t("settings.rssDiagnostics.description", {
-              defaultValue:
-                "Inspect RSS ingestion health and repair missing ProcessedItem.sourceId links.",
-            })}
+            {t("settings.rssDiagnostics.description")}
           </Typography.Text>
 
           <Space wrap>
             <Space>
               <Typography.Text>
-                {t("settings.rssDiagnostics.controls.windowDays", {
-                  defaultValue: "Window Days",
-                })}
+                {t("settings.rssDiagnostics.controls.windowDays")}
               </Typography.Text>
               <InputNumber
                 min={1}
@@ -489,9 +437,7 @@ export function RssDiagnosticsPanel() {
             </Space>
             <Space>
               <Typography.Text>
-                {t("settings.rssDiagnostics.controls.lookbackHours", {
-                  defaultValue: "Lookback Hours",
-                })}
+                {t("settings.rssDiagnostics.controls.lookbackHours")}
               </Typography.Text>
               <InputNumber
                 min={1}
@@ -514,18 +460,14 @@ export function RssDiagnosticsPanel() {
                 <Alert
                   type="warning"
                   showIcon
-                  message={t("settings.rssDiagnostics.schedulerDisabled", {
-                    defaultValue: "NEWS source scheduler is disabled.",
-                  })}
+                  message={t("settings.rssDiagnostics.schedulerDisabled")}
                 />
               ) : null}
               {chain.recommendations.length > 0 ? (
                 <Alert
                   type="info"
                   showIcon
-                  message={t("settings.rssDiagnostics.recommendations", {
-                    defaultValue: "Recommendations",
-                  })}
+                  message={t("settings.rssDiagnostics.recommendations")}
                   description={
                     <Space direction="vertical" size={0}>
                       {chain.recommendations.map((item) => (
@@ -539,33 +481,25 @@ export function RssDiagnosticsPanel() {
               <Row gutter={[12, 12]}>
                 <Col xs={24} sm={12} md={8} lg={6}>
                   <Statistic
-                    title={t("settings.rssDiagnostics.cards.rssSources", {
-                      defaultValue: "RSS Sources",
-                    })}
+                    title={t("settings.rssDiagnostics.cards.rssSources")}
                     value={chain.sources.rssTotal}
                   />
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>
                   <Statistic
-                    title={t("settings.rssDiagnostics.cards.visibleProcessed", {
-                      defaultValue: "Visible (Processed)",
-                    })}
+                    title={t("settings.rssDiagnostics.cards.visibleProcessed")}
                     value={chain.visibility.visibleByProcessed}
                   />
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>
                   <Statistic
-                    title={t("settings.rssDiagnostics.cards.visibleFallback", {
-                      defaultValue: "Visible (Fallback)",
-                    })}
+                    title={t("settings.rssDiagnostics.cards.visibleFallback")}
                     value={chain.visibility.visibleByArticleFallback}
                   />
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>
                   <Statistic
-                    title={t("settings.rssDiagnostics.cards.hidden", {
-                      defaultValue: "Hidden Sources",
-                    })}
+                    title={t("settings.rssDiagnostics.cards.hidden")}
                     value={chain.visibility.hiddenSources}
                   />
                 </Col>
@@ -577,19 +511,16 @@ export function RssDiagnosticsPanel() {
                     size="small"
                     title={t(
                       "settings.rssDiagnostics.cards.processedCoverage",
-                      { defaultValue: "Processed sourceId coverage" },
                     )}
                   >
                     <Space direction="vertical" size={4}>
                       <Typography.Text>
                         {t("settings.rssDiagnostics.cards.totalCompleted", {
-                          defaultValue: "Completed: {{value}}",
                           value: chain.processedCoverage.completedTotal,
                         })}
                       </Typography.Text>
                       <Typography.Text>
                         {t("settings.rssDiagnostics.cards.missingSourceId", {
-                          defaultValue: "Missing sourceId: {{value}}",
                           value: chain.processedCoverage.missingSourceId,
                         })}
                       </Typography.Text>
@@ -602,14 +533,11 @@ export function RssDiagnosticsPanel() {
                 <Col xs={24} md={12}>
                   <Card
                     size="small"
-                    title={t("settings.rssDiagnostics.cards.articleCoverage", {
-                      defaultValue: "Article sourceId coverage",
-                    })}
+                    title={t("settings.rssDiagnostics.cards.articleCoverage")}
                   >
                     <Space direction="vertical" size={4}>
                       <Typography.Text>
                         {t("settings.rssDiagnostics.cards.totalArticle", {
-                          defaultValue: "Articles: {{value}}",
                           value: chain.articleCoverage.total,
                         })}
                       </Typography.Text>
@@ -617,7 +545,6 @@ export function RssDiagnosticsPanel() {
                         {t(
                           "settings.rssDiagnostics.cards.missingArticleSourceId",
                           {
-                            defaultValue: "Missing sourceId: {{value}}",
                             value: chain.articleCoverage.missingSourceId,
                           },
                         )}
@@ -634,9 +561,7 @@ export function RssDiagnosticsPanel() {
                 <Col xs={24} md={12}>
                   <Card
                     size="small"
-                    title={t("settings.rssDiagnostics.charts.visibility", {
-                      defaultValue: "Source Visibility",
-                    })}
+                    title={t("settings.rssDiagnostics.charts.visibility")}
                   >
                     {visibilityChartOption ? (
                       <DashboardChart
@@ -650,9 +575,7 @@ export function RssDiagnosticsPanel() {
                 <Col xs={24} md={12}>
                   <Card
                     size="small"
-                    title={t("settings.rssDiagnostics.charts.pipeline", {
-                      defaultValue: "Pipeline Jobs",
-                    })}
+                    title={t("settings.rssDiagnostics.charts.pipeline")}
                   >
                     {pipelineChartOption ? (
                       <DashboardChart
@@ -672,16 +595,12 @@ export function RssDiagnosticsPanel() {
       <Card>
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <Typography.Title level={5} style={{ margin: 0 }}>
-            {t("settings.rssDiagnostics.backfill.title", {
-              defaultValue: "sourceId Backfill",
-            })}
+            {t("settings.rssDiagnostics.backfill.title")}
           </Typography.Title>
           <Space wrap>
             <Space>
               <Typography.Text>
-                {t("settings.rssDiagnostics.backfill.limit", {
-                  defaultValue: "Scan Limit",
-                })}
+                {t("settings.rssDiagnostics.backfill.limit")}
               </Typography.Text>
               <InputNumber
                 min={1}
@@ -694,18 +613,14 @@ export function RssDiagnosticsPanel() {
               onClick={() => void runBackfill(true)}
               loading={runningBackfill}
             >
-              {t("settings.rssDiagnostics.backfill.dryRun", {
-                defaultValue: "Dry Run",
-              })}
+              {t("settings.rssDiagnostics.backfill.dryRun")}
             </Button>
             <Button
               type="primary"
               onClick={() => void runBackfill(false)}
               loading={runningBackfill}
             >
-              {t("settings.rssDiagnostics.backfill.execute", {
-                defaultValue: "Execute Backfill",
-              })}
+              {t("settings.rssDiagnostics.backfill.execute")}
             </Button>
           </Space>
 
@@ -715,12 +630,8 @@ export function RssDiagnosticsPanel() {
               showIcon
               message={
                 backfillResult.dryRun
-                  ? t("settings.rssDiagnostics.backfill.dryRunSummary", {
-                      defaultValue: "Dry-run finished.",
-                    })
-                  : t("settings.rssDiagnostics.backfill.executeSummary", {
-                      defaultValue: "Backfill finished.",
-                    })
+                  ? t("settings.rssDiagnostics.backfill.dryRunSummary")
+                  : t("settings.rssDiagnostics.backfill.executeSummary")
               }
               description={
                 <Space direction="vertical" size={0}>
@@ -747,9 +658,7 @@ export function RssDiagnosticsPanel() {
       </Card>
 
       <Card
-        title={t("settings.rssDiagnostics.table.title", {
-          defaultValue: "Per-source Diagnostics",
-        })}
+        title={t("settings.rssDiagnostics.table.title")}
       >
         <Table<RssDiagnosticsSourceRow>
           size="small"
@@ -767,19 +676,16 @@ export function RssDiagnosticsPanel() {
           <Space direction="vertical" size={4}>
             <Typography.Text type="secondary">
               {t("settings.rssDiagnostics.meta.generatedAt", {
-                defaultValue: "Generated at: {{value}}",
                 value: formatDateTime(chain.generatedAt),
               })}
             </Typography.Text>
             <Typography.Text type="secondary">
               {t("settings.rssDiagnostics.meta.pipelineLatest", {
-                defaultValue: "Latest pipeline job: {{value}}",
                 value: formatDateTime(chain.pipelineJobs.latestCreatedAt),
               })}
             </Typography.Text>
             <Typography.Text type="secondary">
               {t("settings.rssDiagnostics.meta.crawlResultLatest", {
-                defaultValue: "Latest crawl result: {{value}}",
                 value: formatDateTime(chain.crawlResults.latestFetchedAt),
               })}
             </Typography.Text>

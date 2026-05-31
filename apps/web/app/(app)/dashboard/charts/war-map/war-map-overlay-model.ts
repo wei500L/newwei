@@ -389,61 +389,33 @@ export function buildWarMapOverlayViewModel({
     WarMapControlsSectionMeta
   > = {
     overview: {
-      label: t("dashboard.charts.warMap.overlay.overview", {
-        defaultValue: "Overview",
-      }),
-      description: t("dashboard.charts.warMap.overlay.overviewHint", {
-        defaultValue:
-          "Counts, freshness, and feed health stay visible in the header snapshot.",
-      }),
+      label: t("dashboard.charts.warMap.overlay.overview"),
+      description: t("dashboard.charts.warMap.overlay.overviewHint"),
     },
     view: {
-      label: t("dashboard.charts.warMap.overlay.view", {
-        defaultValue: "View",
-      }),
-      description: t("dashboard.charts.warMap.overlay.viewHint", {
-        defaultValue:
-          "Change map framing, time window, and visible layers for the current view.",
-      }),
+      label: t("dashboard.charts.warMap.overlay.view"),
+      description: t("dashboard.charts.warMap.overlay.viewHint"),
     },
     transport: {
-      label: t("dashboard.charts.warMap.overlay.transport", {
-        defaultValue: "Transport",
-      }),
-      description: t("dashboard.charts.warMap.overlay.transportHint", {
-        defaultValue:
-          "Review flight and AIS modes, source freshness, and transport coverage.",
-      }),
+      label: t("dashboard.charts.warMap.overlay.transport"),
+      description: t("dashboard.charts.warMap.overlay.transportHint"),
     },
     feeds: {
-      label: t("dashboard.charts.warMap.overlay.feeds", {
-        defaultValue: "Feeds",
-      }),
-      description: t("dashboard.charts.warMap.overlay.feedsHint", {
-        defaultValue:
-          "Check chain health, refresh activity, and ingestion issues when data looks off.",
-      }),
+      label: t("dashboard.charts.warMap.overlay.feeds"),
+      description: t("dashboard.charts.warMap.overlay.feedsHint"),
     },
     legend: {
-      label: t("dashboard.charts.warMap.legend.title", {
-        defaultValue: "Legend",
-      }),
-      description: t("dashboard.charts.warMap.overlay.legendHint", {
-        defaultValue:
-          "Reference marker meaning, severity levels, and AIS symbols used on the map.",
-      }),
+      label: t("dashboard.charts.warMap.legend.title"),
+      description: t("dashboard.charts.warMap.overlay.legendHint"),
     },
   };
   const feedsAttentionLabel =
     errorChainCount > 0
-      ? t("dashboard.charts.warMap.overlay.feedsAttention", {
-          defaultValue: "Issues",
-        })
+      ? t("dashboard.charts.warMap.overlay.feedsAttention")
       : undefined;
   const feedsAttentionTooltip =
     errorChainCount > 0
       ? t("dashboard.charts.warMap.overlay.feedsAttentionHint", {
-          defaultValue: "Affected feed chains: {{count}}",
           count: errorChainCount,
         })
       : undefined;
@@ -464,49 +436,33 @@ export function buildWarMapOverlayViewModel({
     overviewMetricCards: [
       {
         key: "signals",
-        label: t("dashboard.charts.warMap.stats.signals", {
-          defaultValue: "Signals",
-        }),
+        label: t("dashboard.charts.warMap.stats.signals"),
         value: rawEventsCount,
-        note: t("dashboard.charts.warMap.overlay.signalDensity", {
-          defaultValue: "Current alert markers",
-        }),
+        note: t("dashboard.charts.warMap.overlay.signalDensity"),
         className:
           "from-sky-50 via-white to-sky-100/60 dark:from-sky-500/[0.16] dark:via-slate-950/[0.92] dark:to-sky-400/[0.08]",
       },
       {
         key: "news",
-        label: t("dashboard.charts.warMap.stats.news", {
-          defaultValue: "News",
-        }),
+        label: t("dashboard.charts.warMap.stats.news"),
         value: rawNewsMarkersCount,
-        note: t("dashboard.charts.warMap.overlay.newsCoverage", {
-          defaultValue: "Geo-tagged headlines",
-        }),
+        note: t("dashboard.charts.warMap.overlay.newsCoverage"),
         className:
           "from-emerald-50 via-white to-emerald-100/60 dark:from-emerald-500/[0.14] dark:via-slate-950/[0.92] dark:to-emerald-400/[0.08]",
       },
       {
         key: "monitors",
-        label: t("dashboard.charts.warMap.stats.monitors", {
-          defaultValue: "Monitors",
-        }),
+        label: t("dashboard.charts.warMap.stats.monitors"),
         value: monitorsCount,
-        note: t("dashboard.charts.warMap.overlay.monitorCoverage", {
-          defaultValue: "Tracked watchlists",
-        }),
+        note: t("dashboard.charts.warMap.overlay.monitorCoverage"),
         className:
           "from-cyan-50 via-white to-cyan-100/60 dark:from-cyan-500/[0.14] dark:via-slate-950/[0.92] dark:to-cyan-400/[0.08]",
       },
       {
         key: "layers",
-        label: t("dashboard.charts.warMap.stats.visibleLayers", {
-          defaultValue: "Visible layers",
-        }),
+        label: t("dashboard.charts.warMap.stats.visibleLayers"),
         value: visibleLayerCount,
-        note: t("dashboard.charts.warMap.overlay.layerCoverage", {
-          defaultValue: "Active map overlays",
-        }),
+        note: t("dashboard.charts.warMap.overlay.layerCoverage"),
         className:
           "from-violet-50 via-white to-violet-100/60 dark:from-violet-500/[0.14] dark:via-slate-950/[0.92] dark:to-violet-400/[0.08]",
       },
@@ -514,15 +470,11 @@ export function buildWarMapOverlayViewModel({
     summaryStatusCards: [
       {
         key: "stream",
-        label: t("dashboard.charts.warMap.overlay.stream", {
-          defaultValue: "Stream",
-        }),
+        label: t("dashboard.charts.warMap.overlay.stream"),
         value: streamStatusLabel,
         detail:
           streamMessageRelative ??
-          t("dashboard.charts.warMap.overlay.noRecentMessage", {
-            defaultValue: "No stream update yet",
-          }),
+          t("dashboard.charts.warMap.overlay.noRecentMessage"),
         dotClassName:
           streamStatusColor === "green"
             ? "bg-emerald-500 dark:bg-emerald-400"
@@ -531,16 +483,12 @@ export function buildWarMapOverlayViewModel({
               : "bg-rose-500 dark:bg-rose-400",
         tagColor: streamStatusColor,
         tooltip: streamMessageExact
-          ? `${t("dashboard.charts.warMap.overlay.latestStreamUpdate", {
-              defaultValue: "Latest stream update",
-            })}: ${streamMessageExact}`
+          ? `${t("dashboard.charts.warMap.overlay.latestStreamUpdate")}: ${streamMessageExact}`
           : (streamError ?? undefined),
       },
       {
         key: "data",
-        label: t("dashboard.charts.warMap.overlay.data", {
-          defaultValue: "Data",
-        }),
+        label: t("dashboard.charts.warMap.overlay.data"),
         value: latestQueryUpdatedRelative ?? dataStatusLabel,
         detail: dataStatusLabel,
         dotClassName:
@@ -553,40 +501,30 @@ export function buildWarMapOverlayViewModel({
                 : "bg-slate-400 dark:bg-slate-500",
         tagColor: dataStatusColor,
         tooltip: latestQueryUpdatedExact
-          ? `${t("dashboard.charts.warMap.overlay.lastUpdatedLabel", {
-              defaultValue: "Last updated",
-            })}: ${latestQueryUpdatedExact}`
+          ? `${t("dashboard.charts.warMap.overlay.lastUpdatedLabel")}: ${latestQueryUpdatedExact}`
           : undefined,
       },
     ],
     summaryDataLabel,
     overviewDataTagLabel:
       latestQueryUpdatedRelative ??
-      t("dashboard.charts.warMap.overlay.awaitingRefresh", {
-        defaultValue: "Awaiting refresh",
-      }),
+      t("dashboard.charts.warMap.overlay.awaitingRefresh"),
     feedSummaryCards: [
       {
         key: "healthy",
-        label: t("dashboard.charts.warMap.overlay.healthyFeeds", {
-          defaultValue: "Healthy",
-        }),
+        label: t("dashboard.charts.warMap.overlay.healthyFeeds"),
         value: healthyChainCount,
         toneClassName: "text-emerald-600 dark:text-emerald-300",
       },
       {
         key: "refreshing",
-        label: t("dashboard.charts.warMap.overlay.refreshingFeeds", {
-          defaultValue: "Refreshing",
-        }),
+        label: t("dashboard.charts.warMap.overlay.refreshingFeeds"),
         value: refreshingChainCount,
         toneClassName: "text-indigo-600 dark:text-indigo-300",
       },
       {
         key: "issues",
-        label: t("dashboard.charts.warMap.overlay.issueFeeds", {
-          defaultValue: "Issues",
-        }),
+        label: t("dashboard.charts.warMap.overlay.issueFeeds"),
         value: errorChainCount,
         toneClassName: "text-rose-600 dark:text-rose-300",
       },
