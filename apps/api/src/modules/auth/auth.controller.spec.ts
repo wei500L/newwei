@@ -16,11 +16,15 @@ describe("AuthController", () => {
     listPlatformApplications: jest.fn(),
   } as any;
   const mfaService = {} as any;
+  const machineTokenService = {} as any;
   const oidcAuthService = {} as any;
   const platformAccess = {
     isPlatformAdmin: jest.fn(),
   } as any;
   const env = {} as any;
+  const userDataExport = {
+    exportUserData: jest.fn(),
+  } as any;
 
   let controller: AuthController;
 
@@ -33,9 +37,11 @@ describe("AuthController", () => {
       inviteService,
       registrationApplications,
       mfaService,
+      machineTokenService,
       oidcAuthService,
       platformAccess,
       env,
+      userDataExport,
     );
   });
 
@@ -50,6 +56,21 @@ describe("AuthController", () => {
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         AuthController.prototype.listRegistrationApplications,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("allows authenticated users to export their own data", () => {
+    expect(
+      Reflect.getMetadata(
+        ALLOW_AUTHENTICATED_KEY,
+        AuthController.prototype.exportUserData,
+      ),
+    ).toBe(true);
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        AuthController.prototype.exportUserData,
       ),
     ).toBeUndefined();
   });

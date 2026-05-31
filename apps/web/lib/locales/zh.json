@@ -6089,6 +6089,13 @@
           "placeholder": "请输入收到的 8 位验证码"
         }
       }
+    },
+    "dataExport": {
+      "title": "数据导出",
+      "description": "下载当前组织下账号、设置、订阅、个性化画像、保存分析、通知和助手记录的机器可读 JSON 副本。",
+      "download": "下载数据导出",
+      "success": "数据导出已下载。",
+      "failed": "数据导出下载失败。"
     }
   },
   "systemSettings": {

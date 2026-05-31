@@ -47,6 +47,32 @@ export function sanitizeExportFilename(filename: string, fallbackBase = "export"
   return safeExt ? `${safeBase}.${safeExt}` : safeBase;
 }
 
+export function filenameFromContentDisposition(
+  contentDisposition: string | null | undefined,
+): string | null {
+  if (!contentDisposition) {
+    return null;
+  }
+
+  const encodedMatch = contentDisposition.match(/filename\*=([^;]+)/i);
+  if (encodedMatch?.[1]) {
+    const encoded = encodedMatch[1].trim().replace(/^UTF-8''/i, "");
+    try {
+      return sanitizeExportFilename(decodeURIComponent(encoded));
+    } catch {
+      return sanitizeExportFilename(encoded);
+    }
+  }
+
+  const filenameMatch = contentDisposition.match(/filename=(?:"([^"]+)"|([^;]+))/i);
+  const rawFilename = filenameMatch?.[1] ?? filenameMatch?.[2];
+  if (!rawFilename) {
+    return null;
+  }
+
+  return sanitizeExportFilename(rawFilename.trim());
+}
+
 export function buildExportBaseName({
   base,
   suffixes,

@@ -6089,6 +6089,13 @@
           "placeholder": "Enter the 8-digit code"
         }
       }
+    },
+    "dataExport": {
+      "title": "Data export",
+      "description": "Download a machine-readable JSON copy of your account, settings, subscriptions, personalization, saved analysis, notifications, and assistant records for this organization.",
+      "download": "Download data export",
+      "success": "Data export downloaded.",
+      "failed": "Failed to download data export."
     }
   },
   "systemSettings": {

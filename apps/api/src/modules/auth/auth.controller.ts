@@ -3,6 +3,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Header,
   HttpCode,
   Param,
   Patch,
@@ -11,8 +12,9 @@ import {
   Query,
   Req,
   Res,
+  StreamableFile,
 } from "@nestjs/common";
-import { ApiTags } from "@nestjs/swagger";
+import { ApiProduces, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 import type { Response } from "express";
 
@@ -69,6 +71,7 @@ import { PlatformAccessService } from "./platform-access.service";
 import { UpdateProfileDto } from "./dto/profile.dto";
 import { RegistrationApplicationService } from "./registration-application.service";
 import { RefreshDto } from "./dto/refresh.dto";
+import { UserDataExportService } from "./user-data-export.service";
 
 @ApiTags("auth")
 @Controller("auth")
@@ -84,6 +87,7 @@ export class AuthController {
     private readonly oidcAuthService: OidcAuthService,
     private readonly platformAccess: PlatformAccessService,
     private readonly env: EnvService,
+    private readonly userDataExport: UserDataExportService,
   ) {}
 
   @Public()
@@ -608,5 +612,24 @@ export class AuthController {
   @AllowAuthenticated()
   async profile(@CurrentUser() user: AuthenticatedUser) {
     return user;
+  }
+
+  @Get("data-export")
+  @AllowAuthenticated()
+  @ApiProduces("application/json")
+  @Header("Cache-Control", "no-store")
+  @Header("Pragma", "no-cache")
+  async exportUserData(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<StreamableFile> {
+    const result = await this.userDataExport.exportUserData(
+      user,
+      resolveRequestIp(req),
+    );
+    return new StreamableFile(result.buffer, {
+      type: "application/json; charset=utf-8",
+      disposition: `attachment; filename="${result.filename}"`,
+    });
   }
 }

@@ -7,6 +7,7 @@ import { DatabaseModule } from "../config/database.module";
 import { EmailModule } from "../email/email.module";
 import { OrgModule } from "../org/org.module";
 import { StorageModule } from "../storage/storage.module";
+import { UserNewsBehaviorModule } from "../user-news-behavior/user-news-behavior.module";
 
 import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
 import { AuthSecurityService } from "./auth-security.service";
@@ -23,6 +24,7 @@ import { PlatformAccessService } from "./platform-access.service";
 import { RegistrationApplicationService } from "./registration-application.service";
 import { RefreshTokenBlacklistService } from "./refresh-token-blacklist.service";
 import { JwtStrategy } from "./strategies/jwt.strategy";
+import { UserDataExportService } from "./user-data-export.service";
 
 @Module({
   imports: [
@@ -33,6 +35,7 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
     EmailModule,
     OrgModule,
     StorageModule,
+    UserNewsBehaviorModule,
   ],
   controllers: [AuthController],
   providers: [
@@ -50,6 +53,7 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
     OrgInviteService,
     RegistrationApplicationService,
     OidcAuthService,
+    UserDataExportService,
   ],
   exports: [
     AuthService,
@@ -65,6 +69,7 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
     OrgInviteService,
     RegistrationApplicationService,
     OidcAuthService,
+    UserDataExportService,
   ],
 })
 export class AuthModule {}

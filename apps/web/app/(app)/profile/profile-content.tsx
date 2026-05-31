@@ -1,6 +1,6 @@
 "use client";
 
-import { UploadOutlined } from "@ant-design/icons";
+import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import {
   Alert,
   Button,
@@ -15,6 +15,7 @@ import {
 } from "antd";
 import type { UploadProps } from "antd";
 import type { RcFile } from "antd/es/upload";
+import type { AxiosResponse } from "axios";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -23,6 +24,11 @@ import { AvatarFallback } from "@/components/avatar-fallback";
 import { createApiClient } from "@/lib/api-client";
 import type { AuthenticatedUser } from "@/lib/auth";
 import { captureClientError } from "@/lib/client-telemetry";
+import {
+  downloadBlobFile,
+  filenameFromContentDisposition,
+  formatDateForFilename,
+} from "@/lib/data-export";
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ALLOWED_AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -67,6 +73,7 @@ export function ProfileContent() {
   const [verifyingEmail, setVerifyingEmail] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
   const [emailCodeCooldown, setEmailCodeCooldown] = useState(0);
   const [pendingEmailHint, setPendingEmailHint] = useState<string | null>(null);
 
@@ -308,6 +315,39 @@ export function ProfileContent() {
     }
   }, [apiClient, messageApi, passwordForm, t]);
 
+  const handleExportUserData = useCallback(async () => {
+    try {
+      setExportingData(true);
+      const response = await apiClient.get<Blob, AxiosResponse<Blob>>(
+        "auth/data-export",
+        { responseType: "blob" },
+      );
+      const rawContentDisposition = response.headers?.["content-disposition"];
+      const contentDisposition = Array.isArray(rawContentDisposition)
+        ? rawContentDisposition.join("; ")
+        : rawContentDisposition;
+      const fallbackFilename = `wei-user-data-${formatDateForFilename(new Date())}.json`;
+      downloadBlobFile(
+        response.data,
+        filenameFromContentDisposition(contentDisposition) ?? fallbackFilename,
+      );
+      messageApi.success(
+        t("profile.dataExport.success", {
+          defaultValue: "Data export downloaded.",
+        }),
+      );
+    } catch (error) {
+      captureClientError("Failed to export user data", error);
+      messageApi.error(
+        t("profile.dataExport.failed", {
+          defaultValue: "Failed to download data export.",
+        }),
+      );
+    } finally {
+      setExportingData(false);
+    }
+  }, [apiClient, messageApi, t]);
+
   if (status === "loading") {
     return (
       <div
@@ -517,6 +557,29 @@ export function ProfileContent() {
               })}
             </Button>
           </Form>
+        </div>
+        <Divider style={{ margin: 0 }} />
+        <div className="flex flex-col gap-2">
+          <Typography.Text strong>
+            {t("profile.dataExport.title", {
+              defaultValue: "Data export",
+            })}
+          </Typography.Text>
+          <Typography.Paragraph type="secondary">
+            {t("profile.dataExport.description", {
+              defaultValue:
+                "Download a machine-readable JSON copy of your account, settings, subscriptions, personalization, saved analysis, notifications, and assistant records for this organization.",
+            })}
+          </Typography.Paragraph>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() => void handleExportUserData()}
+            loading={exportingData}
+          >
+            {t("profile.dataExport.download", {
+              defaultValue: "Download data export",
+            })}
+          </Button>
         </div>
         <Divider style={{ margin: 0 }} />
         <div className="flex flex-col gap-2">
