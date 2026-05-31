@@ -1,4 +1,5 @@
 import { createApiClient, getCachedApiSession } from './api-client';
+import { emitNewsnowPersonalizationUpdated } from './newsnow-personalization-events';
 
 export type UserNewsBehaviorType =
   | 'view'
@@ -278,6 +279,9 @@ export async function trackUserNewsBehavior(payload: UserNewsBehaviorPayload) {
       ...(topics ? { topics } : {}),
       ...(entities ? { entities } : {}),
     });
+    if (type === 'not_interested' || type === 'unsubscribe') {
+      emitNewsnowPersonalizationUpdated({ updatedAt: Date.now() });
+    }
   } catch {
     // Keep interaction non-blocking.
   }

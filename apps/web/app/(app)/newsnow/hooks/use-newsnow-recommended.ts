@@ -1,12 +1,16 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { createApiClient } from '@/lib/api-client';
+import { subscribeNewsnowPersonalizationUpdated } from '@/lib/newsnow-personalization-events';
 
-import { buildNewsnowRecommendedQueryKey } from './newsnow-recommended-query';
+import {
+  NEWSNOW_RECOMMENDED_QUERY_KEY_PREFIX,
+  buildNewsnowRecommendedQueryKey,
+} from './newsnow-recommended-query';
 
 export interface NewsnowRecommendedItem {
   id: string;
@@ -39,6 +43,7 @@ export interface NewsnowRecommendedResponse {
 }
 
 export function useNewsnowRecommended(limit = 30) {
+  const queryClient = useQueryClient();
   const { data: session, status } = useSession();
   const accessToken = session?.accessToken as string | undefined;
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
@@ -48,6 +53,14 @@ export function useNewsnowRecommended(limit = 30) {
     () => createApiClient({ accessToken }),
     [accessToken],
   );
+
+  useEffect(() => {
+    return subscribeNewsnowPersonalizationUpdated(() => {
+      void queryClient.invalidateQueries({
+        queryKey: [NEWSNOW_RECOMMENDED_QUERY_KEY_PREFIX],
+      });
+    });
+  }, [queryClient]);
 
   return useQuery<NewsnowRecommendedResponse>({
     queryKey: buildNewsnowRecommendedQueryKey({
@@ -66,7 +79,9 @@ export function useNewsnowRecommended(limit = 30) {
       return {
         scope: data?.scope === 'hottest' ? 'hottest' : 'hottest',
         generatedAt:
-          typeof data?.generatedAt === 'string' ? data.generatedAt : new Date().toISOString(),
+          typeof data?.generatedAt === 'string'
+            ? data.generatedAt
+            : new Date().toISOString(),
         degraded: data?.degraded === true,
         items: Array.isArray(data?.items) ? data.items : [],
       };

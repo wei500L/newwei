@@ -1,11 +1,18 @@
 'use client';
 
+import { DislikeOutlined } from '@ant-design/icons';
 import { Alert, Button, Empty, Skeleton, Tooltip } from 'antd';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { trackUserNewsBehavior } from '@/lib/user-news-behavior';
+import {
+  getSessionHiddenBehaviorKeys,
+  hideSessionBehaviorKey,
+  subscribeSessionHiddenBehaviorKeys,
+  trackUserNewsBehavior,
+} from '@/lib/user-news-behavior';
 
+import { buildNewsnowRecommendedNotInterestedPayload } from '../hooks/newsnow-recommended-feedback';
 import {
   type NewsnowRecommendedItem,
   useNewsnowRecommended,
@@ -156,13 +163,21 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
     router.push(`/items/${item.matchedItemId}`);
   }, [item, router]);
 
+  const handleNotInterested = useCallback(() => {
+    hideSessionBehaviorKey('newsnowItems', item.id);
+    void trackUserNewsBehavior(
+      buildNewsnowRecommendedNotInterestedPayload(item),
+    );
+  }, [item]);
+
   const scoreSummary = useMemo(
-    () => [
-      `内容 ${scorePercent(item.scoreBreakdown.content)}`,
-      `协同 ${scorePercent(item.scoreBreakdown.collaborative)}`,
-      `来源 ${scorePercent(item.scoreBreakdown.source)}`,
-      `热度 ${scorePercent(item.scoreBreakdown.hotness)}`,
-    ].join(' · '),
+    () =>
+      [
+        `内容 ${scorePercent(item.scoreBreakdown.content)}`,
+        `协同 ${scorePercent(item.scoreBreakdown.collaborative)}`,
+        `来源 ${scorePercent(item.scoreBreakdown.source)}`,
+        `热度 ${scorePercent(item.scoreBreakdown.hotness)}`,
+      ].join(' · '),
     [item.scoreBreakdown],
   );
 
@@ -228,6 +243,9 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
           <Button disabled={!item.matchedItemId} onClick={handleOpenItem}>
             深读
           </Button>
+          <Button icon={<DislikeOutlined />} onClick={handleNotInterested}>
+            不感兴趣
+          </Button>
         </div>
       </div>
     </div>
@@ -236,6 +254,20 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
 
 export function NewsnowRecommendedFeed() {
   const { data, isLoading, isError, error, refetch } = useNewsnowRecommended();
+  const [hiddenItemIds, setHiddenItemIds] = useState<Set<string>>(
+    () => new Set(getSessionHiddenBehaviorKeys('newsnowItems')),
+  );
+
+  useEffect(() => {
+    return subscribeSessionHiddenBehaviorKeys('newsnowItems', (keys) => {
+      setHiddenItemIds(new Set(keys));
+    });
+  }, []);
+
+  const items = useMemo(
+    () => (data?.items ?? []).filter((item) => !hiddenItemIds.has(item.id)),
+    [data?.items, hiddenItemIds],
+  );
 
   if (isLoading) {
     return (
@@ -261,8 +293,6 @@ export function NewsnowRecommendedFeed() {
     );
   }
 
-  const items = data?.items ?? [];
-
   return (
     <div className="mx-auto w-full max-w-[1760px] px-4 pb-8 pt-6 md:px-6 md:pb-9 md:pt-7 xl:px-8">
       <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -275,7 +305,9 @@ export function NewsnowRecommendedFeed() {
           </h2>
         </div>
         <div className="text-xs text-slate-500 dark:text-zinc-400">
-          {data?.generatedAt ? `生成于 ${formatPublishedAt(data.generatedAt)}` : null}
+          {data?.generatedAt
+            ? `生成于 ${formatPublishedAt(data.generatedAt)}`
+            : null}
         </div>
       </div>
 
