@@ -239,6 +239,12 @@ export class NewsExtractionPreflightGateSettingsInput {
   @Max(10_000)
   minWordCount?: number;
 
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  minQualityScore?: number;
+
   @Field(() => Boolean, { nullable: true })
   @IsOptional()
   @IsBoolean()

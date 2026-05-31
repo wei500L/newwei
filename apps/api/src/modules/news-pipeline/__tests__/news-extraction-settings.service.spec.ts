@@ -46,6 +46,7 @@ describe("NewsExtractionSettingsService", () => {
       preflightGate: {
         enabled: true,
         minWordCount: 120,
+        minQualityScore: 0.35,
         rejectBotChallenge: true,
         rejectListLike: true,
       },
@@ -86,6 +87,7 @@ describe("NewsExtractionSettingsService", () => {
     expect(settings.preflightGate).toEqual({
       enabled: true,
       minWordCount: 120,
+      minQualityScore: 0.35,
       rejectBotChallenge: true,
       rejectListLike: true,
     });
@@ -101,6 +103,7 @@ describe("NewsExtractionSettingsService", () => {
       pipelineMode: NewsExtractionPipelineMode.staged,
       preflightGate: {
         minWordCount: -10,
+        minQualityScore: 2,
         rejectBotChallenge: false,
       },
       postCleanGate: {
@@ -121,6 +124,7 @@ describe("NewsExtractionSettingsService", () => {
       preflightGate: {
         enabled: true,
         minWordCount: 0,
+        minQualityScore: 1,
         rejectBotChallenge: false,
         rejectListLike: true,
       },

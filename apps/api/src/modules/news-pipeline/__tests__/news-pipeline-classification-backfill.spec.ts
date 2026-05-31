@@ -78,6 +78,7 @@ describe("NewsPipelineService classification backfill", () => {
       preflightGate: {
         enabled: true,
         minWordCount: 120,
+        minQualityScore: 0.35,
         rejectBotChallenge: true,
         rejectListLike: true,
       },

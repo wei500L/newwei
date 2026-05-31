@@ -130,6 +130,17 @@ export function NewsExtractionSettingsPanel() {
           >
             <InputNumber min={0} max={10000} style={{ width: "100%" }} />
           </Form.Item>
+          <Form.Item
+            name={["preflightGate", "minQualityScore"]}
+            label={t("settings.newsExtraction.fields.minPreflightQualityScore")}
+          >
+            <InputNumber
+              min={0}
+              max={1}
+              step={0.05}
+              style={{ width: "100%" }}
+            />
+          </Form.Item>
         </Card>
 
         <Card
@@ -155,7 +166,7 @@ export function NewsExtractionSettingsPanel() {
           </Space>
           <Form.Item
             name={["postCleanGate", "minQualityScore"]}
-            label={t("settings.newsExtraction.fields.minQualityScore")}
+            label={t("settings.newsExtraction.fields.minCleanedQualityScore")}
           >
             <InputNumber
               min={0}

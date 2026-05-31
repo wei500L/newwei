@@ -185,6 +185,9 @@ export class NewsExtractionPreflightGateSettingsModel {
   @Field(() => Int)
   minWordCount!: number;
 
+  @Field(() => Float)
+  minQualityScore!: number;
+
   @Field(() => Boolean)
   rejectBotChallenge!: boolean;
 

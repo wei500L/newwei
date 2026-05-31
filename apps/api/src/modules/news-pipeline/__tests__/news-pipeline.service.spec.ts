@@ -246,6 +246,7 @@ describe("NewsPipelineService", () => {
       preflightGate: {
         enabled: true,
         minWordCount: 120,
+        minQualityScore: 0.35,
         rejectBotChallenge: true,
         rejectListLike: true,
       },
@@ -524,6 +525,7 @@ describe("NewsPipelineService", () => {
       preflightGate: {
         enabled: true,
         minWordCount: 120,
+        minQualityScore: 0.35,
         rejectBotChallenge: true,
         rejectListLike: true,
       },
@@ -582,6 +584,127 @@ describe("NewsPipelineService", () => {
     );
     expect(processedUpdate.$set?.result?.removed_noise_types).toContain(
       "insufficient_word_count",
+    );
+  });
+
+  it("rejects low preflight quality before LLM clean in staged pipeline", async () => {
+    extractionSettingsService.getSettings.mockResolvedValueOnce({
+      pipelineMode: NewsExtractionPipelineMode.staged,
+      preflightGate: {
+        enabled: true,
+        minWordCount: 0,
+        minQualityScore: 0.35,
+        rejectBotChallenge: false,
+        rejectListLike: false,
+      },
+      postCleanGate: {
+        enabled: false,
+        minQualityScore: 0.35,
+        minCleanedChars: 0,
+        requireSummary: false,
+      },
+      capabilities: {
+        entities: false,
+        sentiment: false,
+        kg: false,
+      },
+      providers: {
+        clean: "llm",
+        entities: "llm",
+        sentiment: "llm",
+        kg: "llm",
+      },
+    });
+
+    await service.process(job, raw);
+    await flushOutbox();
+
+    expect(extractionStageService.cleanWithLlm).not.toHaveBeenCalled();
+    expect(liteLlm.acompletion).not.toHaveBeenCalled();
+
+    const preflightCall = (TaskLogModel.create as jest.Mock).mock.calls.find(
+      ([entry]) => entry.stage === "preflight",
+    );
+    expect(preflightCall?.[0]).toEqual(
+      expect.objectContaining({
+        status: "completed",
+        data: expect.objectContaining({
+          reason: "preflight_quality_score_below_threshold",
+          preflightQualityScore: expect.any(Number),
+          preflightQualityThreshold: 0.35,
+          stageMeta: expect.objectContaining({
+            status: "rejected",
+            reason: "preflight_quality_score_below_threshold",
+          }),
+        }),
+      }),
+    );
+
+    const processedUpdate = (ProcessedItemModel.findOneAndUpdate as jest.Mock)
+      .mock.calls[0]?.[1] as { $set?: { result?: Record<string, any>; llm?: any } };
+    expect(processedUpdate.$set?.llm?.model).toBeNull();
+    expect(processedUpdate.$set?.result?.removed_noise_types).toContain(
+      "preflight_quality_score_below_threshold",
+    );
+    expect(processedUpdate.$set?.result?.stage_meta.clean.status).toBe("skipped");
+  });
+
+  it("runs LLM clean when staged preflight quality passes", async () => {
+    const { CrawlResultContentModel } = jest.requireMock("@modular/mongo") as {
+      CrawlResultContentModel: { findById: jest.Mock };
+    };
+    CrawlResultContentModel.findById.mockReturnValueOnce({
+      lean: jest.fn().mockResolvedValue({
+        markdown:
+          "# Detailed headline\n\n" +
+          "This article paragraph includes enough reporting context and facts. ".repeat(
+            80,
+          ),
+        markdownWithCitations: null,
+        referencesMarkdown: null,
+        crawlRunId: null,
+        metadata: { title: "Detailed headline" },
+      }),
+    });
+    extractionSettingsService.getSettings.mockResolvedValueOnce({
+      pipelineMode: NewsExtractionPipelineMode.staged,
+      preflightGate: {
+        enabled: true,
+        minWordCount: 0,
+        minQualityScore: 0.35,
+        rejectBotChallenge: true,
+        rejectListLike: true,
+      },
+      postCleanGate: {
+        enabled: false,
+        minQualityScore: 0.35,
+        minCleanedChars: 0,
+        requireSummary: false,
+      },
+      capabilities: {
+        entities: false,
+        sentiment: false,
+        kg: false,
+      },
+      providers: {
+        clean: "llm",
+        entities: "llm",
+        sentiment: "llm",
+        kg: "llm",
+      },
+    });
+
+    await service.process(job, raw);
+    await flushOutbox();
+
+    expect(extractionStageService.cleanWithLlm).toHaveBeenCalledTimes(1);
+    expect(liteLlm.acompletion).toHaveBeenCalled();
+
+    const preflightCall = (TaskLogModel.create as jest.Mock).mock.calls.find(
+      ([entry]) => entry.stage === "preflight",
+    );
+    expect(preflightCall?.[0].data.preflightQualityScore).toBeGreaterThanOrEqual(
+      0.35,
     );
   });
 

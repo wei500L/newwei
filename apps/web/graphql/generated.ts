@@ -2308,6 +2308,7 @@ export type NewsExtractionPostCleanGateSettingsModel = {
 
 export type NewsExtractionPreflightGateSettingsInput = {
   enabled?: InputMaybe<Scalars['Boolean']['input']>;
+  minQualityScore?: InputMaybe<Scalars['Float']['input']>;
   minWordCount?: InputMaybe<Scalars['Int']['input']>;
   rejectBotChallenge?: InputMaybe<Scalars['Boolean']['input']>;
   rejectListLike?: InputMaybe<Scalars['Boolean']['input']>;
@@ -2316,6 +2317,7 @@ export type NewsExtractionPreflightGateSettingsInput = {
 export type NewsExtractionPreflightGateSettingsModel = {
   __typename?: 'NewsExtractionPreflightGateSettingsModel';
   enabled: Scalars['Boolean']['output'];
+  minQualityScore: Scalars['Float']['output'];
   minWordCount: Scalars['Int']['output'];
   rejectBotChallenge: Scalars['Boolean']['output'];
   rejectListLike: Scalars['Boolean']['output'];
@@ -4038,14 +4040,14 @@ export type UpdateNewsPromptConfigMutation = { __typename?: 'Mutation', updateNe
 export type NewsExtractionSettingsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type NewsExtractionSettingsQuery = { __typename?: 'Query', newsExtractionSettings: { __typename?: 'NewsExtractionSettingsModel', pipelineMode: NewsExtractionPipelineMode, preflightGate: { __typename?: 'NewsExtractionPreflightGateSettingsModel', enabled: boolean, minWordCount: number, rejectBotChallenge: boolean, rejectListLike: boolean }, postCleanGate: { __typename?: 'NewsExtractionPostCleanGateSettingsModel', enabled: boolean, minQualityScore: number, minCleanedChars: number, requireSummary: boolean }, capabilities: { __typename?: 'NewsExtractionCapabilitiesSettingsModel', entities: boolean, sentiment: boolean, kg: boolean }, providers: { __typename?: 'NewsExtractionProvidersSettingsModel', clean: NewsExtractionProviderId, entities: NewsExtractionProviderId, sentiment: NewsExtractionProviderId, kg: NewsExtractionProviderId } } };
+export type NewsExtractionSettingsQuery = { __typename?: 'Query', newsExtractionSettings: { __typename?: 'NewsExtractionSettingsModel', pipelineMode: NewsExtractionPipelineMode, preflightGate: { __typename?: 'NewsExtractionPreflightGateSettingsModel', enabled: boolean, minWordCount: number, minQualityScore: number, rejectBotChallenge: boolean, rejectListLike: boolean }, postCleanGate: { __typename?: 'NewsExtractionPostCleanGateSettingsModel', enabled: boolean, minQualityScore: number, minCleanedChars: number, requireSummary: boolean }, capabilities: { __typename?: 'NewsExtractionCapabilitiesSettingsModel', entities: boolean, sentiment: boolean, kg: boolean }, providers: { __typename?: 'NewsExtractionProvidersSettingsModel', clean: NewsExtractionProviderId, entities: NewsExtractionProviderId, sentiment: NewsExtractionProviderId, kg: NewsExtractionProviderId } } };
 
 export type UpdateNewsExtractionSettingsMutationVariables = Exact<{
   input: UpdateNewsExtractionSettingsInput;
 }>;
 
 
-export type UpdateNewsExtractionSettingsMutation = { __typename?: 'Mutation', updateNewsExtractionSettings: { __typename?: 'NewsExtractionSettingsModel', pipelineMode: NewsExtractionPipelineMode, preflightGate: { __typename?: 'NewsExtractionPreflightGateSettingsModel', enabled: boolean, minWordCount: number, rejectBotChallenge: boolean, rejectListLike: boolean }, postCleanGate: { __typename?: 'NewsExtractionPostCleanGateSettingsModel', enabled: boolean, minQualityScore: number, minCleanedChars: number, requireSummary: boolean }, capabilities: { __typename?: 'NewsExtractionCapabilitiesSettingsModel', entities: boolean, sentiment: boolean, kg: boolean }, providers: { __typename?: 'NewsExtractionProvidersSettingsModel', clean: NewsExtractionProviderId, entities: NewsExtractionProviderId, sentiment: NewsExtractionProviderId, kg: NewsExtractionProviderId } } };
+export type UpdateNewsExtractionSettingsMutation = { __typename?: 'Mutation', updateNewsExtractionSettings: { __typename?: 'NewsExtractionSettingsModel', pipelineMode: NewsExtractionPipelineMode, preflightGate: { __typename?: 'NewsExtractionPreflightGateSettingsModel', enabled: boolean, minWordCount: number, minQualityScore: number, rejectBotChallenge: boolean, rejectListLike: boolean }, postCleanGate: { __typename?: 'NewsExtractionPostCleanGateSettingsModel', enabled: boolean, minQualityScore: number, minCleanedChars: number, requireSummary: boolean }, capabilities: { __typename?: 'NewsExtractionCapabilitiesSettingsModel', entities: boolean, sentiment: boolean, kg: boolean }, providers: { __typename?: 'NewsExtractionProvidersSettingsModel', clean: NewsExtractionProviderId, entities: NewsExtractionProviderId, sentiment: NewsExtractionProviderId, kg: NewsExtractionProviderId } } };
 
 export type CrawlClientSettingsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -7796,6 +7798,7 @@ export const NewsExtractionSettingsDocument = gql`
     preflightGate {
       enabled
       minWordCount
+      minQualityScore
       rejectBotChallenge
       rejectListLike
     }
@@ -7858,6 +7861,7 @@ export const UpdateNewsExtractionSettingsDocument = gql`
     preflightGate {
       enabled
       minWordCount
+      minQualityScore
       rejectBotChallenge
       rejectListLike
     }

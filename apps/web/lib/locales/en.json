@@ -4604,6 +4604,8 @@
         "minWordCount": "Minimum word count",
         "requireSummary": "Require summary",
         "minQualityScore": "Minimum quality score",
+        "minPreflightQualityScore": "Minimum crawl quality score",
+        "minCleanedQualityScore": "Minimum cleaned quality score",
         "minCleanedChars": "Minimum cleaned characters",
         "entities": "Entities",
         "sentiment": "Sentiment",

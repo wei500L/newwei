@@ -1954,6 +1954,7 @@ type NewsExtractionPostCleanGateSettingsModel {
 
 input NewsExtractionPreflightGateSettingsInput {
   enabled: Boolean
+  minQualityScore: Float
   minWordCount: Int
   rejectBotChallenge: Boolean
   rejectListLike: Boolean
@@ -1961,6 +1962,7 @@ input NewsExtractionPreflightGateSettingsInput {
 
 type NewsExtractionPreflightGateSettingsModel {
   enabled: Boolean!
+  minQualityScore: Float!
   minWordCount: Int!
   rejectBotChallenge: Boolean!
   rejectListLike: Boolean!

@@ -4604,6 +4604,8 @@
         "minWordCount": "最小词数",
         "requireSummary": "要求摘要",
         "minQualityScore": "最低质量分",
+        "minPreflightQualityScore": "最低抓取质量分",
+        "minCleanedQualityScore": "最低清洗质量分",
         "minCleanedChars": "最少清洗字符数",
         "entities": "实体",
         "sentiment": "情感",

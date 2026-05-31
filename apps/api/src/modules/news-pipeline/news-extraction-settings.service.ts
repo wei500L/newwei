@@ -19,6 +19,7 @@ export enum NewsExtractionProviderId {
 export interface NewsExtractionPreflightGateSettings {
   enabled: boolean;
   minWordCount: number;
+  minQualityScore: number;
   rejectBotChallenge: boolean;
   rejectListLike: boolean;
 }
@@ -183,6 +184,7 @@ export class NewsExtractionSettingsService {
       preflightGate: {
         enabled: true,
         minWordCount: 120,
+        minQualityScore: 0.35,
         rejectBotChallenge: true,
         rejectListLike: true,
       },
@@ -225,6 +227,12 @@ export class NewsExtractionSettingsService {
           MIN_WORD_COUNT,
           MAX_WORD_COUNT,
           defaults.preflightGate.minWordCount,
+        ),
+        minQualityScore: this.clampFloat(
+          value.preflightGate?.minQualityScore,
+          MIN_SCORE,
+          MAX_SCORE,
+          defaults.preflightGate.minQualityScore,
         ),
         rejectBotChallenge:
           typeof value.preflightGate?.rejectBotChallenge === "boolean"

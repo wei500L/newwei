@@ -973,6 +973,15 @@ export class NewsPipelineService implements OnModuleDestroy {
     extractionSettings: NewsExtractionSettings,
   ) {
     const preflight = this.evaluatePreflightGate(article, extractionSettings);
+    const preflightOutcomeData = {
+      ...(preflight.reason ? { reason: preflight.reason } : {}),
+      ...(typeof preflight.qualityScore === "number"
+        ? { preflightQualityScore: preflight.qualityScore }
+        : {}),
+      ...(typeof preflight.qualityThreshold === "number"
+        ? { preflightQualityThreshold: preflight.qualityThreshold }
+        : {}),
+    };
     if (preflight.rejected) {
       const cleaned = this.buildGateRejectedCleanedNews({
         article,
@@ -1025,7 +1034,10 @@ export class NewsPipelineService implements OnModuleDestroy {
         job,
         "preflight",
         cleaned.stage_meta?.preflight,
-        { reason: preflight.reason ?? "preflight_rejected" },
+        {
+          reason: preflight.reason ?? "preflight_rejected",
+          ...preflightOutcomeData,
+        },
       );
       const persistResult = await this.runStage(
         job,
@@ -1044,6 +1056,7 @@ export class NewsPipelineService implements OnModuleDestroy {
                 mode: NewsExtractionPipelineMode.staged,
                 gateRejected: true,
                 gateReason: preflight.reason ?? "preflight_rejected",
+                preflightQualityScore: preflight.qualityScore ?? null,
               },
             },
             processedItemId: job.processedItemId,
@@ -1070,6 +1083,9 @@ export class NewsPipelineService implements OnModuleDestroy {
         status: "completed",
         provider: "rules",
       }),
+      Object.keys(preflightOutcomeData).length > 0
+        ? preflightOutcomeData
+        : undefined,
     );
 
     const {
@@ -1223,6 +1239,7 @@ export class NewsPipelineService implements OnModuleDestroy {
               extraction: {
                 mode: NewsExtractionPipelineMode.staged,
                 gateRejected: false,
+                preflightQualityScore: preflight.qualityScore ?? null,
               },
             },
             processedItemId: job.processedItemId,
@@ -1265,6 +1282,7 @@ export class NewsPipelineService implements OnModuleDestroy {
               mode: NewsExtractionPipelineMode.staged,
               gateRejected: true,
               gateReason: qualityGate.reason ?? "quality_gate_rejected",
+              preflightQualityScore: preflight.qualityScore ?? null,
             },
           },
           processedItemId: job.processedItemId,
@@ -1325,26 +1343,88 @@ export class NewsPipelineService implements OnModuleDestroy {
   private evaluatePreflightGate(
     article: CrawledArticle,
     settings: NewsExtractionSettings,
-  ): { rejected: boolean; reason?: string } {
+  ): {
+    rejected: boolean;
+    reason?: string;
+    qualityScore?: number;
+    qualityThreshold?: number;
+  } {
     const gate = settings.preflightGate;
     if (!gate.enabled) {
       return { rejected: false };
     }
     const markdown = this.buildPipelineQualityMarkdown(article);
     const quality = this.assessPipelineMarkdownQuality(markdown);
+    const qualityScore = this.computePreflightQualityScore(quality);
+    const qualityThreshold = gate.minQualityScore;
     if (
       gate.rejectBotChallenge &&
       (quality.isChallenge || this.isLikelyBotChallengeMarkdown(markdown))
     ) {
-      return { rejected: true, reason: "bot_challenge_markdown" };
+      return {
+        rejected: true,
+        reason: "bot_challenge_markdown",
+        qualityScore,
+        qualityThreshold,
+      };
     }
     if (gate.rejectListLike && quality.isListLike) {
-      return { rejected: true, reason: "list_like_markdown" };
+      return {
+        rejected: true,
+        reason: "list_like_markdown",
+        qualityScore,
+        qualityThreshold,
+      };
     }
     if (quality.words < gate.minWordCount) {
-      return { rejected: true, reason: "insufficient_word_count" };
+      return {
+        rejected: true,
+        reason: "insufficient_word_count",
+        qualityScore,
+        qualityThreshold,
+      };
     }
-    return { rejected: false };
+    if (qualityScore < qualityThreshold) {
+      return {
+        rejected: true,
+        reason: "preflight_quality_score_below_threshold",
+        qualityScore,
+        qualityThreshold,
+      };
+    }
+    return { rejected: false, qualityScore, qualityThreshold };
+  }
+
+  private computePreflightQualityScore(quality: {
+    words: number;
+    paragraphs: number;
+    headingCount: number;
+    linkCount: number;
+    bulletLines: number;
+    isChallenge: boolean;
+    isListLike: boolean;
+  }) {
+    if (quality.words <= 0 || quality.isChallenge) {
+      return 0;
+    }
+
+    const score = this.clamp01(
+      0.15 +
+        0.45 * this.clamp01(quality.words / 300) +
+        0.25 * this.clamp01(quality.paragraphs / 5) +
+        0.1 * this.clamp01(quality.headingCount / 4) -
+        0.2 * this.clamp01(quality.linkCount / 30) -
+        0.1 * this.clamp01(quality.bulletLines / 40),
+    );
+
+    return quality.isListLike ? Math.min(score, 0.3) : score;
+  }
+
+  private clamp01(value: number) {
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+    return Math.min(1, Math.max(0, value));
   }
 
   private evaluatePostCleanGate(

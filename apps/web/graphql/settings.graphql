@@ -96,6 +96,7 @@ query NewsExtractionSettings {
     preflightGate {
       enabled
       minWordCount
+      minQualityScore
       rejectBotChallenge
       rejectListLike
     }
@@ -125,6 +126,7 @@ mutation UpdateNewsExtractionSettings($input: UpdateNewsExtractionSettingsInput!
     preflightGate {
       enabled
       minWordCount
+      minQualityScore
       rejectBotChallenge
       rejectListLike
     }
