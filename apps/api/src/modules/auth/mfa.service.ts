@@ -1,10 +1,13 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
+import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
 import { AuthSecurityService } from "./auth-security.service";
@@ -26,12 +29,16 @@ interface LoginChallengePayload {
 const MFA_CHALLENGE_TTL_MINUTES = 10;
 const MFA_ENROLLMENT_CHALLENGE_TTL_MINUTES = 15;
 const MFA_ISSUER = "Modular";
+const MFA_CODE_FAILURE_MESSAGE = "Invalid MFA verification code";
+const MFA_CHALLENGE_LOCKED_MESSAGE =
+  "Too many MFA verification attempts. Please sign in again.";
 
 @Injectable()
 export class MfaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authSecurity: AuthSecurityService,
+    private readonly env: EnvService,
   ) {}
 
   async getStatus(userId: string) {
@@ -305,22 +312,27 @@ export class MfaService {
   }
 
   async consumeLoginChallenge(challengeId: string, code: string) {
+    const invalidChallengeMessage = "MFA challenge is invalid or expired";
     const challenge = await this.getActiveChallenge(
       challengeId,
       "mfa_login",
-      "MFA challenge is invalid or expired",
+      invalidChallengeMessage,
     );
     if (!challenge.userId) {
-      throw new UnauthorizedException("MFA challenge is invalid or expired");
+      throw new UnauthorizedException(invalidChallengeMessage);
     }
 
-    await this.verifyFactorOrRecoveryCode(challenge.userId, code);
-    await this.prisma.authChallenge.update({
-      where: { id: challenge.id },
-      data: {
-        consumedAt: new Date(),
-      },
-    });
+    try {
+      await this.verifyFactorOrRecoveryCode(challenge.userId, code);
+    } catch (error) {
+      return this.recordChallengeFailure(
+        challenge.id,
+        invalidChallengeMessage,
+        error,
+      );
+    }
+
+    await this.consumeChallengeOrThrow(challenge.id, invalidChallengeMessage);
 
     const payload = this.parseLoginChallengePayload(challenge.payload);
     return {
@@ -333,24 +345,29 @@ export class MfaService {
   }
 
   async consumeEnrollmentChallenge(challengeId: string, code: string) {
+    const invalidChallengeMessage =
+      "MFA enrollment challenge is invalid or expired";
     const challenge = await this.getActiveChallenge(
       challengeId,
       "mfa_enrollment",
-      "MFA enrollment challenge is invalid or expired",
+      invalidChallengeMessage,
     );
     if (!challenge.userId) {
-      throw new UnauthorizedException(
-        "MFA enrollment challenge is invalid or expired",
+      throw new UnauthorizedException(invalidChallengeMessage);
+    }
+
+    let enrollment: Awaited<ReturnType<typeof this.verifyEnrollment>>;
+    try {
+      enrollment = await this.verifyEnrollment(challenge.userId, code);
+    } catch (error) {
+      return this.recordChallengeFailure(
+        challenge.id,
+        invalidChallengeMessage,
+        error,
       );
     }
 
-    const enrollment = await this.verifyEnrollment(challenge.userId, code);
-    await this.prisma.authChallenge.update({
-      where: { id: challenge.id },
-      data: {
-        consumedAt: new Date(),
-      },
-    });
+    await this.consumeChallengeOrThrow(challenge.id, invalidChallengeMessage);
 
     const payload = this.parseLoginChallengePayload(challenge.payload);
     return {
@@ -407,6 +424,124 @@ export class MfaService {
       });
     });
     return "recovery_code";
+  }
+
+  private get maxChallengeAttempts() {
+    return Math.max(
+      1,
+      Math.floor(this.env.authMfaChallengeConfig.maxAttempts),
+    );
+  }
+
+  private async consumeChallengeOrThrow(challengeId: string, message: string) {
+    const result = await this.prisma.authChallenge.updateMany({
+      where: {
+        id: challengeId,
+        consumedAt: null,
+        lockedAt: null,
+        failedAttempts: { lt: this.maxChallengeAttempts },
+        expiresAt: { gt: new Date() },
+      },
+      data: {
+        consumedAt: new Date(),
+      },
+    });
+    if (result.count !== 1) {
+      await this.throwInactiveChallenge(challengeId, message);
+    }
+  }
+
+  private async recordChallengeFailure(
+    challengeId: string,
+    message: string,
+    error: unknown,
+  ): Promise<never> {
+    if (!this.isMfaCodeFailure(error)) {
+      throw error;
+    }
+
+    const result = await this.prisma.authChallenge.updateMany({
+      where: {
+        id: challengeId,
+        consumedAt: null,
+        lockedAt: null,
+        failedAttempts: { lt: this.maxChallengeAttempts },
+        expiresAt: { gt: new Date() },
+      },
+      data: {
+        failedAttempts: { increment: 1 },
+      },
+    });
+    if (result.count !== 1) {
+      await this.throwInactiveChallenge(challengeId, message);
+    }
+
+    const updated = await this.prisma.authChallenge.findUnique({
+      where: { id: challengeId },
+      select: { failedAttempts: true },
+    });
+    if ((updated?.failedAttempts ?? 0) >= this.maxChallengeAttempts) {
+      await this.lockChallenge(challengeId);
+      throw new TooManyRequestsException(MFA_CHALLENGE_LOCKED_MESSAGE);
+    }
+
+    throw error;
+  }
+
+  private async throwInactiveChallenge(
+    challengeId: string,
+    message: string,
+  ): Promise<never> {
+    const challenge = await this.prisma.authChallenge.findUnique({
+      where: { id: challengeId },
+      select: {
+        failedAttempts: true,
+        lockedAt: true,
+      },
+    });
+    if (
+      challenge?.lockedAt ||
+      (challenge?.failedAttempts ?? 0) >= this.maxChallengeAttempts
+    ) {
+      await this.lockChallenge(challengeId);
+      throw new TooManyRequestsException(MFA_CHALLENGE_LOCKED_MESSAGE);
+    }
+
+    throw new UnauthorizedException(message);
+  }
+
+  private async lockChallenge(challengeId: string) {
+    await this.prisma.authChallenge.updateMany({
+      where: {
+        id: challengeId,
+        lockedAt: null,
+      },
+      data: {
+        lockedAt: new Date(),
+      },
+    });
+  }
+
+  private isMfaCodeFailure(error: unknown) {
+    if (!(error instanceof HttpException)) {
+      return false;
+    }
+
+    const response = error.getResponse();
+    if (typeof response === "string") {
+      return response === MFA_CODE_FAILURE_MESSAGE;
+    }
+    if (!response || typeof response !== "object" || Array.isArray(response)) {
+      return error.message === MFA_CODE_FAILURE_MESSAGE;
+    }
+
+    const message = (response as { message?: unknown }).message;
+    if (typeof message === "string") {
+      return message === MFA_CODE_FAILURE_MESSAGE;
+    }
+    return (
+      Array.isArray(message) && message.includes(MFA_CODE_FAILURE_MESSAGE)
+    );
   }
 
   private async isOrgAdmin(userId: string, orgId: string) {
@@ -467,6 +602,13 @@ export class MfaService {
     });
     if (!challenge || challenge.type !== type) {
       throw new UnauthorizedException(message);
+    }
+    if (
+      challenge.lockedAt ||
+      challenge.failedAttempts >= this.maxChallengeAttempts
+    ) {
+      await this.lockChallenge(challenge.id);
+      throw new TooManyRequestsException(MFA_CHALLENGE_LOCKED_MESSAGE);
     }
     if (challenge.consumedAt || challenge.expiresAt.getTime() < Date.now()) {
       throw new UnauthorizedException(message);

@@ -1834,6 +1834,8 @@ model AuthChallenge {
   payload    Json
   expiresAt  DateTime
   consumedAt DateTime?
+  failedAttempts Int       @default(0)
+  lockedAt       DateTime?
   createdAt  DateTime          @default(now())
 
   @@index([type, expiresAt])

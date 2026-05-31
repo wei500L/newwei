@@ -15,7 +15,8 @@
         "invalidCredentials": "邮箱或密码错误",
         "invalidCredentialsWithReason": "登录失败：{{reason}}",
         "invalidCode": "验证码错误或已过期",
-        "invalidCodeWithReason": "验证码登录失败：{{reason}}"
+        "invalidCodeWithReason": "验证码登录失败：{{reason}}",
+        "tooManyMfaAttempts": "MFA 验证尝试次数过多，请重新登录。"
       },
       "title": "欢迎回来",
       "subtitle": "登录后继续",

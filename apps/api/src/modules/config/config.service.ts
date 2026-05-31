@@ -52,6 +52,10 @@ export interface AuthEmailCodeConfig {
   maxAttempts: number;
 }
 
+export interface AuthMfaChallengeConfig {
+  maxAttempts: number;
+}
+
 export interface BullBoardConfig {
   username?: string;
   password?: string;
@@ -353,6 +357,14 @@ export class EnvService extends ConfigService<ApiEnv> {
         90,
       maxAttempts:
         this.get<number>("AUTH_EMAIL_CODE_MAX_ATTEMPTS", { infer: true }) ?? 3,
+    };
+  }
+
+  get authMfaChallengeConfig(): AuthMfaChallengeConfig {
+    return {
+      maxAttempts:
+        this.get<number>("AUTH_MFA_CHALLENGE_MAX_ATTEMPTS", { infer: true }) ??
+        5,
     };
   }
 

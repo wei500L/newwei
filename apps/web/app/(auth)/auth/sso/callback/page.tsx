@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { createApiClient, syncApiSessionCache } from "@/lib/api-client";
 import type { BackendLoginResponse } from "@/lib/auth";
+import { classifyRequestError } from "@/lib/request-error";
 
 export default function SsoCallbackPage() {
   const router = useRouter();
@@ -18,7 +19,9 @@ export default function SsoCallbackPage() {
   const apiClient = useMemo(() => createApiClient(), []);
   const [loading, setLoading] = useState(Boolean(handoffToken));
   const [challengeError, setChallengeError] = useState<string | null>(null);
+  const [mfaLocked, setMfaLocked] = useState(false);
   const [enrollmentLoading, setEnrollmentLoading] = useState(false);
+  const [enrollmentLocked, setEnrollmentLocked] = useState(false);
   const [enrollmentSetup, setEnrollmentSetup] = useState<{
     secret: string;
     otpauthUri: string;
@@ -113,22 +116,34 @@ export default function SsoCallbackPage() {
   }, [apiClient, enrollmentChallengeId]);
 
   const onVerify = async (values: { code: string }) => {
-    if (!challengeId) {
+    if (!challengeId || mfaLocked) {
       return;
     }
 
-    const response = await apiClient.post<BackendLoginResponse>(
-      "auth/mfa/verify-login",
-      {
-        challengeId,
-        code: values.code,
-      },
-    );
-    await signInWithPayload(response.data);
+    setChallengeError(null);
+    try {
+      const response = await apiClient.post<BackendLoginResponse>(
+        "auth/mfa/verify-login",
+        {
+          challengeId,
+          code: values.code,
+        },
+      );
+      await signInWithPayload(response.data);
+    } catch (error) {
+      if (classifyRequestError(error).kind === "rateLimit") {
+        setMfaLocked(true);
+        setChallengeError(
+          "Too many MFA verification attempts. Please sign in again.",
+        );
+        return;
+      }
+      setChallengeError("Invalid MFA verification code");
+    }
   };
 
   const onVerifyEnrollment = async (values: { code: string }) => {
-    if (!enrollmentChallengeId) {
+    if (!enrollmentChallengeId || enrollmentLocked) {
       return;
     }
 
@@ -148,8 +163,15 @@ export default function SsoCallbackPage() {
         return;
       }
       await signInWithPayload(response.data);
-    } catch {
-      setChallengeError("Invalid MFA verification code");
+    } catch (error) {
+      if (classifyRequestError(error).kind === "rateLimit") {
+        setEnrollmentLocked(true);
+        setChallengeError(
+          "Too many MFA verification attempts. Please sign in again.",
+        );
+      } else {
+        setChallengeError("Invalid MFA verification code");
+      }
     } finally {
       setEnrollmentLoading(false);
     }
@@ -179,10 +201,10 @@ export default function SsoCallbackPage() {
             name="code"
             rules={[{ required: true, message: "Enter your MFA code" }]}
           >
-            <Input size="large" />
+            <Input size="large" disabled={mfaLocked} />
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit" block>
+            <Button type="primary" htmlType="submit" block disabled={mfaLocked}>
               Verify and continue
             </Button>
           </Form.Item>
@@ -236,7 +258,7 @@ export default function SsoCallbackPage() {
                   { required: true, message: "Enter your authenticator code" },
                 ]}
               >
-                <Input size="large" />
+                <Input size="large" disabled={enrollmentLocked} />
               </Form.Item>
               <Form.Item>
                 <Button
@@ -244,6 +266,7 @@ export default function SsoCallbackPage() {
                   htmlType="submit"
                   block
                   loading={enrollmentLoading}
+                  disabled={enrollmentLocked}
                 >
                   Verify and continue
                 </Button>

@@ -113,6 +113,11 @@ export const apiEnvSchema = baseEnvSchema
       .positive()
       .default(90),
     AUTH_EMAIL_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
+    AUTH_MFA_CHALLENGE_MAX_ATTEMPTS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(5),
     AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
     TASK_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(14),
     GRAPHQL_PLAYGROUND: envBoolean.default(

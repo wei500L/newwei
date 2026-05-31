@@ -12,6 +12,7 @@ import { z } from "zod";
 import { createApiClient, syncApiSessionCache } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { env } from "@/lib/env";
+import { classifyRequestError } from "@/lib/request-error";
 import type {
   BackendLoginResponse,
   BackendMfaChallengeResponse,
@@ -112,12 +113,14 @@ export default function LoginPage() {
   const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
   const [mfaLoading, setMfaLoading] = useState(false);
   const [mfaError, setMfaError] = useState<string | null>(null);
+  const [mfaLocked, setMfaLocked] = useState(false);
   const [mfaForm] = Form.useForm<{ code: string }>();
   const [enrollmentChallengeId, setEnrollmentChallengeId] = useState<
     string | null
   >(null);
   const [enrollmentLoading, setEnrollmentLoading] = useState(false);
   const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
+  const [enrollmentLocked, setEnrollmentLocked] = useState(false);
   const [enrollmentSetup, setEnrollmentSetup] = useState<{
     secret: string;
     otpauthUri: string;
@@ -216,6 +219,8 @@ export default function LoginPage() {
       setEnrollmentChallengeId(null);
       setEnrollmentSetup(null);
       setMfaError(null);
+      setMfaLocked(false);
+      setEnrollmentLocked(false);
       return;
     }
 
@@ -225,6 +230,8 @@ export default function LoginPage() {
       setPendingRecoveryCodes(null);
       setMfaChallengeId(null);
       setEnrollmentError(null);
+      setEnrollmentLocked(false);
+      setMfaLocked(false);
       return;
     }
 
@@ -341,7 +348,12 @@ export default function LoginPage() {
       await signInWithHandoff(response.data);
     } catch (error) {
       captureClientError("MFA verification failed", error);
-      setMfaError(t("auth.login.error.invalidCode"));
+      if (classifyRequestError(error).kind === "rateLimit") {
+        setMfaLocked(true);
+        setMfaError(t("auth.login.error.tooManyMfaAttempts"));
+      } else {
+        setMfaError(t("auth.login.error.invalidCode"));
+      }
     } finally {
       setMfaLoading(false);
     }
@@ -370,7 +382,12 @@ export default function LoginPage() {
       await signInWithHandoff(response.data);
     } catch (error) {
       captureClientError("MFA enrollment verification failed", error);
-      setEnrollmentError("Invalid MFA verification code");
+      if (classifyRequestError(error).kind === "rateLimit") {
+        setEnrollmentLocked(true);
+        setEnrollmentError(t("auth.login.error.tooManyMfaAttempts"));
+      } else {
+        setEnrollmentError("Invalid MFA verification code");
+      }
     } finally {
       setEnrollmentLoading(false);
     }
@@ -609,7 +626,7 @@ export default function LoginPage() {
               name="code"
               rules={[{ required: true, message: "Enter your MFA code" }]}
             >
-              <Input size="large" />
+              <Input size="large" disabled={mfaLocked} />
             </Form.Item>
             {mfaError ? (
               <Form.Item>
@@ -622,6 +639,7 @@ export default function LoginPage() {
                 htmlType="submit"
                 block
                 loading={mfaLoading}
+                disabled={mfaLocked}
               >
                 Verify and continue
               </Button>
@@ -691,7 +709,7 @@ export default function LoginPage() {
                   { required: true, message: "Enter your authenticator code" },
                 ]}
               >
-                <Input size="large" />
+                <Input size="large" disabled={enrollmentLocked} />
               </Form.Item>
               <Form.Item>
                 <Button
@@ -699,6 +717,7 @@ export default function LoginPage() {
                   htmlType="submit"
                   block
                   loading={enrollmentLoading}
+                  disabled={enrollmentLocked}
                 >
                   Verify and continue
                 </Button>

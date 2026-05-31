@@ -15,7 +15,8 @@
         "invalidCredentials": "Invalid email or password",
         "invalidCredentialsWithReason": "Sign-in failed: {{reason}}",
         "invalidCode": "Verification code is invalid or expired",
-        "invalidCodeWithReason": "Code sign-in failed: {{reason}}"
+        "invalidCodeWithReason": "Code sign-in failed: {{reason}}",
+        "tooManyMfaAttempts": "Too many MFA verification attempts. Please sign in again."
       },
       "title": "Welcome back",
       "subtitle": "Sign in to continue",

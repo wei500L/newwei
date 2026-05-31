@@ -1,3 +1,7 @@
+import { UnauthorizedException } from "@nestjs/common";
+
+import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
+
 import { MfaService } from "./mfa.service";
 
 jest.mock("./auth-flow.utils", () => ({
@@ -38,6 +42,7 @@ describe("MfaService", () => {
       create: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
     },
     user: {
       findUnique: jest.fn(),
@@ -49,6 +54,12 @@ describe("MfaService", () => {
     encodeSecret: jest.fn(),
     decodeSecret: jest.fn(),
     getMfaPolicy: jest.fn(),
+  } as any;
+
+  const envMock = {
+    authMfaChallengeConfig: {
+      maxAttempts: 5,
+    },
   } as any;
 
   let service: MfaService;
@@ -73,7 +84,10 @@ describe("MfaService", () => {
       .fn()
       .mockResolvedValue({ cipher: "encoded" });
     authSecurityMock.decodeSecret = jest.fn().mockResolvedValue("SECRET");
-    service = new MfaService(prismaMock, authSecurityMock);
+    prismaMock.authChallenge.updateMany = jest
+      .fn()
+      .mockResolvedValue({ count: 1 });
+    service = new MfaService(prismaMock, authSecurityMock, envMock);
   });
 
   it("keeps the active MFA factor intact while a replacement enrollment is pending", async () => {
@@ -133,4 +147,171 @@ describe("MfaService", () => {
     });
     expect(result.recoveryCodes).toEqual(["RCODE-1", "RCODE-2"]);
   });
+
+  it("records failed login challenge attempts without consuming the challenge", async () => {
+    authFlowUtilsMock.verifyTotpCode.mockReturnValue(false);
+    prismaMock.authChallenge.findUnique
+      .mockResolvedValueOnce(loginChallenge({ failedAttempts: 0 }))
+      .mockResolvedValueOnce({ failedAttempts: 1 });
+    prismaMock.userTotpFactor.findUnique.mockResolvedValue({
+      userId: "user-1",
+      secret: { cipher: "active" },
+      verifiedAt: new Date("2026-04-01T00:00:00.000Z"),
+      disabledAt: null,
+    });
+    prismaMock.userRecoveryCode.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.consumeLoginChallenge("challenge-1", "000000"),
+    ).rejects.toThrow(UnauthorizedException);
+
+    expect(prismaMock.authChallenge.updateMany).toHaveBeenCalledTimes(1);
+    expect(prismaMock.authChallenge.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: "challenge-1",
+          consumedAt: null,
+          lockedAt: null,
+          failedAttempts: { lt: 5 },
+        }),
+        data: {
+          failedAttempts: { increment: 1 },
+        },
+      }),
+    );
+  });
+
+  it("locks a login challenge when the failed attempt limit is reached", async () => {
+    authFlowUtilsMock.verifyTotpCode.mockReturnValue(false);
+    prismaMock.authChallenge.findUnique
+      .mockResolvedValueOnce(loginChallenge({ failedAttempts: 4 }))
+      .mockResolvedValueOnce({ failedAttempts: 5 });
+    prismaMock.userTotpFactor.findUnique.mockResolvedValue({
+      userId: "user-1",
+      secret: { cipher: "active" },
+      verifiedAt: new Date("2026-04-01T00:00:00.000Z"),
+      disabledAt: null,
+    });
+    prismaMock.userRecoveryCode.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.consumeLoginChallenge("challenge-1", "000000"),
+    ).rejects.toThrow(TooManyRequestsException);
+
+    expect(prismaMock.authChallenge.updateMany).toHaveBeenLastCalledWith({
+      where: {
+        id: "challenge-1",
+        lockedAt: null,
+      },
+      data: {
+        lockedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it("rejects locked login challenges before verifying the MFA code", async () => {
+    prismaMock.authChallenge.findUnique.mockResolvedValueOnce(
+      loginChallenge({ failedAttempts: 5, lockedAt: new Date() }),
+    );
+
+    await expect(
+      service.consumeLoginChallenge("challenge-1", "123456"),
+    ).rejects.toThrow(TooManyRequestsException);
+
+    expect(prismaMock.userTotpFactor.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("consumes a valid login challenge only while under the failed attempt limit", async () => {
+    prismaMock.authChallenge.findUnique.mockResolvedValueOnce(
+      loginChallenge({ failedAttempts: 4 }),
+    );
+    prismaMock.userTotpFactor.findUnique.mockResolvedValue({
+      userId: "user-1",
+      secret: { cipher: "active" },
+      verifiedAt: new Date("2026-04-01T00:00:00.000Z"),
+      disabledAt: null,
+    });
+
+    const result = await service.consumeLoginChallenge(
+      "challenge-1",
+      "123456",
+    );
+
+    expect(result).toEqual({
+      userId: "user-1",
+      orgId: "org-1",
+      ipAddress: "127.0.0.1",
+      userAgent: "jest",
+      action: "login",
+    });
+    expect(prismaMock.authChallenge.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: "challenge-1",
+          failedAttempts: { lt: 5 },
+          lockedAt: null,
+        }),
+        data: {
+          consumedAt: expect.any(Date),
+        },
+      }),
+    );
+  });
+
+  it("applies the same failed attempt lockout to enrollment challenges", async () => {
+    authFlowUtilsMock.verifyTotpCode.mockReturnValue(false);
+    prismaMock.authChallenge.findUnique
+      .mockResolvedValueOnce(
+        loginChallenge({
+          type: "mfa_enrollment",
+          failedAttempts: 4,
+        }),
+      )
+      .mockResolvedValueOnce({ failedAttempts: 5 });
+    prismaMock.userTotpFactor.findUnique.mockResolvedValue({
+      userId: "user-1",
+      secret: { cipher: "pending" },
+      pendingSecret: null,
+    });
+
+    await expect(
+      service.consumeEnrollmentChallenge("challenge-1", "000000"),
+    ).rejects.toThrow(TooManyRequestsException);
+
+    expect(prismaMock.authChallenge.updateMany).toHaveBeenLastCalledWith({
+      where: {
+        id: "challenge-1",
+        lockedAt: null,
+      },
+      data: {
+        lockedAt: expect.any(Date),
+      },
+    });
+  });
 });
+
+function loginChallenge(
+  overrides: Partial<{
+    type: "mfa_login" | "mfa_enrollment";
+    failedAttempts: number;
+    lockedAt: Date | null;
+  }> = {},
+) {
+  return {
+    id: "challenge-1",
+    type: overrides.type ?? "mfa_login",
+    userId: "user-1",
+    orgId: "org-1",
+    payload: {
+      orgId: "org-1",
+      ipAddress: "127.0.0.1",
+      userAgent: "jest",
+      action: "login",
+    },
+    expiresAt: new Date(Date.now() + 60_000),
+    consumedAt: null,
+    failedAttempts: overrides.failedAttempts ?? 0,
+    lockedAt: overrides.lockedAt ?? null,
+    createdAt: new Date("2026-04-01T00:00:00.000Z"),
+  };
+}
