@@ -40,6 +40,14 @@ describe('admin settings panel regressions', () => {
     expect(source).toContain('onClick={confirmClearBehaviorProfile}');
   });
 
+  it('labels NewsNow behavior diagnostics as exponential recency decay', () => {
+    const source = read('components/settings/newsnow-personalization-settings-panel.tsx');
+
+    expect(source).toContain('decayPolicy?:');
+    expect(source).toContain('behaviorProfile.decayTitle');
+    expect(source).toContain('behaviorProfile.averageDecay');
+  });
+
   it('submits knowledge graph approvals directly from the approve action', () => {
     const source = read('components/settings/knowledge-graph-review-panel.tsx');
 

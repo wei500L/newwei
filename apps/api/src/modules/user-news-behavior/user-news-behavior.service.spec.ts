@@ -2,12 +2,15 @@ import {
   buildUserNewsBehaviorDayKey,
   buildUserNewsBehaviorHashKey,
   buildUserNewsBehaviorProfileCacheKey,
+  computeUserNewsBehaviorDecayWeight,
   USER_NEWS_BEHAVIOR_HASH_KINDS,
   USER_NEWS_BEHAVIOR_V2_RETENTION_SECONDS,
 } from "./user-news-behavior.constants";
 import { UserNewsBehaviorService } from "./user-news-behavior.service";
 
 describe("UserNewsBehaviorService", () => {
+  const roundScore = (value: number) => Number(value.toFixed(4));
+
   const createPrismaMock = () => ({
     $transaction: jest.fn(async (operations: unknown[]) => Promise.all(operations as Promise<unknown>[])),
     userNewsBehaviorAggregate: {
@@ -116,6 +119,13 @@ describe("UserNewsBehaviorService", () => {
           "n:actions:not_interested": "1",
           "n:sources:reuters": "4",
         },
+        [buildUserNewsBehaviorDayKey({
+          orgId: "org-1",
+          userId: "user-1",
+          dayKey: "20260304",
+        })]: {
+          "p:topics:ai": "4",
+        },
         [buildUserNewsBehaviorHashKey({
           orgId: "org-1",
           userId: "user-1",
@@ -134,14 +144,43 @@ describe("UserNewsBehaviorService", () => {
     const service = new UserNewsBehaviorService(cache as any, createPrismaMock() as any);
 
     const profile = await service.getProfile("org-1", "user-1");
+    const todaySourceScore = roundScore(
+      Math.log1p(4) * computeUserNewsBehaviorDecayWeight(0),
+    );
+    const threeDayNegativeSourceScore = roundScore(
+      Math.log1p(4) * computeUserNewsBehaviorDecayWeight(3),
+    );
+    const fortyFiveDayTopicScore = roundScore(
+      Math.log1p(4) * computeUserNewsBehaviorDecayWeight(45),
+    );
 
-    expect(profile.positive.sources.reuters).toBeGreaterThan(0);
-    expect(profile.negative.sources.reuters).toBeGreaterThan(0);
+    expect(profile.positive.sources.reuters).toBe(todaySourceScore);
+    expect(profile.negative.sources.reuters).toBe(threeDayNegativeSourceScore);
     expect(profile.sources.reuters).toBeGreaterThan(0);
     expect(profile.sources.bloomberg).toBeGreaterThan(0);
-    expect(profile.bands.find((band) => band.key === "1d")?.positive.sources.reuters).toBeGreaterThan(0);
-    expect(profile.bands.find((band) => band.key === "7d")?.negative.sources.reuters).toBeGreaterThan(0);
+    expect(profile.topics.ai).toBe(fortyFiveDayTopicScore);
+    expect(
+      profile.bands.find((band) => band.key === "1d")?.positive.sources.reuters,
+    ).toBe(todaySourceScore);
+    expect(
+      profile.bands.find((band) => band.key === "7d")?.negative.sources.reuters,
+    ).toBe(threeDayNegativeSourceScore);
+    expect(
+      profile.bands.find((band) => band.key === "90d")?.positive.topics.ai,
+    ).toBe(fortyFiveDayTopicScore);
+    expect(profile.bands.find((band) => band.key === "90d")?.weight).toBe(
+      roundScore(
+        Array.from({ length: 60 }, (_, index) =>
+          computeUserNewsBehaviorDecayWeight(index + 30),
+        ).reduce((sum, value) => sum + value, 0) / 60,
+      ),
+    );
     expect(profile.meta.legacyFallbackUsed).toBe(true);
+    expect(profile.meta.decayPolicy).toEqual({
+      strategy: "exponential_half_life",
+      halfLifeDays: 90,
+      windowDays: 90,
+    });
     expect(cache.set).toHaveBeenCalledTimes(1);
   });
 
@@ -236,7 +275,9 @@ describe("UserNewsBehaviorService", () => {
     expect(profile.neighbors).toHaveLength(2);
     expect(profile.topics.ai).toBeGreaterThan(0);
     expect(profile.items["item-1"]).toBeGreaterThan(0);
-    expect(profile.domains["example.com"]).toBeGreaterThan(0);
+    expect(profile.domains["example.com"]).toBe(
+      roundScore(roundScore(2 * computeUserNewsBehaviorDecayWeight(1)) * 0.5),
+    );
     expect(profile.degraded).toBe(false);
   });
 });

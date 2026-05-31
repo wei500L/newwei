@@ -2,6 +2,7 @@ export const USER_NEWS_BEHAVIOR_RETENTION_SECONDS = 90 * 24 * 60 * 60;
 export const USER_NEWS_BEHAVIOR_V2_RETENTION_SECONDS = 95 * 24 * 60 * 60;
 export const USER_NEWS_BEHAVIOR_V2_WINDOW_DAYS = 90;
 export const USER_NEWS_BEHAVIOR_PROFILE_CACHE_TTL_SECONDS = 30;
+export const USER_NEWS_BEHAVIOR_DECAY_HALF_LIFE_DAYS = 90;
 
 export type UserNewsBehaviorHashKind =
   | "actions"
@@ -31,7 +32,6 @@ export interface UserNewsBehaviorBandDefinition {
   key: "1d" | "7d" | "30d" | "90d";
   startDayOffset: number;
   endDayOffset: number;
-  weight: number;
 }
 
 export const USER_NEWS_BEHAVIOR_BANDS: readonly UserNewsBehaviorBandDefinition[] = [
@@ -39,27 +39,53 @@ export const USER_NEWS_BEHAVIOR_BANDS: readonly UserNewsBehaviorBandDefinition[]
     key: "1d",
     startDayOffset: 0,
     endDayOffset: 0,
-    weight: 0.45,
   },
   {
     key: "7d",
     startDayOffset: 1,
     endDayOffset: 6,
-    weight: 0.3,
   },
   {
     key: "30d",
     startDayOffset: 7,
     endDayOffset: 29,
-    weight: 0.17,
   },
   {
     key: "90d",
     startDayOffset: 30,
     endDayOffset: 89,
-    weight: 0.08,
   },
 ] as const;
+
+export function computeUserNewsBehaviorDecayWeight(ageDays: number): number {
+  const normalizedAgeDays = Number.isFinite(ageDays)
+    ? Math.max(0, ageDays)
+    : 0;
+  return Math.pow(
+    0.5,
+    normalizedAgeDays / USER_NEWS_BEHAVIOR_DECAY_HALF_LIFE_DAYS,
+  );
+}
+
+export function computeUserNewsBehaviorBandAverageDecayWeight(
+  band: UserNewsBehaviorBandDefinition,
+): number {
+  const startDayOffset = Math.max(0, Math.floor(band.startDayOffset));
+  const endDayOffset = Math.max(
+    startDayOffset,
+    Math.floor(band.endDayOffset),
+  );
+  let total = 0;
+  for (
+    let dayOffset = startDayOffset;
+    dayOffset <= endDayOffset;
+    dayOffset += 1
+  ) {
+    total += computeUserNewsBehaviorDecayWeight(dayOffset);
+  }
+  const days = endDayOffset - startDayOffset + 1;
+  return Number((total / days).toFixed(4));
+}
 
 export function buildUserNewsBehaviorHashKey(input: {
   orgId: string;

@@ -6761,6 +6761,9 @@
       "behaviorProfile": {
         "title": "行为画像诊断",
         "description": "查看当前用户用于个性化排序的行为画像，核对来源/主题/实体信号是否符合预期。",
+        "decayTitle": "时间衰减",
+        "decayPolicy": "{{halfLifeDays}} 天半衰期",
+        "averageDecay": "平均 {{value}}%",
         "sections": {
           "sources": "来源偏好",
           "topics": "主题偏好",

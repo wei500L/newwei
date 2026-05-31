@@ -6761,6 +6761,9 @@
       "behaviorProfile": {
         "title": "Behavior profile diagnostics",
         "description": "Inspect the current user behavior profile used by personalized ranking and verify whether source/topic/entity signals match expectations.",
+        "decayTitle": "Recency decay",
+        "decayPolicy": "{{halfLifeDays}}d half-life",
+        "averageDecay": "avg {{value}}%",
         "sections": {
           "sources": "Sources",
           "topics": "Topics",

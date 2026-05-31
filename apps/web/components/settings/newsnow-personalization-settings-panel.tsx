@@ -108,6 +108,11 @@ interface UserNewsBehaviorProfileResponse {
   }>;
   meta?: {
     legacyFallbackUsed?: boolean;
+    decayPolicy?: {
+      strategy?: string;
+      halfLifeDays?: number;
+      windowDays?: number;
+    };
   };
 }
 
@@ -878,15 +883,36 @@ export function NewsnowPersonalizationSettingsPanel() {
       {(behaviorProfile?.bands ?? []).length > 0 ? (
         <Card
           size="small"
-          title={t('systemSettings.newsnowPersonalization.behaviorProfile.bands', {
-            defaultValue: 'Recency bands',
-          })}
+          title={t(
+            'systemSettings.newsnowPersonalization.behaviorProfile.decayTitle',
+            {
+              defaultValue: 'Recency decay',
+            },
+          )}
           style={{ marginBottom: '1rem' }}
         >
           <Space wrap size={[8, 8]}>
+            {behaviorProfile?.meta?.decayPolicy?.halfLifeDays ? (
+              <Tag color="blue">
+                {t(
+                  'systemSettings.newsnowPersonalization.behaviorProfile.decayPolicy',
+                  {
+                    defaultValue: '{{halfLifeDays}}d half-life',
+                    halfLifeDays: behaviorProfile.meta.decayPolicy.halfLifeDays,
+                  },
+                )}
+              </Tag>
+            ) : null}
             {(behaviorProfile?.bands ?? []).map((band) => (
               <Tag key={band.key}>
-                {band.key} · {(band.weight * 100).toFixed(0)}%
+                {band.key} ·{' '}
+                {t(
+                  'systemSettings.newsnowPersonalization.behaviorProfile.averageDecay',
+                  {
+                    defaultValue: 'avg {{value}}%',
+                    value: (band.weight * 100).toFixed(0),
+                  },
+                )}
               </Tag>
             ))}
           </Space>

@@ -9,7 +9,10 @@ import {
   buildUserNewsBehaviorDayKey,
   buildUserNewsBehaviorHashKey,
   buildUserNewsBehaviorProfileCacheKey,
+  computeUserNewsBehaviorBandAverageDecayWeight,
+  computeUserNewsBehaviorDecayWeight,
   USER_NEWS_BEHAVIOR_BANDS,
+  USER_NEWS_BEHAVIOR_DECAY_HALF_LIFE_DAYS,
   USER_NEWS_BEHAVIOR_DIMENSIONS,
   USER_NEWS_BEHAVIOR_HASH_KINDS,
   USER_NEWS_BEHAVIOR_RETENTION_SECONDS,
@@ -46,7 +49,6 @@ const SIMILARITY_TOP_SIGNALS = 24;
 const SIMILARITY_MIN_SHARED_SIGNALS = 3;
 const SIMILARITY_SNAPSHOT_TTL_MS = 6 * 60 * 60 * 1000;
 const SIMILARITY_LOCK_TTL_MS = 30_000;
-const SIMILARITY_SCORE_HALF_LIFE_DAYS = 90;
 
 const PERSISTED_SIGNAL_DIMENSIONS = [
   "sources",
@@ -83,6 +85,11 @@ export interface UserNewsBehaviorProfile {
   }[];
   meta: {
     legacyFallbackUsed: boolean;
+    decayPolicy: {
+      strategy: "exponential_half_life";
+      halfLifeDays: number;
+      windowDays: number;
+    };
   };
 }
 
@@ -971,7 +978,7 @@ export class UserNewsBehaviorService {
       0,
       (Date.now() - lastInteractedAt.getTime()) / (24 * 60 * 60 * 1000),
     );
-    const decay = Math.pow(0.5, ageDays / SIMILARITY_SCORE_HALF_LIFE_DAYS);
+    const decay = computeUserNewsBehaviorDecayWeight(ageDays);
     return Number((score * decay).toFixed(4));
   }
 
@@ -1049,7 +1056,7 @@ export class UserNewsBehaviorService {
     const negative = this.createEmptyScoreDimensions();
     const bandProfiles = USER_NEWS_BEHAVIOR_BANDS.map((band) => ({
       key: band.key,
-      weight: band.weight,
+      weight: computeUserNewsBehaviorBandAverageDecayWeight(band),
       positive: this.createEmptyScoreDimensions(),
       negative: this.createEmptyScoreDimensions(),
     }));
@@ -1065,6 +1072,7 @@ export class UserNewsBehaviorService {
       if (!bandProfile) {
         return;
       }
+      const decayWeight = computeUserNewsBehaviorDecayWeight(dayOffset);
       const positiveRaw = this.createEmptyScoreDimensions();
       const negativeRaw = this.createEmptyScoreDimensions();
 
@@ -1090,18 +1098,18 @@ export class UserNewsBehaviorService {
       }
 
       USER_NEWS_BEHAVIOR_DIMENSIONS.forEach((dimension) => {
-        this.addBandScores(
+        this.addDecayedScores(
           positive[dimension],
           bandProfile.positive[dimension],
           positiveRaw[dimension],
-          bandProfile.weight,
+          decayWeight,
           dimension,
         );
-        this.addBandScores(
+        this.addDecayedScores(
           negative[dimension],
           bandProfile.negative[dimension],
           negativeRaw[dimension],
-          bandProfile.weight,
+          decayWeight,
           dimension,
         );
       });
@@ -1147,6 +1155,11 @@ export class UserNewsBehaviorService {
       })),
       meta: {
         legacyFallbackUsed: Boolean(fallback),
+        decayPolicy: {
+          strategy: "exponential_half_life",
+          halfLifeDays: USER_NEWS_BEHAVIOR_DECAY_HALF_LIFE_DAYS,
+          windowDays: USER_NEWS_BEHAVIOR_V2_WINDOW_DAYS,
+        },
       },
     };
 
@@ -1238,11 +1251,11 @@ export class UserNewsBehaviorService {
     };
   }
 
-  private addBandScores(
+  private addDecayedScores(
     aggregate: UserNewsBehaviorScoreRecord,
     bandTarget: UserNewsBehaviorScoreRecord,
     raw: UserNewsBehaviorScoreRecord,
-    weight: number,
+    decayWeight: number,
     dimension: keyof UserNewsBehaviorScoreDimensions,
   ) {
     const normalizeKey =
@@ -1255,7 +1268,7 @@ export class UserNewsBehaviorService {
       if (!normalizedTerm || rawValue <= 0) {
         continue;
       }
-      const score = Number((Math.log1p(rawValue) * weight).toFixed(4));
+      const score = Number((Math.log1p(rawValue) * decayWeight).toFixed(4));
       if (score <= 0) {
         continue;
       }
