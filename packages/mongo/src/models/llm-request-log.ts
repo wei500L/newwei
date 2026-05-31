@@ -48,7 +48,7 @@ const LlmRequestLogSchema = new Schema(
     metadata: { type: Schema.Types.Mixed, default: null },
     apiSurface: {
       type: String,
-      enum: ["chat_completions", "responses", "embeddings"],
+      enum: ["chat_completions", "responses", "embeddings", "rerank"],
       default: null,
       index: true,
     },

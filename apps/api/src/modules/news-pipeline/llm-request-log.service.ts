@@ -31,7 +31,11 @@ export type LlmRequestType =
   | "stream"
   | "responses";
 export type LlmRequestStatus = "success" | "error";
-export type LlmApiSurface = "chat_completions" | "responses" | "embeddings";
+export type LlmApiSurface =
+  | "chat_completions"
+  | "responses"
+  | "embeddings"
+  | "rerank";
 export type LlmRequestAuthMode = "profile_key" | "managed_runtime_key";
 
 export interface LlmRequestLogEntry {
@@ -1277,7 +1281,8 @@ export class LlmRequestLogService {
     if (
       value === "chat_completions" ||
       value === "responses" ||
-      value === "embeddings"
+      value === "embeddings" ||
+      value === "rerank"
     ) {
       return value;
     }

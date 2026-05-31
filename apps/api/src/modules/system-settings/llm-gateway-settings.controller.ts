@@ -184,14 +184,27 @@ export class LlmGatewaySettingsController {
 
   @Post(":id/test")
   @Permissions("settings.manage")
-  async test(@Param("id") id: string, @Body() body: LlmGatewayTestDto) {
-    return this.tester.testProfile(id, body);
+  async test(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() body: LlmGatewayTestDto,
+  ) {
+    return this.tester.testProfile(id, body, {
+      orgId: user.orgId,
+      userId: user.id,
+    });
   }
 
   @Post("test-config")
   @Permissions("settings.manage")
-  async testConfig(@Body() body: LlmGatewayTestConfigDto) {
-    return this.tester.testConfig(body);
+  async testConfig(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: LlmGatewayTestConfigDto,
+  ) {
+    return this.tester.testConfig(body, {
+      orgId: user.orgId,
+      userId: user.id,
+    });
   }
 
   @Get(":id/models")
@@ -220,10 +233,14 @@ export class LlmGatewaySettingsController {
   @Post(":id/proxy-lb-test")
   @Permissions("settings.manage")
   async proxyLoadBalancingTest(
+    @CurrentUser() user: AuthenticatedUser,
     @Param("id") id: string,
     @Body() body: LlmGatewayProxyLoadBalancingTestDto,
   ) {
-    return this.tester.testProxyLoadBalancing(id, body);
+    return this.tester.testProxyLoadBalancing(id, body, {
+      orgId: user.orgId,
+      userId: user.id,
+    });
   }
 
   @Post("models-config")

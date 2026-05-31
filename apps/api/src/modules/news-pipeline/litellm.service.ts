@@ -1822,7 +1822,7 @@ export class LiteLlmService {
             totalTokens: null,
           },
           costUsd,
-          apiSurface: "chat_completions",
+          apiSurface: "rerank",
           runtimeContext,
         });
         return normalizedResponse;
@@ -1831,7 +1831,7 @@ export class LiteLlmService {
         try {
           this.decorateAxiosError(error, {
             apiKeyConfigured,
-            apiSurface: "chat_completions",
+            apiSurface: "rerank",
           });
         } catch (decoratedError) {
           normalizedError = decoratedError;
@@ -1844,7 +1844,7 @@ export class LiteLlmService {
           metadata: params.metadata,
           latencyMs: Date.now() - attemptStartedAt,
           error: normalizedError,
-          apiSurface: "chat_completions",
+          apiSurface: "rerank",
           runtimeContext,
         });
         if (normalizedError instanceof LlmCompatibilityError) {
@@ -1995,7 +1995,7 @@ export class LiteLlmService {
     error: unknown,
     context: {
       apiKeyConfigured: boolean;
-      apiSurface?: "chat_completions" | "embeddings" | "responses";
+      apiSurface?: LlmApiSurface;
     },
   ) {
     if (!(error instanceof AxiosError)) {
@@ -2013,7 +2013,8 @@ export class LiteLlmService {
     const compatibilityIssue = detectOpenAiCompatibilityIssue({
       status,
       errorText: detail,
-      apiSurface: context.apiSurface,
+      apiSurface:
+        context.apiSurface === "rerank" ? undefined : context.apiSurface,
     });
     if (compatibilityIssue) {
       throw new LlmCompatibilityError(compatibilityIssue, { cause: error });

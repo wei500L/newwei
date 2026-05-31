@@ -4,7 +4,10 @@ import { Global, Module, forwardRef } from "@nestjs/common";
 import { AkshareModule } from "../akshare/akshare.module";
 import { AuthModule } from "../auth/auth.module";
 import { GeoModule } from "../geo/geo.module";
-import { LLM_REQUEST_LOG_MODEL } from "../news-pipeline/llm-request-log.service";
+import {
+  LLM_REQUEST_LOG_MODEL,
+  LlmRequestLogService,
+} from "../news-pipeline/llm-request-log.service";
 import { ObservabilitySnapshotService } from "../observability/observability-snapshot.service";
 import { RealtimeSignalsModule } from "../realtime-signals/realtime-signals.module";
 import { SituationMonitorSignalsModule } from "../situation-monitor/signals/situation-monitor-signals.module";
@@ -114,6 +117,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
       provide: LLM_REQUEST_LOG_MODEL,
       useValue: LlmRequestLogModel,
     },
+    LlmRequestLogService,
     LlmGatewaySettingsService,
     LlmGatewayTestService,
     LiteLlmProxyGovernanceService,

@@ -1538,6 +1538,14 @@ describe("LiteLlmService", () => {
         expect.objectContaining({ model: "cohere/rerank-v3.0" }),
         expect.any(Object),
       );
+      expect(llmRequestLogService.logRequest).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          requestType: "rerank",
+          model: "cohere/rerank-v3.0",
+          status: "success",
+          apiSurface: "rerank",
+        }),
+      );
     });
 
     it("throws rerank unavailable when all rerank models fail", async () => {

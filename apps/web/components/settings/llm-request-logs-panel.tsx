@@ -60,7 +60,12 @@ interface LlmRequestLogRow {
   latencyMs: number;
   error: string | null;
   metadata: unknown;
-  apiSurface: "chat_completions" | "responses" | "embeddings" | null;
+  apiSurface:
+    | "chat_completions"
+    | "responses"
+    | "embeddings"
+    | "rerank"
+    | null;
   createdAt: string;
   updatedAt: string;
 }

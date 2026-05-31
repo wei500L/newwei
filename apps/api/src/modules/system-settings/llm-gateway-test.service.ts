@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 
 import {
   detectOpenAiCompatibilityIssue,
-  type LlmApiSurface,
+  type LlmApiSurface as CompatLlmApiSurface,
   LlmCompatibilityError,
   type LlmCompatibilityErrorInfo,
   normalizeOpenAiApiBase,
@@ -26,6 +26,11 @@ import {
 } from "../../common/llm-openai-compat";
 import { extractOpenAiTextFromChoice } from "../../common/openai-chat";
 import { CacheService } from "../cache/cache.service";
+import {
+  LlmRequestLogService,
+  type LlmApiSurface as LlmRequestLogApiSurface,
+  type LlmRequestType,
+} from "../news-pipeline/llm-request-log.service";
 
 import { LiteLlmProxyGovernanceService } from "./litellm-proxy-governance.service";
 import {
@@ -269,6 +274,17 @@ export interface LlmGatewayTestInput {
   includeMetadataProbe?: boolean;
 }
 
+export interface LlmGatewayTestActorContext {
+  orgId: string;
+  userId?: string;
+}
+
+interface LlmGatewayProbeLogContext extends LlmGatewayTestActorContext {
+  profileId?: string;
+  authMode: "profile_key" | "managed_runtime_key";
+  apiKeyConfigured: boolean;
+}
+
 const DEFAULT_PROMPT = 'Say "OK" and nothing else.';
 const DEFAULT_EMBEDDING_INPUT = "hello";
 const DEFAULT_RERANK_QUERY = "latest US inflation outlook and Fed policy";
@@ -284,6 +300,8 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 1_200;
 const DEFAULT_SEND_METADATA = true;
 const DEFAULT_RESPONSE_FORMAT_MODE: LlmGatewayResponseFormatMode =
   "json_schema";
+const GATEWAY_TEST_FEATURE = "gateway_test";
+const UNKNOWN_ORG_ID = "_unknown_";
 
 @Injectable()
 export class LlmGatewayTestService {
@@ -293,6 +311,7 @@ export class LlmGatewayTestService {
     private readonly settings: LlmGatewaySettingsService,
     private readonly cache: CacheService,
     private readonly proxyGovernance: LiteLlmProxyGovernanceService,
+    private readonly llmRequestLogService: LlmRequestLogService,
   ) {}
 
   private buildErrorPayload(
@@ -312,7 +331,9 @@ export class LlmGatewayTestService {
     message: string,
     extras?: Record<string, unknown>,
   ) {
-    return new BadRequestException(this.buildErrorPayload(code, message, extras));
+    return new BadRequestException(
+      this.buildErrorPayload(code, message, extras),
+    );
   }
 
   private badGateway(
@@ -320,7 +341,9 @@ export class LlmGatewayTestService {
     message: string,
     extras?: Record<string, unknown>,
   ) {
-    return new BadGatewayException(this.buildErrorPayload(code, message, extras));
+    return new BadGatewayException(
+      this.buildErrorPayload(code, message, extras),
+    );
   }
 
   private serviceUnavailable(
@@ -499,6 +522,7 @@ export class LlmGatewayTestService {
       concurrency?: number;
       prompt?: string;
     },
+    actor?: LlmGatewayTestActorContext,
   ): Promise<LlmGatewayProxyLoadBalancingTestResult> {
     const cfg = await this.settings.getProfileConfig(profileId);
     if (!cfg) {
@@ -520,7 +544,10 @@ export class LlmGatewayTestService {
       normalizeOptionalString(input.model) ??
       normalizeOptionalString(cfg.model);
     if (!model) {
-      throw this.badRequest(ERROR_CODE_MODEL_REQUIRED, "model is not configured");
+      throw this.badRequest(
+        ERROR_CODE_MODEL_REQUIRED,
+        "model is not configured",
+      );
     }
 
     const attempts = clampInt(input.attempts, 1, 50, 8);
@@ -543,6 +570,11 @@ export class LlmGatewayTestService {
     const context = {
       apiKeyConfigured: Boolean(apiKey),
     };
+    const logContext = this.buildProbeLogContext(actor, {
+      profileId,
+      authMode: "profile_key",
+      apiKeyConfigured: Boolean(apiKey),
+    });
     const startedAt = Date.now();
 
     const modelIdDistribution: Record<string, number> = {};
@@ -568,13 +600,18 @@ export class LlmGatewayTestService {
               stream: false,
             };
 
-            const response = await postWithFallback<ChatCompletionResponse>(
-              client,
-              "/v1/chat/completions",
-              "/chat/completions",
-              payload,
-              { timeout: cfg.timeoutMs },
-            );
+            const { response } =
+              await this.postLoggedModelProbe<ChatCompletionResponse>({
+                client,
+                primaryPath: "/v1/chat/completions",
+                fallbackPath: "/chat/completions",
+                payload,
+                config: { timeout: cfg.timeoutMs },
+                requestType: "completion",
+                apiSurface: "chat_completions",
+                model,
+                logContext,
+              });
 
             succeeded += 1;
 
@@ -720,6 +757,7 @@ export class LlmGatewayTestService {
   async testProfile(
     profileId: string,
     input: LlmGatewayTestInput,
+    actor?: LlmGatewayTestActorContext,
   ): Promise<LlmGatewayTestResult> {
     const cfg = await this.settings.getProfileConfig(profileId);
     if (!cfg) {
@@ -757,8 +795,13 @@ export class LlmGatewayTestService {
     });
 
     const shouldTestCompletion = input.includeCompletion ?? true;
-    const apiSurface =
-      input.apiSurface ?? cfg.apiSurface ?? "chat_completions";
+    const apiSurface = input.apiSurface ?? cfg.apiSurface ?? "chat_completions";
+    const authMode = input.authMode ?? "profile_key";
+    const logContext = this.buildProbeLogContext(actor, {
+      profileId,
+      authMode,
+      apiKeyConfigured: Boolean(apiKey),
+    });
     const responseFormatMode =
       input.responseFormatMode ??
       cfg.responseFormatMode ??
@@ -780,6 +823,7 @@ export class LlmGatewayTestService {
             {
               responseFormatMode,
               includeMetadataProbe,
+              logContext,
             },
           )
         : await this.testCompletion(
@@ -790,6 +834,7 @@ export class LlmGatewayTestService {
             {
               responseFormatMode,
               includeMetadataProbe,
+              logContext,
             },
           )
       : { completion: undefined, error: undefined };
@@ -818,6 +863,7 @@ export class LlmGatewayTestService {
           effectiveCfg,
           embeddingInput,
           embeddingModelOverride,
+          logContext,
         );
       } catch (error) {
         const info = this.toGatewayErrorInfo(error, {
@@ -856,6 +902,7 @@ export class LlmGatewayTestService {
             documents: rerankDocuments,
             modelOverride: normalizeOptionalString(input.rerankModel),
             includeMetadataProbe,
+            logContext,
           },
         );
       } catch (error) {
@@ -899,6 +946,7 @@ export class LlmGatewayTestService {
 
   async testConfig(
     input: LlmGatewayTestConfigInput,
+    actor?: LlmGatewayTestActorContext,
   ): Promise<LlmGatewayTestResult> {
     const stored = input.profileId
       ? await this.getStoredConfig(input.profileId)
@@ -925,7 +973,10 @@ export class LlmGatewayTestService {
     const model = input.model?.trim();
     const storedModel = stored?.model?.trim();
     if (shouldTestCompletion && !model && !storedModel) {
-      throw this.badRequest(ERROR_CODE_MODEL_REQUIRED, "model is not configured");
+      throw this.badRequest(
+        ERROR_CODE_MODEL_REQUIRED,
+        "model is not configured",
+      );
     }
 
     const apiKey = await this.resolveApiKeyForBase(
@@ -936,6 +987,12 @@ export class LlmGatewayTestService {
       input.profileId,
       input.authMode,
     );
+    const authMode = input.authMode ?? "profile_key";
+    const logContext = this.buildProbeLogContext(actor, {
+      profileId: input.profileId,
+      authMode,
+      apiKeyConfigured: Boolean(apiKey),
+    });
     const timeoutMs =
       input.timeoutMs ?? stored?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const temperature =
@@ -1006,10 +1063,12 @@ export class LlmGatewayTestService {
         ? await this.testResponses(client, cfg, prompt, undefined, {
             responseFormatMode,
             includeMetadataProbe,
+            logContext,
           })
         : await this.testCompletion(client, cfg, prompt, undefined, {
             responseFormatMode,
             includeMetadataProbe,
+            logContext,
           })
       : { completion: undefined, error: undefined };
     const completion = completionResult.completion;
@@ -1023,7 +1082,13 @@ export class LlmGatewayTestService {
         ? input.embeddingInput.trim()
         : DEFAULT_EMBEDDING_INPUT;
       try {
-        embedding = await this.testEmbeddings(client, cfg, embeddingInput);
+        embedding = await this.testEmbeddings(
+          client,
+          cfg,
+          embeddingInput,
+          undefined,
+          logContext,
+        );
       } catch (error) {
         const info = this.toGatewayErrorInfo(error, {
           apiKeyConfigured: Boolean(apiKey),
@@ -1048,16 +1113,13 @@ export class LlmGatewayTestService {
           : DEFAULT_RERANK_QUERY;
       const rerankDocuments = normalizeRerankDocuments(input.rerankDocuments);
       try {
-        rerank = await this.testRerank(
-          client,
-          cfg,
-          {
-            query: rerankQuery,
-            documents: rerankDocuments,
-            modelOverride: normalizeOptionalString(input.rerankModel),
-            includeMetadataProbe,
-          },
-        );
+        rerank = await this.testRerank(client, cfg, {
+          query: rerankQuery,
+          documents: rerankDocuments,
+          modelOverride: normalizeOptionalString(input.rerankModel),
+          includeMetadataProbe,
+          logContext,
+        });
       } catch (error) {
         const info = this.toGatewayErrorInfo(error, {
           apiKeyConfigured: Boolean(apiKey),
@@ -1106,6 +1168,7 @@ export class LlmGatewayTestService {
     options?: {
       responseFormatMode?: LlmGatewayResponseFormatMode;
       includeMetadataProbe?: boolean;
+      logContext?: LlmGatewayProbeLogContext;
     },
   ): Promise<{
     completion?: LlmGatewayChatTestResult;
@@ -1150,14 +1213,19 @@ export class LlmGatewayTestService {
             : {}),
         };
         const start = Date.now();
-        const response = await postWithFallback<ChatCompletionResponse>(
-          client,
-          "/v1/chat/completions",
-          "/chat/completions",
-          payload,
-          { timeout: cfg.timeoutMs },
-        );
-        const latencyMs = Date.now() - start;
+        const { response, latencyMs } =
+          await this.postLoggedModelProbe<ChatCompletionResponse>({
+            client,
+            primaryPath: "/v1/chat/completions",
+            fallbackPath: "/chat/completions",
+            payload,
+            config: { timeout: cfg.timeoutMs },
+            requestType: "completion",
+            apiSurface: "chat_completions",
+            model,
+            logContext: options?.logContext,
+            startedAt: start,
+          });
         const choice = (response.data as unknown as { choices?: unknown[] })
           ?.choices?.[0];
         const content = extractOpenAiTextFromChoice(choice);
@@ -1219,6 +1287,7 @@ export class LlmGatewayTestService {
     options?: {
       responseFormatMode?: LlmGatewayResponseFormatMode;
       includeMetadataProbe?: boolean;
+      logContext?: LlmGatewayProbeLogContext;
     },
   ): Promise<{
     completion?: LlmGatewayChatTestResult;
@@ -1262,14 +1331,19 @@ export class LlmGatewayTestService {
             : {}),
         };
         const start = Date.now();
-        const response = await postWithFallback<ResponsesApiResponse>(
-          client,
-          "/v1/responses",
-          "/responses",
-          payload,
-          { timeout: cfg.timeoutMs },
-        );
-        const latencyMs = Date.now() - start;
+        const { response, latencyMs } =
+          await this.postLoggedModelProbe<ResponsesApiResponse>({
+            client,
+            primaryPath: "/v1/responses",
+            fallbackPath: "/responses",
+            payload,
+            config: { timeout: cfg.timeoutMs },
+            requestType: "completion",
+            apiSurface: "responses",
+            model,
+            logContext: options?.logContext,
+            startedAt: start,
+          });
         const content = this.extractResponsesOutputText(response.data);
 
         return {
@@ -1310,6 +1384,7 @@ export class LlmGatewayTestService {
     cfg: { model: string; embeddingModel?: string; timeoutMs: number },
     input: string,
     modelOverride?: string,
+    logContext?: LlmGatewayProbeLogContext,
   ): Promise<LlmGatewayEmbeddingTestResult> {
     const model =
       modelOverride?.trim() || cfg.embeddingModel?.trim() || cfg.model?.trim();
@@ -1325,21 +1400,47 @@ export class LlmGatewayTestService {
       input,
     };
     const start = Date.now();
-    const response = await postWithFallback<EmbeddingResponse>(
-      client,
-      "/v1/embeddings",
-      "/embeddings",
-      payload,
-      { timeout: cfg.timeoutMs },
-    );
-    const latencyMs = Date.now() - start;
+    const { response, latencyMs } =
+      await this.postLoggedModelProbe<EmbeddingResponse>({
+        client,
+        primaryPath: "/v1/embeddings",
+        fallbackPath: "/embeddings",
+        payload,
+        config: { timeout: cfg.timeoutMs },
+        requestType: "embedding",
+        apiSurface: "embeddings",
+        model,
+        logContext,
+        startedAt: start,
+        logSuccess: false,
+      });
     const firstEmbedding = response.data.data?.[0]?.embedding;
     if (!Array.isArray(firstEmbedding) || firstEmbedding.length === 0) {
-      throw this.badGateway(
+      const error = this.badGateway(
         ERROR_CODE_INVALID_EMBEDDING_RESPONSE,
         "Embedding response did not include an embedding vector",
       );
+      this.logGatewayProbeRequest({
+        requestType: "embedding",
+        apiSurface: "embeddings",
+        model,
+        status: "error",
+        latencyMs,
+        error,
+        logContext,
+      });
+      throw error;
     }
+
+    this.logGatewayProbeRequest({
+      requestType: "embedding",
+      apiSurface: "embeddings",
+      model,
+      status: "success",
+      latencyMs,
+      response,
+      logContext,
+    });
 
     return {
       model: response.data.model?.trim() || model,
@@ -1365,6 +1466,7 @@ export class LlmGatewayTestService {
       documents: string[];
       modelOverride?: string;
       includeMetadataProbe?: boolean;
+      logContext?: LlmGatewayProbeLogContext;
     },
   ): Promise<LlmGatewayRerankTestResult> {
     const query = options.query.trim();
@@ -1386,10 +1488,9 @@ export class LlmGatewayTestService {
 
     const uniqueModels = Array.from(
       new Set(
-        (
-          options.modelOverride
-            ? [options.modelOverride, ...(cfg.rerankFallbackModels ?? [])]
-            : [cfg.rerankModel, ...(cfg.rerankFallbackModels ?? [])]
+        (options.modelOverride
+          ? [options.modelOverride, ...(cfg.rerankFallbackModels ?? [])]
+          : [cfg.rerankModel, ...(cfg.rerankFallbackModels ?? [])]
         )
           .filter(
             (model): model is string =>
@@ -1418,21 +1519,47 @@ export class LlmGatewayTestService {
             : {}),
         };
         const start = Date.now();
-        const response = await postWithFallback<RerankResponse>(
-          client,
-          "/v1/rerank",
-          "/rerank",
-          payload,
-          { timeout: cfg.timeoutMs },
-        );
-        const latencyMs = Date.now() - start;
+        const { response, latencyMs } =
+          await this.postLoggedModelProbe<RerankResponse>({
+            client,
+            primaryPath: "/v1/rerank",
+            fallbackPath: "/rerank",
+            payload,
+            config: { timeout: cfg.timeoutMs },
+            requestType: "rerank",
+            apiSurface: "rerank",
+            model,
+            logContext: options.logContext,
+            startedAt: start,
+            logSuccess: false,
+          });
         const results = this.normalizeRerankResults(response.data);
         if (results.length === 0) {
-          throw this.badGateway(
+          const error = this.badGateway(
             ERROR_CODE_INVALID_RERANK_RESPONSE,
             "Rerank response did not include scored results",
           );
+          this.logGatewayProbeRequest({
+            requestType: "rerank",
+            apiSurface: "rerank",
+            model,
+            status: "error",
+            latencyMs,
+            error,
+            logContext: options.logContext,
+          });
+          throw error;
         }
+
+        this.logGatewayProbeRequest({
+          requestType: "rerank",
+          apiSurface: "rerank",
+          model,
+          status: "success",
+          latencyMs,
+          response,
+          logContext: options.logContext,
+        });
 
         return {
           model: normalizeOptionalString(response.data.model) ?? model,
@@ -1460,7 +1587,10 @@ export class LlmGatewayTestService {
 
     throw lastError instanceof Error
       ? lastError
-      : this.badGateway(ERROR_CODE_RERANK_TEST_FAILED, "LLM gateway rerank test failed");
+      : this.badGateway(
+          ERROR_CODE_RERANK_TEST_FAILED,
+          "LLM gateway rerank test failed",
+        );
   }
 
   private normalizeRerankResults(
@@ -1498,7 +1628,9 @@ export class LlmGatewayTestService {
         }
         return { index, score };
       })
-      .filter((entry): entry is { index: number; score: number } => entry !== null)
+      .filter(
+        (entry): entry is { index: number; score: number } => entry !== null,
+      )
       .sort((a, b) => a.index - b.index);
   }
 
@@ -1565,6 +1697,192 @@ export class LlmGatewayTestService {
     return {
       ...(costUsd !== undefined ? { costUsd } : {}),
       ...(keySpendUsd !== undefined ? { keySpendUsd } : {}),
+    };
+  }
+
+  private async postLoggedModelProbe<T>(args: {
+    client: ReturnType<typeof axios.create>;
+    primaryPath: string;
+    fallbackPath: string;
+    payload: unknown;
+    config?: AxiosRequestConfig;
+    requestType: LlmRequestType;
+    apiSurface: LlmRequestLogApiSurface;
+    model: string;
+    logContext?: LlmGatewayProbeLogContext;
+    startedAt?: number;
+    logSuccess?: boolean;
+  }): Promise<{ response: AxiosResponse<T>; latencyMs: number }> {
+    const startedAt = args.startedAt ?? Date.now();
+    try {
+      const response = await postWithFallback<T>(
+        args.client,
+        args.primaryPath,
+        args.fallbackPath,
+        args.payload,
+        args.config,
+      );
+      const latencyMs = Date.now() - startedAt;
+      if (args.logSuccess ?? true) {
+        this.logGatewayProbeRequest({
+          requestType: args.requestType,
+          apiSurface: args.apiSurface,
+          model: args.model,
+          status: "success",
+          latencyMs,
+          response,
+          logContext: args.logContext,
+        });
+      }
+      return { response, latencyMs };
+    } catch (error) {
+      const latencyMs = Date.now() - startedAt;
+      this.logGatewayProbeRequest({
+        requestType: args.requestType,
+        apiSurface: args.apiSurface,
+        model: args.model,
+        status: "error",
+        latencyMs,
+        error,
+        logContext: args.logContext,
+      });
+      throw error;
+    }
+  }
+
+  private logGatewayProbeRequest(args: {
+    requestType: LlmRequestType;
+    apiSurface: LlmRequestLogApiSurface;
+    model: string;
+    status: "success" | "error";
+    latencyMs: number;
+    response?: AxiosResponse<unknown>;
+    error?: unknown;
+    logContext?: LlmGatewayProbeLogContext;
+  }): void {
+    const usage = this.extractLogUsage(args.requestType, args.response?.data);
+    const costs = args.response
+      ? this.extractCosts(
+          args.response as AxiosResponse<{ response_cost?: unknown }>,
+        )
+      : {};
+    const model =
+      this.extractResponseModel(args.response?.data) ?? args.model ?? "unknown";
+    const errorInfo =
+      args.status === "error"
+        ? this.toGatewayErrorInfo(args.error, {
+            apiKeyConfigured: args.logContext?.apiKeyConfigured,
+            apiSurface: args.apiSurface,
+          })
+        : null;
+
+    this.llmRequestLogService.logRequest({
+      orgId: args.logContext?.orgId ?? UNKNOWN_ORG_ID,
+      requestType: args.requestType,
+      model,
+      status: args.status,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      totalTokens: usage.totalTokens,
+      costUsd: costs.costUsd ?? null,
+      feature: GATEWAY_TEST_FEATURE,
+      gatewayProfileId: args.logContext?.profileId ?? null,
+      governanceApplied:
+        args.logContext?.authMode === "managed_runtime_key" ? true : false,
+      authMode: args.logContext?.authMode ?? null,
+      governanceTargetProfileId:
+        args.logContext?.authMode === "managed_runtime_key"
+          ? (args.logContext.profileId ?? null)
+          : null,
+      latencyMs: args.latencyMs,
+      error: errorInfo?.message ?? null,
+      metadata: this.buildGatewayProbeMetadata(args),
+      apiSurface: args.apiSurface,
+    });
+  }
+
+  private buildGatewayProbeMetadata(args: {
+    requestType: LlmRequestType;
+    apiSurface: LlmRequestLogApiSurface;
+    model: string;
+    status: "success" | "error";
+    logContext?: LlmGatewayProbeLogContext;
+  }): Record<string, unknown> {
+    return {
+      source: "gateway-test",
+      feature: GATEWAY_TEST_FEATURE,
+      operation: args.requestType,
+      model: args.model,
+      ...(args.logContext?.profileId
+        ? { profileid: args.logContext.profileId }
+        : {}),
+      ...(args.logContext?.userId ? { userid: args.logContext.userId } : {}),
+      ...(args.status === "error" ? { tags: ["diagnostic", "error"] } : {}),
+    };
+  }
+
+  private buildProbeLogContext(
+    actor: LlmGatewayTestActorContext | undefined,
+    options: {
+      profileId?: string;
+      authMode: "profile_key" | "managed_runtime_key";
+      apiKeyConfigured: boolean;
+    },
+  ): LlmGatewayProbeLogContext {
+    return {
+      orgId: actor?.orgId ?? UNKNOWN_ORG_ID,
+      ...(actor?.userId ? { userId: actor.userId } : {}),
+      ...(options.profileId ? { profileId: options.profileId } : {}),
+      authMode: options.authMode,
+      apiKeyConfigured: options.apiKeyConfigured,
+    };
+  }
+
+  private extractResponseModel(payload: unknown): string | undefined {
+    if (!payload || typeof payload !== "object") {
+      return undefined;
+    }
+    const model = (payload as Record<string, unknown>).model;
+    return normalizeOptionalString(model);
+  }
+
+  private extractLogUsage(
+    requestType: LlmRequestType,
+    payload: unknown,
+  ): {
+    promptTokens: number | null;
+    completionTokens: number | null;
+    totalTokens: number | null;
+  } {
+    if (!payload || typeof payload !== "object") {
+      return { promptTokens: null, completionTokens: null, totalTokens: null };
+    }
+    const usage = (payload as Record<string, unknown>).usage;
+    if (!usage || typeof usage !== "object") {
+      return { promptTokens: null, completionTokens: null, totalTokens: null };
+    }
+    const record = usage as Record<string, unknown>;
+    const promptTokens =
+      extractNumber(record.prompt_tokens) ??
+      extractNumber(record.input_tokens) ??
+      null;
+    const completionTokens =
+      requestType === "embedding"
+        ? null
+        : (extractNumber(record.completion_tokens) ??
+          extractNumber(record.output_tokens) ??
+          null);
+    const explicitTotal = extractNumber(record.total_tokens);
+    const totalTokens =
+      explicitTotal ??
+      (promptTokens !== null && completionTokens !== null
+        ? promptTokens + completionTokens
+        : promptTokens);
+
+    return {
+      promptTokens,
+      completionTokens,
+      totalTokens: totalTokens ?? null,
     };
   }
 
@@ -1645,7 +1963,7 @@ export class LlmGatewayTestService {
     error: unknown,
     context?: {
       apiKeyConfigured?: boolean;
-      apiSurface?: LlmApiSurface;
+      apiSurface?: CompatLlmApiSurface;
     },
   ): never {
     if (
@@ -1695,7 +2013,7 @@ export class LlmGatewayTestService {
     error: unknown,
     context?: {
       apiKeyConfigured?: boolean;
-      apiSurface?: LlmApiSurface;
+      apiSurface?: CompatLlmApiSurface | LlmRequestLogApiSurface;
     },
   ): LlmGatewayTestError {
     if (error instanceof HttpException) {
@@ -1714,7 +2032,9 @@ export class LlmGatewayTestService {
         messageFromArray ??
         error.message;
       const codeFromResponse =
-        typeof responseRecord?.code === "string" ? responseRecord.code : undefined;
+        typeof responseRecord?.code === "string"
+          ? responseRecord.code
+          : undefined;
       return {
         code:
           codeFromResponse ??
@@ -1760,7 +2080,8 @@ export class LlmGatewayTestService {
       const issue = detectOpenAiCompatibilityIssue({
         status,
         errorText: detail ?? "",
-        apiSurface: context?.apiSurface,
+        apiSurface:
+          context?.apiSurface === "rerank" ? undefined : context?.apiSurface,
       });
       if (issue) {
         const compatibilityError = new LlmCompatibilityError(issue, {
