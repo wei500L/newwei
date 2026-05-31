@@ -4124,7 +4124,8 @@
         "saved": "已保存",
         "saveFailed": "保存失败",
         "loadFailed": "加载审核队列失败",
-        "invalidJson": "JSON 格式错误"
+        "invalidJson": "JSON 格式错误",
+        "invalidRelation": "纠正后的关系必须包含 subject、predicate 和 object"
       },
       "details": {
         "title": "关系详情",

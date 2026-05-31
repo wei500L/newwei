@@ -4124,7 +4124,8 @@
         "saved": "Saved",
         "saveFailed": "Failed to save",
         "loadFailed": "Failed to load review queue",
-        "invalidJson": "Invalid JSON"
+        "invalidJson": "Invalid JSON",
+        "invalidRelation": "Corrected relation must include subject, predicate, and object"
       },
       "details": {
         "title": "Relation details",

@@ -48,6 +48,29 @@ function readNestedArray(value: unknown, path: string[]) {
   return Array.isArray(cursor) ? cursor : null;
 }
 
+function isCorrectedRelationDraft(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  const subject = record.subject;
+  const object = record.object;
+  const predicate = typeof record.predicate === "string" ? record.predicate.trim() : "";
+  const hasEntityRef = (candidate: unknown) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      return false;
+    }
+    const entity = candidate as Record<string, unknown>;
+    return (
+      typeof entity.name === "string" &&
+      entity.name.trim().length > 0 &&
+      typeof entity.type === "string" &&
+      entity.type.trim().length > 0
+    );
+  };
+  return predicate.length > 0 && hasEntityRef(subject) && hasEntityRef(object);
+}
+
 export function KnowledgeGraphReviewPanel() {
   const { t } = useTranslation();
   const [messageApi, contextHolder] = message.useMessage();
@@ -166,6 +189,10 @@ export function KnowledgeGraphReviewPanel() {
           correctedRelation = JSON.parse(trimmed) as unknown;
         } catch {
           messageApi.error(t("settings.knowledgeGraphReview.messages.invalidJson"));
+          return;
+        }
+        if (!isCorrectedRelationDraft(correctedRelation)) {
+          messageApi.error(t("settings.knowledgeGraphReview.messages.invalidRelation"));
           return;
         }
       }

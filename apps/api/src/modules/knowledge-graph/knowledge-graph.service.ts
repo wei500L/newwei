@@ -46,6 +46,13 @@ export interface SeedRelationInput {
   properties?: Record<string, unknown>;
 }
 
+export interface ReviewedRelationInput {
+  subject: SeedEntityRef;
+  predicate: KnowledgeRelationType;
+  object: SeedEntityRef;
+  properties?: Record<string, unknown>;
+}
+
 export interface IngestProcessedArticleInput {
   orgId: string;
   articleId: string;
@@ -360,6 +367,78 @@ export class KnowledgeGraphService {
     return { edgesUpserted };
   }
 
+  normalizeReviewedRelation(value: unknown): ReviewedRelationInput | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+
+    const record = value as Record<string, unknown>;
+    const subject = this.parseSeedEntityRef(record.subject);
+    const object = this.parseSeedEntityRef(record.object);
+    const predicateRaw = typeof record.predicate === "string" ? record.predicate.trim() : "";
+    const predicate = this.normalizeRelationType(predicateRaw);
+    const properties = this.toOptionalObject(record.properties);
+
+    if (!subject || !object || !predicate) {
+      return null;
+    }
+
+    return {
+      subject,
+      predicate,
+      object,
+      properties
+    };
+  }
+
+  async upsertReviewedRelationEdge(
+    tx: Prisma.TransactionClient,
+    input: {
+      orgId: string;
+      relation: ReviewedRelationInput;
+      confidence: number;
+      now: Date;
+    }
+  ): Promise<KnowledgeEdge> {
+    const from = await this.upsertEntity(tx, input.orgId, input.relation.subject, {
+      source: KnowledgeRecordSource.user
+    });
+    const to = await this.upsertEntity(tx, input.orgId, input.relation.object, {
+      source: KnowledgeRecordSource.user
+    });
+
+    const where = {
+      orgId_type_fromEntityId_toEntityId: {
+        orgId: input.orgId,
+        type: input.relation.predicate,
+        fromEntityId: from.id,
+        toEntityId: to.id
+      }
+    };
+    const existing = await tx.knowledgeEdge.findUnique({ where });
+    if (existing) {
+      return existing;
+    }
+
+    const properties = input.relation.properties
+      ? { ...input.relation.properties, recordSource: KnowledgeRecordSource.user }
+      : { recordSource: KnowledgeRecordSource.user };
+
+    return tx.knowledgeEdge.create({
+      data: {
+        orgId: input.orgId,
+        type: input.relation.predicate,
+        fromEntityId: from.id,
+        toEntityId: to.id,
+        weight: 0,
+        confidence: this.toConfidence(input.confidence) ?? 0.5,
+        properties: toPrismaJsonValueOrUndefined(properties),
+        firstSeenAt: input.now,
+        lastSeenAt: input.now
+      }
+    });
+  }
+
   async getSubgraph(input: KnowledgeGraphSubgraphInput): Promise<KnowledgeGraphSubgraphResult | null> {
     const seed = await this.resolveEntityByName(input.orgId, input.seedName, input.seedType);
     if (!seed) {
@@ -606,6 +685,28 @@ export class KnowledgeGraphService {
       return null;
     }
     return { name, type };
+  }
+
+  private parseSeedEntityRef(value: unknown): SeedEntityRef | null {
+    const base = this.parseEntityRef(value);
+    if (!base || !value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+
+    const record = value as Record<string, unknown>;
+    const aliases = Array.isArray(record.aliases)
+      ? record.aliases
+          .map((alias) => (typeof alias === "string" ? alias.trim() : ""))
+          .filter((alias) => alias.length > 0)
+          .slice(0, 20)
+      : undefined;
+    const properties = this.toOptionalObject(record.properties);
+
+    return {
+      ...base,
+      ...(aliases && aliases.length > 0 ? { aliases } : {}),
+      ...(properties ? { properties } : {})
+    };
   }
 
   private toConfidence(value: unknown): number | null {

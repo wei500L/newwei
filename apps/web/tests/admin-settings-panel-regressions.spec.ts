@@ -44,6 +44,8 @@ describe('admin settings panel regressions', () => {
     const source = read('components/settings/knowledge-graph-review-panel.tsx');
 
     expect(source).toContain('const [quickReviewingId, setQuickReviewingId] = useState<string | null>(null);');
+    expect(source).toContain('function isCorrectedRelationDraft(value: unknown)');
+    expect(source).toContain('settings.knowledgeGraphReview.messages.invalidRelation');
     expect(source).toContain('void applyReview({');
     expect(source).toContain('status: "approved"');
     expect(source).toContain('quick: true');
