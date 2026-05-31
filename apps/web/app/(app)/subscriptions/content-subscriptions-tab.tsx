@@ -992,7 +992,7 @@ export function ContentSubscriptionsTab({
           <Typography.Text type="secondary">
             {t("subscriptions.content.keywordComposerDescription", {
               defaultValue:
-                "Keywords are manual-only subscriptions. They do not appear in the catalog or AI recommendations.",
+                "Add custom keyword subscriptions for terms that are not yet covered by the catalog or recommendations.",
             })}
           </Typography.Text>
           <Input.Search
@@ -1047,6 +1047,12 @@ export function ContentSubscriptionsTab({
                   }),
                 },
                 {
+                  value: "keyword",
+                  label: t("subscriptions.content.kindKeywords", {
+                    defaultValue: "Keywords",
+                  }),
+                },
+                {
                   value: "geo",
                   label: t("subscriptions.content.kindGeos", {
                     defaultValue: "Geos",
@@ -1062,7 +1068,7 @@ export function ContentSubscriptionsTab({
               onSearch={(value) => setCatalogQuery(value)}
               placeholder={t("subscriptions.content.catalogSearch", {
                 defaultValue:
-                  "Search catalog topics, entities, sources, or geos",
+                  "Search catalog topics, entities, sources, keywords, or geos",
               })}
               style={{ width: 260 }}
             />

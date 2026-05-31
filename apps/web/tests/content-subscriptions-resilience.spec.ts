@@ -16,7 +16,9 @@ describe("content subscriptions resilience wiring", () => {
 
     expect(source).toContain('type: "not_interested"');
     expect(source).toContain("source: item.normalizedValue");
-    expect(source).not.toContain('type: "unsubscribe",\n          source: item.normalizedValue');
+    expect(source).not.toContain(
+      'type: "unsubscribe",\n          source: item.normalizedValue',
+    );
   });
 
   it("treats recommendations and post-mutation refresh as best-effort", () => {
@@ -50,7 +52,7 @@ describe("content subscriptions resilience wiring", () => {
     );
   });
 
-  it("supports expanded subscription kinds and keyword-only manual entry", () => {
+  it("supports expanded subscription kinds and custom keyword entry", () => {
     const source = read(
       "app/(app)/subscriptions/content-subscriptions-tab.tsx",
     );
@@ -68,6 +70,8 @@ describe("content subscriptions resilience wiring", () => {
     expect(source).toContain('kind: "keyword"');
     expect(source).toContain("value: item.normalizedValue");
     expect(source).toContain("kindSources");
+    expect(source).toContain("kindKeywords");
     expect(source).toContain("kindGeos");
+    expect(source).not.toContain("Keywords are manual-only subscriptions");
   });
 });

@@ -115,7 +115,7 @@ describe("NewsExtractionSettingsService", () => {
         entities: false,
       },
       providers: {
-        clean: "external_http" as unknown as NewsExtractionProviderId,
+        clean: "unsupported_provider" as unknown as NewsExtractionProviderId,
       },
     });
 
@@ -163,14 +163,14 @@ describe("NewsExtractionSettingsService", () => {
     });
   });
 
-  it("normalizes legacy external_http providers from stored settings to llm", async () => {
+  it("normalizes unsupported providers from stored settings to llm", async () => {
     prismaMock.systemSetting.findUnique = jest.fn().mockResolvedValue({
       value: {
         providers: {
-          clean: "external_http",
-          entities: "external_http",
-          sentiment: "external_http",
-          kg: "external_http",
+          clean: "unsupported_provider",
+          entities: "unsupported_provider",
+          sentiment: "unsupported_provider",
+          kg: "unsupported_provider",
         },
       },
     });

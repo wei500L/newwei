@@ -49,6 +49,26 @@ describe("UserContentSubscriptionsService", () => {
             metadata: null,
             embeddingVector: null,
           },
+          {
+            kind: CONTENT_SUBSCRIPTION_KIND_GEO,
+            normalizedValue: "jp",
+            displayValue: "Japan",
+            count: 10,
+            lastSeenAt: new Date("2026-03-04T00:00:00.000Z"),
+            taxonomyPath: null,
+            metadata: { countryCodeAlpha2: "JP" },
+            embeddingVector: null,
+          },
+          {
+            kind: CONTENT_SUBSCRIPTION_KIND_KEYWORD,
+            normalizedValue: "ai policy",
+            displayValue: "AI policy",
+            count: 9,
+            lastSeenAt: new Date("2026-03-03T00:00:00.000Z"),
+            taxonomyPath: null,
+            metadata: { extractionSource: "text" },
+            embeddingVector: null,
+          },
         ]),
       },
     };
@@ -118,7 +138,24 @@ describe("UserContentSubscriptionsService", () => {
     expect(result.items.map((item) => item.displayValue)).toEqual([
       "NVIDIA",
       "AI chips",
+      "Japan",
+      "AI policy",
     ]);
+    expect(prisma.contentSubscriptionCatalog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          kind: {
+            in: [
+              ContentSubscriptionKind.topic,
+              ContentSubscriptionKind.entity,
+              CONTENT_SUBSCRIPTION_KIND_SOURCE,
+              CONTENT_SUBSCRIPTION_KIND_KEYWORD,
+              CONTENT_SUBSCRIPTION_KIND_GEO,
+            ],
+          },
+        }),
+      }),
+    );
     expect(liteLlm.embedding).not.toHaveBeenCalled();
     expect(liteLlm.rerank).not.toHaveBeenCalled();
   });
@@ -328,6 +365,105 @@ describe("UserContentSubscriptionsService", () => {
     expect(result.items.map((item) => item.displayValue)).toEqual(["AMD"]);
   });
 
+  it("fills ranked recommendations with geo and keyword fallback rows", async () => {
+    const prisma = {
+      userSetting: {
+        findUnique: jest.fn().mockResolvedValue({ id: "migrated" }),
+      },
+      userContentSubscription: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      contentSubscriptionCatalog: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            kind: ContentSubscriptionKind.topic,
+            normalizedValue: "ai chips",
+            displayValue: "AI chips",
+            count: 18,
+            lastSeenAt: new Date("2026-03-05T00:00:00.000Z"),
+            taxonomyPath: null,
+            metadata: null,
+            embeddingVector: [1, 0],
+          },
+          {
+            kind: CONTENT_SUBSCRIPTION_KIND_GEO,
+            normalizedValue: "jp",
+            displayValue: "Japan",
+            count: 12,
+            lastSeenAt: new Date("2026-03-04T00:00:00.000Z"),
+            taxonomyPath: null,
+            metadata: { countryCodeAlpha2: "JP" },
+            embeddingVector: null,
+          },
+          {
+            kind: CONTENT_SUBSCRIPTION_KIND_KEYWORD,
+            normalizedValue: "ai policy",
+            displayValue: "AI policy",
+            count: 8,
+            lastSeenAt: new Date("2026-03-03T00:00:00.000Z"),
+            taxonomyPath: null,
+            metadata: { extractionSource: "text" },
+            embeddingVector: null,
+          },
+        ]),
+      },
+    };
+    const cache = {
+      wrap: jest
+        .fn()
+        .mockResolvedValue({ syncedAt: "2026-03-06T00:00:00.000Z" }),
+    };
+    const settings = {
+      getSettings: jest.fn().mockResolvedValue({
+        taxonomyVersion: "news-taxonomy-v1",
+        taxonomy: [],
+      }),
+    };
+    const liteLlm = {
+      embedding: jest.fn().mockResolvedValue({
+        model: "text-embedding-3-small",
+        data: [{ index: 0, embedding: [1, 0] }],
+      }),
+      rerank: jest.fn().mockResolvedValue({ results: [] }),
+    };
+    const behavior = {
+      getPersonalizationProfile: jest.fn().mockResolvedValue({
+        positive: {
+          sources: {},
+          topics: { "ai chips": 1 },
+          entities: {},
+          items: {},
+          events: {},
+          domains: {},
+        },
+        negative: {
+          sources: {},
+          topics: {},
+          entities: {},
+          items: {},
+          events: {},
+          domains: {},
+        },
+      }),
+    };
+    const service = new UserContentSubscriptionsService(
+      prisma as any,
+      cache as any,
+      settings as any,
+      liteLlm as any,
+      behavior as any,
+      monitors as any,
+    );
+
+    const result = await service.listRecommendations("org-1", "user-1", 3);
+
+    expect(result.items.map((item) => item.displayValue)).toEqual([
+      "AI chips",
+      "Japan",
+      "AI policy",
+    ]);
+  });
+
   it("normalizes invalid catalog limit before querying Prisma", async () => {
     const prisma = {
       contentSubscriptionCatalog: {
@@ -393,10 +529,20 @@ describe("UserContentSubscriptionsService", () => {
     );
   });
 
-  it("returns an empty catalog result for manual-only keyword subscriptions", async () => {
+  it("queries keyword catalog entries", async () => {
     const prisma = {
       contentSubscriptionCatalog: {
-        findMany: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            kind: CONTENT_SUBSCRIPTION_KIND_KEYWORD,
+            normalizedValue: "ai",
+            displayValue: "AI",
+            count: 12,
+            lastSeenAt: new Date("2026-03-06T00:00:00.000Z"),
+            taxonomyPath: null,
+            metadata: { extractionSource: "text" },
+          },
+        ]),
       },
     };
     const service = new UserContentSubscriptionsService(
@@ -425,9 +571,79 @@ describe("UserContentSubscriptionsService", () => {
     expect(result).toEqual({
       limit: 25,
       taxonomyVersion: "news-taxonomy-v1",
-      items: [],
+      items: [
+        expect.objectContaining({
+          kind: CONTENT_SUBSCRIPTION_KIND_KEYWORD,
+          normalizedValue: "ai",
+          displayValue: "AI",
+          count: 12,
+        }),
+      ],
     });
-    expect(prisma.contentSubscriptionCatalog.findMany).not.toHaveBeenCalled();
+    expect(prisma.contentSubscriptionCatalog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          orgId: "org-1",
+          kind: CONTENT_SUBSCRIPTION_KIND_KEYWORD,
+        }),
+        take: 25,
+      }),
+    );
+  });
+
+  it("derives keyword catalog candidates from processed content text", async () => {
+    jest.spyOn(ProcessedItemModel, "aggregate").mockResolvedValue([
+      {
+        activityAt: new Date("2026-03-06T00:00:00.000Z"),
+        result: {
+          title: "AI chip supply chain expands",
+          summary: "The company said AI demand is rising.",
+          topics: ["AI infrastructure"],
+          entities: [{ name: "NVIDIA" }],
+          key_points: ["AI accelerators remain supply constrained"],
+        },
+      },
+      {
+        activityAt: new Date("2026-03-07T00:00:00.000Z"),
+        result: {
+          title: "AI policy debate continues",
+          summary: "Regulators discuss AI infrastructure rules.",
+          entities: [{ name: "OpenAI" }],
+          key_points: ["Policy teams cite AI safety"],
+        },
+      },
+    ] as any);
+    const service = new UserContentSubscriptionsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      monitors as any,
+    );
+
+    const candidates = await (service as any).loadKeywordCandidates("org-1");
+
+    expect(ProcessedItemModel.aggregate).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          $match: expect.objectContaining({
+            orgId: "org-1",
+            status: "completed",
+          }),
+        }),
+      ]),
+    );
+    expect(candidates).toContainEqual(
+      expect.objectContaining({
+        kind: CONTENT_SUBSCRIPTION_KIND_KEYWORD,
+        normalizedValue: "ai",
+        displayValue: "AI",
+        count: 2,
+        lastSeenAt: new Date("2026-03-07T00:00:00.000Z"),
+        metadata: { extractionSource: "text" },
+      }),
+    );
   });
 
   it("merges duplicate entity candidates from different entity types", async () => {
@@ -556,7 +772,10 @@ describe("UserContentSubscriptionsService", () => {
         })
         .mockResolvedValueOnce({
           model: "catalog-embedding-model",
-          data: [{ index: 1, embedding: [0, 9] }],
+          data: [
+            { index: 2, embedding: [3, 4] },
+            { index: 1, embedding: [0, 9] },
+          ],
         }),
     };
     const service = new UserContentSubscriptionsService(
@@ -585,6 +804,14 @@ describe("UserContentSubscriptionsService", () => {
           count: 6,
           lastSeenAt: new Date("2026-03-06T00:00:00.000Z"),
           metadata: { entityType: "company" },
+        },
+        {
+          kind: CONTENT_SUBSCRIPTION_KIND_KEYWORD,
+          normalizedValue: "ai policy",
+          displayValue: "AI policy",
+          count: 4,
+          lastSeenAt: new Date("2026-03-07T00:00:00.000Z"),
+          metadata: { extractionSource: "text" },
         },
       ],
       {
@@ -637,6 +864,14 @@ describe("UserContentSubscriptionsService", () => {
         embeddingVector: [0, 1],
         metadata: { entityType: "company" },
       }),
+      expect.objectContaining({
+        kind: CONTENT_SUBSCRIPTION_KIND_KEYWORD,
+        normalizedValue: "ai policy",
+        taxonomyPath: null,
+        embeddingModel: "catalog-embedding-model",
+        embeddingVector: [0.6, 0.8],
+        metadata: { extractionSource: "text" },
+      }),
     ]);
   });
 
@@ -684,6 +919,7 @@ describe("UserContentSubscriptionsService", () => {
       },
     ]);
     jest.spyOn(service as any, "loadSourceCandidates").mockResolvedValue([]);
+    jest.spyOn(service as any, "loadKeywordCandidates").mockResolvedValue([]);
     jest.spyOn(service as any, "loadGeoCandidates").mockResolvedValue([]);
     jest.spyOn(service as any, "getTaxonomyDescriptor").mockResolvedValue({
       settingsVersion: "news-taxonomy-v1",
@@ -725,6 +961,7 @@ describe("UserContentSubscriptionsService", () => {
             ContentSubscriptionKind.topic,
             ContentSubscriptionKind.entity,
             CONTENT_SUBSCRIPTION_KIND_SOURCE,
+            CONTENT_SUBSCRIPTION_KIND_KEYWORD,
             CONTENT_SUBSCRIPTION_KIND_GEO,
           ],
         },
@@ -833,6 +1070,7 @@ describe("UserContentSubscriptionsService", () => {
       .mockResolvedValue(candidates);
     jest.spyOn(service as any, "loadEntityCandidates").mockResolvedValue([]);
     jest.spyOn(service as any, "loadSourceCandidates").mockResolvedValue([]);
+    jest.spyOn(service as any, "loadKeywordCandidates").mockResolvedValue([]);
     jest.spyOn(service as any, "loadGeoCandidates").mockResolvedValue([]);
     jest.spyOn(service as any, "getTaxonomyDescriptor").mockResolvedValue({
       settingsVersion: "news-taxonomy-v1",
@@ -893,6 +1131,7 @@ describe("UserContentSubscriptionsService", () => {
     jest.spyOn(service as any, "loadTopicCandidates").mockResolvedValue([]);
     jest.spyOn(service as any, "loadEntityCandidates").mockResolvedValue([]);
     jest.spyOn(service as any, "loadSourceCandidates").mockResolvedValue([]);
+    jest.spyOn(service as any, "loadKeywordCandidates").mockResolvedValue([]);
     jest.spyOn(service as any, "loadGeoCandidates").mockResolvedValue([]);
     jest.spyOn(service as any, "getTaxonomyDescriptor").mockResolvedValue({
       settingsVersion: "news-taxonomy-v1",
@@ -913,6 +1152,7 @@ describe("UserContentSubscriptionsService", () => {
             ContentSubscriptionKind.topic,
             ContentSubscriptionKind.entity,
             CONTENT_SUBSCRIPTION_KIND_SOURCE,
+            CONTENT_SUBSCRIPTION_KIND_KEYWORD,
             CONTENT_SUBSCRIPTION_KIND_GEO,
           ],
         },

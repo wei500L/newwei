@@ -28,6 +28,8 @@ const CATALOG_SYNC_LOCK_TTL_MS = 15 * 60 * 1000;
 const CATALOG_MAX_CANDIDATES_PER_KIND = 240;
 const CATALOG_PERSIST_BATCH_SIZE = 64;
 const CATALOG_LIST_LIMIT = 200;
+const KEYWORD_CATALOG_DOC_LIMIT = CATALOG_MAX_CANDIDATES_PER_KIND * 40;
+const KEYWORD_CATALOG_MAX_TERMS_PER_DOC = 24;
 const UNCATEGORIZED_TAXONOMY_FILTER = "__uncategorized__";
 const EMBEDDING_BATCH_SIZE = 64;
 const RECOMMENDATION_LIMIT = 12;
@@ -53,6 +55,7 @@ const CATALOG_SYNC_KINDS = [
   ContentSubscriptionKind.topic,
   ContentSubscriptionKind.entity,
   CONTENT_SUBSCRIPTION_KIND_SOURCE,
+  CONTENT_SUBSCRIPTION_KIND_KEYWORD,
   CONTENT_SUBSCRIPTION_KIND_GEO,
 ] as const;
 
@@ -60,7 +63,54 @@ const RECOMMENDATION_KINDS = [
   ContentSubscriptionKind.topic,
   ContentSubscriptionKind.entity,
   CONTENT_SUBSCRIPTION_KIND_SOURCE,
+  CONTENT_SUBSCRIPTION_KIND_KEYWORD,
+  CONTENT_SUBSCRIPTION_KIND_GEO,
 ] as const;
+
+const KEYWORD_CJK_RE = /[\u3400-\u9fff]{2,8}/g;
+const KEYWORD_LATIN_RE = /[A-Za-z0-9][A-Za-z0-9.+-]{1,30}/g;
+const KEYWORD_STOP_WORDS = new Set([
+  "about",
+  "across",
+  "after",
+  "amid",
+  "and",
+  "are",
+  "before",
+  "been",
+  "but",
+  "for",
+  "from",
+  "has",
+  "have",
+  "her",
+  "his",
+  "into",
+  "its",
+  "less",
+  "more",
+  "new",
+  "not",
+  "our",
+  "over",
+  "said",
+  "says",
+  "that",
+  "the",
+  "their",
+  "they",
+  "this",
+  "under",
+  "via",
+  "was",
+  "were",
+  "will",
+  "with",
+  "you",
+  "your",
+  "报道",
+  "新闻",
+]);
 
 interface CatalogCandidate {
   kind: ContentSubscriptionKind;
@@ -421,13 +471,6 @@ export class UserContentSubscriptionsService {
   ): Promise<ContentSubscriptionCatalogResponse> {
     await this.ensureCatalogFresh(orgId);
     const taxonomy = await this.getTaxonomyDescriptor(orgId);
-    if (options?.kind === CONTENT_SUBSCRIPTION_KIND_KEYWORD) {
-      return {
-        limit: this.normalizeCatalogLimit(options.limit),
-        taxonomyVersion: taxonomy.settingsVersion,
-        items: [],
-      };
-    }
     const since = new Date(Date.now() - CATALOG_WINDOW_DAYS * DAY_MS);
     const limit = this.normalizeCatalogLimit(options?.limit);
     const taxonomyPathFilter = options?.taxonomyPath?.trim();
@@ -569,11 +612,13 @@ export class UserContentSubscriptionsService {
       queryText,
       embeddingRanked.slice(0, RECOMMENDATION_CANDIDATE_LIMIT),
     );
-    const ordered = (reranked.length > 0 ? reranked : embeddingRanked)
-      .slice(0, limit)
-      .map((entry) =>
-        this.mapCatalogRow(entry.row, taxonomy.byPath, entry.score),
-      );
+    const ordered = this.mergeRankedWithFallback(
+      reranked.length > 0 ? reranked : embeddingRanked,
+      availableCandidates,
+      limit,
+    ).map((entry) =>
+      this.mapCatalogRow(entry.row, taxonomy.byPath, entry.score),
+    );
 
     return {
       limit,
@@ -990,12 +1035,14 @@ export class UserContentSubscriptionsService {
       topicCandidates,
       entityCandidates,
       sourceCandidates,
+      keywordCandidates,
       geoCandidates,
       taxonomy,
     ] = await Promise.all([
       this.loadTopicCandidates(orgId),
       this.loadEntityCandidates(orgId),
       this.loadSourceCandidates(orgId),
+      this.loadKeywordCandidates(orgId),
       this.loadGeoCandidates(orgId),
       this.getTaxonomyDescriptor(orgId),
     ]);
@@ -1003,6 +1050,7 @@ export class UserContentSubscriptionsService {
       ...topicCandidates,
       ...entityCandidates,
       ...sourceCandidates,
+      ...keywordCandidates,
       ...geoCandidates,
     ]
       .sort(
@@ -1160,96 +1208,60 @@ export class UserContentSubscriptionsService {
     candidates: CatalogCandidate[],
     taxonomy: TaxonomyDescriptor,
   ): Promise<CatalogResolution[]> {
-    const taxonomyCandidates = candidates.filter(
-      (candidate) =>
-        candidate.kind === ContentSubscriptionKind.topic ||
-        candidate.kind === ContentSubscriptionKind.entity,
-    );
-    const passthroughCandidates = candidates.filter(
-      (candidate) =>
-        candidate.kind !== ContentSubscriptionKind.topic &&
-        candidate.kind !== ContentSubscriptionKind.entity,
-    );
-
-    if (taxonomyCandidates.length === 0) {
-      return passthroughCandidates.map((candidate) =>
-        this.toAdHocResolution(candidate, taxonomy.settingsVersion),
-      );
-    }
-
-    if (taxonomy.documents.length === 0) {
-      return candidates.map((candidate) =>
-        this.toAdHocResolution(candidate, taxonomy.settingsVersion),
-      );
-    }
-
     let taxonomyEmbeddings: { path: string; vector: number[] }[] = [];
     let embeddingModel: string | null = null;
-
-    try {
-      const taxonomyResponse = await this.liteLlm.embedding({
-        orgId,
-        input: taxonomy.documents.map((entry) => entry.text),
-        metadata: {
-          source: "content-subscriptions",
-          stage: "taxonomy-catalog",
-        },
-      });
-      embeddingModel = taxonomyResponse.model ?? null;
-      const taxonomyVectorByIndex = new Map<number, number[]>();
-      for (const row of taxonomyResponse.data ?? []) {
-        if (
-          !row ||
-          typeof row.index !== "number" ||
-          !Array.isArray(row.embedding) ||
-          row.embedding.length === 0
-        ) {
-          continue;
-        }
-        taxonomyVectorByIndex.set(row.index, row.embedding);
-      }
-      taxonomyEmbeddings = taxonomy.documents
-        .map((entry, index) => {
-          const vector = taxonomyVectorByIndex.get(index);
-          if (!Array.isArray(vector) || vector.length === 0) {
-            return null;
-          }
-          return { path: entry.path, vector: this.normalizeVector(vector) };
-        })
-        .filter((entry): entry is { path: string; vector: number[] } =>
-          Boolean(entry),
-        );
-    } catch (error) {
-      this.logger.warn(
-        { err: error, orgId },
-        "Failed to embed taxonomy documents for content catalog classification",
+    const needsTaxonomy =
+      taxonomy.documents.length > 0 &&
+      candidates.some(
+        (candidate) =>
+          candidate.kind === ContentSubscriptionKind.topic ||
+          candidate.kind === ContentSubscriptionKind.entity,
       );
-      return [
-        ...taxonomyCandidates.map((candidate) => {
-          const fallbackPath = this.classifyByKeyword(
-            candidate.displayValue,
-            taxonomy.nodes,
+
+    if (needsTaxonomy) {
+      try {
+        const taxonomyResponse = await this.liteLlm.embedding({
+          orgId,
+          input: taxonomy.documents.map((entry) => entry.text),
+          metadata: {
+            source: "content-subscriptions",
+            stage: "taxonomy-catalog",
+          },
+        });
+        embeddingModel = taxonomyResponse.model ?? null;
+        const taxonomyVectorByIndex = new Map<number, number[]>();
+        for (const row of taxonomyResponse.data ?? []) {
+          if (
+            !row ||
+            typeof row.index !== "number" ||
+            !Array.isArray(row.embedding) ||
+            row.embedding.length === 0
+          ) {
+            continue;
+          }
+          taxonomyVectorByIndex.set(row.index, row.embedding);
+        }
+        taxonomyEmbeddings = taxonomy.documents
+          .map((entry, index) => {
+            const vector = taxonomyVectorByIndex.get(index);
+            if (!Array.isArray(vector) || vector.length === 0) {
+              return null;
+            }
+            return { path: entry.path, vector: this.normalizeVector(vector) };
+          })
+          .filter((entry): entry is { path: string; vector: number[] } =>
+            Boolean(entry),
           );
-          return this.toAdHocResolution(
-            candidate,
-            taxonomy.settingsVersion,
-            fallbackPath,
-          );
-        }),
-        ...passthroughCandidates.map((candidate) =>
-          this.toAdHocResolution(candidate, taxonomy.settingsVersion),
-        ),
-      ];
+      } catch (error) {
+        this.logger.warn(
+          { err: error, orgId },
+          "Failed to embed taxonomy documents for content catalog classification",
+        );
+      }
     }
 
-    const results: CatalogResolution[] = passthroughCandidates.map(
-      (candidate) =>
-        this.toAdHocResolution(candidate, taxonomy.settingsVersion),
-    );
-    for (const chunk of this.chunkArray(
-      taxonomyCandidates,
-      EMBEDDING_BATCH_SIZE,
-    )) {
+    const results: CatalogResolution[] = [];
+    for (const chunk of this.chunkArray(candidates, EMBEDDING_BATCH_SIZE)) {
       try {
         const response = await this.liteLlm.embedding({
           orgId,
@@ -1278,10 +1290,12 @@ export class UserContentSubscriptionsService {
           const normalizedVector = Array.isArray(vector)
             ? this.normalizeVector(vector)
             : [];
-          const bestPath =
-            normalizedVector.length > 0
-              ? this.pickBestTaxonomyPath(normalizedVector, taxonomyEmbeddings)
-              : this.classifyByKeyword(candidate.displayValue, taxonomy.nodes);
+          const bestPath = this.catalogTaxonomyPath(
+            candidate,
+            normalizedVector,
+            taxonomy,
+            taxonomyEmbeddings,
+          );
           results.push({
             kind: candidate.kind,
             normalizedValue: candidate.normalizedValue,
@@ -1304,7 +1318,7 @@ export class UserContentSubscriptionsService {
             this.toAdHocResolution(
               candidate,
               taxonomy.settingsVersion,
-              this.classifyByKeyword(candidate.displayValue, taxonomy.nodes),
+              this.catalogTaxonomyPath(candidate, [], taxonomy, []),
             ),
           );
         }
@@ -1610,6 +1624,107 @@ export class UserContentSubscriptionsService {
       .slice(0, CATALOG_MAX_CANDIDATES_PER_KIND);
   }
 
+  private async loadKeywordCandidates(
+    orgId: string,
+  ): Promise<CatalogCandidate[]> {
+    const since = new Date(Date.now() - CATALOG_WINDOW_DAYS * DAY_MS);
+    const rows = await ProcessedItemModel.aggregate<{
+      result?: Record<string, unknown> | null;
+      activityAt?: Date | null;
+    }>([
+      {
+        $match: {
+          orgId,
+          status: "completed",
+          result: { $exists: true, $ne: null },
+        },
+      },
+      {
+        $project: {
+          createdAt: 1,
+          ingestedAt: 1,
+          sortAt: 1,
+          result: 1,
+        },
+      },
+      {
+        $addFields: {
+          activityAt: {
+            $ifNull: [
+              "$sortAt",
+              {
+                $convert: {
+                  input: "$result.published_at",
+                  to: "date",
+                  onError: { $ifNull: ["$ingestedAt", "$createdAt"] },
+                  onNull: { $ifNull: ["$ingestedAt", "$createdAt"] },
+                },
+              },
+            ],
+          },
+        },
+      },
+      {
+        $match: {
+          activityAt: { $gte: since },
+        },
+      },
+      {
+        $sort: { activityAt: -1 },
+      },
+      {
+        $limit: KEYWORD_CATALOG_DOC_LIMIT,
+      },
+    ]);
+
+    const merged = new Map<string, CatalogCandidate>();
+    for (const row of rows) {
+      const terms = this.extractKeywordCatalogTerms(row.result);
+      if (terms.length === 0) {
+        continue;
+      }
+      const lastSeenAt =
+        row.activityAt instanceof Date ? row.activityAt : new Date();
+      for (const term of terms) {
+        const normalized = this.normalizeValue(
+          term,
+          CONTENT_SUBSCRIPTION_KIND_KEYWORD,
+        );
+        if (!normalized.normalizedValue) {
+          continue;
+        }
+        const key = this.subscriptionKey(
+          CONTENT_SUBSCRIPTION_KIND_KEYWORD,
+          normalized.normalizedValue,
+        );
+        const existing = merged.get(key);
+        if (existing) {
+          existing.count += 1;
+          if (lastSeenAt > existing.lastSeenAt) {
+            existing.lastSeenAt = lastSeenAt;
+          }
+          continue;
+        }
+        merged.set(key, {
+          kind: CONTENT_SUBSCRIPTION_KIND_KEYWORD,
+          normalizedValue: normalized.normalizedValue,
+          displayValue: normalized.displayValue,
+          count: 1,
+          lastSeenAt,
+          metadata: { extractionSource: "text" },
+        });
+      }
+    }
+
+    return Array.from(merged.values())
+      .filter((entry) => entry.count >= CATALOG_MIN_COUNT)
+      .sort(
+        (a, b) =>
+          b.count - a.count || b.lastSeenAt.getTime() - a.lastSeenAt.getTime(),
+      )
+      .slice(0, CATALOG_MAX_CANDIDATES_PER_KIND);
+  }
+
   private async loadGeoCandidates(orgId: string): Promise<CatalogCandidate[]> {
     const since = new Date(Date.now() - CATALOG_WINDOW_DAYS * DAY_MS);
     const [locationRows, regionRows] = await Promise.all([
@@ -1794,6 +1909,99 @@ export class UserContentSubscriptionsService {
       lastSeenAt,
       metadata,
     });
+  }
+
+  private extractKeywordCatalogTerms(result: unknown): string[] {
+    if (!result || typeof result !== "object" || Array.isArray(result)) {
+      return [];
+    }
+    const record = result as Record<string, unknown>;
+    const terms: string[] = [];
+    const seen = new Set<string>();
+    const pushTerm = (value: unknown) => {
+      if (terms.length >= KEYWORD_CATALOG_MAX_TERMS_PER_DOC) {
+        return;
+      }
+      const term = this.normalizeKeywordCatalogTerm(value);
+      if (!term) {
+        return;
+      }
+      const key = term.toLowerCase();
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      terms.push(term);
+    };
+    const pushExtractedTerms = (value: unknown) => {
+      if (typeof value !== "string") {
+        return;
+      }
+      const text = value.trim();
+      if (!text) {
+        return;
+      }
+      for (const match of text.match(KEYWORD_CJK_RE) ?? []) {
+        pushTerm(match);
+      }
+      for (const match of text.match(KEYWORD_LATIN_RE) ?? []) {
+        pushTerm(match);
+      }
+    };
+
+    for (const value of this.toUnknownArray(record.topics)) {
+      pushTerm(value);
+    }
+    for (const value of this.toUnknownArray(record.category_labels)) {
+      pushTerm(value);
+    }
+    for (const value of this.toUnknownArray(record.entities)) {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        pushTerm((value as Record<string, unknown>).name);
+      }
+    }
+
+    for (const value of [
+      record.title,
+      record.headline,
+      record.subtitle,
+      record.summary,
+      record.abstract,
+      ...this.toUnknownArray(record.key_points),
+      ...this.toUnknownArray(record.keyPoints),
+    ]) {
+      pushExtractedTerms(value);
+    }
+
+    return terms;
+  }
+
+  private normalizeKeywordCatalogTerm(value: unknown) {
+    if (typeof value !== "string") {
+      return "";
+    }
+    const displayValue = value.trim().replace(/\s+/g, " ").slice(0, 128);
+    if (displayValue.length < 2) {
+      return "";
+    }
+    const key = displayValue.toLowerCase();
+    if (KEYWORD_STOP_WORDS.has(key)) {
+      return "";
+    }
+    if (/^[a-z0-9.+-]+$/i.test(displayValue)) {
+      const hasDigit = /\d/.test(displayValue);
+      if (displayValue.length < 3 && !hasDigit && key !== "ai") {
+        return "";
+      }
+    }
+    return displayValue;
+  }
+
+  private toUnknownArray(value: unknown): unknown[] {
+    if (Array.isArray(value)) {
+      return value;
+    }
+    return typeof value === "string" ? [value] : [];
   }
 
   private buildSourceMetadata(source: {
@@ -2084,6 +2292,46 @@ export class UserContentSubscriptionsService {
     }
   }
 
+  private mergeRankedWithFallback<
+    TRow extends {
+      kind: ContentSubscriptionKind;
+      normalizedValue: string;
+    },
+  >(
+    ranked: { row: TRow; score: number }[],
+    fallbackRows: TRow[],
+    limit: number,
+  ) {
+    const ordered: { row: TRow; score?: number }[] = [];
+    const selected = new Set<string>();
+    for (const entry of ranked) {
+      if (ordered.length >= limit) {
+        break;
+      }
+      const key = this.subscriptionKey(
+        entry.row.kind,
+        entry.row.normalizedValue,
+      );
+      if (selected.has(key)) {
+        continue;
+      }
+      selected.add(key);
+      ordered.push(entry);
+    }
+    for (const row of fallbackRows) {
+      if (ordered.length >= limit) {
+        break;
+      }
+      const key = this.subscriptionKey(row.kind, row.normalizedValue);
+      if (selected.has(key)) {
+        continue;
+      }
+      selected.add(key);
+      ordered.push({ row });
+    }
+    return ordered;
+  }
+
   private async tryRerankCatalogRows(
     orgId: string,
     queryText: string,
@@ -2232,6 +2480,24 @@ export class UserContentSubscriptionsService {
     ]
       .filter(Boolean)
       .join("\n");
+  }
+
+  private catalogTaxonomyPath(
+    candidate: CatalogCandidate,
+    vector: number[],
+    taxonomy: TaxonomyDescriptor,
+    taxonomyEmbeddings: { path: string; vector: number[] }[],
+  ) {
+    if (
+      candidate.kind !== ContentSubscriptionKind.topic &&
+      candidate.kind !== ContentSubscriptionKind.entity
+    ) {
+      return null;
+    }
+    if (vector.length > 0 && taxonomyEmbeddings.length > 0) {
+      return this.pickBestTaxonomyPath(vector, taxonomyEmbeddings);
+    }
+    return this.classifyByKeyword(candidate.displayValue, taxonomy.nodes);
   }
 
   private pickBestTaxonomyPath(
