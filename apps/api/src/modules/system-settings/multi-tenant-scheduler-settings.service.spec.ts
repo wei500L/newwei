@@ -34,6 +34,7 @@ describe("MultiTenantSchedulerSettingsService", () => {
       knowledgeGraphIngestionOrgConcurrency: 4,
       sentimentSnapshotOrgConcurrency: 2,
       newsnowHottestAnalysisOrgConcurrency: 6,
+      classificationQualityAlertOrgConcurrency: 4,
       userDigestDeliveryOrgConcurrency: 4,
     });
   });
@@ -67,6 +68,7 @@ describe("MultiTenantSchedulerSettingsService", () => {
         knowledgeGraphIngestionOrgConcurrency: 5,
         sentimentSnapshotOrgConcurrency: 3,
         newsnowHottestAnalysisOrgConcurrency: 8,
+        classificationQualityAlertOrgConcurrency: 4,
         userDigestDeliveryOrgConcurrency: 2,
       },
     });
@@ -77,6 +79,7 @@ describe("MultiTenantSchedulerSettingsService", () => {
       knowledgeGraphIngestionOrgConcurrency: 5,
       sentimentSnapshotOrgConcurrency: 3,
       newsnowHottestAnalysisOrgConcurrency: 8,
+      classificationQualityAlertOrgConcurrency: 4,
       userDigestDeliveryOrgConcurrency: 2,
     });
   });
@@ -95,6 +98,7 @@ describe("MultiTenantSchedulerSettingsService", () => {
       knowledgeGraphIngestionOrgConcurrency: 4,
       sentimentSnapshotOrgConcurrency: 2,
       newsnowHottestAnalysisOrgConcurrency: 6,
+      classificationQualityAlertOrgConcurrency: 4,
       userDigestDeliveryOrgConcurrency: 4,
     });
   });
@@ -107,6 +111,7 @@ describe("MultiTenantSchedulerSettingsService", () => {
         knowledgeGraphIngestionOrgConcurrency: 4,
         sentimentSnapshotOrgConcurrency: 2,
         newsnowHottestAnalysisOrgConcurrency: 6,
+        classificationQualityAlertOrgConcurrency: 5,
         userDigestDeliveryOrgConcurrency: 3,
       },
     });
@@ -124,6 +129,7 @@ describe("MultiTenantSchedulerSettingsService", () => {
       knowledgeGraphIngestionOrgConcurrency: 4,
       sentimentSnapshotOrgConcurrency: 3,
       newsnowHottestAnalysisOrgConcurrency: 7,
+      classificationQualityAlertOrgConcurrency: 4,
       userDigestDeliveryOrgConcurrency: 4,
     });
 
@@ -142,6 +148,7 @@ describe("MultiTenantSchedulerSettingsService", () => {
         knowledgeGraphIngestionOrgConcurrency: 4,
         sentimentSnapshotOrgConcurrency: 2,
         newsnowHottestAnalysisOrgConcurrency: 6,
+        classificationQualityAlertOrgConcurrency: 4,
         userDigestDeliveryOrgConcurrency: 4,
       }),
     ).rejects.toThrow(

@@ -1,8 +1,14 @@
-import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
-import type Redis from 'ioredis';
-import { randomUUID } from 'node:crypto';
+import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
+import type Redis from "ioredis";
+import { randomUUID } from "node:crypto";
 
-import { REDIS_CLIENT } from './cache.tokens';
+import { REDIS_CLIENT } from "./cache.tokens";
+
+export interface CacheLockLease {
+  extend(ttlMs?: number): Promise<void>;
+  release(): Promise<void>;
+  startAutoRenew(ttlMs?: number): () => void;
+}
 
 @Injectable()
 export class CacheService implements OnModuleDestroy {
@@ -135,7 +141,7 @@ export class CacheService implements OnModuleDestroy {
     key: string,
     ttlSeconds: number,
     loader: () => Promise<T>,
-    options?: { lockTtlMs?: number; retryDelayMs?: number; maxWaitMs?: number }
+    options?: { lockTtlMs?: number; retryDelayMs?: number; maxWaitMs?: number },
   ): Promise<T> {
     const cached = await this.get<T>(key);
     if (cached) {
@@ -187,59 +193,110 @@ export class CacheService implements OnModuleDestroy {
   async withLock<T>(
     key: string,
     ttlMs: number,
-    runner: () => Promise<T>
+    runner: () => Promise<T>,
   ): Promise<T | null> {
-    const lockKey = this.lockKey(key);
-    const lockToken = await this.acquireLock(lockKey, ttlMs);
-    if (!lockToken) {
+    const lease = await this.tryAcquireLock(key, ttlMs);
+    if (!lease) {
       return null;
     }
 
-    const normalizedTtlMs = Math.max(1_000, Math.floor(ttlMs));
-    const renewIntervalMs = Math.max(500, Math.floor(normalizedTtlMs / 3));
-    let renewTimer: NodeJS.Timeout | null = null;
-    let renewInFlight = false;
-    const renewLock = async () => {
-      if (renewInFlight) {
-        return;
-      }
-      renewInFlight = true;
-      try {
-        await this.extendLock(lockKey, lockToken, normalizedTtlMs);
-      } catch {
-        // best-effort
-      } finally {
-        renewInFlight = false;
-      }
-    };
-
-    renewTimer = setInterval(() => {
-      void renewLock();
-    }, renewIntervalMs);
-    renewTimer.unref?.();
+    const stopRenew = lease.startAutoRenew();
 
     try {
       return await runner();
     } finally {
-      if (renewTimer) {
-        clearInterval(renewTimer);
-      }
+      stopRenew();
       try {
-        await this.releaseLock(lockKey, lockToken);
+        await lease.release();
       } catch {
         // best-effort
       }
     }
+  }
+
+  async tryAcquireLock(
+    key: string,
+    ttlMs: number,
+  ): Promise<CacheLockLease | null> {
+    const lockKey = this.lockKey(key);
+    const normalizedTtlMs = this.normalizeLockTtlMs(ttlMs);
+    const lockToken = await this.acquireLock(lockKey, normalizedTtlMs);
+    if (!lockToken) {
+      return null;
+    }
+
+    return this.createLockLease(lockKey, lockToken, normalizedTtlMs);
   }
 
   private lockKey(key: string) {
     return `lock:${key}`;
   }
 
+  private createLockLease(
+    lockKey: string,
+    lockToken: string,
+    ttlMs: number,
+  ): CacheLockLease {
+    let released = false;
+
+    return {
+      extend: async (nextTtlMs?: number) => {
+        if (released) {
+          return;
+        }
+        await this.extendLock(
+          lockKey,
+          lockToken,
+          this.normalizeLockTtlMs(nextTtlMs ?? ttlMs),
+        );
+      },
+      release: async () => {
+        if (released) {
+          return;
+        }
+        released = true;
+        await this.releaseLock(lockKey, lockToken);
+      },
+      startAutoRenew: (nextTtlMs?: number) => {
+        const renewalTtlMs = this.normalizeLockTtlMs(nextTtlMs ?? ttlMs);
+        const renewIntervalMs = Math.max(500, Math.floor(renewalTtlMs / 3));
+        let renewInFlight = false;
+        let stopped = false;
+        const renewLock = async () => {
+          if (stopped || released || renewInFlight) {
+            return;
+          }
+          renewInFlight = true;
+          try {
+            await this.extendLock(lockKey, lockToken, renewalTtlMs);
+          } catch {
+            // best-effort
+          } finally {
+            renewInFlight = false;
+          }
+        };
+
+        const renewTimer = setInterval(() => {
+          void renewLock();
+        }, renewIntervalMs);
+        renewTimer.unref?.();
+
+        return () => {
+          stopped = true;
+          clearInterval(renewTimer);
+        };
+      },
+    };
+  }
+
+  private normalizeLockTtlMs(ttlMs: number) {
+    return Math.max(1_000, Math.floor(ttlMs));
+  }
+
   private async acquireLock(key: string, ttlMs: number) {
     const token = randomUUID();
-    const result = await this.redis.set(key, token, 'PX', ttlMs, 'NX');
-    return result === 'OK' ? token : null;
+    const result = await this.redis.set(key, token, "PX", ttlMs, "NX");
+    return result === "OK" ? token : null;
   }
 
   private async releaseLock(key: string, token: string) {

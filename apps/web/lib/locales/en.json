@@ -7771,13 +7771,15 @@
         "newsEventsIngestionOrgConcurrency": "News events ingestion org concurrency",
         "knowledgeGraphIngestionOrgConcurrency": "Knowledge graph ingestion org concurrency",
         "sentimentSnapshotOrgConcurrency": "Sentiment snapshot org concurrency",
-        "newsnowHottestAnalysisOrgConcurrency": "NewsNow hottest analysis org concurrency"
+        "newsnowHottestAnalysisOrgConcurrency": "NewsNow hottest analysis org concurrency",
+        "classificationQualityAlertOrgConcurrency": "Classification quality alert org concurrency"
       },
       "hints": {
         "newsEventsIngestionOrgConcurrency": "How many orgs the news-events ingestion cron may process at once.",
         "knowledgeGraphIngestionOrgConcurrency": "How many orgs the knowledge-graph ingestion cron may process at once.",
         "sentimentSnapshotOrgConcurrency": "How many orgs the sentiment snapshot rebuild cron may process at once.",
-        "newsnowHottestAnalysisOrgConcurrency": "How many orgs the NewsNow hottest-analysis scheduler may refresh at once after the shared global snapshot is prepared."
+        "newsnowHottestAnalysisOrgConcurrency": "How many orgs the NewsNow hottest-analysis scheduler may refresh at once after the shared global snapshot is prepared.",
+        "classificationQualityAlertOrgConcurrency": "How many orgs the classification quality alert scheduler may evaluate at once."
       }
     }
   },

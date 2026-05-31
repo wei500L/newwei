@@ -17,6 +17,7 @@ export interface MultiTenantSchedulerSettingsPublic {
   knowledgeGraphIngestionOrgConcurrency: number;
   sentimentSnapshotOrgConcurrency: number;
   newsnowHottestAnalysisOrgConcurrency: number;
+  classificationQualityAlertOrgConcurrency: number;
   userDigestDeliveryOrgConcurrency: number;
 }
 
@@ -25,6 +26,7 @@ interface StoredMultiTenantSchedulerSettings {
   knowledgeGraphIngestionOrgConcurrency?: unknown;
   sentimentSnapshotOrgConcurrency?: unknown;
   newsnowHottestAnalysisOrgConcurrency?: unknown;
+  classificationQualityAlertOrgConcurrency?: unknown;
   userDigestDeliveryOrgConcurrency?: unknown;
 }
 
@@ -39,13 +41,14 @@ const INVALID_PERSISTED_SETTINGS_CODE =
 const INVALID_PERSISTED_SETTINGS_ERROR =
   "Stored multi-tenant scheduler runtime settings are invalid.";
 const INVALID_PERSISTED_SETTINGS_DETAIL =
-  "newsEventsIngestionOrgConcurrency, knowledgeGraphIngestionOrgConcurrency, sentimentSnapshotOrgConcurrency, newsnowHottestAnalysisOrgConcurrency, and userDigestDeliveryOrgConcurrency must be integers between 1 and 16.";
+  "newsEventsIngestionOrgConcurrency, knowledgeGraphIngestionOrgConcurrency, sentimentSnapshotOrgConcurrency, newsnowHottestAnalysisOrgConcurrency, classificationQualityAlertOrgConcurrency, and userDigestDeliveryOrgConcurrency must be integers between 1 and 16.";
 
 const DEFAULT_SETTINGS: Omit<MultiTenantSchedulerSettingsPublic, "source"> = {
   newsEventsIngestionOrgConcurrency: 4,
   knowledgeGraphIngestionOrgConcurrency: 4,
   sentimentSnapshotOrgConcurrency: 2,
   newsnowHottestAnalysisOrgConcurrency: 6,
+  classificationQualityAlertOrgConcurrency: 4,
   userDigestDeliveryOrgConcurrency: 4,
 };
 
@@ -123,6 +126,7 @@ export class MultiTenantSchedulerSettingsService {
       knowledgeGraphIngestionOrgConcurrency: number;
       sentimentSnapshotOrgConcurrency: number;
       newsnowHottestAnalysisOrgConcurrency: number;
+      classificationQualityAlertOrgConcurrency?: number;
       userDigestDeliveryOrgConcurrency: number;
     },
   ): Promise<MultiTenantSchedulerSettingsPublic> {
@@ -205,6 +209,9 @@ export class MultiTenantSchedulerSettingsService {
     const newsnowHottestAnalysisOrgConcurrency = this.toStrictOptionalInt(
       record.newsnowHottestAnalysisOrgConcurrency,
     );
+    const classificationQualityAlertOrgConcurrency = this.toStrictOptionalInt(
+      record.classificationQualityAlertOrgConcurrency,
+    );
     const userDigestDeliveryOrgConcurrency = this.toStrictOptionalInt(
       record.userDigestDeliveryOrgConcurrency,
     );
@@ -214,6 +221,7 @@ export class MultiTenantSchedulerSettingsService {
       knowledgeGraphIngestionOrgConcurrency === null ||
       sentimentSnapshotOrgConcurrency === null ||
       newsnowHottestAnalysisOrgConcurrency === null ||
+      classificationQualityAlertOrgConcurrency === null ||
       userDigestDeliveryOrgConcurrency === null
     ) {
       return null;
@@ -232,6 +240,9 @@ export class MultiTenantSchedulerSettingsService {
       newsnowHottestAnalysisOrgConcurrency:
         newsnowHottestAnalysisOrgConcurrency ??
         DEFAULT_SETTINGS.newsnowHottestAnalysisOrgConcurrency,
+      classificationQualityAlertOrgConcurrency:
+        classificationQualityAlertOrgConcurrency ??
+        DEFAULT_SETTINGS.classificationQualityAlertOrgConcurrency,
       userDigestDeliveryOrgConcurrency:
         userDigestDeliveryOrgConcurrency ??
         DEFAULT_SETTINGS.userDigestDeliveryOrgConcurrency,
@@ -243,6 +254,7 @@ export class MultiTenantSchedulerSettingsService {
     knowledgeGraphIngestionOrgConcurrency: number;
     sentimentSnapshotOrgConcurrency: number;
     newsnowHottestAnalysisOrgConcurrency: number;
+    classificationQualityAlertOrgConcurrency?: number;
     userDigestDeliveryOrgConcurrency: number;
   }): Omit<MultiTenantSchedulerSettingsPublic, "source"> {
     return {
@@ -262,6 +274,13 @@ export class MultiTenantSchedulerSettingsService {
         input.newsnowHottestAnalysisOrgConcurrency,
         "newsnowHottestAnalysisOrgConcurrency",
       ),
+      classificationQualityAlertOrgConcurrency:
+        input.classificationQualityAlertOrgConcurrency === undefined
+          ? DEFAULT_SETTINGS.classificationQualityAlertOrgConcurrency
+          : this.requireConcurrencyOrThrow(
+              input.classificationQualityAlertOrgConcurrency,
+              "classificationQualityAlertOrgConcurrency",
+            ),
       userDigestDeliveryOrgConcurrency: this.requireConcurrencyOrThrow(
         input.userDigestDeliveryOrgConcurrency,
         "userDigestDeliveryOrgConcurrency",

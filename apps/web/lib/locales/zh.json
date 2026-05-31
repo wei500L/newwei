@@ -7771,13 +7771,15 @@
         "newsEventsIngestionOrgConcurrency": "新闻事件入库组织并发数",
         "knowledgeGraphIngestionOrgConcurrency": "知识图谱入库组织并发数",
         "sentimentSnapshotOrgConcurrency": "情绪快照组织并发数",
-        "newsnowHottestAnalysisOrgConcurrency": "NewsNow 热榜分析组织并发数"
+        "newsnowHottestAnalysisOrgConcurrency": "NewsNow 热榜分析组织并发数",
+        "classificationQualityAlertOrgConcurrency": "分类质量告警组织并发数"
       },
       "hints": {
         "newsEventsIngestionOrgConcurrency": "新闻事件入库 cron 一次最多可并行处理多少个组织。",
         "knowledgeGraphIngestionOrgConcurrency": "知识图谱入库 cron 一次最多可并行处理多少个组织。",
         "sentimentSnapshotOrgConcurrency": "情绪快照重建 cron 一次最多可并行处理多少个组织。",
-        "newsnowHottestAnalysisOrgConcurrency": "在共享全局快照准备完成后，NewsNow 热榜分析调度器一次最多可刷新多少个组织。"
+        "newsnowHottestAnalysisOrgConcurrency": "在共享全局快照准备完成后，NewsNow 热榜分析调度器一次最多可刷新多少个组织。",
+        "classificationQualityAlertOrgConcurrency": "分类质量告警调度器一次最多可评估多少个组织。"
       }
     }
   },

@@ -19,6 +19,7 @@ describe("multi-tenant scheduler settings panel wiring", () => {
     expect(source).toContain("knowledgeGraphIngestionOrgConcurrency");
     expect(source).toContain("sentimentSnapshotOrgConcurrency");
     expect(source).toContain("newsnowHottestAnalysisOrgConcurrency");
+    expect(source).toContain("classificationQualityAlertOrgConcurrency");
     expect(source).toContain("userDigestDeliveryOrgConcurrency");
     expect(source).toContain("Scheduler fan-out policy");
   });

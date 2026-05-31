@@ -1,4 +1,4 @@
-import { IsInt, Max, Min } from "class-validator";
+import { IsInt, IsOptional, Max, Min } from "class-validator";
 
 export class UpdateMultiTenantSchedulerSettingsDto {
   @IsInt()
@@ -20,6 +20,12 @@ export class UpdateMultiTenantSchedulerSettingsDto {
   @Min(1)
   @Max(16)
   newsnowHottestAnalysisOrgConcurrency!: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(16)
+  classificationQualityAlertOrgConcurrency?: number;
 
   @IsInt()
   @Min(1)

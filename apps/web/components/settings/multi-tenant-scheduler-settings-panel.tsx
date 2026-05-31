@@ -1,6 +1,16 @@
 "use client";
 
-import { Alert, Button, Form, InputNumber, Space, Spin, Tag, Typography, message } from "antd";
+import {
+  Alert,
+  Button,
+  Form,
+  InputNumber,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+  message,
+} from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -17,6 +27,7 @@ interface MultiTenantSchedulerSettingsResponse {
   knowledgeGraphIngestionOrgConcurrency: number;
   sentimentSnapshotOrgConcurrency: number;
   newsnowHottestAnalysisOrgConcurrency: number;
+  classificationQualityAlertOrgConcurrency: number;
   userDigestDeliveryOrgConcurrency: number;
 }
 
@@ -25,6 +36,7 @@ interface MultiTenantSchedulerSettingsFormValues {
   knowledgeGraphIngestionOrgConcurrency: number;
   sentimentSnapshotOrgConcurrency: number;
   newsnowHottestAnalysisOrgConcurrency: number;
+  classificationQualityAlertOrgConcurrency: number;
   userDigestDeliveryOrgConcurrency: number;
 }
 
@@ -34,6 +46,7 @@ const DEFAULT_SETTINGS: MultiTenantSchedulerSettingsResponse = {
   knowledgeGraphIngestionOrgConcurrency: 4,
   sentimentSnapshotOrgConcurrency: 2,
   newsnowHottestAnalysisOrgConcurrency: 6,
+  classificationQualityAlertOrgConcurrency: 4,
   userDigestDeliveryOrgConcurrency: 4,
 };
 
@@ -42,9 +55,8 @@ export function MultiTenantSchedulerSettingsPanel() {
   const { data: session } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
   const [form] = Form.useForm<MultiTenantSchedulerSettingsFormValues>();
-  const [settings, setSettings] = useState<MultiTenantSchedulerSettingsResponse | null>(
-    null,
-  );
+  const [settings, setSettings] =
+    useState<MultiTenantSchedulerSettingsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -69,8 +81,9 @@ export function MultiTenantSchedulerSettingsPanel() {
         sentimentSnapshotOrgConcurrency: next.sentimentSnapshotOrgConcurrency,
         newsnowHottestAnalysisOrgConcurrency:
           next.newsnowHottestAnalysisOrgConcurrency,
-        userDigestDeliveryOrgConcurrency:
-          next.userDigestDeliveryOrgConcurrency,
+        classificationQualityAlertOrgConcurrency:
+          next.classificationQualityAlertOrgConcurrency,
+        userDigestDeliveryOrgConcurrency: next.userDigestDeliveryOrgConcurrency,
       });
     },
     [form],
@@ -142,7 +155,9 @@ export function MultiTenantSchedulerSettingsPanel() {
 
   if (loading && settings === null) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+      <div
+        style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}
+      >
         <Spin />
       </div>
     );
@@ -270,6 +285,25 @@ export function MultiTenantSchedulerSettingsPanel() {
             {
               defaultValue:
                 "How many orgs the NewsNow hottest-analysis scheduler may refresh at once after the shared global snapshot is prepared.",
+            },
+          )}
+        >
+          <InputNumber min={1} max={16} style={{ width: "100%" }} />
+        </Form.Item>
+
+        <Form.Item
+          name="classificationQualityAlertOrgConcurrency"
+          label={t(
+            "systemSettings.multiTenantSchedulers.fields.classificationQualityAlertOrgConcurrency",
+            {
+              defaultValue: "Classification quality alert org concurrency",
+            },
+          )}
+          extra={t(
+            "systemSettings.multiTenantSchedulers.hints.classificationQualityAlertOrgConcurrency",
+            {
+              defaultValue:
+                "How many orgs the classification quality alert scheduler may evaluate at once.",
             },
           )}
         >
