@@ -18,6 +18,7 @@ import { AdminErrorsController } from "./admin-errors.controller";
 import { AdminLogsController } from "./admin-logs.controller";
 import { AdminLogsService } from "./admin-logs.service";
 import { ClassificationQualityQueueCleanupService } from "./classification-quality-queue-cleanup.service";
+import { ClassificationQualityAlertSchedulerService } from "./classification-quality-alert-scheduler.service";
 import { ClassificationQualitySeedTriggerService } from "./classification-quality-seed-trigger.service";
 import {
   CLASSIFICATION_QUALITY_QUEUE,
@@ -29,6 +30,7 @@ import { ClassificationQualityService } from "./classification-quality.service";
 import { ClientExceptionEventsController } from "./client-exception-events.controller";
 import { ExceptionEventsService } from "./exception-events.service";
 import { InternalExceptionEventsController } from "./internal-exception-events.controller";
+import { MetricsController } from "./metrics.controller";
 import { NewsSourceQualityController } from "./news-source-quality.controller";
 import { NewsSourceQualityService } from "./news-source-quality.service";
 import { ObservabilitySnapshotService } from "./observability-snapshot.service";
@@ -60,6 +62,7 @@ import { TaskLogsController } from "./task-logs.controller";
     ClientExceptionEventsController,
     InternalExceptionEventsController,
     ClassificationQualityController,
+    MetricsController,
     QualityOverviewController,
     PipelineQualityController,
     NewsSourceQualityController,
@@ -71,6 +74,7 @@ import { TaskLogsController } from "./task-logs.controller";
     AdminLogsService,
     ObservabilitySnapshotService,
     ClassificationQualityService,
+    ClassificationQualityAlertSchedulerService,
     ClassificationQualityProcessor,
     ClassificationQualityQueueCleanupService,
     ClassificationQualitySeedTriggerService,

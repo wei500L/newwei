@@ -9,7 +9,7 @@ import {
 } from "@ant-design/icons";
 import { Button, Card, Dropdown, Popover, Space, Tag, Tooltip, Typography } from "antd";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
@@ -64,6 +64,7 @@ export interface NewsCardProps {
     eventId?: string | null;
     rssHasTranslation?: boolean;
     rssTranslationState?: "translated" | "original";
+    searchHighlights?: { field: string; snippets: string[] }[];
   };
   variant?: NewsCardVariant;
   density?: NewsCardDensity;
@@ -76,6 +77,36 @@ function estimateReadingTime(summary?: string): number {
   const wordsPerMinute = 200;
   const wordCount = summary.split(/\s+/).length;
   return Math.max(1, Math.ceil(wordCount / wordsPerMinute));
+}
+
+function renderHighlightSnippet(snippet: string) {
+  return snippet.split(/(<mark>|<\/mark>)/g).reduce<{
+    nodes: ReactNode[];
+    active: boolean;
+  }>(
+    (state, part, index) => {
+      if (part === "<mark>") {
+        return { ...state, active: true };
+      }
+      if (part === "</mark>") {
+        return { ...state, active: false };
+      }
+      if (!part) {
+        return state;
+      }
+      state.nodes.push(
+        state.active ? (
+          <mark key={index} className="rounded bg-amber-100 px-0.5 text-amber-900">
+            {part}
+          </mark>
+        ) : (
+          <span key={index}>{part}</span>
+        ),
+      );
+      return state;
+    },
+    { nodes: [], active: false },
+  ).nodes;
 }
 
 export function NewsCard({
@@ -115,6 +146,9 @@ export function NewsCard({
   const llmSummary = llmBits.length > 0 ? llmBits.join(" | ") : null;
 
   const summaryText = item.summary?.trim() ?? "";
+  const highlightSnippets = (item.searchHighlights ?? [])
+    .flatMap((entry) => entry.snippets)
+    .slice(0, 2);
   const isCompactDensity = density === "compact";
   const summaryRows = isCompactDensity ? 2 : 4;
   const expandLabel = t("common.expand");
@@ -385,6 +419,16 @@ export function NewsCard({
         >
           {summaryText}
         </Paragraph>
+      ) : null}
+
+      {highlightSnippets.length > 0 ? (
+        <div className="mb-3 flex flex-col gap-1 rounded-md border border-amber-200 bg-amber-50/70 p-2 text-xs leading-5 text-gray-700">
+          {highlightSnippets.map((snippet, index) => (
+            <div key={`${item.id}-highlight-${index}`}>
+              {renderHighlightSnippet(snippet)}
+            </div>
+          ))}
+        </div>
       ) : null}
 
       {eventHref ? (

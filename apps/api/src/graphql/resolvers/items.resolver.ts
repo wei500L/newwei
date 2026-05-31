@@ -927,7 +927,14 @@ export class ItemsResolver {
     orgId: string;
     publishedAt?: Date | null;
     relevanceScore?: number | null;
+    searchHighlights?: Record<string, string[]> | null;
   }): ItemModel {
+    const searchHighlights =
+      meta.searchHighlights && typeof meta.searchHighlights === "object"
+        ? Object.entries(meta.searchHighlights)
+            .filter(([, snippets]) => Array.isArray(snippets) && snippets.length > 0)
+            .map(([field, snippets]) => ({ field, snippets }))
+        : null;
     return {
       id: meta.id,
       metaId: meta.id,
@@ -939,6 +946,7 @@ export class ItemsResolver {
         typeof meta.relevanceScore === "number" && Number.isFinite(meta.relevanceScore)
           ? meta.relevanceScore
           : null,
+      searchHighlights,
       createdAt: meta.createdAt,
       updatedAt: meta.updatedAt,
       orgId: meta.orgId,

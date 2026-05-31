@@ -129,6 +129,24 @@ export interface ItemsSearchRankingConfig {
   recencyHalfLifeHours: number;
 }
 
+export interface ElasticsearchConfig {
+  enabled: boolean;
+  node?: string;
+  username?: string;
+  password?: string;
+  apiKey?: string;
+  itemsIndex: string;
+  itemsAlias: string;
+  requestTimeoutMs: number;
+}
+
+export interface ObservabilityEnvConfig {
+  otelEnabled: boolean;
+  otelServiceName: string;
+  otelExporterOtlpEndpoint?: string;
+  metricsDefaultBuckets?: number[];
+}
+
 export interface ModelServiceConfig {
   enabled: boolean;
   baseUrl?: string;
@@ -889,6 +907,34 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  get elasticsearchConfig(): ElasticsearchConfig {
+    return {
+      enabled:
+        this.get<boolean>("ELASTICSEARCH_ENABLED", { infer: true }) ?? false,
+      node: this.get<string | undefined>("ELASTICSEARCH_NODE", {
+        infer: true,
+      }),
+      username: this.get<string | undefined>("ELASTICSEARCH_USERNAME", {
+        infer: true,
+      }),
+      password: this.get<string | undefined>("ELASTICSEARCH_PASSWORD", {
+        infer: true,
+      }),
+      apiKey: this.get<string | undefined>("ELASTICSEARCH_API_KEY", {
+        infer: true,
+      }),
+      itemsIndex:
+        this.get<string>("ELASTICSEARCH_ITEMS_INDEX", { infer: true }) ??
+        "items-v1",
+      itemsAlias:
+        this.get<string>("ELASTICSEARCH_ITEMS_ALIAS", { infer: true }) ??
+        "items-current",
+      requestTimeoutMs:
+        this.get<number>("ELASTICSEARCH_REQUEST_TIMEOUT_MS", { infer: true }) ??
+        3_000,
+    };
+  }
+
   get itemsReadModelEnabled(): boolean {
     return this.get<boolean>("ITEMS_READ_MODEL_ENABLED", { infer: true }) ?? false;
   }
@@ -1129,6 +1175,29 @@ export class EnvService extends ConfigService<ApiEnv> {
         this.get<number>("ANALYSIS_STREAM_FLUSH_CHARS", { infer: true }) ?? 80,
       streamFlushMs:
         this.get<number>("ANALYSIS_STREAM_FLUSH_MS", { infer: true }) ?? 250,
+    };
+  }
+
+  get observabilityConfig(): ObservabilityEnvConfig {
+    const rawBuckets =
+      this.get<string | undefined>("METRICS_DEFAULT_BUCKETS", {
+        infer: true,
+      }) ?? "";
+    const metricsDefaultBuckets = rawBuckets
+      .split(",")
+      .map((entry) => Number(entry.trim()))
+      .filter((entry) => Number.isFinite(entry) && entry > 0);
+    return {
+      otelEnabled: this.get<boolean>("OTEL_ENABLED", { infer: true }) ?? false,
+      otelServiceName:
+        this.get<string>("OTEL_SERVICE_NAME", { infer: true }) ??
+        "modular-api",
+      otelExporterOtlpEndpoint: this.get<string | undefined>(
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        { infer: true },
+      ),
+      metricsDefaultBuckets:
+        metricsDefaultBuckets.length > 0 ? metricsDefaultBuckets : undefined,
     };
   }
 

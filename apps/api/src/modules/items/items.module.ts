@@ -8,8 +8,10 @@ import { SystemSettingsModule } from "../system-settings/system-settings.module"
 import { UserNewsBehaviorModule } from "../user-news-behavior/user-news-behavior.module";
 
 import { ItemsRssTranslationService } from "./items-rss-translation.service";
+import { ItemsElasticsearchService } from "./items-elasticsearch.service";
 import { ItemsController } from "./items.controller";
 import { ItemsService } from "./items.service";
+import { SearchAdminController } from "./search-admin.controller";
 
 @Module({
   imports: [
@@ -20,8 +22,8 @@ import { ItemsService } from "./items.service";
     SystemSettingsModule,
     UserNewsBehaviorModule,
   ],
-  providers: [ItemsService, ItemsRssTranslationService],
-  controllers: [ItemsController],
-  exports: [ItemsService, ItemsRssTranslationService]
+  providers: [ItemsService, ItemsRssTranslationService, ItemsElasticsearchService],
+  controllers: [ItemsController, SearchAdminController],
+  exports: [ItemsService, ItemsRssTranslationService, ItemsElasticsearchService]
 })
 export class ItemsModule {}

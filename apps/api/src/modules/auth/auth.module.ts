@@ -15,6 +15,7 @@ import { AuthEmailCodeSettingsService } from "./auth-email-code-settings.service
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { MfaService } from "./mfa.service";
+import { MachineTokenService } from "./machine-token.service";
 import { OidcAuthService } from "./oidc-auth.service";
 import { OrgInviteService } from "./org-invite.service";
 import { PasswordResetService } from "./password-reset.service";
@@ -44,6 +45,7 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
     AuthSecurityService,
     PlatformAccessService,
     MfaService,
+    MachineTokenService,
     PasswordResetService,
     OrgInviteService,
     RegistrationApplicationService,
@@ -58,6 +60,7 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
     AuthSecurityService,
     PlatformAccessService,
     MfaService,
+    MachineTokenService,
     PasswordResetService,
     OrgInviteService,
     RegistrationApplicationService,

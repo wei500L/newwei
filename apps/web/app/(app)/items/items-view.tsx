@@ -714,6 +714,10 @@ const ITEMS_QUERY = gql`
           ingestedAt
           publishedAt
           relevanceScore
+          searchHighlights {
+            field
+            snippets
+          }
           processedPreview {
             id
             itemMetaId
@@ -882,6 +886,7 @@ interface ParsedItem {
   source?: string;
   contentType?: CanonicalContentType;
   relevanceScore?: number;
+  searchHighlights?: { field: string; snippets: string[] }[];
   price?: number;
   change?: number;
   ticker?: string;
@@ -1606,6 +1611,14 @@ export function ItemsView({
           Number.isFinite(edge.node.relevanceScore)
             ? edge.node.relevanceScore
             : undefined,
+        searchHighlights: Array.isArray(edge.node.searchHighlights)
+          ? edge.node.searchHighlights
+              .map((entry) => ({
+                field: entry.field,
+                snippets: entry.snippets.filter((snippet) => snippet.trim().length > 0),
+              }))
+              .filter((entry) => entry.snippets.length > 0)
+          : undefined,
         qualityScore:
           typeof processed?.qualityScore === "number"
             ? processed.qualityScore
@@ -2267,6 +2280,7 @@ export function ItemsView({
                       duplicateOf: item.duplicateOf,
                       llm: item.llm,
                       url: item.url,
+                      searchHighlights: item.searchHighlights,
                     }}
                   />
                 )}
@@ -2314,6 +2328,7 @@ export function ItemsView({
                     duplicateOf: item.duplicateOf,
                     llm: item.llm,
                     url: item.url,
+                    searchHighlights: item.searchHighlights,
                     rssHasTranslation: item.rssHasTranslation,
                     rssTranslationState: item.rssTranslationState,
                   }}

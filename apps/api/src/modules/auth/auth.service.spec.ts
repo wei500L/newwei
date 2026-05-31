@@ -302,9 +302,9 @@ describe("AuthService", () => {
               },
             },
             {
-              roleId: "role-billing",
+              roleId: "role-ops",
               role: {
-                permissions: [{ permission: { name: "billing.manage" } }],
+                permissions: [{ permission: { name: "settings.manage" } }],
               },
             },
           ],
@@ -317,9 +317,9 @@ describe("AuthService", () => {
       "password",
       "org-1",
     );
-    expect(user.roleIds).toEqual(["role-editor", "role-billing"]);
+    expect(user.roleIds).toEqual(["role-editor", "role-ops"]);
     expect(user.permissions).toEqual(
-      expect.arrayContaining(["items.read", "billing.manage"]),
+      expect.arrayContaining(["items.read", "settings.manage"]),
     );
   });
 

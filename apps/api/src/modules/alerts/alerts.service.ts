@@ -167,6 +167,67 @@ const DEFAULT_CRAWL_QUALITY_RULES: {
 
 const DEFAULT_REALTIME_SIGNAL_RULES = REALTIME_SIGNAL_DEFAULT_RULES;
 
+const DEFAULT_PIPELINE_RULES: {
+  key:
+    | "success_rate"
+    | "failure_rate"
+    | "average_llm_latency_ms"
+    | "ingestion_p90_ms"
+    | "ingestion_p99_ms";
+  name: string;
+  description: string;
+  metricSlug: string;
+  operator: AlertOperator;
+  thresholdValue: number;
+  severity: AlertSeverity;
+}[] = [
+  {
+    key: "success_rate",
+    name: "Pipeline: Success Rate Low",
+    description: "Alert when pipeline success rate drops below the expected baseline.",
+    metricSlug: "pipeline.success_rate",
+    operator: AlertOperator.lte,
+    thresholdValue: 0.9,
+    severity: AlertSeverity.high,
+  },
+  {
+    key: "failure_rate",
+    name: "Pipeline: Failure Rate High",
+    description: "Alert when pipeline failure rate remains too high.",
+    metricSlug: "pipeline.failure_rate",
+    operator: AlertOperator.gte,
+    thresholdValue: 0.1,
+    severity: AlertSeverity.high,
+  },
+  {
+    key: "average_llm_latency_ms",
+    name: "Pipeline: Average LLM Latency High",
+    description: "Alert when average LLM latency exceeds the operational threshold.",
+    metricSlug: "pipeline.average_llm_latency_ms",
+    operator: AlertOperator.gte,
+    thresholdValue: 8000,
+    severity: AlertSeverity.medium,
+  },
+  {
+    key: "ingestion_p90_ms",
+    name: "Pipeline: Ingestion P90 High",
+    description: "Alert when p90 ingestion latency exceeds the operational threshold.",
+    metricSlug: "pipeline.ingestion_p90_ms",
+    operator: AlertOperator.gte,
+    thresholdValue: 300000,
+    severity: AlertSeverity.medium,
+  },
+  {
+    key: "ingestion_p99_ms",
+    name: "Pipeline: Ingestion P99 High",
+    description: "Alert when p99 ingestion latency exceeds the operational threshold.",
+    metricSlug: "pipeline.ingestion_p99_ms",
+    operator: AlertOperator.gte,
+    thresholdValue: 900000,
+    severity: AlertSeverity.high,
+  },
+];
+
 @Injectable()
 export class AlertsService {
   private readonly prisma: PrismaService;
@@ -307,6 +368,7 @@ export class AlertsService {
     await Promise.all([
       this.ensureDefaultCrawlQualityRules(orgId),
       this.ensureDefaultRealtimeSignalRules(orgId),
+      this.ensureDefaultPipelineRules(orgId),
     ]);
   }
 
@@ -350,6 +412,23 @@ export class AlertsService {
       cooldownSeconds: 1800,
       duplicateLogMessage:
         "Default realtime signal alert rule already exists",
+      buildMetadata: (definition) => ({
+        systemDefault: true,
+        defaultRuleKey: definition.key,
+        version: 1,
+      }),
+    });
+  }
+
+  private async ensureDefaultPipelineRules(orgId: string) {
+    await this.ensureMetricProviderDefaultRules({
+      orgId,
+      metricProvider: AlertMetricProvider.pipeline_job,
+      definitions: DEFAULT_PIPELINE_RULES,
+      buildRuleId: (definition) =>
+        this.buildDefaultPipelineRuleId(orgId, definition.key),
+      cooldownSeconds: 1800,
+      duplicateLogMessage: "Default pipeline alert rule already exists",
       buildMetadata: (definition) => ({
         systemDefault: true,
         defaultRuleKey: definition.key,
@@ -471,6 +550,19 @@ export class AlertsService {
   ) {
     const normalizedOrgId = orgId.replace(/[^a-zA-Z0-9_-]/g, "_");
     return `default-realtime-signal-${key}-${normalizedOrgId}`.slice(0, 191);
+  }
+
+  private buildDefaultPipelineRuleId(
+    orgId: string,
+    key:
+      | "success_rate"
+      | "failure_rate"
+      | "average_llm_latency_ms"
+      | "ingestion_p90_ms"
+      | "ingestion_p99_ms",
+  ) {
+    const normalizedOrgId = orgId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    return `default-pipeline-${key}-${normalizedOrgId}`.slice(0, 191);
   }
 
   async listEvents(orgId: string, limit = 50, metricSlug?: string) {

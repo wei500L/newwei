@@ -57,6 +57,44 @@
         "submit": "验证码登录"
       }
     },
+    "register": {
+      "title": "注册",
+      "subtitle": "提交申请以创建新组织或加入已有组织。",
+      "submitted": "申请已提交",
+      "submitFailed": "提交申请失败",
+      "joinHint": "请使用管理员提供的组织标识。",
+      "tabs": {
+        "createOrg": "创建组织",
+        "joinOrg": "加入组织"
+      },
+      "fields": {
+        "firstName": "名",
+        "lastName": "姓",
+        "orgName": "组织名称",
+        "orgSlug": "组织标识",
+        "description": "描述"
+      },
+      "submitCreateOrg": "提交创建组织申请",
+      "submitJoin": "提交加入申请"
+    },
+    "forgot": {
+      "title": "忘记密码",
+      "subtitle": "如果邮箱存在，系统会发送重置链接。",
+      "success": "如果账号存在，重置链接已发送。",
+      "rateLimited": "重置请求过多，请稍后再试。",
+      "failed": "申请密码重置失败",
+      "submit": "发送重置链接"
+    },
+    "reset": {
+      "title": "重置密码",
+      "missingToken": "缺少重置令牌",
+      "success": "密码已更新",
+      "failed": "重置密码失败",
+      "fields": {
+        "password": "新密码"
+      },
+      "submit": "重置密码"
+    },
     "logoutFailed": "退出失败",
     "logoutThisDevice": "退出当前设备",
     "logoutAllDevices": "退出所有设备",

@@ -3,10 +3,12 @@
 import { Alert, Button, Form, Input, Typography, message } from "antd";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
 
 export default function ResetPasswordPage() {
+  const { t } = useTranslation();
   const apiClient = createApiClient();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -17,8 +19,8 @@ export default function ResetPasswordPage() {
   return (
     <div className="auth-card">
       {contextHolder}
-      <Typography.Title level={3}>Reset password</Typography.Title>
-      {!token ? <Alert type="error" showIcon message="Missing reset token" /> : null}
+      <Typography.Title level={3}>{t("auth.reset.title")}</Typography.Title>
+      {!token ? <Alert type="error" showIcon message={t("auth.reset.missingToken")} /> : null}
       <Form
         layout="vertical"
         onFinish={async (values: { password: string }) => {
@@ -31,17 +33,17 @@ export default function ResetPasswordPage() {
               token,
               password: values.password,
             });
-            messageApi.success("Password updated");
+            messageApi.success(t("auth.reset.success"));
             router.push("/login");
           } catch {
-            messageApi.error("Failed to reset password");
+            messageApi.error(t("auth.reset.failed"));
           } finally {
             setLoading(false);
           }
         }}
       >
         <Form.Item
-          label="New password"
+          label={t("auth.reset.fields.password")}
           name="password"
           rules={[{ required: true }, { min: 8 }]}
         >
@@ -49,7 +51,7 @@ export default function ResetPasswordPage() {
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" block loading={loading} disabled={!token}>
-            Reset password
+            {t("auth.reset.submit")}
           </Button>
         </Form.Item>
       </Form>

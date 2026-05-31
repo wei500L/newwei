@@ -267,6 +267,22 @@ export const apiEnvSchema = baseEnvSchema
       .number()
       .positive()
       .default(48),
+    ELASTICSEARCH_ENABLED: envBoolean.default(false),
+    ELASTICSEARCH_NODE: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? undefined : value,
+      z.string().url().optional(),
+    ),
+    ELASTICSEARCH_USERNAME: z.string().optional(),
+    ELASTICSEARCH_PASSWORD: z.string().optional(),
+    ELASTICSEARCH_API_KEY: z.string().optional(),
+    ELASTICSEARCH_ITEMS_INDEX: z.string().min(1).default("items-v1"),
+    ELASTICSEARCH_ITEMS_ALIAS: z.string().min(1).default("items-current"),
+    ELASTICSEARCH_REQUEST_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(3_000),
     VECTOR_SERVICE_ENABLED: envBoolean.default(false),
     VECTOR_SERVICE_FALLBACK_TO_MONGO: envBoolean.default(true),
     VECTOR_SERVICE_BASE_URL: z.preprocess(
@@ -813,6 +829,10 @@ export const apiEnvSchema = baseEnvSchema
         typeof value === "string" && value.trim() === "" ? undefined : value,
       z.string().default("openai-moderation-pre"),
     ),
+    OTEL_ENABLED: envBoolean.default(false),
+    OTEL_SERVICE_NAME: z.string().min(1).default("modular-api"),
+    OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
+    METRICS_DEFAULT_BUCKETS: z.string().optional(),
     SYSTEM_SETTINGS_ENCRYPTION_KEY: z.string().optional(),
     S3_ACCESS_KEY_ID: z.string().optional(),
     S3_SECRET_ACCESS_KEY: z.string().optional(),

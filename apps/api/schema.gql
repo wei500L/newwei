@@ -1317,9 +1317,17 @@ type ItemModel {
 
   """Search relevance score (0-1) when rankingMode is RELEVANCE."""
   relevanceScore: Float
+
+  """Highlighted search snippets when Elasticsearch matched the item."""
+  searchHighlights: [ItemSearchHighlightModel!]
   status: String!
   title: String!
   updatedAt: DateTime!
+}
+
+type ItemSearchHighlightModel {
+  field: String!
+  snippets: [String!]!
 }
 
 input ItemsDateRangeInput {

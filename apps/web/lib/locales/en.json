@@ -57,6 +57,44 @@
         "submit": "Sign in with code"
       }
     },
+    "register": {
+      "title": "Register",
+      "subtitle": "Submit an application to create a new organization or join an existing one.",
+      "submitted": "Application submitted",
+      "submitFailed": "Failed to submit application",
+      "joinHint": "Use the organization slug provided by your administrator.",
+      "tabs": {
+        "createOrg": "Create organization",
+        "joinOrg": "Join organization"
+      },
+      "fields": {
+        "firstName": "First name",
+        "lastName": "Last name",
+        "orgName": "Organization name",
+        "orgSlug": "Organization slug",
+        "description": "Description"
+      },
+      "submitCreateOrg": "Submit new organization request",
+      "submitJoin": "Submit join request"
+    },
+    "forgot": {
+      "title": "Forgot password",
+      "subtitle": "If the email exists, a reset link will be sent.",
+      "success": "If the account exists, a reset link has been sent.",
+      "rateLimited": "Too many reset requests. Please try again later.",
+      "failed": "Failed to request password reset",
+      "submit": "Send reset link"
+    },
+    "reset": {
+      "title": "Reset password",
+      "missingToken": "Missing reset token",
+      "success": "Password updated",
+      "failed": "Failed to reset password",
+      "fields": {
+        "password": "New password"
+      },
+      "submit": "Reset password"
+    },
     "logoutFailed": "Sign out failed",
     "logoutThisDevice": "Sign out this device",
     "logoutAllDevices": "Sign out all devices",

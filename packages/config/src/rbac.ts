@@ -25,6 +25,7 @@ const CORE_PERMISSION_DESCRIPTION_MAP = {
     "Review low-confidence graph relations and moderation queues.",
   "alerts.read": "Read alert rules, states, and recent triggers.",
   "alerts.manage": "Create, edit, and operate alerting workflows.",
+  "metrics.read": "Scrape and inspect protected service metrics.",
   "analysis.read": "Read saved analysis outputs and related results.",
   "analysis.write": "Create, update, share, export, and annotate saved analysis views.",
   "analysis.run": "Launch analysis jobs and refresh derived results.",

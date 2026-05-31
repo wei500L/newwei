@@ -2,11 +2,13 @@
 
 import { Button, Form, Input, Typography, message } from "antd";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
 import { classifyRequestError } from "@/lib/request-error";
 
 export default function ForgotPasswordPage() {
+  const { t } = useTranslation();
   const apiClient = createApiClient();
   const [loading, setLoading] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
@@ -14,9 +16,9 @@ export default function ForgotPasswordPage() {
   return (
     <div className="auth-card">
       {contextHolder}
-      <Typography.Title level={3}>Forgot password</Typography.Title>
+      <Typography.Title level={3}>{t("auth.forgot.title")}</Typography.Title>
       <Typography.Paragraph type="secondary">
-        If the email exists, a reset link will be sent.
+        {t("auth.forgot.subtitle")}
       </Typography.Paragraph>
       <Form
         layout="vertical"
@@ -24,24 +26,24 @@ export default function ForgotPasswordPage() {
           setLoading(true);
           try {
             await apiClient.post("auth/password/forgot", values);
-            messageApi.success("If the account exists, a reset link has been sent.");
+            messageApi.success(t("auth.forgot.success"));
           } catch (error) {
             if (classifyRequestError(error).kind === "rateLimit") {
-              messageApi.error("Too many reset requests. Please try again later.");
+              messageApi.error(t("auth.forgot.rateLimited"));
             } else {
-              messageApi.error("Failed to request password reset");
+              messageApi.error(t("auth.forgot.failed"));
             }
           } finally {
             setLoading(false);
           }
         }}
       >
-        <Form.Item label="Email" name="email" rules={[{ required: true }]}>
+        <Form.Item label={t("auth.login.fields.email.label")} name="email" rules={[{ required: true }]}>
           <Input size="large" />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" block loading={loading}>
-            Send reset link
+            {t("auth.forgot.submit")}
           </Button>
         </Form.Item>
       </Form>

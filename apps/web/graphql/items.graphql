@@ -25,6 +25,10 @@ query Items(
         ingestedAt
         publishedAt
         relevanceScore
+        searchHighlights {
+          field
+          snippets
+        }
         processedPreview {
           id
           itemMetaId

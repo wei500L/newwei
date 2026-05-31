@@ -1360,9 +1360,17 @@ export type ItemModel = {
   rawPreview?: Maybe<RawItemPreviewModelGraph>;
   /** Search relevance score (0-1) when rankingMode is RELEVANCE. */
   relevanceScore?: Maybe<Scalars['Float']['output']>;
+  /** Highlighted search snippets when Elasticsearch matched the item. */
+  searchHighlights?: Maybe<Array<ItemSearchHighlightModel>>;
   status: Scalars['String']['output'];
   title: Scalars['String']['output'];
   updatedAt: Scalars['DateTime']['output'];
+};
+
+export type ItemSearchHighlightModel = {
+  __typename?: 'ItemSearchHighlightModel';
+  field: Scalars['String']['output'];
+  snippets: Array<Scalars['String']['output']>;
 };
 
 export type ItemsDateRangeInput = {
@@ -3783,7 +3791,7 @@ export type ItemsQueryVariables = Exact<{
 }>;
 
 
-export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, ingestedAt: any, publishedAt?: string | null, relevanceScore?: number | null, processedPreview?: { __typename?: 'ProcessedItemPreviewModelGraph', id: string, itemMetaId: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, source?: string | null, title?: string | null, language?: string | null, publishedAt?: string | null, summary?: string | null, contentType?: string | null, sentiment?: string | null, topics: Array<string>, entities: Array<string>, qualityScore?: number | null, location?: string | null, createdAt: any, eventId?: string | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null, rawPreview?: { __typename?: 'RawItemPreviewModelGraph', url?: string | null, sourceName?: string | null, thumbnail?: string | null, summary?: string | null, sentiment?: string | null, region?: string | null, location?: string | null, ticker?: string | null, price?: number | null, changePercent?: number | null, history?: Array<{ __typename?: 'SeriesPointModel', timestamp: string, value: number }> | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
+export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, ingestedAt: any, publishedAt?: string | null, relevanceScore?: number | null, searchHighlights?: Array<{ __typename?: 'ItemSearchHighlightModel', field: string, snippets: Array<string> }> | null, processedPreview?: { __typename?: 'ProcessedItemPreviewModelGraph', id: string, itemMetaId: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, source?: string | null, title?: string | null, language?: string | null, publishedAt?: string | null, summary?: string | null, contentType?: string | null, sentiment?: string | null, topics: Array<string>, entities: Array<string>, qualityScore?: number | null, location?: string | null, createdAt: any, eventId?: string | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null, rawPreview?: { __typename?: 'RawItemPreviewModelGraph', url?: string | null, sourceName?: string | null, thumbnail?: string | null, summary?: string | null, sentiment?: string | null, region?: string | null, location?: string | null, ticker?: string | null, price?: number | null, changePercent?: number | null, history?: Array<{ __typename?: 'SeriesPointModel', timestamp: string, value: number }> | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
 
 export type ItemFacetsQueryVariables = Exact<{
   search?: InputMaybe<Scalars['String']['input']>;
@@ -5914,6 +5922,10 @@ export const ItemsDocument = gql`
         ingestedAt
         publishedAt
         relevanceScore
+        searchHighlights {
+          field
+          snippets
+        }
         processedPreview {
           id
           itemMetaId

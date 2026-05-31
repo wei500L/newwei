@@ -2,10 +2,12 @@
 
 import { Alert, Button, Form, Input, Tabs, Typography, message } from "antd";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
 
 export default function RegisterPage() {
+  const { t } = useTranslation();
   const apiClient = createApiClient();
   const [loading, setLoading] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
@@ -17,9 +19,9 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await apiClient.post(endpoint, values);
-      messageApi.success("Application submitted");
+      messageApi.success(t("auth.register.submitted"));
     } catch {
-      messageApi.error("Failed to submit application");
+      messageApi.error(t("auth.register.submitFailed"));
     } finally {
       setLoading(false);
     }
@@ -28,15 +30,15 @@ export default function RegisterPage() {
   return (
     <div className="auth-card">
       {contextHolder}
-      <Typography.Title level={3}>Register</Typography.Title>
+      <Typography.Title level={3}>{t("auth.register.title")}</Typography.Title>
       <Typography.Paragraph type="secondary">
-        Submit an application to create a new organization or join an existing one.
+        {t("auth.register.subtitle")}
       </Typography.Paragraph>
       <Tabs
         items={[
           {
             key: "new-org",
-            label: "Create organization",
+            label: t("auth.register.tabs.createOrg"),
             children: (
               <Form
                 layout="vertical"
@@ -44,27 +46,27 @@ export default function RegisterPage() {
                   void submit("auth/register/applications", values as Record<string, string>)
                 }
               >
-                <Form.Item label="Email" name="email" rules={[{ required: true }]}>
+                <Form.Item label={t("auth.login.fields.email.label")} name="email" rules={[{ required: true }]}>
                   <Input size="large" />
                 </Form.Item>
-                <Form.Item label="First name" name="firstName" rules={[{ required: true }]}>
+                <Form.Item label={t("auth.register.fields.firstName")} name="firstName" rules={[{ required: true }]}>
                   <Input size="large" />
                 </Form.Item>
-                <Form.Item label="Last name" name="lastName" rules={[{ required: true }]}>
+                <Form.Item label={t("auth.register.fields.lastName")} name="lastName" rules={[{ required: true }]}>
                   <Input size="large" />
                 </Form.Item>
-                <Form.Item label="Organization name" name="orgName" rules={[{ required: true }]}>
+                <Form.Item label={t("auth.register.fields.orgName")} name="orgName" rules={[{ required: true }]}>
                   <Input size="large" />
                 </Form.Item>
-                <Form.Item label="Organization slug" name="orgSlug" rules={[{ required: true }]}>
+                <Form.Item label={t("auth.register.fields.orgSlug")} name="orgSlug" rules={[{ required: true }]}>
                   <Input size="large" />
                 </Form.Item>
-                <Form.Item label="Description" name="description">
+                <Form.Item label={t("auth.register.fields.description")} name="description">
                   <Input.TextArea rows={3} />
                 </Form.Item>
                 <Form.Item>
                   <Button type="primary" htmlType="submit" block loading={loading}>
-                    Submit new organization request
+                    {t("auth.register.submitCreateOrg")}
                   </Button>
                 </Form.Item>
               </Form>
@@ -72,7 +74,7 @@ export default function RegisterPage() {
           },
           {
             key: "join-org",
-            label: "Join organization",
+            label: t("auth.register.tabs.joinOrg"),
             children: (
               <Form
                 layout="vertical"
@@ -84,23 +86,23 @@ export default function RegisterPage() {
                   type="info"
                   showIcon
                   style={{ marginBottom: "1rem" }}
-                  message="Use the organization slug provided by your administrator."
+                  message={t("auth.register.joinHint")}
                 />
-                <Form.Item label="Email" name="email" rules={[{ required: true }]}>
+                <Form.Item label={t("auth.login.fields.email.label")} name="email" rules={[{ required: true }]}>
                   <Input size="large" />
                 </Form.Item>
-                <Form.Item label="First name" name="firstName" rules={[{ required: true }]}>
+                <Form.Item label={t("auth.register.fields.firstName")} name="firstName" rules={[{ required: true }]}>
                   <Input size="large" />
                 </Form.Item>
-                <Form.Item label="Last name" name="lastName" rules={[{ required: true }]}>
+                <Form.Item label={t("auth.register.fields.lastName")} name="lastName" rules={[{ required: true }]}>
                   <Input size="large" />
                 </Form.Item>
-                <Form.Item label="Organization slug" name="orgSlug" rules={[{ required: true }]}>
+                <Form.Item label={t("auth.register.fields.orgSlug")} name="orgSlug" rules={[{ required: true }]}>
                   <Input size="large" />
                 </Form.Item>
                 <Form.Item>
                   <Button type="primary" htmlType="submit" block loading={loading}>
-                    Submit join request
+                    {t("auth.register.submitJoin")}
                   </Button>
                 </Form.Item>
               </Form>

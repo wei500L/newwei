@@ -42,6 +42,7 @@ import {
   type ItemReadModelRawSnapshotInput,
   buildItemReadModelDocument,
 } from "./item-read-model.utils";
+import { ItemsElasticsearchService } from "./items-elasticsearch.service";
 
 const MAX_CURSOR_PAGE_SIZE = 50;
 const FULLTEXT_MIN_TOKEN_LENGTH = 3;
@@ -147,7 +148,12 @@ export interface ItemMetaRow {
   updatedAt: Date;
 }
 
-type ItemListRow = ItemMetaRow & { relevanceScore?: number; rankOffset?: number };
+type ItemSearchHighlights = Record<string, string[]>;
+type ItemListRow = ItemMetaRow & {
+  relevanceScore?: number;
+  rankOffset?: number;
+  searchHighlights?: ItemSearchHighlights | null;
+};
 
 interface ItemPersonalizationProfile {
   positive: {
@@ -334,7 +340,8 @@ type SearchCandidateSource =
   | "meta"
   | "processed"
   | "processedArticle"
-  | "vector";
+  | "vector"
+  | "elasticsearch";
 
 export interface RssSourceOption {
   id: string;
@@ -358,6 +365,7 @@ export class ItemsService {
     private readonly liteLlm: LiteLlmService,
     private readonly userNewsBehavior: UserNewsBehaviorService,
     @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection,
+    @Optional() private readonly elasticsearch?: ItemsElasticsearchService,
     @Optional() private readonly vectorClient?: VectorClientService
   ) {
     void this._mongo; // Ensure Mongo connection provider is instantiated.
@@ -3028,6 +3036,7 @@ export class ItemsService {
       processed: 1.15,
       processedArticle: 1.05,
       vector: 1.45,
+      elasticsearch: 1.6,
     };
     const scoreById = new Map<
       string,
@@ -4796,11 +4805,13 @@ export class ItemsService {
       if (strategy.type === "none") {
         return [];
       }
-      const [lexicalIds, vectorIds] = await Promise.all([
+      const [elasticHits, lexicalIds, vectorIds] = await Promise.all([
+        this.elasticsearch?.search(orgId, search, MAX_SEARCH_MATCHES).catch(() => null) ?? Promise.resolve(null),
         this.resolveReadModelSearchIds(orgId, strategy),
         this.resolveVectorSearchIds(orgId, search),
       ]);
       return this.rankSearchCandidateIds({
+        elasticsearch: elasticHits?.map((hit) => hit.id),
         meta: lexicalIds,
         vector: vectorIds,
       });
@@ -4811,7 +4822,8 @@ export class ItemsService {
       return [];
     }
 
-    const [metaIds, processedIds, processedArticleIds, vectorIds] = await Promise.all([
+    const [elasticHits, metaIds, processedIds, processedArticleIds, vectorIds] = await Promise.all([
+      this.elasticsearch?.search(orgId, search, MAX_SEARCH_MATCHES).catch(() => null) ?? Promise.resolve(null),
       this.resolveMetaSearchIds(orgId, strategy),
       this.resolveProcessedSearchIds(orgId, search),
       this.resolveProcessedArticleSearchIds(orgId, strategy),
@@ -4819,6 +4831,7 @@ export class ItemsService {
     ]);
 
     return this.rankSearchCandidateIds({
+      elasticsearch: elasticHits?.map((hit) => hit.id),
       meta: metaIds,
       processed: processedIds,
       processedArticle: processedArticleIds,
@@ -5535,6 +5548,11 @@ export class ItemsService {
     const pageIds = pageRows.map((row) => row.id);
     const rowsById = await this.fetchItemMetaRowsByIds(options.orgId, pageIds);
     const scoreById = new Map(pageRows.map((row) => [row.id, row.score]));
+    const highlightsById = await this.loadSearchHighlights(
+      options.orgId,
+      options.search,
+      pageIds,
+    );
 
     const items: ItemListRow[] = [];
     for (const id of pageIds) {
@@ -5545,7 +5563,8 @@ export class ItemsService {
       const score = scoreById.get(id);
       items.push({
         ...row,
-        ...(typeof score === "number" ? { relevanceScore: score } : {})
+        ...(typeof score === "number" ? { relevanceScore: score } : {}),
+        searchHighlights: highlightsById.get(id) ?? null,
       });
     }
 
@@ -5595,6 +5614,11 @@ export class ItemsService {
     const slicedRows = hasNextPage ? pageRows.slice(0, options.first) : pageRows;
     const pageIds = slicedRows.map((row) => row.id);
     const rowsById = await this.fetchItemMetaRowsByIds(options.orgId, pageIds);
+    const highlightsById = await this.loadSearchHighlights(
+      options.orgId,
+      options.search,
+      pageIds,
+    );
 
     const items: ItemListRow[] = [];
     for (let idx = 0; idx < pageIds.length; idx += 1) {
@@ -5610,7 +5634,8 @@ export class ItemsService {
       items.push({
         ...row,
         relevanceScore: rankedRow.score,
-        rankOffset: startOffset + idx
+        rankOffset: startOffset + idx,
+        searchHighlights: highlightsById.get(id) ?? null,
       });
     }
 
@@ -5838,6 +5863,21 @@ export class ItemsService {
       });
 
     return ranked.map((entry) => ({ id: entry.id, score: entry.score }));
+  }
+
+  private async loadSearchHighlights(
+    orgId: string,
+    search: string,
+    ids: string[],
+  ): Promise<Map<string, ItemSearchHighlights>> {
+    if (!this.elasticsearch || ids.length === 0 || !search.trim()) {
+      return new Map();
+    }
+    try {
+      return await this.elasticsearch.getHighlights(orgId, search, ids);
+    } catch {
+      return new Map();
+    }
   }
 
   private async tryRerankCandidates(options: {

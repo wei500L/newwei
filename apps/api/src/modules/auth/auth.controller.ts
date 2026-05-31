@@ -52,6 +52,7 @@ import {
   VerifyEmailDto,
 } from "./dto/email-verification.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
+import { CreateMachineTokenDto } from "./dto/machine-token.dto";
 import { LoginWithCodeDto, SendLoginCodeDto } from "./dto/login-with-code.dto";
 import { LoginDto } from "./dto/login.dto";
 import { LogoutDto } from "./dto/logout.dto";
@@ -60,6 +61,7 @@ import {
   ResetPasswordDto,
 } from "./dto/password-reset.dto";
 import { MfaService } from "./mfa.service";
+import { MachineTokenService } from "./machine-token.service";
 import { OidcAuthService } from "./oidc-auth.service";
 import { OrgInviteService } from "./org-invite.service";
 import { PasswordResetService } from "./password-reset.service";
@@ -78,6 +80,7 @@ export class AuthController {
     private readonly inviteService: OrgInviteService,
     private readonly registrationApplications: RegistrationApplicationService,
     private readonly mfaService: MfaService,
+    private readonly machineTokenService: MachineTokenService,
     private readonly oidcAuthService: OidcAuthService,
     private readonly platformAccess: PlatformAccessService,
     private readonly env: EnvService,
@@ -155,6 +158,22 @@ export class AuthController {
       req.ip,
       req.get("user-agent") ?? undefined,
     );
+  }
+
+  @Post("machine-tokens")
+  @Permissions("settings.manage")
+  async createMachineToken(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: CreateMachineTokenDto,
+  ) {
+    const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
+    return this.machineTokenService.create({
+      orgId: user.orgId,
+      actorId: user.id,
+      name: body.name,
+      permissions: body.permissions,
+      expiresAt,
+    });
   }
 
   @Public()

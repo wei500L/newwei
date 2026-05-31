@@ -63,6 +63,7 @@ model Org {
   newsIndicatorAssociationBacktestRuns NewsIndicatorAssociationBacktestRun[]
   rssTranslationMetricsDaily           RssTranslationMetricsDaily[]
   observabilitySnapshots               ObservabilitySnapshot[]
+  machineAccessTokens                   MachineAccessToken[]
   userSettings                         UserSetting[]
   savedAnalysisViews                   SavedAnalysisView[]
   analysisThreads                      AnalysisThread[]
@@ -80,6 +81,25 @@ model Org {
   archiveArticleClassifications        ArchiveArticleClassification[]
   processedArticleTermHourly           ProcessedArticleTermHourly[]
   crawlMediaBlobs                      CrawlMediaBlob[]
+}
+
+model MachineAccessToken {
+  id             String    @id @default(cuid())
+  org            Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId          String
+  name           String
+  tokenHash      String    @unique
+  permissions    Json
+  createdBy      User?     @relation("MachineAccessTokenCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById    String?
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([orgId, revokedAt])
+  @@index([createdById])
 }
 
 model User {
@@ -107,6 +127,7 @@ model User {
   authChallenges                AuthChallenge[]
   totpFactor                    UserTotpFactor?
   recoveryCodes                 UserRecoveryCode[]
+  machineAccessTokensCreated    MachineAccessToken[]        @relation("MachineAccessTokenCreatedBy")
   crawlTasks                    CrawlTask[]                @relation("CrawlTaskCreatedBy")
   dashboardsCreated             Dashboard[]                @relation("DashboardCreatedBy")
   alertRulesCreated             AlertRule[]                @relation("AlertRuleCreatedBy")

@@ -100,6 +100,25 @@ services:
       - qdrant-data:/qdrant/storage
     logging: *json-file-logging
 
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: ${ELASTICSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
+    ports:
+      - "${ELASTICSEARCH_HOST_PORT:-9200}:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    logging: *json-file-logging
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
   minio:
     image: ${MINIO_IMAGE:-minio/minio:latest}
     restart: unless-stopped
@@ -412,6 +431,8 @@ services:
       MODEL_SERVICE_ENABLED: ${MODEL_SERVICE_ENABLED:-true}
       MODEL_SERVICE_BASE_URL: ${MODEL_SERVICE_BASE_URL:-http://model-service:8090}
       MODEL_SERVICE_INTERNAL_TOKEN: ${MODEL_SERVICE_INTERNAL_TOKEN:-dev-model-token}
+      ELASTICSEARCH_ENABLED: ${ELASTICSEARCH_ENABLED:-true}
+      ELASTICSEARCH_NODE: ${ELASTICSEARCH_NODE:-http://elasticsearch:9200}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -427,6 +448,8 @@ services:
       mongo:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      elasticsearch:
         condition: service_healthy
       ais-relay:
         condition: service_healthy
@@ -551,4 +574,5 @@ volumes:
   redis-data:
   minio-data:
   qdrant-data:
+  elasticsearch-data:
   litellm-postgres-data:
