@@ -1,0 +1,124 @@
+query EntityIntelligenceCard($input: EntityIntelligenceCardInput!) {
+  entityIntelligenceCard(input: $input) {
+    entity {
+      id
+      name
+      type
+      properties
+    }
+    aliases
+    metrics {
+      relationshipCount
+      incomingEdgeCount
+      outgoingEdgeCount
+      mentionedArticleCount
+      recentEventCount
+      avgSentiment
+      negativeRatio
+      latestMentionAt
+    }
+    relationships {
+      direction
+      evidenceCount
+      latestEvidenceAt
+      edge {
+        id
+        from
+        to
+        type
+        weight
+        confidence
+        properties
+      }
+      neighbor {
+        id
+        name
+        type
+        properties
+      }
+    }
+    sentimentSeries {
+      entityName
+      entityType
+      bucketStart
+      totalDocs
+      negativeDocs
+      positiveDocs
+      neutralDocs
+      scoreSum
+      avgScore
+      negativeRatio
+      evidenceProcessedItemIds
+    }
+    neighborhood {
+      seed {
+        id
+        name
+        type
+        properties
+      }
+      nodes {
+        id
+        name
+        type
+        properties
+      }
+      edges {
+        id
+        from
+        to
+        type
+        weight
+        confidence
+        properties
+      }
+      metadata {
+        totalNodes
+        totalEdges
+        generatedAt
+      }
+    }
+    generatedAt
+  }
+}
+
+query EntityIntelligenceEvidence($input: EntityIntelligenceEvidenceInput!) {
+  entityIntelligenceEvidence(input: $input) {
+    restricted
+    events {
+      id
+      status
+      title
+      summary
+      primaryTopic
+      primaryEntity
+      startAt
+      lastAt
+      itemCount
+    }
+    articles {
+      mention
+      confidence
+      linkedAt
+      article {
+        id
+        url
+        sourceLabel
+        title
+        summary
+        language
+        crawlAt
+      }
+    }
+    generatedAt
+  }
+}
+
+query KnowledgeEntityByName($name: String!, $type: String) {
+  knowledgeEntityByName(name: $name, type: $type) {
+    id
+    name
+    type
+    properties
+  }
+}

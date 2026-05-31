@@ -1,6 +1,6 @@
 "use client";
 
-import { WarningOutlined } from "@ant-design/icons";
+import { IdcardOutlined, WarningOutlined } from "@ant-design/icons";
 import {
   App,
   Button,
@@ -22,7 +22,10 @@ import { toast } from "sonner";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import { RequestErrorBanner } from "@/components/request-error-banner";
-import { useEntityImpactGraphSettingsQuery } from "@/graphql/generated";
+import {
+  useEntityImpactGraphSettingsQuery,
+  useKnowledgeEntityByNameLazyQuery,
+} from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import {
@@ -75,6 +78,17 @@ const resolveCategoryList = (input: string[] | undefined) => {
 
 const getCategoryConfig = (type: string) =>
   CATEGORY_CONFIG[normalizeEntityGraphCategory(type)] ?? DEFAULT_CATEGORY;
+
+const resolveKnowledgeEntityTypeForImpactNode = (type: string) => {
+  const normalized = normalizeEntityGraphCategory(type);
+  if (normalized === "stock") {
+    return "instrument";
+  }
+  if (normalized === "commodity" || normalized === "person") {
+    return normalized;
+  }
+  return undefined;
+};
 
 const escapeHtml = (value: unknown) =>
   String(value ?? "")
@@ -138,6 +152,10 @@ export function EntityImpactGraph() {
   const { pending: refreshingSettings, run: refreshSettings } = usePendingAction(
     () => refetchSettings(),
   );
+  const [resolveKnowledgeEntityByName, { loading: resolvingEntityCard }] =
+    useKnowledgeEntityByNameLazyQuery({
+      fetchPolicy: "network-only",
+    });
 
   const settings = settingsData?.entityImpactGraphSettings;
   const enabled = settings?.enabled ?? true;
@@ -637,6 +655,42 @@ export function EntityImpactGraph() {
       }
     },
     [t],
+  );
+
+  const openIntelligenceCardForEntity = useCallback(
+    async (name: string, type: string) => {
+      const normalizedName = name.trim();
+      if (!normalizedName) {
+        return;
+      }
+      try {
+        const result = await resolveKnowledgeEntityByName({
+          variables: {
+            name: normalizedName,
+            type: resolveKnowledgeEntityTypeForImpactNode(type),
+          },
+        });
+        const entity = result.data?.knowledgeEntityByName;
+        if (!entity?.id) {
+          toast.error(
+            t("entities.intelligence.resolveFailed", {
+              defaultValue: "No matching knowledge graph entity found.",
+            }),
+          );
+          return;
+        }
+        window.location.assign(`/entities/${encodeURIComponent(entity.id)}`);
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : t("entities.intelligence.resolveFailed", {
+                defaultValue: "No matching knowledge graph entity found.",
+              }),
+        );
+      }
+    },
+    [resolveKnowledgeEntityByName, t],
   );
 
   const handleNodeClick = useCallback(
@@ -1141,6 +1195,24 @@ export function EntityImpactGraph() {
                       type="text"
                       size="small"
                       block
+                      icon={<IdcardOutlined />}
+                      loading={resolvingEntityCard}
+                      onClick={() => {
+                        void openIntelligenceCardForEntity(
+                          contextMenu.nodeName,
+                          selectedNodeRecord?.type ?? "",
+                        );
+                        setContextMenu(null);
+                      }}
+                    >
+                      {t("entities.intelligence.openCard", {
+                        defaultValue: "Open Intelligence Card",
+                      })}
+                    </Button>
+                    <Button
+                      type="text"
+                      size="small"
+                      block
                       onClick={() => {
                         openSearchForEntity(contextMenu.nodeName);
                         setContextMenu(null);
@@ -1279,6 +1351,20 @@ export function EntityImpactGraph() {
             </div>
 
             <Space wrap>
+              <Button
+                icon={<IdcardOutlined />}
+                loading={resolvingEntityCard}
+                onClick={() => {
+                  void openIntelligenceCardForEntity(
+                    selectedNodeRecord.name,
+                    selectedNodeRecord.type,
+                  );
+                }}
+              >
+                {t("entities.intelligence.openCard", {
+                  defaultValue: "Open Intelligence Card",
+                })}
+              </Button>
               <Button
                 type="primary"
                 onClick={() => openSearchForEntity(selectedNodeRecord.name)}

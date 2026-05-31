@@ -4,6 +4,7 @@ import {
   AppstoreOutlined,
   CopyOutlined,
   FilterOutlined,
+  IdcardOutlined,
   LinkOutlined,
   ReloadOutlined,
   SearchOutlined
@@ -649,6 +650,14 @@ export function KnowledgeGraphContent() {
           }
         >
           {t("pages.knowledgeGraph.actions.centerNode", { defaultValue: "Set as seed" })}
+        </Button>
+        <Button
+          icon={<IdcardOutlined />}
+          onClick={() => router.push(`/entities/${encodeURIComponent(selectedNode.id)}`)}
+        >
+          {t("entities.intelligence.openCard", {
+            defaultValue: "Open Intelligence Card",
+          })}
         </Button>
         <Button
           icon={<SearchOutlined />}

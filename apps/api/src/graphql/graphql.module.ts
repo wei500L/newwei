@@ -68,6 +68,7 @@ import { AssistantResolver } from "./resolvers/assistant.resolver";
 import { CrawlResolver } from "./resolvers/crawl.resolver";
 import { DashboardResolver } from "./resolvers/dashboard.resolver";
 import { EconomicDataResolver } from "./resolvers/economic-data.resolver";
+import { EntityIntelligenceResolver } from "./resolvers/entity-intelligence.resolver";
 import { EntityImpactGraphResolver } from "./resolvers/entity-impact-graph.resolver";
 import { ItemsResolver } from "./resolvers/items.resolver";
 import { KnowledgeGraphImpactResolver } from "./resolvers/knowledge-graph-impact.resolver";
@@ -296,6 +297,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
     DashboardResolver,
     CrawlResolver,
     EconomicDataResolver,
+    EntityIntelligenceResolver,
     EntityImpactGraphResolver,
     KnowledgeGraphResolver,
     KnowledgeGraphImpactResolver,

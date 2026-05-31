@@ -1211,6 +1211,84 @@ type EntityImpactNodeModel {
   value: Float!
 }
 
+type EntityIntelligenceArticleModel {
+  crawlAt: DateTime!
+  id: String!
+  language: String
+  sourceLabel: String
+  summary: String
+  title: String
+  url: String!
+}
+
+input EntityIntelligenceCardInput {
+  entityId: String!
+  relatedLimit: Int
+  windowDays: Int
+}
+
+type EntityIntelligenceCardModel {
+  aliases: [String!]!
+  entity: KnowledgeGraphNodeModel!
+  generatedAt: DateTime!
+  metrics: EntityIntelligenceMetricsModel!
+  neighborhood: KnowledgeGraphModel!
+  relationships: [EntityIntelligenceRelationshipModel!]!
+  sentimentSeries: [EntitySentimentSnapshotModel!]!
+}
+
+type EntityIntelligenceEventModel {
+  id: String!
+  itemCount: Int!
+  lastAt: DateTime!
+  primaryEntity: String
+  primaryTopic: String
+  startAt: DateTime!
+  status: String!
+  summary: String
+  title: String
+}
+
+type EntityIntelligenceEvidenceArticleModel {
+  article: EntityIntelligenceArticleModel!
+  confidence: Float
+  linkedAt: DateTime!
+  mention: String
+}
+
+input EntityIntelligenceEvidenceInput {
+  entityId: String!
+  eventsLimit: Int
+  evidenceLimit: Int
+  windowDays: Int
+}
+
+type EntityIntelligenceEvidenceModel {
+  articles: [EntityIntelligenceEvidenceArticleModel!]!
+  events: [EntityIntelligenceEventModel!]!
+  generatedAt: DateTime!
+  restricted: Boolean!
+}
+
+type EntityIntelligenceMetricsModel {
+  avgSentiment: Float
+  incomingEdgeCount: Int!
+  latestMentionAt: DateTime
+  mentionedArticleCount: Int!
+  negativeRatio: Float
+  outgoingEdgeCount: Int!
+  recentEventCount: Int!
+  relationshipCount: Int!
+}
+
+type EntityIntelligenceRelationshipModel {
+  direction: String!
+  edge: KnowledgeGraphEdgeModel!
+  evidenceCount: Int!
+  latestEvidenceAt: DateTime
+  neighbor: KnowledgeGraphNodeModel!
+}
+
 type EntitySentimentSnapshotModel {
   avgScore: Float!
   bucketStart: DateTime!
@@ -2250,6 +2328,12 @@ type Query {
   economicDataFetchConfigs: [EconomicDataFetchConfigModel!]!
   economicDataRefreshPresetStatus(preset: EconomicDashboardRefreshPreset!): EconomicDataRefreshPresetStatusModel!
   entityImpactGraphSettings: EntityImpactGraphSettingsModel!
+
+  """Get a 360-degree intelligence card for a knowledge graph entity"""
+  entityIntelligenceCard(input: EntityIntelligenceCardInput!): EntityIntelligenceCardModel
+
+  """Get content evidence for a knowledge graph entity intelligence card"""
+  entityIntelligenceEvidence(input: EntityIntelligenceEvidenceInput!): EntityIntelligenceEvidenceModel
   entitySentimentSeries(days: Int, entityName: String!, entityType: String): [EntitySentimentSnapshotModel!]!
   eventGroups(itemsPerGroup: Int, limit: Int, minGroupSize: Int, windowDays: Int): [EventGroupModel!]!
   getCommodityMoveImpact(input: CommodityMoveImpactInput!): KnowledgeGraphImpactAnalysisModel
@@ -2268,6 +2352,9 @@ type Query {
   item(id: String!): ItemModel
   itemFacets(filters: ItemsFiltersInput, search: String): ItemFacets!
   items(after: String, filters: ItemsFiltersInput, first: Int! = 10, orderBy: ItemsOrderBy! = CREATED_DESC, page: Int, rankingMode: ItemsRankingMode, search: String): ItemConnection!
+
+  """Resolve an entity name to the preferred knowledge graph entity"""
+  knowledgeEntityByName(name: String!, type: String): KnowledgeGraphNodeModel
   knowledgeGraphEdgeEvidence(edgeId: String!, limit: Int): [KnowledgeGraphEdgeEvidenceItemModel!]!
   knowledgeGraphEvidenceReviewQueue(limit: Int, maxConfidence: Float, onlyUnreviewed: Boolean): [KnowledgeGraphEvidenceReviewItemModel!]!
   knowledgeGraphSettings: KnowledgeGraphSettingsModel!

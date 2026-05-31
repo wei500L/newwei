@@ -1248,6 +1248,91 @@ export type EntityImpactNodeModel = {
   value: Scalars['Float']['output'];
 };
 
+export type EntityIntelligenceArticleModel = {
+  __typename?: 'EntityIntelligenceArticleModel';
+  crawlAt: Scalars['DateTime']['output'];
+  id: Scalars['String']['output'];
+  language?: Maybe<Scalars['String']['output']>;
+  sourceLabel?: Maybe<Scalars['String']['output']>;
+  summary?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+  url: Scalars['String']['output'];
+};
+
+export type EntityIntelligenceCardInput = {
+  entityId: Scalars['String']['input'];
+  relatedLimit?: InputMaybe<Scalars['Int']['input']>;
+  windowDays?: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type EntityIntelligenceCardModel = {
+  __typename?: 'EntityIntelligenceCardModel';
+  aliases: Array<Scalars['String']['output']>;
+  entity: KnowledgeGraphNodeModel;
+  generatedAt: Scalars['DateTime']['output'];
+  metrics: EntityIntelligenceMetricsModel;
+  neighborhood: KnowledgeGraphModel;
+  relationships: Array<EntityIntelligenceRelationshipModel>;
+  sentimentSeries: Array<EntitySentimentSnapshotModel>;
+};
+
+export type EntityIntelligenceEventModel = {
+  __typename?: 'EntityIntelligenceEventModel';
+  id: Scalars['String']['output'];
+  itemCount: Scalars['Int']['output'];
+  lastAt: Scalars['DateTime']['output'];
+  primaryEntity?: Maybe<Scalars['String']['output']>;
+  primaryTopic?: Maybe<Scalars['String']['output']>;
+  startAt: Scalars['DateTime']['output'];
+  status: Scalars['String']['output'];
+  summary?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+};
+
+export type EntityIntelligenceEvidenceArticleModel = {
+  __typename?: 'EntityIntelligenceEvidenceArticleModel';
+  article: EntityIntelligenceArticleModel;
+  confidence?: Maybe<Scalars['Float']['output']>;
+  linkedAt: Scalars['DateTime']['output'];
+  mention?: Maybe<Scalars['String']['output']>;
+};
+
+export type EntityIntelligenceEvidenceInput = {
+  entityId: Scalars['String']['input'];
+  eventsLimit?: InputMaybe<Scalars['Int']['input']>;
+  evidenceLimit?: InputMaybe<Scalars['Int']['input']>;
+  windowDays?: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type EntityIntelligenceEvidenceModel = {
+  __typename?: 'EntityIntelligenceEvidenceModel';
+  articles: Array<EntityIntelligenceEvidenceArticleModel>;
+  events: Array<EntityIntelligenceEventModel>;
+  generatedAt: Scalars['DateTime']['output'];
+  restricted: Scalars['Boolean']['output'];
+};
+
+export type EntityIntelligenceMetricsModel = {
+  __typename?: 'EntityIntelligenceMetricsModel';
+  avgSentiment?: Maybe<Scalars['Float']['output']>;
+  incomingEdgeCount: Scalars['Int']['output'];
+  latestMentionAt?: Maybe<Scalars['DateTime']['output']>;
+  mentionedArticleCount: Scalars['Int']['output'];
+  negativeRatio?: Maybe<Scalars['Float']['output']>;
+  outgoingEdgeCount: Scalars['Int']['output'];
+  recentEventCount: Scalars['Int']['output'];
+  relationshipCount: Scalars['Int']['output'];
+};
+
+export type EntityIntelligenceRelationshipModel = {
+  __typename?: 'EntityIntelligenceRelationshipModel';
+  direction: Scalars['String']['output'];
+  edge: KnowledgeGraphEdgeModel;
+  evidenceCount: Scalars['Int']['output'];
+  latestEvidenceAt?: Maybe<Scalars['DateTime']['output']>;
+  neighbor: KnowledgeGraphNodeModel;
+};
+
 export type EntitySentimentSnapshotModel = {
   __typename?: 'EntitySentimentSnapshotModel';
   avgScore: Scalars['Float']['output'];
@@ -2612,6 +2697,10 @@ export type Query = {
   economicDataFetchConfigs: Array<EconomicDataFetchConfigModel>;
   economicDataRefreshPresetStatus: EconomicDataRefreshPresetStatusModel;
   entityImpactGraphSettings: EntityImpactGraphSettingsModel;
+  /** Get a 360-degree intelligence card for a knowledge graph entity */
+  entityIntelligenceCard?: Maybe<EntityIntelligenceCardModel>;
+  /** Get content evidence for a knowledge graph entity intelligence card */
+  entityIntelligenceEvidence?: Maybe<EntityIntelligenceEvidenceModel>;
   entitySentimentSeries: Array<EntitySentimentSnapshotModel>;
   eventGroups: Array<EventGroupModel>;
   getCommodityMoveImpact?: Maybe<KnowledgeGraphImpactAnalysisModel>;
@@ -2628,6 +2717,8 @@ export type Query = {
   item?: Maybe<ItemModel>;
   itemFacets: ItemFacets;
   items: ItemConnection;
+  /** Resolve an entity name to the preferred knowledge graph entity */
+  knowledgeEntityByName?: Maybe<KnowledgeGraphNodeModel>;
   knowledgeGraphEdgeEvidence: Array<KnowledgeGraphEdgeEvidenceItemModel>;
   knowledgeGraphEvidenceReviewQueue: Array<KnowledgeGraphEvidenceReviewItemModel>;
   knowledgeGraphSettings: KnowledgeGraphSettingsModel;
@@ -2747,6 +2838,16 @@ export type QueryEconomicDataRefreshPresetStatusArgs = {
 };
 
 
+export type QueryEntityIntelligenceCardArgs = {
+  input: EntityIntelligenceCardInput;
+};
+
+
+export type QueryEntityIntelligenceEvidenceArgs = {
+  input: EntityIntelligenceEvidenceInput;
+};
+
+
 export type QueryEntitySentimentSeriesArgs = {
   days?: InputMaybe<Scalars['Int']['input']>;
   entityName: Scalars['String']['input'];
@@ -2835,6 +2936,12 @@ export type QueryItemsArgs = {
   page?: InputMaybe<Scalars['Int']['input']>;
   rankingMode?: InputMaybe<ItemsRankingMode>;
   search?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryKnowledgeEntityByNameArgs = {
+  name: Scalars['String']['input'];
+  type?: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -3772,6 +3879,28 @@ export type TriggerEconomicDataRefreshPresetMutationVariables = Exact<{
 
 
 export type TriggerEconomicDataRefreshPresetMutation = { __typename?: 'Mutation', triggerEconomicDataRefreshPreset: boolean };
+
+export type EntityIntelligenceCardQueryVariables = Exact<{
+  input: EntityIntelligenceCardInput;
+}>;
+
+
+export type EntityIntelligenceCardQuery = { __typename?: 'Query', entityIntelligenceCard?: { __typename?: 'EntityIntelligenceCardModel', aliases: Array<string>, generatedAt: any, entity: { __typename?: 'KnowledgeGraphNodeModel', id: string, name: string, type: string, properties?: any | null }, metrics: { __typename?: 'EntityIntelligenceMetricsModel', relationshipCount: number, incomingEdgeCount: number, outgoingEdgeCount: number, mentionedArticleCount: number, recentEventCount: number, avgSentiment?: number | null, negativeRatio?: number | null, latestMentionAt?: any | null }, relationships: Array<{ __typename?: 'EntityIntelligenceRelationshipModel', direction: string, evidenceCount: number, latestEvidenceAt?: any | null, edge: { __typename?: 'KnowledgeGraphEdgeModel', id: string, from: string, to: string, type: string, weight: number, confidence: number, properties?: any | null }, neighbor: { __typename?: 'KnowledgeGraphNodeModel', id: string, name: string, type: string, properties?: any | null } }>, sentimentSeries: Array<{ __typename?: 'EntitySentimentSnapshotModel', entityName: string, entityType: string, bucketStart: any, totalDocs: number, negativeDocs: number, positiveDocs: number, neutralDocs: number, scoreSum: number, avgScore: number, negativeRatio: number, evidenceProcessedItemIds?: any | null }>, neighborhood: { __typename?: 'KnowledgeGraphModel', seed: { __typename?: 'KnowledgeGraphNodeModel', id: string, name: string, type: string, properties?: any | null }, nodes: Array<{ __typename?: 'KnowledgeGraphNodeModel', id: string, name: string, type: string, properties?: any | null }>, edges: Array<{ __typename?: 'KnowledgeGraphEdgeModel', id: string, from: string, to: string, type: string, weight: number, confidence: number, properties?: any | null }>, metadata: { __typename?: 'KnowledgeGraphMetadataModel', totalNodes: number, totalEdges: number, generatedAt: any } } } | null };
+
+export type EntityIntelligenceEvidenceQueryVariables = Exact<{
+  input: EntityIntelligenceEvidenceInput;
+}>;
+
+
+export type EntityIntelligenceEvidenceQuery = { __typename?: 'Query', entityIntelligenceEvidence?: { __typename?: 'EntityIntelligenceEvidenceModel', restricted: boolean, generatedAt: any, events: Array<{ __typename?: 'EntityIntelligenceEventModel', id: string, status: string, title?: string | null, summary?: string | null, primaryTopic?: string | null, primaryEntity?: string | null, startAt: any, lastAt: any, itemCount: number }>, articles: Array<{ __typename?: 'EntityIntelligenceEvidenceArticleModel', mention?: string | null, confidence?: number | null, linkedAt: any, article: { __typename?: 'EntityIntelligenceArticleModel', id: string, url: string, sourceLabel?: string | null, title?: string | null, summary?: string | null, language?: string | null, crawlAt: any } }> } | null };
+
+export type KnowledgeEntityByNameQueryVariables = Exact<{
+  name: Scalars['String']['input'];
+  type?: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type KnowledgeEntityByNameQuery = { __typename?: 'Query', knowledgeEntityByName?: { __typename?: 'KnowledgeGraphNodeModel', id: string, name: string, type: string, properties?: any | null } | null };
 
 export type GetEntityImpactGraphQueryVariables = Exact<{
   input?: InputMaybe<EntityImpactGraphInput>;
@@ -5845,6 +5974,234 @@ export function useTriggerEconomicDataRefreshPresetMutation(baseOptions?: Apollo
 export type TriggerEconomicDataRefreshPresetMutationHookResult = ReturnType<typeof useTriggerEconomicDataRefreshPresetMutation>;
 export type TriggerEconomicDataRefreshPresetMutationResult = Apollo.MutationResult<TriggerEconomicDataRefreshPresetMutation>;
 export type TriggerEconomicDataRefreshPresetMutationOptions = Apollo.BaseMutationOptions<TriggerEconomicDataRefreshPresetMutation, TriggerEconomicDataRefreshPresetMutationVariables>;
+export const EntityIntelligenceCardDocument = gql`
+    query EntityIntelligenceCard($input: EntityIntelligenceCardInput!) {
+  entityIntelligenceCard(input: $input) {
+    entity {
+      id
+      name
+      type
+      properties
+    }
+    aliases
+    metrics {
+      relationshipCount
+      incomingEdgeCount
+      outgoingEdgeCount
+      mentionedArticleCount
+      recentEventCount
+      avgSentiment
+      negativeRatio
+      latestMentionAt
+    }
+    relationships {
+      direction
+      evidenceCount
+      latestEvidenceAt
+      edge {
+        id
+        from
+        to
+        type
+        weight
+        confidence
+        properties
+      }
+      neighbor {
+        id
+        name
+        type
+        properties
+      }
+    }
+    sentimentSeries {
+      entityName
+      entityType
+      bucketStart
+      totalDocs
+      negativeDocs
+      positiveDocs
+      neutralDocs
+      scoreSum
+      avgScore
+      negativeRatio
+      evidenceProcessedItemIds
+    }
+    neighborhood {
+      seed {
+        id
+        name
+        type
+        properties
+      }
+      nodes {
+        id
+        name
+        type
+        properties
+      }
+      edges {
+        id
+        from
+        to
+        type
+        weight
+        confidence
+        properties
+      }
+      metadata {
+        totalNodes
+        totalEdges
+        generatedAt
+      }
+    }
+    generatedAt
+  }
+}
+    `;
+
+/**
+ * __useEntityIntelligenceCardQuery__
+ *
+ * To run a query within a React component, call `useEntityIntelligenceCardQuery` and pass it any options that fit your needs.
+ * When your component renders, `useEntityIntelligenceCardQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useEntityIntelligenceCardQuery({
+ *   variables: {
+ *      input: // value for 'input'
+ *   },
+ * });
+ */
+export function useEntityIntelligenceCardQuery(baseOptions: Apollo.QueryHookOptions<EntityIntelligenceCardQuery, EntityIntelligenceCardQueryVariables> & ({ variables: EntityIntelligenceCardQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<EntityIntelligenceCardQuery, EntityIntelligenceCardQueryVariables>(EntityIntelligenceCardDocument, options);
+      }
+export function useEntityIntelligenceCardLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<EntityIntelligenceCardQuery, EntityIntelligenceCardQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<EntityIntelligenceCardQuery, EntityIntelligenceCardQueryVariables>(EntityIntelligenceCardDocument, options);
+        }
+export function useEntityIntelligenceCardSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<EntityIntelligenceCardQuery, EntityIntelligenceCardQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<EntityIntelligenceCardQuery, EntityIntelligenceCardQueryVariables>(EntityIntelligenceCardDocument, options);
+        }
+export type EntityIntelligenceCardQueryHookResult = ReturnType<typeof useEntityIntelligenceCardQuery>;
+export type EntityIntelligenceCardLazyQueryHookResult = ReturnType<typeof useEntityIntelligenceCardLazyQuery>;
+export type EntityIntelligenceCardSuspenseQueryHookResult = ReturnType<typeof useEntityIntelligenceCardSuspenseQuery>;
+export type EntityIntelligenceCardQueryResult = Apollo.QueryResult<EntityIntelligenceCardQuery, EntityIntelligenceCardQueryVariables>;
+export const EntityIntelligenceEvidenceDocument = gql`
+    query EntityIntelligenceEvidence($input: EntityIntelligenceEvidenceInput!) {
+  entityIntelligenceEvidence(input: $input) {
+    restricted
+    events {
+      id
+      status
+      title
+      summary
+      primaryTopic
+      primaryEntity
+      startAt
+      lastAt
+      itemCount
+    }
+    articles {
+      mention
+      confidence
+      linkedAt
+      article {
+        id
+        url
+        sourceLabel
+        title
+        summary
+        language
+        crawlAt
+      }
+    }
+    generatedAt
+  }
+}
+    `;
+
+/**
+ * __useEntityIntelligenceEvidenceQuery__
+ *
+ * To run a query within a React component, call `useEntityIntelligenceEvidenceQuery` and pass it any options that fit your needs.
+ * When your component renders, `useEntityIntelligenceEvidenceQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useEntityIntelligenceEvidenceQuery({
+ *   variables: {
+ *      input: // value for 'input'
+ *   },
+ * });
+ */
+export function useEntityIntelligenceEvidenceQuery(baseOptions: Apollo.QueryHookOptions<EntityIntelligenceEvidenceQuery, EntityIntelligenceEvidenceQueryVariables> & ({ variables: EntityIntelligenceEvidenceQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<EntityIntelligenceEvidenceQuery, EntityIntelligenceEvidenceQueryVariables>(EntityIntelligenceEvidenceDocument, options);
+      }
+export function useEntityIntelligenceEvidenceLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<EntityIntelligenceEvidenceQuery, EntityIntelligenceEvidenceQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<EntityIntelligenceEvidenceQuery, EntityIntelligenceEvidenceQueryVariables>(EntityIntelligenceEvidenceDocument, options);
+        }
+export function useEntityIntelligenceEvidenceSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<EntityIntelligenceEvidenceQuery, EntityIntelligenceEvidenceQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<EntityIntelligenceEvidenceQuery, EntityIntelligenceEvidenceQueryVariables>(EntityIntelligenceEvidenceDocument, options);
+        }
+export type EntityIntelligenceEvidenceQueryHookResult = ReturnType<typeof useEntityIntelligenceEvidenceQuery>;
+export type EntityIntelligenceEvidenceLazyQueryHookResult = ReturnType<typeof useEntityIntelligenceEvidenceLazyQuery>;
+export type EntityIntelligenceEvidenceSuspenseQueryHookResult = ReturnType<typeof useEntityIntelligenceEvidenceSuspenseQuery>;
+export type EntityIntelligenceEvidenceQueryResult = Apollo.QueryResult<EntityIntelligenceEvidenceQuery, EntityIntelligenceEvidenceQueryVariables>;
+export const KnowledgeEntityByNameDocument = gql`
+    query KnowledgeEntityByName($name: String!, $type: String) {
+  knowledgeEntityByName(name: $name, type: $type) {
+    id
+    name
+    type
+    properties
+  }
+}
+    `;
+
+/**
+ * __useKnowledgeEntityByNameQuery__
+ *
+ * To run a query within a React component, call `useKnowledgeEntityByNameQuery` and pass it any options that fit your needs.
+ * When your component renders, `useKnowledgeEntityByNameQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useKnowledgeEntityByNameQuery({
+ *   variables: {
+ *      name: // value for 'name'
+ *      type: // value for 'type'
+ *   },
+ * });
+ */
+export function useKnowledgeEntityByNameQuery(baseOptions: Apollo.QueryHookOptions<KnowledgeEntityByNameQuery, KnowledgeEntityByNameQueryVariables> & ({ variables: KnowledgeEntityByNameQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<KnowledgeEntityByNameQuery, KnowledgeEntityByNameQueryVariables>(KnowledgeEntityByNameDocument, options);
+      }
+export function useKnowledgeEntityByNameLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<KnowledgeEntityByNameQuery, KnowledgeEntityByNameQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<KnowledgeEntityByNameQuery, KnowledgeEntityByNameQueryVariables>(KnowledgeEntityByNameDocument, options);
+        }
+export function useKnowledgeEntityByNameSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<KnowledgeEntityByNameQuery, KnowledgeEntityByNameQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<KnowledgeEntityByNameQuery, KnowledgeEntityByNameQueryVariables>(KnowledgeEntityByNameDocument, options);
+        }
+export type KnowledgeEntityByNameQueryHookResult = ReturnType<typeof useKnowledgeEntityByNameQuery>;
+export type KnowledgeEntityByNameLazyQueryHookResult = ReturnType<typeof useKnowledgeEntityByNameLazyQuery>;
+export type KnowledgeEntityByNameSuspenseQueryHookResult = ReturnType<typeof useKnowledgeEntityByNameSuspenseQuery>;
+export type KnowledgeEntityByNameQueryResult = Apollo.QueryResult<KnowledgeEntityByNameQuery, KnowledgeEntityByNameQueryVariables>;
 export const GetEntityImpactGraphDocument = gql`
     query GetEntityImpactGraph($input: EntityImpactGraphInput) {
   getEntityImpactGraph(input: $input) {
