@@ -4223,6 +4223,23 @@
       "sections": {
         "timelineClassification": "Timeline classification & drift"
       },
+      "clusteringQueue": {
+        "notice": {
+          "title": "Automatic recovery path",
+          "ready": "Automatic LLM recovery is ready. Pending groups are retried by the scheduler; manual backfill queues a group immediately.",
+          "notReady": "Automatic LLM recovery is blocked. Configure an active LLM gateway completion profile before pending groups can be retried.",
+          "automation": "Scheduler: every {{interval}}, retry backoff {{backoff}}, up to {{batchSize}} groups per tick."
+        },
+        "automation": {
+          "minutes": "{{count}} min",
+          "attempts": "Attempts: {{count}}",
+          "processing": "Recovery job running",
+          "blocked": "Auto retry blocked: LLM not ready",
+          "nextTick": "Auto retry on next scheduler tick",
+          "eligible": "Auto retry eligible now",
+          "after": "Auto retry after {{time}}"
+        }
+      },
       "presets": {
         "conservative": "Conservative",
         "balanced": "Balanced",

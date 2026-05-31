@@ -96,6 +96,13 @@ export class NewsEventClusteringRecoveryService {
         model: llmModel,
         apiSurface: llmConfig?.apiSurface ?? null,
       },
+      recoveryAutomation: {
+        enabled: true,
+        intervalSeconds: 5 * 60,
+        retryAfterSeconds: Math.floor(AUTO_BACKFILL_RETRY_AFTER_MS / 1000),
+        batchSize: AUTO_BACKFILL_BATCH_SIZE,
+        actorId: AUTO_BACKFILL_ACTOR_ID,
+      },
     };
   }
 

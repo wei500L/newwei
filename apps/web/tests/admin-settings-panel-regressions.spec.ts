@@ -52,4 +52,13 @@ describe('admin settings panel regressions', () => {
     expect(source).toContain('loading={quickReviewingId === row.id}');
     expect(source).toContain('name="knowledge-graph-review-form"');
   });
+
+  it('surfaces automatic recovery state in the news events clustering queue', () => {
+    const source = read('components/settings/news-events-settings-panel.tsx');
+
+    expect(source).toContain('recoveryAutomation');
+    expect(source).toContain('getAutoRetryFeedback');
+    expect(source).toContain('Auto retry on next scheduler tick');
+    expect(source).toContain('Scheduler: every {{interval}}, retry backoff {{backoff}}, up to {{batchSize}} groups per tick.');
+  });
 });

@@ -119,6 +119,13 @@ interface ClusteringReadinessResponse {
     model: string | null;
     apiSurface: "chat_completions" | "responses" | null;
   };
+  recoveryAutomation?: {
+    enabled: boolean;
+    intervalSeconds: number;
+    retryAfterSeconds: number;
+    batchSize: number;
+    actorId: string;
+  };
 }
 
 interface ClusteringFailureOverview {
@@ -446,6 +453,81 @@ export function NewsEventsSettingsPanel() {
     clusteringReadiness?.modelService.ready,
   );
   const llmBackfillReady = Boolean(clusteringReadiness?.llmBackfill.ready);
+  const recoveryAutomation = clusteringReadiness?.recoveryAutomation;
+  const automationEnabled = Boolean(recoveryAutomation?.enabled);
+
+  const formatSecondsAsMinutes = useCallback(
+    (seconds: number | null | undefined) => {
+      const safeSeconds = Math.max(0, Number(seconds ?? 0));
+      const minutes = Math.max(1, Math.round(safeSeconds / 60));
+      return t("settings.newsEvents.clusteringQueue.automation.minutes", {
+        defaultValue: "{{count}} min",
+        count: minutes,
+      });
+    },
+    [t],
+  );
+
+  const getAutoRetryFeedback = useCallback(
+    (row: ClusteringFailureRow) => {
+      if (!automationEnabled) {
+        return null;
+      }
+      if (row.status === "processing") {
+        return {
+          color: "processing",
+          text: t(
+            "settings.newsEvents.clusteringQueue.automation.processing",
+            {
+              defaultValue: "Recovery job running",
+            },
+          ),
+        };
+      }
+      if (row.status !== "pending") {
+        return null;
+      }
+      if (!llmBackfillReady) {
+        return {
+          color: "warning",
+          text: t("settings.newsEvents.clusteringQueue.automation.blocked", {
+            defaultValue: "Auto retry blocked: LLM not ready",
+          }),
+        };
+      }
+      if (!row.lastAttemptAt) {
+        return {
+          color: "blue",
+          text: t("settings.newsEvents.clusteringQueue.automation.nextTick", {
+            defaultValue: "Auto retry on next scheduler tick",
+          }),
+        };
+      }
+
+      const retryAfterMs =
+        Math.max(0, recoveryAutomation?.retryAfterSeconds ?? 0) * 1000;
+      const nextRetryAt = new Date(
+        new Date(row.lastAttemptAt).getTime() + retryAfterMs,
+      );
+      if (nextRetryAt.getTime() <= Date.now()) {
+        return {
+          color: "blue",
+          text: t("settings.newsEvents.clusteringQueue.automation.eligible", {
+            defaultValue: "Auto retry eligible now",
+          }),
+        };
+      }
+
+      return {
+        color: "default",
+        text: t("settings.newsEvents.clusteringQueue.automation.after", {
+          defaultValue: "Auto retry after {{time}}",
+          time: nextRetryAt.toLocaleString(),
+        }),
+      };
+    },
+    [automationEnabled, llmBackfillReady, recoveryAutomation, t],
+  );
 
   const handleLlmBackfill = useCallback(
     async (groupId: string) => {
@@ -559,25 +641,39 @@ export function NewsEventsSettingsPanel() {
           defaultValue: "Recovery",
         }),
         key: "recovery",
-        render: (_: unknown, row: ClusteringFailureRow) => (
-          <Space direction="vertical" size={2}>
-            <Typography.Text type="secondary">
-              {row.progressTotalCount > 0
-                ? `${row.progressProcessedCount}/${row.progressTotalCount}`
-                : "-"}
-            </Typography.Text>
-            {row.activeJobId ? (
-              <Typography.Text type="secondary" ellipsis>
-                {row.activeJobId}
+        render: (_: unknown, row: ClusteringFailureRow) => {
+          const autoRetryFeedback = getAutoRetryFeedback(row);
+          return (
+            <Space direction="vertical" size={4}>
+              <Typography.Text type="secondary">
+                {row.progressTotalCount > 0
+                  ? `${row.progressProcessedCount}/${row.progressTotalCount}`
+                  : "-"}
               </Typography.Text>
-            ) : null}
-            {row.lastError ? (
-              <Typography.Text type="danger" ellipsis>
-                {row.lastError}
+              <Typography.Text type="secondary">
+                {t("settings.newsEvents.clusteringQueue.automation.attempts", {
+                  defaultValue: "Attempts: {{count}}",
+                  count: row.attemptCount,
+                })}
               </Typography.Text>
-            ) : null}
-          </Space>
-        ),
+              {autoRetryFeedback ? (
+                <Tag color={autoRetryFeedback.color}>
+                  {autoRetryFeedback.text}
+                </Tag>
+              ) : null}
+              {row.activeJobId ? (
+                <Typography.Text type="secondary" ellipsis>
+                  {row.activeJobId}
+                </Typography.Text>
+              ) : null}
+              {row.lastError ? (
+                <Typography.Text type="danger" ellipsis>
+                  {row.lastError}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          );
+        },
       },
       {
         title: t("settings.newsEvents.clusteringQueue.columns.samples", {
@@ -629,7 +725,14 @@ export function NewsEventsSettingsPanel() {
         ),
       },
     ],
-    [actionGroupId, handleIgnoreFailure, handleLlmBackfill, llmBackfillReady, t],
+    [
+      actionGroupId,
+      getAutoRetryFeedback,
+      handleIgnoreFailure,
+      handleLlmBackfill,
+      llmBackfillReady,
+      t,
+    ],
   );
 
   if (loading && !data?.newsEventSettings) {
@@ -701,7 +804,7 @@ export function NewsEventsSettingsPanel() {
           name="clusteringMode"
           extra={t("settings.newsEvents.hints.clusteringMode", {
             defaultValue:
-              "Use vector assignment only, or run BERTopic first and queue hard failures for manual backfill.",
+              "Use vector assignment only, or run BERTopic first and queue hard failures for automatic LLM recovery.",
           })}
           rules={[
             {
@@ -1542,7 +1645,7 @@ export function NewsEventsSettingsPanel() {
             type={llmBackfillReady ? "info" : "warning"}
             showIcon
             message={t("settings.newsEvents.clusteringQueue.notice.title", {
-              defaultValue: "Manual recovery path",
+              defaultValue: "Automatic recovery path",
             })}
             description={
               <Space direction="vertical" size={4}>
@@ -1556,13 +1659,31 @@ export function NewsEventsSettingsPanel() {
                   {llmBackfillReady
                     ? t("settings.newsEvents.clusteringQueue.notice.ready", {
                         defaultValue:
-                          "LLM recovery is ready. Pending groups can be queued for manual backfill.",
+                          "Automatic LLM recovery is ready. Pending groups are retried by the scheduler; manual backfill queues a group immediately.",
                       })
                     : t("settings.newsEvents.clusteringQueue.notice.notReady", {
                         defaultValue:
-                          "LLM recovery is not ready. Configure an active LLM gateway completion profile before using manual backfill.",
+                          "Automatic LLM recovery is blocked. Configure an active LLM gateway completion profile before pending groups can be retried.",
                       })}
                 </Typography.Text>
+                {automationEnabled && recoveryAutomation ? (
+                  <Typography.Text type="secondary">
+                    {t(
+                      "settings.newsEvents.clusteringQueue.notice.automation",
+                      {
+                        defaultValue:
+                          "Scheduler: every {{interval}}, retry backoff {{backoff}}, up to {{batchSize}} groups per tick.",
+                        interval: formatSecondsAsMinutes(
+                          recoveryAutomation.intervalSeconds,
+                        ),
+                        backoff: formatSecondsAsMinutes(
+                          recoveryAutomation.retryAfterSeconds,
+                        ),
+                        batchSize: recoveryAutomation.batchSize,
+                      },
+                    )}
+                  </Typography.Text>
+                ) : null}
                 <Link
                   href={buildAdminSettingsHref({
                     page: "ai",

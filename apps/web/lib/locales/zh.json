@@ -4223,6 +4223,23 @@
       "sections": {
         "timelineClassification": "时间线分类与主题漂移"
       },
+      "clusteringQueue": {
+        "notice": {
+          "title": "自动恢复路径",
+          "ready": "LLM 自动恢复已就绪。待处理分组会由调度器自动重试；手动回填会立即将该分组入队。",
+          "notReady": "LLM 自动恢复被阻塞。请先配置可用的 LLM 网关补全配置，待处理分组才能重试。",
+          "automation": "调度器：每 {{interval}} 扫描一次，重试退避 {{backoff}}，每次最多处理 {{batchSize}} 个分组。"
+        },
+        "automation": {
+          "minutes": "{{count}} 分钟",
+          "attempts": "尝试次数：{{count}}",
+          "processing": "恢复任务运行中",
+          "blocked": "自动重试被阻塞：LLM 未就绪",
+          "nextTick": "下次调度自动重试",
+          "eligible": "已满足自动重试条件",
+          "after": "{{time}} 后自动重试"
+        }
+      },
       "presets": {
         "conservative": "保守",
         "balanced": "平衡",
