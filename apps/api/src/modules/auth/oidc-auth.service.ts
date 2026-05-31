@@ -78,6 +78,7 @@ export class OidcAuthService {
       hasClientSecret: Boolean(config?.clientSecret),
       scopes: this.readScopes(config?.scopes ?? null),
       buttonLabel: config?.buttonLabel ?? "",
+      requireEmailVerified: config?.requireEmailVerified ?? true,
     };
   }
 
@@ -91,6 +92,7 @@ export class OidcAuthService {
     clientSecret?: string;
     scopes?: string[];
     buttonLabel?: string;
+    requireEmailVerified?: boolean;
   }) {
     const existing = await this.prisma.orgOidcConfig.findUnique({
       where: { orgId: params.orgId },
@@ -118,6 +120,7 @@ export class OidcAuthService {
             ? (nextScopes as unknown as Prisma.InputJsonValue)
             : Prisma.DbNull,
         buttonLabel: params.buttonLabel?.trim() || null,
+        requireEmailVerified: params.requireEmailVerified ?? true,
       },
       create: {
         orgId: params.orgId,
@@ -133,6 +136,7 @@ export class OidcAuthService {
             ? (nextScopes as unknown as Prisma.InputJsonValue)
             : Prisma.DbNull,
         buttonLabel: params.buttonLabel?.trim() || null,
+        requireEmailVerified: params.requireEmailVerified ?? true,
       },
     });
 
@@ -144,6 +148,7 @@ export class OidcAuthService {
       hasClientSecret: Boolean(config.clientSecret),
       scopes: this.readScopes(config.scopes),
       buttonLabel: config.buttonLabel ?? "",
+      requireEmailVerified: config.requireEmailVerified,
     };
   }
 
@@ -268,6 +273,7 @@ export class OidcAuthService {
       discovery,
       clientId: org.oidcConfig.clientId,
       nonce: cachedState.nonce,
+      requireEmailVerified: org.oidcConfig.requireEmailVerified ?? true,
     });
 
     const user = await this.prisma.user.findUnique({
@@ -415,6 +421,7 @@ export class OidcAuthService {
     discovery: OidcDiscoveryDocument;
     clientId: string;
     nonce: string;
+    requireEmailVerified: boolean;
   }) {
     try {
       const jwksUrl = await this.assertAllowedOidcUrl(
@@ -443,7 +450,12 @@ export class OidcAuthService {
         },
       );
 
-      this.assertValidVerifiedClaims(payload, params.clientId, params.nonce);
+      this.assertValidVerifiedClaims(
+        payload,
+        params.clientId,
+        params.nonce,
+        params.requireEmailVerified,
+      );
       return payload;
     } catch {
       throw new UnauthorizedException("OIDC identity token validation failed");
@@ -454,12 +466,16 @@ export class OidcAuthService {
     claims: OidcIdTokenClaims,
     clientId: string,
     nonce: string,
+    requireEmailVerified: boolean,
   ): asserts claims is OidcIdTokenClaims & { email: string; nonce: string } {
     if (
       claims.nonce !== nonce ||
       typeof claims.email !== "string" ||
       claims.email.trim().length === 0
     ) {
+      throw new UnauthorizedException("OIDC identity token validation failed");
+    }
+    if (requireEmailVerified && claims.email_verified !== true) {
       throw new UnauthorizedException("OIDC identity token validation failed");
     }
 

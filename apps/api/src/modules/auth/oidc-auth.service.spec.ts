@@ -105,6 +105,68 @@ describe("OidcAuthService", () => {
     });
   });
 
+  it("rejects an id_token with an unverified email by default", async () => {
+    const fixture = await createSigningFixture();
+    const idToken = await signIdToken(fixture.privateKey, {
+      emailVerified: false,
+    });
+    const harness = createServiceHarness();
+    installFetchMock({
+      idToken,
+      jwks: { keys: [fixture.publicJwk] },
+    });
+
+    await expect(
+      harness.service.handleCallback({ state: STATE, code: CODE }),
+    ).rejects.toThrow("OIDC identity token validation failed");
+
+    expect(harness.authService.beginTrustedLogin).not.toHaveBeenCalled();
+  });
+
+  it("rejects an id_token missing email_verified by default", async () => {
+    const fixture = await createSigningFixture();
+    const idToken = await signIdToken(fixture.privateKey, {
+      emailVerified: "omit",
+    });
+    const harness = createServiceHarness();
+    installFetchMock({
+      idToken,
+      jwks: { keys: [fixture.publicJwk] },
+    });
+
+    await expect(
+      harness.service.handleCallback({ state: STATE, code: CODE }),
+    ).rejects.toThrow("OIDC identity token validation failed");
+
+    expect(harness.authService.beginTrustedLogin).not.toHaveBeenCalled();
+  });
+
+  it("accepts an unverified email claim when the org allows it", async () => {
+    const fixture = await createSigningFixture();
+    const idToken = await signIdToken(fixture.privateKey, {
+      emailVerified: false,
+    });
+    const harness = createServiceHarness({
+      oidcConfig: { requireEmailVerified: false },
+    });
+    installFetchMock({
+      idToken,
+      jwks: { keys: [fixture.publicJwk] },
+    });
+
+    await expect(
+      harness.service.handleCallback({ state: STATE, code: CODE }),
+    ).resolves.toEqual({ handoffToken: "handoff-1" });
+
+    expect(harness.authService.beginTrustedLogin).toHaveBeenCalledWith(
+      USER_ID,
+      ORG_ID,
+      undefined,
+      undefined,
+      "login_with_oidc",
+    );
+  });
+
   it("rejects an id_token signed by a key that is not in the provider JWKS", async () => {
     const trustedFixture = await createSigningFixture();
     const attackerFixture = await createSigningFixture();
@@ -247,7 +309,11 @@ describe("OidcAuthService", () => {
   });
 });
 
-function createServiceHarness() {
+function createServiceHarness(options?: {
+  oidcConfig?: Partial<{
+    requireEmailVerified: boolean;
+  }>;
+}) {
   const prisma = {
     org: {
       findUnique: jest.fn().mockResolvedValue({
@@ -260,6 +326,8 @@ function createServiceHarness() {
           clientSecret: { ciphertext: "secret" },
           scopes: ["openid", "email", "profile"],
           buttonLabel: null,
+          requireEmailVerified:
+            options?.oidcConfig?.requireEmailVerified ?? true,
         },
       }),
     },
@@ -335,14 +403,19 @@ async function signIdToken(
   options?: {
     audience?: string | string[];
     expiresAt?: number;
+    emailVerified?: boolean | "omit";
     payload?: Record<string, unknown>;
   },
 ) {
   const now = Math.floor(Date.now() / 1000);
+  const emailVerifiedClaim =
+    options?.emailVerified === "omit"
+      ? {}
+      : { email_verified: options?.emailVerified ?? true };
   return new SignJWT({
     nonce: NONCE,
     email: USER_EMAIL,
-    email_verified: true,
+    ...emailVerifiedClaim,
     ...(options?.payload ?? {}),
   })
     .setProtectedHeader({ alg: "RS256", kid: KEY_ID })

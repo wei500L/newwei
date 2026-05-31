@@ -52,4 +52,8 @@ export class OidcConfigDto {
   @IsOptional()
   @IsString()
   buttonLabel?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  requireEmailVerified?: boolean;
 }

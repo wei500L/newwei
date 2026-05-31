@@ -305,6 +305,7 @@ export class AuthController {
       clientSecret: body.clientSecret,
       scopes: body.scopes,
       buttonLabel: body.buttonLabel,
+      requireEmailVerified: body.requireEmailVerified,
     });
   }
 

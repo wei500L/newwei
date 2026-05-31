@@ -30,6 +30,7 @@ interface OidcConfigResponse {
   hasClientSecret: boolean;
   scopes: string[];
   buttonLabel: string;
+  requireEmailVerified: boolean;
 }
 
 interface OidcConfigFormValues {
@@ -40,6 +41,7 @@ interface OidcConfigFormValues {
   clientSecret?: string;
   scopes?: string[];
   buttonLabel?: string;
+  requireEmailVerified?: boolean;
 }
 
 const EMPTY_SETTINGS: SystemSecuritySettingsResponse = {
@@ -64,6 +66,7 @@ export function SystemSecuritySettingsPanel() {
     hasClientSecret: false,
     scopes: ["openid", "email", "profile"],
     buttonLabel: "",
+    requireEmailVerified: true,
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -96,6 +99,7 @@ export function SystemSecuritySettingsPanel() {
         clientId: oidcResponse.data.clientId,
         scopes: oidcResponse.data.scopes,
         buttonLabel: oidcResponse.data.buttonLabel || undefined,
+        requireEmailVerified: oidcResponse.data.requireEmailVerified ?? true,
       });
     } catch (error) {
       captureClientError("Failed to load system security settings", error);
@@ -177,6 +181,7 @@ export function SystemSecuritySettingsPanel() {
         clientSecret: values.clientSecret,
         scopes: values.scopes ?? [],
         buttonLabel: values.buttonLabel,
+        requireEmailVerified: values.requireEmailVerified ?? true,
       });
       setOidcConfig(response.data);
       oidcForm.setFieldsValue({
@@ -338,6 +343,30 @@ export function SystemSecuritySettingsPanel() {
               tokenSeparators={[",", " "]}
               placeholder="openid email profile"
             />
+          </Form.Item>
+          <Form.Item
+            label="Require verified email"
+            name="requireEmailVerified"
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(previous, current) =>
+              previous.requireEmailVerified !== current.requireEmailVerified
+            }
+          >
+            {({ getFieldValue }) =>
+              getFieldValue("requireEmailVerified") === false ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: "1rem" }}
+                  message="Unverified IdP email claims will be accepted for this organization."
+                />
+              ) : null
+            }
           </Form.Item>
           <Form.Item label="Button label" name="buttonLabel">
             <Input />

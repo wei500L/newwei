@@ -1892,18 +1892,19 @@ model UserRecoveryCode {
 }
 
 model OrgOidcConfig {
-  id           String   @id @default(cuid())
-  org          Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  orgId        String   @unique
-  enabled      Boolean  @default(false)
-  issuerUrl    String
-  discoveryUrl String?
-  clientId     String
-  clientSecret Json?
-  scopes       Json?
-  buttonLabel  String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  org                  Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId                String   @unique
+  enabled              Boolean  @default(false)
+  issuerUrl            String
+  discoveryUrl         String?
+  clientId             String
+  clientSecret         Json?
+  scopes               Json?
+  buttonLabel          String?
+  requireEmailVerified Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@index([enabled, updatedAt])
 }
