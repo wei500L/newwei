@@ -1,7 +1,7 @@
 'use client';
 
-import React, { isValidElement, type ReactNode, useMemo } from 'react';
-import ReactMarkdown from 'react-markdown';
+import React, { isValidElement, memo, type ReactNode, useMemo } from 'react';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { normalizeStreamingMarkdown } from '@/lib/markdown-streaming';
@@ -91,6 +91,8 @@ const CHAT_CLASSES: MarkdownVariantClasses = {
   hr: 'my-5 border-slate-200 dark:border-slate-700',
 };
 
+const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
+
 function resolveVariantClasses(variant: MarkdownViewerVariant): MarkdownVariantClasses {
   return variant === 'chat' ? CHAT_CLASSES : DEFAULT_CLASSES;
 }
@@ -116,7 +118,7 @@ function resolveLanguage(className?: string): string | null {
   return match?.[1]?.toLowerCase() ?? null;
 }
 
-export function MarkdownViewer({
+export const MarkdownViewer = memo(function MarkdownViewer({
   markdown,
   className,
   enableMermaid = false,
@@ -128,80 +130,84 @@ export function MarkdownViewer({
     [markdown, isStreaming],
   );
   const classes = resolveVariantClasses(variant);
+  const markdownComponents = useMemo<Components>(
+    () => ({
+      h1: ({ children }) => <h1 className={classes.h1}>{children}</h1>,
+      h2: ({ children }) => <h2 className={classes.h2}>{children}</h2>,
+      h3: ({ children }) => <h3 className={classes.h3}>{children}</h3>,
+      h4: ({ children }) => <h4 className={classes.h4}>{children}</h4>,
+      p: ({ children }) => <p className={classes.paragraph}>{children}</p>,
+      ul: ({ children }) => <ul className={classes.ul}>{children}</ul>,
+      ol: ({ children }) => <ol className={classes.ol}>{children}</ol>,
+      li: ({ children }) => <li className={classes.li}>{children}</li>,
+      blockquote: ({ children }) => <blockquote className={classes.blockquote}>{children}</blockquote>,
+      a: ({ href, children }) => {
+        const safe = safeHttpUrl(href);
+        if (!safe) {
+          return <span className='text-inherit'>{children}</span>;
+        }
+
+        return (
+          <a href={safe} target='_blank' rel='noreferrer' className={classes.link}>
+            {children}
+          </a>
+        );
+      },
+      pre: ({ children }) => {
+        const childNodes = Array.isArray(children) ? children : [children];
+        const isMermaidBlock = childNodes.some((node) => {
+          if (!isValidElement<{ className?: string }>(node)) {
+            return false;
+          }
+          if (typeof node.props.className !== 'string') {
+            return false;
+          }
+          return (
+            node.props.className.includes('markdown-mermaid') ||
+            node.props.className.includes('language-mermaid')
+          );
+        });
+
+        if (isMermaidBlock) {
+          return <div className={classes.mermaidWrapper}>{children}</div>;
+        }
+
+        return <pre className={classes.pre}>{children}</pre>;
+      },
+      code: ({ className: codeClassName, children }) => {
+        const language = resolveLanguage(codeClassName);
+        const isBlock = Boolean(language);
+
+        if (isBlock && language === 'mermaid' && enableMermaid && !isStreaming) {
+          return <MarkdownMermaid className='markdown-mermaid' chart={extractText(children)} />;
+        }
+
+        if (isBlock) {
+          return <code className={classes.blockCode}>{children}</code>;
+        }
+
+        return <code className={classes.inlineCode}>{children}</code>;
+      },
+      table: ({ children }) => (
+        <div className={classes.tableWrap}>
+          <table className={classes.table}>{children}</table>
+        </div>
+      ),
+      th: ({ children }) => <th className={classes.th}>{children}</th>,
+      td: ({ children }) => <td className={classes.td}>{children}</td>,
+      hr: () => <hr className={classes.hr} />,
+    }),
+    [classes, enableMermaid, isStreaming],
+  );
 
   return (
     <div className={`${classes.container} ${className ?? ''}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          h1: ({ children }) => <h1 className={classes.h1}>{children}</h1>,
-          h2: ({ children }) => <h2 className={classes.h2}>{children}</h2>,
-          h3: ({ children }) => <h3 className={classes.h3}>{children}</h3>,
-          h4: ({ children }) => <h4 className={classes.h4}>{children}</h4>,
-          p: ({ children }) => <p className={classes.paragraph}>{children}</p>,
-          ul: ({ children }) => <ul className={classes.ul}>{children}</ul>,
-          ol: ({ children }) => <ol className={classes.ol}>{children}</ol>,
-          li: ({ children }) => <li className={classes.li}>{children}</li>,
-          blockquote: ({ children }) => <blockquote className={classes.blockquote}>{children}</blockquote>,
-          a: ({ href, children }) => {
-            const safe = safeHttpUrl(href);
-            if (!safe) {
-              return <span className='text-inherit'>{children}</span>;
-            }
-
-            return (
-              <a href={safe} target='_blank' rel='noreferrer' className={classes.link}>
-                {children}
-              </a>
-            );
-          },
-          pre: ({ children }) => {
-            const childNodes = Array.isArray(children) ? children : [children];
-            const isMermaidBlock = childNodes.some((node) => {
-              if (!isValidElement<{ className?: string }>(node)) {
-                return false;
-              }
-              if (typeof node.props.className !== 'string') {
-                return false;
-              }
-              return (
-                node.props.className.includes('markdown-mermaid') ||
-                node.props.className.includes('language-mermaid')
-              );
-            });
-
-            if (isMermaidBlock) {
-              return <div className={classes.mermaidWrapper}>{children}</div>;
-            }
-
-            return <pre className={classes.pre}>{children}</pre>;
-          },
-          code: ({ className: codeClassName, children }) => {
-            const language = resolveLanguage(codeClassName);
-            const isBlock = Boolean(language);
-
-            if (isBlock && language === 'mermaid' && enableMermaid && !isStreaming) {
-              return <MarkdownMermaid className='markdown-mermaid' chart={extractText(children)} />;
-            }
-
-            if (isBlock) {
-              return <code className={classes.blockCode}>{children}</code>;
-            }
-
-            return <code className={classes.inlineCode}>{children}</code>;
-          },
-          table: ({ children }) => (
-            <div className={classes.tableWrap}>
-              <table className={classes.table}>{children}</table>
-            </div>
-          ),
-          th: ({ children }) => <th className={classes.th}>{children}</th>,
-          td: ({ children }) => <td className={classes.td}>{children}</td>,
-          hr: () => <hr className={classes.hr} />,
-        }}
+        remarkPlugins={MARKDOWN_REMARK_PLUGINS}
+        components={markdownComponents}
       >
         {normalizedMarkdown}
       </ReactMarkdown>
     </div>
   );
-}
+});
