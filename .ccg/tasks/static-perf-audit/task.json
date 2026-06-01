@@ -1,0 +1,15 @@
+{
+  "id": "static-perf-audit",
+  "title": "纯静态代码分析排查项目性能问题",
+  "status": "completed",
+  "strategy": "review-audit",
+  "currentPhase": "3-done",
+  "nextAction": "审计完成，报告已交付。用户选择暂不修复——如需修复某条发现，随时切 direct-fix。",
+  "gate": "报告已分级输出 ✓ (6 Critical / 18 Warning / 11 Info)",
+  "branch": "main",
+  "scope": "static-perf-audit",
+  "mode": "claude-subagents",
+  "findings": { "critical": 6, "warning": 18, "info": 11 },
+  "resolution": "report-only (user deferred fixes)",
+  "createdAt": "2026-06-01T15:01:51Z"
+}
