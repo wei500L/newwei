@@ -22,6 +22,7 @@ import {
   Progress,
   Row,
   Select,
+  Skeleton,
   Space,
   Switch,
   Table,
@@ -48,7 +49,6 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
 import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
-import { WarMap } from "@/app/(app)/dashboard/charts/war-map";
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { createApiClient } from "@/lib/api-client";
@@ -140,6 +140,23 @@ const ResponsiveGridLayout = dynamic(
     }),
   {
     ssr: false,
+  },
+);
+
+function SituationMonitorWarMapSkeleton() {
+  return (
+    <div className="flex h-full min-h-[320px] w-full items-center justify-center px-4 py-6">
+      <Skeleton active paragraph={{ rows: 6 }} className="w-full" />
+    </div>
+  );
+}
+
+const WarMap = dynamic(
+  () =>
+    import("@/app/(app)/dashboard/charts/war-map").then((mod) => mod.WarMap),
+  {
+    ssr: false,
+    loading: () => <SituationMonitorWarMapSkeleton />,
   },
 );
 

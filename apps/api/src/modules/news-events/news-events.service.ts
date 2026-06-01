@@ -89,6 +89,24 @@ interface ProcessedItemCategoryClassification {
   confidence: number | null;
 }
 
+type CategoryGateDecision =
+  | "accepted"
+  | "penalized"
+  | "reject"
+  | "skipped_disabled"
+  | "skipped_no_signal_category"
+  | "skipped_low_signal_confidence"
+  | "skipped_no_event_category";
+
+interface CategoryGateTaskLog {
+  queue: "news_events";
+  jobId: string;
+  orgId: string;
+  stage: "category_gate";
+  status: "completed";
+  data: Record<string, unknown>;
+}
+
 @Injectable()
 export class NewsEventsService {
   private readonly eventCategoryDistributionCache = new Map<
@@ -616,12 +634,28 @@ export class NewsEventsService {
     const primaryTopic = this.pickPrimaryTopic(signal.topics);
     const primaryEntity = this.pickPrimaryEntity(signal.entities);
 
-    const assignment = await this.pickEventForSignal(orgId, signal, settings, {
-      timestamp,
-      language,
-      primaryTopic,
-      primaryEntity,
-    });
+    const categoryGateLogs: CategoryGateTaskLog[] = [];
+    let assignment!: {
+      eventId?: string;
+      similarity?: number | null;
+      method: NewsEventAssignmentMethod;
+    };
+    try {
+      assignment = await this.pickEventForSignal(
+        orgId,
+        signal,
+        settings,
+        {
+          timestamp,
+          language,
+          primaryTopic,
+          primaryEntity,
+        },
+        categoryGateLogs,
+      );
+    } finally {
+      await this.flushCategoryGateDecisionLogs(categoryGateLogs);
+    }
 
     return this.prisma.runInTransaction(async (tx) => {
       const eventId =
@@ -784,13 +818,16 @@ export class NewsEventsService {
       this.normalizeOptionalString(targetEvent.language),
       settings,
     );
-    const categoryAdjusted = await this.applyCategoryGate(
+    const categoryGateLogs: CategoryGateTaskLog[] = [];
+    const categoryAdjusted = this.applyCategoryGate(
       orgId,
       languageAdjusted,
       signal,
       targetEvent.metadata,
       settings,
+      categoryGateLogs,
     );
+    await this.flushCategoryGateDecisionLogs(categoryGateLogs);
     if (
       categoryAdjusted === null ||
       categoryAdjusted < settings.vectorMinScore
@@ -872,6 +909,27 @@ export class NewsEventsService {
     orgId: string,
     signal: NewsSignal,
     settings: NewsEventSettings,
+    options?: { limit?: number },
+  ): Promise<NewsEventAssignmentCandidate[]> {
+    const categoryGateLogs: CategoryGateTaskLog[] = [];
+    try {
+      return await this.listAssignmentCandidatesForSignalWithGateLogs(
+        orgId,
+        signal,
+        settings,
+        categoryGateLogs,
+        options,
+      );
+    } finally {
+      await this.flushCategoryGateDecisionLogs(categoryGateLogs);
+    }
+  }
+
+  private async listAssignmentCandidatesForSignalWithGateLogs(
+    orgId: string,
+    signal: NewsSignal,
+    settings: NewsEventSettings,
+    categoryGateLogs: CategoryGateTaskLog[],
     options?: { limit?: number },
   ): Promise<NewsEventAssignmentCandidate[]> {
     const language = this.normalizeOptionalString(signal.language);
@@ -969,12 +1027,13 @@ export class NewsEventsService {
               event.language,
               settings,
             );
-            const categoryAdjusted = await this.applyCategoryGate(
+            const categoryAdjusted = this.applyCategoryGate(
               orgId,
               adjusted,
               signal,
               event.metadata,
               settings,
+              categoryGateLogs,
             );
             if (categoryAdjusted === null) {
               continue;
@@ -996,6 +1055,7 @@ export class NewsEventsService {
         primaryEntity,
       },
       settings,
+      categoryGateLogs,
     );
     for (const candidate of overlapCandidates) {
       const entry = candidateState.get(candidate.eventId) ?? {};
@@ -1076,6 +1136,7 @@ export class NewsEventsService {
       primaryTopic: string | null;
       primaryEntity: string | null;
     },
+    categoryGateLogs: CategoryGateTaskLog[],
   ): Promise<{
     eventId?: string;
     similarity?: number | null;
@@ -1173,12 +1234,13 @@ export class NewsEventsService {
               event.language,
               settings,
             );
-            const categoryAdjusted = await this.applyCategoryGate(
+            const categoryAdjusted = this.applyCategoryGate(
               orgId,
               adjusted,
               signal,
               event.metadata,
               settings,
+              categoryGateLogs,
             );
             if (categoryAdjusted === null) {
               continue;
@@ -1204,6 +1266,7 @@ export class NewsEventsService {
       signal,
       derived,
       settings,
+      categoryGateLogs,
     );
     if (overlapCandidate) {
       return overlapCandidate;
@@ -1222,6 +1285,7 @@ export class NewsEventsService {
       primaryEntity: string | null;
     },
     settings: NewsEventSettings,
+    categoryGateLogs: CategoryGateTaskLog[],
   ): Promise<{
     eventId?: string;
     similarity?: number | null;
@@ -1232,6 +1296,7 @@ export class NewsEventsService {
       signal,
       derived,
       settings,
+      categoryGateLogs,
     );
     const best = candidates[0];
     if (!best) {
@@ -1253,6 +1318,7 @@ export class NewsEventsService {
       primaryEntity: string | null;
     },
     settings: NewsEventSettings,
+    categoryGateLogs: CategoryGateTaskLog[],
   ): Promise<Array<{ eventId: string; score: number }>> {
     const since = new Date(Date.now() - settings.lookbackDays * DAY_MS);
     const clauses: Prisma.NewsEventWhereInput[] = [];
@@ -1300,12 +1366,13 @@ export class NewsEventsService {
         candidate.language,
         settings,
       );
-      const categoryAdjusted = await this.applyCategoryGate(
+      const categoryAdjusted = this.applyCategoryGate(
         orgId,
         score,
         signal,
         candidate.metadata,
         settings,
+        categoryGateLogs,
       );
       if (categoryAdjusted === null) {
         continue;
@@ -1450,17 +1517,24 @@ export class NewsEventsService {
     return score * (1 - penalty);
   }
 
-  private async applyCategoryGate(
+  private applyCategoryGate(
     orgId: string,
     score: number,
     signal: NewsSignal,
     eventMetadata: Prisma.JsonValue | null,
     settings: NewsEventSettings,
-  ): Promise<number | null> {
+    categoryGateLogs: CategoryGateTaskLog[],
+  ): number | null {
     if (!settings.classificationGateEnabled) {
-      await this.logCategoryGateDecision(orgId, signal, "skipped_disabled", {
-        score,
-      });
+      this.collectCategoryGateDecision(
+        categoryGateLogs,
+        orgId,
+        signal,
+        "skipped_disabled",
+        {
+          score,
+        },
+      );
       return score;
     }
 
@@ -1471,16 +1545,23 @@ export class NewsEventsService {
         ? Math.max(0, Math.min(1, signal.categoryConfidence))
         : null;
     if (!signalCategory) {
-      await this.logCategoryGateDecision(orgId, signal, "skipped_no_signal_category", {
-        score,
-      });
+      this.collectCategoryGateDecision(
+        categoryGateLogs,
+        orgId,
+        signal,
+        "skipped_no_signal_category",
+        {
+          score,
+        },
+      );
       return score;
     }
     if (
       signalConfidence === null ||
       signalConfidence < settings.minCategoryConfidenceForGate
     ) {
-      await this.logCategoryGateDecision(
+      this.collectCategoryGateDecision(
+        categoryGateLogs,
         orgId,
         signal,
         "skipped_low_signal_confidence",
@@ -1495,92 +1576,132 @@ export class NewsEventsService {
 
     const eventClassification = this.extractEventClassification(eventMetadata);
     if (!eventClassification.legacyCategory) {
-      await this.logCategoryGateDecision(orgId, signal, "skipped_no_event_category", {
-        score,
-        signalCategory,
-      });
+      this.collectCategoryGateDecision(
+        categoryGateLogs,
+        orgId,
+        signal,
+        "skipped_no_event_category",
+        {
+          score,
+          signalCategory,
+        },
+      );
       return score;
     }
     if (eventClassification.legacyCategory !== signalCategory) {
       if (settings.categoryConflictReject) {
-        await this.logCategoryGateDecision(orgId, signal, "reject", {
-          score,
-          signalCategory,
-          eventCategory: eventClassification.legacyCategory,
-        });
+        this.collectCategoryGateDecision(
+          categoryGateLogs,
+          orgId,
+          signal,
+          "reject",
+          {
+            score,
+            signalCategory,
+            eventCategory: eventClassification.legacyCategory,
+          },
+        );
         return null;
       }
       const adjusted = score * (1 - this.clamp01(settings.categorySoftPenalty));
-      await this.logCategoryGateDecision(orgId, signal, "penalized", {
-        score,
-        adjustedScore: adjusted,
-        signalCategory,
-        eventCategory: eventClassification.legacyCategory,
-      });
+      this.collectCategoryGateDecision(
+        categoryGateLogs,
+        orgId,
+        signal,
+        "penalized",
+        {
+          score,
+          adjustedScore: adjusted,
+          signalCategory,
+          eventCategory: eventClassification.legacyCategory,
+        },
+      );
       return adjusted;
     }
 
     const signalPath = this.normalizeCategoryPath(signal.categoryPath);
     const eventPath = this.normalizeCategoryPath(eventClassification.categoryPath);
     if (!signalPath || !eventPath || signalPath === eventPath) {
-      await this.logCategoryGateDecision(orgId, signal, "accepted", {
-        score,
-        signalCategory,
-        signalPath,
-        eventPath,
-      });
+      this.collectCategoryGateDecision(
+        categoryGateLogs,
+        orgId,
+        signal,
+        "accepted",
+        {
+          score,
+          signalCategory,
+          signalPath,
+          eventPath,
+        },
+      );
       return score;
     }
 
     const adjusted = score * (1 - this.clamp01(settings.categorySoftPenalty * 0.5));
-    await this.logCategoryGateDecision(orgId, signal, "penalized", {
-      score,
-      adjustedScore: adjusted,
-      signalCategory,
-      signalPath,
-      eventPath,
-    });
+    this.collectCategoryGateDecision(
+      categoryGateLogs,
+      orgId,
+      signal,
+      "penalized",
+      {
+        score,
+        adjustedScore: adjusted,
+        signalCategory,
+        signalPath,
+        eventPath,
+      },
+    );
     return adjusted;
   }
 
-  private async logCategoryGateDecision(
+  private collectCategoryGateDecision(
+    logs: CategoryGateTaskLog[],
     orgId: string,
     signal: NewsSignal,
-    decision:
-      | "accepted"
-      | "penalized"
-      | "reject"
-      | "skipped_disabled"
-      | "skipped_no_signal_category"
-      | "skipped_low_signal_confidence"
-      | "skipped_no_event_category",
+    decision: CategoryGateDecision,
     data: Record<string, unknown>,
   ) {
+    logs.push({
+      queue: "news_events",
+      jobId: signal.processedArticleId,
+      orgId,
+      stage: "category_gate",
+      status: "completed",
+      data: {
+        decision,
+        processedItemId: signal.processedItemId,
+        processedArticleId: signal.processedArticleId,
+        signalCategory: signal.legacyCategory ?? null,
+        signalCategoryPath: signal.categoryPath ?? null,
+        signalConfidence:
+          typeof signal.categoryConfidence === "number"
+            ? signal.categoryConfidence
+            : null,
+        ...data,
+      },
+    });
+  }
+
+  private async flushCategoryGateDecisionLogs(
+    logs: CategoryGateTaskLog[],
+  ): Promise<void> {
+    if (logs.length === 0) {
+      return;
+    }
+    const count = logs.length;
+    const orgId = logs[0]?.orgId;
+    const processedArticleIds = Array.from(
+      new Set(logs.map((log) => log.data.processedArticleId)),
+    ).slice(0, 5);
     try {
-      await TaskLogModel.create({
-        queue: "news_events",
-        jobId: signal.processedArticleId,
-        orgId,
-        stage: "category_gate",
-        status: "completed",
-        data: {
-          decision,
-          processedItemId: signal.processedItemId,
-          processedArticleId: signal.processedArticleId,
-          signalCategory: signal.legacyCategory ?? null,
-          signalCategoryPath: signal.categoryPath ?? null,
-          signalConfidence:
-            typeof signal.categoryConfidence === "number"
-              ? signal.categoryConfidence
-              : null,
-          ...data,
-        },
-      });
+      await TaskLogModel.insertMany([...logs], { ordered: false });
     } catch (error) {
       logger.warn(
-        { err: error, orgId, processedArticleId: signal.processedArticleId, decision },
-        "Failed to persist category gate task log",
+        { err: error, orgId, processedArticleIds, count },
+        "Failed to persist category gate task logs",
       );
+    } finally {
+      logs.length = 0;
     }
   }
 

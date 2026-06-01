@@ -12,21 +12,21 @@
 
 ## Critical（必须修复）
 
-### C1. 全部 BullMQ 队列 `removeOnFail: false` 且无任何清理 → Redis 无界增长
+### C. 全部 BullMQ 队列 `removeOnFail: false` 且无任何清理 → Redis 无界增长
 - **位置**: `apps/api/src/modules/queue/queue.module.ts:55,79`；另见 crawl.module.ts、crawl-queue.service.ts、akshare.service.ts:1125、alerts.service.ts、archive-preparation-queue.service.ts、queue.service.ts:100
 - **证据**: 全仓 15+ 处 `removeOnFail: false`；`grep .clean(/.obliterate(/.getFailed(/removeOnFail:{` **零命中**（Claude 复核确认）。`removeOnComplete` 配了 `{age,count}` 上界，`removeOnFail` 完全无界。
 - **影响**: 每个失败 job（含完整 payload）永久驻留 Redis `failed` ZSET+hash。pipeline/crawl/akshare 高吞吐，长跑下失败集合无上限累积 → 最终撑爆 Redis。
 - **建议**: `removeOnFail: { age: 86400, count: 5000 }`；或新增定时 `queue.clean(ms, limit, 'failed')` 巡检。
 - **来源**: Agent-cache（Claude 复核 ✓）
 
-### C2. `newsnow.gateway.ts:236` 缺省路径 `server.emit` 全量广播（性能 + 跨租户越权）
+### C `newsnow.gateway.ts:236` 缺省路径 `server.emit` 全量广播（性能 + 跨租户越权）
 - **位置**: `apps/api/src/modules/news-aggregator/newsnow.gateway.ts:236`
 - **证据**: `event.orgId` 存在时 `emitToOrg`，否则 `this.server.emit("newsnow:update", event)` 广播给命名空间下所有租户所有 socket（Claude 复核确认）。
 - **影响**: 高频 newsnow 更新事件在 orgId 缺失时 O(全部连接) 序列化+发送 → 广播风暴；并跨租户泄露数据。
 - **建议**: 删除全量兜底；无 orgId 时不广播或仅记日志；确保 dispatcher 始终带 orgId。
 - **来源**: Agent-cache（Claude 复核 ✓）
 
-### C3. `user-digest.service.ts:518` 无界正则 `$or` 全集合扫描（ProcessedItem）
+### C `user-digest.service.ts:518` 无界正则 `$or` 全集合扫描（ProcessedItem）
 - **位置**: `apps/api/src/modules/user-digest/user-digest.service.ts:518`（`buildKeywordProcessedItemFilter` 550-573）
 - **证据**: `ProcessedItemModel.find({ orgId, status, duplicateOf, $or: filters }).select({_id:1}).lean()`——filters 为 11 个 `result.*` 子字段上的不锚定 `RegExp(.., "i")`，**无 `.limit()`、无时间下界**（Claude 复核确认）。
 - **影响**: `orgId+status` 前缀外的正则 `$or` 无法命中索引 = 对增长型集合全表扫描+逐文档跑正则；匹配到的全部 `_id` 一次性进内存。既被 `GET` 请求直连，又被 `@Cron(EVERY_MINUTE)` 逐用户调用 → 随历史增长线性变慢、OOM/超时风险。
