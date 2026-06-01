@@ -3,6 +3,7 @@ import { getQueueToken } from "@nestjs/bull-shared";
 import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { CacheModule } from "../cache/cache.module";
 import { EnvService } from "../config/config.service";
 import { DatabaseModule } from "../config/database.module";
@@ -101,7 +102,10 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
       inject: [EnvService, AlertsQueueCleanupService],
       useFactory: (env: EnvService, cleanup: AlertsQueueCleanupService) => {
         const queue = new Queue(ALERTS_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig)
+          connection: toBullmqConnection(env.redisConfig),
+          defaultJobOptions: {
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION
+          }
         });
         cleanup.track(queue);
         return queue;

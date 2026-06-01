@@ -28,6 +28,7 @@ import type { LookupFunction } from "net";
 import { firstValueFrom } from "rxjs";
 
 import { hasMembershipPermission } from "../../common/authz/membership-permissions";
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import {
   toPrismaJsonValue,
   toPrismaJsonValueOrUndefined,
@@ -1220,7 +1221,7 @@ export class AlertsService {
       {
         jobId: `evaluate:${ruleId}:${Date.now()}`,
         removeOnComplete: true,
-        removeOnFail: false,
+        removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
       },
     );
   }
@@ -1899,7 +1900,7 @@ export class AlertsService {
             attempts,
             backoff: { type: "alertNotifications" },
             removeOnComplete: true,
-            removeOnFail: false,
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
           },
         ),
       ),
@@ -2430,7 +2431,7 @@ export class AlertsService {
         jobId: `evaluate-${rule.id}`,
         repeat: { every },
         removeOnComplete: true,
-        removeOnFail: false,
+        removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
       },
     );
   }

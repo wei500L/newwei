@@ -2,6 +2,7 @@ import { getQueueToken } from "@nestjs/bull-shared";
 import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { EnvService } from "../config/config.service";
 import { toBullmqConnection } from "../config/redis-connection";
 import { ItemsModule } from "../items/items.module";
@@ -31,6 +32,9 @@ import type { AssistantJobPayload } from "./assistant.types";
       useFactory: (env: EnvService, cleanup: AssistantQueueCleanupService) => {
         const queue = new Queue<AssistantJobPayload>(ASSISTANT_QUEUE_NAME, {
           connection: toBullmqConnection(env.redisConfig),
+          defaultJobOptions: {
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
+          },
         });
         cleanup.track(queue);
         return queue;

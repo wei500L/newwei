@@ -1,5 +1,7 @@
 import type { Queue } from 'bullmq';
 
+import { BULLMQ_FAILED_JOB_RETENTION } from '../../../common/bullmq-retention';
+
 import {
   TELEGRAM_POLL_JOB_NAME,
 } from './situation-monitor-signals.constants';
@@ -34,7 +36,7 @@ export async function upsertTelegramPollScheduler(
       data: { type: 'poll', source: 'telegram' },
       opts: {
         removeOnComplete: true,
-        removeOnFail: false,
+        removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
       },
     },
   );

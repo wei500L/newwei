@@ -2,6 +2,7 @@ import { getQueueToken } from "@nestjs/bull-shared";
 import { Module } from "@nestjs/common";
 import { Queue } from "bullmq";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { AlertsModule } from "../alerts/alerts.module";
 import { AnalysisModule } from "../analysis/analysis.module";
 import { AssistantModule } from "../assistant/assistant.module";
@@ -17,8 +18,8 @@ import { QueueModule } from "../queue/queue.module";
 import { AdminErrorsController } from "./admin-errors.controller";
 import { AdminLogsController } from "./admin-logs.controller";
 import { AdminLogsService } from "./admin-logs.service";
-import { ClassificationQualityQueueCleanupService } from "./classification-quality-queue-cleanup.service";
 import { ClassificationQualityAlertSchedulerService } from "./classification-quality-alert-scheduler.service";
+import { ClassificationQualityQueueCleanupService } from "./classification-quality-queue-cleanup.service";
 import { ClassificationQualitySeedTriggerService } from "./classification-quality-seed-trigger.service";
 import {
   CLASSIFICATION_QUALITY_QUEUE,
@@ -89,7 +90,7 @@ import { TaskLogsController } from "./task-logs.controller";
           connection: toBullmqConnection(env.redisConfig),
           defaultJobOptions: {
             removeOnComplete: true,
-            removeOnFail: false,
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
             attempts: 3,
             backoff: {
               type: "exponential",

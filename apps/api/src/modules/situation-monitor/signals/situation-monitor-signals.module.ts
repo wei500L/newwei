@@ -2,6 +2,7 @@ import { getQueueToken } from '@nestjs/bull-shared';
 import { Module } from '@nestjs/common';
 import { Queue, QueueEvents } from 'bullmq';
 
+import { BULLMQ_FAILED_JOB_RETENTION } from '../../../common/bullmq-retention';
 import { AlertsModule } from '../../alerts/alerts.module';
 import { AuthModule } from '../../auth/auth.module';
 import { EnvService } from '../../config/config.service';
@@ -37,7 +38,7 @@ import { SituationMonitorSignalsService } from './situation-monitor-signals.serv
           connection: toBullmqConnection(env.redisConfig),
           defaultJobOptions: {
             removeOnComplete: true,
-            removeOnFail: false,
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
             attempts: 3,
             backoff: {
               type: 'exponential',

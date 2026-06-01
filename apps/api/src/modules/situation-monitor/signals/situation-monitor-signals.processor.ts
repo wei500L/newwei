@@ -2,6 +2,7 @@ import { createLogger } from '@modular/utils';
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Job, Queue, QueueEvents, Worker } from 'bullmq';
 
+import { BULLMQ_FAILED_JOB_RETENTION } from '../../../common/bullmq-retention';
 import { EnvService } from '../../config/config.service';
 import { SituationMonitorSettingsService } from '../../system-settings/situation-monitor-settings.service';
 
@@ -124,7 +125,7 @@ export class SituationMonitorSignalsProcessor implements OnModuleInit, OnModuleD
       {
         jobId: `${OREF_POLL_JOB_NAME}:repeat`,
         removeOnComplete: true,
-        removeOnFail: false,
+        removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
         repeat: {
           every: orefIntervalMs,
         },
@@ -136,7 +137,7 @@ export class SituationMonitorSignalsProcessor implements OnModuleInit, OnModuleD
       this.queue.add(
         `${OREF_POLL_JOB_NAME}:bootstrap`,
         { type: 'poll', source: 'oref' },
-        { removeOnComplete: true, removeOnFail: false },
+        { removeOnComplete: true, removeOnFail: BULLMQ_FAILED_JOB_RETENTION },
       ),
     ];
     if (telegramScheduler.enabled) {
@@ -144,7 +145,7 @@ export class SituationMonitorSignalsProcessor implements OnModuleInit, OnModuleD
         this.queue.add(
           `${TELEGRAM_POLL_JOB_NAME}:bootstrap`,
           { type: 'poll', source: 'telegram' },
-          { removeOnComplete: true, removeOnFail: false },
+          { removeOnComplete: true, removeOnFail: BULLMQ_FAILED_JOB_RETENTION },
         ),
       );
     }

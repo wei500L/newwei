@@ -2,6 +2,10 @@ import { getQueueToken } from "@nestjs/bull-shared";
 import { Module, forwardRef } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
+import {
+  BULLMQ_DLQ_JOB_RETENTION,
+  BULLMQ_FAILED_JOB_RETENTION,
+} from "../../common/bullmq-retention";
 import { AuthModule } from "../auth/auth.module";
 import { CacheModule } from "../cache/cache.module";
 import { EnvService } from "../config/config.service";
@@ -52,7 +56,7 @@ import { QueueService } from "./queue.service";
               age: 3600,
               count: 1000,
             },
-            removeOnFail: false,
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
             attempts: 5,
             backoff: {
               type: "exponential",
@@ -76,11 +80,14 @@ import { QueueService } from "./queue.service";
               age: 3600 * 24 * 7,
               count: 10_000,
             },
-            removeOnFail: false,
+            removeOnFail: BULLMQ_DLQ_JOB_RETENTION,
             attempts: 1,
           },
         });
-        cleanup.track(queue);
+        cleanup.track(queue, {
+          failedRetention: BULLMQ_DLQ_JOB_RETENTION,
+          waitingRetention: BULLMQ_DLQ_JOB_RETENTION,
+        });
         return queue;
       },
     },

@@ -23,6 +23,7 @@ import {
 import { NotificationType } from "@prisma/client";
 import { Queue } from "bullmq";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { writeAuditLogBestEffort } from "../../modules/audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
@@ -856,7 +857,7 @@ export class ClassificationQualityService {
         {
           jobId: `classification-quality-report:${jobId}`,
           removeOnComplete: true,
-          removeOnFail: false,
+          removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
           attempts: 3,
           backoff: {
             type: "exponential",
@@ -918,7 +919,7 @@ export class ClassificationQualityService {
         {
           jobId,
           removeOnComplete: true,
-          removeOnFail: false,
+          removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
           attempts: 3,
           backoff: {
             type: "exponential",

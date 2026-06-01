@@ -1,23 +1,6 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Injectable } from "@nestjs/common";
 
-interface Closable {
-  close: () => Promise<unknown>;
-}
+import { BullmqQueueCleanupService } from "../../../common/bullmq-queue-cleanup.service";
 
 @Injectable()
-export class SituationMonitorSignalsQueueCleanupService implements OnModuleDestroy {
-  private readonly resources = new Set<Closable>();
-
-  track(resource: Closable) {
-    this.resources.add(resource);
-  }
-
-  async onModuleDestroy() {
-    await Promise.allSettled(
-      Array.from(this.resources).map(async (resource) => {
-        await resource.close();
-      }),
-    );
-    this.resources.clear();
-  }
-}
+export class SituationMonitorSignalsQueueCleanupService extends BullmqQueueCleanupService {}

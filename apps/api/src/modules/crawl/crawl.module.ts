@@ -3,6 +3,7 @@ import { getQueueToken } from "@nestjs/bull-shared";
 import { Module, forwardRef } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { EnvService } from "../config/config.service";
 import { toBullmqConnection } from "../config/redis-connection";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
@@ -143,7 +144,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
           defaultJobOptions: {
             attempts: env.crawl4aiConfig.maxRetries,
             removeOnComplete: true,
-            removeOnFail: false,
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
             backoff: {
               type: "exponential",
               delay: env.crawl4aiConfig.retryBackoffMs,
@@ -163,7 +164,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
           defaultJobOptions: {
             attempts: env.crawl4aiConfig.maxRetries,
             removeOnComplete: true,
-            removeOnFail: false,
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
             backoff: {
               type: "exponential",
               delay: env.crawl4aiConfig.retryBackoffMs,
@@ -183,7 +184,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
           defaultJobOptions: {
             attempts: env.crawl4aiConfig.maxRetries,
             removeOnComplete: true,
-            removeOnFail: false,
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
             backoff: {
               type: "exponential",
               delay: env.crawl4aiConfig.retryBackoffMs,
@@ -203,7 +204,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
           defaultJobOptions: {
             attempts: 1,
             removeOnComplete: true,
-            removeOnFail: false,
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
             backoff: {
               type: "exponential",
               delay: env.crawl4aiConfig.retryBackoffMs,
@@ -223,7 +224,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
           defaultJobOptions: {
             attempts: 1,
             removeOnComplete: true,
-            removeOnFail: false,
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
             backoff: {
               type: "exponential",
               delay: env.crawl4aiConfig.retryBackoffMs,

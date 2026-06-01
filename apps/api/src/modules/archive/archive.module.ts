@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { CacheModule } from "../cache/cache.module";
 import { EnvService } from "../config/config.service";
 import { toBullmqConnection } from "../config/redis-connection";
@@ -39,6 +40,9 @@ import { ArchiveService } from "./archive.service";
       ) => {
         const queue = new Queue(ARCHIVE_PREPARATION_QUEUE_NAME, {
           connection: toBullmqConnection(env.redisConfig),
+          defaultJobOptions: {
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
+          },
         });
         cleanup.track(queue);
         return queue;

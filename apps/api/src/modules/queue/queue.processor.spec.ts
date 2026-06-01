@@ -68,6 +68,7 @@ import { NotificationType, PipelineJobStatus } from "@prisma/client";
 import { Worker, UnrecoverableError } from "bullmq";
 import { Types } from "mongoose";
 
+import { BULLMQ_DLQ_JOB_RETENTION } from "../../common/bullmq-retention";
 import { ItemStatus } from "../../common/pipeline-status";
 
 import { ITEM_PIPELINE_QUEUE_NAME } from "./queue.constants";
@@ -545,8 +546,8 @@ describe("QueueProcessor", () => {
         }),
         expect.objectContaining({
           jobId: expect.stringContaining("dlq-"),
-          removeOnComplete: false,
-          removeOnFail: false,
+          removeOnComplete: BULLMQ_DLQ_JOB_RETENTION,
+          removeOnFail: BULLMQ_DLQ_JOB_RETENTION,
           attempts: 1,
         }),
       );

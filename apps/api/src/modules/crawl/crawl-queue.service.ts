@@ -2,6 +2,8 @@ import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { Inject, Injectable, Optional } from "@nestjs/common";
 import { Job, Queue } from "bullmq";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
+
 import { CrawlActivityService } from "./crawl-activity.service";
 import { CrawlSettingsService } from "./crawl-settings.service";
 import {
@@ -230,7 +232,7 @@ export class CrawlQueueService {
           id: deduplicationId,
         },
         removeOnComplete: true,
-        removeOnFail: false,
+        removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
         attempts,
         backoff: settings.retryBackoffMs
           ? {
@@ -272,7 +274,7 @@ export class CrawlQueueService {
           id: deduplicationId,
         },
         removeOnComplete: true,
-        removeOnFail: false,
+        removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
         attempts,
         backoff: settings.retryBackoffMs
           ? {
@@ -306,7 +308,7 @@ export class CrawlQueueService {
           id: `crawl-frontier-llm-judge:${options.nodeId}:${options.payload.mode}`,
         },
         removeOnComplete: true,
-        removeOnFail: false,
+        removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
         attempts: 1,
         backoff: settings.retryBackoffMs
           ? {
@@ -338,7 +340,7 @@ export class CrawlQueueService {
           id: `crawl-frontier-llm-learn:${options.runId}`,
         },
         removeOnComplete: true,
-        removeOnFail: false,
+        removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
         attempts: 1,
         backoff: settings.retryBackoffMs
           ? {

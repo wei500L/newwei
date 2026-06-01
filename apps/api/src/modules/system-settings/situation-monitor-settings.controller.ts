@@ -4,6 +4,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Queue } from "bullmq";
 import type { Request } from "express";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { resolveRequestIp } from "../../common/request-ip";
@@ -148,7 +149,12 @@ export class SituationMonitorSettingsController {
   ): Promise<void> {
     const queue = new Queue<TelegramSchedulerJobPayload>(
       SITUATION_MONITOR_SIGNALS_QUEUE_NAME,
-      { connection: toBullmqConnection(this.env.redisConfig) }
+      {
+        connection: toBullmqConnection(this.env.redisConfig),
+        defaultJobOptions: {
+          removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
+        },
+      }
     );
     try {
       await removeLegacyTelegramRepeatJobs(queue);
@@ -161,7 +167,7 @@ export class SituationMonitorSettingsController {
       await queue.add(
         `${TELEGRAM_POLL_JOB_NAME}:bootstrap`,
         { type: "poll", source: "telegram" },
-        { removeOnComplete: true, removeOnFail: false }
+        { removeOnComplete: true, removeOnFail: BULLMQ_FAILED_JOB_RETENTION }
       );
     } catch (error) {
       this.logger.warn(

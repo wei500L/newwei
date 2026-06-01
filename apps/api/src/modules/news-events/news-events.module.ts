@@ -2,14 +2,15 @@ import { getQueueToken } from "@nestjs/bull-shared";
 import { Module } from "@nestjs/common";
 import { Queue } from "bullmq";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { EnvService } from "../config/config.service";
 import { toBullmqConnection } from "../config/redis-connection";
 import { ModelServiceModule } from "../model-service/model-service.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
+import { NewsEventBriefService } from "./news-event-brief.service";
 import { NewsEventClusteringAdminController } from "./news-event-clustering-admin.controller";
 import { NewsEventClusteringFailureService } from "./news-event-clustering-failure.service";
-import { NewsEventClusteringRecoveryProcessor } from "./news-event-clustering-recovery.processor";
 import { NewsEventClusteringRecoveryQueueCleanupService } from "./news-event-clustering-recovery-queue-cleanup.service";
 import { NewsEventClusteringRecoverySchedulerService } from "./news-event-clustering-recovery-scheduler.service";
 import {
@@ -17,8 +18,8 @@ import {
   NEWS_EVENT_CLUSTERING_RECOVERY_QUEUE_NAME,
   type NewsEventClusteringRecoveryJobPayload,
 } from "./news-event-clustering-recovery.constants";
+import { NewsEventClusteringRecoveryProcessor } from "./news-event-clustering-recovery.processor";
 import { NewsEventClusteringRecoveryService } from "./news-event-clustering-recovery.service";
-import { NewsEventBriefService } from "./news-event-brief.service";
 import { NewsEventSourcePolicyService } from "./news-event-source-policy.service";
 import { NewsEventsBertopicService } from "./news-events-bertopic.service";
 import { NewsEventsIngestionService } from "./news-events-ingestion.service";
@@ -53,6 +54,9 @@ import { NewsEventsService } from "./news-events.service";
           NEWS_EVENT_CLUSTERING_RECOVERY_QUEUE_NAME,
           {
             connection: toBullmqConnection(env.redisConfig),
+            defaultJobOptions: {
+              removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
+            },
           },
         );
         cleanup.track(queue);

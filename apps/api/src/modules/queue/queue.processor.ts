@@ -17,6 +17,7 @@ import { NotificationType, PipelineJobStatus } from "@prisma/client";
 import { Worker, UnrecoverableError, type Queue } from "bullmq";
 import { Types } from "mongoose";
 
+import { BULLMQ_DLQ_JOB_RETENTION } from "../../common/bullmq-retention";
 import { ItemStatus } from "../../common/pipeline-status";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
@@ -319,8 +320,8 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           try {
             await this.dlqQueue.add("dlq", dlqPayload, {
               jobId: dlqJobId,
-              removeOnComplete: false,
-              removeOnFail: false,
+              removeOnComplete: BULLMQ_DLQ_JOB_RETENTION,
+              removeOnFail: BULLMQ_DLQ_JOB_RETENTION,
               attempts: 1,
             });
             logger.warn(
