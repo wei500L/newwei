@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 
+import { ItemsModule } from "../items/items.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { UserContentSubscriptionsModule } from "../user-content-subscriptions/user-content-subscriptions.module";
 
@@ -9,7 +10,7 @@ import { UserDigestController } from "./user-digest.controller";
 import { UserDigestService } from "./user-digest.service";
 
 @Module({
-  imports: [UserContentSubscriptionsModule, NotificationsModule],
+  imports: [UserContentSubscriptionsModule, NotificationsModule, ItemsModule],
   controllers: [UserDigestController],
   providers: [
     UserDigestService,

@@ -11,6 +11,11 @@ export interface ItemSearchHit {
   highlights: Record<string, string[]>;
 }
 
+export interface ItemLiteralKeywordSearchOptions {
+  createdAtGte?: Date;
+  limit?: number;
+}
+
 export interface ItemSearchReindexResult {
   indexed: number;
   index: string;
@@ -78,6 +83,27 @@ function extractHighlights(value: unknown): Record<string, string[]> {
   return result;
 }
 
+function normalizeLiteralKeywords(keywords: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const keyword of keywords) {
+    if (typeof keyword !== "string") {
+      continue;
+    }
+    const trimmed = keyword.trim().replace(/\s+/g, " ").slice(0, 128);
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(trimmed);
+    if (out.length >= 50) {
+      break;
+    }
+  }
+  return out;
+}
+
 @Injectable()
 export class ItemsElasticsearchService implements OnModuleInit {
   private readonly client: Client | null;
@@ -111,6 +137,76 @@ export class ItemsElasticsearchService implements OnModuleInit {
     return Boolean(this.client);
   }
 
+  async searchLiteralKeywords(
+    orgId: string,
+    keywords: string[],
+    options: ItemLiteralKeywordSearchOptions = {},
+  ): Promise<ItemSearchHit[] | null> {
+    const normalized = normalizeLiteralKeywords(keywords);
+    if (!this.client) {
+      return null;
+    }
+    if (normalized.length === 0) {
+      return [];
+    }
+    try {
+      await this.ensureIndex();
+      const filters: Record<string, unknown>[] = [{ term: { orgId } }];
+      if (
+        options.createdAtGte instanceof Date &&
+        Number.isFinite(options.createdAtGte.getTime())
+      ) {
+        filters.push({
+          range: { createdAt: { gte: options.createdAtGte.toISOString() } },
+        });
+      }
+      const response = await this.client.search<ItemSearchDocument>({
+        index: this.env.elasticsearchConfig.itemsAlias,
+        size: this.normalizeSearchLimit(options.limit),
+        query: {
+          bool: {
+            filter: filters,
+            should: normalized.map((keyword) => ({
+              multi_match: {
+                query: keyword,
+                type: "phrase",
+                fields: [
+                  "title^4",
+                  "summary^2",
+                  "sourceName^2",
+                  "topics^2",
+                  "entities^2",
+                  "searchText",
+                ],
+              },
+            })),
+            minimum_should_match: 1,
+          },
+        },
+        sort: [{ _score: { order: "desc" } }, { sortAt: { order: "desc" } }],
+      });
+      recordIntegrationEvent({
+        integration: "elasticsearch",
+        operation: "items_literal_keyword_search",
+        status: "success",
+      });
+      return response.hits.hits
+        .map((hit) => ({
+          id: hit._source?.itemMetaId ?? "",
+          score: typeof hit._score === "number" ? hit._score : 0,
+          highlights: extractHighlights(hit.highlight),
+        }))
+        .filter((hit) => hit.id.length > 0);
+    } catch {
+      recordIntegrationEvent({
+        integration: "elasticsearch",
+        operation: "items_literal_keyword_search",
+        status: "failure",
+      });
+      return null;
+    }
+  }
+
   async search(orgId: string, query: string, limit = 500): Promise<ItemSearchHit[] | null> {
     if (!this.client || !query.trim()) {
       return null;
@@ -119,7 +215,7 @@ export class ItemsElasticsearchService implements OnModuleInit {
       await this.ensureIndex();
       const response = await this.client.search<ItemSearchDocument>({
         index: this.env.elasticsearchConfig.itemsAlias,
-        size: Math.min(Math.max(limit, 1), 1000),
+        size: this.normalizeSearchLimit(limit),
         query: {
           bool: {
             filter: [{ term: { orgId } }],
@@ -181,6 +277,10 @@ export class ItemsElasticsearchService implements OnModuleInit {
       });
       return null;
     }
+  }
+
+  private normalizeSearchLimit(limit = 500): number {
+    return Math.min(Math.max(Math.floor(limit), 1), 1000);
   }
 
   async getHighlights(

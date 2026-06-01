@@ -2,6 +2,10 @@ import { UserDigestService } from "../user-digest.service";
 import { ProcessedItemModel } from "@modular/mongo";
 
 describe("UserDigestService", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it("returns default preference when missing", async () => {
     const prisma = {
       userSetting: {
@@ -375,6 +379,7 @@ describe("UserDigestService", () => {
   });
 
   it("matches digest events from source, keyword, and geo content subscriptions", async () => {
+    const since = new Date("2026-01-01T00:00:00.000Z");
     const prisma = {
       newsEventItem: {
         findMany: jest
@@ -390,12 +395,15 @@ describe("UserDigestService", () => {
     const exec = jest
       .fn()
       .mockResolvedValue([{ _id: "pi-1" }, { _id: "pi-2" }, { _id: "pi-3" }]);
-    jest.spyOn(ProcessedItemModel, "find").mockReturnValue({
-      select: jest.fn().mockReturnValue({
-        lean: jest.fn().mockReturnValue({
-          exec,
-        }),
+    const select = jest.fn().mockReturnValue({
+      lean: jest.fn().mockReturnValue({
+        exec,
       }),
+    });
+    const limit = jest.fn().mockReturnValue({ select });
+    const sort = jest.fn().mockReturnValue({ limit });
+    jest.spyOn(ProcessedItemModel, "find").mockReturnValue({
+      sort,
     } as any);
 
     const service = new UserDigestService(prisma as any, {} as any);
@@ -421,7 +429,7 @@ describe("UserDigestService", () => {
 
     const matched = await findMatchedEventIdsFromRelatedContent(
       "org-1",
-      new Date("2026-01-01T00:00:00.000Z"),
+      since,
       {
         focusTopics: [],
         focusEntities: [],
@@ -468,8 +476,11 @@ describe("UserDigestService", () => {
         orgId: "org-1",
         status: "completed",
         duplicateOf: null,
+        createdAt: { $gte: since },
       }),
     );
+    expect(sort).toHaveBeenCalledWith({ createdAt: -1 });
+    expect(limit).toHaveBeenCalledWith(1000);
     expect(exec).toHaveBeenCalledTimes(1);
     expect(Array.from(matched).sort()).toEqual([
       "event-both",
@@ -477,5 +488,99 @@ describe("UserDigestService", () => {
       "event-keyword",
       "event-source",
     ]);
+  });
+
+  it("uses Elasticsearch keyword hits and resolves recent processed item ids by itemMetaId", async () => {
+    const since = new Date("2026-01-01T00:00:00.000Z");
+    const prisma = {
+      newsEventItem: {
+        findMany: jest.fn().mockResolvedValue([{ eventId: "event-keyword" }]),
+      },
+    };
+    const elasticsearch = {
+      searchLiteralKeywords: jest.fn().mockResolvedValue([
+        { id: "meta-1", score: 3, highlights: {} },
+        { id: "meta-2", score: 2, highlights: {} },
+        { id: "meta-1", score: 1, highlights: {} },
+      ]),
+    };
+    const exec = jest.fn().mockResolvedValue([
+      { _id: "pi-2", itemMetaId: "meta-2" },
+      { _id: "pi-1", itemMetaId: "meta-1" },
+    ]);
+    const select = jest.fn().mockReturnValue({
+      lean: jest.fn().mockReturnValue({
+        exec,
+      }),
+    });
+    const limit = jest.fn().mockReturnValue({ select });
+    const sort = jest.fn().mockReturnValue({ limit });
+    jest.spyOn(ProcessedItemModel, "find").mockReturnValue({
+      sort,
+    } as any);
+
+    const service = new UserDigestService(
+      prisma as any,
+      {} as any,
+      elasticsearch as any,
+    );
+    const findMatchedEventIdsFromRelatedContent = (
+      service as unknown as {
+        findMatchedEventIdsFromRelatedContent: (
+          orgId: string,
+          since: Date,
+          subscriptions: {
+            focusTopics: string[];
+            focusEntities: string[];
+            focusKeywords: string[];
+            focusSources: { sourceId: string; displayValue: string }[];
+            focusGeos: {
+              normalizedValue: string;
+              displayValue: string;
+              countryCodeAlpha2?: string;
+            }[];
+          },
+          candidateLimit?: number,
+        ) => Promise<Set<string>>;
+      }
+    ).findMatchedEventIdsFromRelatedContent.bind(service);
+
+    const matched = await findMatchedEventIdsFromRelatedContent(
+      "org-1",
+      since,
+      {
+        focusTopics: [],
+        focusEntities: [],
+        focusKeywords: ["NVIDIA"],
+        focusSources: [],
+        focusGeos: [],
+      },
+      300,
+    );
+
+    expect(elasticsearch.searchLiteralKeywords).toHaveBeenCalledWith(
+      "org-1",
+      ["NVIDIA"],
+      { createdAtGte: since, limit: 300 },
+    );
+    expect(ProcessedItemModel.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        status: "completed",
+        duplicateOf: null,
+        createdAt: { $gte: since },
+        itemMetaId: { $in: ["meta-1", "meta-2"] },
+      }),
+    );
+    expect(sort).toHaveBeenCalledWith({ createdAt: -1 });
+    expect(limit).toHaveBeenCalledWith(300);
+    expect(prisma.newsEventItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          processedItemId: { in: ["pi-1", "pi-2"] },
+        }),
+      }),
+    );
+    expect(Array.from(matched)).toEqual(["event-keyword"]);
   });
 });

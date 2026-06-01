@@ -1,6 +1,6 @@
 import { ProcessedItemModel } from "@modular/mongo";
 import { normalizeCountryCode } from "@modular/utils";
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import type { FilterQuery } from "mongoose";
 import {
   NewsEventStatus,
@@ -12,6 +12,7 @@ import {
 import { canonicalizeGeoValue } from "../../common/geo-subscription";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
+import { ItemsElasticsearchService } from "../items/items-elasticsearch.service";
 import {
   type DigestSubscriptionValues,
   UserContentSubscriptionsService,
@@ -20,6 +21,11 @@ import {
 import { USER_DIGEST_PREFERENCE_KEY } from "./user-digest.constants";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DIGEST_RELATED_CANDIDATE_MIN = 200;
+const DIGEST_RELATED_CANDIDATE_MAX = 1_000;
+const DIGEST_RELATED_CANDIDATES_PER_EVENT = 100;
+const DIGEST_PROCESSED_ITEM_RESOLVE_MULTIPLIER = 3;
+const DIGEST_PROCESSED_ITEM_RESOLVE_MAX = 3_000;
 
 export interface UserDigestPreferenceV1 {
   version: 1;
@@ -159,6 +165,7 @@ export class UserDigestService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly contentSubscriptions: UserContentSubscriptionsService,
+    @Optional() private readonly elasticsearch?: ItemsElasticsearchService,
   ) {}
 
   async getPreference(
@@ -386,6 +393,7 @@ export class UserDigestService {
         orgId,
         since,
         subscriptions,
+        this.digestRelatedContentCandidateLimit(preference.maxEvents),
       );
       for (const eventId of relatedEventIds) {
         matchedEventIds.add(eventId);
@@ -440,6 +448,7 @@ export class UserDigestService {
     orgId: string,
     since: Date,
     subscriptions: DigestSubscriptionValues,
+    candidateLimit = DIGEST_RELATED_CANDIDATE_MAX,
   ): Promise<Set<string>> {
     const matchedEventIds = new Set<string>();
 
@@ -478,7 +487,9 @@ export class UserDigestService {
 
     const processedItemIds = await this.findMatchedProcessedItemIds(
       orgId,
+      since,
       subscriptions,
+      candidateLimit,
     );
     if (processedItemIds.length === 0) {
       return matchedEventIds;
@@ -508,9 +519,114 @@ export class UserDigestService {
 
   private async findMatchedProcessedItemIds(
     orgId: string,
+    since: Date,
     subscriptions: DigestSubscriptionValues,
+    candidateLimit: number,
   ): Promise<string[]> {
-    const filters = this.buildProcessedItemSubscriptionFilters(subscriptions);
+    const matchedIds = new Set<string>();
+    let shouldUseKeywordMongoFallback = subscriptions.focusKeywords.length > 0;
+
+    if (subscriptions.focusKeywords.length > 0 && this.elasticsearch) {
+      const hits = await this.elasticsearch
+        .searchLiteralKeywords(orgId, subscriptions.focusKeywords, {
+          createdAtGte: since,
+          limit: candidateLimit,
+        })
+        .catch(() => null);
+      if (hits !== null) {
+        shouldUseKeywordMongoFallback = false;
+        const itemMetaIds = this.dedupeNonEmptyStrings(
+          hits.map((hit) => hit.id),
+        ).slice(0, candidateLimit);
+        const ids = await this.resolveProcessedItemIdsByItemMetaIds(
+          orgId,
+          since,
+          itemMetaIds,
+          candidateLimit,
+        );
+        for (const id of ids) {
+          matchedIds.add(id);
+        }
+      }
+    }
+
+    const filters = this.buildProcessedItemSubscriptionFilters(subscriptions, {
+      includeKeywords: shouldUseKeywordMongoFallback,
+      includeGeos: true,
+    });
+    if (filters.length > 0) {
+      const ids = await this.findMatchedProcessedItemIdsByMongoFilters(
+        orgId,
+        since,
+        filters,
+        candidateLimit,
+      );
+      for (const id of ids) {
+        matchedIds.add(id);
+      }
+    }
+
+    return Array.from(matchedIds);
+  }
+
+  private async resolveProcessedItemIdsByItemMetaIds(
+    orgId: string,
+    since: Date,
+    itemMetaIds: string[],
+    candidateLimit: number,
+  ): Promise<string[]> {
+    const normalizedIds = this.dedupeNonEmptyStrings(itemMetaIds).slice(
+      0,
+      candidateLimit,
+    );
+    if (normalizedIds.length === 0) {
+      return [];
+    }
+
+    const resolveLimit = Math.min(
+      DIGEST_PROCESSED_ITEM_RESOLVE_MAX,
+      Math.max(
+        candidateLimit,
+        normalizedIds.length * DIGEST_PROCESSED_ITEM_RESOLVE_MULTIPLIER,
+      ),
+    );
+    const docs = await ProcessedItemModel.find({
+      orgId,
+      status: "completed",
+      duplicateOf: null,
+      createdAt: { $gte: since },
+      itemMetaId: { $in: normalizedIds },
+    })
+      .sort({ createdAt: -1 })
+      .limit(resolveLimit)
+      .select({ _id: 1, itemMetaId: 1 })
+      .lean()
+      .exec();
+
+    const idByItemMetaId = new Map<string, string>();
+    for (const doc of docs) {
+      const itemMetaId =
+        typeof (doc as { itemMetaId?: unknown }).itemMetaId === "string"
+          ? ((doc as { itemMetaId: string }).itemMetaId ?? "").trim()
+          : "";
+      const id = String((doc as { _id?: unknown })._id ?? "").trim();
+      if (!itemMetaId || !id || idByItemMetaId.has(itemMetaId)) {
+        continue;
+      }
+      idByItemMetaId.set(itemMetaId, id);
+    }
+
+    return normalizedIds
+      .map((itemMetaId) => idByItemMetaId.get(itemMetaId) ?? "")
+      .filter((id) => id.length > 0);
+  }
+
+  private async findMatchedProcessedItemIdsByMongoFilters(
+    orgId: string,
+    since: Date,
+    filters: FilterQuery<unknown>[],
+    candidateLimit: number,
+  ): Promise<string[]> {
     if (filters.length === 0) {
       return [];
     }
@@ -519,8 +635,11 @@ export class UserDigestService {
       orgId,
       status: "completed",
       duplicateOf: null,
+      createdAt: { $gte: since },
       $or: filters,
     })
+      .sort({ createdAt: -1 })
+      .limit(candidateLimit)
       .select({ _id: 1 })
       .lean()
       .exec();
@@ -536,14 +655,21 @@ export class UserDigestService {
 
   private buildProcessedItemSubscriptionFilters(
     subscriptions: DigestSubscriptionValues,
+    options: { includeKeywords?: boolean; includeGeos?: boolean } = {},
   ): FilterQuery<unknown>[] {
+    const includeKeywords = options.includeKeywords ?? true;
+    const includeGeos = options.includeGeos ?? true;
     return [
-      ...subscriptions.focusKeywords
-        .map((keyword) => this.buildKeywordProcessedItemFilter(keyword))
-        .filter((entry): entry is FilterQuery<unknown> => Boolean(entry)),
-      ...subscriptions.focusGeos
-        .map((geo) => this.buildGeoProcessedItemFilter(geo))
-        .filter((entry): entry is FilterQuery<unknown> => Boolean(entry)),
+      ...(includeKeywords
+        ? subscriptions.focusKeywords
+            .map((keyword) => this.buildKeywordProcessedItemFilter(keyword))
+            .filter((entry): entry is FilterQuery<unknown> => Boolean(entry))
+        : []),
+      ...(includeGeos
+        ? subscriptions.focusGeos
+            .map((geo) => this.buildGeoProcessedItemFilter(geo))
+            .filter((entry): entry is FilterQuery<unknown> => Boolean(entry))
+        : []),
     ];
   }
 
@@ -788,6 +914,31 @@ export class UserDigestService {
           .filter(Boolean),
       ),
     );
+  }
+
+  private digestRelatedContentCandidateLimit(maxEvents: number): number {
+    const numeric = Number.isFinite(maxEvents) ? Math.floor(maxEvents) : 0;
+    return Math.min(
+      DIGEST_RELATED_CANDIDATE_MAX,
+      Math.max(
+        DIGEST_RELATED_CANDIDATE_MIN,
+        numeric * DIGEST_RELATED_CANDIDATES_PER_EVENT,
+      ),
+    );
+  }
+
+  private dedupeNonEmptyStrings(values: string[]): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const value of values) {
+      const normalized = value.trim();
+      if (!normalized || seen.has(normalized)) {
+        continue;
+      }
+      seen.add(normalized);
+      out.push(normalized);
+    }
+    return out;
   }
 
   private chunkArray<T>(values: T[], size: number): T[][] {

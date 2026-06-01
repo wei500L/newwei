@@ -169,6 +169,12 @@ ProcessedItemSchema.index({
   orgId: 1,
   status: 1,
   duplicateOf: 1,
+  createdAt: -1,
+});
+ProcessedItemSchema.index({
+  orgId: 1,
+  status: 1,
+  duplicateOf: 1,
   sortAt: -1,
   ingestedAt: -1,
   createdAt: -1,
