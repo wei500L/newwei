@@ -36,6 +36,7 @@ import {
   NewsSourceRuntimeSecretRequiredError,
 } from "./news-aggregator.errors"
 import type { NewsItem, NewsResolveResponse, SourceID, SourceResponse } from "./news-aggregator.types"
+import { NewsnowActiveSourceRegistryService } from "./newsnow-active-source-registry.service"
 import { NewsnowRealtimeDispatcher } from "./newsnow-realtime.dispatcher"
 
 const LOCK_WAIT_INTERVAL_MS = 200
@@ -90,6 +91,7 @@ export class NewsAggregatorService {
     private readonly prisma: PrismaService,
     private readonly registryService: NewsAggregatorRegistryService,
     private readonly runtimeSecretsService: NewsSourceRuntimeSecretsService,
+    private readonly activeSources: NewsnowActiveSourceRegistryService,
     private readonly newsnowRealtime: NewsnowRealtimeDispatcher,
     private readonly userSettingsService: UserSettingsService,
     private readonly personalizationSettingsService: NewsnowPersonalizationSettingsService,
@@ -1194,14 +1196,23 @@ export class NewsAggregatorService {
           : new Date().toISOString()
 
     try {
-      await this.newsnowRealtime.publish({
-        orgId,
-        sourceId,
-        newItemsCount,
-        topTitles,
-        updatedTime,
-        intervalMs: Math.max(1_000, intervalMs),
-      })
+      const targetOrgIds = this.resolveRealtimeTargetOrgIds(orgId, sourceId)
+      if (targetOrgIds.length === 0) {
+        return
+      }
+
+      await Promise.all(
+        targetOrgIds.map((targetOrgId) =>
+          this.newsnowRealtime.publish({
+            orgId: targetOrgId,
+            sourceId,
+            newItemsCount,
+            topTitles,
+            updatedTime,
+            intervalMs: Math.max(1_000, intervalMs),
+          }),
+        ),
+      )
     } catch (error) {
       this.logger.warn(
         {
@@ -1212,5 +1223,14 @@ export class NewsAggregatorService {
         "failed to publish newsnow realtime event",
       )
     }
+  }
+
+  private resolveRealtimeTargetOrgIds(orgId: string | undefined, sourceId: SourceID) {
+    const explicitOrgId = typeof orgId === "string" ? orgId.trim() : ""
+    if (explicitOrgId) {
+      return [explicitOrgId]
+    }
+
+    return this.activeSources.getOrgIdsForSource(sourceId)
   }
 }

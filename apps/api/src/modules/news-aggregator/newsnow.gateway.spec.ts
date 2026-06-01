@@ -43,6 +43,7 @@ describe("NewsnowGateway", () => {
   const sessionsMock = {
     register: jest.fn(),
     unregister: jest.fn(),
+    emitToOrg: jest.fn(),
   } as any;
 
   const registryServiceMock = {
@@ -280,13 +281,14 @@ describe("NewsnowGateway", () => {
     expect(client.disconnect).toHaveBeenCalledWith(true);
   });
 
-  it("broadcasts realtime events received from dispatcher", async () => {
+  it("broadcasts realtime events received from dispatcher to the event org", async () => {
     gateway.onModuleInit();
 
     expect(dispatcherMock.registerListener).toHaveBeenCalledTimes(1);
     expect(realtimeListener).toBeDefined();
 
     await realtimeListener?.({
+      orgId: "org-1",
       sourceId: "weibo",
       newItemsCount: 2,
       topTitles: ["a", "b"],
@@ -295,10 +297,33 @@ describe("NewsnowGateway", () => {
       timestamp: new Date().toISOString(),
     });
 
-    expect(serverMock.emit).toHaveBeenCalledWith(
+    expect(sessionsMock.emitToOrg).toHaveBeenCalledWith(
+      serverMock,
+      "org-1",
       "newsnow:update",
-      expect.objectContaining({ sourceId: "weibo", newItemsCount: 2 }),
+      expect.objectContaining({
+        orgId: "org-1",
+        sourceId: "weibo",
+        newItemsCount: 2,
+      }),
     );
+    expect(serverMock.emit).not.toHaveBeenCalled();
+  });
+
+  it("drops realtime events without orgId instead of broadcasting to all sockets", async () => {
+    gateway.onModuleInit();
+
+    await realtimeListener?.({
+      sourceId: "weibo",
+      newItemsCount: 2,
+      topTitles: ["a", "b"],
+      updatedTime: new Date().toISOString(),
+      intervalMs: 120000,
+      timestamp: new Date().toISOString(),
+    } as any);
+
+    expect(sessionsMock.emitToOrg).not.toHaveBeenCalled();
+    expect(serverMock.emit).not.toHaveBeenCalled();
   });
 
   it("normalizes active source payloads from the socket", async () => {

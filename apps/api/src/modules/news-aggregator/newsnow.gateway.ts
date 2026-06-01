@@ -224,16 +224,22 @@ export class NewsnowGateway
     if (!this.server) {
       return;
     }
-    if (typeof event.orgId === "string" && event.orgId.trim().length > 0) {
-      this.sessions.emitToOrg(
-        this.server,
-        event.orgId,
-        "newsnow:update",
-        event,
+
+    const orgId = typeof event.orgId === "string" ? event.orgId.trim() : "";
+    if (!orgId) {
+      this.logger.warn(
+        { sourceId: event.sourceId },
+        "Dropped NewsNow realtime event without orgId",
       );
       return;
     }
-    this.server.emit("newsnow:update", event);
+
+    this.sessions.emitToOrg(
+      this.server,
+      orgId,
+      "newsnow:update",
+      { ...event, orgId },
+    );
   }
 
   private verifyToken(token: string): JwtPayload {
