@@ -7,7 +7,7 @@ import {
   settleWithConcurrency,
 } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
-import { PrismaService } from "../config/prisma.service";
+import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 
 import { NewsnowHottestAnalysisService } from "./newsnow-hottest-analysis.service";
@@ -21,7 +21,7 @@ type NewsnowHottestSchedulerOrgRunStatus = "completed" | "skipped";
 @Injectable()
 export class NewsnowHottestAnalysisSchedulerService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly activeOrgRegistry: ActiveOrgRegistryService,
     private readonly cache: CacheService,
     private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
     private readonly hottestAnalysis: NewsnowHottestAnalysisService,
@@ -41,10 +41,7 @@ export class NewsnowHottestAnalysisSchedulerService {
       return;
     }
 
-    const orgs = await this.prisma.org.findMany({
-      where: { isActive: true },
-      select: { id: true },
-    });
+    const orgs = await this.activeOrgRegistry.listActiveOrgs();
 
     if (orgs.length === 0) {
       return;

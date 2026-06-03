@@ -27,16 +27,13 @@ describe("SentimentSnapshotIngestionService", () => {
       setIfAbsent: jest.fn().mockResolvedValue(true),
       withLock: jest.fn(),
     } as any;
-    const prisma = {
-      org: {
-        findMany: jest
-          .fn()
-          .mockResolvedValue([
-            { id: "org-1" },
-            { id: "org-2" },
-            { id: "org-3" },
-          ]),
-      },
+    const prisma = {} as any;
+    const activeOrgRegistry = {
+      listActiveOrgs: jest.fn().mockResolvedValue([
+        { id: "org-1" },
+        { id: "org-2" },
+        { id: "org-3" },
+      ]),
     } as any;
     const schedulerSettings = {
       getRuntimeSettings: jest.fn().mockResolvedValue({
@@ -46,6 +43,7 @@ describe("SentimentSnapshotIngestionService", () => {
     const service = new SentimentSnapshotIngestionService(
       cache,
       prisma,
+      activeOrgRegistry,
       schedulerSettings,
     );
 

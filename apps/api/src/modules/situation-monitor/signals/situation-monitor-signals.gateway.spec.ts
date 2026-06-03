@@ -38,6 +38,8 @@ describe("SituationMonitorSignalsGateway", () => {
   const monitorsMock = {
     augmentTelegramRealtimePayload: jest.fn(),
     augmentOrefRealtimePayload: jest.fn(),
+    augmentTelegramRealtimePayloadForUsers: jest.fn(),
+    augmentOrefRealtimePayloadForUsers: jest.fn(),
   } as any;
 
   const sessionsMock = {
@@ -278,19 +280,37 @@ describe("SituationMonitorSignalsGateway", () => {
       [socketC.id, socketC],
     ]);
 
-    monitorsMock.augmentTelegramRealtimePayload
-      .mockResolvedValueOnce({
-        count: 1,
-        updatedAt: "2026-03-22T00:00:00.000Z",
-        items: [],
-        monitorMatches: [{ itemKey: "telegram:item-1", monitorId: "m-1" }],
-      })
-      .mockResolvedValueOnce({
-        count: 1,
-        updatedAt: "2026-03-22T00:00:00.000Z",
-        items: [],
-        monitorMatches: [{ itemKey: "telegram:item-1", monitorId: "m-2" }],
-      });
+    monitorsMock.augmentTelegramRealtimePayloadForUsers
+      .mockResolvedValueOnce(
+        new Map([
+          [
+            "user-1",
+            {
+              count: 1,
+              updatedAt: "2026-03-22T00:00:00.000Z",
+              items: [],
+              monitorMatches: [
+                { itemKey: "telegram:item-1", monitorId: "m-1" },
+              ],
+            },
+          ],
+        ]),
+      )
+      .mockResolvedValueOnce(
+        new Map([
+          [
+            "user-2",
+            {
+              count: 1,
+              updatedAt: "2026-03-22T00:00:00.000Z",
+              items: [],
+              monitorMatches: [
+                { itemKey: "telegram:item-1", monitorId: "m-2" },
+              ],
+            },
+          ],
+        ]),
+      );
 
     await listener({
       type: "situation:telegram.update",
@@ -302,17 +322,23 @@ describe("SituationMonitorSignalsGateway", () => {
       },
     });
 
-    expect(monitorsMock.augmentTelegramRealtimePayload).toHaveBeenCalledTimes(2);
-    expect(monitorsMock.augmentTelegramRealtimePayload).toHaveBeenNthCalledWith(
+    expect(
+      monitorsMock.augmentTelegramRealtimePayloadForUsers,
+    ).toHaveBeenCalledTimes(2);
+    expect(
+      monitorsMock.augmentTelegramRealtimePayloadForUsers,
+    ).toHaveBeenNthCalledWith(
       1,
       "org-1",
-      "user-1",
+      ["user-1"],
       expect.objectContaining({ count: 1 }),
     );
-    expect(monitorsMock.augmentTelegramRealtimePayload).toHaveBeenNthCalledWith(
+    expect(
+      monitorsMock.augmentTelegramRealtimePayloadForUsers,
+    ).toHaveBeenNthCalledWith(
       2,
       "org-2",
-      "user-2",
+      ["user-2"],
       expect.objectContaining({ count: 1 }),
     );
     expect(sessionsMock.emitToUser).toHaveBeenCalledTimes(2);

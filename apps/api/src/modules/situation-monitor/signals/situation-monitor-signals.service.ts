@@ -27,6 +27,7 @@ import { AlertsService } from "../../alerts/alerts.service";
 import { CacheService } from "../../cache/cache.service";
 import { EnvService } from "../../config/config.service";
 import { PrismaService } from "../../config/prisma.service";
+import { ActiveOrgRegistryService } from "../../org/active-org-registry.service";
 import { MultiTenantSchedulerSettingsService } from "../../system-settings/multi-tenant-scheduler-settings.service";
 import {
   SituationMonitorSettingsService,
@@ -150,6 +151,7 @@ export class SituationMonitorSignalsService
     private readonly alerts: AlertsService,
     private readonly settings: SituationMonitorSettingsService,
     private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
+    private readonly activeOrgRegistry: ActiveOrgRegistryService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -1182,10 +1184,7 @@ export class SituationMonitorSignalsService
       return;
     }
 
-    const orgs = await this.prisma.org.findMany({
-      where: { isActive: true },
-      select: { id: true },
-    });
+    const orgs = await this.activeOrgRegistry.listActiveOrgs();
 
     if (orgs.length === 0) {
       return;

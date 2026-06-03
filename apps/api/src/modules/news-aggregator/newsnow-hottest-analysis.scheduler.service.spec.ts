@@ -26,10 +26,8 @@ function createDeferred<T>(): Deferred<T> {
 }
 
 describe("NewsnowHottestAnalysisSchedulerService", () => {
-  const prisma = {
-    org: {
-      findMany: jest.fn(),
-    },
+  const activeOrgRegistry = {
+    listActiveOrgs: jest.fn(),
   };
   const cache = {
     setIfAbsent: jest.fn(),
@@ -63,7 +61,10 @@ describe("NewsnowHottestAnalysisSchedulerService", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    prisma.org.findMany.mockResolvedValue([{ id: "org-1" }, { id: "org-2" }]);
+    activeOrgRegistry.listActiveOrgs.mockResolvedValue([
+      { id: "org-1" },
+      { id: "org-2" },
+    ]);
     cache.setIfAbsent.mockResolvedValue(true);
     cache.withLock.mockImplementation(
       async (_key: string, _ttlMs: number, runner: () => Promise<unknown>) =>
@@ -75,7 +76,7 @@ describe("NewsnowHottestAnalysisSchedulerService", () => {
     hottestAnalysis.ensureGlobalSnapshot.mockResolvedValue(globalSnapshot);
     hottestAnalysis.refreshProjectionForOrg.mockResolvedValue(undefined);
     service = new NewsnowHottestAnalysisSchedulerService(
-      prisma as never,
+      activeOrgRegistry as never,
       cache as never,
       schedulerSettings as never,
       hottestAnalysis as never,
@@ -85,10 +86,7 @@ describe("NewsnowHottestAnalysisSchedulerService", () => {
   it("builds one global snapshot and refreshes each org projection inside a scheduler lock", async () => {
     await service.refreshScheduled();
 
-    expect(prisma.org.findMany).toHaveBeenCalledWith({
-      where: { isActive: true },
-      select: { id: true },
-    });
+    expect(activeOrgRegistry.listActiveOrgs).toHaveBeenCalledTimes(1);
     expect(cache.setIfAbsent).toHaveBeenCalledWith(
       "cron:newsnow-hottest-analysis:tick-gate",
       expect.any(Object),
@@ -115,7 +113,7 @@ describe("NewsnowHottestAnalysisSchedulerService", () => {
   });
 
   it("fans out org refreshes with configured concurrency", async () => {
-    prisma.org.findMany.mockResolvedValue([
+    activeOrgRegistry.listActiveOrgs.mockResolvedValue([
       { id: "org-1" },
       { id: "org-2" },
       { id: "org-3" },
@@ -166,7 +164,7 @@ describe("NewsnowHottestAnalysisSchedulerService", () => {
 
     await service.refreshScheduled();
 
-    expect(prisma.org.findMany).not.toHaveBeenCalled();
+    expect(activeOrgRegistry.listActiveOrgs).not.toHaveBeenCalled();
     expect(cache.withLock).not.toHaveBeenCalled();
     expect(schedulerSettings.getRuntimeSettings).not.toHaveBeenCalled();
     expect(hottestAnalysis.ensureGlobalSnapshot).not.toHaveBeenCalled();
@@ -184,7 +182,7 @@ describe("NewsnowHottestAnalysisSchedulerService", () => {
   });
 
   it("skips scheduler work when there are no active orgs", async () => {
-    prisma.org.findMany.mockResolvedValue([]);
+    activeOrgRegistry.listActiveOrgs.mockResolvedValue([]);
 
     await service.refreshScheduled();
 

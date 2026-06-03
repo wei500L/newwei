@@ -10,6 +10,7 @@ import {
 } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
+import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 
 import {
@@ -173,6 +174,7 @@ export class NewsEventsTimelineService {
   constructor(
     private readonly cache: CacheService,
     private readonly prisma: PrismaService,
+    private readonly activeOrgRegistry: ActiveOrgRegistryService,
     private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
     private readonly settings: NewsEventsSettingsService,
   ) {}
@@ -191,10 +193,7 @@ export class NewsEventsTimelineService {
       return;
     }
 
-    const orgs = await this.prisma.org.findMany({
-      where: { isActive: true },
-      select: { id: true },
-    });
+    const orgs = await this.activeOrgRegistry.listActiveOrgs();
 
     if (orgs.length === 0) {
       return;

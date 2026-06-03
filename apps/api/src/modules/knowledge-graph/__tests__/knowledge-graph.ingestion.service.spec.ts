@@ -27,16 +27,13 @@ describe("KnowledgeGraphIngestionService", () => {
       setIfAbsent: jest.fn().mockResolvedValue(true),
       withLock: jest.fn(),
     } as any;
-    const prisma = {
-      org: {
-        findMany: jest
-          .fn()
-          .mockResolvedValue([
-            { id: "org-1" },
-            { id: "org-2" },
-            { id: "org-3" },
-          ]),
-      },
+    const prisma = {} as any;
+    const activeOrgRegistry = {
+      listActiveOrgs: jest.fn().mockResolvedValue([
+        { id: "org-1" },
+        { id: "org-2" },
+        { id: "org-3" },
+      ]),
     } as any;
     const schedulerSettings = {
       getRuntimeSettings: jest.fn().mockResolvedValue({
@@ -49,6 +46,7 @@ describe("KnowledgeGraphIngestionService", () => {
     const service = new KnowledgeGraphIngestionService(
       cache,
       prisma,
+      activeOrgRegistry,
       schedulerSettings,
       settings,
       quality,
@@ -139,6 +137,7 @@ describe("KnowledgeGraphIngestionService", () => {
     } as any;
 
     const schedulerSettings = {} as any;
+    const activeOrgRegistry = {} as any;
     const settings = {
       getSettings: jest.fn().mockResolvedValue({
         enabled: true,
@@ -177,6 +176,7 @@ describe("KnowledgeGraphIngestionService", () => {
     const service = new KnowledgeGraphIngestionService(
       cache,
       prisma,
+      activeOrgRegistry,
       schedulerSettings,
       settings,
       quality,

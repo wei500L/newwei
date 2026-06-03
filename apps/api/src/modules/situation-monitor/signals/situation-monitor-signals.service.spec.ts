@@ -43,8 +43,10 @@ describe("SituationMonitorSignalsService", () => {
         situationMonitorOrefDefaultRuleOrgConcurrency: 16,
       }),
     } as any;
+    const activeOrgRegistry = {
+      listActiveOrgs: jest.fn(),
+    } as any;
     const prisma = {
-      org: { findMany: jest.fn() },
       alertRule: {
         findMany: jest.fn(),
         findFirst: jest.fn(),
@@ -59,10 +61,11 @@ describe("SituationMonitorSignalsService", () => {
       alerts,
       settings,
       schedulerSettings,
+      activeOrgRegistry,
       prisma,
     );
 
-    return { service, prisma };
+    return { service, prisma, activeOrgRegistry };
   }
 
   it("returns global telegram feed metadata", async () => {
@@ -312,8 +315,11 @@ describe("SituationMonitorSignalsService", () => {
   });
 
   it("loads existing OREF defaults in one batch query and only creates missing rules", async () => {
-    const { service, prisma } = createService();
-    prisma.org.findMany.mockResolvedValue([{ id: "org-1" }, { id: "org-2" }]);
+    const { service, prisma, activeOrgRegistry } = createService();
+    activeOrgRegistry.listActiveOrgs.mockResolvedValue([
+      { id: "org-1" },
+      { id: "org-2" },
+    ]);
     prisma.alertRule.findMany.mockResolvedValue([
       {
         orgId: "org-1",
@@ -351,8 +357,8 @@ describe("SituationMonitorSignalsService", () => {
   });
 
   it("ignores duplicate OREF default-rule creates after switching to deterministic ids", async () => {
-    const { service, prisma } = createService();
-    prisma.org.findMany.mockResolvedValue([{ id: "org-1" }]);
+    const { service, prisma, activeOrgRegistry } = createService();
+    activeOrgRegistry.listActiveOrgs.mockResolvedValue([{ id: "org-1" }]);
     prisma.alertRule.findMany.mockResolvedValue([]);
     prisma.alertRule.create.mockImplementation(
       async ({ data }: { data: any }) => {

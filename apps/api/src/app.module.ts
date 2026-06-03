@@ -38,6 +38,7 @@ import { NewsEventsModule } from "./modules/news-events/news-events.module";
 import { NewsIndicatorModule } from "./modules/news-indicator/news-indicator.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { ObservabilityModule } from "./modules/observability/observability.module";
+import { OrgModule } from "./modules/org/org.module";
 import { PublicPortalModule } from "./modules/public-portal/public-portal.module";
 import { QueueAdminModule } from "./modules/queue/queue-admin.module";
 import { QueueModule } from "./modules/queue/queue.module";
@@ -80,6 +81,7 @@ const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
     QueueModule,
     ...(bullBoardEnabled ? [QueueAdminModule] : []),
     AuthModule,
+    OrgModule,
     AuditModule,
     RbacModule,
     ItemsModule,

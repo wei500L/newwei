@@ -31,10 +31,9 @@ describe("NewsEventsIngestionService", () => {
       setIfAbsent: jest.fn().mockResolvedValue(true),
       withLock: jest.fn(),
     } as any;
-    const prisma = {
-      org: {
-        findMany: jest.fn(),
-      },
+    const prisma = {} as any;
+    const activeOrgRegistry = {
+      listActiveOrgs: jest.fn(),
     } as any;
     const schedulerSettings = {
       getRuntimeSettings: jest.fn().mockResolvedValue({
@@ -43,25 +42,30 @@ describe("NewsEventsIngestionService", () => {
     } as any;
     const settings = {} as any;
     const events = {} as any;
+    const bertopic = {} as any;
     const service = new NewsEventsIngestionService(
       cache,
       prisma,
+      activeOrgRegistry,
       schedulerSettings,
       settings,
       events,
+      bertopic,
     );
 
     return {
       service,
       cache,
       prisma,
+      activeOrgRegistry,
       schedulerSettings,
     };
   };
 
   it("fans out org ingestion with configured concurrency", async () => {
-    const { service, cache, prisma, schedulerSettings } = createService();
-    prisma.org.findMany.mockResolvedValue([
+    const { service, cache, activeOrgRegistry, schedulerSettings } =
+      createService();
+    activeOrgRegistry.listActiveOrgs.mockResolvedValue([
       { id: "org-1" },
       { id: "org-2" },
       { id: "org-3" },
@@ -119,8 +123,11 @@ describe("NewsEventsIngestionService", () => {
   });
 
   it("skips an org when its lock is already held", async () => {
-    const { service, cache, prisma } = createService();
-    prisma.org.findMany.mockResolvedValue([{ id: "org-1" }, { id: "org-2" }]);
+    const { service, cache, activeOrgRegistry } = createService();
+    activeOrgRegistry.listActiveOrgs.mockResolvedValue([
+      { id: "org-1" },
+      { id: "org-2" },
+    ]);
     cache.withLock
       .mockResolvedValueOnce(null)
       .mockImplementationOnce(

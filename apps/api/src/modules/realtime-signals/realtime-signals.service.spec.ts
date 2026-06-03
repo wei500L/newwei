@@ -107,6 +107,10 @@ const createSchedulerSettings = (concurrency = 2) => ({
   }),
 });
 
+const createActiveOrgRegistry = (orgs = [{ id: "org-1" }]) => ({
+  listActiveOrgs: jest.fn().mockResolvedValue(orgs),
+});
+
 describe("RealtimeSignalsService unrest merge", () => {
   const buildService = () => {
     const store = {
@@ -125,6 +129,7 @@ describe("RealtimeSignalsService unrest merge", () => {
       { realtimeSignalsConfig: envConfig } as any,
       store as any,
       {} as any,
+      createActiveOrgRegistry() as any,
       createSchedulerSettings() as any,
     );
     jest
@@ -804,6 +809,7 @@ describe("RealtimeSignalsService unrest merge", () => {
       { realtimeSignalsConfig: envConfig } as any,
       {} as any,
       settings as any,
+      createActiveOrgRegistry() as any,
       createSchedulerSettings() as any,
     );
     const fetchJsonSpy = jest
@@ -944,6 +950,7 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
       { realtimeSignalsConfig: envConfig } as any,
       store as any,
       settings as any,
+      createActiveOrgRegistry() as any,
       createSchedulerSettings() as any,
     );
     return { service, prisma, cache, store, settings };
@@ -1287,6 +1294,7 @@ describe("RealtimeSignalsService scheduler lock", () => {
       { realtimeSignalsConfig: envConfig } as any,
       {} as any,
       settings as any,
+      createActiveOrgRegistry() as any,
       createSchedulerSettings() as any,
     );
     jest.spyOn(service, "refreshOrg").mockResolvedValue();
@@ -1319,6 +1327,7 @@ describe("RealtimeSignalsService fetch retries", () => {
       { realtimeSignalsConfig: envConfig } as any,
       {} as any,
       { getRuntimeConfig: jest.fn().mockResolvedValue(runtimeConfig) } as any,
+      createActiveOrgRegistry() as any,
       createSchedulerSettings() as any,
     );
     const fetchSpy = jest
@@ -1395,6 +1404,7 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       { realtimeSignalsConfig: envConfig } as any,
       store as any,
       settings as any,
+      createActiveOrgRegistry() as any,
       createSchedulerSettings() as any,
     );
     return { service, prisma, store, settings, cache };
@@ -1844,6 +1854,7 @@ describe("RealtimeSignalsService processed article term coverage", () => {
       { realtimeSignalsConfig: envConfig } as any,
       {} as any,
       { getRuntimeConfig: jest.fn().mockResolvedValue(runtimeConfig) } as any,
+      createActiveOrgRegistry() as any,
       createSchedulerSettings() as any,
     );
     return { service, prisma, cache };

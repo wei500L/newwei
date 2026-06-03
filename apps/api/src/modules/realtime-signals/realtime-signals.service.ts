@@ -33,6 +33,7 @@ import { CacheService } from "../cache/cache.service";
 import { REDIS_CLIENT } from "../cache/cache.tokens";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
+import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 import { RealtimeSignalsSettingsService } from "../system-settings/realtime-signals-settings.service";
 
@@ -81,6 +82,16 @@ const logger = createLogger({ name: "realtime-signals" });
 const REALTIME_SIGNALS_TICK_GATE_TTL_MS = 55_000;
 
 type RealtimeSignalsSchedulerOrgRunStatus = "completed" | "skipped";
+interface RealtimeSignalsSharedSourceContext {
+  fetch(source: RealtimeSignalSource): Promise<RealtimeSignalFetchResult[]>;
+}
+
+const REALTIME_GLOBAL_RESULT_SOURCES = new Set<RealtimeSignalSource>([
+  "unrest",
+  "outages",
+  "pizzint",
+  "gdelt_tension",
+]);
 const ACLED_API_URL = "https://acleddata.com/api/acled/read";
 const GDELT_UNREST_GEOJSON_URL =
   "https://api.gdeltproject.org/api/v1/gkg_geojson";
@@ -454,6 +465,7 @@ export class RealtimeSignalsService {
     private readonly env: EnvService,
     private readonly store: RealtimeSignalsSnapshotStore,
     private readonly settings: RealtimeSignalsSettingsService,
+    private readonly activeOrgRegistry: ActiveOrgRegistryService,
     private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
   ) {}
 
@@ -476,10 +488,7 @@ export class RealtimeSignalsService {
       return;
     }
 
-    const orgs = await this.prisma.org.findMany({
-      where: { isActive: true },
-      select: { id: true },
-    });
+    const orgs = await this.activeOrgRegistry.listActiveOrgs();
 
     if (orgs.length === 0) {
       return;
@@ -492,10 +501,12 @@ export class RealtimeSignalsService {
       "Realtime signals refresh tick started",
     );
 
+    const sharedSourceContext = this.createSharedSourceContext(runtime);
     const results = await settleWithConcurrency(
       orgs,
       concurrency,
-      async (org) => this.refreshOrgWithLock(org.id, runtime),
+      async (org) =>
+        this.refreshOrgWithLock(org.id, runtime, sharedSourceContext),
     );
 
     let failedOrgs = 0;
@@ -515,7 +526,7 @@ export class RealtimeSignalsService {
     }
 
     try {
-      await this.refreshGlobalAllFlightCapture(
+      await this.refreshGlobalAllFlightCaptureWithLock(
         orgs.map((org) => org.id),
         runtime,
       );
@@ -535,12 +546,13 @@ export class RealtimeSignalsService {
   private async refreshOrgWithLock(
     orgId: string,
     runtime: RealtimeSignalsRuntimeConfig,
+    sharedSourceContext?: RealtimeSignalsSharedSourceContext,
   ): Promise<RealtimeSignalsSchedulerOrgRunStatus> {
     const locked = await this.cache.withLock(
       `cron:realtime-signals:org:${orgId}`,
       REALTIME_SIGNALS_INGEST_LOCK_TTL_MS,
       async () => {
-        await this.refreshOrg(orgId, runtime);
+        await this.refreshOrg(orgId, runtime, sharedSourceContext);
         return "completed" as const;
       },
     );
@@ -556,9 +568,30 @@ export class RealtimeSignalsService {
     return "skipped";
   }
 
+  private async refreshGlobalAllFlightCaptureWithLock(
+    orgIds: string[],
+    runtime: RealtimeSignalsRuntimeConfig,
+  ) {
+    const locked = await this.cache.withLock(
+      "cron:realtime-signals:opensky-all-capture",
+      REALTIME_SIGNALS_INGEST_LOCK_TTL_MS,
+      async () => {
+        await this.refreshGlobalAllFlightCapture(orgIds, runtime);
+        return "completed" as const;
+      },
+    );
+
+    if (locked === null) {
+      logger.info(
+        "Skipped realtime signals global all-flight capture because another run is in progress",
+      );
+    }
+  }
+
   async refreshOrg(
     orgId: string,
     runtimeConfig?: RealtimeSignalsRuntimeConfig,
+    sharedSourceContext?: RealtimeSignalsSharedSourceContext,
   ) {
     const runtime = runtimeConfig ?? (await this.getRuntimeConfig());
     if (!runtime.enabled) {
@@ -619,7 +652,12 @@ export class RealtimeSignalsService {
       }
 
       try {
-        const results = await this.fetchSource(orgId, source, runtime);
+        const results = await this.fetchSource(
+          orgId,
+          source,
+          runtime,
+          sharedSourceContext,
+        );
         const completedAtMs = Date.now();
         const nowIso = new Date(completedAtMs).toISOString();
         const nextEligibleAt = new Date(
@@ -1053,7 +1091,15 @@ export class RealtimeSignalsService {
     orgId: string,
     source: RealtimeSignalSource,
     runtime: RealtimeSignalsRuntimeConfig,
+    sharedSourceContext?: RealtimeSignalsSharedSourceContext,
   ): Promise<RealtimeSignalFetchResult[]> {
+    if (
+      sharedSourceContext &&
+      REALTIME_GLOBAL_RESULT_SOURCES.has(source)
+    ) {
+      return await sharedSourceContext.fetch(source);
+    }
+
     switch (source) {
       case "opensky":
         return this.fetchAdsbSignal(orgId, runtime);
@@ -1071,6 +1117,46 @@ export class RealtimeSignalsService {
         return this.fetchGdeltTensionSignal(runtime);
       case "polymarket_leads":
         return this.fetchPolymarketLeadsSignal(orgId, runtime);
+      default:
+        return [];
+    }
+  }
+
+  private createSharedSourceContext(
+    runtime: RealtimeSignalsRuntimeConfig,
+  ): RealtimeSignalsSharedSourceContext {
+    const fetches = new Map<
+      RealtimeSignalSource,
+      Promise<RealtimeSignalFetchResult[]>
+    >();
+
+    return {
+      fetch: async (source) => {
+        const existing = fetches.get(source);
+        if (existing) {
+          return await existing;
+        }
+
+        const promise = this.fetchSharedGlobalSource(source, runtime);
+        fetches.set(source, promise);
+        return await promise;
+      },
+    };
+  }
+
+  private async fetchSharedGlobalSource(
+    source: RealtimeSignalSource,
+    runtime: RealtimeSignalsRuntimeConfig,
+  ): Promise<RealtimeSignalFetchResult[]> {
+    switch (source) {
+      case "unrest":
+        return this.fetchUnrestSignal(runtime);
+      case "outages":
+        return this.fetchOutagesSignal(runtime);
+      case "pizzint":
+        return this.fetchPizzintSignal(runtime);
+      case "gdelt_tension":
+        return this.fetchGdeltTensionSignal(runtime);
       default:
         return [];
     }

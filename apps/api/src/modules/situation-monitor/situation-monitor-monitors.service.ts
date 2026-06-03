@@ -636,6 +636,31 @@ export class SituationMonitorMonitorsService {
     };
   }
 
+  async augmentTelegramRealtimePayloadForUsers(
+    orgId: string,
+    userIds: string[],
+    payload: SituationTelegramRealtimePayload,
+  ): Promise<Map<string, SituationTelegramRealtimePayload>> {
+    const normalizedUserIds = this.normalizeUserIds(userIds);
+    const candidates = (payload.items ?? []).map((item) =>
+      this.telegramCandidate(item),
+    );
+    const matchesByUser = await this.matchCandidatesForUsers(
+      orgId,
+      normalizedUserIds,
+      candidates,
+    );
+    return new Map(
+      normalizedUserIds.map((userId) => [
+        userId,
+        {
+          ...payload,
+          monitorMatches: matchesByUser.get(userId) ?? [],
+        },
+      ]),
+    );
+  }
+
   async augmentOrefAlerts(
     orgId: string,
     userId: string,
@@ -675,6 +700,50 @@ export class SituationMonitorMonitorsService {
       alertMonitorMatches,
       ...(historyEntry ? { historyMonitorMatches } : {}),
     };
+  }
+
+  async augmentOrefRealtimePayloadForUsers(
+    orgId: string,
+    userIds: string[],
+    payload: SituationOrefRealtimePayload,
+  ): Promise<Map<string, SituationOrefRealtimePayload>> {
+    const normalizedUserIds = this.normalizeUserIds(userIds);
+    const historyEntry = payload.historyEntry ?? undefined;
+    const alertCandidates = (payload.alerts ?? []).map((alert) =>
+      this.orefAlertCandidate(alert, "oref_alert"),
+    );
+    const historyCandidates = historyEntry
+      ? historyEntry.alerts.map((alert) =>
+          this.orefHistoryCandidate(alert, historyEntry),
+        )
+      : [];
+    const [alertMatchesByUser, historyMatchesByUser] = await Promise.all([
+      this.matchCandidatesForUsers(orgId, normalizedUserIds, alertCandidates),
+      historyCandidates.length > 0
+        ? this.matchCandidatesForUsers(
+            orgId,
+            normalizedUserIds,
+            historyCandidates,
+          )
+        : Promise.resolve(
+            new Map<string, SituationMonitorMatchResult[]>(
+              normalizedUserIds.map((userId) => [userId, []]),
+            ),
+          ),
+    ]);
+
+    return new Map(
+      normalizedUserIds.map((userId) => [
+        userId,
+        {
+          ...payload,
+          alertMonitorMatches: alertMatchesByUser.get(userId) ?? [],
+          ...(historyEntry
+            ? { historyMonitorMatches: historyMatchesByUser.get(userId) ?? [] }
+            : {}),
+        },
+      ]),
+    );
   }
 
   async augmentOrefHistory(
@@ -738,6 +807,16 @@ export class SituationMonitorMonitorsService {
     return ownership;
   }
 
+  private normalizeUserIds(userIds: string[]): string[] {
+    return Array.from(
+      new Set(
+        userIds
+          .map((userId) => userId.trim())
+          .filter((userId) => userId.length > 0),
+      ),
+    );
+  }
+
   private async matchCandidates(
     orgId: string,
     userId: string,
@@ -759,6 +838,80 @@ export class SituationMonitorMonitorsService {
       monitors,
       candidates,
     );
+    return await this.matchCandidatesWithPreparedData(
+      orgId,
+      monitors,
+      candidates,
+      candidateEmbeddings,
+    );
+  }
+
+  private async matchCandidatesForUsers(
+    orgId: string,
+    userIds: string[],
+    candidates: MonitorCandidate[],
+  ): Promise<Map<string, SituationMonitorMatchResult[]>> {
+    const normalizedUserIds = this.normalizeUserIds(userIds);
+    const emptyResults = new Map<string, SituationMonitorMatchResult[]>(
+      normalizedUserIds.map((userId) => [userId, []]),
+    );
+    if (normalizedUserIds.length === 0 || candidates.length === 0) {
+      return emptyResults;
+    }
+
+    const rows = await this.prisma.situationMonitorMonitor.findMany({
+      where: { orgId, userId: { in: normalizedUserIds } },
+      orderBy: [{ userId: "asc" }, { kind: "asc" }, { createdAt: "desc" }],
+    });
+    if (rows.length === 0) {
+      return emptyResults;
+    }
+
+    const monitorsByUser = new Map<string, NormalizedMonitorRecord[]>();
+    const allMonitors: NormalizedMonitorRecord[] = [];
+    for (const row of rows) {
+      const monitor = this.normalizeMonitorRow(row);
+      if (!monitor.enabled) {
+        continue;
+      }
+
+      const rowUserId = row.userId;
+      const monitors = monitorsByUser.get(rowUserId) ?? [];
+      monitors.push(monitor);
+      monitorsByUser.set(rowUserId, monitors);
+      allMonitors.push(monitor);
+    }
+
+    if (allMonitors.length === 0) {
+      return emptyResults;
+    }
+
+    const candidateEmbeddings = await this.embedCandidateBatch(
+      orgId,
+      allMonitors,
+      candidates,
+    );
+    const results = new Map<string, SituationMonitorMatchResult[]>();
+    for (const userId of normalizedUserIds) {
+      results.set(
+        userId,
+        await this.matchCandidatesWithPreparedData(
+          orgId,
+          monitorsByUser.get(userId) ?? [],
+          candidates,
+          candidateEmbeddings,
+        ),
+      );
+    }
+    return results;
+  }
+
+  private async matchCandidatesWithPreparedData(
+    orgId: string,
+    monitors: NormalizedMonitorRecord[],
+    candidates: MonitorCandidate[],
+    candidateEmbeddings: Map<string, number[]>,
+  ): Promise<SituationMonitorMatchResult[]> {
     const results: SituationMonitorMatchResult[] = [];
 
     for (const monitor of monitors) {

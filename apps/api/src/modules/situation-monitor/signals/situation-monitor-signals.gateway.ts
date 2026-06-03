@@ -238,42 +238,56 @@ export class SituationMonitorSignalsGateway
       return;
     }
 
-    const users = this.getConnectedUsers();
-    if (users.length === 0) {
+    const usersByOrg = this.getConnectedUsersByOrg();
+    if (usersByOrg.size === 0) {
       return;
     }
 
     await Promise.allSettled(
-      users.map(async ({ orgId, userId }) => {
-        const payload = await this.augmentPayloadForUser(event, orgId, userId);
-        this.sessions.emitToUser(this.server, userId, event.type, payload);
+      Array.from(usersByOrg.entries()).map(async ([orgId, userIds]) => {
+        const payloadsByUser = await this.augmentPayloadForOrg(
+          event,
+          orgId,
+          userIds,
+        );
+        for (const userId of userIds) {
+          this.sessions.emitToUser(
+            this.server,
+            userId,
+            event.type,
+            payloadsByUser.get(userId) ?? event.payload,
+          );
+        }
       }),
     );
   }
 
-  private async augmentPayloadForUser(
+  private async augmentPayloadForOrg(
     event: SupportedSituationMonitorRealtimeEvent,
     orgId: string,
-    userId: string,
-  ) {
+    userIds: string[],
+  ): Promise<Map<string, SupportedSituationMonitorRealtimeEvent["payload"]>> {
+    const fallback = new Map(
+      userIds.map((userId) => [userId, event.payload] as const),
+    );
     if (!this.monitors) {
-      return event.payload;
+      return fallback;
     }
 
     try {
       if (event.type === "situation:telegram.update") {
         const payload = event.payload as SituationTelegramRealtimePayload;
-        return await this.monitors.augmentTelegramRealtimePayload(
+        return await this.monitors.augmentTelegramRealtimePayloadForUsers(
           orgId,
-          userId,
+          userIds,
           payload,
         );
       }
 
       const payload = event.payload as SituationOrefRealtimePayload;
-      return await this.monitors.augmentOrefRealtimePayload(
+      return await this.monitors.augmentOrefRealtimePayloadForUsers(
         orgId,
-        userId,
+        userIds,
         payload,
       );
     } catch (error) {
@@ -281,12 +295,12 @@ export class SituationMonitorSignalsGateway
         {
           eventType: event.type,
           orgId,
-          userId,
+          userCount: userIds.length,
           error: error instanceof Error ? error.message : String(error),
         },
         "Failed to augment situation monitor realtime payload",
       );
-      return event.payload;
+      return fallback;
     }
   }
 
@@ -437,10 +451,10 @@ export class SituationMonitorSignalsGateway
     return allowlist.includes(normalizedOrigin);
   }
 
-  private getConnectedUsers() {
+  private getConnectedUsersByOrg() {
     const sockets = this.server?.sockets?.sockets;
     if (!sockets) {
-      return [] as { orgId: string; userId: string }[];
+      return new Map<string, string[]>();
     }
 
     const users = new Map<string, { orgId: string; userId: string }>();
@@ -454,6 +468,12 @@ export class SituationMonitorSignalsGateway
         userId: profile.id,
       });
     }
-    return Array.from(users.values());
+    const usersByOrg = new Map<string, string[]>();
+    for (const { orgId, userId } of users.values()) {
+      const userIds = usersByOrg.get(orgId) ?? [];
+      userIds.push(userId);
+      usersByOrg.set(orgId, userIds);
+    }
+    return usersByOrg;
   }
 }

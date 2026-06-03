@@ -31,6 +31,9 @@ describe("NewsEventsTimelineService", () => {
           await runner(),
       ),
     },
+    activeOrgRegistry: {
+      listActiveOrgs: jest.fn().mockResolvedValue([]),
+    },
     schedulerSettings: {
       getRuntimeSettings: jest.fn().mockResolvedValue({
         newsEventsTimelineOrgConcurrency: 2,
@@ -145,10 +148,11 @@ describe("NewsEventsTimelineService", () => {
       }),
     };
 
-    const { cache, schedulerSettings } = makeSchedulerDeps();
+    const { cache, activeOrgRegistry, schedulerSettings } = makeSchedulerDeps();
     const service = new NewsEventsTimelineService(
       cache as any,
       prisma as any,
+      activeOrgRegistry as any,
       schedulerSettings as any,
       settings as any,
     );
@@ -281,10 +285,11 @@ describe("NewsEventsTimelineService", () => {
       }),
     };
 
-    const { cache, schedulerSettings } = makeSchedulerDeps();
+    const { cache, activeOrgRegistry, schedulerSettings } = makeSchedulerDeps();
     const service = new NewsEventsTimelineService(
       cache as any,
       prisma as any,
+      activeOrgRegistry as any,
       schedulerSettings as any,
       settings as any,
     );
@@ -322,10 +327,11 @@ describe("NewsEventsTimelineService", () => {
   it("prunes expired timeline classification cache entries proactively", async () => {
     mockProcessedItemFind.mockReturnValueOnce(makeMongoFindQuery([]));
 
-    const { cache, schedulerSettings } = makeSchedulerDeps();
+    const { cache, activeOrgRegistry, schedulerSettings } = makeSchedulerDeps();
     const service = new NewsEventsTimelineService(
       cache as any,
       {} as any,
+      activeOrgRegistry as any,
       schedulerSettings as any,
       {} as any,
     );

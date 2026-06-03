@@ -7,7 +7,7 @@ import {
   settleWithConcurrency,
 } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
-import { PrismaService } from "../config/prisma.service";
+import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 
 import { NewsIndicatorAssociationService } from "./news-indicator-association.service";
@@ -24,7 +24,7 @@ type NewsIndicatorAssociationSchedulerOrgRunStatus = "completed" | "skipped";
 export class NewsIndicatorAssociationIngestionService {
   constructor(
     private readonly cache: CacheService,
-    private readonly prisma: PrismaService,
+    private readonly activeOrgRegistry: ActiveOrgRegistryService,
     private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
     private readonly settings: NewsIndicatorSettingsService,
     private readonly associations: NewsIndicatorAssociationService,
@@ -44,10 +44,7 @@ export class NewsIndicatorAssociationIngestionService {
       return;
     }
 
-    const orgs = await this.prisma.org.findMany({
-      where: { isActive: true },
-      select: { id: true },
-    });
+    const orgs = await this.activeOrgRegistry.listActiveOrgs();
 
     if (orgs.length === 0) {
       return;

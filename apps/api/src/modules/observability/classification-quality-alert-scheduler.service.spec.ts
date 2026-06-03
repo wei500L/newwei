@@ -114,10 +114,8 @@ function createService(options: {
   getSummary: jest.Mock;
   withLock?: jest.Mock;
 }) {
-  const prisma = {
-    org: {
-      findMany: jest.fn().mockResolvedValue(options.orgs),
-    },
+  const activeOrgRegistry = {
+    listActiveOrgs: jest.fn().mockResolvedValue(options.orgs),
   };
   const cache = {
     setIfAbsent: jest.fn().mockResolvedValue(true),
@@ -138,7 +136,7 @@ function createService(options: {
   };
 
   return new ClassificationQualityAlertSchedulerService(
-    prisma as any,
+    activeOrgRegistry as any,
     cache as any,
     schedulerSettings as any,
     classificationQuality as any,
