@@ -4,9 +4,13 @@ import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { CrawlTaskStatus, Prisma } from "@prisma/client";
 
-import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
+import {
+  claimSchedulerTick,
+  settleWithConcurrency,
+} from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
+import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 
 import type {
   CrawlQualityMetricsAggregates,
@@ -25,7 +29,7 @@ const logger = createLogger({ name: "crawl-quality-task-snapshot" });
 
 const ACTIVE_TASK_REFRESH_MAX_AGE_MS = 5 * 60 * 1000;
 const RECENT_CHANGE_LOOKBACK_MS = 15 * 60 * 1000;
-const RECENT_REFRESH_ORG_CONCURRENCY = 2;
+const RECENT_REFRESH_TICK_GATE_TTL_MS = 4 * 60_000 + 45_000;
 const REFRESH_BATCH_SIZE = 200;
 const REFRESH_LOCK_TTL_MS = 4 * 60 * 1000;
 const ACTIVE_TASK_STATUSES = new Set<CrawlTaskStatus>([
@@ -80,10 +84,23 @@ export class CrawlQualityTaskSnapshotService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async refreshRecentSnapshots() {
+    const claimed = await claimSchedulerTick(
+      this.cache,
+      "cron:crawl-quality-task-snapshot:tick-gate",
+      RECENT_REFRESH_TICK_GATE_TTL_MS,
+    );
+    if (!claimed) {
+      logger.info(
+        "Skipped crawl quality task snapshot refresh tick because another instance already claimed this interval",
+      );
+      return;
+    }
+
     const orgs = await this.prisma.org.findMany({
       where: { isActive: true },
       select: { id: true },
@@ -92,9 +109,11 @@ export class CrawlQualityTaskSnapshotService {
       return;
     }
 
+    const runtime = await this.schedulerSettings.getRuntimeSettings();
+    const concurrency = runtime.crawlQualityTaskSnapshotOrgConcurrency;
     const results = await settleWithConcurrency(
       orgs,
-      RECENT_REFRESH_ORG_CONCURRENCY,
+      concurrency,
       async (org) => await this.refreshRecentSnapshotsForOrgWithLock(org.id),
     );
 
@@ -115,7 +134,7 @@ export class CrawlQualityTaskSnapshotService {
     }
 
     logger.info(
-      { orgCount: orgs.length, failed, skipped },
+      { orgCount: orgs.length, concurrency, failed, skipped },
       "Crawl quality task snapshot refresh tick completed",
     );
   }

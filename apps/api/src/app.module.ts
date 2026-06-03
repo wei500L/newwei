@@ -46,6 +46,7 @@ import { RealtimeSignalsModule } from "./modules/realtime-signals/realtime-signa
 import { SearchTelemetryModule } from "./modules/search-telemetry/search-telemetry.module";
 import { SentimentModule } from "./modules/sentiment/sentiment.module";
 import { SituationMonitorModule } from "./modules/situation-monitor/situation-monitor.module";
+import { MultiTenantSchedulerSettingsModule } from "./modules/system-settings/multi-tenant-scheduler-settings.module";
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
 import { UserContentSubscriptionsModule } from "./modules/user-content-subscriptions/user-content-subscriptions.module";
 import { UserDigestModule } from "./modules/user-digest/user-digest.module";
@@ -91,6 +92,7 @@ const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
     AnalysisModule,
     AnalysisWorkspaceModule,
     AssistantModule,
+    MultiTenantSchedulerSettingsModule,
     RealtimeSignalsModule,
     SearchTelemetryModule,
     SituationMonitorModule,

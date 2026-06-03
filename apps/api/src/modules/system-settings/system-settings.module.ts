@@ -37,8 +37,6 @@ import { LlmRequestLogSettingsController } from "./llm-request-log-settings.cont
 import { LlmRequestLogSettingsService } from "./llm-request-log-settings.service";
 import { ModelServiceSettingsController } from "./model-service-settings.controller";
 import { ModelServiceSettingsService } from "./model-service-settings.service";
-import { MultiTenantSchedulerSettingsController } from "./multi-tenant-scheduler-settings.controller";
-import { MultiTenantSchedulerSettingsService } from "./multi-tenant-scheduler-settings.service";
 import { NewsSourceRuntimeSecretsController } from "./news-source-runtime-secrets.controller";
 import { NewsSourceRuntimeSecretsService } from "./news-source-runtime-secrets.service";
 import { NewsSourceSchedulerSettingsController } from "./news-source-scheduler-settings.controller";
@@ -94,7 +92,6 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     OpenAiKeysInternalController,
     SystemSecuritySettingsController,
     ModelServiceSettingsController,
-    MultiTenantSchedulerSettingsController,
     LlmRequestLogSettingsController,
     NewsSourceRuntimeSecretsController,
     NewsSourceSchedulerSettingsController,
@@ -125,7 +122,6 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
-    MultiTenantSchedulerSettingsService,
     LlmRequestLogSettingsService,
     NewsSourceRuntimeSecretsService,
     NewsSourceSchedulerSettingsService,
@@ -158,7 +154,6 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
-    MultiTenantSchedulerSettingsService,
     LlmRequestLogSettingsService,
     NewsSourceRuntimeSecretsService,
     NewsSourceSchedulerSettingsService,

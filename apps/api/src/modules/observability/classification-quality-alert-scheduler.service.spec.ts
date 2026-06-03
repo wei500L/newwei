@@ -120,6 +120,7 @@ function createService(options: {
     },
   };
   const cache = {
+    setIfAbsent: jest.fn().mockResolvedValue(true),
     withLock:
       options.withLock ??
       jest.fn(

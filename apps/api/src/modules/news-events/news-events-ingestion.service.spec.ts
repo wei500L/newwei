@@ -28,6 +28,7 @@ function createDeferred<T>(): Deferred<T> {
 describe("NewsEventsIngestionService", () => {
   const createService = () => {
     const cache = {
+      setIfAbsent: jest.fn().mockResolvedValue(true),
       withLock: jest.fn(),
     } as any;
     const prisma = {
@@ -81,17 +82,19 @@ describe("NewsEventsIngestionService", () => {
     let maxActive = 0;
     let started = 0;
 
-    jest.spyOn(service as any, "ingestOrg").mockImplementation(async (orgId: string) => {
-      started += 1;
-      active += 1;
-      maxActive = Math.max(maxActive, active);
-      if (started === 2) {
-        startedTwo.resolve();
-      }
+    jest
+      .spyOn(service as any, "ingestOrg")
+      .mockImplementation(async (orgId: string) => {
+        started += 1;
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        if (started === 2) {
+          startedTwo.resolve();
+        }
 
-      await releases.get(orgId)!.promise;
-      active -= 1;
-    });
+        await releases.get(orgId)!.promise;
+        active -= 1;
+      });
 
     const runPromise = service.ingestRecentProcessedArticles();
 

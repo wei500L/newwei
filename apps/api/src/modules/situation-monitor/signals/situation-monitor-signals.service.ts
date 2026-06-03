@@ -19,10 +19,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
+import {
+  claimSchedulerTick,
+  settleWithConcurrency,
+} from "../../../common/multi-tenant-scheduler";
 import { AlertsService } from "../../alerts/alerts.service";
 import { CacheService } from "../../cache/cache.service";
 import { EnvService } from "../../config/config.service";
 import { PrismaService } from "../../config/prisma.service";
+import { MultiTenantSchedulerSettingsService } from "../../system-settings/multi-tenant-scheduler-settings.service";
 import {
   SituationMonitorSettingsService,
   type SituationMonitorTelegramRuntimeConfig,
@@ -59,7 +64,7 @@ const TELEGRAM_CACHE_TTL_SECONDS = 24 * 60 * 60;
 const OREF_ALERTS_CACHE_TTL_SECONDS = 60 * 60;
 const OREF_HISTORY_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const OREF_PERSIST_MAX_WAVES_DEFAULT = 200;
-const OREF_DEFAULT_RULE_CONCURRENCY = 16;
+const OREF_DEFAULT_RULE_TICK_GATE_TTL_MS = 55_000;
 
 interface TelegramState {
   client: unknown | null;
@@ -144,6 +149,7 @@ export class SituationMonitorSignalsService
     private readonly dispatcher: SituationMonitorSignalsDispatcher,
     private readonly alerts: AlertsService,
     private readonly settings: SituationMonitorSettingsService,
+    private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -1164,6 +1170,18 @@ export class SituationMonitorSignalsService
     }
     this.orefEnsureRulesAt = now;
 
+    const claimed = await claimSchedulerTick(
+      this.cache,
+      "cron:situation-monitor-oref-default-rules:tick-gate",
+      OREF_DEFAULT_RULE_TICK_GATE_TTL_MS,
+    );
+    if (!claimed) {
+      logger.info(
+        "Skipped OREF default alert rule maintenance because another instance already claimed this interval",
+      );
+      return;
+    }
+
     const orgs = await this.prisma.org.findMany({
       where: { isActive: true },
       select: { id: true },
@@ -1193,62 +1211,80 @@ export class SituationMonitorSignalsService
         (rule) => `${rule.orgId}:${String(rule.metricSlug).trim()}`,
       ),
     );
-    const missingRules = orgs.flatMap((org) =>
-      SITUATION_MONITOR_DEFAULT_OREF_ALERT_RULES.filter(
-        (definition) => !existingRuleKeys.has(`${org.id}:${definition.slug}`),
-      ).map((definition) => ({
+    const missingRuleGroups = orgs
+      .map((org) => ({
         orgId: org.id,
-        definition,
-      })),
-    );
+        definitions: SITUATION_MONITOR_DEFAULT_OREF_ALERT_RULES.filter(
+          (definition) => !existingRuleKeys.has(`${org.id}:${definition.slug}`),
+        ),
+      }))
+      .filter((group) => group.definitions.length > 0);
 
-    await this.executeWithConcurrencyLimit(
-      missingRules,
-      async ({ orgId, definition }) => {
-        try {
-          await this.prisma.alertRule.create({
-            data: {
-              id: this.buildDefaultOrefRuleId(orgId, definition.slug),
-              orgId,
-              name: definition.name,
-              description: definition.description,
-              severity:
-                definition.slug === SITUATION_MONITOR_OREF_HISTORY_24H_METRIC_SLUG
-                  ? AlertSeverity.medium
-                  : AlertSeverity.high,
-              status: AlertStatus.active,
-              metricProvider: AlertMetricProvider.system_metric,
-              metricSlug: definition.slug,
-              operator: AlertOperator.gte,
-              thresholdValue: new Prisma.Decimal(definition.thresholdValue),
-              thresholdLower: null,
-              thresholdUpper: null,
-              changeWindowMin: 60,
-              cooldownSeconds: 300,
-              checkIntervalSec: 300,
-              metadata: {
-                source: "situation-monitor-signals",
-                systemDefault: true,
+    if (missingRuleGroups.length === 0) {
+      return;
+    }
+
+    const runtime = await this.schedulerSettings.getRuntimeSettings();
+    const concurrency = runtime.situationMonitorOrefDefaultRuleOrgConcurrency;
+    const results = await settleWithConcurrency(
+      missingRuleGroups,
+      concurrency,
+      async ({ orgId, definitions }) => {
+        for (const definition of definitions) {
+          try {
+            await this.prisma.alertRule.create({
+              data: {
+                id: this.buildDefaultOrefRuleId(orgId, definition.slug),
+                orgId,
+                name: definition.name,
+                description: definition.description,
+                severity:
+                  definition.slug ===
+                  SITUATION_MONITOR_OREF_HISTORY_24H_METRIC_SLUG
+                    ? AlertSeverity.medium
+                    : AlertSeverity.high,
+                status: AlertStatus.active,
+                metricProvider: AlertMetricProvider.system_metric,
+                metricSlug: definition.slug,
+                operator: AlertOperator.gte,
+                thresholdValue: new Prisma.Decimal(definition.thresholdValue),
+                thresholdLower: null,
+                thresholdUpper: null,
+                changeWindowMin: 60,
+                cooldownSeconds: 300,
+                checkIntervalSec: 300,
+                metadata: {
+                  source: "situation-monitor-signals",
+                  systemDefault: true,
+                },
+                dataItemId: null,
               },
-              dataItemId: null,
-            },
-          });
-        } catch (error) {
-          if (
-            error instanceof Prisma.PrismaClientKnownRequestError &&
-            error.code === "P2002"
-          ) {
-            logger.debug(
-              { orgId, metricSlug: definition.slug },
-              "Default OREF alert rule already exists",
-            );
-            return;
+            });
+          } catch (error) {
+            if (
+              error instanceof Prisma.PrismaClientKnownRequestError &&
+              error.code === "P2002"
+            ) {
+              logger.debug(
+                { orgId, metricSlug: definition.slug },
+                "Default OREF alert rule already exists",
+              );
+              continue;
+            }
+            throw error;
           }
-          throw error;
         }
       },
-      OREF_DEFAULT_RULE_CONCURRENCY,
     );
+
+    for (const result of results) {
+      if (result.status === "rejected") {
+        logger.warn(
+          { err: result.reason, orgId: result.item.orgId },
+          "Failed to ensure OREF default alert rules for org",
+        );
+      }
+    }
   }
 
   private buildDefaultOrefRuleId(orgId: string, metricSlug: string) {
@@ -1257,34 +1293,6 @@ export class SituationMonitorSignalsService
       .digest("hex")
       .slice(0, 40);
     return `default-oref-alert-${key}`;
-  }
-
-  private async executeWithConcurrencyLimit<T, R>(
-    items: T[],
-    fn: (item: T, index: number) => Promise<R>,
-    concurrency: number,
-  ): Promise<R[]> {
-    if (items.length === 0) {
-      return [];
-    }
-
-    const results: R[] = new Array(items.length);
-    let index = 0;
-
-    const worker = async () => {
-      while (index < items.length) {
-        const currentIndex = index++;
-        results[currentIndex] = await fn(items[currentIndex]!, currentIndex);
-      }
-    };
-
-    await Promise.all(
-      Array.from({ length: Math.min(concurrency, items.length) }, () =>
-        worker(),
-      ),
-    );
-
-    return results;
   }
 
   private async orefCurlFetch(

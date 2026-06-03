@@ -27,13 +27,24 @@ describe("CrawlQualityTaskSnapshotService", () => {
       $executeRaw: jest.fn(),
     } as any;
     const cache = {
+      setIfAbsent: jest.fn().mockResolvedValue(true),
       withLock: jest.fn(),
+    } as any;
+    const schedulerSettings = {
+      getRuntimeSettings: jest.fn().mockResolvedValue({
+        crawlQualityTaskSnapshotOrgConcurrency: 2,
+      }),
     } as any;
 
     return {
       prisma,
       cache,
-      service: new CrawlQualityTaskSnapshotService(prisma, cache),
+      schedulerSettings,
+      service: new CrawlQualityTaskSnapshotService(
+        prisma,
+        cache,
+        schedulerSettings,
+      ),
     };
   }
 
@@ -242,10 +253,9 @@ describe("CrawlQualityTaskSnapshotService", () => {
       .mockResolvedValueOnce([{ id: "task-updated" }, { id: "task-shared" }]);
     prisma.crawlResult.findMany.mockResolvedValue([{ taskId: "task-result" }]);
 
-    const taskLogLean = jest.fn().mockResolvedValue([
-      { jobId: "task-log" },
-      { jobId: "task-shared" },
-    ]);
+    const taskLogLean = jest
+      .fn()
+      .mockResolvedValue([{ jobId: "task-log" }, { jobId: "task-shared" }]);
     (TaskLogModel.find as jest.Mock).mockReturnValue({
       select: jest.fn().mockReturnValue({ lean: taskLogLean }),
     });

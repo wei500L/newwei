@@ -23,30 +23,45 @@ type MultiTenantSchedulerSettingsSource = "default" | "db";
 
 interface MultiTenantSchedulerSettingsResponse {
   source: MultiTenantSchedulerSettingsSource;
+  realtimeSignalsOrgConcurrency: number;
+  newsEventsTimelineOrgConcurrency: number;
   newsEventsIngestionOrgConcurrency: number;
   knowledgeGraphIngestionOrgConcurrency: number;
   sentimentSnapshotOrgConcurrency: number;
   newsnowHottestAnalysisOrgConcurrency: number;
   classificationQualityAlertOrgConcurrency: number;
+  newsIndicatorAssociationOrgConcurrency: number;
+  crawlQualityTaskSnapshotOrgConcurrency: number;
+  situationMonitorOrefDefaultRuleOrgConcurrency: number;
   userDigestDeliveryOrgConcurrency: number;
 }
 
 interface MultiTenantSchedulerSettingsFormValues {
+  realtimeSignalsOrgConcurrency: number;
+  newsEventsTimelineOrgConcurrency: number;
   newsEventsIngestionOrgConcurrency: number;
   knowledgeGraphIngestionOrgConcurrency: number;
   sentimentSnapshotOrgConcurrency: number;
   newsnowHottestAnalysisOrgConcurrency: number;
   classificationQualityAlertOrgConcurrency: number;
+  newsIndicatorAssociationOrgConcurrency: number;
+  crawlQualityTaskSnapshotOrgConcurrency: number;
+  situationMonitorOrefDefaultRuleOrgConcurrency: number;
   userDigestDeliveryOrgConcurrency: number;
 }
 
 const DEFAULT_SETTINGS: MultiTenantSchedulerSettingsResponse = {
   source: "default",
+  realtimeSignalsOrgConcurrency: 4,
+  newsEventsTimelineOrgConcurrency: 2,
   newsEventsIngestionOrgConcurrency: 4,
   knowledgeGraphIngestionOrgConcurrency: 4,
   sentimentSnapshotOrgConcurrency: 2,
   newsnowHottestAnalysisOrgConcurrency: 6,
   classificationQualityAlertOrgConcurrency: 4,
+  newsIndicatorAssociationOrgConcurrency: 2,
+  crawlQualityTaskSnapshotOrgConcurrency: 2,
+  situationMonitorOrefDefaultRuleOrgConcurrency: 16,
   userDigestDeliveryOrgConcurrency: 4,
 };
 
@@ -74,6 +89,8 @@ export function MultiTenantSchedulerSettingsPanel() {
       };
       setSettings(next);
       form.setFieldsValue({
+        realtimeSignalsOrgConcurrency: next.realtimeSignalsOrgConcurrency,
+        newsEventsTimelineOrgConcurrency: next.newsEventsTimelineOrgConcurrency,
         newsEventsIngestionOrgConcurrency:
           next.newsEventsIngestionOrgConcurrency,
         knowledgeGraphIngestionOrgConcurrency:
@@ -83,6 +100,12 @@ export function MultiTenantSchedulerSettingsPanel() {
           next.newsnowHottestAnalysisOrgConcurrency,
         classificationQualityAlertOrgConcurrency:
           next.classificationQualityAlertOrgConcurrency,
+        newsIndicatorAssociationOrgConcurrency:
+          next.newsIndicatorAssociationOrgConcurrency,
+        crawlQualityTaskSnapshotOrgConcurrency:
+          next.crawlQualityTaskSnapshotOrgConcurrency,
+        situationMonitorOrefDefaultRuleOrgConcurrency:
+          next.situationMonitorOrefDefaultRuleOrgConcurrency,
         userDigestDeliveryOrgConcurrency: next.userDigestDeliveryOrgConcurrency,
       });
     },
@@ -196,6 +219,30 @@ export function MultiTenantSchedulerSettingsPanel() {
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
+          name="realtimeSignalsOrgConcurrency"
+          label={t(
+            "systemSettings.multiTenantSchedulers.fields.realtimeSignalsOrgConcurrency",
+          )}
+          extra={t(
+            "systemSettings.multiTenantSchedulers.hints.realtimeSignalsOrgConcurrency",
+          )}
+        >
+          <InputNumber min={1} max={16} style={{ width: "100%" }} />
+        </Form.Item>
+
+        <Form.Item
+          name="newsEventsTimelineOrgConcurrency"
+          label={t(
+            "systemSettings.multiTenantSchedulers.fields.newsEventsTimelineOrgConcurrency",
+          )}
+          extra={t(
+            "systemSettings.multiTenantSchedulers.hints.newsEventsTimelineOrgConcurrency",
+          )}
+        >
+          <InputNumber min={1} max={16} style={{ width: "100%" }} />
+        </Form.Item>
+
+        <Form.Item
           name="newsEventsIngestionOrgConcurrency"
           label={t(
             "systemSettings.multiTenantSchedulers.fields.newsEventsIngestionOrgConcurrency",
@@ -250,6 +297,42 @@ export function MultiTenantSchedulerSettingsPanel() {
           )}
           extra={t(
             "systemSettings.multiTenantSchedulers.hints.classificationQualityAlertOrgConcurrency",
+          )}
+        >
+          <InputNumber min={1} max={16} style={{ width: "100%" }} />
+        </Form.Item>
+
+        <Form.Item
+          name="newsIndicatorAssociationOrgConcurrency"
+          label={t(
+            "systemSettings.multiTenantSchedulers.fields.newsIndicatorAssociationOrgConcurrency",
+          )}
+          extra={t(
+            "systemSettings.multiTenantSchedulers.hints.newsIndicatorAssociationOrgConcurrency",
+          )}
+        >
+          <InputNumber min={1} max={16} style={{ width: "100%" }} />
+        </Form.Item>
+
+        <Form.Item
+          name="crawlQualityTaskSnapshotOrgConcurrency"
+          label={t(
+            "systemSettings.multiTenantSchedulers.fields.crawlQualityTaskSnapshotOrgConcurrency",
+          )}
+          extra={t(
+            "systemSettings.multiTenantSchedulers.hints.crawlQualityTaskSnapshotOrgConcurrency",
+          )}
+        >
+          <InputNumber min={1} max={16} style={{ width: "100%" }} />
+        </Form.Item>
+
+        <Form.Item
+          name="situationMonitorOrefDefaultRuleOrgConcurrency"
+          label={t(
+            "systemSettings.multiTenantSchedulers.fields.situationMonitorOrefDefaultRuleOrgConcurrency",
+          )}
+          extra={t(
+            "systemSettings.multiTenantSchedulers.hints.situationMonitorOrefDefaultRuleOrgConcurrency",
           )}
         >
           <InputNumber min={1} max={16} style={{ width: "100%" }} />

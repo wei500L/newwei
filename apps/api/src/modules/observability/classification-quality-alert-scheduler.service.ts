@@ -2,7 +2,10 @@ import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import { Interval } from "@nestjs/schedule";
 
-import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
+import {
+  claimSchedulerTick,
+  settleWithConcurrency,
+} from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
@@ -11,6 +14,7 @@ import { ClassificationQualityService } from "./classification-quality.service";
 import { recordSchedulerRun } from "./prometheus-metrics";
 
 const CLASSIFICATION_ALERT_SCHEDULER_INTERVAL_MS = 5 * 60_000;
+const CLASSIFICATION_ALERT_TICK_GATE_TTL_MS = 4 * 60_000 + 45_000;
 const CLASSIFICATION_ALERT_LOCK_TTL_MS = 4 * 60_000;
 
 type ClassificationAlertSchedulerOrgRunStatus =
@@ -36,6 +40,18 @@ export class ClassificationQualityAlertSchedulerService {
     CLASSIFICATION_ALERT_SCHEDULER_INTERVAL_MS,
   )
   async evaluate(): Promise<void> {
+    const claimed = await claimSchedulerTick(
+      this.cache,
+      "cron:classification-quality-alert:tick-gate",
+      CLASSIFICATION_ALERT_TICK_GATE_TTL_MS,
+    );
+    if (!claimed) {
+      this.logger.info(
+        "Skipped classification quality alert scheduler tick because another instance already claimed this interval",
+      );
+      return;
+    }
+
     const orgs = await this.prisma.org.findMany({
       where: { isActive: true },
       select: { id: true },

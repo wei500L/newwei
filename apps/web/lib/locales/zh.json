@@ -7996,19 +7996,29 @@
         "body": "这些限制按每次 cron tick 生效。更高的数值可降低端到端调度延迟，但也会增加 Redis、MySQL、MongoDB 与下游服务的并发负载。"
       },
       "fields": {
+        "realtimeSignalsOrgConcurrency": "实时信号组织并发数",
+        "newsEventsTimelineOrgConcurrency": "新闻事件时间线组织并发数",
         "newsEventsIngestionOrgConcurrency": "新闻事件入库组织并发数",
         "knowledgeGraphIngestionOrgConcurrency": "知识图谱入库组织并发数",
         "sentimentSnapshotOrgConcurrency": "情绪快照组织并发数",
         "newsnowHottestAnalysisOrgConcurrency": "NewsNow 热榜分析组织并发数",
         "classificationQualityAlertOrgConcurrency": "分类质量告警组织并发数",
+        "newsIndicatorAssociationOrgConcurrency": "新闻指标关联组织并发数",
+        "crawlQualityTaskSnapshotOrgConcurrency": "抓取质量快照组织并发数",
+        "situationMonitorOrefDefaultRuleOrgConcurrency": "态势监控 OREF 默认规则组织并发数",
         "userDigestDeliveryOrgConcurrency": "用户摘要投递组织并发数"
       },
       "hints": {
+        "realtimeSignalsOrgConcurrency": "实时信号调度器一次最多可刷新多少个组织。",
+        "newsEventsTimelineOrgConcurrency": "新闻事件时间线重建 cron 一次最多可处理多少个组织。",
         "newsEventsIngestionOrgConcurrency": "新闻事件入库 cron 一次最多可并行处理多少个组织。",
         "knowledgeGraphIngestionOrgConcurrency": "知识图谱入库 cron 一次最多可并行处理多少个组织。",
         "sentimentSnapshotOrgConcurrency": "情绪快照重建 cron 一次最多可并行处理多少个组织。",
         "newsnowHottestAnalysisOrgConcurrency": "在共享全局快照准备完成后，NewsNow 热榜分析调度器一次最多可刷新多少个组织。",
         "classificationQualityAlertOrgConcurrency": "分类质量告警调度器一次最多可评估多少个组织。",
+        "newsIndicatorAssociationOrgConcurrency": "新闻指标关联调度器一次最多可刷新多少个组织。",
+        "crawlQualityTaskSnapshotOrgConcurrency": "抓取质量任务快照调度器一次最多可处理多少个组织。",
+        "situationMonitorOrefDefaultRuleOrgConcurrency": "态势监控 OREF 默认规则维护器一次最多可处理多少个组织。",
         "userDigestDeliveryOrgConcurrency": "用户摘要邮件调度器一次可处理的组织数量。"
       }
     }

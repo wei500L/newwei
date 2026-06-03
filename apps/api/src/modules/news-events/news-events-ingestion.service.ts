@@ -4,7 +4,10 @@ import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { ProcessedArticleStatus, Prisma } from "@prisma/client";
 
-import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
+import {
+  claimSchedulerTick,
+  settleWithConcurrency,
+} from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { buildNewsSignalFromProcessedArticle } from "../news-signals/news-signal";
@@ -18,6 +21,7 @@ import { NewsEventsSettingsService } from "./news-events-settings.service";
 import { NewsEventsService } from "./news-events.service";
 
 const logger = createLogger({ name: "news-events-ingestion" });
+const NEWS_EVENTS_INGESTION_TICK_GATE_TTL_MS = 4 * 60_000 + 45_000;
 const NEWS_EVENTS_INGESTION_ORG_LOCK_TTL_MS = 60_000;
 
 type NewsEventsSchedulerOrgRunStatus = "completed" | "skipped";
@@ -35,9 +39,21 @@ export class NewsEventsIngestionService {
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async ingestRecentProcessedArticles() {
+    const claimed = await claimSchedulerTick(
+      this.cache,
+      "cron:news-events-ingestion:tick-gate",
+      NEWS_EVENTS_INGESTION_TICK_GATE_TTL_MS,
+    );
+    if (!claimed) {
+      logger.info(
+        "Skipped news event ingestion scheduler tick because another instance already claimed this interval",
+      );
+      return;
+    }
+
     const orgs = await this.prisma.org.findMany({
       where: { isActive: true },
-      select: { id: true }
+      select: { id: true },
     });
 
     if (orgs.length === 0) {
@@ -51,8 +67,10 @@ export class NewsEventsIngestionService {
       "News event ingestion scheduler tick started",
     );
 
-    const results = await settleWithConcurrency(orgs, concurrency, async (org) =>
-      await this.ingestOrgWithLock(org.id),
+    const results = await settleWithConcurrency(
+      orgs,
+      concurrency,
+      async (org) => await this.ingestOrgWithLock(org.id),
     );
 
     let failedOrgs = 0;
@@ -107,13 +125,18 @@ export class NewsEventsIngestionService {
       return;
     }
 
-    let state = await this.prisma.newsEventIngestionState.findUnique({ where: { orgId } });
+    let state = await this.prisma.newsEventIngestionState.findUnique({
+      where: { orgId },
+    });
     if (!state) {
-      state = await this.prisma.newsEventIngestionState.create({ data: { orgId } });
+      state = await this.prisma.newsEventIngestionState.create({
+        data: { orgId },
+      });
     }
 
     const baselineStartAt =
-      state.lastProcessedAt ?? new Date(Date.now() - settings.backfillDays * 24 * 60 * 60 * 1000);
+      state.lastProcessedAt ??
+      new Date(Date.now() - settings.backfillDays * 24 * 60 * 60 * 1000);
 
     const where: Prisma.ProcessedArticleWhereInput = {
       status: ProcessedArticleStatus.completed,
@@ -124,16 +147,16 @@ export class NewsEventsIngestionService {
               { processedAt: { gt: state.lastProcessedAt } },
               {
                 processedAt: state.lastProcessedAt,
-                articleId: { gt: state.lastProcessedArticleId ?? "" }
-              }
-            ]
+                articleId: { gt: state.lastProcessedArticleId ?? "" },
+              },
+            ],
           }
         : {
-            processedAt: { gte: baselineStartAt }
-          })
+            processedAt: { gte: baselineStartAt },
+          }),
     };
 
-    const batch = await this.prisma.processedArticle.findMany({
+    const batch = (await this.prisma.processedArticle.findMany({
       where,
       select: {
         id: true,
@@ -148,11 +171,11 @@ export class NewsEventsIngestionService {
         entities: true,
         qualityScore: true,
         cleanedMarkdownRef: true,
-        article: { select: { crawlAt: true } }
+        article: { select: { crawlAt: true } },
       },
       orderBy: [{ processedAt: "asc" }, { articleId: "asc" }],
-      take: settings.maxBatchSize
-    }) as NewsEventIngestionBatchEntry[];
+      take: settings.maxBatchSize,
+    })) as NewsEventIngestionBatchEntry[];
 
     if (batch.length === 0) {
       return;
@@ -233,19 +256,23 @@ export class NewsEventsIngestionService {
           topics: entry.topics,
           entities: entry.entities,
           qualityScore: entry.qualityScore ?? null,
-          cleanedMarkdownRef: entry.cleanedMarkdownRef ?? null
+          cleanedMarkdownRef: entry.cleanedMarkdownRef ?? null,
         },
         article: {
-          crawlAt: entry.article?.crawlAt ?? null
+          crawlAt: entry.article?.crawlAt ?? null,
         },
         processedItemResult:
           typeof entry.cleanedMarkdownRef === "string"
-            ? processedItemResultById.get(entry.cleanedMarkdownRef.trim()) ??
-              null
+            ? (processedItemResultById.get(entry.cleanedMarkdownRef.trim()) ??
+              null)
             : null,
       });
 
-      const result = await this.events.assignNewsSignalToEvent(orgId, signal, settings);
+      const result = await this.events.assignNewsSignalToEvent(
+        orgId,
+        signal,
+        settings,
+      );
 
       processedArticles += 1;
       if (result.created) {
@@ -256,8 +283,8 @@ export class NewsEventsIngestionService {
         where: { orgId },
         data: {
           lastProcessedAt: entry.processedAt,
-          lastProcessedArticleId: entry.articleId
-        }
+          lastProcessedArticleId: entry.articleId,
+        },
       });
     }
 

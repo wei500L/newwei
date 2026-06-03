@@ -2,6 +2,18 @@ import { IsInt, IsOptional, Max, Min } from "class-validator";
 
 export class UpdateMultiTenantSchedulerSettingsDto {
   @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(16)
+  realtimeSignalsOrgConcurrency?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(16)
+  newsEventsTimelineOrgConcurrency?: number;
+
+  @IsInt()
   @Min(1)
   @Max(16)
   newsEventsIngestionOrgConcurrency!: number;
@@ -26,6 +38,24 @@ export class UpdateMultiTenantSchedulerSettingsDto {
   @Min(1)
   @Max(16)
   classificationQualityAlertOrgConcurrency?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(16)
+  newsIndicatorAssociationOrgConcurrency?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(16)
+  crawlQualityTaskSnapshotOrgConcurrency?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  @Max(16)
+  situationMonitorOrefDefaultRuleOrgConcurrency?: number;
 
   @IsInt()
   @Min(1)

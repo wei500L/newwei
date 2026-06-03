@@ -97,8 +97,15 @@ const createRealtimeSignalsCache = () => {
         loader: () => Promise<unknown>,
       ) => loader(),
     ),
+    setIfAbsent: jest.fn().mockResolvedValue(true),
   };
 };
+
+const createSchedulerSettings = (concurrency = 2) => ({
+  getRuntimeSettings: jest.fn().mockResolvedValue({
+    realtimeSignalsOrgConcurrency: concurrency,
+  }),
+});
 
 describe("RealtimeSignalsService unrest merge", () => {
   const buildService = () => {
@@ -118,6 +125,7 @@ describe("RealtimeSignalsService unrest merge", () => {
       { realtimeSignalsConfig: envConfig } as any,
       store as any,
       {} as any,
+      createSchedulerSettings() as any,
     );
     jest
       .spyOn(service as any, "persistAircraftTransportSnapshot")
@@ -796,6 +804,7 @@ describe("RealtimeSignalsService unrest merge", () => {
       { realtimeSignalsConfig: envConfig } as any,
       {} as any,
       settings as any,
+      createSchedulerSettings() as any,
     );
     const fetchJsonSpy = jest
       .spyOn(service as any, "fetchJsonWithRetry")
@@ -935,6 +944,7 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
       { realtimeSignalsConfig: envConfig } as any,
       store as any,
       settings as any,
+      createSchedulerSettings() as any,
     );
     return { service, prisma, cache, store, settings };
   };
@@ -1253,13 +1263,14 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
 });
 
 describe("RealtimeSignalsService scheduler lock", () => {
-  it("uses the configured ingest lock TTL for cron refresh", async () => {
+  it("claims the scheduler tick before refreshing orgs with org locks", async () => {
     const prisma = {
       org: {
         findMany: jest.fn().mockResolvedValue([{ id: "org-1" }]),
       },
     };
     const cache = {
+      setIfAbsent: jest.fn().mockResolvedValue(true),
       withLock: jest.fn(
         async (_key: string, _ttlMs: number, runner: () => Promise<void>) => {
           await runner();
@@ -1276,15 +1287,21 @@ describe("RealtimeSignalsService scheduler lock", () => {
       { realtimeSignalsConfig: envConfig } as any,
       {} as any,
       settings as any,
+      createSchedulerSettings() as any,
     );
     jest.spyOn(service, "refreshOrg").mockResolvedValue();
 
     await service.refreshScheduled();
 
     expect(cache.withLock).toHaveBeenCalledWith(
-      "cron:realtime-signals",
+      "cron:realtime-signals:org:org-1",
       REALTIME_SIGNALS_INGEST_LOCK_TTL_MS,
       expect.any(Function),
+    );
+    expect(cache.setIfAbsent).toHaveBeenCalledWith(
+      "cron:realtime-signals:tick-gate",
+      expect.any(Object),
+      55,
     );
   });
 });
@@ -1302,6 +1319,7 @@ describe("RealtimeSignalsService fetch retries", () => {
       { realtimeSignalsConfig: envConfig } as any,
       {} as any,
       { getRuntimeConfig: jest.fn().mockResolvedValue(runtimeConfig) } as any,
+      createSchedulerSettings() as any,
     );
     const fetchSpy = jest
       .spyOn(fetchModule, "fetchWithIpv4Fallback")
@@ -1377,6 +1395,7 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       { realtimeSignalsConfig: envConfig } as any,
       store as any,
       settings as any,
+      createSchedulerSettings() as any,
     );
     return { service, prisma, store, settings, cache };
   };
@@ -1483,19 +1502,20 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       vessels: [],
       hasVesselSnapshot: false,
     });
-    store.getSourceState.mockImplementation(async (_orgId: string, source: string) =>
-      source === "ais"
-        ? {
-            source: "ais",
-            status: "success",
-            lastAttemptAt: "2026-03-12T03:30:00.000Z",
-            lastSuccessAt: "2026-03-12T03:30:00.000Z",
-            context: {
-              source: "relay",
-              configured: true,
-            },
-          }
-        : null,
+    store.getSourceState.mockImplementation(
+      async (_orgId: string, source: string) =>
+        source === "ais"
+          ? {
+              source: "ais",
+              status: "success",
+              lastAttemptAt: "2026-03-12T03:30:00.000Z",
+              lastSuccessAt: "2026-03-12T03:30:00.000Z",
+              context: {
+                source: "relay",
+                configured: true,
+              },
+            }
+          : null,
     );
 
     const result = await service.getRuntimeDiagnostics("org-1");
@@ -1540,30 +1560,33 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       recentProcessedItems: 0,
       recentProcessedItemsWithLocation: 0,
     });
-    store.getSourceState.mockImplementation(async (_orgId: string, source: string) =>
-      source === "outages"
-        ? {
-            source: "outages",
-            status: "error",
-            lastAttemptAt: "2026-03-12T03:30:00.000Z",
-            nextEligibleAt: "2026-03-12T03:32:00.000Z",
-          lastErrorAt: "2026-03-12T03:30:00.000Z",
-          lastError: "HTTP 429 Too Many Requests",
-          lastErrorCode: "upstream_rate_limited",
-          lastErrorStatus: 429,
-          lastRateLimit: {
-            retryAfterSec: 120,
-              rateLimit: '"default";r=0;t=120',
-              rateLimitPolicy: '"default";q=1200;w=300',
-              cfRay: "abc123-NRT",
-            },
-          }
-        : null,
+    store.getSourceState.mockImplementation(
+      async (_orgId: string, source: string) =>
+        source === "outages"
+          ? {
+              source: "outages",
+              status: "error",
+              lastAttemptAt: "2026-03-12T03:30:00.000Z",
+              nextEligibleAt: "2026-03-12T03:32:00.000Z",
+              lastErrorAt: "2026-03-12T03:30:00.000Z",
+              lastError: "HTTP 429 Too Many Requests",
+              lastErrorCode: "upstream_rate_limited",
+              lastErrorStatus: 429,
+              lastRateLimit: {
+                retryAfterSec: 120,
+                rateLimit: '"default";r=0;t=120',
+                rateLimitPolicy: '"default";q=1200;w=300',
+                cfRay: "abc123-NRT",
+              },
+            }
+          : null,
     );
 
     const result = await service.getRuntimeDiagnostics("org-1");
 
-    expect(result.sources.find((source) => source.source === "outages")).toMatchObject({
+    expect(
+      result.sources.find((source) => source.source === "outages"),
+    ).toMatchObject({
       status: "error",
       statusReasonCode: "upstream_rate_limited",
       lastAttemptAt: "2026-03-12T03:30:00.000Z",
@@ -1587,30 +1610,33 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       recentProcessedItems: 0,
       recentProcessedItemsWithLocation: 0,
     });
-    store.getSourceState.mockImplementation(async (_orgId: string, source: string) =>
-      source === "outages"
-        ? {
-            source: "outages",
-            status: "error",
-            lastAttemptAt: "2026-03-12T03:30:00.000Z",
-            nextEligibleAt: "2026-03-12T03:32:00.000Z",
-            lastErrorAt: "2026-03-12T03:30:00.000Z",
-            lastError: "HTTP 403 Forbidden",
-            lastErrorCode: "upstream_auth_failed",
-            lastErrorStatus: 403,
-            lastRateLimit: {
-              retryAfterSec: 120,
-              rateLimit: '"default";r=0;t=120',
-              rateLimitPolicy: '"default";q=1200;w=300',
-              cfRay: "abc123-NRT",
-            },
-          }
-        : null,
+    store.getSourceState.mockImplementation(
+      async (_orgId: string, source: string) =>
+        source === "outages"
+          ? {
+              source: "outages",
+              status: "error",
+              lastAttemptAt: "2026-03-12T03:30:00.000Z",
+              nextEligibleAt: "2026-03-12T03:32:00.000Z",
+              lastErrorAt: "2026-03-12T03:30:00.000Z",
+              lastError: "HTTP 403 Forbidden",
+              lastErrorCode: "upstream_auth_failed",
+              lastErrorStatus: 403,
+              lastRateLimit: {
+                retryAfterSec: 120,
+                rateLimit: '"default";r=0;t=120',
+                rateLimitPolicy: '"default";q=1200;w=300',
+                cfRay: "abc123-NRT",
+              },
+            }
+          : null,
     );
 
     const result = await service.getRuntimeDiagnostics("org-1");
 
-    expect(result.sources.find((source) => source.source === "outages")).toMatchObject({
+    expect(
+      result.sources.find((source) => source.source === "outages"),
+    ).toMatchObject({
       status: "error",
       statusReasonCode: "upstream_auth_failed",
       lastErrorCode: "upstream_auth_failed",
@@ -1818,6 +1844,7 @@ describe("RealtimeSignalsService processed article term coverage", () => {
       { realtimeSignalsConfig: envConfig } as any,
       {} as any,
       { getRuntimeConfig: jest.fn().mockResolvedValue(runtimeConfig) } as any,
+      createSchedulerSettings() as any,
     );
     return { service, prisma, cache };
   };

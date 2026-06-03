@@ -18,6 +18,10 @@ import type Redis from "ioredis";
 
 import { fetchWithIpv4Fallback } from "../../common/http/fetch-with-ipv4-fallback";
 import {
+  claimSchedulerTick,
+  settleWithConcurrency,
+} from "../../common/multi-tenant-scheduler";
+import {
   classifyUpstreamRequestError,
   readHttpStatus,
 } from "../../common/http/upstream-error-classification";
@@ -29,6 +33,7 @@ import { CacheService } from "../cache/cache.service";
 import { REDIS_CLIENT } from "../cache/cache.tokens";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
+import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 import { RealtimeSignalsSettingsService } from "../system-settings/realtime-signals-settings.service";
 
 import {
@@ -73,6 +78,9 @@ import {
 import { buildAisRuntimeSemantics } from "./ais-runtime-semantics";
 
 const logger = createLogger({ name: "realtime-signals" });
+const REALTIME_SIGNALS_TICK_GATE_TTL_MS = 55_000;
+
+type RealtimeSignalsSchedulerOrgRunStatus = "completed" | "skipped";
 const ACLED_API_URL = "https://acleddata.com/api/acled/read";
 const GDELT_UNREST_GEOJSON_URL =
   "https://api.gdeltproject.org/api/v1/gkg_geojson";
@@ -446,10 +454,23 @@ export class RealtimeSignalsService {
     private readonly env: EnvService,
     private readonly store: RealtimeSignalsSnapshotStore,
     private readonly settings: RealtimeSignalsSettingsService,
+    private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async refreshScheduled() {
+    const claimed = await claimSchedulerTick(
+      this.cache,
+      "cron:realtime-signals:tick-gate",
+      REALTIME_SIGNALS_TICK_GATE_TTL_MS,
+    );
+    if (!claimed) {
+      logger.info(
+        "Skipped realtime signals refresh tick because another instance already claimed this interval",
+      );
+      return;
+    }
+
     const runtime = await this.getRuntimeConfig();
     if (!runtime.enabled) {
       return;
@@ -460,33 +481,79 @@ export class RealtimeSignalsService {
       select: { id: true },
     });
 
-    await this.cache.withLock(
-      "cron:realtime-signals",
+    if (orgs.length === 0) {
+      return;
+    }
+
+    const schedulerRuntime = await this.schedulerSettings.getRuntimeSettings();
+    const concurrency = schedulerRuntime.realtimeSignalsOrgConcurrency;
+    logger.info(
+      { orgCount: orgs.length, concurrency },
+      "Realtime signals refresh tick started",
+    );
+
+    const results = await settleWithConcurrency(
+      orgs,
+      concurrency,
+      async (org) => this.refreshOrgWithLock(org.id, runtime),
+    );
+
+    let failedOrgs = 0;
+    let skippedOrgs = 0;
+    for (const result of results) {
+      if (result.status === "rejected") {
+        failedOrgs += 1;
+        logger.warn(
+          { orgId: result.item.id, err: result.reason },
+          "Realtime signals refresh failed for org",
+        );
+        continue;
+      }
+      if (result.value === "skipped") {
+        skippedOrgs += 1;
+      }
+    }
+
+    try {
+      await this.refreshGlobalAllFlightCapture(
+        orgs.map((org) => org.id),
+        runtime,
+      );
+    } catch (error) {
+      logger.warn(
+        { err: error },
+        "Realtime signals global all-flight capture failed",
+      );
+    }
+
+    logger.info(
+      { orgCount: orgs.length, concurrency, failedOrgs, skippedOrgs },
+      "Realtime signals refresh tick completed",
+    );
+  }
+
+  private async refreshOrgWithLock(
+    orgId: string,
+    runtime: RealtimeSignalsRuntimeConfig,
+  ): Promise<RealtimeSignalsSchedulerOrgRunStatus> {
+    const locked = await this.cache.withLock(
+      `cron:realtime-signals:org:${orgId}`,
       REALTIME_SIGNALS_INGEST_LOCK_TTL_MS,
       async () => {
-        for (const org of orgs) {
-          try {
-            await this.refreshOrg(org.id, runtime);
-          } catch (error) {
-            logger.warn(
-              { orgId: org.id, err: error },
-              "Realtime signals refresh failed for org",
-            );
-          }
-        }
-        try {
-          await this.refreshGlobalAllFlightCapture(
-            orgs.map((org) => org.id),
-            runtime,
-          );
-        } catch (error) {
-          logger.warn(
-            { err: error },
-            "Realtime signals global all-flight capture failed",
-          );
-        }
+        await this.refreshOrg(orgId, runtime);
+        return "completed" as const;
       },
     );
+
+    if (locked !== null) {
+      return locked;
+    }
+
+    logger.info(
+      { orgId },
+      "Skipped realtime signals org refresh because previous org run is still in progress",
+    );
+    return "skipped";
   }
 
   async refreshOrg(
@@ -556,7 +623,8 @@ export class RealtimeSignalsService {
         const completedAtMs = Date.now();
         const nowIso = new Date(completedAtMs).toISOString();
         const nextEligibleAt = new Date(
-          completedAtMs + Math.max(10, Math.trunc(effectiveIntervalSec)) * 1_000,
+          completedAtMs +
+            Math.max(10, Math.trunc(effectiveIntervalSec)) * 1_000,
         ).toISOString();
         for (const result of results) {
           await this.store.appendPoint(orgId, result.metricSlug, {
@@ -760,7 +828,9 @@ export class RealtimeSignalsService {
         ]);
 
         const evaluationContext = this.toDiagnosticContext(evaluation.context);
-        const sourceStateContext = this.toDiagnosticContext(sourceState?.context);
+        const sourceStateContext = this.toDiagnosticContext(
+          sourceState?.context,
+        );
         const context =
           evaluationContext || sourceStateContext
             ? {
@@ -2424,7 +2494,11 @@ export class RealtimeSignalsService {
     const openskyErrorKind = details.kind ?? "unknown";
     await Promise.all([
       this.cache.hincrby(key, "errorCalls", 1),
-      this.cache.hincrby(key, this.getOpenskyErrorBudgetField(openskyErrorKind), 1),
+      this.cache.hincrby(
+        key,
+        this.getOpenskyErrorBudgetField(openskyErrorKind),
+        1,
+      ),
       this.cache.expire(key, this.getOpenskyBudgetTtlSeconds()),
     ]);
     if (error && typeof error === "object") {
@@ -4498,7 +4572,11 @@ export class RealtimeSignalsService {
     error: unknown,
   ): RealtimeSignalRateLimitDetails | undefined {
     const rateLimit = (error as { rateLimit?: unknown })?.rateLimit;
-    if (!rateLimit || typeof rateLimit !== "object" || Array.isArray(rateLimit)) {
+    if (
+      !rateLimit ||
+      typeof rateLimit !== "object" ||
+      Array.isArray(rateLimit)
+    ) {
       return undefined;
     }
     const details = rateLimit as RealtimeSignalRateLimitDetails;
@@ -4524,7 +4602,11 @@ export class RealtimeSignalsService {
         ? { rateLimit: this.normalizeString(headers.get("ratelimit")) }
         : {}),
       ...(this.normalizeString(headers.get("ratelimit-policy"))
-        ? { rateLimitPolicy: this.normalizeString(headers.get("ratelimit-policy")) }
+        ? {
+            rateLimitPolicy: this.normalizeString(
+              headers.get("ratelimit-policy"),
+            ),
+          }
         : {}),
       ...(this.normalizeString(headers.get("cf-ray"))
         ? { cfRay: this.normalizeString(headers.get("cf-ray")) }

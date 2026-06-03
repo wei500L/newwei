@@ -2,7 +2,10 @@ import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 
-import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
+import {
+  claimSchedulerTick,
+  settleWithConcurrency,
+} from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
@@ -11,6 +14,7 @@ import { UserDigestDeliveryService } from "./user-digest-delivery.service";
 import { USER_DIGEST_ORG_LOCK_TTL_MS } from "./user-digest.constants";
 
 const logger = createLogger({ name: "user-digest-delivery-scheduler" });
+const USER_DIGEST_DELIVERY_TICK_GATE_TTL_MS = 55_000;
 
 type OrgRunStatus = "completed" | "skipped";
 
@@ -25,6 +29,18 @@ export class UserDigestDeliverySchedulerService {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async runScheduledDeliveries() {
+    const claimed = await claimSchedulerTick(
+      this.cache,
+      "cron:user-digest-delivery:tick-gate",
+      USER_DIGEST_DELIVERY_TICK_GATE_TTL_MS,
+    );
+    if (!claimed) {
+      logger.info(
+        "Skipped user digest delivery scheduler tick because another instance already claimed this interval",
+      );
+      return;
+    }
+
     const orgs = await this.prisma.org.findMany({
       where: { isActive: true },
       select: { id: true },
@@ -40,8 +56,10 @@ export class UserDigestDeliverySchedulerService {
       "User digest delivery scheduler tick started",
     );
 
-    const results = await settleWithConcurrency(orgs, concurrency, async (org) =>
-      await this.runOrgWithLock(org.id),
+    const results = await settleWithConcurrency(
+      orgs,
+      concurrency,
+      async (org) => await this.runOrgWithLock(org.id),
     );
 
     let failedOrgs = 0;
