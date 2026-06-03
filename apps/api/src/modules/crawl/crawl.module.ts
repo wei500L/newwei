@@ -5,8 +5,8 @@ import { Queue, QueueEvents } from "bullmq";
 
 import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { withKeepAliveAgents } from "../../common/http/http-agent";
+import { BullmqConnectionService } from "../config/bullmq-connection.service";
 import { EnvService } from "../config/config.service";
-import { toBullmqConnection } from "../config/redis-connection";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { ObservabilitySnapshotService } from "../observability/observability-snapshot.service";
@@ -141,10 +141,14 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlAdaptiveConcurrencyService,
     {
       provide: CRAWL_QUEUE_LEGACY,
-      inject: [EnvService, CrawlQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
+      inject: [EnvService, CrawlQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        env: EnvService,
+        cleanup: CrawlQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.getSharedConnection(),
           defaultJobOptions: {
             attempts: env.crawl4aiConfig.maxRetries,
             removeOnComplete: true,
@@ -161,10 +165,14 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     },
     {
       provide: CRAWL_QUEUE_HOT,
-      inject: [EnvService, CrawlQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
+      inject: [EnvService, CrawlQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        env: EnvService,
+        cleanup: CrawlQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_HOT_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.getSharedConnection(),
           defaultJobOptions: {
             attempts: env.crawl4aiConfig.maxRetries,
             removeOnComplete: true,
@@ -181,10 +189,14 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     },
     {
       provide: CRAWL_QUEUE_NORMAL,
-      inject: [EnvService, CrawlQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
+      inject: [EnvService, CrawlQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        env: EnvService,
+        cleanup: CrawlQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_NORMAL_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.getSharedConnection(),
           defaultJobOptions: {
             attempts: env.crawl4aiConfig.maxRetries,
             removeOnComplete: true,
@@ -201,10 +213,14 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     },
     {
       provide: CRAWL_QUEUE_LLM_JUDGE,
-      inject: [EnvService, CrawlQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
+      inject: [EnvService, CrawlQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        env: EnvService,
+        cleanup: CrawlQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_LLM_JUDGE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.getSharedConnection(),
           defaultJobOptions: {
             attempts: 1,
             removeOnComplete: true,
@@ -221,10 +237,14 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     },
     {
       provide: CRAWL_QUEUE_LLM_LEARN,
-      inject: [EnvService, CrawlQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
+      inject: [EnvService, CrawlQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        env: EnvService,
+        cleanup: CrawlQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_LLM_LEARN_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.getSharedConnection(),
           defaultJobOptions: {
             attempts: 1,
             removeOnComplete: true,
@@ -241,10 +261,15 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     },
     {
       provide: CRAWL_QUEUE_EVENTS_HOT,
-      inject: [EnvService, CrawlQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
+      inject: [CrawlQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: CrawlQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const events = new QueueEvents(CRAWL_QUEUE_HOT_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.createDedicatedConnectionOptions(
+            `events:${CRAWL_QUEUE_HOT_NAME}`,
+          ),
         });
         cleanup.track(events);
         return events;
@@ -252,10 +277,15 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     },
     {
       provide: CRAWL_QUEUE_EVENTS_NORMAL,
-      inject: [EnvService, CrawlQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
+      inject: [CrawlQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: CrawlQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const events = new QueueEvents(CRAWL_QUEUE_NORMAL_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.createDedicatedConnectionOptions(
+            `events:${CRAWL_QUEUE_NORMAL_NAME}`,
+          ),
         });
         cleanup.track(events);
         return events;
@@ -263,10 +293,15 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     },
     {
       provide: CRAWL_QUEUE_EVENTS_LEGACY,
-      inject: [EnvService, CrawlQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
+      inject: [CrawlQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: CrawlQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const events = new QueueEvents(CRAWL_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.createDedicatedConnectionOptions(
+            `events:${CRAWL_QUEUE_NAME}`,
+          ),
         });
         cleanup.track(events);
         return events;

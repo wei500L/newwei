@@ -10,8 +10,7 @@ import { Permissions } from "../../common/decorators/permissions.decorator";
 import { resolveRequestIp } from "../../common/request-ip";
 import { AkshareService } from "../akshare/akshare.service";
 import type { AuthenticatedUser } from "../auth/auth.service";
-import { EnvService } from "../config/config.service";
-import { toBullmqConnection } from "../config/redis-connection";
+import { BullmqConnectionService } from "../config/bullmq-connection.service";
 import {
   SITUATION_MONITOR_SIGNALS_QUEUE_NAME,
   TELEGRAM_POLL_JOB_NAME,
@@ -45,7 +44,7 @@ export class SituationMonitorSettingsController {
   constructor(
     private readonly settings: SituationMonitorSettingsService,
     private readonly telegramAuth: SituationMonitorTelegramAuthService,
-    private readonly env: EnvService,
+    private readonly bullmqConnections: BullmqConnectionService,
     private readonly signals: SituationMonitorSignalsService,
     private readonly akshareService: AkshareService,
     private readonly externalSnapshots: SituationMonitorExternalSnapshotService,
@@ -150,7 +149,7 @@ export class SituationMonitorSettingsController {
     const queue = new Queue<TelegramSchedulerJobPayload>(
       SITUATION_MONITOR_SIGNALS_QUEUE_NAME,
       {
-        connection: toBullmqConnection(this.env.redisConfig),
+        connection: this.bullmqConnections.getSharedConnection(),
         defaultJobOptions: {
           removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
         },

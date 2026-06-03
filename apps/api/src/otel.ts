@@ -2,6 +2,11 @@ import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentation
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 
+import {
+  createOtelInstrumentationConfig,
+  createOtelSampler,
+} from "./otel-config";
+
 const otelEnabled = process.env.OTEL_ENABLED === "true" || process.env.OTEL_ENABLED === "1";
 
 if (otelEnabled) {
@@ -14,7 +19,10 @@ if (otelEnabled) {
   const sdk = new NodeSDK({
     serviceName: process.env.OTEL_SERVICE_NAME ?? "modular-api",
     traceExporter,
-    instrumentations: [getNodeAutoInstrumentations()],
+    sampler: createOtelSampler(),
+    instrumentations: [
+      getNodeAutoInstrumentations(createOtelInstrumentationConfig()),
+    ],
   });
 
   sdk.start();

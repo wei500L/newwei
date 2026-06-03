@@ -21,7 +21,6 @@ import { BULLMQ_DLQ_JOB_RETENTION } from "../../common/bullmq-retention";
 import { ItemStatus } from "../../common/pipeline-status";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
-import { toBullmqConnection } from "../config/redis-connection";
 import { NewsSourceOpsSnapshotService } from "../crawl/news-source-ops-snapshot.service";
 import { NewsPipelineService } from "../news-pipeline/news-pipeline.service";
 import type {
@@ -87,7 +86,6 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    const config = this.env.bullmqConfig;
     const concurrency =
       this.env.newsPipelineEnv.processQueueConcurrency > 0
         ? this.env.newsPipelineEnv.processQueueConcurrency
@@ -219,7 +217,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
         });
       },
       {
-        connection: toBullmqConnection(config.connection),
+        connection: this.queue.opts.connection,
         concurrency,
       },
     );

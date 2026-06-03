@@ -872,7 +872,16 @@ export const apiEnvSchema = baseEnvSchema
     ),
     OTEL_ENABLED: envBoolean.default(false),
     OTEL_SERVICE_NAME: z.string().min(1).default("modular-api"),
-    OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
+    OTEL_EXPORTER_OTLP_ENDPOINT: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? undefined : value,
+      z.string().url().optional(),
+    ),
+    OTEL_TRACE_SAMPLE_RATE: z.coerce
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.05),
     METRICS_DEFAULT_BUCKETS: z.string().optional(),
     SYSTEM_SETTINGS_ENCRYPTION_KEY: z.string().optional(),
     S3_ACCESS_KEY_ID: z.string().optional(),

@@ -3,8 +3,7 @@ import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
 import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
-import { EnvService } from "../config/config.service";
-import { toBullmqConnection } from "../config/redis-connection";
+import { BullmqConnectionService } from "../config/bullmq-connection.service";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 
@@ -26,10 +25,13 @@ import { AnalysisService } from "./analysis.service";
     AnalysisQueueCleanupService,
     {
       provide: ANALYSIS_QUEUE,
-      inject: [EnvService, AnalysisQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: AnalysisQueueCleanupService) => {
+      inject: [AnalysisQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: AnalysisQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const queue = new Queue(ANALYSIS_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.getSharedConnection(),
           defaultJobOptions: {
             removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
           },
@@ -40,10 +42,15 @@ import { AnalysisService } from "./analysis.service";
     },
     {
       provide: ANALYSIS_QUEUE_EVENTS,
-      inject: [EnvService, AnalysisQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: AnalysisQueueCleanupService) => {
+      inject: [AnalysisQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: AnalysisQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const events = new QueueEvents(ANALYSIS_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.createDedicatedConnectionOptions(
+            `events:${ANALYSIS_QUEUE_NAME}`,
+          ),
         });
         cleanup.track(events);
         return events;

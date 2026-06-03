@@ -112,6 +112,12 @@ const createMockRawItem = (id: string) => ({
 const createMockQueue = () => ({
   add: jest.fn().mockResolvedValue({ id: "queued-job-id" }),
   close: jest.fn().mockResolvedValue(undefined),
+  opts: {
+    connection: {
+      host: "localhost",
+      port: 6379,
+    },
+  },
 });
 
 const createMockDlqQueue = () => ({

@@ -3,8 +3,7 @@ import { Module } from "@nestjs/common";
 import { Queue } from "bullmq";
 
 import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
-import { EnvService } from "../config/config.service";
-import { toBullmqConnection } from "../config/redis-connection";
+import { BullmqConnectionService } from "../config/bullmq-connection.service";
 import { ModelServiceModule } from "../model-service/model-service.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
@@ -45,15 +44,18 @@ import { NewsEventsService } from "./news-events.service";
     NewsEventsTimelineService,
     {
       provide: NEWS_EVENT_CLUSTERING_RECOVERY_QUEUE,
-      inject: [EnvService, NewsEventClusteringRecoveryQueueCleanupService],
+      inject: [
+        NewsEventClusteringRecoveryQueueCleanupService,
+        BullmqConnectionService,
+      ],
       useFactory: (
-        env: EnvService,
         cleanup: NewsEventClusteringRecoveryQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
       ) => {
         const queue = new Queue<NewsEventClusteringRecoveryJobPayload>(
           NEWS_EVENT_CLUSTERING_RECOVERY_QUEUE_NAME,
           {
-            connection: toBullmqConnection(env.redisConfig),
+            connection: bullmqConnections.getSharedConnection(),
             defaultJobOptions: {
               removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
             },

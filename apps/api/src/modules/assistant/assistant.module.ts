@@ -3,8 +3,7 @@ import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
 import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
-import { EnvService } from "../config/config.service";
-import { toBullmqConnection } from "../config/redis-connection";
+import { BullmqConnectionService } from "../config/bullmq-connection.service";
 import { ItemsModule } from "../items/items.module";
 import { ModelServiceModule } from "../model-service/model-service.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
@@ -28,10 +27,13 @@ import type { AssistantJobPayload } from "./assistant.types";
     AssistantQueueCleanupService,
     {
       provide: ASSISTANT_QUEUE,
-      inject: [EnvService, AssistantQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: AssistantQueueCleanupService) => {
+      inject: [AssistantQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: AssistantQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const queue = new Queue<AssistantJobPayload>(ASSISTANT_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.getSharedConnection(),
           defaultJobOptions: {
             removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
           },
@@ -42,10 +44,15 @@ import type { AssistantJobPayload } from "./assistant.types";
     },
     {
       provide: ASSISTANT_QUEUE_EVENTS,
-      inject: [EnvService, AssistantQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: AssistantQueueCleanupService) => {
+      inject: [AssistantQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: AssistantQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const events = new QueueEvents(ASSISTANT_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.createDedicatedConnectionOptions(
+            `events:${ASSISTANT_QUEUE_NAME}`,
+          ),
         });
         cleanup.track(events);
         return events;

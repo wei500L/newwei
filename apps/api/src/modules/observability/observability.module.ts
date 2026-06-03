@@ -7,9 +7,8 @@ import { AlertsModule } from "../alerts/alerts.module";
 import { AnalysisModule } from "../analysis/analysis.module";
 import { AssistantModule } from "../assistant/assistant.module";
 import { AuthModule } from "../auth/auth.module";
-import { EnvService } from "../config/config.service";
+import { BullmqConnectionService } from "../config/bullmq-connection.service";
 import { DatabaseModule } from "../config/database.module";
-import { toBullmqConnection } from "../config/redis-connection";
 import { CrawlModule } from "../crawl/crawl.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
@@ -81,13 +80,16 @@ import { TaskLogsController } from "./task-logs.controller";
     ClassificationQualitySeedTriggerService,
     {
       provide: CLASSIFICATION_QUALITY_QUEUE,
-      inject: [EnvService, ClassificationQualityQueueCleanupService],
+      inject: [
+        ClassificationQualityQueueCleanupService,
+        BullmqConnectionService,
+      ],
       useFactory: (
-        env: EnvService,
         cleanup: ClassificationQualityQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
       ) => {
         const queue = new Queue(CLASSIFICATION_QUALITY_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.getSharedConnection(),
           defaultJobOptions: {
             removeOnComplete: true,
             removeOnFail: BULLMQ_FAILED_JOB_RETENTION,

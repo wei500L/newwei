@@ -170,6 +170,7 @@ export interface ObservabilityEnvConfig {
   otelEnabled: boolean;
   otelServiceName: string;
   otelExporterOtlpEndpoint?: string;
+  otelTraceSampleRate: number;
   metricsDefaultBuckets?: number[];
 }
 
@@ -1290,6 +1291,8 @@ export class EnvService extends ConfigService<ApiEnv> {
         "OTEL_EXPORTER_OTLP_ENDPOINT",
         { infer: true },
       ),
+      otelTraceSampleRate:
+        this.get<number>("OTEL_TRACE_SAMPLE_RATE", { infer: true }) ?? 0.05,
       metricsDefaultBuckets:
         metricsDefaultBuckets.length > 0 ? metricsDefaultBuckets : undefined,
     };
