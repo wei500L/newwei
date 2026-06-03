@@ -2,6 +2,7 @@ import { HttpModule } from "@nestjs/axios";
 import { Module } from "@nestjs/common";
 import { TerminusModule } from "@nestjs/terminus";
 
+import { withKeepAliveAgents } from "../../common/http/http-agent";
 import { CacheModule } from "../cache/cache.module";
 import { EnvService } from "../config/config.service";
 import { DatabaseModule } from "../config/database.module";
@@ -23,15 +24,18 @@ import { RedisHealthIndicator } from "./redis.health";
       inject: [EnvService],
       useFactory: (env: EnvService) => {
         const cfg = env.crawl4aiConfig;
-        return {
-          baseURL: cfg.baseUrl ? cfg.baseUrl.replace(/\/$/, "") : undefined,
-          timeout: Math.min(1500, cfg.timeoutMs),
-          headers: cfg.apiKey
-            ? {
-                "x-api-key": cfg.apiKey
-              }
-            : undefined
-        };
+        return withKeepAliveAgents(
+          {
+            baseURL: cfg.baseUrl ? cfg.baseUrl.replace(/\/$/, "") : undefined,
+            timeout: Math.min(1500, cfg.timeoutMs),
+            headers: cfg.apiKey
+              ? {
+                  "x-api-key": cfg.apiKey
+                }
+              : undefined
+          },
+          env.httpAgentConfig
+        );
       }
     })
   ],

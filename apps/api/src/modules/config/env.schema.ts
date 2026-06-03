@@ -42,7 +42,41 @@ export const apiEnvSchema = baseEnvSchema
     REDIS_DB: z.coerce.number().int().nonnegative().default(0),
     REDIS_USERNAME: z.string().optional(),
     REDIS_PASSWORD: z.string().optional(),
+    REDIS_ENABLE_AUTO_PIPELINING: envBoolean.default(true),
+    REDIS_MAX_RETRIES_PER_REQUEST: z.coerce
+      .number()
+      .int()
+      .nonnegative()
+      .default(3),
     BULLMQ_NAMESPACE: z.string().default("modular"),
+    PRISMA_CONNECTION_LIMIT: z.coerce.number().int().positive().default(10),
+    PRISMA_POOL_TIMEOUT_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(10),
+    PRISMA_TRANSACTION_MAX_WAIT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(5_000),
+    PRISMA_TRANSACTION_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(15_000),
+    HTTP_KEEP_ALIVE_ENABLED: envBoolean.default(true),
+    HTTP_AGENT_MAX_SOCKETS: z.coerce.number().int().positive().default(64),
+    HTTP_AGENT_MAX_FREE_SOCKETS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(16),
+    HTTP_AGENT_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(60_000),
     RATE_LIMIT_LOGIN: z.coerce.number().int().positive().default(5),
     RATE_LIMIT_LOGIN_WINDOW: z.coerce.number().int().positive().default(60),
     RATE_LIMIT_CRAWL_TASK_CREATE: z.coerce
@@ -128,6 +162,13 @@ export const apiEnvSchema = baseEnvSchema
     ),
     GRAPHQL_DEPTH_LIMIT: z.coerce.number().int().positive().default(8),
     GRAPHQL_COMPLEXITY_LIMIT: z.coerce.number().int().positive().default(2000),
+    GRAPHQL_APQ_ENABLED: envBoolean.default(true),
+    GRAPHQL_RESPONSE_CACHE_ENABLED: envBoolean.default(true),
+    GRAPHQL_RESPONSE_CACHE_MAX_AGE_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(30),
     CORS_ORIGIN: z.string().optional(),
     WS_MAX_CONNECTIONS_PER_USER: z.coerce.number().int().positive().default(5),
     WS_MAX_CONNECTIONS_PER_IP: z.coerce.number().int().positive().default(50),

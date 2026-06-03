@@ -4,6 +4,7 @@ import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
 import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
+import { withKeepAliveAgents } from "../../common/http/http-agent";
 import { CacheModule } from "../cache/cache.module";
 import { EnvService } from "../config/config.service";
 import { DatabaseModule } from "../config/database.module";
@@ -42,9 +43,13 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
     RealtimeSignalsModule,
     HttpModule.registerAsync({
       inject: [EnvService],
-      useFactory: (env: EnvService) => ({
-        timeout: env.alertingConfig.webhookTimeoutMs
-      })
+      useFactory: (env: EnvService) =>
+        withKeepAliveAgents(
+          {
+            timeout: env.alertingConfig.webhookTimeoutMs
+          },
+          env.httpAgentConfig
+        )
     })
   ],
   providers: [

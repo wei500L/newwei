@@ -1,12 +1,24 @@
 "use client";
 
-import { Typography } from "antd";
+import { Skeleton, Typography } from "antd";
+import dynamic from "next/dynamic";
 import { useTranslation } from "react-i18next";
 
-import { WarMap } from "@/app/(app)/dashboard/charts/war-map";
-
 import { OnboardingPageVisit } from "../components/onboarding-page-visit";
+
 import { GeocodeLookupCard } from "./geocode-lookup-card";
+
+const WarMap = dynamic(
+  () => import("@/app/(app)/dashboard/charts/war-map").then((mod) => mod.WarMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-[560px] w-full items-center justify-center">
+        <Skeleton active paragraph={{ rows: 8 }} className="w-full" />
+      </div>
+    ),
+  },
+);
 
 export default function MapPage() {
   const { t } = useTranslation();

@@ -1,5 +1,5 @@
 import { ForbiddenException, UseGuards } from "@nestjs/common";
-import { Args, Context, Int, Query, Resolver } from "@nestjs/graphql";
+import { Args, Context, Info, Int, Query, Resolver } from "@nestjs/graphql";
 import { KnowledgeEntityType, KnowledgeRelationType } from "@prisma/client";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
@@ -12,15 +12,27 @@ import { HasPermission } from "../decorators/has-permission.decorator";
 import type { GqlRequest } from "../graphql.types";
 import { ArticleEntityLinkModel } from "../models/article-entity-link.model";
 import { KnowledgeGraphEdgeEvidenceItemModel } from "../models/knowledge-graph-evidence.model";
-import { KnowledgeGraphModel, KnowledgeGraphSubgraphInput } from "../models/knowledge-graph.model";
+import {
+  KnowledgeGraphModel,
+  KnowledgeGraphSubgraphInput,
+} from "../models/knowledge-graph.model";
+import {
+  type CacheableResolveInfo,
+  setPrivateResponseCacheHint,
+} from "../response-cache-hints";
 
-function normalizeEnumValue<T extends Record<string, string>>(value: string, enumObject: T): T[keyof T] | undefined {
+function normalizeEnumValue<T extends Record<string, string>>(
+  value: string,
+  enumObject: T,
+): T[keyof T] | undefined {
   const normalized = value.trim().toLowerCase();
   if (!normalized) {
     return undefined;
   }
   const allowed = new Set(Object.values(enumObject));
-  return allowed.has(normalized as T[keyof T]) ? (normalized as T[keyof T]) : undefined;
+  return allowed.has(normalized as T[keyof T])
+    ? (normalized as T[keyof T])
+    : undefined;
 }
 
 @Resolver()
@@ -29,14 +41,18 @@ export class KnowledgeGraphResolver {
   constructor(
     private readonly settings: KnowledgeGraphSettingsService,
     private readonly graph: KnowledgeGraphService,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
   ) {}
 
   @HasPermission("dashboards.read")
-  @Query(() => KnowledgeGraphModel, { nullable: true, description: "Get a knowledge graph subgraph for a seed entity" })
+  @Query(() => KnowledgeGraphModel, {
+    nullable: true,
+    description: "Get a knowledge graph subgraph for a seed entity",
+  })
   async getKnowledgeGraphSubgraph(
     @Context("req") req: GqlRequest,
-    @Args("input") input: KnowledgeGraphSubgraphInput
+    @Args("input") input: KnowledgeGraphSubgraphInput,
+    @Info() info?: CacheableResolveInfo,
   ): Promise<KnowledgeGraphModel | null> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
@@ -62,13 +78,17 @@ export class KnowledgeGraphResolver {
       : undefined;
 
     const cacheTtlSeconds = settings.cacheTtlSeconds ?? 0;
+    const responseCacheTtlSeconds = Math.min(cacheTtlSeconds, 30);
+    if (responseCacheTtlSeconds > 0) {
+      setPrivateResponseCacheHint(info, responseCacheTtlSeconds);
+    }
     const cacheKey = this.buildCacheKey({
       orgId: requester.orgId,
       seedName: input.seedName,
       seedType: seedType ?? null,
       maxDepth,
       maxNodes,
-      relationTypes: relationTypes ?? null
+      relationTypes: relationTypes ?? null,
     });
 
     const loader = async () => {
@@ -78,7 +98,7 @@ export class KnowledgeGraphResolver {
         seedType,
         maxDepth,
         maxNodes,
-        relationTypes
+        relationTypes,
       });
 
       if (!subgraph) {
@@ -89,7 +109,7 @@ export class KnowledgeGraphResolver {
         id: node.id,
         name: node.canonicalName,
         type: node.type,
-        properties: (node.properties as Record<string, unknown> | null) ?? null
+        properties: (node.properties as Record<string, unknown> | null) ?? null,
       }));
 
       const edges = subgraph.edges.map((edge) => ({
@@ -99,7 +119,7 @@ export class KnowledgeGraphResolver {
         type: edge.type,
         weight: edge.weight,
         confidence: edge.confidence,
-        properties: (edge.properties as Record<string, unknown> | null) ?? null
+        properties: (edge.properties as Record<string, unknown> | null) ?? null,
       }));
 
       const generatedAt = new Date().toISOString();
@@ -109,26 +129,36 @@ export class KnowledgeGraphResolver {
           id: subgraph.seed.id,
           name: subgraph.seed.canonicalName,
           type: subgraph.seed.type,
-          properties: (subgraph.seed.properties as Record<string, unknown> | null) ?? null
+          properties:
+            (subgraph.seed.properties as Record<string, unknown> | null) ??
+            null,
         },
         nodes,
         edges,
         metadata: {
           totalNodes: nodes.length,
           totalEdges: edges.length,
-          generatedAt
-        }
+          generatedAt,
+        },
       } satisfies Omit<KnowledgeGraphModel, "metadata"> & {
-        metadata: Omit<KnowledgeGraphModel["metadata"], "generatedAt"> & { generatedAt: string };
+        metadata: Omit<KnowledgeGraphModel["metadata"], "generatedAt"> & {
+          generatedAt: string;
+        };
       };
     };
 
     const cached =
       cacheTtlSeconds > 0
         ? await this.cache.wrap(cacheKey, cacheTtlSeconds, loader, {
-            lockTtlMs: Math.min(300_000, Math.max(30_000, cacheTtlSeconds * 1000)),
-            maxWaitMs: Math.min(300_000, Math.max(30_000, cacheTtlSeconds * 1000)),
-            retryDelayMs: 200
+            lockTtlMs: Math.min(
+              300_000,
+              Math.max(30_000, cacheTtlSeconds * 1000),
+            ),
+            maxWaitMs: Math.min(
+              300_000,
+              Math.max(30_000, cacheTtlSeconds * 1000),
+            ),
+            retryDelayMs: 200,
           })
         : await loader();
 
@@ -140,8 +170,8 @@ export class KnowledgeGraphResolver {
       ...cached,
       metadata: {
         ...cached.metadata,
-        generatedAt: new Date(cached.metadata.generatedAt)
-      }
+        generatedAt: new Date(cached.metadata.generatedAt),
+      },
     };
   }
 
@@ -150,7 +180,7 @@ export class KnowledgeGraphResolver {
   async articleEntityLinks(
     @Context("req") req: GqlRequest,
     @Args("articleId") articleId: string,
-    @Args("limit", { type: () => Int, nullable: true }) limit?: number
+    @Args("limit", { type: () => Int, nullable: true }) limit?: number,
   ): Promise<ArticleEntityLinkModel[]> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
@@ -165,7 +195,7 @@ export class KnowledgeGraphResolver {
     const rows = await this.graph.listArticleEntityLinks(
       requester.orgId,
       articleId,
-      typeof limit === "number" ? limit : 50
+      typeof limit === "number" ? limit : 50,
     );
 
     return rows.map((row) => ({
@@ -177,8 +207,9 @@ export class KnowledgeGraphResolver {
         id: row.entity.id,
         name: row.entity.canonicalName,
         type: row.entity.type,
-        properties: (row.entity.properties as Record<string, unknown> | null) ?? null
-      }
+        properties:
+          (row.entity.properties as Record<string, unknown> | null) ?? null,
+      },
     }));
   }
 
@@ -187,7 +218,7 @@ export class KnowledgeGraphResolver {
   async knowledgeGraphEdgeEvidence(
     @Context("req") req: GqlRequest,
     @Args("edgeId") edgeId: string,
-    @Args("limit", { type: () => Int, nullable: true }) limit?: number
+    @Args("limit", { type: () => Int, nullable: true }) limit?: number,
   ): Promise<KnowledgeGraphEdgeEvidenceItemModel[]> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
@@ -202,7 +233,7 @@ export class KnowledgeGraphResolver {
     const rows = await this.graph.listEdgeEvidence(
       requester.orgId,
       edgeId,
-      typeof limit === "number" ? limit : 20
+      typeof limit === "number" ? limit : 20,
     );
 
     return rows.map((row) => ({
@@ -211,7 +242,7 @@ export class KnowledgeGraphResolver {
       extractorVersion: row.extractorVersion,
       createdAt: row.createdAt,
       evidence: row.evidence,
-      article: row.article
+      article: row.article,
     }));
   }
 
@@ -225,7 +256,8 @@ export class KnowledgeGraphResolver {
   }) {
     const seedName = input.seedName.trim().toLowerCase();
     const seedType = input.seedType ?? "any";
-    const relationTypes = input.relationTypes?.slice().sort().join(",") ?? "any";
+    const relationTypes =
+      input.relationTypes?.slice().sort().join(",") ?? "any";
     return `knowledgeGraph:subgraph:${input.orgId}:seed=${seedName}:type=${seedType}:depth=${input.maxDepth}:max=${input.maxNodes}:rels=${relationTypes}`;
   }
 }

@@ -4,6 +4,7 @@ import { Module, forwardRef } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
 import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
+import { withKeepAliveAgents } from "../../common/http/http-agent";
 import { EnvService } from "../config/config.service";
 import { toBullmqConnection } from "../config/redis-connection";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
@@ -79,15 +80,18 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
       inject: [EnvService],
       useFactory: (env: EnvService) => {
         const cfg = env.crawl4aiConfig;
-        return {
-          baseURL: cfg.baseUrl ? cfg.baseUrl.replace(/\/$/, "") : undefined,
-          timeout: cfg.timeoutMs,
-          headers: cfg.apiKey
-            ? {
-                "x-api-key": cfg.apiKey,
-              }
-            : undefined,
-        };
+        return withKeepAliveAgents(
+          {
+            baseURL: cfg.baseUrl ? cfg.baseUrl.replace(/\/$/, "") : undefined,
+            timeout: cfg.timeoutMs,
+            headers: cfg.apiKey
+              ? {
+                  "x-api-key": cfg.apiKey,
+                }
+              : undefined,
+          },
+          env.httpAgentConfig
+        );
       },
     }),
   ],

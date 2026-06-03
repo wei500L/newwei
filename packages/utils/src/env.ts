@@ -18,13 +18,19 @@ const optionalPositiveIntFromEnv = z.preprocess((value) => {
   return value;
 }, z.coerce.number().int().positive().optional());
 
-const optionalWebsocketUrl = z.preprocess((value) => {
-  if (typeof value !== "string") {
-    return value;
-  }
-  const normalized = value.trim();
-  return normalized === "" ? undefined : normalized;
-}, z.string().regex(/^wss?:\/\/\S+$/).optional());
+const optionalWebsocketUrl = z.preprocess(
+  (value) => {
+    if (typeof value !== "string") {
+      return value;
+    }
+    const normalized = value.trim();
+    return normalized === "" ? undefined : normalized;
+  },
+  z
+    .string()
+    .regex(/^wss?:\/\/\S+$/)
+    .optional(),
+);
 
 const envBoolean = z.preprocess((value) => {
   if (typeof value === "boolean") {
@@ -61,6 +67,11 @@ export interface MysqlConnectionEnvLike {
   MYSQL_USER?: string | null;
   MYSQL_PASSWORD?: string | null;
   MYSQL_DB?: string | null;
+}
+
+export interface PrismaConnectionPoolOptions {
+  connectionLimit?: number | null;
+  poolTimeoutSeconds?: number | null;
 }
 
 function readOptionalEnvString(
@@ -128,6 +139,40 @@ export function resolveMysqlConnectionString(
   return `mysql://${user}:${encodeURIComponent(password)}@${host}:${port}/${dbName}`;
 }
 
+export function resolvePrismaMysqlConnectionString(
+  env: MysqlConnectionEnvLike,
+  options: PrismaConnectionPoolOptions = {},
+): string {
+  const connectionString = resolveMysqlConnectionString(env);
+  const parsed = new URL(connectionString);
+
+  if (
+    typeof options.connectionLimit === "number" &&
+    Number.isFinite(options.connectionLimit) &&
+    options.connectionLimit > 0 &&
+    !parsed.searchParams.has("connection_limit")
+  ) {
+    parsed.searchParams.set(
+      "connection_limit",
+      String(Math.floor(options.connectionLimit)),
+    );
+  }
+
+  if (
+    typeof options.poolTimeoutSeconds === "number" &&
+    Number.isFinite(options.poolTimeoutSeconds) &&
+    options.poolTimeoutSeconds > 0 &&
+    !parsed.searchParams.has("pool_timeout")
+  ) {
+    parsed.searchParams.set(
+      "pool_timeout",
+      String(Math.floor(options.poolTimeoutSeconds)),
+    );
+  }
+
+  return parsed.toString();
+}
+
 export const baseEnvSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -142,6 +187,12 @@ export const baseEnvSchema = z.object({
     .string()
     .url()
     .or(z.string().regex(/^mongodb/)),
+  MONGO_MAX_POOL_SIZE: z.coerce.number().int().positive().default(20),
+  MONGO_MIN_POOL_SIZE: z.coerce.number().int().nonnegative().default(0),
+  MONGO_AUTO_INDEX: envBoolean.default(
+    process.env.NODE_ENV === "production" ? false : true,
+  ),
+  MONGO_BUFFER_COMMANDS: envBoolean.default(false),
   REDIS_HOST: z.string().min(1),
   REDIS_PORT: z.coerce.number().int().positive(),
   SMTP_HOST: z.string().min(1).default("smtp.163.com"),

@@ -4,17 +4,19 @@ import {
   ApolloClient,
   ApolloLink,
   HttpLink,
-  InMemoryCache,
   split,
   type NormalizedCacheObject,
 } from "@apollo/client";
 import { setContext } from "@apollo/client/link/context";
 import { onError } from "@apollo/client/link/error";
+import { createPersistedQueryLink } from "@apollo/client/link/persisted-queries";
 import { GraphQLWsLink } from "@apollo/client/link/subscriptions";
 import { fromPromise } from "@apollo/client/link/utils";
 import { getMainDefinition } from "@apollo/client/utilities";
+import { sha256 } from "crypto-hash";
 import { createClient } from "graphql-ws";
 
+import { createApolloCache } from "./apollo-cache-policies";
 import { emitForbidden, emitUnauthorized } from "./auth-events";
 import {
   getCachedBrowserAuthSession,
@@ -42,11 +44,12 @@ interface NetworkErrorWithResponse {
 let apolloClient: ApolloClient<NormalizedCacheObject> | null = null;
 const GRAPHQL_WS_CONNECTION_ACK_TIMEOUT_MS = 10_000;
 
-const toWsUrl = (url: string): string => url.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
+const toWsUrl = (url: string): string =>
+  url.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
 
 const httpLink = new HttpLink({
   uri: env.graphqlUrl,
-  credentials: "include"
+  credentials: "include",
 });
 
 export const setApolloAccessToken = (token: string | null | undefined) => {
@@ -72,99 +75,127 @@ const authLink = setContext(async (_, { headers }) => {
   return {
     headers: {
       ...traceHeaders,
-      ...(token ? { authorization: `Bearer ${token}` } : {})
-    }
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
   };
 });
 
-const errorLink = onError(({ graphQLErrors, networkError, operation, response, forward }) => {
-  const responseTraceId =
-    (networkError as unknown as NetworkErrorWithResponse)?.response?.headers?.get?.("x-trace-id") ??
-    (response as Response | undefined)?.headers?.get?.("x-trace-id") ??
-    undefined;
+const errorLink = onError(
+  ({ graphQLErrors, networkError, operation, response, forward }) => {
+    const responseTraceId =
+      (
+        networkError as unknown as NetworkErrorWithResponse
+      )?.response?.headers?.get?.("x-trace-id") ??
+      (response as Response | undefined)?.headers?.get?.("x-trace-id") ??
+      undefined;
 
-  const statusCode =
-    (networkError as NetworkErrorWithResponse | undefined)?.statusCode ??
-    (networkError as NetworkErrorWithResponse | undefined)?.response?.status;
+    const statusCode =
+      (networkError as NetworkErrorWithResponse | undefined)?.statusCode ??
+      (networkError as NetworkErrorWithResponse | undefined)?.response?.status;
 
-  const unauthenticatedGraphqlError =
-    graphQLErrors?.find((error) => {
-      const code = error.extensions?.code;
-      return code === "UNAUTHENTICATED" || code === "UNAUTHORIZED";
-    }) ?? null;
+    const unauthenticatedGraphqlError =
+      graphQLErrors?.find((error) => {
+        const code = error.extensions?.code;
+        return code === "UNAUTHENTICATED" || code === "UNAUTHORIZED";
+      }) ?? null;
 
-  const alreadyRetried = Boolean(operation.getContext()._retry);
+    const alreadyRetried = Boolean(operation.getContext()._retry);
 
-  if ((statusCode === 401 || unauthenticatedGraphqlError) && typeof window !== "undefined" && forward && !alreadyRetried) {
-    operation.setContext({ _retry: true });
-    invalidateBrowserAuthSessionCache();
-
-    return fromPromise(refreshAccessToken()).flatMap((token) => {
-      if (token) {
-        return forward(operation);
-      }
-
+    if (
+      (statusCode === 401 || unauthenticatedGraphqlError) &&
+      typeof window !== "undefined" &&
+      forward &&
+      !alreadyRetried
+    ) {
+      operation.setContext({ _retry: true });
       invalidateBrowserAuthSessionCache();
-      emitUnauthorized({ status: 401, reason: unauthenticatedGraphqlError?.message });
 
-      const originalError =
-        networkError ??
-        new Error(unauthenticatedGraphqlError?.message ?? "Unauthenticated");
-      return fromPromise(Promise.reject(originalError));
-    });
-  }
+      return fromPromise(refreshAccessToken()).flatMap((token) => {
+        if (token) {
+          return forward(operation);
+        }
 
-  if (graphQLErrors) {
-    graphQLErrors.forEach((error) => {
-      if (error.extensions?.code === "UNAUTHENTICATED" || error.extensions?.code === "UNAUTHORIZED") {
         invalidateBrowserAuthSessionCache();
-        emitUnauthorized({ status: 401, reason: error.message });
-      }
-      if (error.extensions?.code === "FORBIDDEN") {
-        const detail =
-          typeof error.extensions?.detail === "string" && error.extensions.detail.trim()
-            ? error.extensions.detail.trim()
-            : "";
-        emitForbidden({
-          status: 403,
-          reason: detail ? `${error.message}: ${detail}` : error.message
+        emitUnauthorized({
+          status: 401,
+          reason: unauthenticatedGraphqlError?.message,
         });
-      }
-      const traceId =
-        (error.extensions?.traceId as string | undefined) ?? responseTraceId ?? undefined;
-      captureClientError(`[GraphQL error]: ${error.message}`, error, {
-        traceId,
-        tags: {
-          path: error.path?.join(".") ?? "unknown",
-          operation: operation?.operationName ?? "unknown"
-        },
-        extras: { extensions: error.extensions }
-      });
-    });
-  }
-  if (networkError) {
-    if (statusCode === 401) {
-      invalidateBrowserAuthSessionCache();
-      emitUnauthorized({ status: statusCode });
-    }
-    if (statusCode === 403) {
-      emitForbidden({ status: statusCode });
-    }
-    captureClientError("[Network error]", networkError, {
-      traceId: responseTraceId ?? undefined,
-      tags: { operation: operation?.operationName ?? "unknown" }
-    });
-  }
 
-  return undefined;
-});
+        const originalError =
+          networkError ??
+          new Error(unauthenticatedGraphqlError?.message ?? "Unauthenticated");
+        return fromPromise(Promise.reject(originalError));
+      });
+    }
+
+    if (graphQLErrors) {
+      graphQLErrors.forEach((error) => {
+        if (
+          error.extensions?.code === "UNAUTHENTICATED" ||
+          error.extensions?.code === "UNAUTHORIZED"
+        ) {
+          invalidateBrowserAuthSessionCache();
+          emitUnauthorized({ status: 401, reason: error.message });
+        }
+        if (error.extensions?.code === "FORBIDDEN") {
+          const detail =
+            typeof error.extensions?.detail === "string" &&
+            error.extensions.detail.trim()
+              ? error.extensions.detail.trim()
+              : "";
+          emitForbidden({
+            status: 403,
+            reason: detail ? `${error.message}: ${detail}` : error.message,
+          });
+        }
+        const traceId =
+          (error.extensions?.traceId as string | undefined) ??
+          responseTraceId ??
+          undefined;
+        captureClientError(`[GraphQL error]: ${error.message}`, error, {
+          traceId,
+          tags: {
+            path: error.path?.join(".") ?? "unknown",
+            operation: operation?.operationName ?? "unknown",
+          },
+          extras: { extensions: error.extensions },
+        });
+      });
+    }
+    if (networkError) {
+      if (statusCode === 401) {
+        invalidateBrowserAuthSessionCache();
+        emitUnauthorized({ status: statusCode });
+      }
+      if (statusCode === 403) {
+        emitForbidden({ status: statusCode });
+      }
+      captureClientError("[Network error]", networkError, {
+        traceId: responseTraceId ?? undefined,
+        tags: { operation: operation?.operationName ?? "unknown" },
+      });
+    }
+
+    return undefined;
+  },
+);
 
 function createApolloClient() {
-  const httpChain = ApolloLink.from([authLink, httpLink]);
+  const persistedQueryLink = env.NEXT_PUBLIC_GRAPHQL_APQ_ENABLED
+    ? createPersistedQueryLink({
+        sha256,
+        useGETForHashedQueries: true,
+      })
+    : null;
+  const httpChain = ApolloLink.from(
+    persistedQueryLink
+      ? [authLink, persistedQueryLink, httpLink]
+      : [authLink, httpLink],
+  );
   const wsLink =
     typeof window === "undefined"
-        ? null
-        : new GraphQLWsLink(
+      ? null
+      : new GraphQLWsLink(
           createClient({
             url: toWsUrl(env.graphqlUrl),
             lazy: true,
@@ -175,10 +206,10 @@ function createApolloClient() {
               const traceHeaders = createTraceHeaders();
               return {
                 ...traceHeaders,
-                ...(token ? { authorization: `Bearer ${token}` } : {})
+                ...(token ? { authorization: `Bearer ${token}` } : {}),
               };
-            }
-          })
+            },
+          }),
         );
 
   const link =
@@ -187,21 +218,24 @@ function createApolloClient() {
       : split(
           ({ query }) => {
             const definition = getMainDefinition(query);
-            return definition.kind === "OperationDefinition" && definition.operation === "subscription";
+            return (
+              definition.kind === "OperationDefinition" &&
+              definition.operation === "subscription"
+            );
           },
           wsLink,
-          httpChain
+          httpChain,
         );
 
   return new ApolloClient({
     link: ApolloLink.from([errorLink, link]),
-    cache: new InMemoryCache(),
+    cache: createApolloCache(),
     defaultOptions: {
       watchQuery: {
         // Modules that need background refresh should opt in explicitly.
-        fetchPolicy: "cache-first"
-      }
-    }
+        fetchPolicy: "cache-first",
+      },
+    },
   });
 }
 

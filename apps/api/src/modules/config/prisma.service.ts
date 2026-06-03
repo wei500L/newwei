@@ -1,4 +1,7 @@
-import { createLogger, resolveMysqlConnectionString } from "@modular/utils";
+import {
+  createLogger,
+  resolvePrismaMysqlConnectionString,
+} from "@modular/utils";
 import {
   Inject,
   Injectable,
@@ -26,16 +29,23 @@ export class PrismaService
   private readonly logger = createLogger({ name: "prisma" });
 
   constructor(@Inject(EnvService) private readonly env: EnvService) {
-    const connectionString = resolveMysqlConnectionString({
-      DATABASE_URL: process.env.DATABASE_URL,
-      MYSQL_HOST: env.get<string | undefined>("MYSQL_HOST", { infer: true }),
-      MYSQL_PORT: env.get<number | undefined>("MYSQL_PORT", { infer: true }),
-      MYSQL_USER: env.get<string | undefined>("MYSQL_USER", { infer: true }),
-      MYSQL_PASSWORD: env.get<string | undefined>("MYSQL_PASSWORD", {
-        infer: true,
-      }),
-      MYSQL_DB: env.get<string | undefined>("MYSQL_DB", { infer: true }),
-    });
+    const prismaConfig = env.prismaConfig;
+    const connectionString = resolvePrismaMysqlConnectionString(
+      {
+        DATABASE_URL: process.env.DATABASE_URL,
+        MYSQL_HOST: env.get<string | undefined>("MYSQL_HOST", { infer: true }),
+        MYSQL_PORT: env.get<number | undefined>("MYSQL_PORT", { infer: true }),
+        MYSQL_USER: env.get<string | undefined>("MYSQL_USER", { infer: true }),
+        MYSQL_PASSWORD: env.get<string | undefined>("MYSQL_PASSWORD", {
+          infer: true,
+        }),
+        MYSQL_DB: env.get<string | undefined>("MYSQL_DB", { infer: true }),
+      },
+      {
+        connectionLimit: prismaConfig.connectionLimit,
+        poolTimeoutSeconds: prismaConfig.poolTimeoutSeconds,
+      },
+    );
 
     process.env.DATABASE_URL = connectionString;
     super({
@@ -43,6 +53,10 @@ export class PrismaService
         db: {
           url: connectionString,
         },
+      },
+      transactionOptions: {
+        maxWait: prismaConfig.transactionMaxWaitMs,
+        timeout: prismaConfig.transactionTimeoutMs,
       },
     });
   }
@@ -80,7 +94,10 @@ export class PrismaService
   }
 
   async runInTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) {
-    return this.$transaction(fn, { timeout: 15000 });
+    return this.$transaction(fn, {
+      maxWait: this.env.prismaConfig.transactionMaxWaitMs,
+      timeout: this.env.prismaConfig.transactionTimeoutMs,
+    });
   }
 
   private ensureKnowledgeGraphDelegates() {

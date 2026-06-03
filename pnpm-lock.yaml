@@ -84,6 +84,12 @@ importers:
       '@apollo/server':
         specifier: ^4.11.1
         version: 4.12.2(graphql@16.12.0)
+      '@apollo/server-plugin-response-cache':
+        specifier: ^4.1.4
+        version: 4.1.4(@apollo/server@4.12.2(graphql@16.12.0))(graphql@16.12.0)
+      '@apollo/utils.keyvaluecache':
+        specifier: ^2.1.1
+        version: 2.1.1
       '@aws-sdk/client-s3':
         specifier: ^3.823.0
         version: 3.958.0
@@ -467,6 +473,9 @@ importers:
       axios:
         specifier: ^1.6.8
         version: 1.13.2
+      crypto-hash:
+        specifier: ^4.0.1
+        version: 4.0.1
       cytoscape:
         specifier: ^3.33.1
         version: 3.33.1
@@ -809,6 +818,14 @@ packages:
     deprecated: The use of GraphQL Playground in Apollo Server was supported in previous versions, but this is no longer the case as of December 31, 2022. This package exists for v4 migration purposes only. We do not intend to resolve security issues or other bugs with this package if they arise, so please migrate away from this to [Apollo Server's default Explorer](https://www.apollographql.com/docs/apollo-server/api/plugin/landing-pages) as soon as possible.
     peerDependencies:
       '@apollo/server': ^4.0.0
+
+  '@apollo/server-plugin-response-cache@4.1.4':
+    resolution: {integrity: sha512-MicQsfTbwIzUc7GCFwY9uOz46ad2q22f4RWy42YEoy4YKGdrnl3X0rfs5GpBliw54nM3fxYIdmvGKeO2W7wMSg==}
+    engines: {node: '>=14.16.0'}
+    deprecated: '@apollo/server-plugin-response-cache v4 is part of Apollo Server v4, which is deprecated and will transition to end-of-life on January 26, 2026. As long as you are already using a non-EOL version of Node.js, upgrading to v5 should take only a few minutes. See https://www.apollographql.com/docs/apollo-server/previous-versions for details.'
+    peerDependencies:
+      '@apollo/server': ^4.0.1
+      graphql: ^16.6.0
 
   '@apollo/server@4.12.2':
     resolution: {integrity: sha512-jKRlf+sBMMdKYrjMoiWKne42Eb6paBfDOr08KJnUaeaiyWFj+/040FjVPQI7YGLfdwnYIsl1NUUqS2UdgezJDg==}
@@ -5608,6 +5625,10 @@ packages:
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
     engines: {node: '>= 8'}
+
+  crypto-hash@4.0.1:
+    resolution: {integrity: sha512-4u4yl+8C+75Xedf1uMA0J/TTYAqJ54XdyBc1RV3UjCkU2wQjFMsB5ScjRDh3oo21zAwSprcVEDolaGDT8z5G6g==}
+    engines: {node: '>=20'}
 
   css-select@5.2.2:
     resolution: {integrity: sha512-TizTzUddG/xYLA3NXodFM0fSbNizXjOKhqiQQwvhlspadZokn1KDy0NZFS0wuEubIYAV5/c1/lAr0TaaFXEXzw==}
@@ -10569,6 +10590,13 @@ snapshots:
     dependencies:
       '@apollo/server': 4.12.2(graphql@16.12.0)
       '@apollographql/graphql-playground-html': 1.6.29
+
+  '@apollo/server-plugin-response-cache@4.1.4(@apollo/server@4.12.2(graphql@16.12.0))(graphql@16.12.0)':
+    dependencies:
+      '@apollo/server': 4.12.2(graphql@16.12.0)
+      '@apollo/utils.createhash': 2.0.2
+      '@apollo/utils.keyvaluecache': 2.1.1
+      graphql: 16.12.0
 
   '@apollo/server@4.12.2(graphql@16.12.0)':
     dependencies:
@@ -16842,6 +16870,8 @@ snapshots:
       path-key: 3.1.1
       shebang-command: 2.0.0
       which: 2.0.2
+
+  crypto-hash@4.0.1: {}
 
   css-select@5.2.2:
     dependencies:

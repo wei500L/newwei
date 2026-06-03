@@ -25,11 +25,10 @@ import {
   Tag,
   Typography
 } from "antd";
-import cytoscape, { type Core, type EdgeSingular, type ElementDefinition, type NodeSingular } from "cytoscape";
-import fcose from "cytoscape-fcose";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -60,19 +59,20 @@ import {
   type KnowledgeGraphSeedType
 } from "@/lib/knowledge-graph-explorer";
 
-cytoscape.use(fcose);
+import type { KnowledgeGraphCanvasElement } from "./knowledge-graph-canvas";
+
+const KnowledgeGraphCanvas = dynamic(
+  () =>
+    import("./knowledge-graph-canvas").then(
+      (mod) => mod.KnowledgeGraphCanvas,
+    ),
+  {
+    ssr: false,
+    loading: () => <Skeleton active paragraph={{ rows: 10 }} />,
+  },
+);
 
 const { Title, Text, Paragraph } = Typography;
-
-const NODE_COLORS: Record<string, string> = {
-  company: "#2563eb",
-  industry: "#16a34a",
-  person: "#f97316",
-  policy: "#dc2626",
-  commodity: "#9333ea",
-  instrument: "#0891b2",
-  organization: "#64748b"
-};
 
 const NODE_TYPE_OPTIONS: { label: string; value: KnowledgeGraphSeedType }[] = [
   { label: "Company", value: "company" },
@@ -90,10 +90,6 @@ type GraphNode = NonNullable<
 type GraphEdge = NonNullable<
   GetKnowledgeGraphSubgraphQuery["getKnowledgeGraphSubgraph"]
 >["edges"][number];
-
-function getNodeColor(type: string) {
-  return NODE_COLORS[type.trim().toLowerCase()] ?? "#94a3b8";
-}
 
 function buildDegreeMap(edges: readonly GraphEdge[]) {
   const degreeMap = new Map<string, number>();
@@ -143,8 +139,7 @@ export function KnowledgeGraphContent() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const cyRef = useRef<Core | null>(null);
+  const [layoutRunNonce, setLayoutRunNonce] = useState(0);
 
   const routeState = useMemo(
     () => parseKnowledgeGraphExplorerParams(searchParams),
@@ -274,7 +269,7 @@ export function KnowledgeGraphContent() {
       edges,
       degreeMap,
       elements: [
-        ...Array.from(nodeMap.values()).map((node): ElementDefinition => ({
+        ...Array.from(nodeMap.values()).map((node): KnowledgeGraphCanvasElement => ({
           data: {
             id: node.id,
             label: node.name,
@@ -285,7 +280,7 @@ export function KnowledgeGraphContent() {
           }
         })),
         ...edges.map(
-          (edge): ElementDefinition => ({
+          (edge): KnowledgeGraphCanvasElement => ({
             data: {
               id: edge.id,
               source: edge.from,
@@ -356,131 +351,35 @@ export function KnowledgeGraphContent() {
     }
   }, [graphData, selectedEdgeId, selectedNodeId]);
 
-  useEffect(() => {
-    if (!graphData || !containerRef.current) {
-      return;
-    }
-
-    const cy = cytoscape({
-      container: containerRef.current,
-      elements: graphData.elements,
-      layout: {
-        name: "fcose",
-        animate: false,
-        fit: true,
-        padding: 32,
-        nodeRepulsion: 8_000,
-        idealEdgeLength: 140,
-        edgeElasticity: 0.08,
-        gravity: 0.18,
-        quality: "proof"
-      } as any,
-      wheelSensitivity: 0.18,
-      style: [
-        {
-          selector: "node",
-          style: {
-            "background-color": (ele: NodeSingular) => getNodeColor(String(ele.data("type") ?? "")),
-            label: "data(label)",
-            color: "#0f172a",
-            "font-size": 11,
-            "font-weight": (ele: NodeSingular) => (ele.data("isSeed") ? 700 : 500),
-            "border-width": (ele: NodeSingular) => (ele.data("isSeed") ? 3 : 1.5),
-            "border-color": "#e2e8f0",
-            width: (ele: NodeSingular) => Math.max(28, Math.min(68, 28 + Number(ele.data("degree") ?? 0) * 5)),
-            height: (ele: NodeSingular) => Math.max(28, Math.min(68, 28 + Number(ele.data("degree") ?? 0) * 5)),
-            "text-wrap": "wrap",
-            "text-max-width": "110px",
-            "text-valign": "bottom",
-            "text-margin-y": 10
-          }
-        },
-        {
-          selector: "edge",
-          style: {
-            width: (ele: EdgeSingular) => Math.max(1.5, Math.min(6, Number(ele.data("weight") ?? 1))),
-            "line-color": (ele: EdgeSingular) => {
-              const confidence = Number(ele.data("confidence") ?? 0);
-              if (confidence >= 0.85) return "#16a34a";
-              if (confidence >= 0.7) return "#f59e0b";
-              return "#ef4444";
-            },
-            opacity: (ele: EdgeSingular) => Math.max(0.3, Math.min(0.92, Number(ele.data("confidence") ?? 0.5))),
-            "curve-style": "bezier",
-            "target-arrow-shape": "triangle",
-            "target-arrow-color": "line-color"
-          }
-        },
-        {
-          selector: "node:selected",
-          style: {
-            "border-color": "#0f172a",
-            "border-width": 4,
-            "overlay-opacity": 0.08,
-            "overlay-color": "#1d4ed8"
-          }
-        },
-        {
-          selector: "edge:selected",
-          style: {
-            width: 6,
-            "overlay-opacity": 0.06,
-            "overlay-color": "#0f172a"
-          }
-        }
-      ]
-    });
-
-    cy.on("tap", "node", (event) => {
-      const id = String(event.target.id());
+  const handleCanvasNodeSelect = useCallback(
+    (id: string) => {
       setSelectedNodeId(id);
       setSelectedEdgeId(null);
       if (isMobile) {
         setDetailDrawerOpen(true);
       }
-    });
+    },
+    [isMobile],
+  );
 
-    cy.on("tap", "edge", (event) => {
-      const id = String(event.target.id());
+  const handleCanvasEdgeSelect = useCallback(
+    (id: string) => {
       setSelectedEdgeId(id);
       setSelectedNodeId(null);
       if (isMobile) {
         setDetailDrawerOpen(true);
       }
-    });
+    },
+    [isMobile],
+  );
 
-    cy.on("tap", (event) => {
-      if (event.target !== cy) {
-        return;
-      }
-      setSelectedNodeId(null);
-      setSelectedEdgeId(null);
-    });
-
-    cyRef.current = cy;
-
-    return () => {
-      cy.destroy();
-      cyRef.current = null;
-    };
-  }, [graphData, isMobile]);
+  const handleCanvasClearSelection = useCallback(() => {
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+  }, []);
 
   const rerunLayout = () => {
-    const cy = cyRef.current;
-    if (!cy) {
-      return;
-    }
-    cy.layout({
-      name: "fcose",
-      animate: true,
-      fit: true,
-      padding: 32,
-      nodeRepulsion: 8_000,
-      idealEdgeLength: 140,
-      edgeElasticity: 0.08,
-      gravity: 0.18,
-      quality: "proof"
-    } as any).run();
+    setLayoutRunNonce((value) => value + 1);
   };
 
   const controlPanel = (
@@ -980,9 +879,15 @@ export function KnowledgeGraphContent() {
                 {t("dashboard.actions.fetchLatest")}
               </Button>
             </div>
-            <div
-              ref={containerRef}
-              className="min-h-[640px] rounded-[28px] border border-slate-200/80 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.09),_transparent_45%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.98))]"
+            <KnowledgeGraphCanvas
+              elements={graphData.elements}
+              isMobile={isMobile}
+              layoutRunNonce={layoutRunNonce}
+              selectedNodeId={selectedNodeId}
+              selectedEdgeId={selectedEdgeId}
+              onNodeSelect={handleCanvasNodeSelect}
+              onEdgeSelect={handleCanvasEdgeSelect}
+              onClearSelection={handleCanvasClearSelection}
             />
           </div>
           {!isMobile ? (

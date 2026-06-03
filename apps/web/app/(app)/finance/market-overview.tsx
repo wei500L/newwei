@@ -1,18 +1,50 @@
 "use client";
 
 import { Card, Skeleton, Typography } from "antd";
+import dynamic from "next/dynamic";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { FinancialCandlestick } from "@/app/(app)/dashboard/charts/financial-candlestick";
-import { SectorHeatmap } from "@/app/(app)/dashboard/charts/sector-heatmap";
-import { MarketPulse } from "@/app/(app)/dashboard/components/market-pulse";
-import { MetricDrillDown } from "@/app/(app)/dashboard/metric-drilldown";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useHeroMetrics } from "@/lib/hero-metrics";
 import { useDashboardRangeStore } from "@/store/time-range";
+
+const MarketPulse = dynamic(
+  () =>
+    import("@/app/(app)/dashboard/components/market-pulse").then(
+      (mod) => mod.MarketPulse,
+    ),
+  { loading: () => <Skeleton active paragraph={{ rows: 4 }} /> },
+);
+
+const MetricDrillDown = dynamic(
+  () =>
+    import("@/app/(app)/dashboard/metric-drilldown").then(
+      (mod) => mod.MetricDrillDown,
+    ),
+  {
+    ssr: false,
+    loading: () => <Skeleton active paragraph={{ rows: 8 }} />,
+  },
+);
+
+const SectorHeatmap = dynamic(
+  () =>
+    import("@/app/(app)/dashboard/charts/sector-heatmap").then(
+      (mod) => mod.SectorHeatmap,
+    ),
+  { loading: () => <Skeleton active paragraph={{ rows: 6 }} /> },
+);
+
+const FinancialCandlestick = dynamic(
+  () =>
+    import("@/app/(app)/dashboard/charts/financial-candlestick").then(
+      (mod) => mod.FinancialCandlestick,
+    ),
+  { loading: () => <Skeleton active paragraph={{ rows: 6 }} /> },
+);
 
 export function MarketOverview() {
   const { t } = useTranslation();

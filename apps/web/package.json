@@ -34,6 +34,7 @@
     "@xyflow/react": "^12.10.1",
     "antd": "^5.19.0",
     "axios": "^1.6.8",
+    "crypto-hash": "^4.0.1",
     "cytoscape": "^3.33.1",
     "cytoscape-fcose": "^2.2.0",
     "dayjs": "^1.11.13",

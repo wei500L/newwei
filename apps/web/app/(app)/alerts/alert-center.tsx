@@ -1,6 +1,7 @@
 "use client";
 
 import { gql, useApolloClient, useMutation } from "@apollo/client";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import {
   Alert,
   Badge,
@@ -34,7 +35,7 @@ import type { EChartsOption } from "echarts";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
@@ -48,6 +49,7 @@ import {
   useAlertRuleTuningSuggestionQuery,
 } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import { createCoalescedRefetchScheduler } from "@/lib/coalesced-refetch";
 import {
   buildCsv,
   downloadCsv,
@@ -70,9 +72,15 @@ import {
   resolveAlertCenterAccess,
   resolveSelectedEventId,
   resolveFilterTimeWindow,
+  type AlertEventItem,
   type AlertDatePreset,
   type AlertFilterState,
 } from "./alert-center.utils";
+import {
+  ALERT_EVENT_ROW_ESTIMATE_PX,
+  shouldUpdateAlertEventsMetric,
+  shouldVirtualizeAlertEvents,
+} from "./alert-events-virtualization";
 
 const severityColor: Record<string, string> = {
   low: "green",
@@ -1341,6 +1349,8 @@ export function AlertCenterContent() {
   const [openFilterPanelKeys, setOpenFilterPanelKeys] = useState<string[]>([]);
   const [listPage, setListPage] = useState<number>(1);
   const [listPageSize, setListPageSize] = useState<number>(30);
+  const eventsListRef = useRef<HTMLDivElement | null>(null);
+  const [eventsListScrollMargin, setEventsListScrollMargin] = useState(0);
   const [exportScope, setExportScope] = useState<AlertExportScope>("selected");
   const [expandMessage, setExpandMessage] = useState<boolean>(false);
   const [expandContext, setExpandContext] = useState<boolean>(false);
@@ -1376,17 +1386,23 @@ export function AlertCenterContent() {
     if (!shouldQueryEvents) {
       return;
     }
+    const refetchScheduler = createCoalescedRefetchScheduler(() =>
+      refetchEvents(),
+    );
     const sub = client
       .subscribe({
         query: AlertEventsStreamDocument,
       })
       .subscribe({
         next: () => {
-          void refetchEvents();
+          refetchScheduler.schedule();
         },
       });
 
-    return () => sub.unsubscribe();
+    return () => {
+      sub.unsubscribe();
+      refetchScheduler.cancel();
+    };
   }, [client, refetchEvents, shouldQueryEvents]);
 
   const sortedEvents = useMemo(() => {
@@ -1672,10 +1688,102 @@ export function AlertCenterContent() {
     const start = (listPage - 1) * listPageSize;
     return filteredEvents.slice(start, start + listPageSize);
   }, [filteredEvents, listPage, listPageSize]);
+  const shouldVirtualizeCurrentEvents = shouldVirtualizeAlertEvents(
+    currentPageEvents.length,
+  );
+  const eventVirtualizer = useWindowVirtualizer({
+    count: currentPageEvents.length,
+    estimateSize: () => ALERT_EVENT_ROW_ESTIMATE_PX,
+    overscan: 5,
+    enabled: shouldVirtualizeCurrentEvents,
+    scrollMargin: eventsListScrollMargin,
+  });
+  const virtualEventRows = shouldVirtualizeCurrentEvents
+    ? eventVirtualizer.getVirtualItems()
+    : [];
+  const eventListTopSpacer =
+    virtualEventRows.length > 0
+      ? Math.max(0, virtualEventRows[0]!.start - eventsListScrollMargin)
+      : 0;
+  const eventListBottomSpacer =
+    virtualEventRows.length > 0
+      ? Math.max(
+          0,
+          eventVirtualizer.getTotalSize() -
+            virtualEventRows[virtualEventRows.length - 1]!.end,
+        )
+      : 0;
+  const currentPageEventEntries = shouldVirtualizeCurrentEvents
+    ? virtualEventRows
+        .map((row) => {
+          const event = currentPageEvents[row.index];
+          return event ? { event, key: event.id, virtualIndex: row.index } : null;
+        })
+        .filter(
+          (entry): entry is { event: AlertEventItem; key: string; virtualIndex: number } =>
+            entry !== null,
+        )
+    : currentPageEvents.map((event, index) => ({
+        event,
+        key: event.id,
+        virtualIndex: index,
+      }));
   const exportEvents = useMemo(
     () => (exportScope === "page" ? currentPageEvents : selectedEventsForBatch),
     [currentPageEvents, exportScope, selectedEventsForBatch],
   );
+
+  useEffect(() => {
+    if (!shouldVirtualizeCurrentEvents) {
+      setEventsListScrollMargin(0);
+      return;
+    }
+
+    let frameId: number | null = null;
+    const scheduleUpdate = () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(() => {
+        const node = eventsListRef.current;
+        if (!node) {
+          return;
+        }
+        const nextScrollMargin = node.getBoundingClientRect().top + window.scrollY;
+        setEventsListScrollMargin((previous) =>
+          shouldUpdateAlertEventsMetric(previous, nextScrollMargin)
+            ? nextScrollMargin
+            : previous,
+        );
+      });
+    };
+
+    scheduleUpdate();
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => scheduleUpdate());
+    if (eventsListRef.current) {
+      resizeObserver?.observe(eventsListRef.current);
+    }
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate);
+    };
+  }, [currentPageEvents.length, shouldVirtualizeCurrentEvents]);
+
+  useEffect(() => {
+    if (shouldVirtualizeCurrentEvents) {
+      eventVirtualizer.measure();
+    }
+  }, [currentPageEvents.length, eventVirtualizer, shouldVirtualizeCurrentEvents]);
 
   const handleExportCsv = async () => {
     if (exportEvents.length === 0) {
@@ -3664,18 +3772,30 @@ export function AlertCenterContent() {
                 />
               ) : null}
 
-              <List
-                loading={eventsLoading}
-                dataSource={currentPageEvents}
-                locale={{
-                  emptyText: (
-                    <ChartEmptyState
-                      className="h-auto py-6"
-                      description={t("alerts.center.emptyEvents")}
-                    />
-                  ),
-                }}
-                renderItem={(event) => {
+              <div ref={eventsListRef}>
+                <List
+                  loading={eventsLoading}
+                  dataSource={currentPageEventEntries}
+                  header={
+                    shouldVirtualizeCurrentEvents && eventListTopSpacer > 0 ? (
+                      <div style={{ height: eventListTopSpacer }} />
+                    ) : null
+                  }
+                  footer={
+                    shouldVirtualizeCurrentEvents && eventListBottomSpacer > 0 ? (
+                      <div style={{ height: eventListBottomSpacer }} />
+                    ) : null
+                  }
+                  locale={{
+                    emptyText: (
+                      <ChartEmptyState
+                        className="h-auto py-6"
+                        description={t("alerts.center.emptyEvents")}
+                      />
+                    ),
+                  }}
+                  renderItem={(entry) => {
+                  const event = entry.event;
                   const isSelected = event.id === selectedEventId;
                   const eventContext =
                     event.context && typeof event.context === "object"
@@ -3858,8 +3978,9 @@ export function AlertCenterContent() {
                       </div>
                     </List.Item>
                   );
-                }}
-              />
+                  }}
+                />
+              </div>
 
               {filteredEvents.length > listPageSize ? (
                 <Pagination

@@ -11,6 +11,7 @@ import { WINSTON_MODULE_NEST_PROVIDER } from "nest-winston";
 import { createRequire } from "node:module";
 
 import { AppModule } from "./app.module";
+import { configureAxiosKeepAliveDefaults } from "./common/http/http-agent";
 import { RedisIoAdapter } from "./common/websocket/redis-io.adapter";
 import { EnvService } from "./modules/config/config.service";
 import { recordHttpRequestMetric } from "./modules/observability/prometheus-metrics";
@@ -84,6 +85,7 @@ async function bootstrap() {
   );
   app.use(urlencoded({ extended: true }));
   const env = app.get(EnvService);
+  configureAxiosKeepAliveDefaults(env.httpAgentConfig);
   const webSocketAdapterRegistry = app.get(WebSocketAdapterRegistry);
 
   if (env.webSocketRedisAdapter.enabled) {

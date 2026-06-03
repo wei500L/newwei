@@ -1,14 +1,28 @@
 "use client";
 
-import { Tabs } from "antd";
+import { Skeleton, Tabs } from "antd";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { KnowledgeGraphContent } from "./knowledge-graph-content";
-import { KnowledgeGraphImpactContent } from "./knowledge-graph-impact-content";
-
 type KnowledgeGraphWorkspaceTab = "explorer" | "impact";
+
+const KnowledgeGraphContent = dynamic(
+  () =>
+    import("./knowledge-graph-content").then(
+      (mod) => mod.KnowledgeGraphContent,
+    ),
+  { loading: () => <Skeleton active paragraph={{ rows: 10 }} /> },
+);
+
+const KnowledgeGraphImpactContent = dynamic(
+  () =>
+    import("./knowledge-graph-impact-content").then(
+      (mod) => mod.KnowledgeGraphImpactContent,
+    ),
+  { loading: () => <Skeleton active paragraph={{ rows: 8 }} /> },
+);
 
 function resolveTab(value: string | null): KnowledgeGraphWorkspaceTab {
   return value === "impact" ? "impact" : "explorer";
@@ -26,16 +40,21 @@ export function KnowledgeGraphWorkspace() {
       {
         key: "explorer",
         label: t("knowledgeGraph.workspace.tabs.explorer"),
-        children: <KnowledgeGraphContent />,
       },
       {
         key: "impact",
         label: t("knowledgeGraph.workspace.tabs.impact"),
-        children: <KnowledgeGraphImpactContent />,
       },
     ],
     [t],
   );
+
+  const renderTabContent = (key: KnowledgeGraphWorkspaceTab) => {
+    if (key === "impact") {
+      return <KnowledgeGraphImpactContent />;
+    }
+    return <KnowledgeGraphContent />;
+  };
 
   return (
     <Tabs
@@ -52,7 +71,13 @@ export function KnowledgeGraphWorkspace() {
           scroll: false,
         });
       }}
-      items={items}
+      items={items.map((item) => ({
+        ...item,
+        children:
+          item.key === activeKey
+            ? renderTabContent(item.key as KnowledgeGraphWorkspaceTab)
+            : null,
+      }))}
       destroyOnHidden
     />
   );

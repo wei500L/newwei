@@ -166,6 +166,7 @@ const SpacetimeGeoHeatmap = dynamic(
       (mod) => mod.SpacetimeGeoHeatmap,
     ),
   {
+    ssr: false,
     loading: () => <Skeleton active paragraph={{ rows: 8 }} />,
   },
 );
@@ -184,6 +185,7 @@ const KnowledgeGraph3D = dynamic(
   () =>
     import("./charts/knowledge-graph-3d").then((mod) => mod.KnowledgeGraph3D),
   {
+    ssr: false,
     loading: () => <Skeleton active paragraph={{ rows: 6 }} />,
   },
 );

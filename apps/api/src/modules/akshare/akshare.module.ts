@@ -4,6 +4,7 @@ import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
 import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
+import { withKeepAliveAgents } from "../../common/http/http-agent";
 import { EnvService } from "../config/config.service";
 import { DatabaseModule } from "../config/database.module";
 import { toBullmqConnection } from "../config/redis-connection";
@@ -29,9 +30,12 @@ import { YfinanceFinancialDataProvider } from "./providers/yfinance.provider";
       inject: [EnvService],
       useFactory: (env: EnvService) => {
         const cfg = env.akshareConfig;
-        return {
-          timeout: cfg.timeoutMs
-        };
+        return withKeepAliveAgents(
+          {
+            timeout: cfg.timeoutMs
+          },
+          env.httpAgentConfig
+        );
       }
     })
   ],

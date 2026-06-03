@@ -2,26 +2,50 @@ import { z } from "zod";
 
 import { logServerError } from "./server-logger";
 
+const envBoolean = z.preprocess((value) => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    if (value === 1) return true;
+    if (value === 0) return false;
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "") return undefined;
+    if (["true", "1", "yes", "y", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "n", "off"].includes(normalized)) return false;
+  }
+  return value;
+}, z.boolean());
+
 const publicSchema = z.object({
-  NEXT_PUBLIC_API_BASE_URL: z.string().url()
+  NEXT_PUBLIC_API_BASE_URL: z.string().url(),
+  NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: envBoolean.default(true),
 });
 
 const serverSchema = z.object({
-  API_BASE_URL: z.string().url().optional()
+  API_BASE_URL: z.string().url().optional(),
 });
 
 const isServer = typeof window === "undefined";
 
 const publicParsed = publicSchema.safeParse({
-  NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL
+  NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
+  NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: process.env.NEXT_PUBLIC_GRAPHQL_APQ_ENABLED,
 });
 
 if (!publicParsed.success) {
   const fieldErrors = publicParsed.error.flatten().fieldErrors;
   if (isServer) {
-    logServerError("Invalid web environment configuration", publicParsed.error, {
-      meta: fieldErrors
-    });
+    logServerError(
+      "Invalid web environment configuration",
+      publicParsed.error,
+      {
+        meta: fieldErrors,
+      },
+    );
   } else {
     // eslint-disable-next-line no-console
     console.error("Invalid web environment configuration", fieldErrors);
@@ -33,31 +57,40 @@ const publicEnvValues = publicParsed.data;
 
 const serverParsed = isServer
   ? serverSchema.safeParse({
-      API_BASE_URL: process.env.API_BASE_URL
+      API_BASE_URL: process.env.API_BASE_URL,
     })
   : null;
 
 if (isServer && serverParsed && !serverParsed.success) {
   const fieldErrors = serverParsed.error.flatten().fieldErrors;
   logServerError("Invalid web environment configuration", serverParsed.error, {
-    meta: fieldErrors
+    meta: fieldErrors,
   });
   throw new Error("Invalid web environment configuration");
 }
 
-const publicApiBaseUrl = publicEnvValues.NEXT_PUBLIC_API_BASE_URL.endsWith("/api")
+const publicApiBaseUrl = publicEnvValues.NEXT_PUBLIC_API_BASE_URL.endsWith(
+  "/api",
+)
   ? publicEnvValues.NEXT_PUBLIC_API_BASE_URL
   : `${publicEnvValues.NEXT_PUBLIC_API_BASE_URL.replace(/\/$/, "")}/api`;
-const publicApiRoot = publicApiBaseUrl.endsWith("/api") ? publicApiBaseUrl.slice(0, -4) : publicApiBaseUrl;
+const publicApiRoot = publicApiBaseUrl.endsWith("/api")
+  ? publicApiBaseUrl.slice(0, -4)
+  : publicApiBaseUrl;
 
 const internalApiRootRaw =
-  isServer && serverParsed && serverParsed.success ? serverParsed.data.API_BASE_URL ?? publicApiRoot : publicApiRoot;
+  isServer && serverParsed && serverParsed.success
+    ? (serverParsed.data.API_BASE_URL ?? publicApiRoot)
+    : publicApiRoot;
 const internalApiBaseUrl = internalApiRootRaw.endsWith("/api")
   ? internalApiRootRaw
   : `${internalApiRootRaw.replace(/\/$/, "")}/api`;
-const internalApiRoot = internalApiBaseUrl.endsWith("/api") ? internalApiBaseUrl.slice(0, -4) : internalApiBaseUrl;
+const internalApiRoot = internalApiBaseUrl.endsWith("/api")
+  ? internalApiBaseUrl.slice(0, -4)
+  : internalApiBaseUrl;
 
-const apiBaseUrl = typeof window === "undefined" ? internalApiBaseUrl : publicApiBaseUrl;
+const apiBaseUrl =
+  typeof window === "undefined" ? internalApiBaseUrl : publicApiBaseUrl;
 const apiRoot = typeof window === "undefined" ? internalApiRoot : publicApiRoot;
 const graphqlUrl = `${apiRoot}/graphql`;
 
@@ -65,5 +98,5 @@ export const env = {
   ...publicEnvValues,
   apiBaseUrl,
   apiRoot,
-  graphqlUrl
+  graphqlUrl,
 };

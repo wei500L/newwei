@@ -126,6 +126,7 @@ const SectorHeatmap = dynamic(
 const WarMap = dynamic(
   () => import("./charts/war-map").then((mod) => mod.WarMap),
   {
+    ssr: false,
     loading: () => <DashboardSkeleton className="h-full" rows={6} />,
   },
 );
@@ -173,8 +174,12 @@ const MarketPulse = dynamic(
   },
 );
 
-const MetricDrillDown = dynamic(() =>
-  import("./metric-drilldown").then((mod) => mod.MetricDrillDown),
+const MetricDrillDown = dynamic(
+  () => import("./metric-drilldown").then((mod) => mod.MetricDrillDown),
+  {
+    ssr: false,
+    loading: () => <DashboardSkeleton className="min-h-[420px]" rows={6} />,
+  },
 );
 
 const QueueChart = dynamic(

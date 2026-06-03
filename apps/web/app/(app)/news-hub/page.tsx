@@ -1,6 +1,3 @@
-"use client";
-
-import { Typography } from 'antd';
 import Link from 'next/link';
 
 
@@ -35,12 +32,12 @@ export default function NewsHubPage() {
   return (
     <div className="mx-auto w-full max-w-[1200px] px-4 py-6 md:px-6 md:py-8">
       <header className="mb-6 rounded-2xl border border-white/10 bg-[linear-gradient(120deg,rgba(15,23,42,0.92),rgba(2,6,23,0.85))] p-5 text-zinc-100 shadow-[0_26px_70px_-42px_rgba(15,23,42,0.9)]">
-        <Typography.Title level={3} style={{ marginBottom: 8, color: 'inherit' }}>
+        <h1 className="mb-2 text-2xl font-semibold text-inherit">
           News Hub
-        </Typography.Title>
-        <Typography.Paragraph style={{ marginBottom: 0, color: 'rgba(228,228,231,0.88)' }}>
+        </h1>
+        <p className="mb-0 text-[rgba(228,228,231,0.88)]">
           统一入口：先看热榜，再进深读，最后回到事件脉络校验。
-        </Typography.Paragraph>
+        </p>
       </header>
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-3">

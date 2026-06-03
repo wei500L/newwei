@@ -61,6 +61,32 @@ export interface BullBoardConfig {
   password?: string;
 }
 
+export interface MongoEnvConfig {
+  maxPoolSize: number;
+  minPoolSize: number;
+  autoIndex: boolean;
+  bufferCommands: boolean;
+}
+
+export interface PrismaEnvConfig {
+  connectionLimit: number;
+  poolTimeoutSeconds: number;
+  transactionMaxWaitMs: number;
+  transactionTimeoutMs: number;
+}
+
+export interface RedisTuningConfig {
+  enableAutoPipelining: boolean;
+  maxRetriesPerRequest: number;
+}
+
+export interface HttpAgentEnvConfig {
+  keepAliveEnabled: boolean;
+  maxSockets: number;
+  maxFreeSockets: number;
+  timeoutMs: number;
+}
+
 export interface CrawlTaskJanitorConfig {
   enabled: boolean;
   runningTimeoutMs: number;
@@ -242,6 +268,65 @@ export class EnvService extends ConfigService<ApiEnv> {
       username: this.get<string | undefined>("REDIS_USERNAME", { infer: true }),
       password: this.get<string | undefined>("REDIS_PASSWORD", { infer: true }),
       db: this.get<number>("REDIS_DB", { infer: true }) ?? 0,
+      enableAutoPipelining:
+        this.get<boolean>("REDIS_ENABLE_AUTO_PIPELINING", { infer: true }) ??
+        true,
+      maxRetriesPerRequest:
+        this.get<number>("REDIS_MAX_RETRIES_PER_REQUEST", { infer: true }) ??
+        3,
+    };
+  }
+
+  get mongoConfig(): MongoEnvConfig {
+    return {
+      maxPoolSize:
+        this.get<number>("MONGO_MAX_POOL_SIZE", { infer: true }) ?? 20,
+      minPoolSize:
+        this.get<number>("MONGO_MIN_POOL_SIZE", { infer: true }) ?? 0,
+      autoIndex:
+        this.get<boolean>("MONGO_AUTO_INDEX", { infer: true }) ??
+        process.env.NODE_ENV !== "production",
+      bufferCommands:
+        this.get<boolean>("MONGO_BUFFER_COMMANDS", { infer: true }) ?? false,
+    };
+  }
+
+  get prismaConfig(): PrismaEnvConfig {
+    return {
+      connectionLimit:
+        this.get<number>("PRISMA_CONNECTION_LIMIT", { infer: true }) ?? 10,
+      poolTimeoutSeconds:
+        this.get<number>("PRISMA_POOL_TIMEOUT_SECONDS", { infer: true }) ?? 10,
+      transactionMaxWaitMs:
+        this.get<number>("PRISMA_TRANSACTION_MAX_WAIT_MS", { infer: true }) ??
+        5_000,
+      transactionTimeoutMs:
+        this.get<number>("PRISMA_TRANSACTION_TIMEOUT_MS", { infer: true }) ??
+        15_000,
+    };
+  }
+
+  get redisTuning(): RedisTuningConfig {
+    return {
+      enableAutoPipelining:
+        this.get<boolean>("REDIS_ENABLE_AUTO_PIPELINING", { infer: true }) ??
+        true,
+      maxRetriesPerRequest:
+        this.get<number>("REDIS_MAX_RETRIES_PER_REQUEST", { infer: true }) ??
+        3,
+    };
+  }
+
+  get httpAgentConfig(): HttpAgentEnvConfig {
+    return {
+      keepAliveEnabled:
+        this.get<boolean>("HTTP_KEEP_ALIVE_ENABLED", { infer: true }) ?? true,
+      maxSockets:
+        this.get<number>("HTTP_AGENT_MAX_SOCKETS", { infer: true }) ?? 64,
+      maxFreeSockets:
+        this.get<number>("HTTP_AGENT_MAX_FREE_SOCKETS", { infer: true }) ?? 16,
+      timeoutMs:
+        this.get<number>("HTTP_AGENT_TIMEOUT_MS", { infer: true }) ?? 60_000,
     };
   }
 
@@ -407,6 +492,15 @@ export class EnvService extends ConfigService<ApiEnv> {
       complexityLimit:
         this.get<number>("GRAPHQL_COMPLEXITY_LIMIT", { infer: true }) ?? 2000,
       corsOrigin: this.get("CORS_ORIGIN", { infer: true }),
+      apqEnabled:
+        this.get<boolean>("GRAPHQL_APQ_ENABLED", { infer: true }) ?? true,
+      responseCacheEnabled:
+        this.get<boolean>("GRAPHQL_RESPONSE_CACHE_ENABLED", { infer: true }) ??
+        true,
+      responseCacheMaxAgeSeconds:
+        this.get<number>("GRAPHQL_RESPONSE_CACHE_MAX_AGE_SECONDS", {
+          infer: true,
+        }) ?? 30,
     };
   }
 

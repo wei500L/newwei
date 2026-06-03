@@ -11,6 +11,7 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import type { AlertEventsStreamSubscription } from "@/graphql/generated";
 import { AlertEventsStreamDocument, useAlertEventsQuery } from "@/graphql/generated";
 import { usePendingAction } from "@/hooks/use-pending-action";
+import { createCoalescedRefetchScheduler } from "@/lib/coalesced-refetch";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { useTimedValueDeduper } from "@/lib/use-realtime-helpers";
 
@@ -51,13 +52,16 @@ export function AlertPanel() {
     if (!authenticated || !canReadAlerts) {
       return;
     }
+    const refetchScheduler = createCoalescedRefetchScheduler(() =>
+      refetchEvents(),
+    );
     const sub = client
       .subscribe<AlertEventsStreamSubscription>({
         query: AlertEventsStreamDocument
       })
       .subscribe({
         next: () => {
-          void refetchEvents();
+          refetchScheduler.schedule();
         },
         error: (error) => {
           const errorMessage =
@@ -69,7 +73,10 @@ export function AlertPanel() {
           message.error(toastMessage);
         }
       });
-    return () => sub.unsubscribe();
+    return () => {
+      sub.unsubscribe();
+      refetchScheduler.cancel();
+    };
   }, [
     authenticated,
     canReadAlerts,

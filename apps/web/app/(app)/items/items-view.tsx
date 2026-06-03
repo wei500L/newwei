@@ -6,6 +6,7 @@ import {
   SearchOutlined,
 } from "@ant-design/icons";
 import { gql, useMutation, useQuery } from "@apollo/client";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import {
   Alert,
   Button,
@@ -14,6 +15,7 @@ import {
   Grid,
   Input,
   List,
+  Pagination,
   Row,
   Segmented,
   Skeleton,
@@ -36,9 +38,9 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ArticlePublishedTime } from "@/components/article-published-time";
-import { AnnotationPanel } from "@/components/analysis/annotation-panel";
 import { AnalysisToolbar } from "@/components/analysis/analysis-toolbar";
+import { AnnotationPanel } from "@/components/analysis/annotation-panel";
+import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import {
   EnhancedSearchBox,
@@ -70,6 +72,11 @@ import { FacetedSearch, type FilterState } from "./components/faceted-search";
 import { NewsCard } from "./components/news-card";
 import { type ItemViewType, ViewSwitcher } from "./components/view-switcher";
 import { resolveAvailableSentiments } from "./item-facets";
+import {
+  estimateItemsFeedRowSize,
+  shouldUpdateItemsFeedMetric,
+  shouldVirtualizeItemsFeed,
+} from "./items-feed-virtualization";
 import {
   countItemsFilterDimensions,
   resolveItemsViewLayoutState,
@@ -994,8 +1001,10 @@ export function ItemsView({
   const translationRequestKeyRef = useRef("");
   const translationRequestSeqRef = useRef(0);
   const listTableContainerRef = useRef<HTMLDivElement | null>(null);
+  const feedListRef = useRef<HTMLDivElement | null>(null);
   const [listTableScrollX, setListTableScrollX] = useState<number | null>(null);
   const [listTableScrollY, setListTableScrollY] = useState<number | null>(null);
+  const [feedScrollMargin, setFeedScrollMargin] = useState(0);
   const urlFiltersRef = useRef(urlFilters);
   const [translateRssItems] = useMutation<
     TranslateRssItemsMutation,
@@ -1044,6 +1053,19 @@ export function ItemsView({
 
     setListTableScrollX((prev) => (prev === nextScrollX ? prev : nextScrollX));
     setListTableScrollY((prev) => (prev === nextScrollY ? prev : nextScrollY));
+  }, []);
+
+  const updateFeedMetrics = useCallback(() => {
+    const container = feedListRef.current;
+    if (!container || typeof window === "undefined") {
+      return;
+    }
+    const nextScrollMargin = container.getBoundingClientRect().top + window.scrollY;
+    setFeedScrollMargin((previous) =>
+      shouldUpdateItemsFeedMetric(previous, nextScrollMargin)
+        ? nextScrollMargin
+        : previous,
+    );
   }, []);
 
   useEffect(() => {
@@ -1740,6 +1762,63 @@ export function ItemsView({
     rssTranslationConfig?.showOriginal,
     translatedByItemId,
   ]);
+  const shouldVirtualizeFeed =
+    view === "feed" && shouldVirtualizeItemsFeed(pageData.length);
+  const feedVirtualizer = useWindowVirtualizer({
+    count: pageData.length,
+    estimateSize: () =>
+      estimateItemsFeedRowSize({
+        density: layoutState.density,
+        isReaderPreset: layoutState.isReaderPreset,
+      }),
+    overscan: 4,
+    enabled: shouldVirtualizeFeed,
+    scrollMargin: feedScrollMargin,
+  });
+
+  useEffect(() => {
+    if (view !== "feed") {
+      setFeedScrollMargin(0);
+      return;
+    }
+
+    let frameId: number | null = null;
+    const scheduleUpdate = () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(() => updateFeedMetrics());
+    };
+
+    scheduleUpdate();
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => scheduleUpdate());
+
+    if (feedListRef.current) {
+      resizeObserver?.observe(feedListRef.current);
+    }
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate);
+    };
+  }, [pageData.length, updateFeedMetrics, view]);
+
+  useEffect(() => {
+    if (!shouldVirtualizeFeed) {
+      return;
+    }
+    feedVirtualizer.measure();
+  }, [feedVirtualizer, pageData.length, shouldVirtualizeFeed]);
+
   const rssTranslationStats = useMemo(() => {
     if (!rssTranslationConfig?.enabled || pageData.length === 0) {
       return null;
@@ -2290,6 +2369,91 @@ export function ItemsView({
     }
 
     if (view === "feed") {
+      const renderFeedCard = (item: ParsedItem) => (
+        <NewsCard
+          variant={layoutState.isReaderPreset ? "reader" : "default"}
+          density={layoutState.density}
+          item={{
+            ...item,
+            publishedAt: item.publishedAt,
+            ingestedAt: item.ingestedAt,
+            topics: item.topics,
+            entities: item.entities,
+            qualityScore: item.qualityScore,
+            duplicateSimilarity: item.duplicateSimilarity,
+            duplicateOf: item.duplicateOf,
+            llm: item.llm,
+            url: item.url,
+            searchHighlights: item.searchHighlights,
+            rssHasTranslation: item.rssHasTranslation,
+            rssTranslationState: item.rssTranslationState,
+          }}
+        />
+      );
+
+      const pagination = (
+        <div className="flex justify-center">
+          <Pagination
+            current={page}
+            pageSize={pageSize}
+            total={totalCount}
+            showSizeChanger
+            pageSizeOptions={ITEMS_PAGE_SIZE_OPTIONS_STRINGS}
+            onChange={handlePaginationChange}
+            onShowSizeChange={handlePaginationChange}
+          />
+        </div>
+      );
+
+      if (shouldVirtualizeFeed) {
+        const virtualRows = feedVirtualizer.getVirtualItems();
+        return (
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            {errorBanner}
+            <div
+              ref={feedListRef}
+              className={
+                layoutState.isReaderPreset ? "items-reader-feed-list" : undefined
+              }
+              role="list"
+            >
+              <div
+                style={{
+                  height: `${feedVirtualizer.getTotalSize()}px`,
+                  position: "relative",
+                  width: "100%",
+                }}
+              >
+                {virtualRows.map((virtualRow) => {
+                  const item = pageData[virtualRow.index];
+                  if (!item) {
+                    return null;
+                  }
+                  return (
+                    <div
+                      key={item.id}
+                      data-index={virtualRow.index}
+                      ref={feedVirtualizer.measureElement}
+                      role="listitem"
+                      style={{
+                        left: 0,
+                        position: "absolute",
+                        top: 0,
+                        transform: `translateY(${virtualRow.start - feedScrollMargin}px)`,
+                        width: "100%",
+                      }}
+                    >
+                      {renderFeedCard(item)}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            {pagination}
+          </Space>
+        );
+      }
+
       return (
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           {errorBanner}
@@ -2312,25 +2476,7 @@ export function ItemsView({
             }}
             renderItem={(item) => (
               <List.Item key={item.id}>
-                <NewsCard
-                  variant={layoutState.isReaderPreset ? "reader" : "default"}
-                  density={layoutState.density}
-                  item={{
-                    ...item,
-                    publishedAt: item.publishedAt,
-                    ingestedAt: item.ingestedAt,
-                    topics: item.topics,
-                    entities: item.entities,
-                    qualityScore: item.qualityScore,
-                    duplicateSimilarity: item.duplicateSimilarity,
-                    duplicateOf: item.duplicateOf,
-                    llm: item.llm,
-                    url: item.url,
-                    searchHighlights: item.searchHighlights,
-                    rssHasTranslation: item.rssHasTranslation,
-                    rssTranslationState: item.rssTranslationState,
-                  }}
-                />
+                {renderFeedCard(item)}
               </List.Item>
             )}
           />
