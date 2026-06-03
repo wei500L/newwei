@@ -1,15 +1,14 @@
 {
   "id": "static-perf-audit",
   "title": "纯静态代码分析排查项目性能问题",
-  "status": "completed",
+  "status": "in_progress",
   "strategy": "review-audit",
-  "currentPhase": "3-done",
-  "nextAction": "审计完成，报告已交付。用户选择暂不修复——如需修复某条发现，随时切 direct-fix。",
-  "gate": "报告已分级输出 ✓ (6 Critical / 18 Warning / 11 Info)",
+  "currentPhase": "deep-review",
+  "nextAction": "第二轮深度审查：5 路深挖代理（索引矩阵/摄入流水线/读路径/前端bundle/并发资源）→ 生成 deep-analysis.md",
+  "gate": "第一轮报告已交付 (report.md, 6C/18W/11I)",
   "branch": "main",
   "scope": "static-perf-audit",
   "mode": "claude-subagents",
-  "findings": { "critical": 6, "warning": 18, "info": 11 },
-  "resolution": "report-only (user deferred fixes)",
+  "findings": { "round1": { "critical": 6, "warning": 18, "info": 11 } },
   "createdAt": "2026-06-01T15:01:51Z"
 }
