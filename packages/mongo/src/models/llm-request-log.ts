@@ -15,34 +15,31 @@ const SECONDS_PER_DAY = 24 * 60 * 60;
 
 const LlmRequestLogSchema = new Schema(
   {
-    orgId: { type: String, required: true, index: true },
+    orgId: { type: String, required: true },
     requestType: {
       type: String,
       enum: ["completion", "embedding", "rerank", "stream", "responses"],
       required: true,
-      index: true,
     },
-    model: { type: String, required: true, index: true },
+    model: { type: String, required: true },
     status: {
       type: String,
       enum: ["success", "error"],
       required: true,
-      index: true,
     },
     promptTokens: { type: Number, default: null },
     completionTokens: { type: Number, default: null },
     totalTokens: { type: Number, default: null },
     costUsd: { type: Number, default: null },
-    feature: { type: String, default: null, index: true },
-    gatewayProfileId: { type: String, default: null, index: true },
-    governanceApplied: { type: Boolean, default: null, index: true },
+    feature: { type: String, default: null },
+    gatewayProfileId: { type: String, default: null },
+    governanceApplied: { type: Boolean, default: null },
     authMode: {
       type: String,
       enum: ["profile_key", "managed_runtime_key"],
       default: null,
-      index: true,
     },
-    governanceTargetProfileId: { type: String, default: null, index: true },
+    governanceTargetProfileId: { type: String, default: null },
     latencyMs: { type: Number, required: true, min: 0 },
     error: { type: String, default: null },
     metadata: { type: Schema.Types.Mixed, default: null },
@@ -50,7 +47,6 @@ const LlmRequestLogSchema = new Schema(
       type: String,
       enum: ["chat_completions", "responses", "embeddings", "rerank"],
       default: null,
-      index: true,
     },
   },
   {

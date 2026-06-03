@@ -286,6 +286,7 @@ model ItemMeta {
   @@unique([orgId, externalId])
   @@index([orgId, name])
   @@index([orgId, sortAt, id])
+  @@index([orgId, createdAt, id], map: "ItemMeta_org_createdAt_id_idx")
   @@fulltext([name, externalId])
 }
 
@@ -1471,6 +1472,9 @@ model NewsEvent {
 
   @@index([orgId, lastAt])
   @@index([orgId, status, lastAt])
+  @@index([orgId, status, lastAt, startAt, id], map: "NewsEvent_org_status_last_start_id_idx")
+  @@index([orgId, status, primaryTopic, lastAt, startAt], map: "NewsEvent_org_status_topic_last_start_idx")
+  @@index([orgId, status, primaryEntity, lastAt, startAt], map: "NewsEvent_org_status_entity_last_start_idx")
   @@index([orgId, primaryTopic, lastAt])
   @@index([orgId, primaryEntity, lastAt])
 }

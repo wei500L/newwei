@@ -15,14 +15,14 @@ const MIN_ITEM_COUNT = 2;
 const MIN_CREDIBILITY_SCORE = 60;
 const TOPIC_FALLBACK = "Top stories";
 
-type PortalTopicSummary = {
+export interface PortalTopicSummary {
   topic: string;
   topicSlug: string;
   storyCount: number;
   latestAt: string;
-};
+}
 
-type PublicPortalStory = {
+export interface PublicPortalStory {
   id: string;
   slug: string;
   title: string;
@@ -44,7 +44,7 @@ type PublicPortalStory = {
     blogSourceCount: number;
     corroborated: boolean;
   };
-};
+}
 
 type SelectedPortalEventRow = Prisma.NewsEventGetPayload<{
   select: {
@@ -279,19 +279,35 @@ export class PublicPortalService {
     },
   ): Promise<PublicPortalStory[]> {
     const stories: PublicPortalStory[] = [];
-    let skip = 0;
+    let cursor: { lastAt: Date; startAt: Date; id: string } | null = null;
 
     while (stories.length < options.limit) {
-      const rows = await this.prisma.newsEvent.findMany({
+      const cursorFilter: Prisma.NewsEventWhereInput = cursor
+        ? {
+            OR: [
+              { lastAt: { lt: cursor.lastAt } },
+              {
+                lastAt: cursor.lastAt,
+                startAt: { lt: cursor.startAt },
+              },
+              {
+                lastAt: cursor.lastAt,
+                startAt: cursor.startAt,
+                id: { lt: cursor.id },
+              },
+            ],
+          }
+        : {};
+      const rows: SelectedPortalEventRow[] = await this.prisma.newsEvent.findMany({
         where: {
           orgId,
           status: NewsEventStatus.active,
           title: { not: null },
           summary: { not: null },
           ...(options.excludeEventId ? { id: { not: options.excludeEventId } } : {}),
+          ...cursorFilter,
         },
         orderBy: [{ lastAt: "desc" }, { startAt: "desc" }, { id: "desc" }],
-        skip,
         take: STORY_FETCH_LIMIT,
         select: {
           id: true,
@@ -316,7 +332,10 @@ export class PublicPortalService {
         break;
       }
 
-      skip += rows.length;
+      const lastRow = rows[rows.length - 1];
+      cursor = lastRow
+        ? { lastAt: lastRow.lastAt, startAt: lastRow.startAt, id: lastRow.id }
+        : cursor;
 
       const eventIds = rows.map((row) => row.id);
       const [heatMap, authorityMap] = await Promise.all([

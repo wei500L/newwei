@@ -1,3 +1,4 @@
+import { ProcessedItemModel } from "@modular/mongo";
 import { ProcessedArticleStatus } from "@prisma/client";
 
 import { DashboardChartsService } from "../dashboard-charts.service";
@@ -46,6 +47,11 @@ const createRealtimeSignalsStore = (
 });
 
 describe("DashboardChartsService", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    processedItemFindExecMock.mockResolvedValue([]);
+  });
+
   afterEach(() => {
     jest.useRealTimers();
   });
@@ -120,6 +126,33 @@ describe("DashboardChartsService", () => {
           },
         }),
       }),
+    );
+  });
+
+  it("filters Mongo war map fallback records with hasLocation", async () => {
+    const service = new DashboardChartsService(
+      {} as any,
+      { resolveCandidates: jest.fn() } as any,
+      createCache() as any,
+    );
+    const range = {
+      start: new Date("2026-01-01T00:00:00.000Z"),
+      end: new Date("2026-01-02T00:00:00.000Z"),
+    };
+
+    await (service as any).loadMongoWarMapLocationRecords(range, "org-1", 25);
+
+    expect(ProcessedItemModel.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        status: "completed",
+        hasLocation: true,
+        duplicateOf: null,
+      }),
+      expect.any(Object),
+    );
+    expect((ProcessedItemModel.find as jest.Mock).mock.calls[0]?.[0]).not.toHaveProperty(
+      "result.location",
     );
   });
 

@@ -40,6 +40,7 @@ import { createHash } from "node:crypto";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { GeocodingService } from "../geo/geocoding.service";
+import { buildAisRuntimeSemantics } from "../realtime-signals/ais-runtime-semantics";
 import { RealtimeSignalsService } from "../realtime-signals/realtime-signals.service";
 import { RealtimeSignalsSnapshotStore } from "../realtime-signals/realtime-signals.snapshot-store";
 import type {
@@ -47,7 +48,6 @@ import type {
   RealtimeAisLatestSnapshot,
   RealtimeAisVesselSnapshot,
 } from "../realtime-signals/realtime-signals.types";
-import { buildAisRuntimeSemantics } from "../realtime-signals/ais-runtime-semantics";
 import {
   classifyAircraftTransport,
   classifyAisShipType,
@@ -1309,8 +1309,8 @@ export class DashboardChartsService {
       {
         orgId,
         status: "completed",
+        hasLocation: true,
         duplicateOf: null,
-        "result.location": { $exists: true, $nin: [null, ""] },
         ...this.buildWarMapMongoRangeFilter(range),
       },
       {

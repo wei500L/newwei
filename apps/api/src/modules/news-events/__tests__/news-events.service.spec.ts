@@ -914,7 +914,7 @@ describe("NewsEventsService", () => {
     });
   });
 
-  it("applies entity contains filter for listEvents", async () => {
+  it("applies exact entity filter for listEvents", async () => {
     const prisma = {
       newsEvent: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -935,7 +935,7 @@ describe("NewsEventsService", () => {
         where: expect.objectContaining({
           orgId: "org-1",
           status: NewsEventStatus.active,
-          primaryEntity: { contains: "Douglas Engelbart" },
+          primaryEntity: "Douglas Engelbart",
         }),
       }),
     );

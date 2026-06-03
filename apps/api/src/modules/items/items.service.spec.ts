@@ -1372,6 +1372,94 @@ describe("ItemsService filters", () => {
     expect(mockProcessedItemFind).toHaveBeenCalledTimes(1);
   });
 
+  it("uses Mongo text search for legacy ProcessedItem fulltext matches", async () => {
+    const sort = jest.fn().mockReturnThis();
+    const limit = jest.fn().mockReturnThis();
+    const lean = jest.fn().mockResolvedValue([{ itemMetaId: "meta-text-1" }]);
+    mockProcessedItemFind.mockReturnValue({ sort, limit, lean });
+
+    const service = new ItemsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    const ids = await (service as any).resolveProcessedSearchIds("org-1", {
+      type: "fulltext",
+      query: "federal* policy*",
+    });
+
+    expect(ids).toEqual(["meta-text-1"]);
+    expect(mockProcessedItemFind).toHaveBeenCalledWith(
+      {
+        orgId: "org-1",
+        status: "completed",
+        $text: { $search: "federal policy" },
+      },
+      {
+        itemMetaId: 1,
+        score: { $meta: "textScore" },
+      },
+    );
+    expect(sort).toHaveBeenCalledWith({
+      score: { $meta: "textScore" },
+      createdAt: -1,
+    });
+    expect(limit).toHaveBeenCalledWith(expect.any(Number));
+  });
+
+  it("skips legacy ProcessedItem prefix search instead of running regex scans", async () => {
+    const service = new ItemsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    const ids = await (service as any).resolveProcessedSearchIds("org-1", {
+      type: "prefix",
+      term: "ai",
+    });
+
+    expect(ids).toEqual([]);
+    expect(mockProcessedItemFind).not.toHaveBeenCalled();
+  });
+
+  it("uses case-sensitive anchored regexes for read-model prefix fields", async () => {
+    const sort = jest.fn().mockReturnThis();
+    const limit = jest.fn().mockReturnThis();
+    const lean = jest.fn().mockResolvedValue([{ itemMetaId: "meta-prefix-1" }]);
+    mockItemReadModelFind.mockReturnValue({ sort, limit, lean });
+
+    const service = new ItemsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    const ids = await (service as any).resolveReadModelSearchIds("org-1", {
+      type: "prefix",
+      term: "OpenAI",
+    });
+
+    expect(ids).toEqual(["meta-prefix-1"]);
+    const findFilter = mockItemReadModelFind.mock.calls[0]?.[0] as {
+      $and?: { $or?: Record<string, RegExp>[] }[];
+    };
+    const titleRegex = findFilter.$and?.[1]?.$or?.[0]?.titleLower;
+    expect(titleRegex).toBeInstanceOf(RegExp);
+    expect(titleRegex?.source).toBe("^openai");
+    expect(titleRegex?.flags).toBe("");
+  });
+
   it("builds facets from the latest processed snapshot per item", async () => {
     mockProcessedItemFind.mockReturnValueOnce({
       sort: jest.fn().mockReturnThis(),

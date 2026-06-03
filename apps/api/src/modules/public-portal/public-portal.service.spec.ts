@@ -186,16 +186,30 @@ describe("PublicPortalService", () => {
     expect(prismaMock.newsEvent.findMany).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        skip: 0,
         take: 96,
       }),
     );
+    expect(prismaMock.newsEvent.findMany.mock.calls[0]?.[0]).not.toHaveProperty("skip");
     expect(prismaMock.newsEvent.findMany).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        skip: 96,
         take: 96,
+        where: expect.objectContaining({
+          OR: [
+            { lastAt: { lt: firstBatch[firstBatch.length - 1]!.lastAt } },
+            {
+              lastAt: firstBatch[firstBatch.length - 1]!.lastAt,
+              startAt: { lt: firstBatch[firstBatch.length - 1]!.startAt },
+            },
+            {
+              lastAt: firstBatch[firstBatch.length - 1]!.lastAt,
+              startAt: firstBatch[firstBatch.length - 1]!.startAt,
+              id: { lt: firstBatch[firstBatch.length - 1]!.id },
+            },
+          ],
+        }),
       }),
     );
+    expect(prismaMock.newsEvent.findMany.mock.calls[1]?.[0]).not.toHaveProperty("skip");
   });
 });

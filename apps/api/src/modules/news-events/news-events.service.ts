@@ -151,7 +151,7 @@ export class NewsEventsService {
       where: {
         orgId,
         ...(options?.status ? { status: options.status } : {}),
-        ...(entity ? { primaryEntity: { contains: entity } } : {}),
+        ...(entity ? { primaryEntity: entity } : {}),
         lastAt: { gte: since },
       },
       orderBy: [{ lastAt: "desc" }, { startAt: "desc" }],
@@ -1319,7 +1319,7 @@ export class NewsEventsService {
     },
     settings: NewsEventSettings,
     categoryGateLogs: CategoryGateTaskLog[],
-  ): Promise<Array<{ eventId: string; score: number }>> {
+  ): Promise<{ eventId: string; score: number }[]> {
     const since = new Date(Date.now() - settings.lookbackDays * DAY_MS);
     const clauses: Prisma.NewsEventWhereInput[] = [];
     if (derived.primaryTopic) {
@@ -1343,7 +1343,7 @@ export class NewsEventsService {
       take: DEFAULT_CANDIDATE_EVENTS_LIMIT,
     });
 
-    const scored: Array<{ eventId: string; score: number }> = [];
+    const scored: { eventId: string; score: number }[] = [];
     for (const candidate of candidates) {
       const topicMatch =
         Boolean(derived.primaryTopic) &&

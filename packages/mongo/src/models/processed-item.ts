@@ -116,13 +116,13 @@ const ProcessedItemResultSchema = new Schema(
 const ProcessedItemSchema = new Schema(
   {
     rawItemId: { type: Schema.Types.ObjectId, ref: "RawItem", required: true },
-    itemMetaId: { type: String, index: true, required: true },
-    orgId: { type: String, index: true, required: true },
+    itemMetaId: { type: String, required: true },
+    orgId: { type: String, required: true },
     ingestedAt: { type: Date, default: undefined },
     sortAt: { type: Date, default: undefined },
     traceId: { type: String, index: true, default: null },
     pipelineJobId: { type: String, index: true, default: null },
-    sourceId: { type: String, index: true, default: null },
+    sourceId: { type: String, default: null },
     status: {
       type: String,
       enum: ["pending", "processing", "completed", "failed"],
@@ -213,6 +213,46 @@ ProcessedItemSchema.index({
   "result.category_method": 1,
   createdAt: -1,
 });
+ProcessedItemSchema.index(
+  {
+    orgId: 1,
+    status: 1,
+    "result.title": "text",
+    "result.subtitle": "text",
+    "result.summary": "text",
+    "result.topics": "text",
+    "result.key_points": "text",
+    "result.entities.name": "text",
+    "result.location": "text",
+    tags: "text",
+  },
+  {
+    name: "processed_item_org_status_search_text",
+    default_language: "none",
+    weights: {
+      "result.title": 10,
+      "result.subtitle": 6,
+      "result.summary": 4,
+      "result.topics": 5,
+      "result.key_points": 4,
+      "result.entities.name": 5,
+      "result.location": 3,
+      tags: 2,
+    },
+  },
+);
+ProcessedItemSchema.index(
+  {
+    orgId: 1,
+    status: 1,
+    hasLocation: 1,
+    duplicateOf: 1,
+    sortAt: -1,
+    ingestedAt: -1,
+    createdAt: -1,
+  },
+  { name: "processed_item_war_map_location_recency" },
+);
 
 ProcessedItemSchema.pre("validate", function (next) {
   const doc = this as unknown as {

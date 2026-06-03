@@ -1,4 +1,7 @@
 import {
+  ItemReadModelModel,
+  LlmRequestLogModel,
+  NewsEventClusteringFailureModel,
   RawItemModel,
   ProcessedItemModel,
   TaskLogModel,
@@ -19,6 +22,21 @@ async function main() {
       {
         label: "ProcessedItem",
         model: ProcessedItemModel,
+        mode: "create",
+      },
+      {
+        label: "ItemReadModel",
+        model: ItemReadModelModel,
+        mode: "create",
+      },
+      {
+        label: "NewsEventClusteringFailure",
+        model: NewsEventClusteringFailureModel,
+        mode: "create",
+      },
+      {
+        label: "LlmRequestLog",
+        model: LlmRequestLogModel,
         mode: "create",
       },
       {

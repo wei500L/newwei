@@ -17,6 +17,7 @@
     "db:migrate": "pnpm --filter db run migrate",
     "db:seed": "pnpm --filter db run seed",
     "mongo:indexes": "pnpm --filter @modular/api run mongo:indexes",
+    "mongo:indexes:prune": "pnpm --filter @modular/api run mongo:indexes:prune",
     "mongo:backfill:processed-item-location": "pnpm --filter @modular/api run processed-item-location:backfill",
     "mongo:backfill:raw-item-urls": "pnpm --filter @modular/api run raw-item-urls:backfill",
     "docker:u": "pnpm docker:up",

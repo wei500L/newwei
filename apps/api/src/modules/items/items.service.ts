@@ -4,6 +4,7 @@ import {
   ItemReadModelModel,
   type ItemReadModel,
   type MongoConnection,
+  type ProcessedItem,
 } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
 import {
@@ -15,7 +16,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { Prisma, type ItemMeta } from "@prisma/client";
-import { Types, type PipelineStage } from "mongoose";
+import { Types, type PipelineStage, type ProjectionType } from "mongoose";
 import { createHash, randomUUID } from "node:crypto";
 
 import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
@@ -4664,7 +4665,7 @@ export class ItemsService {
       );
     }
 
-    const regex = new RegExp(`^${this.escapeRegex(strategy.term.trim().toLowerCase())}`, "i");
+    const regex = new RegExp(`^${this.escapeRegex(strategy.term.trim().toLowerCase())}`);
     const docs = (await ItemReadModelModel.find(
       {
         $and: [
@@ -4868,7 +4869,7 @@ export class ItemsService {
     const [elasticHits, metaIds, processedIds, processedArticleIds, vectorIds] = await Promise.all([
       this.elasticsearch?.search(orgId, search, MAX_SEARCH_MATCHES).catch(() => null) ?? Promise.resolve(null),
       this.resolveMetaSearchIds(orgId, strategy),
-      this.resolveProcessedSearchIds(orgId, search),
+      this.resolveProcessedSearchIds(orgId, strategy),
       this.resolveProcessedArticleSearchIds(orgId, strategy),
       this.resolveVectorSearchIds(orgId, search),
     ]);
@@ -5470,34 +5471,37 @@ export class ItemsService {
     return this.dedupeItemMetaIds(items.map((item) => item.id));
   }
 
-  private async resolveProcessedSearchIds(orgId: string, search: string) {
-    const tokens = this.tokenizeSearch(search, MONGO_MIN_TOKEN_LENGTH);
-    if (tokens.length === 0) {
+  private buildMongoTextSearchQuery(strategy: SearchStrategy): string | null {
+    if (strategy.type !== "fulltext") {
+      return null;
+    }
+
+    const tokens = strategy.query
+      .split(/\s+/)
+      .map((token) => token.replace(/\*+$/g, "").trim())
+      .filter((token) => token.length >= FULLTEXT_MIN_TOKEN_LENGTH);
+
+    return tokens.length > 0 ? tokens.join(" ") : null;
+  }
+
+  private async resolveProcessedSearchIds(orgId: string, strategy: SearchStrategy) {
+    const textQuery = this.buildMongoTextSearchQuery(strategy);
+    if (!textQuery) {
       return [];
     }
 
-    const regexes = tokens.map((token) => new RegExp(this.escapeRegex(token), "i"));
-    const tokenFilters = regexes.map((regex) => ({
-      $or: [
-        { "result.title": regex },
-        { "result.subtitle": regex },
-        { "result.summary": regex },
-        { "result.topics": regex },
-        { "result.key_points": regex },
-        { "result.entities.name": regex },
-        { "result.location": regex },
-        { tags: regex }
-      ]
-    }));
-
-    const match = {
-      orgId,
-      status: PipelineStageStatus.Completed,
-      ...(tokenFilters.length ? { $and: tokenFilters } : {})
-    };
-
-    const records = await ProcessedItemModel.find(match, { itemMetaId: 1 })
-      .sort({ createdAt: -1 })
+    const records = await ProcessedItemModel.find(
+      {
+        orgId,
+        status: PipelineStageStatus.Completed,
+        $text: { $search: textQuery },
+      },
+      {
+        itemMetaId: 1,
+        score: { $meta: "textScore" },
+      } as unknown as ProjectionType<ProcessedItem>,
+    )
+      .sort({ score: { $meta: "textScore" }, createdAt: -1 })
       .limit(MAX_SEARCH_MATCHES)
       .lean();
 

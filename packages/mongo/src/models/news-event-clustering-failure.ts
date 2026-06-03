@@ -85,6 +85,18 @@ NewsEventClusteringFailureSchema.index({
   embeddingModel: 1,
   createdAt: -1,
 });
+NewsEventClusteringFailureSchema.index(
+  {
+    status: 1,
+    clusteringMode: 1,
+    lastAttemptAt: 1,
+    createdAt: 1,
+  },
+  {
+    name: 'news_event_failure_auto_retry',
+    partialFilterExpression: { itemCount: { $gt: 0 } },
+  },
+);
 
 export type NewsEventClusteringFailure = InferSchemaType<
   typeof NewsEventClusteringFailureSchema
