@@ -22,6 +22,21 @@ jest.mock(
 const createEmptyReadModelLoader = () =>
   new DataLoader(async (keys: readonly string[]) => keys.map(() => null));
 
+const makeInfo = (fields: string[]) =>
+  ({
+    fieldNodes: [
+      {
+        selectionSet: {
+          selections: fields.map((field) => ({
+            kind: "Field",
+            name: { value: field }
+          }))
+        }
+      }
+    ],
+    fragments: {}
+  }) as any;
+
 describe("ItemsResolver.processed", () => {
   const resolver = new ItemsResolver({} as any);
 
@@ -43,7 +58,10 @@ describe("ItemsResolver.processed", () => {
 
     const result = await resolver.processed(
       { metaId: "meta-1" } as any,
+      makeInfo(["result", "resultJson"]),
       createEmptyReadModelLoader() as any,
+      createEmptyReadModelLoader() as any,
+      loader as any,
       loader as any
     );
     expect(result?.result).toBeDefined();
@@ -61,7 +79,10 @@ describe("ItemsResolver.processed", () => {
 
     const result = await resolver.processed(
       { metaId: "meta-1" } as any,
+      makeInfo(["result", "resultJson"]),
       createEmptyReadModelLoader() as any,
+      createEmptyReadModelLoader() as any,
+      loader as any,
       loader as any
     );
     expect(JSON.parse(result!.result!)).toMatchObject({ title: "Object Result", topics: ["t1"] });
@@ -78,7 +99,10 @@ describe("ItemsResolver.processed", () => {
 
     const result = await resolver.processed(
       { metaId: "meta-1" } as any,
+      makeInfo(["result", "resultJson"]),
       createEmptyReadModelLoader() as any,
+      createEmptyReadModelLoader() as any,
+      loader as any,
       loader as any
     );
     expect(result?.result).toBeUndefined();

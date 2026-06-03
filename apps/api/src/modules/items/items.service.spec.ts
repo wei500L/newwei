@@ -15,6 +15,7 @@ const mockProcessedItemAggregate = jest.fn();
 const mockProcessedItemFind = jest.fn();
 const mockItemReadModelFind = jest.fn();
 const mockItemReadModelFindOne = jest.fn();
+const mockItemReadModelCountDocuments = jest.fn();
 const mockItemReadModelUpdateOne = jest.fn();
 const mockItemReadModelBulkWrite = jest.fn();
 
@@ -84,6 +85,7 @@ jest.mock("@modular/mongo", () => {
     ItemReadModelModel: {
       find: (...args: unknown[]) => mockItemReadModelFind(...args),
       findOne: (...args: unknown[]) => mockItemReadModelFindOne(...args),
+      countDocuments: (...args: unknown[]) => mockItemReadModelCountDocuments(...args),
       updateOne: (...args: unknown[]) => mockItemReadModelUpdateOne(...args),
       bulkWrite: (...args: unknown[]) => mockItemReadModelBulkWrite(...args)
     }
@@ -102,11 +104,36 @@ beforeEach(() => {
   mockProcessedItemFind.mockReset();
   mockItemReadModelFind.mockReset();
   mockItemReadModelFindOne.mockReset();
+  mockItemReadModelCountDocuments.mockReset();
   mockItemReadModelUpdateOne.mockReset();
   mockItemReadModelBulkWrite.mockReset();
 });
 
 describe("ItemsService.list", () => {
+  const asReadModelListResult = <T>(value: T) => ({
+    sort: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue(value),
+  });
+
+  const buildReadModelDoc = (id: string) => ({
+    orgId: "org-1",
+    itemMetaId: id,
+    meta: {
+      id,
+      externalId: `external-${id}`,
+      name: `Item ${id}`,
+      status: "active",
+      mongoRef: "",
+      version: 1,
+      publishedAt: null,
+      sortAt: new Date("2024-01-02T00:00:00.000Z"),
+      createdAt: new Date("2024-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2024-01-03T00:00:00.000Z"),
+    },
+  });
+
   it("returns total consistent with filtered item rows", async () => {
     const prisma = {
       itemMeta: {
@@ -247,6 +274,74 @@ describe("ItemsService.list", () => {
     expect(result.items).toHaveLength(2);
     expect(result.items[0]).toMatchObject({ id: "meta-1", relevanceScore: 0.91 });
     expect(result.items[1]).toMatchObject({ id: "meta-2", relevanceScore: 0.77 });
+  });
+
+  it("uses a meta-only read-model projection for page lists", async () => {
+    mockItemReadModelFind.mockReturnValue(asReadModelListResult([buildReadModelDoc("meta-1")]));
+    mockItemReadModelCountDocuments.mockResolvedValue(1);
+
+    const service = new ItemsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {}, itemsReadModelEnabled: true } as any,
+      {} as any,
+      {} as any
+    );
+    (service as any).resolveScopedIds = jest.fn().mockResolvedValue(undefined);
+
+    const result = await service.list("org-1", 1, 10, undefined, undefined, "CREATED_DESC");
+
+    expect(result.items).toHaveLength(1);
+    const projection = mockItemReadModelFind.mock.calls[0][1] as Record<string, unknown>;
+    expect(projection).toMatchObject({
+      orgId: 1,
+      itemMetaId: 1,
+      "meta.id": 1,
+      "meta.name": 1,
+    });
+    expect(projection.raw).toBeUndefined();
+    expect(projection.processed).toBeUndefined();
+    expect(projection.searchText).toBeUndefined();
+    expect(projection.searchTerms).toBeUndefined();
+  });
+
+  it("uses a meta-only read-model projection for cursor lists", async () => {
+    mockItemReadModelFind.mockReturnValue(
+      asReadModelListResult([buildReadModelDoc("meta-1"), buildReadModelDoc("meta-2")])
+    );
+
+    const service = new ItemsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {}, itemsReadModelEnabled: true } as any,
+      {} as any,
+      {} as any
+    );
+    (service as any).resolveScopedIds = jest.fn().mockResolvedValue(undefined);
+
+    const result = await service.listWithCursor(
+      "org-1",
+      1,
+      undefined,
+      undefined,
+      undefined,
+      "CREATED_DESC"
+    );
+
+    expect(result.items).toHaveLength(1);
+    const projection = mockItemReadModelFind.mock.calls[0][1] as Record<string, unknown>;
+    expect(projection).toMatchObject({
+      orgId: 1,
+      itemMetaId: 1,
+      "meta.id": 1,
+      "meta.name": 1,
+    });
+    expect(projection.raw).toBeUndefined();
+    expect(projection.processed).toBeUndefined();
+    expect(projection.searchText).toBeUndefined();
+    expect(projection.searchTerms).toBeUndefined();
   });
 
   it("throws explicit RERANK_UNAVAILABLE code when rerank service fails", async () => {

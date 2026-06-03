@@ -5065,6 +5065,9 @@ export class NewsPipelineService implements OnModuleDestroy {
         : undefined;
       const processedId = new Types.ObjectId(document._id);
       const rawItemId = new Types.ObjectId(document.rawItemId);
+      const summaryEmbeddingDimensions = Array.isArray(document.summaryEmbedding)
+        ? document.summaryEmbedding.length
+        : null;
       const update: Record<string, unknown> = {
         rawItemId,
         itemMetaId: document.itemMetaId,
@@ -5079,6 +5082,7 @@ export class NewsPipelineService implements OnModuleDestroy {
         llm: document.llm,
         summaryEmbedding: document.summaryEmbedding,
         summaryEmbeddingModel: document.summaryEmbeddingModel ?? null,
+        summaryEmbeddingDimensions,
         duplicateOf,
         duplicateSimilarity: document.duplicateSimilarity ?? null,
         error: document.error ?? undefined,

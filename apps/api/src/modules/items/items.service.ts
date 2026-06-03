@@ -78,6 +78,38 @@ const EVENT_GROUPS_CACHE_TTL_SECONDS = 120;
 const PERSONALIZED_CANDIDATE_MIN = 180;
 const PERSONALIZED_CANDIDATE_MAX = 1600;
 const PERSONALIZED_CANDIDATE_MULTIPLIER = 8;
+const ITEM_READ_MODEL_META_ROW_PROJECTION: Record<string, 1> = {
+  orgId: 1,
+  itemMetaId: 1,
+  "meta.id": 1,
+  "meta.externalId": 1,
+  "meta.name": 1,
+  "meta.status": 1,
+  "meta.mongoRef": 1,
+  "meta.version": 1,
+  "meta.publishedAt": 1,
+  "meta.sortAt": 1,
+  "meta.createdAt": 1,
+  "meta.updatedAt": 1,
+};
+const PROCESSED_READ_MODEL_SNAPSHOT_PROJECTION: Record<string, 1> = {
+  _id: 1,
+  rawItemId: 1,
+  itemMetaId: 1,
+  pipelineJobId: 1,
+  sourceId: 1,
+  status: 1,
+  error: 1,
+  tags: 1,
+  result: 1,
+  duplicateOf: 1,
+  duplicateSimilarity: 1,
+  summaryEmbeddingModel: 1,
+  summaryEmbeddingDimensions: 1,
+  llm: 1,
+  createdAt: 1,
+  updatedAt: 1,
+};
 const DEFAULT_RECENCY_HALFLIFE_HOURS = 48;
 const DEFAULT_WEIGHT_RERANK = 0.55;
 const DEFAULT_WEIGHT_RECENCY = 0.25;
@@ -459,6 +491,7 @@ export class ItemsService {
       duplicateSimilarity?: unknown;
       summaryEmbedding?: unknown;
       summaryEmbeddingModel?: unknown;
+      summaryEmbeddingDimensions?: unknown;
       llm?: unknown;
       createdAt?: unknown;
       updatedAt?: unknown;
@@ -491,9 +524,13 @@ export class ItemsService {
         : typeof (record.duplicateOf as { toString?: () => string } | undefined)?.toString === "function"
           ? (record.duplicateOf as { toString(): string }).toString()
           : "";
-    const summaryEmbeddingDimensions = Array.isArray(record.summaryEmbedding)
-      ? record.summaryEmbedding.length
-      : null;
+    const summaryEmbeddingDimensions =
+      typeof record.summaryEmbeddingDimensions === "number" &&
+      Number.isFinite(record.summaryEmbeddingDimensions)
+        ? record.summaryEmbeddingDimensions
+        : Array.isArray(record.summaryEmbedding)
+          ? record.summaryEmbedding.length
+          : null;
     const errorRaw =
       record.error && typeof record.error === "object" && !Array.isArray(record.error)
         ? (record.error as { message?: unknown; name?: unknown })
@@ -671,10 +708,13 @@ export class ItemsService {
     if (itemMetaIds.length === 0) {
       return new Map<string, ItemReadModel>();
     }
-    const docs = (await ItemReadModelModel.find({
-      orgId,
-      itemMetaId: { $in: itemMetaIds },
-    }).lean()) as ItemReadModel[];
+    const docs = (await ItemReadModelModel.find(
+      {
+        orgId,
+        itemMetaId: { $in: itemMetaIds },
+      },
+      ITEM_READ_MODEL_META_ROW_PROJECTION,
+    ).lean()) as ItemReadModel[];
     const byId = new Map<string, ItemReadModel>();
     for (const doc of docs) {
       if (!doc?.itemMetaId || byId.has(doc.itemMetaId)) {
@@ -725,7 +765,10 @@ export class ItemsService {
       return new Map<string, ItemReadModelProcessedSnapshotInput>();
     }
 
-    const docs = await ProcessedItemModel.aggregate(this.buildLatestItemSnapshotPipeline(itemMetaIds));
+    const docs = await ProcessedItemModel.aggregate([
+      ...this.buildLatestItemSnapshotPipeline(itemMetaIds),
+      { $project: PROCESSED_READ_MODEL_SNAPSHOT_PROJECTION },
+    ]);
     const processedByItemMetaId = new Map<string, ItemReadModelProcessedSnapshotInput>();
     for (const processedDoc of docs) {
       const snapshot = this.toProcessedReadModelSnapshot(processedDoc);
@@ -1701,7 +1744,7 @@ export class ItemsService {
           ? { sortAt: -1, itemMetaId: -1 }
           : { createdAt: -1, itemMetaId: -1 };
       const [docs, total] = await Promise.all([
-        ItemReadModelModel.find(match)
+        ItemReadModelModel.find(match, ITEM_READ_MODEL_META_ROW_PROJECTION)
           .sort(sort)
           .skip(skip)
           .limit(take)
@@ -1857,7 +1900,7 @@ export class ItemsService {
           ? { sortAt: -1, itemMetaId: -1 }
           : { createdAt: -1, itemMetaId: -1 };
 
-      const docs = (await ItemReadModelModel.find(match)
+      const docs = (await ItemReadModelModel.find(match, ITEM_READ_MODEL_META_ROW_PROJECTION)
         .sort(sort)
         .limit(take + 1)
         .lean()) as ItemReadModel[];

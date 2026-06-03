@@ -10,4 +10,9 @@ describe("ProcessedItemModel schema", () => {
     const path = ProcessedItemModel.schema.path("result.content_type");
     expect(path).toBeTruthy();
   });
+
+  it("includes summaryEmbeddingDimensions for lightweight embedding metadata reads", () => {
+    const path = ProcessedItemModel.schema.path("summaryEmbeddingDimensions");
+    expect(path).toBeTruthy();
+  });
 });

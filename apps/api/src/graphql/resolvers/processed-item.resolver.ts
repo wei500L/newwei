@@ -1,6 +1,7 @@
 import { ProcessedItemModel } from "@modular/mongo";
 import { BadRequestException, ForbiddenException, UseGuards } from "@nestjs/common";
-import { Args, Context, ID, Query, Resolver } from "@nestjs/graphql";
+import { Args, Context, ID, Info, Query, Resolver } from "@nestjs/graphql";
+import type { GraphQLResolveInfo } from "graphql";
 import { Types } from "mongoose";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
@@ -10,6 +11,7 @@ import { HasPermission } from "../decorators/has-permission.decorator";
 import type { GqlRequest } from "../graphql.types";
 import { ProcessedItemModelGraph } from "../models/item.model";
 import { normalizeProcessedResult } from "../utils/normalize-processed-result";
+import { selectionContainsField } from "../utils/selection-contains-field";
 
 interface LeanProcessedItem {
   _id: { toString(): string };
@@ -22,9 +24,36 @@ interface LeanProcessedItem {
   duplicateOf?: unknown;
   duplicateSimilarity?: unknown;
   llm?: unknown;
-  summaryEmbedding?: unknown;
   summaryEmbeddingModel?: unknown;
+  summaryEmbeddingDimensions?: unknown;
   createdAt: Date;
+}
+
+const PROCESSED_ITEM_BY_ID_SCALAR_PROJECTION: Record<string, 1> = {
+  orgId: 1,
+  itemMetaId: 1,
+  status: 1,
+  error: 1,
+  tags: 1,
+  duplicateOf: 1,
+  duplicateSimilarity: 1,
+  llm: 1,
+  summaryEmbeddingModel: 1,
+  summaryEmbeddingDimensions: 1,
+  createdAt: 1,
+};
+
+const PROCESSED_ITEM_BY_ID_FULL_PROJECTION: Record<string, 1> = {
+  ...PROCESSED_ITEM_BY_ID_SCALAR_PROJECTION,
+  result: 1,
+};
+
+function queryRequestsProcessedResult(info?: GraphQLResolveInfo): boolean {
+  const selections = info?.fieldNodes?.flatMap((node) => node.selectionSet?.selections ?? []) ?? [];
+  return (
+    selectionContainsField(selections, "result", info?.fragments) ||
+    selectionContainsField(selections, "resultJson", info?.fragments)
+  );
 }
 
 @Resolver(() => ProcessedItemModelGraph)
@@ -34,7 +63,8 @@ export class ProcessedItemResolver {
   @Query(() => ProcessedItemModelGraph, { nullable: true })
   async processedItemById(
     @Context("req") req: GqlRequest,
-    @Args("id", { type: () => ID }) id: string
+    @Args("id", { type: () => ID }) id: string,
+    @Info() info?: GraphQLResolveInfo
   ): Promise<ProcessedItemModelGraph | null> {
     const user = this.requireUser(req);
 
@@ -43,20 +73,27 @@ export class ProcessedItemResolver {
       throw new BadRequestException("Invalid processed item id");
     }
 
-    const doc = (await ProcessedItemModel.findOne({ _id: normalizedId, orgId: user.orgId }).lean().exec()) as
-      | LeanProcessedItem
-      | null;
+    const includeResult = info ? queryRequestsProcessedResult(info) : true;
+    const doc = (await ProcessedItemModel.findOne(
+      { _id: normalizedId, orgId: user.orgId },
+      includeResult ? PROCESSED_ITEM_BY_ID_FULL_PROJECTION : PROCESSED_ITEM_BY_ID_SCALAR_PROJECTION,
+    )
+      .lean()
+      .exec()) as LeanProcessedItem | null;
     if (!doc) {
       return null;
     }
 
-    const normalizedResult = normalizeProcessedResult(doc.result);
+    const normalizedResult = includeResult ? normalizeProcessedResult(doc.result) : null;
     const resultJson =
       normalizedResult && typeof normalizedResult === "object" && !Array.isArray(normalizedResult)
         ? (normalizedResult as Record<string, unknown>)
         : null;
 
-    const summaryEmbeddingDimensions = Array.isArray(doc.summaryEmbedding) ? doc.summaryEmbedding.length : null;
+    const summaryEmbeddingDimensions =
+      typeof doc.summaryEmbeddingDimensions === "number" && Number.isFinite(doc.summaryEmbeddingDimensions)
+        ? doc.summaryEmbeddingDimensions
+        : null;
     const summaryEmbeddingModel = typeof doc.summaryEmbeddingModel === "string" ? doc.summaryEmbeddingModel : null;
 
     const tags = Array.isArray(doc.tags)

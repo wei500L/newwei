@@ -689,6 +689,7 @@ describe("QueueProcessor", () => {
           }),
           $unset: expect.objectContaining({
             hasLocation: 1,
+            summaryEmbeddingDimensions: 1,
           }),
         }),
         { upsert: true },
@@ -808,6 +809,9 @@ describe("QueueProcessor", () => {
             error: expect.objectContaining({
               message: "Test error message",
             }),
+          }),
+          $unset: expect.objectContaining({
+            summaryEmbeddingDimensions: 1,
           }),
         }),
         { upsert: true },

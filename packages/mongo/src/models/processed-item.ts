@@ -143,6 +143,7 @@ const ProcessedItemSchema = new Schema(
     },
     summaryEmbedding: { type: [Number], default: undefined },
     summaryEmbeddingModel: { type: String, default: null },
+    summaryEmbeddingDimensions: { type: Number, default: null },
     duplicateOf: {
       type: Schema.Types.ObjectId,
       ref: "ProcessedItem",

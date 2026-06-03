@@ -620,6 +620,13 @@ export function itemReadModelToProcessedPreviewGraph(
     return null;
   }
   const extracted = extractProcessedResultFields(doc.processed.result);
+  const publishedAt =
+    extracted.publishedAt ??
+    (doc.publishedAt instanceof Date && Number.isFinite(doc.publishedAt.getTime())
+      ? doc.publishedAt.toISOString()
+      : null);
+  const topics = extracted.topics.length > 0 ? extracted.topics : doc.topics ?? [];
+  const entities = extracted.entities.length > 0 ? extracted.entities : doc.entities ?? [];
   return {
     id: doc.processed.id,
     itemMetaId: doc.processed.itemMetaId,
@@ -628,21 +635,17 @@ export function itemReadModelToProcessedPreviewGraph(
     duplicateOf: doc.processed.duplicateOf ?? null,
     duplicateSimilarity: doc.processed.duplicateSimilarity ?? null,
     llm: doc.processed.llm ?? null,
-    source: extracted.source,
-    title: extracted.title,
-    language: extracted.language,
-    publishedAt:
-      extracted.publishedAt ??
-      (doc.publishedAt instanceof Date && Number.isFinite(doc.publishedAt.getTime())
-        ? doc.publishedAt.toISOString()
-        : null),
-    summary: extracted.summary,
-    sentiment: extracted.sentiment,
-    contentType: extracted.contentType,
-    topics: extracted.topics,
-    entities: extracted.entities,
-    qualityScore: extracted.qualityScore,
-    location: extracted.location ?? extracted.region,
+    source: extracted.source ?? doc.sourceName ?? null,
+    title: extracted.title ?? doc.title ?? null,
+    language: extracted.language ?? doc.language ?? null,
+    publishedAt,
+    summary: extracted.summary ?? doc.summary ?? null,
+    sentiment: extracted.sentiment ?? doc.sentiment ?? null,
+    contentType: extracted.contentType ?? doc.contentType ?? null,
+    topics,
+    entities,
+    qualityScore: extracted.qualityScore ?? doc.qualityScore ?? null,
+    location: extracted.location ?? extracted.region ?? doc.location ?? doc.region ?? null,
     createdAt: doc.processed.createdAt,
   };
 }

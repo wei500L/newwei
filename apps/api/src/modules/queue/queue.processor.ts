@@ -417,6 +417,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
       duplicateSimilarity: 1,
       summaryEmbedding: 1,
       summaryEmbeddingModel: 1,
+      summaryEmbeddingDimensions: 1,
     };
     if (!options.error) {
       unset.error = 1;

@@ -1899,6 +1899,7 @@ describe("NewsPipelineService", () => {
     expect(updateArgs?.$set).toEqual(
       expect.objectContaining({
         hasLocation: true,
+        summaryEmbeddingDimensions: null,
         rawItemId: expect.anything(),
         result: expect.objectContaining({
           title: "Existing title",
@@ -2144,6 +2145,9 @@ describe("NewsPipelineService", () => {
       }),
     );
     expect(prisma.itemMeta.updateMany).not.toHaveBeenCalled();
+    const updateArgs = (ProcessedItemModel.findOneAndUpdate as jest.Mock).mock
+      .calls[0]?.[1];
+    expect(updateArgs.$set.summaryEmbeddingDimensions).toBe(3);
 
     const retryTimers = (serviceWithVector as any).outboxRetryTimers as Map<
       string,
