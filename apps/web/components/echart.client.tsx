@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ChartSkeleton } from "@/components/chart-skeleton";
+import { CHART_SERIES_DARK, CHART_SERIES_LIGHT } from "@/lib/chart-theme-tokens";
 import {
   downloadDataUrlFile,
   sanitizeFilename,
@@ -522,16 +523,7 @@ export function DashboardChart({
       if (!runtime.themesRegistered) {
         // Register Smart Light Theme
         echarts.registerTheme("smart-light", {
-          color: [
-            "#0050b3", // Primary (Deep Blue)
-            "#faad14", // Secondary (Tech Gold)
-            "#13c2c2", // Accent (Cyan)
-            "#eb2f96", // Magenta
-            "#722ed1", // Purple
-            "#52c41a", // Green
-            "#fadb14", // Yellow
-            "#fa8c16", // Orange
-          ],
+          color: CHART_SERIES_LIGHT,
           backgroundColor: "transparent",
           tooltip: {
             backgroundColor: "rgba(255, 255, 255, 0.95)",
@@ -599,16 +591,7 @@ export function DashboardChart({
 
         // Register Smart Dark Theme
         echarts.registerTheme("smart-dark", {
-          color: [
-            "#2563eb", // Vibrant Blue (was #177ddc)
-            "#d48806", // Gold
-            "#13a8a8", // Cyan
-            "#cb2b83", // Magenta
-            "#642ab5", // Purple
-            "#49aa19", // Green
-            "#d8bd14", // Yellow
-            "#d87a16", // Orange
-          ],
+          color: CHART_SERIES_DARK,
           backgroundColor: "transparent",
           tooltip: {
             backgroundColor: "rgba(15, 23, 42, 0.95)",
