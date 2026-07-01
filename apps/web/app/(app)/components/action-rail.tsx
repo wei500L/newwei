@@ -278,12 +278,12 @@ export function ActionRail({ mode, onContentHeightChange }: ActionRailProps) {
                   aria-current={isActive ? "page" : undefined}
                   className={`
                     w-full h-11 flex items-center justify-center rounded-xl transition-all duration-150 select-none
-                    cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-white
+                    cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900
                     active:scale-[0.97]
                     ${
                       isActive
                         ? "bg-[var(--primary)] text-white shadow-sm"
-                        : "text-slate-500 hover:text-[var(--primary)] hover:bg-slate-100 active:bg-slate-200"
+                        : "text-slate-500 dark:text-slate-400 hover:text-[var(--primary)] hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-700"
                     }
                   `}
                 >
@@ -309,12 +309,12 @@ export function ActionRail({ mode, onContentHeightChange }: ActionRailProps) {
                     aria-current={isActive ? "page" : undefined}
                     className={`
                       w-full h-11 flex items-center justify-center rounded-xl transition-all duration-150 select-none
-                      cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-white
+                      cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900
                       active:scale-[0.97]
                       ${
                         isActive
                           ? "bg-[var(--primary)] text-white shadow-sm"
-                          : "text-slate-500 hover:text-[var(--primary)] hover:bg-slate-100 active:bg-slate-200"
+                          : "text-slate-500 dark:text-slate-400 hover:text-[var(--primary)] hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-700"
                       }
                     `}
                   >

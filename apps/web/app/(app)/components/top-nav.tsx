@@ -539,7 +539,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
                     flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-all duration-200
                     ${isActive
                       ? "bg-[var(--primary)] text-white shadow-sm"
-                      : "text-slate-700 hover:text-[var(--primary)] hover:bg-slate-50"
+                      : "text-slate-700 dark:text-slate-300 hover:text-[var(--primary)] hover:bg-slate-50 dark:hover:bg-slate-800"
                     }
                   `}
                 >
@@ -569,7 +569,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
                         flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-all duration-200
                         ${isActive
                           ? "bg-[var(--primary)] text-white shadow-sm"
-                          : "text-slate-700 hover:text-[var(--primary)] hover:bg-slate-50"
+                          : "text-slate-700 dark:text-slate-300 hover:text-[var(--primary)] hover:bg-slate-50 dark:hover:bg-slate-800"
                         }
                       `}
                     >

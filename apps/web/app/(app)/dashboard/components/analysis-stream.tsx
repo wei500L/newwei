@@ -204,7 +204,7 @@ export function AnalysisStream() {
             </div>
             
             {/* Content Line */}
-            <div className="text-slate-700 text-xs leading-relaxed group-hover:text-slate-900 transition-all">
+            <div className="text-slate-700 dark:text-slate-300 text-xs leading-relaxed group-hover:text-slate-900 dark:group-hover:text-slate-100 transition-all">
               {item.summary || summaryUnavailableLabel}
             </div>
 

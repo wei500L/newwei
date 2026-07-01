@@ -582,7 +582,7 @@ export function KnowledgeGraphContent() {
       </Descriptions>
       {selectedNode.properties ? (
         <Card size="small" title={t("pages.knowledgeGraph.details.properties")}>
-          <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-slate-700">
+          <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-slate-700 dark:text-slate-300">
             {formatJson(selectedNode.properties)}
           </pre>
         </Card>
@@ -630,7 +630,7 @@ export function KnowledgeGraphContent() {
       </Descriptions>
       {selectedEdgeDisplay.properties ? (
         <Card size="small" title={t("pages.knowledgeGraph.details.properties")}>
-          <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-slate-700">
+          <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-slate-700 dark:text-slate-300">
             {formatJson(selectedEdgeDisplay.properties)}
           </pre>
         </Card>
@@ -678,7 +678,7 @@ export function KnowledgeGraphContent() {
             const reviewStatus = readNestedString(item.evidence, ["review", "status"]);
 
             return (
-              <List.Item className="!block rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 shadow-sm">
+              <List.Item className="!block rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 px-4 py-4 shadow-sm">
                 <div className="flex flex-col gap-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -707,14 +707,14 @@ export function KnowledgeGraphContent() {
                     </Space>
                   </div>
                   {quote ? (
-                    <blockquote className="rounded-xl border-l-4 border-blue-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                    <blockquote className="rounded-xl border-l-4 border-blue-200 dark:border-blue-800 bg-slate-50 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-700 dark:text-slate-300">
                       {quote}
                     </blockquote>
                   ) : null}
                   {item.article.summary ? (
-                    <Paragraph className="!mb-0 text-sm text-slate-600">{item.article.summary}</Paragraph>
+                    <Paragraph className="!mb-0 text-sm text-slate-600 dark:text-slate-400">{item.article.summary}</Paragraph>
                   ) : null}
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                     {item.extractorVersion ? (
                       <Tag>{item.extractorVersion}</Tag>
                     ) : null}

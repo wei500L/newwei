@@ -191,17 +191,17 @@ export function HeroSection({
         {metrics.map((metric) => (
           <Col xs={24} sm={12} lg={6} key={metric.key}>
             <div 
-              className="flex flex-col h-full px-4 py-2 rounded-2xl transition-all duration-300 cursor-pointer hover:bg-slate-50 hover:shadow-md hover:-translate-y-1 group border border-transparent hover:border-[var(--border)]"
+              className="flex flex-col h-full px-4 py-2 rounded-2xl transition-all duration-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 hover:shadow-md hover:-translate-y-1 group border border-transparent hover:border-[var(--border)]"
               onClick={() => onMetricClick?.(metric.key)}
             >
-              <Typography.Text type="secondary" className="mb-3 text-[12px] font-medium tracking-wide opacity-70 group-hover:opacity-100 transition-opacity text-slate-500">
+              <Typography.Text type="secondary" className="mb-3 text-[12px] font-medium tracking-wide opacity-70 group-hover:opacity-100 transition-opacity text-slate-500 dark:text-slate-400">
                 {metric.title}
               </Typography.Text>
               <div className="flex items-baseline gap-2 mb-4">
-                <span className="text-4xl font-semibold text-slate-900 tracking-tight">
+                <span className="text-4xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight">
                   {metric.hasData && metric.value !== null ? metric.value.toFixed(1) : notAvailableLabel}
                   {metric.hasData && metric.suffix ? (
-                    <span className="text-xl ml-1 text-slate-400 font-medium">{metric.suffix}</span>
+                    <span className="text-xl ml-1 text-slate-400 dark:text-slate-400 font-medium">{metric.suffix}</span>
                   ) : null}
                 </span>
                 <div className={`flex items-center text-xs font-bold px-2 py-0.5 rounded-full ${
@@ -209,7 +209,7 @@ export function HeroSection({
                     ? "bg-emerald-50 text-[var(--bullish)]" 
                     : metric.trend !== null && metric.trend < 0 
                       ? "bg-amber-50 text-[var(--bearish)]" 
-                      : "bg-slate-100 text-slate-400"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-400"
                 }`}>
                   {metric.trend !== null && metric.trend > 0 ? (
                     <ArrowUpOutlined className="text-[10px]" />

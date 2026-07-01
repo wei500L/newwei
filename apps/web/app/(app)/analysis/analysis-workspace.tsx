@@ -226,8 +226,8 @@ function BoardColumnView({
   return (
     <section
       ref={setNodeRef}
-      className={`flex min-h-viz-2xl w-[320px] shrink-0 flex-col rounded-md border border-[var(--border)] bg-slate-50 ${
-        isOver ? "ring-2 ring-blue-300" : ""
+      className={`flex min-h-viz-2xl w-[320px] shrink-0 flex-col rounded-md border border-[var(--border)] bg-slate-50 dark:bg-slate-800 ${
+        isOver ? "ring-2 ring-blue-300 dark:ring-blue-500" : ""
       }`}
     >
       <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">

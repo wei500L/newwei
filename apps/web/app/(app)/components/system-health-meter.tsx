@@ -56,7 +56,7 @@ const buildStateTone = (state: SystemHealthState): SystemHealthTone => {
         dotClassName: "bg-emerald-500",
         fillClassName: "bg-[linear-gradient(90deg,#34d399,#10b981)]",
         badgeClassName:
-          "border-emerald-200/80 bg-emerald-50/85 text-emerald-700",
+          "border-emerald-200/80 dark:border-emerald-400/35 bg-emerald-50/85 dark:bg-emerald-400/12 text-emerald-700 dark:text-emerald-200",
         labelClassName: "text-emerald-700",
         animationClassName: null,
         glowClassName: null,
@@ -65,7 +65,8 @@ const buildStateTone = (state: SystemHealthState): SystemHealthTone => {
       return {
         dotClassName: "bg-amber-500",
         fillClassName: "bg-[linear-gradient(90deg,#fbbf24,#f59e0b)]",
-        badgeClassName: "border-amber-200/80 bg-amber-50/90 text-amber-700",
+        badgeClassName:
+          "border-amber-200/80 dark:border-amber-400/35 bg-amber-50/90 dark:bg-amber-400/12 text-amber-700 dark:text-amber-200",
         labelClassName: "text-amber-700",
         animationClassName: styles.warningPulse ?? null,
         glowClassName: styles.warningGlow ?? null,
@@ -74,7 +75,8 @@ const buildStateTone = (state: SystemHealthState): SystemHealthTone => {
       return {
         dotClassName: "bg-rose-500",
         fillClassName: "bg-[linear-gradient(90deg,#fb7185,#e11d48)]",
-        badgeClassName: "border-rose-200/80 bg-rose-50/90 text-rose-700",
+        badgeClassName:
+          "border-rose-200/80 dark:border-rose-400/35 bg-rose-50/90 dark:bg-rose-400/12 text-rose-700 dark:text-rose-200",
         labelClassName: "text-rose-700",
         animationClassName: styles.criticalBlink ?? null,
         glowClassName: styles.criticalGlow ?? null,
@@ -83,7 +85,8 @@ const buildStateTone = (state: SystemHealthState): SystemHealthTone => {
       return {
         dotClassName: "bg-slate-400",
         fillClassName: "bg-[linear-gradient(90deg,#cbd5e1,#94a3b8)]",
-        badgeClassName: "border-slate-200/80 bg-slate-50/90 text-slate-600",
+        badgeClassName:
+          "border-slate-200/80 dark:border-slate-700 bg-slate-50/90 dark:bg-slate-800 text-slate-600 dark:text-slate-400",
         labelClassName: "text-slate-600",
         animationClassName: null,
         glowClassName: null,
