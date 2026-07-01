@@ -30,6 +30,7 @@ import { useTranslation } from "react-i18next";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
+import { PRESSURE_STATUS_COLORS } from "@/lib/status-tokens";
 
 type LlmGatewayResponseFormatMode = "json_schema" | "json_object" | "none";
 type LlmGatewayApiSurface = "chat_completions" | "responses";
@@ -699,12 +700,12 @@ function clampPercent(value: number): number {
 
 function getPressureStatusColor(value: number): string {
   if (value >= 100) {
-    return "#ff4d4f";
+    return PRESSURE_STATUS_COLORS.critical;
   }
   if (value >= 80) {
-    return "#faad14";
+    return PRESSURE_STATUS_COLORS.warning;
   }
-  return "#1677ff";
+  return PRESSURE_STATUS_COLORS.normal;
 }
 
 function getManagedRuntimeKeyStateMeta(

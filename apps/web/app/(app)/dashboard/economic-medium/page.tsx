@@ -9,6 +9,7 @@ import { ChartStateBanner } from "@/components/chart-state-banner";
 import { DashboardChartCard } from "@/components/dashboard-chart-card";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
+import { ECONOMIC_CHANGE_COLORS } from "@/lib/chart-theme-tokens";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 import {
@@ -163,7 +164,9 @@ export default function EconomicMediumPage() {
         itemStyle: {
           color: (params: CallbackDataParams) => {
             const value = typeof params.value === "number" ? params.value : 0;
-            return value >= 0 ? "#389e0d" : "#cf1322";
+            return value >= 0
+              ? ECONOMIC_CHANGE_COLORS.positive
+              : ECONOMIC_CHANGE_COLORS.negative;
           },
         },
       },

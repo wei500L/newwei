@@ -16,7 +16,15 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ChartSkeleton } from "@/components/chart-skeleton";
-import { CHART_SERIES_DARK, CHART_SERIES_LIGHT } from "@/lib/chart-theme-tokens";
+import {
+  CHART_DARK_TEXT_COLORS,
+  CHART_DARK_TOOLTIP_BG,
+  CHART_DARK_TOOLTIP_BORDER,
+  CHART_LIGHT_TEXT_COLORS,
+  CHART_LIGHT_TOOLTIP_BG,
+  CHART_SERIES_DARK,
+  CHART_SERIES_LIGHT,
+} from "@/lib/chart-theme-tokens";
 import {
   downloadDataUrlFile,
   sanitizeFilename,
@@ -526,10 +534,10 @@ export function DashboardChart({
           color: CHART_SERIES_LIGHT,
           backgroundColor: "transparent",
           tooltip: {
-            backgroundColor: "rgba(255, 255, 255, 0.95)",
-            borderColor: "#e5e7eb",
+            backgroundColor: CHART_LIGHT_TOOLTIP_BG,
+            borderColor: CHART_LIGHT_TEXT_COLORS.border,
             textStyle: {
-              color: "#1f2937",
+              color: CHART_LIGHT_TEXT_COLORS.primary,
             },
             padding: [10, 14],
             extraCssText:
@@ -537,13 +545,13 @@ export function DashboardChart({
           },
           title: {
             textStyle: {
-              color: "#111827",
+              color: CHART_LIGHT_TEXT_COLORS.title,
               fontWeight: 600,
             },
           },
           legend: {
             textStyle: {
-              color: "#4b5563",
+              color: CHART_LIGHT_TEXT_COLORS.secondary,
             },
           },
           grid: {
@@ -558,14 +566,14 @@ export function DashboardChart({
             axisLine: {
               show: true,
               lineStyle: {
-                color: "#e5e7eb",
+                color: CHART_LIGHT_TEXT_COLORS.border,
               },
             },
             axisTick: {
               show: false,
             },
             axisLabel: {
-              color: "#6b7280",
+              color: CHART_LIGHT_TEXT_COLORS.tertiary,
               margin: 12,
             },
             splitLine: {
@@ -580,7 +588,7 @@ export function DashboardChart({
               show: false,
             },
             axisLabel: {
-              color: "#6b7280",
+              color: CHART_LIGHT_TEXT_COLORS.tertiary,
               margin: 12,
             },
             splitLine: {
@@ -594,10 +602,10 @@ export function DashboardChart({
           color: CHART_SERIES_DARK,
           backgroundColor: "transparent",
           tooltip: {
-            backgroundColor: "rgba(15, 23, 42, 0.95)",
-            borderColor: "rgba(255, 255, 255, 0.1)",
+            backgroundColor: CHART_DARK_TOOLTIP_BG,
+            borderColor: CHART_DARK_TOOLTIP_BORDER,
             textStyle: {
-              color: "#e2e8f0",
+              color: CHART_DARK_TEXT_COLORS.primary,
             },
             padding: [10, 14],
             extraCssText:
@@ -605,13 +613,13 @@ export function DashboardChart({
           },
           title: {
             textStyle: {
-              color: "#f3f4f6",
+              color: CHART_DARK_TEXT_COLORS.title,
               fontWeight: 700,
             },
           },
           legend: {
             textStyle: {
-              color: "#9ca3af",
+              color: CHART_DARK_TEXT_COLORS.tertiary,
             },
           },
           grid: {
@@ -626,14 +634,14 @@ export function DashboardChart({
             axisLine: {
               show: true,
               lineStyle: {
-                color: "rgba(255, 255, 255, 0.1)",
+                color: CHART_DARK_TOOLTIP_BORDER,
               },
             },
             axisTick: {
               show: false,
             },
             axisLabel: {
-              color: "#cbd5e1",
+              color: CHART_DARK_TEXT_COLORS.secondary,
               margin: 12,
             },
             splitLine: {
@@ -648,7 +656,7 @@ export function DashboardChart({
               show: false,
             },
             axisLabel: {
-              color: "#9ca3af",
+              color: CHART_DARK_TEXT_COLORS.tertiary,
               margin: 12,
             },
             splitLine: {

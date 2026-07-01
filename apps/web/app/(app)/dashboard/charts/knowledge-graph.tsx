@@ -14,6 +14,7 @@ import { DashboardChart } from "@/components/echart";
 import { useGetKnowledgeGraphSubgraphQuery, useKnowledgeGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { usePendingAction } from "@/hooks/use-pending-action";
+import { DEFAULT_NODE_COLOR, KNOWLEDGE_GRAPH_NODE_COLORS } from "@/lib/graph-tokens";
 import {
   buildKnowledgeGraphExplorerHref,
   normalizeKnowledgeGraphSeedType
@@ -22,16 +23,16 @@ import {
 const { Text } = Typography;
 
 const NODE_TYPE_CONFIG: Record<string, { color: string; symbol: string; index: number }> = {
-  company: { color: "#2563eb", symbol: "roundRect", index: 0 },
-  industry: { color: "#16a34a", symbol: "rect", index: 1 },
-  person: { color: "#f97316", symbol: "circle", index: 2 },
-  policy: { color: "#ef4444", symbol: "diamond", index: 3 },
-  commodity: { color: "#a855f7", symbol: "triangle", index: 4 },
-  instrument: { color: "#0ea5e9", symbol: "pin", index: 5 },
-  organization: { color: "#64748b", symbol: "roundRect", index: 6 }
+  company: { color: KNOWLEDGE_GRAPH_NODE_COLORS.company, symbol: "roundRect", index: 0 },
+  industry: { color: KNOWLEDGE_GRAPH_NODE_COLORS.industry, symbol: "rect", index: 1 },
+  person: { color: KNOWLEDGE_GRAPH_NODE_COLORS.person, symbol: "circle", index: 2 },
+  policy: { color: KNOWLEDGE_GRAPH_NODE_COLORS.policy, symbol: "diamond", index: 3 },
+  commodity: { color: KNOWLEDGE_GRAPH_NODE_COLORS.commodity, symbol: "triangle", index: 4 },
+  instrument: { color: KNOWLEDGE_GRAPH_NODE_COLORS.instrument, symbol: "pin", index: 5 },
+  organization: { color: KNOWLEDGE_GRAPH_NODE_COLORS.organization, symbol: "roundRect", index: 6 }
 };
 
-const DEFAULT_NODE_TYPE = { color: "#94a3b8", symbol: "circle", index: 7 };
+const DEFAULT_NODE_TYPE = { color: DEFAULT_NODE_COLOR, symbol: "circle", index: 7 };
 const LAST_ENTITY_STORAGE_KEY = "dashboard.knowledgeGraph.lastEntity";
 const EMPTY_DEGRADATION_STATS = {
   filteredNodes: 0,

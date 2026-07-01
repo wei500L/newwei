@@ -48,3 +48,53 @@ export const CHART_STATE_TITLE: Record<ChartStateVariant, string> = {
   permission: "#b45309",
   error: "#dc2626",
 } as const;
+
+/**
+ * ChartEmptyState 无 chart theme 时的 SVG 兜底色。
+ * stroke/fill 直接写入 SVG presentation 属性，text 写入 inline style，
+ * 均不解析 var()，故以 JS 常量集中。
+ */
+export const CHART_BORDER_FALLBACK = "rgba(148, 163, 184, 0.4)";
+export const CHART_FILL_FALLBACK = "rgba(148, 163, 184, 0.08)";
+export const CHART_TEXT_FALLBACK = "#94a3b8";
+
+/**
+ * LLM 网关压力状态色（antd Progress strokeColor，JS prop）。
+ * critical=已超额、warning=接近上限、normal=健康。
+ */
+export const PRESSURE_STATUS_COLORS = {
+  critical: "#ff4d4f",
+  warning: "#faad14",
+  normal: "#1677ff",
+} as const;
+
+/**
+ * 实体情感极性色（inline style / antd Progress strokeColor，JS 上下文）。
+ * neutral=无数据兜底、positive=正向、negative=负向、gray=接近中性。
+ */
+export const SENTIMENT_COLORS = {
+  neutral: "#94a3b8",
+  positive: "#16a34a",
+  negative: "#dc2626",
+  gray: "#64748b",
+} as const;
+
+/**
+ * 告警中心范围指示条各段色（inline style background/borderColor，JS 上下文）。
+ * track=底轨、range=命中区间、expected=期望标记、observed=观测标记。
+ */
+export const RANGE_INDICATOR_COLORS = {
+  track: "#e2e8f0",
+  range: "#93c5fd",
+  expected: "#0f172a",
+  observed: "#dc2626",
+} as const;
+
+/**
+ * 告警趋势线色，按严重级别（echarts lineStyle.color，canvas 上下文）。
+ */
+export const ALERT_LINE_COLORS = {
+  low: "#16a34a",
+  medium: "#ea580c",
+  high: "#dc2626",
+} as const;

@@ -2,6 +2,8 @@
 
 import React from 'react';
 
+import { AURA_CARD_GLOW } from '@/lib/aura-theme-tokens';
+
 import { useCardGlow } from '../hooks/use-card-glow';
 
 interface AuraBentoCardProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -28,7 +30,7 @@ export function AuraBentoCard({ children, className = '', squish = true, ...prop
       <div 
         className="pointer-events-none absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
         style={{
-          background: 'radial-gradient(circle at var(--glow-x, 50%) var(--glow-y, 50%), rgba(255,255,255,0.1) 0%, transparent 60%)',
+          background: `radial-gradient(circle at var(--glow-x, 50%) var(--glow-y, 50%), ${AURA_CARD_GLOW} 0%, transparent 60%)`,
         }}
       />
       <div className="relative z-10 h-full w-full">

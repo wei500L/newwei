@@ -34,6 +34,10 @@ import {
 } from "@/hooks/useEntityImpactGraph";
 import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import {
+  ENTITY_IMPACT_GRAPH_COLORS,
+  ENTITY_IMPACT_GRAPH_DEFAULT_COLOR,
+} from "@/lib/graph-tokens";
+import {
   buildEntityGraphConnectionMap,
   ENTITY_GRAPH_DEFAULT_CATEGORIES,
   filterEntityGraphData,
@@ -59,13 +63,13 @@ const CATEGORY_CONFIG: Record<
   string,
   { color: string; symbol: string; index: number }
 > = {
-  person: { color: "#2f6ce5", symbol: "circle", index: 0 },
-  organization: { color: "#10b981", symbol: "rect", index: 1 },
-  stock: { color: "#f59e0b", symbol: "diamond", index: 2 },
-  commodity: { color: "#8b5cf6", symbol: "triangle", index: 3 },
+  person: { color: ENTITY_IMPACT_GRAPH_COLORS.person, symbol: "circle", index: 0 },
+  organization: { color: ENTITY_IMPACT_GRAPH_COLORS.organization, symbol: "rect", index: 1 },
+  stock: { color: ENTITY_IMPACT_GRAPH_COLORS.stock, symbol: "diamond", index: 2 },
+  commodity: { color: ENTITY_IMPACT_GRAPH_COLORS.commodity, symbol: "triangle", index: 3 },
 };
 
-const DEFAULT_CATEGORY = { color: "#64748b", symbol: "circle", index: 4 };
+const DEFAULT_CATEGORY = { color: ENTITY_IMPACT_GRAPH_DEFAULT_COLOR, symbol: "circle", index: 4 };
 
 const resolveCategoryList = (input: string[] | undefined) => {
   const normalized = (input ?? []).map(normalizeEntityGraphCategory);

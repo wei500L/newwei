@@ -15,6 +15,11 @@ import { Toaster } from "sonner";
 
 import { useTheme } from "@/hooks/use-theme";
 import {
+  ANTD_COLORS_DARK,
+  ANTD_COLORS_LIGHT,
+  SHADOW_PRESETS,
+} from "@/lib/antd-theme-tokens";
+import {
   extractApiError,
   isRuntimeSecretRequiredApiError,
 } from "@/lib/api-error";
@@ -216,22 +221,20 @@ export function AppProviders({ children }: PropsWithChildren) {
 
   const antdTheme = useMemo(() => {
     const isDark = themeMode === "dark";
-    const colorPrimary = isDark ? "#6f9bff" : "#1f3b7b";
-    const colorBgBase = isDark ? "#0b1220" : "#f7f6f2";
-    const colorTextBase = isDark ? "#e2e8f0" : "#1f2933";
-    const colorTextSecondary = isDark ? "#cbd5e1" : "#475569";
-    const colorFillSecondary = isDark ? "#1e293b" : "#f1f5f9";
-    const colorBorder = isDark ? "#334155" : "#e2e8f0";
-    const colorBgContainer = isDark ? "rgba(15, 23, 42, 0.82)" : "#ffffff";
-    const colorBgElevated = isDark ? "rgba(15, 23, 42, 0.95)" : "rgba(255, 255, 255, 0.98)";
-    const colorBgSpotlight = isDark ? "rgba(2, 6, 23, 0.98)" : "rgba(15, 23, 42, 0.95)";
-    const colorTextPlaceholder = isDark ? "#94a3b8" : "#64748b";
-    const cardShadow = isDark
-      ? "0 4px 6px rgba(0,0,0,0.2), 0 12px 28px rgba(2,6,23,0.4), 0 0 48px rgba(99,102,241,0.04)"
-      : "0 4px 6px rgba(31,59,123,0.04), 0 12px 28px rgba(31,59,123,0.06), 0 24px 48px rgba(31,59,123,0.03)";
-    const modalShadow = isDark
-      ? "0 18px 42px rgba(2, 6, 23, 0.55), 0 0 64px rgba(99,102,241,0.06)"
-      : "0 16px 40px rgba(15, 23, 42, 0.18), 0 24px 64px rgba(31,59,123,0.05)";
+    const colors = isDark ? ANTD_COLORS_DARK : ANTD_COLORS_LIGHT;
+    const shadows = isDark ? SHADOW_PRESETS.dark : SHADOW_PRESETS.light;
+    const colorPrimary = colors.colorPrimary;
+    const colorBgBase = colors.colorBgBase;
+    const colorTextBase = colors.colorTextBase;
+    const colorTextSecondary = colors.colorTextSecondary;
+    const colorFillSecondary = colors.colorFillSecondary;
+    const colorBorder = colors.colorBorder;
+    const colorBgContainer = colors.colorBgContainer;
+    const colorBgElevated = colors.colorBgElevated;
+    const colorBgSpotlight = colors.colorBgSpotlight;
+    const colorTextPlaceholder = colors.colorTextPlaceholder;
+    const cardShadow = shadows.card;
+    const modalShadow = shadows.modal;
 
     return {
       algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,

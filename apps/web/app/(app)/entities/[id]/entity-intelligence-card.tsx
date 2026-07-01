@@ -43,6 +43,7 @@ import {
   formatKnowledgeGraphLabel,
   normalizeKnowledgeGraphSeedType,
 } from "@/lib/knowledge-graph-explorer";
+import { SENTIMENT_COLORS } from "@/lib/status-tokens";
 import { safeHttpUrl } from "@/lib/url";
 
 interface EntityIntelligenceCardProps {
@@ -87,15 +88,15 @@ function formatScore(value: number | null | undefined) {
 
 function getSentimentColor(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    return "#94a3b8";
+    return SENTIMENT_COLORS.neutral;
   }
   if (value > 0.1) {
-    return "#16a34a";
+    return SENTIMENT_COLORS.positive;
   }
   if (value < -0.1) {
-    return "#dc2626";
+    return SENTIMENT_COLORS.negative;
   }
-  return "#64748b";
+  return SENTIMENT_COLORS.gray;
 }
 
 export function EntityIntelligenceCard({

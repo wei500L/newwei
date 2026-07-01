@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import { MARKET_PULSE_COLOR } from "@/lib/chart-theme-tokens";
 import dayjs from "@/lib/dayjs";
 import { resolveEconomicUnit } from "@/lib/economic-units";
 import { resolveLocale, formatDateTime } from "@/lib/i18n";
@@ -310,7 +311,7 @@ export function MarketPulse({
         value: resource.value,
         trend: resource.trend,
         data: resource.history,
-        color: "#13c2c2", // Cyan
+        color: MARKET_PULSE_COLOR, // Cyan
         suffix: resource.hasData ? resource.unit : undefined,
         hasData: resource.hasData,
         granularity: resource.granularity,

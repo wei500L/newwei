@@ -2,6 +2,8 @@
 
 import { usePathname } from 'next/navigation';
 
+import { AURA_BACKGROUND_COLORS } from '@/lib/aura-theme-tokens';
+
 export function AuraBackground() {
   const pathname = usePathname();
   const isReadMode = pathname.includes('/read/') || pathname.match(/\/items\/\w+/);
@@ -12,22 +14,10 @@ export function AuraBackground() {
     pathname.includes('/situation-monitor');
 
   const colors = isFinance
-    ? {
-        color1: 'rgba(245, 158, 11, 0.2)',
-        color2: 'rgba(217, 119, 6, 0.16)',
-        color3: 'rgba(252, 211, 77, 0.12)',
-      }
+    ? AURA_BACKGROUND_COLORS.finance
     : isTechLike
-      ? {
-          color1: 'rgba(59, 130, 246, 0.16)',
-          color2: 'rgba(139, 92, 246, 0.12)',
-          color3: 'rgba(56, 189, 248, 0.1)',
-        }
-      : {
-          color1: 'var(--aura-color-1)',
-          color2: 'var(--aura-color-2)',
-          color3: 'rgba(255, 255, 255, 0.06)',
-        };
+      ? AURA_BACKGROUND_COLORS.tech
+      : AURA_BACKGROUND_COLORS.default;
 
   if (isReadMode) {
     return null; // Don't render background for pure reading pages

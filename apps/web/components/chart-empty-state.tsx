@@ -5,8 +5,11 @@ import type { ReactNode } from "react";
 
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import {
+  CHART_BORDER_FALLBACK,
+  CHART_FILL_FALLBACK,
   CHART_STATE_ACCENT_FALLBACK,
   CHART_STATE_TITLE,
+  CHART_TEXT_FALLBACK,
 } from "@/lib/status-tokens";
 
 export type ChartEmptyStateVariant =
@@ -42,8 +45,8 @@ export function ChartEmptyState({
   className,
 }: ChartEmptyStateProps) {
   const { colors } = useChartTheme();
-  const stroke = colors?.border ?? "rgba(148, 163, 184, 0.4)";
-  const fill = colors?.secondary ?? "rgba(148, 163, 184, 0.08)";
+  const stroke = colors?.border ?? CHART_BORDER_FALLBACK;
+  const fill = colors?.secondary ?? CHART_FILL_FALLBACK;
   const accent = (() => {
     switch (variant) {
       case "error":
@@ -61,7 +64,7 @@ export function ChartEmptyState({
         return colors?.accent ?? CHART_STATE_ACCENT_FALLBACK.empty;
     }
   })();
-  const textColor = colors?.foreground ?? "#94a3b8";
+  const textColor = colors?.foreground ?? CHART_TEXT_FALLBACK;
   const titleColor = CHART_STATE_TITLE[variant];
   const actionNode =
     action ??

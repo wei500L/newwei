@@ -10,6 +10,7 @@ import { DashboardChartCard } from "@/components/dashboard-chart-card";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import type { EconomicSeriesField, EconomicSeriesMap } from "@/hooks/useEconomicData";
 import { useEconomicData } from "@/hooks/useEconomicData";
+import { ECONOMIC_CHART_COLORS } from "@/lib/chart-theme-tokens";
 import dayjs from "@/lib/dayjs";
 import { resolveLocale } from "@/lib/i18n";
 
@@ -74,7 +75,7 @@ export default function EconomicLongPage() {
       {
         type: "bar",
         data: gdpBarData.map((entry) => Number(entry[1].toFixed(0))),
-        itemStyle: { color: "#0958d9" },
+        itemStyle: { color: ECONOMIC_CHART_COLORS.gdp },
       },
     ],
   };

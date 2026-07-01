@@ -13,21 +13,22 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import { useGetKnowledgeGraphSubgraphQuery, useKnowledgeGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { usePendingAction } from "@/hooks/use-pending-action";
+import { DEFAULT_NODE_COLOR, KNOWLEDGE_GRAPH_NODE_COLORS } from "@/lib/graph-tokens";
 import { buildKnowledgeGraphExplorerHref } from "@/lib/knowledge-graph-explorer";
 
 const { Text } = Typography;
 
 const NODE_TYPE_CONFIG: Record<string, { color: string; index: number }> = {
-  company: { color: "#2563eb", index: 0 },
-  industry: { color: "#16a34a", index: 1 },
-  person: { color: "#f97316", index: 2 },
-  policy: { color: "#ef4444", index: 3 },
-  commodity: { color: "#a855f7", index: 4 },
-  instrument: { color: "#0ea5e9", index: 5 },
-  organization: { color: "#64748b", index: 6 }
+  company: { color: KNOWLEDGE_GRAPH_NODE_COLORS.company, index: 0 },
+  industry: { color: KNOWLEDGE_GRAPH_NODE_COLORS.industry, index: 1 },
+  person: { color: KNOWLEDGE_GRAPH_NODE_COLORS.person, index: 2 },
+  policy: { color: KNOWLEDGE_GRAPH_NODE_COLORS.policy, index: 3 },
+  commodity: { color: KNOWLEDGE_GRAPH_NODE_COLORS.commodity, index: 4 },
+  instrument: { color: KNOWLEDGE_GRAPH_NODE_COLORS.instrument, index: 5 },
+  organization: { color: KNOWLEDGE_GRAPH_NODE_COLORS.organization, index: 6 }
 };
 
-const DEFAULT_NODE_TYPE = { color: "#94a3b8", index: 7 };
+const DEFAULT_NODE_TYPE = { color: DEFAULT_NODE_COLOR, index: 7 };
 const LAST_ENTITY_STORAGE_KEY = "dashboard.knowledgeGraph.lastEntity";
 
 const getNodeTypeConfig = (type: string) => {

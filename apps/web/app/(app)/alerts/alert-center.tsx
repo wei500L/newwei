@@ -60,6 +60,7 @@ import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { classifyRequestError } from "@/lib/request-error";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
+import { ALERT_LINE_COLORS, RANGE_INDICATOR_COLORS } from "@/lib/status-tokens";
 
 import {
   buildAlertExportJson,
@@ -403,7 +404,7 @@ const EconomicAnomalyEvidence = ({
                       width: "100%",
                       height: 3,
                       borderRadius: 999,
-                      background: "#e2e8f0",
+                      background: RANGE_INDICATOR_COLORS.track,
                     }}
                   />
                   <div
@@ -417,7 +418,7 @@ const EconomicAnomalyEvidence = ({
                       )}%`,
                       height: 7,
                       borderRadius: 999,
-                      background: "#93c5fd",
+                      background: RANGE_INDICATOR_COLORS.range,
                     }}
                   />
                   <Tooltip
@@ -430,7 +431,7 @@ const EconomicAnomalyEvidence = ({
                         left: `${toPercentPosition(expected)}%`,
                         width: 2,
                         height: 18,
-                        background: "#0f172a",
+                        background: RANGE_INDICATOR_COLORS.expected,
                       }}
                     />
                   </Tooltip>
@@ -444,7 +445,7 @@ const EconomicAnomalyEvidence = ({
                         left: `${toPercentPosition(observed)}%`,
                         width: 2,
                         height: 22,
-                        background: "#dc2626",
+                        background: RANGE_INDICATOR_COLORS.observed,
                       }}
                     />
                   </Tooltip>
@@ -2117,21 +2118,21 @@ export function AlertCenterContent() {
           type: "line",
           smooth: true,
           data: trendPoints.map((point) => point.low),
-          lineStyle: { color: "#16a34a" },
+          lineStyle: { color: ALERT_LINE_COLORS.low },
         },
         {
           name: t("alerts.center.filters.severity.medium"),
           type: "line",
           smooth: true,
           data: trendPoints.map((point) => point.medium),
-          lineStyle: { color: "#ea580c" },
+          lineStyle: { color: ALERT_LINE_COLORS.medium },
         },
         {
           name: t("alerts.center.filters.severity.high"),
           type: "line",
           smooth: true,
           data: trendPoints.map((point) => point.high),
-          lineStyle: { color: "#dc2626" },
+          lineStyle: { color: ALERT_LINE_COLORS.high },
         },
       ],
       textStyle: { fontFamily },
