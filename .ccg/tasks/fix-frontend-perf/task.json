@@ -1,0 +1,20 @@
+{
+  "id": "fix-frontend-perf",
+  "title": "优化完善前端性能问题（纯静态审查驱动，不补测试）",
+  "status": "completed",
+  "strategy": "optimize-measure(adapted→static-refactor)",
+  "currentPhase": "4-verify",
+  "nextAction": "已交付：2 项真实修复（D-FE-7 NewsCard memo、D-FE-12 lodash 子路径）；5 项经复核为前一轮已修复；typecheck 干净通过",
+  "gate": null,
+  "result": {
+    "fixed": ["D-FE-7 NewsCard memo + 稳定 item 引用", "D-FE-12 lodash 根导入→lodash/debounce"],
+    "alreadyFixed": ["D-FE-3 echart wrapper dynamic", "D-FE-4 cytoscape 隔离(有测试)", "D-FE-5 alert refetch coalesced", "D-FE-14 dashboard echarts ssr 边界", "D-FE-8 键值现状合理", "D-FE-13 根级 loading.tsx 兜底"],
+    "verify": "tsc --noEmit：3 改动文件 0 错误；仅预存 merge 标记(war-map/url-state.ts, login/page.tsx)残留，与本任务无关",
+    "changedFiles": ["apps/web/app/(app)/items/components/news-card.tsx", "apps/web/app/(app)/items/items-view.tsx", "apps/web/app/(app)/assistant/assistant-content.tsx"]
+  },
+  "branch": "main",
+  "scope": "fix-frontend-perf",
+  "source": "静态审计 report.md + deep-analysis.md 的前端发现（C6, D-FE-1~14）",
+  "constraints": ["纯静态代码审查", "不补测试", "不做运行时基线度量"],
+  "createdAt": "2026-06-30T21:52:04-1000"
+}

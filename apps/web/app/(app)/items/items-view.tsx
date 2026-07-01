@@ -2346,19 +2346,7 @@ export function ItemsView({
                   <NewsCard
                     variant={layoutState.isReaderPreset ? "reader" : "default"}
                     density={layoutState.density}
-                    item={{
-                      ...item,
-                      publishedAt: item.publishedAt,
-                      ingestedAt: item.ingestedAt,
-                      topics: item.topics,
-                      entities: item.entities,
-                      qualityScore: item.qualityScore,
-                      duplicateSimilarity: item.duplicateSimilarity,
-                      duplicateOf: item.duplicateOf,
-                      llm: item.llm,
-                      url: item.url,
-                      searchHighlights: item.searchHighlights,
-                    }}
+                    item={item}
                   />
                 )}
               </List.Item>
@@ -2373,21 +2361,7 @@ export function ItemsView({
         <NewsCard
           variant={layoutState.isReaderPreset ? "reader" : "default"}
           density={layoutState.density}
-          item={{
-            ...item,
-            publishedAt: item.publishedAt,
-            ingestedAt: item.ingestedAt,
-            topics: item.topics,
-            entities: item.entities,
-            qualityScore: item.qualityScore,
-            duplicateSimilarity: item.duplicateSimilarity,
-            duplicateOf: item.duplicateOf,
-            llm: item.llm,
-            url: item.url,
-            searchHighlights: item.searchHighlights,
-            rssHasTranslation: item.rssHasTranslation,
-            rssTranslationState: item.rssTranslationState,
-          }}
+          item={item}
         />
       );
 

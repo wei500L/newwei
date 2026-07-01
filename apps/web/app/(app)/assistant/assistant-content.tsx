@@ -31,7 +31,7 @@ import {
   Typography,
 } from 'antd';
 import type { TextAreaRef } from 'antd/es/input/TextArea';
-import { debounce } from 'lodash';
+import debounce from 'lodash/debounce';
 import { useSession } from 'next-auth/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';

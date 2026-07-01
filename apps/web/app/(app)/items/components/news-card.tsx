@@ -9,7 +9,7 @@ import {
 } from "@ant-design/icons";
 import { Button, Card, Dropdown, Popover, Space, Tag, Tooltip, Typography } from "antd";
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
@@ -109,7 +109,7 @@ function renderHighlightSnippet(snippet: string) {
   ).nodes;
 }
 
-export function NewsCard({
+function NewsCardComponent({
   item,
   variant = "default",
   density = "compact",
@@ -639,3 +639,5 @@ export function NewsCard({
     </div>
   );
 }
+
+export const NewsCard = memo(NewsCardComponent);

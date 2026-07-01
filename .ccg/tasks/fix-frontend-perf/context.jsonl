@@ -1,0 +1,3 @@
+{"_example": "Fill with {\"file\": \"path\", \"reason\": \"why\"}. Seed rows are skipped."}
+{"file": ".ccg/tasks/static-perf-audit/report.md", "reason": "第一轮审计：C6 markdown-viewer memo、前端 Warning 列表"}
+{"file": ".ccg/tasks/static-perf-audit/deep-analysis.md", "reason": "第二轮审计：前端 bundle 拓扑 + D-FE-1~14 完整前端发现清单"}
