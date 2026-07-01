@@ -62,7 +62,7 @@ const DEFAULT_CLASSES: MarkdownVariantClasses = {
   table: 'w-full border-collapse text-sm',
   th: 'border-b bg-slate-50 dark:bg-slate-800 px-3 py-2 text-left text-xs font-semibold',
   td: 'border-b px-3 py-2 text-sm',
-  hr: 'my-4 border-slate-200',
+  hr: 'my-4 border-slate-200 dark:border-slate-700',
 };
 
 const CHAT_CLASSES: MarkdownVariantClasses = {

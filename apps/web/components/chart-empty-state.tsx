@@ -10,15 +10,11 @@ import {
   CHART_STATE_ACCENT_FALLBACK,
   CHART_STATE_TITLE,
   CHART_TEXT_FALLBACK,
+  type ChartStateVariant,
 } from "@/lib/status-tokens";
 
-export type ChartEmptyStateVariant =
-  | "empty"
-  | "delayed"
-  | "backfilling"
-  | "offline"
-  | "permission"
-  | "error";
+// 单一真源：变体集与 status-tokens 的 ChartStateVariant 一致，避免类型分裂
+export type ChartEmptyStateVariant = ChartStateVariant;
 export type ChartEmptyStatePresentation = "center" | "banner";
 
 interface ChartEmptyStateProps {

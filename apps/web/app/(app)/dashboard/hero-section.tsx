@@ -201,7 +201,7 @@ export function HeroSection({
                 <span className="text-4xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight">
                   {metric.hasData && metric.value !== null ? metric.value.toFixed(1) : notAvailableLabel}
                   {metric.hasData && metric.suffix ? (
-                    <span className="text-xl ml-1 text-slate-400 dark:text-slate-400 font-medium">{metric.suffix}</span>
+                    <span className="text-xl ml-1 text-slate-600 dark:text-slate-300 font-medium">{metric.suffix}</span>
                   ) : null}
                 </span>
                 <div className={`flex items-center text-xs font-bold px-2 py-0.5 rounded-full ${
