@@ -4,6 +4,10 @@ import { Alert, Button, Empty, Typography } from "antd";
 import type { ReactNode } from "react";
 
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import {
+  CHART_STATE_ACCENT_FALLBACK,
+  CHART_STATE_TITLE,
+} from "@/lib/status-tokens";
 
 export type ChartEmptyStateVariant =
   | "empty"
@@ -43,31 +47,22 @@ export function ChartEmptyState({
   const accent = (() => {
     switch (variant) {
       case "error":
-        return "rgba(220, 38, 38, 0.55)";
+        return CHART_STATE_ACCENT_FALLBACK.error;
       case "permission":
-        return colors?.accent ?? "rgba(217, 119, 6, 0.6)";
+        return colors?.accent ?? CHART_STATE_ACCENT_FALLBACK.permission;
       case "delayed":
-        return "rgba(245, 158, 11, 0.6)";
+        return CHART_STATE_ACCENT_FALLBACK.delayed;
       case "offline":
-        return "rgba(100, 116, 139, 0.6)";
+        return CHART_STATE_ACCENT_FALLBACK.offline;
       case "backfilling":
-        return colors?.primary ?? "rgba(56, 189, 248, 0.6)";
+        return colors?.primary ?? CHART_STATE_ACCENT_FALLBACK.backfilling;
       case "empty":
       default:
-        return colors?.accent ?? "rgba(56, 189, 248, 0.6)";
+        return colors?.accent ?? CHART_STATE_ACCENT_FALLBACK.empty;
     }
   })();
   const textColor = colors?.foreground ?? "#94a3b8";
-  const titleColor =
-    variant === "error"
-      ? "#dc2626"
-      : variant === "permission"
-        ? "#b45309"
-      : variant === "delayed"
-        ? "#d97706"
-        : variant === "offline"
-          ? "#475569"
-        : "#0f172a";
+  const titleColor = CHART_STATE_TITLE[variant];
   const actionNode =
     action ??
     (onAction && actionLabel ? (

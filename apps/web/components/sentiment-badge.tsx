@@ -3,6 +3,8 @@
 import { Tag, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
+import { SENTIMENT_GLOW } from "@/lib/status-tokens";
+
 interface SentimentBadgeProps {
   sentiment?: string | null;
   showTrend?: boolean;
@@ -30,18 +32,18 @@ export function SentimentBadge({
     case "positive":
       color = "success";
       label = t("items.sentiment.positive");
-      glowColor = "rgba(34, 197, 94, 0.2)";
+      glowColor = SENTIMENT_GLOW.positive;
       break;
     case "negative":
       color = "error";
       label = t("items.sentiment.negative");
-      glowColor = "rgba(239, 68, 68, 0.2)";
+      glowColor = SENTIMENT_GLOW.negative;
       break;
     case "neutral":
     default:
       color = "default";
       label = t("items.sentiment.neutral");
-      glowColor = "rgba(100, 100, 100, 0.2)";
+      glowColor = SENTIMENT_GLOW.neutral;
   }
 
   const trendIcon = showTrend
