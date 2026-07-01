@@ -1042,7 +1042,7 @@ export function AssistantContent() {
                   icon={<DeleteOutlined />}
                   loading={deletingRunId === run.id && deleteRunSaving}
                   disabled={!canRunAssistant}
-                  className="absolute right-2 top-2 text-slate-400 transition-colors hover:text-rose-600 dark:text-slate-500 dark:hover:text-rose-400"
+                  className="absolute right-2 top-2 text-slate-600 transition-colors hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400"
                   onClick={(event) => {
                     event.stopPropagation();
                     void confirmDeleteRun(run);
@@ -1072,7 +1072,7 @@ export function AssistantContent() {
                   <div className="mb-1 truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{userPrompt}</div>
                   <div className="mb-2 line-clamp-2 text-sm text-slate-600 dark:text-slate-300">{preview}</div>
 
-                  <span className="text-xs font-medium text-slate-400 dark:text-slate-500">
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
                     {formatDateTime(new Date(run.createdAt), locale, {
                       year: 'numeric',
                       month: 'short',
@@ -1149,7 +1149,7 @@ export function AssistantContent() {
           >
             <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4 dark:border-slate-700/70">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 dark:text-slate-400">
                   {t('assistant.chat.historyTitle')}
                 </p>
                 <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -1157,7 +1157,7 @@ export function AssistantContent() {
                 </p>
               </div>
               <Space size={8}>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500 ring-1 ring-inset ring-slate-300/60 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/60">
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-300/60 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/60">
                   {runs.length}
                 </span>
                 <Button
@@ -1222,7 +1222,7 @@ export function AssistantContent() {
                       {t('assistant.chat.historyTitle')} ({runs.length})
                     </Button>
                     {activeRun ? (
-                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
                         {formatDateTime(new Date(activeRun.createdAt), locale, {
                           year: 'numeric',
                           month: 'short',
@@ -1244,9 +1244,9 @@ export function AssistantContent() {
                 {!activeRun ? (
                   <div className="flex h-full flex-col items-center justify-center px-6 text-center">
                     <div className={styles.emptyOrb}>
-                      <RobotOutlined className="text-3xl text-slate-400 dark:text-slate-300" />
+                      <RobotOutlined className="text-3xl text-slate-600 dark:text-slate-300" />
                     </div>
-                    <p className="mt-4 max-w-sm text-sm font-semibold text-slate-500 dark:text-slate-300">
+                    <p className="mt-4 max-w-sm text-sm font-semibold text-slate-600 dark:text-slate-300">
                       {t('assistant.chat.emptyConversation')}
                     </p>
                   </div>
@@ -1457,7 +1457,7 @@ export function AssistantContent() {
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                       <div className="flex flex-wrap items-center gap-2">
                         <Space size={8} wrap>
-                          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                          <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
                             {t('assistant.chat.knowledgeSource.label')}
                           </span>
                           <Segmented
@@ -1514,7 +1514,7 @@ export function AssistantContent() {
                         >
                           {t('assistant.chat.quickForecast')}
                         </Button>
-                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
                           {t('assistant.chat.enterHint')}
                         </span>
                       </div>
