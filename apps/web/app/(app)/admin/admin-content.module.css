@@ -72,13 +72,13 @@
       var(--admin-metric-bg-end)
     ),
     radial-gradient(circle at 8% 0%, var(--admin-metric-accent-glow), transparent 56%);
-  padding: 0.75rem 0.9rem;
+  padding: 0.85rem 1rem;
   box-shadow: var(--admin-metric-shadow);
 }
 
 .metricLabel {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -87,7 +87,7 @@
 
 .metricValue {
   display: block;
-  margin-top: 0.2rem;
+  margin-top: 0.35rem;
   font-size: 1.7rem;
   line-height: 1;
   font-weight: 700;
@@ -229,7 +229,7 @@
 
 .groupDescription {
   margin: 0.12rem 0 0;
-  font-size: 0.76rem;
+  font-size: 0.8rem;
   line-height: 1.4;
   color: var(--secondary-foreground);
 }
@@ -284,7 +284,7 @@
     var(--admin-link-bg-start),
     var(--admin-link-bg-end)
   );
-  padding: 0.9rem;
+  padding: 1rem;
   box-shadow: var(--admin-link-shadow);
   transition:
     transform 180ms ease,
@@ -332,7 +332,7 @@
 
 .linkTitle {
   margin: 0;
-  font-size: 0.86rem;
+  font-size: 0.94rem;
   font-weight: 700;
   color: var(--foreground);
 }
@@ -340,7 +340,7 @@
 .linkDescription {
   margin: 0.25rem 0 0;
   min-height: 2.6rem;
-  font-size: 0.74rem;
+  font-size: 0.8rem;
   line-height: 1.35;
   color: var(--secondary-foreground);
 }

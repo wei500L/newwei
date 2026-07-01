@@ -35,7 +35,7 @@ export default function NewsHubPage() {
         <h1 className="mb-2 text-2xl font-semibold text-inherit">
           News Hub
         </h1>
-        <p className="mb-0 text-[rgba(228,228,231,0.88)]">
+        <p className="mb-0 text-zinc-200/90">
           统一入口：先看热榜，再进深读，最后回到事件脉络校验。
         </p>
       </header>
@@ -47,10 +47,10 @@ export default function NewsHubPage() {
             className={`rounded-2xl border bg-[linear-gradient(145deg,var(--tw-gradient-stops))] p-5 ${pillar.tone}`}
           >
             <h2 className="text-lg font-semibold tracking-[0.01em]">{pillar.title}</h2>
-            <p className="mt-2 min-h-[56px] text-sm leading-6 text-zinc-200/88">{pillar.description}</p>
+            <p className="mt-2 min-h-14 text-sm leading-6 text-zinc-200/90">{pillar.description}</p>
             <Link
               href={pillar.href}
-              className="mt-4 inline-flex rounded-md border border-white/20 bg-white/8 px-3 py-1.5 text-sm text-zinc-100 transition-colors hover:bg-white/16"
+              className="mt-4 inline-flex rounded-md border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-zinc-100 transition-colors hover:bg-white/20"
             >
               {pillar.cta}
             </Link>
