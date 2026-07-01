@@ -572,7 +572,7 @@ describe("war-map page wiring", () => {
       "onRealtimeQueryChange={handleWarMapRealtimeQueryChange}",
     );
     expect(source).toContain(
-      'className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] overflow-hidden flex flex-col"',
+      'className="xl:col-span-2 h-viz-3xl glass-panel border border-[var(--border)] overflow-hidden flex flex-col"',
     );
     expect(source).toContain('className="min-h-0 flex flex-1"');
     expect(source).toContain('className="flex-1"');

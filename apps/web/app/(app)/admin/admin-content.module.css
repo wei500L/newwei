@@ -277,7 +277,7 @@
 .linkCard {
   display: block;
   height: 100%;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--admin-link-border);
   background: linear-gradient(
     180deg,
@@ -396,7 +396,7 @@
   margin-bottom: 0.75rem;
   overflow: hidden;
   border: 1px solid var(--admin-collapse-border);
-  border-radius: 14px !important;
+  border-radius: var(--radius-lg) !important;
   background: linear-gradient(
     180deg,
     var(--admin-collapse-bg-start),

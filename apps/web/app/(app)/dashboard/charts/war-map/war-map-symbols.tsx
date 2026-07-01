@@ -1458,7 +1458,7 @@ export function WarMapLegendSwatch({
   });
   const containerClassName =
     variant === "quick"
-      ? `flex min-w-0 items-center gap-2.5 rounded-[14px] border px-2.5 py-2 text-left transition-[border-color,background-color,box-shadow,transform,opacity] duration-150 ${
+      ? `flex min-w-0 items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-[border-color,background-color,box-shadow,transform,opacity] duration-150 ${
           active
             ? "border-slate-300/90 bg-white/[0.96] shadow-[0_12px_22px_-20px_rgba(15,23,42,0.2)] dark:border-slate-500/70 dark:bg-slate-950/[0.86]"
             : "border-slate-200/75 bg-white/[0.72] dark:border-slate-700/70 dark:bg-slate-950/[0.52]"

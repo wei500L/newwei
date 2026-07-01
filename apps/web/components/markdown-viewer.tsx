@@ -85,7 +85,7 @@ const CHAT_CLASSES: MarkdownVariantClasses = {
   inlineCode: 'rounded bg-slate-950/10 px-1.5 py-0.5 font-mono text-[12px] leading-5 text-slate-700 dark:bg-slate-200/10 dark:text-slate-200',
   tableWrap:
     'my-4 max-w-full overflow-x-auto rounded-xl border border-slate-200 bg-white/92 shadow-[0_8px_18px_rgba(15,23,42,0.06)] dark:border-slate-700 dark:bg-slate-900/76 dark:shadow-[0_10px_20px_rgba(2,6,23,0.45)]',
-  table: 'w-full border-collapse text-[14px] leading-6',
+  table: 'w-full border-collapse text-sm leading-6',
   th: 'border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200',
   td: 'border-b border-slate-100 px-3 py-2 align-top text-[14px] text-slate-800 dark:border-slate-800 dark:text-slate-200',
   hr: 'my-5 border-slate-200 dark:border-slate-700',

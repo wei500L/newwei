@@ -137,10 +137,6 @@
     background-color: var(--background);
   }
 
-  .dark body {
-    background-color: var(--background);
-  }
-
   h1,
   h2,
   h3,
@@ -726,7 +722,7 @@
 
   .archive-toolbar .ant-btn {
     height: 42px;
-    border-radius: 14px;
+    border-radius: var(--radius-lg);
   }
 
   .archive-toolbar .ant-btn-icon-only {
@@ -745,7 +741,7 @@
   .archive-toolbar .ant-input-affix-wrapper {
     width: 100%;
     min-height: 42px;
-    border-radius: 14px;
+    border-radius: var(--radius-lg);
   }
 
   .archive-toolbar .ant-picker-focused,
@@ -768,7 +764,7 @@
 
   .archive-toolbar .ant-select-selector {
     min-height: 42px !important;
-    border-radius: 14px !important;
+    border-radius: var(--radius-lg) !important;
     padding-top: 4px !important;
     padding-bottom: 4px !important;
   }
@@ -1281,7 +1277,7 @@
   .command-bar-shell {
     position: relative;
     overflow: hidden;
-    border-radius: 14px;
+    border-radius: var(--radius-lg);
     isolation: isolate;
     transition: box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1);
   }
@@ -1853,7 +1849,7 @@
   .entity-graph-toolbar .ant-segmented {
     border: 1px solid rgba(148, 163, 184, 0.35);
     background: rgba(226, 232, 240, 0.55);
-    border-radius: 10px;
+    border-radius: var(--radius);
     padding: 2px;
   }
 
@@ -1877,7 +1873,7 @@
   }
 
   .entity-graph-actions .ant-btn {
-    border-radius: 10px;
+    border-radius: var(--radius);
     border-color: rgba(148, 163, 184, 0.4);
     background: linear-gradient(
       180deg,
@@ -2130,18 +2126,6 @@
 
   .dark .auth-card .ant-alert.ant-alert-error .ant-alert-icon {
     color: #f87171;
-  }
-
-  .text-glow {
-    text-shadow: none;
-  }
-
-  .text-glow-green {
-    text-shadow: none;
-  }
-
-  .text-glow-red {
-    text-shadow: none;
   }
 
   /* Ticker Animation */

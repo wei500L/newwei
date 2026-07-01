@@ -1174,7 +1174,7 @@ export const NewsnowCard = memo(function NewsnowCard({
             title={source.desc}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[14px] bg-secondary border border-[var(--border)] text-xs font-semibold text-[var(--foreground)] shadow-sm transition-transform hover:scale-105"
+            className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary border border-[var(--border)] text-xs font-semibold text-[var(--foreground)] shadow-sm transition-transform hover:scale-105"
           >
             {iconLoadError || !iconUrl ? (
               <span className="font-serif text-lg">{source.name.slice(0, 1)}</span>

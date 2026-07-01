@@ -103,7 +103,7 @@ describe('dashboard-content realtime constants', () => {
     const sourceText = fs.readFileSync(dashboardContentPath, 'utf8');
 
     expect(sourceText).toContain(
-      'className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] overflow-hidden flex flex-col"',
+      'className="xl:col-span-2 h-viz-3xl glass-panel border border-[var(--border)] overflow-hidden flex flex-col"',
     );
     expect(sourceText).toContain('className="px-5 pt-4"');
     expect(sourceText).toContain('className="min-h-0 flex flex-1"');

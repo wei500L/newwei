@@ -168,7 +168,7 @@ export function NewsListHot({
                   <span
                     className={`block overflow-hidden transition-colors group-hover:text-[var(--primary)] font-medium [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] ${
                       isComfortable
-                        ? "text-[14px] leading-[1.45]"
+                        ? "text-sm leading-[1.45]"
                         : "text-[13px] leading-[1.4]"
                     }`}
                   >

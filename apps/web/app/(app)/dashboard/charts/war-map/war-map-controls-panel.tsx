@@ -156,13 +156,13 @@ const OVERLAY_PANEL_TAB_GRID_CLASS_NAME =
 const OVERLAY_PANEL_STANDALONE_SPLIT_GRID_CLASS_NAME =
   "grid gap-4 xl:grid-cols-2";
 const OVERLAY_PANEL_OPTION_BUTTON_CLASS_NAME =
-  "!h-auto !min-h-10 !w-full !justify-start !rounded-[16px] !px-3.5 !py-2.5 !text-left !text-[12px] !font-semibold !leading-5";
+  "!h-auto !min-h-10 !w-full !justify-start !rounded-[16px] !px-3.5 !py-2.5 !text-left !text-xs !font-semibold !leading-5";
 const OVERLAY_PANEL_TAB_BUTTON_CLASS_NAME =
-  "!h-auto !min-h-[3rem] !w-full !justify-center !rounded-[18px] !px-3.5 !py-2.5 !text-center !text-[12px] !font-semibold !leading-5";
+  "!h-auto !min-h-[3rem] !w-full !justify-center !rounded-[18px] !px-3.5 !py-2.5 !text-center !text-xs !font-semibold !leading-5";
 const AIS_SECTION_CARD_CLASS_NAME = `${OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME} border-cyan-200/70 bg-cyan-50/55 dark:border-cyan-400/25 dark:bg-cyan-950/12`;
 const FLIGHTS_SECTION_CARD_CLASS_NAME = `${OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME} border-indigo-200/70 bg-indigo-50/45 dark:border-indigo-400/25 dark:bg-indigo-950/12`;
 const OVERLAY_PANEL_MODE_HINT_CLASS_NAME =
-  "mt-3 rounded-2xl border border-amber-200/80 bg-amber-50/85 px-3.5 py-3 text-[12px] leading-5 text-amber-900 shadow-[0_12px_28px_-24px_rgba(180,83,9,0.45)] dark:border-amber-400/30 dark:bg-amber-950/25 dark:text-amber-100";
+  "mt-3 rounded-2xl border border-amber-200/80 bg-amber-50/85 px-3.5 py-3 text-xs leading-5 text-amber-900 shadow-[0_12px_28px_-24px_rgba(180,83,9,0.45)] dark:border-amber-400/30 dark:bg-amber-950/25 dark:text-amber-100";
 
 function ControlsChoiceButton({
   active,
