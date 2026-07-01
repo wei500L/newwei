@@ -130,13 +130,25 @@ export function mergeWarMapSettingsWithUrlState(
 ): WarMapSettings {
   const normalized = normalizeWarMapSettings(payload);
   const parsed = readWarMapUrlState(search);
-  if (!parsed.aisMode) {
-    return normalized;
-  }
 
+  // URL-derived state (shared / deep / bookmarked links) must take precedence over the
+  // user's saved remote settings for EVERY field present in the URL — not only aisMode —
+  // otherwise remote hydration clobbers the shared view/preset/layers of the link.
   return {
     ...normalized,
-    aisMode: parsed.aisMode,
+    ...(parsed.viewState
+      ? {
+          viewState: normalizeWarMapViewState({
+            ...normalized.viewState,
+            ...parsed.viewState,
+          }),
+        }
+      : {}),
+    ...(parsed.activePreset ? { activePreset: parsed.activePreset } : {}),
+    ...(parsed.timeRangePreset ? { timeRangePreset: parsed.timeRangePreset } : {}),
+    ...(parsed.layerVisibility ? { layerVisibility: parsed.layerVisibility } : {}),
+    ...(parsed.flightMode ? { flightMode: parsed.flightMode } : {}),
+    ...(parsed.aisMode ? { aisMode: parsed.aisMode } : {}),
   };
 }
 

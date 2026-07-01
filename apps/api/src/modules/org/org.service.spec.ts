@@ -248,7 +248,10 @@ describe("OrgService", () => {
   });
 
   it("throws a friendly error when slug already exists on update", async () => {
-    prismaMock.membership.findUnique = jest.fn().mockResolvedValue({ id: "membership-1" });
+    prismaMock.membership.findUnique = jest.fn().mockResolvedValue({
+      id: "membership-1",
+      roles: [{ role: { permissions: [{ permission: { name: "org.write" } }] } }]
+    });
     prismaMock.org.update = jest.fn().mockRejectedValue({ code: "P2002" });
 
     await expect(

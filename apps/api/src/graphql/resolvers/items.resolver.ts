@@ -609,8 +609,11 @@ export class ItemsResolver {
       throw new BadRequestException("Unauthenticated");
     }
 
-    const meta = await this.itemsService.getItemMeta(requester.orgId, id);
-    return this.toItemModel(meta);
+    // item(id) is nullable in the schema and the UI has a dedicated not-found empty
+    // state: return null on miss instead of throwing NotFound (which would surface as
+    // a GraphQL error and emit error telemetry for an ordinary/expected condition).
+    const meta = await this.itemsService.getItemMetaOrNull(requester.orgId, id);
+    return meta ? this.toItemModel(meta) : null;
   }
 
   @HasPermission("items.write")

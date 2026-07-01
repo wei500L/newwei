@@ -245,9 +245,16 @@ export class AlertsResolver {
 
   @HasPermission("alerts.manage")
   @Mutation(() => Boolean)
-  async triggerAlertRule(@Args("ruleId") ruleId: string): Promise<boolean> {
-    await this.alerts.enqueueRuleCheck(ruleId);
-    return true;
+  async triggerAlertRule(
+    @Context("req") req: GqlRequest,
+    @Args("ruleId") ruleId: string
+  ): Promise<boolean> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    // Scope to the caller's org so one tenant cannot force-evaluate another tenant's rule.
+    return this.alerts.triggerRuleCheck(requester.orgId, ruleId);
   }
 
   @HasPermission("alerts.manage")

@@ -11,6 +11,7 @@ import { z } from "zod";
 
 import { createApiClient, syncApiSessionCache } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
+import { resolveSafeRedirect } from "@/lib/safe-redirect";
 
 const { Title, Text } = Typography;
 const DEFAULT_SEND_CODE_COOLDOWN_SECONDS = 90;
@@ -116,8 +117,9 @@ export default function LoginPage() {
   }, [codeCooldown]);
 
   const redirectAfterLogin = () => {
-    const redirectTo = searchParams.get("callbackUrl") ?? "/dashboard";
-    router.push(redirectTo);
+    // Sanitize callbackUrl to a same-origin path to prevent open redirect (CWE-601):
+    // signIn uses redirect:false, so NextAuth's own callbackUrl validation is bypassed.
+    router.push(resolveSafeRedirect(searchParams.get("callbackUrl")));
   };
 
   const onPasswordLogin = async (values: PasswordLoginFormValues) => {

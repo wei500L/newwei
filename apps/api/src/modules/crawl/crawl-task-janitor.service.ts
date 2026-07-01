@@ -46,23 +46,36 @@ export class CrawlTaskJanitorService {
     );
   }
 
-  async cleanupStaleTasks(now: Date): Promise<{ staleRunning: number; staleQueued: number }> {
+  async cleanupStaleTasks(
+    now: Date
+  ): Promise<{ staleRunning: number; staleQueued: number; stalePending: number }> {
     const config = this.env.crawlTaskJanitorConfig;
     const staleRunningBefore = new Date(now.getTime() - config.runningTimeoutMs);
     const staleQueuedBefore = new Date(now.getTime() - config.queuedTimeoutMs);
 
-    const [running, queued] = await Promise.all([
+    const [running, queued, pending] = await Promise.all([
       this.findStaleRunningTasks(staleRunningBefore, config.batchSize),
-      this.findStaleQueuedTasks(staleQueuedBefore, config.batchSize)
+      this.findStaleQueuedTasks(staleQueuedBefore, config.batchSize),
+      // A crash between the scheduler's task-creating transaction and the enqueue/status
+      // flip leaves a crawlTask stuck in 'pending' with no BullMQ job that no other path
+      // reclaims (C-5). Reuse the same stale-timeout as 'queued' — a healthy 'pending'
+      // transitions to 'queued' within the same scheduler tick.
+      this.findStalePendingTasks(staleQueuedBefore, config.batchSize)
     ]);
 
+    // Both 'queued' and 'pending' tasks may still have an enqueued job (for 'pending' the
+    // enqueue precedes the status flip), so only fail those with no matching BullMQ job.
     const queuedWithoutJobs = await this.filterQueuedTasksWithoutPendingJobs(
       queued,
       config.queueScanLimit
     );
+    const pendingWithoutJobs = await this.filterQueuedTasksWithoutPendingJobs(
+      pending,
+      config.queueScanLimit
+    );
 
-    if (running.length === 0 && queued.length === 0) {
-      return { staleRunning: 0, staleQueued: 0 };
+    if (running.length === 0 && queued.length === 0 && pending.length === 0) {
+      return { staleRunning: 0, staleQueued: 0, stalePending: 0 };
     }
 
     if (running.length > 0) {
@@ -81,7 +94,19 @@ export class CrawlTaskJanitorService {
       );
     }
 
-    return { staleRunning: running.length, staleQueued: queuedWithoutJobs.length };
+    if (pendingWithoutJobs.length > 0) {
+      await this.failTasks(
+        "pending",
+        pendingWithoutJobs,
+        `stale crawl task stuck pending with no queue job (never enqueued > ${config.queuedTimeoutMs}ms)`
+      );
+    }
+
+    return {
+      staleRunning: running.length,
+      staleQueued: queuedWithoutJobs.length,
+      stalePending: pendingWithoutJobs.length
+    };
   }
 
   private async findStaleRunningTasks(cutoff: Date, take: number): Promise<StaleTaskRow[]> {
@@ -138,6 +163,24 @@ export class CrawlTaskJanitorService {
     return tasks;
   }
 
+  private async findStalePendingTasks(cutoff: Date, take: number): Promise<StaleTaskRow[]> {
+    const tasks = await this.prisma.crawlTask.findMany({
+      where: {
+        status: "pending",
+        updatedAt: { lt: cutoff }
+      },
+      orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+      take,
+      select: {
+        id: true,
+        orgId: true,
+        lastRunAt: true,
+        updatedAt: true
+      }
+    });
+    return tasks;
+  }
+
   private mergeStaleTaskRows(groups: StaleTaskRow[][], take: number): StaleTaskRow[] {
     const merged = new Map<string, StaleTaskRow>();
     for (const group of groups) {
@@ -160,7 +203,11 @@ export class CrawlTaskJanitorService {
       .slice(0, take);
   }
 
-  private async failTasks(kind: "running" | "queued", tasks: StaleTaskRow[], message: string) {
+  private async failTasks(
+    kind: "running" | "queued" | "pending",
+    tasks: StaleTaskRow[],
+    message: string
+  ) {
     const taskIds = tasks.map((task) => task.id);
     const updated = await this.prisma.crawlTask.updateMany({
       where: {
@@ -218,7 +265,11 @@ export class CrawlTaskJanitorService {
     }
   }
 
-  private async writeAuditLogs(tasks: StaleTaskRow[], kind: "running" | "queued", message: string) {
+  private async writeAuditLogs(
+    tasks: StaleTaskRow[],
+    kind: "running" | "queued" | "pending",
+    message: string
+  ) {
     const byOrg = tasks.reduce<Record<string, string[]>>((acc, task) => {
       const bucket = (acc[task.orgId] ??= []);
       bucket.push(task.id);
@@ -252,7 +303,11 @@ export class CrawlTaskJanitorService {
     );
   }
 
-  private async writeTaskLogs(tasks: StaleTaskRow[], kind: "running" | "queued", message: string) {
+  private async writeTaskLogs(
+    tasks: StaleTaskRow[],
+    kind: "running" | "queued" | "pending",
+    message: string
+  ) {
     await Promise.all(
       tasks.map(async (task) => {
         try {

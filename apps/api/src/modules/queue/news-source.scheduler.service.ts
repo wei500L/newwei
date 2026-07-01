@@ -1817,22 +1817,14 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     );
   }
 
-  private computeManualDispatchDedupeKey(sourceId: string, now: Date) {
-    const bucketStart = new Date(now.getTime());
-    bucketStart.setSeconds(0, 0);
-    const bucketEnd = new Date(bucketStart.getTime() + 60_000);
-    const ttlSeconds = Math.max(
-      1,
-      Math.ceil((bucketEnd.getTime() - now.getTime()) / 1000) + 5,
-    );
-    return {
-      key: `news-source:dispatch-minute:${sourceId}:${bucketStart.toISOString()}`,
-      until: bucketEnd.toISOString(),
-      ttlSeconds,
-    };
-  }
-
-  private computeSchedulerDispatchDedupeKey(sourceId: string, now: Date) {
+  /**
+   * Shared dispatch dedupe key used by BOTH the cron scheduler and manual dispatchNow.
+   * Previously the two paths used disjoint namespaces (dispatch-minute vs dispatch-window),
+   * so setIfAbsent in one never blocked the other and the same source could be scheduled
+   * concurrently (C-2). Using one namespace + one aligned window (< the 30s cron interval,
+   * so cron ticks never self-dedupe) makes the two paths mutually exclusive per window.
+   */
+  private computeSharedDispatchDedupeKey(sourceId: string, now: Date) {
     const windowMs = SCHEDULER_DISPATCH_DEDUPE_WINDOW_MS;
     const bucketStartMs = Math.floor(now.getTime() / windowMs) * windowMs;
     const bucketStart = new Date(bucketStartMs);
@@ -1842,10 +1834,18 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       Math.ceil((bucketEnd.getTime() - now.getTime()) / 1000) + 2,
     );
     return {
-      key: `news-source:dispatch-window:${sourceId}:${bucketStart.toISOString()}`,
+      key: `news-source:dispatch:${sourceId}:${bucketStart.toISOString()}`,
       until: bucketEnd.toISOString(),
       ttlSeconds,
     };
+  }
+
+  private computeManualDispatchDedupeKey(sourceId: string, now: Date) {
+    return this.computeSharedDispatchDedupeKey(sourceId, now);
+  }
+
+  private computeSchedulerDispatchDedupeKey(sourceId: string, now: Date) {
+    return this.computeSharedDispatchDedupeKey(sourceId, now);
   }
 
   private isDeepDiscoveryFailureError(error: unknown) {

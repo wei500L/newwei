@@ -31,9 +31,15 @@ describe("QueueEventPublisher", () => {
       }),
     } as any;
 
-    const publisher = new QueueEventPublisher(events, queue);
+    const cache = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(undefined),
+      del: jest.fn().mockResolvedValue(undefined),
+    } as any;
 
-    return { publisher, events, queue, handlers };
+    const publisher = new QueueEventPublisher(events, queue, cache);
+
+    return { publisher, events, queue, cache, handlers };
   };
 
   it("publishes enriched pipeline payload from queue job data", async () => {
@@ -101,6 +107,34 @@ describe("QueueEventPublisher", () => {
       }),
     );
     expect((publisher as any).orgCache.has("job-2")).toBe(false);
+  });
+
+  it("resolves org context from the shared cache when the job is removed and local cache is cold (C-4)", async () => {
+    const { publisher, handlers, queue, cache } = createContext();
+    const listener = jest.fn();
+    publisher.registerListener(listener);
+
+    // Job already removed (removeOnComplete) and this instance never observed 'active',
+    // so its local cache is cold; the context must come from the shared (Redis) cache.
+    queue.getJob = jest.fn().mockResolvedValue(null);
+    cache.get = jest.fn().mockResolvedValue({
+      orgId: "org-9",
+      pipelineJobId: "pipeline-9",
+      sourceId: "source-9",
+    });
+
+    await handlers.completed?.({ jobId: "job-9", returnvalue: { id: "x" } });
+
+    expect(cache.get).toHaveBeenCalledWith("queue:pipeline:jobctx:job-9");
+    expect(listener).toHaveBeenCalledWith(
+      "org-9",
+      expect.objectContaining({
+        event: "COMPLETED",
+        jobId: "job-9",
+        pipelineJobId: "pipeline-9",
+        sourceId: "source-9",
+      }),
+    );
   });
 
   it("prunes expired cached job context during later writes", () => {

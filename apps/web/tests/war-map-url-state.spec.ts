@@ -156,6 +156,26 @@ describe("war-map url-state", () => {
     expect(merged.flightMode).toBe("all");
     expect(merged.aisMode).toBe("density");
   });
+
+  it("lets URL-derived view/preset/layers win over remote settings (F-3)", () => {
+    const merged = mergeWarMapSettingsWithUrlState(
+      {
+        activePreset: "asia",
+        timeRangePreset: "24h",
+        flightMode: "military",
+        aisMode: "military",
+        layerVisibility: cloneDefaultLayerVisibility(),
+      },
+      new URLSearchParams("preset=oceania&tr=48h&fm=all&layers=flights"),
+    );
+
+    // Fields present in the URL must override remote settings, not be discarded.
+    expect(merged.activePreset).toBe("oceania");
+    expect(merged.timeRangePreset).toBe("48h");
+    expect(merged.flightMode).toBe("all");
+    expect(merged.layerVisibility.flights).toBe(true);
+    expect(merged.layerVisibility.ais).toBe(false);
+  });
 });
 
 describe("war-map settings store", () => {

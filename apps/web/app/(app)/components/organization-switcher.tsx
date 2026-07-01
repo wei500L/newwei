@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { getApolloClient } from "@/lib/apollo-client";
 import type { BackendLoginResponse, OrganizationOption } from "@/lib/auth";
 import { setBrowserAuthSession, type BrowserAuthSession } from "@/lib/browser-auth-session";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -111,6 +112,14 @@ export function OrganizationSwitcher({
       setBrowserAuthSession(
         (updatedSession ?? { ...(session ?? {}), ...sessionPatch }) as BrowserAuthSession
       );
+      // Invalidate the Apollo cache so cache-first queries don't serve the previous
+      // org's data after switching tenants. resetStore also refetches active queries
+      // under the new org; a refetch failure must not fail the switch itself.
+      await getApolloClient()
+        .resetStore()
+        .catch((resetError) => {
+          captureClientError("Apollo resetStore after org switch failed", resetError);
+        });
       messageApi.success(t("orgSwitcher.success", { org: switchedLabel }));
     } catch (err) {
       captureClientError("Organization switch failed", err);

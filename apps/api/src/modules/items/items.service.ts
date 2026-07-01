@@ -3668,11 +3668,16 @@ export class ItemsService {
     };
   }
 
-  async getItemMeta(orgId: string, id: string): Promise<ItemMetaRow> {
+  /**
+   * Org-scoped item lookup that returns null on miss (deleted / stale / cross-org id),
+   * for callers whose contract is nullable (e.g. the GraphQL `item(id)` query). Use
+   * {@link getItemMeta} when a missing item should be a hard NotFound error.
+   */
+  async getItemMetaOrNull(orgId: string, id: string): Promise<ItemMetaRow | null> {
     if (this.isReadModelEnabled()) {
       const readModel = await this.loadItemReadModel(orgId, id);
       if (!readModel) {
-        throw new NotFoundException("Item not found");
+        return null;
       }
       return this.itemMetaRowFromReadModel(readModel);
     }
@@ -3681,7 +3686,7 @@ export class ItemsService {
       where: { id, orgId },
     });
     if (!itemMeta) {
-      throw new NotFoundException("Item not found");
+      return null;
     }
     return {
       id: itemMeta.id,
@@ -3696,6 +3701,14 @@ export class ItemsService {
       createdAt: itemMeta.createdAt,
       updatedAt: itemMeta.updatedAt,
     };
+  }
+
+  async getItemMeta(orgId: string, id: string): Promise<ItemMetaRow> {
+    const itemMeta = await this.getItemMetaOrNull(orgId, id);
+    if (!itemMeta) {
+      throw new NotFoundException("Item not found");
+    }
+    return itemMeta;
   }
 
   async update(orgId: string, userId: string, dto: UpdateItemDto) {

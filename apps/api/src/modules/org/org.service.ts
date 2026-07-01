@@ -2,9 +2,14 @@ import { DEFAULT_ROLES } from "@modular/config";
 import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
+import { hasMembershipPermission } from "../../common/authz/membership-permissions";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { PrismaService } from "../config/prisma.service";
+
+// org.write is admin-only (see @modular/config DEFAULT_ROLES). Managing an org must
+// bind the permission check to the TARGET org, not the caller's active-org claims.
+const ORG_WRITE_PERMISSION = "org.write";
 
 export interface OrgListItem {
   id: string;
@@ -222,7 +227,7 @@ export class OrgService {
       throw new BadRequestException("Organization id is required");
     }
 
-    await this.assertActorMembership(actorId, orgId);
+    await this.assertActorCanManageOrg(actorId, orgId);
 
     const data: Prisma.OrgUpdateInput = {};
     if (typeof input.name === "string") {
@@ -301,7 +306,7 @@ export class OrgService {
 
   async setOrgActive(actorId: string, orgId: string, isActive: boolean): Promise<OrgListItem> {
     const normalizedOrgId = orgId.trim();
-    await this.assertActorMembership(actorId, normalizedOrgId);
+    await this.assertActorCanManageOrg(actorId, normalizedOrgId);
 
     const updated = await this.prisma.org.update({
       where: { id: normalizedOrgId },
@@ -334,7 +339,7 @@ export class OrgService {
     };
   }
 
-  private async assertActorMembership(actorId: string, orgId: string): Promise<void> {
+  private async assertActorCanManageOrg(actorId: string, orgId: string): Promise<void> {
     if (!actorId) {
       throw new ForbiddenException("Missing actor context");
     }
@@ -348,11 +353,34 @@ export class OrgService {
           userId: actorId,
           orgId
         }
+      },
+      include: {
+        role: {
+          include: {
+            permissions: { include: { permission: true } }
+          }
+        },
+        roles: {
+          include: {
+            role: {
+              include: {
+                permissions: { include: { permission: true } }
+              }
+            }
+          }
+        }
       }
     });
 
     if (!membership) {
       throw new ForbiddenException("Not a member of the organization");
+    }
+
+    // Authorization must be re-derived within the TARGET org. Without this, a plain
+    // member of another org (whose active-org claims carry org.write) could rename,
+    // re-slug, or disable that org — cross-tenant privilege escalation / DoS.
+    if (!hasMembershipPermission(membership, ORG_WRITE_PERMISSION)) {
+      throw new ForbiddenException("org.write permission required in the target organization");
     }
   }
 }

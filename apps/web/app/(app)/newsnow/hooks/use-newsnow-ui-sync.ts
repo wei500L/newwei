@@ -99,7 +99,13 @@ export function useNewsnowUiSync() {
           replacePreferences(remoteSettings);
           lastSavedFingerprintRef.current = buildFingerprint(remoteSettings);
         } else {
-          lastSavedFingerprintRef.current = null;
+          // No server prefs for this (org, user). The store persists under a single
+          // global localStorage key, so without a reset the previous org's prefs would
+          // remain and get uploaded into this org's slot. Reset to defaults and baseline
+          // the fingerprint to defaults so nothing is saved until the user changes a pref.
+          const defaults = normalizeNewsnowPreferenceSettings({});
+          replacePreferences(defaults);
+          lastSavedFingerprintRef.current = buildFingerprint(defaults);
         }
         hydratedRef.current = true;
       } catch (error) {

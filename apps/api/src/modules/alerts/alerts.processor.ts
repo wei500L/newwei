@@ -36,7 +36,7 @@ export class AlertsProcessor implements OnModuleInit, OnModuleDestroy {
             return;
           }
           if (job.name.startsWith("evaluate-rule") && job.data.type === "evaluate" && job.data.ruleId) {
-            await this.alertsService.evaluateRule(job.data.ruleId);
+            await this.alertsService.evaluateRule(job.data.ruleId, job.data.orgId);
             return;
           }
           if (job.name.startsWith("deliver-notification") && job.data.type === "deliver" && job.data.deliveryId) {

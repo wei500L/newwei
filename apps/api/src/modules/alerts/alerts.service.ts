@@ -1133,6 +1133,23 @@ export class AlertsService {
     );
   }
 
+  /**
+   * Manual (user-triggered) rule evaluation. Verifies the rule belongs to the
+   * caller's org before enqueuing, preventing cross-tenant forced evaluation (IDOR).
+   * The enqueued job carries orgId so evaluateRule can re-check ownership.
+   */
+  async triggerRuleCheck(orgId: string, ruleId: string): Promise<boolean> {
+    const existing = await this.prisma.alertRule.findFirst({
+      where: { id: ruleId, orgId },
+      select: { id: true },
+    });
+    if (!existing) {
+      return false;
+    }
+    await this.enqueueRuleCheck(ruleId, orgId);
+    return true;
+  }
+
   async enqueueActiveRuleChecks() {
     await this.ensureDefaultRulesForAllOrgs();
     const activeRules = await this.prisma.alertRule.findMany({
@@ -1166,12 +1183,22 @@ export class AlertsService {
     );
   }
 
-  async evaluateRule(ruleId: string) {
+  async evaluateRule(ruleId: string, expectedOrgId?: string) {
     const rule = await this.prisma.alertRule.findUnique({
       where: { id: ruleId },
       include: { channels: { include: { channel: true } } },
     });
     if (!rule || rule.status !== AlertStatus.active) {
+      return null;
+    }
+
+    // Defense in depth: when the job declares a target org, never evaluate a rule
+    // that belongs to a different tenant (guards against mismatched/forged job data).
+    if (expectedOrgId && rule.orgId !== expectedOrgId) {
+      logger.warn(
+        { ruleId, expectedOrgId, actualOrgId: rule.orgId },
+        "Refusing to evaluate alert rule for mismatched org",
+      );
       return null;
     }
 

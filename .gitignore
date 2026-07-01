@@ -36,3 +36,31 @@ e6d2bf860ccc367fe37ff953ba6de66b/
 
 newsnow-ref/
 worldmonitor/
+
+# --- Local/generated artifacts (root-scoped) ---
+# Generated scaffolding/middleware scratch space (news-aggregator, etc.) + patches
+/.tmp/
+
+# Screenshots & visual-test captures
+/screenshots/
+
+# Generated reports & error dumps
+/errors.md
+/report.html
+/repomix-output.xml
+
+# Log files (anywhere) and the root log dir
+*.log
+/log/
+
+# Downloaded OS/browser dependency packages (crawl4ai/Playwright deps)
+*.deb
+
+# Local Docker buildx state
+/.docker-config/
+
+# Stray workflow queue artifact — filename derived from an undefined queue id (tooling bug)
+.workflow/issues/queues/undefined.json
+
+# Unrelated CTF helper scripts — do not belong to this project
+tools/ctf-*

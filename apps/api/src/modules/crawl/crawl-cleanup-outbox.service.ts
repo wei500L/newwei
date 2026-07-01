@@ -206,9 +206,16 @@ export class CrawlCleanupOutboxService {
   }
 
   private async markOutboxFailure(outboxId: string, attempts: number, error: unknown) {
+    // deleteTaskResults is idempotent (deletes Mongo docs by taskId), so a delivery
+    // failure is always safe to retry. Do NOT escalate to `dead` here: the MySQL rows
+    // are already deleted, so a dead entry would permanently orphan the Mongo content
+    // with no reconciliation path (C-3). The backoff below is capped (~8min max), so
+    // continuing to retry is not a hot loop; surface a warning for operator visibility.
     if (attempts >= this.outboxMaxAttempts) {
-      await this.markOutboxDead(outboxId, attempts, error);
-      return;
+      logger.warn(
+        { outboxId, attempts },
+        "Crawl cleanup outbox delivery still failing after max attempts; continuing to retry to avoid orphaning Mongo content",
+      );
     }
 
     const nextDelay = this.computeBackoffDelay(this.outboxRetryBaseDelayMs, attempts, 5);

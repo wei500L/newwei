@@ -77,7 +77,7 @@ describe("CrawlTaskJanitorService", () => {
 
   it("no-ops when there are no stale tasks", async () => {
     const result = await service.cleanupStaleTasks(new Date());
-    expect(result).toEqual({ staleRunning: 0, staleQueued: 0 });
+    expect(result).toEqual({ staleRunning: 0, staleQueued: 0, stalePending: 0 });
     expect(prismaMock.crawlTask.updateMany).not.toHaveBeenCalled();
     expect(prismaMock.auditLog.create).not.toHaveBeenCalled();
     expect(TaskLogModel.create).not.toHaveBeenCalled();
@@ -86,7 +86,8 @@ describe("CrawlTaskJanitorService", () => {
   it("guards cron cleanup with a distributed lock", async () => {
     const spy = jest.spyOn(service, "cleanupStaleTasks").mockResolvedValue({
       staleRunning: 0,
-      staleQueued: 0
+      staleQueued: 0,
+      stalePending: 0
     });
     await service.cleanupCron();
     expect(cacheMock.withLock).toHaveBeenCalledWith(
@@ -116,6 +117,7 @@ describe("CrawlTaskJanitorService", () => {
           updatedAt: new Date(Date.now() - 120_000)
         }
       ])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
     prismaMock.crawlTask.updateMany = jest.fn().mockResolvedValue({ count: 1 });
@@ -160,12 +162,13 @@ describe("CrawlTaskJanitorService", () => {
           lastRunAt: null,
           updatedAt: new Date(Date.now() - 120_000)
         }
-      ]);
+      ])
+      .mockResolvedValueOnce([]);
     queueServiceMock.getPendingJobCount = jest.fn().mockResolvedValue(1);
     queueServiceMock.listPendingTaskIds = jest.fn().mockResolvedValue(new Set(["task-2"]));
 
     const result = await service.cleanupStaleTasks(new Date());
-    expect(result).toEqual({ staleRunning: 0, staleQueued: 0 });
+    expect(result).toEqual({ staleRunning: 0, staleQueued: 0, stalePending: 0 });
     expect(prismaMock.crawlTask.updateMany).not.toHaveBeenCalled();
   });
 
@@ -181,13 +184,14 @@ describe("CrawlTaskJanitorService", () => {
           lastRunAt: null,
           updatedAt: new Date(Date.now() - 120_000)
         }
-      ]);
+      ])
+      .mockResolvedValueOnce([]);
     queueServiceMock.getPendingJobCount = jest.fn().mockResolvedValue(0);
     queueServiceMock.listPendingTaskIds = jest.fn().mockResolvedValue(new Set());
     prismaMock.crawlTask.updateMany = jest.fn().mockResolvedValue({ count: 1 });
 
     const result = await service.cleanupStaleTasks(new Date());
-    expect(result).toEqual({ staleRunning: 0, staleQueued: 1 });
+    expect(result).toEqual({ staleRunning: 0, staleQueued: 1, stalePending: 0 });
     expect(prismaMock.crawlTask.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -223,6 +227,7 @@ describe("CrawlTaskJanitorService", () => {
           updatedAt: new Date("2026-01-01T00:01:00.000Z")
         }
       ])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
     prismaMock.crawlTask.updateMany = jest.fn().mockResolvedValue({ count: 2 });
 
@@ -234,6 +239,35 @@ describe("CrawlTaskJanitorService", () => {
         where: expect.objectContaining({
           id: { in: ["task-1", "task-2"] },
           status: "running"
+        })
+      })
+    );
+  });
+
+  it("marks stale pending tasks with no queue job as failed (C-5)", async () => {
+    prismaMock.crawlTask.findMany = jest
+      .fn()
+      .mockResolvedValueOnce([]) // running (started)
+      .mockResolvedValueOnce([]) // running (no heartbeat)
+      .mockResolvedValueOnce([]) // queued
+      .mockResolvedValueOnce([
+        {
+          id: "task-pending",
+          orgId: "org-3",
+          lastRunAt: null,
+          updatedAt: new Date(Date.now() - 120_000)
+        }
+      ]);
+    queueServiceMock.getPendingJobCount = jest.fn().mockResolvedValue(0);
+    queueServiceMock.listPendingTaskIds = jest.fn().mockResolvedValue(new Set());
+    prismaMock.crawlTask.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+
+    const result = await service.cleanupStaleTasks(new Date());
+    expect(result).toEqual({ staleRunning: 0, staleQueued: 0, stalePending: 1 });
+    expect(prismaMock.crawlTask.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: "pending"
         })
       })
     );

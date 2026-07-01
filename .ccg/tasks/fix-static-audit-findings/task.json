@@ -1,0 +1,19 @@
+{
+  "id": "fix-static-audit-findings",
+  "title": "修复静态审计报告确认的 12 个问题（P2×7 + P3×5，前后端+安全+队列）",
+  "status": "in_progress",
+  "strategy": "debug-investigate",
+  "currentPhase": "5-fix-complete",
+  "nextAction": "用户审查 diff；就绪后可运行 typecheck/test 验证并提交（未自动 commit）",
+  "gate": null,
+  "fixesApplied": 12,
+  "branch": "main",
+  "scope": "fix-static-audit-findings",
+  "createdAt": "2026-07-01T06:30:04Z",
+  "source": ".workflow/reviews/static-audit.md",
+  "findings": {
+    "P2": ["E-1", "B-2", "B-1", "F-1", "E-2", "F-3", "C-2"],
+    "P3": ["D-1", "F-2", "C-5", "C-3", "C-4"]
+  },
+  "note": "Diagnosis (Phase 1-3) already completed by the 7-agent static audit + adversarial verification; entering at Phase 4."
+}

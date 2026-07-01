@@ -3,6 +3,8 @@ import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 import { PubSub } from "graphql-subscriptions";
 
+import { CacheService } from "../cache/cache.service";
+
 import { PIPELINE_QUEUE, PIPELINE_QUEUE_EVENTS } from "./queue.constants";
 
 export interface QueueEventPayload {
@@ -102,6 +104,7 @@ export class QueueEventPublisher implements OnModuleDestroy {
   constructor(
     @Inject(PIPELINE_QUEUE_EVENTS) private readonly events: QueueEvents,
     @Inject(PIPELINE_QUEUE) private readonly queue: Queue,
+    private readonly cache: CacheService,
   ) {
     this.events.on("active", this.handleActive);
     this.events.on("progress", this.handleProgress);
@@ -145,14 +148,22 @@ export class QueueEventPublisher implements OnModuleDestroy {
       const job = await this.queue.getJob(jobId);
       const context = this.extractJobContext(job?.data);
       if (context) {
-        this.setCachedJobContext(jobId, context);
+        await this.setCachedJobContext(jobId, context);
         return context;
       }
     } catch (error) {
       this.logger.debug({ jobId, error }, "Failed to resolve pipeline queue context from job");
     }
 
-    return cached;
+    if (cached) {
+      return cached;
+    }
+
+    // Cross-instance fallback: for terminal events the job may already be removed
+    // (removeOnComplete) and this instance may never have observed 'active' locally,
+    // so its in-memory cache is cold. Resolve from the shared cache so the COMPLETED/
+    // FAILED event is not dropped for subscribers connected to this instance (C-4).
+    return this.readSharedJobContext(jobId);
   }
 
   private extractJobContext(value: unknown): PipelineQueueJobContext | null {
@@ -174,13 +185,47 @@ export class QueueEventPublisher implements OnModuleDestroy {
     };
   }
 
-  private setCachedJobContext(jobId: string, context: PipelineQueueJobContext) {
+  private async setCachedJobContext(jobId: string, context: PipelineQueueJobContext) {
     const now = Date.now();
     this.pruneExpiredOrgCacheIfDue(now);
     this.orgCache.set(jobId, {
       ...context,
       expiresAt: now + this.orgCacheTtlMs,
     });
+    // Mirror to the shared cache so any instance can resolve context for a removed job.
+    try {
+      await this.cache.set(
+        this.jobContextCacheKey(jobId),
+        context,
+        Math.ceil(this.orgCacheTtlMs / 1000),
+      );
+    } catch (error) {
+      this.logger.debug({ jobId, error }, "Failed to persist queue job context to shared cache");
+    }
+  }
+
+  private async readSharedJobContext(jobId: string): Promise<PipelineQueueJobContext | null> {
+    try {
+      const stored = await this.cache.get<PipelineQueueJobContext>(
+        this.jobContextCacheKey(jobId),
+      );
+      const context = this.extractJobContext(stored);
+      if (context) {
+        // Warm the local cache for any subsequent events for this job on this instance.
+        this.orgCache.set(jobId, {
+          ...context,
+          expiresAt: Date.now() + this.orgCacheTtlMs,
+        });
+        return context;
+      }
+    } catch (error) {
+      this.logger.debug({ jobId, error }, "Failed to read shared queue job context");
+    }
+    return null;
+  }
+
+  private jobContextCacheKey(jobId: string) {
+    return `queue:pipeline:jobctx:${jobId}`;
   }
 
   private getCachedJobContext(jobId: string): PipelineQueueJobContext | null {
