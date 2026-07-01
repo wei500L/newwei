@@ -226,7 +226,7 @@ function BoardColumnView({
   return (
     <section
       ref={setNodeRef}
-      className={`flex min-h-viz-2xl w-[320px] shrink-0 flex-col rounded-md border border-[var(--border)] bg-slate-50 dark:bg-slate-800 ${
+      className={`flex md:min-h-viz-2xl w-full md:w-[320px] shrink-0 flex-col rounded-md border border-[var(--border)] bg-slate-50 dark:bg-slate-800 ${
         isOver ? "ring-2 ring-blue-300 dark:ring-blue-500" : ""
       }`}
     >
@@ -780,7 +780,7 @@ export function AnalysisWorkspace() {
                 <Spin spinning={loadingBoard}>
                   {board?.columns.length ? (
                     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-                      <div className="flex gap-3 overflow-x-auto pb-3">
+                      <div className="flex flex-col gap-3 md:flex-row md:overflow-x-auto pb-3">
                         {board.columns.map((column) => (
                           <BoardColumnView
                             key={column.id}

@@ -883,7 +883,7 @@ export function DashboardContent() {
       </div>
 
       {/* Right Column: Data Board & Intelligence */}
-      <div className="w-[400px] flex-shrink-0 flex flex-col gap-6 hidden 2xl:flex sticky top-0 h-fit">
+      <div className="w-[340px] 2xl:w-[400px] flex-shrink-0 flex flex-col gap-6 hidden xl:flex sticky top-0 h-fit">
         <DashboardAnalysisFeedProvider>
           {/* Live News Feed */}
           <div className="h-[600px]">

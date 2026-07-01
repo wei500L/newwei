@@ -230,7 +230,7 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-col items-stretch gap-2 lg:w-[240px]">
+        <div className="flex shrink-0 flex-col items-stretch gap-2 md:max-w-[240px] lg:w-[240px]">
           <Tooltip title={scoreSummary}>
             <div className="rounded-[18px] border border-slate-200/70 bg-white/75 px-3 py-2 text-xs text-slate-600 shadow-[0_12px_24px_-28px_rgba(15,23,42,0.75)] dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300">
               综合分 {Math.round(item.score * 100)}

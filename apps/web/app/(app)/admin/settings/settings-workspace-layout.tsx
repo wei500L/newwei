@@ -81,8 +81,8 @@ export function AdminSettingsWorkspaceLayout({
   }
 
   return (
-    <div className="flex flex-col gap-6 xl:flex-row xl:items-start">
-      <div className="xl:hidden">
+    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+      <div className="lg:hidden">
         <Card className="content-card">
           <Typography.Text strong>
             {t('adminSettings.workspace.title')}
@@ -113,7 +113,7 @@ export function AdminSettingsWorkspaceLayout({
         </Card>
       </div>
 
-      <aside className="hidden xl:block xl:w-[280px] xl:shrink-0">
+      <aside className="hidden lg:block lg:w-56 xl:w-[280px] lg:shrink-0">
         <div className="sticky top-6">
           <Card className="content-card">
             <div className="flex items-start justify-between gap-3">
