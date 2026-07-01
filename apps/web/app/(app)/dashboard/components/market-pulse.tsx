@@ -355,7 +355,7 @@ export function MarketPulse({
 
   if (allMissing) {
     return (
-      <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
+      <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-panel">
         <ChartEmptyState title={emptyTitle} description={emptyDescription} />
       </div>
     );

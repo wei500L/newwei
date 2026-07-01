@@ -109,6 +109,10 @@ const config: Config = {
       maxWidth: {
         measure: 'var(--reading-measure)',
       },
+      boxShadow: {
+        // 面板卡片标准阴影（原散落的 shadow-[0_8px_20px_rgba(15,23,42,0.08)]）
+        panel: '0 8px 20px rgba(15,23,42,0.08)',
+      },
       height: { ...vizHeights },
       minHeight: { ...vizHeights },
       maxHeight: { ...vizHeights },

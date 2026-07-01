@@ -604,7 +604,7 @@ export function DashboardContent() {
         {/* Hero / Market Pulse */}
         <div className="relative">
           {heroAccessState.kind === "forbidden" ? (
-            <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
+            <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-panel">
               <ChartEmptyState
                 className="h-auto"
                 variant="permission"
@@ -613,7 +613,7 @@ export function DashboardContent() {
               />
             </div>
           ) : heroError && !heroHasData ? (
-            <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
+            <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-panel">
               <RequestErrorBanner
                 presentation="center"
                 error={heroError}
