@@ -1,6 +1,23 @@
 import type { Config } from 'tailwindcss'
 import { fontFamily } from 'tailwindcss/defaultTheme'
 
+/**
+ * P1 foundation: semantic visualization-container heights.
+ * These replace scattered `h-[NNNpx]` magic numbers with named tokens.
+ * Values map 1:1 to the most common existing heights (zero visual change);
+ * deliberate consolidation of near-duplicates is a separate follow-up.
+ */
+const vizHeights = {
+  'viz-xs': '180px',
+  'viz-sm': '260px',
+  'viz-md': '300px',
+  'viz-lg': '360px',
+  'viz-xl': '400px',
+  'viz-2xl': '420px',
+  'viz-3xl': '500px',
+  'viz-4xl': '520px',
+}
+
 const config: Config = {
   darkMode: 'class',
   content: [
@@ -85,6 +102,16 @@ const config: Config = {
         md: 'var(--radius)',
         sm: 'calc(var(--radius) - 2px)',
       },
+      fontSize: {
+        reading: ['1rem', { lineHeight: '1.75' }],
+        'reading-lg': ['1.0625rem', { lineHeight: '1.7' }],
+      },
+      maxWidth: {
+        measure: 'var(--reading-measure)',
+      },
+      height: { ...vizHeights },
+      minHeight: { ...vizHeights },
+      maxHeight: { ...vizHeights },
     },
   },
   plugins: [],

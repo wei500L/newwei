@@ -541,7 +541,7 @@ export function NewsIndicatorAssociations() {
       onRetry: () => refetchSettings()
     });
     return (
-      <div className="h-[420px]">
+      <div className="h-viz-2xl">
         <ChartEmptyState
           variant={emptyState.variant}
           title={emptyState.title}
@@ -555,7 +555,7 @@ export function NewsIndicatorAssociations() {
 
   if (!enabled) {
     return (
-      <div className="h-[420px]">
+      <div className="h-viz-2xl">
         <ChartEmptyState
           variant="offline"
           title={t("pages.newsIndicator.disabledTitle")}
@@ -680,7 +680,7 @@ export function NewsIndicatorAssociations() {
           ) : null}
 
           {assocErrorState && associations.length === 0 ? (
-            <div className="h-[260px]">
+            <div className="h-viz-sm">
               <ChartEmptyState
                 className="h-full"
                 variant={assocErrorState.variant}
@@ -694,7 +694,7 @@ export function NewsIndicatorAssociations() {
             <Skeleton active paragraph={{ rows: 8 }} />
           ) : associations.length === 0 ? (
             <ChartEmptyState
-              className="h-[260px]"
+              className="h-viz-sm"
               title={
                 hasIndicatorSlugs
                   ? t("pages.newsIndicator.empty")

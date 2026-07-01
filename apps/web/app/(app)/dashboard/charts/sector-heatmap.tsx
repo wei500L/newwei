@@ -390,7 +390,7 @@ export function SectorHeatmap() {
 
   if (sessionStatus === "loading") {
     return (
-      <div className="h-[300px] flex items-center transition-all duration-300">
+      <div className="h-viz-md flex items-center transition-all duration-300">
         <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
@@ -398,7 +398,7 @@ export function SectorHeatmap() {
 
   if (isLoading && !data) {
     return (
-      <div className="h-[300px] flex items-center transition-all duration-300">
+      <div className="h-viz-md flex items-center transition-all duration-300">
         <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
@@ -414,7 +414,7 @@ export function SectorHeatmap() {
         .map((entry) => `${entry.name}: ${entry.available.join(", ") || noSourceFieldsLabel}`)
         .join("\n");
       return (
-        <div className="h-[300px] transition-all duration-300">
+        <div className="h-viz-md transition-all duration-300">
           <ChartEmptyState
             variant="error"
             title={t("dashboard.charts.sectorHeatmapConfigErrorTitle")}
@@ -456,7 +456,7 @@ export function SectorHeatmap() {
       actionLabelOverride: t("dashboard.actions.retryFetch"),
     });
     return (
-      <div className="h-[300px] transition-all duration-300">
+      <div className="h-viz-md transition-all duration-300">
         <ChartEmptyState {...emptyState} />
       </div>
     );
@@ -464,14 +464,14 @@ export function SectorHeatmap() {
 
   if (!data || data.cells.length === 0) {
     return (
-      <div className="h-[300px] transition-all duration-300">
+      <div className="h-viz-md transition-all duration-300">
         <ChartEmptyState title={emptyTitle} description={emptyHint} />
       </div>
     );
   }
 
   return (
-    <div className="flex h-[300px] flex-col gap-2 transition-all duration-300">
+    <div className="flex h-viz-md flex-col gap-2 transition-all duration-300">
       {showStaleErrorBanner ? (
         <div className="px-2">
           <RequestErrorBanner

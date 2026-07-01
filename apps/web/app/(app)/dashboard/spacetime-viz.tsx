@@ -1330,7 +1330,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
         <div className="xl:col-span-2">
           <Card
             title={t("dashboard.charts.spacetimeGeoHeatmap.title")}
-            className="glass-card sm-panel-card h-[520px]"
+            className="glass-card sm-panel-card h-viz-4xl"
             variant="borderless"
           >
             <div className="flex flex-col gap-2 h-full">
@@ -1420,7 +1420,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                 </Tooltip>
               ) : null
             }
-            className="glass-card sm-panel-card h-[520px]"
+            className="glass-card sm-panel-card h-viz-4xl"
             variant="borderless"
           >
             <div className="h-full flex flex-col gap-3">

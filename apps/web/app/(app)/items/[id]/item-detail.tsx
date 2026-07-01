@@ -1068,7 +1068,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       key: "processed",
       label: t("items.detail.payloadProcessed"),
       children: (
-        <pre className="max-h-[360px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
+        <pre className="max-h-viz-lg overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
           {JSON.stringify(processedResult, null, 2)}
         </pre>
       ),
@@ -1095,7 +1095,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
               description={t("items.detail.markdownFallbackTooltip")}
             />
           ) : null}
-          <pre className="max-h-[360px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
+          <pre className="max-h-viz-lg overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
             {cleanedMarkdown}
           </pre>
         </Space>
@@ -1107,7 +1107,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       key: "raw",
       label: t("items.detail.payloadRaw"),
       children: (
-        <pre className="max-h-[360px] overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
+        <pre className="max-h-viz-lg overflow-auto rounded-lg bg-slate-950/5 p-4 text-xs">
           {JSON.stringify(rawPayload, null, 2)}
         </pre>
       ),

@@ -534,7 +534,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
 
   if (sessionStatus === "loading") {
     return (
-      <div className="h-[420px] flex items-center">
+      <div className="h-viz-2xl flex items-center">
         <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
@@ -542,7 +542,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
 
   if (authenticated && !canReadDashboards) {
     return (
-      <div className="h-[420px]">
+      <div className="h-viz-2xl">
         <ChartEmptyState
           variant="permission"
           title={t("common.accessDenied")}
@@ -554,7 +554,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
 
   if (settingsLoading) {
     return (
-      <div className="h-[420px] flex items-center">
+      <div className="h-viz-2xl flex items-center">
         <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
@@ -562,7 +562,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
 
   if (settingsError) {
     return (
-      <div className="h-[420px]">
+      <div className="h-viz-2xl">
         <ChartEmptyState
           variant="error"
           title={t("dashboard.dataAbnormal")}
@@ -579,7 +579,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
 
   if (isDisabledByAdmin) {
     return (
-      <div className="h-[420px]">
+      <div className="h-viz-2xl">
         <ChartEmptyState
           variant="offline"
           title={t("dashboard.charts.knowledgeGraphDisabledTitle")}

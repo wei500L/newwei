@@ -63,18 +63,18 @@ function SpacetimeVizSkeleton() {
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-2">
-          <DashboardSkeleton className="h-[520px]" rows={10} />
+          <DashboardSkeleton className="h-viz-4xl" rows={10} />
         </div>
         <div className="xl:col-span-1">
-          <DashboardSkeleton className="h-[520px]" rows={10} />
+          <DashboardSkeleton className="h-viz-4xl" rows={10} />
         </div>
       </div>
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-2">
-          <DashboardSkeleton className="h-[360px]" rows={8} />
+          <DashboardSkeleton className="h-viz-lg" rows={8} />
         </div>
         <div className="xl:col-span-1">
-          <DashboardSkeleton className="h-[420px]" rows={8} />
+          <DashboardSkeleton className="h-viz-2xl" rows={8} />
         </div>
       </div>
     </div>
@@ -94,7 +94,7 @@ const AlertPanel = dynamic(
 const AnalysisPanel = dynamic(
   () => import("./analysis-panel").then((mod) => mod.AnalysisPanel),
   {
-    loading: () => <DashboardSkeleton className="min-h-[300px]" rows={4} />,
+    loading: () => <DashboardSkeleton className="min-h-viz-md" rows={4} />,
   },
 );
 
@@ -119,7 +119,7 @@ const GlobalSentimentTrend = dynamic(
 const SectorHeatmap = dynamic(
   () => import("./charts/sector-heatmap").then((mod) => mod.SectorHeatmap),
   {
-    loading: () => <DashboardSkeleton className="h-[300px]" rows={6} />,
+    loading: () => <DashboardSkeleton className="h-viz-md" rows={6} />,
   },
 );
 
@@ -145,14 +145,14 @@ const EntityImpactGraph = dynamic(
   () =>
     import("./charts/entity-impact-graph").then((mod) => mod.EntityImpactGraph),
   {
-    loading: () => <DashboardSkeleton className="h-[400px]" rows={6} />,
+    loading: () => <DashboardSkeleton className="h-viz-xl" rows={6} />,
   },
 );
 
 const KnowledgeGraph = dynamic(
   () => import("./charts/knowledge-graph").then((mod) => mod.KnowledgeGraph),
   {
-    loading: () => <DashboardSkeleton className="h-[360px]" rows={6} />,
+    loading: () => <DashboardSkeleton className="h-viz-lg" rows={6} />,
   },
 );
 
@@ -168,7 +168,7 @@ const MarketPulse = dynamic(
   {
     loading: () => (
       <div className="mb-6">
-        <DashboardSkeleton className="min-h-[180px]" rows={4} />
+        <DashboardSkeleton className="min-h-viz-xs" rows={4} />
       </div>
     ),
   },
@@ -178,13 +178,13 @@ const MetricDrillDown = dynamic(
   () => import("./metric-drilldown").then((mod) => mod.MetricDrillDown),
   {
     ssr: false,
-    loading: () => <DashboardSkeleton className="min-h-[420px]" rows={6} />,
+    loading: () => <DashboardSkeleton className="min-h-viz-2xl" rows={6} />,
   },
 );
 
 const QueueChart = dynamic(
   () => import("./queue-chart").then((mod) => mod.QueueChart),
-  { loading: () => <DashboardSkeleton className="h-[260px]" rows={4} /> },
+  { loading: () => <DashboardSkeleton className="h-viz-sm" rows={4} /> },
 );
 
 interface DashboardStreamStatusLineProps {
@@ -660,7 +660,7 @@ export function DashboardContent() {
         {/* Charts Section - Immersive Map & Analytics */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Indicator Map - Dominant Central Feature */}
-          <div className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] overflow-hidden flex flex-col">
+          <div className="xl:col-span-2 h-viz-3xl glass-panel border border-[var(--border)] overflow-hidden flex flex-col">
             <div className="px-5 pt-4">
               <h3 className="text-lg text-slate-700">
                 {t("dashboard.charts.warMap.title")}
@@ -679,7 +679,7 @@ export function DashboardContent() {
           {/* Sector Heatmap - Side Panel */}
           <Card
             title={t("dashboard.charts.sectorHeatmap")}
-            className="glass-card h-[500px]"
+            className="glass-card h-viz-3xl"
             variant="borderless"
           >
             <SectorHeatmap />
@@ -894,7 +894,7 @@ export function DashboardContent() {
           <div ref={analysisPanelRef}>
             <Card
               title={t("dashboard.panels.aiAnalysis")}
-              className={`content-card flex-1 border-none shadow-sm min-h-[300px]${
+              className={`content-card flex-1 border-none shadow-sm min-h-viz-md${
                 isAnalysisFocused ? " ring-1 ring-[var(--primary)]" : ""
               }`}
             >

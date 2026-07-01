@@ -189,7 +189,7 @@ export function EconomicChartCard({
         </>
       ) : (
         <ChartEmptyState
-          className="h-[360px]"
+          className="h-viz-lg"
           title={t("dashboard.charts.noDataRange")}
           description={t("dashboard.dataEmptyHint")}
         />

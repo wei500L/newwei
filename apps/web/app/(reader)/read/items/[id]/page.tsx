@@ -787,7 +787,7 @@ export default function ReaderPage() {
 
         {/* Main Content */}
         {hasContent ? (
-          <div className="prose dark:prose-invert max-w-none leading-relaxed">
+          <div className="prose dark:prose-invert mx-auto max-w-measure leading-relaxed">
             <MarkdownViewer markdown={articleContent!} />
           </div>
         ) : (

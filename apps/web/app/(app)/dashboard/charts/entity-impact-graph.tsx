@@ -832,7 +832,7 @@ export function EntityImpactGraph() {
 
   if (sessionStatus === "loading") {
     return (
-      <div className="h-[400px] flex items-center">
+      <div className="h-viz-xl flex items-center">
         <Skeleton active paragraph={{ rows: 8 }} />
       </div>
     );
@@ -840,7 +840,7 @@ export function EntityImpactGraph() {
 
   if (authenticated && !canReadDashboards) {
     return (
-      <div className="h-[400px]">
+      <div className="h-viz-xl">
         <ChartEmptyState
           variant="permission"
           title={t("common.accessDenied")}
@@ -852,7 +852,7 @@ export function EntityImpactGraph() {
 
   if (!settingsApplied && settingsError) {
     return (
-      <div className="h-[400px]">
+      <div className="h-viz-xl">
         <ChartEmptyState
           variant="error"
           title={t("dashboard.dataAbnormal")}
@@ -869,7 +869,7 @@ export function EntityImpactGraph() {
 
   if (enabled === false) {
     return (
-      <div className="h-[400px]">
+      <div className="h-viz-xl">
         <ChartEmptyState
           variant="offline"
           title={t("dashboard.charts.entityGraph.disabledTitle")}
@@ -881,7 +881,7 @@ export function EntityImpactGraph() {
 
   if (!settingsApplied) {
     return (
-      <div className="h-[400px] flex items-center">
+      <div className="h-viz-xl flex items-center">
         <Skeleton active paragraph={{ rows: 8 }} />
       </div>
     );
@@ -889,7 +889,7 @@ export function EntityImpactGraph() {
 
   if (loading && !hasData) {
     return (
-      <div className="h-[400px] flex items-center">
+      <div className="h-viz-xl flex items-center">
         <Skeleton active paragraph={{ rows: 8 }} />
       </div>
     );
@@ -897,7 +897,7 @@ export function EntityImpactGraph() {
 
   if (error && !hasData) {
     return (
-      <div className="h-[400px]">
+      <div className="h-viz-xl">
         <ChartEmptyState
           variant="error"
           title={t("dashboard.dataAbnormal")}
@@ -914,7 +914,7 @@ export function EntityImpactGraph() {
 
   if (!hasData) {
     return (
-      <div className="h-[400px]">
+      <div className="h-viz-xl">
         <ChartEmptyState description={emptyMessage} />
       </div>
     );
@@ -1188,7 +1188,7 @@ export function EntityImpactGraph() {
             ) : null}
           </div>
         ) : (
-          <div className="entity-graph-canvas h-[320px] md:h-[400px] flex items-center justify-center">
+          <div className="entity-graph-canvas h-[320px] md:h-viz-xl flex items-center justify-center">
             <ChartEmptyState
               title={t("dashboard.dataEmpty")}
               description={t("dashboard.charts.entityGraph.filteredEmpty")}

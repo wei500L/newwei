@@ -566,7 +566,7 @@ export function SpacetimePropagation({
 
   if (loading || (propagationQuery.isLoading && !propagationQuery.data)) {
     return (
-      <div className="h-[360px] flex items-center">
+      <div className="h-viz-lg flex items-center">
         <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
@@ -574,7 +574,7 @@ export function SpacetimePropagation({
 
   if (!eventId) {
     return (
-      <div className="h-[360px]">
+      <div className="h-viz-lg">
         <ChartEmptyState
           title={t("dashboard.charts.spacetimePropagation.emptyTitle")}
           description={t("dashboard.charts.spacetimePropagation.emptyDescription")}
@@ -589,7 +589,7 @@ export function SpacetimePropagation({
 
   if (propagationQuery.error && !hasPropagation) {
     return (
-      <div className="h-[360px]">
+      <div className="h-viz-lg">
         <RequestErrorBanner
           error={propagationQuery.error}
           onRetry={() => {
@@ -604,7 +604,7 @@ export function SpacetimePropagation({
 
   if (!hasPropagation) {
     return (
-      <div className="h-[360px]">
+      <div className="h-viz-lg">
         <ChartEmptyState
           title={t("dashboard.dataEmpty")}
           description={t("dashboard.charts.spacetimePropagation.empty")}

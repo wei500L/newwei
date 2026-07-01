@@ -56,7 +56,7 @@ export function TodayContent() {
         {/* Right: Hot Topics + Feed (2 cols) */}
         <div className="col-span-2 space-y-4 h-full flex flex-col">
           <HotTopics />
-          <AuraBentoCard squish={false} className="p-4 min-h-[500px] flex-1 flex flex-col">
+          <AuraBentoCard squish={false} className="p-4 min-h-viz-3xl flex-1 flex flex-col">
             <Typography.Title level={5}>{t("pages.today.latestFeed")}</Typography.Title>
             <div className="flex-1 overflow-y-auto rail-scrollbar">
               <ItemsView

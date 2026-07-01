@@ -347,7 +347,7 @@ export function KnowledgeGraph() {
 
   if (sessionStatus === "loading") {
     return (
-      <div className="h-[420px] flex items-center">
+      <div className="h-viz-2xl flex items-center">
         <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
@@ -355,7 +355,7 @@ export function KnowledgeGraph() {
 
   if (authenticated && !canReadDashboards) {
     return (
-      <div className="h-[420px]">
+      <div className="h-viz-2xl">
         <ChartEmptyState
           variant="permission"
           title={t("common.accessDenied")}
@@ -367,7 +367,7 @@ export function KnowledgeGraph() {
 
   if (settingsLoading) {
     return (
-      <div className="h-[420px] flex items-center">
+      <div className="h-viz-2xl flex items-center">
         <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     );
@@ -375,7 +375,7 @@ export function KnowledgeGraph() {
 
   if (settingsError) {
     return (
-      <div className="h-[420px]">
+      <div className="h-viz-2xl">
         <ChartEmptyState
           variant="error"
           title={t("dashboard.dataAbnormal")}
@@ -392,7 +392,7 @@ export function KnowledgeGraph() {
 
   if (isDisabledByAdmin) {
     return (
-      <div className="h-[420px]">
+      <div className="h-viz-2xl">
         <ChartEmptyState
           variant="offline"
           title={t("dashboard.charts.knowledgeGraphDisabledTitle")}
@@ -533,18 +533,18 @@ export function KnowledgeGraph() {
       ) : null}
 
       {!seedName ? (
-        <div className="h-[360px] transition-all duration-300">
+        <div className="h-viz-lg transition-all duration-300">
           <ChartEmptyState
             title={t("dashboard.charts.knowledgeGraphEmptyTitle")}
             description={t("dashboard.charts.knowledgeGraphEmptyDescription")}
           />
         </div>
       ) : loading ? (
-        <div className="h-[360px] flex items-center transition-all duration-300">
+        <div className="h-viz-lg flex items-center transition-all duration-300">
           <Skeleton active paragraph={{ rows: 6 }} />
         </div>
       ) : graph ? (
-        <div className="h-[360px] transition-all duration-300">
+        <div className="h-viz-lg transition-all duration-300">
           <DashboardChart
             option={option}
             theme={echartsTheme}
@@ -576,7 +576,7 @@ export function KnowledgeGraph() {
           />
         </div>
       ) : (
-        <div className="h-[360px] transition-all duration-300">
+        <div className="h-viz-lg transition-all duration-300">
           <ChartEmptyState
             title={t("dashboard.charts.knowledgeGraphNotFoundTitle")}
             description={t("dashboard.charts.knowledgeGraphNotFoundDescription")}

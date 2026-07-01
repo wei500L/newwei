@@ -43,6 +43,11 @@
   --radius: 10px;
   --radius-lg: 14px;
 
+  /* Reading & type scale (P1 foundation) — long-form baseline */
+  --reading-measure: 72ch; /* optimal line length for readability */
+  --reading-size: 1rem; /* 16px body baseline for long-form */
+  --reading-leading: 1.75;
+
   --aura-color-1: rgba(31, 59, 123, 0.08);
   --aura-color-2: rgba(217, 119, 6, 0.06);
 

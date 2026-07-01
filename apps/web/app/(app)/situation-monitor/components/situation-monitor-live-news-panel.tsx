@@ -283,7 +283,7 @@ function LiveNewsVideoTile(props: {
 
   if (!active) {
     return (
-      <div className="flex h-[180px] items-center justify-center rounded border border-[var(--border)] bg-black/20 text-xs text-[var(--text-muted)]">
+      <div className="flex h-viz-xs items-center justify-center rounded border border-[var(--border)] bg-black/20 text-xs text-[var(--text-muted)]">
         {unavailableLabel}
       </div>
     );
@@ -291,7 +291,7 @@ function LiveNewsVideoTile(props: {
 
   if (shouldUseYoutube && resolvedYoutubeVideoId) {
     return (
-      <div className="relative h-[180px] overflow-hidden rounded border border-[var(--border)] bg-black">
+      <div className="relative h-viz-xs overflow-hidden rounded border border-[var(--border)] bg-black">
         {hlsUrl ? (
           <Tag color="orange" style={{ position: "absolute", top: 8, left: 8, zIndex: 2 }}>
             {cooldownActive ? cooldownLabel : fallbackLabel}
@@ -314,7 +314,7 @@ function LiveNewsVideoTile(props: {
 
   if (!shouldTryHls && resolvingYoutube) {
     return (
-      <div className="flex h-[180px] items-center justify-center rounded border border-[var(--border)] bg-black/30 text-xs text-[var(--text-muted)]">
+      <div className="flex h-viz-xs items-center justify-center rounded border border-[var(--border)] bg-black/30 text-xs text-[var(--text-muted)]">
         {resolvingYoutubeLabel}
       </div>
     );
@@ -333,7 +333,7 @@ function LiveNewsVideoTile(props: {
       channel.sourceMode === "youtube-only" ? "default" : cooldownActive ? "orange" : "red";
 
     return (
-      <div className="relative flex h-[180px] items-center justify-center rounded border border-[var(--border)] bg-black/30 text-xs text-[var(--text-muted)]">
+      <div className="relative flex h-viz-xs items-center justify-center rounded border border-[var(--border)] bg-black/30 text-xs text-[var(--text-muted)]">
         <Tag color={statusColor} style={{ position: "absolute", top: 8, left: 8 }}>
           {statusLabel}
         </Tag>
@@ -349,7 +349,7 @@ function LiveNewsVideoTile(props: {
       muted
       playsInline
       controls={false}
-      className="h-[180px] w-full rounded border border-[var(--border)] bg-black object-cover"
+      className="h-viz-xs w-full rounded border border-[var(--border)] bg-black object-cover"
     />
   );
 }
@@ -635,7 +635,7 @@ export function SituationMonitorLiveNewsPanel() {
             {t("situationMonitor.liveNews.manageHint")}
           </Typography.Paragraph>
 
-          <div className="max-h-[360px] overflow-auto pr-1">
+          <div className="max-h-viz-lg overflow-auto pr-1">
             {orderedRegionChannels.map((channel) => {
               const enabled = regionEnabledSet.has(channel.id);
               const visible = enabled && channels.some((entry) => entry.id === channel.id);

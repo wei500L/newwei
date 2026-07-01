@@ -750,7 +750,7 @@ export function KnowledgeGraphContent() {
 
   if (authenticated && !canReadDashboards) {
     return (
-      <div className="min-h-[520px]">
+      <div className="min-h-viz-4xl">
         <ChartEmptyState
           variant="permission"
           title={t("common.accessDenied")}
@@ -766,7 +766,7 @@ export function KnowledgeGraphContent() {
 
   if (settingsError) {
     return (
-      <div className="min-h-[520px]">
+      <div className="min-h-viz-4xl">
         <ChartEmptyState
           variant="error"
           title={t("dashboard.dataAbnormal")}
@@ -783,7 +783,7 @@ export function KnowledgeGraphContent() {
 
   if (isDisabledByAdmin) {
     return (
-      <div className="min-h-[520px]">
+      <div className="min-h-viz-4xl">
         <ChartEmptyState
           variant="offline"
           title={t("dashboard.charts.knowledgeGraphDisabledTitle")}

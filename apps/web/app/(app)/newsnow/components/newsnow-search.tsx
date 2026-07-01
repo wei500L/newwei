@@ -128,7 +128,7 @@ export function NewsnowSearch({ isOpen, onClose }: NewsnowSearchProps) {
             <span className="search-feedback-pill__text">{searchStatus.message}</span>
           </div>
         </div>
-        <div className="max-h-[500px] overflow-y-auto px-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <div className="max-h-viz-3xl overflow-y-auto px-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           <List
             split={false}
             dataSource={filteredSources}

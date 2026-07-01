@@ -673,7 +673,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                 className={surface.sectionCardClassName}
               >
                 {mapError ? (
-                  <div className="h-[400px]">
+                  <div className="h-viz-xl">
                     <ChartEmptyState
                       variant="error"
                       title={mapError.title}
