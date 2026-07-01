@@ -58,7 +58,7 @@ function NewsnowSourcesSkeleton() {
         {[...Array(10)].map((_, i) => (
           <div
             key={i}
-            className="h-[430px] rounded-[24px] sm:h-[470px] lg:h-viz-3xl glass-panel p-5"
+            className="h-[430px] rounded-[24px] sm:h-[470px] md:h-viz-3xl glass-panel p-5"
           >
             <Skeleton active paragraph={{ rows: 10 }} />
           </div>
