@@ -1,4 +1,6 @@
 import type { ApolloServerPlugin } from "@apollo/server";
+import responseCachePlugin from "@apollo/server-plugin-response-cache";
+import type { KeyValueCache } from "@apollo/utils.keyvaluecache";
 import { createLogger } from "@modular/utils";
 import { ApolloDriver, ApolloDriverConfig } from "@nestjs/apollo";
 import { Module } from "@nestjs/common";
@@ -10,11 +12,13 @@ import {
   GraphQLDirective,
   GraphQLNonNull,
   GraphQLString,
+  Kind,
   getNamedType,
   isCompositeType,
   isEnumType,
   isScalarType,
 } from "graphql";
+import Redis from "ioredis";
 import depthLimit from "graphql-depth-limit";
 import {
   type ComplexityEstimator,
@@ -38,6 +42,7 @@ import { AuthModule } from "../modules/auth/auth.module";
 import { CacheModule } from "../modules/cache/cache.module";
 import { ConfigModule } from "../modules/config/config.module";
 import { EnvService } from "../modules/config/config.service";
+import { toIoredisConnection } from "../modules/config/redis-connection";
 import { CrawlModule } from "../modules/crawl/crawl.module";
 import { DashboardModule } from "../modules/dashboard/dashboard.module";
 import { ItemsModule } from "../modules/items/items.module";
@@ -52,11 +57,20 @@ import { RbacModule } from "../modules/rbac/rbac.module";
 import { SentimentModule } from "../modules/sentiment/sentiment.module";
 
 import { GraphqlRateLimitGuard } from "./guards/graphql-rate-limit.guard";
-import { ItemReadModelLoader } from "./loaders/item-read-model.loader";
 import { ItemMetaLoader } from "./loaders/item-meta.loader";
+import {
+  ItemReadModelLoader,
+  ItemReadModelProcessedLoader,
+  ItemReadModelProcessedPreviewLoader,
+  ItemReadModelRawLoader,
+  ItemReadModelRawPreviewLoader,
+} from "./loaders/item-read-model.loader";
 import { ProcessedItemEventIdLoader } from "./loaders/processed-item-event-id.loader";
 import { ProcessedItemPreviewLoader } from "./loaders/processed-item-preview.loader";
-import { ProcessedItemLoader } from "./loaders/processed-item.loader";
+import {
+  ProcessedItemLoader,
+  ProcessedItemScalarLoader,
+} from "./loaders/processed-item.loader";
 import { RawItemPreviewLoader } from "./loaders/raw-item-preview.loader";
 import { RawItemLoader } from "./loaders/raw-item.loader";
 import { RoleLoader } from "./loaders/role.loader";
@@ -68,13 +82,9 @@ import { AssistantResolver } from "./resolvers/assistant.resolver";
 import { CrawlResolver } from "./resolvers/crawl.resolver";
 import { DashboardResolver } from "./resolvers/dashboard.resolver";
 import { EconomicDataResolver } from "./resolvers/economic-data.resolver";
+import { EntityIntelligenceResolver } from "./resolvers/entity-intelligence.resolver";
 import { EntityImpactGraphResolver } from "./resolvers/entity-impact-graph.resolver";
 import { ItemsResolver } from "./resolvers/items.resolver";
-import { ProcessedItemResolver } from "./resolvers/processed-item.resolver";
-import {
-  ProcessedItemEventResolver,
-  ProcessedItemPreviewEventResolver,
-} from "./resolvers/processed-item-event.resolver";
 import { KnowledgeGraphImpactResolver } from "./resolvers/knowledge-graph-impact.resolver";
 import { KnowledgeGraphReviewResolver } from "./resolvers/knowledge-graph-review.resolver";
 import { KnowledgeGraphResolver } from "./resolvers/knowledge-graph.resolver";
@@ -82,6 +92,11 @@ import { NewsEventsResolver } from "./resolvers/news-events.resolver";
 import { NewsIndicatorResolver } from "./resolvers/news-indicator.resolver";
 import { NotificationResolver } from "./resolvers/notification.resolver";
 import { OrgResolver } from "./resolvers/org.resolver";
+import {
+  ProcessedItemEventResolver,
+  ProcessedItemPreviewEventResolver,
+} from "./resolvers/processed-item-event.resolver";
+import { ProcessedItemResolver } from "./resolvers/processed-item.resolver";
 import { RbacResolver } from "./resolvers/rbac.resolver";
 import { SentimentResolver } from "./resolvers/sentiment.resolver";
 import { SettingsResolver } from "./resolvers/settings.resolver";
@@ -92,11 +107,114 @@ const logger = createLogger({ name: "graphql" });
 
 const BASE_FIELD_COMPLEXITY = 1;
 const COMPOSITE_FIELD_COMPLEXITY = 2;
+const GRAPHQL_RESPONSE_CACHE_PREFIX = "graphql:response:";
+const CACHEABLE_OPERATION_NAMES = new Set([
+  "DashboardHeroMetrics",
+  "EconomicData",
+  "EconomicDataWithInsights",
+  "GetEntityImpactGraph",
+  "GetKnowledgeGraphSubgraph",
+]);
+const CACHEABLE_ROOT_FIELDS = new Set([
+  "getEconomicData",
+  "getEconomicDataWithInsights",
+  "getEntityImpactGraph",
+  "getKnowledgeGraphSubgraph",
+]);
 
 interface GraphqlContextFactoryArgs {
   req?: any;
   res?: any;
   extra?: any;
+}
+
+class RedisKeyValueCache implements KeyValueCache<string> {
+  constructor(private readonly redis: Redis) {}
+
+  async get(key: string): Promise<string | undefined> {
+    return (
+      (await this.redis.get(`${GRAPHQL_RESPONSE_CACHE_PREFIX}${key}`)) ??
+      undefined
+    );
+  }
+
+  async set(
+    key: string,
+    value: string,
+    options?: { ttl?: number | null },
+  ): Promise<void> {
+    const redisKey = `${GRAPHQL_RESPONSE_CACHE_PREFIX}${key}`;
+    if (options?.ttl && options.ttl > 0) {
+      await this.redis.set(redisKey, value, "EX", Math.floor(options.ttl));
+      return;
+    }
+    await this.redis.set(redisKey, value);
+  }
+
+  async delete(key: string): Promise<boolean> {
+    const deleted = await this.redis.del(
+      `${GRAPHQL_RESPONSE_CACHE_PREFIX}${key}`,
+    );
+    return deleted > 0;
+  }
+}
+
+function getRootFieldNames(requestContext: {
+  operation?: { selectionSet?: { selections?: readonly unknown[] } };
+}): string[] {
+  const selections = requestContext.operation?.selectionSet?.selections;
+  if (!selections) {
+    return [];
+  }
+
+  return selections
+    .map((selection) => {
+      if (
+        typeof selection === "object" &&
+        selection !== null &&
+        "kind" in selection &&
+        selection.kind === Kind.FIELD &&
+        "name" in selection &&
+        typeof selection.name === "object" &&
+        selection.name !== null &&
+        "value" in selection.name &&
+        typeof selection.name.value === "string"
+      ) {
+        return selection.name.value;
+      }
+      return null;
+    })
+    .filter((fieldName): fieldName is string => Boolean(fieldName));
+}
+
+function isCacheableGraphqlRequest(requestContext: {
+  operation?: {
+    operation?: string;
+    selectionSet?: { selections?: readonly unknown[] };
+  };
+  request: {
+    operationName?: string | null;
+    variables?: Record<string, unknown>;
+  };
+}): boolean {
+  if (requestContext.operation?.operation !== "query") {
+    return false;
+  }
+
+  if (requestContext.request.variables?.forceRefresh === true) {
+    return false;
+  }
+
+  const operationName = requestContext.request.operationName;
+  if (operationName && CACHEABLE_OPERATION_NAMES.has(operationName)) {
+    return true;
+  }
+
+  const rootFields = getRootFieldNames(requestContext);
+  return (
+    rootFields.length > 0 &&
+    rootFields.every((fieldName) => CACHEABLE_ROOT_FIELDS.has(fieldName))
+  );
 }
 
 const paginationComplexityEstimator: ComplexityEstimator = ({
@@ -192,6 +310,40 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
           compositeFieldComplexityEstimator,
           simpleEstimator({ defaultComplexity: BASE_FIELD_COMPLEXITY }),
         ];
+        const responseCacheRedis = cfg.responseCacheEnabled
+          ? new Redis(toIoredisConnection(env.redisConfig))
+          : null;
+        const responseCachePlugins: ApolloServerPlugin[] =
+          responseCacheRedis === null
+            ? []
+            : [
+                responseCachePlugin({
+                  cache: new RedisKeyValueCache(responseCacheRedis),
+                  sessionId: async (requestContext) => {
+                    const user = (
+                      requestContext.contextValue as {
+                        user?: { orgId?: string; id?: string };
+                      }
+                    )?.user;
+                    return user?.orgId && user?.id
+                      ? `${user.orgId}:${user.id}`
+                      : null;
+                  },
+                  shouldReadFromCache: async (requestContext) =>
+                    isCacheableGraphqlRequest(requestContext),
+                  shouldWriteToCache: async (requestContext) =>
+                    isCacheableGraphqlRequest(requestContext),
+                }),
+                {
+                  async serverWillStart() {
+                    return {
+                      async serverWillStop() {
+                        await responseCacheRedis.quit();
+                      },
+                    };
+                  },
+                },
+              ];
 
         return {
           autoSchemaFile: join(__dirname, "..", "..", "schema.gql"),
@@ -238,6 +390,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
             directives: [hasPermissionDirective, complexityDirective],
           },
           validationRules: [depthLimit(cfg.depthLimit)],
+          persistedQueries: cfg.apqEnabled ? undefined : false,
           plugins: [
             {
               async requestDidStart() {
@@ -260,7 +413,11 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
 
                     if (complexity > cfg.complexityLimit) {
                       logger.warn(
-                        { complexity, operationName, limit: cfg.complexityLimit },
+                        {
+                          complexity,
+                          operationName,
+                          limit: cfg.complexityLimit,
+                        },
                         "GraphQL query rejected for excessive complexity",
                       );
                       throw new GraphQLError(
@@ -278,6 +435,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
                 };
               },
             } satisfies ApolloServerPlugin,
+            ...responseCachePlugins,
           ],
         };
       },
@@ -296,6 +454,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
     DashboardResolver,
     CrawlResolver,
     EconomicDataResolver,
+    EntityIntelligenceResolver,
     EntityImpactGraphResolver,
     KnowledgeGraphResolver,
     KnowledgeGraphImpactResolver,
@@ -311,10 +470,15 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
     UserLoader,
     RoleLoader,
     ItemReadModelLoader,
+    ItemReadModelRawLoader,
+    ItemReadModelRawPreviewLoader,
+    ItemReadModelProcessedLoader,
+    ItemReadModelProcessedPreviewLoader,
     ItemMetaLoader,
     RawItemLoader,
     RawItemPreviewLoader,
     ProcessedItemLoader,
+    ProcessedItemScalarLoader,
     ProcessedItemPreviewLoader,
     ProcessedItemEventIdLoader,
     GqlAuthGuard,

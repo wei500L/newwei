@@ -166,6 +166,7 @@ const SpacetimeGeoHeatmap = dynamic(
       (mod) => mod.SpacetimeGeoHeatmap,
     ),
   {
+    ssr: false,
     loading: () => <Skeleton active paragraph={{ rows: 8 }} />,
   },
 );
@@ -184,6 +185,7 @@ const KnowledgeGraph3D = dynamic(
   () =>
     import("./charts/knowledge-graph-3d").then((mod) => mod.KnowledgeGraph3D),
   {
+    ssr: false,
     loading: () => <Skeleton active paragraph={{ rows: 6 }} />,
   },
 );
@@ -602,28 +604,18 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
   const sourceTypeLabel = useCallback(
     (sourceType: NewsEventSourceType) => {
       if (sourceType === "authoritative") {
-        return t("dashboard.charts.spacetimeTimeline.sourceTypeAuthoritative", {
-          defaultValue: "Authoritative",
-        });
+        return t("dashboard.charts.spacetimeTimeline.sourceTypeAuthoritative");
       }
       if (sourceType === "mixed") {
-        return t("dashboard.charts.spacetimeTimeline.sourceTypeMixed", {
-          defaultValue: "Mixed",
-        });
+        return t("dashboard.charts.spacetimeTimeline.sourceTypeMixed");
       }
       if (sourceType === "blog") {
-        return t("dashboard.charts.spacetimeTimeline.sourceTypeBlog", {
-          defaultValue: "Blog",
-        });
+        return t("dashboard.charts.spacetimeTimeline.sourceTypeBlog");
       }
       if (sourceType === "all") {
-        return t("dashboard.charts.spacetimeTimeline.sourceTypeAll", {
-          defaultValue: "All",
-        });
+        return t("dashboard.charts.spacetimeTimeline.sourceTypeAll");
       }
-      return t("dashboard.charts.spacetimeTimeline.sourceTypeUnknown", {
-        defaultValue: "Unknown",
-      });
+      return t("dashboard.charts.spacetimeTimeline.sourceTypeUnknown");
     },
     [t],
   );
@@ -1190,27 +1182,19 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
     () => [
       {
         value: "authoritative" as const,
-        label: t("dashboard.charts.spacetimeTimeline.sourceTypeAuthoritative", {
-          defaultValue: "Authoritative",
-        }),
+        label: t("dashboard.charts.spacetimeTimeline.sourceTypeAuthoritative"),
       },
       {
         value: "mixed" as const,
-        label: t("dashboard.charts.spacetimeTimeline.sourceTypeMixed", {
-          defaultValue: "Mixed",
-        }),
+        label: t("dashboard.charts.spacetimeTimeline.sourceTypeMixed"),
       },
       {
         value: "blog" as const,
-        label: t("dashboard.charts.spacetimeTimeline.sourceTypeBlog", {
-          defaultValue: "Blog",
-        }),
+        label: t("dashboard.charts.spacetimeTimeline.sourceTypeBlog"),
       },
       {
         value: "all" as const,
-        label: t("dashboard.charts.spacetimeTimeline.sourceTypeAll", {
-          defaultValue: "All",
-        }),
+        label: t("dashboard.charts.spacetimeTimeline.sourceTypeAll"),
       },
     ],
     [t],
@@ -1220,21 +1204,15 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
     () => [
       {
         value: "heat" as const,
-        label: t("dashboard.charts.spacetimeTimeline.sortByHeat", {
-          defaultValue: "Heat",
-        }),
+        label: t("dashboard.charts.spacetimeTimeline.sortByHeat"),
       },
       {
         value: "credibility" as const,
-        label: t("dashboard.charts.spacetimeTimeline.sortByCredibility", {
-          defaultValue: "Credibility",
-        }),
+        label: t("dashboard.charts.spacetimeTimeline.sortByCredibility"),
       },
       {
         value: "latest" as const,
-        label: t("dashboard.charts.spacetimeTimeline.sortByLatest", {
-          defaultValue: "Latest",
-        }),
+        label: t("dashboard.charts.spacetimeTimeline.sortByLatest"),
       },
     ],
     [t],
@@ -1252,69 +1230,44 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
       if (code === "POLICY_CACHE_STALE") {
         return t(
           "dashboard.charts.spacetimeTimeline.degradedReasonPolicyCacheStale",
-          {
-            defaultValue: "policy cache is stale",
-          },
         );
       }
       if (code === "PRESET_CACHE_STALE") {
         return t(
           "dashboard.charts.spacetimeTimeline.degradedReasonPresetCacheStale",
-          {
-            defaultValue: "preset cache is stale",
-          },
         );
       }
       if (code === "POLICY_CACHE_READ_FAILED") {
         return t(
           "dashboard.charts.spacetimeTimeline.degradedReasonPolicyCacheReadFailed",
-          {
-            defaultValue: "policy cache read failed",
-          },
         );
       }
       if (code === "PRESET_CACHE_READ_FAILED") {
         return t(
           "dashboard.charts.spacetimeTimeline.degradedReasonPresetCacheReadFailed",
-          {
-            defaultValue: "preset cache read failed",
-          },
         );
       }
       if (code === "POLICY_DB_READ_FAILED") {
         return t(
           "dashboard.charts.spacetimeTimeline.degradedReasonPolicyDbReadFailed",
-          {
-            defaultValue: "policy DB read failed",
-          },
         );
       }
       if (code === "PRESET_DB_READ_FAILED") {
         return t(
           "dashboard.charts.spacetimeTimeline.degradedReasonPresetDbReadFailed",
-          {
-            defaultValue: "preset DB read failed",
-          },
         );
       }
       if (code === "POLICY_CACHE_MISS") {
         return t(
           "dashboard.charts.spacetimeTimeline.degradedReasonPolicyCacheMiss",
-          {
-            defaultValue: "policy cache is missing",
-          },
         );
       }
       if (code === "PRESET_CACHE_MISS") {
         return t(
           "dashboard.charts.spacetimeTimeline.degradedReasonPresetCacheMiss",
-          {
-            defaultValue: "preset cache is missing",
-          },
         );
       }
       return t("dashboard.charts.spacetimeTimeline.degradedReasonUnknown", {
-        defaultValue: "unknown issue: {{code}}",
         code,
       });
     });
@@ -1325,27 +1278,19 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
     () => [
       {
         value: "auto" as const,
-        label: t("dashboard.charts.spacetimeTimeline.granularityAuto", {
-          defaultValue: "Auto",
-        }),
+        label: t("dashboard.charts.spacetimeTimeline.granularityAuto"),
       },
       {
         value: "day" as const,
-        label: t("dashboard.charts.spacetimeTimeline.granularityDay", {
-          defaultValue: "Daily",
-        }),
+        label: t("dashboard.charts.spacetimeTimeline.granularityDay"),
       },
       {
         value: "week" as const,
-        label: t("dashboard.charts.spacetimeTimeline.granularityWeek", {
-          defaultValue: "Weekly",
-        }),
+        label: t("dashboard.charts.spacetimeTimeline.granularityWeek"),
       },
       {
         value: "month" as const,
-        label: t("dashboard.charts.spacetimeTimeline.granularityMonth", {
-          defaultValue: "Monthly",
-        }),
+        label: t("dashboard.charts.spacetimeTimeline.granularityMonth"),
       },
     ],
     [t],
@@ -1384,18 +1329,14 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-2">
           <Card
-            title={t("dashboard.charts.spacetimeGeoHeatmap.title", {
-              defaultValue: "Geo Sentiment Heatmap",
-            })}
+            title={t("dashboard.charts.spacetimeGeoHeatmap.title")}
             className="glass-card sm-panel-card h-[520px]"
             variant="borderless"
           >
             <div className="flex flex-col gap-2 h-full">
               <Space wrap size="small" align="center">
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {t("dashboard.charts.spacetimeGeoHeatmap.scope", {
-                    defaultValue: "Scope",
-                  })}
+                  {t("dashboard.charts.spacetimeGeoHeatmap.scope")}
                 </Typography.Text>
                 <Segmented
                   size="small"
@@ -1404,14 +1345,12 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                     {
                       label: t(
                         "dashboard.charts.spacetimeGeoHeatmap.scopeGlobal",
-                        { defaultValue: "Global" },
                       ),
                       value: "global",
                     },
                     {
                       label: t(
                         "dashboard.charts.spacetimeGeoHeatmap.scopeEvent",
-                        { defaultValue: "Event" },
                       ),
                       value: "event",
                     },
@@ -1429,9 +1368,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                   }
                 />
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {t("dashboard.charts.spacetimeGeoHeatmap.followTimeline", {
-                    defaultValue: "Follow timeline",
-                  })}
+                  {t("dashboard.charts.spacetimeGeoHeatmap.followTimeline")}
                 </Typography.Text>
               </Space>
 
@@ -1459,24 +1396,17 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
 
         <div className="xl:col-span-1">
           <Card
-            title={t("dashboard.charts.spacetimeTimeline.title", {
-              defaultValue: "Timeline Player",
-            })}
+            title={t("dashboard.charts.spacetimeTimeline.title")}
             extra={
               timelineDegraded ? (
                 <Tooltip
                   title={t(
                     "dashboard.charts.spacetimeTimeline.degradedTooltip",
                     {
-                      defaultValue:
-                        "Degraded: source policy synchronization has issues ({{reasons}}).",
                       reasons:
                         degradedReasonText ||
                         t(
                           "dashboard.charts.spacetimeTimeline.degradedReasonUnknownShort",
-                          {
-                            defaultValue: "unknown",
-                          },
                         ),
                     },
                   )}
@@ -1485,9 +1415,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                     color={timelineDegradedCritical ? "error" : "warning"}
                     style={{ marginInlineEnd: 0 }}
                   >
-                    {t("dashboard.charts.spacetimeTimeline.degradedBadge", {
-                      defaultValue: "Degraded",
-                    })}
+                    {t("dashboard.charts.spacetimeTimeline.degradedBadge")}
                   </Tag>
                 </Tooltip>
               ) : null
@@ -1499,9 +1427,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
               <Space direction="vertical" size={6}>
                 <Space wrap size="small" align="center">
                   <Typography.Text type="secondary">
-                    {t("dashboard.charts.spacetimeTimeline.event", {
-                      defaultValue: "Event",
-                    })}
+                    {t("dashboard.charts.spacetimeTimeline.event")}
                   </Typography.Text>
                   <Select
                     value={selectedEventId ?? undefined}
@@ -1511,16 +1437,13 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                     style={{ minWidth: 280 }}
                     placeholder={t(
                       "dashboard.charts.spacetimeTimeline.eventPlaceholder",
-                      { defaultValue: "Select an event" },
                     )}
                   />
                 </Space>
 
                 <Space wrap size="small" align="center">
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {t("dashboard.charts.spacetimeTimeline.sourceType", {
-                      defaultValue: "Sources",
-                    })}
+                    {t("dashboard.charts.spacetimeTimeline.sourceType")}
                   </Typography.Text>
                   <Select
                     size="small"
@@ -1539,17 +1462,13 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                     disabled={orgForceAuthoritativeMode}
                   />
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {t("dashboard.charts.spacetimeTimeline.lockAuthoritative", {
-                      defaultValue: "Lock authoritative mode",
-                    })}
+                    {t("dashboard.charts.spacetimeTimeline.lockAuthoritative")}
                   </Typography.Text>
                   {orgForceAuthoritativeMode ? (
                     <Tooltip
                       title={t(
                         "dashboard.charts.spacetimeTimeline.orgEnforcedTooltip",
                         {
-                          defaultValue:
-                            "Forced by organization settings. Minimum authority sources: {{count}}.",
                           count: orgForceMinAuthoritativeSources,
                         },
                       )}
@@ -1557,9 +1476,6 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                       <Tag color="gold">
                         {t(
                           "dashboard.charts.spacetimeTimeline.orgEnforcedTag",
-                          {
-                            defaultValue: "Org enforced",
-                          },
                         )}
                       </Tag>
                     </Tooltip>
@@ -1575,15 +1491,10 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     {t(
                       "dashboard.charts.spacetimeTimeline.requireCorroborated",
-                      {
-                        defaultValue: "Require cross-verified",
-                      },
                     )}
                   </Typography.Text>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {t("dashboard.charts.spacetimeTimeline.sortBy", {
-                      defaultValue: "Sort",
-                    })}
+                    {t("dashboard.charts.spacetimeTimeline.sortBy")}
                   </Typography.Text>
                   <Select
                     size="small"
@@ -1596,9 +1507,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
 
                 <Space wrap size="small" align="center">
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {t("dashboard.charts.spacetimeTimeline.minHeat", {
-                      defaultValue: "Min heat",
-                    })}
+                    {t("dashboard.charts.spacetimeTimeline.minHeat")}
                   </Typography.Text>
                   <InputNumber
                     size="small"
@@ -1619,9 +1528,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                     style={{ width: 92 }}
                   />
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {t("dashboard.charts.spacetimeTimeline.minCredibility", {
-                      defaultValue: "Min credibility",
-                    })}
+                    {t("dashboard.charts.spacetimeTimeline.minCredibility")}
                   </Typography.Text>
                   <InputNumber
                     size="small"
@@ -1653,7 +1560,6 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                     {t(
                       "dashboard.charts.spacetimeTimeline.syncStatusAutoRefresh",
                       {
-                        defaultValue: "Auto refresh status ({{seconds}}s)",
                         seconds: Math.round(
                           SYNC_STATUS_POLL_INTERVAL_MS / 1000,
                         ),
@@ -1665,16 +1571,13 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                     onClick={handleRefreshSyncStatus}
                     loading={sourcePolicySyncLoading}
                   >
-                    {t("dashboard.charts.spacetimeTimeline.refreshStatus", {
-                      defaultValue: "Refresh status",
-                    })}
+                    {t("dashboard.charts.spacetimeTimeline.refreshStatus")}
                   </Button>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     {syncStatusLastRefreshedAt
                       ? t(
                           "dashboard.charts.spacetimeTimeline.lastRefreshAt",
                           {
-                            defaultValue: "Last refreshed: {{time}}",
                             time:
                               formatDateTime(
                                 syncStatusLastRefreshedAt,
@@ -1692,9 +1595,6 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                         )
                       : t(
                           "dashboard.charts.spacetimeTimeline.lastRefreshNever",
-                          {
-                            defaultValue: "Last refreshed: --",
-                          },
                         )}
                   </Typography.Text>
                 </Space>
@@ -1702,12 +1602,8 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                 <Space wrap size="small" align="center">
                   <Tag color={playing ? "green" : "default"}>
                     {playing
-                      ? t("dashboard.charts.spacetimeTimeline.playing", {
-                          defaultValue: "Playing",
-                        })
-                      : t("dashboard.charts.spacetimeTimeline.paused", {
-                          defaultValue: "Paused",
-                        })}
+                      ? t("dashboard.charts.spacetimeTimeline.playing")
+                      : t("dashboard.charts.spacetimeTimeline.paused")}
                   </Tag>
                   {event ? (
                     <Tag
@@ -1729,13 +1625,9 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                       {event.sourceEvidence?.corroborated
                         ? t(
                             "dashboard.charts.spacetimeTimeline.corroboratedTag",
-                            { defaultValue: "Cross-verified" },
                           )
                         : t(
                             "dashboard.charts.spacetimeTimeline.uncorroboratedTag",
-                            {
-                              defaultValue: "Single-source leaning",
-                            },
                           )}
                     </Tag>
                   ) : null}
@@ -1744,7 +1636,6 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                       {t(
                         "dashboard.charts.spacetimeTimeline.authorityThreshold",
                         {
-                          defaultValue: "Authority >= {{count}}",
                           count: minAuthoritativeSources ?? 1,
                         },
                       )}
@@ -1753,15 +1644,13 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     {event
                       ? resolveEventTitle(event)
-                      : t("common.emptyValue", { defaultValue: "N/A" })}
+                      : t("common.emptyValue")}
                   </Typography.Text>
                   {event ? (
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                       {t(
                         "dashboard.charts.spacetimeTimeline.sourceEvidenceSummary",
                         {
-                          defaultValue:
-                            "A{{authoritative}} / U{{unique}} / B{{blog}}",
                           authoritative:
                             event.sourceEvidence?.authoritativeSourceCount ?? 0,
                           unique: event.sourceEvidence?.uniqueSourceCount ?? 0,
@@ -1778,9 +1667,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
               ) : eventError ? (
                 <div className="flex flex-col gap-2">
                   <Typography.Text type="danger">
-                    {t("dashboard.dataAbnormal", {
-                      defaultValue: "Data error",
-                    })}
+                    {t("dashboard.dataAbnormal")}
                   </Typography.Text>
                   <Button
                     loading={refreshingEvent}
@@ -1789,30 +1676,23 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                       void refreshEvent();
                     }}
                   >
-                    {t("dashboard.actions.retryFetch", {
-                      defaultValue: "Retry fetch"
-                    })}
+                    {t("dashboard.actions.retryFetch")}
                   </Button>
                 </div>
               ) : !event ? (
                 <ChartEmptyState
-                  title={t("dashboard.charts.spacetimeTimeline.emptyTitle", {
-                    defaultValue: "No event",
-                  })}
+                  title={t("dashboard.charts.spacetimeTimeline.emptyTitle")}
                   description={t(
                     "dashboard.charts.spacetimeTimeline.emptyDescription",
-                    { defaultValue: "Select an event to play its timeline." },
                   )}
                 />
               ) : timeline.length === 0 ? (
                 <ChartEmptyState
                   title={t(
                     "dashboard.charts.spacetimeTimeline.noTimelineTitle",
-                    { defaultValue: "No timeline" },
                   )}
                   description={t(
                     "dashboard.charts.spacetimeTimeline.noTimelineDescription",
-                    { defaultValue: "This event has no timeline entries." },
                   )}
                 />
               ) : (
@@ -1824,37 +1704,35 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                         onClick={() => setPlaying((prev) => !prev)}
                       >
                         {playing
-                          ? t("common.pause", { defaultValue: "Pause" })
-                          : t("common.play", { defaultValue: "Play" })}
+                          ? t("common.pause")
+                          : t("common.play")}
                       </Button>
                       <Button
                         size="small"
                         onClick={() => jumpCursor(-1)}
                         disabled={cursorIndex <= 0}
                       >
-                        {t("common.prev", { defaultValue: "Prev" })}
+                        {t("common.prev")}
                       </Button>
                       <Button
                         size="small"
                         onClick={() => jumpCursor(1)}
                         disabled={cursorIndex >= timeline.length - 1}
                       >
-                        {t("common.next", { defaultValue: "Next" })}
+                        {t("common.next")}
                       </Button>
                       <Button
                         size="small"
                         onClick={() => jumpCursor(10)}
                         disabled={cursorIndex >= timeline.length - 1}
                       >
-                        {t("common.fastForward", { defaultValue: "Fast" })}
+                        {t("common.fastForward")}
                       </Button>
                       <Typography.Text
                         type="secondary"
                         style={{ fontSize: 12 }}
                       >
-                        {t("dashboard.charts.spacetimeTimeline.granularity", {
-                          defaultValue: "Granularity",
-                        })}
+                        {t("dashboard.charts.spacetimeTimeline.granularity")}
                       </Typography.Text>
                       <Select
                         value={timelineGranularity}
@@ -1874,9 +1752,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                         type="secondary"
                         style={{ fontSize: 12 }}
                       >
-                        {t("dashboard.charts.spacetimeTimeline.playSpeed", {
-                          defaultValue: "Speed",
-                        })}
+                        {t("dashboard.charts.spacetimeTimeline.playSpeed")}
                       </Typography.Text>
                       <InputNumber
                         size="small"
@@ -1923,9 +1799,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                         type="secondary"
                         style={{ fontSize: 12 }}
                       >
-                        {t("dashboard.charts.spacetimeTimeline.step", {
-                          defaultValue: "Step",
-                        })}
+                        {t("dashboard.charts.spacetimeTimeline.step")}
                         : {cursorIndex + 1}/{timeline.length}
                       </Typography.Text>
                       <Slider
@@ -1947,9 +1821,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                       <Space wrap size="small" align="center">
                         <Typography.Text strong>
                           {cursorEntry?.title?.trim() ||
-                            t("dashboard.charts.spacetimeTimeline.bucket", {
-                              defaultValue: "Bucket",
-                            })}
+                            t("dashboard.charts.spacetimeTimeline.bucket")}
                         </Typography.Text>
                         {cursorStartIso ? (
                           <Tag color="purple" className="text-xs">
@@ -1970,7 +1842,6 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                           <Tag color="geekblue" className="text-xs">
                             {t(
                               "dashboard.charts.spacetimeTimeline.bucketGranularity",
-                              { defaultValue: "Bucket" },
                             )}
                             : {cursorGranularityLabel}
                           </Tag>
@@ -1980,7 +1851,6 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                             {t(
                               "dashboard.charts.spacetimeTimeline.aggregatedBuckets",
                               {
-                                defaultValue: "{{count}} nodes",
                                 count: cursorEntry.aggregatedCount,
                               },
                             )}
@@ -1993,7 +1863,6 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                         >
                           {t(
                             "dashboard.charts.spacetimeTimeline.viewReferences",
-                            { defaultValue: "References" },
                           )}
                         </Button>
                       </Space>
@@ -2020,7 +1889,6 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                           {t(
                             "dashboard.charts.spacetimeTimeline.linkedSources",
                             {
-                              defaultValue: "Linked sources: {{count}}",
                               count: cursorLinkedSources.length,
                             },
                           )}
@@ -2038,9 +1906,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-2">
           <Card
-            title={t("dashboard.charts.spacetimePropagation.title", {
-              defaultValue: "Propagation Flow",
-            })}
+            title={t("dashboard.charts.spacetimePropagation.title")}
             className="glass-card"
             variant="borderless"
           >
@@ -2058,9 +1924,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
 
         <div className="xl:col-span-1">
           <Card
-            title={t("dashboard.charts.knowledgeGraph3d.title", {
-              defaultValue: "Knowledge Graph (3D)",
-            })}
+            title={t("dashboard.charts.knowledgeGraph3d.title")}
             className="glass-card"
             variant="borderless"
           >
@@ -2074,9 +1938,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
       <Drawer
         title={
           selectedTimelineEntry?.title?.trim() ||
-          t("dashboard.charts.spacetimeTimeline.detailsTitle", {
-            defaultValue: "Timeline Details",
-          })
+          t("dashboard.charts.spacetimeTimeline.detailsTitle")
         }
         open={timelineDrawerOpen}
         onClose={() => setTimelineDrawerOpen(false)}
@@ -2084,7 +1946,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
       >
         {!selectedTimelineEntry ? (
           <Empty
-            description={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+            description={t("dashboard.dataEmpty")}
             image={Empty.PRESENTED_IMAGE_SIMPLE}
           />
         ) : (
@@ -2098,14 +1960,12 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
               {selectedTimelineEntry.aggregatedCount > 1 ? (
                 <Tag color="blue">
                   {t("dashboard.charts.spacetimeTimeline.aggregatedBuckets", {
-                    defaultValue: "{{count}} nodes",
                     count: selectedTimelineEntry.aggregatedCount,
                   })}
                 </Tag>
               ) : null}
               <Tag color="default">
                 {t("dashboard.charts.spacetimeTimeline.references", {
-                  defaultValue: "Refs: {{count}}",
                   count:
                     timelineEntryReferences.resolved.length +
                     timelineEntryReferences.unresolved.length,
@@ -2121,9 +1981,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
 
             {referencedArticlesLoading ? (
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {t("dashboard.charts.spacetimeTimeline.loadingReferences", {
-                  defaultValue: "Loading referenced articles...",
-                })}
+                {t("dashboard.charts.spacetimeTimeline.loadingReferences")}
               </Typography.Text>
             ) : null}
 
@@ -2131,14 +1989,9 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
               <ChartEmptyState
                 title={t(
                   "dashboard.charts.spacetimeTimeline.noReferencesTitle",
-                  { defaultValue: "No references" },
                 )}
                 description={t(
                   "dashboard.charts.spacetimeTimeline.noReferencesDescription",
-                  {
-                    defaultValue:
-                      "No referenced articles were found for this timeline node.",
-                  },
                 )}
               />
             ) : (
@@ -2169,9 +2022,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                             <Space size="small" wrap>
                               <Tag color="geekblue">
                                 {article.sourceLabel ||
-                                  t("common.notAvailable", {
-                                    defaultValue: "N/A",
-                                  })}
+                                  t("common.notAvailable")}
                               </Tag>
                             </Space>
                             <Typography.Text
@@ -2180,7 +2031,6 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                             >
                               {t(
                                 "dashboard.charts.spacetimeTimeline.publishedAt",
-                                { defaultValue: "Published" },
                               )}
                               :{" "}
                               {publishedAt
@@ -2188,9 +2038,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                                     dateStyle: "medium",
                                     timeStyle: "short",
                                   })
-                                : t("common.notAvailable", {
-                                    defaultValue: "N/A",
-                                  })}
+                                : t("common.notAvailable")}
                             </Typography.Text>
                           </Space>
                         }
@@ -2204,8 +2052,6 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
             {timelineEntryReferences.unresolved.length > 0 ? (
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {t("dashboard.charts.spacetimeTimeline.unresolvedReferences", {
-                  defaultValue:
-                    "{{count}} references are still unavailable after lookup.",
                   count: timelineEntryReferences.unresolved.length,
                 })}
               </Typography.Text>

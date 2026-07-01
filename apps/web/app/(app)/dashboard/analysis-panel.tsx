@@ -29,7 +29,7 @@ import {
 } from "@/graphql/generated";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { dashboardNow } from "@/lib/dashboard-time";
-import dayjs from "@/lib/dayjs";
+import type dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 import {
@@ -103,11 +103,8 @@ export function AnalysisPanel() {
     return (
       <ChartEmptyState
         variant="permission"
-        title={t("common.accessDenied", { defaultValue: "Access denied" })}
-        description={t("common.accessDeniedDescription", {
-          defaultValue:
-            "You don't have permission to view this data. Contact an administrator if you need access."
-        })}
+        title={t("common.accessDenied")}
+        description={t("common.accessDeniedDescription")}
       />
     );
   }
@@ -118,10 +115,8 @@ export function AnalysisPanel() {
         <ChartEmptyState
           presentation="banner"
           variant="permission"
-          title={t("common.accessDenied", { defaultValue: "Access denied" })}
-          description={t("analysis.runPermissionRequired", {
-            defaultValue: "You can view results, but you don't have permission to run new analyses.",
-          })}
+          title={t("common.accessDenied")}
+          description={t("analysis.runPermissionRequired")}
         />
       ) : null}
       <Card title={t("analysis.correlation.title")}>
@@ -130,7 +125,7 @@ export function AnalysisPanel() {
           loading={savingCorr}
           onSubmit={async (values) => {
             if (!canRunAnalysis) {
-              message.warning(t("common.accessDenied", { defaultValue: "Access denied" }));
+              message.warning(t("common.accessDenied"));
               return;
             }
             try {
@@ -141,7 +136,6 @@ export function AnalysisPanel() {
               const errorMessage = err instanceof Error ? err.message : String(err);
               message.error(
                 t("analysis.correlation.submitFailed", {
-                  defaultValue: "Failed to submit correlation analysis: {{error}}",
                   error: errorMessage,
                 }),
               );
@@ -155,7 +149,7 @@ export function AnalysisPanel() {
           loading={savingAnomaly}
           onSubmit={async (values) => {
             if (!canRunAnalysis) {
-              message.warning(t("common.accessDenied", { defaultValue: "Access denied" }));
+              message.warning(t("common.accessDenied"));
               return;
             }
             try {
@@ -166,7 +160,6 @@ export function AnalysisPanel() {
               const errorMessage = err instanceof Error ? err.message : String(err);
               message.error(
                 t("analysis.anomaly.submitFailed", {
-                  defaultValue: "Failed to submit anomaly analysis: {{error}}",
                   error: errorMessage,
                 }),
               );
@@ -180,11 +173,9 @@ export function AnalysisPanel() {
             presentation="banner"
             variant="error"
             className="mb-3"
-            title={t("analysis.results.loadFailedTitle", { defaultValue: "Failed to load analysis results" })}
+            title={t("analysis.results.loadFailedTitle")}
             description={error instanceof Error ? error.message : String(error)}
-            actionLabel={t("dashboard.actions.retryFetch", {
-              defaultValue: "Retry fetch"
-            })}
+            actionLabel={t("dashboard.actions.retryFetch")}
             actionLoading={refreshingResults}
             onAction={() => {
               void refreshResults();
@@ -197,11 +188,8 @@ export function AnalysisPanel() {
         ) : visibleResults.length === 0 ? (
           <ChartEmptyState
             className="h-auto py-6"
-            title={t("analysis.results.emptyTitle", { defaultValue: "No analysis yet" })}
-            description={t("analysis.results.emptyDescription", {
-              defaultValue:
-                "Run a correlation, anomaly, or geo transport analysis to generate results.",
-            })}
+            title={t("analysis.results.emptyTitle")}
+            description={t("analysis.results.emptyDescription")}
           />
         ) : (
           <List<DashboardAnalysisResult>

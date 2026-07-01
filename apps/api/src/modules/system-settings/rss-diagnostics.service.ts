@@ -9,9 +9,9 @@ import {
 import { Types } from "mongoose";
 
 import { PipelineStageStatus } from "../../common/pipeline-status";
-import { ObservabilitySnapshotService } from "../observability/observability-snapshot.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
+import { ObservabilitySnapshotService } from "../observability/observability-snapshot.service";
 
 const logger = createLogger({ name: "rss-diagnostics" });
 

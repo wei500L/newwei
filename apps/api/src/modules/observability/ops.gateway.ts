@@ -9,18 +9,22 @@ import {
 import { verify } from "jsonwebtoken";
 import { Server, Socket } from "socket.io";
 
-import { AnalysisQueueEventPublisher } from "../analysis/analysis-queue-event.publisher";
 import { AlertsQueueEventPublisher } from "../alerts/alerts-queue-event.publisher";
+import { AnalysisQueueEventPublisher } from "../analysis/analysis-queue-event.publisher";
+import { AssistantQueueEventPublisher } from "../assistant/assistant-queue-event.publisher";
 import { AccessTokenBlacklistService } from "../auth/access-token-blacklist.service";
 import {
   AuthService,
   type AuthenticatedUser,
   type JwtPayload,
 } from "../auth/auth.service";
-import { AssistantQueueEventPublisher } from "../assistant/assistant-queue-event.publisher";
 import { EnvService } from "../config/config.service";
 import { CrawlQueueEventPublisher } from "../crawl/crawl-queue-event.publisher";
 import { QueueEventPublisher } from "../queue/queue-event.publisher";
+import {
+  buildRealtimeSocketErrorPayload,
+  shouldRecordFailedSocketAuth,
+} from "../websocket/socket-error-payloads";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
 import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
 
@@ -177,10 +181,13 @@ export class OpsGateway
           { socketId: client.id, ip },
           "WebSocket connection rate limited",
         );
-        client.emit("ops:error", {
-          message: "Rate limit exceeded",
-          retryAfterMs: rateLimitResult.retryAfterMs,
-        });
+        client.emit(
+          "ops:error",
+          buildRealtimeSocketErrorPayload(
+            "Rate limit exceeded",
+            rateLimitResult.retryAfterMs,
+          ),
+        );
         client.disconnect(true);
         return;
       }
@@ -193,10 +200,13 @@ export class OpsGateway
           { socketId: client.id, ip, backoffDelay },
           "WebSocket connection in backoff period",
         );
-        client.emit("ops:error", {
-          message: "Too many failed attempts",
-          retryAfterMs: backoffDelay,
-        });
+        client.emit(
+          "ops:error",
+          buildRealtimeSocketErrorPayload(
+            "Too many failed attempts",
+            backoffDelay,
+          ),
+        );
         client.disconnect(true);
         return;
       }
@@ -248,17 +258,21 @@ export class OpsGateway
         "Ops socket connected",
       );
     } catch (error) {
-      await this.connectionRateLimiter.recordFailedAuth(ip ?? "");
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (shouldRecordFailedSocketAuth(errorMessage)) {
+        await this.connectionRateLimiter.recordFailedAuth(ip ?? "");
+      }
       this.sessions.unregister(client);
       this.logger.warn(
         {
           socketId: client.id,
           ip,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage,
         },
         "Ops socket authentication failed",
       );
-      client.emit("ops:error", { message: "Unauthorized" });
+      client.emit("ops:error", buildRealtimeSocketErrorPayload(errorMessage));
       client.disconnect(true);
     }
   }

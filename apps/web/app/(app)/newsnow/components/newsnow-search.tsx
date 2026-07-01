@@ -29,39 +29,30 @@ export function NewsnowSearch({ isOpen, onClose }: NewsnowSearchProps) {
     if (metadataError) {
       return {
         tone: "error" as const,
-        message: t("search.feedback.error", {
-          defaultValue: "Search is temporarily unavailable. Please retry.",
-        }),
+        message: t("search.feedback.error"),
       };
     }
     if (metadataLoading) {
       return {
         tone: "loading" as const,
-        message: t("search.feedback.sourcesLoading", {
-          defaultValue: "Loading source index...",
-        }),
+        message: t("search.feedback.sourcesLoading"),
       };
     }
     if (!normalizedSearchText) {
       return {
         tone: "idle" as const,
-        message: t("search.feedback.sourcesIdle", {
-          defaultValue: "Type to filter sources.",
-        }),
+        message: t("search.feedback.sourcesIdle"),
       };
     }
     if (filteredSources.length === 0) {
       return {
         tone: "empty" as const,
-        message: t("search.feedback.sourcesEmpty", {
-          defaultValue: "No matching sources.",
-        }),
+        message: t("search.feedback.sourcesEmpty"),
       };
     }
     return {
       tone: "ready" as const,
       message: t("search.feedback.sourcesReady", {
-        defaultValue: "{{count}} source(s) matched",
         count: filteredSources.length,
       }),
     };

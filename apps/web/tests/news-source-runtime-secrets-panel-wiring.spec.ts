@@ -15,6 +15,6 @@ describe("news source runtime secrets panel wiring", () => {
     expect(source).toContain("const UNASSIGNED_SOURCE_GROUP_KEY = '__draft__'");
     expect(source).toContain("focusRow(nextRow.rowKey, nextRow.sourceId)");
     expect(source).toContain("group.isDraftGroup");
-    expect(source).toContain("Draft entries");
+    expect(source).toContain("systemSettings.newsSourceRuntimeSecrets.groups.unassignedDrafts");
   });
 });

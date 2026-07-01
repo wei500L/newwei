@@ -10,13 +10,13 @@ import {
 } from "../../graphql/dto/item.input";
 import { CacheService } from "../cache/cache.service";
 import { LiteLlmService } from "../news-pipeline/litellm.service";
+import { SituationMonitorTranslationService } from "../situation-monitor/situation-monitor-translation.service";
 import { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
 import { RssTranslationMetricsService } from "../system-settings/rss-translation-metrics.service";
 import {
   SituationMonitorSettingsService,
   type SituationMonitorTranslationRuntimeConfig,
 } from "../system-settings/situation-monitor-settings.service";
-import { SituationMonitorTranslationService } from "../situation-monitor/situation-monitor-translation.service";
 
 const logger = createLogger({ name: "items-rss-translation" });
 

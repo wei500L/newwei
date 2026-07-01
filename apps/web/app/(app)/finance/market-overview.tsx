@@ -1,18 +1,50 @@
 "use client";
 
 import { Card, Skeleton, Typography } from "antd";
+import dynamic from "next/dynamic";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { FinancialCandlestick } from "@/app/(app)/dashboard/charts/financial-candlestick";
-import { SectorHeatmap } from "@/app/(app)/dashboard/charts/sector-heatmap";
-import { MarketPulse } from "@/app/(app)/dashboard/components/market-pulse";
-import { MetricDrillDown } from "@/app/(app)/dashboard/metric-drilldown";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useHeroMetrics } from "@/lib/hero-metrics";
 import { useDashboardRangeStore } from "@/store/time-range";
+
+const MarketPulse = dynamic(
+  () =>
+    import("@/app/(app)/dashboard/components/market-pulse").then(
+      (mod) => mod.MarketPulse,
+    ),
+  { loading: () => <Skeleton active paragraph={{ rows: 4 }} /> },
+);
+
+const MetricDrillDown = dynamic(
+  () =>
+    import("@/app/(app)/dashboard/metric-drilldown").then(
+      (mod) => mod.MetricDrillDown,
+    ),
+  {
+    ssr: false,
+    loading: () => <Skeleton active paragraph={{ rows: 8 }} />,
+  },
+);
+
+const SectorHeatmap = dynamic(
+  () =>
+    import("@/app/(app)/dashboard/charts/sector-heatmap").then(
+      (mod) => mod.SectorHeatmap,
+    ),
+  { loading: () => <Skeleton active paragraph={{ rows: 6 }} /> },
+);
+
+const FinancialCandlestick = dynamic(
+  () =>
+    import("@/app/(app)/dashboard/charts/financial-candlestick").then(
+      (mod) => mod.FinancialCandlestick,
+    ),
+  { loading: () => <Skeleton active paragraph={{ rows: 6 }} /> },
+);
 
 export function MarketOverview() {
   const { t } = useTranslation();
@@ -32,12 +64,10 @@ export function MarketOverview() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("finance.market.overviewTitle", { defaultValue: "Market Overview" })}
+          {t("finance.market.overviewTitle")}
         </Typography.Title>
         <Typography.Text type="secondary">
-          {t("finance.market.overviewSubtitle", {
-            defaultValue: "Track macro and market signals across the selected time range."
-          })}
+          {t("finance.market.overviewSubtitle")}
         </Typography.Text>
         <TimeRangeControls
           appliedGranularity={appliedHeroGranularityInfo.coarsest}
@@ -49,11 +79,8 @@ export function MarketOverview() {
         <ChartEmptyState
           className="h-auto"
           variant="permission"
-          title={t("common.accessDenied", { defaultValue: "Access denied" })}
-          description={t("finance.market.permissionRequired", {
-            defaultValue:
-              "Market overview hero metrics require the economicdata.read permission.",
-          })}
+          title={t("common.accessDenied")}
+          description={t("finance.market.permissionRequired")}
         />
       ) : heroError && !heroHasData ? (
         <RequestErrorBanner
@@ -85,7 +112,7 @@ export function MarketOverview() {
       ) : (
         <ChartEmptyState
           className="h-auto"
-          description={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+          description={t("dashboard.dataEmpty")}
         />
       )}
 
@@ -99,13 +126,13 @@ export function MarketOverview() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <Card
-          title={t("finance.market.sectorHeatmap", { defaultValue: "Sector Heatmap" })}
+          title={t("finance.market.sectorHeatmap")}
           className="content-card xl:col-span-2"
         >
           <SectorHeatmap />
         </Card>
         <Card
-          title={t("finance.market.candlestick", { defaultValue: "Candlestick" })}
+          title={t("finance.market.candlestick")}
           className="content-card"
         >
           <FinancialCandlestick />

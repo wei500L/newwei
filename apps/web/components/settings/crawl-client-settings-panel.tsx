@@ -110,16 +110,12 @@ export function CrawlClientSettingsPanel() {
           />
         </Form.Item>
         <Form.Item
-          label={t("settings.crawlClient.fields.requestTimeoutHot", {
-            defaultValue: "Hot request timeout",
-          })}
+          label={t("settings.crawlClient.fields.requestTimeoutHot")}
           name="requestTimeoutHotMs"
           rules={[
             {
               required: true,
-              message: t("settings.crawlClient.validation.requestTimeoutHot", {
-                defaultValue: "Please enter hot request timeout.",
-              }),
+              message: t("settings.crawlClient.validation.requestTimeoutHot"),
             },
             {
               type: "number",
@@ -149,18 +145,13 @@ export function CrawlClientSettingsPanel() {
           />
         </Form.Item>
         <Form.Item
-          label={t("settings.crawlClient.fields.requestTimeoutNormal", {
-            defaultValue: "Normal request timeout",
-          })}
+          label={t("settings.crawlClient.fields.requestTimeoutNormal")}
           name="requestTimeoutNormalMs"
           rules={[
             {
               required: true,
               message: t(
                 "settings.crawlClient.validation.requestTimeoutNormal",
-                {
-                  defaultValue: "Please enter normal request timeout.",
-                },
               ),
             },
             {
@@ -191,27 +182,20 @@ export function CrawlClientSettingsPanel() {
           />
         </Form.Item>
         <Form.Item
-          label={t("settings.crawlClient.fields.conditionalRequestEnabled", {
-            defaultValue: "Enable HTTP conditional requests",
-          })}
+          label={t("settings.crawlClient.fields.conditionalRequestEnabled")}
           name="conditionalRequestEnabled"
           valuePropName="checked"
         >
           <Switch />
         </Form.Item>
         <Form.Item
-          label={t("settings.crawlClient.fields.conditionalRequestTimeoutMs", {
-            defaultValue: "Conditional request timeout",
-          })}
+          label={t("settings.crawlClient.fields.conditionalRequestTimeoutMs")}
           name="conditionalRequestTimeoutMs"
           rules={[
             {
               required: true,
               message: t(
                 "settings.crawlClient.validation.conditionalRequestTimeoutMs",
-                {
-                  defaultValue: "Please enter conditional request timeout.",
-                },
               ),
             },
             {
@@ -243,18 +227,13 @@ export function CrawlClientSettingsPanel() {
           />
         </Form.Item>
         <Form.Item
-          label={t("settings.crawlClient.fields.conditionalRequestMaxRetries", {
-            defaultValue: "Conditional request retries",
-          })}
+          label={t("settings.crawlClient.fields.conditionalRequestMaxRetries")}
           name="conditionalRequestMaxRetries"
           rules={[
             {
               required: true,
               message: t(
                 "settings.crawlClient.validation.conditionalRequestMaxRetries",
-                {
-                  defaultValue: "Please enter conditional request retries.",
-                },
               ),
             },
             {
@@ -286,9 +265,6 @@ export function CrawlClientSettingsPanel() {
         <Form.Item
           label={t(
             "settings.crawlClient.fields.detailPublishSignalHeadFetchTimeout",
-            {
-              defaultValue: "Detail publish-signal head fetch timeout",
-            },
           )}
           name="detailPublishSignalHeadFetchTimeoutMs"
           rules={[
@@ -296,10 +272,6 @@ export function CrawlClientSettingsPanel() {
               required: true,
               message: t(
                 "settings.crawlClient.validation.detailPublishSignalHeadFetchTimeout",
-                {
-                  defaultValue:
-                    "Please enter detail publish-signal head fetch timeout.",
-                },
               ),
             },
             {
@@ -332,9 +304,6 @@ export function CrawlClientSettingsPanel() {
         <Form.Item
           label={t(
             "settings.crawlClient.fields.detailPublishSignalHeadFetchConcurrency",
-            {
-              defaultValue: "Detail publish-signal head fetch concurrency",
-            },
           )}
           name="detailPublishSignalHeadFetchConcurrency"
           rules={[
@@ -342,10 +311,6 @@ export function CrawlClientSettingsPanel() {
               required: true,
               message: t(
                 "settings.crawlClient.validation.detailPublishSignalHeadFetchConcurrency",
-                {
-                  defaultValue:
-                    "Please enter detail publish-signal head fetch concurrency.",
-                },
               ),
             },
             {
@@ -371,9 +336,6 @@ export function CrawlClientSettingsPanel() {
         <Form.Item
           label={t(
             "settings.crawlClient.fields.detailPublishSignalHeadFetchMaxReadBytes",
-            {
-              defaultValue: "Detail publish-signal head fetch max read bytes",
-            },
           )}
           name="detailPublishSignalHeadFetchMaxReadBytes"
           rules={[
@@ -381,10 +343,6 @@ export function CrawlClientSettingsPanel() {
               required: true,
               message: t(
                 "settings.crawlClient.validation.detailPublishSignalHeadFetchMaxReadBytes",
-                {
-                  defaultValue:
-                    "Please enter detail publish-signal head fetch max read bytes.",
-                },
               ),
             },
             {
@@ -469,18 +427,13 @@ export function CrawlClientSettingsPanel() {
           />
         </Form.Item>
         <Form.Item
-          label={t("settings.crawlClient.fields.queueOverloadCooldown", {
-            defaultValue: "Queue overload cooldown",
-          })}
+          label={t("settings.crawlClient.fields.queueOverloadCooldown")}
           name="queueOverloadCooldownMs"
           rules={[
             {
               required: true,
               message: t(
                 "settings.crawlClient.validation.queueOverloadCooldown",
-                {
-                  defaultValue: "Please enter queue overload cooldown.",
-                },
               ),
             },
             {
@@ -511,9 +464,7 @@ export function CrawlClientSettingsPanel() {
           />
         </Form.Item>
         <Form.Item
-          label={t("settings.crawlClient.fields.adaptiveConcurrency", {
-            defaultValue: "Adaptive concurrency",
-          })}
+          label={t("settings.crawlClient.fields.adaptiveConcurrency")}
           name="adaptiveConcurrencyEnabled"
           valuePropName="checked"
         >
@@ -521,30 +472,19 @@ export function CrawlClientSettingsPanel() {
         </Form.Item>
         <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
           {adaptiveConcurrencyEnabled
-            ? t("settings.crawlClient.hints.adaptiveEnabled", {
-                defaultValue:
-                  "Adaptive mode is enabled. Window and threshold fields below are active.",
-              })
-            : t("settings.crawlClient.hints.adaptiveDisabled", {
-                defaultValue:
-                  "Adaptive mode is disabled. Enable it to configure window and threshold fields.",
-              })}
+            ? t("settings.crawlClient.hints.adaptiveEnabled")
+            : t("settings.crawlClient.hints.adaptiveDisabled")}
         </Typography.Paragraph>
         {adaptiveConcurrencyEnabled ? (
           <>
             <Form.Item
-              label={t("settings.crawlClient.fields.adaptiveWindowMinutes", {
-                defaultValue: "Adaptive window",
-              })}
+              label={t("settings.crawlClient.fields.adaptiveWindowMinutes")}
               name="adaptiveWindowMinutes"
               rules={[
                 {
                   required: true,
                   message: t(
                     "settings.crawlClient.validation.adaptiveWindowMinutes",
-                    {
-                      defaultValue: "Please enter adaptive window in minutes.",
-                    },
                   ),
                 },
                 {
@@ -575,19 +515,13 @@ export function CrawlClientSettingsPanel() {
               />
             </Form.Item>
             <Form.Item
-              label={t("settings.crawlClient.fields.adaptiveCooldownMinutes", {
-                defaultValue: "Adaptive cooldown",
-              })}
+              label={t("settings.crawlClient.fields.adaptiveCooldownMinutes")}
               name="adaptiveCooldownMinutes"
               rules={[
                 {
                   required: true,
                   message: t(
                     "settings.crawlClient.validation.adaptiveCooldownMinutes",
-                    {
-                      defaultValue:
-                        "Please enter adaptive cooldown in minutes.",
-                    },
                   ),
                 },
                 {
@@ -620,9 +554,6 @@ export function CrawlClientSettingsPanel() {
             <Form.Item
               label={t(
                 "settings.crawlClient.fields.adaptiveLatencyThresholdRatio",
-                {
-                  defaultValue: "Adaptive latency threshold",
-                },
               )}
               name="adaptiveLatencyThresholdRatio"
               rules={[
@@ -630,10 +561,6 @@ export function CrawlClientSettingsPanel() {
                   required: true,
                   message: t(
                     "settings.crawlClient.validation.adaptiveLatencyThresholdRatio",
-                    {
-                      defaultValue:
-                        "Please enter adaptive latency threshold ratio.",
-                    },
                   ),
                 },
                 {
@@ -658,9 +585,6 @@ export function CrawlClientSettingsPanel() {
             <Form.Item
               label={t(
                 "settings.crawlClient.fields.adaptiveErrorRateThreshold",
-                {
-                  defaultValue: "Adaptive error-rate threshold",
-                },
               )}
               name="adaptiveErrorRateThreshold"
               rules={[
@@ -668,10 +592,6 @@ export function CrawlClientSettingsPanel() {
                   required: true,
                   message: t(
                     "settings.crawlClient.validation.adaptiveErrorRateThreshold",
-                    {
-                      defaultValue:
-                        "Please enter adaptive error-rate threshold ratio.",
-                    },
                   ),
                 },
                 {
@@ -696,9 +616,6 @@ export function CrawlClientSettingsPanel() {
             <Form.Item
               label={t(
                 "settings.crawlClient.fields.adaptiveMemoryHeadroomThreshold",
-                {
-                  defaultValue: "Adaptive memory headroom threshold",
-                },
               )}
               name="adaptiveMemoryHeadroomThreshold"
               rules={[
@@ -706,10 +623,6 @@ export function CrawlClientSettingsPanel() {
                   required: true,
                   message: t(
                     "settings.crawlClient.validation.adaptiveMemoryHeadroomThreshold",
-                    {
-                      defaultValue:
-                        "Please enter adaptive memory headroom threshold ratio.",
-                    },
                   ),
                 },
                 {

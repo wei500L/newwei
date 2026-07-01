@@ -6,15 +6,15 @@ import {
 import { Injectable } from '@nestjs/common';
 
 import {
-  ARCHIVE_VERTICAL_TAXONOMY,
-} from './archive-taxonomy';
-import {
   ARCHIVE_RULE_CONFLICT_KEYWORD_PENALTY,
   ARCHIVE_RULE_EXCLUDED_KEYWORD_PENALTY,
   ARCHIVE_RULE_STRONG_KEYWORD_INCREMENT,
   ARCHIVE_RULE_STRONG_SCORE,
   ARCHIVE_RULE_WEAK_KEYWORD_INCREMENT,
 } from './archive-classification.constants';
+import {
+  ARCHIVE_VERTICAL_TAXONOMY,
+} from './archive-taxonomy';
 import {
   ARCHIVE_VERTICAL_ORDER,
   ArchiveRegion,

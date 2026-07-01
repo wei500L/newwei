@@ -1,11 +1,14 @@
 import { getQueueToken } from "@nestjs/bull-shared";
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
+import {
+  BULLMQ_DLQ_JOB_RETENTION,
+  BULLMQ_FAILED_JOB_RETENTION,
+} from "../../common/bullmq-retention";
 import { AuthModule } from "../auth/auth.module";
 import { CacheModule } from "../cache/cache.module";
-import { EnvService } from "../config/config.service";
-import { toBullmqConnection } from "../config/redis-connection";
+import { BullmqConnectionService } from "../config/bullmq-connection.service";
 import { CrawlModule } from "../crawl/crawl.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
@@ -36,23 +39,25 @@ import { QueueService } from "./queue.service";
     NewsPipelineModule,
     NotificationsModule,
     AuthModule,
-    SystemSettingsModule,
+    forwardRef(() => SystemSettingsModule),
   ],
   controllers: [NewsSourceDispatchController, NewsSourceOpsController],
   providers: [
     {
       provide: PIPELINE_QUEUE,
-      inject: [EnvService, QueueCleanupService],
-      useFactory: (env: EnvService, cleanup: QueueCleanupService) => {
-        const config = env.bullmqConfig;
+      inject: [QueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: QueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const queue = new Queue(ITEM_PIPELINE_QUEUE_NAME, {
-          connection: toBullmqConnection(config.connection),
+          connection: bullmqConnections.getSharedConnection(),
           defaultJobOptions: {
             removeOnComplete: {
               age: 3600,
               count: 1000,
             },
-            removeOnFail: false,
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
             attempts: 5,
             backoff: {
               type: "exponential",
@@ -66,31 +71,40 @@ import { QueueService } from "./queue.service";
     },
     {
       provide: PIPELINE_DLQ_QUEUE,
-      inject: [EnvService, QueueCleanupService],
-      useFactory: (env: EnvService, cleanup: QueueCleanupService) => {
-        const config = env.bullmqConfig;
+      inject: [QueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: QueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const queue = new Queue(ITEM_PIPELINE_DLQ_QUEUE_NAME, {
-          connection: toBullmqConnection(config.connection),
+          connection: bullmqConnections.getSharedConnection(),
           defaultJobOptions: {
             removeOnComplete: {
               age: 3600 * 24 * 7,
               count: 10_000,
             },
-            removeOnFail: false,
+            removeOnFail: BULLMQ_DLQ_JOB_RETENTION,
             attempts: 1,
           },
         });
-        cleanup.track(queue);
+        cleanup.track(queue, {
+          failedRetention: BULLMQ_DLQ_JOB_RETENTION,
+          waitingRetention: BULLMQ_DLQ_JOB_RETENTION,
+        });
         return queue;
       },
     },
     {
       provide: PIPELINE_QUEUE_EVENTS,
-      inject: [EnvService, QueueCleanupService],
-      useFactory: (env: EnvService, cleanup: QueueCleanupService) => {
-        const config = env.bullmqConfig;
+      inject: [QueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: QueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const events = new QueueEvents(ITEM_PIPELINE_QUEUE_NAME, {
-          connection: toBullmqConnection(config.connection)
+          connection: bullmqConnections.createDedicatedConnectionOptions(
+            `events:${ITEM_PIPELINE_QUEUE_NAME}`,
+          )
         });
         cleanup.track(events);
         return events;

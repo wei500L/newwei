@@ -22,10 +22,10 @@ export interface SituationMonitorSettingsState {
 const normalizeWindowHours = (value: unknown): number => {
   const raw = typeof value === "number" ? value : Number.NaN;
   if (!Number.isFinite(raw)) {
-    return 24;
+    return 72;
   }
-  const allowed = new Set([6, 24, 72]);
-  return allowed.has(raw) ? raw : 24;
+  const allowed = new Set([6, 24, 72, 168]);
+  return allowed.has(raw) ? raw : 72;
 };
 
 const normalizeScope = (value: unknown): SituationMonitorScope => {
@@ -37,7 +37,7 @@ const normalizeBoolean = (value: unknown, fallback: boolean): boolean => {
 };
 
 export const useSituationMonitorSettingsStore = create<SituationMonitorSettingsState>((set) => ({
-  windowHours: 24,
+  windowHours: 72,
   scope: "all",
   autoRefresh: true,
   resetLayoutOnPreset: false,
@@ -62,7 +62,7 @@ export const useSituationMonitorSettingsStore = create<SituationMonitorSettingsS
   },
   reset: () =>
     set({
-      windowHours: 24,
+      windowHours: 72,
       scope: "all",
       autoRefresh: true,
       resetLayoutOnPreset: false,

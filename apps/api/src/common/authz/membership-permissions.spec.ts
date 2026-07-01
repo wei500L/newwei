@@ -34,11 +34,11 @@ describe("membership-permissions", () => {
       },
       roles: [
         {
-          roleId: "role-billing",
+          roleId: "role-ops",
           role: {
-            id: "role-billing",
-            name: "billing",
-            permissions: [{ permission: { name: "billing.manage" } }],
+            id: "role-ops",
+            name: "ops",
+            permissions: [{ permission: { name: "settings.manage" } }],
           },
         },
       ],
@@ -47,9 +47,9 @@ describe("membership-permissions", () => {
     expect(collectMembershipRoles(membership)).toEqual([
       membership.roles[0]!.role,
     ]);
-    expect(collectMembershipRoleIds(membership)).toEqual(["role-billing"]);
+    expect(collectMembershipRoleIds(membership)).toEqual(["role-ops"]);
     expect(Array.from(collectMembershipPermissionSet(membership))).toEqual([
-      "billing.manage",
+      "settings.manage",
     ]);
   });
 
@@ -79,11 +79,11 @@ describe("membership-permissions", () => {
           },
         },
         {
-          roleId: "role-billing",
+          roleId: "role-ops",
           role: {
-            id: "role-billing",
-            name: "billing",
-            permissions: [{ permission: { name: "billing.manage" } }],
+            id: "role-ops",
+            name: "ops",
+            permissions: [{ permission: { name: "settings.manage" } }],
           },
         },
       ],
@@ -91,12 +91,12 @@ describe("membership-permissions", () => {
 
     expect(collectMembershipRoleIds(membership)).toEqual([
       "role-editor",
-      "role-billing",
+      "role-ops",
     ]);
     expect(Array.from(collectMembershipPermissionSet(membership))).toEqual([
       "items.read",
       "items.write",
-      "billing.manage",
+      "settings.manage",
     ]);
   });
 

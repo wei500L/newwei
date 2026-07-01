@@ -1,3 +1,4 @@
+import "./otel";
 import "reflect-metadata";
 import { createLogger } from "@modular/utils";
 import { RequestMethod, ValidationPipe } from "@nestjs/common";
@@ -10,8 +11,10 @@ import { WINSTON_MODULE_NEST_PROVIDER } from "nest-winston";
 import { createRequire } from "node:module";
 
 import { AppModule } from "./app.module";
+import { configureAxiosKeepAliveDefaults } from "./common/http/http-agent";
 import { RedisIoAdapter } from "./common/websocket/redis-io.adapter";
 import { EnvService } from "./modules/config/config.service";
+import { recordHttpRequestMetric } from "./modules/observability/prometheus-metrics";
 import { WebSocketAdapterRegistry } from "./modules/websocket/websocket-adapter-registry.service";
 
 const nodeRequire = createRequire(__filename);
@@ -50,6 +53,12 @@ async function bootstrap() {
   app.use((req: Request, res: Response, next: NextFunction) => {
     const started = Date.now();
     res.on("finish", () => {
+      recordHttpRequestMetric({
+        method: req.method,
+        route: req.route?.path ? String(req.route.path) : req.path,
+        statusCode: res.statusCode,
+        durationMs: Date.now() - started,
+      });
       const traceId =
         (res.getHeader("x-trace-id") as string | undefined) ||
         (req as { traceId?: string }).traceId;
@@ -66,9 +75,17 @@ async function bootstrap() {
 
   app.use(helmet());
   app.use(cookieParser());
-  app.use(json({ limit: "10mb" }));
+  app.use(
+    json({
+      limit: "10mb",
+      verify: (req: Request & { rawBody?: Buffer }, _res, buf) => {
+        req.rawBody = Buffer.from(buf);
+      },
+    }),
+  );
   app.use(urlencoded({ extended: true }));
   const env = app.get(EnvService);
+  configureAxiosKeepAliveDefaults(env.httpAgentConfig);
   const webSocketAdapterRegistry = app.get(WebSocketAdapterRegistry);
 
   if (env.webSocketRedisAdapter.enabled) {

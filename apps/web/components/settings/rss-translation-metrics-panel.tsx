@@ -170,7 +170,7 @@ export function RssTranslationMetricsPanel() {
       captureClientError("Failed to load RSS translation metrics", error);
       const messageText =
         extractApiError(error).message ||
-        t("settings.rssTranslationMetrics.errors.loadFailed", { defaultValue: "Failed to load metrics." });
+        t("settings.rssTranslationMetrics.errors.loadFailed");
       setErrorMessage(messageText);
       messageApi.error(messageText);
     } finally {
@@ -236,8 +236,8 @@ export function RssTranslationMetricsPanel() {
       tooltip: { trigger: "axis" },
       legend: {
         data: [
-          t("settings.rssTranslationMetrics.charts.series.requests", { defaultValue: "Requests" }),
-          t("settings.rssTranslationMetrics.charts.series.translated", { defaultValue: "Translated texts" })
+          t("settings.rssTranslationMetrics.charts.series.requests"),
+          t("settings.rssTranslationMetrics.charts.series.translated")
         ]
       },
       grid: { top: 42, left: 24, right: 24, bottom: 24, containLabel: true },
@@ -258,14 +258,14 @@ export function RssTranslationMetricsPanel() {
       series: [
         {
           type: "bar",
-          name: t("settings.rssTranslationMetrics.charts.series.requests", { defaultValue: "Requests" }),
+          name: t("settings.rssTranslationMetrics.charts.series.requests"),
           data: dailyTrend.map((item) => item.requestCount),
           itemStyle: { color: colors.primary }
         },
         {
           type: "line",
           smooth: true,
-          name: t("settings.rssTranslationMetrics.charts.series.translated", { defaultValue: "Translated texts" }),
+          name: t("settings.rssTranslationMetrics.charts.series.translated"),
           data: dailyTrend.map((item) => item.translatedCount),
           itemStyle: { color: colors.bullish }
         }
@@ -282,9 +282,9 @@ export function RssTranslationMetricsPanel() {
       tooltip: { trigger: "axis" },
       legend: {
         data: [
-          t("settings.rssTranslationMetrics.charts.series.cacheHitRate", { defaultValue: "Cache hit rate" }),
-          t("settings.rssTranslationMetrics.charts.series.failureRate", { defaultValue: "Failure rate" }),
-          t("settings.rssTranslationMetrics.charts.series.avgLatency", { defaultValue: "Avg latency (ms)" })
+          t("settings.rssTranslationMetrics.charts.series.cacheHitRate"),
+          t("settings.rssTranslationMetrics.charts.series.failureRate"),
+          t("settings.rssTranslationMetrics.charts.series.avgLatency")
         ]
       },
       grid: { top: 42, left: 24, right: 24, bottom: 24, containLabel: true },
@@ -316,14 +316,14 @@ export function RssTranslationMetricsPanel() {
         {
           type: "line",
           smooth: true,
-          name: t("settings.rssTranslationMetrics.charts.series.cacheHitRate", { defaultValue: "Cache hit rate" }),
+          name: t("settings.rssTranslationMetrics.charts.series.cacheHitRate"),
           data: dailyTrend.map((item) => Number((item.cacheHitRate * 100).toFixed(2))),
           itemStyle: { color: colors.bullish }
         },
         {
           type: "line",
           smooth: true,
-          name: t("settings.rssTranslationMetrics.charts.series.failureRate", { defaultValue: "Failure rate" }),
+          name: t("settings.rssTranslationMetrics.charts.series.failureRate"),
           data: dailyTrend.map((item) => Number((item.failureRate * 100).toFixed(2))),
           itemStyle: { color: colors.destructive }
         },
@@ -331,7 +331,7 @@ export function RssTranslationMetricsPanel() {
           type: "line",
           smooth: true,
           yAxisIndex: 1,
-          name: t("settings.rssTranslationMetrics.charts.series.avgLatency", { defaultValue: "Avg latency (ms)" }),
+          name: t("settings.rssTranslationMetrics.charts.series.avgLatency"),
           data: dailyTrend.map((item) => item.avgLatencyMs),
           itemStyle: { color: colors.accent }
         }
@@ -342,14 +342,14 @@ export function RssTranslationMetricsPanel() {
   const columns = useMemo<ColumnsType<RssTranslationMetricsDailyRow>>(
     () => [
       {
-        title: t("settings.rssTranslationMetrics.table.columns.date", { defaultValue: "Date" }),
+        title: t("settings.rssTranslationMetrics.table.columns.date"),
         dataIndex: "date",
         key: "date",
         width: 110,
         fixed: "left"
       },
       {
-        title: t("settings.rssTranslationMetrics.table.columns.provider", { defaultValue: "Provider" }),
+        title: t("settings.rssTranslationMetrics.table.columns.provider"),
         dataIndex: "provider",
         key: "provider",
         width: 110,
@@ -358,65 +358,65 @@ export function RssTranslationMetricsPanel() {
         )
       },
       {
-        title: t("settings.rssTranslationMetrics.table.columns.targetLanguage", { defaultValue: "Language" }),
+        title: t("settings.rssTranslationMetrics.table.columns.targetLanguage"),
         dataIndex: "targetLanguage",
         key: "targetLanguage",
         width: 100
       },
       {
-        title: t("settings.rssTranslationMetrics.table.columns.requestCount", { defaultValue: "Requests" }),
+        title: t("settings.rssTranslationMetrics.table.columns.requestCount"),
         dataIndex: "requestCount",
         key: "requestCount",
         width: 110
       },
       {
-        title: t("settings.rssTranslationMetrics.table.columns.textCount", { defaultValue: "Texts" }),
+        title: t("settings.rssTranslationMetrics.table.columns.textCount"),
         dataIndex: "textCount",
         key: "textCount",
         width: 100
       },
       {
-        title: t("settings.rssTranslationMetrics.table.columns.translatedCount", { defaultValue: "Translated" }),
+        title: t("settings.rssTranslationMetrics.table.columns.translatedCount"),
         dataIndex: "translatedCount",
         key: "translatedCount",
         width: 110
       },
       {
-        title: t("settings.rssTranslationMetrics.table.columns.cacheHitRate", { defaultValue: "Cache hit rate" }),
+        title: t("settings.rssTranslationMetrics.table.columns.cacheHitRate"),
         dataIndex: "cacheHitRate",
         key: "cacheHitRate",
         width: 130,
         render: (value: number) => `${(value * 100).toFixed(1)}%`
       },
       {
-        title: t("settings.rssTranslationMetrics.table.columns.failureRate", { defaultValue: "Failure rate" }),
+        title: t("settings.rssTranslationMetrics.table.columns.failureRate"),
         dataIndex: "failureRate",
         key: "failureRate",
         width: 120,
         render: (value: number) => `${(value * 100).toFixed(1)}%`
       },
       {
-        title: t("settings.rssTranslationMetrics.table.columns.avgLatencyMs", { defaultValue: "Avg latency" }),
+        title: t("settings.rssTranslationMetrics.table.columns.avgLatencyMs"),
         dataIndex: "avgLatencyMs",
         key: "avgLatencyMs",
         width: 120,
         render: (value: number) => `${value}ms`
       },
       {
-        title: t("settings.rssTranslationMetrics.table.columns.maxLatencyMs", { defaultValue: "Max latency" }),
+        title: t("settings.rssTranslationMetrics.table.columns.maxLatencyMs"),
         dataIndex: "maxLatencyMs",
         key: "maxLatencyMs",
         width: 120,
         render: (value: number) => `${value}ms`
       },
       {
-        title: t("settings.rssTranslationMetrics.table.columns.failureCount", { defaultValue: "Failures" }),
+        title: t("settings.rssTranslationMetrics.table.columns.failureCount"),
         dataIndex: "failureCount",
         key: "failureCount",
         width: 100
       },
       {
-        title: t("settings.rssTranslationMetrics.table.columns.skipTooLongCount", { defaultValue: "Skipped long texts" }),
+        title: t("settings.rssTranslationMetrics.table.columns.skipTooLongCount"),
         dataIndex: "skipTooLongCount",
         key: "skipTooLongCount",
         width: 160
@@ -429,16 +429,16 @@ export function RssTranslationMetricsPanel() {
     <>
       {contextHolder}
       <Card
-        title={t("settings.rssTranslationMetrics.title", { defaultValue: "RSS translation metrics" })}
+        title={t("settings.rssTranslationMetrics.title")}
         extra={
           <Space wrap>
             <Select
               style={{ width: 150 }}
               value={days}
               options={[
-                { value: 7, label: t("settings.rssTranslationMetrics.filters.lastDays", { defaultValue: "Last {{days}} days", days: 7 }) },
-                { value: 14, label: t("settings.rssTranslationMetrics.filters.lastDays", { defaultValue: "Last {{days}} days", days: 14 }) },
-                { value: 30, label: t("settings.rssTranslationMetrics.filters.lastDays", { defaultValue: "Last {{days}} days", days: 30 }) }
+                { value: 7, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 7 }) },
+                { value: 14, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 14 }) },
+                { value: 30, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 30 }) }
               ]}
               onChange={(value) => setDays(Number(value))}
             />
@@ -447,9 +447,9 @@ export function RssTranslationMetricsPanel() {
               value={providerFilter}
               onChange={(value) => setProviderFilter(value as ProviderFilter)}
               options={[
-                { value: "all", label: t("settings.rssTranslationMetrics.filters.providers.all", { defaultValue: "All providers" }) },
-                { value: "deeplx", label: t("settings.rssTranslationMetrics.filters.providers.deeplx", { defaultValue: "DeepLX API" }) },
-                { value: "llm", label: t("settings.rssTranslationMetrics.filters.providers.llm", { defaultValue: "LLM small model" }) }
+                { value: "all", label: t("settings.rssTranslationMetrics.filters.providers.all") },
+                { value: "deeplx", label: t("settings.rssTranslationMetrics.filters.providers.deeplx") },
+                { value: "llm", label: t("settings.rssTranslationMetrics.filters.providers.llm") }
               ]}
             />
             <Select
@@ -457,7 +457,7 @@ export function RssTranslationMetricsPanel() {
               value={targetLanguageFilter}
               onChange={(value) => setTargetLanguageFilter(String(value))}
               options={[
-                { value: "all", label: t("settings.rssTranslationMetrics.filters.languages.all", { defaultValue: "All languages" }) },
+                { value: "all", label: t("settings.rssTranslationMetrics.filters.languages.all") },
                 ...RSS_TRANSLATION_TARGET_LANGUAGE_OPTIONS.map((option) => ({
                   value: option.value,
                   label: option.label
@@ -465,7 +465,7 @@ export function RssTranslationMetricsPanel() {
               ]}
             />
             <Button onClick={() => void loadMetrics()} loading={loading}>
-              {t("common.refresh", { defaultValue: "Refresh" })}
+              {t("common.refresh")}
             </Button>
           </Space>
         }
@@ -476,7 +476,6 @@ export function RssTranslationMetricsPanel() {
           <Space wrap>
             <Tag color="default">
               {t("settings.rssTranslationMetrics.window", {
-                defaultValue: "Window: {{from}} to {{to}}",
                 from: metrics.from || "-",
                 to: metrics.to || "-"
               })}
@@ -486,40 +485,40 @@ export function RssTranslationMetricsPanel() {
           <Row gutter={[12, 12]}>
             <Col xs={24} sm={12} md={8} xl={6}>
               <Statistic
-                title={t("settings.rssTranslationMetrics.summary.requestCount", { defaultValue: "Requests" })}
+                title={t("settings.rssTranslationMetrics.summary.requestCount")}
                 value={metrics.summary.requestCount}
               />
             </Col>
             <Col xs={24} sm={12} md={8} xl={6}>
               <Statistic
-                title={t("settings.rssTranslationMetrics.summary.translatedCount", { defaultValue: "Translated texts" })}
+                title={t("settings.rssTranslationMetrics.summary.translatedCount")}
                 value={metrics.summary.translatedCount}
               />
             </Col>
             <Col xs={24} sm={12} md={8} xl={6}>
               <Statistic
-                title={t("settings.rssTranslationMetrics.summary.cacheHitRate", { defaultValue: "Cache hit rate" })}
+                title={t("settings.rssTranslationMetrics.summary.cacheHitRate")}
                 value={Number((metrics.summary.cacheHitRate * 100).toFixed(2))}
                 suffix="%"
               />
             </Col>
             <Col xs={24} sm={12} md={8} xl={6}>
               <Statistic
-                title={t("settings.rssTranslationMetrics.summary.failureRate", { defaultValue: "Failure rate" })}
+                title={t("settings.rssTranslationMetrics.summary.failureRate")}
                 value={Number((metrics.summary.failureRate * 100).toFixed(2))}
                 suffix="%"
               />
             </Col>
             <Col xs={24} sm={12} md={8} xl={6}>
               <Statistic
-                title={t("settings.rssTranslationMetrics.summary.avgLatencyMs", { defaultValue: "Avg latency (ms)" })}
+                title={t("settings.rssTranslationMetrics.summary.avgLatencyMs")}
                 value={metrics.summary.avgLatencyMs}
                 suffix="ms"
               />
             </Col>
             <Col xs={24} sm={12} md={8} xl={6}>
               <Statistic
-                title={t("settings.rssTranslationMetrics.summary.maxLatencyMs", { defaultValue: "Max latency (ms)" })}
+                title={t("settings.rssTranslationMetrics.summary.maxLatencyMs")}
                 value={metrics.summary.maxLatencyMs}
                 suffix="ms"
               />
@@ -530,17 +529,13 @@ export function RssTranslationMetricsPanel() {
             <Col xs={24} xl={12}>
               <Card
                 size="small"
-                title={t("settings.rssTranslationMetrics.charts.volume", {
-                  defaultValue: "Requests and translated volume"
-                })}
+                title={t("settings.rssTranslationMetrics.charts.volume")}
               >
                 {volumeChartOption ? (
                   <DashboardChart option={volumeChartOption} theme={echartsTheme} height={300} />
                 ) : (
                   <Empty
-                    description={t("settings.rssTranslationMetrics.charts.empty", {
-                      defaultValue: "No metrics in selected range."
-                    })}
+                    description={t("settings.rssTranslationMetrics.charts.empty")}
                   />
                 )}
               </Card>
@@ -548,17 +543,13 @@ export function RssTranslationMetricsPanel() {
             <Col xs={24} xl={12}>
               <Card
                 size="small"
-                title={t("settings.rssTranslationMetrics.charts.quality", {
-                  defaultValue: "Cache / failure / latency trends"
-                })}
+                title={t("settings.rssTranslationMetrics.charts.quality")}
               >
                 {qualityChartOption ? (
                   <DashboardChart option={qualityChartOption} theme={echartsTheme} height={300} />
                 ) : (
                   <Empty
-                    description={t("settings.rssTranslationMetrics.charts.empty", {
-                      defaultValue: "No metrics in selected range."
-                    })}
+                    description={t("settings.rssTranslationMetrics.charts.empty")}
                   />
                 )}
               </Card>
@@ -567,7 +558,7 @@ export function RssTranslationMetricsPanel() {
 
           <div>
             <Typography.Text strong>
-              {t("settings.rssTranslationMetrics.table.title", { defaultValue: "Daily details" })}
+              {t("settings.rssTranslationMetrics.table.title")}
             </Typography.Text>
             <Table<RssTranslationMetricsDailyRow>
               style={{ marginTop: 8 }}
@@ -578,14 +569,13 @@ export function RssTranslationMetricsPanel() {
               pagination={{ pageSize: 20, showSizeChanger: false }}
               scroll={{ x: 1400 }}
               locale={{
-                emptyText: t("settings.rssTranslationMetrics.table.empty", { defaultValue: "No metrics found." })
+                emptyText: t("settings.rssTranslationMetrics.table.empty")
               }}
             />
           </div>
 
           <Typography.Text type="secondary">
             {t("settings.rssTranslationMetrics.summary.cacheOverview", {
-              defaultValue: "Cache hits: {{hits}} · misses: {{misses}} · failures: {{failures}} · skipped long texts: {{skipTooLong}}",
               hits: metrics.summary.cacheHitCount,
               misses: metrics.summary.cacheMissCount,
               failures: metrics.summary.failureCount,
@@ -594,7 +584,6 @@ export function RssTranslationMetricsPanel() {
           </Typography.Text>
           <Typography.Text type="secondary">
             {t("settings.rssTranslationMetrics.summary.rates", {
-              defaultValue: "Cache hit rate {{cacheHitRate}} · Failure rate {{failureRate}}",
               cacheHitRate: formatPercent(metrics.summary.cacheHitRate),
               failureRate: formatPercent(metrics.summary.failureRate)
             })}

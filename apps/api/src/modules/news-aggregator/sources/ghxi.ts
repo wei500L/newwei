@@ -1,8 +1,10 @@
+import * as cheerio from "cheerio"
+
+import type { NewsItem } from "../news-aggregator.types"
+
 import { myFetch } from "./fetch";
 import { defineSource } from "./source";
 
-import * as cheerio from "cheerio"
-import type { NewsItem } from "../news-aggregator.types"
 
 const relativeTimeToDate = function (timeStr: string) {
   const units = {

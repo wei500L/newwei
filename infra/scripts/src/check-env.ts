@@ -4,7 +4,7 @@ import {
   baseEnvSchema,
   loadAndValidateEnv,
   resolveMysqlConnectionString,
-} from "@modular/utils";
+} from "../../../packages/utils/src";
 
 const scriptsDir = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(scriptsDir, "../..");

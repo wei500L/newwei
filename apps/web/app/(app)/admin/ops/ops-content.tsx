@@ -22,49 +22,36 @@ export function OpsContent() {
   const opsLinks: OpsLink[] = [
     {
       key: "crawl-tasks",
-      title: t("ops.links.crawlTasks.title", { defaultValue: "Crawl Tasks" }),
-      description: t("ops.links.crawlTasks.description", {
-        defaultValue: "Manage crawl jobs and task execution"
-      }),
+      title: t("ops.links.crawlTasks.title"),
+      description: t("ops.links.crawlTasks.description"),
       href: "/admin/ops/crawl-tasks",
       permission: "crawl.read"
     },
     {
       key: "crawl-monitor",
-      title: t("ops.links.crawlMonitor.title", { defaultValue: "Crawl4AI Monitor" }),
-      description: t("ops.links.crawlMonitor.description", {
-        defaultValue: "Real-time dashboard for system metrics and browser pool"
-      }),
+      title: t("ops.links.crawlMonitor.title"),
+      description: t("ops.links.crawlMonitor.description"),
       href: "/admin/ops/crawl-monitor",
       permission: "crawl.read"
     },
     {
       key: "crawl-templates",
-      title: t("ops.links.crawlTemplates.title", { defaultValue: "Crawl Templates" }),
-      description: t("ops.links.crawlTemplates.description", {
-        defaultValue: "Manage reusable Crawl4ai configuration templates"
-      }),
+      title: t("ops.links.crawlTemplates.title"),
+      description: t("ops.links.crawlTemplates.description"),
       href: "/admin/ops/crawl-templates",
       permission: "crawl.read"
     },
     {
       key: "crawl-frontier",
-      title: t("ops.links.crawlFrontier.title", {
-        defaultValue: "Crawl Frontier",
-      }),
-      description: t("ops.links.crawlFrontier.description", {
-        defaultValue:
-          "Manage crawl site profiles, frontier runs, and layered/native execution.",
-      }),
+      title: t("ops.links.crawlFrontier.title"),
+      description: t("ops.links.crawlFrontier.description"),
       href: "/admin/ops/crawl-frontier",
       permission: "crawl.read",
     },
     {
       key: "news-sources",
-      title: t("ops.links.newsSources.title", { defaultValue: "News Sources" }),
-      description: t("ops.links.newsSources.description", {
-        defaultValue: "Manage source scheduling and crawl configs"
-      }),
+      title: t("ops.links.newsSources.title"),
+      description: t("ops.links.newsSources.description"),
       href: "/admin/ops/news-sources",
       permission: "crawl.write"
     }
@@ -87,7 +74,7 @@ export function OpsContent() {
 
   if (!canViewOps) {
     return (
-      <Card className="content-card" title={t("ops.title", { defaultValue: "Operations" })}>
+      <Card className="content-card" title={t("ops.title")}>
         <Alert
           type="warning"
           message={t("settings.adminOnly.title")}
@@ -101,10 +88,10 @@ export function OpsContent() {
     <div className="flex flex-col gap-6">
       <Space direction="vertical" size={2}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("ops.title", { defaultValue: "Operations" })}
+          {t("ops.title")}
         </Typography.Title>
         <Typography.Text type="secondary">
-          {t("ops.subtitle", { defaultValue: "Manage crawl pipelines and source schedules." })}
+          {t("ops.subtitle")}
         </Typography.Text>
       </Space>
       <Card className="content-card">

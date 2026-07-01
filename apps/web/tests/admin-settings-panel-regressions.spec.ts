@@ -40,14 +40,33 @@ describe('admin settings panel regressions', () => {
     expect(source).toContain('onClick={confirmClearBehaviorProfile}');
   });
 
+  it('labels NewsNow behavior diagnostics as exponential recency decay', () => {
+    const source = read('components/settings/newsnow-personalization-settings-panel.tsx');
+
+    expect(source).toContain('decayPolicy?:');
+    expect(source).toContain('behaviorProfile.decayTitle');
+    expect(source).toContain('behaviorProfile.averageDecay');
+  });
+
   it('submits knowledge graph approvals directly from the approve action', () => {
     const source = read('components/settings/knowledge-graph-review-panel.tsx');
 
     expect(source).toContain('const [quickReviewingId, setQuickReviewingId] = useState<string | null>(null);');
+    expect(source).toContain('function isCorrectedRelationDraft(value: unknown)');
+    expect(source).toContain('settings.knowledgeGraphReview.messages.invalidRelation');
     expect(source).toContain('void applyReview({');
     expect(source).toContain('status: "approved"');
     expect(source).toContain('quick: true');
     expect(source).toContain('loading={quickReviewingId === row.id}');
     expect(source).toContain('name="knowledge-graph-review-form"');
+  });
+
+  it('surfaces automatic recovery state in the news events clustering queue', () => {
+    const source = read('components/settings/news-events-settings-panel.tsx');
+
+    expect(source).toContain('recoveryAutomation');
+    expect(source).toContain('getAutoRetryFeedback');
+    expect(source).toContain('settings.newsEvents.clusteringQueue.automation.nextTick');
+    expect(source).toContain('settings.newsEvents.clusteringQueue.notice.automation');
   });
 });

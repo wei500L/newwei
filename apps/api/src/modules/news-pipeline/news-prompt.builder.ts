@@ -14,6 +14,13 @@ export interface PromptInput {
   cacheHit: boolean;
 }
 
+export interface EnrichmentPromptInput {
+  title?: string | null;
+  summary?: string | null;
+  markdown: string;
+  language?: string | null;
+}
+
 export interface JsonSchemaResponseFormat {
   type: "json_schema";
   json_schema: {
@@ -104,11 +111,36 @@ export class NewsPromptBuilder {
     return CLEANED_NEWS_RESPONSE_FORMAT;
   }
 
+  buildEntityPrompt(config: NewsPromptConfig, input: EnrichmentPromptInput) {
+    return this.renderStagePrompt(config.entityUserPromptTemplate, input);
+  }
+
+  buildSentimentPrompt(config: NewsPromptConfig, input: EnrichmentPromptInput) {
+    return this.renderStagePrompt(config.sentimentUserPromptTemplate, input);
+  }
+
+  buildKgPrompt(config: NewsPromptConfig, input: EnrichmentPromptInput) {
+    return this.renderStagePrompt(config.kgUserPromptTemplate, input);
+  }
+
   private renderTemplate(template: string, context: Record<string, string>) {
     return Object.entries(context).reduce((acc, [key, value]) => {
       const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "gi");
       return acc.replace(pattern, value ?? "");
     }, template);
+  }
+
+  private renderStagePrompt(
+    template: string,
+    input: EnrichmentPromptInput,
+  ): string {
+    const rendered = this.renderTemplate(template, {
+      title: input.title ?? "",
+      summary: input.summary ?? "",
+      markdown: input.markdown,
+      language: input.language ?? "",
+    });
+    return this.squashEmptyLines(rendered);
   }
 
   private squashEmptyLines(input: string) {

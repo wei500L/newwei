@@ -39,8 +39,8 @@ export function useCsvExport(): UseCsvExportResult {
 
   const label = useMemo(() => {
     return exporting
-      ? t("dashboard.charts.exporting", { defaultValue: "Exporting..." })
-      : t("dashboard.charts.downloadCsv", { defaultValue: "Download CSV" });
+      ? t("dashboard.charts.exporting")
+      : t("dashboard.charts.downloadCsv");
   }, [exporting, t]);
 
   const exportCsv = useCallback(
@@ -52,10 +52,10 @@ export function useCsvExport(): UseCsvExportResult {
         const csv = await buildCsv(rows);
         downloadCsv({ csv, filename, includeBom });
         toast.success(
-          t("dashboard.charts.exportSuccess", { defaultValue: "Export completed" })
+          t("dashboard.charts.exportSuccess")
         );
       } catch {
-        toast.error(t("dashboard.charts.exportFailed", { defaultValue: "Export failed" }));
+        toast.error(t("dashboard.charts.exportFailed"));
       } finally {
         setExporting(false);
       }
@@ -73,12 +73,12 @@ export function useCsvExport(): UseCsvExportResult {
         downloadBlobFile(blob, filename);
         toast.success(
           successMessage ??
-            t("dashboard.charts.exportSuccess", { defaultValue: "Export completed" })
+            t("dashboard.charts.exportSuccess")
         );
       } catch {
         toast.error(
           errorMessage ??
-            t("dashboard.charts.exportFailed", { defaultValue: "Export failed" })
+            t("dashboard.charts.exportFailed")
         );
       } finally {
         setExporting(false);

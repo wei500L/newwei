@@ -99,10 +99,10 @@ export const REGION_OPTIONS: ArchiveRegion[] = [
   'OTHER',
 ];
 
-export const VERTICAL_SECTIONS: Array<{
+export const VERTICAL_SECTIONS: {
   key: string;
   verticals: ArchiveVertical[];
-}> = [
+}[] = [
   {
     key: 'geo',
     verticals: ['EAST_SEA', 'SOUTH_SEA', 'WEST_FRONT'],

@@ -30,6 +30,10 @@ export interface AuthenticatedUser {
   isActive?: boolean;
   planTier?: string | null;
   subscriptionStatus?: string | null;
+  globalRoles?: string[];
+  mfaEnabled?: boolean;
+  mfaRequired?: boolean;
+  mfaEnrollmentRequired?: boolean;
 }
 
 export interface BackendLoginResponse {
@@ -38,6 +42,23 @@ export interface BackendLoginResponse {
   expiresIn: number;
   user: AuthenticatedUser;
   organizations?: OrganizationOption[];
+  recoveryCodes?: string[];
+}
+
+export interface BackendMfaChallengeResponse {
+  user: AuthenticatedUser;
+  organizations?: OrganizationOption[];
+  mfaRequired: true;
+  authChallengeId: string;
+  challengeExpiresAt: string;
+}
+
+export interface BackendMfaEnrollmentChallengeResponse {
+  user: AuthenticatedUser;
+  organizations?: OrganizationOption[];
+  mfaEnrollmentRequired: true;
+  enrollmentChallengeId: string;
+  challengeExpiresAt: string;
 }
 
 export interface TokenPayload extends JWT {
@@ -58,6 +79,10 @@ function normalizeOptionalId(value: unknown): string | undefined {
   if (!trimmed) return undefined;
   if (trimmed === "undefined" || trimmed === "null") return undefined;
   return trimmed;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
@@ -152,6 +177,81 @@ const config: NextAuthConfig = {
     signIn: "/login",
   },
   providers: [
+    Credentials({
+      id: "handoff",
+      name: "Token Handoff",
+      credentials: {
+        handoffToken: { label: "Handoff Token", type: "text", required: false },
+        accessToken: { label: "Access Token", type: "text", required: false },
+        refreshToken: { label: "Refresh Token", type: "text", required: false },
+        expiresIn: { label: "Expires In", type: "text", required: false },
+        userJson: { label: "User Json", type: "text", required: false },
+        organizationsJson: {
+          label: "Organizations Json",
+          type: "text",
+          required: false,
+        },
+      },
+      async authorize(credentials) {
+        const handoffToken = asString(credentials?.handoffToken);
+        if (handoffToken) {
+          const response = await fetch(
+            `${serverEnv.apiBaseUrl}/auth/sso/handoff/exchange`,
+            {
+              method: "POST",
+              headers: createTraceHeaders({
+                "Content-Type": "application/json",
+              }),
+              body: JSON.stringify({ handoffToken }),
+            },
+          );
+          if (!response.ok) {
+            return null;
+          }
+          const data = (await response.json()) as BackendLoginResponse;
+          return {
+            id: data.user.id,
+            email: data.user.email,
+            name: `${data.user.firstName} ${data.user.lastName}`,
+            ...data,
+            organizations: data.organizations ?? [{ id: data.user.orgId }],
+          };
+        }
+
+        const accessToken = asString(credentials?.accessToken);
+        const refreshToken = asString(credentials?.refreshToken);
+        const expiresInRaw = asString(credentials?.expiresIn);
+        const userJson = asString(credentials?.userJson);
+        const organizationsJson = asString(credentials?.organizationsJson);
+        if (!accessToken || !refreshToken || !expiresInRaw || !userJson) {
+          return null;
+        }
+
+        try {
+          const user = JSON.parse(userJson) as AuthenticatedUser;
+          const organizations = organizationsJson
+            ? (JSON.parse(organizationsJson) as OrganizationOption[])
+            : [{ id: user.orgId }];
+          const expiresIn = Number(expiresInRaw);
+          if (!Number.isFinite(expiresIn)) {
+            return null;
+          }
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: `${user.firstName} ${user.lastName}`,
+            accessToken,
+            refreshToken,
+            expiresIn,
+            user,
+            organizations,
+          };
+        } catch {
+          return null;
+        }
+      },
+    }),
     Credentials({
       name: "Credentials",
       credentials: {

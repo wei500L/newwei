@@ -17,6 +17,7 @@
     "db:migrate": "pnpm --filter db run migrate",
     "db:seed": "pnpm --filter db run seed",
     "mongo:indexes": "pnpm --filter @modular/api run mongo:indexes",
+    "mongo:indexes:prune": "pnpm --filter @modular/api run mongo:indexes:prune",
     "mongo:backfill:processed-item-location": "pnpm --filter @modular/api run processed-item-location:backfill",
     "mongo:backfill:raw-item-urls": "pnpm --filter @modular/api run raw-item-urls:backfill",
     "docker:u": "pnpm docker:up",
@@ -24,6 +25,7 @@
     "docker:up:extras": "node infra/scripts/src/docker-up.js --profile extras",
     "docker:up:build": "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml up --build",
     "docker:up:extras:build": "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile extras up --build",
+    "docker:smoke:ais-relay-startup": "node infra/scripts/src/ais-relay-startup-smoke.js",
     "docker:redis:repair": "node infra/scripts/src/redis-aof-repair.js",
     "docker:down": "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile extras down",
     "docker:logs": "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile extras logs -f"

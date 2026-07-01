@@ -10,6 +10,8 @@ jest.mock("@modular/utils", () => ({
 
 const mockProcessedItemFindById = jest.fn();
 const mockProcessedItemFind = jest.fn();
+const mockTaskLogCreate = jest.fn();
+const mockTaskLogInsertMany = jest.fn();
 
 jest.mock(
   "@modular/vector-client",
@@ -30,8 +32,13 @@ jest.mock("@modular/mongo", () => ({
     findById: (...args: unknown[]) => mockProcessedItemFindById(...args),
     find: (...args: unknown[]) => mockProcessedItemFind(...args),
   },
+  TaskLogModel: {
+    create: mockTaskLogCreate,
+    insertMany: mockTaskLogInsertMany,
+  },
 }));
 
+import { TaskLogModel } from "@modular/mongo";
 import { NewsEventAssignmentMethod, NewsEventStatus } from "@prisma/client";
 
 import { NewsEventsService } from "../news-events.service";
@@ -67,6 +74,10 @@ describe("NewsEventsService", () => {
   beforeEach(() => {
     mockProcessedItemFindById.mockReset();
     mockProcessedItemFind.mockReset();
+    mockTaskLogCreate.mockReset();
+    mockTaskLogInsertMany.mockReset();
+    mockTaskLogCreate.mockResolvedValue(undefined);
+    mockTaskLogInsertMany.mockResolvedValue([]);
   });
 
   it("returns existing assignment without writes", async () => {
@@ -488,6 +499,392 @@ describe("NewsEventsService", () => {
     expect(tx.newsEvent.create).not.toHaveBeenCalled();
   });
 
+  it("batches category gate task logs for vector candidates", async () => {
+    mockProcessedItemFindById.mockReturnValueOnce(
+      makeEmbeddingQuery({
+        summaryEmbedding: [0.1, 0.2],
+        summaryEmbeddingModel: "embed-1",
+      }),
+    );
+
+    const prisma = {
+      newsEventItem: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([
+          { eventId: "event-1", processedItemId: "pi-2" },
+          { eventId: "event-2", processedItemId: "pi-3" },
+        ]),
+      },
+      newsEvent: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "event-1",
+            language: "en",
+            metadata: { classification: { legacyCategory: "finance" } },
+            startAt: new Date("2026-01-01T00:00:00.000Z"),
+            lastAt: new Date("2026-01-02T00:00:00.000Z"),
+          },
+          {
+            id: "event-2",
+            language: "en",
+            metadata: { classification: { legacyCategory: "politics" } },
+            startAt: new Date("2026-01-01T00:00:00.000Z"),
+            lastAt: new Date("2026-01-02T00:00:00.000Z"),
+          },
+        ]),
+      },
+      runInTransaction: jest.fn(),
+    };
+
+    const tx = {
+      newsEventItem: {
+        create: jest.fn().mockResolvedValue(null),
+      },
+      newsEvent: {
+        findUnique: jest.fn().mockResolvedValue({
+          startAt: new Date("2026-01-01T00:00:00.000Z"),
+          lastAt: new Date("2026-01-02T00:00:00.000Z"),
+        }),
+        update: jest.fn().mockResolvedValue(null),
+        create: jest.fn(),
+      },
+    };
+
+    prisma.runInTransaction.mockImplementation(async (fn: any) => fn(tx));
+
+    const vectorClient = {
+      searchBestEffort: jest.fn().mockResolvedValue([
+        { processedItemId: "pi-2", score: 0.95 },
+        { processedItemId: "pi-3", score: 0.94 },
+      ]),
+    };
+    const service = new NewsEventsService(prisma as any, vectorClient as any);
+
+    const result = await service.assignNewsSignalToEvent(
+      "org-1",
+      {
+        articleId: "a-1",
+        processedArticleId: "pa-1",
+        processedItemId: "pi-1",
+        timestamp: new Date("2026-01-03T00:00:00.000Z"),
+        language: "en",
+        title: "t",
+        summary: "s",
+        topics: [],
+        entities: [],
+        sentiment: null,
+        qualityScore: null,
+        legacyCategory: "finance",
+        categoryPath: "finance/markets/equities",
+        categoryConfidence: 0.92,
+      },
+      makeSettings(),
+    );
+
+    expect(result).toEqual({ eventId: "event-1", created: true });
+    expect(TaskLogModel.insertMany).toHaveBeenCalledTimes(1);
+    expect(TaskLogModel.create).not.toHaveBeenCalled();
+
+    const [logs, options] = (TaskLogModel.insertMany as jest.Mock).mock.calls[0];
+    expect(options).toEqual({ ordered: false });
+    expect(logs).toHaveLength(2);
+    expect(logs.map((log: any) => log.data.decision).sort()).toEqual([
+      "accepted",
+      "reject",
+    ]);
+    expect(logs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          queue: "news_events",
+          jobId: "pa-1",
+          orgId: "org-1",
+          stage: "category_gate",
+          status: "completed",
+          data: expect.objectContaining({
+            processedArticleId: "pa-1",
+            signalCategory: "finance",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("continues assignment when batched category gate logging fails", async () => {
+    mockTaskLogInsertMany.mockRejectedValueOnce(new Error("mongo down"));
+    mockProcessedItemFindById.mockReturnValueOnce(
+      makeEmbeddingQuery({
+        summaryEmbedding: [0.1, 0.2],
+        summaryEmbeddingModel: "embed-1",
+      }),
+    );
+
+    const prisma = {
+      newsEventItem: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ eventId: "event-1", processedItemId: "pi-2" }]),
+      },
+      newsEvent: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "event-1",
+            language: "en",
+            metadata: { classification: { legacyCategory: "finance" } },
+            startAt: new Date("2026-01-01T00:00:00.000Z"),
+            lastAt: new Date("2026-01-02T00:00:00.000Z"),
+          },
+        ]),
+      },
+      runInTransaction: jest.fn(),
+    };
+
+    const tx = {
+      newsEventItem: {
+        create: jest.fn().mockResolvedValue(null),
+      },
+      newsEvent: {
+        findUnique: jest.fn().mockResolvedValue({
+          startAt: new Date("2026-01-01T00:00:00.000Z"),
+          lastAt: new Date("2026-01-02T00:00:00.000Z"),
+        }),
+        update: jest.fn().mockResolvedValue(null),
+        create: jest.fn(),
+      },
+    };
+
+    prisma.runInTransaction.mockImplementation(async (fn: any) => fn(tx));
+
+    const vectorClient = {
+      searchBestEffort: jest
+        .fn()
+        .mockResolvedValue([{ processedItemId: "pi-2", score: 0.95 }]),
+    };
+    const service = new NewsEventsService(prisma as any, vectorClient as any);
+
+    const result = await service.assignNewsSignalToEvent(
+      "org-1",
+      {
+        articleId: "a-1",
+        processedArticleId: "pa-1",
+        processedItemId: "pi-1",
+        timestamp: new Date("2026-01-03T00:00:00.000Z"),
+        language: "en",
+        title: "t",
+        summary: "s",
+        topics: [],
+        entities: [],
+        sentiment: null,
+        qualityScore: null,
+        legacyCategory: "finance",
+        categoryPath: "finance/markets/equities",
+        categoryConfidence: 0.92,
+      },
+      makeSettings(),
+    );
+
+    expect(result).toEqual({ eventId: "event-1", created: true });
+    expect(TaskLogModel.insertMany).toHaveBeenCalledTimes(1);
+    expect(tx.newsEventItem.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventId: "event-1",
+          assignedBy: NewsEventAssignmentMethod.vector,
+          similarity: 0.95,
+        }),
+      }),
+    );
+  });
+
+  it("batches category gate task logs for overlap candidates", async () => {
+    mockProcessedItemFindById.mockReturnValueOnce(makeEmbeddingQuery(null));
+
+    const prisma = {
+      newsEventItem: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      newsEvent: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([
+            {
+              id: "event-overlap",
+              language: "en",
+              primaryTopic: "topic-1",
+              primaryEntity: null,
+              metadata: { classification: { legacyCategory: "finance" } },
+              startAt: new Date("2026-01-01T00:00:00.000Z"),
+              lastAt: new Date("2026-01-02T00:00:00.000Z"),
+            },
+          ])
+          .mockResolvedValueOnce([
+            {
+              id: "event-overlap",
+              title: "Existing event",
+              summary: null,
+              language: "en",
+              primaryTopic: "topic-1",
+              primaryEntity: null,
+              startAt: new Date("2026-01-01T00:00:00.000Z"),
+              lastAt: new Date("2026-01-02T00:00:00.000Z"),
+              _count: { items: 2 },
+            },
+          ]),
+      },
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const service = new NewsEventsService(prisma as any, vectorClient as any);
+
+    const result = await service.listAssignmentCandidatesForSignal(
+      "org-1",
+      {
+        articleId: "a-1",
+        processedArticleId: "pa-1",
+        processedItemId: "pi-1",
+        timestamp: new Date("2026-01-03T00:00:00.000Z"),
+        language: "en",
+        title: "t",
+        summary: "s",
+        topics: ["topic-1"],
+        entities: [],
+        sentiment: null,
+        qualityScore: null,
+        legacyCategory: "finance",
+        categoryPath: "finance/markets/equities",
+        categoryConfidence: 0.92,
+      },
+      makeSettings(),
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        eventId: "event-overlap",
+        matchOrigin: "overlap",
+      }),
+    ]);
+    expect(TaskLogModel.insertMany).toHaveBeenCalledTimes(1);
+    const [logs, options] = (TaskLogModel.insertMany as jest.Mock).mock.calls[0];
+    expect(options).toEqual({ ordered: false });
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toEqual(
+      expect.objectContaining({
+        stage: "category_gate",
+        data: expect.objectContaining({
+          decision: "accepted",
+          processedArticleId: "pa-1",
+        }),
+      }),
+    );
+  });
+
+  it("falls back to general assignment when gated specific-event merge is rejected", async () => {
+    const prisma = {
+      newsEvent: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "event-1",
+          language: "en",
+          metadata: { classification: { legacyCategory: "politics" } },
+        }),
+      },
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const service = new NewsEventsService(prisma as any, vectorClient as any);
+    const assignGeneralSpy = jest
+      .spyOn(service, "assignNewsSignalToEvent")
+      .mockResolvedValue({ eventId: "event-new", created: true });
+    const assignSpecificSpy = jest.spyOn(service, "assignNewsSignalToSpecificEvent");
+
+    const result = await service.assignNewsSignalToSpecificEventWithSettings(
+      "org-1",
+      "event-1",
+      {
+        articleId: "a-1",
+        processedArticleId: "pa-1",
+        processedItemId: "pi-1",
+        timestamp: new Date("2026-01-03T00:00:00.000Z"),
+        language: "en",
+        title: "t",
+        summary: "s",
+        topics: [],
+        entities: [],
+        sentiment: null,
+        qualityScore: null,
+        legacyCategory: "finance",
+        categoryPath: "finance/markets",
+        categoryConfidence: 0.92,
+      },
+      makeSettings(),
+      {
+        similarity: 0.95,
+        assignedBy: NewsEventAssignmentMethod.manual,
+      },
+    );
+
+    expect(result).toEqual({ eventId: "event-new", created: true });
+    expect(assignGeneralSpy).toHaveBeenCalledWith(
+      "org-1",
+      expect.objectContaining({ processedArticleId: "pa-1" }),
+      expect.any(Object),
+    );
+    expect(assignSpecificSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps gated specific-event merges when the target event passes classification checks", async () => {
+    const prisma = {
+      newsEvent: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "event-1",
+          language: "en",
+          metadata: { classification: { legacyCategory: "finance" } },
+        }),
+      },
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const service = new NewsEventsService(prisma as any, vectorClient as any);
+    const assignGeneralSpy = jest.spyOn(service, "assignNewsSignalToEvent");
+    const assignSpecificSpy = jest
+      .spyOn(service, "assignNewsSignalToSpecificEvent")
+      .mockResolvedValue({ eventId: "event-1", created: true });
+
+    const result = await service.assignNewsSignalToSpecificEventWithSettings(
+      "org-1",
+      "event-1",
+      {
+        articleId: "a-1",
+        processedArticleId: "pa-1",
+        processedItemId: "pi-1",
+        timestamp: new Date("2026-01-03T00:00:00.000Z"),
+        language: "en",
+        title: "t",
+        summary: "s",
+        topics: [],
+        entities: [],
+        sentiment: null,
+        qualityScore: null,
+        legacyCategory: "finance",
+        categoryPath: "finance/markets",
+        categoryConfidence: 0.92,
+      },
+      makeSettings(),
+      {
+        similarity: 0.95,
+        assignedBy: NewsEventAssignmentMethod.manual,
+      },
+    );
+
+    expect(result).toEqual({ eventId: "event-1", created: true });
+    expect(assignSpecificSpy).toHaveBeenCalledWith(
+      "org-1",
+      "event-1",
+      expect.objectContaining({ processedArticleId: "pa-1" }),
+      expect.objectContaining({
+        assignedBy: NewsEventAssignmentMethod.manual,
+        similarity: 0.95,
+      }),
+    );
+    expect(assignGeneralSpy).not.toHaveBeenCalled();
+  });
+
   it("allows listEvents to fetch up to 300 candidates for downstream filtering", async () => {
     const prisma = {
       newsEvent: {
@@ -517,7 +914,7 @@ describe("NewsEventsService", () => {
     });
   });
 
-  it("applies entity contains filter for listEvents", async () => {
+  it("applies exact entity filter for listEvents", async () => {
     const prisma = {
       newsEvent: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -538,7 +935,7 @@ describe("NewsEventsService", () => {
         where: expect.objectContaining({
           orgId: "org-1",
           status: NewsEventStatus.active,
-          primaryEntity: { contains: "Douglas Engelbart" },
+          primaryEntity: "Douglas Engelbart",
         }),
       }),
     );

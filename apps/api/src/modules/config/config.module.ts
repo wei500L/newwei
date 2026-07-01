@@ -3,6 +3,7 @@ import { Global, Module } from "@nestjs/common";
 import { ConfigModule as NestConfigModule } from "@nestjs/config";
 import path from "node:path";
 
+import { BullmqConnectionService } from "./bullmq-connection.service";
 import { EnvService } from "./config.service";
 import { apiEnvSchema } from "./env.schema";
 
@@ -30,7 +31,7 @@ const logger = createLogger({ name: "api-config" });
       },
     }),
   ],
-  providers: [EnvService],
-  exports: [EnvService],
+  providers: [EnvService, BullmqConnectionService],
+  exports: [EnvService, BullmqConnectionService],
 })
 export class ConfigModule {}

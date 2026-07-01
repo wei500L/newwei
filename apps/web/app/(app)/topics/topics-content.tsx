@@ -152,10 +152,8 @@ const splitPreview = <T,>(values: T[], max: number) => {
 export function TopicsContent({ initialData = null }: TopicsContentProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const latestAtLabel = t('pages.topics.latestAtLabel', { defaultValue: 'Latest' });
-  const latestAtHelp = t('pages.topics.latestAtHelp', {
-    defaultValue: 'Sorted by Published time when available; falls back to Ingested time.'
-  });
+  const latestAtLabel = t('pages.topics.latestAtLabel');
+  const latestAtHelp = t('pages.topics.latestAtHelp');
   const screens = Grid.useBreakpoint();
   const filterLayoutMode = resolveTopicsFilterLayoutMode(screens);
   const isDesktopStickyFilter = filterLayoutMode === 'desktopSticky';
@@ -248,7 +246,6 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
       [7, 14, 30, 90].map((days) => ({
         value: days,
         label: t('pages.topics.filters.windowOption', {
-          defaultValue: '{{days}} days',
           days
         })
       })),
@@ -260,7 +257,6 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
       [2, 3, 5].map((size) => ({
         value: size,
         label: t('pages.topics.filters.groupOption', {
-          defaultValue: '{{count}}+ reports',
           count: size
         })
       })),
@@ -274,7 +270,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
       group.title ??
       entities[0] ??
       topics[0] ??
-      t('pages.topics.eventFallbackTitle', { defaultValue: 'Untitled Event' })
+      t('pages.topics.eventFallbackTitle')
     );
   };
 
@@ -347,12 +343,10 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
         <div className="flex flex-col gap-2">
           <Space direction="vertical" size={2}>
             <Typography.Title level={4} style={{ margin: 0 }}>
-              {t('pages.topics.title', { defaultValue: 'Topics & Events' })}
+              {t('pages.topics.title')}
             </Typography.Title>
             <Typography.Text type="secondary">
-              {t('pages.topics.subtitle', {
-                defaultValue: 'Track clustered events and topic momentum with a focused reading flow.'
-              })}
+              {t('pages.topics.subtitle')}
             </Typography.Text>
           </Space>
         </div>
@@ -370,7 +364,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {t('pages.topics.filters.windowLabel', { defaultValue: 'Window' })}
+                  {t('pages.topics.filters.windowLabel')}
                 </Typography.Text>
                 <Select
                   size="small"
@@ -383,7 +377,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
 
               <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {t('pages.topics.filters.groupLabel', { defaultValue: 'Min group size' })}
+                  {t('pages.topics.filters.groupLabel')}
                 </Typography.Text>
                 <Select
                   size="small"
@@ -401,7 +395,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
               loading={loading}
               className="self-start lg:self-auto"
             >
-              {t('common.refresh', { defaultValue: 'Refresh' })}
+              {t('common.refresh')}
             </Button>
           </div>
         </Card>
@@ -409,7 +403,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
         <Card className="content-card">
           {error ? (
             <Typography.Text type="danger">
-              {t('pages.topics.loadFailed', { defaultValue: 'Failed to load topics and events.' })}: {error.message}
+              {t('pages.topics.loadFailed')}: {error.message}
             </Typography.Text>
           ) : null}
 
@@ -420,13 +414,11 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
             items={[
               {
                 key: 'events',
-                label: t('pages.topics.tabs.events', { defaultValue: 'Events' }),
+                label: t('pages.topics.tabs.events'),
                 children:
                   sortedEventGroups.length === 0 ? (
                     <Empty
-                      description={t('pages.topics.eventsEmpty', {
-                        defaultValue: 'Aggregation not ready for events yet.'
-                      })}
+                      description={t('pages.topics.eventsEmpty')}
                       image={Empty.PRESENTED_IMAGE_SIMPLE}
                     />
                   ) : (
@@ -451,7 +443,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                                 size="small"
                                 onClick={() => openEventDrawer(group)}
                               >
-                                {t('pages.topics.list.openDetails', { defaultValue: 'Details' })}
+                                {t('pages.topics.list.openDetails')}
                               </Button>
                             ]}
                           >
@@ -467,7 +459,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                                   <Space size={[6, 6]} wrap>
                                     <Typography.Text strong>{eventTitle}</Typography.Text>
                                     <Tag>
-                                      {t('pages.topics.list.countLabel', { defaultValue: 'Reports' })}: {group.count}
+                                      {t('pages.topics.list.countLabel')}: {group.count}
                                     </Tag>
                                   </Space>
                                 }
@@ -492,7 +484,6 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                                       {topicPreview.hiddenCount > 0 ? (
                                         <Tag color="blue">
                                           {t('pages.topics.list.moreTag', {
-                                            defaultValue: '+{{count}}',
                                             count: topicPreview.hiddenCount
                                           })}
                                         </Tag>
@@ -506,7 +497,6 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                                       {entityPreview.hiddenCount > 0 ? (
                                         <Tag color="purple">
                                           {t('pages.topics.list.moreTag', {
-                                            defaultValue: '+{{count}}',
                                             count: entityPreview.hiddenCount
                                           })}
                                         </Tag>
@@ -520,7 +510,6 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                                       {sourcePreview.hiddenCount > 0 ? (
                                         <Tag color="geekblue">
                                           {t('pages.topics.list.moreTag', {
-                                            defaultValue: '+{{count}}',
                                             count: sourcePreview.hiddenCount
                                           })}
                                         </Tag>
@@ -538,13 +527,11 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
               },
               {
                 key: 'topics',
-                label: t('pages.topics.tabs.topics', { defaultValue: 'Topics' }),
+                label: t('pages.topics.tabs.topics'),
                 children:
                   sortedGroups.length === 0 ? (
                     <Empty
-                      description={t('pages.topics.topicsEmpty', {
-                        defaultValue: 'Aggregation not ready for topics yet.'
-                      })}
+                      description={t('pages.topics.topicsEmpty')}
                       image={Empty.PRESENTED_IMAGE_SIMPLE}
                     />
                   ) : (
@@ -564,7 +551,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                                 size="small"
                                 onClick={() => openTopicDrawer(group)}
                               >
-                                {t('pages.topics.list.openTopic', { defaultValue: 'Preview' })}
+                                {t('pages.topics.list.openTopic')}
                               </Button>
                             ]}
                           >
@@ -580,7 +567,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                                   <Space size={[6, 6]} wrap>
                                     <Typography.Text strong>{group.topic}</Typography.Text>
                                     <Tag>
-                                      {t('pages.topics.list.countLabel', { defaultValue: 'Reports' })}: {group.count}
+                                      {t('pages.topics.list.countLabel')}: {group.count}
                                     </Tag>
                                   </Space>
                                 }
@@ -601,7 +588,6 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                                         {sourcePreview.hiddenCount > 0 ? (
                                           <Tag color="geekblue">
                                             {t('pages.topics.list.moreTag', {
-                                              defaultValue: '+{{count}}',
                                               count: sourcePreview.hiddenCount
                                             })}
                                           </Tag>
@@ -629,7 +615,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
     <>
       {content}
       <Drawer
-        title={t('pages.topics.eventDetail.title', { defaultValue: 'Event Details' })}
+        title={t('pages.topics.eventDetail.title')}
         width={drawerWidth}
         open={Boolean(selectedEvent)}
         onClose={() => setSelectedEvent(null)}
@@ -655,7 +641,6 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
             <Space direction="vertical" size="small">
               <Typography.Text type="secondary">
                 {t('pages.topics.eventDetail.count', {
-                  defaultValue: '{{count}} reports',
                   count: selectedEvent.count
                 })}
               </Typography.Text>
@@ -685,18 +670,16 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
             </Space>
 
             <Typography.Title level={5} style={{ margin: 0 }}>
-              {t('pages.topics.eventDetail.timelineTitle', { defaultValue: 'Timeline' })}
+              {t('pages.topics.eventDetail.timelineTitle')}
             </Typography.Title>
             <List
               dataSource={selectedEventItems}
               rowKey="id"
               locale={{
-                emptyText: t('pages.topics.eventDetail.timelineEmpty', {
-                  defaultValue: 'No related items.'
-                })
+                emptyText: t('pages.topics.eventDetail.timelineEmpty')
               }}
               renderItem={(item) => {
-                const ingestedLabel = t('items.time.ingested', { defaultValue: 'Ingested' });
+                const ingestedLabel = t('items.time.ingested');
                 const publishedAt = item.publishedAt ?? null;
                 const ingestedAt = item.createdAt;
                 return (
@@ -708,7 +691,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                         size="small"
                         onClick={() => router.push(`/items/${item.itemMetaId}`)}
                       >
-                        {t('pages.topics.eventDetail.openItem', { defaultValue: 'Open item' })}
+                        {t('pages.topics.eventDetail.openItem')}
                       </Button>
                     ]}
                   >
@@ -748,7 +731,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
       </Drawer>
 
       <Drawer
-        title={t('pages.topics.topicDetail.title', { defaultValue: 'Topic Details' })}
+        title={t('pages.topics.topicDetail.title')}
         width={drawerWidth}
         open={Boolean(selectedTopic)}
         onClose={() => setSelectedTopic(null)}
@@ -767,7 +750,6 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
               </Tooltip>
               <Typography.Text type="secondary">
                 {t('pages.topics.eventDetail.count', {
-                  defaultValue: '{{count}} reports',
                   count: selectedTopic.count
                 })}
               </Typography.Text>
@@ -784,12 +766,12 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
             ) : null}
 
             <Typography.Title level={5} style={{ margin: 0 }}>
-              {t('pages.topics.topicDetail.relatedItemsTitle', { defaultValue: 'Related reports' })}
+              {t('pages.topics.topicDetail.relatedItemsTitle')}
             </Typography.Title>
 
             {selectedTopicItems.length === 0 ? (
               <Empty
-                description={t('pages.topics.topicDetail.empty', { defaultValue: 'No related reports.' })}
+                description={t('pages.topics.topicDetail.empty')}
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
               />
             ) : (

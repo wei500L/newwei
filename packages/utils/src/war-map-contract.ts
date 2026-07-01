@@ -1,3 +1,5 @@
+import type { AisSurfaceReasonCode } from "./realtime-signals-contract";
+
 export const WAR_MAP_LAYER_IDS = [
   "conflicts",
   "bases",
@@ -149,6 +151,7 @@ export interface WarMapSettings {
   timeRangePreset: WarMapTimeRangePreset;
   flightMode: WarMapFlightMode;
   aisMode: WarMapAisMode;
+  aisHighlightCandidates: boolean;
 }
 
 export type WarMapGeometryType = "point" | "path" | "polygon" | "raster";
@@ -237,13 +240,56 @@ export interface WarMapAisDisruptionProperties {
   darkShips?: number;
 }
 
-export interface WarMapLayerDataset {
+export type WarMapAisBlockedReasonCode =
+  | "missing_vessels_snapshot"
+  | "snapshot_unavailable";
+
+export interface WarMapAisLayerSummary extends Record<string, unknown> {
+  source: "relay";
+  sourceEndpoint?: string;
+  mode: WarMapAisMode;
+  configured: boolean;
+  connected: boolean;
+  freshness: "fresh" | "stale" | "missing";
+  snapshotUpdatedAt?: string;
+  snapshotAgeSec?: number;
+  staleThresholdSec: number;
+  relayVesselCount: number;
+  disruptionsCount: number;
+  densityCount: number;
+  candidateCount: number;
+  renderedVesselCount: number;
+  allVesselsAvailable: boolean;
+  messageCount?: number;
+  clientCount?: number;
+  droppedMessages?: number;
+  positionReportsSeen?: number;
+  positionReportsProcessed?: number;
+  ignoredPositionReports?: number;
+  parseErrors?: number;
+  statusReasonCode?: AisSurfaceReasonCode | string;
+  statusReason?: string;
+  viewportVesselCount?: number;
+  maxReturned?: number;
+  truncated?: boolean;
+  blockedReasonCode?: WarMapAisBlockedReasonCode;
+  blockedReason?: string;
+}
+
+export interface WarMapLayerDataset<
+  TSummary extends Record<string, unknown> = Record<string, unknown>,
+> {
   layerId: WarMapLayerId;
   geometryType: WarMapGeometryType;
   updatedAt?: string;
   renderHints?: WarMapLayerRenderHints;
-  summary?: Record<string, unknown>;
+  summary?: TSummary;
   features: WarMapLayerFeature[];
+}
+
+export interface WarMapAisLayerDataset
+  extends WarMapLayerDataset<WarMapAisLayerSummary> {
+  layerId: "ais";
 }
 
 export type WarMapTranslateTarget = "zh-CN";
@@ -301,7 +347,9 @@ export interface WarMapNewsMarkersResponse {
 
 export interface WarMapLayersResponse {
   updatedAt: string;
-  layers: Partial<Record<WarMapLayerId, WarMapLayerDataset>>;
+  layers: Omit<Partial<Record<WarMapLayerId, WarMapLayerDataset>>, "ais"> & {
+    ais?: WarMapAisLayerDataset;
+  };
 }
 
 export type WarMapLayersResponseV2 = WarMapLayersResponse;
@@ -455,7 +503,8 @@ export function normalizeWarMapSettings(value: unknown): WarMapSettings {
       activePreset: "global",
       timeRangePreset: "7d",
       flightMode: "military",
-      aisMode: "military",
+      aisMode: "all",
+      aisHighlightCandidates: true,
     };
   }
 
@@ -472,5 +521,7 @@ export function normalizeWarMapSettings(value: unknown): WarMapSettings {
         : record.aisMode === "density"
           ? "density"
           : "military",
+    aisHighlightCandidates:
+      record.aisHighlightCandidates === false ? false : true,
   };
 }

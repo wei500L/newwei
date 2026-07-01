@@ -267,11 +267,9 @@ export function MarketPulse({
   const locale = resolveLocale(i18n.language);
   const theme = useChartTheme();
   const { range, start, end } = useDashboardRangeStore();
-  const notAvailableLabel = t("common.notAvailable", { defaultValue: "Not available" });
-  const emptyTitle = t("dashboard.charts.noDataRange", { defaultValue: "No Data Found for Selected Range" });
-  const emptyDescription = t("dashboard.hero.emptyDescription", {
-    defaultValue: "Hero metrics are unavailable for the selected time range."
-  });
+  const notAvailableLabel = t("common.notAvailable");
+  const emptyTitle = t("dashboard.charts.noDataRange");
+  const emptyDescription = t("dashboard.hero.emptyDescription");
 
   const metrics = useMemo<HeroMetric[]>(() => {
     const conflict = processSeries(conflictData);
@@ -282,7 +280,7 @@ export function MarketPulse({
     return [
       {
         key: "global-conflict-index",
-        title: t("dashboard.hero.globalConflictIndex", "Global Conflict Index"),
+        title: t("dashboard.hero.globalConflictIndex"),
         value: conflict.value,
         trend: conflict.trend,
         data: conflict.history,
@@ -295,7 +293,7 @@ export function MarketPulse({
       },
       {
         key: "market-sentiment",
-        title: t("dashboard.hero.marketSentiment", "Market Sentiment"),
+        title: t("dashboard.hero.marketSentiment"),
         value: market.value,
         trend: market.trend,
         data: market.history,
@@ -308,7 +306,7 @@ export function MarketPulse({
       },
       {
         key: "resource-scarcity",
-        title: t("dashboard.hero.resourceScarcity", "Resource Scarcity"),
+        title: t("dashboard.hero.resourceScarcity"),
         value: resource.value,
         trend: resource.trend,
         data: resource.history,
@@ -321,7 +319,7 @@ export function MarketPulse({
       },
       {
         key: "supply-chain-stability",
-        title: t("dashboard.hero.supplyChain", "Supply Chain Stability"),
+        title: t("dashboard.hero.supplyChain"),
         value: supply.value,
         trend: supply.trend,
         data: supply.history,
@@ -366,22 +364,18 @@ export function MarketPulse({
     metrics.filter((metric) => metric.hasData).map((metric) => metric.granularity),
   );
 
-  const aggregationLabel = t("dashboard.timeRange.aggregation", { defaultValue: "Aggregation" });
+  const aggregationLabel = t("dashboard.timeRange.aggregation");
   const granularityLabel = formatGranularityLabelLocalized(activeGranularity, t);
   const granularityTagText = `${aggregationLabel}: ${granularityLabel}`;
   const granularityTooltip = (() => {
     const detailParts = metrics
       .filter((metric) => metric.hasData && metric.granularity !== UiTimeGranularity.Unknown)
       .map((metric) => `${metric.title}: ${formatGranularityLabelLocalized(metric.granularity, t)}`);
-    const baseTooltip = t("dashboard.timeRange.aggregationHintHeroCoarsest", {
-      defaultValue: "Aggregation is reported by the backend. Displayed value uses the coarsest bucket across hero metrics.",
-    });
+    const baseTooltip = t("dashboard.timeRange.aggregationHintHeroCoarsest");
     if (!detailParts.length) {
       return baseTooltip;
     }
-    const perMetricLabel = t("dashboard.timeRange.aggregationHintPerMetric", {
-      defaultValue: "Per metric",
-    });
+    const perMetricLabel = t("dashboard.timeRange.aggregationHintPerMetric");
     return `${baseTooltip} ${perMetricLabel}: ${detailParts.join(" · ")}.`;
   })();
 
@@ -436,7 +430,6 @@ export function MarketPulse({
                             return t("dashboard.hero.latestBucket", {
                               bucket: bucketLabel,
                               granularity: formatGranularityLabelLocalized(metric.granularity, t),
-                              defaultValue: "Latest bucket: {{bucket}} ({{granularity}})",
                             });
                           })()
                         : undefined
@@ -470,11 +463,8 @@ export function MarketPulse({
                           metric.hasData && metric.previousTimestamp && metric.lastTimestamp
                             ? t("dashboard.hero.trendVsPreviousGranularity", {
                                 granularity: formatGranularityLabelLocalized(metric.granularity, t).toLowerCase(),
-                                defaultValue: "vs prev. {{granularity}}",
                               })
-                            : t("dashboard.hero.trendVsPreviousPoint", {
-                                defaultValue: "vs prev. data point",
-                              })
+                            : t("dashboard.hero.trendVsPreviousPoint")
                         }
                       >
                         <div className={`flex items-center text-[11px] font-black px-2 py-0.5 rounded-full ${trendClass} backdrop-blur-sm border border-current/5`}>
@@ -493,7 +483,7 @@ export function MarketPulse({
                     <div className="h-[40px] flex items-end">
                       <Typography.Text className="text-[10px] text-slate-400 dark:text-slate-600 font-bold uppercase tracking-widest italic opacity-50">
                         {metric.hasData
-                          ? t("dashboard.hero.insufficientData", "Insufficient Data")
+                          ? t("dashboard.hero.insufficientData")
                           : notAvailableLabel}
                       </Typography.Text>
                     </div>

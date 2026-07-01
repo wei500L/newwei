@@ -1,12 +1,12 @@
 import { Time } from "../news-aggregator.constants"
+import type { OriginSource, Source, SourceID } from "../news-aggregator.types"
 import {
   PRODUCTHUNT_RUNTIME_SECRETS_CONFIG,
   WEIBO_RUNTIME_SECRETS_CONFIG,
 } from '../news-source-runtime-secrets.catalog'
-import type { OriginSource, Source, SourceID } from "../news-aggregator.types"
 
 function typeSafeObjectFromEntries<
-  const T extends ReadonlyArray<readonly [PropertyKey, unknown]>,
+  const T extends readonly (readonly [PropertyKey, unknown])[],
 >(entries: T): { [K in T[number]as K[0]]: K[1] } {
   return Object.fromEntries(entries) as { [K in T[number]as K[0]]: K[1] }
 }
@@ -529,5 +529,5 @@ export function genSources() {
     }
   })
 
-  return typeSafeObjectFromEntries(_.filter(([_, v]) => v.disable !== true))
+  return typeSafeObjectFromEntries(_.filter(([, v]) => v.disable !== true))
 }

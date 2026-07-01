@@ -9,6 +9,7 @@ import {
   LiteLlmService,
   LiteLlmCompletionParams,
   LiteLlmEmbeddingParams,
+  type LiteLlmStreamChunk,
 } from "./litellm.service";
 import { LlmRequestLogService } from "./llm-request-log.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
@@ -223,7 +224,47 @@ describe("LiteLlmService", () => {
         expect.objectContaining({
           feature: "news_event_brief",
           gatewayProfileId: "profile-1",
+          governanceApplied: false,
+          authMode: "profile_key",
         }),
+      );
+    });
+
+    it("records governance context when LiteLLM managed runtime governance is active", async () => {
+      llmGatewaySettings.getActiveConfig.mockResolvedValueOnce({
+        profileId: "profile-1",
+        profileName: "Primary Gateway",
+        ...configService.config.litellm,
+        apiKey: "managed-runtime-key",
+        sendMetadata: true,
+        responseFormatMode: "json_schema",
+        apiSurface: "chat_completions",
+        assistantWebSearchEnabled: false,
+        managedByLiteLlmProxyGovernance: true,
+        governanceAuthMode: "managed_runtime_key",
+        governanceTargetProfileId: "profile-1",
+      } as any);
+
+      await service.acompletion(completionParams);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(llmRequestLogService.logRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          governanceApplied: true,
+          authMode: "managed_runtime_key",
+          governanceTargetProfileId: "profile-1",
+        }),
+      );
+    });
+
+    it("fails closed when governed config resolution fails", async () => {
+      llmGatewaySettings.getActiveConfig.mockRejectedValueOnce(
+        new Error("managed runtime key unreadable"),
+      );
+
+      await expect(service.acompletion(completionParams)).rejects.toThrow(
+        "managed runtime key unreadable",
       );
     });
 
@@ -644,12 +685,23 @@ describe("LiteLlmService", () => {
         config: { headers: new AxiosHeaders() },
       });
 
-      for await (const _chunk of service.stream({
+      const chunks: LiteLlmStreamChunk[] = [];
+      for await (const chunk of service.stream({
         messages: [{ role: "user", content: "Search gold news" }],
         tools: [{ type: "web_search_preview" }],
       })) {
-        // noop
+        chunks.push(chunk);
       }
+
+      expect(chunks).toEqual([
+        expect.objectContaining({
+          finishReason: "stop",
+          model: "gpt-4o-mini",
+          raw: {
+            type: "response.completed",
+          },
+        }),
+      ]);
 
       expect(mockAxiosPost).toHaveBeenCalledWith(
         "/v1/responses",
@@ -1485,6 +1537,14 @@ describe("LiteLlmService", () => {
         "/v1/rerank",
         expect.objectContaining({ model: "cohere/rerank-v3.0" }),
         expect.any(Object),
+      );
+      expect(llmRequestLogService.logRequest).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          requestType: "rerank",
+          model: "cohere/rerank-v3.0",
+          status: "success",
+          apiSurface: "rerank",
+        }),
       );
     });
 

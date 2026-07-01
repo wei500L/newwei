@@ -748,8 +748,6 @@ input CrawlOptionsInput {
   overrideNavigator: Boolean
   pageTimeoutMs: Int
   pageTypeHint: String
-  proxyConfig: CrawlProxyConfigInput
-  proxyUrl: String
   qualityProfile: String
   removeForms: Boolean
   scanFullPage: Boolean
@@ -774,12 +772,6 @@ input CrawlOptionsInput {
   waitForSelector: String
   waitForTimeoutMs: Int
   waitUntil: CrawlWaitUntil
-}
-
-input CrawlProxyConfigInput {
-  password: String
-  server: String!
-  username: String
 }
 
 type CrawlResultModel {
@@ -1219,6 +1211,84 @@ type EntityImpactNodeModel {
   value: Float!
 }
 
+type EntityIntelligenceArticleModel {
+  crawlAt: DateTime!
+  id: String!
+  language: String
+  sourceLabel: String
+  summary: String
+  title: String
+  url: String!
+}
+
+input EntityIntelligenceCardInput {
+  entityId: String!
+  relatedLimit: Int
+  windowDays: Int
+}
+
+type EntityIntelligenceCardModel {
+  aliases: [String!]!
+  entity: KnowledgeGraphNodeModel!
+  generatedAt: DateTime!
+  metrics: EntityIntelligenceMetricsModel!
+  neighborhood: KnowledgeGraphModel!
+  relationships: [EntityIntelligenceRelationshipModel!]!
+  sentimentSeries: [EntitySentimentSnapshotModel!]!
+}
+
+type EntityIntelligenceEventModel {
+  id: String!
+  itemCount: Int!
+  lastAt: DateTime!
+  primaryEntity: String
+  primaryTopic: String
+  startAt: DateTime!
+  status: String!
+  summary: String
+  title: String
+}
+
+type EntityIntelligenceEvidenceArticleModel {
+  article: EntityIntelligenceArticleModel!
+  confidence: Float
+  linkedAt: DateTime!
+  mention: String
+}
+
+input EntityIntelligenceEvidenceInput {
+  entityId: String!
+  eventsLimit: Int
+  evidenceLimit: Int
+  windowDays: Int
+}
+
+type EntityIntelligenceEvidenceModel {
+  articles: [EntityIntelligenceEvidenceArticleModel!]!
+  events: [EntityIntelligenceEventModel!]!
+  generatedAt: DateTime!
+  restricted: Boolean!
+}
+
+type EntityIntelligenceMetricsModel {
+  avgSentiment: Float
+  incomingEdgeCount: Int!
+  latestMentionAt: DateTime
+  mentionedArticleCount: Int!
+  negativeRatio: Float
+  outgoingEdgeCount: Int!
+  recentEventCount: Int!
+  relationshipCount: Int!
+}
+
+type EntityIntelligenceRelationshipModel {
+  direction: String!
+  edge: KnowledgeGraphEdgeModel!
+  evidenceCount: Int!
+  latestEvidenceAt: DateTime
+  neighbor: KnowledgeGraphNodeModel!
+}
+
 type EntitySentimentSnapshotModel {
   avgScore: Float!
   bucketStart: DateTime!
@@ -1325,9 +1395,17 @@ type ItemModel {
 
   """Search relevance score (0-1) when rankingMode is RELEVANCE."""
   relevanceScore: Float
+
+  """Highlighted search snippets when Elasticsearch matched the item."""
+  searchHighlights: [ItemSearchHighlightModel!]
   status: String!
   title: String!
   updatedAt: DateTime!
+}
+
+type ItemSearchHighlightModel {
+  field: String!
+  snippets: [String!]!
 }
 
 input ItemsDateRangeInput {
@@ -1360,6 +1438,24 @@ enum ItemsRankingMode {
 The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf).
 """
 scalar JSON
+
+type KnowledgeGraphEdgeEvidenceArticleModel {
+  crawlAt: DateTime!
+  id: String!
+  language: String
+  summary: String
+  title: String
+  url: String!
+}
+
+type KnowledgeGraphEdgeEvidenceItemModel {
+  article: KnowledgeGraphEdgeEvidenceArticleModel!
+  confidence: Float
+  createdAt: DateTime!
+  evidence: JSON
+  extractorVersion: String
+  id: String!
+}
 
 type KnowledgeGraphEdgeModel {
   confidence: Float!
@@ -1533,6 +1629,7 @@ type Mutation {
   updateNewsEventSettings(input: UpdateNewsEventSettingsInput!): NewsEventSettingsModel!
   updateNewsEventSourcePolicy(input: UpdateNewsEventSourcePolicyInput!): NewsEventSourcePolicySettingsModel!
   updateNewsEventSourcePolicyPresets(input: UpdateNewsEventSourcePolicyPresetInput!): NewsEventSourcePolicyPresetSettingsModel!
+  updateNewsExtractionSettings(input: UpdateNewsExtractionSettingsInput!): NewsExtractionSettingsModel!
   updateNewsIndicatorSettings(input: UpdateNewsIndicatorSettingsInput!): NewsIndicatorSettingsModel!
   updateNewsPromptConfig(input: UpdateNewsPromptConfigInput!): NewsPromptConfigModel!
   updateOrg(input: UpdateOrgInput!): OrgModel!
@@ -1651,6 +1748,11 @@ type NewsEventBriefSourceModel {
   url: String!
 }
 
+enum NewsEventClusteringMode {
+  bertopic_primary
+  vector
+}
+
 type NewsEventItemModel {
   assignedBy: NewsEventAssignmentMethod!
   createdAt: DateTime!
@@ -1726,10 +1828,14 @@ type NewsEventReferencedArticleModel {
 
 type NewsEventSettingsModel {
   backfillDays: Int!
+  bertopicMaxItemsPerRequest: Int!
+  bertopicMinItemsPerGroup: Int!
+  bertopicMinTopicSize: Int!
   cacheTtlSeconds: Int!
   categoryConflictReject: Boolean!
   categorySoftPenalty: Float!
   classificationGateEnabled: Boolean!
+  clusteringMode: NewsEventClusteringMode!
   crossLanguagePenalty: Float!
   enabled: Boolean!
   forceAuthoritativeMode: Boolean!
@@ -1901,6 +2007,79 @@ type NewsEventTimelineEntryModel {
   updatedAt: DateTime!
 }
 
+input NewsExtractionCapabilitiesSettingsInput {
+  entities: Boolean
+  kg: Boolean
+  sentiment: Boolean
+}
+
+type NewsExtractionCapabilitiesSettingsModel {
+  entities: Boolean!
+  kg: Boolean!
+  sentiment: Boolean!
+}
+
+enum NewsExtractionPipelineMode {
+  legacy
+  staged
+}
+
+input NewsExtractionPostCleanGateSettingsInput {
+  enabled: Boolean
+  minCleanedChars: Int
+  minQualityScore: Float
+  requireSummary: Boolean
+}
+
+type NewsExtractionPostCleanGateSettingsModel {
+  enabled: Boolean!
+  minCleanedChars: Int!
+  minQualityScore: Float!
+  requireSummary: Boolean!
+}
+
+input NewsExtractionPreflightGateSettingsInput {
+  enabled: Boolean
+  minQualityScore: Float
+  minWordCount: Int
+  rejectBotChallenge: Boolean
+  rejectListLike: Boolean
+}
+
+type NewsExtractionPreflightGateSettingsModel {
+  enabled: Boolean!
+  minQualityScore: Float!
+  minWordCount: Int!
+  rejectBotChallenge: Boolean!
+  rejectListLike: Boolean!
+}
+
+enum NewsExtractionProviderId {
+  llm
+}
+
+input NewsExtractionProvidersSettingsInput {
+  clean: NewsExtractionProviderId
+  entities: NewsExtractionProviderId
+  kg: NewsExtractionProviderId
+  sentiment: NewsExtractionProviderId
+}
+
+type NewsExtractionProvidersSettingsModel {
+  clean: NewsExtractionProviderId!
+  entities: NewsExtractionProviderId!
+  kg: NewsExtractionProviderId!
+  sentiment: NewsExtractionProviderId!
+}
+
+type NewsExtractionSettingsModel {
+  capabilities: NewsExtractionCapabilitiesSettingsModel!
+  pipelineMode: NewsExtractionPipelineMode!
+  postCleanGate: NewsExtractionPostCleanGateSettingsModel!
+  preflightGate: NewsExtractionPreflightGateSettingsModel!
+  providers: NewsExtractionProvidersSettingsModel!
+}
+
 type NewsIndicatorAssociationBacktestRunModel {
   config: JSON
   createdAt: DateTime!
@@ -1970,6 +2149,12 @@ type NewsIndicatorSettingsModel {
 }
 
 type NewsPromptConfigModel {
+  entitySystemPromptTemplate: String!
+  entityUserPromptTemplate: String!
+  kgSystemPromptTemplate: String!
+  kgUserPromptTemplate: String!
+  sentimentSystemPromptTemplate: String!
+  sentimentUserPromptTemplate: String!
   systemPromptTemplate: String!
   userPromptTemplate: String!
   version: String!
@@ -2143,6 +2328,12 @@ type Query {
   economicDataFetchConfigs: [EconomicDataFetchConfigModel!]!
   economicDataRefreshPresetStatus(preset: EconomicDashboardRefreshPreset!): EconomicDataRefreshPresetStatusModel!
   entityImpactGraphSettings: EntityImpactGraphSettingsModel!
+
+  """Get a 360-degree intelligence card for a knowledge graph entity"""
+  entityIntelligenceCard(input: EntityIntelligenceCardInput!): EntityIntelligenceCardModel
+
+  """Get content evidence for a knowledge graph entity intelligence card"""
+  entityIntelligenceEvidence(input: EntityIntelligenceEvidenceInput!): EntityIntelligenceEvidenceModel
   entitySentimentSeries(days: Int, entityName: String!, entityType: String): [EntitySentimentSnapshotModel!]!
   eventGroups(itemsPerGroup: Int, limit: Int, minGroupSize: Int, windowDays: Int): [EventGroupModel!]!
   getCommodityMoveImpact(input: CommodityMoveImpactInput!): KnowledgeGraphImpactAnalysisModel
@@ -2161,6 +2352,10 @@ type Query {
   item(id: String!): ItemModel
   itemFacets(filters: ItemsFiltersInput, search: String): ItemFacets!
   items(after: String, filters: ItemsFiltersInput, first: Int! = 10, orderBy: ItemsOrderBy! = CREATED_DESC, page: Int, rankingMode: ItemsRankingMode, search: String): ItemConnection!
+
+  """Resolve an entity name to the preferred knowledge graph entity"""
+  knowledgeEntityByName(name: String!, type: String): KnowledgeGraphNodeModel
+  knowledgeGraphEdgeEvidence(edgeId: String!, limit: Int): [KnowledgeGraphEdgeEvidenceItemModel!]!
   knowledgeGraphEvidenceReviewQueue(limit: Int, maxConfidence: Float, onlyUnreviewed: Boolean): [KnowledgeGraphEvidenceReviewItemModel!]!
   knowledgeGraphSettings: KnowledgeGraphSettingsModel!
   me: UserModel!
@@ -2177,6 +2372,7 @@ type Query {
   newsEventSourcePolicyRevisionDiff(baseRevision: Int!, targetRevision: Int!): NewsEventSourcePolicyRevisionDiffModel!
   newsEventSourcePolicySyncStatus: NewsEventSourcePolicySyncStatusModel!
   newsEvents(dedupeSimilar: Boolean, entity: String, limit: Int, minAuthoritativeSources: Int, minCredibilityScore: Float, minHeatScore: Float, sortBy: NewsEventSortBy, sourceType: NewsEventSourceType, status: NewsEventStatus, windowDays: Int): [NewsEventModel!]!
+  newsExtractionSettings: NewsExtractionSettingsModel!
   newsIndicatorAssociation(backtestsLimit: Int, id: String!): NewsIndicatorAssociationModel
   newsIndicatorAssociations(featureMetric: NewsIndicatorFeatureMetric, indicatorSlug: String, limit: Int, scopeKey: String, scopeType: NewsIndicatorScopeType): [NewsIndicatorAssociationModel!]!
   newsIndicatorSettings: NewsIndicatorSettingsModel!
@@ -2565,10 +2761,14 @@ input UpdateNewsDedupeSettingsInput {
 
 input UpdateNewsEventSettingsInput {
   backfillDays: Int!
+  bertopicMaxItemsPerRequest: Int
+  bertopicMinItemsPerGroup: Int
+  bertopicMinTopicSize: Int
   cacheTtlSeconds: Int!
   categoryConflictReject: Boolean
   categorySoftPenalty: Float
   classificationGateEnabled: Boolean
+  clusteringMode: NewsEventClusteringMode
   crossLanguagePenalty: Float!
   enabled: Boolean!
   forceAuthoritativeMode: Boolean
@@ -2610,6 +2810,14 @@ input UpdateNewsEventSourcePolicyPresetInput {
   note: String
 }
 
+input UpdateNewsExtractionSettingsInput {
+  capabilities: NewsExtractionCapabilitiesSettingsInput
+  pipelineMode: NewsExtractionPipelineMode
+  postCleanGate: NewsExtractionPostCleanGateSettingsInput
+  preflightGate: NewsExtractionPreflightGateSettingsInput
+  providers: NewsExtractionProvidersSettingsInput
+}
+
 input UpdateNewsIndicatorSettingsInput {
   backtestBaselineDays: Int!
   backtestHoldoutDays: Int!
@@ -2629,6 +2837,12 @@ input UpdateNewsIndicatorSettingsInput {
 }
 
 input UpdateNewsPromptConfigInput {
+  entitySystemPromptTemplate: String!
+  entityUserPromptTemplate: String!
+  kgSystemPromptTemplate: String!
+  kgUserPromptTemplate: String!
+  sentimentSystemPromptTemplate: String!
+  sentimentUserPromptTemplate: String!
   systemPromptTemplate: String!
   userPromptTemplate: String!
   version: String!

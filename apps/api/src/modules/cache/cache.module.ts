@@ -1,5 +1,5 @@
-import { Global, Inject, Injectable, Module, OnModuleDestroy } from '@nestjs/common';
 import { createLogger } from '@modular/utils';
+import { Global, Inject, Injectable, Module, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
 
 import { EnvService } from '../config/config.service';

@@ -24,6 +24,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   List,
   Grid,
@@ -57,15 +58,22 @@ import {
   useUpdateCrawlClientSettingsMutation,
 } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
-import { getCrawlTasksOpsRefreshDecision } from "@/lib/crawl-ops-refresh";
 import { normalizeHeadlessModeFormValues } from "@/lib/crawl-headless-mode";
+import { getCrawlTasksOpsRefreshDecision } from "@/lib/crawl-ops-refresh";
+import {
+  findUnsupportedProxyIssues,
+  getCrawlConfigPolicyIssueTranslationKey,
+} from "@/lib/crawl-config-policy";
 import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { formatRealtimeSocketError } from "@/lib/realtime-socket-errors";
 
 import { Crawl4aiHealthCard } from "./components/Crawl4aiHealthCard";
 import { CreateCrawlTaskDrawer } from "./components/CreateCrawlTaskDrawer";
 import { MetadataExtractionCard } from "./components/MetadataExtractionCard";
 import type { CreateCrawlTaskFormValues, MetadataFormValues } from "./types";
+
+const REALTIME_SOCKET_TIMEOUT_MS = 10_000;
 
 const statusColors: Record<CrawlTaskStatus, string> = {
   pending: "gold",
@@ -93,6 +101,25 @@ function safeParseJson<T>(input?: string | null): T | null {
   } catch {
     return null;
   }
+}
+
+function findTaskProxyIssuesFromConfig(rawConfig?: string | null) {
+  const config = safeParseJson<Record<string, unknown>>(rawConfig);
+  return findUnsupportedProxyIssues(config, "task.config");
+}
+
+function formatPolicyIssues(
+  issues: ReturnType<typeof findUnsupportedProxyIssues>,
+  t: ReturnType<typeof useTranslation>["t"],
+) {
+  return issues
+    .map(
+      (issue) =>
+        `${issue.path}: ${t(getCrawlConfigPolicyIssueTranslationKey(issue.code), {
+          defaultValue: issue.code,
+        })}`,
+    )
+    .join(" ");
 }
 
 function toCrawlWaitUntilInput(
@@ -362,10 +389,14 @@ export function CrawlTasksView() {
   const [opsLiveStatus, setOpsLiveStatus] = useState<
     "disconnected" | "connecting" | "connected"
   >("disconnected");
+  const [opsLiveError, setOpsLiveError] = useState<string | null>(null);
   const currentPageRef = useRef(current);
 
   const [createTask, { loading: creating }] = useCreateCrawlTaskMutation();
   const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
+  const unsupportedProxyActionHint = t(
+    "crawl.policy.actionBlockedByUnsupportedProxy",
+  );
   const {
     data: crawlClientSettingsData,
     loading: crawlClientSettingsLoading,
@@ -459,7 +490,7 @@ export function CrawlTasksView() {
         if (!options?.silent) {
           message.error(
             (error as Error).message ??
-              t("common.failed", { defaultValue: "Failed" }),
+              t("common.failed"),
           );
         }
       } finally {
@@ -612,7 +643,7 @@ export function CrawlTasksView() {
         if (!options?.silent) {
           setTasksError(
             (error as Error).message ??
-              t("common.failed", { defaultValue: "Failed" }),
+              t("common.failed"),
           );
         }
       } finally {
@@ -691,34 +722,94 @@ export function CrawlTasksView() {
     if (!canView || !session?.accessToken) {
       opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
+      setOpsLiveError(null);
       return;
     }
 
     opsSocketBootstrappingRef.current = true;
     setOpsLiveStatus("connecting");
+    setOpsLiveError(null);
     let hasConnectedOnce = false;
     const socket = io(`${env.apiRoot}/ops`, {
       auth: { token: session.accessToken },
       transports: ["websocket"],
+      withCredentials: true,
+      autoConnect: false,
+      timeout: REALTIME_SOCKET_TIMEOUT_MS,
     });
     opsSocketRef.current = socket;
+    const connectTimer = window.setTimeout(() => {
+      socket.connect();
+    }, 0);
 
     const handleConnect = () => {
       opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("connected");
+      setOpsLiveError(null);
       if (hasConnectedOnce) {
         scheduleOpsRefresh();
         return;
       }
       hasConnectedOnce = true;
     };
-    const handleDisconnect = () => {
+    const getLocalizedError = (
+      payload:
+        | { code?: string; message?: string; retryAfterMs?: number }
+        | undefined,
+      fallbackKind: "socket" | "connect",
+    ) =>
+      formatRealtimeSocketError(payload, t, {
+        keyPrefix: "crawl.liveUpdates.connectionError",
+        fallbackKind,
+        defaults: {
+          unauthorized: "Crawl realtime access expired. Please sign in again.",
+          tooManyConnections:
+            "Crawl realtime connections are at capacity. Please try again later.",
+          tooManyConnectionAttempts:
+            "Too many crawl realtime connection attempts. Please try again later.",
+          rateLimitExceeded:
+            "Crawl realtime connection attempts are too frequent. Please try again later.",
+          tooManyFailedAttempts:
+            "Too many failed crawl realtime sign-in attempts. Please try again later.",
+          timeout: "Connecting to crawl realtime timed out. Please try again.",
+          network:
+            "Unable to connect to crawl realtime. Please check the network and try again.",
+          connect:
+            "Unable to connect to crawl realtime right now. Please try again later.",
+          socket:
+            "Crawl realtime connection is unstable. Please try again later.",
+        },
+      });
+    const handleDisconnect = (reason: string) => {
       opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
+      if (reason === "io client disconnect") {
+        setOpsLiveError(null);
+        return;
+      }
+      setOpsLiveError((currentError) =>
+        currentError ?? getLocalizedError({ message: reason }, "socket"),
+      );
     };
-    const handleConnectError = () => {
+    const handleConnectError = (
+      error: { code?: string; message?: string; retryAfterMs?: number },
+    ) => {
       opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
+      setOpsLiveError(getLocalizedError(error, "connect"));
+    };
+    const handleServerError = (payload: unknown) => {
+      const candidate =
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? (payload as {
+              code?: string;
+              message?: string;
+              retryAfterMs?: number;
+            })
+          : undefined;
+      opsSocketBootstrappingRef.current = false;
+      setOpsLiveStatus("disconnected");
+      setOpsLiveError(getLocalizedError(candidate, "socket"));
     };
     const handleEvent = (payload: unknown) => {
       const refreshDecision = getCrawlTasksOpsRefreshDecision(payload);
@@ -731,12 +822,15 @@ export function CrawlTasksView() {
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
     socket.on("connect_error", handleConnectError);
+    socket.on("ops:error", handleServerError);
     socket.on("ops:event", handleEvent);
 
     return () => {
+      window.clearTimeout(connectTimer);
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
       socket.off("connect_error", handleConnectError);
+      socket.off("ops:error", handleServerError);
       socket.off("ops:event", handleEvent);
       socket.disconnect();
       if (opsSocketRef.current === socket) {
@@ -744,7 +838,7 @@ export function CrawlTasksView() {
       }
       opsSocketBootstrappingRef.current = false;
     };
-  }, [canView, scheduleOpsRefresh, session?.accessToken]);
+  }, [canView, scheduleOpsRefresh, session?.accessToken, t]);
 
   useEffect(() => {
     if (
@@ -776,8 +870,15 @@ export function CrawlTasksView() {
 
   const buildTaskConfigTags = (record: CrawlTaskNode): ReactNode[] => {
     const summary = parseCrawlTaskConfigSummary(record.config);
+    const proxyIssues = findTaskProxyIssuesFromConfig(record.config);
     if (!summary) {
-      return [];
+      return proxyIssues.length > 0
+        ? [
+            <Tag key="legacyProxy" color="error">
+              {t("crawl.proxy.unsupportedLegacyTitle")}
+            </Tag>,
+          ]
+        : [];
     }
 
     const qualityProfileLabel =
@@ -802,9 +903,7 @@ export function CrawlTasksView() {
     if (summary.ingestToItems) {
       tags.push(
         <Tag key="ingest" color="geekblue">
-          {t("crawl.settings.ingestToItems", {
-            defaultValue: "Auto send to Items",
-          })}
+          {t("crawl.settings.ingestToItems")}
         </Tag>,
       );
     }
@@ -839,17 +938,13 @@ export function CrawlTasksView() {
     if (summary.antiBotMode === "enabled") {
       tags.push(
         <Tag key="antiBotMode" color="volcano">
-          {t("crawl.browser.antiBotModes.enabled", {
-            defaultValue: "Anti-bot enabled",
-          })}
+          {t("crawl.browser.antiBotModes.enabled")}
         </Tag>,
       );
     } else if (summary.antiBotMode === "disabled") {
       tags.push(
         <Tag key="antiBotMode" color="default">
-          {t("crawl.browser.antiBotModes.disabled", {
-            defaultValue: "Anti-bot disabled",
-          })}
+          {t("crawl.browser.antiBotModes.disabled")}
         </Tag>,
       );
     }
@@ -857,6 +952,13 @@ export function CrawlTasksView() {
       tags.push(
         <Tag key="autoExpandDetails" color="green">
           {t("crawl.settings.autoExpandDetails")}
+        </Tag>,
+      );
+    }
+    if (proxyIssues.length > 0) {
+      tags.unshift(
+        <Tag key="legacyProxy" color="error">
+          {t("crawl.proxy.unsupportedLegacyTitle")}
         </Tag>,
       );
     }
@@ -959,27 +1061,42 @@ export function CrawlTasksView() {
       key: "actions",
       width: 140,
       fixed: "right",
-      render: (_, record) => (
-        <Space size={4}>
-          <Button
-            size="small"
-            type="link"
-            onClick={() => openTaskDetail(record.id)}
-          >
-            {t("common.view")}
-          </Button>
-          {canManage ? (
+      render: (_, record) => {
+        const hasUnsupportedLegacyProxy =
+          findTaskProxyIssuesFromConfig(record.config).length > 0;
+        return (
+          <Space size={4}>
             <Button
               size="small"
               type="link"
-              onClick={() => handleRetry(record.id)}
-              loading={retrying}
+              onClick={() => openTaskDetail(record.id)}
             >
-              {t("common.retry")}
+              {t("common.view")}
             </Button>
-          ) : null}
-        </Space>
-      ),
+            {canManage ? (
+              <Tooltip
+                title={
+                  hasUnsupportedLegacyProxy
+                    ? unsupportedProxyActionHint
+                    : undefined
+                }
+              >
+                <span>
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={() => handleRetry(record.id)}
+                    loading={retrying}
+                    disabled={hasUnsupportedLegacyProxy}
+                  >
+                    {t("common.retry")}
+                  </Button>
+                </span>
+              </Tooltip>
+            ) : null}
+          </Space>
+        );
+      },
     },
   ];
 
@@ -1022,6 +1139,12 @@ export function CrawlTasksView() {
   };
 
   const handleRetry = async (id: string) => {
+    const taskRecord = taskEdgesRef.current.find((edge) => edge.node.id === id)?.node;
+    const proxyIssues = findTaskProxyIssuesFromConfig(taskRecord?.config);
+    if (proxyIssues.length > 0) {
+      message.error(formatPolicyIssues(proxyIssues, t));
+      return;
+    }
     try {
       await retryTask({ variables: { id } });
       message.success(t("crawl.task.requeued"));
@@ -1043,14 +1166,12 @@ export function CrawlTasksView() {
       );
       setQueueStats(response.data);
       message.success(
-        t("crawl.ops.queuePaused", { defaultValue: "Crawl queue paused." }),
+        t("crawl.ops.queuePaused"),
       );
     } catch (error: unknown) {
       message.error(
         (error as Error).message ??
-          t("crawl.ops.queuePauseFailed", {
-            defaultValue: "Failed to pause crawl queue.",
-          }),
+          t("crawl.ops.queuePauseFailed"),
       );
     } finally {
       setQueueActionLoading(null);
@@ -1065,14 +1186,12 @@ export function CrawlTasksView() {
       );
       setQueueStats(response.data);
       message.success(
-        t("crawl.ops.queueResumed", { defaultValue: "Crawl queue resumed." }),
+        t("crawl.ops.queueResumed"),
       );
     } catch (error: unknown) {
       message.error(
         (error as Error).message ??
-          t("crawl.ops.queueResumeFailed", {
-            defaultValue: "Failed to resume crawl queue.",
-          }),
+          t("crawl.ops.queueResumeFailed"),
       );
     } finally {
       setQueueActionLoading(null);
@@ -1084,7 +1203,6 @@ export function CrawlTasksView() {
     if (nextConcurrency < 1 || nextConcurrency > 20) {
       message.error(
         t("common.validation.numberRange", {
-          defaultValue: "Value must be between {{min}} and {{max}}.",
           min: 1,
           max: 20,
         }),
@@ -1099,16 +1217,12 @@ export function CrawlTasksView() {
       });
       await loadQueueStats();
       message.success(
-        t("crawl.ops.concurrencySaved", {
-          defaultValue: "Updated crawl concurrency limit.",
-        }),
+        t("crawl.ops.concurrencySaved"),
       );
     } catch (error: unknown) {
       message.error(
         (error as Error).message ??
-          t("crawl.ops.concurrencySaveFailed", {
-            defaultValue: "Failed to update crawl concurrency limit.",
-          }),
+          t("crawl.ops.concurrencySaveFailed"),
       );
     } finally {
       setQueueActionLoading(null);
@@ -1120,7 +1234,6 @@ export function CrawlTasksView() {
     if (frequencySeconds < 60 || frequencySeconds > 2_592_000) {
       message.error(
         t("common.validation.numberRange", {
-          defaultValue: "Value must be between {{min}} and {{max}}.",
           min: 60,
           max: 2_592_000,
         }),
@@ -1129,15 +1242,10 @@ export function CrawlTasksView() {
     }
 
     Modal.confirm({
-      title: t("crawl.ops.batchFrequencyConfirmTitle", {
-        defaultValue: "Apply frequency to all News Sources?",
-      }),
-      content: t("crawl.ops.batchFrequencyConfirmDesc", {
-        defaultValue:
-          "This updates frequencySeconds for all News Sources in your org.",
-      }),
-      okText: t("common.confirm", { defaultValue: "Confirm" }),
-      cancelText: t("common.cancel", { defaultValue: "Cancel" }),
+      title: t("crawl.ops.batchFrequencyConfirmTitle"),
+      content: t("crawl.ops.batchFrequencyConfirmDesc"),
+      okText: t("common.confirm"),
+      cancelText: t("common.cancel"),
       onOk: async () => {
         setBatchFrequencyLoading(true);
         try {
@@ -1147,8 +1255,6 @@ export function CrawlTasksView() {
           );
           message.success(
             t("crawl.ops.batchFrequencySaved", {
-              defaultValue:
-                "Updated {{count}} News Sources, active sources rescheduled: {{rescheduled}}.",
               count: response.data.updatedCount,
               rescheduled: response.data.activeRescheduledCount,
             }),
@@ -1156,9 +1262,7 @@ export function CrawlTasksView() {
         } catch (error: unknown) {
           message.error(
             (error as Error).message ??
-              t("crawl.ops.batchFrequencySaveFailed", {
-                defaultValue: "Failed to batch update News Source frequency.",
-              }),
+              t("crawl.ops.batchFrequencySaveFailed"),
           );
           throw error;
         } finally {
@@ -1179,16 +1283,12 @@ export function CrawlTasksView() {
       });
       await refetchCrawlClientSettings();
       message.success(
-        t("settings.crawlClient.saved", {
-          defaultValue: "Crawl client settings saved.",
-        }),
+        t("settings.crawlClient.saved"),
       );
     } catch (error) {
       message.error(
         (error as Error).message ??
-          t("settings.crawlClient.saveFailed", {
-            defaultValue: "Failed to save crawl client settings.",
-          }),
+          t("settings.crawlClient.saveFailed"),
       );
     }
   };
@@ -1199,6 +1299,21 @@ export function CrawlTasksView() {
     let options: CrawlOptionsInput;
     try {
       const sanitizedOptions = sanitizeCrawlOptions(normalizedValues);
+      const proxyIssues = findUnsupportedProxyIssues(sanitizedOptions, "options");
+      if (proxyIssues.length > 0) {
+        message.error(
+          proxyIssues
+            .map(
+              (issue) =>
+                `${issue.path}: ${t(
+                  getCrawlConfigPolicyIssueTranslationKey(issue.code),
+                  { defaultValue: issue.code },
+                )}`,
+            )
+            .join(" "),
+        );
+        return;
+      }
       assertNoCrawl4aiLlmOptions(sanitizedOptions, "options");
       options = toGraphqlCrawlOptionsInput(sanitizedOptions);
     } catch (error) {
@@ -1285,7 +1400,7 @@ export function CrawlTasksView() {
         style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
       >
         <Typography.Text type="secondary">
-          {t("common.loading", { defaultValue: "Loading..." })}
+          {t("common.loading")}
         </Typography.Text>
       </div>
     );
@@ -1295,7 +1410,7 @@ export function CrawlTasksView() {
     return (
       <Card
         className="content-card"
-        title={t("crawl.title", { defaultValue: "Crawl Tasks" })}
+        title={t("crawl.title")}
       >
         <Alert
           type="warning"
@@ -1310,7 +1425,7 @@ export function CrawlTasksView() {
     <div className="flex flex-col gap-4">
       <Card
         className="content-card"
-        title={t("crawl.title", { defaultValue: "Crawl Tasks" })}
+        title={t("crawl.title")}
       >
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           {sourceIdFilter ? (
@@ -1319,7 +1434,6 @@ export function CrawlTasksView() {
               showIcon
               style={{ marginBottom: 0 }}
               message={t("crawl.filter.sourceId", {
-                defaultValue: "Filtered by NewsSource {{id}}",
                 id: sourceIdFilter,
               })}
               action={
@@ -1327,7 +1441,7 @@ export function CrawlTasksView() {
                   size="small"
                   onClick={() => router.push("/admin/ops/crawl-tasks")}
                 >
-                  {t("common.clear", { defaultValue: "Clear" })}
+                  {t("common.clear")}
                 </Button>
               }
             />
@@ -1337,8 +1451,26 @@ export function CrawlTasksView() {
               type="error"
               showIcon
               style={{ marginBottom: 0 }}
-              message={t("common.failed", { defaultValue: "Failed" })}
+              message={t("common.failed")}
               description={tasksError}
+            />
+          ) : null}
+          {opsLiveError ? (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 0 }}
+              message={t("crawl.liveUpdates.alertTitle")}
+              description={
+                <Space direction="vertical" size={4}>
+                  <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
+                    {opsLiveError}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">
+                    {t("crawl.liveUpdates.fallbackHint")}
+                  </Typography.Text>
+                </Space>
+              }
             />
           ) : null}
           <div
@@ -1428,17 +1560,36 @@ export function CrawlTasksView() {
                 width: screens.md ? "auto" : "100%",
               }}
             >
+              <Tag
+                color={
+                  opsLiveError
+                    ? "red"
+                    : opsLiveStatus === "connected"
+                      ? "green"
+                      : opsLiveStatus === "connecting"
+                        ? "blue"
+                        : undefined
+                }
+              >
+                {opsLiveError
+                  ? t("crawl.liveUpdates.error")
+                  : opsLiveStatus === "connected"
+                    ? t("crawl.liveUpdates.connected")
+                    : opsLiveStatus === "connecting"
+                      ? t("crawl.liveUpdates.connecting")
+                      : t("crawl.liveUpdates.disconnected")}
+              </Tag>
               <Button
                 icon={<DashboardOutlined />}
                 onClick={() => router.push("/admin/ops/crawl-monitor")}
               >
-                {t("crawl.monitor.open", { defaultValue: "Monitor" })}
+                {t("crawl.monitor.open")}
               </Button>
               <Button
                 icon={<GlobalOutlined />}
                 onClick={() => router.push("/admin/ops/news-sources")}
               >
-                {t("newsSources.title", { defaultValue: "News Sources" })}
+                {t("newsSources.title")}
               </Button>
               {canManage ? (
                 <Button type="primary" onClick={() => setDrawerOpen(true)}>
@@ -1459,32 +1610,28 @@ export function CrawlTasksView() {
       {canManage || canManageQueueOps ? (
         <Card
           className="content-card"
-          title={t("crawl.ops.title", {
-            defaultValue: "Crawl Queue Ops",
-          })}
+          title={t("crawl.ops.title")}
           loading={queueStatsLoading}
         >
           <Row gutter={[16, 16]}>
             <Col xs={24} md={8}>
               <Space direction="vertical" size={8}>
                 <Typography.Text strong>
-                  {t("crawl.ops.queueStatus", { defaultValue: "Queue status" })}
+                  {t("crawl.ops.queueStatus")}
                 </Typography.Text>
                 <Space wrap size={[8, 8]}>
                   <Tag color={queueStats?.paused ? "volcano" : "green"}>
                     {queueStats?.paused
-                      ? t("crawl.ops.paused", { defaultValue: "Paused" })
-                      : t("crawl.ops.running", { defaultValue: "Running" })}
+                      ? t("crawl.ops.paused")
+                      : t("crawl.ops.running")}
                   </Tag>
                   <Typography.Text type="secondary">
                     {t("crawl.ops.pending", {
-                      defaultValue: "Pending: {{count}}",
                       count: queueStats?.pending ?? 0,
                     })}
                   </Typography.Text>
                   <Typography.Text type="secondary">
                     {t("crawl.ops.active", {
-                      defaultValue: "Active: {{count}}",
                       count: queueStats?.counts.active ?? 0,
                     })}
                   </Typography.Text>
@@ -1495,7 +1642,7 @@ export function CrawlTasksView() {
                     loading={queueActionLoading === "pause"}
                     disabled={!canManageQueueOps || queueStats?.paused === true}
                   >
-                    {t("crawl.ops.pauseQueue", { defaultValue: "Pause queue" })}
+                    {t("crawl.ops.pauseQueue")}
                   </Button>
                   <Button
                     onClick={handleResumeQueue}
@@ -1504,9 +1651,7 @@ export function CrawlTasksView() {
                       !canManageQueueOps || queueStats?.paused === false
                     }
                   >
-                    {t("crawl.ops.resumeQueue", {
-                      defaultValue: "Resume queue",
-                    })}
+                    {t("crawl.ops.resumeQueue")}
                   </Button>
                 </Space>
               </Space>
@@ -1515,9 +1660,7 @@ export function CrawlTasksView() {
             <Col xs={24} md={8}>
               <Space direction="vertical" size={8} style={{ width: "100%" }}>
                 <Typography.Text strong>
-                  {t("crawl.ops.maxConcurrency", {
-                    defaultValue: "Global max concurrency",
-                  })}
+                  {t("crawl.ops.maxConcurrency")}
                 </Typography.Text>
                 <Space.Compact style={{ width: "100%" }}>
                   <InputNumber
@@ -1537,72 +1680,55 @@ export function CrawlTasksView() {
                     disabled={!canManageQueueOps}
                     onClick={handleUpdateMaxConcurrency}
                   >
-                    {t("common.saveChanges", { defaultValue: "Save Changes" })}
+                    {t("common.saveChanges")}
                   </Button>
                 </Space.Compact>
                 <Typography.Text type="secondary" style={{ display: "block" }}>
-                  {t("crawl.ops.maxConcurrencyHelp", {
-                    defaultValue:
-                      "Controls crawl queue workers only. Crawl-result to item ingest uses a fixed internal concurrency of 8 and is not affected here.",
-                  })}
+                  {t("crawl.ops.maxConcurrencyHelp")}
                 </Typography.Text>
                 <Typography.Text type="secondary">
-                  {t("crawl.ops.effectiveConcurrency", {
-                    defaultValue: "Effective",
-                  })}
+                  {t("crawl.ops.effectiveConcurrency")}
                   : {queueStats?.effectiveConcurrency ?? "-"}
                 </Typography.Text>
                 <Typography.Text type="secondary">
-                  {t("crawl.ops.queueSplit", {
-                    defaultValue: "Hot/Normal pending",
-                  })}
+                  {t("crawl.ops.queueSplit")}
                   : {queueStats?.queues?.hot?.pending ?? 0}/
                   {queueStats?.queues?.normal?.pending ?? 0}
                 </Typography.Text>
                 <Typography.Text type="secondary">
-                  {t("crawl.ops.hotQueueRuntime", {
-                    defaultValue: "Hot queue (A/F/E/P)",
-                  })}
+                  {t("crawl.ops.hotQueueRuntime")}
                   : {queueStats?.queues?.hot?.counts?.active ?? 0}/
                   {queueStats?.queues?.hot?.counts?.failed ?? 0}/
                   {queueStats?.queues?.hot?.effectiveConcurrency ?? 0}/
                   {queueStats?.queues?.hot?.paused
-                    ? t("crawl.ops.paused", { defaultValue: "Paused" })
-                    : t("crawl.ops.running", { defaultValue: "Running" })}
+                    ? t("crawl.ops.paused")
+                    : t("crawl.ops.running")}
                 </Typography.Text>
                 <Typography.Text type="secondary">
-                  {t("crawl.ops.normalQueueRuntime", {
-                    defaultValue: "Normal queue (A/F/E/P)",
-                  })}
+                  {t("crawl.ops.normalQueueRuntime")}
                   : {queueStats?.queues?.normal?.counts?.active ?? 0}/
                   {queueStats?.queues?.normal?.counts?.failed ?? 0}/
                   {queueStats?.queues?.normal?.effectiveConcurrency ?? 0}/
                   {queueStats?.queues?.normal?.paused
-                    ? t("crawl.ops.paused", { defaultValue: "Paused" })
-                    : t("crawl.ops.running", { defaultValue: "Running" })}
+                    ? t("crawl.ops.paused")
+                    : t("crawl.ops.running")}
                 </Typography.Text>
                 <Typography.Text type="secondary">
-                  {t("crawl.ops.adaptiveStatus", {
-                    defaultValue: "Adaptive",
-                  })}
+                  {t("crawl.ops.adaptiveStatus")}
                   :{" "}
                   {queueStats?.adaptive?.enabled
                     ? `${queueStats?.adaptive?.lastDecision ?? "idle"}`
-                    : t("common.disabled", { defaultValue: "Disabled" })}
+                    : t("common.disabled")}
                 </Typography.Text>
                 {queueStats?.adaptive?.enabled ? (
                   <>
                     <Typography.Text type="secondary">
-                      {t("crawl.ops.adaptiveWindowCooldown", {
-                        defaultValue: "Adaptive window/cooldown (min)",
-                      })}
+                      {t("crawl.ops.adaptiveWindowCooldown")}
                       : {queueStats?.adaptive?.windowMinutes ?? "-"}/
                       {queueStats?.adaptive?.cooldownMinutes ?? "-"}
                     </Typography.Text>
                     <Typography.Text type="secondary">
-                      {t("crawl.ops.adaptiveThresholds", {
-                        defaultValue: "Adaptive thresholds (L/E/M)",
-                      })}
+                      {t("crawl.ops.adaptiveThresholds")}
                       :{" "}
                       {typeof queueStats?.adaptive?.thresholds?.latencyRatio ===
                       "number"
@@ -1629,10 +1755,7 @@ export function CrawlTasksView() {
                         : "-"}
                     </Typography.Text>
                     <Typography.Text type="secondary">
-                      {t("crawl.ops.adaptiveMetrics", {
-                        defaultValue:
-                          "Adaptive sampled metrics p95/error/headroom",
-                      })}
+                      {t("crawl.ops.adaptiveMetrics")}
                       : {queueStats?.adaptive?.metrics?.p95LatencyMs ?? "-"}ms/
                       {typeof queueStats?.adaptive?.metrics?.errorRate ===
                       "number"
@@ -1656,9 +1779,7 @@ export function CrawlTasksView() {
                     </Typography.Text>
                     {queueStats?.adaptive?.reason ? (
                       <Typography.Text type="secondary">
-                        {t("crawl.ops.adaptiveReason", {
-                          defaultValue: "Adaptive reason",
-                        })}
+                        {t("crawl.ops.adaptiveReason")}
                         : {queueStats?.adaptive?.reason}
                       </Typography.Text>
                     ) : null}
@@ -1671,9 +1792,7 @@ export function CrawlTasksView() {
               <Col xs={24} md={8}>
                 <Space direction="vertical" size={8} style={{ width: "100%" }}>
                   <Typography.Text strong>
-                    {t("crawl.ops.batchFrequency", {
-                      defaultValue: "Batch schedule interval (seconds)",
-                    })}
+                    {t("crawl.ops.batchFrequency")}
                   </Typography.Text>
                   <Space.Compact style={{ width: "100%" }}>
                     <InputNumber
@@ -1691,16 +1810,11 @@ export function CrawlTasksView() {
                       loading={batchFrequencyLoading}
                       onClick={handleBatchFrequencySubmit}
                     >
-                      {t("crawl.ops.applyAll", {
-                        defaultValue: "Apply to all",
-                      })}
+                      {t("crawl.ops.applyAll")}
                     </Button>
                   </Space.Compact>
                   <Typography.Text type="secondary">
-                    {t("crawl.ops.batchFrequencyHint", {
-                      defaultValue:
-                        "Updates frequencySeconds for all News Sources in this org.",
-                    })}
+                    {t("crawl.ops.batchFrequencyHint")}
                   </Typography.Text>
                 </Space>
               </Col>
@@ -1712,15 +1826,10 @@ export function CrawlTasksView() {
       {canManageSettings ? (
         <Card
           className="content-card"
-          title={t("settings.tabs.crawlClient", {
-            defaultValue: "Crawl Client",
-          })}
+          title={t("settings.tabs.crawlClient")}
         >
           <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-            {t("settings.crawlClient.description", {
-              defaultValue:
-                "Tune crawl4ai runtime parameters for health checks, request timeouts, and retry behavior.",
-            })}
+            {t("settings.crawlClient.description")}
           </Typography.Paragraph>
           {crawlClientSettingsLoading &&
           !crawlClientSettingsData?.crawlClientSettings ? (
@@ -1773,18 +1882,13 @@ export function CrawlTasksView() {
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item
-                    label={t("settings.crawlClient.fields.requestTimeoutHot", {
-                      defaultValue: "Hot request timeout",
-                    })}
+                    label={t("settings.crawlClient.fields.requestTimeoutHot")}
                     name="requestTimeoutHotMs"
                     rules={[
                       {
                         required: true,
                         message: t(
                           "settings.crawlClient.validation.requestTimeoutHot",
-                          {
-                            defaultValue: "Please enter hot request timeout.",
-                          },
                         ),
                       },
                       {
@@ -1810,9 +1914,6 @@ export function CrawlTasksView() {
                   <Form.Item
                     label={t(
                       "settings.crawlClient.fields.requestTimeoutNormal",
-                      {
-                        defaultValue: "Normal request timeout",
-                      },
                     )}
                     name="requestTimeoutNormalMs"
                     rules={[
@@ -1820,10 +1921,6 @@ export function CrawlTasksView() {
                         required: true,
                         message: t(
                           "settings.crawlClient.validation.requestTimeoutNormal",
-                          {
-                            defaultValue:
-                              "Please enter normal request timeout.",
-                          },
                         ),
                       },
                       {
@@ -1849,9 +1946,6 @@ export function CrawlTasksView() {
                   <Form.Item
                     label={t(
                       "settings.crawlClient.fields.conditionalRequestEnabled",
-                      {
-                        defaultValue: "Enable HTTP conditional requests",
-                      },
                     )}
                     name="conditionalRequestEnabled"
                     valuePropName="checked"
@@ -1863,9 +1957,6 @@ export function CrawlTasksView() {
                   <Form.Item
                     label={t(
                       "settings.crawlClient.fields.conditionalRequestTimeoutMs",
-                      {
-                        defaultValue: "Conditional request timeout",
-                      },
                     )}
                     name="conditionalRequestTimeoutMs"
                     rules={[
@@ -1873,10 +1964,6 @@ export function CrawlTasksView() {
                         required: true,
                         message: t(
                           "settings.crawlClient.validation.conditionalRequestTimeoutMs",
-                          {
-                            defaultValue:
-                              "Please enter conditional request timeout.",
-                          },
                         ),
                       },
                       {
@@ -1903,9 +1990,6 @@ export function CrawlTasksView() {
                   <Form.Item
                     label={t(
                       "settings.crawlClient.fields.conditionalRequestMaxRetries",
-                      {
-                        defaultValue: "Conditional request retries",
-                      },
                     )}
                     name="conditionalRequestMaxRetries"
                     rules={[
@@ -1913,10 +1997,6 @@ export function CrawlTasksView() {
                         required: true,
                         message: t(
                           "settings.crawlClient.validation.conditionalRequestMaxRetries",
-                          {
-                            defaultValue:
-                              "Please enter conditional request retries.",
-                          },
                         ),
                       },
                       {
@@ -1943,10 +2023,6 @@ export function CrawlTasksView() {
                   <Form.Item
                     label={t(
                       "settings.crawlClient.fields.detailPublishSignalHeadFetchTimeout",
-                      {
-                        defaultValue:
-                          "Detail publish-signal head fetch timeout",
-                      },
                     )}
                     name="detailPublishSignalHeadFetchTimeoutMs"
                     rules={[
@@ -1954,10 +2030,6 @@ export function CrawlTasksView() {
                         required: true,
                         message: t(
                           "settings.crawlClient.validation.detailPublishSignalHeadFetchTimeout",
-                          {
-                            defaultValue:
-                              "Please enter detail publish-signal head fetch timeout.",
-                          },
                         ),
                       },
                       {
@@ -1983,10 +2055,6 @@ export function CrawlTasksView() {
                   <Form.Item
                     label={t(
                       "settings.crawlClient.fields.detailPublishSignalHeadFetchConcurrency",
-                      {
-                        defaultValue:
-                          "Detail publish-signal head fetch concurrency",
-                      },
                     )}
                     name="detailPublishSignalHeadFetchConcurrency"
                     rules={[
@@ -1994,10 +2062,6 @@ export function CrawlTasksView() {
                         required: true,
                         message: t(
                           "settings.crawlClient.validation.detailPublishSignalHeadFetchConcurrency",
-                          {
-                            defaultValue:
-                              "Please enter detail publish-signal head fetch concurrency.",
-                          },
                         ),
                       },
                       {
@@ -2023,10 +2087,6 @@ export function CrawlTasksView() {
                   <Form.Item
                     label={t(
                       "settings.crawlClient.fields.detailPublishSignalHeadFetchMaxReadBytes",
-                      {
-                        defaultValue:
-                          "Detail publish-signal head fetch max read bytes",
-                      },
                     )}
                     name="detailPublishSignalHeadFetchMaxReadBytes"
                     rules={[
@@ -2034,10 +2094,6 @@ export function CrawlTasksView() {
                         required: true,
                         message: t(
                           "settings.crawlClient.validation.detailPublishSignalHeadFetchMaxReadBytes",
-                          {
-                            defaultValue:
-                              "Please enter detail publish-signal head fetch max read bytes.",
-                          },
                         ),
                       },
                       {
@@ -2123,9 +2179,6 @@ export function CrawlTasksView() {
                   <Form.Item
                     label={t(
                       "settings.crawlClient.fields.queueOverloadCooldown",
-                      {
-                        defaultValue: "Queue overload cooldown",
-                      },
                     )}
                     name="queueOverloadCooldownMs"
                     rules={[
@@ -2133,10 +2186,6 @@ export function CrawlTasksView() {
                         required: true,
                         message: t(
                           "settings.crawlClient.validation.queueOverloadCooldown",
-                          {
-                            defaultValue:
-                              "Please enter queue overload cooldown.",
-                          },
                         ),
                       },
                       {
@@ -2162,9 +2211,6 @@ export function CrawlTasksView() {
                   <Form.Item
                     label={t(
                       "settings.crawlClient.fields.adaptiveConcurrency",
-                      {
-                        defaultValue: "Adaptive concurrency",
-                      },
                     )}
                     name="adaptiveConcurrencyEnabled"
                     valuePropName="checked"
@@ -2178,14 +2224,8 @@ export function CrawlTasksView() {
                     style={{ marginTop: -8, marginBottom: 8 }}
                   >
                     {adaptiveConcurrencyEnabled
-                      ? t("settings.crawlClient.hints.adaptiveEnabled", {
-                          defaultValue:
-                            "Adaptive mode is enabled. Window and threshold fields below are active.",
-                        })
-                      : t("settings.crawlClient.hints.adaptiveDisabled", {
-                          defaultValue:
-                            "Adaptive mode is disabled. Enable it to configure window and threshold fields.",
-                        })}
+                      ? t("settings.crawlClient.hints.adaptiveEnabled")
+                      : t("settings.crawlClient.hints.adaptiveDisabled")}
                   </Typography.Paragraph>
                 </Col>
                 {adaptiveConcurrencyEnabled ? (
@@ -2194,9 +2234,6 @@ export function CrawlTasksView() {
                       <Form.Item
                         label={t(
                           "settings.crawlClient.fields.adaptiveWindowMinutes",
-                          {
-                            defaultValue: "Adaptive window",
-                          },
                         )}
                         name="adaptiveWindowMinutes"
                         rules={[
@@ -2204,10 +2241,6 @@ export function CrawlTasksView() {
                             required: true,
                             message: t(
                               "settings.crawlClient.validation.adaptiveWindowMinutes",
-                              {
-                                defaultValue:
-                                  "Please enter adaptive window in minutes.",
-                              },
                             ),
                           },
                           {
@@ -2233,9 +2266,6 @@ export function CrawlTasksView() {
                       <Form.Item
                         label={t(
                           "settings.crawlClient.fields.adaptiveCooldownMinutes",
-                          {
-                            defaultValue: "Adaptive cooldown",
-                          },
                         )}
                         name="adaptiveCooldownMinutes"
                         rules={[
@@ -2243,10 +2273,6 @@ export function CrawlTasksView() {
                             required: true,
                             message: t(
                               "settings.crawlClient.validation.adaptiveCooldownMinutes",
-                              {
-                                defaultValue:
-                                  "Please enter adaptive cooldown in minutes.",
-                              },
                             ),
                           },
                           {
@@ -2272,9 +2298,6 @@ export function CrawlTasksView() {
                       <Form.Item
                         label={t(
                           "settings.crawlClient.fields.adaptiveLatencyThresholdRatio",
-                          {
-                            defaultValue: "Adaptive latency threshold",
-                          },
                         )}
                         name="adaptiveLatencyThresholdRatio"
                         rules={[
@@ -2282,10 +2305,6 @@ export function CrawlTasksView() {
                             required: true,
                             message: t(
                               "settings.crawlClient.validation.adaptiveLatencyThresholdRatio",
-                              {
-                                defaultValue:
-                                  "Please enter adaptive latency threshold ratio.",
-                              },
                             ),
                           },
                           {
@@ -2312,9 +2331,6 @@ export function CrawlTasksView() {
                       <Form.Item
                         label={t(
                           "settings.crawlClient.fields.adaptiveErrorRateThreshold",
-                          {
-                            defaultValue: "Adaptive error-rate threshold",
-                          },
                         )}
                         name="adaptiveErrorRateThreshold"
                         rules={[
@@ -2322,10 +2338,6 @@ export function CrawlTasksView() {
                             required: true,
                             message: t(
                               "settings.crawlClient.validation.adaptiveErrorRateThreshold",
-                              {
-                                defaultValue:
-                                  "Please enter adaptive error-rate threshold ratio.",
-                              },
                             ),
                           },
                           {
@@ -2352,9 +2364,6 @@ export function CrawlTasksView() {
                       <Form.Item
                         label={t(
                           "settings.crawlClient.fields.adaptiveMemoryHeadroomThreshold",
-                          {
-                            defaultValue: "Adaptive memory headroom threshold",
-                          },
                         )}
                         name="adaptiveMemoryHeadroomThreshold"
                         rules={[
@@ -2362,10 +2371,6 @@ export function CrawlTasksView() {
                             required: true,
                             message: t(
                               "settings.crawlClient.validation.adaptiveMemoryHeadroomThreshold",
-                              {
-                                defaultValue:
-                                  "Please enter adaptive memory headroom threshold ratio.",
-                              },
                             ),
                           },
                           {
@@ -2397,7 +2402,7 @@ export function CrawlTasksView() {
                   htmlType="submit"
                   loading={crawlClientSettingsSaving}
                 >
-                  {t("common.saveChanges", { defaultValue: "Save Changes" })}
+                  {t("common.saveChanges")}
                 </Button>
               </Form.Item>
             </Form>
@@ -2407,11 +2412,10 @@ export function CrawlTasksView() {
 
       <Card
         className="content-card"
-        title={t("crawl.taskList.title", { defaultValue: "Task List" })}
+        title={t("crawl.taskList.title")}
         extra={
           <Typography.Text type="secondary">
             {t("crawl.taskList.total", {
-              defaultValue: "Total {{count}}",
               count: totalCount,
             })}
           </Typography.Text>
@@ -2446,15 +2450,29 @@ export function CrawlTasksView() {
                       {t("common.view")}
                     </Button>,
                     canManage ? (
-                      <Button
+                      <Tooltip
                         key="retry"
-                        size="small"
-                        type="link"
-                        onClick={() => handleRetry(record.id)}
-                        loading={retrying}
+                        title={
+                          findTaskProxyIssuesFromConfig(record.config).length > 0
+                            ? unsupportedProxyActionHint
+                            : undefined
+                        }
                       >
-                        {t("common.retry")}
-                      </Button>
+                        <span>
+                          <Button
+                            size="small"
+                            type="link"
+                            onClick={() => handleRetry(record.id)}
+                            loading={retrying}
+                            disabled={
+                              findTaskProxyIssuesFromConfig(record.config)
+                                .length > 0
+                            }
+                          >
+                            {t("common.retry")}
+                          </Button>
+                        </span>
+                      </Tooltip>
                     ) : null,
                   ].filter(Boolean)}
                 >

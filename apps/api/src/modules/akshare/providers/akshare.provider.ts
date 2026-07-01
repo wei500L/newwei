@@ -8,13 +8,11 @@ import { Injectable } from '@nestjs/common';
 import { lastValueFrom } from 'rxjs';
 
 import { EnvService } from '../../config/config.service';
-
 import { AkshareParserService } from '../akshare-parser.service';
 import type {
   AkshareFinancialDataProviderConfig,
   FinancialDataItemConfig,
 } from '../financial-data.types';
-import type { ParsedDataPoint } from '../parsers';
 
 import {
   FinancialDataProvider,

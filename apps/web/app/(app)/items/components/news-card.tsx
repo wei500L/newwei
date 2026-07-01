@@ -1,9 +1,15 @@
 "use client";
 
-import { BookOutlined, ClockCircleOutlined, InfoCircleOutlined, ShareAltOutlined } from "@ant-design/icons";
-import { Button, Card, Popover, Space, Tag, Tooltip, Typography } from "antd";
+import {
+  BookOutlined,
+  ClockCircleOutlined,
+  InfoCircleOutlined,
+  MoreOutlined,
+  ShareAltOutlined,
+} from "@ant-design/icons";
+import { Button, Card, Dropdown, Popover, Space, Tag, Tooltip, Typography } from "antd";
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
@@ -12,7 +18,13 @@ import { SentimentBadge } from "@/components/sentiment-badge";
 import { resolveLocale } from "@/lib/i18n";
 import { formatRatioAsPercent } from "@/lib/metrics-format";
 import { safeHttpUrl } from "@/lib/url";
-import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
+import {
+  hideSessionBehaviorKey,
+  isSessionHiddenBehaviorKey,
+  shareTrackedNewsLink,
+  subscribeSessionHiddenBehaviorKeys,
+  trackUserNewsBehavior,
+} from "@/lib/user-news-behavior";
 
 const { Title, Paragraph } = Typography;
 const VIEW_EXPOSURE_THRESHOLD = 0.4;
@@ -51,7 +63,8 @@ export interface NewsCardProps {
     url?: string;
     eventId?: string | null;
     rssHasTranslation?: boolean;
-    rssTranslationState?: 'translated' | 'original';
+    rssTranslationState?: "translated" | "original";
+    searchHighlights?: { field: string; snippets: string[] }[];
   };
   variant?: NewsCardVariant;
   density?: NewsCardDensity;
@@ -66,29 +79,59 @@ function estimateReadingTime(summary?: string): number {
   return Math.max(1, Math.ceil(wordCount / wordsPerMinute));
 }
 
-export function NewsCard({ item, variant = "default", density = "compact" }: NewsCardProps) {
+function renderHighlightSnippet(snippet: string) {
+  return snippet.split(/(<mark>|<\/mark>)/g).reduce<{
+    nodes: ReactNode[];
+    active: boolean;
+  }>(
+    (state, part, index) => {
+      if (part === "<mark>") {
+        return { ...state, active: true };
+      }
+      if (part === "</mark>") {
+        return { ...state, active: false };
+      }
+      if (!part) {
+        return state;
+      }
+      state.nodes.push(
+        state.active ? (
+          <mark key={index} className="rounded bg-amber-100 px-0.5 text-amber-900">
+            {part}
+          </mark>
+        ) : (
+          <span key={index}>{part}</span>
+        ),
+      );
+      return state;
+    },
+    { nodes: [], active: false },
+  ).nodes;
+}
+
+export function NewsCard({
+  item,
+  variant = "default",
+  density = "compact",
+}: NewsCardProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
 
   const isReaderVariant = variant === "reader";
 
-  const openLabel = t("items.detail.openItem", { defaultValue: "Open item" });
-  const readOriginalLabel = t("items.detail.readOriginal", { defaultValue: "Read original" });
-  const readModeLabel = t("items.readMode", { defaultValue: "Read mode" });
-  const shareLabel = t("common.share", { defaultValue: "Share" });
-  const readingTimeLabel = t("items.readingTime", { defaultValue: "min read" });
-  const translatedLabel = t("pages.rss.translation.translatedBadge", {
-    defaultValue: "Translated"
-  });
-  const originalLabel = t("pages.rss.translation.originalBadge", {
-    defaultValue: "Original"
-  });
+  const openLabel = t("items.detail.openItem");
+  const readOriginalLabel = t("items.detail.readOriginal");
+  const readModeLabel = t("items.readMode");
+  const shareLabel = t("common.share");
+  const readingTimeLabel = t("items.readingTime");
+  const translatedLabel = t("pages.rss.translation.translatedBadge");
+  const originalLabel = t("pages.rss.translation.originalBadge");
 
   const qualityScore = formatRatioAsPercent(item.qualityScore, locale);
   const duplicateScore = formatRatioAsPercent(item.duplicateSimilarity, locale);
   const duplicateLabel = item.duplicateOf
-    ? t("items.duplicate.duplicate", { defaultValue: "Duplicate" })
-    : t("items.duplicate.similarity", { defaultValue: "Similarity" });
+    ? t("items.duplicate.duplicate")
+    : t("items.duplicate.similarity");
 
   const llmBits: string[] = [];
   if (item.llm?.model) {
@@ -103,28 +146,35 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
   const llmSummary = llmBits.length > 0 ? llmBits.join(" | ") : null;
 
   const summaryText = item.summary?.trim() ?? "";
+  const highlightSnippets = (item.searchHighlights ?? [])
+    .flatMap((entry) => entry.snippets)
+    .slice(0, 2);
   const isCompactDensity = density === "compact";
   const summaryRows = isCompactDensity ? 2 : 4;
-  const expandLabel = t("common.expand", { defaultValue: "Show more" });
-  const collapseLabel = t("common.collapse", { defaultValue: "Show less" });
+  const expandLabel = t("common.expand");
+  const collapseLabel = t("common.collapse");
   const summaryEllipsis = isCompactDensity
     ? { rows: summaryRows }
     : {
         rows: summaryRows,
         expandable: "collapsible" as const,
-        symbol: (expanded: boolean) => (expanded ? collapseLabel : expandLabel)
+        symbol: (expanded: boolean) => (expanded ? collapseLabel : expandLabel),
       };
   const thumbnailUrl = safeHttpUrl(item.thumbnail);
   const originalUrl = safeHttpUrl(item.url);
   const readingTime = estimateReadingTime(summaryText);
   const itemHref = `/items/${item.id}`;
   const readModeHref = `/read/items/${item.id}`;
-  const primaryItemId = typeof item.duplicateOf === "string" ? item.duplicateOf.trim() : "";
+  const primaryItemId =
+    typeof item.duplicateOf === "string" ? item.duplicateOf.trim() : "";
   const primaryItemHref = primaryItemId ? `/items/${primaryItemId}` : null;
   const eventHref = item.eventId ? `/events/${item.eventId}` : null;
   const cardRef = useRef<HTMLDivElement | null>(null);
   const viewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasTrackedViewRef = useRef(false);
+  const [isHidden, setIsHidden] = useState(() =>
+    isSessionHiddenBehaviorKey("items", item.id),
+  );
 
   const handleOpenItem = () => {
     void trackUserNewsBehavior({
@@ -133,7 +183,7 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
       source: item.source,
       topics: item.topics,
       entities: item.entities,
-      url: originalUrl ?? undefined
+      url: originalUrl ?? undefined,
     });
   };
 
@@ -146,7 +196,7 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
         source: item.source,
         topics: item.topics,
         entities: item.entities,
-        url: originalUrl ?? undefined
+        url: originalUrl ?? undefined,
       });
     }
   };
@@ -161,12 +211,19 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
       source: item.source,
       topics: item.topics,
       entities: item.entities,
-      url: originalUrl ?? undefined
+      url: originalUrl ?? undefined,
     });
   };
 
   useEffect(() => {
     hasTrackedViewRef.current = false;
+  }, [item.id]);
+
+  useEffect(() => {
+    setIsHidden(isSessionHiddenBehaviorKey("items", item.id));
+    return subscribeSessionHiddenBehaviorKeys("items", (keys) => {
+      setIsHidden(keys.includes(item.id));
+    });
   }, [item.id]);
 
   useEffect(() => {
@@ -186,7 +243,7 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
         source: item.source,
         topics: item.topics,
         entities: item.entities,
-        url: originalUrl ?? undefined
+        url: originalUrl ?? undefined,
       });
     };
 
@@ -197,7 +254,10 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
       }
     };
 
-    if (typeof window === "undefined" || typeof IntersectionObserver === "undefined") {
+    if (
+      typeof window === "undefined" ||
+      typeof IntersectionObserver === "undefined"
+    ) {
       emitView();
       return;
     }
@@ -208,7 +268,10 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
         if (!entry) {
           return;
         }
-        if (entry.isIntersecting && entry.intersectionRatio >= VIEW_EXPOSURE_THRESHOLD) {
+        if (
+          entry.isIntersecting &&
+          entry.intersectionRatio >= VIEW_EXPOSURE_THRESHOLD
+        ) {
           if (!viewTimerRef.current && !hasTrackedViewRef.current) {
             viewTimerRef.current = setTimeout(() => {
               viewTimerRef.current = null;
@@ -219,7 +282,7 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
         }
         clearPendingTimer();
       },
-      { threshold: [0, VIEW_EXPOSURE_THRESHOLD, 0.8] }
+      { threshold: [0, VIEW_EXPOSURE_THRESHOLD, 0.8] },
     );
 
     observer.observe(node);
@@ -230,14 +293,46 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
     };
   }, [item.entities, item.id, item.source, item.topics, originalUrl]);
 
+  if (isHidden) {
+    return null;
+  }
+
+  const handleHideItem = () => {
+    hideSessionBehaviorKey("items", item.id);
+    setIsHidden(true);
+  };
+
+  const handleNotInterested = () => {
+    hideSessionBehaviorKey("items", item.id);
+    setIsHidden(true);
+    void trackUserNewsBehavior({
+      type: "not_interested",
+      itemId: item.id,
+      ...(originalUrl ? { url: originalUrl } : {}),
+    });
+  };
+
+  const moreActionItems = [
+    {
+      key: "hide",
+      label: t("common.hide"),
+      onClick: handleHideItem,
+    },
+    {
+      key: "not-interested",
+      label: t("common.notInterested"),
+      onClick: handleNotInterested,
+    },
+  ];
+
   const metricsContent = (
     <div className="flex flex-col gap-2 text-xs min-w-[220px]">
       <div className="font-semibold border-b pb-2 mb-1 text-gray-700 dark:text-gray-300">
-        {t("items.metrics.title", { defaultValue: "Technical Metrics" })}
+        {t("items.metrics.title")}
       </div>
       {qualityScore && (
         <div className="flex justify-between">
-          <span className="text-gray-500">{t("items.columns.quality", { defaultValue: "Quality" })}:</span>
+          <span className="text-gray-500">{t("items.columns.quality")}:</span>
           <span className="font-medium">{qualityScore}</span>
         </div>
       )}
@@ -249,7 +344,7 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
       )}
       {item.duplicateOf ? (
         <div className="text-gray-400 text-[10px]">
-          {t("items.duplicate.of", { defaultValue: "Duplicate of" })}: {item.duplicateOf}
+          {t("items.duplicate.of")}: {item.duplicateOf}
         </div>
       ) : null}
       {primaryItemHref ? (
@@ -260,22 +355,30 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
           href={primaryItemHref}
           onClick={handleOpenPrimaryItem}
         >
-          {t("items.duplicate.viewPrimary", { defaultValue: "查看主稿" })}
+          {t("items.duplicate.viewPrimary")}
         </Button>
       ) : null}
       {item.llm?.model && (
         <div className="flex justify-between">
-          <span className="text-gray-500">{t("items.metrics.model", { defaultValue: "Model" })}:</span>
-          <span className="text-gray-600 dark:text-gray-400">{item.llm.model}</span>
+          <span className="text-gray-500">{t("items.metrics.model")}:</span>
+          <span className="text-gray-600 dark:text-gray-400">
+            {item.llm.model}
+          </span>
         </div>
       )}
       {item.llm?.promptVersion && (
         <div className="flex justify-between">
-          <span className="text-gray-500">{t("items.metrics.prompt", { defaultValue: "Prompt" })}:</span>
-          <span className="text-gray-600 dark:text-gray-400">{item.llm.promptVersion}</span>
+          <span className="text-gray-500">{t("items.metrics.prompt")}:</span>
+          <span className="text-gray-600 dark:text-gray-400">
+            {item.llm.promptVersion}
+          </span>
         </div>
       )}
-      {llmSummary && <div className="border-t pt-2 mt-1 text-[10px] text-gray-400">{llmSummary}</div>}
+      {llmSummary && (
+        <div className="border-t pt-2 mt-1 text-[10px] text-gray-400">
+          {llmSummary}
+        </div>
+      )}
     </div>
   );
 
@@ -298,7 +401,7 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
         style={{
           margin: 0,
           lineHeight: isReaderVariant ? 1.45 : 1.4,
-          marginBottom: isReaderVariant ? 10 : 8
+          marginBottom: isReaderVariant ? 10 : 8,
         }}
         className="hover:text-blue-500 transition-colors"
       >
@@ -318,11 +421,25 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
         </Paragraph>
       ) : null}
 
+      {highlightSnippets.length > 0 ? (
+        <div className="mb-3 flex flex-col gap-1 rounded-md border border-amber-200 bg-amber-50/70 p-2 text-xs leading-5 text-gray-700">
+          {highlightSnippets.map((snippet, index) => (
+            <div key={`${item.id}-highlight-${index}`}>
+              {renderHighlightSnippet(snippet)}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       {eventHref ? (
         <div className="mb-3">
-          <Link href={eventHref} className="inline-block" onClick={handleOpenEvent}>
+          <Link
+            href={eventHref}
+            className="inline-block"
+            onClick={handleOpenEvent}
+          >
             <Tag color="geekblue" className="cursor-pointer">
-              {t("items.partOfEvent", { defaultValue: "Part of event" })}
+              {t("items.partOfEvent")}
             </Tag>
           </Link>
         </div>
@@ -336,26 +453,29 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
         <div className="flex items-center gap-2 flex-wrap">
           <SentimentBadge sentiment={item.sentiment} />
           {item.source ? (
-            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{item.source}</span>
+            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+              {item.source}
+            </span>
           ) : null}
           {item.rssTranslationState ? (
             <Tooltip
               title={
                 item.rssTranslationState === "translated"
-                  ? t("pages.rss.translation.translatedHint", {
-                      defaultValue: "Showing translated title and summary."
-                    })
+                  ? t("pages.rss.translation.translatedHint")
                   : item.rssHasTranslation
-                    ? t("pages.rss.translation.originalWithTranslationHint", {
-                        defaultValue: "Translation is available, but this card is showing original text."
-                      })
-                    : t("pages.rss.translation.originalHint", {
-                        defaultValue: "No translated content was returned for this item, so it remains in the original language."
-                      })
+                    ? t("pages.rss.translation.originalWithTranslationHint")
+                    : t("pages.rss.translation.originalHint")
               }
             >
-              <Tag color={item.rssTranslationState === "translated" ? "cyan" : "default"} className="m-0">
-                {item.rssTranslationState === "translated" ? translatedLabel : originalLabel}
+              <Tag
+                color={
+                  item.rssTranslationState === "translated" ? "cyan" : "default"
+                }
+                className="m-0"
+              >
+                {item.rssTranslationState === "translated"
+                  ? translatedLabel
+                  : originalLabel}
               </Tag>
             </Tooltip>
           ) : null}
@@ -367,14 +487,24 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
           primaryStrong={isReaderVariant}
           formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
           primaryClassName={
-            isReaderVariant ? "text-sm text-gray-600 dark:text-gray-300" : "text-xs text-gray-500 dark:text-gray-400"
+            isReaderVariant
+              ? "text-sm text-gray-600 dark:text-gray-300"
+              : "text-xs text-gray-500 dark:text-gray-400"
           }
           secondaryClassName="text-[11px]"
           secondaryStyle={{ fontSize: 11 }}
         />
       </div>
-      <Popover content={metricsContent} trigger={["hover", "click"]} placement="bottomRight">
-        <Button type="text" size="small" icon={<InfoCircleOutlined className="text-gray-400" />} />
+      <Popover
+        content={metricsContent}
+        trigger={["hover", "click"]}
+        placement="bottomRight"
+      >
+        <Button
+          type="text"
+          size="small"
+          icon={<InfoCircleOutlined className="text-gray-400" />}
+        />
       </Popover>
     </div>
   );
@@ -383,97 +513,128 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
     <div ref={cardRef} className="h-full">
       <Card
         hoverable
-        className={isReaderVariant ? "glass-card items-feed-card-reader" : "glass-card"}
+        className={
+          isReaderVariant ? "glass-card items-feed-card-reader" : "glass-card"
+        }
         style={{ height: "100%", display: "flex", flexDirection: "column" }}
         styles={{
           body: {
             flex: 1,
             display: "flex",
             flexDirection: "column",
-            padding: isReaderVariant ? "18px" : "16px"
-          }
+            padding: isReaderVariant ? "18px" : "16px",
+          },
         }}
       >
-      {isCompactDensity ? (
-        <div className="mb-3 flex items-start gap-3">
-          <div className="w-24 shrink-0">{imageBlock}</div>
-          <div className="min-w-0 flex-1">
+        {isCompactDensity ? (
+          <div className="mb-3 flex items-start gap-3">
+            <div className="w-24 shrink-0">{imageBlock}</div>
+            <div className="min-w-0 flex-1">
+              {metaBlock}
+              {detailsBlock}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="mb-3">{imageBlock}</div>
             {metaBlock}
             {detailsBlock}
+          </>
+        )}
+
+        <div className="mt-auto pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1 text-xs text-gray-400">
+            <ClockCircleOutlined />
+            <span>
+              {readingTime} {readingTimeLabel}
+            </span>
           </div>
-        </div>
-      ) : (
-        <>
-          <div className="mb-3">{imageBlock}</div>
-          {metaBlock}
-          {detailsBlock}
-        </>
-      )}
 
-      <div className="mt-auto pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-1 text-xs text-gray-400">
-          <ClockCircleOutlined />
-          <span>
-            {readingTime} {readingTimeLabel}
-          </span>
-        </div>
+          <Space size="small" wrap>
+            {isReaderVariant ? (
+              <Button type="text" size="small" href={readModeHref}>
+                {readModeLabel}
+              </Button>
+            ) : (
+              <Tooltip title={readModeLabel}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<BookOutlined />}
+                  href={readModeHref}
+                />
+              </Tooltip>
+            )}
 
-        <Space size="small" wrap>
-          {isReaderVariant ? (
-            <Button type="text" size="small" href={readModeHref}>
-              {readModeLabel}
-            </Button>
-          ) : (
-            <Tooltip title={readModeLabel}>
-              <Button type="text" size="small" icon={<BookOutlined />} href={readModeHref} />
-            </Tooltip>
-          )}
-
-          {!isReaderVariant ? (
-            <Tooltip title={shareLabel}>
-              <Button
-                type="text"
-                size="small"
-                icon={<ShareAltOutlined />}
-                onClick={() => {
-                  if (navigator.share) {
-                    navigator.share({
+            {!isReaderVariant ? (
+              <Tooltip title={shareLabel}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<ShareAltOutlined />}
+                  onClick={() => {
+                    void shareTrackedNewsLink({
                       title: item.title,
-                      url: window.location.origin + `/items/${item.id}`
+                      url: window.location.origin + `/items/${item.id}`,
+                      behavior: {
+                        type: "share",
+                        itemId: item.id,
+                        source: item.source,
+                        topics: item.topics,
+                        entities: item.entities,
+                        ...(originalUrl ? { url: originalUrl } : {}),
+                      },
                     });
-                  }
+                  }}
+                />
+              </Tooltip>
+            ) : null}
+
+            {originalUrl ? (
+              <Button
+                type="link"
+                size="small"
+                href={originalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => {
+                  void trackUserNewsBehavior({
+                    type: "click",
+                    itemId: item.id,
+                    source: item.source,
+                    topics: item.topics,
+                    entities: item.entities,
+                    url: originalUrl,
+                  });
                 }}
-              />
-            </Tooltip>
-          ) : null}
+              >
+                {readOriginalLabel}
+              </Button>
+            ) : null}
 
-          {originalUrl ? (
             <Button
-              type="link"
+              type="primary"
               size="small"
-              href={originalUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => {
-                void trackUserNewsBehavior({
-                  type: "click",
-                  itemId: item.id,
-                  source: item.source,
-                  topics: item.topics,
-                  entities: item.entities,
-                  url: originalUrl
-                });
-              }}
+              href={itemHref}
+              onClick={handleOpenItem}
             >
-              {readOriginalLabel}
+              {openLabel}
             </Button>
-          ) : null}
-
-          <Button type="primary" size="small" href={itemHref} onClick={handleOpenItem}>
-            {openLabel}
-          </Button>
-        </Space>
-      </div>
+            {!isReaderVariant ? (
+              <Dropdown
+                trigger={["click"]}
+                menu={{ items: moreActionItems }}
+              >
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MoreOutlined />}
+                  aria-label={t("common.actions")}
+                />
+              </Dropdown>
+            ) : null}
+          </Space>
+        </div>
       </Card>
     </div>
   );

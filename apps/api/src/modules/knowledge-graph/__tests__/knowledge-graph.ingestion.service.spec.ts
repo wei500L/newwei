@@ -24,16 +24,16 @@ function createDeferred<T>(): Deferred<T> {
 describe("KnowledgeGraphIngestionService", () => {
   it("fans out org ingestion with configured concurrency", async () => {
     const cache = {
+      setIfAbsent: jest.fn().mockResolvedValue(true),
       withLock: jest.fn(),
     } as any;
-    const prisma = {
-      org: {
-        findMany: jest.fn().mockResolvedValue([
-          { id: "org-1" },
-          { id: "org-2" },
-          { id: "org-3" },
-        ]),
-      },
+    const prisma = {} as any;
+    const activeOrgRegistry = {
+      listActiveOrgs: jest.fn().mockResolvedValue([
+        { id: "org-1" },
+        { id: "org-2" },
+        { id: "org-3" },
+      ]),
     } as any;
     const schedulerSettings = {
       getRuntimeSettings: jest.fn().mockResolvedValue({
@@ -46,6 +46,7 @@ describe("KnowledgeGraphIngestionService", () => {
     const service = new KnowledgeGraphIngestionService(
       cache,
       prisma,
+      activeOrgRegistry,
       schedulerSettings,
       settings,
       quality,
@@ -68,17 +69,19 @@ describe("KnowledgeGraphIngestionService", () => {
     let maxActive = 0;
     let started = 0;
 
-    jest.spyOn(service as any, "ingestOrg").mockImplementation(async (orgId: string) => {
-      started += 1;
-      active += 1;
-      maxActive = Math.max(maxActive, active);
-      if (started === 2) {
-        startedTwo.resolve();
-      }
+    jest
+      .spyOn(service as any, "ingestOrg")
+      .mockImplementation(async (orgId: string) => {
+        started += 1;
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        if (started === 2) {
+          startedTwo.resolve();
+        }
 
-      await releases.get(orgId)!.promise;
-      active -= 1;
-    });
+        await releases.get(orgId)!.promise;
+        active -= 1;
+      });
 
     const runPromise = service.ingestRecentProcessedArticles();
 
@@ -102,10 +105,10 @@ describe("KnowledgeGraphIngestionService", () => {
         findUnique: jest.fn().mockResolvedValue({
           orgId: "org-1",
           lastProcessedAt: null,
-          lastProcessedArticleId: null
+          lastProcessedArticleId: null,
         }),
         create: jest.fn(),
-        update: jest.fn().mockResolvedValue(undefined)
+        update: jest.fn().mockResolvedValue(undefined),
       },
       processedArticle: {
         findMany: jest.fn().mockResolvedValue([
@@ -117,7 +120,7 @@ describe("KnowledgeGraphIngestionService", () => {
             language: "zh",
             entities: [],
             kgRelations: [],
-            llmPromptVersion: "v1"
+            llmPromptVersion: "v1",
           },
           {
             articleId: "a-2",
@@ -127,13 +130,14 @@ describe("KnowledgeGraphIngestionService", () => {
             language: "zh",
             entities: [],
             kgRelations: [],
-            llmPromptVersion: "v1"
-          }
-        ])
-      }
+            llmPromptVersion: "v1",
+          },
+        ]),
+      },
     } as any;
 
     const schedulerSettings = {} as any;
+    const activeOrgRegistry = {} as any;
     const settings = {
       getSettings: jest.fn().mockResolvedValue({
         enabled: true,
@@ -149,8 +153,8 @@ describe("KnowledgeGraphIngestionService", () => {
         multiModelValidationMaxRelationsPerArticle: 5,
         entityDisambiguationEnabled: false,
         entityDisambiguationMaxCandidates: 5,
-        cacheTtlSeconds: 60
-      })
+        cacheTtlSeconds: 60,
+      }),
     } as any;
 
     const quality = {
@@ -160,22 +164,23 @@ describe("KnowledgeGraphIngestionService", () => {
         .mockResolvedValueOnce({
           relations: [],
           validatedRelations: 2,
-          filteredRelations: 1
-        })
+          filteredRelations: 1,
+        }),
     } as any;
 
     const graph = {
       ingestProcessedArticle: jest.fn().mockResolvedValue({ edgesUpserted: 3 }),
-      linkArticleEntities: jest.fn().mockResolvedValue(undefined)
+      linkArticleEntities: jest.fn().mockResolvedValue(undefined),
     } as any;
 
     const service = new KnowledgeGraphIngestionService(
       cache,
       prisma,
+      activeOrgRegistry,
       schedulerSettings,
       settings,
       quality,
-      graph
+      graph,
     );
 
     await (service as any).ingestOrg("org-1");
@@ -190,9 +195,9 @@ describe("KnowledgeGraphIngestionService", () => {
         where: { orgId: "org-1" },
         data: {
           lastProcessedAt: firstProcessedAt,
-          lastProcessedArticleId: "a-1"
-        }
-      }
+          lastProcessedArticleId: "a-1",
+        },
+      },
     );
     expect(prisma.knowledgeGraphIngestionState.update).toHaveBeenNthCalledWith(
       2,
@@ -200,9 +205,9 @@ describe("KnowledgeGraphIngestionService", () => {
         where: { orgId: "org-1" },
         data: {
           lastProcessedAt: secondProcessedAt,
-          lastProcessedArticleId: "a-2"
-        }
-      }
+          lastProcessedArticleId: "a-2",
+        },
+      },
     );
   });
 });

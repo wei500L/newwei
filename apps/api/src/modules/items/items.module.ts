@@ -5,10 +5,15 @@ import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { QueueModule } from "../queue/queue.module";
 import { SituationMonitorModule } from "../situation-monitor/situation-monitor.module";
 import { SystemSettingsModule } from "../system-settings/system-settings.module";
+import { UserNewsBehaviorModule } from "../user-news-behavior/user-news-behavior.module";
 
-import { ItemsController } from "./items.controller";
+import { ItemsElasticsearchService } from "./items-elasticsearch.service";
 import { ItemsRssTranslationService } from "./items-rss-translation.service";
+import { ItemsController } from "./items.controller";
 import { ItemsService } from "./items.service";
+import { SearchAdminController } from "./search-admin.controller";
+import { SearchReindexJobStore } from "./search-reindex-job.store";
+import { SearchReindexService } from "./search-reindex.service";
 
 @Module({
   imports: [
@@ -16,10 +21,21 @@ import { ItemsService } from "./items.service";
     QueueModule,
     NewsPipelineModule,
     SituationMonitorModule,
-    SystemSettingsModule
+    SystemSettingsModule,
+    UserNewsBehaviorModule,
   ],
-  providers: [ItemsService, ItemsRssTranslationService],
-  controllers: [ItemsController],
-  exports: [ItemsService, ItemsRssTranslationService]
+  providers: [
+    ItemsService,
+    ItemsRssTranslationService,
+    ItemsElasticsearchService,
+    SearchReindexJobStore,
+    SearchReindexService,
+  ],
+  controllers: [ItemsController, SearchAdminController],
+  exports: [
+    ItemsService,
+    ItemsRssTranslationService,
+    ItemsElasticsearchService,
+  ],
 })
 export class ItemsModule {}

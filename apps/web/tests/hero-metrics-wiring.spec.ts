@@ -18,6 +18,22 @@ describe("shared auth session wiring", () => {
     expect(apolloClientSource).not.toContain('from "next-auth/react"');
     expect(apiClientSource).not.toContain('from "next-auth/react"');
   });
+
+  it("applies an explicit GraphQL websocket ack timeout and surfaces alert subscription errors", () => {
+    const apolloClientSource = read("lib/apollo-client.ts");
+    const alertPanelSource = read("app/(app)/dashboard/alert-panel.tsx");
+
+    expect(apolloClientSource).toContain(
+      "const GRAPHQL_WS_CONNECTION_ACK_TIMEOUT_MS = 10_000;",
+    );
+    expect(apolloClientSource).toContain(
+      "connectionAckWaitTimeout: GRAPHQL_WS_CONNECTION_ACK_TIMEOUT_MS",
+    );
+    expect(alertPanelSource).toContain("const shouldShowStreamError = useTimedValueDeduper(30_000);");
+    expect(alertPanelSource).toContain('error: (error) => {');
+    expect(alertPanelSource).toContain('const toastMessage = t("alerts.streamError", { error: errorMessage });');
+    expect(alertPanelSource).toContain("message.error(toastMessage);");
+  });
 });
 
 describe("hero metrics wiring", () => {

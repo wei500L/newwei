@@ -58,8 +58,8 @@ export function CommandBar() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const debouncedQuery = useDebounceValue(query, COMMAND_SEARCH_DEBOUNCE_MS);
-  const emptyLabel = t("nav.commandEmpty", { defaultValue: "No results found." });
-  const runSearchLabel = t("nav.commandRunSearch", { defaultValue: "Search all items" });
+  const emptyLabel = t("nav.commandEmpty");
+  const runSearchLabel = t("nav.commandRunSearch");
   const normalizedQuery = query.trim();
   const normalizedDebouncedQuery = debouncedQuery.trim();
 
@@ -91,19 +91,14 @@ export function CommandBar() {
     switch (feedbackState) {
       case "minChars":
         return t("search.feedback.minChars", {
-          defaultValue: "Type {{remaining}} more character(s) to search",
           remaining: remainingChars,
         });
       case "debouncing":
-        return t("search.feedback.debouncing", {
-          defaultValue: "Waiting for you to finish typing...",
-        });
+        return t("search.feedback.debouncing");
       case "loading":
-        return t("search.feedback.loading", { defaultValue: "Searching..." });
+        return t("search.feedback.loading");
       case "error":
-        return t("search.feedback.error", {
-          defaultValue: "Search is temporarily unavailable. Please retry.",
-        });
+        return t("search.feedback.error");
       case "empty":
         return emptyLabel;
       default:
@@ -189,12 +184,10 @@ export function CommandBar() {
             id="command-bar-query"
             name="commandBarQuery"
             autoComplete="off"
-            aria-label={t("nav.searchAriaLabel", { defaultValue: "Search news items" })}
+            aria-label={t("nav.searchAriaLabel")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("nav.commandPlaceholder", {
-              defaultValue: "Search titles, summaries, topics, entities... (Cmd+K)"
-            })}
+            placeholder={t("nav.commandPlaceholder")}
             className="w-full border-none bg-transparent text-[13px] font-medium text-[var(--command-bar-text)] caret-[var(--primary)] outline-none transition-[color,opacity] duration-300 placeholder:text-[var(--command-bar-placeholder)] sm:text-sm"
             onFocus={() => setFocused(true)}
             onBlur={() => setTimeout(() => setFocused(false), 200)}
@@ -244,7 +237,7 @@ export function CommandBar() {
             ? edges.map((edge, index) => {
                 const statusText = edge.node.status ?? "";
                 const statusLabel = t(`items.status.${statusText}`, { defaultValue: statusText });
-                const externalIdLabel = t("items.detail.fields.externalId", { defaultValue: "External ID" });
+                const externalIdLabel = t("items.detail.fields.externalId");
                 return (
                   <div
                     key={edge.node.id}

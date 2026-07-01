@@ -1,11 +1,11 @@
-import type { Layout } from 'react-grid-layout';
+import type { Layout } from "react-grid-layout";
 
 import {
   SITUATION_MONITOR_GRID_BREAKPOINT_ORDER,
   type SituationMonitorGridBreakpoint,
   type SituationMonitorResponsiveLayouts,
-} from '@/lib/situation-monitor-grid';
-import { SITUATION_MONITOR_PANELS } from '@/store/situation-monitor-layout';
+} from "@/lib/situation-monitor-grid";
+import { SITUATION_MONITOR_PANELS } from "@/store/situation-monitor-layout";
 
 export interface SituationMonitorLayoutPayload {
   layouts: SituationMonitorResponsiveLayouts;
@@ -13,27 +13,27 @@ export interface SituationMonitorLayoutPayload {
 }
 
 function normalizeLayoutEntry(entry: unknown): Layout | null {
-  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
     return null;
   }
 
   const record = entry as Record<string, unknown>;
-  const id = typeof record.i === 'string' ? record.i : '';
+  const id = typeof record.i === "string" ? record.i : "";
   if (!id) {
     return null;
   }
 
   return {
     i: id,
-    x: typeof record.x === 'number' ? record.x : 0,
-    y: typeof record.y === 'number' ? record.y : 0,
-    w: typeof record.w === 'number' ? record.w : 0,
-    h: typeof record.h === 'number' ? record.h : 0,
-    minW: typeof record.minW === 'number' ? record.minW : undefined,
-    minH: typeof record.minH === 'number' ? record.minH : undefined,
-    maxW: typeof record.maxW === 'number' ? record.maxW : undefined,
-    maxH: typeof record.maxH === 'number' ? record.maxH : undefined,
-    static: typeof record.static === 'boolean' ? record.static : undefined,
+    x: typeof record.x === "number" ? record.x : 0,
+    y: typeof record.y === "number" ? record.y : 0,
+    w: typeof record.w === "number" ? record.w : 0,
+    h: typeof record.h === "number" ? record.h : 0,
+    minW: typeof record.minW === "number" ? record.minW : undefined,
+    minH: typeof record.minH === "number" ? record.minH : undefined,
+    maxW: typeof record.maxW === "number" ? record.maxW : undefined,
+    maxH: typeof record.maxH === "number" ? record.maxH : undefined,
+    static: typeof record.static === "boolean" ? record.static : undefined,
   };
 }
 
@@ -48,10 +48,17 @@ function normalizeLayoutArray(raw: unknown): Layout[] {
     .sort((a, b) => a.i.localeCompare(b.i));
 }
 
-function normalizeLayouts(rawLayouts: unknown, rawLayout: unknown): SituationMonitorResponsiveLayouts {
+function normalizeLayouts(
+  rawLayouts: unknown,
+  rawLayout: unknown,
+): SituationMonitorResponsiveLayouts {
   const layouts: SituationMonitorResponsiveLayouts = {};
 
-  if (rawLayouts && typeof rawLayouts === 'object' && !Array.isArray(rawLayouts)) {
+  if (
+    rawLayouts &&
+    typeof rawLayouts === "object" &&
+    !Array.isArray(rawLayouts)
+  ) {
     const record = rawLayouts as Record<string, unknown>;
     for (const breakpoint of SITUATION_MONITOR_GRID_BREAKPOINT_ORDER) {
       const nextLayout = normalizeLayoutArray(record[breakpoint]);
@@ -71,7 +78,9 @@ function normalizeLayouts(rawLayouts: unknown, rawLayout: unknown): SituationMon
   return layouts;
 }
 
-function sortLayouts(layouts: SituationMonitorResponsiveLayouts): SituationMonitorResponsiveLayouts {
+function sortLayouts(
+  layouts: SituationMonitorResponsiveLayouts,
+): SituationMonitorResponsiveLayouts {
   const sorted: SituationMonitorResponsiveLayouts = {};
 
   for (const breakpoint of SITUATION_MONITOR_GRID_BREAKPOINT_ORDER) {
@@ -95,24 +104,41 @@ export function buildDefaultSituationMonitorLayoutPayload(): SituationMonitorLay
   };
 }
 
-export function normalizeSituationMonitorLayoutPayload(payload: unknown): SituationMonitorLayoutPayload {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+export function normalizeSituationMonitorLayoutPayload(
+  payload: unknown,
+): SituationMonitorLayoutPayload {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return { layouts: {}, visibility: {} };
   }
 
   const record = payload as Record<string, unknown>;
   const rawVisibility = record.visibility;
   const visibilityEntries =
-    rawVisibility && typeof rawVisibility === 'object' && !Array.isArray(rawVisibility)
+    rawVisibility &&
+    typeof rawVisibility === "object" &&
+    !Array.isArray(rawVisibility)
       ? Object.entries(rawVisibility as Record<string, unknown>)
-          .filter(([key, val]) => typeof key === 'string' && typeof val === 'boolean')
+          .filter(
+            ([key, val]) => typeof key === "string" && typeof val === "boolean",
+          )
           .sort(([a], [b]) => a.localeCompare(b))
       : [];
 
   return {
     layouts: sortLayouts(normalizeLayouts(record.layouts, record.layout)),
-    visibility: Object.fromEntries(visibilityEntries) as Record<string, boolean>,
+    visibility: Object.fromEntries(visibilityEntries) as Record<
+      string,
+      boolean
+    >,
   };
+}
+
+export function hasSituationMonitorLayoutGeometry(payload: unknown): boolean {
+  const normalized = normalizeSituationMonitorLayoutPayload(payload);
+
+  return SITUATION_MONITOR_GRID_BREAKPOINT_ORDER.some(
+    (breakpoint) => (normalized.layouts[breakpoint]?.length ?? 0) > 0,
+  );
 }
 
 export function fingerprintSituationMonitorLayout(payload: unknown): string {
@@ -124,5 +150,8 @@ export function fingerprintSituationMonitorLayout(payload: unknown): string {
     }),
   ) as Partial<Record<SituationMonitorGridBreakpoint, Layout[]>>;
 
-  return JSON.stringify({ layouts: serializedLayouts, visibility: normalized.visibility });
+  return JSON.stringify({
+    layouts: serializedLayouts,
+    visibility: normalized.visibility,
+  });
 }

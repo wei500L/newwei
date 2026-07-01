@@ -2,37 +2,39 @@ import { getQueueToken } from "@nestjs/bull-shared";
 import { Module } from "@nestjs/common";
 import { Queue } from "bullmq";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { AlertsModule } from "../alerts/alerts.module";
 import { AnalysisModule } from "../analysis/analysis.module";
 import { AssistantModule } from "../assistant/assistant.module";
 import { AuthModule } from "../auth/auth.module";
-import { EnvService } from "../config/config.service";
+import { BullmqConnectionService } from "../config/bullmq-connection.service";
 import { DatabaseModule } from "../config/database.module";
-import { toBullmqConnection } from "../config/redis-connection";
 import { CrawlModule } from "../crawl/crawl.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { QueueModule } from "../queue/queue.module";
 
+import { AdminErrorsController } from "./admin-errors.controller";
 import { AdminLogsController } from "./admin-logs.controller";
 import { AdminLogsService } from "./admin-logs.service";
-import { AdminErrorsController } from "./admin-errors.controller";
-import { ClassificationQualityController } from "./classification-quality.controller";
-import { ClassificationQualityProcessor } from "./classification-quality.processor";
+import { ClassificationQualityAlertSchedulerService } from "./classification-quality-alert-scheduler.service";
 import { ClassificationQualityQueueCleanupService } from "./classification-quality-queue-cleanup.service";
 import { ClassificationQualitySeedTriggerService } from "./classification-quality-seed-trigger.service";
-import { ClassificationQualityService } from "./classification-quality.service";
 import {
   CLASSIFICATION_QUALITY_QUEUE,
   CLASSIFICATION_QUALITY_QUEUE_NAME,
 } from "./classification-quality.constants";
+import { ClassificationQualityController } from "./classification-quality.controller";
+import { ClassificationQualityProcessor } from "./classification-quality.processor";
+import { ClassificationQualityService } from "./classification-quality.service";
 import { ClientExceptionEventsController } from "./client-exception-events.controller";
 import { ExceptionEventsService } from "./exception-events.service";
 import { InternalExceptionEventsController } from "./internal-exception-events.controller";
+import { MetricsController } from "./metrics.controller";
 import { NewsSourceQualityController } from "./news-source-quality.controller";
 import { NewsSourceQualityService } from "./news-source-quality.service";
-import { OpsGateway } from "./ops.gateway";
 import { ObservabilitySnapshotService } from "./observability-snapshot.service";
+import { OpsGateway } from "./ops.gateway";
 import { PipelineQualityController } from "./pipeline-quality.controller";
 import { PipelineQualityService } from "./pipeline-quality.service";
 import { PipelineRecoveryController } from "./pipeline-recovery.controller";
@@ -60,6 +62,7 @@ import { TaskLogsController } from "./task-logs.controller";
     ClientExceptionEventsController,
     InternalExceptionEventsController,
     ClassificationQualityController,
+    MetricsController,
     QualityOverviewController,
     PipelineQualityController,
     NewsSourceQualityController,
@@ -71,21 +74,25 @@ import { TaskLogsController } from "./task-logs.controller";
     AdminLogsService,
     ObservabilitySnapshotService,
     ClassificationQualityService,
+    ClassificationQualityAlertSchedulerService,
     ClassificationQualityProcessor,
     ClassificationQualityQueueCleanupService,
     ClassificationQualitySeedTriggerService,
     {
       provide: CLASSIFICATION_QUALITY_QUEUE,
-      inject: [EnvService, ClassificationQualityQueueCleanupService],
+      inject: [
+        ClassificationQualityQueueCleanupService,
+        BullmqConnectionService,
+      ],
       useFactory: (
-        env: EnvService,
         cleanup: ClassificationQualityQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
       ) => {
         const queue = new Queue(CLASSIFICATION_QUALITY_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.getSharedConnection(),
           defaultJobOptions: {
             removeOnComplete: true,
-            removeOnFail: false,
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
             attempts: 3,
             backoff: {
               type: "exponential",

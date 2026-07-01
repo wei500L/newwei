@@ -380,10 +380,10 @@ export function NewsDedupeSettingsPanel() {
       }
       await updateSettings({ variables: { input: payload } });
       await refetch();
-      messageApi.success(t("settings.newsDedupe.messages.saved", { defaultValue: "Saved" }));
+      messageApi.success(t("settings.newsDedupe.messages.saved"));
     } catch (err) {
       captureClientError("Failed to save news dedupe settings", err);
-      messageApi.error(t("settings.newsDedupe.messages.saveFailed", { defaultValue: "Failed to save" }));
+      messageApi.error(t("settings.newsDedupe.messages.saveFailed"));
     }
   };
 
@@ -399,10 +399,10 @@ export function NewsDedupeSettingsPanel() {
           2
         )
       );
-      messageApi.success(t("settings.newsDedupe.messages.copied", { defaultValue: "Copied." }));
+      messageApi.success(t("settings.newsDedupe.messages.copied"));
     } catch (err) {
       captureClientError("Failed to copy news dedupe settings JSON", err);
-      messageApi.error(t("settings.newsDedupe.messages.copyFailed", { defaultValue: "Copy failed" }));
+      messageApi.error(t("settings.newsDedupe.messages.copyFailed"));
     }
   };
 
@@ -418,19 +418,14 @@ export function NewsDedupeSettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
-        {t("settings.newsDedupe.description", {
-          defaultValue: "Configure semantic dedupe thresholds by source, language, and category path."
-        })}
+        {t("settings.newsDedupe.description")}
       </Typography.Paragraph>
 
       <Alert
         type="info"
         showIcon
-        message={t("settings.newsDedupe.notice.title", { defaultValue: "How it works" })}
-        description={t("settings.newsDedupe.notice.body", {
-          defaultValue:
-            "Matching priority: source+language+path > source+language > source > language+path > language > path > default. Length-based adjustments still apply."
-        })}
+        message={t("settings.newsDedupe.notice.title")}
+        description={t("settings.newsDedupe.notice.body")}
         style={{ marginBottom: "1rem" }}
       />
 
@@ -438,7 +433,7 @@ export function NewsDedupeSettingsPanel() {
         <Alert
           type="error"
           showIcon
-          message={t("settings.newsDedupe.messages.loadFailed", { defaultValue: "Failed to load settings" })}
+          message={t("settings.newsDedupe.messages.loadFailed")}
           description={error.message}
           style={{ marginBottom: "1rem" }}
         />
@@ -447,21 +442,18 @@ export function NewsDedupeSettingsPanel() {
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Card
           size="small"
-          title={t("settings.newsDedupe.sections.mode", { defaultValue: "Similarity method" })}
+          title={t("settings.newsDedupe.sections.mode")}
           style={{ marginBottom: "1rem" }}
         >
           <Form.Item
-            label={t("settings.newsDedupe.fields.useEmbeddings", { defaultValue: "Use embeddings" })}
+            label={t("settings.newsDedupe.fields.useEmbeddings")}
             name="useEmbeddings"
             valuePropName="checked"
-            extra={t("settings.newsDedupe.hints.useEmbeddings", {
-              defaultValue:
-                "On: compute embeddings vectors for semantic dedupe (fast + scalable, but needs embedding support and storage). Off: use an LLM judge to score similarity (slower + higher cost, but no embeddings storage)."
-            })}
+            extra={t("settings.newsDedupe.hints.useEmbeddings")}
           >
             <Switch
-              checkedChildren={t("settings.newsDedupe.options.useEmbeddings.on", { defaultValue: "Embeddings" })}
-              unCheckedChildren={t("settings.newsDedupe.options.useEmbeddings.off", { defaultValue: "LLM" })}
+              checkedChildren={t("settings.newsDedupe.options.useEmbeddings.on")}
+              unCheckedChildren={t("settings.newsDedupe.options.useEmbeddings.off")}
             />
           </Form.Item>
 
@@ -470,54 +462,36 @@ export function NewsDedupeSettingsPanel() {
               getFieldValue("useEmbeddings") ? null : (
                 <>
                   <Form.Item
-                    label={t("settings.newsDedupe.fields.llmJudgeModel", {
-                      defaultValue: "LLM judge model (optional)"
-                    })}
+                    label={t("settings.newsDedupe.fields.llmJudgeModel")}
                     name="llmJudgeModel"
-                    extra={t("settings.newsDedupe.hints.llmJudgeModel", {
-                      defaultValue:
-                        "Overrides which model is used for LLM-based dedupe. Leave blank to use the pipeline's default completion model."
-                    })}
+                    extra={t("settings.newsDedupe.hints.llmJudgeModel")}
                   >
                     <Input placeholder="openai/gpt-4o-mini" />
                   </Form.Item>
 
                   <Space wrap style={{ display: "flex" }}>
                     <Form.Item
-                      label={t("settings.newsDedupe.fields.llmJudgeConcurrency", {
-                        defaultValue: "Judge concurrency"
-                      })}
+                      label={t("settings.newsDedupe.fields.llmJudgeConcurrency")}
                       name="llmJudgeConcurrency"
-                      extra={t("settings.newsDedupe.hints.llmJudgeConcurrency", {
-                        defaultValue:
-                          "How many LLM dedupe comparisons can run in parallel for each item."
-                      })}
+                      extra={t("settings.newsDedupe.hints.llmJudgeConcurrency")}
                       style={{ flex: 1, minWidth: 240 }}
                     >
                       <InputNumber min={1} max={8} step={1} style={{ width: "100%" }} />
                     </Form.Item>
 
                     <Form.Item
-                      label={t("settings.newsDedupe.fields.llmJudgeMaxComparisons", {
-                        defaultValue: "Max comparisons"
-                      })}
+                      label={t("settings.newsDedupe.fields.llmJudgeMaxComparisons")}
                       name="llmJudgeMaxComparisons"
-                      extra={t("settings.newsDedupe.hints.llmJudgeMaxComparisons", {
-                        defaultValue: "Upper bound on LLM judge calls per item (cost/latency control)."
-                      })}
+                      extra={t("settings.newsDedupe.hints.llmJudgeMaxComparisons")}
                       style={{ flex: 1, minWidth: 240 }}
                     >
                       <InputNumber min={1} max={30} step={1} style={{ width: "100%" }} />
                     </Form.Item>
 
                     <Form.Item
-                      label={t("settings.newsDedupe.fields.llmJudgeCandidateChars", {
-                        defaultValue: "Candidate chars"
-                      })}
+                      label={t("settings.newsDedupe.fields.llmJudgeCandidateChars")}
                       name="llmJudgeCandidateChars"
-                      extra={t("settings.newsDedupe.hints.llmJudgeCandidateChars", {
-                        defaultValue: "Truncation length for each summary sent to the judge."
-                      })}
+                      extra={t("settings.newsDedupe.hints.llmJudgeCandidateChars")}
                       style={{ flex: 1, minWidth: 240 }}
                     >
                       <InputNumber min={200} max={5000} step={50} style={{ width: "100%" }} />
@@ -525,14 +499,9 @@ export function NewsDedupeSettingsPanel() {
                   </Space>
 
                   <Form.Item
-                    label={t("settings.newsDedupe.fields.llmJudgeInstructions", {
-                      defaultValue: "LLM judge instructions (optional)"
-                    })}
+                    label={t("settings.newsDedupe.fields.llmJudgeInstructions")}
                     name="llmJudgeInstructions"
-                    extra={t("settings.newsDedupe.hints.llmJudgeInstructions", {
-                      defaultValue:
-                        "Extra system-level instructions appended to the dedupe judge prompt. Keep it short to avoid prompt injection and output-format issues."
-                    })}
+                    extra={t("settings.newsDedupe.hints.llmJudgeInstructions")}
                   >
                     <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} placeholder="…" />
                   </Form.Item>
@@ -540,39 +509,25 @@ export function NewsDedupeSettingsPanel() {
                   <Divider style={{ margin: "0.75rem 0" }} />
 
                   <Form.Item
-                    label={t("settings.newsDedupe.fields.llmJudgePromptVersion", {
-                      defaultValue: "Prompt version"
-                    })}
+                    label={t("settings.newsDedupe.fields.llmJudgePromptVersion")}
                     name="llmJudgePromptVersion"
-                    extra={t("settings.newsDedupe.hints.llmJudgePromptVersion", {
-                      defaultValue: "Saved to metadata for tracking prompt changes."
-                    })}
+                    extra={t("settings.newsDedupe.hints.llmJudgePromptVersion")}
                   >
                     <Input placeholder="news-dedupe-judge-v1" />
                   </Form.Item>
 
                   <Form.Item
-                    label={t("settings.newsDedupe.fields.llmJudgeSystemPromptTemplate", {
-                      defaultValue: "System prompt template"
-                    })}
+                    label={t("settings.newsDedupe.fields.llmJudgeSystemPromptTemplate")}
                     name="llmJudgeSystemPromptTemplate"
-                    extra={t("settings.newsDedupe.hints.llmJudgeSystemPromptTemplate", {
-                      defaultValue:
-                        "Supports placeholders: {{language_hint}}, {{additional_instructions}}. Leave blank to reset to defaults."
-                    })}
+                    extra={t("settings.newsDedupe.hints.llmJudgeSystemPromptTemplate")}
                   >
                     <Input.TextArea autoSize={{ minRows: 4, maxRows: 12 }} />
                   </Form.Item>
 
                   <Form.Item
-                    label={t("settings.newsDedupe.fields.llmJudgeUserPromptTemplate", {
-                      defaultValue: "User prompt template"
-                    })}
+                    label={t("settings.newsDedupe.fields.llmJudgeUserPromptTemplate")}
                     name="llmJudgeUserPromptTemplate"
-                    extra={t("settings.newsDedupe.hints.llmJudgeUserPromptTemplate", {
-                      defaultValue:
-                        "Supports placeholders: {{threshold}}, {{title_a_section}}, {{summary_a}}, {{title_b_section}}, {{summary_b}}. Leave blank to reset to defaults."
-                    })}
+                    extra={t("settings.newsDedupe.hints.llmJudgeUserPromptTemplate")}
                   >
                     <Input.TextArea autoSize={{ minRows: 6, maxRows: 16 }} />
                   </Form.Item>
@@ -584,17 +539,15 @@ export function NewsDedupeSettingsPanel() {
 
         <Card
           size="small"
-          title={t("settings.newsDedupe.sections.overrides", { defaultValue: "Scoped overrides" })}
+          title={t("settings.newsDedupe.sections.overrides")}
           style={{ marginBottom: "1rem" }}
         >
           <Form.Item
-            label={t("settings.newsDedupe.fields.defaultThreshold", { defaultValue: "Default threshold" })}
+            label={t("settings.newsDedupe.fields.defaultThreshold")}
             name="defaultThreshold"
-            extra={t("settings.newsDedupe.hints.defaultThreshold", {
-              defaultValue: "Used when no scoped rule matches. Range 0–1 (higher = stricter)."
-            })}
+            extra={t("settings.newsDedupe.hints.defaultThreshold")}
             rules={[
-              { required: true, message: t("settings.newsDedupe.validation.required", { defaultValue: "Required" }) }
+              { required: true, message: t("settings.newsDedupe.validation.required") }
             ]}
           >
             <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
@@ -607,12 +560,11 @@ export function NewsDedupeSettingsPanel() {
               <>
                 <Space wrap style={{ marginBottom: "0.75rem" }}>
                   <Tag>
-                    {t("settings.newsDedupe.fields.defaultThreshold", { defaultValue: "Default threshold" })}:{" "}
+                    {t("settings.newsDedupe.fields.defaultThreshold")}:{" "}
                     {formatThreshold(effectiveDefaultThreshold)}
                   </Tag>
                   <Tag>
                     {t("settings.newsDedupe.hints.normalizedCount", {
-                      defaultValue: "Effective overrides: {{count}}",
                       count: normalizedPreview.length
                     })}
                   </Tag>
@@ -621,16 +573,16 @@ export function NewsDedupeSettingsPanel() {
                 {fields.length > 0 ? (
                   <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                     <Typography.Text type="secondary" style={{ width: 220 }}>
-                      {t("settings.newsDedupe.fields.sourceId", { defaultValue: "Source ID (optional)" })}
+                      {t("settings.newsDedupe.fields.sourceId")}
                     </Typography.Text>
                     <Typography.Text type="secondary" style={{ width: 160 }}>
-                      {t("settings.newsDedupe.fields.language", { defaultValue: "Language (optional)" })}
+                      {t("settings.newsDedupe.fields.language")}
                     </Typography.Text>
                     <Typography.Text type="secondary" style={{ flex: 1, minWidth: 220 }}>
-                      {t("settings.newsDedupe.fields.categoryPath", { defaultValue: "Category path (optional)" })}
+                      {t("settings.newsDedupe.fields.categoryPath")}
                     </Typography.Text>
                     <Typography.Text type="secondary" style={{ width: 220 }}>
-                      {t("settings.newsDedupe.fields.threshold", { defaultValue: "Threshold" })}
+                      {t("settings.newsDedupe.fields.threshold")}
                     </Typography.Text>
                     <div style={{ width: 32 }} />
                   </div>
@@ -644,9 +596,7 @@ export function NewsDedupeSettingsPanel() {
                       style={{ width: 220, marginBottom: 0 }}
                     >
                       <Input
-                        placeholder={t("settings.newsDedupe.placeholders.sourceId", {
-                          defaultValue: "news-source-id"
-                        })}
+                        placeholder={t("settings.newsDedupe.placeholders.sourceId")}
                       />
                     </Form.Item>
 
@@ -655,7 +605,7 @@ export function NewsDedupeSettingsPanel() {
                       name={[field.name, "language"]}
                       style={{ width: 160, marginBottom: 0 }}
                     >
-                      <Input placeholder={t("settings.newsDedupe.placeholders.language", { defaultValue: "en / zh" })} />
+                      <Input placeholder={t("settings.newsDedupe.placeholders.language")} />
                     </Form.Item>
 
                     <Form.Item
@@ -664,9 +614,7 @@ export function NewsDedupeSettingsPanel() {
                       style={{ flex: 1, minWidth: 220, marginBottom: 0 }}
                     >
                       <Input
-                        placeholder={t("settings.newsDedupe.placeholders.categoryPath", {
-                          defaultValue: "finance/markets"
-                        })}
+                        placeholder={t("settings.newsDedupe.placeholders.categoryPath")}
                       />
                     </Form.Item>
 
@@ -676,7 +624,7 @@ export function NewsDedupeSettingsPanel() {
                       rules={[
                         {
                           required: true,
-                          message: t("settings.newsDedupe.validation.threshold", { defaultValue: "Required" })
+                          message: t("settings.newsDedupe.validation.threshold")
                         }
                       ]}
                       style={{ width: 220, marginBottom: 0 }}
@@ -689,7 +637,7 @@ export function NewsDedupeSettingsPanel() {
                       type="text"
                       icon={<MinusCircleOutlined />}
                       onClick={() => remove(field.name)}
-                      aria-label={t("settings.newsDedupe.actions.remove", { defaultValue: "Remove" })}
+                      aria-label={t("settings.newsDedupe.actions.remove")}
                     />
                   </Space>
                 ))}
@@ -707,7 +655,7 @@ export function NewsDedupeSettingsPanel() {
                     }
                     icon={<PlusOutlined />}
                   >
-                    {t("settings.newsDedupe.actions.add", { defaultValue: "Add override" })}
+                    {t("settings.newsDedupe.actions.add")}
                   </Button>
                 </Form.Item>
               </>
@@ -717,10 +665,10 @@ export function NewsDedupeSettingsPanel() {
 
         <Card
           size="small"
-          title={t("settings.newsDedupe.sections.preview", { defaultValue: "Effective config" })}
+          title={t("settings.newsDedupe.sections.preview")}
           extra={
             <Button onClick={handleCopyJson} disabled={loading}>
-              {t("settings.newsDedupe.actions.copyJson", { defaultValue: "Copy JSON" })}
+              {t("settings.newsDedupe.actions.copyJson")}
             </Button>
           }
           style={{ marginBottom: "1rem" }}
@@ -733,25 +681,25 @@ export function NewsDedupeSettingsPanel() {
               rowKey={(row) => buildScopeKey(row)}
               columns={[
                 {
-                  title: t("settings.newsDedupe.fields.sourceId", { defaultValue: "Source ID" }),
+                  title: t("settings.newsDedupe.fields.sourceId"),
                   dataIndex: "sourceId",
                   key: "sourceId",
                   render: (value: string | null) => value ?? "—"
                 },
                 {
-                  title: t("settings.newsDedupe.fields.language", { defaultValue: "Language" }),
+                  title: t("settings.newsDedupe.fields.language"),
                   dataIndex: "language",
                   key: "language",
                   render: (value: string | null) => value ?? "—"
                 },
                 {
-                  title: t("settings.newsDedupe.fields.categoryPath", { defaultValue: "Category path" }),
+                  title: t("settings.newsDedupe.fields.categoryPath"),
                   dataIndex: "categoryPath",
                   key: "categoryPath",
                   render: (value: string | null) => value ?? "—"
                 },
                 {
-                  title: t("settings.newsDedupe.fields.threshold", { defaultValue: "Threshold" }),
+                  title: t("settings.newsDedupe.fields.threshold"),
                   dataIndex: "threshold",
                   key: "threshold",
                   width: 140,
@@ -760,59 +708,56 @@ export function NewsDedupeSettingsPanel() {
               ]}
             />
           ) : (
-            <Empty description={t("settings.newsDedupe.preview.empty", { defaultValue: "No overrides." })} />
+            <Empty description={t("settings.newsDedupe.preview.empty")} />
           )}
         </Card>
 
         <Card
           size="small"
-          title={t("settings.newsDedupe.sections.tester", { defaultValue: "Threshold preview" })}
+          title={t("settings.newsDedupe.sections.tester")}
           style={{ marginBottom: "1rem" }}
         >
           <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
-            {t("settings.newsDedupe.tester.hint", {
-              defaultValue:
-                "Use this to preview which override matches and what threshold is applied after length adjustments."
-            })}
+            {t("settings.newsDedupe.tester.hint")}
           </Typography.Paragraph>
 
           <Space direction="vertical" size="middle" style={{ display: "flex" }}>
             <Space wrap style={{ display: "flex" }}>
               <Form.Item
-                label={t("settings.newsDedupe.tester.fields.sourceId", { defaultValue: "Source ID" })}
+                label={t("settings.newsDedupe.tester.fields.sourceId")}
                 style={{ minWidth: 220, flex: 1, marginBottom: 0 }}
               >
                 <Input
                   value={probeSourceId}
                   onChange={(event) => setProbeSourceId(event.target.value)}
-                  placeholder={t("settings.newsDedupe.tester.placeholders.sourceId", { defaultValue: "Optional" })}
+                  placeholder={t("settings.newsDedupe.tester.placeholders.sourceId")}
                 />
               </Form.Item>
 
               <Form.Item
-                label={t("settings.newsDedupe.tester.fields.language", { defaultValue: "Language" })}
+                label={t("settings.newsDedupe.tester.fields.language")}
                 style={{ minWidth: 160, marginBottom: 0 }}
               >
                 <Input
                   value={probeLanguage}
                   onChange={(event) => setProbeLanguage(event.target.value)}
-                  placeholder={t("settings.newsDedupe.tester.placeholders.language", { defaultValue: "Optional" })}
+                  placeholder={t("settings.newsDedupe.tester.placeholders.language")}
                 />
               </Form.Item>
 
               <Form.Item
-                label={t("settings.newsDedupe.tester.fields.categoryPath", { defaultValue: "Category path" })}
+                label={t("settings.newsDedupe.tester.fields.categoryPath")}
                 style={{ minWidth: 260, flex: 1, marginBottom: 0 }}
               >
                 <Input
                   value={probeCategoryPath}
                   onChange={(event) => setProbeCategoryPath(event.target.value)}
-                  placeholder={t("settings.newsDedupe.tester.placeholders.categoryPath", { defaultValue: "Optional" })}
+                  placeholder={t("settings.newsDedupe.tester.placeholders.categoryPath")}
                 />
               </Form.Item>
 
               <Form.Item
-                label={t("settings.newsDedupe.tester.fields.summaryLength", { defaultValue: "Summary length" })}
+                label={t("settings.newsDedupe.tester.fields.summaryLength")}
                 style={{ width: 220, marginBottom: 0 }}
               >
                 <InputNumber
@@ -827,16 +772,16 @@ export function NewsDedupeSettingsPanel() {
 
             <Space wrap>
               <Tag>
-                {t("settings.newsDedupe.tester.results.base", { defaultValue: "Base" })}:{" "}
+                {t("settings.newsDedupe.tester.results.base")}:{" "}
                 {formatThreshold(probeResult.threshold)}
                 {probeMatchedScopeLabel
-                  ? ` (${t("settings.newsDedupe.tester.results.matched", { defaultValue: "matched" })}: ${
+                  ? ` (${t("settings.newsDedupe.tester.results.matched")}: ${
                       probeMatchedScopeLabel
                     })`
-                  : ` (${t("settings.newsDedupe.tester.results.default", { defaultValue: "default" })})`}
+                  : ` (${t("settings.newsDedupe.tester.results.default")})`}
               </Tag>
               <Tag color="green">
-                {t("settings.newsDedupe.tester.results.final", { defaultValue: "Final" })}:{" "}
+                {t("settings.newsDedupe.tester.results.final")}:{" "}
                 {formatThreshold(probeResult.finalThreshold)}
               </Tag>
             </Space>
@@ -845,7 +790,7 @@ export function NewsDedupeSettingsPanel() {
 
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving} disabled={loading}>
-            {t("common.saveChanges", { defaultValue: "Save changes" })}
+            {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>

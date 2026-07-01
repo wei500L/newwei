@@ -9,17 +9,18 @@ import { usePendingAction } from "@/hooks/use-pending-action";
 import { useTheme } from "@/hooks/use-theme";
 
 import { NewsnowColumn } from "../components/newsnow-column";
-import { NewsnowHottestCandidates } from "../components/newsnow-hottest-candidates";
 import { NewsnowHeader } from "../components/newsnow-header";
+import { NewsnowHottestCandidates } from "../components/newsnow-hottest-candidates";
+import { NewsnowRecommendedFeed } from "../components/newsnow-recommended-feed";
 import {
   useDomesticOpinionIndex,
   useHottestAnalysis,
   useNewsMetadata,
   usePrimeNewsSources,
 } from "../hooks/use-news-sources";
-import { shouldSyncDomesticOpinionWithHottestAnalysis } from "../lib/newsnow-domestic-opinion";
 import { useNewsnowStream } from "../hooks/use-newsnow-stream";
 import { useNewsnowUiSync } from "../hooks/use-newsnow-ui-sync";
+import { shouldSyncDomesticOpinionWithHottestAnalysis } from "../lib/newsnow-domestic-opinion";
 import { useNewsnowStore } from "../store/newsnow-store";
 
 function NewsnowAttribution() {
@@ -88,15 +89,20 @@ export default function NewsnowColumnPage() {
     clearLiveUnread,
     clearAllLiveUnread,
   } = useNewsnowStore();
-  const resolvedColumnKey = metadata?.columns[normalizedColumnKey]
-    ? normalizedColumnKey
-    : "hottest";
+  const resolvedColumnKey =
+    normalizedColumnKey === "recommended"
+      ? "recommended"
+      : metadata?.columns[normalizedColumnKey]
+        ? normalizedColumnKey
+        : "hottest";
 
   const sourceIds = useMemo(
     () =>
       resolvedColumnKey === "focus"
         ? focusSources
-        : metadata?.columns[resolvedColumnKey]?.sources || [],
+        : resolvedColumnKey === "recommended"
+          ? metadata?.columns.hottest?.sources || []
+          : metadata?.columns[resolvedColumnKey]?.sources || [],
     [focusSources, metadata?.columns, resolvedColumnKey],
   );
   const visibleSourceIdsInColumn = useMemo(
@@ -380,16 +386,20 @@ export default function NewsnowColumnPage() {
               domesticOpinionError={domesticOpinionIndex.error}
             />
           ) : null}
-          <NewsnowColumn
-            columnKey={resolvedColumnKey}
-            sourceIds={sourceIds}
-            sources={metadata?.sources || {}}
-            analysisBySource={
-              resolvedColumnKey === "hottest"
-                ? hottestAnalysis.data?.bySource
-                : undefined
-            }
-          />
+          {resolvedColumnKey === "recommended" ? (
+            <NewsnowRecommendedFeed />
+          ) : (
+            <NewsnowColumn
+              columnKey={resolvedColumnKey}
+              sourceIds={sourceIds}
+              sources={metadata?.sources || {}}
+              analysisBySource={
+                resolvedColumnKey === "hottest"
+                  ? hottestAnalysis.data?.bySource
+                  : undefined
+              }
+            />
+          )}
         </main>
         <NewsnowAttribution />
       </div>

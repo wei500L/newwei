@@ -13,8 +13,8 @@ export function LanguageSwitcher({ compact = false }: LanguageSwitcherProps) {
   const { i18n, t } = useTranslation();
   const current = resolveLocale(i18n.language);
   const options = [
-    { value: "zh-CN", label: t("language.chinese", { defaultValue: "简体中文" }) },
-    { value: "en-US", label: t("language.english", { defaultValue: "English" }) }
+    { value: "zh-CN", label: t("language.chinese") },
+    { value: "en-US", label: t("language.english") }
   ];
 
   return (

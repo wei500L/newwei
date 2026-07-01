@@ -7,7 +7,8 @@ import { gunzipSync } from "node:zlib";
 
 import { CacheService } from "../cache/cache.service";
 
-import { Crawl4aiClient, type Crawl4aiArticle } from "./crawl4ai.client";
+import { CrawlExecutionService } from "./crawl-execution.service";
+import { assertNoUnsupportedProxy } from "./crawl-config-policy";
 import type {
   CrawlMetadataExtractionInput,
   CrawlMetadataResult,
@@ -16,6 +17,7 @@ import type {
   CrawlSeedDiscoveryMode,
   CrawlTaskOptions,
 } from "./crawl.types";
+import { Crawl4aiClient, type Crawl4aiArticle } from "./crawl4ai.client";
 
 const logger = createLogger({ name: "crawl-metadata" });
 
@@ -185,6 +187,7 @@ export class CrawlMetadataService {
   constructor(
     @Optional() private readonly crawl4ai?: Crawl4aiClient,
     @Optional() private readonly cache?: CacheService,
+    @Optional() private readonly executionService?: CrawlExecutionService,
   ) {}
 
   async extract(
@@ -946,11 +949,11 @@ export class CrawlMetadataService {
       this.normalizeUrlForComparison(input.seedUrl) ?? input.seedUrl;
     const startedAtMs = Date.now();
     const timeBudgetMs = input.deep.timeBudgetSeconds * 1000;
-    const pendingPages: Array<{
+    const pendingPages: {
       url: string;
       depth: number;
       priority: number;
-    }> = [{ url: input.seedUrl, depth: 0, priority: 1 }];
+    }[] = [{ url: input.seedUrl, depth: 0, priority: 1 }];
     const pendingPageSet = new Set<string>([normalizedSeedUrl]);
     const visitedPages = new Set<string>();
     const candidates = new Map<string, DeepDiscoveryCandidate>();
@@ -1007,11 +1010,11 @@ export class CrawlMetadataService {
             if (!article || article.success !== true) {
               return {
                 normalizedCurrentUrl,
-                nextPages: [] as Array<{
+                nextPages: [] as {
                   url: string;
                   depth: number;
                   priority: number;
-                }>,
+                }[],
                 discoveredCandidates: [] as DeepDiscoveryCandidate[],
               };
             }
@@ -1020,20 +1023,20 @@ export class CrawlMetadataService {
             if (!linksRecord) {
               return {
                 normalizedCurrentUrl,
-                nextPages: [] as Array<{
+                nextPages: [] as {
                   url: string;
                   depth: number;
                   priority: number;
-                }>,
+                }[],
                 discoveredCandidates: [] as DeepDiscoveryCandidate[],
               };
             }
 
-            const nextPages: Array<{
+            const nextPages: {
               url: string;
               depth: number;
               priority: number;
-            }> = [];
+            }[] = [];
             const discoveredCandidates: DeepDiscoveryCandidate[] = [];
             const seenNextPages = new Set<string>();
             const seenCandidates = new Set<string>();
@@ -1634,7 +1637,7 @@ export class CrawlMetadataService {
         return ts;
       }
     }
-    const dashedDate = /(20\d{2})[-_/\.]([01]\d)[-_/\.]([0-3]\d)/.exec(path);
+    const dashedDate = /(20\d{2})[-_/.]([01]\d)[-_/.]([0-3]\d)/.exec(path);
     if (dashedDate) {
       const year = Number(dashedDate[1]);
       const month = Number(dashedDate[2]);
@@ -1864,8 +1867,25 @@ export class CrawlMetadataService {
   private normalizeCrawlOptions(value: unknown): CrawlTaskOptions | undefined {
     const options =
       value && typeof value === "object" && !Array.isArray(value)
-        ? (value as CrawlTaskOptions)
+        ? (value as Partial<CrawlTaskOptions>)
         : {};
+    assertNoUnsupportedProxy(options, "crawlOptions");
+    const normalized = this.executionService
+      ? this.executionService.normalizeOptions(options)
+      : this.normalizeDiscoveryOptionsFallback(options);
+
+    return {
+      ...normalized,
+      additionalUrls: undefined,
+      multiUrlConfigs: undefined,
+      extractLinks: true,
+      prefetch: true,
+    };
+  }
+
+  private normalizeDiscoveryOptionsFallback(
+    options: Partial<CrawlTaskOptions>,
+  ): CrawlTaskOptions {
     const waitUntil =
       options.waitUntil === "domcontentloaded" ||
       options.waitUntil === "load" ||
@@ -1879,9 +1899,7 @@ export class CrawlMetadataService {
         ? Math.max(500, Math.min(60000, Math.round(options.waitForTimeoutMs)))
         : 12_000;
     const waitForTimeoutMs =
-      waitUntil === "networkidle" && typeof waitForTimeoutMsRaw === "number"
-        ? Math.max(5000, waitForTimeoutMsRaw)
-        : waitForTimeoutMsRaw;
+      waitUntil === "networkidle" ? Math.max(5000, waitForTimeoutMsRaw) : waitForTimeoutMsRaw;
     const pageTimeoutMs =
       typeof options.pageTimeoutMs === "number" &&
       Number.isFinite(options.pageTimeoutMs)
@@ -1905,55 +1923,13 @@ export class CrawlMetadataService {
       Number.isFinite(options.maxDelayRangeMs)
         ? Math.max(0, Math.min(10_000, Math.round(options.maxDelayRangeMs)))
         : 2_000;
-    const scanVirtualScroll =
+    const virtualScroll =
       options.virtualScroll && typeof options.virtualScroll === "object"
         ? options.virtualScroll
-        : {
-            containerSelector: "body",
-            scrollCount: 8,
-            scrollBy: "page_height" as const,
-            waitAfterScrollMs: 700,
-          };
-    const normalizedUserAgent =
-      typeof options.userAgent === "string" &&
-      options.userAgent.trim().length > 0
-        ? options.userAgent.trim()
-        : undefined;
-    const enableStealthMode =
-      typeof options.enableStealthMode === "boolean"
-        ? options.enableStealthMode
-        : false;
-    const simulateUser =
-      typeof options.simulateUser === "boolean"
-        ? options.simulateUser
-        : enableStealthMode;
-    const overrideNavigator =
-      typeof options.overrideNavigator === "boolean"
-        ? options.overrideNavigator
-        : enableStealthMode;
-    const userAgentMode = normalizedUserAgent
-      ? undefined
-      : options.userAgentMode === "random"
-        ? "random"
         : undefined;
 
     return {
-      ...options,
-      additionalUrls: undefined,
-      multiUrlConfigs: undefined,
-      extractLinks: true,
-      prefetch: true,
-      headless:
-        typeof options.headless === "boolean" ? options.headless : undefined,
-      enableUndetectedBrowser:
-        typeof options.enableUndetectedBrowser === "boolean"
-          ? options.enableUndetectedBrowser
-          : false,
-      enableStealthMode,
-      simulateUser,
-      overrideNavigator,
-      userAgent: normalizedUserAgent,
-      userAgentMode,
+      ...(options as CrawlTaskOptions),
       waitUntil,
       waitForTimeoutMs,
       pageTimeoutMs,
@@ -1968,8 +1944,12 @@ export class CrawlMetadataService {
         typeof options.processIframes === "boolean"
           ? options.processIframes
           : true,
-      scanFullPage: scanVirtualScroll ? false : options.scanFullPage,
-      virtualScroll: scanVirtualScroll,
+      scanFullPage: virtualScroll
+        ? false
+        : typeof options.scanFullPage === "boolean"
+          ? options.scanFullPage
+          : false,
+      virtualScroll,
     };
   }
 
@@ -2259,7 +2239,9 @@ export class CrawlMetadataService {
     if (!parsed) {
       return;
     }
-    diagnostics && (diagnostics.parsedSitemaps += 1);
+    if (diagnostics) {
+      diagnostics.parsedSitemaps += 1;
+    }
     const crawledAtTs = Date.now();
 
     for (const entry of parsed.urls) {
@@ -2360,20 +2342,26 @@ export class CrawlMetadataService {
       return [];
     }
     const robotsUrl = this.joinUrl(origin, "robots.txt");
-    diagnostics && (diagnostics.robotsUrl = robotsUrl);
+    if (diagnostics) {
+      diagnostics.robotsUrl = robotsUrl;
+    }
     const robotsDiscovered =
       discoveryMode === "robots" || discoveryMode === "sitemap_only"
         ? await this.discoverRobotsSitemapUrls(robotsUrl, timeoutMs)
         : [];
     if (robotsDiscovered.length > 0) {
-      diagnostics && (diagnostics.seedMethod = "robots");
+      if (diagnostics) {
+        diagnostics.seedMethod = "robots";
+      }
       diagnostics?.robotsDiscoveredSitemaps.push(...robotsDiscovered);
       return robotsDiscovered;
     }
     const fallbackSeeds = DEFAULT_SITEMAP_SEEDS.map((seed) =>
       this.joinUrl(origin, seed),
     );
-    diagnostics && (diagnostics.seedMethod = "common_paths");
+    if (diagnostics) {
+      diagnostics.seedMethod = "common_paths";
+    }
     return fallbackSeeds;
   }
 

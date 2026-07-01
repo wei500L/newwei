@@ -1,4 +1,7 @@
-import { settleWithConcurrency } from "./multi-tenant-scheduler";
+import {
+  claimSchedulerTick,
+  settleWithConcurrency,
+} from "./multi-tenant-scheduler";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -24,7 +27,11 @@ function createDeferred<T>(): Deferred<T> {
 describe("settleWithConcurrency", () => {
   it("enforces the requested concurrency limit", async () => {
     const startedTwo = createDeferred<void>();
-    const releases = [createDeferred<number>(), createDeferred<number>(), createDeferred<number>()];
+    const releases = [
+      createDeferred<number>(),
+      createDeferred<number>(),
+      createDeferred<number>(),
+    ];
     let active = 0;
     let maxActive = 0;
     let started = 0;
@@ -92,5 +99,24 @@ describe("settleWithConcurrency", () => {
       status: "fulfilled",
       value: "org-3-done",
     });
+  });
+});
+
+describe("claimSchedulerTick", () => {
+  it("claims a scheduler tick with a rounded-up ttl in seconds", async () => {
+    const cache = {
+      setIfAbsent: jest.fn().mockResolvedValue(true),
+    };
+    const now = new Date("2026-06-03T00:00:00.000Z");
+
+    await expect(
+      claimSchedulerTick(cache, "cron:test:tick-gate", 55_500, now),
+    ).resolves.toBe(true);
+
+    expect(cache.setIfAbsent).toHaveBeenCalledWith(
+      "cron:test:tick-gate",
+      { claimedAt: "2026-06-03T00:00:00.000Z" },
+      56,
+    );
   });
 });

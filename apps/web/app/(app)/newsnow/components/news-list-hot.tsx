@@ -6,9 +6,9 @@ import { useEffect, useState } from "react";
 
 import { useIsMobile } from "../hooks/use-is-mobile";
 import type { NewsItem, NewsnowAnalyzedItem } from "../hooks/use-news-sources";
+import type { CrossSourceItemMeta } from "../lib/newsnow-dnd";
 import { buildItemAnalysisBadges } from "../lib/newsnow-hottest-analysis";
 import { getNewsItemStableKey } from "../lib/newsnow-items";
-import type { CrossSourceItemMeta } from "../lib/newsnow-dnd";
 import type { NewsnowDensityMode } from "../store/newsnow-store";
 
 interface NewsListHotProps {

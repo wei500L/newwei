@@ -11,6 +11,7 @@ import {
   getCountryName,
   type WarMapAisDensityProperties,
   type WarMapAisDisruptionProperties,
+  type WarMapAisLayerSummary,
   type WarMapAisVesselProperties,
   type WarMapEvent,
   type WarMapEventSeverity,
@@ -39,21 +40,22 @@ import { createHash } from "node:crypto";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { GeocodingService } from "../geo/geocoding.service";
-import { RealtimeSignalsSnapshotStore } from "../realtime-signals/realtime-signals.snapshot-store";
+import { buildAisRuntimeSemantics } from "../realtime-signals/ais-runtime-semantics";
 import { RealtimeSignalsService } from "../realtime-signals/realtime-signals.service";
+import { RealtimeSignalsSnapshotStore } from "../realtime-signals/realtime-signals.snapshot-store";
 import type {
   RealtimeAdsbAircraftSnapshot,
   RealtimeAisLatestSnapshot,
   RealtimeAisVesselSnapshot,
 } from "../realtime-signals/realtime-signals.types";
-import { SituationMonitorTranslationService } from "../situation-monitor/situation-monitor-translation.service";
-
-import worldGeoJson from "./assets/world.geo.json";
-import type { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
 import {
   classifyAircraftTransport,
   classifyAisShipType,
 } from "../realtime-signals/transport-classification";
+import { SituationMonitorTranslationService } from "../situation-monitor/situation-monitor-translation.service";
+
+import worldGeoJson from "./assets/world.geo.json";
+import type { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
 import {
   buildWarMapLayersResponse,
   type WarMapLayersResponse as WarMapStaticLayersResponse,
@@ -1307,8 +1309,8 @@ export class DashboardChartsService {
       {
         orgId,
         status: "completed",
+        hasLocation: true,
         duplicateOf: null,
-        "result.location": { $exists: true, $nin: [null, ""] },
         ...this.buildWarMapMongoRangeFilter(range),
       },
       {
@@ -2450,17 +2452,8 @@ export class DashboardChartsService {
       this.realtimeSignalsStore.getLatestAisSnapshot(orgId),
       this.realtimeSignalsStore.getSourceState(orgId, "ais"),
     ]);
-    const sourceContext =
-      sourceState?.context &&
-      typeof sourceState.context === "object" &&
-      !Array.isArray(sourceState.context)
-        ? sourceState.context
-        : undefined;
-    const staleThresholdSec =
-      typeof sourceContext?.staleThresholdSec === "number" &&
-      Number.isFinite(sourceContext.staleThresholdSec)
-        ? Math.max(60, Math.round(sourceContext.staleThresholdSec))
-        : 20 * 60;
+    const aisRuntime = buildAisRuntimeSemantics({ snapshot, sourceState });
+    const staleThresholdSec = 20 * 60;
 
     if (!snapshot) {
       dataset.features = [];
@@ -2468,7 +2461,7 @@ export class DashboardChartsService {
       dataset.summary = {
         source: "relay",
         mode: aisMode,
-        configured: sourceContext?.configured !== false,
+        configured: aisRuntime.diagnostics.configured,
         connected: false,
         freshness: "missing",
         staleThresholdSec,
@@ -2491,7 +2484,13 @@ export class DashboardChartsService {
               blockedReason: "AIS relay snapshot is not available yet.",
             }
           : {}),
-      };
+        ...(aisRuntime.statusReasonCode
+          ? { statusReasonCode: aisRuntime.statusReasonCode }
+          : {}),
+        ...(aisRuntime.statusReason
+          ? { statusReason: aisRuntime.statusReason }
+          : {}),
+      } satisfies WarMapAisLayerSummary;
       return;
     }
 
@@ -2504,7 +2503,6 @@ export class DashboardChartsService {
       typeof snapshotAgeSec === "number" && snapshotAgeSec > staleThresholdSec
         ? "stale"
         : "fresh";
-
     const disruptionFeatures = this.filterWarMapPointsByBbox(
       snapshot.disruptions,
       options.bbox,
@@ -2530,6 +2528,10 @@ export class DashboardChartsService {
       vesselPool,
       options.bbox,
     );
+    const viewportVesselCount =
+      aisMode === "all" && snapshot.hasVesselSnapshot
+        ? filteredVessels.length
+        : undefined;
     const shapedVessels =
       aisMode === "all"
         ? this.shapeWarMapAisVesselsForViewport(vesselPool, options)
@@ -2552,23 +2554,37 @@ export class DashboardChartsService {
       source: "relay",
       sourceEndpoint: snapshot.sourceEndpoint,
       mode: aisMode,
-      configured: sourceContext?.configured !== false,
-      connected: snapshot.status.connected,
+      configured: aisRuntime.diagnostics.configured,
+      connected: aisRuntime.diagnostics.connected,
       freshness,
       snapshotUpdatedAt: snapshot.updatedAt,
       ...(typeof snapshotAgeSec === "number" ? { snapshotAgeSec } : {}),
       staleThresholdSec,
-      relayVesselCount: snapshot.status.vessels,
+      relayVesselCount: aisRuntime.diagnostics.vesselCount,
       disruptionsCount: disruptionFeatures.length,
       densityCount: densityFeatures.length,
-      candidateCount: snapshot.candidateReports.length,
+      candidateCount: aisRuntime.diagnostics.candidateCount,
       renderedVesselCount: vesselFeatures.length,
-      allVesselsAvailable: snapshot.hasVesselSnapshot,
-      messageCount: snapshot.status.messages,
+      allVesselsAvailable: aisRuntime.diagnostics.allVesselsAvailable,
+      messageCount: aisRuntime.diagnostics.messageCount,
       clientCount: snapshot.status.clients,
-      droppedMessages: snapshot.status.droppedMessages,
+      droppedMessages: aisRuntime.diagnostics.droppedMessages,
+      positionReportsSeen: aisRuntime.diagnostics.positionReportsSeen,
+      positionReportsProcessed:
+        aisRuntime.diagnostics.positionReportsProcessed,
+      ignoredPositionReports: aisRuntime.diagnostics.ignoredPositionReports,
+      parseErrors: aisRuntime.diagnostics.parseErrors,
+      ...(aisRuntime.statusReasonCode
+        ? { statusReasonCode: aisRuntime.statusReasonCode }
+        : {}),
+      ...(aisRuntime.statusReason
+        ? { statusReason: aisRuntime.statusReason }
+        : {}),
       ...(aisMode === "all"
         ? {
+            ...(typeof viewportVesselCount === "number"
+              ? { viewportVesselCount }
+              : {}),
             maxReturned: this.resolveWarMapAisMaxPoints(options),
             truncated: vesselFeatures.length < filteredVessels.length,
           }
@@ -2580,7 +2596,7 @@ export class DashboardChartsService {
             blockedReason: "AIS relay snapshot does not include vessels[] yet.",
           }
         : {}),
-    };
+    } satisfies WarMapAisLayerSummary;
   }
 
   private async enrichWarMapFlightsLayer(
@@ -5514,7 +5530,10 @@ export class DashboardChartsService {
       );
       let usedFallback = false;
       if (!fieldKey) {
-        fieldKey = resolveFallbackSourceField(availableSourceFields, labelToField);
+        fieldKey = resolveFallbackSourceField(
+          availableSourceFields,
+          labelToField,
+        );
         usedFallback = Boolean(fieldKey);
       }
       if (!fieldKey) {
@@ -5804,7 +5823,7 @@ export class DashboardChartsService {
 
     const resultPoints: FinancialCandlestickPoint[] = [];
     let updatedAt: Date | undefined;
-    const incompleteEntries: Array<{ timestamp: string; missing: string[] }> =
+    const incompleteEntries: { timestamp: string; missing: string[] }[] =
       [];
     const latestObservedAt = sorted.at(-1)?.timestamp;
     for (const entry of sorted) {

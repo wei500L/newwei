@@ -9,6 +9,12 @@ export interface NewsPromptConfig {
   systemPromptTemplate: string;
   denoisePromptTemplate: string;
   userPromptTemplate: string;
+  entitySystemPromptTemplate: string;
+  entityUserPromptTemplate: string;
+  sentimentSystemPromptTemplate: string;
+  sentimentUserPromptTemplate: string;
+  kgSystemPromptTemplate: string;
+  kgUserPromptTemplate: string;
 }
 
 export const DEFAULT_SYSTEM_PROMPT_TEMPLATE = [
@@ -51,7 +57,48 @@ export const DEFAULT_NEWS_PROMPT_CONFIG: NewsPromptConfig = {
   version: "news-clean-v4",
   systemPromptTemplate: DEFAULT_SYSTEM_PROMPT_TEMPLATE,
   denoisePromptTemplate: DEFAULT_DENOISE_PROMPT_TEMPLATE,
-  userPromptTemplate: DEFAULT_USER_PROMPT_TEMPLATE
+  userPromptTemplate: DEFAULT_USER_PROMPT_TEMPLATE,
+  entitySystemPromptTemplate: [
+    "You extract named entities from cleaned news content into strict JSON.",
+    "Return 0-20 entities with fields: name, type, confidence.",
+    "Allowed entity types: person/company/industry/organization/location/product/index/policy/commodity/other.",
+    "Only include entities explicitly supported by the article.",
+  ].join(" "),
+  entityUserPromptTemplate: [
+    "Extract entities from this cleaned article.",
+    "Title: {{title}}",
+    "Summary: {{summary}}",
+    "Language: {{language}}",
+    "",
+    "{{markdown}}",
+  ].join("\n"),
+  sentimentSystemPromptTemplate: [
+    "You assign overall article sentiment into strict JSON.",
+    "Return sentiment_label as one of positive, neutral, or negative.",
+    "Use neutral when the tone is mixed, descriptive, or uncertain.",
+  ].join(" "),
+  sentimentUserPromptTemplate: [
+    "Classify the overall sentiment of this cleaned article.",
+    "Title: {{title}}",
+    "Summary: {{summary}}",
+    "Language: {{language}}",
+    "",
+    "{{markdown}}",
+  ].join("\n"),
+  kgSystemPromptTemplate: [
+    "You extract finance-oriented knowledge graph relations into strict JSON.",
+    "Return up to 20 kg_relations with subject{name,type}, predicate, object{name,type}, confidence 0-1, optional properties, optional evidence.",
+    "Allowed predicate values: belongs_to_industry, supplies, customer_of, competes_with, holds_position, affects_industry, affects_company, upstream_of, downstream_of, has_ticker.",
+    "Only include relations directly supported by the text.",
+  ].join(" "),
+  kgUserPromptTemplate: [
+    "Extract knowledge graph relations from this cleaned article.",
+    "Title: {{title}}",
+    "Summary: {{summary}}",
+    "Language: {{language}}",
+    "",
+    "{{markdown}}",
+  ].join("\n"),
 };
 
 const PROMPT_CONFIG_KEY = "news_pipeline_prompt_config";
@@ -119,12 +166,36 @@ export class NewsPromptConfigService {
     const userPromptTemplate =
       this.cleanString(config.userPromptTemplate) ??
       DEFAULT_NEWS_PROMPT_CONFIG.userPromptTemplate;
+    const entitySystemPromptTemplate =
+      this.cleanString(config.entitySystemPromptTemplate) ??
+      DEFAULT_NEWS_PROMPT_CONFIG.entitySystemPromptTemplate;
+    const entityUserPromptTemplate =
+      this.cleanString(config.entityUserPromptTemplate) ??
+      DEFAULT_NEWS_PROMPT_CONFIG.entityUserPromptTemplate;
+    const sentimentSystemPromptTemplate =
+      this.cleanString(config.sentimentSystemPromptTemplate) ??
+      DEFAULT_NEWS_PROMPT_CONFIG.sentimentSystemPromptTemplate;
+    const sentimentUserPromptTemplate =
+      this.cleanString(config.sentimentUserPromptTemplate) ??
+      DEFAULT_NEWS_PROMPT_CONFIG.sentimentUserPromptTemplate;
+    const kgSystemPromptTemplate =
+      this.cleanString(config.kgSystemPromptTemplate) ??
+      DEFAULT_NEWS_PROMPT_CONFIG.kgSystemPromptTemplate;
+    const kgUserPromptTemplate =
+      this.cleanString(config.kgUserPromptTemplate) ??
+      DEFAULT_NEWS_PROMPT_CONFIG.kgUserPromptTemplate;
 
     return {
       version: version ?? DEFAULT_NEWS_PROMPT_CONFIG.version,
       systemPromptTemplate,
       denoisePromptTemplate,
-      userPromptTemplate
+      userPromptTemplate,
+      entitySystemPromptTemplate,
+      entityUserPromptTemplate,
+      sentimentSystemPromptTemplate,
+      sentimentUserPromptTemplate,
+      kgSystemPromptTemplate,
+      kgUserPromptTemplate,
     };
   }
 

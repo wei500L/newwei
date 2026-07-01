@@ -1,11 +1,16 @@
 import { UserDigestService } from "../user-digest.service";
+import { ProcessedItemModel } from "@modular/mongo";
 
 describe("UserDigestService", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it("returns default preference when missing", async () => {
     const prisma = {
       userSetting: {
-        findUnique: jest.fn().mockResolvedValue(null)
-      }
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
     };
     const contentSubscriptions = {
       getDigestPreferenceValues: jest.fn().mockResolvedValue({
@@ -14,7 +19,10 @@ describe("UserDigestService", () => {
       }),
     };
 
-    const service = new UserDigestService(prisma as any, contentSubscriptions as any);
+    const service = new UserDigestService(
+      prisma as any,
+      contentSubscriptions as any,
+    );
     const pref = await service.getPreference("org-1", "user-1");
 
     expect(pref).toEqual(
@@ -23,8 +31,8 @@ describe("UserDigestService", () => {
         windowDays: 3,
         maxEvents: 8,
         includeIndicators: true,
-        maxIndicatorsPerEvent: 5
-      })
+        maxIndicatorsPerEvent: 5,
+      }),
     );
   });
 
@@ -37,24 +45,29 @@ describe("UserDigestService", () => {
             windowDays: 999,
             maxEvents: 0,
             includeIndicators: false,
-            maxIndicatorsPerEvent: 200
-          }
+            maxIndicatorsPerEvent: 200,
+          },
         }),
-        upsert: jest.fn().mockResolvedValue(null)
-      }
+        upsert: jest.fn().mockResolvedValue(null),
+      },
     };
     const contentSubscriptions = {
-      replaceSubscriptionsFromDigestPreference: jest.fn().mockResolvedValue(undefined),
+      replaceSubscriptionsFromDigestPreference: jest
+        .fn()
+        .mockResolvedValue(undefined),
       getDigestPreferenceValues: jest.fn().mockResolvedValue({
         focusEntities: ["ACME", "MegaCorp"],
         focusTopics: ["macro", "policy"],
       }),
     };
 
-    const service = new UserDigestService(prisma as any, contentSubscriptions as any);
+    const service = new UserDigestService(
+      prisma as any,
+      contentSubscriptions as any,
+    );
     const pref = await service.updatePreference("org-1", "user-1", {
       focusTopics: ["  macro  ", "policy"],
-      includeIndicators: true
+      includeIndicators: true,
     });
 
     expect(pref.focusEntities).toEqual(["ACME", "MegaCorp"]);
@@ -63,21 +76,21 @@ describe("UserDigestService", () => {
     expect(pref.maxEvents).toBe(1);
     expect(pref.includeIndicators).toBe(true);
     expect(pref.maxIndicatorsPerEvent).toBe(50);
-    expect(contentSubscriptions.replaceSubscriptionsFromDigestPreference).toHaveBeenCalledWith(
-      "org-1",
-      "user-1",
-      { focusTopics: ["  macro  ", "policy"] },
-    );
+    expect(
+      contentSubscriptions.replaceSubscriptionsFromDigestPreference,
+    ).toHaveBeenCalledWith("org-1", "user-1", {
+      focusTopics: ["  macro  ", "policy"],
+    });
 
     expect(prisma.userSetting.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({
-          key: "ai:digest:preference:v1"
+          key: "ai:digest:preference:v1",
         }),
         update: expect.objectContaining({
-          value: expect.any(Object)
-        })
-      })
+          value: expect.any(Object),
+        }),
+      }),
     );
   });
 
@@ -100,7 +113,10 @@ describe("UserDigestService", () => {
       }),
     };
 
-    const service = new UserDigestService(prisma as any, contentSubscriptions as any);
+    const service = new UserDigestService(
+      prisma as any,
+      contentSubscriptions as any,
+    );
     const pref = await service.getPreference("org-1", "user-1");
 
     expect(pref.focusEntities).toEqual(["NVIDIA"]);
@@ -131,7 +147,9 @@ describe("UserDigestService", () => {
             startAt: new Date("2026-01-01T00:00:00.000Z"),
             lastAt: new Date("2026-01-02T00:00:00.000Z"),
             _count: { items: 4 },
-            representativeProcessedArticle: { article: { url: "https://example.com/1" } },
+            representativeProcessedArticle: {
+              article: { url: "https://example.com/1" },
+            },
           },
           {
             id: "event-2",
@@ -142,7 +160,9 @@ describe("UserDigestService", () => {
             startAt: new Date("2026-01-01T12:00:00.000Z"),
             lastAt: new Date("2026-01-02T12:00:00.000Z"),
             _count: { items: 2 },
-            representativeProcessedArticle: { article: { url: "https://example.com/2" } },
+            representativeProcessedArticle: {
+              article: { url: "https://example.com/2" },
+            },
           },
         ]),
       },
@@ -204,21 +224,47 @@ describe("UserDigestService", () => {
         focusTopics: ["macro"],
         focusEntities: ["ACME"],
       }),
+      getDigestSubscriptionValues: jest.fn().mockResolvedValue({
+        focusTopics: ["macro"],
+        focusEntities: ["ACME"],
+        focusKeywords: [],
+        focusSources: [],
+        focusGeos: [],
+      }),
     };
 
-    const service = new UserDigestService(prisma as any, contentSubscriptions as any);
+    const service = new UserDigestService(
+      prisma as any,
+      contentSubscriptions as any,
+    );
     const digest = await service.generateDigest("org-1", "user-1");
 
-    expect(prisma.newsEvent.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.newsEvent.findMany).toHaveBeenCalledTimes(2);
     expect(prisma.topicSentimentSnapshot.findMany).toHaveBeenCalledWith({
       where: { orgId: "org-1", topic: { in: ["macro"] } },
       orderBy: [{ topic: "asc" }, { bucketStart: "desc" }],
-      select: { topic: true, bucketStart: true, totalDocs: true, avgScore: true, negativeRatio: true },
+      select: {
+        topic: true,
+        bucketStart: true,
+        totalDocs: true,
+        avgScore: true,
+        negativeRatio: true,
+      },
     });
     expect(prisma.entitySentimentSnapshot.findMany).toHaveBeenCalledWith({
       where: { orgId: "org-1", entityName: { in: ["ACME"] } },
-      orderBy: [{ entityName: "asc" }, { bucketStart: "desc" }, { entityType: "asc" }],
-      select: { entityName: true, bucketStart: true, totalDocs: true, avgScore: true, negativeRatio: true },
+      orderBy: [
+        { entityName: "asc" },
+        { bucketStart: "desc" },
+        { entityType: "asc" },
+      ],
+      select: {
+        entityName: true,
+        bucketStart: true,
+        totalDocs: true,
+        avgScore: true,
+        negativeRatio: true,
+      },
     });
     expect(prisma.newsIndicatorAssociation.findMany).toHaveBeenCalledTimes(1);
     expect(digest.events).toHaveLength(2);
@@ -272,8 +318,11 @@ describe("UserDigestService", () => {
       service as unknown as {
         loadIndicatorAssociationsByScope: (
           orgId: string,
-          events: { primaryTopic: string | null; primaryEntity: string | null }[],
-          limit: number
+          events: {
+            primaryTopic: string | null;
+            primaryEntity: string | null;
+          }[],
+          limit: number,
         ) => Promise<Map<string, { indicatorSlug: string }[]>>;
       }
     ).loadIndicatorAssociationsByScope.bind(service);
@@ -284,7 +333,7 @@ describe("UserDigestService", () => {
         { primaryTopic: "macro", primaryEntity: null },
         { primaryTopic: "policy", primaryEntity: null },
       ],
-      1
+      1,
     );
 
     expect(prisma.newsIndicatorAssociation.findMany).toHaveBeenCalledWith(
@@ -320,12 +369,218 @@ describe("UserDigestService", () => {
           { lagDays: "asc" },
           { id: "asc" },
         ],
-      })
+      }),
     );
     expect(grouped.get("topic:macro")).toHaveLength(1);
     expect(grouped.get("topic:policy")).toHaveLength(1);
     expect(grouped.get("topic:policy")?.[0]).toMatchObject({
       indicatorSlug: "cpi",
     });
+  });
+
+  it("matches digest events from source, keyword, and geo content subscriptions", async () => {
+    const since = new Date("2026-01-01T00:00:00.000Z");
+    const prisma = {
+      newsEventItem: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([{ eventId: "event-source" }])
+          .mockResolvedValueOnce([
+            { eventId: "event-keyword" },
+            { eventId: "event-geo" },
+            { eventId: "event-both" },
+          ]),
+      },
+    };
+    const exec = jest
+      .fn()
+      .mockResolvedValue([{ _id: "pi-1" }, { _id: "pi-2" }, { _id: "pi-3" }]);
+    const select = jest.fn().mockReturnValue({
+      lean: jest.fn().mockReturnValue({
+        exec,
+      }),
+    });
+    const limit = jest.fn().mockReturnValue({ select });
+    const sort = jest.fn().mockReturnValue({ limit });
+    jest.spyOn(ProcessedItemModel, "find").mockReturnValue({
+      sort,
+    } as any);
+
+    const service = new UserDigestService(prisma as any, {} as any);
+    const findMatchedEventIdsFromRelatedContent = (
+      service as unknown as {
+        findMatchedEventIdsFromRelatedContent: (
+          orgId: string,
+          since: Date,
+          subscriptions: {
+            focusTopics: string[];
+            focusEntities: string[];
+            focusKeywords: string[];
+            focusSources: { sourceId: string; displayValue: string }[];
+            focusGeos: {
+              normalizedValue: string;
+              displayValue: string;
+              countryCodeAlpha2?: string;
+            }[];
+          },
+        ) => Promise<Set<string>>;
+      }
+    ).findMatchedEventIdsFromRelatedContent.bind(service);
+
+    const matched = await findMatchedEventIdsFromRelatedContent(
+      "org-1",
+      since,
+      {
+        focusTopics: [],
+        focusEntities: [],
+        focusKeywords: ["NVIDIA"],
+        focusSources: [{ sourceId: "reuters-world", displayValue: "Reuters" }],
+        focusGeos: [
+          {
+            normalizedValue: "japan",
+            displayValue: "Japan",
+            countryCodeAlpha2: "JP",
+          },
+        ],
+      },
+    );
+
+    expect(prisma.newsEventItem.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          processedArticle: {
+            article: {
+              sourceId: { in: ["reuters-world"] },
+            },
+          },
+        }),
+        select: { eventId: true },
+        distinct: ["eventId"],
+      }),
+    );
+    expect(prisma.newsEventItem.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          processedItemId: { in: ["pi-1", "pi-2", "pi-3"] },
+        }),
+        select: {
+          eventId: true,
+        },
+        distinct: ["eventId"],
+      }),
+    );
+    expect(ProcessedItemModel.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        status: "completed",
+        duplicateOf: null,
+        createdAt: { $gte: since },
+      }),
+    );
+    expect(sort).toHaveBeenCalledWith({ createdAt: -1 });
+    expect(limit).toHaveBeenCalledWith(1000);
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(Array.from(matched).sort()).toEqual([
+      "event-both",
+      "event-geo",
+      "event-keyword",
+      "event-source",
+    ]);
+  });
+
+  it("uses Elasticsearch keyword hits and resolves recent processed item ids by itemMetaId", async () => {
+    const since = new Date("2026-01-01T00:00:00.000Z");
+    const prisma = {
+      newsEventItem: {
+        findMany: jest.fn().mockResolvedValue([{ eventId: "event-keyword" }]),
+      },
+    };
+    const elasticsearch = {
+      searchLiteralKeywords: jest.fn().mockResolvedValue([
+        { id: "meta-1", score: 3, highlights: {} },
+        { id: "meta-2", score: 2, highlights: {} },
+        { id: "meta-1", score: 1, highlights: {} },
+      ]),
+    };
+    const exec = jest.fn().mockResolvedValue([
+      { _id: "pi-2", itemMetaId: "meta-2" },
+      { _id: "pi-1", itemMetaId: "meta-1" },
+    ]);
+    const select = jest.fn().mockReturnValue({
+      lean: jest.fn().mockReturnValue({
+        exec,
+      }),
+    });
+    const limit = jest.fn().mockReturnValue({ select });
+    const sort = jest.fn().mockReturnValue({ limit });
+    jest.spyOn(ProcessedItemModel, "find").mockReturnValue({
+      sort,
+    } as any);
+
+    const service = new UserDigestService(
+      prisma as any,
+      {} as any,
+      elasticsearch as any,
+    );
+    const findMatchedEventIdsFromRelatedContent = (
+      service as unknown as {
+        findMatchedEventIdsFromRelatedContent: (
+          orgId: string,
+          since: Date,
+          subscriptions: {
+            focusTopics: string[];
+            focusEntities: string[];
+            focusKeywords: string[];
+            focusSources: { sourceId: string; displayValue: string }[];
+            focusGeos: {
+              normalizedValue: string;
+              displayValue: string;
+              countryCodeAlpha2?: string;
+            }[];
+          },
+          candidateLimit?: number,
+        ) => Promise<Set<string>>;
+      }
+    ).findMatchedEventIdsFromRelatedContent.bind(service);
+
+    const matched = await findMatchedEventIdsFromRelatedContent(
+      "org-1",
+      since,
+      {
+        focusTopics: [],
+        focusEntities: [],
+        focusKeywords: ["NVIDIA"],
+        focusSources: [],
+        focusGeos: [],
+      },
+      300,
+    );
+
+    expect(elasticsearch.searchLiteralKeywords).toHaveBeenCalledWith(
+      "org-1",
+      ["NVIDIA"],
+      { createdAtGte: since, limit: 300 },
+    );
+    expect(ProcessedItemModel.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        status: "completed",
+        duplicateOf: null,
+        createdAt: { $gte: since },
+        itemMetaId: { $in: ["meta-1", "meta-2"] },
+      }),
+    );
+    expect(sort).toHaveBeenCalledWith({ createdAt: -1 });
+    expect(limit).toHaveBeenCalledWith(300);
+    expect(prisma.newsEventItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          processedItemId: { in: ["pi-1", "pi-2"] },
+        }),
+      }),
+    );
+    expect(Array.from(matched)).toEqual(["event-keyword"]);
   });
 });

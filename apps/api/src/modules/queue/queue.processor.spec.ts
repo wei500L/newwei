@@ -68,6 +68,7 @@ import { NotificationType, PipelineJobStatus } from "@prisma/client";
 import { Worker, UnrecoverableError } from "bullmq";
 import { Types } from "mongoose";
 
+import { BULLMQ_DLQ_JOB_RETENTION } from "../../common/bullmq-retention";
 import { ItemStatus } from "../../common/pipeline-status";
 
 import { ITEM_PIPELINE_QUEUE_NAME } from "./queue.constants";
@@ -111,6 +112,12 @@ const createMockRawItem = (id: string) => ({
 const createMockQueue = () => ({
   add: jest.fn().mockResolvedValue({ id: "queued-job-id" }),
   close: jest.fn().mockResolvedValue(undefined),
+  opts: {
+    connection: {
+      host: "localhost",
+      port: 6379,
+    },
+  },
 });
 
 const createMockDlqQueue = () => ({
@@ -545,8 +552,8 @@ describe("QueueProcessor", () => {
         }),
         expect.objectContaining({
           jobId: expect.stringContaining("dlq-"),
-          removeOnComplete: false,
-          removeOnFail: false,
+          removeOnComplete: BULLMQ_DLQ_JOB_RETENTION,
+          removeOnFail: BULLMQ_DLQ_JOB_RETENTION,
           attempts: 1,
         }),
       );
@@ -688,6 +695,7 @@ describe("QueueProcessor", () => {
           }),
           $unset: expect.objectContaining({
             hasLocation: 1,
+            summaryEmbeddingDimensions: 1,
           }),
         }),
         { upsert: true },
@@ -807,6 +815,9 @@ describe("QueueProcessor", () => {
             error: expect.objectContaining({
               message: "Test error message",
             }),
+          }),
+          $unset: expect.objectContaining({
+            summaryEmbeddingDimensions: 1,
           }),
         }),
         { upsert: true },

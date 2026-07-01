@@ -15,15 +15,16 @@ import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
 import {
+  LiteLlmProxyGovernancePreflightDto,
+  UpdateLlmGatewayProxyGovernanceDto,
+} from "./dto/llm-gateway-proxy-governance.dto";
+import { UpdateLlmGatewayProxyLoadBalancingSettingsDto } from "./dto/llm-gateway-proxy-lb-settings.dto";
+import { LlmGatewayProxyLoadBalancingTestDto } from "./dto/llm-gateway-proxy-lb-test.dto";
+import {
   LlmGatewayModelsConfigDto,
   LlmGatewayTestConfigDto,
 } from "./dto/llm-gateway-test-config.dto";
-import { UpdateLlmGatewayProxyGovernanceDto } from "./dto/llm-gateway-proxy-governance.dto";
-import { UpdateLlmGatewayProxyLoadBalancingSettingsDto } from "./dto/llm-gateway-proxy-lb-settings.dto";
 import { LlmGatewayTestDto } from "./dto/llm-gateway-test.dto";
-import { LlmGatewayProxyLoadBalancingTestDto } from "./dto/llm-gateway-proxy-lb-test.dto";
-import { LiteLlmProxyGovernanceService } from "./litellm-proxy-governance.service";
-import { LiteLlmProxyLoadBalancingSettingsService } from "./litellm-proxy-lb-settings.service";
 import {
   CreateLlmGatewayDto,
   SetEmbeddingActiveLlmGatewayDto,
@@ -31,6 +32,8 @@ import {
   SetActiveLlmGatewayDto,
   UpdateLlmGatewayDto,
 } from "./dto/llm-gateway.dto";
+import { LiteLlmProxyGovernanceService } from "./litellm-proxy-governance.service";
+import { LiteLlmProxyLoadBalancingSettingsService } from "./litellm-proxy-lb-settings.service";
 import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
 import { LlmGatewayTestService } from "./llm-gateway-test.service";
 
@@ -116,6 +119,14 @@ export class LlmGatewaySettingsController {
     return this.proxyGovernance.updateSettings(user.orgId, user.id, body);
   }
 
+  @Post("proxy-governance/preflight")
+  @Permissions("settings.manage")
+  async preflightProxyGovernanceSettings(
+    @Body() body: LiteLlmProxyGovernancePreflightDto,
+  ) {
+    return this.proxyGovernance.getEnablePreflight(body);
+  }
+
   @Delete("proxy-governance")
   @Permissions("settings.manage")
   async resetProxyGovernanceSettings(@CurrentUser() user: AuthenticatedUser) {
@@ -173,14 +184,27 @@ export class LlmGatewaySettingsController {
 
   @Post(":id/test")
   @Permissions("settings.manage")
-  async test(@Param("id") id: string, @Body() body: LlmGatewayTestDto) {
-    return this.tester.testProfile(id, body);
+  async test(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() body: LlmGatewayTestDto,
+  ) {
+    return this.tester.testProfile(id, body, {
+      orgId: user.orgId,
+      userId: user.id,
+    });
   }
 
   @Post("test-config")
   @Permissions("settings.manage")
-  async testConfig(@Body() body: LlmGatewayTestConfigDto) {
-    return this.tester.testConfig(body);
+  async testConfig(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: LlmGatewayTestConfigDto,
+  ) {
+    return this.tester.testConfig(body, {
+      orgId: user.orgId,
+      userId: user.id,
+    });
   }
 
   @Get(":id/models")
@@ -209,10 +233,14 @@ export class LlmGatewaySettingsController {
   @Post(":id/proxy-lb-test")
   @Permissions("settings.manage")
   async proxyLoadBalancingTest(
+    @CurrentUser() user: AuthenticatedUser,
     @Param("id") id: string,
     @Body() body: LlmGatewayProxyLoadBalancingTestDto,
   ) {
-    return this.tester.testProxyLoadBalancing(id, body);
+    return this.tester.testProxyLoadBalancing(id, body, {
+      orgId: user.orgId,
+      userId: user.id,
+    });
   }
 
   @Post("models-config")

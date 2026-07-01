@@ -83,7 +83,7 @@ export function UserUiSettingsSyncIndicator() {
     [sections],
   );
 
-  const title = t("common.syncStatus", { defaultValue: "Sync status" });
+  const title = t("common.syncStatus");
 
   const icon =
     overall === "error" ? (
@@ -97,7 +97,7 @@ export function UserUiSettingsSyncIndicator() {
       <div className="flex items-start justify-between gap-6">
         <div className="flex flex-col gap-1">
           <Typography.Text>
-            {t("pages.situationMonitor.title", { defaultValue: "Situation Monitor" })}
+            {t("pages.situationMonitor.title")}
           </Typography.Text>
           {renderLastSynced(sections["situation-monitor"], locale, t)}
           {sections["situation-monitor"].state === "error" && sections["situation-monitor"].lastErrorMessage ? (
@@ -117,7 +117,7 @@ export function UserUiSettingsSyncIndicator() {
       <div className="flex items-start justify-between gap-6">
         <div className="flex flex-col gap-1">
           <Typography.Text>
-            {t("pages.map.title", { defaultValue: "Regional Signals Map" })}
+            {t("pages.map.title")}
           </Typography.Text>
           {renderLastSynced(sections["war-map"], locale, t)}
           {sections["war-map"].state === "error" && sections["war-map"].lastErrorMessage ? (
@@ -133,12 +133,12 @@ export function UserUiSettingsSyncIndicator() {
       </div>
 
       <Typography.Text type="secondary">
-        {t("common.syncHint", { defaultValue: "Changes sync automatically across devices." })}
+        {t("common.syncHint")}
       </Typography.Text>
 
       {overall === "error" ? (
         <Button size="small" onClick={() => requestReload()}>
-          {t("common.retry", { defaultValue: "Retry" })}
+          {t("common.retry")}
         </Button>
       ) : null}
     </Space>

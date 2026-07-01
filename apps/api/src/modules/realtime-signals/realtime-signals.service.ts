@@ -16,6 +16,15 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { ProcessedArticleStatus } from "@prisma/client";
 import type Redis from "ioredis";
 
+import { fetchWithIpv4Fallback } from "../../common/http/fetch-with-ipv4-fallback";
+import {
+  claimSchedulerTick,
+  settleWithConcurrency,
+} from "../../common/multi-tenant-scheduler";
+import {
+  classifyUpstreamRequestError,
+  readHttpStatus,
+} from "../../common/http/upstream-error-classification";
 import {
   extractProcessedArticleTerms,
   normalizeProcessedArticleSource,
@@ -24,6 +33,8 @@ import { CacheService } from "../cache/cache.service";
 import { REDIS_CLIENT } from "../cache/cache.tokens";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
+import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
+import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 import { RealtimeSignalsSettingsService } from "../system-settings/realtime-signals-settings.service";
 
 import {
@@ -32,10 +43,6 @@ import {
   REALTIME_SIGNAL_SOURCES,
 } from "./realtime-signals.constants";
 import { RealtimeSignalsSnapshotStore } from "./realtime-signals.snapshot-store";
-import {
-  classifyAircraftTransport,
-  classifyAisShipType,
-} from "./transport-classification";
 import type {
   RealtimeAdsbAircraftSnapshot,
   RealtimeAdsbLatestSnapshot,
@@ -44,10 +51,13 @@ import type {
   RealtimeAisDisruptionSeverity,
   RealtimeAisDisruptionSnapshot,
   RealtimeAisLatestSnapshot,
+  RealtimeAisRelayDiagnostics,
   RealtimeAisRelayStatusSnapshot,
   RealtimeAisVesselSnapshot,
   RealtimeSignalFetchResult,
-  RealtimeSignalFlightMode,
+  RealtimeSignalErrorCode,
+  RealtimeSignalRateLimitDetails,
+  RealtimeSignalRuntimeStatus,
   RealtimeOpenskyBudgetDaySummary,
   RealtimeOpenskyBudgetDegradationLevel,
   RealtimeOpenskyErrorKind,
@@ -62,8 +72,26 @@ import type {
   RealtimeSignalsRuntimeConfig,
   RealtimeSignalsRuntimeSettingsSource,
 } from "./realtime-signals.types";
+import {
+  classifyAircraftTransport,
+  classifyAisShipType,
+} from "./transport-classification";
+import { buildAisRuntimeSemantics } from "./ais-runtime-semantics";
 
 const logger = createLogger({ name: "realtime-signals" });
+const REALTIME_SIGNALS_TICK_GATE_TTL_MS = 55_000;
+
+type RealtimeSignalsSchedulerOrgRunStatus = "completed" | "skipped";
+interface RealtimeSignalsSharedSourceContext {
+  fetch(source: RealtimeSignalSource): Promise<RealtimeSignalFetchResult[]>;
+}
+
+const REALTIME_GLOBAL_RESULT_SOURCES = new Set<RealtimeSignalSource>([
+  "unrest",
+  "outages",
+  "pizzint",
+  "gdelt_tension",
+]);
 const ACLED_API_URL = "https://acleddata.com/api/acled/read";
 const GDELT_UNREST_GEOJSON_URL =
   "https://api.gdeltproject.org/api/v1/gkg_geojson";
@@ -247,23 +275,22 @@ const OPENSKY_ALL_CAPTURE_QUERY_REGIONS = [
     bbox: [110, -47, 180, 5] as [number, number, number, number],
   },
 ] as const;
-const OPENSKY_BUDGET_HASH_FIELDS = [
-  "usedCredits",
-  "requestCount",
-  "militaryCredits",
-  "militaryCalls",
-  "allCredits",
-  "allCalls",
-  "errorCalls",
-  "authErrorCalls",
-  "rateLimitedErrorCalls",
-  "serverErrorCalls",
-  "timeoutErrorCalls",
-  "networkErrorCalls",
-  "unknownErrorCalls",
-  "blockedAllModeCount",
-  "skippedMilitaryCount",
-] as const;
+type OpenSkyBudgetCounterField =
+  | "usedCredits"
+  | "requestCount"
+  | "militaryCredits"
+  | "militaryCalls"
+  | "allCredits"
+  | "allCalls"
+  | "errorCalls"
+  | "authErrorCalls"
+  | "rateLimitedErrorCalls"
+  | "serverErrorCalls"
+  | "timeoutErrorCalls"
+  | "networkErrorCalls"
+  | "unknownErrorCalls"
+  | "blockedAllModeCount"
+  | "skippedMilitaryCount";
 const SOURCE_TO_METRIC_SLUG: Record<RealtimeSignalSource, string> = {
   opensky: REALTIME_SIGNAL_METRIC_SLUGS.opensky,
   ais: REALTIME_SIGNAL_METRIC_SLUGS.ais,
@@ -306,6 +333,14 @@ interface JsonFetchOptions {
   shouldRetry?: (error: unknown) => boolean;
 }
 
+interface JsonFetchError extends Error {
+  body?: string;
+  status?: number;
+  statusText?: string;
+  retryAfterMs?: number;
+  rateLimit?: RealtimeSignalRateLimitDetails;
+}
+
 interface UnrestFeedFetchResult {
   events: UnrestEventCandidate[];
   configured: boolean;
@@ -338,8 +373,6 @@ interface AdsbNormalizationResult {
 
 type OpenSkyCreditScope = "military" | "all";
 
-type OpenSkyBudgetCounterField = (typeof OPENSKY_BUDGET_HASH_FIELDS)[number];
-
 interface OpenSkyBudgetReserveResult {
   allowed: boolean;
   usedCredits: number;
@@ -349,10 +382,12 @@ interface OpenSkyBudgetReserveResult {
 interface OpenSkyDiagnosticMessage {
   code?: string;
   message?: string;
+  status?: RealtimeSignalRuntimeStatus;
 }
 
-interface OpenSkyErrorDetails {
-  kind: RealtimeOpenskyErrorKind;
+interface DiagnosticErrorDetails {
+  code: RealtimeSignalErrorCode;
+  kind?: RealtimeOpenskyErrorKind;
   status?: number;
   message: string;
 }
@@ -421,6 +456,8 @@ class OpenSkyBudgetReserveError extends Error {
 
 @Injectable()
 export class RealtimeSignalsService {
+  private readonly aisRelayIssueCodeByOrg = new Map<string, string>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
@@ -428,52 +465,133 @@ export class RealtimeSignalsService {
     private readonly env: EnvService,
     private readonly store: RealtimeSignalsSnapshotStore,
     private readonly settings: RealtimeSignalsSettingsService,
+    private readonly activeOrgRegistry: ActiveOrgRegistryService,
+    private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async refreshScheduled() {
+    const claimed = await claimSchedulerTick(
+      this.cache,
+      "cron:realtime-signals:tick-gate",
+      REALTIME_SIGNALS_TICK_GATE_TTL_MS,
+    );
+    if (!claimed) {
+      logger.info(
+        "Skipped realtime signals refresh tick because another instance already claimed this interval",
+      );
+      return;
+    }
+
     const runtime = await this.getRuntimeConfig();
     if (!runtime.enabled) {
       return;
     }
 
-    const orgs = await this.prisma.org.findMany({
-      where: { isActive: true },
-      select: { id: true },
-    });
+    const orgs = await this.activeOrgRegistry.listActiveOrgs();
 
-    await this.cache.withLock(
-      "cron:realtime-signals",
+    if (orgs.length === 0) {
+      return;
+    }
+
+    const schedulerRuntime = await this.schedulerSettings.getRuntimeSettings();
+    const concurrency = schedulerRuntime.realtimeSignalsOrgConcurrency;
+    logger.info(
+      { orgCount: orgs.length, concurrency },
+      "Realtime signals refresh tick started",
+    );
+
+    const sharedSourceContext = this.createSharedSourceContext(runtime);
+    const results = await settleWithConcurrency(
+      orgs,
+      concurrency,
+      async (org) =>
+        this.refreshOrgWithLock(org.id, runtime, sharedSourceContext),
+    );
+
+    let failedOrgs = 0;
+    let skippedOrgs = 0;
+    for (const result of results) {
+      if (result.status === "rejected") {
+        failedOrgs += 1;
+        logger.warn(
+          { orgId: result.item.id, err: result.reason },
+          "Realtime signals refresh failed for org",
+        );
+        continue;
+      }
+      if (result.value === "skipped") {
+        skippedOrgs += 1;
+      }
+    }
+
+    try {
+      await this.refreshGlobalAllFlightCaptureWithLock(
+        orgs.map((org) => org.id),
+        runtime,
+      );
+    } catch (error) {
+      logger.warn(
+        { err: error },
+        "Realtime signals global all-flight capture failed",
+      );
+    }
+
+    logger.info(
+      { orgCount: orgs.length, concurrency, failedOrgs, skippedOrgs },
+      "Realtime signals refresh tick completed",
+    );
+  }
+
+  private async refreshOrgWithLock(
+    orgId: string,
+    runtime: RealtimeSignalsRuntimeConfig,
+    sharedSourceContext?: RealtimeSignalsSharedSourceContext,
+  ): Promise<RealtimeSignalsSchedulerOrgRunStatus> {
+    const locked = await this.cache.withLock(
+      `cron:realtime-signals:org:${orgId}`,
       REALTIME_SIGNALS_INGEST_LOCK_TTL_MS,
       async () => {
-        for (const org of orgs) {
-          try {
-            await this.refreshOrg(org.id, runtime);
-          } catch (error) {
-            logger.warn(
-              { orgId: org.id, err: error },
-              "Realtime signals refresh failed for org",
-            );
-          }
-        }
-        try {
-          await this.refreshGlobalAllFlightCapture(
-            orgs.map((org) => org.id),
-            runtime,
-          );
-        } catch (error) {
-          logger.warn(
-            { err: error },
-            "Realtime signals global all-flight capture failed",
-          );
-        }
+        await this.refreshOrg(orgId, runtime, sharedSourceContext);
+        return "completed" as const;
       },
     );
+
+    if (locked !== null) {
+      return locked;
+    }
+
+    logger.info(
+      { orgId },
+      "Skipped realtime signals org refresh because previous org run is still in progress",
+    );
+    return "skipped";
+  }
+
+  private async refreshGlobalAllFlightCaptureWithLock(
+    orgIds: string[],
+    runtime: RealtimeSignalsRuntimeConfig,
+  ) {
+    const locked = await this.cache.withLock(
+      "cron:realtime-signals:opensky-all-capture",
+      REALTIME_SIGNALS_INGEST_LOCK_TTL_MS,
+      async () => {
+        await this.refreshGlobalAllFlightCapture(orgIds, runtime);
+        return "completed" as const;
+      },
+    );
+
+    if (locked === null) {
+      logger.info(
+        "Skipped realtime signals global all-flight capture because another run is in progress",
+      );
+    }
   }
 
   async refreshOrg(
     orgId: string,
     runtimeConfig?: RealtimeSignalsRuntimeConfig,
+    sharedSourceContext?: RealtimeSignalsSharedSourceContext,
   ) {
     const runtime = runtimeConfig ?? (await this.getRuntimeConfig());
     if (!runtime.enabled) {
@@ -509,15 +627,16 @@ export class RealtimeSignalsService {
         orgId,
         source,
       );
+      const lastRunMs = await this.store.getLastRun(orgId, source);
       const effectiveIntervalSec =
         source === "opensky"
           ? (openskyBudget?.effectiveMilitaryIntervalSec ??
             sourceConfig.intervalSec)
           : sourceConfig.intervalSec;
 
-      const refreshState = await this.resolveRefreshState(
-        orgId,
-        source,
+      const refreshState = this.resolveRefreshState(
+        previousSourceState,
+        lastRunMs,
         effectiveIntervalSec,
       );
       if (!refreshState.shouldRun) {
@@ -533,8 +652,18 @@ export class RealtimeSignalsService {
       }
 
       try {
-        const results = await this.fetchSource(orgId, source, runtime);
-        const nowIso = new Date().toISOString();
+        const results = await this.fetchSource(
+          orgId,
+          source,
+          runtime,
+          sharedSourceContext,
+        );
+        const completedAtMs = Date.now();
+        const nowIso = new Date(completedAtMs).toISOString();
+        const nextEligibleAt = new Date(
+          completedAtMs +
+            Math.max(10, Math.trunc(effectiveIntervalSec)) * 1_000,
+        ).toISOString();
         for (const result of results) {
           await this.store.appendPoint(orgId, result.metricSlug, {
             ts: nowIso,
@@ -542,32 +671,42 @@ export class RealtimeSignalsService {
             context: result.context,
           });
         }
-        await this.store.setLastRun(orgId, source, Date.now());
+        await this.store.setLastRun(orgId, source, completedAtMs);
         const primaryResult = results[0];
         await this.store.setSourceState(orgId, {
           source,
           status: "success",
           lastAttemptAt: nowIso,
+          nextEligibleAt,
           lastSuccessAt: nowIso,
+          lastRateLimit: undefined,
           metricSlug: primaryResult?.metricSlug,
           latestValue: primaryResult?.value,
           context: this.toDiagnosticContext(primaryResult?.context),
         });
         this.updateInsightSnapshot(nextInsight, source, results, nowIso);
       } catch (error) {
-        const nowIso = new Date().toISOString();
+        const completedAtMs = Date.now();
+        const nowIso = new Date(completedAtMs).toISOString();
         const diagnosticError = this.toDiagnosticErrorDetails(error);
+        const nextEligibleAt = this.computeNextEligibleAt(
+          completedAtMs,
+          effectiveIntervalSec,
+          error,
+        );
         await this.store.setSourceState(orgId, {
           source,
           status: "error",
           lastAttemptAt: nowIso,
+          nextEligibleAt,
           lastSuccessAt: previousSourceState?.lastSuccessAt,
           lastErrorAt: nowIso,
           lastError: diagnosticError.message,
+          lastErrorCode: diagnosticError.code,
           lastErrorKind:
             source === "opensky" ? diagnosticError.kind : undefined,
-          lastErrorStatus:
-            source === "opensky" ? diagnosticError.status : undefined,
+          lastErrorStatus: diagnosticError.status,
+          lastRateLimit: this.getRateLimitDetails(error),
           metricSlug: previousSourceState?.metricSlug,
           latestValue: previousSourceState?.latestValue,
           context: previousSourceState?.context,
@@ -696,12 +835,14 @@ export class RealtimeSignalsService {
       insight,
       markerReadiness,
       adsbLatestSnapshot,
+      aisLatestSnapshot,
     ] = await Promise.all([
       this.getRuntimeConfig({ refreshAcledToken: false }),
       this.getRuntimeSettingsSource(orgId),
       this.store.getInsightSnapshot(orgId),
       this.getMarkerReadiness(orgId),
       this.store.getLatestAdsbSnapshot(orgId),
+      this.store.getLatestAisSnapshot(orgId),
     ]);
     const nowMs = Date.now();
     const openskyBudget = await this.getOpenskyBudgetSummary(runtime, nowMs);
@@ -724,9 +865,17 @@ export class RealtimeSignalsService {
           ),
         ]);
 
+        const evaluationContext = this.toDiagnosticContext(evaluation.context);
+        const sourceStateContext = this.toDiagnosticContext(
+          sourceState?.context,
+        );
         const context =
-          this.toDiagnosticContext(evaluation.context) ??
-          this.toDiagnosticContext(sourceState?.context);
+          evaluationContext || sourceStateContext
+            ? {
+                ...(evaluationContext ?? {}),
+                ...(sourceStateContext ?? {}),
+              }
+            : undefined;
         const openskySnapshot =
           source === "opensky"
             ? this.buildAdsbRuntimeDiagnostics(
@@ -741,6 +890,13 @@ export class RealtimeSignalsService {
                 effectiveIntervalSec,
               )
             : undefined;
+        const aisRuntime =
+          source === "ais"
+            ? buildAisRuntimeSemantics({
+                snapshot: aisLatestSnapshot,
+                sourceState,
+              })
+            : undefined;
         const runtimeStatus = this.resolveRuntimeSourceStatus({
           source,
           sourceConfig: {
@@ -750,6 +906,7 @@ export class RealtimeSignalsService {
           sourceState,
           lastRunMs,
           context,
+          aisRuntime,
           nowMs,
         });
 
@@ -768,15 +925,19 @@ export class RealtimeSignalsService {
               ? new Date(lastRunMs).toISOString()
               : undefined,
           lastAttemptAt: sourceState?.lastAttemptAt,
+          nextEligibleAt: sourceState?.nextEligibleAt,
           lastSuccessAt: sourceState?.lastSuccessAt,
           lastErrorAt: sourceState?.lastErrorAt,
           lastError: sourceState?.lastError,
+          lastErrorCode: sourceState?.lastErrorCode,
           lastErrorKind: sourceState?.lastErrorKind,
           lastErrorStatus: sourceState?.lastErrorStatus,
+          lastRateLimit: sourceState?.lastRateLimit,
           latestValue: evaluation.latest,
           previousValue: evaluation.previous,
           changePercent: evaluation.changePercent,
           context,
+          ...(aisRuntime ? { aisDiagnostics: aisRuntime.diagnostics } : {}),
           ...(openskySnapshot
             ? {
                 openskySnapshot,
@@ -837,18 +998,29 @@ export class RealtimeSignalsService {
     return nextInsight;
   }
 
-  private async resolveRefreshState(
-    orgId: string,
-    source: RealtimeSignalSource,
+  private resolveRefreshState(
+    sourceState: RealtimeSignalSourceState | null | undefined,
+    lastRunMs: number | null,
     intervalSec: number,
   ) {
-    const lastRunMs = await this.store.getLastRun(orgId, source);
-    if (!lastRunMs) {
+    const nextEligibleMs = this.parseTimestampMs(sourceState?.nextEligibleAt);
+    const safeIntervalSec = Math.max(10, Math.trunc(intervalSec));
+    if (nextEligibleMs !== null) {
+      return {
+        shouldRun: Date.now() >= nextEligibleMs,
+        lastRunMs,
+      };
+    }
+    const lastAttemptMs =
+      this.parseTimestampMs(sourceState?.lastAttemptAt) ??
+      (typeof lastRunMs === "number" && Number.isFinite(lastRunMs)
+        ? lastRunMs
+        : null);
+    if (lastAttemptMs === null) {
       return { shouldRun: true, lastRunMs: null };
     }
-    const safeIntervalSec = Math.max(10, Math.trunc(intervalSec));
     return {
-      shouldRun: Date.now() - lastRunMs >= safeIntervalSec * 1_000,
+      shouldRun: Date.now() - lastAttemptMs >= safeIntervalSec * 1_000,
       lastRunMs,
     };
   }
@@ -919,7 +1091,15 @@ export class RealtimeSignalsService {
     orgId: string,
     source: RealtimeSignalSource,
     runtime: RealtimeSignalsRuntimeConfig,
+    sharedSourceContext?: RealtimeSignalsSharedSourceContext,
   ): Promise<RealtimeSignalFetchResult[]> {
+    if (
+      sharedSourceContext &&
+      REALTIME_GLOBAL_RESULT_SOURCES.has(source)
+    ) {
+      return await sharedSourceContext.fetch(source);
+    }
+
     switch (source) {
       case "opensky":
         return this.fetchAdsbSignal(orgId, runtime);
@@ -937,6 +1117,46 @@ export class RealtimeSignalsService {
         return this.fetchGdeltTensionSignal(runtime);
       case "polymarket_leads":
         return this.fetchPolymarketLeadsSignal(orgId, runtime);
+      default:
+        return [];
+    }
+  }
+
+  private createSharedSourceContext(
+    runtime: RealtimeSignalsRuntimeConfig,
+  ): RealtimeSignalsSharedSourceContext {
+    const fetches = new Map<
+      RealtimeSignalSource,
+      Promise<RealtimeSignalFetchResult[]>
+    >();
+
+    return {
+      fetch: async (source) => {
+        const existing = fetches.get(source);
+        if (existing) {
+          return await existing;
+        }
+
+        const promise = this.fetchSharedGlobalSource(source, runtime);
+        fetches.set(source, promise);
+        return await promise;
+      },
+    };
+  }
+
+  private async fetchSharedGlobalSource(
+    source: RealtimeSignalSource,
+    runtime: RealtimeSignalsRuntimeConfig,
+  ): Promise<RealtimeSignalFetchResult[]> {
+    switch (source) {
+      case "unrest":
+        return this.fetchUnrestSignal(runtime);
+      case "outages":
+        return this.fetchOutagesSignal(runtime);
+      case "pizzint":
+        return this.fetchPizzintSignal(runtime);
+      case "gdelt_tension":
+        return this.fetchGdeltTensionSignal(runtime);
       default:
         return [];
     }
@@ -2357,9 +2577,14 @@ export class RealtimeSignalsService {
     const details = this.toDiagnosticErrorDetails(error);
     const dateHkt = this.getOpenskyHktDate(occurredAtMs ?? Date.now());
     const key = this.getOpenskyBudgetKey(dateHkt);
+    const openskyErrorKind = details.kind ?? "unknown";
     await Promise.all([
       this.cache.hincrby(key, "errorCalls", 1),
-      this.cache.hincrby(key, this.getOpenskyErrorBudgetField(details.kind), 1),
+      this.cache.hincrby(
+        key,
+        this.getOpenskyErrorBudgetField(openskyErrorKind),
+        1,
+      ),
       this.cache.expire(key, this.getOpenskyBudgetTtlSeconds()),
     ]);
     if (error && typeof error === "object") {
@@ -2491,6 +2716,63 @@ export class RealtimeSignalsService {
     return Math.max(10 * 60, safeIntervalSec * 2);
   }
 
+  private normalizeAisMmsi(value: unknown) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(Math.trunc(value));
+    }
+    return this.normalizeString(value);
+  }
+
+  private logAisRelayStatusChange(
+    orgId: string,
+    snapshot: RealtimeAisLatestSnapshot,
+  ) {
+    const aisRuntime = buildAisRuntimeSemantics({ snapshot });
+    const issueIdentity =
+      aisRuntime.diagnostics.statusReasonCode ??
+      aisRuntime.diagnostics.statusReason ??
+      (snapshot.diagnostics.healthState === "degraded" ? "degraded" : "ok");
+    const previousIssueIdentity = this.aisRelayIssueCodeByOrg.get(orgId);
+    if (previousIssueIdentity === issueIdentity) {
+      return;
+    }
+
+    this.aisRelayIssueCodeByOrg.set(orgId, issueIdentity);
+    if (issueIdentity === "ok") {
+      if (previousIssueIdentity && previousIssueIdentity !== "ok") {
+        logger.info(
+          {
+            orgId,
+            source: "ais",
+            previousIssueCode: previousIssueIdentity,
+            updatedAt: snapshot.updatedAt,
+          },
+          "AIS relay snapshot recovered",
+        );
+      }
+      return;
+    }
+
+    logger.warn(
+      {
+        orgId,
+        source: "ais",
+        issueCode: aisRuntime.diagnostics.statusReasonCode,
+        issueIdentity,
+        issueReason: aisRuntime.diagnostics.statusReason,
+        connected: snapshot.status.connected,
+        messages: snapshot.status.messages,
+        vessels: snapshot.status.vessels,
+        positionReportsSeen: snapshot.diagnostics.positionReportsSeen,
+        positionReportsProcessed: snapshot.diagnostics.positionReportsProcessed,
+        ignoredPositionReports: snapshot.diagnostics.ignoredPositionReports,
+        parseErrors: snapshot.diagnostics.parseErrors,
+        updatedAt: snapshot.updatedAt,
+      },
+      "AIS relay snapshot reports degraded state",
+    );
+  }
+
   private async fetchAisSignal(
     orgId: string,
     runtime: RealtimeSignalsRuntimeConfig,
@@ -2505,12 +2787,6 @@ export class RealtimeSignalsService {
           context: {
             source: "relay",
             configured: false,
-            connected: false,
-            disruptions: 0,
-            densityRegions: 0,
-            candidateCount: 0,
-            vesselCount: 0,
-            allVesselsAvailable: false,
             countryCodes: [],
           },
         },
@@ -2526,6 +2802,7 @@ export class RealtimeSignalsService {
       payload,
       `${aisBase}/ais/snapshot`,
     );
+    this.logAisRelayStatusChange(orgId, snapshot);
     await this.store.setLatestAisSnapshot(
       orgId,
       snapshot,
@@ -2548,15 +2825,6 @@ export class RealtimeSignalsService {
         context: {
           source: "relay",
           configured: true,
-          connected: snapshot.status.connected,
-          disruptions: snapshot.disruptions.length,
-          densityRegions: snapshot.density.length,
-          candidateCount: snapshot.candidateReports.length,
-          vesselCount: snapshot.status.vessels,
-          snapshotUpdatedAt: snapshot.updatedAt,
-          allVesselsAvailable: snapshot.hasVesselSnapshot,
-          messageCount: snapshot.status.messages,
-          droppedMessages: snapshot.status.droppedMessages,
           countryCodes: Array.from(countries),
         },
       },
@@ -2667,7 +2935,7 @@ export class RealtimeSignalsService {
         configured: true,
       } satisfies UnrestFeedFetchResult;
     } catch (error) {
-      const status = this.readHttpStatus(error);
+      const status = readHttpStatus(error);
       if (status === 401 || status === 403) {
         try {
           const refreshedToken =
@@ -3410,11 +3678,11 @@ export class RealtimeSignalsService {
   }
 
   private buildRecentTermCountsFromBuckets(
-    rows: Array<{
+    rows: {
       term: string;
       source: string;
       _sum: { articleCount: number | null };
-    }>,
+    }[],
   ) {
     const recentCounts = new Map<
       string,
@@ -3439,10 +3707,10 @@ export class RealtimeSignalsService {
   }
 
   private buildBaselineTermCountsFromBuckets(
-    rows: Array<{
+    rows: {
       term: string;
       _sum: { articleCount: number | null };
-    }>,
+    }[],
   ) {
     const baselineCounts = new Map<string, number>();
     for (const row of rows) {
@@ -3972,6 +4240,7 @@ export class RealtimeSignalsService {
     sourceState: RealtimeSignalSourceState | null | undefined;
     lastRunMs: number | null;
     context: Record<string, unknown> | undefined;
+    aisRuntime?: ReturnType<typeof buildAisRuntimeSemantics>;
     nowMs: number;
   }) {
     if (!options.sourceConfig.enabled) {
@@ -4012,7 +4281,7 @@ export class RealtimeSignalsService {
         code:
           options.source === "opensky"
             ? options.sourceState.lastErrorKind
-            : undefined,
+            : options.sourceState.lastErrorCode,
         reason: options.sourceState.lastError,
       };
     }
@@ -4048,10 +4317,33 @@ export class RealtimeSignalsService {
       };
     }
 
+    if (options.source === "ais") {
+      if (
+        options.aisRuntime?.statusReasonCode ||
+        options.aisRuntime?.statusReason
+      ) {
+        return {
+          status: "error" as const,
+          code: options.aisRuntime.statusReasonCode,
+          reason: options.aisRuntime.statusReason,
+        };
+      }
+      return {
+        status: "ok" as const,
+      };
+    }
+
     const contextReason = this.getRuntimeContextReason(
       options.source,
       options.context,
     );
+    if (contextReason?.status && contextReason.status !== "ok") {
+      return {
+        status: contextReason.status,
+        code: contextReason.code,
+        reason: contextReason.message,
+      };
+    }
     return {
       status: "ok" as const,
       code: contextReason?.code,
@@ -4236,16 +4528,14 @@ export class RealtimeSignalsService {
     );
   }
 
-  private readHttpStatus(error: unknown) {
-    if (!error || typeof error !== "object") {
-      return undefined;
-    }
-    const status = Number((error as { status?: unknown }).status);
-    return Number.isFinite(status) ? status : undefined;
+  private classifyRealtimeSignalErrorCode(
+    error: unknown,
+  ): RealtimeSignalErrorCode {
+    return classifyUpstreamRequestError(error);
   }
 
   private classifyOpenskyError(error: unknown): RealtimeOpenskyErrorKind {
-    const status = this.readHttpStatus(error);
+    const status = readHttpStatus(error);
     if (status === 401 || status === 403) {
       return "auth";
     }
@@ -4278,9 +4568,10 @@ export class RealtimeSignalsService {
     return "unknown";
   }
 
-  private toDiagnosticErrorDetails(error: unknown): OpenSkyErrorDetails {
-    const status = this.readHttpStatus(error);
+  private toDiagnosticErrorDetails(error: unknown): DiagnosticErrorDetails {
+    const status = readHttpStatus(error);
     return {
+      code: this.classifyRealtimeSignalErrorCode(error),
       kind: this.classifyOpenskyError(error),
       status,
       message: this.toDiagnosticErrorMessage(error),
@@ -4292,7 +4583,7 @@ export class RealtimeSignalsService {
       return error.message;
     }
     if (error && typeof error === "object") {
-      const status = this.readHttpStatus(error);
+      const status = readHttpStatus(error);
       const statusText = this.normalizeString(
         (error as { statusText?: unknown }).statusText,
       );
@@ -4342,6 +4633,129 @@ export class RealtimeSignalsService {
     };
   }
 
+  private computeNextEligibleAt(
+    attemptCompletedAtMs: number,
+    intervalSec: number,
+    error: unknown,
+  ) {
+    const defaultDelayMs = Math.max(10, Math.trunc(intervalSec)) * 1_000;
+    const retryAfterMs = this.getRetryAfterMs(error);
+    const delayMs =
+      retryAfterMs === null
+        ? defaultDelayMs
+        : Math.max(defaultDelayMs, retryAfterMs);
+    return new Date(attemptCompletedAtMs + delayMs).toISOString();
+  }
+
+  private getRetryAfterMs(error: unknown) {
+    const retryAfterMs = (error as { retryAfterMs?: unknown })?.retryAfterMs;
+    return typeof retryAfterMs === "number" && Number.isFinite(retryAfterMs)
+      ? retryAfterMs
+      : null;
+  }
+
+  private getRateLimitDetails(
+    error: unknown,
+  ): RealtimeSignalRateLimitDetails | undefined {
+    const rateLimit = (error as { rateLimit?: unknown })?.rateLimit;
+    if (
+      !rateLimit ||
+      typeof rateLimit !== "object" ||
+      Array.isArray(rateLimit)
+    ) {
+      return undefined;
+    }
+    const details = rateLimit as RealtimeSignalRateLimitDetails;
+    if (
+      typeof details.retryAfterSec !== "number" &&
+      !details.rateLimit &&
+      !details.rateLimitPolicy &&
+      !details.cfRay
+    ) {
+      return undefined;
+    }
+    return details;
+  }
+
+  private readRateLimitDetails(headers: Headers) {
+    const retryAfterRaw = this.normalizeString(headers.get("retry-after"));
+    const retryAfterMs = this.parseRetryAfterMs(retryAfterRaw);
+    const details: RealtimeSignalRateLimitDetails = {
+      ...(retryAfterMs !== null
+        ? { retryAfterSec: Math.max(0, Math.ceil(retryAfterMs / 1_000)) }
+        : {}),
+      ...(this.normalizeString(headers.get("ratelimit"))
+        ? { rateLimit: this.normalizeString(headers.get("ratelimit")) }
+        : {}),
+      ...(this.normalizeString(headers.get("ratelimit-policy"))
+        ? {
+            rateLimitPolicy: this.normalizeString(
+              headers.get("ratelimit-policy"),
+            ),
+          }
+        : {}),
+      ...(this.normalizeString(headers.get("cf-ray"))
+        ? { cfRay: this.normalizeString(headers.get("cf-ray")) }
+        : {}),
+    };
+
+    return {
+      retryAfterMs,
+      details:
+        typeof details.retryAfterSec === "number" ||
+        details.rateLimit ||
+        details.rateLimitPolicy ||
+        details.cfRay
+          ? details
+          : undefined,
+    };
+  }
+
+  private parseRetryAfterMs(value: string | undefined) {
+    const normalized = this.normalizeString(value);
+    if (!normalized) {
+      return null;
+    }
+    const numericSeconds = Number(normalized);
+    if (Number.isFinite(numericSeconds) && numericSeconds >= 0) {
+      return Math.round(numericSeconds * 1_000);
+    }
+    const retryAtMs = Date.parse(normalized);
+    if (!Number.isFinite(retryAtMs)) {
+      return null;
+    }
+    return Math.max(0, retryAtMs - Date.now());
+  }
+
+  private shouldRetryFetchError(error: unknown) {
+    const status = this.toFiniteNumber((error as { status?: unknown })?.status);
+    if (typeof status === "number") {
+      if (status === 408 || status === 425) {
+        return true;
+      }
+      if (status === 429) {
+        return false;
+      }
+      return status >= 500;
+    }
+
+    const message = this.normalizeString(
+      (error as { message?: unknown })?.message,
+    )?.toLowerCase();
+    if (!message) {
+      return false;
+    }
+    return (
+      message.includes("timeout") ||
+      message.includes("timed out") ||
+      message.includes("fetch failed") ||
+      message.includes("network") ||
+      message.includes("econnreset") ||
+      message.includes("enotfound") ||
+      message.includes("eai_again")
+    );
+  }
+
   private async fetchJsonWithRetry<T>(
     url: string,
     runtime: RealtimeSignalsRuntimeConfig,
@@ -4355,34 +4769,38 @@ export class RealtimeSignalsService {
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
         await options.beforeAttempt?.();
-        const response = await fetch(url, {
-          method: options.method ?? "GET",
-          headers: {
-            accept: "application/json",
-            ...(options.body && !options.rawBody
-              ? { "content-type": "application/json" }
-              : {}),
-            ...(options.headers ?? {}),
+        const response = await fetchWithIpv4Fallback(
+          url,
+          {
+            body:
+              typeof options.rawBody === "string"
+                ? options.rawBody
+                : options.body
+                  ? JSON.stringify(options.body)
+                  : undefined,
+            headers: {
+              accept: "application/json",
+              ...(options.body && !options.rawBody
+                ? { "content-type": "application/json" }
+                : {}),
+              ...(options.headers ?? {}),
+            },
+            method: options.method ?? "GET",
           },
-          body:
-            typeof options.rawBody === "string"
-              ? options.rawBody
-              : options.body
-                ? JSON.stringify(options.body)
-                : undefined,
-          signal: controller.signal,
-        });
+          { timeoutMs },
+        );
         if (!response.ok) {
           const body = await response.text().catch(() => "");
+          const rateLimit = this.readRateLimitDetails(response.headers);
           const error = new Error(
             `HTTP ${response.status} ${response.statusText}`,
-          );
+          ) as JsonFetchError;
           Object.assign(error, {
             body,
+            rateLimit: rateLimit.details,
+            retryAfterMs: rateLimit.retryAfterMs ?? undefined,
             status: response.status,
             statusText: response.statusText,
           });
@@ -4393,7 +4811,9 @@ export class RealtimeSignalsService {
         lastError = error;
         const shouldRetry =
           attempt < maxRetries &&
-          (options.shouldRetry ? options.shouldRetry(error) : true);
+          (options.shouldRetry
+            ? options.shouldRetry(error)
+            : this.shouldRetryFetchError(error));
         if (!shouldRetry) {
           break;
         }
@@ -4401,8 +4821,6 @@ export class RealtimeSignalsService {
           const delayMs = Math.min(5_000, 300 * (attempt + 1));
           await this.sleep(delayMs);
         }
-      } finally {
-        clearTimeout(timer);
       }
     }
 
@@ -4486,6 +4904,7 @@ export class RealtimeSignalsService {
     const {
       updatedAt,
       status,
+      diagnostics,
       disruptions,
       density,
       candidateReports,
@@ -4496,6 +4915,7 @@ export class RealtimeSignalsService {
       sourceEndpoint,
       updatedAt,
       status,
+      diagnostics,
       disruptions,
       density,
       candidateReports,
@@ -4531,6 +4951,70 @@ export class RealtimeSignalsService {
         0,
         Math.round(this.toFiniteNumber(record.droppedMessages) ?? 0),
       ),
+    };
+  }
+
+  private normalizeAisRelayDiagnostics(
+    value: unknown,
+  ): RealtimeAisRelayDiagnostics {
+    const record =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    const statusReasonCode = this.normalizeString(record.statusReasonCode);
+    const statusReason = this.normalizeString(record.statusReason);
+    const healthState =
+      this.normalizeString(record.healthState) === "degraded"
+        ? "degraded"
+        : "ok";
+    return {
+      healthState,
+      ...(statusReasonCode ? { statusReasonCode } : {}),
+      ...(statusReason ? { statusReason } : {}),
+      positionReportsSeen: Math.max(
+        0,
+        Math.round(this.toFiniteNumber(record.positionReportsSeen) ?? 0),
+      ),
+      positionReportsProcessed: Math.max(
+        0,
+        Math.round(this.toFiniteNumber(record.positionReportsProcessed) ?? 0),
+      ),
+      ignoredPositionReports: Math.max(
+        0,
+        Math.round(this.toFiniteNumber(record.ignoredPositionReports) ?? 0),
+      ),
+      parseErrors: Math.max(
+        0,
+        Math.round(this.toFiniteNumber(record.parseErrors) ?? 0),
+      ),
+      ...(this.normalizeString(record.lastHealthyAt)
+        ? { lastHealthyAt: this.toIsoTimestamp(record.lastHealthyAt) }
+        : {}),
+      ...(this.normalizeString(record.lastIssueAt)
+        ? { lastIssueAt: this.toIsoTimestamp(record.lastIssueAt) }
+        : {}),
+      ...(this.normalizeString(record.lastConnectedAt)
+        ? { lastConnectedAt: this.toIsoTimestamp(record.lastConnectedAt) }
+        : {}),
+      ...(this.normalizeString(record.lastMessageAt)
+        ? { lastMessageAt: this.toIsoTimestamp(record.lastMessageAt) }
+        : {}),
+      ...(this.normalizeString(record.lastUpstreamErrorAt)
+        ? {
+            lastUpstreamErrorAt: this.toIsoTimestamp(
+              record.lastUpstreamErrorAt,
+            ),
+          }
+        : {}),
+      ...(this.normalizeString(record.lastUpstreamError)
+        ? { lastUpstreamError: this.normalizeString(record.lastUpstreamError) }
+        : {}),
+      ...(this.normalizeString(record.lastParseErrorAt)
+        ? { lastParseErrorAt: this.toIsoTimestamp(record.lastParseErrorAt) }
+        : {}),
+      ...(this.normalizeString(record.lastParseError)
+        ? { lastParseError: this.normalizeString(record.lastParseError) }
+        : {}),
     };
   }
 
@@ -4635,7 +5119,9 @@ export class RealtimeSignalsService {
       return null;
     }
     const record = value as Record<string, unknown>;
-    const mmsi = this.normalizeString(record.mmsi ?? record.MMSI);
+    const mmsi = this.normalizeAisMmsi(
+      record.mmsi ?? record.MMSI ?? record.MMSI_String,
+    );
     const lat = this.toFiniteNumber(record.lat);
     const lng = this.toFiniteNumber(record.lon ?? record.lng);
     if (!mmsi || !this.isValidCoordinate(lat, lng)) {
@@ -4676,6 +5162,7 @@ export class RealtimeSignalsService {
     const record = payload as {
       timestamp?: unknown;
       status?: unknown;
+      diagnostics?: unknown;
       disruptions?: unknown;
       density?: unknown;
       candidateReports?: unknown;
@@ -4691,6 +5178,7 @@ export class RealtimeSignalsService {
     return {
       updatedAt,
       status: this.normalizeAisStatusPayload(record.status),
+      diagnostics: this.normalizeAisRelayDiagnostics(record.diagnostics),
       disruptions: record.disruptions
         .map((entry, index) =>
           this.normalizeAisDisruptionSnapshot(entry, index),
@@ -4925,10 +5413,10 @@ export class RealtimeSignalsService {
     );
 
     const trackPointsToInsert: TransportTelemetryRecord[] = [];
-    const statesToUpsert: Array<{
+    const statesToUpsert: {
       record: TransportTelemetryRecord;
       existing: Record<string, unknown> | null;
-    }> = [];
+    }[] = [];
 
     for (const record of dedupedRecords) {
       const existing =

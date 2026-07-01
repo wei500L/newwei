@@ -3,9 +3,11 @@ import { getQueueToken } from "@nestjs/bull-shared";
 import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
+import { withKeepAliveAgents } from "../../common/http/http-agent";
+import { BullmqConnectionService } from "../config/bullmq-connection.service";
 import { EnvService } from "../config/config.service";
 import { DatabaseModule } from "../config/database.module";
-import { toBullmqConnection } from "../config/redis-connection";
 
 import { AdminAkshareController } from "./admin-akshare.controller";
 import { AkshareGatewayClient } from "./akshare-gateway.client";
@@ -15,8 +17,8 @@ import { AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS, AKSHARE_QUEUE_NAME } from "./aksha
 import { AkshareQueueProcessor } from "./akshare.processor";
 import { AkshareService } from "./akshare.service";
 import { AkshareFinancialDataProvider } from "./providers/akshare.provider";
-import { FinancialDataProviderRegistryInitializer } from "./providers/financial-data-provider-registry.initializer";
 import { FinancialDataProviderRegistry } from "./providers/financial-data-provider";
+import { FinancialDataProviderRegistryInitializer } from "./providers/financial-data-provider-registry.initializer";
 import { FinnhubFinancialDataProvider } from "./providers/finnhub.provider";
 import { FredFinancialDataProvider } from "./providers/fred.provider";
 import { YfinanceFinancialDataProvider } from "./providers/yfinance.provider";
@@ -28,9 +30,12 @@ import { YfinanceFinancialDataProvider } from "./providers/yfinance.provider";
       inject: [EnvService],
       useFactory: (env: EnvService) => {
         const cfg = env.akshareConfig;
-        return {
-          timeout: cfg.timeoutMs
-        };
+        return withKeepAliveAgents(
+          {
+            timeout: cfg.timeoutMs
+          },
+          env.httpAgentConfig
+        );
       }
     })
   ],
@@ -49,10 +54,16 @@ import { YfinanceFinancialDataProvider } from "./providers/yfinance.provider";
     AkshareQueueCleanupService,
     {
       provide: AKSHARE_QUEUE,
-      inject: [EnvService, AkshareQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: AkshareQueueCleanupService) => {
+      inject: [AkshareQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: AkshareQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const queue = new Queue<unknown>(AKSHARE_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig)
+          connection: bullmqConnections.getSharedConnection(),
+          defaultJobOptions: {
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION
+          }
         });
         cleanup.track(queue);
         return queue;
@@ -60,10 +71,15 @@ import { YfinanceFinancialDataProvider } from "./providers/yfinance.provider";
     },
     {
       provide: AKSHARE_QUEUE_EVENTS,
-      inject: [EnvService, AkshareQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: AkshareQueueCleanupService) => {
+      inject: [AkshareQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: AkshareQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const events = new QueueEvents(AKSHARE_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig)
+          connection: bullmqConnections.createDedicatedConnectionOptions(
+            `events:${AKSHARE_QUEUE_NAME}`,
+          )
         });
         cleanup.track(events);
         return events;

@@ -8,6 +8,8 @@ import { io, type Socket } from "socket.io-client";
 import { env } from "@/lib/env";
 import { formatRealtimeSocketError } from "@/lib/realtime-socket-errors";
 
+const REALTIME_SOCKET_TIMEOUT_MS = 10_000;
+
 export interface QueueEventMessage {
   orgId: string;
   event: string;
@@ -58,6 +60,7 @@ export function useQueueEvents(
       auth: { token },
       withCredentials: true,
       autoConnect: false,
+      timeout: REALTIME_SOCKET_TIMEOUT_MS,
     });
     socketRef.current = socket;
 

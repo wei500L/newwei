@@ -8,6 +8,7 @@ import {
   DashboardOutlined,
   ExclamationCircleOutlined,
   FundOutlined,
+  FolderOpenOutlined,
   GlobalOutlined,
   HistoryOutlined,
   ReadOutlined,
@@ -18,10 +19,10 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { Tooltip } from "antd";
+import type { TFunction } from "i18next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
-import type { TFunction } from "i18next";
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -64,89 +65,108 @@ export function buildActionRailNavConfig(
     permissions.includes("dashboards.write") ||
     permissions.includes("alerts.manage");
   const canViewDashboards = permissions.includes("dashboards.read");
+  const canUseAnalysis = permissions.includes("analysis.read") || permissions.includes("analysis.write");
 
   const mainNavItems: ActionItem[] = [
     {
       key: "/news-hub",
       icon: <AppstoreOutlined />,
-      label: t("nav.main.newsHub", { defaultValue: "News Hub" }),
+      label: t("nav.main.newsHub"),
       path: "/news-hub",
     },
     {
       key: "/today",
       icon: <ReadOutlined />,
-      label: t("nav.main.today", { defaultValue: "Today" }),
+      label: t("nav.main.today"),
       path: "/today",
     },
     {
       key: "/newsnow",
       icon: <GlobalOutlined />,
-      label: t("nav.main.newsnow", { defaultValue: "NewsNow" }),
+      label: t("nav.main.newsnow"),
       path: "/newsnow",
     },
     {
       key: "/topics",
       icon: <AppstoreOutlined />,
-      label: t("nav.main.topics", { defaultValue: "Topics" }),
+      label: t("nav.main.topics"),
       path: "/topics",
     },
     {
       key: "/events",
       icon: <ClusterOutlined />,
-      label: t("nav.main.events", { defaultValue: "News Events" }),
+      label: t("nav.main.events"),
       path: "/events",
     },
     {
       key: "/events-archive",
       icon: <HistoryOutlined />,
-      label: t("nav.main.eventsArchive", { defaultValue: "Events Archive" }),
+      label: t("nav.main.eventsArchive"),
       path: "/events-archive",
     },
     {
       key: "/rss",
       icon: <BookOutlined />,
-      label: t("nav.main.rss", { defaultValue: "RSS Reader" }),
+      label: t("nav.main.rss"),
       path: "/rss",
     },
     {
       key: "/situation-monitor",
       icon: <RadarChartOutlined />,
-      label: t("nav.main.situationMonitor", {
-        defaultValue: "Situation Monitor",
-      }),
+      label: t("nav.main.situationMonitor"),
       path: "/situation-monitor",
     },
     {
       key: "/map",
       icon: <GlobalOutlined />,
-      label: t("nav.main.map", { defaultValue: "Map" }),
+      label: t("nav.main.map"),
       path: "/map",
     },
+    ...(canViewDashboards
+      ? [
+          {
+            key: "/knowledge-graph",
+            icon: <ClusterOutlined />,
+            label: t("nav.main.knowledgeGraph"),
+            path: "/knowledge-graph",
+          },
+        ]
+      : []),
     {
       key: "/finance",
       icon: <FundOutlined />,
-      label: t("nav.main.finance", { defaultValue: "Finance" }),
+      label: t("nav.main.finance"),
       path: "/finance",
     },
     {
       key: "/alerts",
       icon: <ExclamationCircleOutlined />,
-      label: t("nav.main.alerts", { defaultValue: "Alert Center" }),
+      label: t("nav.main.alerts"),
       path: "/alerts",
     },
     {
       key: "/search",
       icon: <SearchOutlined />,
-      label: t("nav.main.search", { defaultValue: "Search" }),
+      label: t("nav.main.search"),
       path: "/search",
     },
+    ...(canUseAnalysis
+      ? [
+          {
+            key: "/analysis",
+            icon: <FolderOpenOutlined />,
+            label: t("nav.main.analysis"),
+            path: "/analysis",
+          },
+        ]
+      : []),
   ];
 
   if (canUseAssistant) {
     mainNavItems.push({
       key: "/assistant",
       icon: <RobotOutlined />,
-      label: t("nav.main.assistant", { defaultValue: "Assistant" }),
+      label: t("nav.main.assistant"),
       path: "/assistant",
     });
   }
@@ -155,13 +175,13 @@ export function buildActionRailNavConfig(
     {
       key: "/subscriptions",
       icon: <BellOutlined />,
-      label: t("nav.main.subscriptions", { defaultValue: "Subscriptions" }),
+      label: t("nav.main.subscriptions"),
       path: "/subscriptions",
     },
     {
       key: "/profile",
       icon: <UserOutlined />,
-      label: t("nav.main.profile", { defaultValue: "Profile" }),
+      label: t("nav.main.profile"),
       path: "/profile",
     },
   );
@@ -171,7 +191,7 @@ export function buildActionRailNavConfig(
     adminNavItems.push({
       key: "/dashboard",
       icon: <DashboardOutlined />,
-      label: t("nav.dashboard", { defaultValue: "Dashboard" }),
+      label: t("nav.dashboard"),
       path: "/dashboard",
     });
   }
@@ -179,7 +199,7 @@ export function buildActionRailNavConfig(
     adminNavItems.push({
       key: "/admin/ops/crawl-tasks",
       icon: <RadarChartOutlined />,
-      label: t("nav.crawlTasks", { defaultValue: "Crawl Tasks" }),
+      label: t("nav.crawlTasks"),
       path: "/admin/ops/crawl-tasks",
     });
   }
@@ -187,7 +207,7 @@ export function buildActionRailNavConfig(
     adminNavItems.push({
       key: "/admin",
       icon: <SettingOutlined />,
-      label: t("nav.admin", { defaultValue: "Admin" }),
+      label: t("nav.admin"),
       path: "/admin",
     });
   }
@@ -277,7 +297,7 @@ export function ActionRail({ mode, onContentHeightChange }: ActionRailProps) {
         {adminNavItems.length > 0 ? (
           <div className="flex flex-col gap-1.5 w-full px-2 pt-3">
             <span className="px-2 text-[10px] uppercase tracking-[0.2em] text-slate-400 whitespace-nowrap">
-              {t("nav.adminGroup", { defaultValue: "Admin" })}
+              {t("nav.adminGroup")}
             </span>
             {adminNavItems.map((item) => {
               const isActive = item.key === activeKey;

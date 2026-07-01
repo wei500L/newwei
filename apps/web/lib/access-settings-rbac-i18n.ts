@@ -243,20 +243,20 @@ export function compareAccessPermissionLabels(
   );
 }
 
-export function getCorePermissionTranslationEntries(): Array<{
+export function getCorePermissionTranslationEntries(): {
   name: keyof typeof CORE_PERMISSION_TRANSLATION_KEYS;
   key: (typeof CORE_PERMISSION_TRANSLATION_KEYS)[keyof typeof CORE_PERMISSION_TRANSLATION_KEYS];
-}> {
+}[] {
   return Object.entries(CORE_PERMISSION_TRANSLATION_KEYS).map(([name, key]) => ({
     name: name as keyof typeof CORE_PERMISSION_TRANSLATION_KEYS,
     key,
   }));
 }
 
-export function getSystemRoleTranslationEntries(): Array<{
+export function getSystemRoleTranslationEntries(): {
   name: SystemRoleKey;
   key: SystemRoleKey;
-}> {
+}[] {
   return Object.entries(SYSTEM_ROLE_TRANSLATION_KEYS).map(([name, key]) => ({
     name: name as SystemRoleKey,
     key,

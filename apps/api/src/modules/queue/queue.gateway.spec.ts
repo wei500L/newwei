@@ -1,5 +1,5 @@
-import { sign } from "jsonwebtoken";
 import { RealtimeSocketErrorCode } from "@modular/utils";
+import { sign } from "jsonwebtoken";
 
 import type { AuthenticatedUser } from "../auth/auth.service";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
@@ -162,6 +162,9 @@ describe("QueueGateway", () => {
       message: "Too many connections",
     });
     expect(client2.disconnect).toHaveBeenCalledWith(true);
+    expect(
+      (gateway as any).connectionRateLimiter.recordFailedAuth,
+    ).not.toHaveBeenCalled();
   });
 
   it("rejects connection when rate limit exceeded", async () => {

@@ -31,7 +31,12 @@ export type LlmRequestType =
   | "stream"
   | "responses";
 export type LlmRequestStatus = "success" | "error";
-export type LlmApiSurface = "chat_completions" | "responses" | "embeddings";
+export type LlmApiSurface =
+  | "chat_completions"
+  | "responses"
+  | "embeddings"
+  | "rerank";
+export type LlmRequestAuthMode = "profile_key" | "managed_runtime_key";
 
 export interface LlmRequestLogEntry {
   orgId: string;
@@ -44,6 +49,9 @@ export interface LlmRequestLogEntry {
   costUsd?: number | null;
   feature?: string | null;
   gatewayProfileId?: string | null;
+  governanceApplied?: boolean | null;
+  authMode?: LlmRequestAuthMode | null;
+  governanceTargetProfileId?: string | null;
   latencyMs: number;
   error?: string | null;
   metadata?: Record<string, unknown> | null;
@@ -80,6 +88,9 @@ export interface LlmRequestLogListItem {
   costUsd: number | null;
   feature: string | null;
   gatewayProfileId: string | null;
+  governanceApplied: boolean | null;
+  authMode: LlmRequestAuthMode | null;
+  governanceTargetProfileId: string | null;
   latencyMs: number;
   error: string | null;
   metadata: unknown;
@@ -124,10 +135,20 @@ export interface LlmUsageSummaryByDayRow extends LlmUsageSummaryTotals {
 export interface LlmUsageSummary {
   totals: LlmUsageSummaryTotals;
   statusBreakdown: LlmUsageSummaryStatusBreakdown;
+  governanceBreakdown: LlmUsageSummaryGovernanceBreakdown;
   latency: LlmUsageSummaryLatency;
   topErrors: LlmUsageSummaryTopError[];
   byModel: LlmUsageSummaryGroupRow[];
   byDay: LlmUsageSummaryByDayRow[];
+}
+
+export interface LlmUsageSummaryGovernanceBreakdown {
+  governedRequestCount: number;
+  directRequestCount: number;
+  governedCostUsd: number;
+  directCostUsd: number;
+  managedRuntimeKeyRequestCount: number;
+  profileKeyRequestCount: number;
 }
 
 export interface LlmUsageSummaryStatusBreakdown {
@@ -235,6 +256,15 @@ interface UsageAggDayRow extends UsageAggRow {
 interface UsageAggStatusRow {
   _id?: LlmRequestStatus | string;
   count?: number;
+}
+
+interface UsageAggGovernanceRow {
+  governedRequestCount?: number;
+  directRequestCount?: number;
+  governedCostUsd?: number;
+  directCostUsd?: number;
+  managedRuntimeKeyRequestCount?: number;
+  profileKeyRequestCount?: number;
 }
 
 interface UsageAggErrorRow {
@@ -603,6 +633,7 @@ export class LlmRequestLogService {
       byModelAgg,
       byDayAgg,
       statusAgg,
+      governanceAgg,
       topErrorAgg,
       p95Latency,
     ] = await Promise.all([
@@ -665,6 +696,52 @@ export class LlmRequestLogService {
           },
         },
       ]),
+      this.llmRequestLogModel.aggregate<UsageAggGovernanceRow>([
+        { $match: usageWhere },
+        {
+          $group: {
+            _id: null,
+            governedRequestCount: {
+              $sum: {
+                $cond: [{ $eq: ["$governanceApplied", true] }, 1, 0],
+              },
+            },
+            directRequestCount: {
+              $sum: {
+                $cond: [{ $eq: ["$governanceApplied", true] }, 0, 1],
+              },
+            },
+            governedCostUsd: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$governanceApplied", true] },
+                  { $ifNull: ["$costUsd", 0] },
+                  0,
+                ],
+              },
+            },
+            directCostUsd: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$governanceApplied", true] },
+                  0,
+                  { $ifNull: ["$costUsd", 0] },
+                ],
+              },
+            },
+            managedRuntimeKeyRequestCount: {
+              $sum: {
+                $cond: [{ $eq: ["$authMode", "managed_runtime_key"] }, 1, 0],
+              },
+            },
+            profileKeyRequestCount: {
+              $sum: {
+                $cond: [{ $eq: ["$authMode", "profile_key"] }, 1, 0],
+              },
+            },
+          },
+        },
+      ]),
       this.llmRequestLogModel.aggregate<UsageAggErrorRow>([
         { $match: topErrorWhere },
         {
@@ -689,6 +766,7 @@ export class LlmRequestLogService {
     const requestCount = Math.max(0, totals.requestCount);
     const successRate = requestCount > 0 ? successCount / requestCount : 0;
     const errorRate = requestCount > 0 ? errorCount / requestCount : 0;
+    const governance = governanceAgg[0] ?? {};
     const topErrors = topErrorAgg
       .map((row) => ({
         message: typeof row._id === "string" ? row._id.trim() : "",
@@ -716,6 +794,20 @@ export class LlmRequestLogService {
         error: errorCount,
         successRate,
         errorRate,
+      },
+      governanceBreakdown: {
+        governedRequestCount: this.toSafeInteger(
+          governance.governedRequestCount,
+        ),
+        directRequestCount: this.toSafeInteger(governance.directRequestCount),
+        governedCostUsd: this.toSafeNumber(governance.governedCostUsd),
+        directCostUsd: this.toSafeNumber(governance.directCostUsd),
+        managedRuntimeKeyRequestCount: this.toSafeInteger(
+          governance.managedRuntimeKeyRequestCount,
+        ),
+        profileKeyRequestCount: this.toSafeInteger(
+          governance.profileKeyRequestCount,
+        ),
       },
       latency: {
         avgMs: totals.avgLatencyMs,
@@ -769,6 +861,14 @@ export class LlmRequestLogService {
         this.resolveFeatureFromMetadata(metadata.value) ??
         null,
       gatewayProfileId: this.normalizeProfileId(entry.gatewayProfileId),
+      governanceApplied:
+        typeof entry.governanceApplied === "boolean"
+          ? entry.governanceApplied
+          : null,
+      authMode: this.normalizeAuthMode(entry.authMode),
+      governanceTargetProfileId: this.normalizeProfileId(
+        entry.governanceTargetProfileId,
+      ),
       latencyMs: Math.max(0, Number(entry.latencyMs) || 0),
       error: this.normalizeError(entry.error),
       metadata: metadata.value,
@@ -1077,6 +1177,14 @@ export class LlmRequestLogService {
         this.resolveFeatureFromMetadata(row.metadata) ??
         null,
       gatewayProfileId: this.normalizeProfileId(row.gatewayProfileId),
+      governanceApplied:
+        typeof row.governanceApplied === "boolean"
+          ? row.governanceApplied
+          : null,
+      authMode: this.normalizeAuthMode(row.authMode),
+      governanceTargetProfileId: this.normalizeProfileId(
+        row.governanceTargetProfileId,
+      ),
       latencyMs: Math.max(0, Number(row.latencyMs ?? 0)),
       error: typeof row.error === "string" ? row.error : null,
       metadata: row.metadata ?? null,
@@ -1173,7 +1281,8 @@ export class LlmRequestLogService {
     if (
       value === "chat_completions" ||
       value === "responses" ||
-      value === "embeddings"
+      value === "embeddings" ||
+      value === "rerank"
     ) {
       return value;
     }
@@ -1277,7 +1386,7 @@ export class LlmRequestLogService {
       .skip(rank)
       .limit(1)
       .select({ latencyMs: 1 })
-      .lean()) as Array<{ latencyMs?: unknown }>;
+      .lean()) as { latencyMs?: unknown }[];
     if (!Array.isArray(rows) || rows.length === 0) {
       return null;
     }
@@ -1312,6 +1421,12 @@ export class LlmRequestLogService {
       return 0;
     }
     return numeric;
+  }
+
+  private normalizeAuthMode(value: unknown): LlmRequestAuthMode | null {
+    return value === "managed_runtime_key" || value === "profile_key"
+      ? value
+      : null;
   }
 
   private normalizeFeatureToken(value: unknown): string | undefined {

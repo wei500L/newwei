@@ -15,6 +15,7 @@ import type {
 } from "../news-pipeline.types";
 import { DEFAULT_NEWS_PROMPT_CONFIG } from "../news-prompt-config.service";
 import { NewsPromptBuilder } from "../news-prompt.builder";
+import { NewsExtractionPipelineMode } from "../news-extraction-settings.service";
 
 jest.mock(
   "@modular/vector-client",
@@ -239,6 +240,62 @@ describe("NewsPipelineService", () => {
     })),
   };
 
+  const extractionSettingsService = {
+    getSettings: jest.fn().mockResolvedValue({
+      pipelineMode: NewsExtractionPipelineMode.legacy,
+      preflightGate: {
+        enabled: true,
+        minWordCount: 120,
+        minQualityScore: 0.35,
+        rejectBotChallenge: true,
+        rejectListLike: true,
+      },
+      postCleanGate: {
+        enabled: true,
+        minQualityScore: 0.35,
+        minCleanedChars: 400,
+        requireSummary: true,
+      },
+      capabilities: {
+        entities: true,
+        sentiment: true,
+        kg: true,
+      },
+      providers: {
+        clean: "llm",
+        entities: "llm",
+        sentiment: "llm",
+        kg: "llm",
+      },
+    }),
+  };
+
+  const extractionStageService = {
+    cleanWithLlm: jest.fn(async (_context, promptConfig) => {
+      const response = await liteLlm.acompletion();
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error("LiteLLM returned empty content");
+      }
+      return {
+        cleaned: JSON.parse(content),
+        llm: {
+          provider: "llm",
+          model: response.model ?? null,
+          promptVersion: promptConfig.version,
+          promptTokens: response.usage?.prompt_tokens ?? null,
+          completionTokens: response.usage?.completion_tokens ?? null,
+          totalTokens: response.usage?.total_tokens ?? null,
+          costUsd: response.costUsd ?? null,
+          latencyMs: response.latencyMs ?? null,
+        },
+      };
+    }),
+    extractEntities: jest.fn(),
+    analyzeSentiment: jest.fn(),
+    extractKgRelations: jest.fn(),
+  };
+
   const configService = {
     get config() {
       return baseConfig;
@@ -313,6 +370,8 @@ describe("NewsPipelineService", () => {
     promptBuilder,
     promptConfigService as any,
     dedupeSettingsService as any,
+    extractionSettingsService as any,
+    extractionStageService as any,
     prisma as any,
     crawlExecution as any,
   );
@@ -458,6 +517,195 @@ describe("NewsPipelineService", () => {
         ),
     );
     expect(stageCalls).toHaveLength(0);
+  });
+
+  it("uses staged preflight gate when extraction settings default to staged", async () => {
+    extractionSettingsService.getSettings.mockResolvedValueOnce({
+      pipelineMode: NewsExtractionPipelineMode.staged,
+      preflightGate: {
+        enabled: true,
+        minWordCount: 120,
+        minQualityScore: 0.35,
+        rejectBotChallenge: true,
+        rejectListLike: true,
+      },
+      postCleanGate: {
+        enabled: true,
+        minQualityScore: 0.35,
+        minCleanedChars: 400,
+        requireSummary: true,
+      },
+      capabilities: {
+        entities: true,
+        sentiment: true,
+        kg: true,
+      },
+      providers: {
+        clean: "llm",
+        entities: "llm",
+        sentiment: "llm",
+        kg: "llm",
+      },
+    });
+
+    await service.process(job, raw);
+    await flushOutbox();
+
+    expect(liteLlm.acompletion).not.toHaveBeenCalled();
+    expect(TaskLogModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: "preflight",
+        data: expect.objectContaining({
+          reason: "insufficient_word_count",
+          stageMeta: expect.objectContaining({
+            status: "rejected",
+            reason: "insufficient_word_count",
+          }),
+        }),
+      }),
+    );
+    const processedUpdate = (ProcessedItemModel.findOneAndUpdate as jest.Mock)
+      .mock.calls[0]?.[1] as { $set?: { result?: Record<string, any> } };
+    expect(processedUpdate.$set?.result?.stage_meta).toEqual(
+      expect.objectContaining({
+        preflight: expect.objectContaining({
+          status: "rejected",
+          reason: "insufficient_word_count",
+        }),
+        clean: expect.objectContaining({
+          status: "skipped",
+          reason: "preflight_rejected",
+        }),
+        quality_gate: expect.objectContaining({
+          status: "skipped",
+          reason: "preflight_rejected",
+        }),
+      }),
+    );
+    expect(processedUpdate.$set?.result?.removed_noise_types).toContain(
+      "insufficient_word_count",
+    );
+  });
+
+  it("rejects low preflight quality before LLM clean in staged pipeline", async () => {
+    extractionSettingsService.getSettings.mockResolvedValueOnce({
+      pipelineMode: NewsExtractionPipelineMode.staged,
+      preflightGate: {
+        enabled: true,
+        minWordCount: 0,
+        minQualityScore: 0.35,
+        rejectBotChallenge: false,
+        rejectListLike: false,
+      },
+      postCleanGate: {
+        enabled: false,
+        minQualityScore: 0.35,
+        minCleanedChars: 0,
+        requireSummary: false,
+      },
+      capabilities: {
+        entities: false,
+        sentiment: false,
+        kg: false,
+      },
+      providers: {
+        clean: "llm",
+        entities: "llm",
+        sentiment: "llm",
+        kg: "llm",
+      },
+    });
+
+    await service.process(job, raw);
+    await flushOutbox();
+
+    expect(extractionStageService.cleanWithLlm).not.toHaveBeenCalled();
+    expect(liteLlm.acompletion).not.toHaveBeenCalled();
+
+    const preflightCall = (TaskLogModel.create as jest.Mock).mock.calls.find(
+      ([entry]) => entry.stage === "preflight",
+    );
+    expect(preflightCall?.[0]).toEqual(
+      expect.objectContaining({
+        status: "completed",
+        data: expect.objectContaining({
+          reason: "preflight_quality_score_below_threshold",
+          preflightQualityScore: expect.any(Number),
+          preflightQualityThreshold: 0.35,
+          stageMeta: expect.objectContaining({
+            status: "rejected",
+            reason: "preflight_quality_score_below_threshold",
+          }),
+        }),
+      }),
+    );
+
+    const processedUpdate = (ProcessedItemModel.findOneAndUpdate as jest.Mock)
+      .mock.calls[0]?.[1] as { $set?: { result?: Record<string, any>; llm?: any } };
+    expect(processedUpdate.$set?.llm?.model).toBeNull();
+    expect(processedUpdate.$set?.result?.removed_noise_types).toContain(
+      "preflight_quality_score_below_threshold",
+    );
+    expect(processedUpdate.$set?.result?.stage_meta.clean.status).toBe("skipped");
+  });
+
+  it("runs LLM clean when staged preflight quality passes", async () => {
+    const { CrawlResultContentModel } = jest.requireMock("@modular/mongo") as {
+      CrawlResultContentModel: { findById: jest.Mock };
+    };
+    CrawlResultContentModel.findById.mockReturnValueOnce({
+      lean: jest.fn().mockResolvedValue({
+        markdown:
+          "# Detailed headline\n\n" +
+          "This article paragraph includes enough reporting context and facts. ".repeat(
+            80,
+          ),
+        markdownWithCitations: null,
+        referencesMarkdown: null,
+        crawlRunId: null,
+        metadata: { title: "Detailed headline" },
+      }),
+    });
+    extractionSettingsService.getSettings.mockResolvedValueOnce({
+      pipelineMode: NewsExtractionPipelineMode.staged,
+      preflightGate: {
+        enabled: true,
+        minWordCount: 0,
+        minQualityScore: 0.35,
+        rejectBotChallenge: true,
+        rejectListLike: true,
+      },
+      postCleanGate: {
+        enabled: false,
+        minQualityScore: 0.35,
+        minCleanedChars: 0,
+        requireSummary: false,
+      },
+      capabilities: {
+        entities: false,
+        sentiment: false,
+        kg: false,
+      },
+      providers: {
+        clean: "llm",
+        entities: "llm",
+        sentiment: "llm",
+        kg: "llm",
+      },
+    });
+
+    await service.process(job, raw);
+    await flushOutbox();
+
+    expect(extractionStageService.cleanWithLlm).toHaveBeenCalledTimes(1);
+    expect(liteLlm.acompletion).toHaveBeenCalled();
+
+    const preflightCall = (TaskLogModel.create as jest.Mock).mock.calls.find(
+      ([entry]) => entry.stage === "preflight",
+    );
+    expect(preflightCall?.[0].data.preflightQualityScore).toBeGreaterThanOrEqual(
+      0.35,
+    );
   });
 
   it("rejects llm extraction settings inside crawl options", () => {
@@ -1557,7 +1805,10 @@ describe("NewsPipelineService", () => {
       attempts: 4,
     });
 
-    await (service as any).deliverOutboxFromQueue("outbox-invalid-queued", null);
+    await (service as any).deliverOutboxFromQueue(
+      "outbox-invalid-queued",
+      null,
+    );
 
     expect(updateSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1648,6 +1899,7 @@ describe("NewsPipelineService", () => {
     expect(updateArgs?.$set).toEqual(
       expect.objectContaining({
         hasLocation: true,
+        summaryEmbeddingDimensions: null,
         rawItemId: expect.anything(),
         result: expect.objectContaining({
           title: "Existing title",
@@ -1846,6 +2098,8 @@ describe("NewsPipelineService", () => {
       promptBuilder,
       promptConfigService as any,
       dedupeSettingsService as any,
+      extractionSettingsService as any,
+      extractionStageService as any,
       prisma as any,
       crawlExecution as any,
       undefined,
@@ -1891,6 +2145,9 @@ describe("NewsPipelineService", () => {
       }),
     );
     expect(prisma.itemMeta.updateMany).not.toHaveBeenCalled();
+    const updateArgs = (ProcessedItemModel.findOneAndUpdate as jest.Mock).mock
+      .calls[0]?.[1];
+    expect(updateArgs.$set.summaryEmbeddingDimensions).toBe(3);
 
     const retryTimers = (serviceWithVector as any).outboxRetryTimers as Map<
       string,
@@ -1959,6 +2216,8 @@ describe("NewsPipelineService", () => {
       promptBuilder,
       promptConfigService as any,
       dedupeSettingsService as any,
+      extractionSettingsService as any,
+      extractionStageService as any,
       prisma as any,
       crawlExecution as any,
       undefined,

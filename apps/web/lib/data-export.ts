@@ -6,7 +6,7 @@ export interface BuildCsvOptions {
 
 export interface ExportBaseNameOptions {
   base: string;
-  suffixes?: Array<string | null | undefined>;
+  suffixes?: (string | null | undefined)[];
   start?: string;
   end?: string;
   fallback?: string;
@@ -45,6 +45,32 @@ export function sanitizeExportFilename(filename: string, fallbackBase = "export"
   const safeBase = sanitizeFilename(base, fallbackBase);
   const safeExt = sanitizeFilenameSegment(ext);
   return safeExt ? `${safeBase}.${safeExt}` : safeBase;
+}
+
+export function filenameFromContentDisposition(
+  contentDisposition: string | null | undefined,
+): string | null {
+  if (!contentDisposition) {
+    return null;
+  }
+
+  const encodedMatch = contentDisposition.match(/filename\*=([^;]+)/i);
+  if (encodedMatch?.[1]) {
+    const encoded = encodedMatch[1].trim().replace(/^UTF-8''/i, "");
+    try {
+      return sanitizeExportFilename(decodeURIComponent(encoded));
+    } catch {
+      return sanitizeExportFilename(encoded);
+    }
+  }
+
+  const filenameMatch = contentDisposition.match(/filename=(?:"([^"]+)"|([^;]+))/i);
+  const rawFilename = filenameMatch?.[1] ?? filenameMatch?.[2];
+  if (!rawFilename) {
+    return null;
+  }
+
+  return sanitizeExportFilename(rawFilename.trim());
 }
 
 export function buildExportBaseName({
@@ -165,7 +191,8 @@ export interface DownloadCsvOptions {
   includeBom?: CsvBomMode;
 }
 
-const containsNonAscii = (value: string) => /[^\x00-\x7f]/.test(value);
+const containsNonAscii = (value: string) =>
+  Array.from(value).some((character) => character.charCodeAt(0) > 0x7f);
 
 export type CsvBomMode = boolean | "auto";
 

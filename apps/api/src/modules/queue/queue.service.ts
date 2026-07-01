@@ -5,6 +5,11 @@ import { Queue, JobsOptions, type Job } from "bullmq";
 import { Types } from "mongoose";
 
 import {
+  BULLMQ_FAILED_JOB_RETENTION,
+  keepsFinishedJob,
+} from "../../common/bullmq-retention";
+
+import {
   QueueOrgStatsService,
   type TrackedJobStatus,
 } from "./queue-org-stats.service";
@@ -97,7 +102,7 @@ export class QueueService {
         {
           jobId,
           removeOnComplete: true,
-          removeOnFail: false,
+          removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
           attempts: 5,
           backoff: { type: "exponential", delay: 2000 },
           ...opts,
@@ -163,10 +168,10 @@ export class QueueService {
 
     const delay = typeof opts.delay === "number" ? opts.delay : 0;
     const status: TrackedJobStatus = delay > 0 ? "delayed" : "waiting";
-    const removeOnComplete = (opts.removeOnComplete ?? true) as unknown;
-    const removeOnFail = (opts.removeOnFail ?? false) as unknown;
-    const keepCompleted = removeOnComplete !== true;
-    const keepFailed = removeOnFail !== true;
+    const removeOnComplete = opts.removeOnComplete ?? true;
+    const removeOnFail = opts.removeOnFail ?? BULLMQ_FAILED_JOB_RETENTION;
+    const keepCompleted = keepsFinishedJob(removeOnComplete);
+    const keepFailed = keepsFinishedJob(removeOnFail);
     try {
       await this.orgStats.upsertJobMetaAndCount({
         jobId,

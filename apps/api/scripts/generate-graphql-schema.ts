@@ -24,6 +24,7 @@ import { AssistantResolver } from "../src/graphql/resolvers/assistant.resolver";
 import { CrawlResolver } from "../src/graphql/resolvers/crawl.resolver";
 import { DashboardResolver } from "../src/graphql/resolvers/dashboard.resolver";
 import { EconomicDataResolver } from "../src/graphql/resolvers/economic-data.resolver";
+import { EntityIntelligenceResolver } from "../src/graphql/resolvers/entity-intelligence.resolver";
 import { EntityImpactGraphResolver } from "../src/graphql/resolvers/entity-impact-graph.resolver";
 import { ItemsResolver } from "../src/graphql/resolvers/items.resolver";
 import { ProcessedItemResolver } from "../src/graphql/resolvers/processed-item.resolver";
@@ -57,6 +58,7 @@ const resolvers = [
   DashboardResolver,
   CrawlResolver,
   EconomicDataResolver,
+  EntityIntelligenceResolver,
   EntityImpactGraphResolver,
   KnowledgeGraphResolver,
   KnowledgeGraphImpactResolver,

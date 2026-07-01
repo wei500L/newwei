@@ -60,6 +60,22 @@ export class NewsnowActiveSourceRegistryService {
     );
   }
 
+  getOrgIdsForSource(sourceId: string) {
+    const normalizedSourceId = sourceId.trim();
+    if (!normalizedSourceId) {
+      return [];
+    }
+
+    const orgIds = new Set<string>();
+    for (const session of this.sessions.values()) {
+      if (session.sourceIds.includes(normalizedSourceId)) {
+        orgIds.add(session.orgId);
+      }
+    }
+
+    return Array.from(orgIds);
+  }
+
   getAllActiveSourceIds() {
     return Array.from(
       new Set(

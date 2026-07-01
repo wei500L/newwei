@@ -1,4 +1,5 @@
 import { ECONOMIC_DASHBOARD_REFRESH_PRESET } from "@modular/utils";
+
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
 
 import { ActionRateLimitService } from "./action-rate-limit.service";
@@ -85,6 +86,98 @@ describe("ActionRateLimitService", () => {
     await expect(service.enforceRbacWrite("org-1", "admin-2")).rejects.toThrow(
       TooManyRequestsException
     );
+  });
+
+  describe("enforcePasswordResetRequest", () => {
+    it("uses default email and IP limits when no policy exists", async () => {
+      await service.enforcePasswordResetRequest("User@Example.COM", "203.0.113.10");
+
+      expect(rateLimitPolicyMock.getPolicy).toHaveBeenCalledWith("auth.password_reset");
+      expect(rateLimitConfigMock.getBucketConfig).not.toHaveBeenCalled();
+      expect(rateLimiterMock.consume).toHaveBeenNthCalledWith(
+        1,
+        "auth:password-reset:ip:203.0.113.10",
+        10,
+        900
+      );
+      expect(rateLimiterMock.consume).toHaveBeenNthCalledWith(
+        2,
+        expect.stringMatching(/^auth:password-reset:email:[a-f0-9]{64}$/),
+        3,
+        900
+      );
+      expect(rateLimiterMock.consume.mock.calls[1]?.[0]).not.toContain(
+        "User@Example.COM"
+      );
+    });
+
+    it("prefers password reset policy values", async () => {
+      rateLimitPolicyMock.getPolicy = jest.fn().mockResolvedValue({
+        feature: "auth.password_reset",
+        userLimit: 2,
+        ipLimit: 7,
+        windowSeconds: 600,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      service = new ActionRateLimitService(rateLimiterMock, rateLimitConfigMock, rateLimitPolicyMock);
+
+      await service.enforcePasswordResetRequest("user@example.com", "203.0.113.10");
+
+      expect(rateLimiterMock.consume).toHaveBeenNthCalledWith(
+        1,
+        "auth:password-reset:ip:203.0.113.10",
+        7,
+        600
+      );
+      expect(rateLimiterMock.consume).toHaveBeenNthCalledWith(
+        2,
+        expect.stringMatching(/^auth:password-reset:email:[a-f0-9]{64}$/),
+        2,
+        600
+      );
+    });
+
+    it("skips consumption when the password reset policy is disabled", async () => {
+      rateLimitPolicyMock.getPolicy = jest.fn().mockResolvedValue({
+        feature: "auth.password_reset",
+        userLimit: 2,
+        ipLimit: 7,
+        windowSeconds: 600,
+        enabled: false,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      service = new ActionRateLimitService(rateLimiterMock, rateLimitConfigMock, rateLimitPolicyMock);
+
+      await service.enforcePasswordResetRequest("user@example.com", "203.0.113.10");
+
+      expect(rateLimiterMock.consume).not.toHaveBeenCalled();
+    });
+
+    it("throws before consuming email quota when the IP bucket is exhausted", async () => {
+      rateLimiterMock.consume = jest.fn().mockResolvedValueOnce(false);
+      service = new ActionRateLimitService(rateLimiterMock, rateLimitConfigMock, rateLimitPolicyMock);
+
+      await expect(
+        service.enforcePasswordResetRequest("user@example.com", "203.0.113.10")
+      ).rejects.toThrow(TooManyRequestsException);
+
+      expect(rateLimiterMock.consume).toHaveBeenCalledTimes(1);
+    });
+
+    it("throws when the email bucket is exhausted", async () => {
+      rateLimiterMock.consume = jest
+        .fn()
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
+      service = new ActionRateLimitService(rateLimiterMock, rateLimitConfigMock, rateLimitPolicyMock);
+
+      await expect(
+        service.enforcePasswordResetRequest("user@example.com", "203.0.113.10")
+      ).rejects.toThrow("Too many password reset requests");
+    });
   });
 
   describe("enforceAkshareUpgrade", () => {

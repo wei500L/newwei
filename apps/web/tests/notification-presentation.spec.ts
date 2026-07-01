@@ -215,6 +215,54 @@ describe("notification presentation", () => {
     });
   });
 
+  it("formats user digest ready notifications from semantic params", () => {
+    const copy = formatNotificationPresentation(
+      {
+        type: NotificationType.System,
+        title: "Daily digest ready",
+        body: "legacy body",
+        data: {
+          presentation: {
+            kind: "user_digest_ready",
+            params: {
+              eventCount: 3,
+              generatedAt: "2026-04-18T00:31:00.000Z",
+            },
+          },
+        },
+      },
+      "en-US",
+      enTranslator,
+    );
+
+    expect(copy.title).toBe("Daily digest ready");
+    expect(copy.body).toContain("Emailed 3 digest event(s)");
+  });
+
+  it("formats user digest delivery failures with target email context", () => {
+    const copy = formatNotificationPresentation(
+      {
+        type: NotificationType.System,
+        title: "Daily digest delivery failed",
+        body: "legacy body",
+        data: {
+          presentation: {
+            kind: "user_digest_delivery_failed",
+            technicalDetail: "SMTP down",
+            params: {
+              targetEmail: "user@example.com",
+            },
+          },
+        },
+      },
+      "en-US",
+      enTranslator,
+    );
+
+    expect(copy.title).toBe("Daily digest delivery failed");
+    expect(copy.body).toBe("Target user@example.com. SMTP down");
+  });
+
   it("maps stable socket error codes to localized messages", () => {
     expect(
       formatNotificationStreamError(

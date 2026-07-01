@@ -15,7 +15,8 @@
         "invalidCredentials": "Invalid email or password",
         "invalidCredentialsWithReason": "Sign-in failed: {{reason}}",
         "invalidCode": "Verification code is invalid or expired",
-        "invalidCodeWithReason": "Code sign-in failed: {{reason}}"
+        "invalidCodeWithReason": "Code sign-in failed: {{reason}}",
+        "tooManyMfaAttempts": "Too many MFA verification attempts. Please sign in again."
       },
       "title": "Welcome back",
       "subtitle": "Sign in to continue",
@@ -55,6 +56,44 @@
         "sendFailed": "Failed to send verification code. Please try again.",
         "submit": "Sign in with code"
       }
+    },
+    "register": {
+      "title": "Register",
+      "subtitle": "Submit an application to create a new organization or join an existing one.",
+      "submitted": "Application submitted",
+      "submitFailed": "Failed to submit application",
+      "joinHint": "Use the organization slug provided by your administrator.",
+      "tabs": {
+        "createOrg": "Create organization",
+        "joinOrg": "Join organization"
+      },
+      "fields": {
+        "firstName": "First name",
+        "lastName": "Last name",
+        "orgName": "Organization name",
+        "orgSlug": "Organization slug",
+        "description": "Description"
+      },
+      "submitCreateOrg": "Submit new organization request",
+      "submitJoin": "Submit join request"
+    },
+    "forgot": {
+      "title": "Forgot password",
+      "subtitle": "If the email exists, a reset link will be sent.",
+      "success": "If the account exists, a reset link has been sent.",
+      "rateLimited": "Too many reset requests. Please try again later.",
+      "failed": "Failed to request password reset",
+      "submit": "Send reset link"
+    },
+    "reset": {
+      "title": "Reset password",
+      "missingToken": "Missing reset token",
+      "success": "Password updated",
+      "failed": "Failed to reset password",
+      "fields": {
+        "password": "New password"
+      },
+      "submit": "Reset password"
     },
     "logoutFailed": "Sign out failed",
     "logoutThisDevice": "Sign out this device",
@@ -483,7 +522,12 @@
         "webhook": "Webhook",
         "email": "Email"
       },
-      "add": "Add"
+      "add": "Add",
+      "validation": {
+        "nameRequired": "Enter a channel name.",
+        "typeRequired": "Select a channel type.",
+        "targetRequired": "Enter a delivery target."
+      }
     }
   },
   "common": {
@@ -605,7 +649,14 @@
     "back": "Back",
     "share": "Share",
     "readMore": "Read full story",
-    "unavailable": "Unavailable"
+    "unavailable": "Unavailable",
+    "totalCount": "Total {{count}}",
+    "minimize": "Minimize",
+    "justNow": "just now",
+    "hide": "Hide",
+    "notInterested": "Not interested",
+    "no": "No",
+    "yes": "Yes"
   },
   "orgSwitcher": {
     "error": {
@@ -875,9 +926,17 @@
       "eventsLabel": "Events",
       "unknownCountry": "Unknown",
       "mapLoading": "Loading map geometry...",
+      "mapInitializing": "Initializing basemap...",
       "mapLoadFailed": "Failed to load map",
       "high": "High",
       "low": "Low",
+      "currentValue": "Current",
+      "threshold": "Threshold",
+      "recentChange": "Change",
+      "relatedSignals": "Related Signals",
+      "noSignals": "No related alert signals for this metric in the selected period.",
+      "noHistoryTitle": "No history in selected range",
+      "noHistoryDescription": "This metric has no historical samples for the selected period.",
       "alertFrequency": "Alert Frequency",
       "status": {
         "pending": "Pending",
@@ -1361,7 +1420,8 @@
           "asia": "Asia",
           "latam": "LatAm",
           "africa": "Africa",
-          "oceania": "Oceania"
+          "oceania": "Oceania",
+          "title": "Regions"
         },
         "timeRange": {
           "1h": "1H",
@@ -1386,8 +1446,8 @@
           "visibleLayers": "Visible layers",
           "layersUpdated": "Layers updated",
           "flights": "Flights",
-          "flightModeMilitary": "Military",
-          "flightModeAll": "All",
+          "flightModeMilitary": "Military focus",
+          "flightModeAll": "All flights",
           "mode": "Mode",
           "flightSource": "Flight source",
           "flightSourceOpensky": "OpenSky",
@@ -1408,7 +1468,7 @@
           "flightBudgetDegradation": "Degradation: {{value}}",
           "flightNotConfigured": "OpenSky OAuth client credentials are not configured.",
           "flightsRaw": "raw {{count}}",
-          "aisModeMilitary": "Military candidates",
+          "aisModeMilitary": "Candidate vessels",
           "aisModeDensity": "Density only",
           "aisModeAll": "All vessels",
           "aisTrackedVessels": "Tracked vessels",
@@ -1421,6 +1481,7 @@
           "aisClients": "Relay clients",
           "aisSourceEndpoint": "Endpoint",
           "aisSnapshotUpdated": "AIS updated",
+          "aisSnapshotMissingVesselsContract": "AIS relay reports tracked vessels, but this snapshot only exposes aggregated signals instead of individual vessels[].",
           "aisSnapshotUnavailable": "AIS snapshot unavailable",
           "aisDisconnected": "AIS disconnected",
           "aisNotConfigured": "AIS not configured",
@@ -1428,6 +1489,8 @@
           "aisVessels": "AIS vessel",
           "aisAllUnavailable": "All vessels unavailable",
           "aisAllUnavailableHint": "All vessels mode will unlock after the relay exposes vessels[] in its snapshot payload.",
+          "aisViewportEmpty": "Viewport has no vessel positions",
+          "aisViewportEmptyHint": "All vessels is active, but this viewport currently has no individual ship positions in the live snapshot. Pan toward nearby shipping lanes or zoom out to return to aggregated chokepoints.",
           "monitors": "Monitors",
           "monitorsHint": "Custom monitors with saved locations",
           "monitorsUpdated": "Monitors updated",
@@ -1441,7 +1504,22 @@
           "medium": "Medium",
           "low": "Low",
           "geocoded": "Geocoded",
-          "fallbackCountry": "Fallback country"
+          "fallbackCountry": "Fallback country",
+          "aisHighlightCandidates": "Highlight candidates",
+          "aisIssue": "Relay issue",
+          "aisHighlightOn": "Candidates highlighted",
+          "aisHighlightOff": "Candidates not highlighted",
+          "aisDensityAggregateHint": "Aggregated AIS hotspot, not individual vessels.",
+          "aisDisruptionAggregateHint": "Aggregated AIS chokepoint signal, not individual vessels.",
+          "aisDegraded": "Degraded",
+          "aisViewportVessels": "Viewport vessels",
+          "aisHighlightedCandidates": "Highlighted candidates",
+          "aisViewportCap": "Viewport cap",
+          "aisViewportTruncated": "Viewport is truncated after per-cell sampling to preserve map readability.",
+          "aisPositionReportsSeen": "Reports seen",
+          "aisPositionReportsProcessed": "Reports processed",
+          "aisIgnoredPositionReports": "Reports ignored",
+          "aisParseErrors": "Parse errors"
         },
         "status": {
           "ready": "Ready",
@@ -1456,6 +1534,59 @@
           "loadingMap": "Loading map base layer…",
           "loadingData": "Loading map data…",
           "preparing": "Preparing map…"
+        },
+        "overlay": {
+          "maritimeEyebrow": "Maritime",
+          "airEyebrow": "Air",
+          "updatedSummary": "Last updated {{value}}",
+          "lastUpdatedLabel": "Last updated",
+          "aisSectionDescription": "Start with the full vessel layer, then switch to filtered candidate or density views when you need narrower maritime signals.",
+          "aisSectionDescriptionUnavailable": "Full-vessel AIS is temporarily unavailable from the relay snapshot. Use candidate or density views until vessel snapshots recover.",
+          "flightsSectionDescription": "Review OpenSky air traffic scope and switch between military-focused and broader flight coverage.",
+          "aisCandidatesOnlyActiveHint": "Candidate vessels is a filtered subset. Some ships are intentionally hidden in this mode.",
+          "aisDensityOnlyActiveHint": "Density only summarizes chokepoints and hotspots instead of showing individual ships.",
+          "aisAllUnavailableInlineHint": "All vessels is currently unavailable because relay vessel snapshots are missing.",
+          "aisShowAllAction": "Switch to All vessels",
+          "signalDensityShort": "active",
+          "newsCoverageShort": "mapped",
+          "monitorCoverageShort": "tracked",
+          "layerCoverageShort": "visible",
+          "aisHighlightCandidatesHint": "Rule-based government and military candidates are highlighted on top of the full vessel layer.",
+          "aisCandidatesOnlyHint": "Candidate vessels shows a filtered subset based on AIS name and ship-type rules, not a complete vessel inventory.",
+          "aisAllVesselsHint": "All vessels shows the full AIS vessel snapshot for the current viewport.",
+          "aisStatusHint": "Enable the AIS layer to inspect vessel source, freshness, and disruption signals.",
+          "flights": "Flights",
+          "flightStatusHint": "Flight source badges appear when the layer is visible.",
+          "transportLegendHint": "Need symbol meanings? Use the AIS reference before changing modes.",
+          "openFullLegend": "Open full legend",
+          "signalLegend": "Signals",
+          "newsLegend": "News & monitors",
+          "expandInspector": "Expand details",
+          "overview": "Overview",
+          "overviewHint": "Counts, freshness, and feed health stay visible in the header snapshot.",
+          "view": "View",
+          "viewHint": "Change map framing, time window, and visible layers for the current view.",
+          "transport": "Transport",
+          "transportHint": "Review flight and AIS modes, source freshness, and transport coverage.",
+          "feeds": "Feeds",
+          "feedsHint": "Check chain health, refresh activity, and ingestion issues when data looks off.",
+          "legendHint": "Reference marker meaning, severity levels, and AIS symbols used on the map.",
+          "feedsAttention": "Issues",
+          "feedsAttentionHint": "Affected feed chains: {{count}}",
+          "signalDensity": "Current alert markers",
+          "newsCoverage": "Geo-tagged headlines",
+          "monitorCoverage": "Tracked watchlists",
+          "layerCoverage": "Active map overlays",
+          "stream": "Stream",
+          "noRecentMessage": "No stream update yet",
+          "latestStreamUpdate": "Latest stream update",
+          "data": "Data",
+          "awaitingRefresh": "Awaiting refresh",
+          "healthyFeeds": "Healthy",
+          "refreshingFeeds": "Refreshing",
+          "issueFeeds": "Issues",
+          "controls": "Controls",
+          "aisHighlightCandidatesOffHint": "Candidate highlighting is currently off; all vessels remain visible."
         },
         "tooltip": {
           "location": "Location",
@@ -1494,7 +1625,8 @@
           "darkShips": "Dark ships",
           "window": "Window",
           "region": "Region",
-          "updated": "Updated"
+          "updated": "Updated",
+          "role": "Role"
         },
         "panel": {
           "signalsTitle": "Nearby signals",
@@ -1506,12 +1638,26 @@
           "count": "{{count}} items",
           "zoomIn": "Zoom in",
           "latest": "Latest",
-          "openOriginal": "Open"
+          "openOriginal": "Open",
+          "flightDetailSummary": "Latest aircraft state plus recent persisted change points.",
+          "vesselDetailSummary": "Latest vessel state plus recent persisted change points.",
+          "recentTrackPoints": "Recent change points",
+          "noTrackPoints": "No persisted track points in the current range.",
+          "trackPointCount": "Points",
+          "trackDistance": "Distance"
         },
         "legend": {
           "title": "Legend",
           "radius": "Larger points indicate stronger aggregated signal density.",
           "aisTitle": "AIS",
+          "signalHigh": "Signal / high severity",
+          "signalMedium": "Signal / medium severity",
+          "signalLow": "Signal / low severity",
+          "newsGeocoded": "Geo-tagged news",
+          "newsFallback": "Country fallback news",
+          "monitor": "Situation monitor",
+          "flight": "Flight activity",
+          "aisAllVesselsQuick": "AIS vessels",
           "aisMilitary": "Military / government",
           "aisFishing": "Fishing",
           "aisPassenger": "Passenger",
@@ -1519,7 +1665,43 @@
           "aisTanker": "Tanker",
           "aisOther": "Other / unknown",
           "aisDensity": "Traffic density heatmap",
-          "aisDisruption": "Chokepoint disruption"
+          "aisDisruption": "Chokepoint disruption",
+          "aisDisruptionHigh": "Disruption / high",
+          "aisDisruptionMedium": "Disruption / medium",
+          "aisDisruptionLow": "Disruption / low",
+          "aisDisruptionQuick": "AIS disruption",
+          "quickColorByCategory": "Color shows vessel category",
+          "quickLegendHint": "Live symbols stay aligned with the active map layers.",
+          "signalsTitle": "Signals",
+          "signalsHint": "Severity is encoded by both shape treatment and color.",
+          "newsTitle": "News & Monitors",
+          "newsHint": "Shape distinguishes precision and source, not just color.",
+          "transportTitle": "Air & Sea",
+          "transportHint": "Flights and AIS layers share the same map symbols and quick legend.",
+          "statesTitle": "Interaction States",
+          "statesHint": "Hover, selected, and clustered markers use explicit ring and badge states.",
+          "hoverState": "Hover focus",
+          "selectedState": "Selected",
+          "clusterState": "Cluster badge",
+          "otherLayersTitle": "Other Active Point Layers",
+          "otherLayersHint": "Point-based overlays without a bespoke symbol still use the shared halo and outline treatment.",
+          "otherPointLayer": "Other point layer",
+          "flightZoomRequired": "Zoom in to request all-flight OpenSky data for the current viewport.",
+          "flightNotConfigured": "OpenSky OAuth client credentials are not configured.",
+          "flightBudgetLimited": "OpenSky all-flight mode is temporarily limited to preserve the daily credit budget.",
+          "flightStale": "Flight layer is temporarily stale.",
+          "flightMissing": "Flight layer is unavailable.",
+          "aisAggregatedOnly": "AIS is currently showing aggregated signals only.",
+          "aisViewportEmpty": "This viewport currently has no individual vessel positions.",
+          "transportLimited": "Air and sea transport layers are partially limited.",
+          "transportAggregatedOnly": "Transport layers are showing aggregated AIS signals only.",
+          "transportFlightsLimited": "Transport layers are showing limited flight coverage.",
+          "transportViewportEmpty": "Transport layers currently have no individual positions in this viewport.",
+          "interactionTitle": "Interaction",
+          "previewHint": "Hover to preview. Click to pin.",
+          "clearFocus": "Clear focus",
+          "quickLegendCompactHint": "Active symbol cues",
+          "moreItems": "+{{count}} more"
         },
         "translation": {
           "label": "CN coverage",
@@ -1546,7 +1728,13 @@
         "openedNews": "News opened in a new tab",
         "missingMonitorQuery": "No keywords available for this monitor.",
         "openingSearch": "Opening search for \"{{query}}\"...",
-        "openedSearch": "Search opened for \"{{query}}\" in a new tab"
+        "openedSearch": "Search opened for \"{{query}}\" in a new tab",
+        "actions": {
+          "analyzeCurrentView": "Analyze current view",
+          "enableTransportLayers": "Enable the flight or AIS layer before requesting transport analysis.",
+          "analyzeCurrentViewSubmitted": "Transport analysis submitted for the current view.",
+          "analyzeCurrentViewFailed": "Failed to submit transport analysis."
+        }
       },
       "entityGraph": {
         "disabledTitle": "Disabled",
@@ -1722,13 +1910,15 @@
       },
       "knowledgeGraph3d": {
         "title": "Knowledge Graph (3D)"
-      }
+      },
+      "sectorHeatmapFallbackWarning": "Fallback fields: {{count}}"
     },
     "stream": {
       "status": {
         "live": "Live",
         "polling": "Polling",
-        "offline": "Offline"
+        "offline": "Offline",
+        "paused": "Paused"
       },
       "fallback": "Live updates interrupted; using polling",
       "offline": "Live updates unavailable",
@@ -1849,13 +2039,15 @@
       "eventsArchive": "Events Archive",
       "rss": "RSS Reader",
       "map": "Situation Map",
+      "knowledgeGraph": "Knowledge Graph",
       "finance": "Finance Panel",
       "alerts": "Alert Center",
       "search": "Search",
       "subscriptions": "Subscriptions & Notifications",
       "profile": "Profile",
       "situationMonitor": "Situation Monitor",
-      "assistant": "Assistant"
+      "assistant": "Assistant",
+      "analysis": "Analysis"
     },
     "adminGroup": "Admin",
     "commandRunSearch": "Search all items",
@@ -1881,7 +2073,115 @@
       "overlay": "Alert & News Signals Overview",
       "demoBadge": "Demo",
       "demoNote": "Demo indicators until alert geo context is connected.",
-      "empty": "No alerts or geo-tagged news signals in the selected range."
+      "empty": "No alerts or geo-tagged news signals in the selected range.",
+      "geocode": {
+        "empty": "No geocode result was returned for this query.",
+        "loadFailed": "Failed to geocode this query.",
+        "title": "Geocode Lookup",
+        "description": "Resolve a place or region to coordinates using the same geocoding service used by the backend pipeline.",
+        "fields": {
+          "query": "Location query",
+          "countryCode": "Country code"
+        },
+        "validation": {
+          "queryRequired": "Enter a location query."
+        },
+        "placeholders": {
+          "query": "Shanghai, South China Sea, Brussels, Texas...",
+          "countryCode": "Optional ISO alpha-2 code, e.g. CN or US"
+        },
+        "actions": {
+          "lookup": "Resolve coordinates",
+          "copyCoordinates": "Copy coordinates",
+          "openMap": "Open in map"
+        },
+        "labels": {
+          "result": "Result",
+          "provider": "Provider",
+          "country": "Country",
+          "bounds": "Bounds"
+        },
+        "messages": {
+          "copied": "Coordinates copied.",
+          "copyFailed": "Failed to copy coordinates."
+        }
+      }
+    },
+    "knowledgeGraph": {
+      "title": "Knowledge Graph Explorer",
+      "subtitle": "Explore entity relationships, inspect edge evidence, and pivot graph searches without leaving the console.",
+      "emptyDescription": "Enter a seed entity to load a graph and inspect its evidence-backed relationships.",
+      "controls": {
+        "seed": "Seed entity",
+        "seedPlaceholder": "Search a company, policy, commodity, or organization",
+        "seedType": "Seed type",
+        "seedTypeAny": "Any type",
+        "relations": "Relation types",
+        "relationsAny": "All relation types",
+        "depth": "Depth",
+        "maxNodes": "Max nodes"
+      },
+      "actions": {
+        "filters": "Filters",
+        "openExplorer": "Open explorer",
+        "reflow": "Reflow layout",
+        "centerNode": "Set as seed",
+        "openSearch": "Open search",
+        "openArticle": "Open article"
+      },
+      "meta": {
+        "scope": "Scope",
+        "scopeEmpty": "No seed selected",
+        "time": "Time",
+        "notRangeFiltered": "Not range-filtered",
+        "relationCount": "Relations",
+        "nodes": "Nodes",
+        "edges": "Edges",
+        "generatedAt": "Generated"
+      },
+      "details": {
+        "drawerTitle": "Graph details",
+        "empty": "Select a node or edge to inspect details.",
+        "degree": "Degree",
+        "nodeId": "Node ID",
+        "edgeId": "Edge ID",
+        "type": "Type",
+        "from": "From",
+        "to": "To",
+        "weight": "Weight",
+        "confidence": "Confidence",
+        "evidenceTitle": "Evidence",
+        "evidenceConfidence": "Evidence",
+        "evidencePermissionTitle": "Evidence is restricted",
+        "evidencePermissionDescription": "Viewing edge evidence requires the items.read permission.",
+        "untitledArticle": "Untitled article",
+        "noEvidence": "No evidence records were found for this edge.",
+        "properties": "Properties",
+        "noProperties": "No structured properties for this node."
+      },
+      "nodeTypes": {
+        "company": "Company",
+        "industry": "Industry",
+        "person": "Person",
+        "policy": "Policy",
+        "commodity": "Commodity",
+        "instrument": "Instrument",
+        "organization": "Organization"
+      },
+      "relations": {
+        "belongs_to_industry": "Belongs to industry",
+        "supplies": "Supplies",
+        "customer_of": "Customer of",
+        "competes_with": "Competes with",
+        "holds_position": "Holds position",
+        "affects_industry": "Affects industry",
+        "affects_company": "Affects company",
+        "upstream_of": "Upstream of",
+        "downstream_of": "Downstream of",
+        "has_ticker": "Has ticker"
+      },
+      "notFoundTitle": "Not found",
+      "notFoundDescription": "No graph data found for this entity"
     },
     "search": {
       "title": "Search",
@@ -2312,7 +2612,8 @@
         "ruleScore": "Rule",
         "embeddingScore": "Embedding",
         "rerankScore": "Rerank",
-        "fused": "Fusion"
+        "fused": "Fusion",
+        "open": "Open event details"
       },
       "preparation": {
         "failedTitle": "Archive background preparation failed",
@@ -2362,6 +2663,34 @@
         "focusEntitiesPlaceholder": "Enter entities",
         "includeIndicators": "Include indicators",
         "maxIndicatorsPerEvent": "Max indicators per event"
+      },
+      "deliveryLoadFailed": "Failed to load digest delivery settings.",
+      "deliverySaved": "Delivery schedule saved.",
+      "deliverySaveFailed": "Failed to save delivery schedule.",
+      "deliveryStatus": {
+        "sent": "Last run sent",
+        "failed": "Last run failed",
+        "empty": "No digest items",
+        "idle": "Idle"
+      },
+      "delivery": {
+        "customize": "Delivery schedule",
+        "enabled": "Delivery on",
+        "disabled": "Delivery off",
+        "schedule": "Schedule",
+        "nextRunAt": "Next run",
+        "emailRequired": "Verify your email in Profile before enabling scheduled digest delivery.",
+        "openProfile": "Open profile",
+        "lastError": "Last delivery error",
+        "title": "Digest Delivery Schedule",
+        "description": "Send the current rolling digest to your verified email once per day, and also record the result in Notification Center.",
+        "targetEmail": "Target email",
+        "enabledLabel": "Enable daily delivery",
+        "verifyFirst": "Email verification is required before this can be enabled.",
+        "time": "Delivery time",
+        "timezone": "Timezone",
+        "timezonePlaceholder": "Select an IANA timezone",
+        "lastSentAt": "Last email sent"
       }
     },
     "newsIndicator": {
@@ -2452,6 +2781,41 @@
     "situationMonitor": {
       "title": "Situation Monitor",
       "subtitle": "Correlation, narratives, and key figures across your recent items."
+    },
+    "welcome": {
+      "skipToChecklist": "Skip to checklist",
+      "eyebrow": "Onboarding",
+      "title": "Learn the workspace in four short stops.",
+      "description": "The workspace is data-dense by design. This guide pushes you through the pages that matter most so the rest of the console feels predictable.",
+      "progress": "Progress",
+      "enterWorkspace": "Enter workspace",
+      "skipForNow": "Skip for now",
+      "status": {
+        "done": "Done",
+        "start": "Start"
+      },
+      "steps": {
+        "today": {
+          "label": "Today",
+          "title": "Read the daily briefing",
+          "description": "Start with the curated overview that pulls the most important updates into one page."
+        },
+        "events": {
+          "label": "Events",
+          "title": "Review live events",
+          "description": "See how the event model groups coverage, confidence, and corroboration into one feed."
+        },
+        "map": {
+          "label": "Map",
+          "title": "Scan the map",
+          "description": "Open the regional map to understand where alerts and geo-linked news are accumulating."
+        },
+        "finance": {
+          "label": "Finance",
+          "title": "Check market signals",
+          "description": "Inspect the finance workspace for macro pulse, sector heat, and candlestick context."
+        }
+      }
     }
   },
   "adminConsole": {
@@ -2529,6 +2893,10 @@
       "knowledgeGraphReview": {
         "title": "Knowledge Graph Review",
         "description": "Review low-confidence knowledge graph relations and record human feedback"
+      },
+      "searchTelemetry": {
+        "title": "Search Telemetry",
+        "description": "Inspect archive search submissions, query friction, and load-more usage"
       }
     },
     "metrics": {
@@ -2669,6 +3037,9 @@
       "news-indicator": {
         "description": "Manage indicator matching, thresholds, and associations."
       },
+      "news-extraction": {
+        "description": "Control staged cleaning, quality gates, and downstream enrichment."
+      },
       "news-dedupe": {
         "description": "Adjust dedupe windows, similarity rules, and fallbacks."
       },
@@ -2723,6 +3094,10 @@
       "crawlTemplates": {
         "title": "Crawl Templates",
         "description": "Manage reusable Crawl4ai configuration templates"
+      },
+      "crawlFrontier": {
+        "title": "Crawl Frontier",
+        "description": "Manage crawl site profiles, frontier runs, and layered/native execution."
       }
     }
   },
@@ -2807,6 +3182,17 @@
       "disconnected": "Disconnected",
       "error": "Error",
       "lastEvent": "Last event: {{time}}",
+      "connectionError": {
+        "unauthorized": "News source realtime access expired. Please sign in again.",
+        "tooManyConnections": "News source realtime connections are at capacity. Please try again later.",
+        "tooManyConnectionAttempts": "Too many news source realtime connection attempts. Please try again later.",
+        "rateLimitExceeded": "News source realtime connection attempts are too frequent. Please try again later.",
+        "tooManyFailedAttempts": "Too many failed news source realtime sign-in attempts. Please try again later.",
+        "timeout": "Connecting to news source realtime timed out. Please try again.",
+        "network": "Unable to connect to news source realtime. Please check the network and try again.",
+        "connect": "Unable to connect to news source realtime right now. Please try again later.",
+        "socket": "News source realtime connection is unstable. Please try again later."
+      },
       "details": {
         "lastEvent": "Last event",
         "refreshOn": "Refresh on",
@@ -2852,6 +3238,10 @@
       "setGroup": "Set group",
       "clearGroup": "Clear group",
       "importOpml": "Import OPML"
+    },
+    "crawl": {
+      "proxyDisabledTitle": "Custom upstream proxies are disabled",
+      "proxyDisabledDescription": "Do not add proxyUrl or proxyConfig in crawlOptions. Existing legacy proxy fields stay visible in the JSON editor and will block save until removed."
     },
     "fields": {
       "name": "Name",
@@ -2976,7 +3366,10 @@
       "seedDeepEnableSecondaryHubs": "Follow secondary hubs",
       "seedDeepEnableSecondaryHubsHint": "Allow exploration of section/topic pages during deep discovery.",
       "seedDeepIgnoreRobotsTxt": "Ignore robots.txt",
-      "seedDeepIgnoreRobotsTxtHint": "This mode is hard-locked to ignore robots.txt."
+      "seedDeepIgnoreRobotsTxtHint": "This mode is hard-locked to ignore robots.txt.",
+      "workflow": "Workflow",
+      "workflowMode": "Workflow version mode",
+      "workflowVersion": "Pinned workflow version"
     },
     "crawlHeadlessMode": {
       "auto": "Auto (recommended)",
@@ -3340,15 +3733,35 @@
       "headSignalNoPublishSignal": "Head signal no-publish",
       "http304HitRate": "HTTP 304 hit",
       "thresholdStatusBreached": "breach",
+      "thresholdStatusNoData": "no data",
       "thresholdStatusNormal": "normal",
       "preflightFailureRate": "Preflight failure",
       "orgHashDedupeHitRate": "Org hash dedupe hit",
       "thresholdHint": "Threshold tags come from active alert rules and are evaluated over the selected window.",
+      "noSamples": "No crawl quality samples are available for the selected window yet.",
+      "noSamplesDescription": "Run or schedule at least one crawl before relying on crawl quality thresholds.",
       "crawlQualityAlertTitle": "Crawl quality warning: one or more quality rates crossed configured thresholds",
       "highestSource": "highest",
       "lowestSource": "lowest",
       "publishConfidenceBuckets": "Confidence buckets: <0.4={{lt04}}, 0.4~0.6={{from04To06}}, 0.6~0.8={{from06To08}}, >=0.8={{gte08}}",
       "updatedAt": "Window {{from}} - {{to}}"
+    },
+    "readiness": {
+      "loadFailed": "Failed to load readiness summary.",
+      "title": "Situation Monitor readiness",
+      "noSourcesConfigured": "No news sources are configured for this workspace yet.",
+      "noSourcesConfiguredDescription": "Import an OPML list or create a source to enable Situation Monitor crawl refresh.",
+      "noActiveSources": "Situation Monitor cannot queue new collection because there are no active news sources.",
+      "degraded": "Some sources are degraded and may reduce Situation Monitor coverage.",
+      "ready": "News source scheduling looks healthy for Situation Monitor refresh.",
+      "noActiveSourcesDescription": "Activate at least one source or import a source list before relying on Situation Monitor refresh.",
+      "degradedDescription": "Review circuit-open and failing sources before relying on fresh Situation Monitor data.",
+      "openSchedulerSettings": "Open scheduler settings",
+      "total": "Total sources",
+      "active": "Active",
+      "inactive": "Inactive",
+      "circuitOpen": "Circuit open",
+      "failing": "Failing"
     }
   },
   "finance": {
@@ -3399,24 +3812,41 @@
     "channelNotifyInterval": "Notification frequency",
     "content": {
       "tabTitle": "Content subscriptions",
-      "summary": "Manage personalized topic and entity subscriptions, browse by taxonomy, and add AI-ranked recommendations.",
+      "summary": "Manage personalized topic, entity, source, keyword, and geo subscriptions, browse the catalog, and add AI-ranked recommendations.",
       "topicCount": "Topics: {{count}}",
       "entityCount": "Entities: {{count}}",
+      "sourceCount": "Sources: {{count}}",
+      "keywordCount": "Keywords: {{count}}",
+      "geoCount": "Geos: {{count}}",
       "limitLabel": "Per type limit: {{count}}",
       "currentTitle": "Content subscriptions",
-      "searchPlaceholder": "Search subscribed topics or entities",
+      "searchPlaceholder": "Search subscribed topics, entities, sources, keywords, or geos",
       "batchUnsubscribe": "Unsubscribe selected",
       "currentEmpty": "No content subscriptions yet.",
-      "catalogTitle": "Browse by category",
+      "keywordComposerTitle": "Add keyword subscriptions",
+      "keywordComposerDescription": "Keywords are manual-only subscriptions. They do not appear in the catalog or AI recommendations.",
+      "keywordComposerPlaceholder": "Enter keywords or phrases, separated by commas",
+      "keywordComposerAction": "Add keywords",
+      "keywordsAdded": "Added {{count}} keyword subscriptions.",
+      "keywordAddFailed": "Failed to add keyword subscriptions.",
+      "catalogTitle": "Browse catalog",
       "kindAll": "All types",
       "kindTopics": "Topics",
       "kindEntities": "Entities",
-      "catalogSearch": "Search the subscription catalog",
+      "kindSources": "Sources",
+      "kindKeywords": "Keywords",
+      "kindGeos": "Geos",
+      "catalogSearch": "Search catalog topics, entities, sources, or geos",
       "batchSubscribe": "Subscribe selected",
       "allCategories": "All categories",
       "catalogEmpty": "No catalog matches the current filter.",
       "itemCount": "{{count}} items",
       "lastSeenAt": "Last seen {{time}}",
+      "metadataSourceId": "ID {{value}}",
+      "metadataLanguage": "Language {{value}}",
+      "metadataCountry": "Country {{value}}",
+      "metadataSite": "Site {{value}}",
+      "metadataFeed": "Feed {{value}}",
       "subscribed": "Subscribed",
       "subscribe": "Subscribe",
       "recommendationsTitle": "Recommended subscriptions",
@@ -3436,8 +3866,16 @@
       "removeSingleFailed": "Failed to remove subscription.",
       "openMonitor": "Open monitor",
       "monitorOwnedHint": "Managed by My Monitors. Edit the owning monitor to change this subscription.",
-      "signInRequired": "Please sign in to manage content subscriptions."
-    }
+      "signInRequired": "Please sign in to manage content subscriptions.",
+      "recommendationsLoadFailed": "Failed to load recommendations.",
+      "recommendationsLoadFailedDescription": "Recommendations are temporarily unavailable. You can still manage subscriptions and browse the catalog.",
+      "refreshFailedAfterMutation": "Changes were saved, but the latest subscription list could not be reloaded.",
+      "refreshFailedAfterMutationDescription": "Your add/remove action has completed. The page is still showing the previous subscription snapshot until reload succeeds.",
+      "loadFailedDescription": "The subscriptions list could not be loaded. Retry to restore the latest subscription state.",
+      "degradedBadge": "Degraded"
+    },
+    "channelMissingId": "Channel id is missing. Reopen the dialog and try again.",
+    "channelValidationFailed": "Fill in the required fields before saving."
   },
   "brand": {
     "short": "M",
@@ -3532,6 +3970,20 @@
         "body": "Classification quality thresholds were exceeded in the {{window}} window. Review system monitoring for details.",
         "latency": "Latency: {{summary}}",
         "gate": "Category gates: {{summary}}"
+      },
+      "userDigestReady": {
+        "title": "Daily digest ready",
+        "body": "Emailed {{count}} digest event(s){{generatedSuffix}}.",
+        "generatedSuffix": " at {{value}}"
+      },
+      "userDigestEmpty": {
+        "title": "Daily digest has no new items",
+        "body": "No digest events matched your current window. The next delivery check is already scheduled."
+      },
+      "userDigestDeliveryFailed": {
+        "title": "Daily digest delivery failed",
+        "body": "The system could not send your digest email. Review your delivery settings and try again later.",
+        "bodyWithEmail": "Target {{email}}. {{detail}}"
       }
     },
     "type": {
@@ -3830,7 +4282,8 @@
         "saved": "Saved",
         "saveFailed": "Failed to save",
         "loadFailed": "Failed to load review queue",
-        "invalidJson": "Invalid JSON"
+        "invalidJson": "Invalid JSON",
+        "invalidRelation": "Corrected relation must include subject, predicate, and object"
       },
       "details": {
         "title": "Relation details",
@@ -3889,7 +4342,11 @@
         "timelineMaxCategoryDistributionItems": "Max category distribution items",
         "timelineMaxPhaseSummaries": "Max phase summaries",
         "timelinePresetCustomDistanceThreshold": "Preset custom distance threshold",
-        "cacheTtlSeconds": "Cache TTL (seconds)"
+        "cacheTtlSeconds": "Cache TTL (seconds)",
+        "clusteringMode": "Clustering mode",
+        "bertopicMinItemsPerGroup": "BERTopic min items per group",
+        "bertopicMaxItemsPerRequest": "BERTopic max items per request",
+        "bertopicMinTopicSize": "BERTopic min topic size"
       },
       "hints": {
         "ingestionEnabled": "Controls scheduled ingestion jobs.",
@@ -3911,27 +4368,94 @@
         "timelineCrossCategoryWarningShare": "Trigger a cross-category warning when non-dominant categories exceed this share.",
         "timelineMaxCategoryDistributionItems": "Limit of category slices returned by timeline/category-distribution metadata.",
         "timelineMaxPhaseSummaries": "Upper bound for staged timeline summaries generated per event.",
-        "timelinePresetCustomDistanceThreshold": "When the closest preset distance is above this threshold, preset matching is shown as Custom."
+        "timelinePresetCustomDistanceThreshold": "When the closest preset distance is above this threshold, preset matching is shown as Custom.",
+        "clusteringMode": "Use vector assignment only, or run BERTopic first and queue hard failures for automatic LLM recovery.",
+        "bertopicMinItemsPerGroup": "Language + embedding-model groups below this size skip BERTopic and use vector assignment directly.",
+        "bertopicMaxItemsPerRequest": "Upper bound for each BERTopic request to control CPU and memory pressure on the model service. Must be greater than or equal to the min items per group.",
+        "bertopicMinTopicSize": "Minimum local cluster size passed through to BERTopic/HDBSCAN before a topic is kept."
       },
       "messages": {
         "saved": "Saved",
         "saveFailed": "Failed to save",
         "loadFailed": "Failed to load settings",
-        "presetApplied": "Preset applied. Save changes to persist."
+        "presetApplied": "Preset applied. Save changes to persist.",
+        "clusteringAdminLoadFailed": "Failed to load BERTopic clustering diagnostics.",
+        "llmBackfillQueued": "LLM backfill queued.",
+        "llmBackfillFailed": "Failed to queue LLM backfill.",
+        "failureIgnored": "Failure group ignored.",
+        "failureIgnoreFailed": "Failed to ignore failure group."
       },
       "validation": {
         "required": "Required",
+        "bertopicMaxItemsMustBeAtLeastMinGroup": "BERTopic max items per request must be greater than or equal to min items per group.",
         "lowMustBeAtMostHigh": "Low confidence threshold must be less than or equal to high confidence threshold.",
         "highMustBeAtLeastLow": "High confidence threshold must be greater than or equal to low confidence threshold."
       },
       "sections": {
-        "timelineClassification": "Timeline classification & drift"
+        "timelineClassification": "Timeline classification & drift",
+        "clustering": "Clustering",
+        "clusteringQueue": "BERTopic failure queue"
+      },
+      "clusteringQueue": {
+        "notice": {
+          "title": "Automatic recovery path",
+          "ready": "Automatic LLM recovery is ready. Pending groups are retried by the scheduler; manual backfill queues a group immediately.",
+          "notReady": "Automatic LLM recovery is blocked. Configure an active LLM gateway completion profile before pending groups can be retried.",
+          "automation": "Scheduler: every {{interval}}, retry backoff {{backoff}}, up to {{batchSize}} groups per tick.",
+          "body": "Only hard BERTopic request failures enter this queue. Small groups, missing embeddings, and outliers still fall back to the standard vector assignment automatically."
+        },
+        "automation": {
+          "minutes": "{{count}} min",
+          "attempts": "Attempts: {{count}}",
+          "processing": "Recovery job running",
+          "blocked": "Auto retry blocked: LLM not ready",
+          "nextTick": "Auto retry on next scheduler tick",
+          "eligible": "Auto retry eligible now",
+          "after": "Auto retry after {{time}}"
+        },
+        "columns": {
+          "group": "Group",
+          "status": "Status",
+          "items": "Items",
+          "recovery": "Recovery",
+          "samples": "Samples",
+          "actions": "Actions"
+        },
+        "actions": {
+          "llmBackfill": "LLM backfill",
+          "ignore": "Ignore",
+          "openLlmGateway": "Open LLM gateway settings"
+        },
+        "overview": {
+          "pending": "Pending",
+          "processing": "Processing",
+          "resolved": "Resolved",
+          "ignored": "Ignored",
+          "latest": "Latest failure"
+        },
+        "empty": "No queued BERTopic failures."
       },
       "presets": {
         "conservative": "Conservative",
         "balanced": "Balanced",
         "aggressive": "Aggressive",
         "custom": "Custom"
+      },
+      "options": {
+        "clusteringMode": {
+          "vector": "Vector only",
+          "bertopicPrimary": "BERTopic primary"
+        }
+      },
+      "clusteringMode": {
+        "notice": {
+          "title": "BERTopic execution path",
+          "ready": "Model service credentials are available. BERTopic will run before vector fallback.",
+          "notReady": "Model service is not fully configured. BERTopic requests will fail and affected groups will enter the admin review queue."
+        },
+        "actions": {
+          "modelService": "Open model service settings"
+        }
       }
     },
     "newsClassification": {
@@ -4241,11 +4765,21 @@
     "newsPrompts": {
       "saved": "Saved",
       "saveFailed": "Failed to save",
-      "description": "News prompts description",
+      "description": "Manage the prompt templates used for cleaning and staged news extraction.",
+      "cleaningTitle": "Cleaning prompts",
+      "entityTitle": "Entity extraction prompts",
+      "sentimentTitle": "Sentiment prompts",
+      "kgTitle": "Knowledge graph prompts",
       "fields": {
         "version": "Version",
         "systemTemplate": "System template",
-        "userTemplate": "User template"
+        "userTemplate": "User template",
+        "entitySystemTemplate": "Entity system template",
+        "entityUserTemplate": "Entity user template",
+        "sentimentSystemTemplate": "Sentiment system template",
+        "sentimentUserTemplate": "Sentiment user template",
+        "kgSystemTemplate": "Knowledge graph system template",
+        "kgUserTemplate": "Knowledge graph user template"
       },
       "validation": {
         "version": "Version is required",
@@ -4260,6 +4794,38 @@
       "estimatedTokens": "Estimated tokens: {{count}}",
       "estimatedTotalTokens": "Estimated total tokens: {{count}}",
       "placeholdersTitle": "Placeholders title"
+    },
+    "newsExtraction": {
+      "saved": "News extraction settings saved.",
+      "saveFailed": "Failed to save news extraction settings.",
+      "description": "Configure staged article cleaning, low-cost quality gates, and downstream enrichment stages.",
+      "pipelineTitle": "Pipeline mode",
+      "preflightTitle": "Preflight gate",
+      "postCleanTitle": "Post-clean gate",
+      "capabilitiesTitle": "Downstream enrichment",
+      "providersTitle": "Providers",
+      "pipelineModeLegacy": "Legacy single-pass",
+      "pipelineModeStaged": "Staged extraction",
+      "providersHint": "Provider routing is stage-specific. This rollout currently supports the built-in LLM provider.",
+      "fields": {
+        "enabled": "Enabled",
+        "pipelineMode": "Execution mode",
+        "rejectBotChallenge": "Reject bot challenge pages",
+        "rejectListLike": "Reject list-like pages",
+        "minWordCount": "Minimum word count",
+        "requireSummary": "Require summary",
+        "minQualityScore": "Minimum quality score",
+        "minPreflightQualityScore": "Minimum crawl quality score",
+        "minCleanedQualityScore": "Minimum cleaned quality score",
+        "minCleanedChars": "Minimum cleaned characters",
+        "entities": "Entities",
+        "sentiment": "Sentiment",
+        "kg": "Knowledge graph relations",
+        "cleanProvider": "Clean provider",
+        "entitiesProvider": "Entity provider",
+        "sentimentProvider": "Sentiment provider",
+        "kgProvider": "Knowledge graph provider"
+      }
     },
     "llmGateway": {
       "description": "Manage OpenAI-compatible LLM gateway profiles. The active profile overrides runtime requests made by the API.",
@@ -4559,7 +5125,8 @@
           "includeCompletion": "Test chat completion",
           "apiSurface": "API surface",
           "responseFormatMode": "response_format probe",
-          "includeMetadataProbe": "Include metadata probe"
+          "includeMetadataProbe": "Include metadata probe",
+          "authMode": "Auth mode"
         },
         "placeholders": {
           "prompt": "Say \"OK\" and nothing else.",
@@ -4572,7 +5139,8 @@
           "embeddingModel": "Leave empty to use the profile embedding model.",
           "includeCompletion": "When disabled, only embeddings are tested.",
           "includeRerank": "When enabled, runs a rerank probe against /v1/rerank.",
-          "rerankModel": "Leave empty to use the profile rerank model + backup rerank models."
+          "rerankModel": "Leave empty to use the profile rerank model + backup rerank models.",
+          "authMode": "profile_key validates the profile credential. managed_runtime_key validates the governed runtime credential actually used in production."
         },
         "sections": {
           "completion": "Chat completion",
@@ -4590,7 +5158,8 @@
           "compatibility": "Compatibility",
           "field": "field",
           "topN": "topN",
-          "score": "score"
+          "score": "score",
+          "authMode": "Auth mode"
         }
       },
       "testUnsaved": {
@@ -4710,7 +5279,14 @@
           },
           "liveliness": "Liveliness: {{value}}",
           "readiness": "Readiness: {{value}}",
-          "checkedAt": "Checked: {{value}}"
+          "checkedAt": "Checked: {{value}}",
+          "summary": {
+            "ready": "Governance can be enabled",
+            "blocked": "Governance enablement is blocked",
+            "counts": "Blocking issues {{blocking}}; warnings {{warnings}}."
+          },
+          "loading": "Loading governance preflight checks.",
+          "nextActions": "Recommended next actions"
         },
         "errors": {
           "loadFailed": "Failed to load LiteLLM proxy governance settings",
@@ -4773,8 +5349,9 @@
           "remaining24h": "24h remaining: {{value}}",
           "observed30d": "Observed 30d: {{value}}",
           "remaining30d": "30d remaining: {{value}}",
-          "observedDetails": "24h requests {{requests}}, tokens {{tokens}}, p95 latency {{latency}}.",
+          "observedDetails": "24h governed spend {{governed}}, direct spend {{direct}}, requests {{requests}}, p95 latency {{latency}}.",
           "observedLoading": "Loading observed request usage for the governed profile.",
+          "leadingError": "Top recent error: {{message}} ({{count}} requests).",
           "syncedAt": "Last synced: {{value}}",
           "adminMissing": "LITELLM_MASTER_KEY is not configured, so governance cannot be synced to LiteLLM yet."
         },
@@ -4789,19 +5366,164 @@
           "team": "Team: {{value}}",
           "key": "Key: {{value}}",
           "syncedAt": "Last synced: {{value}}",
-          "adminMissing": "Set LITELLM_MASTER_KEY on both API and LiteLLM before enabling managed governance."
+          "adminMissing": "Set LITELLM_MASTER_KEY on both API and LiteLLM before enabling managed governance.",
+          "keyStates": {
+            "available": "Readable",
+            "unreadable": "Unreadable",
+            "missing": "Missing"
+          },
+          "cards": {
+            "enforcement": "Enforcement",
+            "target": "Governed target",
+            "preflight": "Preflight",
+            "runtime": "Runtime path",
+            "governedRatio": "Governed share",
+            "managedKeyRequests": "Managed-key requests",
+            "profileKeyRequests": "Profile-key requests",
+            "successRate": "24h success rate",
+            "enforcementEnabledDescription": "LiteLLM should enforce budgets and concurrency on runtime traffic.",
+            "enforcementDisabledDescription": "Saving profiles changes config only. Runtime traffic still uses profile credentials.",
+            "targetDescriptionEmpty": "No proxy target selected."
+          },
+          "tags": {
+            "adminKeyReady": "Admin key ready",
+            "adminKeyMissing": "Admin key missing",
+            "trafficBindings": "Traffic: {{value}}",
+            "noRuntimeBindings": "No runtime bindings",
+            "preflightCounts": "{{blocking}} blocking / {{warnings}} warning",
+            "runtimeCounts": "{{governed}} governed / {{direct}} direct",
+            "none": "None",
+            "noneLowercase": "none",
+            "readyLowercase": "ready",
+            "notSelected": "not selected"
+          },
+          "preflightStates": {
+            "noTargetSelected": {
+              "label": "No target selected",
+              "description": "Select a LiteLLM profile before running governance preflight."
+            },
+            "notChecked": {
+              "label": "Not checked",
+              "description": "Run preflight to confirm this target can be governed."
+            },
+            "blocked": {
+              "label": "Blocked",
+              "description": "{{blocking}} blocking issue(s), {{warnings}} warning(s)."
+            },
+            "readyWithWarnings": {
+              "label": "Ready with warnings",
+              "description": "{{warnings}} warning(s) still worth resolving."
+            },
+            "ready": {
+              "label": "Ready",
+              "description": "Selected target is healthy enough to enable managed governance."
+            }
+          },
+          "runtimeStates": {
+            "directMode": {
+              "label": "Direct mode",
+              "description": "Runtime traffic is still expected to authenticate with profile credentials."
+            },
+            "failClosed": {
+              "label": "Fail closed",
+              "description": "Governed traffic will fail until the managed runtime key can be decrypted."
+            },
+            "noRecentTraffic": {
+              "label": "No recent traffic",
+              "description": "No requests were observed for the governed target in the last 24h."
+            },
+            "noGovernedTraffic": {
+              "label": "No governed traffic",
+              "description": "The target saw requests, but none used the managed LiteLLM runtime key."
+            },
+            "mixedTraffic": {
+              "label": "Mixed traffic",
+              "description": "Both governed and direct profile-key traffic are still hitting the governed target."
+            },
+            "governedTrafficObserved": {
+              "label": "Governed traffic observed",
+              "description": "Recent requests are reaching the target through the managed LiteLLM runtime key."
+            }
+          }
         },
         "observed": {
           "title": "Observed runtime usage",
           "hint": "This is derived from business request logs for the selected LiteLLM profile. LiteLLM still performs the actual enforcement.",
-          "daySpend": "24h spend: {{value}}",
+          "daySpend": "Governed 24h spend: {{value}}",
+          "dayDirect": "Direct 24h spend: {{value}}",
           "dayRemaining": "24h remaining: {{value}}",
-          "monthSpend": "30d spend: {{value}}",
+          "monthSpend": "Governed 30d spend: {{value}}",
+          "monthDirect": "Direct 30d spend: {{value}}",
           "monthRemaining": "30d remaining: {{value}}",
           "dayDetails": "24h requests {{requests}}, tokens {{tokens}}, success rate {{successRate}}%, errors {{errors}}, p95 latency {{latency}}.",
           "monthDetails": "30d requests {{requests}}, tokens {{tokens}}, success rate {{successRate}}%, errors {{errors}}, avg latency {{latency}}.",
           "leadingErrorTitle": "Most common recent error",
-          "loading": "Loading observed usage for the selected profile."
+          "loading": "Loading observed usage for the selected profile.",
+          "cards": {
+            "governedRatio": "Governed share",
+            "governedRatioDetail": "{{governed}} of {{total}} requests",
+            "managedKeyRequests": "Managed-key requests",
+            "managedKeyRequestsDetail": "24h managed-runtime-key requests",
+            "profileKeyRequests": "Profile-key requests",
+            "profileKeyRequestsDetail": "24h profile-key requests",
+            "successRate": "24h success rate",
+            "successRateDetail": "{{count}} errors in the last 24h"
+          },
+          "budgetPressure": "Observed budget pressure",
+          "budgetPressureHint": "Derived from app-side governed request logs. LiteLLM remains the source of truth for real enforcement.",
+          "dayBudgetProgress": "24h governed spend vs configured cap",
+          "monthBudgetProgress": "30d governed spend vs configured cap",
+          "directLeakage": "24h direct request leakage",
+          "authModeDetails": "24h managed-runtime-key requests {{managed}}, profile-key requests {{direct}}.",
+          "runtimeKeyUnreadable": "Managed runtime key is unreadable, so governed traffic will fail closed until secret decryption is fixed.",
+          "zeroGoverned": "No governed requests were observed in the last 24h.",
+          "directRequests": "Direct profile-key requests are still reaching the governed target profile.",
+          "directRequestsDetails": "Direct requests: {{count}}, governed requests: {{governed}} in the last 24h."
+        },
+        "recommendedActions": {
+          "enableAfterPreflight": "Enable governance after preflight passes.",
+          "resolveBlocking": "Resolve blocking preflight issues before saving.",
+          "bindCompletion": "Bind completion traffic to the governed profile.",
+          "bindEmbedding": "Bind embedding traffic if this profile should govern embeddings.",
+          "bindRerank": "Bind rerank traffic if this profile should govern rerank.",
+          "restoreSecretDecryption": "Restore secret decryption so the managed runtime key can be read.",
+          "verifyRuntimeTraffic": "Verify real runtime traffic is reaching the governed target profile.",
+          "removeProfileKeyCallers": "Remove remaining profile-key callers hitting the governed target profile.",
+          "reviewDailyBudget": "Review the 24h budget because observed governed spend is nearing the configured cap."
+        },
+        "attention": {
+          "preflightBlocked": {
+            "title": "Preflight is blocking enablement",
+            "description": "{{count}} required check(s) still fail for the selected target."
+          },
+          "managedKeyUnreadable": {
+            "title": "Managed runtime key is unreadable",
+            "description": "Governed traffic will fail closed until secret decryption is restored."
+          },
+          "noBindings": {
+            "title": "No governed traffic binding is active",
+            "description": "Completion, embedding, or rerank traffic must point at the governed target for LiteLLM enforcement to matter."
+          },
+          "zeroGoverned": {
+            "title": "No governed requests observed",
+            "description": "The governed target saw no managed-runtime-key requests in the last 24h."
+          },
+          "directTraffic": {
+            "title": "Direct traffic still bypasses managed governance",
+            "description": "{{count}} direct profile-key request(s) reached the governed target in the last 24h."
+          },
+          "dayBudget": {
+            "title": "24h spend is near the configured cap",
+            "description": "{{value}} of the daily governed budget has been observed."
+          },
+          "monthBudget": {
+            "title": "30d spend is near the configured cap",
+            "description": "{{value}} of the monthly governed budget has been observed."
+          },
+          "readyToEnable": {
+            "title": "Governance is ready to enable",
+            "description": "Preflight is passing for the current target profile."
+          }
         },
         "fields": {
           "enabled": "Enable LiteLLM-enforced runtime governance",
@@ -5149,6 +5871,7 @@
       "newsEvents": "News events",
       "newsEventSourcePolicy": "News source policy",
       "newsIndicator": "News ↔ indicators",
+      "newsExtraction": "News extraction",
       "newsDedupe": "News dedupe",
       "newsClassification": "News classification",
       "newsPrompts": "News prompts",
@@ -5539,6 +6262,39 @@
           "placeholder": "Enter the 8-digit code"
         }
       }
+    },
+    "dataExport": {
+      "title": "Data export",
+      "description": "Download a machine-readable JSON copy of your account, settings, subscriptions, personalization, saved analysis, notifications, and assistant records for this organization.",
+      "download": "Download data export",
+      "success": "Data export downloaded.",
+      "failed": "Failed to download data export."
+    },
+    "details": {
+      "success": "Profile updated.",
+      "failed": "Failed to update profile.",
+      "title": "Profile details",
+      "description": "Update how your name appears across saved views, comments, and collaboration surfaces.",
+      "firstName": "First name",
+      "firstNameRequired": "Enter a first name.",
+      "lastName": "Last name",
+      "lastNameRequired": "Enter a last name.",
+      "save": "Save profile"
+    },
+    "password": {
+      "success": "Password changed. Please use the new password next time you sign in.",
+      "failed": "Failed to change password.",
+      "title": "Change password",
+      "description": "Changing your password revokes existing refresh tokens and secures future sessions.",
+      "current": "Current password",
+      "currentRequired": "Enter your current password.",
+      "new": "New password",
+      "newRequired": "Enter a new password.",
+      "newMin": "Password must be at least 8 characters.",
+      "confirm": "Confirm new password",
+      "confirmRequired": "Confirm the new password.",
+      "confirmMismatch": "Passwords do not match.",
+      "submit": "Change password"
     }
   },
   "systemSettings": {
@@ -5821,7 +6577,8 @@
           "upstreamRateLimited": "Upstream rate limited (HTTP 429). Please try again later.",
           "upstreamError": "Nominatim request failed (HTTP {{status}}).",
           "networkError": "Network error or timeout. Please try again later."
-        }
+        },
+        "success": "Geocoding test completed."
       },
       "fields": {
         "userAgent": "User-Agent",
@@ -6033,6 +6790,24 @@
         "resetContent": "Remove stored overrides and revert to env values?",
         "confirm": "Confirm",
         "cancel": "Cancel"
+      },
+      "diagnostics": {
+        "title": "Runtime diagnostics",
+        "configured": "Configured",
+        "incomplete": "Incomplete",
+        "backoffActive": "Backoff active",
+        "available": "Available for requests",
+        "labels": {
+          "snapshot": "Snapshot",
+          "source": "Effective source",
+          "baseUrl": "Effective base URL",
+          "timeout": "Timeout",
+          "maxRetries": "Max retries",
+          "fallback": "Fallback to Mongo",
+          "consecutiveFailures": "Consecutive failures",
+          "unavailableUntil": "Unavailable until",
+          "lastFailureAt": "Last failure"
+        }
       }
     },
     "modelService": {
@@ -6248,18 +7023,25 @@
       "behaviorProfile": {
         "title": "Behavior profile diagnostics",
         "description": "Inspect the current user behavior profile used by personalized ranking and verify whether source/topic/entity signals match expectations.",
+        "decayTitle": "Recency decay",
+        "decayPolicy": "{{halfLifeDays}}d half-life",
+        "averageDecay": "avg {{value}}%",
         "sections": {
           "sources": "Sources",
           "topics": "Topics",
           "entities": "Entities",
           "domains": "Domains",
           "items": "Items",
-          "events": "Events"
+          "events": "Events",
+          "combined": "Combined",
+          "positive": "Positive",
+          "negative": "Negative"
         },
         "empty": "No profile data",
         "clearAction": "Clear profile",
         "clearConfirmTitle": "Clear behavior profile?",
-        "clearConfirmDescription": "This removes accumulated source/topic/entity/item/event preferences for the current user."
+        "clearConfirmDescription": "This removes accumulated source/topic/entity/item/event preferences for the current user.",
+        "legacyFallback": "Legacy behavior fallback is still contributing because the v2 profile is sparse."
       },
       "unsaved": {
         "title": "Unsaved changes",
@@ -6375,7 +7157,8 @@
       "groups": {
         "totalCount": "Keys: {{count}}",
         "persistedCount": "Configured: {{count}}",
-        "draftCount": "Drafts: {{count}}"
+        "draftCount": "Drafts: {{count}}",
+        "unassignedDrafts": "Draft entries"
       },
       "filters": {
         "onlyConfigured": "Configured only",
@@ -6536,7 +7319,10 @@
         "telegramSendCode": "Send code",
         "telegramCompleteAuth": "Generate & save session",
         "telegramClearAuthState": "Clear auth state",
-        "telegramClearSavedSession": "Clear saved Telegram session"
+        "telegramClearSavedSession": "Clear saved Telegram session",
+        "backToMonitor": "Back to Situation Monitor",
+        "openMonitoringSettings": "Open monitoring settings",
+        "openSchedulerSettings": "Open scheduler settings"
       },
       "validation": {
         "translationMaxConcurrency": "Concurrency is required",
@@ -6597,6 +7383,41 @@
         "telegramEnableContent": "Session will be saved either way. Choose whether to enable Telegram polling immediately.",
         "telegramEnableConfirm": "Save and enable",
         "telegramEnableSkip": "Save only"
+      },
+      "snapshot": {
+        "refreshSuccess": "Rebuilt the Situation Monitor external snapshot.",
+        "refreshFailed": "Failed to rebuild the Situation Monitor external snapshot.",
+        "title": "GDELT snapshot scheduler",
+        "stale": "STALE",
+        "interval": "Every {{count}} min",
+        "history": "{{count}} day history",
+        "generatedAt": "Last generated: {{time}}",
+        "lastFullSuccess": "Last full success: {{time}}",
+        "lastNonSuccess": "Last partial/failure: {{time}}",
+        "nextScheduled": "Next scheduled run: {{time}}",
+        "coverage": "Available categories: {{count}} / 6. Active warnings: {{warnings}}.",
+        "successRate": "24h success {{value}}",
+        "rateLimitedCount": "24h rate limits {{value}}",
+        "averageCoverage": "24h avg categories {{value}} / 6",
+        "refreshStatus": "Refresh status",
+        "forceRefresh": "Rebuild external snapshot"
+      },
+      "readiness": {
+        "title": "Situation Monitor readiness",
+        "description": "These settings directly affect Situation Monitor refresh, Telegram, OREF, Finnhub, and FRED data availability.",
+        "providers": "Provider readiness"
+      },
+      "quality": {
+        "title": "Analysis quality",
+        "empty": "Quality metrics are not available yet.",
+        "articles": "Articles {{count}}",
+        "clusters": "Clusters {{count}}",
+        "mixed": "Mixed {{count}}",
+        "mode": "Mode {{value}}",
+        "generatedAt": "Last computed: {{time}}",
+        "window": "Window: {{hours}}h",
+        "dedupe": "Dedupe ratio: {{value}}",
+        "avgSources": "Avg sources / cluster: {{value}}"
       }
     },
     "realtimeSignals": {
@@ -6714,7 +7535,8 @@
         "aisRelaySharedSecret": "Shared auth secret expected by the AIS relay. It must match `AIS_RELAY_SHARED_SECRET` on the relay service.",
         "acledOauthUsername": "ACLED account email used for automatic OAuth token refresh.",
         "acledOauthClientId": "Defaults to `acled`. Change only if ACLED issued a different client ID.",
-        "secretOptional": "Leave secret fields empty to keep existing stored values."
+        "secretOptional": "Leave secret fields empty to keep existing stored values.",
+        "openskyClientId": "OAuth client ID used for OpenSky access tokens."
       },
       "placeholders": {
         "openskyBaseUrl": "https://opensky-network.org/api",
@@ -6724,7 +7546,8 @@
         "polymarketProxyUrl": "https://your-proxy.example.com/polymarket",
         "acledOauthUsername": "weidu500l@gmail.com",
         "acledOauthClientId": "acled",
-        "secretValue": "Leave empty to keep current value"
+        "secretValue": "Leave empty to keep current value",
+        "openskyClientId": "client-id"
       },
       "alerts": {
         "aisRelayPurpose": {
@@ -6914,11 +7737,88 @@
           "network": "network",
           "unknown": "unknown"
         },
+        "errorCode": {
+          "dns_resolution_failed": "DNS resolution failed",
+          "request_timeout": "Request timed out",
+          "network_error": "Network error",
+          "upstream_auth_failed": "Upstream auth failed",
+          "upstream_rate_limited": "Upstream rate limited",
+          "upstream_server_error": "Upstream server error",
+          "fetch_error": "Fetch error"
+        },
+        "aisReason": {
+          "ais_upstream_disconnected": "AIS relay is reachable, but its upstream AIS stream is disconnected.",
+          "ais_upstream_no_messages_after_connect": "AIS relay connected upstream, but no AIS messages arrived after connect.",
+          "ais_upstream_stalled": "AIS relay upstream message flow has stalled.",
+          "ais_position_reports_not_retained": "AIS relay is receiving reports, but vessel snapshots are not being retained.",
+          "ais_position_reports_mostly_ignored": "AIS relay is receiving reports, but most position reports are being ignored during normalization.",
+          "ais_payload_parse_errors": "AIS relay is encountering frequent upstream payload parse errors.",
+          "ais_snapshot_missing_vessels_contract": "AIS relay reports tracked vessels, but this snapshot only exposes aggregated signals instead of individual vessels[]."
+        },
         "lastRunAt": "Last run",
         "lastAttemptAt": "Last attempt",
+        "nextEligibleAt": "Next eligible",
         "lastSuccessAt": "Last success",
         "lastError": "Last error",
-        "empty": "Runtime diagnostics have not been loaded yet."
+        "retryAfter": "Retry-After",
+        "rateLimit": "Rate limit diagnostics",
+        "rateLimitHeader": "RateLimit",
+        "rateLimitPolicy": "RateLimit-Policy",
+        "cfRay": "CF-Ray",
+        "feedback": {
+          "aisRelayMissingConfig": {
+            "title": "AIS relay root URL is not configured.",
+            "body": "The API cannot request `/ais/snapshot` until `AIS relay root URL` points to the relay service."
+          },
+          "aisRelayDnsFailure": {
+            "title": "The API cannot resolve the AIS relay host.",
+            "body": "Verify that `AIS relay root URL` uses the correct host name, that the `api` container is on the same Docker network, and that the `ais-relay` service name still matches the configured address."
+          },
+          "aisUpstreamDisconnected": {
+            "title": "AIS relay is reachable, but its upstream AIS stream is disconnected.",
+            "body": "The relay service is up, but it is not maintaining a live upstream stream."
+          },
+          "aisReportsNotRetained": {
+            "title": "AIS relay is receiving reports, but vessel snapshots are not being retained.",
+            "body": "Seen {{seen}} reports, processed {{processed}}, retained candidates {{candidates}}. Check relay parsing and snapshot retention logic."
+          },
+          "aisUpstreamNoMessagesAfterConnect": {
+            "body": "The websocket connected, but no AIS payload arrived before the relay timeout window. Check upstream subscription health, credentials, and whether the source is sending live traffic."
+          },
+          "aisUpstreamStalled": {
+            "body": "The upstream socket stayed open but message flow stopped. Inspect upstream heartbeat/keepalive behavior and relay-side reconnect activity."
+          },
+          "aisReportsMostlyIgnored": {
+            "body": "The relay is receiving positions, but normalization is discarding most of them. Seen {{seen}} reports, processed {{processed}}, ignored {{ignored}}."
+          },
+          "aisPayloadParseErrors": {
+            "body": "The relay is discarding a significant share of upstream payloads during parsing. Review upstream payload format drift and parser assumptions. Recent parse errors: {{count}}."
+          },
+          "aisSnapshotMissingVesselsContract": {
+            "title": "AIS relay snapshot contract is missing vessels[].",
+            "body": "The relay is publishing density/disruption aggregates, but not the per-vessel `vessels[]` snapshot required by AIS all-mode. Fix the relay snapshot contract instead of diagnosing this as an upstream disconnect."
+          },
+          "aisRelayDegraded": {
+            "title": "AIS relay reported degraded runtime health.",
+            "body": "The relay is responding, but diagnostics indicate upstream or parsing problems that will affect AIS map quality."
+          },
+          "outagesRateLimited": {
+            "title": "Cloudflare Radar outages source is currently rate limited.",
+            "body": "The API is honoring the upstream limit window and will not retry before {{time}}."
+          },
+          "lastHealthyAt": "Last healthy: {{time}}.",
+          "retryAfterWindow": "Retry-After requested {{value}} of backoff."
+        },
+        "empty": "Runtime diagnostics have not been loaded yet.",
+        "aisTrackedVessels": "Tracked vessels",
+        "aisCandidates": "Candidates",
+        "aisReportsSeen": "Reports seen",
+        "aisReportsProcessed": "Reports processed",
+        "aisReportsIgnored": "Reports ignored",
+        "aisParseErrors": "Parse errors",
+        "aisRelayDiagnostics": "AIS relay diagnostics",
+        "aisLastUpstreamError": "Last upstream error",
+        "aisLastParseError": "Last parse error"
       }
     },
     "akshare": {
@@ -7076,6 +7976,51 @@
         "scopeDigest": "Digest {{value}}",
         "scopeCalendar": "Calendar {{value}}"
       }
+    },
+    "multiTenantSchedulers": {
+      "errors": {
+        "loadFailed": "Failed to load multi-tenant scheduler settings.",
+        "saveFailed": "Failed to save multi-tenant scheduler settings."
+      },
+      "messages": {
+        "saved": "Multi-tenant scheduler settings saved."
+      },
+      "status": {
+        "saved": "Saved override",
+        "default": "Default",
+        "label": "Settings source"
+      },
+      "description": "Control how many organizations each background cron can process in parallel. Org-level locks still keep single-flight execution per tenant.",
+      "notice": {
+        "title": "Scheduler fan-out policy",
+        "body": "These limits apply per cron tick. Higher values reduce end-to-end tick latency, but also increase concurrent load on Redis, MySQL, MongoDB, and downstream services."
+      },
+      "fields": {
+        "realtimeSignalsOrgConcurrency": "Realtime signals org concurrency",
+        "newsEventsTimelineOrgConcurrency": "News events timeline org concurrency",
+        "newsEventsIngestionOrgConcurrency": "News events ingestion org concurrency",
+        "knowledgeGraphIngestionOrgConcurrency": "Knowledge graph ingestion org concurrency",
+        "sentimentSnapshotOrgConcurrency": "Sentiment snapshot org concurrency",
+        "newsnowHottestAnalysisOrgConcurrency": "NewsNow hottest analysis org concurrency",
+        "classificationQualityAlertOrgConcurrency": "Classification quality alert org concurrency",
+        "newsIndicatorAssociationOrgConcurrency": "News indicator association org concurrency",
+        "crawlQualityTaskSnapshotOrgConcurrency": "Crawl quality snapshot org concurrency",
+        "situationMonitorOrefDefaultRuleOrgConcurrency": "Situation monitor OREF rule org concurrency",
+        "userDigestDeliveryOrgConcurrency": "User digest delivery org concurrency"
+      },
+      "hints": {
+        "realtimeSignalsOrgConcurrency": "How many orgs the realtime signals scheduler may refresh at once.",
+        "newsEventsTimelineOrgConcurrency": "How many orgs the news-events timeline rebuild cron may process at once.",
+        "newsEventsIngestionOrgConcurrency": "How many orgs the news-events ingestion cron may process at once.",
+        "knowledgeGraphIngestionOrgConcurrency": "How many orgs the knowledge-graph ingestion cron may process at once.",
+        "sentimentSnapshotOrgConcurrency": "How many orgs the sentiment snapshot rebuild cron may process at once.",
+        "newsnowHottestAnalysisOrgConcurrency": "How many orgs the NewsNow hottest-analysis scheduler may refresh at once after the shared global snapshot is prepared.",
+        "classificationQualityAlertOrgConcurrency": "How many orgs the classification quality alert scheduler may evaluate at once.",
+        "newsIndicatorAssociationOrgConcurrency": "How many orgs the news indicator association scheduler may refresh at once.",
+        "crawlQualityTaskSnapshotOrgConcurrency": "How many orgs the crawl quality task snapshot scheduler may process at once.",
+        "situationMonitorOrefDefaultRuleOrgConcurrency": "How many orgs the situation monitor OREF default rule maintainer may process at once.",
+        "userDigestDeliveryOrgConcurrency": "How many orgs the user digest email scheduler may process at once."
+      }
     }
   },
   "analysis": {
@@ -7153,7 +8098,93 @@
       "generating": "Generating",
       "pending": "Pending"
     },
-    "runPermissionRequired": "You can view results, but you don't have permission to run new analyses."
+    "runPermissionRequired": "You can view results, but you don't have permission to run new analyses.",
+    "library": {
+      "loadFailed": "Failed to load saved views.",
+      "copySuccess": "View link copied.",
+      "copyFailed": "Failed to copy link.",
+      "deleteSuccess": "Saved view deleted.",
+      "deleteFailed": "Failed to delete saved view.",
+      "title": "Analysis library",
+      "subtitle": "Reopen saved views, copy org-internal links, and manage shared analysis state.",
+      "scope": {
+        "all": "All",
+        "mine": "Mine",
+        "shared": "Shared"
+      },
+      "surface": {
+        "all": "All surfaces"
+      },
+      "empty": "No saved views for the current filter.",
+      "open": "Open view",
+      "copy": "Copy link",
+      "deleteTitle": "Delete this saved view?",
+      "noDescription": "No description provided.",
+      "updatedBy": "Updated by {{name}}"
+    },
+    "workspace": {
+      "title": "Analysis workspace",
+      "subtitle": "Coordinate shared boards, saved views, and task discussions."
+    },
+    "toolbar": {
+      "updateSuccess": "Saved view updated.",
+      "createSuccess": "Saved view created.",
+      "saveFailed": "Failed to save view.",
+      "exportFailed": "Failed to export CSV.",
+      "copySuccess": "Share link copied.",
+      "copyFailed": "Failed to copy link.",
+      "title": "Analysis workspace",
+      "shared": "Org shared",
+      "private": "Private",
+      "editable": "You can edit this view",
+      "savedDescription": "This saved analysis view can be reopened, exported, and discussed with your team.",
+      "unsavedDescription": "Save the current filters as an internal view, export the result set, or continue into the analysis library.",
+      "updatedBy": "Last updated by {{name}}",
+      "permissionTitle": "Read-only access",
+      "permissionDescription": "Saving views, exporting CSV, and annotations require analysis.write permission.",
+      "library": "Analysis library",
+      "share": "Copy link",
+      "createTask": "Create task",
+      "export": "Export CSV",
+      "update": "Update view",
+      "save": "Save view",
+      "updateModalTitle": "Update saved analysis view",
+      "createModalTitle": "Save current analysis view",
+      "fields": {
+        "title": "Title",
+        "titleRequired": "Enter a title.",
+        "titlePlaceholder": "South China Sea watchlist",
+        "description": "Description",
+        "descriptionPlaceholder": "What this saved view tracks and why it matters.",
+        "visibility": "Visibility"
+      }
+    },
+    "annotations": {
+      "loadFailed": "Failed to load annotations.",
+      "noteSaved": "Shared note saved.",
+      "noteSaveFailed": "Failed to save note.",
+      "commentSaved": "Comment added.",
+      "commentSaveFailed": "Failed to save comment.",
+      "commentUpdated": "Comment updated.",
+      "commentUpdateFailed": "Failed to update comment.",
+      "commentDeleted": "Comment deleted.",
+      "commentDeleteFailed": "Failed to delete comment.",
+      "title": "Shared annotations",
+      "readOnlyTitle": "Read-only annotations",
+      "readOnlyDescription": "You can read shared notes and comments, but writing requires analysis.write permission.",
+      "createTask": "Create task",
+      "noteTitle": "Shared note",
+      "notePlaceholder": "Capture hypotheses, evidence gaps, and next steps.",
+      "saveNote": "Save note",
+      "updatedAt": "Updated {{time}}",
+      "noteEmpty": "No shared note yet.",
+      "commentsTitle": "Comments",
+      "deleteTitle": "Delete this comment?",
+      "commentsEmpty": "No comments yet.",
+      "newComment": "Add comment",
+      "commentPlaceholder": "Call out corroboration gaps, follow-up questions, or tasking.",
+      "addComment": "Post comment"
+    }
   },
   "orgAdmin": {
     "loading": "Loading",
@@ -7360,6 +8391,7 @@
       "ws": {
         "missingUrl": "WebSocket URL not available.",
         "error": "WebSocket error.",
+        "timeout": "WebSocket connection timed out. Retrying automatically...",
         "reconnecting": "Disconnected. Reconnecting...",
         "warningTitle": "WebSocket connection issue",
         "noAutoFallback": "No automatic fallback. Switch to Polling manually if needed.",
@@ -7506,10 +8538,30 @@
         "request": "Request details",
         "browser": "Browser details",
         "copyJson": "Copy JSON",
-        "copied": "Copied."
+        "copied": "Copied.",
+        "openRequest": "Open request details"
       },
       "raw": {
         "description": "Raw monitoring payload for debugging (best-effort normalization)."
+      }
+    },
+    "liveUpdates": {
+      "connected": "Live",
+      "connecting": "Connecting",
+      "disconnected": "Disconnected",
+      "error": "Error",
+      "alertTitle": "Realtime updates unavailable",
+      "fallbackHint": "This page is temporarily using scheduled refresh while the realtime connection recovers.",
+      "connectionError": {
+        "unauthorized": "Crawl realtime access expired. Please sign in again.",
+        "tooManyConnections": "Crawl realtime connections are at capacity. Please try again later.",
+        "tooManyConnectionAttempts": "Too many crawl realtime connection attempts. Please try again later.",
+        "rateLimitExceeded": "Crawl realtime connection attempts are too frequent. Please try again later.",
+        "tooManyFailedAttempts": "Too many failed crawl realtime sign-in attempts. Please try again later.",
+        "timeout": "Connecting to crawl realtime timed out. Please try again.",
+        "network": "Unable to connect to crawl realtime. Please check the network and try again.",
+        "connect": "Unable to connect to crawl realtime right now. Please try again later.",
+        "socket": "Crawl realtime connection is unstable. Please try again later."
       }
     },
     "ops": {
@@ -7588,7 +8640,8 @@
       "proxy": {
         "direct": "Direct",
         "dict": "Proxy {{server}} / user {{user}}",
-        "dockerHint": "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead."
+        "dockerHint": "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead.",
+        "unsupportedLegacy": "Unsupported legacy proxy config: {{value}}"
       },
       "markdown": {
         "default": "Default",
@@ -7652,7 +8705,15 @@
         "confirmDescription": "This will convert crawl results into Items and enqueue LLM processing for results that are not in Items yet.",
         "running": "Backfilling results...",
         "progress": "Backfilling... ({{ingested}} ingested, {{skipped}} skipped, {{failed}} failed)",
-        "done": "Queued for processing. Refreshing..."
+        "done": "Queued for processing. Refreshing...",
+        "emptyTitle": "No results to backfill yet.",
+        "emptyDescription": "This task has no crawl results yet, so nothing can be sent to Items.",
+        "timeout": "Backfill request timed out. Please try again after refreshing the task.",
+        "summary": "{{ingested}} ingested, {{skipped}} skipped, {{failed}} failed across {{scanned}} scanned results.",
+        "noMissingTitle": "All crawl results are already in Items.",
+        "partialTitle": "Backfill finished with failures.",
+        "failedTitle": "Backfill failed.",
+        "emptyHint": "No crawl results available yet."
       },
       "fields": {
         "displayName": "Display name",
@@ -8257,6 +9318,9 @@
       "title": "Proxy",
       "url": "URL",
       "urlHint": "URL hint",
+      "disabledTitle": "Custom upstream proxies are disabled",
+      "disabledDescription": "Task crawl no longer accepts proxyUrl or proxyConfig. Remove any legacy proxy fields before submitting.",
+      "unsupportedLegacyTitle": "Unsupported legacy proxy configuration detected",
       "placeholders": {
         "url": "Enter URL",
         "server": "Enter Server",
@@ -8267,6 +9331,11 @@
       "serverHint": "Server hint",
       "username": "Username",
       "password": "Password"
+    },
+    "policy": {
+      "unsupportedProxy": "Custom upstream proxies are no longer supported.",
+      "frontierSinglePrimaryUrl": "Frontier node crawl must keep a single primary URL.",
+      "actionBlockedByUnsupportedProxy": "Remove the unsupported legacy proxy configuration before continuing."
     },
     "title": "Crawl Tasks",
     "filter": {
@@ -8326,7 +9395,7 @@
       "metaTitle": "Metadata",
       "contextTitle": "Context",
       "contextEmpty": "No topics or entities.",
-      "payloadTitle": "Payload",
+      "payloadTitle": "Full text & JSON",
       "payloadEmpty": "No payload available.",
       "payloadProcessed": "Processed JSON",
       "payloadRaw": "Raw JSON",
@@ -8385,7 +9454,53 @@
         "llmCost": "LLM cost",
         "llmTokens": "LLM total tokens",
         "embeddingModel": "Embedding model",
-        "embeddingDims": "Embedding dims"
+        "embeddingDims": "Embedding dims",
+        "provider": "Provider",
+        "model": "Model",
+        "promptVersion": "Prompt version",
+        "reason": "Reason",
+        "tokens": "Tokens",
+        "promptTokens": "Prompt tokens",
+        "completionTokens": "Completion tokens",
+        "latency": "Latency",
+        "cost": "Cost"
+      },
+      "stageMetaTitle": "Stage execution",
+      "stages": {
+        "attention": "Some pipeline stages need attention",
+        "rawJson": "Raw stage metadata JSON",
+        "summary": {
+          "completed": "Completed",
+          "skipped": "Skipped",
+          "rejected": "Rejected",
+          "failed": "Failed"
+        },
+        "status": {
+          "completed": "Completed",
+          "skipped": "Skipped",
+          "rejected": "Rejected",
+          "failed": "Failed"
+        },
+        "labels": {
+          "preflight": "Preflight",
+          "clean": "Clean",
+          "qualityGate": "Quality gate",
+          "entities": "Entities",
+          "sentiment": "Sentiment",
+          "kg": "Knowledge graph",
+          "classify": "Classification",
+          "dedupe": "Dedupe"
+        },
+        "descriptions": {
+          "preflight": "Low-cost crawl quality screening before LLM cleaning.",
+          "clean": "Primary LLM cleanup and structured extraction pass.",
+          "qualityGate": "Post-clean gating based on quality score and minimum content.",
+          "entities": "Independent entity extraction from cleaned content.",
+          "sentiment": "Overall sentiment inference from cleaned content.",
+          "kg": "Knowledge graph relation extraction.",
+          "classify": "Taxonomy and content-type classification.",
+          "dedupe": "Summary-level duplicate detection."
+        }
       },
       "keyPointsMore": "+{{count}} more",
       "processedErrorTitle": "Processing failed",
@@ -8393,7 +9508,38 @@
       "fullTextTitle": "Article text",
       "languageNoticeTitle": "Language notice",
       "languageNoticeDescription": "Detected language is {{language}}. This article may not have been translated to Chinese yet.",
-      "fullTextEmpty": "No translated article text available."
+      "fullTextEmpty": "No translated article text available.",
+      "pipelineRecovery": {
+        "errors": {
+          "loadFailed": "Failed to load pipeline recovery runs.",
+          "actionFailed": "Pipeline recovery action failed."
+        },
+        "messages": {
+          "replaySuccess": "Pipeline replay queued.",
+          "rollbackSuccess": "Pipeline rollback created."
+        },
+        "confirm": {
+          "replayTitle": "Replay this pipeline run?",
+          "rollbackTitle": "Rollback to this raw item?",
+          "replayBody": "This clones the selected raw item and requeues the pipeline.",
+          "rollbackBody": "This resets the pipeline state so the selected raw item becomes pending again."
+        },
+        "actions": {
+          "replay": "Replay",
+          "rollback": "Rollback",
+          "replayCurrent": "Replay current raw item",
+          "rollbackCurrent": "Rollback current raw item"
+        },
+        "title": "Pipeline Recovery",
+        "description": "Inspect recent processed runs for this item and trigger replay or rollback without leaving the item detail page.",
+        "labels": {
+          "itemStatus": "Item status",
+          "mongoRef": "Current raw ref",
+          "updatedAt": "Updated",
+          "stageErrors": "Recent stage errors"
+        },
+        "empty": "No recent pipeline runs found for this item."
+      }
     },
     "columns": {
       "name": "Title",
@@ -8515,6 +9661,7 @@
     }
   },
   "reader": {
+    "theme": "Theme",
     "translation": {
       "title": "Translation",
       "enable": "Enable",
@@ -8530,7 +9677,17 @@
     },
     "back": "Back",
     "font": "Font",
+    "fontFamily": {
+      "sans": "Sans",
+      "serif": "Serif",
+      "mono": "Mono"
+    },
     "size": "Size",
+    "fontSize": {
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large"
+    },
     "languageNotice": "Original language: {{language}}",
     "coverCaption": "Cover image from {{source}}",
     "summary": "Summary",
@@ -8605,6 +9762,10 @@
       "noLlmTitle": "No LLM in crawl stage",
       "noLlmDescription": "The crawl stage must only fetch and store cleaned markdown; run your configured model in the pipeline stage instead."
     },
+    "proxy": {
+      "disabledTitle": "Custom upstream proxies are disabled",
+      "disabledDescription": "Do not store proxyUrl or proxyConfig in template crawlOptions. Legacy proxy fields remain visible in JSON and block save until removed."
+    },
     "headless": {
       "auto": "Auto",
       "headless": "Headless",
@@ -8655,10 +9816,25 @@
       "disconnected": "Disconnected",
       "error": "Error",
       "lastEvent": "Last event: {{time}}",
+      "connectionError": {
+        "unauthorized": "Quality realtime access expired. Please sign in again.",
+        "tooManyConnections": "Quality realtime connections are at capacity. Please try again later.",
+        "tooManyConnectionAttempts": "Too many quality realtime connection attempts. Please try again later.",
+        "rateLimitExceeded": "Quality realtime connection attempts are too frequent. Please try again later.",
+        "tooManyFailedAttempts": "Too many failed quality realtime sign-in attempts. Please try again later.",
+        "timeout": "Connecting to quality realtime timed out. Please try again.",
+        "network": "Unable to connect to quality realtime. Please check the network and try again.",
+        "connect": "Unable to connect to quality realtime right now. Please try again later.",
+        "socket": "Quality realtime connection is unstable. Please try again later."
+      },
       "details": {
         "lastEvent": "Last event",
         "refreshOn": "Refresh on",
         "resetCounters": "Reset counters"
+      },
+      "stale": {
+        "title": "New live events arrived after the last refresh.",
+        "description": "Overview data is stale for: {{sources}}. Refresh now or enable refresh-on-event for those sources."
       }
     },
     "updatedAt": "Updated at: {{time}}",
@@ -9237,7 +10413,30 @@
       "alert": "ALERT",
       "taggedHint": "Tagged scope is active. Switch to All items if you want broader coverage.",
       "internalTooltip": "Processed internal headlines from this project.",
-      "gdeltTooltip": "Fallback headlines from GDELT when internal coverage is thin."
+      "gdeltTooltip": "Fallback headlines from GDELT when internal coverage is thin.",
+      "emptyReason": {
+        "rateLimited": "RATE LIMITED",
+        "upstream": "UPSTREAM ERROR",
+        "unconfigured": "UNCONFIGURED",
+        "outsideWindow": "OUTSIDE WINDOW",
+        "noData": "NO DATA"
+      },
+      "emptyDescription": {
+        "rateLimited": "The latest external snapshot could not refresh this category because GDELT rate limited the upstream request.",
+        "upstream": "The latest external snapshot could not refresh this category because the upstream GDELT request failed.",
+        "unconfigured": "This workspace has no active internal news sources for this category yet.",
+        "outsideWindow": "Older content exists outside the current time window. Expand the window to inspect broader coverage.",
+        "noData": "Neither internal coverage nor the latest external snapshot produced visible event clusters for this category."
+      },
+      "clusterCount": "CLUSTERS {{count}}",
+      "articleCount": "ARTICLES {{count}}",
+      "internalCount": "INT {{count}}",
+      "externalCount": "EXT {{count}}",
+      "mixedCluster": "MIXED",
+      "sourcesCount": "{{count}} sources",
+      "rawArticleCount": "{{count}} raw articles",
+      "hideRawArticles": "Hide raw articles",
+      "viewRawArticles": "View raw articles"
     },
     "notice": {
       "title": "Signal scope and feed legend",
@@ -9300,7 +10499,11 @@
       "hint": "Configure the FRED shared financial data provider in Admin Settings > System Settings > Situation Monitor.",
       "value": "Value",
       "delta": "Δ",
-      "balanceSheet": "Balance sheet"
+      "balanceSheet": "Balance sheet",
+      "moneyPrinter": {
+        "on": "PRINTER ON",
+        "off": "PRINTER OFF"
+      }
     },
     "leaders": {
       "title": "World Leaders",
@@ -9360,11 +10563,22 @@
     "window": {
       "6h": "Last 6h",
       "24h": "Last 24h",
-      "72h": "Last 72h"
+      "72h": "Last 72h",
+      "168h": "Last 7d"
+    },
+    "windowCompact": {
+      "6h": "6H",
+      "24h": "24H",
+      "72h": "72H",
+      "168h": "7D"
     },
     "scope": {
       "tagged": "Tagged sources",
       "all": "All items"
+    },
+    "scopeBadge": {
+      "tagged": "TAGGED",
+      "all": "ALL"
     },
     "panels": {
       "title": "Panels",
@@ -9372,7 +10586,78 @@
       "reset": "Reset panels",
       "fixed": "Fixed",
       "none": "No panels enabled. Open Panels to re-enable.",
-      "hintCompact": "Enable Edit layout on smaller screens before dragging or resizing cards."
+      "hintCompact": "Enable Edit layout on smaller screens before dragging or resizing cards.",
+      "hintDesktop": "Click Customize layout to resize, reorder, and emphasize the cards you care about."
+    },
+    "empty": {
+      "unconfigured": {
+        "title": "No news sources are configured yet.",
+        "description": "This workspace has no active internal news sources, so the page can only rely on the external snapshot."
+      },
+      "window": {
+        "title": "Results are thin in the current window.",
+        "description": "Older content exists outside the current time window. Expand the range to inspect broader context."
+      },
+      "partial": {
+        "title": "External snapshot coverage is partial right now.",
+        "description": "Some categories are unavailable because the latest external snapshot was only partially generated."
+      },
+      "generic": {
+        "title": "No content is available right now.",
+        "description": "There are no internal items or external snapshot headlines available for the current view."
+      }
+    },
+    "summary": {
+      "title": "Summary",
+      "articles": "ARTICLES {{count}}",
+      "clusters": "CLUSTERS {{count}}",
+      "internal": "INT {{count}}",
+      "external": "EXT {{count}}",
+      "mixedClusters": "MIXED {{count}}",
+      "caption": "Internal items remain workspace-specific. External snapshot coverage is shared and server-generated."
+    },
+    "coverage": {
+      "title": "Coverage",
+      "visibleCategories": "{{count}} / 6 categories currently have visible coverage.",
+      "quality": "Dedupe {{dedupe}}. Avg sources / cluster {{sources}}.",
+      "generatedAt": "Last snapshot: {{time}}",
+      "missingCategories": "Missing: {{categories}}",
+      "noneMissing": "none",
+      "mode": {
+        "internal+external": "INT + EXT",
+        "internal-only": "INT ONLY",
+        "external-only": "EXT ONLY",
+        "empty": "EMPTY"
+      }
+    },
+    "actions": {
+      "title": "Next actions",
+      "openNewsSources": "Open News Sources",
+      "openSettings": "Open Situation Monitor Settings",
+      "refreshPageData": "Refresh page data",
+      "switchWindow": "Switch to {{window}}",
+      "recommendedWindow": "Current results are thin. Expand to {{window}} for broader context."
+    },
+    "snapshot": {
+      "stale": "STALE",
+      "freshCategories": "FRESH {{count}}",
+      "reusedCategories": "REUSED {{count}}",
+      "reusedCategory": "REUSED",
+      "reusedCategoryHint": "Showing the last successful snapshot for this category from {{time}} while the newest upstream fetch recovers.",
+      "status": {
+        "completed": "COMPLETED",
+        "partial": "PARTIAL",
+        "failed": "FAILED",
+        "idle": "IDLE"
+      }
+    },
+    "scopeRecovery": {
+      "title": "Tagged scope found no internal coverage.",
+      "description": "This view is limited to items tagged for situation monitoring. Switch to All items to load broader coverage.",
+      "action": "Switch to All items"
+    },
+    "status": {
+      "noData": "NO DATA"
     },
     "autoRefresh": "Auto refresh",
     "translateToZh": "Translate to Simplified Chinese",
@@ -9430,7 +10715,10 @@
     },
     "layout": {
       "done": "Done",
-      "edit": "Edit layout"
+      "edit": "Edit layout",
+      "resetPanelSize": "Restore default size",
+      "sizeBadge": "{{cols}} cols · {{rows}} rows · {{height}}px",
+      "editing": "Layout editing is on"
     }
   },
   "search": {
@@ -9470,6 +10758,479 @@
       "to": "End date",
       "source": "Filter by source",
       "phrase": "Exact phrase match"
+    }
+  },
+  "crawlFrontier": {
+    "errors": {
+      "loadProfiles": "Failed to load crawl site profiles.",
+      "loadRuns": "Failed to load crawl frontier runs.",
+      "loadProfile": "Failed to load crawl site profile."
+    },
+    "profile": {
+      "strategy": {
+        "layeredFrontier": "Layered frontier",
+        "nativeDeepCrawl": "Native deep crawl",
+        "minAcceptedResults": "Min accepted"
+      }
+    },
+    "run": {
+      "nativeAcceptedSelected": "Native accepted vs selected",
+      "acceptedLabel": "accepted",
+      "selectedLabel": "selected",
+      "nativeAccepted": "Native accepted",
+      "nativeSelected": "Native selected"
+    },
+    "workflowStudio": {
+      "title": "Workflow Strategy Studio",
+      "actions": {
+        "newWorkflow": "New Workflow",
+        "saveDraft": "Save Draft",
+        "publish": "Publish",
+        "trialRun": "Trial Run",
+        "replayLastRun": "Replay Last Run",
+        "compareVersions": "Compare Versions",
+        "runLeft": "Run Left",
+        "runRight": "Run Right"
+      },
+      "errors": {
+        "load": "Failed to load crawl strategy workflows",
+        "saveDraft": "Failed to save workflow draft",
+        "publish": "Failed to publish workflow",
+        "create": "Failed to create workflow",
+        "trial": "Failed to trial run workflow",
+        "compare": "Failed to compare workflow versions",
+        "replay": "Failed to replay workflow run"
+      },
+      "messages": {
+        "draftSaved": "Workflow draft saved",
+        "published": "Workflow published",
+        "trialCompleted": "Workflow trial run completed",
+        "trialStartedFromVersion": "Trial run started from v{{version}}",
+        "replayCreated": "Replay created: {{runId}}",
+        "replayCompleted": "Workflow replay completed"
+      },
+      "status": {
+        "publishedVersions": "Published versions: {{count}}",
+        "draftOnly": "Draft only"
+      },
+      "sections": {
+        "workflows": "Workflows",
+        "compare": "Version Compare",
+        "nodePalette": "Node Palette",
+        "trialRun": "Trial Run",
+        "linkedFrontierRuns": "Linked Frontier Runs",
+        "canvas": "Canvas",
+        "inspector": "Inspector",
+        "workflowSettings": "Workflow Settings",
+        "trialResult": "Trial Run Result"
+      },
+      "placeholders": {
+        "selectWorkflow": "Select workflow",
+        "workflowName": "Workflow name",
+        "workflowDescription": "Workflow description",
+        "leftVersion": "Left version",
+        "rightVersion": "Right version",
+        "trialSeedUrl": "https://example.com/news",
+        "bindProfile": "Bind a profile",
+        "bindNewsSource": "Bind a news source",
+        "nodeLabel": "Node label"
+      },
+      "empty": {
+        "selectWorkflow": "Select or create a workflow",
+        "createToEdit": "Create a workflow to start editing",
+        "selectNode": "Select a node to inspect",
+        "noLinkedFrontierRuns": "No production frontier runs are currently linked to this workflow.",
+        "noWorkflowSelected": "No workflow selected",
+        "trialResult": "Run a workflow trial to inspect step logs and candidate flow"
+      },
+      "hints": {
+        "trialRuntime": "Trial run uses the same workflow engine as the backend strategy runtime."
+      },
+      "compare": {
+        "labels": {
+          "nodeDelta": "Node delta",
+          "edgeDelta": "Edge delta",
+          "changedSettings": "Changed settings",
+          "changedNodes": "Changed nodes",
+          "bindingImpact": "Binding impact",
+          "profiles": "Profiles",
+          "newsSources": "News sources"
+        },
+        "cards": {
+          "settingsDiff": "Settings Diff",
+          "nodeDiff": "Node Diff",
+          "edgeDiff": "Edge Diff",
+          "bindingImpact": "Binding Impact"
+        },
+        "tags": {
+          "added": "added",
+          "removed": "removed",
+          "changed": "changed"
+        },
+        "empty": {
+          "nodeDiff": "No node-level differences detected.",
+          "edgeDiff": "No edge-level differences detected.",
+          "selectVersions": "Select two versions to inspect workflow drift."
+        }
+      },
+      "settings": {
+        "executionMode": "Execution Mode",
+        "robotsPolicy": "Robots Policy",
+        "maxDepth": "Max Depth",
+        "maxPages": "Max Pages"
+      },
+      "trial": {
+        "cards": {
+          "stepTimeline": "Step Timeline",
+          "candidateFlow": "Candidate Flow",
+          "systemEvents": "System Events",
+          "parameterSources": "Parameter Sources"
+        },
+        "empty": {
+          "systemEvents": "No system events were recorded during this run.",
+          "parameterSources": "No workflow parameter overrides were recorded."
+        }
+      },
+      "drawer": {
+        "candidateExplanation": "Candidate Explanation",
+        "traceSummary": "Trace Summary",
+        "trace": "Trace",
+        "rawSnapshots": "Raw snapshots",
+        "before": "Before",
+        "after": "After"
+      },
+      "candidates": {
+        "columns": {
+          "candidate": "Candidate",
+          "status": "Status",
+          "signals": "Signals",
+          "reason": "Reason",
+          "actions": "Actions"
+        },
+        "actions": {
+          "explain": "Explain"
+        }
+      }
+    },
+    "console": {
+      "tabs": {
+        "profiles": "Profiles",
+        "workflow": "Workflow",
+        "runs": "Runs"
+      },
+      "stats": {
+        "profiles": "Profiles",
+        "active": "Active",
+        "shadow": "Shadow"
+      },
+      "runStats": {
+        "totalRuns": "Total runs",
+        "failed": "Failed",
+        "challenge": "Challenge",
+        "pendingLlm": "Pending LLM",
+        "seedFirst": "Seed-first"
+      },
+      "filters": {
+        "profile": "Profile",
+        "status": "Status",
+        "mode": "Mode",
+        "runRole": "Run role",
+        "failureKind": "Failure kind",
+        "warningFlag": "Warning flag",
+        "seedStrategy": "Seed strategy"
+      },
+      "actions": {
+        "newProfile": "New Profile",
+        "refresh": "Refresh",
+        "reset": "Reset",
+        "newRun": "New Run",
+        "cancelSelected": "Cancel Selected",
+        "close": "Close",
+        "save": "Save",
+        "previewMatch": "Preview match"
+      },
+      "placeholders": {
+        "searchRun": "Search seed URL or native run ID",
+        "searchNode": "Search URL or path",
+        "matchHost": "*.example.com",
+        "optionalWorkflow": "Optional workflow",
+        "workflowVersionId": "workflow-version-id",
+        "previewUrl": "https://news.example.com/world/latest",
+        "locale": "en-GB"
+      },
+      "profileEditor": {
+        "createTitle": "Create Site Profile",
+        "editTitle": "Edit Site Profile",
+        "rawMode": {
+          "enabled": "Raw JSON mode bypasses the structured form.",
+          "disabled": "Structured controls are the default. Raw JSON remains available for advanced overrides."
+        },
+        "tabs": {
+          "basic": "Basic",
+          "strategy": "Strategy",
+          "llmLocaleDom": "LLM / Locale / DOM",
+          "patternsJson": "Patterns / JSON"
+        },
+        "cards": {
+          "identity": "Identity",
+          "status": "Status",
+          "matchPreview": "Match preview",
+          "seedDiscovery": "Seed discovery",
+          "llmAssist": "LLM assist",
+          "localeHostScope": "Locale & host scope",
+          "domScopesKeywords": "DOM scopes & keywords",
+          "urlPatterns": "URL patterns",
+          "pageTypeSignalsFreshness": "Page type signals & freshness",
+          "freshnessRules": "Freshness rules",
+          "advancedJson": "Advanced JSON"
+        },
+        "fields": {
+          "profileName": "Profile name",
+          "matchHost": "Match host",
+          "description": "Description",
+          "executionMode": "Execution mode",
+          "workflowBinding": "Workflow binding",
+          "workflowVersionMode": "Workflow version mode",
+          "pinnedWorkflowVersion": "Pinned workflow version",
+          "sourceTier": "Source tier",
+          "previewUrl": "Preview URL",
+          "preferredLocale": "Preferred locale"
+        },
+        "matchPreview": {
+          "draftMatches": "Draft profile matches this URL",
+          "draftMismatch": "Draft profile does not match this URL",
+          "activeMatch": "Active profile match: {{name}}",
+          "noActiveMatch": "No active saved profile currently matches this URL",
+          "draftOnly": "This preview is based on the draft form values only."
+        }
+      },
+      "modals": {
+        "profileVersions": "Profile Versions",
+        "createRun": "Create Crawl Frontier Run"
+      },
+      "runForm": {
+        "seedUrl": "Seed URL",
+        "profileHelp": "Leave empty to auto-match by host.",
+        "executionModeOverride": "Execution Mode Override",
+        "maxDepth": "Max Depth",
+        "maxPages": "Max Pages",
+        "keywords": "Keywords",
+        "keywordsHelp": "Comma or newline separated."
+      },
+      "runDrawer": {
+        "title": "Crawl Frontier Run Detail",
+        "tabs": {
+          "overview": "Overview",
+          "strategyTrace": "Strategy Trace",
+          "workflowTrace": "Workflow Trace",
+          "nodes": "Nodes",
+          "llmShadow": "LLM & Shadow",
+          "seedDiagnostics": "Seed & Diagnostics",
+          "repairExtraction": "Repair & Extraction"
+        },
+        "overview": {
+          "pages": "Pages",
+          "nodes": "Nodes",
+          "articles": "Articles",
+          "pendingLlmJobs": "Pending LLM jobs",
+          "coverageDiagnostics": "Coverage & diagnostics",
+          "rootDiagnosis": "Root diagnosis"
+        },
+        "workflow": {
+          "noTrace": "This run does not have a linked workflow trace record.",
+          "runCard": "Workflow Run",
+          "openInStudio": "Open in Studio",
+          "replayLegacyHint": "Legacy bridge runs are observable but cannot be replayed until the profile or news source is bound to a published workflow version.",
+          "replay": "Replay",
+          "legacyBridgeNotice": "This production run is backed by a legacy bridge snapshot. It is fully explorable, but replay is disabled until the source is bound to a published workflow version.",
+          "workflowSteps": "Workflow steps",
+          "candidates": "Candidates",
+          "selected": "Selected",
+          "systemEvents": "System events",
+          "systemEventsTitle": "System Events",
+          "stepTimeline": "Step Timeline"
+        },
+        "nodes": {
+          "allStatuses": "All statuses",
+          "allPageTypes": "All page types",
+          "problemsOnlyHint": "Only show nodes with warnings, rejections, or failures.",
+          "problemsOnly": "Problems only",
+          "retrySelected": "Retry selected",
+          "retryConfirmTitle": "Retry selected nodes?",
+          "retryConfirmContent": "This re-queues the selected failed or skipped nodes for another crawl attempt."
+        },
+        "llm": {
+          "lifecycle": "LLM lifecycle",
+          "shadowProfile": "Shadow profile"
+        },
+        "diagnostics": {
+          "seedSummary": "Seed summary",
+          "payloads": "Diagnostics payloads"
+        },
+        "repair": {
+          "articleRepair": "Article repair",
+          "articleLinkedNodes": "Article-linked nodes",
+          "repairAttempted": "Repair attempted",
+          "repairApplied": "Repair applied",
+          "repairFailed": "Repair failed",
+          "repairedFields": "Repaired fields",
+          "missingFields": "Missing fields",
+          "repairErrorsModels": "Repair errors & models"
+        }
+      },
+      "workflowCandidate": {
+        "title": "Workflow Candidate Explanation",
+        "summary": "Summary",
+        "trace": "Trace",
+        "rawSnapshots": "Raw snapshots",
+        "before": "Before",
+        "after": "After"
+      },
+      "nodeDrawer": {
+        "title": "Node Diagnostics",
+        "cards": {
+          "basics": "Node basics",
+          "judgment": "Node judgment",
+          "runLinkage": "Run linkage",
+          "crawlResult": "Crawl result",
+          "articleExtraction": "Article & extraction",
+          "extractionSummary": "Extraction summary",
+          "repairSummary": "Repair summary",
+          "relatedLlmLogs": "Related LLM logs",
+          "metadata": "Metadata"
+        },
+        "empty": {
+          "noCrawlResult": "No crawl result linked to this node yet.",
+          "noArticle": "No article or processed article linked to this node."
+        }
+      }
+    },
+    "title": "News Crawl Frontier Console",
+    "subtitle": "Operate site profiles, inspect seed-first and frontier traces, and debug why capture succeeded, degraded, or failed."
+  },
+  "admin": {
+    "searchTelemetry": {
+      "errors": {
+        "loadFailed": "Failed to load search telemetry."
+      },
+      "chart": {
+        "total": "Total events",
+        "loadMore": "Load more",
+        "title": "Daily trend",
+        "empty": "No daily telemetry rows for the selected range."
+      },
+      "columns": {
+        "event": "Event",
+        "count": "Count",
+        "surface": "Surface",
+        "bucket": "Bucket",
+        "vertical": "Vertical"
+      },
+      "permissions": "Search telemetry is restricted to administrators.",
+      "title": "Search Telemetry",
+      "description": "Inspect archive search submissions, short-query friction, and load-more usage over time.",
+      "filters": {
+        "surfaceUnavailable": "Surface filtering is temporarily unavailable because the stored telemetry only includes aggregate daily event counters."
+      },
+      "metrics": {
+        "totalEvents": "Total events",
+        "activeDays": "Tracked days",
+        "averageDaily": "Avg events / day"
+      },
+      "tables": {
+        "events": "Event totals",
+        "surfaces": "Surface totals",
+        "queryLength": "Query length buckets",
+        "verticals": "Load-more verticals"
+      }
+    }
+  },
+  "entities": {
+    "intelligence": {
+      "resolveFailed": "No matching knowledge graph entity found.",
+      "openCard": "Open Intelligence Card",
+      "generatedAt": "Generated at",
+      "relationships": "Relationships",
+      "mentions": "Recent mentions",
+      "events": "Recent events",
+      "negativeRatio": "Negative ratio",
+      "neighborhood": "Neighborhood",
+      "sentiment": "Sentiment",
+      "avgSentiment": "Average sentiment",
+      "evidence": "Evidence",
+      "articles": "Articles"
+    }
+  },
+  "knowledgeGraph": {
+    "impact": {
+      "scenarios": {
+        "executive": {
+          "title": "Executive change",
+          "description": "Estimate which entities or instruments are most exposed when leadership changes at a company."
+        },
+        "commodity": {
+          "title": "Commodity move",
+          "description": "Trace likely downstream winners, losers, and exposed entities from a commodity shock."
+        },
+        "policy": {
+          "title": "Policy event",
+          "description": "Surface the entities and sectors most affected by a new policy, regulation, or official directive."
+        }
+      },
+      "fields": {
+        "companyName": "Company name",
+        "commodityName": "Commodity name",
+        "policyName": "Policy or event name",
+        "maxCandidates": "Max candidates",
+        "includeLprSnapshot": "Include LPR snapshot"
+      },
+      "placeholders": {
+        "companyName": "Enter a listed company or organization",
+        "commodityName": "Enter a commodity, energy product, or raw material",
+        "policyName": "Enter a policy keyword or named policy event"
+      },
+      "errors": {
+        "seedRequired": "Enter a seed before running the impact analysis.",
+        "loadFailed": "Failed to load impact analysis.",
+        "title": "Impact analysis failed"
+      },
+      "permissions": {
+        "title": "Knowledge graph impact requires dashboard access."
+      },
+      "disabled": {
+        "title": "Knowledge graph analysis is disabled by an administrator."
+      },
+      "title": "Entity Impact Analysis",
+      "description": "Run scenario analysis on top of the knowledge graph to surface likely downstream exposure chains.",
+      "validation": {
+        "seedRequired": "This field is required."
+      },
+      "actions": {
+        "run": "Run impact analysis",
+        "openExplorer": "Open in explorer"
+      },
+      "empty": "Pick a scenario and run an analysis to inspect candidate impact chains.",
+      "summary": {
+        "seed": "Seed",
+        "scenario": "Scenario",
+        "generatedAt": "Generated at",
+        "candidates": "Candidates"
+      },
+      "chain": {
+        "title": "Chain",
+        "nodes": "Nodes",
+        "edges": "Edges"
+      },
+      "candidate": {
+        "score": "Score"
+      },
+      "properties": "Entity properties"
+    },
+    "workspace": {
+      "tabs": {
+        "explorer": "Explorer",
+        "impact": "Impact Analysis"
+      }
     }
   }
 }

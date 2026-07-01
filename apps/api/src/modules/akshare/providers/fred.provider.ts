@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
 import { FinancialDataProviderSettingsService } from '../../system-settings/financial-data-provider-settings.service';
-
 import type {
   FinancialDataItemConfig,
   FredFinancialDataProviderConfig,

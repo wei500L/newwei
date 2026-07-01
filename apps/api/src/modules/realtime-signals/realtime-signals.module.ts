@@ -4,8 +4,8 @@ import { CacheModule } from "../cache/cache.module";
 import { DatabaseModule } from "../config/database.module";
 
 import { RealtimeSignalsRuntimeController } from "./realtime-signals-runtime.controller";
-import { RealtimeSignalsSnapshotStore } from "./realtime-signals.snapshot-store";
 import { RealtimeSignalsService } from "./realtime-signals.service";
+import { RealtimeSignalsSnapshotStore } from "./realtime-signals.snapshot-store";
 
 @Module({
   imports: [DatabaseModule, CacheModule],

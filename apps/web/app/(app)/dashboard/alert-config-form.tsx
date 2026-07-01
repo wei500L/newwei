@@ -29,6 +29,7 @@ import {
   useUpsertAlertRuleMutation,
 } from "@/graphql/generated";
 import dayjs, { toUtcIsoString } from "@/lib/dayjs";
+
 import {
   DEFAULT_SYSTEM_METRIC_SLUG,
   systemMetricSlugs,
@@ -473,9 +474,7 @@ export function AlertConfigForm() {
             const metricSlug = normalizeMetricSlug(values.metricSlug);
             if (!metricSlug) {
               message.error(
-                t("alerts.config.errors.metricSlugRequired", {
-                  defaultValue: "Metric slug is required.",
-                }),
+                t("alerts.config.errors.metricSlugRequired"),
               );
               return;
             }
@@ -512,10 +511,7 @@ export function AlertConfigForm() {
                 !Number.isFinite(values.systemCurrentValue))
             ) {
               message.error(
-                t("alerts.config.errors.systemCurrentValueRequired", {
-                  defaultValue:
-                    "Manual system metric requires a current value override.",
-                }),
+                t("alerts.config.errors.systemCurrentValueRequired"),
               );
               return;
             }
@@ -594,7 +590,7 @@ export function AlertConfigForm() {
               message.error(
                 error instanceof Error
                   ? error.message
-                  : t("alerts.config.saveFailed", { defaultValue: "Failed to save." })
+                  : t("alerts.config.saveFailed")
               );
             }
           }}
@@ -606,9 +602,7 @@ export function AlertConfigForm() {
             <Input autoComplete="off" />
           </Form.Item>
           <Form.Item
-            label={t("alerts.config.fields.description", {
-              defaultValue: "Description",
-            })}
+            label={t("alerts.config.fields.description")}
             name="description"
           >
             <Input.TextArea
@@ -814,7 +808,6 @@ export function AlertConfigForm() {
                   pipelinePresetOptions.unshift({
                     value: selectedPipelineMetricSlug,
                     label: t("alerts.config.pipeline.metrics.custom", {
-                      defaultValue: "Custom: {{slug}}",
                       slug: selectedPipelineMetricSlug,
                     }),
                   });
@@ -823,9 +816,7 @@ export function AlertConfigForm() {
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Typography.Text strong>{t("alerts.config.pipeline.title")}</Typography.Text>
                     <Form.Item
-                      label={t("alerts.config.pipeline.metricPreset", {
-                        defaultValue: "Pipeline metric",
-                      })}
+                      label={t("alerts.config.pipeline.metricPreset")}
                     >
                       <Select
                         options={pipelinePresetOptions}
@@ -914,8 +905,6 @@ export function AlertConfigForm() {
                         type="info"
                         showIcon
                         message={t("alerts.config.pipeline.presetDefaults", {
-                          defaultValue:
-                            "Default trigger: {{operator}} {{threshold}}",
                           operator: t(
                             `alerts.operators.${selectedPipelinePreset.operator}`,
                             { defaultValue: selectedPipelinePreset.operator },
@@ -926,26 +915,18 @@ export function AlertConfigForm() {
                       />
                     ) : null}
                     <Typography.Text type="secondary">
-                      {t("alerts.config.pipeline.metricPresetHint", {
-                        defaultValue:
-                          "Choose between failed pipeline jobs and Mongo outbox delivery health metrics.",
-                      })}
+                      {t("alerts.config.pipeline.metricPresetHint")}
                     </Typography.Text>
                     {isPipelineOutboxMetric ? (
                       <>
                         <Form.Item
-                          label={t("alerts.config.pipeline.outboxType", {
-                            defaultValue: "Outbox type",
-                          })}
+                          label={t("alerts.config.pipeline.outboxType")}
                           name="pipelineOutboxType"
                         >
                           <Select options={pipelineOutboxTypeOptions} />
                         </Form.Item>
                         <Typography.Text type="secondary">
-                          {t("alerts.config.pipeline.outboxTypeHint", {
-                            defaultValue:
-                              "Mongo outbox metrics ignore queue and source filters, and scope the rule with metadata.type instead.",
-                          })}
+                          {t("alerts.config.pipeline.outboxTypeHint")}
                         </Typography.Text>
                       </>
                     ) : (
@@ -994,9 +975,7 @@ export function AlertConfigForm() {
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Typography.Text strong>{t("alerts.config.crawl.title")}</Typography.Text>
                     <Form.Item
-                      label={t("alerts.config.crawl.metricPreset", {
-                        defaultValue: "Crawl metric"
-                      })}
+                      label={t("alerts.config.crawl.metricPreset")}
                     >
                       <Select
                         options={crawlMetricSlugs}
@@ -1075,10 +1054,7 @@ export function AlertConfigForm() {
                       </>
                     ) : (
                       <Typography.Text type="secondary">
-                        {t("alerts.config.crawl.metricPresetHint", {
-                          defaultValue:
-                            "This quality metric uses pipeline logs; crawl status filters are not applied.",
-                        })}
+                        {t("alerts.config.crawl.metricPresetHint")}
                       </Typography.Text>
                     )}
                   </Space>
@@ -1117,10 +1093,6 @@ export function AlertConfigForm() {
                                 required: true,
                                 message: t(
                                   "alerts.config.errors.systemCurrentValueRequired",
-                                  {
-                                    defaultValue:
-                                      "Manual system metric requires a current value override.",
-                                  },
                                 ),
                               },
                             ]
@@ -1160,7 +1132,6 @@ export function AlertConfigForm() {
                   realtimePresetOptions.unshift({
                     value: selectedRealtimeMetricSlug,
                     label: t("alerts.config.realtime.metrics.custom", {
-                      defaultValue: "Custom: {{slug}}",
                       slug: selectedRealtimeMetricSlug,
                     }),
                   });
@@ -1168,14 +1139,10 @@ export function AlertConfigForm() {
                 return (
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Typography.Text strong>
-                      {t("alerts.config.realtime.title", {
-                        defaultValue: "Realtime signals",
-                      })}
+                      {t("alerts.config.realtime.title")}
                     </Typography.Text>
                     <Form.Item
-                      label={t("alerts.config.realtime.metricPreset", {
-                        defaultValue: "Realtime metric",
-                      })}
+                      label={t("alerts.config.realtime.metricPreset")}
                     >
                       <Select
                         options={realtimePresetOptions}
@@ -1243,8 +1210,6 @@ export function AlertConfigForm() {
                         type="info"
                         showIcon
                         message={t("alerts.config.realtime.presetDefaults", {
-                          defaultValue:
-                            "Default trigger: {{operator}} {{threshold}}",
                           operator: t(
                             `alerts.operators.${selectedRealtimePreset.operator}`,
                             { defaultValue: selectedRealtimePreset.operator },
@@ -1255,10 +1220,7 @@ export function AlertConfigForm() {
                       />
                     ) : null}
                     <Typography.Text type="secondary">
-                      {t("alerts.config.realtime.metricPresetHint", {
-                        defaultValue:
-                          "Pick one of the canonical realtime signal slugs to align with scheduler snapshots.",
-                      })}
+                      {t("alerts.config.realtime.metricPresetHint")}
                     </Typography.Text>
                   </Space>
                 );
@@ -1346,9 +1308,9 @@ export function AlertConfigForm() {
             </Form.Item>
           </Space>
           <Form.Item
-            label={t("alerts.config.fields.metadataJson", { defaultValue: "Metadata (JSON)" })}
+            label={t("alerts.config.fields.metadataJson")}
             name="metadataJson"
-            tooltip={t("alerts.config.fields.metadataJsonHint", { defaultValue: "Optional JSON object merged into rule metadata." })}
+            tooltip={t("alerts.config.fields.metadataJsonHint")}
           >
             <Input.TextArea autoSize={{ minRows: 6, maxRows: 16 }} placeholder='{"key":"value"}' />
           </Form.Item>
@@ -1399,7 +1361,7 @@ export function AlertConfigForm() {
               message.error(
                 error instanceof Error
                   ? error.message
-                  : t("alerts.channels.createFailed", { defaultValue: "Failed to create channel." })
+                  : t("alerts.channels.createFailed")
               );
             }
           }}

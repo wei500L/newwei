@@ -7,11 +7,18 @@ describe("NewsnowSourceWarmSchedulerService", () => {
   const aggregator = {
     fetchSource: jest.fn(),
   };
+  const cache = {
+    withLock: jest.fn(),
+  };
 
   let service: NewsnowSourceWarmSchedulerService;
 
   beforeEach(() => {
     jest.resetAllMocks();
+    cache.withLock.mockImplementation(
+      async (_key: string, _ttlMs: number, runner: () => Promise<unknown>) =>
+        await runner(),
+    );
     activeSources.getAllActiveSourceIds.mockReturnValue([
       "weibo",
       "hackernews",
@@ -19,6 +26,7 @@ describe("NewsnowSourceWarmSchedulerService", () => {
     ]);
     aggregator.fetchSource.mockResolvedValue(undefined);
     service = new NewsnowSourceWarmSchedulerService(
+      cache as never,
       activeSources as never,
       aggregator as never,
     );

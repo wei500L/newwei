@@ -11,6 +11,24 @@ export const supportedLocales = ["en-US", "zh-CN"] as const;
 export type SupportedLocale = (typeof supportedLocales)[number];
 
 const STORAGE_KEY = "language";
+export const LANGUAGE_COOKIE_KEY = "language";
+
+function readLanguageCookie(): SupportedLocale | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  const segments = document.cookie.split(";").map((segment) => segment.trim());
+  const match = segments.find((segment) =>
+    segment.startsWith(`${LANGUAGE_COOKIE_KEY}=`)
+  );
+  if (!match) {
+    return null;
+  }
+  const rawValue = decodeURIComponent(match.slice(LANGUAGE_COOKIE_KEY.length + 1));
+  return supportedLocales.includes(rawValue as SupportedLocale)
+    ? (rawValue as SupportedLocale)
+    : null;
+}
 
 export function normalizeLocale(locale?: string): SupportedLocale {
   if (!locale) {
@@ -49,12 +67,15 @@ export function getStoredLanguage(): SupportedLocale | null {
   if (stored && supportedLocales.includes(stored as SupportedLocale)) {
     return stored as SupportedLocale;
   }
-  return null;
+  return readLanguageCookie();
 }
 
 export async function changeLanguage(next: SupportedLocale) {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(STORAGE_KEY, next);
+  }
+  if (typeof document !== "undefined") {
+    document.cookie = `${LANGUAGE_COOKIE_KEY}=${encodeURIComponent(next)}; path=/; max-age=31536000; samesite=lax`;
   }
   await i18next.changeLanguage(next);
 }

@@ -79,13 +79,13 @@ export default function KeyMonitorPage() {
         <>
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={8}>
-              <CandlestickCard title={t("dashboard.keyMonitor.cards.gold")} group={goldSeries} meta={chartMeta} />
+              <CandlestickCard title={t("dashboard.keyMonitor.cards.gold")} group={goldSeries} meta={chartMeta} chartLazy={false} />
             </Col>
             <Col xs={24} lg={8}>
-              <CandlestickCard title={t("dashboard.keyMonitor.cards.oil")} group={oilSeries} meta={chartMeta} />
+              <CandlestickCard title={t("dashboard.keyMonitor.cards.oil")} group={oilSeries} meta={chartMeta} chartLazy={false} />
             </Col>
             <Col xs={24} lg={8}>
-              <CandlestickCard title={t("dashboard.keyMonitor.cards.copper")} group={copperSeries} meta={chartMeta} />
+              <CandlestickCard title={t("dashboard.keyMonitor.cards.copper")} group={copperSeries} meta={chartMeta} chartLazy={false} />
             </Col>
           </Row>
           <Row gutter={[16, 16]}>
@@ -96,6 +96,7 @@ export default function KeyMonitorPage() {
                 seriesMap={seriesMap}
                 insights={insightsMap}
                 meta={chartMeta}
+                chartLazy={false}
                 series={[
                   {
                     slug: "shanghai_composite_index",
@@ -119,6 +120,7 @@ export default function KeyMonitorPage() {
                 seriesMap={seriesMap}
                 insights={insightsMap}
                 meta={chartMeta}
+                chartLazy={false}
                 series={[
                   { slug: "china_fx_mid_rates", label: t("dashboard.keyMonitor.series.usd"), field: FX_FIELD_NAMES.USD },
                   { slug: "china_fx_mid_rates", label: t("dashboard.keyMonitor.series.eur"), field: FX_FIELD_NAMES.EUR },
@@ -135,6 +137,7 @@ export default function KeyMonitorPage() {
                 seriesMap={seriesMap}
                 insights={insightsMap}
                 meta={chartMeta}
+                chartLazy={false}
                 series={[
                   {
                     slug: "usd_cny_spot",

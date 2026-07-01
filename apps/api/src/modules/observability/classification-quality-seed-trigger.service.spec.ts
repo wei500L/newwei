@@ -1,7 +1,7 @@
 import { QueueEventPayload, QueueEventPublisher } from "../queue/queue-event.publisher";
 
-import { ClassificationQualityService } from "./classification-quality.service";
 import { ClassificationQualitySeedTriggerService } from "./classification-quality-seed-trigger.service";
+import { ClassificationQualityService } from "./classification-quality.service";
 
 describe("ClassificationQualitySeedTriggerService", () => {
   let registerListener: jest.Mock;

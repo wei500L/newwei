@@ -51,6 +51,20 @@ export interface NewsEventAuthorityProfile {
   corroborated: boolean;
 }
 
+export interface NewsEventAssignmentCandidate {
+  eventId: string;
+  score: number;
+  matchOrigin: "vector" | "overlap" | "hybrid";
+  title: string | null;
+  summary: string | null;
+  language: string | null;
+  primaryTopic: string | null;
+  primaryEntity: string | null;
+  startAt: Date;
+  lastAt: Date;
+  itemCount: number;
+}
+
 export interface NewsEventReferencedArticle {
   id: string;
   url: string;
@@ -73,6 +87,24 @@ interface ProcessedItemCategoryClassification {
   legacyCategory: string | null;
   categoryPath: string | null;
   confidence: number | null;
+}
+
+type CategoryGateDecision =
+  | "accepted"
+  | "penalized"
+  | "reject"
+  | "skipped_disabled"
+  | "skipped_no_signal_category"
+  | "skipped_low_signal_confidence"
+  | "skipped_no_event_category";
+
+interface CategoryGateTaskLog {
+  queue: "news_events";
+  jobId: string;
+  orgId: string;
+  stage: "category_gate";
+  status: "completed";
+  data: Record<string, unknown>;
 }
 
 @Injectable()
@@ -119,7 +151,7 @@ export class NewsEventsService {
       where: {
         orgId,
         ...(options?.status ? { status: options.status } : {}),
-        ...(entity ? { primaryEntity: { contains: entity } } : {}),
+        ...(entity ? { primaryEntity: entity } : {}),
         lastAt: { gte: since },
       },
       orderBy: [{ lastAt: "desc" }, { startAt: "desc" }],
@@ -602,12 +634,28 @@ export class NewsEventsService {
     const primaryTopic = this.pickPrimaryTopic(signal.topics);
     const primaryEntity = this.pickPrimaryEntity(signal.entities);
 
-    const assignment = await this.pickEventForSignal(orgId, signal, settings, {
-      timestamp,
-      language,
-      primaryTopic,
-      primaryEntity,
-    });
+    const categoryGateLogs: CategoryGateTaskLog[] = [];
+    let assignment!: {
+      eventId?: string;
+      similarity?: number | null;
+      method: NewsEventAssignmentMethod;
+    };
+    try {
+      assignment = await this.pickEventForSignal(
+        orgId,
+        signal,
+        settings,
+        {
+          timestamp,
+          language,
+          primaryTopic,
+          primaryEntity,
+        },
+        categoryGateLogs,
+      );
+    } finally {
+      await this.flushCategoryGateDecisionLogs(categoryGateLogs);
+    }
 
     return this.prisma.runInTransaction(async (tx) => {
       const eventId =
@@ -664,6 +712,420 @@ export class NewsEventsService {
     });
   }
 
+  async assignNewsSignalToSpecificEvent(
+    orgId: string,
+    eventId: string,
+    signal: NewsSignal,
+    options?: {
+      similarity?: number | null;
+      assignedBy?: NewsEventAssignmentMethod;
+    },
+  ) {
+    const existing = await this.prisma.newsEventItem.findUnique({
+      where: {
+        orgId_processedArticleId: {
+          orgId,
+          processedArticleId: signal.processedArticleId,
+        },
+      },
+      select: { id: true, eventId: true },
+    });
+    if (existing) {
+      return { eventId: existing.eventId, created: false };
+    }
+
+    const timestamp = this.clampFutureDate(signal.timestamp);
+    return this.prisma.runInTransaction(async (tx) => {
+      try {
+        await tx.newsEventItem.create({
+          data: {
+            orgId,
+            eventId,
+            processedArticleId: signal.processedArticleId,
+            processedItemId: this.normalizeOptionalString(
+              signal.processedItemId,
+            ),
+            similarity: options?.similarity ?? null,
+            assignedBy: options?.assignedBy ?? NewsEventAssignmentMethod.manual,
+          },
+        });
+      } catch (error) {
+        if (this.isUniqueConstraintError(error)) {
+          return { eventId, created: false };
+        }
+        throw error;
+      }
+
+      const current = await tx.newsEvent.findUnique({
+        where: { id: eventId },
+        select: { startAt: true, lastAt: true },
+      });
+
+      const startAt = current
+        ? this.minDate(this.clampFutureDate(current.startAt), timestamp)
+        : timestamp;
+      const lastAt = current
+        ? this.maxDate(this.clampFutureDate(current.lastAt), timestamp)
+        : timestamp;
+
+      await tx.newsEvent.update({
+        where: { id: eventId },
+        data: { startAt, lastAt },
+      });
+
+      return { eventId, created: true };
+    });
+  }
+
+  async assignNewsSignalToSpecificEventWithSettings(
+    orgId: string,
+    eventId: string,
+    signal: NewsSignal,
+    settings: NewsEventSettings,
+    options?: {
+      similarity?: number | null;
+      assignedBy?: NewsEventAssignmentMethod;
+    },
+  ) {
+    const normalizedEventId = this.normalizeOptionalString(eventId);
+    if (!normalizedEventId) {
+      return this.assignNewsSignalToEvent(orgId, signal, settings);
+    }
+
+    const targetEvent = await this.prisma.newsEvent.findFirst({
+      where: {
+        orgId,
+        id: normalizedEventId,
+        status: NewsEventStatus.active,
+      },
+      select: {
+        id: true,
+        language: true,
+        metadata: true,
+      },
+    });
+    if (!targetEvent) {
+      return this.assignNewsSignalToEvent(orgId, signal, settings);
+    }
+
+    const similarity =
+      typeof options?.similarity === "number" && Number.isFinite(options.similarity)
+        ? options.similarity
+        : 0;
+    const languageAdjusted = this.applyLanguagePenalty(
+      similarity,
+      this.normalizeOptionalString(signal.language),
+      this.normalizeOptionalString(targetEvent.language),
+      settings,
+    );
+    const categoryGateLogs: CategoryGateTaskLog[] = [];
+    const categoryAdjusted = this.applyCategoryGate(
+      orgId,
+      languageAdjusted,
+      signal,
+      targetEvent.metadata,
+      settings,
+      categoryGateLogs,
+    );
+    await this.flushCategoryGateDecisionLogs(categoryGateLogs);
+    if (
+      categoryAdjusted === null ||
+      categoryAdjusted < settings.vectorMinScore
+    ) {
+      return this.assignNewsSignalToEvent(orgId, signal, settings);
+    }
+
+    return this.assignNewsSignalToSpecificEvent(
+      orgId,
+      normalizedEventId,
+      signal,
+      {
+        ...options,
+        similarity: categoryAdjusted,
+      },
+    );
+  }
+
+  async assignNewsSignalToNewEvent(
+    orgId: string,
+    signal: NewsSignal,
+    settings: NewsEventSettings,
+    options?: {
+      assignedBy?: NewsEventAssignmentMethod;
+    },
+  ) {
+    const existing = await this.prisma.newsEventItem.findUnique({
+      where: {
+        orgId_processedArticleId: {
+          orgId,
+          processedArticleId: signal.processedArticleId,
+        },
+      },
+      select: { id: true, eventId: true },
+    });
+    if (existing) {
+      return { eventId: existing.eventId, created: false };
+    }
+
+    const timestamp = this.clampFutureDate(signal.timestamp);
+    const language = this.normalizeOptionalString(signal.language);
+    const primaryTopic = this.pickPrimaryTopic(signal.topics);
+    const primaryEntity = this.pickPrimaryEntity(signal.entities);
+
+    return this.prisma.runInTransaction(async (tx) => {
+      const event = await this.createEvent(tx, orgId, signal, settings, {
+        timestamp,
+        language,
+        primaryTopic,
+        primaryEntity,
+      });
+
+      try {
+        await tx.newsEventItem.create({
+          data: {
+            orgId,
+            eventId: event.id,
+            processedArticleId: signal.processedArticleId,
+            processedItemId: this.normalizeOptionalString(
+              signal.processedItemId,
+            ),
+            similarity: null,
+            assignedBy:
+              options?.assignedBy ?? NewsEventAssignmentMethod.manual,
+          },
+        });
+      } catch (error) {
+        if (this.isUniqueConstraintError(error)) {
+          return { eventId: event.id, created: false };
+        }
+        throw error;
+      }
+
+      return { eventId: event.id, created: true };
+    });
+  }
+
+  async listAssignmentCandidatesForSignal(
+    orgId: string,
+    signal: NewsSignal,
+    settings: NewsEventSettings,
+    options?: { limit?: number },
+  ): Promise<NewsEventAssignmentCandidate[]> {
+    const categoryGateLogs: CategoryGateTaskLog[] = [];
+    try {
+      return await this.listAssignmentCandidatesForSignalWithGateLogs(
+        orgId,
+        signal,
+        settings,
+        categoryGateLogs,
+        options,
+      );
+    } finally {
+      await this.flushCategoryGateDecisionLogs(categoryGateLogs);
+    }
+  }
+
+  private async listAssignmentCandidatesForSignalWithGateLogs(
+    orgId: string,
+    signal: NewsSignal,
+    settings: NewsEventSettings,
+    categoryGateLogs: CategoryGateTaskLog[],
+    options?: { limit?: number },
+  ): Promise<NewsEventAssignmentCandidate[]> {
+    const language = this.normalizeOptionalString(signal.language);
+    const primaryTopic = this.pickPrimaryTopic(signal.topics);
+    const primaryEntity = this.pickPrimaryEntity(signal.entities);
+    const limit = Math.min(Math.max(options?.limit ?? 6, 1), 12);
+    const candidateState = new Map<
+      string,
+      {
+        vectorScore?: number;
+        overlapScore?: number;
+      }
+    >();
+
+    const vector = await this.tryResolveSummaryEmbedding(signal.processedItemId);
+    if (vector) {
+      const matches = await this.vectorClient.searchBestEffort({
+        orgId,
+        embeddingModel: vector.model,
+        vector: vector.embedding,
+        limit: DEFAULT_VECTOR_SEARCH_LIMIT,
+        minScore: settings.vectorMinScore,
+        lookbackMs: settings.lookbackDays * DAY_MS,
+      });
+
+      const matchIds = (matches ?? [])
+        .map((match) =>
+          typeof match.processedItemId === "string"
+            ? match.processedItemId.trim()
+            : "",
+        )
+        .filter((id) => id.length > 0 && id !== signal.processedItemId);
+
+      if (matchIds.length > 0) {
+        const memberships = await this.prisma.newsEventItem.findMany({
+          where: { orgId, processedItemId: { in: matchIds } },
+          select: { eventId: true, processedItemId: true },
+        });
+
+        const membershipByProcessedItemId = new Map<string, string>(
+          memberships
+            .map((row) => {
+              const processedItemId =
+                typeof row.processedItemId === "string"
+                  ? row.processedItemId.trim()
+                  : "";
+              return processedItemId
+                ? ([processedItemId, row.eventId] as const)
+                : null;
+            })
+            .filter((entry): entry is readonly [string, string] => Boolean(entry)),
+        );
+
+        const scoreByEventId = new Map<string, number>();
+        for (const match of matches ?? []) {
+          const processedItemId =
+            typeof match.processedItemId === "string"
+              ? match.processedItemId.trim()
+              : "";
+          const score = typeof match.score === "number" ? match.score : null;
+          const eventId = membershipByProcessedItemId.get(processedItemId);
+          if (!eventId || score === null) {
+            continue;
+          }
+          const existing = scoreByEventId.get(eventId);
+          if (existing === undefined || score > existing) {
+            scoreByEventId.set(eventId, score);
+          }
+        }
+
+        if (scoreByEventId.size > 0) {
+          const eventIds = Array.from(scoreByEventId.keys());
+          const events = await this.prisma.newsEvent.findMany({
+            where: {
+              orgId,
+              id: { in: eventIds },
+              status: NewsEventStatus.active,
+            },
+            select: {
+              id: true,
+              language: true,
+              metadata: true,
+            },
+          });
+          const eventsById = new Map(events.map((event) => [event.id, event]));
+
+          for (const [eventId, rawScore] of scoreByEventId.entries()) {
+            const event = eventsById.get(eventId);
+            if (!event) {
+              continue;
+            }
+            const adjusted = this.applyLanguagePenalty(
+              rawScore,
+              language,
+              event.language,
+              settings,
+            );
+            const categoryAdjusted = this.applyCategoryGate(
+              orgId,
+              adjusted,
+              signal,
+              event.metadata,
+              settings,
+              categoryGateLogs,
+            );
+            if (categoryAdjusted === null) {
+              continue;
+            }
+            const entry = candidateState.get(eventId) ?? {};
+            entry.vectorScore = categoryAdjusted;
+            candidateState.set(eventId, entry);
+          }
+        }
+      }
+    }
+
+    const overlapCandidates = await this.pickOverlapCandidates(
+      orgId,
+      signal,
+      {
+        language,
+        primaryTopic,
+        primaryEntity,
+      },
+      settings,
+      categoryGateLogs,
+    );
+    for (const candidate of overlapCandidates) {
+      const entry = candidateState.get(candidate.eventId) ?? {};
+      entry.overlapScore = candidate.score;
+      candidateState.set(candidate.eventId, entry);
+    }
+
+    const eventIds = Array.from(candidateState.keys());
+    if (eventIds.length === 0) {
+      return [];
+    }
+
+    const events = await this.prisma.newsEvent.findMany({
+      where: {
+        orgId,
+        id: { in: eventIds },
+        status: NewsEventStatus.active,
+      },
+      select: {
+        id: true,
+        title: true,
+        summary: true,
+        language: true,
+        primaryTopic: true,
+        primaryEntity: true,
+        startAt: true,
+        lastAt: true,
+        _count: { select: { items: true } },
+      },
+    });
+
+    return events
+      .map((event) => {
+        const scoreState = candidateState.get(event.id);
+        if (!scoreState) {
+          return null;
+        }
+        const vectorScore = scoreState.vectorScore;
+        const overlapScore = scoreState.overlapScore;
+        const score = Math.max(vectorScore ?? 0, overlapScore ?? 0);
+        const matchOrigin =
+          typeof vectorScore === "number" && typeof overlapScore === "number"
+            ? "hybrid"
+            : typeof vectorScore === "number"
+              ? "vector"
+              : "overlap";
+        return {
+          eventId: event.id,
+          score,
+          matchOrigin,
+          title: event.title ?? null,
+          summary: event.summary ?? null,
+          language: event.language ?? null,
+          primaryTopic: event.primaryTopic ?? null,
+          primaryEntity: event.primaryEntity ?? null,
+          startAt: event.startAt,
+          lastAt: event.lastAt,
+          itemCount: event._count.items,
+        } satisfies NewsEventAssignmentCandidate;
+      })
+      .filter((entry): entry is NewsEventAssignmentCandidate => Boolean(entry))
+      .sort((a, b) => {
+        if (b.score !== a.score) {
+          return b.score - a.score;
+        }
+        return b.lastAt.getTime() - a.lastAt.getTime();
+      })
+      .slice(0, limit);
+  }
+
   private async pickEventForSignal(
     orgId: string,
     signal: NewsSignal,
@@ -674,6 +1136,7 @@ export class NewsEventsService {
       primaryTopic: string | null;
       primaryEntity: string | null;
     },
+    categoryGateLogs: CategoryGateTaskLog[],
   ): Promise<{
     eventId?: string;
     similarity?: number | null;
@@ -771,12 +1234,13 @@ export class NewsEventsService {
               event.language,
               settings,
             );
-            const categoryAdjusted = await this.applyCategoryGate(
+            const categoryAdjusted = this.applyCategoryGate(
               orgId,
               adjusted,
               signal,
               event.metadata,
               settings,
+              categoryGateLogs,
             );
             if (categoryAdjusted === null) {
               continue;
@@ -802,6 +1266,7 @@ export class NewsEventsService {
       signal,
       derived,
       settings,
+      categoryGateLogs,
     );
     if (overlapCandidate) {
       return overlapCandidate;
@@ -820,11 +1285,41 @@ export class NewsEventsService {
       primaryEntity: string | null;
     },
     settings: NewsEventSettings,
+    categoryGateLogs: CategoryGateTaskLog[],
   ): Promise<{
     eventId?: string;
     similarity?: number | null;
     method: NewsEventAssignmentMethod;
   } | null> {
+    const candidates = await this.pickOverlapCandidates(
+      orgId,
+      signal,
+      derived,
+      settings,
+      categoryGateLogs,
+    );
+    const best = candidates[0];
+    if (!best) {
+      return null;
+    }
+    return {
+      eventId: best.eventId,
+      similarity: best.score,
+      method: NewsEventAssignmentMethod.overlap,
+    };
+  }
+
+  private async pickOverlapCandidates(
+    orgId: string,
+    signal: NewsSignal,
+    derived: {
+      language: string | null;
+      primaryTopic: string | null;
+      primaryEntity: string | null;
+    },
+    settings: NewsEventSettings,
+    categoryGateLogs: CategoryGateTaskLog[],
+  ): Promise<{ eventId: string; score: number }[]> {
     const since = new Date(Date.now() - settings.lookbackDays * DAY_MS);
     const clauses: Prisma.NewsEventWhereInput[] = [];
     if (derived.primaryTopic) {
@@ -834,7 +1329,7 @@ export class NewsEventsService {
       clauses.push({ primaryEntity: derived.primaryEntity });
     }
     if (clauses.length === 0) {
-      return null;
+      return [];
     }
 
     const candidates = await this.prisma.newsEvent.findMany({
@@ -848,12 +1343,7 @@ export class NewsEventsService {
       take: DEFAULT_CANDIDATE_EVENTS_LIMIT,
     });
 
-    let best: {
-      id: string;
-      score: number;
-      startAt: Date;
-      lastAt: Date;
-    } | null = null;
+    const scored: { eventId: string; score: number }[] = [];
     for (const candidate of candidates) {
       const topicMatch =
         Boolean(derived.primaryTopic) &&
@@ -876,36 +1366,25 @@ export class NewsEventsService {
         candidate.language,
         settings,
       );
-      const categoryAdjusted = await this.applyCategoryGate(
+      const categoryAdjusted = this.applyCategoryGate(
         orgId,
         score,
         signal,
         candidate.metadata,
         settings,
+        categoryGateLogs,
       );
       if (categoryAdjusted === null) {
         continue;
       }
       score = categoryAdjusted;
 
-      if (!best || score > best.score) {
-        best = {
-          id: candidate.id,
-          score,
-          startAt: candidate.startAt,
-          lastAt: candidate.lastAt,
-        };
-      }
+      scored.push({
+        eventId: candidate.id,
+        score,
+      });
     }
-
-    if (!best) {
-      return null;
-    }
-    return {
-      eventId: best.id,
-      similarity: best.score,
-      method: NewsEventAssignmentMethod.overlap,
-    };
+    return scored.sort((a, b) => b.score - a.score);
   }
 
   private async createEvent(
@@ -1038,17 +1517,24 @@ export class NewsEventsService {
     return score * (1 - penalty);
   }
 
-  private async applyCategoryGate(
+  private applyCategoryGate(
     orgId: string,
     score: number,
     signal: NewsSignal,
     eventMetadata: Prisma.JsonValue | null,
     settings: NewsEventSettings,
-  ): Promise<number | null> {
+    categoryGateLogs: CategoryGateTaskLog[],
+  ): number | null {
     if (!settings.classificationGateEnabled) {
-      await this.logCategoryGateDecision(orgId, signal, "skipped_disabled", {
-        score,
-      });
+      this.collectCategoryGateDecision(
+        categoryGateLogs,
+        orgId,
+        signal,
+        "skipped_disabled",
+        {
+          score,
+        },
+      );
       return score;
     }
 
@@ -1059,16 +1545,23 @@ export class NewsEventsService {
         ? Math.max(0, Math.min(1, signal.categoryConfidence))
         : null;
     if (!signalCategory) {
-      await this.logCategoryGateDecision(orgId, signal, "skipped_no_signal_category", {
-        score,
-      });
+      this.collectCategoryGateDecision(
+        categoryGateLogs,
+        orgId,
+        signal,
+        "skipped_no_signal_category",
+        {
+          score,
+        },
+      );
       return score;
     }
     if (
       signalConfidence === null ||
       signalConfidence < settings.minCategoryConfidenceForGate
     ) {
-      await this.logCategoryGateDecision(
+      this.collectCategoryGateDecision(
+        categoryGateLogs,
         orgId,
         signal,
         "skipped_low_signal_confidence",
@@ -1083,92 +1576,132 @@ export class NewsEventsService {
 
     const eventClassification = this.extractEventClassification(eventMetadata);
     if (!eventClassification.legacyCategory) {
-      await this.logCategoryGateDecision(orgId, signal, "skipped_no_event_category", {
-        score,
-        signalCategory,
-      });
+      this.collectCategoryGateDecision(
+        categoryGateLogs,
+        orgId,
+        signal,
+        "skipped_no_event_category",
+        {
+          score,
+          signalCategory,
+        },
+      );
       return score;
     }
     if (eventClassification.legacyCategory !== signalCategory) {
       if (settings.categoryConflictReject) {
-        await this.logCategoryGateDecision(orgId, signal, "reject", {
-          score,
-          signalCategory,
-          eventCategory: eventClassification.legacyCategory,
-        });
+        this.collectCategoryGateDecision(
+          categoryGateLogs,
+          orgId,
+          signal,
+          "reject",
+          {
+            score,
+            signalCategory,
+            eventCategory: eventClassification.legacyCategory,
+          },
+        );
         return null;
       }
       const adjusted = score * (1 - this.clamp01(settings.categorySoftPenalty));
-      await this.logCategoryGateDecision(orgId, signal, "penalized", {
-        score,
-        adjustedScore: adjusted,
-        signalCategory,
-        eventCategory: eventClassification.legacyCategory,
-      });
+      this.collectCategoryGateDecision(
+        categoryGateLogs,
+        orgId,
+        signal,
+        "penalized",
+        {
+          score,
+          adjustedScore: adjusted,
+          signalCategory,
+          eventCategory: eventClassification.legacyCategory,
+        },
+      );
       return adjusted;
     }
 
     const signalPath = this.normalizeCategoryPath(signal.categoryPath);
     const eventPath = this.normalizeCategoryPath(eventClassification.categoryPath);
     if (!signalPath || !eventPath || signalPath === eventPath) {
-      await this.logCategoryGateDecision(orgId, signal, "accepted", {
-        score,
-        signalCategory,
-        signalPath,
-        eventPath,
-      });
+      this.collectCategoryGateDecision(
+        categoryGateLogs,
+        orgId,
+        signal,
+        "accepted",
+        {
+          score,
+          signalCategory,
+          signalPath,
+          eventPath,
+        },
+      );
       return score;
     }
 
     const adjusted = score * (1 - this.clamp01(settings.categorySoftPenalty * 0.5));
-    await this.logCategoryGateDecision(orgId, signal, "penalized", {
-      score,
-      adjustedScore: adjusted,
-      signalCategory,
-      signalPath,
-      eventPath,
-    });
+    this.collectCategoryGateDecision(
+      categoryGateLogs,
+      orgId,
+      signal,
+      "penalized",
+      {
+        score,
+        adjustedScore: adjusted,
+        signalCategory,
+        signalPath,
+        eventPath,
+      },
+    );
     return adjusted;
   }
 
-  private async logCategoryGateDecision(
+  private collectCategoryGateDecision(
+    logs: CategoryGateTaskLog[],
     orgId: string,
     signal: NewsSignal,
-    decision:
-      | "accepted"
-      | "penalized"
-      | "reject"
-      | "skipped_disabled"
-      | "skipped_no_signal_category"
-      | "skipped_low_signal_confidence"
-      | "skipped_no_event_category",
+    decision: CategoryGateDecision,
     data: Record<string, unknown>,
   ) {
+    logs.push({
+      queue: "news_events",
+      jobId: signal.processedArticleId,
+      orgId,
+      stage: "category_gate",
+      status: "completed",
+      data: {
+        decision,
+        processedItemId: signal.processedItemId,
+        processedArticleId: signal.processedArticleId,
+        signalCategory: signal.legacyCategory ?? null,
+        signalCategoryPath: signal.categoryPath ?? null,
+        signalConfidence:
+          typeof signal.categoryConfidence === "number"
+            ? signal.categoryConfidence
+            : null,
+        ...data,
+      },
+    });
+  }
+
+  private async flushCategoryGateDecisionLogs(
+    logs: CategoryGateTaskLog[],
+  ): Promise<void> {
+    if (logs.length === 0) {
+      return;
+    }
+    const count = logs.length;
+    const orgId = logs[0]?.orgId;
+    const processedArticleIds = Array.from(
+      new Set(logs.map((log) => log.data.processedArticleId)),
+    ).slice(0, 5);
     try {
-      await TaskLogModel.create({
-        queue: "news_events",
-        jobId: signal.processedArticleId,
-        orgId,
-        stage: "category_gate",
-        status: "completed",
-        data: {
-          decision,
-          processedItemId: signal.processedItemId,
-          processedArticleId: signal.processedArticleId,
-          signalCategory: signal.legacyCategory ?? null,
-          signalCategoryPath: signal.categoryPath ?? null,
-          signalConfidence:
-            typeof signal.categoryConfidence === "number"
-              ? signal.categoryConfidence
-              : null,
-          ...data,
-        },
-      });
+      await TaskLogModel.insertMany([...logs], { ordered: false });
     } catch (error) {
       logger.warn(
-        { err: error, orgId, processedArticleId: signal.processedArticleId, decision },
-        "Failed to persist category gate task log",
+        { err: error, orgId, processedArticleIds, count },
+        "Failed to persist category gate task logs",
       );
+    } finally {
+      logs.length = 0;
     }
   }
 

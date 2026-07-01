@@ -6,6 +6,7 @@ import {
   SearchOutlined,
 } from "@ant-design/icons";
 import { gql, useMutation, useQuery } from "@apollo/client";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import {
   Alert,
   Button,
@@ -14,6 +15,7 @@ import {
   Grid,
   Input,
   List,
+  Pagination,
   Row,
   Segmented,
   Skeleton,
@@ -36,6 +38,8 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { AnalysisToolbar } from "@/components/analysis/analysis-toolbar";
+import { AnnotationPanel } from "@/components/analysis/annotation-panel";
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import {
@@ -68,6 +72,11 @@ import { FacetedSearch, type FilterState } from "./components/faceted-search";
 import { NewsCard } from "./components/news-card";
 import { type ItemViewType, ViewSwitcher } from "./components/view-switcher";
 import { resolveAvailableSentiments } from "./item-facets";
+import {
+  estimateItemsFeedRowSize,
+  shouldUpdateItemsFeedMetric,
+  shouldVirtualizeItemsFeed,
+} from "./items-feed-virtualization";
 import {
   countItemsFilterDimensions,
   resolveItemsViewLayoutState,
@@ -712,6 +721,10 @@ const ITEMS_QUERY = gql`
           ingestedAt
           publishedAt
           relevanceScore
+          searchHighlights {
+            field
+            snippets
+          }
           processedPreview {
             id
             itemMetaId
@@ -880,6 +893,7 @@ interface ParsedItem {
   source?: string;
   contentType?: CanonicalContentType;
   relevanceScore?: number;
+  searchHighlights?: { field: string; snippets: string[] }[];
   price?: number;
   change?: number;
   ticker?: string;
@@ -904,7 +918,7 @@ interface ParsedItem {
   history?: { timestamp: string; value: number }[];
   eventId?: string | null;
   rssHasTranslation?: boolean;
-  rssTranslationState?: 'translated' | 'original';
+  rssTranslationState?: "translated" | "original";
 }
 
 export function ItemsView({
@@ -959,6 +973,10 @@ export function ItemsView({
   const urlPageSize = clampItemsPageSize(urlRawPageSize);
   const urlRanking = searchParams.get("ranking");
   const urlOrder = searchParams.get(ITEMS_ORDER_QUERY_KEY);
+  const savedViewId = useMemo(() => {
+    const value = searchParams.get("savedView")?.trim();
+    return value ? value : null;
+  }, [searchParams]);
 
   // Local State (UI + query source of truth)
   const [searchInput, setSearchInput] = useState(urlSearch);
@@ -983,18 +1001,16 @@ export function ItemsView({
   const translationRequestKeyRef = useRef("");
   const translationRequestSeqRef = useRef(0);
   const listTableContainerRef = useRef<HTMLDivElement | null>(null);
+  const feedListRef = useRef<HTMLDivElement | null>(null);
   const [listTableScrollX, setListTableScrollX] = useState<number | null>(null);
   const [listTableScrollY, setListTableScrollY] = useState<number | null>(null);
+  const [feedScrollMargin, setFeedScrollMargin] = useState(0);
   const urlFiltersRef = useRef(urlFilters);
   const [translateRssItems] = useMutation<
     TranslateRssItemsMutation,
     TranslateRssItemsMutationVariables
   >(TRANSLATE_RSS_ITEMS_MUTATION);
-  const {
-    queryFilters,
-    displayFilters,
-    normalizedFixedSourceIds,
-  } = useMemo(
+  const { queryFilters, displayFilters, normalizedFixedSourceIds } = useMemo(
     () =>
       resolveItemsViewFiltersWithFixedSources({
         filters,
@@ -1037,6 +1053,19 @@ export function ItemsView({
 
     setListTableScrollX((prev) => (prev === nextScrollX ? prev : nextScrollX));
     setListTableScrollY((prev) => (prev === nextScrollY ? prev : nextScrollY));
+  }, []);
+
+  const updateFeedMetrics = useCallback(() => {
+    const container = feedListRef.current;
+    if (!container || typeof window === "undefined") {
+      return;
+    }
+    const nextScrollMargin = container.getBoundingClientRect().top + window.scrollY;
+    setFeedScrollMargin((previous) =>
+      shouldUpdateItemsFeedMetric(previous, nextScrollMargin)
+        ? nextScrollMargin
+        : previous,
+    );
   }, []);
 
   useEffect(() => {
@@ -1198,7 +1227,6 @@ export function ItemsView({
           scrollToFirstRowOnChange: true,
         }
       : undefined;
-  const listTableVirtualEnabled = Boolean(listTableScroll);
   const effectiveSortMode = sortMode === "default" ? activeSortMode : sortMode;
   const orderQueryValue =
     sortMode !== "default"
@@ -1427,40 +1455,34 @@ export function ItemsView({
     const parts: string[] = [];
     if (displayFiltersInput?.sourceIds?.length) {
       parts.push(
-        `${t("pages.rss.sourceLabel", { defaultValue: "RSS Sources" })}: ${displayFiltersInput.sourceIds.length.toLocaleString(locale)}`,
+        `${t("pages.rss.sourceLabel")}: ${displayFiltersInput.sourceIds.length.toLocaleString(locale)}`,
       );
     }
     if (displayFiltersInput?.regions?.length) {
       parts.push(
-        `${t("items.filters.region", { defaultValue: "Region" })}: ${displayFiltersInput.regions.length.toLocaleString(locale)}`,
+        `${t("items.filters.region")}: ${displayFiltersInput.regions.length.toLocaleString(locale)}`,
       );
     }
     if (displayFiltersInput?.topics?.length) {
       parts.push(
-        `${t("items.filters.topic", { defaultValue: "Topic" })}: ${displayFiltersInput.topics.length.toLocaleString(locale)}`,
+        `${t("items.filters.topic")}: ${displayFiltersInput.topics.length.toLocaleString(locale)}`,
       );
     }
     if (displayFiltersInput?.sentiments?.length) {
       parts.push(
-        `${t("items.filters.sentiment", { defaultValue: "Sentiment" })}: ${displayFiltersInput.sentiments.length.toLocaleString(locale)}`,
+        `${t("items.filters.sentiment")}: ${displayFiltersInput.sentiments.length.toLocaleString(locale)}`,
       );
     }
     if (displayFiltersInput?.contentTypes?.length) {
       parts.push(
-        `${t("items.filters.contentType", { defaultValue: "Content type" })}: ${displayFiltersInput.contentTypes.length.toLocaleString(locale)}`,
+        `${t("items.filters.contentType")}: ${displayFiltersInput.contentTypes.length.toLocaleString(locale)}`,
       );
     }
     if (displayFiltersInput?.excludeDuplicates) {
-      parts.push(
-        t("items.filters.excludeDuplicates", {
-          defaultValue: "Hide duplicates",
-        }),
-      );
+      parts.push(t("items.filters.excludeDuplicates"));
     }
     if (displayFiltersInput?.dateRange) {
-      parts.push(
-        `${t("items.filters.date", { defaultValue: "Date Range" })}: 1`,
-      );
+      parts.push(`${t("items.filters.date")}: 1`);
     }
     return {
       parts,
@@ -1610,6 +1632,14 @@ export function ItemsView({
           Number.isFinite(edge.node.relevanceScore)
             ? edge.node.relevanceScore
             : undefined,
+        searchHighlights: Array.isArray(edge.node.searchHighlights)
+          ? edge.node.searchHighlights
+              .map((entry) => ({
+                field: entry.field,
+                snippets: entry.snippets.filter((snippet) => snippet.trim().length > 0),
+              }))
+              .filter((entry) => entry.snippets.length > 0)
+          : undefined,
         qualityScore:
           typeof processed?.qualityScore === "number"
             ? processed.qualityScore
@@ -1732,6 +1762,63 @@ export function ItemsView({
     rssTranslationConfig?.showOriginal,
     translatedByItemId,
   ]);
+  const shouldVirtualizeFeed =
+    view === "feed" && shouldVirtualizeItemsFeed(pageData.length);
+  const feedVirtualizer = useWindowVirtualizer({
+    count: pageData.length,
+    estimateSize: () =>
+      estimateItemsFeedRowSize({
+        density: layoutState.density,
+        isReaderPreset: layoutState.isReaderPreset,
+      }),
+    overscan: 4,
+    enabled: shouldVirtualizeFeed,
+    scrollMargin: feedScrollMargin,
+  });
+
+  useEffect(() => {
+    if (view !== "feed") {
+      setFeedScrollMargin(0);
+      return;
+    }
+
+    let frameId: number | null = null;
+    const scheduleUpdate = () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(() => updateFeedMetrics());
+    };
+
+    scheduleUpdate();
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => scheduleUpdate());
+
+    if (feedListRef.current) {
+      resizeObserver?.observe(feedListRef.current);
+    }
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate);
+    };
+  }, [pageData.length, updateFeedMetrics, view]);
+
+  useEffect(() => {
+    if (!shouldVirtualizeFeed) {
+      return;
+    }
+    feedVirtualizer.measure();
+  }, [feedVirtualizer, pageData.length, shouldVirtualizeFeed]);
+
   const rssTranslationStats = useMemo(() => {
     if (!rssTranslationConfig?.enabled || pageData.length === 0) {
       return null;
@@ -1740,11 +1827,11 @@ export function ItemsView({
     let translated = 0;
     let original = 0;
     pageData.forEach((item) => {
-      if (item.rssTranslationState === 'translated') {
+      if (item.rssTranslationState === "translated") {
         translated += 1;
         return;
       }
-      if (item.rssTranslationState === 'original') {
+      if (item.rssTranslationState === "original") {
         original += 1;
       }
     });
@@ -1823,7 +1910,11 @@ export function ItemsView({
     const selected = normalizeFilterList(filters.sentiments, {
       lowerCase: true,
     });
-    if (!selected || selected.length === 0 || availableSentiments.length === 0) {
+    if (
+      !selected ||
+      selected.length === 0 ||
+      availableSentiments.length === 0
+    ) {
       return;
     }
 
@@ -1867,24 +1958,16 @@ export function ItemsView({
     if (emptyStateVariant === "today") {
       const action = canManageCrawl
         ? {
-            label: t("items.empty.todayActionAdmin", {
-              defaultValue: "Manage crawl tasks",
-            }),
+            label: t("items.empty.todayActionAdmin"),
             href: "/admin/ops/crawl-tasks",
           }
         : {
-            label: t("items.empty.todayActionSubscriber", {
-              defaultValue: "Manage subscriptions",
-            }),
+            label: t("items.empty.todayActionSubscriber"),
             href: "/subscriptions",
           };
       return {
-        title: t("items.empty.todayTitle", {
-          defaultValue: "No news in this window",
-        }),
-        description: t("items.empty.todayDescription", {
-          defaultValue: "Try adjusting filters or check back later.",
-        }),
+        title: t("items.empty.todayTitle"),
+        description: t("items.empty.todayDescription"),
         actionLabel: action.label,
         actionHref: action.href,
       };
@@ -1893,28 +1976,19 @@ export function ItemsView({
     if (emptyStateVariant === "search") {
       if (isUnsearched) {
         return {
-          title: t("items.empty.searchIdleTitle", {
-            defaultValue: "Start searching",
-          }),
-          description: t("items.empty.searchIdleDescription", {
-            defaultValue:
-              "Enter keywords or adjust filters to search processed items.",
-          }),
+          title: t("items.empty.searchIdleTitle"),
+          description: t("items.empty.searchIdleDescription"),
         };
       }
       return {
-        title: t("items.empty.searchTitle", { defaultValue: "No results" }),
-        description: t("items.empty.searchDescription", {
-          defaultValue: "Try adjusting your keywords or filters.",
-        }),
+        title: t("items.empty.searchTitle"),
+        description: t("items.empty.searchDescription"),
       };
     }
 
     return {
-      title: t("items.empty.defaultTitle", { defaultValue: "No items found" }),
-      description: t("items.empty.defaultDescription", {
-        defaultValue: "Try adjusting filters or refresh.",
-      }),
+      title: t("items.empty.defaultTitle"),
+      description: t("items.empty.defaultDescription"),
     };
   }, [canManageCrawl, emptyStateVariant, isUnsearched, t]);
 
@@ -1970,13 +2044,13 @@ export function ItemsView({
   const columns = useMemo<ColumnsType<ParsedItem>>(
     () => [
       {
-        title: t("items.columns.name", { defaultValue: "Title" }),
+        title: t("items.columns.name"),
         dataIndex: "name",
         key: "name",
         ellipsis: true,
       },
       {
-        title: t("items.columns.source", { defaultValue: "Source" }),
+        title: t("items.columns.source"),
         dataIndex: "source",
         key: "source",
         width: 120,
@@ -1984,14 +2058,12 @@ export function ItemsView({
           value ?? t("common.notAvailable"),
       },
       {
-        title: t("items.columns.time", { defaultValue: "Time" }),
+        title: t("items.columns.time"),
         dataIndex: "publishedAt",
         key: "publishedAt",
         width: 240,
         render: (_: string | undefined, record) => {
-          const ingestedLabel = t("items.time.ingested", {
-            defaultValue: "Ingested",
-          });
+          const ingestedLabel = t("items.time.ingested");
           const ingestedAt = record.ingestedAt ?? record.createdAt;
           return (
             <Space direction="vertical" size={0}>
@@ -2020,11 +2092,8 @@ export function ItemsView({
       },
       {
         title: withMetricTooltip(
-          t("items.columns.quality", { defaultValue: "Quality" }),
-          t("items.metrics.quality.tooltip", {
-            defaultValue:
-              "Quality score from LLM cleaning stage (0–1, shown as %).",
-          }),
+          t("items.columns.quality"),
+          t("items.metrics.quality.tooltip"),
         ),
         dataIndex: "qualityScore",
         key: "qualityScore",
@@ -2037,15 +2106,16 @@ export function ItemsView({
 
           const tooltip = (
             <div className="text-xs">
-              <div>
-                {t("items.metrics.quality.tooltip", {
-                  defaultValue:
-                    "Quality score from LLM cleaning stage (0–1, shown as %).",
-                })}
-              </div>
-              {record.llm?.model ? <div>Model: {record.llm.model}</div> : null}
+              <div>{t("items.metrics.quality.tooltip")}</div>
+              {record.llm?.model ? (
+                <div>
+                  {t("items.metrics.model")}: {record.llm.model}
+                </div>
+              ) : null}
               {record.llm?.promptVersion ? (
-                <div>Prompt: {record.llm.promptVersion}</div>
+                <div>
+                  {t("items.metrics.prompt")}: {record.llm.promptVersion}
+                </div>
               ) : null}
             </div>
           );
@@ -2059,11 +2129,8 @@ export function ItemsView({
       },
       {
         title: withMetricTooltip(
-          t("items.columns.duplicate", { defaultValue: "Duplicate" }),
-          t("items.metrics.duplicate.tooltip", {
-            defaultValue:
-              "Duplicate similarity from dedup stage (0–1, shown as %).",
-          }),
+          t("items.columns.duplicate"),
+          t("items.metrics.duplicate.tooltip"),
         ),
         dataIndex: "duplicateSimilarity",
         key: "duplicateSimilarity",
@@ -2074,19 +2141,16 @@ export function ItemsView({
             return <Tag>{t("common.notAvailable")}</Tag>;
           }
           const label = record.duplicateOf
-            ? t("items.duplicate.duplicate", { defaultValue: "Duplicate" })
-            : t("items.duplicate.similarity", { defaultValue: "Similarity" });
+            ? t("items.duplicate.duplicate")
+            : t("items.duplicate.similarity");
 
           const tooltip = (
             <div className="text-xs">
-              <div>
-                {t("items.metrics.duplicate.tooltip", {
-                  defaultValue:
-                    "Duplicate similarity from dedup stage (0–1, shown as %).",
-                })}
-              </div>
+              <div>{t("items.metrics.duplicate.tooltip")}</div>
               {record.duplicateOf ? (
-                <div>Duplicate of: {record.duplicateOf}</div>
+                <div>
+                  {t("items.duplicate.of")}: {record.duplicateOf}
+                </div>
               ) : null}
             </div>
           );
@@ -2101,7 +2165,7 @@ export function ItemsView({
         },
       },
       {
-        title: t("items.columns.open", { defaultValue: "Open" }),
+        title: t("items.columns.open"),
         key: "open",
         width: 100,
         render: (_: unknown, record) => (
@@ -2111,7 +2175,7 @@ export function ItemsView({
             onClick={() => router.push(`/items/${record.id}`)}
             className="px-0"
           >
-            {t("items.detail.openItem", { defaultValue: "Open item" })}
+            {t("items.detail.openItem")}
           </Button>
         ),
       },
@@ -2124,28 +2188,17 @@ export function ItemsView({
       <Alert
         type="error"
         showIcon
-        message={t("items.rerankUnavailable.title", {
-          defaultValue: "Reranker unavailable",
-        })}
+        message={t("items.rerankUnavailable.title")}
         description={
           <div>
-            <div>
-              {t("items.rerankUnavailable.description", {
-                defaultValue:
-                  "Relevance reranking is currently unavailable. Retry later or switch to Recency ranking.",
-              })}
-            </div>
+            <div>{t("items.rerankUnavailable.description")}</div>
             <div className="mt-1 text-xs opacity-80">
-              {t("items.rerankUnavailable.detailLabel", {
-                defaultValue: "Details",
-              })}
-              : {rerankUnavailableMessage}
+              {t("items.rerankUnavailable.detailLabel")}:{" "}
+              {rerankUnavailableMessage}
             </div>
             <div className="mt-2">
               <Button size="small" onClick={handleSwitchToRecencyRanking}>
-                {t("items.rerankUnavailable.switchToRecency", {
-                  defaultValue: "Switch to Recency ranking",
-                })}
+                {t("items.rerankUnavailable.switchToRecency")}
               </Button>
             </div>
           </div>
@@ -2170,13 +2223,8 @@ export function ItemsView({
             <ChartEmptyState
               className="h-auto"
               variant="delayed"
-              title={t("common.loadingDelayedTitle", {
-                defaultValue: "Still loading…",
-              })}
-              description={t("common.loadingDelayed", {
-                defaultValue:
-                  "Data is taking longer than usual. Please hold on or refresh.",
-              })}
+              title={t("common.loadingDelayedTitle")}
+              description={t("common.loadingDelayed")}
             />
           ) : null}
         </Space>
@@ -2201,14 +2249,10 @@ export function ItemsView({
       const isFiltered = Boolean(search.length > 0 || hasVisibleFilters);
       const filteredDescription = isFiltered ? (
         <div className="flex flex-col items-center gap-1">
-          <span>
-            {t("items.empty.filteredDescription", {
-              defaultValue: "No items match the current search or filters.",
-            })}
-          </span>
+          <span>{t("items.empty.filteredDescription")}</span>
           {search ? (
             <span className="font-mono text-[10px] opacity-80">
-              {t("items.stats.query", { defaultValue: "Query" })}: {search}
+              {t("items.stats.query")}: {search}
             </span>
           ) : null}
           {filterSummary.text ? (
@@ -2257,7 +2301,6 @@ export function ItemsView({
               dataSource={pageData}
               loading={loading}
               size="large"
-              virtual={listTableVirtualEnabled}
               scroll={listTableScroll}
               pagination={{
                 current: page,
@@ -2314,6 +2357,7 @@ export function ItemsView({
                       duplicateOf: item.duplicateOf,
                       llm: item.llm,
                       url: item.url,
+                      searchHighlights: item.searchHighlights,
                     }}
                   />
                 )}
@@ -2325,6 +2369,91 @@ export function ItemsView({
     }
 
     if (view === "feed") {
+      const renderFeedCard = (item: ParsedItem) => (
+        <NewsCard
+          variant={layoutState.isReaderPreset ? "reader" : "default"}
+          density={layoutState.density}
+          item={{
+            ...item,
+            publishedAt: item.publishedAt,
+            ingestedAt: item.ingestedAt,
+            topics: item.topics,
+            entities: item.entities,
+            qualityScore: item.qualityScore,
+            duplicateSimilarity: item.duplicateSimilarity,
+            duplicateOf: item.duplicateOf,
+            llm: item.llm,
+            url: item.url,
+            searchHighlights: item.searchHighlights,
+            rssHasTranslation: item.rssHasTranslation,
+            rssTranslationState: item.rssTranslationState,
+          }}
+        />
+      );
+
+      const pagination = (
+        <div className="flex justify-center">
+          <Pagination
+            current={page}
+            pageSize={pageSize}
+            total={totalCount}
+            showSizeChanger
+            pageSizeOptions={ITEMS_PAGE_SIZE_OPTIONS_STRINGS}
+            onChange={handlePaginationChange}
+            onShowSizeChange={handlePaginationChange}
+          />
+        </div>
+      );
+
+      if (shouldVirtualizeFeed) {
+        const virtualRows = feedVirtualizer.getVirtualItems();
+        return (
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            {errorBanner}
+            <div
+              ref={feedListRef}
+              className={
+                layoutState.isReaderPreset ? "items-reader-feed-list" : undefined
+              }
+              role="list"
+            >
+              <div
+                style={{
+                  height: `${feedVirtualizer.getTotalSize()}px`,
+                  position: "relative",
+                  width: "100%",
+                }}
+              >
+                {virtualRows.map((virtualRow) => {
+                  const item = pageData[virtualRow.index];
+                  if (!item) {
+                    return null;
+                  }
+                  return (
+                    <div
+                      key={item.id}
+                      data-index={virtualRow.index}
+                      ref={feedVirtualizer.measureElement}
+                      role="listitem"
+                      style={{
+                        left: 0,
+                        position: "absolute",
+                        top: 0,
+                        transform: `translateY(${virtualRow.start - feedScrollMargin}px)`,
+                        width: "100%",
+                      }}
+                    >
+                      {renderFeedCard(item)}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            {pagination}
+          </Space>
+        );
+      }
+
       return (
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           {errorBanner}
@@ -2347,24 +2476,7 @@ export function ItemsView({
             }}
             renderItem={(item) => (
               <List.Item key={item.id}>
-                <NewsCard
-                  variant={layoutState.isReaderPreset ? "reader" : "default"}
-                  density={layoutState.density}
-                  item={{
-                    ...item,
-                    publishedAt: item.publishedAt,
-                    ingestedAt: item.ingestedAt,
-                    topics: item.topics,
-                    entities: item.entities,
-                    qualityScore: item.qualityScore,
-                    duplicateSimilarity: item.duplicateSimilarity,
-                    duplicateOf: item.duplicateOf,
-                    llm: item.llm,
-                    url: item.url,
-                    rssHasTranslation: item.rssHasTranslation,
-                    rssTranslationState: item.rssTranslationState,
-                  }}
-                />
+                {renderFeedCard(item)}
               </List.Item>
             )}
           />
@@ -2377,8 +2489,8 @@ export function ItemsView({
 
   const filterButtonLabel =
     activeFilterDimensionCount > 0
-      ? `${t("items.filters.button", { defaultValue: "Filters" })} (${activeFilterDimensionCount})`
-      : t("items.filters.button", { defaultValue: "Filters" });
+      ? `${t("items.filters.button")} (${activeFilterDimensionCount})`
+      : t("items.filters.button");
   const excludeDuplicatesEnabled = displayFilters.excludeDuplicates === true;
 
   const containerClassName = layoutState.isReaderPreset
@@ -2391,15 +2503,29 @@ export function ItemsView({
         {!hideQuickNav ? (
           <div className="flex flex-wrap items-center gap-2">
             <Button size="small" onClick={() => router.push("/news-hub")}>
-              {t("items.quickNav.hub", { defaultValue: "News Hub" })}
+              {t("items.quickNav.hub")}
             </Button>
-            <Button size="small" onClick={() => router.push("/newsnow/hottest")}>
-              {t("items.quickNav.newsnow", { defaultValue: "实时热榜" })}
+            <Button
+              size="small"
+              onClick={() => router.push("/newsnow/hottest")}
+            >
+              {t("items.quickNav.newsnow")}
             </Button>
             <Button size="small" onClick={() => router.push("/events")}>
-              {t("items.quickNav.events", { defaultValue: "事件脉络" })}
+              {t("items.quickNav.events")}
             </Button>
           </div>
+        ) : null}
+
+        <AnalysisToolbar
+          surface="items"
+          exportTarget="items"
+          queryString={searchParams.toString()}
+          savedViewId={savedViewId}
+        />
+
+        {savedViewId ? (
+          <AnnotationPanel subjectType="saved_view" subjectId={savedViewId} />
         ) : null}
 
         {/* Header Controls */}
@@ -2440,10 +2566,10 @@ export function ItemsView({
                       }}
                       onPressEnter={() => handleSearch(searchInput)}
                     />
-                    {(searchInput.length > 0 || search.length > 0) ? (
+                    {searchInput.length > 0 || search.length > 0 ? (
                       <Button
                         icon={<CloseCircleOutlined />}
-                        aria-label={t("common.clear", { defaultValue: "Clear" })}
+                        aria-label={t("common.clear")}
                         onClick={handleClearSearch}
                       />
                     ) : null}
@@ -2454,9 +2580,7 @@ export function ItemsView({
                     />
                   </Space.Compact>
                 )
-              ) : (
-                null
-              )}
+              ) : null}
               {emptyStateVariant === "search" || search.length > 0 ? (
                 <Segmented
                   size="small"
@@ -2467,30 +2591,18 @@ export function ItemsView({
                         <Tooltip
                           title={t(
                             "items.rerankUnavailable.relevanceDisabledHint",
-                            {
-                              defaultValue:
-                                "Relevance ranking is temporarily unavailable because reranker is down.",
-                            },
                           )}
                         >
-                          <span>
-                            {t("items.ranking.relevanceUnavailable", {
-                              defaultValue: "Relevance (Unavailable)",
-                            })}
-                          </span>
+                          <span>{t("items.ranking.relevanceUnavailable")}</span>
                         </Tooltip>
                       ) : (
-                        t("items.ranking.relevance", {
-                          defaultValue: "Relevance",
-                        })
+                        t("items.ranking.relevance")
                       ),
                       value: "RELEVANCE",
                       disabled: relevanceRankingUnavailable,
                     },
                     {
-                      label: t("items.ranking.recency", {
-                        defaultValue: "Recency",
-                      }),
+                      label: t("items.ranking.recency"),
                       value: "RECENCY",
                     },
                   ]}
@@ -2509,19 +2621,15 @@ export function ItemsView({
                   value={effectiveSortMode}
                   options={[
                     {
-                      label: t("items.sort.latest", { defaultValue: "Latest" }),
+                      label: t("items.sort.latest"),
                       value: "default",
                     },
                     {
-                      label: t("items.sort.published", {
-                        defaultValue: "Published",
-                      }),
+                      label: t("items.sort.published"),
                       value: "publishedDesc",
                     },
                     {
-                      label: t("items.sort.personalized", {
-                        defaultValue: "Personalized",
-                      }),
+                      label: t("items.sort.personalized"),
                       value: "personalized",
                     },
                   ]}
@@ -2531,16 +2639,10 @@ export function ItemsView({
                   }}
                 />
               ) : null}
-              <Tooltip
-                title={t("items.filters.excludeDuplicatesHint", {
-                  defaultValue: "Hide entries that are marked as duplicates.",
-                })}
-              >
+              <Tooltip title={t("items.filters.excludeDuplicatesHint")}>
                 <Space size={6}>
                   <Typography.Text type="secondary">
-                    {t("items.filters.excludeDuplicates", {
-                      defaultValue: "Hide duplicates",
-                    })}
+                    {t("items.filters.excludeDuplicates")}
                   </Typography.Text>
                   <Switch
                     size="small"
@@ -2582,23 +2684,22 @@ export function ItemsView({
                   closable
                   onClose={() => handleSearch("")}
                 >
-                  {t("items.stats.query", { defaultValue: "Query" })}: {search}
+                  {t("items.stats.query")}: {search}
                 </Tag>
               </Tooltip>
             ) : null}
             {filterSummary.text ? (
               <Tooltip title={filterSummary.text}>
                 <Tag className="text-xs" color="purple">
-                  {t("items.stats.filters", { defaultValue: "Filters" })}:{" "}
-                  {filterSummary.text}
+                  {t("items.stats.filters")}: {filterSummary.text}
                 </Tag>
               </Tooltip>
             ) : null}
             <Tag className="text-xs">
-              {t("items.stats.matches", { defaultValue: "Matches" })}:{" "}
+              {t("items.stats.matches")}:{" "}
               {typeof resolvedTotalCount === "number"
                 ? totalCount.toLocaleString(locale)
-                : t("common.loading", { defaultValue: "Loading..." })}
+                : t("common.loading")}
             </Tag>
             {showingRange ? (
               <Tag className="text-xs">
@@ -2606,7 +2707,6 @@ export function ItemsView({
                   from: showingRange.from,
                   to: showingRange.to,
                   total: totalCount,
-                  defaultValue: "Showing {{from}}-{{to}} of {{total}}",
                 })}
               </Tag>
             ) : null}
@@ -2614,7 +2714,6 @@ export function ItemsView({
               <Tag className="text-xs" color="cyan">
                 {t("pages.rss.translation.translatedCount", {
                   count: rssTranslationStats.translated,
-                  defaultValue: "Translated: {{count}}"
                 })}
               </Tag>
             ) : null}
@@ -2622,7 +2721,6 @@ export function ItemsView({
               <Tag className="text-xs">
                 {t("pages.rss.translation.originalCount", {
                   count: rssTranslationStats.original,
-                  defaultValue: "Original: {{count}}"
                 })}
               </Tag>
             ) : null}
@@ -2663,7 +2761,7 @@ export function ItemsView({
       </Space>
 
       <Drawer
-        title={t("items.filters.title", { defaultValue: "Filters" })}
+        title={t("items.filters.title")}
         placement={screens.lg ? "right" : "bottom"}
         width={screens.lg ? 360 : undefined}
         height={!screens.lg ? "72vh" : undefined}

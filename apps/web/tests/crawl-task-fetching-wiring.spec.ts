@@ -51,4 +51,30 @@ describe('crawl task fetching wiring', () => {
     expect(source).toContain('router.push(`/admin/ops/crawl-tasks/${taskId}`);');
     expect(source).not.toContain('<Link href={`/admin/ops/crawl-tasks/${record.id}`}>');
   });
+
+  it('defers ops socket connects until listeners are registered', () => {
+    const listSource = read('app/(app)/crawl/crawl-tasks.tsx');
+    const detailSource = read('app/(app)/crawl/[taskId]/task-detail.tsx');
+
+    expect(listSource).toContain('autoConnect: false');
+    expect(listSource).toContain('const connectTimer = window.setTimeout(() => {');
+    expect(listSource).toContain('window.clearTimeout(connectTimer);');
+    expect(detailSource).toContain('autoConnect: false');
+    expect(detailSource).toContain('const connectTimer = window.setTimeout(() => {');
+    expect(detailSource).toContain('window.clearTimeout(connectTimer);');
+  });
+
+  it('surfaces localized ops realtime errors instead of silently degrading', () => {
+    const listSource = read('app/(app)/crawl/crawl-tasks.tsx');
+    const detailSource = read('app/(app)/crawl/[taskId]/task-detail.tsx');
+
+    for (const source of [listSource, detailSource]) {
+      expect(source).toContain('const [opsLiveError, setOpsLiveError] = useState<string | null>(null);');
+      expect(source).toContain('formatRealtimeSocketError');
+      expect(source).toContain('keyPrefix: "crawl.liveUpdates.connectionError"');
+      expect(source).toContain('socket.on("ops:error", handleServerError);');
+      expect(source).toContain('t("crawl.liveUpdates.error"');
+      expect(source).toContain('t("crawl.liveUpdates.alertTitle"');
+    }
+  });
 });

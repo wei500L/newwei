@@ -69,6 +69,55 @@ describe('CrawlStrategyRuntimeService.replayRun', () => {
   });
 });
 
+describe('CrawlStrategyRuntimeService proxy policy', () => {
+  it('rejects trial runs for workflows with legacy proxy crawlOptions', async () => {
+    const workflows = {
+      resolveBoundWorkflowVersion: jest.fn().mockResolvedValue({
+        workflow: { id: 'wf-1', name: 'Workflow A', description: null },
+        version: { id: 'ver-1', version: 1 },
+        definition: {
+          version: 1,
+          metadata: {},
+          settings: {
+            executionMode: 'hybrid',
+            maxDepth: 3,
+            maxPages: 60,
+            timeoutMs: 15000,
+            concurrency: 2,
+            robotsPolicy: 'respect',
+            domainScope: 'registrable_domain',
+          },
+          nodes: [
+            {
+              id: 'list-1',
+              type: 'list-discovery',
+              label: 'List Discovery',
+              position: { x: 0, y: 0 },
+              config: {
+                crawlOptions: {
+                  proxyUrl: 'http://proxy.example.com:8080',
+                },
+              },
+            },
+          ],
+          edges: [],
+        },
+      }),
+    } as any;
+
+    const service = new CrawlStrategyRuntimeService(
+      {} as any,
+      {} as any,
+      {} as any,
+      workflows,
+    );
+
+    await expect(
+      service.trialRunWorkflow('org-1', 'user-1', 'wf-1', {}),
+    ).rejects.toThrow('Unsupported crawl config');
+  });
+});
+
 describe('CrawlStrategyRuntimeService candidate trace semantics', () => {
   it('records before/after snapshots across classifier, scorer, budget and persist nodes', () => {
     const service = new CrawlStrategyRuntimeService(

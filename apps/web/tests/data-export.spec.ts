@@ -5,6 +5,7 @@ import {
   buildExportBaseName,
   buildExportFilename,
   escapeCsvValue,
+  filenameFromContentDisposition,
   formatDateForFilename,
   sanitizeExportFilename,
   sanitizeFilename,
@@ -26,6 +27,20 @@ describe("data-export", () => {
   it("sanitizes export filenames while keeping extension", () => {
     expect(sanitizeExportFilename(" Report 2024.csv ")).toBe("Report-2024.csv");
     expect(sanitizeExportFilename("bad.name..csv")).toBe("bad-name.csv");
+  });
+
+  it("extracts safe filenames from content disposition headers", () => {
+    expect(
+      filenameFromContentDisposition(
+        'attachment; filename="wei user data.json"',
+      ),
+    ).toBe("wei-user-data.json");
+    expect(
+      filenameFromContentDisposition(
+        "attachment; filename*=UTF-8''wei%20%E4%B8%AD%E6%96%87.json",
+      ),
+    ).toBe("wei.json");
+    expect(filenameFromContentDisposition(undefined)).toBeNull();
   });
 
   it("builds export base names and filenames", () => {

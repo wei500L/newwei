@@ -1,3 +1,4 @@
+import { DASHBOARD_STREAM_EVENT_TYPES } from "@modular/utils";
 import {
   Controller,
   Get,
@@ -9,16 +10,17 @@ import {
   Sse,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { DASHBOARD_STREAM_EVENT_TYPES } from "@modular/utils";
 import { createHash } from "node:crypto";
 import { Observable } from "rxjs";
 
+/* eslint-disable import/order */
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
 import { DashboardChartsService } from "./dashboard-charts.service";
 import { DashboardService } from "./dashboard.service";
+/* eslint-enable import/order */
 
 function parseWarMapFlightMode(value?: string): "military" | "all" {
   return value?.trim().toLowerCase() === "all" ? "all" : "military";

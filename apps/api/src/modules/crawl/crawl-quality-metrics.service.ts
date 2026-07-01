@@ -9,7 +9,6 @@ import {
 import { PrismaService } from "../config/prisma.service";
 import { ObservabilitySnapshotService } from "../observability/observability-snapshot.service";
 
-import { CrawlQualityTaskSnapshotService } from "./crawl-quality-task-snapshot.service";
 import type {
   CrawlQualityAlertThresholds,
   CrawlQualityMetricsSnapshot,
@@ -17,7 +16,9 @@ import type {
 import {
   createEmptyCrawlQualityConfidenceBuckets,
   createEmptyCrawlQualityRejectBreakdown,
+  createEmptyCrawlQualitySampleCounts,
 } from "./crawl-quality-metrics.types";
+import { CrawlQualityTaskSnapshotService } from "./crawl-quality-task-snapshot.service";
 
 const DEFAULT_CRAWL_QUALITY_ALERT_THRESHOLDS: CrawlQualityAlertThresholds = {
   preflightFailureRateHigh: 0.15,
@@ -65,6 +66,7 @@ export class CrawlQualityMetricsService {
       return {
         ...snapshot,
         taskCount: 0,
+        sampleCounts: createEmptyCrawlQualitySampleCounts(),
         lowSignalRatio: 0,
         emptyMarkdownRate: 0,
         expansionTriggerRate: 0,
@@ -87,7 +89,10 @@ export class CrawlQualityMetricsService {
     return {
       ...snapshot,
       taskCount: entry.taskCount,
+      sampleCounts: entry.sampleCounts,
       lowSignalRatio: entry.lowSignalRatio,
+      emptyMarkdownRate: entry.emptyMarkdownRate,
+      expansionTriggerRate: entry.expansionTriggerRate,
       expansionSuccessRate: entry.expansionSuccessRate,
       avgMarkdownChars: entry.avgMarkdownChars,
       candidateRejects: entry.candidateRejects,
@@ -242,6 +247,7 @@ export class CrawlQualityMetricsService {
       from: from.toISOString(),
       to: to.toISOString(),
       taskCount: 0,
+      sampleCounts: createEmptyCrawlQualitySampleCounts(),
       lowSignalRatio: 0,
       emptyMarkdownRate: 0,
       expansionTriggerRate: 0,

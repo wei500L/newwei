@@ -159,6 +159,26 @@ describe("war-map data contract helpers", () => {
       normalizeWarMapLayersResponse({
         updatedAt: "2026-03-01T00:00:00.000Z",
         layers: {
+          ais: {
+            layerId: "ais",
+            geometryType: "point",
+            summary: {
+              source: "relay",
+              mode: "all",
+              configured: true,
+              connected: true,
+              freshness: "fresh",
+              staleThresholdSec: 1200,
+              relayVesselCount: 5,
+              disruptionsCount: 1,
+              densityCount: 2,
+              candidateCount: 3,
+              renderedVesselCount: 2,
+              allVesselsAvailable: true,
+              statusReasonCode: "ais_snapshot_missing_vessels_contract",
+            },
+            features: [],
+          },
           conflicts: {
             layerId: "conflicts",
             geometryType: "polygon",
@@ -179,10 +199,30 @@ describe("war-map data contract helpers", () => {
       }),
     ).toEqual({
       updatedAt: "2026-03-01T00:00:00.000Z",
-      layers: {
-        conflicts: {
-          layerId: "conflicts",
-          geometryType: "polygon",
+        layers: {
+          ais: {
+            layerId: "ais",
+            geometryType: "point",
+            summary: {
+              source: "relay",
+              mode: "all",
+              configured: true,
+              connected: true,
+              freshness: "fresh",
+              staleThresholdSec: 1200,
+              relayVesselCount: 5,
+              disruptionsCount: 1,
+              densityCount: 2,
+              candidateCount: 3,
+              renderedVesselCount: 2,
+              allVesselsAvailable: true,
+              statusReasonCode: "ais_snapshot_missing_vessels_contract",
+            },
+            features: [],
+          },
+          conflicts: {
+            layerId: "conflicts",
+            geometryType: "polygon",
           features: [
             { id: "polygon-1", polygon: [[[1, 2]]], properties: { name: "A" } },
           ],
@@ -209,17 +249,15 @@ describe("war-map page wiring", () => {
     const source = read("app/(app)/map/page.tsx");
 
     expect(source).not.toContain("TimeRangeControls");
-    expect(source).toContain('<WarMap className="h-full" />');
     expect(source).toContain(
-      "min-h-[calc(100dvh-var(--top-nav-height,4rem)-var(--ticker-height,0px)-2rem)]",
+      '<WarMap className="min-h-0 w-full" layoutVariant="standalone" />',
     );
+    expect(source).toContain('className="flex flex-col gap-4 pb-6 sm:gap-6"');
     expect(source).toContain(
-      "md:min-h-[calc(100dvh-var(--top-nav-height,4rem)-var(--ticker-height,0px)-3rem)]",
+      'className="glass-panel border border-[var(--border)] flex flex-col gap-4 overflow-hidden p-4 sm:p-5"',
     );
-    expect(source).toContain("max-h-[56rem]");
-    expect(source).toContain("min-h-[30rem]");
-    expect(source).toContain("OpenSky flight activity");
-    expect(source).toContain("Signals, News & Flights");
+    expect(source).toContain('t("pages.map.subtitle")');
+    expect(source).toContain('t("pages.map.overlay")');
   });
 
   it("wires dashboard stream coverage for map news and layers", () => {
@@ -230,10 +268,10 @@ describe("war-map page wiring", () => {
     expect(source).toContain("buildWarMapNewsMarkersQueryKey");
     expect(source).toContain("buildWarMapLayersQueryKey");
     expect(source).toContain(
-      "queryClient.setQueryData(warMapNewsMarkersKey, payload)",
+      "queueStreamUpdate('war-map-news-markers', warMapNewsMarkersKey, payload)",
     );
     expect(source).toContain(
-      "queryClient.setQueryData(warMapLayersKey, payload)",
+      "queueStreamUpdate('war-map-layers', warMapLayersKey, payload)",
     );
     expect(source).not.toContain("invalidateWarMapNewsMarkerQueries");
     expect(source).not.toContain("invalidateWarMapLayerQueries");
@@ -299,19 +337,19 @@ describe("war-map page wiring", () => {
     expect(source).toContain("onEffectiveRangeChange");
     expect(source).toContain("warMapBBox: queryBbox");
     expect(source).toContain("warMapFlightMode: flightMode");
-    expect(source).toContain("warMapAisMode: aisMode");
+    expect(source).toContain("warMapAisMode: effectiveAisMode");
     expect(source).toContain(
       'const flightsSource = readSummaryString(flightsSummary, "source");',
     );
     expect(source).toContain(
       'const flightsScope = readSummaryString(flightsSummary, "scope");',
     );
-    expect(source).toContain('defaultValue: "Flight source"');
-    expect(source).toContain('defaultValue: "OpenSky"');
-    expect(source).toContain('defaultValue: "Military / possible military"');
+    expect(source).toContain('t("dashboard.charts.warMap.stats.flightSource")');
+    expect(source).toContain('t("dashboard.charts.warMap.stats.flightSourceOpensky")');
+    expect(source).toContain('t("dashboard.charts.warMap.stats.flightScopeMilitary")');
     expect(source).toContain("flightBudgetLimited");
     expect(source).toContain(
-      "temporarily limited to preserve the daily credit budget",
+      "dashboard.charts.warMap.stats.flightBudgetLimited",
     );
     expect(source).toContain(
       "const flightMode = useWarMapSettingsStore((state) => state.flightMode);",
@@ -319,10 +357,19 @@ describe("war-map page wiring", () => {
     expect(source).toContain(
       "const aisMode = useWarMapSettingsStore((state) => state.aisMode);",
     );
+    expect(source).toContain(
+      "const aisHighlightCandidates = useWarMapSettingsStore(",
+    );
     expect(source).toContain("onFlightModeChange: setFlightMode,");
-    expect(source).toContain("onAisModeChange: setAisMode,");
+    expect(source).toContain(
+      "onAisHighlightCandidatesChange: setAisHighlightCandidates,",
+    );
+    expect(source).toContain('id: "wm-ais-candidate-highlight-glow"');
     expect(controlsSource).toContain(
       'onClick={() => transport.onFlightModeChange("all")}',
+    );
+    expect(controlsSource).toContain(
+      "transport.onAisHighlightCandidatesChange(",
     );
     expect(controlsSource).toContain(
       'onClick={() => transport.onAisModeChange("density")}',
@@ -330,8 +377,33 @@ describe("war-map page wiring", () => {
     expect(controlsSource).toContain(
       'onClick={() => transport.onAisModeChange("all")}',
     );
+    expect(controlsSource.indexOf('t("dashboard.charts.warMap.stats.aisModeAll")')).toBeLessThan(
+      controlsSource.indexOf('t("dashboard.charts.warMap.stats.aisModeMilitary")'),
+    );
+    expect(controlsSource).toContain('t("dashboard.charts.warMap.stats.aisModeMilitary")');
+    expect(controlsSource).toContain('dashboard.charts.warMap.stats.aisHighlightCandidates');
+    expect(controlsSource).toContain("aisCandidatesOnlyActiveHint");
+    expect(controlsSource).toContain("aisDensityOnlyActiveHint");
+    expect(controlsSource).toContain("dashboard.charts.warMap.overlay.aisShowAllAction");
     expect(source).toContain('id: "wm-ais-density-zones"');
+    expect(source).toContain(
+      "dashboard.charts.warMap.stats.aisDensityAggregateHint",
+    );
+    expect(source).toContain(
+      "dashboard.charts.warMap.stats.aisDisruptionAggregateHint",
+    );
+    expect(source).toContain("isAisViewportEmptyStateActive({");
+    expect(source).toContain('id: "wm-ais-vessels"');
+    expect(source).toContain("getAngle: resolveVesselIconAngle");
+    expect(source).toContain('t("dashboard.charts.warMap.stats.aisViewportEmpty")');
+    expect(source).toContain(
+      "dashboard.charts.warMap.stats.aisViewportEmpty",
+    );
+    expect(controlsSource).toContain("transport.aisViewportEmptyStateActive");
+    expect(controlsSource).toContain("transport.aisViewportEmptyStateHint");
     expect(controlsSource).toContain("dashboard.charts.warMap.legend.aisTitle");
+    expect(source).toContain('className="grid gap-3 sm:grid-cols-2"');
+    expect(source).toContain("!min-h-[42px] !w-full !items-center rounded-xl");
   });
 
   it("suppresses map chrome behind fatal overlays while keeping nonfatal retry banners", () => {
@@ -344,7 +416,7 @@ describe("war-map page wiring", () => {
     expect(source).toContain("const hasFatalOverlay = Boolean(fatalOverlay);");
     expect(source).toContain("{!hasFatalOverlay ? (");
     expect(source).toContain(
-      'className="absolute inset-0 z-30 rounded-lg bg-white/80 backdrop-blur-sm dark:bg-slate-950/72"',
+      'className="absolute inset-0 z-30 rounded-lg bg-white/80 backdrop-blur-sm dark:bg-slate-950/[0.72]"',
     );
     expect(source).toContain("showCachedDataHint");
   });
@@ -367,17 +439,17 @@ describe("war-map page wiring", () => {
     expect(source).toContain(
       "!mapLoadError && (!mapReady || (anyLoading && !hasData));",
     );
-    expect(source).toContain('defaultValue: "Loading map base layer…"');
-    expect(source).toContain('defaultValue: "Refreshing {{count}} chains"');
+    expect(source).toContain('t("dashboard.charts.warMap.status.loadingMap")');
+    expect(source).toContain('t("dashboard.charts.warMap.status.refreshingChains"');
     expect(overlayModelSource).toContain(
-      'defaultValue: "Latest stream update"',
+      't("dashboard.charts.warMap.overlay.latestStreamUpdate")',
     );
     expect(overlayModelSource).toContain(
-      'defaultValue: "No stream update yet"',
+      't("dashboard.charts.warMap.overlay.noRecentMessage")',
     );
-    expect(overlayModelSource).toContain('defaultValue: "Awaiting refresh"');
-    expect(source).toContain('defaultValue: "Awaiting first refresh"');
-    expect(source).toContain('defaultValue: "Last updated {{value}}"');
+    expect(overlayModelSource).toContain('t("dashboard.charts.warMap.overlay.awaitingRefresh")');
+    expect(source).toContain('t("dashboard.charts.warMap.status.waitingData")');
+    expect(source).toContain('t("dashboard.charts.warMap.overlay.updatedSummary"');
     expect(refreshBlock).not.toContain("refreshRangeAnchor();");
     expect(refreshBlock).toContain("eventsQuery.refetch()");
     expect(refreshBlock).toContain("newsQuery.refetch()");
@@ -396,21 +468,41 @@ describe("war-map page wiring", () => {
     expect(source).toContain("buildWarMapOverlayViewModel({");
     expect(source).toContain("<WarMapOverlayRail");
     expect(source).toContain("<WarMapControlsPanel");
+    expect(source).toContain("<WarMapLegendDock");
     expect(source).toContain("<WarMapInspectorPanel");
     expect(source).toContain('useState<OverlayControlsSection>("view")');
-    expect(source).toContain(
-      'onOpenLegend: () => setControlsSection("legend")',
-    );
+    expect(source).toContain('layoutVariant = "embedded"');
+    expect(source).toContain("const standaloneLayout =");
+    expect(source).toContain("if (standaloneLayout) {");
+    expect(source).toContain("scrollLegendDockIntoView();");
+    expect(source).toContain('setOpenOverlayPanel("legend")');
     expect(source).not.toContain('setControlsSection("overview");');
-    expect(source).not.toContain('openOverlayPanel === "legend"');
     expect(source).not.toContain("legendOverlayRef");
     expect(source).not.toContain(
       "legend={{ showAisLegend: layerVisibility.ais }}",
     );
     expect(source).toContain('current === "controls" ? null : "controls"');
+    expect(source).toContain('placement="bottom"');
     expect(source).toContain(
-      'className ?? "min-h-[24rem] h-[clamp(24rem,50dvh,29rem)]"',
+      "const mobileControlsDrawerHeight = `min(${overlayLayout.controlsDrawerHeight}px, calc(100dvh - 72px))`;",
     );
+    expect(source).toContain(
+      "const standaloneControlsDrawerHeight = `min(${overlayLayout.standaloneDrawerHeight}px, calc(100dvh - 96px))`;",
+    );
+    expect(source).toContain("closable={false}");
+    expect(source).toContain(
+      "getContainer={standaloneLayout ? false : undefined}",
+    );
+    expect(source).toContain('block: "start"');
+    expect(source).toContain(
+      '["relative", className?.trim()].filter(Boolean).join(" ")',
+    );
+    expect(source).toContain(
+      'min-h-[24rem] h-[clamp(24rem,56dvh,38rem)] overflow-hidden rounded-[24px]',
+    );
+    expect(source).not.toContain("overlayLayout.legendDockHeight");
+    expect(source).not.toContain('placement="right"');
+    expect(source).toContain("resolveWarMapContainerClassName(className)");
   });
 
   it("keeps overlay settings surfaces dark-theme aware", () => {
@@ -432,26 +524,32 @@ describe("war-map page wiring", () => {
     expect(overlayModelSource).toContain("dark:hover:bg-slate-950/[0.82]");
     expect(overlayModelSource).toContain("resolveOverlayButtonClassName");
     expect(overlayModelSource).toContain("OVERLAY_STATUS_TAG_CLASS_NAME");
-    expect(controlsSource).toContain("bg-white/[0.85]");
+    expect(controlsSource).toContain("bg-white/[0.88]");
     expect(controlsSource).toContain("dark:bg-slate-900/70");
-    expect(controlsSource).toContain("OVERLAY_BUTTON_GROUP_CLASS_NAME");
+    expect(controlsSource).toContain("ControlsChoiceButton");
+    expect(controlsSource).toContain("OVERLAY_PANEL_OPTION_GRID_CLASS_NAME");
+    expect(controlsSource).toContain("OVERLAY_PANEL_TAB_GRID_CLASS_NAME");
+    expect(controlsSource).toContain(
+      "OVERLAY_PANEL_STANDALONE_SPLIT_GRID_CLASS_NAME",
+    );
     expect(controlsSource).toContain("resolveOverlayButtonClassName({");
     expect(controlsSource).toContain("ControlsHeaderSummary");
     expect(controlsSource).toContain("renderControlsTabLabel");
     expect(controlsSource).toContain("ResizeObserver");
     expect(controlsSource).toContain("transport.onOpenLegend");
+    expect(controlsSource).toContain("overscroll-contain");
+    expect(controlsSource).toContain("WarMapLegendDock");
+    expect(controlsSource).toContain('size={compact ? 22 : 24}');
+    expect(controlsSource).toContain('className="mt-4 grid gap-4 md:grid-cols-2"');
     expect(controlsSource).not.toContain("legend.showAisLegend");
-    expect(controlsSource).not.toContain("overlayPanelMaxHeight - 108");
     expect(railSource).toContain("dark:bg-slate-950/[0.78]");
-    expect(railSource).toContain("dark:from-slate-950/[0.92]");
+    expect(railSource).toContain('layoutVariant = "embedded"');
     expect(railSource).toContain("right-4 z-10 flex justify-end");
     expect(railSource).toContain("iconOnly: !showActionLabels");
     expect(railSource).toContain(
-      "!h-10 !min-w-[7rem] !px-4 !text-xs !font-semibold",
+      "!h-10 !min-w-[6.5rem] !px-4 !text-xs !font-semibold",
     );
-    expect(railSource).toContain(
-      'const hideRailSummaryCards =\n    !useDrawerControls && openOverlayPanel === "controls";',
-    );
+    expect(railSource).toContain("const usesLegendDock =");
     expect(inspectorSource).toContain("dark:from-amber-500/10");
     expect(inspectorSource).toContain("dark:bg-slate-950/[0.78]");
     expect(inspectorSource).toContain("OVERLAY_NEUTRAL_TAG_CLASS_NAME");
@@ -476,7 +574,8 @@ describe("war-map page wiring", () => {
     expect(source).toContain(
       'className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] overflow-hidden flex flex-col"',
     );
-    expect(source).toContain('className="min-h-0 flex-1"');
+    expect(source).toContain('className="min-h-0 flex flex-1"');
+    expect(source).toContain('className="flex-1"');
     expect(source).not.toContain('className="absolute top-4 left-4 z-10"');
   });
 });

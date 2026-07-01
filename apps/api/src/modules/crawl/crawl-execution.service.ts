@@ -9,11 +9,11 @@ import type { CrawlTask, Prisma } from "@prisma/client";
 import { NotificationType, PipelineJobStatus } from "@prisma/client";
 import { load } from "cheerio";
 
-import { toPrismaJsonValue } from "../../common/prisma-json";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { writeTaskLogBestEffort } from "../observability/task-log.writer";
+
 import {
   CrawlQualityStrategyService,
   type CrawlArticleSignal,
@@ -21,12 +21,6 @@ import {
 import { CrawlResultService } from "./crawl-result.service";
 import { CrawlSettingsService } from "./crawl-settings.service";
 import { CRAWL_QUEUE_NAME } from "./crawl.constants";
-import { translateLocalhostProxyUrlForCrawl4ai } from "./crawl4ai-proxy";
-import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
-import {
-  buildCanonicalUrlFingerprint,
-  extractUrlQueryParamAllowlistFromTaskConfig,
-} from "./url-fingerprint";
 import {
   CrawlExecutionSummary,
   CrawlDetailExpansionOptions,
@@ -54,6 +48,9 @@ import {
   CrawlTableExtractionStrategy,
   CrawlVirtualScrollConfig,
 } from "./crawl.types";
+import { assertNoUnsupportedProxy } from "./crawl-config-policy";
+import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
+import { translateLocalhostProxyUrlForCrawl4ai } from "./crawl4ai-proxy";
 import {
   Crawl4aiClient,
   Crawl4aiArticle,
@@ -63,6 +60,10 @@ import {
 } from "./crawl4ai.client";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
 import { NewsSourceOpsSnapshotService } from "./news-source-ops-snapshot.service";
+import {
+  buildCanonicalUrlFingerprint,
+  extractUrlQueryParamAllowlistFromTaskConfig,
+} from "./url-fingerprint";
 
 const logger = createLogger({ name: "crawl-execution-service" });
 
@@ -289,6 +290,7 @@ export class CrawlExecutionService {
         !Array.isArray(task.config)
           ? (task.config as Record<string, unknown>)
           : null;
+      assertNoUnsupportedProxy(configRecord, "task.config");
       const options = this.extractOptions(
         configRecord as Prisma.JsonValue | null,
       );
@@ -473,7 +475,7 @@ export class CrawlExecutionService {
       if (this.shouldAttemptEmptyMarkdownFallback(successes, failures)) {
         const fallbackProfiles =
           this.buildEmptyMarkdownFallbackProfiles(effectiveOptions);
-        const fallbackAttempts: Array<Record<string, unknown>> = [];
+        const fallbackAttempts: Record<string, unknown>[] = [];
         const fallbackCandidates: {
           label: string;
           options: CrawlTaskOptions;
@@ -1258,12 +1260,8 @@ export class CrawlExecutionService {
         options: fallbackOptions,
       };
 
-      try {
-        const response = await this.crawlClient.crawl(fallbackRequest);
-        return { response, options: fallbackOptions };
-      } catch (fallbackError) {
-        throw fallbackError;
-      }
+      const response = await this.crawlClient.crawl(fallbackRequest);
+      return { response, options: fallbackOptions };
     }
   }
 
@@ -1440,7 +1438,7 @@ export class CrawlExecutionService {
       });
 
     const retryCandidates: CrawlRetryCandidate[] = [];
-    const retryAttempts: Array<Record<string, unknown>> = [];
+    const retryAttempts: Record<string, unknown>[] = [];
     const maxAttempts = this.antiBotRetryAttempts;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -4061,7 +4059,7 @@ export class CrawlExecutionService {
     let earlyStopped = false;
     let shouldProbeHeadSignal = true;
     try {
-      while (true) {
+      for (;;) {
         const { value, done } = await reader.read();
         if (done) {
           break;
@@ -4409,7 +4407,7 @@ export class CrawlExecutionService {
           Number(slashDate[3]),
         );
       }
-      const dashedDate = /(20\d{2})[-_/\.]([01]\d)[-_/\.]([0-3]\d)/.exec(path);
+      const dashedDate = /(20\d{2})[-_/.]([01]\d)[-_/.]([0-3]\d)/.exec(path);
       if (dashedDate) {
         return toUtcTimestamp(
           Number(dashedDate[1]),

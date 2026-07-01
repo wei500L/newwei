@@ -3,10 +3,12 @@ import { getQueueToken } from "@nestjs/bull-shared";
 import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
+import { withKeepAliveAgents } from "../../common/http/http-agent";
 import { CacheModule } from "../cache/cache.module";
+import { BullmqConnectionService } from "../config/bullmq-connection.service";
 import { EnvService } from "../config/config.service";
 import { DatabaseModule } from "../config/database.module";
-import { toBullmqConnection } from "../config/redis-connection";
 import { EmailModule } from "../email/email.module";
 import { KnowledgeGraphModule } from "../knowledge-graph/knowledge-graph.module";
 import { ModelServiceModule } from "../model-service/model-service.module";
@@ -41,9 +43,13 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
     RealtimeSignalsModule,
     HttpModule.registerAsync({
       inject: [EnvService],
-      useFactory: (env: EnvService) => ({
-        timeout: env.alertingConfig.webhookTimeoutMs
-      })
+      useFactory: (env: EnvService) =>
+        withKeepAliveAgents(
+          {
+            timeout: env.alertingConfig.webhookTimeoutMs
+          },
+          env.httpAgentConfig
+        )
     })
   ],
   providers: [
@@ -98,10 +104,16 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
     },
     {
       provide: ALERTS_QUEUE,
-      inject: [EnvService, AlertsQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: AlertsQueueCleanupService) => {
+      inject: [AlertsQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: AlertsQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const queue = new Queue(ALERTS_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig)
+          connection: bullmqConnections.getSharedConnection(),
+          defaultJobOptions: {
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION
+          }
         });
         cleanup.track(queue);
         return queue;
@@ -109,10 +121,15 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
     },
     {
       provide: ALERTS_QUEUE_EVENTS,
-      inject: [EnvService, AlertsQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: AlertsQueueCleanupService) => {
+      inject: [AlertsQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: AlertsQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const events = new QueueEvents(ALERTS_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig)
+          connection: bullmqConnections.createDedicatedConnectionOptions(
+            `events:${ALERTS_QUEUE_NAME}`,
+          )
         });
         cleanup.track(events);
         return events;

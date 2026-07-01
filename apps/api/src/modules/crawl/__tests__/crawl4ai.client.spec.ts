@@ -192,6 +192,14 @@ describe("Crawl4aiClient", () => {
       .mockReturnValueOnce(
         of({
           data: {
+            systemEvents: [
+              {
+                level: "warn",
+                eventType: "upstream_warning",
+                message: "upstream retained",
+                timestamp: "2025-01-01T00:00:00.000Z",
+              },
+            ],
             results: [
               { url: "https://example.com", markdown: "# ok", success: true },
             ],
@@ -215,9 +223,20 @@ describe("Crawl4aiClient", () => {
     expect(firstPayload.crawler_config.params.prefetch).toBe(true);
     expect(secondPayload.crawler_config.params).not.toHaveProperty("prefetch");
     expect(response.results).toHaveLength(1);
+    expect(response.systemEvents).toEqual([
+      {
+        level: "warn",
+        eventType: "upstream_warning",
+        message: "upstream retained",
+        timestamp: "2025-01-01T00:00:00.000Z",
+      },
+      expect.objectContaining({
+        eventType: "prefetch_compatibility_fallback",
+      }),
+    ]);
   });
 
-  it("retries without prefetch on generic 500 response when prefetch is enabled", async () => {
+  it("does not retry without prefetch on generic 500 response", async () => {
     const genericServerError = {
       message: "Request failed with status code 500",
       response: {
@@ -240,21 +259,52 @@ describe("Crawl4aiClient", () => {
       );
 
     const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await expect(
+      client.crawl({
+        url: "https://example.com/",
+        options: {
+          prefetch: true,
+          extractLinks: true,
+        } as any,
+      }),
+    ).rejects.toBeInstanceOf(Crawl4aiRequestException);
+
+    expect(httpMock.post).toHaveBeenCalledTimes(1);
+    const firstPayload = httpMock.post.mock.calls[0]?.[1];
+    expect(firstPayload.crawler_config.params.prefetch).toBe(true);
+  });
+
+  it("retains upstream system events on successful responses", async () => {
+    httpMock.post = jest.fn().mockReturnValue(
+      of({
+        data: {
+          systemEvents: [
+            {
+              level: "info",
+              eventType: "crawl_started",
+              message: "started",
+              timestamp: "2025-01-01T00:00:00.000Z",
+            },
+          ],
+          results: [],
+        },
+      }),
+    );
+
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
     const response = await client.crawl({
       url: "https://example.com/",
-      options: {
-        prefetch: true,
-        extractLinks: true,
-      } as any,
+      options: {} as any,
     });
 
-    expect(httpMock.post).toHaveBeenCalledTimes(2);
-    const firstPayload = httpMock.post.mock.calls[0]?.[1];
-    const secondPayload = httpMock.post.mock.calls[1]?.[1];
-
-    expect(firstPayload.crawler_config.params.prefetch).toBe(true);
-    expect(secondPayload.crawler_config.params).not.toHaveProperty("prefetch");
-    expect(response.results).toHaveLength(1);
+    expect(response.systemEvents).toEqual([
+      {
+        level: "info",
+        eventType: "crawl_started",
+        message: "started",
+        timestamp: "2025-01-01T00:00:00.000Z",
+      },
+    ]);
   });
 
   it("disables scan_full_page when virtualScroll is configured", async () => {
@@ -796,7 +846,7 @@ describe("Crawl4aiClient", () => {
     expect(payload.crawler_config.params.wait_for_timeout).toBe(500);
   });
 
-  it("routes crawl traffic through the worker SSRF proxy and preserves upstream proxy overrides", async () => {
+  it("routes crawl traffic through the worker SSRF proxy without user upstream overrides", async () => {
     envMock.crawl4aiConfig.ssrfProxyUrl = "http://127.0.0.1:18080";
     const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
 
@@ -812,18 +862,7 @@ describe("Crawl4aiClient", () => {
     });
 
     const payload = httpMock.post.mock.calls[0]?.[1];
-    expect(payload.browser_config.params.proxy).toBeUndefined();
-    expect(payload.browser_config.params.proxy_config).toEqual({
-      server: "http://127.0.0.1:18080",
-      username: "__modular_ssrf_proxy__",
-      password: Buffer.from(
-        JSON.stringify({
-          server: "http://host.docker.internal:7890",
-          username: "user-1",
-          password: "secret-1",
-        }),
-        "utf8",
-      ).toString("base64url"),
-    });
+    expect(payload.browser_config.params.proxy).toBe("http://127.0.0.1:18080");
+    expect(payload.browser_config.params.proxy_config).toBeUndefined();
   });
 });

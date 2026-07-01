@@ -15,34 +15,38 @@ const SECONDS_PER_DAY = 24 * 60 * 60;
 
 const LlmRequestLogSchema = new Schema(
   {
-    orgId: { type: String, required: true, index: true },
+    orgId: { type: String, required: true },
     requestType: {
       type: String,
       enum: ["completion", "embedding", "rerank", "stream", "responses"],
       required: true,
-      index: true,
     },
-    model: { type: String, required: true, index: true },
+    model: { type: String, required: true },
     status: {
       type: String,
       enum: ["success", "error"],
       required: true,
-      index: true,
     },
     promptTokens: { type: Number, default: null },
     completionTokens: { type: Number, default: null },
     totalTokens: { type: Number, default: null },
     costUsd: { type: Number, default: null },
-    feature: { type: String, default: null, index: true },
-    gatewayProfileId: { type: String, default: null, index: true },
+    feature: { type: String, default: null },
+    gatewayProfileId: { type: String, default: null },
+    governanceApplied: { type: Boolean, default: null },
+    authMode: {
+      type: String,
+      enum: ["profile_key", "managed_runtime_key"],
+      default: null,
+    },
+    governanceTargetProfileId: { type: String, default: null },
     latencyMs: { type: Number, required: true, min: 0 },
     error: { type: String, default: null },
     metadata: { type: Schema.Types.Mixed, default: null },
     apiSurface: {
       type: String,
-      enum: ["chat_completions", "responses", "embeddings"],
+      enum: ["chat_completions", "responses", "embeddings", "rerank"],
       default: null,
-      index: true,
     },
   },
   {
@@ -53,6 +57,12 @@ const LlmRequestLogSchema = new Schema(
 LlmRequestLogSchema.index({ orgId: 1, createdAt: -1 });
 LlmRequestLogSchema.index({ orgId: 1, feature: 1, createdAt: -1 });
 LlmRequestLogSchema.index({ orgId: 1, gatewayProfileId: 1, createdAt: -1 });
+LlmRequestLogSchema.index({
+  orgId: 1,
+  governanceTargetProfileId: 1,
+  governanceApplied: 1,
+  createdAt: -1,
+});
 LlmRequestLogSchema.index({ orgId: 1, model: 1, createdAt: -1 });
 LlmRequestLogSchema.index({
   orgId: 1,

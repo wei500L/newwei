@@ -14,6 +14,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
+import { PrismaService } from "../config/prisma.service";
 import {
   isSituationMonitorLiveHlsProxyChannel,
   SituationMonitorSettingsService,
@@ -27,10 +28,10 @@ import {
   UpdateSituationMonitorDto,
 } from "./dto/situation-monitor-monitor.dto";
 import { SituationMonitorInsightsQueryDto, SituationMonitorSignalFeedbackDto } from "./dto/situation-monitor.dto";
-import { SituationMonitorMonitorsService } from "./situation-monitor-monitors.service";
-import { SituationMonitorRefreshService } from "./situation-monitor-refresh.service";
 import { SituationMonitorSignalsService } from "./signals/situation-monitor-signals.service";
 import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
+import { SituationMonitorMonitorsService } from "./situation-monitor-monitors.service";
+import { SituationMonitorRefreshService } from "./situation-monitor-refresh.service";
 import { SituationMonitorTranslationService } from "./situation-monitor-translation.service";
 import { SituationMonitorService } from "./situation-monitor.service";
 
@@ -150,6 +151,7 @@ export class SituationMonitorController {
     private readonly signals: SituationMonitorSignalsService,
     private readonly settings: SituationMonitorSettingsService,
     private readonly refreshService: SituationMonitorRefreshService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Get("insights")
@@ -223,7 +225,26 @@ export class SituationMonitorController {
   @Get("catalog")
   @Permissions("items.read")
   async catalog(@CurrentUser() user: AuthenticatedUser) {
-    void user;
+    const [publicSettings, activeSourceCount] = await Promise.all([
+      this.settings.getPublicSettings(),
+      this.prisma.newsSource.count({
+        where: {
+          orgId: user.orgId,
+          isActive: true,
+        },
+      }),
+    ]);
+
+    const telegramRefreshable = Boolean(
+      publicSettings.telegramEnabled &&
+        publicSettings.hasTelegramApiId &&
+        publicSettings.hasTelegramApiHash &&
+        publicSettings.hasTelegramSession,
+    );
+    const orefRefreshable = Boolean(
+      publicSettings.orefEnabled && publicSettings.orefConfigured,
+    );
+
     return {
       narratives: NARRATIVE_PATTERNS.map((entry) => ({
         id: entry.id,
@@ -236,6 +257,16 @@ export class SituationMonitorController {
         name: formatIdTitle(entry.id),
         category: entry.category,
       })),
+      refreshReadiness: {
+        activeSourceCount,
+        backendRefreshTargets: {
+          crawl: activeSourceCount > 0,
+          telegram: telegramRefreshable,
+          oref: orefRefreshable,
+          any:
+            activeSourceCount > 0 || telegramRefreshable || orefRefreshable,
+        },
+      },
     };
   }
 

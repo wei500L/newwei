@@ -4,9 +4,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { Api, TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
 
+import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
 import { CacheService } from "../cache/cache.service";
 import { RateLimiterService } from "../cache/rate-limiter.service";
-import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
+
 import { SituationMonitorSettingsService } from "./situation-monitor-settings.service";
 
 interface PendingTelegramAuthRequest {

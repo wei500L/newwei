@@ -92,6 +92,10 @@ describe('NewsAggregatorService personalization order', () => {
     getSecretsForSource: jest.fn(),
   } as any;
 
+  const activeSourcesMock = {
+    getOrgIdsForSource: jest.fn(),
+  } as any;
+
   const realtimeDispatcherMock = {
     publish: jest.fn(),
   } as any;
@@ -116,6 +120,10 @@ describe('NewsAggregatorService personalization order', () => {
     }),
     resolveStaleTtlMs: jest.fn().mockReturnValue(60_000),
     recordRuntimeMetricsBestEffort: jest.fn(),
+  } as any;
+
+  const userNewsBehaviorMock = {
+    getPersonalizationProfile: jest.fn(),
   } as any;
 
   let service: NewsAggregatorService;
@@ -148,8 +156,13 @@ describe('NewsAggregatorService personalization order', () => {
     cacheServiceMock.zrange.mockResolvedValue([]);
     rateLimiterServiceMock.consume.mockResolvedValue(true);
     runtimeSecretsServiceMock.getSecretsForSource.mockResolvedValue({});
+    activeSourcesMock.getOrgIdsForSource.mockReturnValue([]);
     realtimeDispatcherMock.publish.mockResolvedValue(undefined);
     prismaMock.newsEventItem.findFirst.mockResolvedValue(null);
+    userNewsBehaviorMock.getPersonalizationProfile.mockResolvedValue({
+      positive: { sources: {} },
+      negative: { sources: {} },
+    });
     personalizationSettingsServiceMock.getRuntimeSettings.mockResolvedValue({
       source: 'default',
       cacheTtlMs: 20_000,
@@ -169,9 +182,11 @@ describe('NewsAggregatorService personalization order', () => {
       prismaMock,
       registryServiceMock,
       runtimeSecretsServiceMock,
+      activeSourcesMock,
       realtimeDispatcherMock,
       userSettingsServiceMock,
       personalizationSettingsServiceMock,
+      userNewsBehaviorMock,
     );
   });
 
@@ -251,7 +266,7 @@ describe('NewsAggregatorService personalization order', () => {
       sourceIds: ['weibo', 'hackernews', 'baidu'],
     });
 
-    expect(result.sortMode).toBe('smart');
+    expect(result.sortMode).toBe('personalized');
     expect(result.sourceIds[0]).toBe('hackernews');
     expect(result.sourceScores.hackernews).toBeGreaterThan(result.sourceScores.weibo);
   });
@@ -290,7 +305,7 @@ describe('NewsAggregatorService personalization order', () => {
       },
     });
 
-    expect(result.sortMode).toBe('smart');
+    expect(result.sortMode).toBe('personalized');
     expect(result.sourceIds[0]).toBe('baidu');
   });
 
@@ -665,5 +680,65 @@ describe('NewsAggregatorService personalization order', () => {
         }),
       });
     }
+  });
+
+  it('publishes NewsNow realtime updates once per active org for the refreshed source', async () => {
+    activeSourcesMock.getOrgIdsForSource.mockReturnValue(['org-1', 'org-2']);
+    cacheServiceMock.get.mockResolvedValueOnce({
+      status: 'success',
+      id: 'weibo',
+      updatedTime: Date.now() - 120000,
+      items: [
+        {
+          id: 'old-item',
+          title: 'old headline',
+          url: 'https://example.com/old',
+        },
+      ],
+    });
+
+    await service.fetchSource('weibo', true);
+
+    expect(activeSourcesMock.getOrgIdsForSource).toHaveBeenCalledWith('weibo');
+    expect(realtimeDispatcherMock.publish).toHaveBeenCalledTimes(2);
+    expect(realtimeDispatcherMock.publish).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        orgId: 'org-1',
+        sourceId: 'weibo',
+        newItemsCount: 1,
+        topTitles: ['headline'],
+        intervalMs: 120000,
+      }),
+    );
+    expect(realtimeDispatcherMock.publish).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        orgId: 'org-2',
+        sourceId: 'weibo',
+        newItemsCount: 1,
+      }),
+    );
+  });
+
+  it('does not publish NewsNow realtime updates when no org is actively watching the source', async () => {
+    activeSourcesMock.getOrgIdsForSource.mockReturnValue([]);
+    cacheServiceMock.get.mockResolvedValueOnce({
+      status: 'success',
+      id: 'weibo',
+      updatedTime: Date.now() - 120000,
+      items: [
+        {
+          id: 'old-item',
+          title: 'old headline',
+          url: 'https://example.com/old',
+        },
+      ],
+    });
+
+    await service.fetchSource('weibo', true);
+
+    expect(activeSourcesMock.getOrgIdsForSource).toHaveBeenCalledWith('weibo');
+    expect(realtimeDispatcherMock.publish).not.toHaveBeenCalled();
   });
 });

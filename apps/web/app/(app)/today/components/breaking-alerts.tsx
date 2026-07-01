@@ -1,8 +1,7 @@
 "use client";
 
 import { AlertOutlined } from "@ant-design/icons";
-import { useQuery } from "@apollo/client";
-import { gql } from "@apollo/client";
+import { useQuery , gql } from "@apollo/client";
 import { useTranslation } from "react-i18next";
 
 import dayjs from "@/lib/dayjs";
@@ -90,10 +89,10 @@ export function BreakingAlerts() {
         </div>
         <div>
           <p className="text-sm text-green-700 dark:text-green-400 m-0 font-medium">
-            {t("pages.today.noAlerts", { defaultValue: "No breaking alerts" })}
+            {t("pages.today.noAlerts")}
           </p>
           <p className="text-xs text-green-600/70 dark:text-green-300/70 m-0">
-            {t("pages.today.marketsStable", { defaultValue: "Markets are stable" })}
+            {t("pages.today.marketsStable")}
           </p>
         </div>
       </div>
@@ -112,7 +111,7 @@ export function BreakingAlerts() {
           </div>
           <div className="flex-1 min-w-0">
             <h4 className="font-bold text-red-700 dark:text-red-400 text-sm m-0 truncate">
-              {alert.title || t("pages.today.breakingAlert", { defaultValue: "Breaking Alert" })}
+              {alert.title || t("pages.today.breakingAlert")}
             </h4>
             <p className="text-xs text-red-600/80 dark:text-red-300/80 m-0">
               {getTriggerReason(alert)}
@@ -121,7 +120,7 @@ export function BreakingAlerts() {
         </div>
       ))}
       <p className="text-[10px] text-gray-400 text-center m-0">
-        {t("pages.today.alertsDisclaimer", { defaultValue: "For reference only • AI-generated alerts" })}
+        {t("pages.today.alertsDisclaimer")}
       </p>
     </div>
   );

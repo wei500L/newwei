@@ -92,7 +92,7 @@ const RawItemPayloadSchema = new Schema(
 
 const RawItemSchema = new Schema(
   {
-    itemMetaId: { type: String, index: true, required: true, trim: true },
+    itemMetaId: { type: String, required: true, trim: true },
     payload: { type: RawItemPayloadSchema, required: true },
     source: { type: String, default: "manual" },
     urlComparableFull: { type: String, default: null, trim: true },
@@ -121,6 +121,7 @@ RawItemSchema.pre("validate", function (next) {
 
 RawItemSchema.index({ urlComparableFullHash: 1, createdAt: -1 });
 RawItemSchema.index({ urlComparableBase: 1, createdAt: -1 });
+RawItemSchema.index({ itemMetaId: 1, createdAt: -1 });
 
 export type RawItem = InferSchemaType<typeof RawItemSchema>;
 

@@ -1,8 +1,22 @@
 "use client";
 
+import {
+  ArrowLeftOutlined,
+  BgColorsOutlined,
+  FontSizeOutlined,
+  ShareAltOutlined,
+} from "@ant-design/icons";
 import { gql, useMutation, useQuery } from "@apollo/client";
-import { ArrowLeftOutlined, BgColorsOutlined, FontSizeOutlined, ShareAltOutlined } from "@ant-design/icons";
-import { Alert, Button, Radio, Select, Skeleton, Space, Switch, Typography } from "antd";
+import {
+  Alert,
+  Button,
+  Radio,
+  Select,
+  Skeleton,
+  Space,
+  Switch,
+  Typography,
+} from "antd";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -17,7 +31,7 @@ import {
   resolveDisplayContent,
   resolveDisplaySummary,
   resolveDisplayTitle,
-  resolveLanguageLabel
+  resolveLanguageLabel,
 } from "@/lib/item-display";
 import {
   isChineseTargetLanguage,
@@ -29,9 +43,14 @@ import {
   type RssTranslationStatusQuery,
   type RssTranslationStatusQueryVariables,
   type TranslateRssItemsMutation,
-  type TranslateRssItemsMutationVariables
+  type TranslateRssItemsMutationVariables,
 } from "@/lib/rss-translation";
 import { safeHttpUrl } from "@/lib/url";
+import {
+  estimateReadingTimeMinutes,
+  useUserNewsReadMilestones,
+} from "@/lib/use-user-news-read-milestones";
+import { shareTrackedNewsLink } from "@/lib/user-news-behavior";
 
 import { buildReaderAiInsights } from "./reader-ai-insights";
 
@@ -60,19 +79,19 @@ type Theme = "light" | "sepia" | "dark";
 const fontFamilyClasses: Record<FontFamily, string> = {
   sans: "font-sans",
   serif: "font-serif",
-  mono: "font-mono"
+  mono: "font-mono",
 };
 
 const fontSizeClasses: Record<FontSize, string> = {
   small: "text-base",
   medium: "text-lg",
-  large: "text-xl"
+  large: "text-xl",
 };
 
 const themeClasses: Record<Theme, { bg: string; text: string }> = {
   light: { bg: "bg-[#fafafa]", text: "text-gray-900" },
   sepia: { bg: "bg-[#f4ecd8]", text: "text-[#5b4636]" },
-  dark: { bg: "bg-[#1a1a1a]", text: "text-gray-200" }
+  dark: { bg: "bg-[#1a1a1a]", text: "text-gray-200" },
 };
 
 const parseJson = <T,>(value: unknown): T | null => {
@@ -119,19 +138,20 @@ export default function ReaderPage() {
   const [targetLanguage, setTargetLanguage] = useState("zh-CN");
   const [showOriginalContent, setShowOriginalContent] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
-  const [translatedItem, setTranslatedItem] = useState<RssItemTranslation | null>(null);
+  const [translatedItem, setTranslatedItem] =
+    useState<RssItemTranslation | null>(null);
   const translationRequestSeqRef = useRef(0);
 
   const { data, loading, error } = useQuery(READER_ITEM_QUERY, {
     variables: { id },
-    fetchPolicy: "network-only"
+    fetchPolicy: "network-only",
   });
   const { data: translationStatusData } = useQuery<
     RssTranslationStatusQuery,
     RssTranslationStatusQueryVariables
   >(RSS_TRANSLATION_STATUS_QUERY, {
     variables: { targetLanguage },
-    fetchPolicy: "cache-and-network"
+    fetchPolicy: "cache-and-network",
   });
   const [translateRssItems, { loading: translationLoading }] = useMutation<
     TranslateRssItemsMutation,
@@ -141,25 +161,29 @@ export default function ReaderPage() {
   const item = data?.item;
   const providerStatuses = translationStatusData?.rssTranslationStatus ?? [];
   const selectedProviderStatus = providerStatuses.find(
-    (status) => status.provider === translationProvider
+    (status) => status.provider === translationProvider,
   );
-  const translationProviderAvailable = Boolean(selectedProviderStatus?.available);
+  const translationProviderAvailable = Boolean(
+    selectedProviderStatus?.available,
+  );
   const translationTargetSupported = Boolean(
-    selectedProviderStatus?.targetLanguageSupported ?? true
+    selectedProviderStatus?.targetLanguageSupported ?? true,
   );
   const translationReady = Boolean(
-    translationEnabled && translationProviderAvailable && translationTargetSupported
+    translationEnabled &&
+      translationProviderAvailable &&
+      translationTargetSupported,
   );
 
   const processedResult = useMemo(
     () =>
       parseJson<Record<string, unknown>>(item?.processed?.resultJson) ??
       parseJson<Record<string, unknown>>(item?.processed?.result),
-    [item?.processed?.result, item?.processed?.resultJson]
+    [item?.processed?.result, item?.processed?.resultJson],
   );
   const rawPayload = useMemo(
     () => parseJson<Record<string, unknown>>(item?.raw?.payload),
-    [item?.raw?.payload]
+    [item?.raw?.payload],
   );
 
   const originalUrl = safeHttpUrl(rawPayload?.url);
@@ -170,31 +194,49 @@ export default function ReaderPage() {
     toNonEmptyString(rawPayload?.source) ??
     undefined;
   const cleanedMarkdown =
-    typeof processedResult?.cleaned_markdown === "string" ? processedResult.cleaned_markdown : undefined;
+    typeof processedResult?.cleaned_markdown === "string"
+      ? processedResult.cleaned_markdown
+      : undefined;
   const keyPoints = Array.isArray(processedResult?.key_points)
     ? processedResult.key_points.filter(
-        (point: unknown): point is string => typeof point === "string" && point.trim().length > 0
+        (point: unknown): point is string =>
+          typeof point === "string" && point.trim().length > 0,
+      )
+    : [];
+  const topics = Array.isArray(processedResult?.topics)
+    ? processedResult.topics.filter(
+        (topic): topic is string =>
+          typeof topic === "string" && topic.trim().length > 0,
+      )
+    : [];
+  const entities = Array.isArray(processedResult?.entities)
+    ? processedResult.entities.filter(
+        (entity): entity is string =>
+          typeof entity === "string" && entity.trim().length > 0,
       )
     : [];
   const summary = resolveDisplaySummary({
     processedSummary: processedResult?.summary,
-    rawSummary: rawPayload?.summary
+    rawSummary: rawPayload?.summary,
   });
   const baseDisplayTitle = resolveDisplayTitle({
     processedTitle: processedResult?.title,
     itemTitle: item?.title,
     source,
-    originalUrl
+    originalUrl,
   });
   const baseArticleContent = resolveDisplayContent({
-    cleanedMarkdown
+    cleanedMarkdown,
   });
   const translatedTitle = toNonEmptyString(translatedItem?.title);
   const translatedSummary = toNonEmptyString(translatedItem?.summary);
-  const translatedArticleContent = toNonEmptyString(translatedItem?.cleanedMarkdown);
+  const translatedArticleContent = toNonEmptyString(
+    translatedItem?.cleanedMarkdown,
+  );
   const translatedKeyPoints = Array.isArray(translatedItem?.keyPoints)
     ? translatedItem.keyPoints.filter(
-        (point): point is string => typeof point === "string" && point.trim().length > 0
+        (point): point is string =>
+          typeof point === "string" && point.trim().length > 0,
       )
     : [];
   const displayTitle =
@@ -213,24 +255,49 @@ export default function ReaderPage() {
     translationReady && !showOriginalContent && translatedArticleContent
       ? translatedArticleContent
       : baseArticleContent;
+  const estimatedReadingTime = useMemo(
+    () =>
+      estimateReadingTimeMinutes(
+        [resolvedSummary, ...resolvedKeyPoints, articleContent]
+          .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+          .join("\n\n"),
+      ),
+    [articleContent, resolvedKeyPoints, resolvedSummary],
+  );
   const languageLabel = resolveLanguageLabel(processedResult?.language);
-  const hasNonChineseContent = Boolean(languageLabel && !isChineseLanguage(languageLabel));
+  const hasNonChineseContent = Boolean(
+    languageLabel && !isChineseLanguage(languageLabel),
+  );
   const hasContent = Boolean(articleContent);
   const publishedTime = resolveArticlePublishedTime({
     publishedAt: item?.publishedAt ?? null,
     locale,
     formatOptions: { dateStyle: "long" },
-    unknownText: t("items.time.publishedUnknown", { defaultValue: "Published time unknown" })
+    unknownText: t("items.time.publishedUnknown"),
   });
 
   const currentTheme = themeClasses[theme];
   const aiInsights = useMemo(
     () => buildReaderAiInsights(processedResult),
-    [processedResult]
+    [processedResult],
   );
 
+  useUserNewsReadMilestones({
+    itemId: item?.id ?? undefined,
+    eventId: item?.processed?.eventId ?? undefined,
+    source,
+    topics: topics.slice(0, 6),
+    entities: entities.slice(0, 6),
+    url: originalUrl ?? undefined,
+    estimatedReadingTimeMinutes: estimatedReadingTime,
+    enabled: Boolean(item?.id),
+  });
+
   useEffect(() => {
-    if (translationProvider === "deeplx" && !isChineseTargetLanguage(targetLanguage)) {
+    if (
+      translationProvider === "deeplx" &&
+      !isChineseTargetLanguage(targetLanguage)
+    ) {
       setTargetLanguage("zh-CN");
     }
   }, [targetLanguage, translationProvider]);
@@ -257,9 +324,9 @@ export default function ReaderPage() {
           itemIds: [item.id],
           provider: translationProvider,
           targetLanguage,
-          fields: ["title", "summary", "key_points", "cleaned_markdown"]
-        }
-      }
+          fields: ["title", "summary", "key_points", "cleaned_markdown"],
+        },
+      },
     })
       .then((response) => {
         if (translationRequestSeqRef.current !== requestSeq) {
@@ -272,7 +339,8 @@ export default function ReaderPage() {
         if (translationRequestSeqRef.current !== requestSeq) {
           return;
         }
-        const message = err instanceof Error ? err.message : "Translation failed";
+        const message =
+          err instanceof Error ? err.message : "Translation failed";
         setTranslationError(message);
       });
   }, [
@@ -282,7 +350,7 @@ export default function ReaderPage() {
     translationEnabled,
     translationProvider,
     translationReady,
-    translateRssItems
+    translateRssItems,
   ]);
 
   if (loading) {
@@ -300,16 +368,14 @@ export default function ReaderPage() {
       <div className={`min-h-screen ${currentTheme.bg} ${currentTheme.text}`}>
         <div className="max-w-3xl mx-auto px-6 py-10 text-center">
           <Typography.Title level={4}>
-            {t("reader.error.title", { defaultValue: "Failed to load article" })}
+            {t("reader.error.title")}
           </Typography.Title>
           <Typography.Text type="secondary">
-            {error?.message || t("reader.error.notFound", { defaultValue: "Article not found" })}
+            {error?.message || t("reader.error.notFound")}
           </Typography.Text>
           <div className="mt-4">
             <Link href="/items">
-              <Button icon={<ArrowLeftOutlined />}>
-                {t("common.back", { defaultValue: "Back" })}
-              </Button>
+              <Button icon={<ArrowLeftOutlined />}>{t("common.back")}</Button>
             </Link>
           </div>
         </div>
@@ -318,7 +384,9 @@ export default function ReaderPage() {
   }
 
   return (
-    <div className={`min-h-screen ${currentTheme.bg} ${currentTheme.text} transition-colors duration-300`}>
+    <div
+      className={`min-h-screen ${currentTheme.bg} ${currentTheme.text} transition-colors duration-300`}
+    >
       {/* Floating Toolbar */}
       <header className="sticky top-0 z-50 border-b border-gray-200/50 dark:border-gray-800/50 bg-white/80 dark:bg-black/80 backdrop-blur-md">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between">
@@ -326,7 +394,7 @@ export default function ReaderPage() {
             href="/items"
             className="text-sm text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors flex items-center gap-1"
           >
-            <ArrowLeftOutlined /> {t("reader.back", { defaultValue: "Back" })}
+            <ArrowLeftOutlined /> {t("reader.back")}
           </Link>
 
           <div className="flex items-center gap-1">
@@ -335,6 +403,7 @@ export default function ReaderPage() {
               size="small"
               icon={<FontSizeOutlined />}
               onClick={() => setShowToolbar(!showToolbar)}
+              aria-label={t("reader.size")}
             />
             <Button
               type="text"
@@ -345,8 +414,32 @@ export default function ReaderPage() {
                 const nextIndex = (themes.indexOf(theme) + 1) % themes.length;
                 setTheme(themes[nextIndex] ?? "light");
               }}
+              aria-label={t("reader.theme")}
             />
-            <Button type="text" size="small" icon={<ShareAltOutlined />} />
+            <Button
+              type="text"
+              size="small"
+              icon={<ShareAltOutlined />}
+              onClick={() => {
+                if (!item?.id) {
+                  return;
+                }
+                void shareTrackedNewsLink({
+                  title: displayTitle,
+                  url: `${window.location.origin}/items/${item.id}`,
+                  behavior: {
+                    type: "share",
+                    itemId: item.id,
+                    eventId: item.processed?.eventId ?? undefined,
+                    source,
+                    topics: topics.slice(0, 6),
+                    entities: entities.slice(0, 6),
+                    ...(originalUrl ? { url: originalUrl } : {}),
+                  },
+                });
+              }}
+              aria-label={t("common.share")}
+            />
           </div>
         </div>
 
@@ -355,7 +448,9 @@ export default function ReaderPage() {
           <div className="border-t border-gray-200/50 dark:border-gray-800/50 bg-white/60 dark:bg-black/60">
             <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-6">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">{t("reader.font", { defaultValue: "Font" })}</span>
+                <span className="text-xs text-gray-500">
+                  {t("reader.font")}
+                </span>
                 <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5">
                   {(["sans", "serif", "mono"] as FontFamily[]).map((f) => (
                     <button
@@ -367,14 +462,16 @@ export default function ReaderPage() {
                           : "text-gray-500 hover:text-gray-700"
                       }`}
                     >
-                      {f.charAt(0).toUpperCase() + f.slice(1)}
+                      {t(`reader.fontFamily.${f}`)}
                     </button>
                   ))}
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">{t("reader.size", { defaultValue: "Size" })}</span>
+                <span className="text-xs text-gray-500">
+                  {t("reader.size")}
+                </span>
                 <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5">
                   {(["small", "medium", "large"] as FontSize[]).map((s) => (
                     <button
@@ -386,7 +483,7 @@ export default function ReaderPage() {
                           : "text-gray-500 hover:text-gray-700"
                       }`}
                     >
-                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                      {t(`reader.fontSize.${s}`)}
                     </button>
                   ))}
                 </div>
@@ -409,11 +506,11 @@ export default function ReaderPage() {
           <Space direction="vertical" size="small" style={{ width: "100%" }}>
             <Space wrap>
               <Typography.Text strong>
-                {t("reader.translation.title", { defaultValue: "Translation" })}
+                {t("reader.translation.title")}
               </Typography.Text>
               <Space>
                 <Typography.Text>
-                  {t("reader.translation.enable", { defaultValue: "Enable" })}
+                  {t("reader.translation.enable")}
                 </Typography.Text>
                 <Switch
                   checked={translationEnabled}
@@ -423,36 +520,34 @@ export default function ReaderPage() {
               <Radio.Group
                 value={translationProvider}
                 onChange={(event) =>
-                  setTranslationProvider(event.target.value as RssTranslationProvider)
+                  setTranslationProvider(
+                    event.target.value as RssTranslationProvider,
+                  )
                 }
                 optionType="button"
                 buttonStyle="solid"
                 disabled={!translationEnabled}
               >
                 <Radio.Button value="deeplx">
-                  {t('items.detail.translation.provider.deeplx', {
-                    defaultValue: 'DeepLX API'
-                  })}
+                  {t("items.detail.translation.provider.deeplx")}
                 </Radio.Button>
                 <Radio.Button value="llm">
-                  {t('items.detail.translation.provider.llm', {
-                    defaultValue: 'LLM'
-                  })}
+                  {t("items.detail.translation.provider.llm")}
                 </Radio.Button>
               </Radio.Group>
               <Select
                 style={{ minWidth: 160 }}
                 value={targetLanguage}
                 onChange={(value) => setTargetLanguage(value)}
-                disabled={!translationEnabled || translationProvider === "deeplx"}
+                disabled={
+                  !translationEnabled || translationProvider === "deeplx"
+                }
                 options={RSS_TRANSLATION_TARGET_LANGUAGE_OPTIONS}
               />
               {translationEnabled ? (
                 <Space>
                   <Typography.Text>
-                    {t("reader.translation.showOriginal", {
-                      defaultValue: "Show original"
-                    })}
+                    {t("reader.translation.showOriginal")}
                   </Typography.Text>
                   <Switch
                     checked={showOriginalContent}
@@ -462,14 +557,16 @@ export default function ReaderPage() {
               ) : null}
             </Space>
 
-            {translationEnabled && selectedProviderStatus && !translationProviderAvailable ? (
+            {translationEnabled &&
+            selectedProviderStatus &&
+            !translationProviderAvailable ? (
               <Alert
                 type="warning"
                 showIcon
-                message={t("reader.translation.unavailable", {
-                  defaultValue: "Selected translation source is unavailable."
-                })}
-                description={selectedProviderStatus.message ?? t("common.notAvailable")}
+                message={t("reader.translation.unavailable")}
+                description={
+                  selectedProviderStatus.message ?? t("common.notAvailable")
+                }
               />
             ) : null}
 
@@ -480,18 +577,16 @@ export default function ReaderPage() {
               <Alert
                 type="warning"
                 showIcon
-                message={t("reader.translation.targetUnsupported", {
-                  defaultValue: "Target language is not supported by selected source."
-                })}
-                description={selectedProviderStatus.message ?? t("common.notAvailable")}
+                message={t("reader.translation.targetUnsupported")}
+                description={
+                  selectedProviderStatus.message ?? t("common.notAvailable")
+                }
               />
             ) : null}
 
             {translationEnabled && translationLoading ? (
               <Typography.Text type="secondary">
-                {t("reader.translation.loading", {
-                  defaultValue: "Translating article content..."
-                })}
+                {t("reader.translation.loading")}
               </Typography.Text>
             ) : null}
 
@@ -499,9 +594,7 @@ export default function ReaderPage() {
               <Alert
                 type="error"
                 showIcon
-                message={t("reader.translation.failed", {
-                  defaultValue: "Translation failed."
-                })}
+                message={t("reader.translation.failed")}
                 description={translationError}
               />
             ) : null}
@@ -510,20 +603,21 @@ export default function ReaderPage() {
 
         {/* Header */}
         <header className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold leading-tight mb-4">{displayTitle}</h1>
+          <h1 className="text-3xl md:text-4xl font-bold leading-tight mb-4">
+            {displayTitle}
+          </h1>
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
             {source ? <span>{source}</span> : null}
             <span>
-              {t("items.time.published", { defaultValue: "Published" })}: {publishedTime.primaryText}
+              {t("items.time.published")}: {publishedTime.primaryText}
             </span>
-            {publishedTime.relativeText ? <span>{publishedTime.relativeText}</span> : null}
+            {publishedTime.relativeText ? (
+              <span>{publishedTime.relativeText}</span>
+            ) : null}
             {hasNonChineseContent ? (
               <span>
-                {t("reader.languageNotice", {
-                  defaultValue: "Original language: {{language}}",
-                  language: languageLabel
-                })}
+                {t("reader.languageNotice", { language: languageLabel })}
               </span>
             ) : null}
           </div>
@@ -541,10 +635,7 @@ export default function ReaderPage() {
           />
           {source ? (
             <p className="mt-2 text-xs text-gray-500">
-              {t("reader.coverCaption", {
-                defaultValue: "Cover image from {{source}}",
-                source
-              })}
+              {t("reader.coverCaption", { source })}
             </p>
           ) : null}
         </div>
@@ -553,7 +644,7 @@ export default function ReaderPage() {
         {resolvedSummary && (
           <div className="bg-slate-100/70 dark:bg-slate-800/40 rounded-lg p-4 mb-6">
             <h3 className="text-sm font-semibold mb-2">
-              {t("reader.summary", { defaultValue: "Summary" })}
+              {t("reader.summary")}
             </h3>
             <Typography.Paragraph style={{ marginBottom: 0 }}>
               {resolvedSummary}
@@ -566,18 +657,18 @@ export default function ReaderPage() {
           <section className="mb-6 rounded-xl border border-violet-200/60 bg-violet-50/70 p-4 dark:border-violet-400/30 dark:bg-violet-950/20">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-violet-900 dark:text-violet-200">
-                {t("reader.aiInsights.title", { defaultValue: "AI 解读" })}
+                {t("reader.aiInsights.title")}
               </h3>
               <div className="flex flex-wrap items-center gap-1">
                 {aiInsights.sentimentLabel ? (
                   <span className="rounded bg-white/70 px-1.5 py-0.5 text-[11px] text-violet-800 dark:bg-violet-900/40 dark:text-violet-100">
-                    {t("reader.aiInsights.sentiment", { defaultValue: "情感" })}:{" "}
+                    {t("reader.aiInsights.sentiment")}:{" "}
                     {aiInsights.sentimentLabel}
                   </span>
                 ) : null}
                 {typeof aiInsights.qualityScore === "number" ? (
                   <span className="rounded bg-white/70 px-1.5 py-0.5 text-[11px] text-violet-800 dark:bg-violet-900/40 dark:text-violet-100">
-                    {t("reader.aiInsights.quality", { defaultValue: "质量" })}:{" "}
+                    {t("reader.aiInsights.quality")}:{" "}
                     {Math.round(aiInsights.qualityScore * 100)}%
                   </span>
                 ) : null}
@@ -586,7 +677,7 @@ export default function ReaderPage() {
                     href={`/events/${item.processed.eventId}`}
                     className="rounded bg-white/80 px-1.5 py-0.5 text-[11px] text-violet-700 underline-offset-2 hover:underline dark:bg-violet-900/40 dark:text-violet-100"
                   >
-                    {t("reader.aiInsights.event", { defaultValue: "查看关联事件" })}
+                    {t("reader.aiInsights.event")}
                   </Link>
                 ) : null}
               </div>
@@ -595,7 +686,7 @@ export default function ReaderPage() {
             {aiInsights.timeline.length > 0 ? (
               <div className="mt-3">
                 <p className="mb-1 text-xs font-medium text-violet-700 dark:text-violet-300">
-                  {t("reader.aiInsights.timeline", { defaultValue: "事件脉络" })}
+                  {t("reader.aiInsights.timeline")}
                 </p>
                 <ol className="space-y-1">
                   {aiInsights.timeline.map((point, index) => (
@@ -614,11 +705,14 @@ export default function ReaderPage() {
             {aiInsights.controversies.length > 0 ? (
               <div className="mt-3 rounded border border-rose-300/50 bg-rose-50/85 p-2 dark:border-rose-400/30 dark:bg-rose-950/25">
                 <p className="mb-1 text-xs font-medium text-rose-700 dark:text-rose-300">
-                  {t("reader.aiInsights.controversy", { defaultValue: "争议信号" })}
+                  {t("reader.aiInsights.controversy")}
                 </p>
                 <ul className="space-y-1">
                   {aiInsights.controversies.map((signal, index) => (
-                    <li key={`${signal}-${index}`} className="text-xs text-rose-800 dark:text-rose-100">
+                    <li
+                      key={`${signal}-${index}`}
+                      className="text-xs text-rose-800 dark:text-rose-100"
+                    >
                       • {signal}
                     </li>
                   ))}
@@ -629,7 +723,7 @@ export default function ReaderPage() {
             {aiInsights.actors.length > 0 ? (
               <div className="mt-3">
                 <p className="mb-1 text-xs font-medium text-violet-700 dark:text-violet-300">
-                  {t("reader.aiInsights.actors", { defaultValue: "关键主体" })}
+                  {t("reader.aiInsights.actors")}
                 </p>
                 <div className="flex flex-wrap gap-1">
                   {aiInsights.actors.map((actor) => (
@@ -650,7 +744,7 @@ export default function ReaderPage() {
             {aiInsights.relations.length > 0 ? (
               <div className="mt-3">
                 <p className="mb-1 text-xs font-medium text-violet-700 dark:text-violet-300">
-                  {t("reader.aiInsights.relations", { defaultValue: "关系图谱" })}
+                  {t("reader.aiInsights.relations")}
                 </p>
                 <div className="space-y-1">
                   {aiInsights.relations.map((relation, index) => (
@@ -658,7 +752,8 @@ export default function ReaderPage() {
                       key={`${relation.subject}-${relation.predicate}-${relation.object}-${index}`}
                       className="rounded bg-white/70 px-2 py-1 text-xs text-violet-900 dark:bg-violet-900/30 dark:text-violet-100"
                     >
-                      {relation.subject} → {relation.predicate} → {relation.object}
+                      {relation.subject} → {relation.predicate} →{" "}
+                      {relation.object}
                       {typeof relation.confidence === "number"
                         ? ` (${Math.round(relation.confidence * 100)}%)`
                         : ""}
@@ -674,11 +769,14 @@ export default function ReaderPage() {
         {resolvedKeyPoints.length > 0 && (
           <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 mb-6">
             <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-2">
-              {t("reader.keyPoints", { defaultValue: "Key Points" })}
+              {t("reader.keyPoints")}
             </h3>
             <ul className="space-y-1">
               {resolvedKeyPoints.map((point: string, index: number) => (
-                <li key={index} className="text-sm text-blue-800 dark:text-blue-200 flex gap-2">
+                <li
+                  key={index}
+                  className="text-sm text-blue-800 dark:text-blue-200 flex gap-2"
+                >
                   <span className="text-blue-400">•</span>
                   {point}
                 </li>
@@ -695,7 +793,7 @@ export default function ReaderPage() {
         ) : (
           <div className="text-center py-10">
             <Typography.Text type="secondary">
-              {t("reader.noContent", { defaultValue: "No readable content available" })}
+              {t("reader.noContent")}
             </Typography.Text>
             {originalUrl && (
               <div className="mt-4">
@@ -705,7 +803,7 @@ export default function ReaderPage() {
                   rel="noopener noreferrer"
                   className="text-blue-500 hover:underline"
                 >
-                  {t("reader.viewOriginal", { defaultValue: "View original article" })}
+                  {t("reader.viewOriginal")}
                 </a>
               </div>
             )}
@@ -716,17 +814,11 @@ export default function ReaderPage() {
         <footer className="mt-12 pt-8 border-t border-gray-200 dark:border-gray-800">
           <Space>
             <Link href={`/items/${id}`}>
-              <Button type="default">
-                {t("reader.viewDetails", { defaultValue: "View Details" })}
-              </Button>
+              <Button type="default">{t("reader.viewDetails")}</Button>
             </Link>
             {originalUrl && (
-              <a
-                href={originalUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <Button>{t("reader.originalSource", { defaultValue: "Original Source" })}</Button>
+              <a href={originalUrl} target="_blank" rel="noopener noreferrer">
+                <Button>{t("reader.originalSource")}</Button>
               </a>
             )}
           </Space>

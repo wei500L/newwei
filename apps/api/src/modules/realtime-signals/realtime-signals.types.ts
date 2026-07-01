@@ -1,3 +1,6 @@
+import type { UpstreamRequestErrorCode } from "../../common/http/upstream-error-classification";
+import type { RealtimeAisRuntimeDiagnostics } from "@modular/utils";
+
 export type RealtimeSignalSource =
   | "opensky"
   | "ais"
@@ -32,6 +35,15 @@ export interface RealtimeSignalFetchResult {
   context?: Record<string, unknown>;
 }
 
+export interface RealtimeSignalRateLimitDetails {
+  retryAfterSec?: number;
+  rateLimit?: string;
+  rateLimitPolicy?: string;
+  cfRay?: string;
+}
+
+export type RealtimeSignalErrorCode = UpstreamRequestErrorCode;
+
 export type RealtimeSignalFlightMode = "military" | "all";
 
 export interface RealtimeAisRelayStatusSnapshot {
@@ -40,6 +52,26 @@ export interface RealtimeAisRelayStatusSnapshot {
   messages: number;
   clients: number;
   droppedMessages: number;
+}
+
+export type RealtimeAisRelayHealthState = "ok" | "degraded";
+
+export interface RealtimeAisRelayDiagnostics {
+  healthState: RealtimeAisRelayHealthState;
+  statusReason?: string;
+  statusReasonCode?: string;
+  positionReportsSeen: number;
+  positionReportsProcessed: number;
+  ignoredPositionReports: number;
+  parseErrors: number;
+  lastHealthyAt?: string;
+  lastIssueAt?: string;
+  lastConnectedAt?: string;
+  lastMessageAt?: string;
+  lastUpstreamErrorAt?: string;
+  lastUpstreamError?: string;
+  lastParseErrorAt?: string;
+  lastParseError?: string;
 }
 
 export type RealtimeAisDisruptionSeverity = "low" | "elevated" | "high";
@@ -87,6 +119,7 @@ export interface RealtimeAisLatestSnapshot {
   sourceEndpoint: string;
   updatedAt: string;
   status: RealtimeAisRelayStatusSnapshot;
+  diagnostics: RealtimeAisRelayDiagnostics;
   disruptions: RealtimeAisDisruptionSnapshot[];
   density: RealtimeAisDensitySnapshot[];
   candidateReports: RealtimeAisVesselSnapshot[];
@@ -281,7 +314,7 @@ export interface RealtimeSignalsRuntimeConfig {
 }
 
 export interface RealtimeSignalsInsightSnapshot {
-  keywordSpikes: Array<{
+  keywordSpikes: {
     id: string;
     term: string;
     count: number;
@@ -289,14 +322,14 @@ export interface RealtimeSignalsInsightSnapshot {
     multiplier: number;
     sourceCount: number;
     confidence: number;
-  }>;
-  predictionLeads: Array<{
+  }[];
+  predictionLeads: {
     id: string;
     title: string;
     shift: number;
     newsActivity: number;
     confidence: number;
-  }>;
+  }[];
   pizzint?: {
     defcon: number;
     adjustedScore: number;
@@ -305,7 +338,7 @@ export interface RealtimeSignalsInsightSnapshot {
     avgPop: number;
     updatedAt: string;
   };
-  tensions: Array<{
+  tensions: {
     id: string;
     label: string;
     score: number;
@@ -313,18 +346,21 @@ export interface RealtimeSignalsInsightSnapshot {
     trend: "rising" | "stable" | "falling";
     countries: string[];
     updatedAt: string;
-  }>;
+  }[];
 }
 
 export interface RealtimeSignalSourceState {
   source: RealtimeSignalSource;
   status: "success" | "error";
   lastAttemptAt: string;
+  nextEligibleAt?: string;
   lastSuccessAt?: string;
   lastErrorAt?: string;
   lastError?: string;
+  lastErrorCode?: RealtimeSignalErrorCode;
   lastErrorKind?: RealtimeOpenskyErrorKind;
   lastErrorStatus?: number;
+  lastRateLimit?: RealtimeSignalRateLimitDetails;
   metricSlug?: string;
   latestValue?: number;
   context?: Record<string, unknown>;
@@ -347,15 +383,19 @@ export interface RealtimeSignalRuntimeSourceDiagnostics {
   statusReasonCode?: string;
   lastRunAt?: string;
   lastAttemptAt?: string;
+  nextEligibleAt?: string;
   lastSuccessAt?: string;
   lastErrorAt?: string;
   lastError?: string;
+  lastErrorCode?: RealtimeSignalErrorCode;
   lastErrorKind?: RealtimeOpenskyErrorKind;
   lastErrorStatus?: number;
+  lastRateLimit?: RealtimeSignalRateLimitDetails;
   latestValue: number | null;
   previousValue: number | null;
   changePercent: number | null;
   context?: Record<string, unknown>;
+  aisDiagnostics?: RealtimeAisRuntimeDiagnostics;
   openskySnapshot?: RealtimeOpenskyRuntimeDiagnostics;
   adsbSnapshot?: RealtimeOpenskyRuntimeDiagnostics;
 }

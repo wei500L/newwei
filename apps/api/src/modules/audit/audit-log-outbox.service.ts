@@ -4,10 +4,13 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { AuditLogOutboxStatus, Prisma } from "@prisma/client";
 
 import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
+import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 
 const logger = createLogger({ name: "audit-log-outbox" });
 const AUDIT_LOG_OUTBOX_DELIVERY_CONCURRENCY = 8;
+const AUDIT_LOG_OUTBOX_LOCK_KEY = "cron:audit-log-outbox";
+const AUDIT_LOG_OUTBOX_LOCK_TTL_MS = 55_000;
 
 interface AuditLogOutboxPayload {
   orgId: string;
@@ -45,54 +48,81 @@ export class AuditLogOutboxService {
   private readonly outboxRetryBaseDelayMs = 30_000;
   private readonly outboxMaxAttempts = 10;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
+  ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async retryPendingAuditLogOutbox() {
-    const now = new Date();
-    const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
-
-    try {
-      const entries = await this.fetchRetryEntries(now, staleLockCutoff);
-
-      const results = await settleWithConcurrency(
-        entries,
-        AUDIT_LOG_OUTBOX_DELIVERY_CONCURRENCY,
-        async (entry) => {
-          const payload = this.parseOutboxPayload(entry.payload);
-          if (!payload || payload.orgId !== entry.orgId) {
-            await this.markOutboxDead(
-              entry.id,
-              (entry.attempts ?? 0) + 1,
-              new Error("Invalid outbox payload")
-            );
-            return;
-          }
-
-          await this.deliverOutboxPayload(entry.id, entry.status, payload);
-        }
-      );
-
-      for (const result of results) {
-        if (result.status === "fulfilled") {
-          continue;
-        }
-        logger.warn(
-          { err: result.reason, outboxId: result.item.id, orgId: result.item.orgId },
-          "Failed to process audit log outbox entry"
+    const locked = await this.cache.withLock(
+      AUDIT_LOG_OUTBOX_LOCK_KEY,
+      AUDIT_LOG_OUTBOX_LOCK_TTL_MS,
+      async () => {
+        const now = new Date();
+        const staleLockCutoff = new Date(
+          now.getTime() - this.outboxStaleLockMs,
         );
-      }
-    } catch (error) {
-      logger.warn({ err: error }, "Failed to process audit log outbox batch");
+
+        try {
+          const entries = await this.fetchRetryEntries(now, staleLockCutoff);
+
+          const results = await settleWithConcurrency(
+            entries,
+            AUDIT_LOG_OUTBOX_DELIVERY_CONCURRENCY,
+            async (entry) => {
+              const payload = this.parseOutboxPayload(entry.payload);
+              if (!payload || payload.orgId !== entry.orgId) {
+                await this.markOutboxDead(
+                  entry.id,
+                  (entry.attempts ?? 0) + 1,
+                  new Error("Invalid outbox payload"),
+                );
+                return;
+              }
+
+              await this.deliverOutboxPayload(entry.id, entry.status, payload);
+            },
+          );
+
+          for (const result of results) {
+            if (result.status === "fulfilled") {
+              continue;
+            }
+            logger.warn(
+              {
+                err: result.reason,
+                outboxId: result.item.id,
+                orgId: result.item.orgId,
+              },
+              "Failed to process audit log outbox entry",
+            );
+          }
+        } catch (error) {
+          logger.warn(
+            { err: error },
+            "Failed to process audit log outbox batch",
+          );
+        }
+      },
+    );
+
+    if (locked === null) {
+      logger.info(
+        "Skipped audit log outbox batch because previous batch is still in progress",
+      );
     }
   }
 
-  private parseOutboxPayload(payload: Prisma.JsonValue): NormalizedAuditLogOutboxPayload | null {
+  private parseOutboxPayload(
+    payload: Prisma.JsonValue,
+  ): NormalizedAuditLogOutboxPayload | null {
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       return null;
     }
 
-    const raw = payload as Partial<AuditLogOutboxPayload> & Record<string, unknown>;
+    const raw = payload as Partial<AuditLogOutboxPayload> &
+      Record<string, unknown>;
     if (typeof raw.orgId !== "string" || !raw.orgId.trim()) {
       return null;
     }
@@ -112,10 +142,19 @@ export class AuditLogOutboxService {
     }
 
     const actorId =
-      raw.actorId === null ? null : typeof raw.actorId === "string" ? raw.actorId : null;
+      raw.actorId === null
+        ? null
+        : typeof raw.actorId === "string"
+          ? raw.actorId
+          : null;
     const ipAddress =
-      raw.ipAddress === null ? null : typeof raw.ipAddress === "string" ? raw.ipAddress : null;
-    const metadata = "metadata" in raw ? (raw.metadata as Prisma.InputJsonValue) : undefined;
+      raw.ipAddress === null
+        ? null
+        : typeof raw.ipAddress === "string"
+          ? raw.ipAddress
+          : null;
+    const metadata =
+      "metadata" in raw ? (raw.metadata as Prisma.InputJsonValue) : undefined;
 
     return {
       orgId: raw.orgId,
@@ -124,14 +163,14 @@ export class AuditLogOutboxService {
       action: raw.action,
       metadata,
       ipAddress,
-      createdAt
+      createdAt,
     };
   }
 
   private async deliverOutboxPayload(
     outboxId: string,
     status: AuditLogOutboxStatus,
-    payload: NormalizedAuditLogOutboxPayload
+    payload: NormalizedAuditLogOutboxPayload,
   ) {
     const claimed = await this.claimOutboxEntry(outboxId, status);
     if (!claimed) {
@@ -147,21 +186,24 @@ export class AuditLogOutboxService {
           action: payload.action,
           metadata: payload.metadata,
           ipAddress: payload.ipAddress,
-          createdAt: payload.createdAt
-        }
+          createdAt: payload.createdAt,
+        },
       });
       await this.prisma.auditLogOutbox.delete({ where: { id: outboxId } });
     } catch (error) {
       const attempts = claimed?.attempts ?? 1;
       logger.warn(
         { err: error, outboxId, orgId: payload.orgId },
-        "Audit log outbox delivery failed"
+        "Audit log outbox delivery failed",
       );
       await this.markOutboxFailure(outboxId, attempts, error);
     }
   }
 
-  private async claimOutboxEntry(outboxId: string, status: AuditLogOutboxStatus) {
+  private async claimOutboxEntry(
+    outboxId: string,
+    status: AuditLogOutboxStatus,
+  ) {
     const now = new Date();
     const staleLockCutoff = new Date(now.getTime() - this.outboxStaleLockMs);
     const eligibilityWhere =
@@ -169,12 +211,12 @@ export class AuditLogOutboxService {
         ? {
             id: outboxId,
             status,
-            lockedAt: { lt: staleLockCutoff }
+            lockedAt: { lt: staleLockCutoff },
           }
         : {
             id: outboxId,
             status,
-            availableAt: { lte: now }
+            availableAt: { lte: now },
           };
 
     return this.prisma.runInTransaction(async (tx) => {
@@ -184,8 +226,8 @@ export class AuditLogOutboxService {
           status: AuditLogOutboxStatus.processing,
           lockedAt: now,
           attempts: { increment: 1 },
-          lastError: null
-        }
+          lastError: null,
+        },
       });
 
       if (updated.count === 0) {
@@ -198,27 +240,32 @@ export class AuditLogOutboxService {
 
   private async fetchRetryEntries(
     now: Date,
-    staleLockCutoff: Date
+    staleLockCutoff: Date,
   ): Promise<AuditLogOutboxEntryRow[]> {
     const [pending, failed, staleProcessing] = await Promise.all([
       this.findEntriesForRetry({
         status: AuditLogOutboxStatus.pending,
-        availableAt: { lte: now }
+        availableAt: { lte: now },
       }),
       this.findEntriesForRetry({
         status: AuditLogOutboxStatus.failed,
-        availableAt: { lte: now }
+        availableAt: { lte: now },
       }),
       this.findEntriesForRetry({
         status: AuditLogOutboxStatus.processing,
-        lockedAt: { lt: staleLockCutoff }
-      })
+        lockedAt: { lt: staleLockCutoff },
+      }),
     ]);
 
-    return this.mergeRetryEntries([pending, failed, staleProcessing], this.outboxBatchSize);
+    return this.mergeRetryEntries(
+      [pending, failed, staleProcessing],
+      this.outboxBatchSize,
+    );
   }
 
-  private findEntriesForRetry(where: Prisma.AuditLogOutboxWhereInput): Promise<AuditLogOutboxEntryRow[]> {
+  private findEntriesForRetry(
+    where: Prisma.AuditLogOutboxWhereInput,
+  ): Promise<AuditLogOutboxEntryRow[]> {
     return this.prisma.auditLogOutbox.findMany({
       where,
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -229,14 +276,14 @@ export class AuditLogOutboxService {
         payload: true,
         status: true,
         attempts: true,
-        createdAt: true
-      }
+        createdAt: true,
+      },
     });
   }
 
   private mergeRetryEntries(
     groups: AuditLogOutboxEntryRow[][],
-    take: number
+    take: number,
   ): AuditLogOutboxEntryRow[] {
     const merged = new Map<string, AuditLogOutboxEntryRow>();
     for (const group of groups) {
@@ -249,7 +296,8 @@ export class AuditLogOutboxService {
 
     return Array.from(merged.values())
       .sort((left, right) => {
-        const createdDelta = left.createdAt.getTime() - right.createdAt.getTime();
+        const createdDelta =
+          left.createdAt.getTime() - right.createdAt.getTime();
         if (createdDelta !== 0) {
           return createdDelta;
         }
@@ -258,14 +306,22 @@ export class AuditLogOutboxService {
       .slice(0, take);
   }
 
-  private async markOutboxFailure(outboxId: string, attempts: number, error: unknown) {
+  private async markOutboxFailure(
+    outboxId: string,
+    attempts: number,
+    error: unknown,
+  ) {
     const message = error instanceof Error ? error.message : String(error);
     if (attempts >= this.outboxMaxAttempts) {
       await this.markOutboxDead(outboxId, attempts, error);
       return;
     }
 
-    const nextDelay = this.computeBackoffDelay(this.outboxRetryBaseDelayMs, attempts, 5);
+    const nextDelay = this.computeBackoffDelay(
+      this.outboxRetryBaseDelayMs,
+      attempts,
+      5,
+    );
     const availableAt = new Date(Date.now() + nextDelay);
 
     try {
@@ -276,18 +332,22 @@ export class AuditLogOutboxService {
           lastError: message,
           availableAt,
           lockedAt: null,
-          attempts: Math.max(attempts, 1)
-        }
+          attempts: Math.max(attempts, 1),
+        },
       });
     } catch (updateError) {
       logger.warn(
         { err: updateError, outboxId, message },
-        "Failed to update audit log outbox status after delivery error"
+        "Failed to update audit log outbox status after delivery error",
       );
     }
   }
 
-  private async markOutboxDead(outboxId: string, attempts: number, error: unknown) {
+  private async markOutboxDead(
+    outboxId: string,
+    attempts: number,
+    error: unknown,
+  ) {
     const message = error instanceof Error ? error.message : String(error);
     try {
       await this.prisma.auditLogOutbox.update({
@@ -297,16 +357,24 @@ export class AuditLogOutboxService {
           lastError: message,
           availableAt: new Date(),
           lockedAt: null,
-          attempts: Math.max(attempts, 1)
-        }
+          attempts: Math.max(attempts, 1),
+        },
       });
     } catch (updateError) {
-      logger.warn({ err: updateError, outboxId, message }, "Failed to mark audit log outbox dead");
+      logger.warn(
+        { err: updateError, outboxId, message },
+        "Failed to mark audit log outbox dead",
+      );
     }
   }
 
-  private computeBackoffDelay(baseDelayMs: number, attempt: number, maxAttempts: number) {
-    const exponentialDelay = baseDelayMs * 2 ** Math.max(Math.min(attempt, maxAttempts) - 1, 0);
+  private computeBackoffDelay(
+    baseDelayMs: number,
+    attempt: number,
+    maxAttempts: number,
+  ) {
+    const exponentialDelay =
+      baseDelayMs * 2 ** Math.max(Math.min(attempt, maxAttempts) - 1, 0);
     const jitterFactor = 0.5 + Math.random();
     return Math.round(exponentialDelay * jitterFactor);
   }

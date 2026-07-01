@@ -74,7 +74,7 @@ function toFiniteNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function uniqueStringList(...lists: Array<string[] | undefined>): string[] | undefined {
+function uniqueStringList(...lists: (string[] | undefined)[]): string[] | undefined {
   const merged = Array.from(
     new Set(
       lists.flatMap((list) =>
@@ -343,6 +343,7 @@ export class CrawlStrategyRootExecutorService {
   async recordNativeFallbackExecution(options: {
     workflowRunId?: string | null;
     node: Pick<CrawlFrontierNodeRecord, 'id'>;
+    acceptedCount: number;
     createdCount: number;
     minAcceptedResults: number;
     minArticleResults: number;
@@ -389,13 +390,14 @@ export class CrawlStrategyRootExecutorService {
       nodeType: 'fallback-strategy',
       message: 'Native root discovery fell back to layered discovery',
       triggerReason: options.triggerReason,
-      beforeCount: options.createdCount,
-      afterCount: options.createdCount + fallbackSelected,
+      beforeCount: options.acceptedCount,
+      afterCount: options.acceptedCount + fallbackSelected,
       rescuedCount: fallbackSelected,
       details: {
         minAcceptedResults: options.minAcceptedResults,
         minArticleResults: options.minArticleResults,
-        nativeAcceptedResults: options.createdCount,
+        nativeAcceptedResults: options.acceptedCount,
+        nativeSelectedResults: options.createdCount,
         nativeAcceptedArticles: options.nativeAcceptedArticles,
         candidateStats: candidateStats ?? null,
         rejectionCounts: rejectionCounts ?? null,

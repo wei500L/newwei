@@ -1,4 +1,5 @@
 import { AkshareParserService } from '../akshare-parser.service';
+
 import { AkshareFinancialDataProvider } from './akshare.provider';
 
 describe('AkshareFinancialDataProvider payload filtering', () => {

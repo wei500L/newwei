@@ -21,14 +21,14 @@ type TranslateFn = (
   options?: { defaultValue?: string; [key: string]: unknown },
 ) => string;
 
-type PipelineMetricPreset = {
+interface PipelineMetricPreset {
   labelKey: string;
   fallbackLabel: string;
   operator: AlertOperator;
   thresholdValue: number;
   defaultName: string;
   defaultDescription: string;
-};
+}
 
 export const DEFAULT_PIPELINE_METRIC_SLUG: PipelineMetricSlug = "pipeline_job";
 export const DEFAULT_PIPELINE_OUTBOX_TYPE: PipelineOutboxType =
@@ -151,9 +151,7 @@ export const isPipelineOutboxType = (
 export const buildPipelineMetricPresetOptions = (
   t: TranslateFn,
 ): { value: PipelineMetricSlug; label: string }[] =>
-  (Object.entries(pipelineMetricPresetConfig) as Array<
-    [PipelineMetricSlug, PipelineMetricPreset]
-  >).map(([value, preset]) => ({
+  (Object.entries(pipelineMetricPresetConfig) as [PipelineMetricSlug, PipelineMetricPreset][]).map(([value, preset]) => ({
     value,
     label: t(preset.labelKey, {
       defaultValue: preset.fallbackLabel,
@@ -165,15 +163,11 @@ export const buildPipelineOutboxTypeOptions = (
 ): { value: PipelineOutboxType; label: string }[] => [
   {
     value: "processed_item",
-    label: t("alerts.config.pipeline.outboxTypes.processedItem", {
-      defaultValue: "Processed item delivery",
-    }),
+    label: t("alerts.config.pipeline.outboxTypes.processedItem"),
   },
   {
     value: "cleanup_crawl_results",
-    label: t("alerts.config.pipeline.outboxTypes.cleanupCrawlResults", {
-      defaultValue: "Crawl cleanup",
-    }),
+    label: t("alerts.config.pipeline.outboxTypes.cleanupCrawlResults"),
   },
 ];
 
@@ -189,13 +183,13 @@ export const resolveInitialPipelineOutboxType = (
     : undefined;
 };
 
-type BuildPipelineProviderMetadataInput = {
+interface BuildPipelineProviderMetadataInput {
   metricSlug: string | undefined;
   pipelineStatuses?: string[] | null | undefined;
   pipelineQueueName?: string | null | undefined;
   pipelineSourceId?: string | null | undefined;
   pipelineOutboxType?: string | null | undefined;
-};
+}
 
 export const buildPipelineProviderMetadata = ({
   metricSlug,

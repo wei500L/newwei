@@ -12,6 +12,13 @@ import { z } from "zod";
 import { createApiClient, syncApiSessionCache } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { resolveSafeRedirect } from "@/lib/safe-redirect";
+import { env } from "@/lib/env";
+import { classifyRequestError } from "@/lib/request-error";
+import type {
+  BackendLoginResponse,
+  BackendMfaChallengeResponse,
+  BackendMfaEnrollmentChallengeResponse,
+} from "@/lib/auth";
 
 const { Title, Text } = Typography;
 const DEFAULT_SEND_CODE_COOLDOWN_SECONDS = 90;
@@ -70,6 +77,11 @@ interface SendLoginCodeResponse {
   cooldownSeconds?: number;
 }
 
+type LoginResponse =
+  | BackendLoginResponse
+  | BackendMfaChallengeResponse
+  | BackendMfaEnrollmentChallengeResponse;
+
 function applyFormFieldErrors<T extends object>(
   form: FormInstance<T>,
   fieldErrors: Record<string, string[] | undefined>,
@@ -99,6 +111,27 @@ export default function LoginPage() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [codeCooldown, setCodeCooldown] = useState(0);
+  const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
+  const [mfaLoading, setMfaLoading] = useState(false);
+  const [mfaError, setMfaError] = useState<string | null>(null);
+  const [mfaLocked, setMfaLocked] = useState(false);
+  const [mfaForm] = Form.useForm<{ code: string }>();
+  const [enrollmentChallengeId, setEnrollmentChallengeId] = useState<
+    string | null
+  >(null);
+  const [enrollmentLoading, setEnrollmentLoading] = useState(false);
+  const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
+  const [enrollmentLocked, setEnrollmentLocked] = useState(false);
+  const [enrollmentSetup, setEnrollmentSetup] = useState<{
+    secret: string;
+    otpauthUri: string;
+  } | null>(null);
+  const [pendingEnrollmentLogin, setPendingEnrollmentLogin] =
+    useState<BackendLoginResponse | null>(null);
+  const [pendingRecoveryCodes, setPendingRecoveryCodes] = useState<
+    string[] | null
+  >(null);
+  const [enrollmentForm] = Form.useForm<{ code: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionExpired = searchParams.get("sessionExpired") === "1";
@@ -116,10 +149,95 @@ export default function LoginPage() {
     return () => window.clearInterval(timer);
   }, [codeCooldown]);
 
+  useEffect(() => {
+    if (!enrollmentChallengeId) {
+      return;
+    }
+
+    let active = true;
+    setEnrollmentLoading(true);
+    setEnrollmentError(null);
+    setEnrollmentSetup(null);
+    enrollmentForm.resetFields();
+
+    void apiClient
+      .post<{ secret: string; otpauthUri: string }>(
+        "auth/mfa/enrollment/start",
+        {
+          challengeId: enrollmentChallengeId,
+        },
+      )
+      .then((response) => {
+        if (!active) {
+          return;
+        }
+        setEnrollmentSetup(response.data);
+      })
+      .catch((error) => {
+        captureClientError("MFA enrollment start failed", error);
+        if (!active) {
+          return;
+        }
+        setEnrollmentError("Unable to start MFA enrollment");
+      })
+      .finally(() => {
+        if (active) {
+          setEnrollmentLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [apiClient, enrollmentChallengeId, enrollmentForm]);
+
   const redirectAfterLogin = () => {
     // Sanitize callbackUrl to a same-origin path to prevent open redirect (CWE-601):
     // signIn uses redirect:false, so NextAuth's own callbackUrl validation is bypassed.
-    router.push(resolveSafeRedirect(searchParams.get("callbackUrl")));
+    router.push(resolveSafeRedirect(searchParams.get("callbackUrl"), "/welcome"));
+  };
+
+  const signInWithHandoff = async (payload: BackendLoginResponse) => {
+    const result = await signIn("handoff", {
+      accessToken: payload.accessToken,
+      refreshToken: payload.refreshToken,
+      expiresIn: String(payload.expiresIn),
+      userJson: JSON.stringify(payload.user),
+      organizationsJson: JSON.stringify(payload.organizations ?? []),
+      redirect: false,
+    });
+
+    if (result?.error) {
+      throw new Error(result.error);
+    }
+
+    await syncApiSessionCache().catch(() => null);
+    redirectAfterLogin();
+  };
+
+  const handleLoginResponse = async (response: LoginResponse) => {
+    if ("mfaRequired" in response && response.mfaRequired) {
+      setMfaChallengeId(response.authChallengeId);
+      setEnrollmentChallengeId(null);
+      setEnrollmentSetup(null);
+      setMfaError(null);
+      setMfaLocked(false);
+      setEnrollmentLocked(false);
+      return;
+    }
+
+    if ("mfaEnrollmentRequired" in response && response.mfaEnrollmentRequired) {
+      setEnrollmentChallengeId(response.enrollmentChallengeId);
+      setPendingEnrollmentLogin(null);
+      setPendingRecoveryCodes(null);
+      setMfaChallengeId(null);
+      setEnrollmentError(null);
+      setEnrollmentLocked(false);
+      setMfaLocked(false);
+      return;
+    }
+
+    await signInWithHandoff(response as BackendLoginResponse);
   };
 
   const onPasswordLogin = async (values: PasswordLoginFormValues) => {
@@ -137,26 +255,12 @@ export default function LoginPage() {
     try {
       setPasswordLoading(true);
       setPasswordError(null);
-      const result = await signIn("credentials", {
+      const response = await apiClient.post<LoginResponse>("auth/login", {
         email: payload.email,
         password: payload.password,
         ...(payload.orgId ? { orgId: payload.orgId } : {}),
-        redirect: false,
       });
-
-      if (result?.error) {
-        setPasswordError(
-          process.env.NODE_ENV === "production"
-            ? t("auth.login.error.invalidCredentials")
-            : t("auth.login.error.invalidCredentialsWithReason", {
-                reason: result.error,
-              }),
-        );
-        return;
-      }
-
-      await syncApiSessionCache().catch(() => null);
-      redirectAfterLogin();
+      await handleLoginResponse(response.data);
     } catch (error) {
       captureClientError("Password login failed", error);
       setPasswordError(t("common.error.unexpected"));
@@ -180,26 +284,15 @@ export default function LoginPage() {
     try {
       setCodeLoginLoading(true);
       setCodeError(null);
-      const result = await signIn("email-code", {
-        email: payload.email,
-        code: payload.code,
-        ...(payload.orgId ? { orgId: payload.orgId } : {}),
-        redirect: false,
-      });
-
-      if (result?.error) {
-        setCodeError(
-          process.env.NODE_ENV === "production"
-            ? t("auth.login.error.invalidCode")
-            : t("auth.login.error.invalidCodeWithReason", {
-                reason: result.error,
-              }),
-        );
-        return;
-      }
-
-      await syncApiSessionCache().catch(() => null);
-      redirectAfterLogin();
+      const response = await apiClient.post<LoginResponse>(
+        "auth/login-with-code",
+        {
+          email: payload.email,
+          code: payload.code,
+          ...(payload.orgId ? { orgId: payload.orgId } : {}),
+        },
+      );
+      await handleLoginResponse(response.data);
     } catch (error) {
       captureClientError("Code login failed", error);
       setCodeError(t("common.error.unexpected"));
@@ -239,6 +332,83 @@ export default function LoginPage() {
     }
   };
 
+  const onVerifyMfa = async (values: { code: string }) => {
+    if (!mfaChallengeId) {
+      return;
+    }
+
+    try {
+      setMfaLoading(true);
+      setMfaError(null);
+      const response = await apiClient.post<BackendLoginResponse>(
+        "auth/mfa/verify-login",
+        {
+          challengeId: mfaChallengeId,
+          code: values.code,
+        },
+      );
+      await signInWithHandoff(response.data);
+    } catch (error) {
+      captureClientError("MFA verification failed", error);
+      if (classifyRequestError(error).kind === "rateLimit") {
+        setMfaLocked(true);
+        setMfaError(t("auth.login.error.tooManyMfaAttempts"));
+      } else {
+        setMfaError(t("auth.login.error.invalidCode"));
+      }
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
+  const onVerifyEnrollment = async (values: { code: string }) => {
+    if (!enrollmentChallengeId) {
+      return;
+    }
+
+    try {
+      setEnrollmentLoading(true);
+      setEnrollmentError(null);
+      const response = await apiClient.post<BackendLoginResponse>(
+        "auth/mfa/enrollment/complete",
+        {
+          challengeId: enrollmentChallengeId,
+          code: values.code,
+        },
+      );
+      if (response.data.recoveryCodes?.length) {
+        setPendingEnrollmentLogin(response.data);
+        setPendingRecoveryCodes(response.data.recoveryCodes);
+        return;
+      }
+      await signInWithHandoff(response.data);
+    } catch (error) {
+      captureClientError("MFA enrollment verification failed", error);
+      if (classifyRequestError(error).kind === "rateLimit") {
+        setEnrollmentLocked(true);
+        setEnrollmentError(t("auth.login.error.tooManyMfaAttempts"));
+      } else {
+        setEnrollmentError("Invalid MFA verification code");
+      }
+    } finally {
+      setEnrollmentLoading(false);
+    }
+  };
+
+  const handleSsoLogin = () => {
+    const orgId =
+      passwordForm.getFieldValue("orgId") ?? codeForm.getFieldValue("orgId");
+    if (!orgId || !String(orgId).trim()) {
+      messageApi.error("Organization is required for SSO");
+      return;
+    }
+    window.location.assign(
+      `${env.apiBaseUrl}/auth/sso/oidc/start?org=${encodeURIComponent(
+        String(orgId).trim(),
+      )}`,
+    );
+  };
+
   return (
     <div className="auth-card">
       {contextHolder}
@@ -246,6 +416,22 @@ export default function LoginPage() {
         {t("auth.login.title")}
       </Title>
       <Text type="secondary">{t("auth.login.subtitle")}</Text>
+      <div style={{ marginTop: "0.5rem" }}>
+        <Button
+          type="link"
+          onClick={() => router.push("/register")}
+          style={{ paddingInline: 0 }}
+        >
+          Register
+        </Button>
+        <Button
+          type="link"
+          onClick={() => router.push("/forgot-password")}
+          style={{ paddingInline: 0, marginLeft: 12 }}
+        >
+          Forgot password?
+        </Button>
+      </div>
       <div style={{ marginTop: "1.5rem" }}>
         {sessionExpired ? (
           <Alert
@@ -425,6 +611,123 @@ export default function LoginPage() {
           },
         ]}
       />
+      <Button block style={{ marginTop: "0.75rem" }} onClick={handleSsoLogin}>
+        Continue with SSO
+      </Button>
+      {mfaChallengeId ? (
+        <div style={{ marginTop: "1rem" }}>
+          <Alert
+            type="info"
+            showIcon
+            message="Multi-factor authentication required"
+            style={{ marginBottom: "0.75rem" }}
+          />
+          <Form form={mfaForm} layout="vertical" onFinish={onVerifyMfa}>
+            <Form.Item
+              label="Authenticator code or recovery code"
+              name="code"
+              rules={[{ required: true, message: "Enter your MFA code" }]}
+            >
+              <Input size="large" disabled={mfaLocked} />
+            </Form.Item>
+            {mfaError ? (
+              <Form.Item>
+                <Alert type="error" showIcon message={mfaError} />
+              </Form.Item>
+            ) : null}
+            <Form.Item>
+              <Button
+                type="primary"
+                htmlType="submit"
+                block
+                loading={mfaLoading}
+                disabled={mfaLocked}
+              >
+                Verify and continue
+              </Button>
+            </Form.Item>
+          </Form>
+        </div>
+      ) : null}
+      {enrollmentChallengeId ? (
+        <div style={{ marginTop: "1rem" }}>
+          <Alert
+            type="info"
+            showIcon
+            message="Multi-factor authentication setup required"
+            description="Scan or copy this secret into your authenticator app, then enter the generated code to finish signing in."
+            style={{ marginBottom: "0.75rem" }}
+          />
+          {enrollmentLoading && !enrollmentSetup ? (
+            <Text type="secondary">Preparing authenticator setup...</Text>
+          ) : null}
+          {enrollmentSetup ? (
+            <>
+              <Typography.Paragraph copyable>
+                {enrollmentSetup.secret}
+              </Typography.Paragraph>
+              <Typography.Paragraph copyable>
+                {enrollmentSetup.otpauthUri}
+              </Typography.Paragraph>
+            </>
+          ) : null}
+          {enrollmentError ? (
+            <Alert
+              type="error"
+              showIcon
+              message={enrollmentError}
+              style={{ marginBottom: "0.75rem" }}
+            />
+          ) : null}
+          {pendingRecoveryCodes && pendingEnrollmentLogin ? (
+            <div>
+              <Alert
+                type="success"
+                showIcon
+                message="Save these recovery codes before continuing"
+                style={{ marginBottom: "0.75rem" }}
+              />
+              <Typography.Paragraph copyable>
+                {pendingRecoveryCodes.join(", ")}
+              </Typography.Paragraph>
+              <Button
+                type="primary"
+                block
+                onClick={() => void signInWithHandoff(pendingEnrollmentLogin)}
+              >
+                Continue
+              </Button>
+            </div>
+          ) : (
+            <Form
+              form={enrollmentForm}
+              layout="vertical"
+              onFinish={onVerifyEnrollment}
+            >
+              <Form.Item
+                label="Authenticator code"
+                name="code"
+                rules={[
+                  { required: true, message: "Enter your authenticator code" },
+                ]}
+              >
+                <Input size="large" disabled={enrollmentLocked} />
+              </Form.Item>
+              <Form.Item>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  block
+                  loading={enrollmentLoading}
+                  disabled={enrollmentLocked}
+                >
+                  Verify and continue
+                </Button>
+              </Form.Item>
+            </Form>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

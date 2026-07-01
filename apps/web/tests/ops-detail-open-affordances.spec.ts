@@ -17,6 +17,15 @@ describe('ops detail open affordances', () => {
     expect(source).toContain('onRow={requestRowProps}');
   });
 
+  it('guards crawl monitor websocket handshakes with an explicit timeout', () => {
+    const source = read('app/(app)/admin/ops/crawl-monitor/crawl-monitor-content.tsx');
+
+    expect(source).toContain('const WS_CONNECT_TIMEOUT_MS = 10_000;');
+    expect(source).toContain('const wsConnectTimeoutId = useRef<number | null>(null);');
+    expect(source).toContain('ws.readyState !== WebSocket.CONNECTING');
+    expect(source).toContain('t("crawl.monitor.ws.timeout"');
+  });
+
   it('keeps events archive detail opening wired through a reusable drawer helper', () => {
     const source = read('app/(app)/events-archive/events-archive-content.tsx');
 

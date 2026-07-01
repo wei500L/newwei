@@ -19,6 +19,7 @@ import { ApiGraphqlModule } from "./graphql/graphql.module";
 import { AkshareModule } from "./modules/akshare/akshare.module";
 import { AlertsModule } from "./modules/alerts/alerts.module";
 import { AnalysisModule } from "./modules/analysis/analysis.module";
+import { AnalysisWorkspaceModule } from "./modules/analysis-workspace/analysis-workspace.module";
 import { ArchiveModule } from "./modules/archive/archive.module";
 import { AssistantModule } from "./modules/assistant/assistant.module";
 import { AuditModule } from "./modules/audit/audit.module";
@@ -32,11 +33,13 @@ import { EmailModule } from "./modules/email/email.module";
 import { HealthModule } from "./modules/health/health.module";
 import { ItemsModule } from "./modules/items/items.module";
 import { KnowledgeGraphModule } from "./modules/knowledge-graph/knowledge-graph.module";
-import { NewsEventsModule } from "./modules/news-events/news-events.module";
 import { NewsAggregatorModule } from "./modules/news-aggregator/news-aggregator.module";
+import { NewsEventsModule } from "./modules/news-events/news-events.module";
 import { NewsIndicatorModule } from "./modules/news-indicator/news-indicator.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { ObservabilityModule } from "./modules/observability/observability.module";
+import { OrgModule } from "./modules/org/org.module";
+import { PublicPortalModule } from "./modules/public-portal/public-portal.module";
 import { QueueAdminModule } from "./modules/queue/queue-admin.module";
 import { QueueModule } from "./modules/queue/queue.module";
 import { RbacModule } from "./modules/rbac/rbac.module";
@@ -44,10 +47,11 @@ import { RealtimeSignalsModule } from "./modules/realtime-signals/realtime-signa
 import { SearchTelemetryModule } from "./modules/search-telemetry/search-telemetry.module";
 import { SentimentModule } from "./modules/sentiment/sentiment.module";
 import { SituationMonitorModule } from "./modules/situation-monitor/situation-monitor.module";
+import { MultiTenantSchedulerSettingsModule } from "./modules/system-settings/multi-tenant-scheduler-settings.module";
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
+import { UserContentSubscriptionsModule } from "./modules/user-content-subscriptions/user-content-subscriptions.module";
 import { UserDigestModule } from "./modules/user-digest/user-digest.module";
 import { UserNewsBehaviorModule } from "./modules/user-news-behavior/user-news-behavior.module";
-import { UserContentSubscriptionsModule } from "./modules/user-content-subscriptions/user-content-subscriptions.module";
 import { UserSettingsModule } from "./modules/user-settings/user-settings.module";
 import { VectorModule } from "./modules/vector/vector.module";
 import { WebSocketModule } from "./modules/websocket/websocket.module";
@@ -77,6 +81,7 @@ const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
     QueueModule,
     ...(bullBoardEnabled ? [QueueAdminModule] : []),
     AuthModule,
+    OrgModule,
     AuditModule,
     RbacModule,
     ItemsModule,
@@ -87,7 +92,9 @@ const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
     AkshareModule,
     AlertsModule,
     AnalysisModule,
+    AnalysisWorkspaceModule,
     AssistantModule,
+    MultiTenantSchedulerSettingsModule,
     RealtimeSignalsModule,
     SearchTelemetryModule,
     SituationMonitorModule,
@@ -99,6 +106,7 @@ const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
     UserDigestModule,
     NotificationsModule,
     ObservabilityModule,
+    PublicPortalModule,
     KnowledgeGraphModule,
     NewsEventsModule,
     NewsAggregatorModule,

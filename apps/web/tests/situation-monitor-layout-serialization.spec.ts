@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDefaultSituationMonitorLayoutPayload,
   fingerprintSituationMonitorLayout,
+  hasSituationMonitorLayoutGeometry,
   normalizeSituationMonitorLayoutPayload,
 } from "../lib/situation-monitor-layout-serialization";
 
@@ -12,6 +13,7 @@ describe("situation monitor layout serialization", () => {
 
     expect(payload.layouts.lg?.length).toBeGreaterThan(0);
     expect(payload.layouts.sm).toBeUndefined();
+    expect(payload.visibility.summary).toBe(true);
     expect(payload.visibility.map).toBe(true);
     expect(payload.visibility["realtime-snapshot"]).toBe(true);
     expect(
@@ -54,5 +56,23 @@ describe("situation monitor layout serialization", () => {
     expect(fingerprint).toContain('"layouts"');
     expect(fingerprint).toContain('"sm"');
     expect(fingerprint).not.toContain('"layout":[');
+  });
+
+  it("treats visibility-only legacy payloads as missing layout geometry", () => {
+    expect(
+      hasSituationMonitorLayoutGeometry({
+        layout: [],
+        visibility: { summary: true, map: true },
+      }),
+    ).toBe(false);
+
+    expect(
+      hasSituationMonitorLayoutGeometry({
+        layouts: {
+          lg: [{ i: "summary", x: 0, y: 0, w: 4, h: 4 }],
+        },
+        visibility: { summary: true },
+      }),
+    ).toBe(true);
   });
 });

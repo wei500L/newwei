@@ -3,6 +3,7 @@
 import { SearchOutlined, WarningOutlined } from "@ant-design/icons";
 import { Alert, Button, Drawer, Input, Skeleton, Slider, Space, Tag, Tooltip, Typography, message } from "antd";
 import type { EChartsOption } from "echarts";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -13,6 +14,10 @@ import { DashboardChart } from "@/components/echart";
 import { useGetKnowledgeGraphSubgraphQuery, useKnowledgeGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { usePendingAction } from "@/hooks/use-pending-action";
+import {
+  buildKnowledgeGraphExplorerHref,
+  normalizeKnowledgeGraphSeedType
+} from "@/lib/knowledge-graph-explorer";
 
 const { Text } = Typography;
 
@@ -115,7 +120,7 @@ export function KnowledgeGraph() {
     (value?: string) => {
       const next = (value ?? seedDraft).trim();
       if (!next) {
-        const warning = t("dashboard.charts.knowledgeGraphSeedRequired", { defaultValue: "Enter an entity name" });
+        const warning = t("dashboard.charts.knowledgeGraphSeedRequired");
         setSeedError(warning);
         messageApi.warning(warning);
         return;
@@ -147,6 +152,11 @@ export function KnowledgeGraph() {
   );
 
   const graph = data?.getKnowledgeGraphSubgraph ?? null;
+  const explorerHref = buildKnowledgeGraphExplorerHref({
+    seedName,
+    maxDepth,
+    maxNodes
+  });
 
   const normalizedGraph = useMemo(() => {
     if (!graph) {
@@ -154,7 +164,7 @@ export function KnowledgeGraph() {
     }
 
     // 预处理节点，同时统计重复/无效节点
-    const normalizedNodes: Array<(typeof graph.nodes)[number] & { id: string }> = [];
+    const normalizedNodes: ((typeof graph.nodes)[number] & { id: string })[] = [];
     const seenNodeIds = new Set<string>();
     let filteredNodes = 0;
     for (const node of graph.nodes) {
@@ -348,11 +358,8 @@ export function KnowledgeGraph() {
       <div className="h-[420px]">
         <ChartEmptyState
           variant="permission"
-          title={t("common.accessDenied", { defaultValue: "Access denied" })}
-          description={t("common.accessDeniedDescription", {
-            defaultValue:
-              "You don't have permission to view this data. Contact an administrator if you need access."
-          })}
+          title={t("common.accessDenied")}
+          description={t("common.accessDeniedDescription")}
         />
       </div>
     );
@@ -371,11 +378,9 @@ export function KnowledgeGraph() {
       <div className="h-[420px]">
         <ChartEmptyState
           variant="error"
-          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          title={t("dashboard.dataAbnormal")}
           description={settingsError.message}
-          actionLabel={t("dashboard.actions.retryFetch", {
-            defaultValue: "Retry fetch"
-          })}
+          actionLabel={t("dashboard.actions.retryFetch")}
           actionLoading={refreshingSettings}
           onAction={() => {
             void refreshSettings();
@@ -390,8 +395,8 @@ export function KnowledgeGraph() {
       <div className="h-[420px]">
         <ChartEmptyState
           variant="offline"
-          title={t("dashboard.charts.knowledgeGraphDisabledTitle", { defaultValue: "Disabled" })}
-          description={t("dashboard.charts.knowledgeGraphDisabledDescription", { defaultValue: "Disabled by admin" })}
+          title={t("dashboard.charts.knowledgeGraphDisabledTitle")}
+          description={t("dashboard.charts.knowledgeGraphDisabledDescription")}
         />
       </div>
     );
@@ -411,14 +416,14 @@ export function KnowledgeGraph() {
                 setSeedError(null);
               }}
               onPressEnter={(event) => handleSearch(event.currentTarget.value)}
-              placeholder={t("dashboard.charts.knowledgeGraphSeedPlaceholder", { defaultValue: "Entity name" })}
+              placeholder={t("dashboard.charts.knowledgeGraphSeedPlaceholder")}
               allowClear
             />
             <Button
               type="primary"
               icon={<SearchOutlined />}
               loading={loading}
-              aria-label={t("common.search", { defaultValue: "Search" })}
+              aria-label={t("common.search")}
               onClick={() => handleSearch()}
             />
           </Space.Compact>
@@ -431,27 +436,30 @@ export function KnowledgeGraph() {
         <Space size="middle">
           <div>
             <Text type="secondary">
-              {t("dashboard.charts.knowledgeGraphDepth", { defaultValue: "Depth" })}: {maxDepth}
+              {t("dashboard.charts.knowledgeGraphDepth")}: {maxDepth}
             </Text>
             <Slider min={1} max={5} step={1} value={maxDepth} onChange={(value) => setMaxDepth(value)} style={{ width: 160 }} />
           </div>
           <div>
             <Text type="secondary">
-              {t("dashboard.charts.knowledgeGraphMaxNodes", { defaultValue: "Max nodes" })}: {maxNodes}
+              {t("dashboard.charts.knowledgeGraphMaxNodes")}: {maxNodes}
             </Text>
             <Slider min={50} max={500} step={25} value={maxNodes} onChange={(value) => setMaxNodes(value)} style={{ width: 160 }} />
           </div>
         </Space>
+        <Link href={explorerHref}>
+          <Button>{t("pages.knowledgeGraph.actions.openExplorer")}</Button>
+        </Link>
       </div>
 
       {seedName ? (
         <Space size="small" wrap style={{ marginBottom: "0.75rem" }}>
           <Tag color="geekblue" className="text-xs">
-            {t("dashboard.charts.knowledgeGraphSeedLabel", { defaultValue: "Entity" })}: {seedName}
+            {t("dashboard.charts.knowledgeGraphSeedLabel")}: {seedName}
           </Tag>
           {loading ? (
             <Tag color="processing" className="text-xs">
-              {t("dashboard.charts.knowledgeGraphSearching", { defaultValue: "Searching..." })}
+              {t("dashboard.charts.knowledgeGraphSearching")}
             </Tag>
           ) : null}
         </Space>
@@ -484,8 +492,7 @@ export function KnowledgeGraph() {
                 filteredNodes: degradationStats.filteredNodes,
                 totalNodes: degradationStats.totalNodes,
                 filteredEdges: degradationStats.filteredEdges,
-                totalEdges: degradationStats.totalEdges,
-                defaultValue: `${degradationStats.filteredNodes} 个重复/无效节点和 ${degradationStats.filteredEdges} 个无效链接已被隐藏，以确保图谱正常显示。`
+                totalEdges: degradationStats.totalEdges
               })}
             >
               <Tag
@@ -495,8 +502,7 @@ export function KnowledgeGraph() {
               >
                 {t("dashboard.charts.knowledgeGraphFiltered", {
                   nodes: degradationStats.filteredNodes,
-                  edges: degradationStats.filteredEdges,
-                  defaultValue: `已过滤 ${degradationStats.filteredNodes} 节点 / ${degradationStats.filteredEdges} 链接`
+                  edges: degradationStats.filteredEdges
                 })}
               </Tag>
             </Tooltip>
@@ -508,7 +514,7 @@ export function KnowledgeGraph() {
         <Alert
           type="error"
           showIcon
-          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          message={t("dashboard.dataAbnormal")}
           description={error.message}
           action={
             <Button
@@ -519,9 +525,7 @@ export function KnowledgeGraph() {
                 void refreshGraph();
               }}
             >
-              {t("dashboard.actions.retryFetch", {
-                defaultValue: "Retry fetch"
-              })}
+              {t("dashboard.actions.retryFetch")}
             </Button>
           }
           style={{ marginBottom: "0.75rem" }}
@@ -531,10 +535,8 @@ export function KnowledgeGraph() {
       {!seedName ? (
         <div className="h-[360px] transition-all duration-300">
           <ChartEmptyState
-            title={t("dashboard.charts.knowledgeGraphEmptyTitle", { defaultValue: "No data" })}
-            description={t("dashboard.charts.knowledgeGraphEmptyDescription", {
-              defaultValue: "Search an entity to load real graph data"
-            })}
+            title={t("dashboard.charts.knowledgeGraphEmptyTitle")}
+            description={t("dashboard.charts.knowledgeGraphEmptyDescription")}
           />
         </div>
       ) : loading ? (
@@ -576,10 +578,8 @@ export function KnowledgeGraph() {
       ) : (
         <div className="h-[360px] transition-all duration-300">
           <ChartEmptyState
-            title={t("dashboard.charts.knowledgeGraphNotFoundTitle", { defaultValue: "Not found" })}
-            description={t("dashboard.charts.knowledgeGraphNotFoundDescription", {
-              defaultValue: "No graph data found for this entity"
-            })}
+            title={t("dashboard.charts.knowledgeGraphNotFoundTitle")}
+            description={t("dashboard.charts.knowledgeGraphNotFoundDescription")}
           />
         </div>
       )}
@@ -588,20 +588,30 @@ export function KnowledgeGraph() {
         onClose={() => setNodeDrawerOpen(false)}
         placement="right"
         width={380}
-        title={selectedNode?.name ?? t("dashboard.charts.knowledgeGraphNodeTitle", { defaultValue: "Node" })}
+        title={selectedNode?.name ?? t("dashboard.charts.knowledgeGraphNodeTitle")}
       >
         {selectedNode ? (
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
             <div>
               <Text type="secondary">
-                {t("dashboard.charts.knowledgeGraphNodeType", { defaultValue: "Type" })}: {selectedNode.type ?? "-"}
+                {t("dashboard.charts.knowledgeGraphNodeType")}: {selectedNode.type ?? "-"}
               </Text>
               <br />
               <Text type="secondary">
-                {t("dashboard.charts.knowledgeGraphNodeDegree", { defaultValue: "Degree" })}: {selectedNode.degree ?? 0}
+                {t("dashboard.charts.knowledgeGraphNodeDegree")}: {selectedNode.degree ?? 0}
               </Text>
             </div>
             <Space wrap>
+              <Link
+                href={buildKnowledgeGraphExplorerHref({
+                  seedName: selectedNode.name,
+                  seedType: normalizeKnowledgeGraphSeedType(selectedNode.type)
+                })}
+              >
+                <Button>
+                  {t("pages.knowledgeGraph.actions.openExplorer")}
+                </Button>
+              </Link>
               <Button
                 type="primary"
                 onClick={() => {
@@ -611,14 +621,13 @@ export function KnowledgeGraph() {
                   setNodeDrawerOpen(false);
                 }}
               >
-                {t("dashboard.charts.knowledgeGraphExplore", { defaultValue: "Explore this node" })}
+                {t("dashboard.charts.knowledgeGraphExplore")}
               </Button>
               <Button
                 onClick={() => {
                   const toastId = toast.loading(
                     t("dashboard.charts.knowledgeGraphOpeningSearch", {
-                      query: selectedNode.name,
-                      defaultValue: `Opening search for "${selectedNode.name}"...`
+                      query: selectedNode.name
                     })
                   );
                   const handle = window.open(
@@ -630,37 +639,34 @@ export function KnowledgeGraph() {
                     if (handle) {
                       toast.success(
                         t("dashboard.charts.knowledgeGraphOpenedSearch", {
-                          query: selectedNode.name,
-                          defaultValue: `Search opened for "${selectedNode.name}" in a new tab`
+                          query: selectedNode.name
                         }),
                         { id: toastId }
                       );
                     } else {
                       toast.error(
-                        t("common.popupBlocked", { defaultValue: "Popup blocked. Please allow popups for this site." }),
+                        t("common.popupBlocked"),
                         { id: toastId }
                       );
                     }
                   }, 200);
                 }}
               >
-                {t("dashboard.charts.knowledgeGraphOpenSearch", { defaultValue: "Open search" })}
+                {t("dashboard.charts.knowledgeGraphOpenSearch")}
               </Button>
               <Button
                 onClick={() => {
                   void navigator.clipboard
                     .writeText(selectedNode.name)
-                    .then(() => toast.success(t("common.copied", { defaultValue: "Copied" })))
-                    .catch(() => toast.error(t("common.copyFailed", { defaultValue: "Copy failed" })));
+                    .then(() => toast.success(t("common.copied")))
+                    .catch(() => toast.error(t("common.copyFailed")));
                 }}
               >
-                {t("common.copy", { defaultValue: "Copy" })}
+                {t("common.copy")}
               </Button>
             </Space>
             <Text type="secondary" className="text-xs">
-              {t("dashboard.charts.knowledgeGraphExploreHint", {
-                defaultValue: "Tip: use \"Explore this node\" to re-center the graph on it."
-              })}
+              {t("dashboard.charts.knowledgeGraphExploreHint")}
             </Text>
           </Space>
         ) : null}

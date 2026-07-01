@@ -220,7 +220,7 @@ export abstract class BaseParser<TConfig extends AkshareParserConfig = AksharePa
    */
   protected assertFieldsExistInPayload(
     records: Record<string, unknown>[],
-    fields: Array<string | undefined>,
+    fields: (string | undefined)[],
     context?: ParserContext
   ): void {
     if (records.length === 0) {

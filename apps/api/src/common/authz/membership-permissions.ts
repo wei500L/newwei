@@ -3,7 +3,7 @@ export interface MembershipPermissionEntry {
 }
 
 export interface MembershipRoleWithPermissions {
-  permissions?: Array<MembershipPermissionEntry | null> | null;
+  permissions?: (MembershipPermissionEntry | null)[] | null;
 }
 
 export interface MembershipRoleLink<TRole = unknown> {
@@ -14,7 +14,7 @@ export interface MembershipRoleLink<TRole = unknown> {
 export interface MembershipWithRoles<TRole = unknown> {
   roleId?: string | null;
   role?: TRole | null;
-  roles?: Array<MembershipRoleLink<TRole> | null> | null;
+  roles?: (MembershipRoleLink<TRole> | null)[] | null;
 }
 
 export const collectMembershipRoles = <TRole>(

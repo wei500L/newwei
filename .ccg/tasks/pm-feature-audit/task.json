@@ -1,0 +1,12 @@
+{
+  "id": "pm-feature-audit",
+  "title": "产品经理视角审查不完善/需优化/有缺陷的功能",
+  "status": "in_progress",
+  "strategy": "review-audit",
+  "currentPhase": "3",
+  "nextAction": "审计报告已交付(基线HEAD=aa203efb)；待用户决定是否修复 W1 rate-limit fail-open / W2 OIDC email_verified / W3 search reindex 并发与内存",
+  "gate": "report-delivered",
+  "branch": "main",
+  "scope": "pm-feature-audit",
+  "createdAt": "2026-05-30T00:00:00Z"
+}

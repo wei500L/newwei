@@ -1,4 +1,7 @@
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { AxiosError, AxiosHeaders, AxiosResponse } from "axios";
 
 import { LLM_GATEWAY_ERROR_CODE_UNAVAILABLE } from "./llm-gateway-error-codes";
@@ -37,6 +40,9 @@ describe("LlmGatewayTestService", () => {
   } as any;
   const proxyGovernanceMock = {
     resolveTestingApiKey: jest.fn(),
+  } as any;
+  const llmRequestLogMock = {
+    logRequest: jest.fn(),
   } as any;
 
   let service: LlmGatewayTestService;
@@ -111,12 +117,21 @@ describe("LlmGatewayTestService", () => {
     cacheMock.set.mockResolvedValue(undefined);
     cacheMock.del.mockResolvedValue(undefined);
     proxyGovernanceMock.resolveTestingApiKey.mockImplementation(
-      (_apiBase: string, fallbackApiKey?: string) => fallbackApiKey,
+      (
+        _apiBase: string,
+        fallbackApiKey?: string,
+        _profileId?: string,
+        authMode?: "profile_key" | "managed_runtime_key",
+      ) =>
+        authMode === "managed_runtime_key"
+          ? "managed-runtime-key"
+          : fallbackApiKey,
     );
     service = new LlmGatewayTestService(
       settingsMock,
       cacheMock,
       proxyGovernanceMock,
+      llmRequestLogMock,
     );
   });
 
@@ -134,6 +149,7 @@ describe("LlmGatewayTestService", () => {
     expect(result.completion.costUsd).toBe(0.0001);
     expect(result.completion.keySpendUsd).toBe(0.05);
     expect(result.embedding?.dimensions).toBe(3);
+    expect(result.authModeUsed).toBe("profile_key");
 
     expect(mockAxiosCreate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -156,6 +172,100 @@ describe("LlmGatewayTestService", () => {
       "/v1/embeddings",
       expect.objectContaining({ model: "openai/text-embedding-3-small" }),
       expect.any(Object),
+    );
+  });
+
+  it("writes LiteLLM request logs for gateway probe model calls", async () => {
+    mockAxiosPost
+      .mockResolvedValueOnce(mockCompletionResponse)
+      .mockResolvedValueOnce(mockEmbeddingResponse);
+
+    await service.testProfile(
+      "profile-1",
+      {
+        includeEmbeddings: true,
+      },
+      { orgId: "org-1", userId: "user-1" },
+    );
+
+    expect(llmRequestLogMock.logRequest).toHaveBeenCalledTimes(2);
+    expect(llmRequestLogMock.logRequest).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        orgId: "org-1",
+        requestType: "completion",
+        model: "openai/gpt-4o-mini",
+        status: "success",
+        promptTokens: 5,
+        completionTokens: 1,
+        totalTokens: 6,
+        costUsd: 0.0001,
+        feature: "gateway_test",
+        gatewayProfileId: "profile-1",
+        authMode: "profile_key",
+        apiSurface: "chat_completions",
+        metadata: expect.objectContaining({
+          source: "gateway-test",
+          userid: "user-1",
+          profileid: "profile-1",
+        }),
+      }),
+    );
+    expect(llmRequestLogMock.logRequest).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        orgId: "org-1",
+        requestType: "embedding",
+        model: "openai/text-embedding-3-small",
+        status: "success",
+        promptTokens: 3,
+        completionTokens: null,
+        totalTokens: 3,
+        feature: "gateway_test",
+        gatewayProfileId: "profile-1",
+        apiSurface: "embeddings",
+      }),
+    );
+  });
+
+  it("writes error logs for failed gateway probe model calls", async () => {
+    const error400 = new AxiosError(
+      "Bad request",
+      "ERR_BAD_REQUEST",
+      undefined,
+      undefined,
+      {
+        status: 400,
+        data: { error: { message: "invalid request" } },
+        statusText: "Bad Request",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      },
+    );
+
+    mockAxiosPost.mockRejectedValueOnce(error400);
+
+    const result = await service.testProfile(
+      "profile-1",
+      {
+        includeEmbeddings: false,
+      },
+      { orgId: "org-1", userId: "user-1" },
+    );
+
+    expect(result.completion).toBeUndefined();
+    expect(result.completionError?.status).toBe(400);
+    expect(llmRequestLogMock.logRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        requestType: "completion",
+        model: "openai/gpt-4o-mini",
+        status: "error",
+        feature: "gateway_test",
+        gatewayProfileId: "profile-1",
+        apiSurface: "chat_completions",
+        error: expect.stringContaining("HTTP 400"),
+      }),
     );
   });
 
@@ -198,6 +308,30 @@ describe("LlmGatewayTestService", () => {
     );
   });
 
+  it("supports testing with the managed runtime key explicitly", async () => {
+    mockAxiosPost.mockResolvedValueOnce(mockCompletionResponse);
+
+    const result = await service.testProfile("profile-1", {
+      authMode: "managed_runtime_key",
+      includeEmbeddings: false,
+    });
+
+    expect(result.authModeUsed).toBe("managed_runtime_key");
+    expect(proxyGovernanceMock.resolveTestingApiKey).toHaveBeenCalledWith(
+      "http://localhost:4001",
+      "sk-test",
+      "profile-1",
+      "managed_runtime_key",
+    );
+    expect(mockAxiosCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer managed-runtime-key",
+        }),
+      }),
+    );
+  });
+
   it("tests rerank probe when includeRerank is enabled", async () => {
     mockAxiosPost.mockResolvedValueOnce(mockRerankResponse);
 
@@ -230,6 +364,15 @@ describe("LlmGatewayTestService", () => {
       }),
       expect.any(Object),
     );
+    expect(llmRequestLogMock.logRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestType: "rerank",
+        model: "cohere/rerank-v3.5",
+        status: "success",
+        feature: "gateway_test",
+        apiSurface: "rerank",
+      }),
+    );
   });
 
   it("uses backup rerank model when primary rerank model fails", async () => {
@@ -246,15 +389,13 @@ describe("LlmGatewayTestService", () => {
         config: { headers: new AxiosHeaders() },
       },
     );
-    mockAxiosPost
-      .mockRejectedValueOnce(error400)
-      .mockResolvedValueOnce({
-        ...mockRerankResponse,
-        data: {
-          model: "cohere/rerank-v3.0",
-          results: [{ index: 0, relevance_score: 0.88 }],
-        },
-      });
+    mockAxiosPost.mockRejectedValueOnce(error400).mockResolvedValueOnce({
+      ...mockRerankResponse,
+      data: {
+        model: "cohere/rerank-v3.0",
+        results: [{ index: 0, relevance_score: 0.88 }],
+      },
+    });
 
     const result = await service.testProfile("profile-1", {
       includeCompletion: false,
@@ -894,7 +1035,6 @@ describe("LlmGatewayTestService", () => {
     expect(payload).not.toHaveProperty("metadata");
     expect(payload).not.toHaveProperty("response_format");
   });
-
 
   it("returns compatibilityError when metadata is unsupported", async () => {
     const error400 = new AxiosError(

@@ -34,7 +34,7 @@ describe("newsnow preference normalization", () => {
       hottest: ["weibo", "hackernews"],
     });
     expect(normalized.hideCrossSourceDuplicates).toBe(true);
-    expect(normalized.sortMode).toBe("smart");
+    expect(normalized.sortMode).toBe("personalized");
     expect(normalized.sourceAffinity.weibo?.score).toBe(100);
     expect(normalized.sourceAffinity).not.toHaveProperty("bad source");
   });

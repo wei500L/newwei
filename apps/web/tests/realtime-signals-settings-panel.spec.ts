@@ -20,8 +20,15 @@ describe("realtime signals settings panel wiring", () => {
     expect(source).toContain("openskyWarningRemainingPct");
     expect(source).toContain("openskyCriticalRemainingPct");
     expect(source).toContain("openskyBudget?.recentDays");
-    expect(source).toContain("OpenSky budget & schedule");
+    expect(source).toContain("systemSettings.realtimeSignals.runtime.openskyBudget.title");
     expect(source).toContain("effectiveMilitaryIntervalSec");
     expect(source).toContain("configuredIntervalSec");
+  });
+
+  it("reads AIS runtime diagnostics from aisDiagnostics instead of unpacking AIS context", () => {
+    const source = read("components/settings/realtime-signals-settings-panel.tsx");
+
+    expect(source).toContain("row.aisDiagnostics");
+    expect(source).not.toContain("row.source === \"ais\" && row.context ? row.context");
   });
 });

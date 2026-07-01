@@ -1,3 +1,4 @@
+import type { SituationMonitorMatchResult } from '../types/situation-monitor-monitors';
 import type {
   OrefHistoryEntry,
   SituationOrefAlertsResponse,
@@ -7,7 +8,6 @@ import type {
   SituationTelegramRealtimePayload,
   TelegramSignalItem,
 } from '../types/situation-monitor-signals';
-import type { SituationMonitorMatchResult } from '../types/situation-monitor-monitors';
 
 import type { TelegramFeedFilterState } from './telegram-feed';
 
@@ -55,6 +55,14 @@ function mergeMonitorMatches(
       left.monitorName.localeCompare(right.monitorName),
   );
   return results;
+}
+
+function omitErrorField<T extends { error?: unknown }>(
+  value: T,
+): Omit<T, 'error'> {
+  const nextValue = { ...value };
+  delete nextValue.error;
+  return nextValue;
 }
 
 function normalizeTelegramFilterValue(value: string): string | null {
@@ -126,7 +134,7 @@ export function mergeTelegramFeedRealtime(
   const allowedKeys = items.map(getTelegramMatchKey);
   const replaceKeys = payload.items.map(getTelegramMatchKey);
 
-  const { error: _error, ...rest } = current;
+  const rest = omitErrorField(current);
   return {
     ...rest,
     count: items.length,
@@ -148,7 +156,7 @@ export function mergeOrefAlertsRealtime(
     return current;
   }
 
-  const { error: _error, ...rest } = current;
+  const rest = omitErrorField(current);
   return {
     ...rest,
     alerts: payload.alerts,
@@ -193,7 +201,7 @@ export function mergeOrefHistoryRealtime(
     ? getOrefHistoryMatchKeys(payload.historyEntry)
     : [];
 
-  const { error: _error, ...rest } = current;
+  const rest = omitErrorField(current);
   return {
     ...rest,
     history,

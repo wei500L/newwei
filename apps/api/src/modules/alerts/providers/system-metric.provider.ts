@@ -1,10 +1,10 @@
-import { Injectable } from "@nestjs/common";
 import {
   CUSTOM_MANUAL_SYSTEM_METRIC_SLUG,
   SYSTEM_LOAD_1M_METRIC_SLUG,
   SYSTEM_MEMORY_USAGE_METRIC_SLUG,
   SYSTEM_UPTIME_SECONDS_METRIC_SLUG,
 } from "@modular/utils";
+import { Injectable } from "@nestjs/common";
 import { AlertMetricProvider, AlertRule } from "@prisma/client";
 import os from "node:os";
 

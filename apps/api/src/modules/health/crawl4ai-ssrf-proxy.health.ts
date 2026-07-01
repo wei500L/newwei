@@ -13,12 +13,12 @@ import { CrawlSettingsService } from "../crawl/crawl-settings.service";
 const SSRF_PROXY_PROBE_URL = "https://example.com/";
 
 interface CrawlProbeResponse {
-  results?: Array<{
+  results?: {
     success?: boolean;
     error_message?: string;
     errorMessage?: string;
     error?: string;
-  }>;
+  }[];
   error?: string;
 }
 

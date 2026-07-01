@@ -1,3 +1,4 @@
+import { ProcessedItemModel } from "@modular/mongo";
 import { ProcessedArticleStatus } from "@prisma/client";
 
 import { DashboardChartsService } from "../dashboard-charts.service";
@@ -36,30 +37,6 @@ const createCache = () => ({
   ),
 });
 
-const createSerializingCache = () => {
-  const store = new Map<string, string>();
-  return {
-    get: jest.fn(),
-    set: jest.fn(),
-    wrap: jest.fn(
-      async (
-        key: string,
-        _ttlSeconds: number,
-        loader: () => Promise<unknown>,
-      ) => {
-        const cached = store.get(key);
-        if (cached) {
-          return JSON.parse(cached);
-        }
-        const value = await loader();
-        const serialized = JSON.stringify(value);
-        store.set(key, serialized);
-        return JSON.parse(serialized);
-      },
-    ),
-  };
-};
-
 const createRealtimeSignalsStore = (
   overrides: Record<string, unknown> = {},
 ) => ({
@@ -70,6 +47,11 @@ const createRealtimeSignalsStore = (
 });
 
 describe("DashboardChartsService", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    processedItemFindExecMock.mockResolvedValue([]);
+  });
+
   afterEach(() => {
     jest.useRealTimers();
   });
@@ -144,6 +126,33 @@ describe("DashboardChartsService", () => {
           },
         }),
       }),
+    );
+  });
+
+  it("filters Mongo war map fallback records with hasLocation", async () => {
+    const service = new DashboardChartsService(
+      {} as any,
+      { resolveCandidates: jest.fn() } as any,
+      createCache() as any,
+    );
+    const range = {
+      start: new Date("2026-01-01T00:00:00.000Z"),
+      end: new Date("2026-01-02T00:00:00.000Z"),
+    };
+
+    await (service as any).loadMongoWarMapLocationRecords(range, "org-1", 25);
+
+    expect(ProcessedItemModel.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        status: "completed",
+        hasLocation: true,
+        duplicateOf: null,
+      }),
+      expect.any(Object),
+    );
+    expect((ProcessedItemModel.find as jest.Mock).mock.calls[0]?.[0]).not.toHaveProperty(
+      "result.location",
     );
   });
 
@@ -635,6 +644,185 @@ describe("DashboardChartsService", () => {
         renderedVesselCount: 1,
         allVesselsAvailable: false,
         snapshotAgeSec: 300,
+        statusReasonCode: "ais_snapshot_missing_vessels_contract",
+        statusReason:
+          "AIS relay reports tracked vessels, but the snapshot payload omits vessels[] and only exposes aggregated signals.",
+      }),
+    );
+  });
+
+  it("keeps military mode scoped to candidate reports while all mode preserves vessel coordinates", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:05:00.000Z"));
+    const prisma = {
+      alertEvent: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const snapshot = {
+      source: "relay",
+      sourceEndpoint: "https://relay.example.com/ais/snapshot",
+      updatedAt: "2026-01-01T12:00:00.000Z",
+      status: {
+        connected: true,
+        vessels: 1,
+        messages: 1200,
+        clients: 2,
+        droppedMessages: 0,
+      },
+      disruptions: [],
+      density: [],
+      candidateReports: [],
+      vessels: [
+        {
+          mmsi: "311990000",
+          name: "Harbor Trader",
+          lat: 53.1212,
+          lng: 5.4321,
+          shipType: 72,
+          heading: 182,
+          speed: 9,
+          course: 184,
+          observedAt: "2026-01-01T11:59:30.000Z",
+        },
+      ],
+      hasVesselSnapshot: true,
+    };
+    const realtimeSignalsStore = createRealtimeSignalsStore({
+      getLatestAisSnapshot: jest.fn().mockResolvedValue(snapshot),
+      getSourceState: jest.fn().mockResolvedValue({
+        source: "ais",
+        status: "success",
+        lastAttemptAt: "2026-01-01T12:00:00.000Z",
+        lastSuccessAt: "2026-01-01T12:00:00.000Z",
+        context: {
+          configured: true,
+          staleThresholdSec: 600,
+        },
+      }),
+    });
+    const service = new DashboardChartsService(
+      prisma as any,
+      { resolveCandidates: jest.fn() } as any,
+      createCache() as any,
+      undefined,
+      undefined,
+      realtimeSignalsStore as any,
+    );
+
+    const militaryResponse = await service.getWarMapLayers({
+      orgId: "org-1",
+      range: {
+        start: new Date("2026-01-01T00:00:00.000Z"),
+        end: new Date("2026-01-02T00:00:00.000Z"),
+      },
+      aisMode: "military",
+    });
+    const allResponse = await service.getWarMapLayers({
+      orgId: "org-1",
+      range: {
+        start: new Date("2026-01-01T00:00:00.000Z"),
+        end: new Date("2026-01-02T00:00:00.000Z"),
+      },
+      aisMode: "all",
+    });
+
+    expect(
+      militaryResponse.layers.ais.features.filter(
+        (feature) =>
+          (feature.properties as Record<string, unknown> | undefined)
+            ?.featureKind === "vessel",
+      ),
+    ).toHaveLength(0);
+    expect(militaryResponse.layers.ais.summary).toEqual(
+      expect.objectContaining({
+        mode: "military",
+        candidateCount: 0,
+        renderedVesselCount: 0,
+      }),
+    );
+
+    expect(allResponse.layers.ais.features).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "ais-vessel-311990000",
+          lat: 53.1212,
+          lng: 5.4321,
+          timestamp: "2026-01-01T11:59:30.000Z",
+          properties: expect.objectContaining({
+            featureKind: "vessel",
+            name: "Harbor Trader",
+            shipType: 72,
+            heading: 182,
+            speed: 9,
+            course: 184,
+            observedAt: "2026-01-01T11:59:30.000Z",
+          }),
+        }),
+      ]),
+    );
+    expect(allResponse.layers.ais.summary).toEqual(
+      expect.objectContaining({
+        mode: "all",
+        candidateCount: 0,
+        relayVesselCount: 1,
+        viewportVesselCount: 1,
+        renderedVesselCount: 1,
+        allVesselsAvailable: true,
+      }),
+    );
+  });
+
+  it("surfaces upstream AIS fetch errors without inventing local refresh reason codes", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:05:00.000Z"));
+    const prisma = {
+      alertEvent: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const realtimeSignalsStore = createRealtimeSignalsStore({
+      getLatestAisSnapshot: jest.fn().mockResolvedValue(null),
+      getSourceState: jest.fn().mockResolvedValue({
+        source: "ais",
+        status: "error",
+        lastAttemptAt: "2026-01-01T12:00:00.000Z",
+        lastErrorAt: "2026-01-01T12:00:00.000Z",
+        lastError: "fetch failed",
+        lastErrorCode: "network_error",
+        context: {
+          source: "relay",
+          configured: true,
+        },
+      }),
+    });
+    const service = new DashboardChartsService(
+      prisma as any,
+      { resolveCandidates: jest.fn() } as any,
+      createCache() as any,
+      undefined,
+      undefined,
+      realtimeSignalsStore as any,
+    );
+
+    const response = await service.getWarMapLayers({
+      orgId: "org-1",
+      range: {
+        start: new Date("2026-01-01T00:00:00.000Z"),
+        end: new Date("2026-01-02T00:00:00.000Z"),
+      },
+      aisMode: "military",
+    });
+
+    expect(response.layers.ais.summary).toEqual(
+      expect.objectContaining({
+        freshness: "missing",
+        statusReasonCode: "network_error",
+        statusReason: "fetch failed",
       }),
     );
   });
@@ -763,6 +951,82 @@ describe("DashboardChartsService", () => {
         renderedVesselCount: 0,
         densityCount: 1,
         disruptionsCount: 1,
+      }),
+    );
+  });
+
+  it("surfaces degraded AIS relay reasons in the war map summary", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:05:00.000Z"));
+    const prisma = {
+      alertEvent: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const realtimeSignalsStore = createRealtimeSignalsStore({
+      getLatestAisSnapshot: jest.fn().mockResolvedValue({
+        source: "relay",
+        sourceEndpoint: "https://relay.example.com/ais/snapshot",
+        updatedAt: "2026-01-01T12:00:00.000Z",
+        status: {
+          connected: true,
+          vessels: 0,
+          messages: 800,
+          clients: 1,
+          droppedMessages: 0,
+        },
+        diagnostics: {
+          healthState: "degraded",
+          statusReasonCode: "ais_position_reports_not_retained",
+          statusReason:
+            "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
+          positionReportsSeen: 800,
+          positionReportsProcessed: 0,
+          ignoredPositionReports: 800,
+          parseErrors: 0,
+        },
+        disruptions: [],
+        density: [],
+        candidateReports: [],
+        vessels: [],
+        hasVesselSnapshot: true,
+      }),
+      getSourceState: jest.fn().mockResolvedValue({
+        source: "ais",
+        status: "success",
+        lastAttemptAt: "2026-01-01T12:00:00.000Z",
+        lastSuccessAt: "2026-01-01T12:00:00.000Z",
+        context: {
+          configured: true,
+          staleThresholdSec: 600,
+        },
+      }),
+    });
+    const service = new DashboardChartsService(
+      prisma as any,
+      { resolveCandidates: jest.fn() } as any,
+      createCache() as any,
+      undefined,
+      undefined,
+      realtimeSignalsStore as any,
+    );
+
+    const response = await service.getWarMapLayers({
+      orgId: "org-1",
+      range: {
+        start: new Date("2026-01-01T00:00:00.000Z"),
+        end: new Date("2026-01-02T00:00:00.000Z"),
+      },
+      aisMode: "military",
+    });
+
+    expect(response.layers.ais.summary).toEqual(
+      expect.objectContaining({
+        statusReasonCode: "ais_position_reports_not_retained",
+        statusReason:
+          "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
       }),
     );
   });
@@ -981,6 +1245,7 @@ describe("DashboardChartsService", () => {
         blockedReason: "AIS relay snapshot does not include vessels[] yet.",
         maxReturned: 180,
         truncated: false,
+        statusReasonCode: "ais_snapshot_missing_vessels_contract",
       }),
     );
   });
@@ -1139,6 +1404,7 @@ describe("DashboardChartsService", () => {
         sourceEndpoint: "https://relay.example.com/ais/snapshot",
         connected: true,
         relayVesselCount: 84,
+        viewportVesselCount: 2,
         renderedVesselCount: 2,
         allVesselsAvailable: true,
         messageCount: 2048,
@@ -1241,6 +1507,7 @@ describe("DashboardChartsService", () => {
       expect.objectContaining({
         mode: "all",
         relayVesselCount: 250,
+        viewportVesselCount: 250,
         renderedVesselCount: 180,
         maxReturned: 180,
         truncated: true,

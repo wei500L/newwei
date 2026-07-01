@@ -17,6 +17,9 @@ import { useSession } from "next-auth/react";
 import type { ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 
+import { buildAdminLogsHref } from "@/lib/admin-logs";
+
+import styles from "./admin-content.module.css";
 import {
   ADMIN_GROUP_ORDER,
   canViewAdmin,
@@ -25,9 +28,7 @@ import {
   type AdminGroupKey,
   type AdminLinkPermission,
 } from "./admin-content.utils";
-import { buildAdminLogsHref } from "@/lib/admin-logs";
 import { buildAdminSettingsHref } from "./settings/settings-navigation";
-import styles from "./admin-content.module.css";
 
 interface AdminLinkItem {
   key: string;
@@ -55,44 +56,26 @@ export function AdminContent() {
   const adminGroups: AdminGroupItem[] = [
     {
       key: "operations",
-      title: t("adminConsole.groups.operations.title", {
-        defaultValue: "Operations & Delivery",
-      }),
-      description: t("adminConsole.groups.operations.description", {
-        defaultValue: "Run content pipelines, dashboards, and alert routing.",
-      }),
+      title: t("adminConsole.groups.operations.title"),
+      description: t("adminConsole.groups.operations.description"),
       icon: AppstoreOutlined,
     },
     {
       key: "monitoring",
-      title: t("adminConsole.groups.monitoring.title", {
-        defaultValue: "Monitoring & Quality",
-      }),
-      description: t("adminConsole.groups.monitoring.description", {
-        defaultValue:
-          "Track failures, data quality, and knowledge-review backlogs.",
-      }),
+      title: t("adminConsole.groups.monitoring.title"),
+      description: t("adminConsole.groups.monitoring.description"),
       icon: LineChartOutlined,
     },
     {
       key: "governance",
-      title: t("adminConsole.groups.governance.title", {
-        defaultValue: "Governance & Access",
-      }),
-      description: t("adminConsole.groups.governance.description", {
-        defaultValue: "Control organizations, permissions, and auditability.",
-      }),
+      title: t("adminConsole.groups.governance.title"),
+      description: t("adminConsole.groups.governance.description"),
       icon: TeamOutlined,
     },
     {
       key: "platform",
-      title: t("adminConsole.groups.platform.title", {
-        defaultValue: "Platform & Infrastructure",
-      }),
-      description: t("adminConsole.groups.platform.description", {
-        defaultValue:
-          "Manage storage, runtime defaults, and core system behavior.",
-      }),
+      title: t("adminConsole.groups.platform.title"),
+      description: t("adminConsole.groups.platform.description"),
       icon: SettingOutlined,
     },
   ];
@@ -100,10 +83,8 @@ export function AdminContent() {
   const adminLinks: AdminLinkItem[] = [
     {
       key: "ops",
-      title: t("adminConsole.links.ops.title", { defaultValue: "Operations" }),
-      description: t("adminConsole.links.ops.description", {
-        defaultValue: "Manage crawl tasks and source scheduling",
-      }),
+      title: t("adminConsole.links.ops.title"),
+      description: t("adminConsole.links.ops.description"),
       href: "/admin/ops",
       permission: "crawl.read",
       group: "operations",
@@ -111,12 +92,8 @@ export function AdminContent() {
     },
     {
       key: "dashboards",
-      title: t("adminConsole.links.dashboards.title", {
-        defaultValue: "Dashboard Config",
-      }),
-      description: t("adminConsole.links.dashboards.description", {
-        defaultValue: "Edit dashboard layouts and metrics",
-      }),
+      title: t("adminConsole.links.dashboards.title"),
+      description: t("adminConsole.links.dashboards.description"),
       href: "/admin/dashboards",
       permission: "dashboards.write",
       group: "operations",
@@ -124,12 +101,8 @@ export function AdminContent() {
     },
     {
       key: "alerts",
-      title: t("adminConsole.links.alerts.title", {
-        defaultValue: "Alert Rules",
-      }),
-      description: t("adminConsole.links.alerts.description", {
-        defaultValue: "Configure alert rules and channels",
-      }),
+      title: t("adminConsole.links.alerts.title"),
+      description: t("adminConsole.links.alerts.description"),
       href: "/admin/alerts",
       permission: "alerts.manage",
       group: "operations",
@@ -137,12 +110,8 @@ export function AdminContent() {
     },
     {
       key: "logs",
-      title: t("adminConsole.links.logs.title", {
-        defaultValue: "Logs",
-      }),
-      description: t("adminConsole.links.logs.description", {
-        defaultValue: "Inspect task, error, and audit events in one workspace",
-      }),
+      title: t("adminConsole.links.logs.title"),
+      description: t("adminConsole.links.logs.description"),
       href: buildAdminLogsHref({ tab: "task" }),
       permission: "settings.manage",
       group: "monitoring",
@@ -150,27 +119,26 @@ export function AdminContent() {
     },
     {
       key: "quality",
-      title: t("adminConsole.links.quality.title", {
-        defaultValue: "Data Quality",
-      }),
-      description: t("adminConsole.links.quality.description", {
-        defaultValue:
-          "Monitor pipeline success, latency, and source reliability",
-      }),
+      title: t("adminConsole.links.quality.title"),
+      description: t("adminConsole.links.quality.description"),
       href: "/admin/quality",
       permission: "settings.manage",
       group: "monitoring",
       icon: LineChartOutlined,
     },
     {
+      key: "searchTelemetry",
+      title: t("adminConsole.links.searchTelemetry.title"),
+      description: t("adminConsole.links.searchTelemetry.description"),
+      href: "/admin/search-telemetry",
+      permission: "settings.manage",
+      group: "monitoring",
+      icon: LineChartOutlined,
+    },
+    {
       key: "knowledgeGraphReview",
-      title: t("adminConsole.links.knowledgeGraphReview.title", {
-        defaultValue: "Knowledge Graph Review",
-      }),
-      description: t("adminConsole.links.knowledgeGraphReview.description", {
-        defaultValue:
-          "Review low-confidence knowledge graph relations and record human feedback",
-      }),
+      title: t("adminConsole.links.knowledgeGraphReview.title"),
+      description: t("adminConsole.links.knowledgeGraphReview.description"),
       href: buildAdminSettingsHref({
         page: "knowledge",
         panel: "knowledge-graph-review",
@@ -181,12 +149,8 @@ export function AdminContent() {
     },
     {
       key: "orgs",
-      title: t("adminConsole.links.orgs.title", {
-        defaultValue: "Organizations",
-      }),
-      description: t("adminConsole.links.orgs.description", {
-        defaultValue: "Manage orgs and memberships",
-      }),
+      title: t("adminConsole.links.orgs.title"),
+      description: t("adminConsole.links.orgs.description"),
       href: "/admin/orgs",
       permission: "org.write",
       group: "governance",
@@ -194,13 +158,8 @@ export function AdminContent() {
     },
     {
       key: "settingsWorkspace",
-      title: t("adminSettings.workspace.title", {
-        defaultValue: "Settings Workspace",
-      }),
-      description: t("adminSettings.workspace.adminCardDescription", {
-        defaultValue:
-          "Open the unified workspace for access, system, storage, and service configuration.",
-      }),
+      title: t("adminSettings.workspace.title"),
+      description: t("adminSettings.workspace.adminCardDescription"),
       href: "/admin/settings",
       permission: "settings.manage",
       group: "platform",
@@ -216,29 +175,21 @@ export function AdminContent() {
   const highlightedMetrics = [
     {
       key: "sections",
-      label: t("adminConsole.metrics.sections", { defaultValue: "Sections" }),
+      label: t("adminConsole.metrics.sections"),
       value: visibleGroupOrder.length,
-      hint: t("adminConsole.metrics.sectionsHint", {
-        defaultValue: "Functional domains",
-      }),
+      hint: t("adminConsole.metrics.sectionsHint"),
     },
     {
       key: "links",
-      label: t("adminConsole.metrics.links", { defaultValue: "Quick Links" }),
+      label: t("adminConsole.metrics.links"),
       value: visibleLinks.length,
-      hint: t("adminConsole.metrics.linksHint", {
-        defaultValue: "Available shortcuts",
-      }),
+      hint: t("adminConsole.metrics.linksHint"),
     },
     {
       key: "permissions",
-      label: t("adminConsole.metrics.permissions", {
-        defaultValue: "Permissions",
-      }),
+      label: t("adminConsole.metrics.permissions"),
       value: permissions.length,
-      hint: t("adminConsole.metrics.permissionsHint", {
-        defaultValue: "Granted capabilities",
-      }),
+      hint: t("adminConsole.metrics.permissionsHint"),
     },
   ];
 
@@ -256,7 +207,7 @@ export function AdminContent() {
     return (
       <Card
         className="content-card"
-        title={t("adminConsole.title", { defaultValue: "Admin Console" })}
+        title={t("adminConsole.title")}
       >
         <Alert
           type="warning"
@@ -295,7 +246,6 @@ export function AdminContent() {
           <span className={styles.groupCounter}>
             {t("adminConsole.group.itemCount", {
               count: links.length,
-              defaultValue: "{{count}} items",
             })}
           </span>
         </div>
@@ -316,7 +266,7 @@ export function AdminContent() {
                   </div>
                 </div>
                 <div className={styles.cardAction}>
-                  {t("adminConsole.card.enter", { defaultValue: "Open" })}
+                  {t("adminConsole.card.enter")}
                   <RightOutlined className="ml-1 text-[10px]" />
                 </div>
               </Link>
@@ -336,13 +286,10 @@ export function AdminContent() {
             className={styles.pageTitle}
             style={{ margin: 0 }}
           >
-            {t("adminConsole.title", { defaultValue: "Admin Console" })}
+            {t("adminConsole.title")}
           </Typography.Title>
           <Typography.Text className={styles.pageSubtitle}>
-            {t("adminConsole.subtitle", {
-              defaultValue:
-                "Manage operations, organizations, dashboards, alerts, and system settings.",
-            })}
+            {t("adminConsole.subtitle")}
           </Typography.Text>
         </Space>
 
@@ -436,9 +383,7 @@ export function AdminContent() {
                                   </div>
                                 </div>
                                 <div className={styles.cardAction}>
-                                  {t("adminConsole.card.enter", {
-                                    defaultValue: "Open",
-                                  })}
+                                  {t("adminConsole.card.enter")}
                                   <RightOutlined className="ml-1 text-[10px]" />
                                 </div>
                               </Link>

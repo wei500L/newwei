@@ -12,8 +12,8 @@ import { ApiTags } from "@nestjs/swagger";
 import { Public } from "../../common/decorators/public.decorator";
 import { EnvService } from "../config/config.service";
 
-import { LiteLlmProxyLoadBalancingSettingsService } from "./litellm-proxy-lb-settings.service";
 import { ReportLiteLlmOpenAiKeysAppliedDto } from "./dto/litellm-openai-keys-applied.dto";
+import { LiteLlmProxyLoadBalancingSettingsService } from "./litellm-proxy-lb-settings.service";
 import { OpenAiKeysSettingsService } from "./openai-keys-settings.service";
 
 @ApiTags("internal")

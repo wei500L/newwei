@@ -1,10 +1,10 @@
-import { HttpService } from "@nestjs/axios";
-import { Injectable, Logger } from "@nestjs/common";
 import {
   buildAutoBrowserHeadersForCrawlOptions,
   mergeBrowserHeaders,
   normalizeBrowserHeaders,
 } from "@modular/utils";
+import { HttpService } from "@nestjs/axios";
+import { Injectable, Logger } from "@nestjs/common";
 import type { AxiosError } from "axios";
 import { lastValueFrom, TimeoutError, timeout } from "rxjs";
 
@@ -37,8 +37,8 @@ import type {
   CrawlVirtualScrollConfig,
   CrawlDeepCrawlComponent,
 } from "./crawl.types";
-import { Crawl4aiRequestException } from "./crawl4ai.exception";
 import { translateLocalhostProxyUrlForCrawl4ai } from "./crawl4ai-proxy";
+import { Crawl4aiRequestException } from "./crawl4ai.exception";
 import { validateJsCodeArray } from "./validators/js-code.validator";
 
 export interface Crawl4aiRequest {
@@ -83,7 +83,7 @@ export interface Crawl4aiResponse {
   runId?: string | null;
   nextCursor?: string | null;
   warnings?: string[];
-  systemEvents?: Array<{
+  systemEvents?: {
     level: "info" | "warn" | "error";
     eventType: string;
     message: string;
@@ -93,7 +93,7 @@ export interface Crawl4aiResponse {
     rescuedCount?: number | null;
     details?: Record<string, unknown>;
     timestamp: string;
-  }>;
+  }[];
   results: Crawl4aiArticle[];
   serverMemoryMb?: number;
   peakMemoryMb?: number;
@@ -131,8 +131,6 @@ interface CrawlScanProfile {
   adjustViewportToContent?: boolean;
 }
 
-const CRAWL4AI_SSRF_PROXY_AUTH_USER = "__modular_ssrf_proxy__";
-
 @Injectable()
 export class Crawl4aiClient {
   private readonly logger = new Logger(Crawl4aiClient.name);
@@ -154,7 +152,13 @@ export class Crawl4aiClient {
 
     try {
       const response = await this.sendCrawlRequest(payload, requestTimeoutMs);
-      return systemEvents.length > 0 ? { ...response, systemEvents } : response;
+      if (systemEvents.length === 0) {
+        return response;
+      }
+      return {
+        ...response,
+        systemEvents: [...(response.systemEvents ?? []), ...systemEvents],
+      };
     } catch (error) {
       let resolvedError: unknown = error;
       let resolvedPayload: Crawl4aiHttpPayload = payload;
@@ -185,7 +189,7 @@ export class Crawl4aiClient {
           });
           return {
             ...response,
-            systemEvents,
+            systemEvents: [...(response.systemEvents ?? []), ...systemEvents],
           };
         } catch (retryError) {
           resolvedError = retryError;
@@ -227,7 +231,7 @@ export class Crawl4aiClient {
           });
           return {
             ...response,
-            systemEvents,
+            systemEvents: [...(response.systemEvents ?? []), ...systemEvents],
           };
         } catch (fallbackError) {
           resolvedError = fallbackError;
@@ -347,7 +351,7 @@ export class Crawl4aiClient {
       }
       if (maybeProxyIssue) {
         hints.push(
-          "Hint: crawl4ai failed to connect to the proxy. If your proxy is on the Docker host, use host.docker.internal (e.g. http://host.docker.internal:7890) instead of 127.0.0.1/localhost, or disable proxyUrl.",
+          "Hint: crawl4ai failed to connect to the configured proxy. If the proxy is on the Docker host, use host.docker.internal (e.g. http://host.docker.internal:7890) instead of 127.0.0.1/localhost.",
         );
       }
       const messageWithHint =
@@ -404,11 +408,27 @@ export class Crawl4aiClient {
   }
 
   private normalizeCrawlResponse(data?: Crawl4aiResponse): Crawl4aiResponse {
+    const systemEvents = Array.isArray(data?.systemEvents)
+      ? data.systemEvents.filter(
+          (
+            event,
+          ): event is NonNullable<Crawl4aiResponse["systemEvents"]>[number] =>
+            Boolean(
+              event &&
+                typeof event === "object" &&
+                typeof event.level === "string" &&
+                typeof event.eventType === "string" &&
+                typeof event.message === "string" &&
+                typeof event.timestamp === "string",
+            ),
+        )
+      : undefined;
     return {
       results: data?.results ?? [],
       nextCursor: data?.nextCursor ?? null,
       runId: data?.runId ?? null,
       warnings: data?.warnings ?? [],
+      systemEvents,
       serverMemoryMb: data?.serverMemoryMb,
       peakMemoryMb: data?.peakMemoryMb,
       memoryEfficiency: data?.memoryEfficiency,
@@ -630,16 +650,7 @@ export class Crawl4aiClient {
   }
 
   private isPrefetchFallbackCandidateError(error: unknown): boolean {
-    if (this.isPrefetchCompatibilityError(error)) {
-      return true;
-    }
-
-    if (!error || typeof error !== "object") {
-      return false;
-    }
-
-    const axiosError = error as AxiosError<unknown>;
-    return axiosError.response?.status === 500;
+    return this.isPrefetchCompatibilityError(error);
   }
 
   private isPrefetchCompatibilityError(error: unknown): boolean {
@@ -1065,46 +1076,21 @@ export class Crawl4aiClient {
   }
 
   private resolveBrowserProxy(options: CrawlTaskOptions) {
-    const directProxyConfig = this.resolveProxyConfig(options);
-    const directProxyUrl = this.resolveProxyUrl(options);
     const ssrfProxyUrl = this.normalizeSsrfProxyUrl(
       this.env.crawl4aiConfig.ssrfProxyUrl,
     );
 
-    if (!ssrfProxyUrl) {
-      return {
-        proxy: directProxyUrl,
-        proxyConfig: directProxyConfig,
-      };
-    }
-
-    const encodedUpstream = this.encodeSsrfProxyUpstream(
-      directProxyConfig ??
-        (directProxyUrl ? { server: directProxyUrl } : undefined),
-    );
-
     return {
-      proxy: undefined,
-      proxyConfig: this.compact({
-        server: ssrfProxyUrl,
-        username: encodedUpstream
-          ? CRAWL4AI_SSRF_PROXY_AUTH_USER
-          : undefined,
-        password: encodedUpstream,
-      }),
+      proxy: ssrfProxyUrl ?? this.resolveProxyUrl(options),
+      proxyConfig: ssrfProxyUrl
+        ? undefined
+        : this.resolveProxyConfig(options),
     };
   }
 
   private normalizeSsrfProxyUrl(proxyUrl?: string) {
     const normalized = proxyUrl?.trim();
     return normalized && /^https?:\/\//i.test(normalized) ? normalized : undefined;
-  }
-
-  private encodeSsrfProxyUpstream(proxyConfig?: CrawlProxyConfig) {
-    if (!proxyConfig) {
-      return undefined;
-    }
-    return Buffer.from(JSON.stringify(proxyConfig), "utf8").toString("base64url");
   }
 
   private buildMarkdownGenerator(options: CrawlTaskOptions) {

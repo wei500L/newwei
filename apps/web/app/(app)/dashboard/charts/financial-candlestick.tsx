@@ -57,33 +57,23 @@ export function FinancialCandlestick() {
   const { range, start, end } = useDashboardRangeStore();
   const theme = useChartTheme();
   const { exporting: exportingCsv, label: csvLabel, exportCsv } = useCsvExport();
-  const emptyTitle = t("dashboard.dataEmpty", { defaultValue: "No data" });
-  const emptyHint = t("dashboard.candlestick.emptyHintRefresh", {
-    defaultValue: "No data for the selected range. Try expanding the range or refresh the data."
-  });
-  const rangeLabel = t("dashboard.charts.rangeLabel", { defaultValue: "Range" });
-  const windowLabelText = t("dashboard.charts.windowLabel", { defaultValue: "Window" });
-  const intervalLabel = t("dashboard.candlestick.interval", { defaultValue: "Interval" });
-  const bucketLabelText = t("dashboard.candlestick.bucket", { defaultValue: "Bucket" });
-  const openLabel = t("dashboard.candlestick.open", { defaultValue: "Open" });
-  const highLabel = t("dashboard.candlestick.high", { defaultValue: "High" });
-  const lowLabel = t("dashboard.candlestick.low", { defaultValue: "Low" });
-  const closeLabel = t("dashboard.candlestick.close", { defaultValue: "Close" });
-  const changeLabel = t("dashboard.candlestick.change", { defaultValue: "Change" });
-  const sessionRangeLabel = t("dashboard.candlestick.sessionRange", {
-    defaultValue: "Session range"
-  });
-  const timestampLabel = t("dashboard.candlestick.timestamp", { defaultValue: "Timestamp" });
-  const volumeLabel = t("dashboard.candlestick.volume", { defaultValue: "Volume" });
-  const latestCloseLabelText = t("dashboard.candlestick.latestClose", {
-    defaultValue: "Latest close"
-  });
-  const windowChangeLabelText = t("dashboard.candlestick.windowChange", {
-    defaultValue: "Window change"
-  });
-  const notAvailableShort = t("dashboard.candlestick.notAvailableShort", {
-    defaultValue: "N/A"
-  });
+  const emptyTitle = t("dashboard.dataEmpty");
+  const emptyHint = t("dashboard.candlestick.emptyHintRefresh");
+  const rangeLabel = t("dashboard.charts.rangeLabel");
+  const windowLabelText = t("dashboard.charts.windowLabel");
+  const intervalLabel = t("dashboard.candlestick.interval");
+  const bucketLabelText = t("dashboard.candlestick.bucket");
+  const openLabel = t("dashboard.candlestick.open");
+  const highLabel = t("dashboard.candlestick.high");
+  const lowLabel = t("dashboard.candlestick.low");
+  const closeLabel = t("dashboard.candlestick.close");
+  const changeLabel = t("dashboard.candlestick.change");
+  const sessionRangeLabel = t("dashboard.candlestick.sessionRange");
+  const timestampLabel = t("dashboard.candlestick.timestamp");
+  const volumeLabel = t("dashboard.candlestick.volume");
+  const latestCloseLabelText = t("dashboard.candlestick.latestClose");
+  const windowChangeLabelText = t("dashboard.candlestick.windowChange");
+  const notAvailableShort = t("dashboard.candlestick.notAvailableShort");
   const startLabel = formatDateForFilename(start);
   const endLabel = formatDateForFilename(end);
   const windowLabel = `${startLabel} - ${endLabel}`;
@@ -158,13 +148,11 @@ export function FinancialCandlestick() {
     if (!updatedAtLabel) return null;
     if (data?.skippedIncompleteCount) {
       return t("dashboard.candlestick.latestComplete", {
-        time: updatedAtLabel,
-        defaultValue: "Latest complete: {{time}}"
+        time: updatedAtLabel
       });
     }
     return t("dashboard.updatedAt", {
-      time: updatedAtLabel,
-      defaultValue: "Updated: {{time}}"
+      time: updatedAtLabel
     });
   }, [data?.skippedIncompleteCount, t, updatedAtLabel]);
 
@@ -472,9 +460,7 @@ export function FinancialCandlestick() {
         void refreshCandles();
       },
       actionLoading: refreshingCandles,
-      actionLabelOverride: t("dashboard.actions.retryFetch", {
-        defaultValue: "Retry fetch"
-      }),
+      actionLabelOverride: t("dashboard.actions.retryFetch"),
     });
     return (
       <div className="h-[350px] transition-all duration-300">
@@ -486,30 +472,21 @@ export function FinancialCandlestick() {
   if (!data || normalizedPoints.length === 0) {
     const awaitingCompleteCandle = Boolean(data?.skippedIncompleteCount);
     const emptyStateTitle = awaitingCompleteCandle
-      ? t("dashboard.candlestick.awaitingCompleteTitle", {
-          defaultValue: "Awaiting complete candle"
-        })
+      ? t("dashboard.candlestick.awaitingCompleteTitle")
       : emptyTitle;
     const emptyStateDescription = awaitingCompleteCandle
       ? latestObservedAtLabel
         ? t("dashboard.candlestick.awaitingCompleteDescriptionWithTime", {
-            time: latestObservedAtLabel,
-            defaultValue:
-              "Latest observed data at {{time}} is still in progress, so no complete candle can be shown yet. Try again shortly."
+            time: latestObservedAtLabel
           })
-        : t("dashboard.candlestick.awaitingCompleteDescription", {
-            defaultValue:
-              "The latest observation is still in progress, so no complete candle can be shown yet. Try again shortly."
-          })
+        : t("dashboard.candlestick.awaitingCompleteDescription")
       : emptyHint;
     return (
       <div className="h-[350px] transition-all duration-300">
         <ChartEmptyState
           title={emptyStateTitle}
           description={emptyStateDescription}
-          actionLabel={t("dashboard.actions.fetchLatest", {
-            defaultValue: "Pull latest data"
-          })}
+          actionLabel={t("dashboard.actions.fetchLatest")}
           actionLoading={refreshingCandles}
           onAction={() => {
             void refreshCandles();
@@ -533,8 +510,7 @@ export function FinancialCandlestick() {
         </Tag>
         <Tag color="default" className="text-xs">
           {t("dashboard.candlestick.candlesCount", {
-            count: normalizedPoints.length,
-            defaultValue: "Candles: {{count}}"
+            count: normalizedPoints.length
           })}
         </Tag>
         {summaryMetrics?.latestCloseText ? (
@@ -555,16 +531,14 @@ export function FinancialCandlestick() {
         {latestObservedAtLabel && data?.skippedIncompleteCount ? (
           <Tag color="processing" className="text-xs">
             {t("dashboard.candlestick.observedThrough", {
-              time: latestObservedAtLabel,
-              defaultValue: "Observed through: {{time}}"
+              time: latestObservedAtLabel
             })}
           </Tag>
         ) : null}
         {data?.skippedIncompleteCount ? (
           <Tag color="orange" className="text-xs">
             {t("dashboard.candlestick.inProgressOmitted", {
-              count: data.skippedIncompleteCount,
-              defaultValue: "In-progress candles omitted: {{count}}"
+              count: data.skippedIncompleteCount
             })}
           </Tag>
         ) : null}

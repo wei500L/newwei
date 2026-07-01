@@ -9,7 +9,13 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-export const CONTENT_SUBSCRIPTION_KIND_VALUES = ['topic', 'entity'] as const;
+export const CONTENT_SUBSCRIPTION_KIND_VALUES = [
+  'topic',
+  'entity',
+  'source',
+  'keyword',
+  'geo',
+] as const;
 export const CONTENT_SUBSCRIPTION_SOURCE_VALUES = [
   'manual',
   'recommendation',

@@ -2,7 +2,7 @@ import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 
 export interface NewsnowRealtimeEvent {
-  orgId?: string;
+  orgId: string;
   sourceId: string;
   newItemsCount: number;
   topTitles: string[];
@@ -28,8 +28,18 @@ export class NewsnowRealtimeDispatcher {
   async publish(
     event: Omit<NewsnowRealtimeEvent, "timestamp">,
   ) {
+    const orgId = typeof event.orgId === "string" ? event.orgId.trim() : "";
+    if (!orgId) {
+      this.logger.warn(
+        { sourceId: event.sourceId },
+        "Dropped NewsNow realtime event without orgId",
+      );
+      return;
+    }
+
     const payload: NewsnowRealtimeEvent = {
       ...event,
+      orgId,
       timestamp: new Date().toISOString(),
     };
     for (const listener of this.listeners) {

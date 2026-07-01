@@ -7,12 +7,12 @@ import { safeJsonParseFromText } from "../../common/llm-json";
 import { LiteLlmService } from "../news-pipeline/litellm.service";
 import type { JsonSchemaResponseFormat } from "../news-pipeline/news-prompt.builder";
 
+import { resolveEffectiveLlmAssistConfig } from "./crawl-frontier.utils";
 import type {
   CrawlFrontierPageType,
   CrawlSiteProfileConfig,
   CrawlSiteProfileRecord,
 } from "./crawl.types";
-import { resolveEffectiveLlmAssistConfig } from "./crawl-frontier.utils";
 
 export interface FrontierLlmCandidate {
   url: string;
@@ -199,7 +199,7 @@ function clamp01(value: number, fallback = 0): number {
   return Math.max(0, Math.min(1, Number(value.toFixed(4))));
 }
 
-function uniqueStringList(...lists: Array<string[] | undefined>): string[] | undefined {
+function uniqueStringList(...lists: (string[] | undefined)[]): string[] | undefined {
   const merged = Array.from(
     new Set(
       lists.flatMap((list) =>
@@ -213,7 +213,7 @@ function uniqueStringList(...lists: Array<string[] | undefined>): string[] | und
 }
 
 function parseCompletionJson<T>(
-  value: { choices?: Array<{ message?: { content?: string | null } }> },
+  value: { choices?: { message?: { content?: string | null } }[] },
   schema: z.ZodType<T>,
 ): T | null {
   const text = (value.choices ?? [])
@@ -528,14 +528,14 @@ export class CrawlFrontierLlmService {
       metadata?: Record<string, unknown> | null;
     };
     profile: CrawlSiteProfileRecord;
-    nodes: Array<{
+    nodes: {
       url: string;
       pageType: CrawlFrontierPageType;
       status: string;
       score?: number | null;
       freshnessScore?: number | null;
       metadata?: Record<string, unknown> | null;
-    }>;
+    }[];
   }): Promise<FrontierProfileLearningSuggestion | null> {
     const llmAssist = resolveEffectiveLlmAssistConfig(
       options.profile.config,
@@ -733,14 +733,14 @@ export class CrawlFrontierLlmService {
       metadata?: Record<string, unknown> | null;
     };
     profile: CrawlSiteProfileRecord;
-    nodes: Array<{
+    nodes: {
       url: string;
       pageType: CrawlFrontierPageType;
       status: string;
       score?: number | null;
       freshnessScore?: number | null;
       metadata?: Record<string, unknown> | null;
-    }>;
+    }[];
   }): Record<string, unknown> {
     const topArticles = options.nodes
       .filter((node) => node.pageType === "article")

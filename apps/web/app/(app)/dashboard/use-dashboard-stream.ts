@@ -94,6 +94,7 @@ export interface DashboardStreamOptions {
 }
 
 const MAX_RECONNECT_DELAY_MS = 30_000;
+const DASHBOARD_STREAM_CONNECT_TIMEOUT_MS = 10_000;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -714,6 +715,14 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
 
       const controller = new AbortController();
       abortRef.current = controller;
+      let didConnectTimeout = false;
+      const connectTimeoutId = window.setTimeout(() => {
+        if (abortRef.current !== controller || controller.signal.aborted) {
+          return;
+        }
+        didConnectTimeout = true;
+        controller.abort();
+      }, DASHBOARD_STREAM_CONNECT_TIMEOUT_MS);
 
       try {
         const response = await fetch(
@@ -739,6 +748,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
           signal: controller.signal,
           },
         );
+        window.clearTimeout(connectTimeoutId);
 
         if (!response.ok || !response.body) {
           if (response.status === 401) {
@@ -808,10 +818,17 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         dispatchEvent();
         handleError('Dashboard stream disconnected');
       } catch (error) {
+        window.clearTimeout(connectTimeoutId);
         if (!active) return;
-        if (error instanceof Error && error.name === 'AbortError') return;
+        if (error instanceof Error && error.name === 'AbortError') {
+          if (didConnectTimeout) {
+            handleError('Dashboard stream connection timed out');
+          }
+          return;
+        }
         handleError(resolveErrorMessage(error));
       } finally {
+        window.clearTimeout(connectTimeoutId);
         connecting = false;
         if (readerRef.current) {
           void readerRef.current.cancel().catch(() => null);

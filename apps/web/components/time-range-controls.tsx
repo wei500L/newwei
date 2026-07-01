@@ -71,13 +71,13 @@ export function TimeRangeControls({
     : null;
 
   const appliedGranularityDisplayLabel = hasMixedGranularity
-    ? `${t("dashboard.timeRange.mixed", { defaultValue: "Mixed" })} (${formatGranularityLabelLocalized(
+    ? `${t("dashboard.timeRange.mixed")} (${formatGranularityLabelLocalized(
         mixedFinest!,
         t,
       )}-${formatGranularityLabelLocalized(mixedCoarsest!, t)})`
     : appliedGranularityLabel;
 
-  const aggregationLabel = t("dashboard.timeRange.aggregation", { defaultValue: "Aggregation" });
+  const aggregationLabel = t("dashboard.timeRange.aggregation");
   const hasResolvedGranularity = Boolean(resolvedAppliedGranularity || hasMixedGranularity);
   const showAggregationLoading =
     loading && backendGranularityEnabled && !hasResolvedGranularity;
@@ -91,24 +91,16 @@ export function TimeRangeControls({
     hasResolvedGranularity
       ? `${aggregationLabel}: ${appliedGranularityDisplayLabel}`
       : showAggregationLoading
-        ? `${aggregationLabel}: ${t("common.loading", { defaultValue: "Loading..." })}`
-        : `${aggregationLabel}: ${t("common.notAvailable", { defaultValue: "Not available" })}`;
+        ? `${aggregationLabel}: ${t("common.loading")}`
+        : `${aggregationLabel}: ${t("common.notAvailable")}`;
 
   const aggregationHint = backendGranularityEnabled
     ? hasResolvedGranularity
-      ? t("dashboard.timeRange.aggregationHintBackend", {
-          defaultValue: "Aggregation is reported by the backend."
-        })
+      ? t("dashboard.timeRange.aggregationHintBackend")
       : showAggregationLoading
-        ? t("dashboard.timeRange.aggregationHintPending", {
-            defaultValue: "Waiting for backend to report aggregation granularity."
-          })
-        : t("dashboard.timeRange.aggregationHintUnavailable", {
-            defaultValue: "No aggregation granularity is available for the current data window."
-          })
-    : t("dashboard.timeRange.aggregationHintUnavailable", {
-        defaultValue: "This view does not report aggregation granularity."
-      });
+        ? t("dashboard.timeRange.aggregationHintPending")
+        : t("dashboard.timeRange.aggregationHintUnavailable")
+    : t("dashboard.timeRange.aggregationHintUnavailable");
 
   const handlePresetChange = (value: SegmentedValue) => {
     setRange(value as DashboardRangePreset);
@@ -152,9 +144,7 @@ export function TimeRangeControls({
           </Tag>
         </Tooltip>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {t("dashboard.timeRange.helperText", {
-            defaultValue: "Time range affects chart granularity and tooltips."
-          })}
+          {t("dashboard.timeRange.helperText")}
         </Typography.Text>
       </Space>
     </Space>

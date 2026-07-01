@@ -44,13 +44,18 @@ import {
 import { useTranslation } from "react-i18next";
 import { io, type Socket } from "socket.io-client";
 
-import { Crawl4aiHealthCard } from "@/app/(app)/crawl/components/Crawl4aiHealthCard";
 import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
+import { Crawl4aiHealthCard } from "@/app/(app)/crawl/components/Crawl4aiHealthCard";
 import { CreateCrawlTaskDrawer } from "@/app/(app)/crawl/components/CreateCrawlTaskDrawer";
 import type { CreateCrawlTaskFormValues } from "@/app/(app)/crawl/types";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { applyAutoBrowserHeadersToCrawlOptions } from "@/lib/crawl-browser-headers";
+import {
+  findUnsupportedProxyIssues,
+  getCrawlConfigPolicyIssueTranslationKey,
+  type CrawlConfigPolicyIssue,
+} from "@/lib/crawl-config-policy";
 import { normalizeHeadlessModeFormValues } from "@/lib/crawl-headless-mode";
 import {
   buildNewsSourceCloudflarePresetValues,
@@ -59,6 +64,7 @@ import {
 import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { resolveRssAdaptiveListUiModel } from "@/lib/news-source-rss-adaptive-ui";
+import { formatRealtimeSocketError } from "@/lib/realtime-socket-errors";
 import {
   buildSeedConfigFromFormValues,
   type SeedSchedulerRuntimeSettings,
@@ -115,6 +121,8 @@ interface NewsSourceListResponse {
   page: number;
   pageSize: number;
 }
+
+const REALTIME_SOCKET_TIMEOUT_MS = 10_000;
 
 interface NewsSourceRecord {
   id: string;
@@ -182,6 +190,20 @@ interface NewsSourceReadinessSummary {
   inactive: number;
   circuitOpen: number;
   failing: number;
+}
+
+interface CrawlQualitySampleCounts {
+  markdownCount: number;
+  expansionTriggeredTaskCount: number;
+  headSignalAttemptedCount: number;
+  preflightRunCount: number;
+  dedupeEvaluatedCount: number;
+}
+
+interface RefreshAllOptions {
+  silent?: boolean;
+  includeQueue?: boolean;
+  includeQuality?: boolean;
 }
 
 function mapNewsSourceRecord(record: NewsSourceApiRecord): NewsSourceRecord {
@@ -296,7 +318,10 @@ interface Crawl4aiQueueStats {
 interface Crawl4aiQualitySourceMetric {
   sourceId: string;
   taskCount: number;
+  sampleCounts?: CrawlQualitySampleCounts;
   lowSignalRatio: number;
+  emptyMarkdownRate: number;
+  expansionTriggerRate: number;
   expansionSuccessRate: number;
   avgMarkdownChars: number;
   candidateRejects?: {
@@ -325,6 +350,7 @@ interface Crawl4aiQualitySnapshot {
   from: string;
   to: string;
   taskCount: number;
+  sampleCounts?: CrawlQualitySampleCounts;
   lowSignalRatio: number;
   emptyMarkdownRate: number;
   expansionTriggerRate: number;
@@ -476,8 +502,6 @@ interface NewsSourceFormValues {
   tags?: string;
   summaryHints?: string;
   metadataJson?: string;
-  crawlProxyMode?: "auto" | "enable" | "disable";
-  crawlProxyUrl?: string;
   crawlScanMode?: "default" | "full_page" | "virtual_scroll";
   crawlScrollDelayMs?: number;
   crawlVirtualScrollContainerSelector?: string;
@@ -559,8 +583,6 @@ const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
   seedRssBodySourceStrategy: DEFAULT_SEED_FORM_VALUES.seedRssBodySourceStrategy,
   seedRssNoBodyPolicy: DEFAULT_SEED_FORM_VALUES.seedRssNoBodyPolicy,
   seedQuery: "",
-  crawlProxyMode: "auto",
-  crawlProxyUrl: "",
   crawlScanMode: "default",
   crawlScrollDelayMs: undefined,
   crawlVirtualScrollContainerSelector: "",
@@ -717,7 +739,6 @@ const DISALLOWED_CRAWL4AI_LLM_NORMALIZED_KEYS = new Set([
   "extractionstrategy",
   "llmconfig",
 ]);
-const LOCAL_PROXY_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 const normalizeLooseKey = (key: string) =>
   key.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -757,25 +778,18 @@ const findDisallowedCrawl4aiLlmKeys = (
   return hits;
 };
 
-const translateLocalProxyToDockerHost = (value: string) => {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return trimmed;
-  }
-  try {
-    const parsed = new URL(trimmed);
-    const hostname = parsed.hostname.toLowerCase();
-    if (!LOCAL_PROXY_HOSTS.has(hostname)) {
-      return trimmed;
-    }
-    parsed.hostname = "host.docker.internal";
-    const hadNoPath = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/]+$/.test(trimmed);
-    const next = parsed.toString();
-    return hadNoPath && next.endsWith("/") ? next.slice(0, -1) : next;
-  } catch {
-    return trimmed;
-  }
-};
+const formatPolicyIssues = (
+  issues: CrawlConfigPolicyIssue[],
+  t: ReturnType<typeof useTranslation>["t"],
+) =>
+  issues
+    .map(
+      (issue) =>
+        `${issue.path}: ${t(getCrawlConfigPolicyIssueTranslationKey(issue.code), {
+          defaultValue: issue.code,
+        })}`,
+    )
+    .join(", ");
 
 const hasSeedConfig = (
   config: unknown,
@@ -855,17 +869,13 @@ const getCrawlStrategyTags = (
     tags.push({
       key: "scanMode",
       color: "cyan",
-      label: t("newsSources.scanMode.virtualScroll", {
-        defaultValue: "Virtual scroll",
-      }),
+      label: t("newsSources.scanMode.virtualScroll"),
     });
   } else if (crawlOptions.scanFullPage === true) {
     tags.push({
       key: "scanMode",
       color: "blue",
-      label: t("newsSources.scanMode.fullPage", {
-        defaultValue: "Full-page scanning",
-      }),
+      label: t("newsSources.scanMode.fullPage"),
     });
   }
 
@@ -927,17 +937,13 @@ const getCrawlStrategyTags = (
     tags.push({
       key: "antiBotMode",
       color: "volcano",
-      label: t("newsSources.tags.antiBotEnabled", {
-        defaultValue: "Anti-bot retry enabled",
-      }),
+      label: t("newsSources.tags.antiBotEnabled"),
     });
   } else if (antiBotMode === "disabled") {
     tags.push({
       key: "antiBotMode",
       color: "default",
-      label: t("newsSources.tags.antiBotDisabled", {
-        defaultValue: "Anti-bot retry disabled",
-      }),
+      label: t("newsSources.tags.antiBotDisabled"),
     });
   }
 
@@ -1034,6 +1040,20 @@ const DEFAULT_CRAWL_QUALITY_HIGH_ORG_HASH_DEDUPE_RATE_THRESHOLD = 0.3;
 const DEFAULT_CRAWL_QUALITY_PREFLIGHT_FAILURE_RATE_THRESHOLD = 0.15;
 const normalizeRateValue = (value: number | undefined): number =>
   typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
+const normalizeCountValue = (value: number | undefined): number =>
+  typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
+
+type CrawlQualitySampleMetric =
+  | "markdownCount"
+  | "expansionTriggeredTaskCount"
+  | "headSignalAttemptedCount"
+  | "preflightRunCount"
+  | "dedupeEvaluatedCount";
+
+const getSampleCount = (
+  sampleCounts: CrawlQualitySampleCounts | undefined,
+  key: CrawlQualitySampleMetric,
+): number => normalizeCountValue(sampleCounts?.[key]);
 
 export function NewsSourcesContent() {
   const { t, i18n } = useTranslation();
@@ -1151,6 +1171,10 @@ export function NewsSourcesContent() {
   const liveRefreshTimerRef = useRef<number | null>(null);
   const liveSocketRef = useRef<Socket | null>(null);
   const liveUiBusyRef = useRef(false);
+  const visibleSourceIdSetRef = useRef<Set<string>>(new Set());
+  const refreshAllRef = useRef<((options?: RefreshAllOptions) => Promise<void>) | null>(
+    null,
+  );
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const refreshRef = useRef(false);
   const pendingRefreshRef = useRef<{
@@ -1247,16 +1271,29 @@ export function NewsSourcesContent() {
     const orgHashDedupeHitRate = normalizeRateValue(
       crawlQualityStats.orgHashDedupeHitRate,
     );
+    const preflightRunCount = getSampleCount(
+      crawlQualityStats.sampleCounts,
+      "preflightRunCount",
+    );
+    const dedupeEvaluatedCount = getSampleCount(
+      crawlQualityStats.sampleCounts,
+      "dedupeEvaluatedCount",
+    );
 
     return {
       preflightFailureRate,
       http304HitRate,
       orgHashDedupeHitRate,
+      preflightRunCount,
+      dedupeEvaluatedCount,
       preflightFailureBreached:
+        preflightRunCount > 0 &&
         preflightFailureRate >= crawlQualityThresholds.preflightFailureRateHigh,
       http304Breached:
+        preflightRunCount > 0 &&
         http304HitRate <= crawlQualityThresholds.http304HitRateLow,
       orgHashDedupeBreached:
+        dedupeEvaluatedCount > 0 &&
         orgHashDedupeHitRate >= crawlQualityThresholds.orgHashDedupeHitRateHigh,
     };
   }, [crawlQualityStats, crawlQualityThresholds]);
@@ -1271,9 +1308,13 @@ export function NewsSourcesContent() {
     const resolveExtremeSource = (
       selector: (entry: Crawl4aiQualitySourceMetric) => number | undefined,
       direction: "high" | "low",
+      sampleSelector?: (entry: Crawl4aiQualitySourceMetric) => number,
     ) => {
       let best: { sourceId: string; rate: number } | null = null;
       for (const entry of grouped) {
+        if (sampleSelector && sampleSelector(entry) <= 0) {
+          continue;
+        }
         const value = selector(entry);
         const rate =
           typeof value === "number" && Number.isFinite(value)
@@ -1311,7 +1352,13 @@ export function NewsSourcesContent() {
       threshold: number,
       rawRate: number | undefined,
       selector: (entry: Crawl4aiQualitySourceMetric) => number | undefined,
+      sampleCountRaw?: number,
+      sampleSelector?: (entry: Crawl4aiQualitySourceMetric) => number,
     ) => {
+      const sampleCount = normalizeCountValue(sampleCountRaw);
+      if (sampleCount <= 0) {
+        return;
+      }
       const overallRate =
         typeof rawRate === "number" && Number.isFinite(rawRate)
           ? Math.max(0, rawRate)
@@ -1324,7 +1371,7 @@ export function NewsSourcesContent() {
         direction: "high",
         threshold,
         overallRate,
-        extremeSource: resolveExtremeSource(selector, "high"),
+        extremeSource: resolveExtremeSource(selector, "high", sampleSelector),
       });
     };
     const pushLowAlert = (
@@ -1332,7 +1379,13 @@ export function NewsSourcesContent() {
       threshold: number,
       rawRate: number | undefined,
       selector: (entry: Crawl4aiQualitySourceMetric) => number | undefined,
+      sampleCountRaw?: number,
+      sampleSelector?: (entry: Crawl4aiQualitySourceMetric) => number,
     ) => {
+      const sampleCount = normalizeCountValue(sampleCountRaw);
+      if (sampleCount <= 0) {
+        return;
+      }
       const overallRate =
         typeof rawRate === "number" && Number.isFinite(rawRate)
           ? Math.max(0, rawRate)
@@ -1345,7 +1398,7 @@ export function NewsSourcesContent() {
         direction: "low",
         threshold,
         overallRate,
-        extremeSource: resolveExtremeSource(selector, "low"),
+        extremeSource: resolveExtremeSource(selector, "low", sampleSelector),
       });
     };
     pushHighAlert(
@@ -1353,36 +1406,48 @@ export function NewsSourcesContent() {
       CRAWL_QUALITY_ALERT_RATE_THRESHOLD,
       crawlQualityStats.headSignalSoftFailureRate,
       (entry) => entry.headSignalSoftFailureRate,
+      getSampleCount(crawlQualityStats.sampleCounts, "headSignalAttemptedCount"),
+      (entry) => getSampleCount(entry.sampleCounts, "headSignalAttemptedCount"),
     );
     pushHighAlert(
       "truncated",
       CRAWL_QUALITY_ALERT_RATE_THRESHOLD,
       crawlQualityStats.headSignalTruncatedRate,
       (entry) => entry.headSignalTruncatedRate,
+      getSampleCount(crawlQualityStats.sampleCounts, "headSignalAttemptedCount"),
+      (entry) => getSampleCount(entry.sampleCounts, "headSignalAttemptedCount"),
     );
     pushHighAlert(
       "noPublishSignal",
       CRAWL_QUALITY_ALERT_RATE_THRESHOLD,
       crawlQualityStats.headSignalNoPublishSignalRate,
       (entry) => entry.headSignalNoPublishSignalRate,
+      getSampleCount(crawlQualityStats.sampleCounts, "headSignalAttemptedCount"),
+      (entry) => getSampleCount(entry.sampleCounts, "headSignalAttemptedCount"),
     );
     pushHighAlert(
       "preflightFailure",
       crawlQualityThresholds.preflightFailureRateHigh,
       crawlQualityStats.preflightFailureRate,
       (entry) => entry.preflightFailureRate,
+      getSampleCount(crawlQualityStats.sampleCounts, "preflightRunCount"),
+      (entry) => getSampleCount(entry.sampleCounts, "preflightRunCount"),
     );
     pushHighAlert(
       "orgHashDedupeHigh",
       crawlQualityThresholds.orgHashDedupeHitRateHigh,
       crawlQualityStats.orgHashDedupeHitRate,
       (entry) => entry.orgHashDedupeHitRate,
+      getSampleCount(crawlQualityStats.sampleCounts, "dedupeEvaluatedCount"),
+      (entry) => getSampleCount(entry.sampleCounts, "dedupeEvaluatedCount"),
     );
     pushLowAlert(
       "http304Low",
       crawlQualityThresholds.http304HitRateLow,
       crawlQualityStats.http304HitRate,
       (entry) => entry.http304HitRate,
+      getSampleCount(crawlQualityStats.sampleCounts, "preflightRunCount"),
+      (entry) => getSampleCount(entry.sampleCounts, "preflightRunCount"),
     );
     return alerts;
   }, [crawlQualityStats, crawlQualityThresholds]);
@@ -1395,6 +1460,10 @@ export function NewsSourcesContent() {
   useEffect(() => {
     liveRefreshSourcesRef.current = liveRefreshSources;
   }, [liveRefreshSources]);
+
+  useEffect(() => {
+    visibleSourceIdSetRef.current = visibleSourceIdSet;
+  }, [visibleSourceIdSet]);
 
   const loadSources = useCallback(
     async (options?: {
@@ -1444,9 +1513,7 @@ export function NewsSourcesContent() {
         captureClientError("Failed to load news sources", error);
         if (!silent) {
           messageApi.error(
-            t("newsSources.errors.loadFailed", {
-              defaultValue: "Failed to load news sources.",
-            }),
+            t("newsSources.errors.loadFailed"),
           );
         }
         return false;
@@ -1542,9 +1609,7 @@ export function NewsSourcesContent() {
         );
         setReadinessSummary(null);
         setReadinessError(
-          t("newsSources.readiness.loadFailed", {
-            defaultValue: "Failed to load readiness summary.",
-          }),
+          t("newsSources.readiness.loadFailed"),
         );
       } finally {
         if (!silent) {
@@ -1631,9 +1696,7 @@ export function NewsSourcesContent() {
       captureClientError("Failed to load OPML presets", error);
       messageApi.error(
         extractApiErrorMessage(error) ??
-          t("newsSources.opml.errors.loadPresets", {
-            defaultValue: "Failed to load OPML presets.",
-          }),
+          t("newsSources.opml.errors.loadPresets"),
       );
     } finally {
       setOpmlLoadingPresets(false);
@@ -1705,11 +1768,7 @@ export function NewsSourcesContent() {
   );
 
   const refreshAll = useCallback(
-    async (options?: {
-      silent?: boolean;
-      includeQueue?: boolean;
-      includeQuality?: boolean;
-    }) => {
+    async (options?: RefreshAllOptions) => {
       const silent = options?.silent === true;
       const includeQueue = options?.includeQueue !== false;
       const includeQuality = options?.includeQuality !== false;
@@ -1755,6 +1814,10 @@ export function NewsSourcesContent() {
       loadSources,
     ],
   );
+
+  useEffect(() => {
+    refreshAllRef.current = refreshAll;
+  }, [refreshAll]);
 
   useEffect(() => {
     if (canView) {
@@ -1892,13 +1955,13 @@ export function NewsSourcesContent() {
       if (liveUiBusyRef.current) {
         return;
       }
-      void refreshAll({
+      void refreshAllRef.current?.({
         silent: true,
         includeQueue: false,
         includeQuality: false,
       });
     }, 1200);
-  }, [refreshAll]);
+  }, []);
 
   const resetLiveCounters = useCallback(() => {
     setLiveEventCount(0);
@@ -1918,27 +1981,68 @@ export function NewsSourcesContent() {
     const socket = io(`${env.apiRoot}/ops`, {
       auth: { token: session.accessToken },
       transports: ["websocket"],
+      withCredentials: true,
+      autoConnect: false,
+      timeout: REALTIME_SOCKET_TIMEOUT_MS,
     });
 
     liveSocketRef.current = socket;
+    const connectTimer = window.setTimeout(() => {
+      socket.connect();
+    }, 0);
 
     const handleConnect = () => {
       setLiveStatus("connected");
       setLiveError(null);
-      void refreshAll({ silent: true });
+      void refreshAllRef.current?.({ silent: true });
     };
     const handleDisconnect = () => setLiveStatus("disconnected");
-    const handleConnectError = (error: Error) => {
+    const getLocalizedError = (
+      payload:
+        | { code?: string; message?: string; retryAfterMs?: number }
+        | undefined,
+      fallbackKind: "socket" | "connect",
+    ) =>
+      formatRealtimeSocketError(payload, t, {
+        keyPrefix: "newsSources.liveUpdates.connectionError",
+        fallbackKind,
+        defaults: {
+          unauthorized:
+            "News source realtime access expired. Please sign in again.",
+          tooManyConnections:
+            "News source realtime connections are at capacity. Please try again later.",
+          tooManyConnectionAttempts:
+            "Too many news source realtime connection attempts. Please try again later.",
+          rateLimitExceeded:
+            "News source realtime connection attempts are too frequent. Please try again later.",
+          tooManyFailedAttempts:
+            "Too many failed news source realtime sign-in attempts. Please try again later.",
+          timeout:
+            "Connecting to news source realtime timed out. Please try again.",
+          network:
+            "Unable to connect to news source realtime. Please check the network and try again.",
+          connect:
+            "Unable to connect to news source realtime right now. Please try again later.",
+          socket:
+            "News source realtime connection is unstable. Please try again later.",
+        },
+      });
+    const handleConnectError = (
+      error: { code?: string; message?: string; retryAfterMs?: number },
+    ) => {
       setLiveStatus("disconnected");
-      setLiveError(error.message);
+      setLiveError(getLocalizedError(error, "connect"));
     };
     const handleServerError = (payload: unknown) => {
-      if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-        const message = (payload as { message?: unknown }).message;
-        if (typeof message === "string" && message.trim()) {
-          setLiveError(message.trim());
-        }
-      }
+      const candidate =
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? (payload as {
+              code?: string;
+              message?: string;
+              retryAfterMs?: number;
+            })
+          : undefined;
+      setLiveError(getLocalizedError(candidate, "socket"));
     };
     const handleEvent = (payload: unknown) => {
       if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -1973,7 +2077,7 @@ export function NewsSourcesContent() {
       const isPageScopedSource = source === "pipeline" || source === "crawl";
       if (
         isPageScopedSource &&
-        (!sourceId || !visibleSourceIdSet.has(sourceId))
+        (!sourceId || !visibleSourceIdSetRef.current.has(sourceId))
       ) {
         return;
       }
@@ -1990,6 +2094,7 @@ export function NewsSourcesContent() {
     socket.on("ops:event", handleEvent);
 
     return () => {
+      window.clearTimeout(connectTimer);
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
       socket.off("connect_error", handleConnectError);
@@ -2008,10 +2113,8 @@ export function NewsSourcesContent() {
   }, [
     canView,
     liveUpdatesEnabled,
-    refreshAll,
-    scheduleLiveRefresh,
     session?.accessToken,
-    visibleSourceIdSet,
+    scheduleLiveRefresh,
   ]);
 
   useEffect(() => {
@@ -2042,27 +2145,27 @@ export function NewsSourcesContent() {
   const siteTypeOptions = [
     {
       value: "general",
-      label: t("newsSources.types.general", { defaultValue: "General" }),
+      label: t("newsSources.types.general"),
     },
     {
       value: "finance",
-      label: t("newsSources.types.finance", { defaultValue: "Finance" }),
+      label: t("newsSources.types.finance"),
     },
     {
       value: "technology",
-      label: t("newsSources.types.technology", { defaultValue: "Technology" }),
+      label: t("newsSources.types.technology"),
     },
     {
       value: "politics",
-      label: t("newsSources.types.politics", { defaultValue: "Politics" }),
+      label: t("newsSources.types.politics"),
     },
     {
       value: "regulatory",
-      label: t("newsSources.types.regulatory", { defaultValue: "Regulatory" }),
+      label: t("newsSources.types.regulatory"),
     },
     {
       value: "other",
-      label: t("newsSources.types.other", { defaultValue: "Other" }),
+      label: t("newsSources.types.other"),
     },
   ];
 
@@ -2088,18 +2191,14 @@ export function NewsSourcesContent() {
           <Alert
             type="error"
             showIcon
-            message={t("newsSources.liveUpdates.error", {
-              defaultValue: "Error",
-            })}
+            message={t("newsSources.liveUpdates.error")}
             description={liveError}
           />
         ) : null}
 
         <Space direction="vertical" size={4}>
           <Typography.Text type="secondary">
-            {t("newsSources.liveUpdates.details.lastEvent", {
-              defaultValue: "Last event",
-            })}
+            {t("newsSources.liveUpdates.details.lastEvent")}
           </Typography.Text>
           {liveLastEvent ? (
             <Space direction="vertical" size={2} style={{ width: "100%" }}>
@@ -2125,7 +2224,7 @@ export function NewsSourcesContent() {
             </Space>
           ) : (
             <Typography.Text type="secondary">
-              {t("common.noData", { defaultValue: "No data" })}
+              {t("common.noData")}
             </Typography.Text>
           )}
         </Space>
@@ -2134,9 +2233,7 @@ export function NewsSourcesContent() {
 
         <Space direction="vertical" size={6} style={{ width: "100%" }}>
           <Typography.Text type="secondary">
-            {t("newsSources.liveUpdates.details.refreshOn", {
-              defaultValue: "Refresh on",
-            })}
+            {t("newsSources.liveUpdates.details.refreshOn")}
           </Typography.Text>
           <Space direction="vertical" size={4} style={{ width: "100%" }}>
             {LIVE_EVENT_SOURCES.map((source) => (
@@ -2168,9 +2265,7 @@ export function NewsSourcesContent() {
           </Space>
           <Space>
             <Button size="small" onClick={resetLiveCounters}>
-              {t("newsSources.liveUpdates.details.resetCounters", {
-                defaultValue: "Reset counters",
-              })}
+              {t("newsSources.liveUpdates.details.resetCounters")}
             </Button>
           </Space>
         </Space>
@@ -2292,37 +2387,6 @@ export function NewsSourcesContent() {
         : crawlAntiBotModeRaw === "disabled"
           ? "disable"
           : "auto";
-    const proxyConfig = isPlainObject(crawlOptionsConfig?.proxyConfig)
-      ? (crawlOptionsConfig!.proxyConfig as Record<string, unknown>)
-      : null;
-    const proxyConfigServer =
-      typeof proxyConfig?.server === "string" ? proxyConfig.server.trim() : "";
-    const proxyConfigUsername =
-      typeof proxyConfig?.username === "string"
-        ? proxyConfig.username.trim()
-        : "";
-    const proxyConfigPassword =
-      typeof proxyConfig?.password === "string"
-        ? proxyConfig.password.trim()
-        : "";
-    const proxyConfigHasAuth =
-      Boolean(proxyConfigUsername) || Boolean(proxyConfigPassword);
-    const proxyUrlRaw =
-      typeof crawlOptionsConfig?.proxyUrl === "string"
-        ? crawlOptionsConfig.proxyUrl.trim()
-        : "";
-    const crawlProxyMode =
-      proxyUrlRaw.length > 0
-        ? "enable"
-        : proxyConfigServer.length > 0 && !proxyConfigHasAuth
-          ? "enable"
-          : "auto";
-    const crawlProxyUrl =
-      proxyUrlRaw.length > 0
-        ? proxyUrlRaw
-        : proxyConfigServer.length > 0 && !proxyConfigHasAuth
-          ? proxyConfigServer
-          : "";
     const virtualScrollConfig =
       crawlOptionsConfig?.virtualScroll &&
       typeof crawlOptionsConfig.virtualScroll === "object" &&
@@ -2508,8 +2572,6 @@ export function NewsSourcesContent() {
       metadataJson: config?.metadata
         ? JSON.stringify(config.metadata, null, 2)
         : "",
-      crawlProxyMode,
-      crawlProxyUrl,
       crawlScanMode,
       crawlScrollDelayMs,
       crawlVirtualScrollContainerSelector,
@@ -2656,35 +2718,6 @@ export function NewsSourcesContent() {
       typeof resolvedCrawlOptions.antiBotMode === "string"
     ) {
       delete resolvedCrawlOptions.antiBotMode;
-    }
-
-    const crawlProxyMode =
-      values.crawlProxyMode === "enable"
-        ? "enable"
-        : values.crawlProxyMode === "disable"
-          ? "disable"
-          : "auto";
-    const crawlProxyUrl = values.crawlProxyUrl?.trim() ?? "";
-    if (crawlProxyMode === "enable") {
-      if (!crawlProxyUrl) {
-        throw new Error(
-          t("newsSources.errors.proxyUrlRequired", {
-            defaultValue: "Proxy URL is required when proxy is enabled.",
-          }),
-        );
-      }
-      resolvedCrawlOptions = resolvedCrawlOptions ?? {};
-      resolvedCrawlOptions.proxyUrl = crawlProxyUrl;
-      if (typeof resolvedCrawlOptions.proxyConfig === "object") {
-        delete resolvedCrawlOptions.proxyConfig;
-      }
-    } else if (crawlProxyMode === "disable" && resolvedCrawlOptions) {
-      if (typeof resolvedCrawlOptions.proxyUrl === "string") {
-        delete resolvedCrawlOptions.proxyUrl;
-      }
-      if (typeof resolvedCrawlOptions.proxyConfig === "object") {
-        delete resolvedCrawlOptions.proxyConfig;
-      }
     }
 
     const crawlScanMode =
@@ -2916,6 +2949,13 @@ export function NewsSourcesContent() {
     }
 
     if (resolvedCrawlOptions) {
+      const proxyIssues = findUnsupportedProxyIssues(
+        resolvedCrawlOptions,
+        "config.crawlOptions",
+      );
+      if (proxyIssues.length > 0) {
+        throw new Error(formatPolicyIssues(proxyIssues, t));
+      }
       const blockedKeys = findDisallowedCrawl4aiLlmKeys(resolvedCrawlOptions);
       if (blockedKeys.length > 0) {
         const list = blockedKeys.slice(0, 5).join(", ");
@@ -2923,12 +2963,22 @@ export function NewsSourcesContent() {
           blockedKeys.length > 5 ? ` (+${blockedKeys.length - 5} more)` : "";
         throw new Error(
           t("newsSources.errors.crawlOptionsLlmBlocked", {
-            defaultValue:
-              "crawlOptions contains crawl4ai LLM extraction settings ({{keys}}{{suffix}}). The crawl stage must only fetch and store cleaned markdown; run your configured model in the pipeline stage instead.",
             keys: list,
             suffix,
           }),
         );
+      }
+    }
+    const finalCrawlOptions = isRssSeedMode
+      ? existingCrawlOptions
+      : resolvedCrawlOptions;
+    if (finalCrawlOptions) {
+      const proxyIssues = findUnsupportedProxyIssues(
+        finalCrawlOptions,
+        "config.crawlOptions",
+      );
+      if (proxyIssues.length > 0) {
+        throw new Error(formatPolicyIssues(proxyIssues, t));
       }
     }
     if (isRssSeedMode) {
@@ -3035,6 +3085,15 @@ export function NewsSourcesContent() {
     let crawlOptions: ReturnType<typeof sanitizeCrawlOptions>;
     try {
       crawlOptions = sanitizeCrawlOptions(normalizeCreateDrawerValues(values));
+      const proxyIssues = findUnsupportedProxyIssues(
+        crawlOptions,
+        "config.crawlOptions",
+      );
+      if (proxyIssues.length > 0) {
+        messageApi.error(formatPolicyIssues(proxyIssues, t));
+        setCreatingFromTaskDrawer(false);
+        return;
+      }
     } catch (error) {
       messageApi.error(
         error instanceof Error ? error.message : "Invalid crawl options",
@@ -3073,9 +3132,7 @@ export function NewsSourcesContent() {
         payload,
       );
       messageApi.success(
-        t("newsSources.messages.created", {
-          defaultValue: "News source created.",
-        }),
+        t("newsSources.messages.created"),
       );
       closeCreateDrawer();
       await loadSources();
@@ -3088,9 +3145,7 @@ export function NewsSourcesContent() {
         extractApiErrorMessage(error) ??
           (error instanceof Error
             ? error.message
-            : t("newsSources.errors.saveFailed", {
-                defaultValue: "Failed to save news source.",
-              })),
+            : t("newsSources.errors.saveFailed")),
       );
     } finally {
       setCreatingFromTaskDrawer(false);
@@ -3131,12 +3186,8 @@ export function NewsSourcesContent() {
       }
       messageApi.success(
         editingSource
-          ? t("newsSources.messages.updated", {
-              defaultValue: "News source updated.",
-            })
-          : t("newsSources.messages.created", {
-              defaultValue: "News source created.",
-            }),
+          ? t("newsSources.messages.updated")
+          : t("newsSources.messages.created"),
       );
       setModalOpen(false);
       setEditingSource(null);
@@ -3148,9 +3199,7 @@ export function NewsSourcesContent() {
         extractApiErrorMessage(error) ??
           (error instanceof Error
             ? error.message
-            : t("newsSources.errors.saveFailed", {
-                defaultValue: "Failed to save news source.",
-              })),
+            : t("newsSources.errors.saveFailed")),
       );
     } finally {
       setSaving(false);
@@ -3180,9 +3229,7 @@ export function NewsSourcesContent() {
       messageApi.error(
         error instanceof Error
           ? error.message
-          : t("newsSources.opml.errors.readFile", {
-              defaultValue: "Failed to read OPML file.",
-            }),
+          : t("newsSources.opml.errors.readFile"),
       );
     } finally {
       event.target.value = "";
@@ -3214,9 +3261,7 @@ export function NewsSourcesContent() {
         extractApiErrorMessage(error) ??
           (error instanceof Error
             ? error.message
-            : t("newsSources.opml.errors.preview", {
-                defaultValue: "Failed to preview OPML.",
-              })),
+            : t("newsSources.opml.errors.preview")),
       );
     } finally {
       setOpmlPreviewing(false);
@@ -3276,9 +3321,7 @@ export function NewsSourcesContent() {
   const handleImportOpml = async () => {
     if (!opmlPreview) {
       messageApi.warning(
-        t("newsSources.opml.errors.previewFirst", {
-          defaultValue: "Preview OPML before importing.",
-        }),
+        t("newsSources.opml.errors.previewFirst"),
       );
       return;
     }
@@ -3306,8 +3349,6 @@ export function NewsSourcesContent() {
       setOpmlImportReport(report);
       messageApi.success(
         t("newsSources.opml.messages.imported", {
-          defaultValue:
-            "OPML import finished: {{created}} created, {{skipped}} skipped, {{failed}} failed.",
           created: report?.summary?.created ?? 0,
           skipped: report?.summary?.skipped ?? 0,
           failed: report?.summary?.failed ?? 0,
@@ -3320,9 +3361,7 @@ export function NewsSourcesContent() {
         extractApiErrorMessage(error) ??
           (error instanceof Error
             ? error.message
-            : t("newsSources.opml.errors.import", {
-                defaultValue: "Failed to import OPML.",
-              })),
+            : t("newsSources.opml.errors.import")),
       );
     } finally {
       setOpmlImporting(false);
@@ -3340,19 +3379,13 @@ export function NewsSourcesContent() {
       await loadSources();
       messageApi.success(
         nextActive
-          ? t("newsSources.messages.enabled", {
-              defaultValue: "Source enabled.",
-            })
-          : t("newsSources.messages.disabled", {
-              defaultValue: "Source disabled.",
-            }),
+          ? t("newsSources.messages.enabled")
+          : t("newsSources.messages.disabled"),
       );
     } catch (error) {
       captureClientError("Failed to update news source", error);
       messageApi.error(
-        t("newsSources.errors.saveFailed", {
-          defaultValue: "Failed to save news source.",
-        }),
+        t("newsSources.errors.saveFailed"),
       );
     }
   };
@@ -3386,7 +3419,7 @@ export function NewsSourcesContent() {
               router.push(`/admin/ops/crawl-tasks/${payload.crawlTaskIds[0]}`)
             }
           >
-            {t("newsSources.actions.openTask", { defaultValue: "Open task" })}
+            {t("newsSources.actions.openTask")}
           </Button>
         ) : null;
 
@@ -3400,11 +3433,9 @@ export function NewsSourcesContent() {
         messageApi.info(
           <Space size={6} wrap>
             <span>
-              {t("newsSources.messages.runDeduped", {
-                defaultValue: "Already dispatched this minute.",
-              })}
+              {t("newsSources.messages.runDeduped")}
               {untilLabel
-                ? ` ${t("newsSources.messages.tryAfter", { defaultValue: "Try after {{time}}", time: untilLabel })}`
+                ? ` ${t("newsSources.messages.tryAfter", { time: untilLabel })}`
                 : ""}
             </span>
             {openTaskButton}
@@ -3418,12 +3449,11 @@ export function NewsSourcesContent() {
           <Space size={6} wrap>
             <span>
               {t("newsSources.messages.runSkippedInFlight", {
-                defaultValue: "Skipped (in-flight {{count}}/{{limit}}).",
                 count: payload.inFlightCount ?? 0,
                 limit: payload.inFlightLimit ?? 0,
               })}
               {nextRunAtLabel
-                ? ` ${t("newsSources.messages.nextRunAt", { defaultValue: "Next run: {{time}}", time: nextRunAtLabel })}`
+                ? ` ${t("newsSources.messages.nextRunAt", { time: nextRunAtLabel })}`
                 : ""}
             </span>
           </Space>,
@@ -3435,11 +3465,9 @@ export function NewsSourcesContent() {
         messageApi.info(
           <Space size={6} wrap>
             <span>
-              {t("newsSources.messages.noNewUrls", {
-                defaultValue: "No new URLs to schedule.",
-              })}
+              {t("newsSources.messages.noNewUrls")}
               {nextRunAtLabel
-                ? ` ${t("newsSources.messages.nextRunAt", { defaultValue: "Next run: {{time}}", time: nextRunAtLabel })}`
+                ? ` ${t("newsSources.messages.nextRunAt", { time: nextRunAtLabel })}`
                 : ""}
             </span>
           </Space>,
@@ -3462,7 +3490,6 @@ export function NewsSourcesContent() {
       const skippedText =
         typeof payload?.skippedCount === "number" && payload.skippedCount > 0
           ? t("newsSources.messages.runSkippedCount", {
-              defaultValue: "Skipped {{count}}.",
               count: payload.skippedCount,
             })
           : null;
@@ -3470,7 +3497,6 @@ export function NewsSourcesContent() {
         typeof payload?.enqueueFailures === "number" &&
         payload.enqueueFailures > 0
           ? t("newsSources.messages.runEnqueueFailures", {
-              defaultValue: "Failed to enqueue {{count}}.",
               count: payload.enqueueFailures,
             })
           : null;
@@ -3478,8 +3504,6 @@ export function NewsSourcesContent() {
         typeof payload?.rssSkippedNoBodyCount === "number" &&
         payload.rssSkippedNoBodyCount > 0
           ? t("newsSources.messages.runRssNoBodySkipped", {
-              defaultValue:
-                "RSS skipped {{count}} item(s) without usable body content.",
               count: payload.rssSkippedNoBodyCount,
             })
           : null;
@@ -3499,7 +3523,7 @@ export function NewsSourcesContent() {
               {rssNoBodySkippedText ? ` ${rssNoBodySkippedText}` : ""}
               {failureText ? ` ${failureText}` : ""}
               {nextRunAtLabel
-                ? ` ${t("newsSources.messages.nextRunAt", { defaultValue: "Next run: {{time}}", time: nextRunAtLabel })}`
+                ? ` ${t("newsSources.messages.nextRunAt", { time: nextRunAtLabel })}`
                 : ""}
             </span>
             {openTaskButton}
@@ -3509,19 +3533,14 @@ export function NewsSourcesContent() {
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 409) {
         messageApi.info(
-          t("newsSources.messages.dispatchInProgress", {
-            defaultValue:
-              "Dispatch already in progress. Please wait and refresh.",
-          }),
+          t("newsSources.messages.dispatchInProgress"),
         );
         return;
       }
       captureClientError("Failed to run news source now", error);
       messageApi.error(
         extractApiErrorMessage(error) ??
-          t("newsSources.errors.runFailed", {
-            defaultValue: "Failed to schedule source.",
-          }),
+          t("newsSources.errors.runFailed"),
       );
     } finally {
       setDispatchingSourceIds((prev) => {
@@ -3553,7 +3572,6 @@ export function NewsSourcesContent() {
       if (failedCount > 0) {
         messageApi.warning(
           t("newsSources.messages.batchTogglePartial", {
-            defaultValue: "Updated {{ok}}/{{total}} sources.",
             ok: okCount,
             total: results.length,
           }),
@@ -3562,11 +3580,9 @@ export function NewsSourcesContent() {
         messageApi.success(
           nextActive
             ? t("newsSources.messages.enabledBatch", {
-                defaultValue: "Enabled {{count}} source(s).",
                 count: okCount,
               })
             : t("newsSources.messages.disabledBatch", {
-                defaultValue: "Disabled {{count}} source(s).",
                 count: okCount,
               }),
         );
@@ -3578,9 +3594,7 @@ export function NewsSourcesContent() {
       captureClientError("Failed to batch update news sources", error);
       messageApi.error(
         extractApiErrorMessage(error) ??
-          t("newsSources.errors.saveFailed", {
-            defaultValue: "Failed to save news source.",
-          }),
+          t("newsSources.errors.saveFailed"),
       );
     } finally {
       setBatchToggleLoading(false);
@@ -3597,7 +3611,6 @@ export function NewsSourcesContent() {
       await apiClient.patch("admin/news-sources/batch/group", { ids, group });
       messageApi.success(
         t("newsSources.messages.groupUpdatedBatch", {
-          defaultValue: "Group updated for {{count}} source(s).",
           count: ids.length,
         }),
       );
@@ -3608,9 +3621,7 @@ export function NewsSourcesContent() {
       captureClientError("Failed to batch update group", error);
       messageApi.error(
         extractApiErrorMessage(error) ??
-          t("newsSources.errors.saveFailed", {
-            defaultValue: "Failed to save news source.",
-          }),
+          t("newsSources.errors.saveFailed"),
       );
     } finally {
       setBatchGroupLoading(false);
@@ -3649,10 +3660,7 @@ export function NewsSourcesContent() {
                 ok: false,
                 sourceId: target.id,
                 kind: "conflict",
-                error: t("newsSources.messages.dispatchInProgress", {
-                  defaultValue:
-                    "Dispatch already in progress. Please wait and refresh.",
-                }),
+                error: t("newsSources.messages.dispatchInProgress"),
               };
             }
             return {
@@ -3726,8 +3734,6 @@ export function NewsSourcesContent() {
         type: messageType,
         content: useDetailedBatchMessage
           ? t("newsSources.messages.batchDispatchDetailed", {
-              defaultValue:
-                "Dispatched {{sources}} source(s): queued {{tasks}} task(s), queued {{jobs}} pipeline job(s), skipped {{skipped}} (RSS no-body {{rssNoBody}}), enqueue failures {{enqueueFailures}}, conflicts {{conflicts}}, request failures {{failures}}.",
               sources: targets.length,
               tasks: queuedTaskTotal,
               jobs: queuedJobTotal,
@@ -3738,8 +3744,6 @@ export function NewsSourcesContent() {
               failures: requestFailureCount,
             })
           : t("newsSources.messages.batchDispatch", {
-              defaultValue:
-                "Dispatched {{sources}} source(s): queued {{tasks}} task(s), skipped {{skipped}}, enqueue failures {{enqueueFailures}}, conflicts {{conflicts}}, request failures {{failures}}.",
               sources: targets.length,
               tasks: scheduledTotal,
               skipped: skippedTotal,
@@ -3758,16 +3762,9 @@ export function NewsSourcesContent() {
 
   const handleCancelQueued = async (source: NewsSourceRecord) => {
     Modal.confirm({
-      title: t("newsSources.ops.cancelQueued.title", {
-        defaultValue: "Cancel queued crawls?",
-      }),
-      content: t("newsSources.ops.cancelQueued.description", {
-        defaultValue:
-          "This removes waiting/delayed crawl4ai jobs for this source. Running jobs will not be interrupted.",
-      }),
-      okText: t("newsSources.ops.cancelQueued.ok", {
-        defaultValue: "Cancel queued",
-      }),
+      title: t("newsSources.ops.cancelQueued.title"),
+      content: t("newsSources.ops.cancelQueued.description"),
+      okText: t("newsSources.ops.cancelQueued.ok"),
       okButtonProps: { danger: true },
       onOk: async () => {
         setOpsLoadingSourceIds((prev) => {
@@ -3782,7 +3779,6 @@ export function NewsSourcesContent() {
           const payload = response.data;
           messageApi.success(
             t("newsSources.ops.cancelQueued.done", {
-              defaultValue: "Removed {{removed}} job(s) (scanned {{scanned}}).",
               removed: payload.removedJobs ?? 0,
               scanned: payload.scannedJobs ?? 0,
             }),
@@ -3792,9 +3788,7 @@ export function NewsSourcesContent() {
           captureClientError("Failed to cancel queued crawls", error);
           messageApi.error(
             extractApiErrorMessage(error) ??
-              t("newsSources.ops.cancelQueued.failed", {
-                defaultValue: "Failed to cancel queued crawls.",
-              }),
+              t("newsSources.ops.cancelQueued.failed"),
           );
         } finally {
           setOpsLoadingSourceIds((prev) => {
@@ -3809,16 +3803,9 @@ export function NewsSourcesContent() {
 
   const handleClearInflight = async (source: NewsSourceRecord) => {
     Modal.confirm({
-      title: t("newsSources.ops.clearInflight.title", {
-        defaultValue: "Clear in-flight pipeline jobs?",
-      }),
-      content: t("newsSources.ops.clearInflight.description", {
-        defaultValue:
-          "This marks recent in-flight pipeline jobs as failed to unblock scheduling. Use carefully.",
-      }),
-      okText: t("newsSources.ops.clearInflight.ok", {
-        defaultValue: "Clear in-flight",
-      }),
+      title: t("newsSources.ops.clearInflight.title"),
+      content: t("newsSources.ops.clearInflight.description"),
+      okText: t("newsSources.ops.clearInflight.ok"),
       okButtonProps: { danger: true },
       onOk: async () => {
         setOpsLoadingSourceIds((prev) => {
@@ -3834,7 +3821,6 @@ export function NewsSourcesContent() {
           const payload = response.data;
           messageApi.success(
             t("newsSources.ops.clearInflight.done", {
-              defaultValue: "Cleared {{count}} job(s).",
               count: payload.clearedJobs ?? 0,
             }),
           );
@@ -3843,9 +3829,7 @@ export function NewsSourcesContent() {
           captureClientError("Failed to clear inflight jobs", error);
           messageApi.error(
             extractApiErrorMessage(error) ??
-              t("newsSources.ops.clearInflight.failed", {
-                defaultValue: "Failed to clear in-flight jobs.",
-              }),
+              t("newsSources.ops.clearInflight.failed"),
           );
         } finally {
           setOpsLoadingSourceIds((prev) => {
@@ -3893,9 +3877,7 @@ export function NewsSourcesContent() {
         payload.retryType === "crawl" && payload.crawlTaskId ? (
           <Space size={8} wrap>
             <span>
-              {t("newsSources.ops.retryLatest.done", {
-                defaultValue: "Retried latest task.",
-              })}
+              {t("newsSources.ops.retryLatest.done")}
             </span>
             <Button
               type="link"
@@ -3904,22 +3886,18 @@ export function NewsSourcesContent() {
                 router.push(`/admin/ops/crawl-tasks/${payload.crawlTaskId}`)
               }
             >
-              {t("newsSources.actions.openTask", { defaultValue: "Open task" })}
+              {t("newsSources.actions.openTask")}
             </Button>
           </Space>
         ) : (
-          t("newsSources.ops.retryLatest.donePipeline", {
-            defaultValue: "Retried latest pipeline job.",
-          })
+          t("newsSources.ops.retryLatest.donePipeline")
         ),
       );
     } catch (error) {
       captureClientError("Failed to retry latest failed task", error);
       messageApi.error(
         extractApiErrorMessage(error) ??
-          t("newsSources.ops.retryLatest.failed", {
-            defaultValue: "Failed to retry latest task.",
-          }),
+          t("newsSources.ops.retryLatest.failed"),
       );
     } finally {
       setOpsLoadingSourceIds((prev) => {
@@ -3964,9 +3942,7 @@ export function NewsSourcesContent() {
 
     if (!values.nextRunAt?.isValid?.() || values.nextRunAt.isBefore(dayjs())) {
       messageApi.error(
-        t("newsSources.schedule.validation.future", {
-          defaultValue: "Next run time must be in the future.",
-        }),
+        t("newsSources.schedule.validation.future"),
       );
       return;
     }
@@ -3993,7 +3969,6 @@ export function NewsSourcesContent() {
       if (failedCount > 0) {
         messageApi.warning(
           t("newsSources.messages.scheduledBatchPartial", {
-            defaultValue: "Scheduled {{ok}}/{{total}} sources for {{time}}.",
             ok: okCount,
             total: results.length,
             time: timeLabel,
@@ -4002,7 +3977,6 @@ export function NewsSourcesContent() {
       } else {
         messageApi.success(
           t("newsSources.messages.scheduledBatch", {
-            defaultValue: "Scheduled {{count}} source(s) for {{time}}.",
             count: okCount,
             time: timeLabel,
           }),
@@ -4017,9 +3991,7 @@ export function NewsSourcesContent() {
         extractApiErrorMessage(error) ??
           (error instanceof Error
             ? error.message
-            : t("newsSources.errors.runFailed", {
-                defaultValue: "Failed to schedule source.",
-              })),
+            : t("newsSources.errors.runFailed")),
       );
     } finally {
       setScheduleLoading(false);
@@ -4028,26 +4000,20 @@ export function NewsSourcesContent() {
 
   const handleDelete = (source: NewsSourceRecord) => {
     Modal.confirm({
-      title: t("newsSources.delete.title", { defaultValue: "Delete source?" }),
-      content: t("newsSources.delete.description", {
-        defaultValue: "This removes the source and stops scheduled crawls.",
-      }),
+      title: t("newsSources.delete.title"),
+      content: t("newsSources.delete.description"),
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
           await apiClient.delete(`admin/news-sources/${source.id}`);
           await loadSources();
           messageApi.success(
-            t("newsSources.messages.deleted", {
-              defaultValue: "News source deleted.",
-            }),
+            t("newsSources.messages.deleted"),
           );
         } catch (error) {
           captureClientError("Failed to delete news source", error);
           messageApi.error(
-            t("newsSources.errors.deleteFailed", {
-              defaultValue: "Failed to delete news source.",
-            }),
+            t("newsSources.errors.deleteFailed"),
           );
         }
       },
@@ -4071,9 +4037,7 @@ export function NewsSourcesContent() {
         (error instanceof Error ? error.message : null);
       messageApi.error(
         detail ??
-          t("newsSources.errors.previewFailed", {
-            defaultValue: "Failed to preview news source.",
-          }),
+          t("newsSources.errors.previewFailed"),
       );
       setPreviewOpen(false);
       setPreviewSource(null);
@@ -4118,7 +4082,7 @@ export function NewsSourcesContent() {
         style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
       >
         <Typography.Text type="secondary">
-          {t("common.loading", { defaultValue: "Loading..." })}
+          {t("common.loading")}
         </Typography.Text>
       </div>
     );
@@ -4128,7 +4092,7 @@ export function NewsSourcesContent() {
     return (
       <Card
         className="content-card"
-        title={t("newsSources.title", { defaultValue: "News Sources" })}
+        title={t("newsSources.title")}
       >
         <Alert
           type="warning"
@@ -4143,17 +4107,25 @@ export function NewsSourcesContent() {
     page: "ingestion",
     panel: "news-source-scheduler",
   });
+  const readinessState = !readinessSummary
+    ? null
+    : readinessSummary.total === 0
+      ? "empty"
+      : readinessSummary.active === 0
+        ? "inactive"
+        : readinessSummary.circuitOpen > 0 || readinessSummary.failing > 0
+          ? "degraded"
+          : "ready";
   const readinessTone =
-    readinessSummary && readinessSummary.active === 0
-      ? "error"
-      : readinessSummary &&
-          (readinessSummary.circuitOpen > 0 || readinessSummary.failing > 0)
+    readinessState === "empty"
+      ? "info"
+      : readinessState === "inactive" || readinessState === "degraded"
         ? "warning"
-        : "info";
+        : "success";
 
   const columns: ColumnsType<NewsSourceRecord> = [
     {
-      title: t("newsSources.columns.name", { defaultValue: "Name" }),
+      title: t("newsSources.columns.name"),
       dataIndex: "name",
       key: "name",
       width: 320,
@@ -4173,20 +4145,12 @@ export function NewsSourcesContent() {
                         : "purple";
                 const label =
                   mode === "rss"
-                    ? t("newsSources.seedMode.rss", {
-                        defaultValue: "RSS / Atom",
-                      })
+                    ? t("newsSources.seedMode.rss")
                     : mode === "list"
-                      ? t("newsSources.seedMode.list", {
-                          defaultValue: "List page",
-                        })
+                      ? t("newsSources.seedMode.list")
                       : mode === "deep"
-                        ? t("newsSources.seedMode.deep", {
-                            defaultValue: "Deep discovery",
-                          })
-                        : t("newsSources.seedMode.sitemap", {
-                            defaultValue: "Sitemap",
-                          });
+                        ? t("newsSources.seedMode.deep")
+                        : t("newsSources.seedMode.sitemap");
                 return <Tag color={color}>{label}</Tag>;
               })();
         const rssAdaptive = resolveRssAdaptiveObservability(record);
@@ -4200,16 +4164,12 @@ export function NewsSourcesContent() {
                 : "default";
         const rssAdaptiveTierLabel =
           rssAdaptive?.tier === "hot"
-            ? t("newsSources.rssAdaptive.tier.hot", { defaultValue: "Hot" })
+            ? t("newsSources.rssAdaptive.tier.hot")
             : rssAdaptive?.tier === "warm"
-              ? t("newsSources.rssAdaptive.tier.warm", { defaultValue: "Warm" })
+              ? t("newsSources.rssAdaptive.tier.warm")
               : rssAdaptive?.tier === "cold"
-                ? t("newsSources.rssAdaptive.tier.cold", {
-                    defaultValue: "Cold",
-                  })
-                : t("newsSources.rssAdaptive.tier.normal", {
-                    defaultValue: "Normal",
-                  });
+                ? t("newsSources.rssAdaptive.tier.cold")
+                : t("newsSources.rssAdaptive.tier.normal");
 
         return (
           <Space direction="vertical" size={2}>
@@ -4222,11 +4182,10 @@ export function NewsSourcesContent() {
                     <Space direction="vertical" size={0}>
                       <Typography.Text>
                         {t("newsSources.rssAdaptive.tooltip.hitRate", {
-                          defaultValue: "Hit rate: {{value}}",
                           value:
                             typeof rssAdaptive.hitRate === "number"
                               ? `${Math.round(rssAdaptive.hitRate * 100)}%`
-                              : t("common.emptyValue", { defaultValue: "-" }),
+                              : t("common.emptyValue"),
                         })}
                       </Typography.Text>
                       <Typography.Text type="secondary">
@@ -4234,19 +4193,14 @@ export function NewsSourcesContent() {
                           ? t(
                               "newsSources.rssAdaptive.tooltip.consecutiveNoHit",
                               {
-                                defaultValue:
-                                  "Consecutive no-hit runs: {{value}}",
                                 value: rssAdaptive.consecutiveNoHit,
                               },
                             )
-                          : t("newsSources.rssAdaptive.tooltip.noHistory", {
-                              defaultValue: "No adaptive history yet.",
-                            })}
+                          : t("newsSources.rssAdaptive.tooltip.noHistory")}
                       </Typography.Text>
                       {rssAdaptive.updatedAt ? (
                         <Typography.Text type="secondary">
                           {t("newsSources.rssAdaptive.tooltip.updatedAt", {
-                            defaultValue: "Updated at: {{value}}",
                             value: formatDateTime(
                               rssAdaptive.updatedAt,
                               locale,
@@ -4263,7 +4217,6 @@ export function NewsSourcesContent() {
                 >
                   <Tag color={rssAdaptiveTierColor}>
                     {t("newsSources.rssAdaptive.tierTag", {
-                      defaultValue: "Adaptive {{tier}}",
                       tier: rssAdaptiveTierLabel,
                     })}
                   </Tag>
@@ -4272,7 +4225,6 @@ export function NewsSourcesContent() {
               {rssAdaptive ? (
                 <Tag>
                   {t("newsSources.rssAdaptive.intervalTag", {
-                    defaultValue: "Poll {{seconds}}s",
                     seconds: rssAdaptive.effectiveIntervalSeconds,
                   })}
                 </Tag>
@@ -4280,7 +4232,6 @@ export function NewsSourcesContent() {
               {rssAdaptive ? (
                 <Tag>
                   {t("newsSources.rssAdaptive.discoveryTtlTag", {
-                    defaultValue: "Discovery TTL {{seconds}}s",
                     seconds: rssAdaptive.effectiveDiscoveryCacheTtlSeconds,
                   })}
                 </Tag>
@@ -4290,7 +4241,6 @@ export function NewsSourcesContent() {
               {record.crawlTaskQueuedCount > 0 ? (
                 <Tag color="cyan">
                   {t("newsSources.queueCounts.queued", {
-                    defaultValue: "Queued: {{count}}",
                     count: record.crawlTaskQueuedCount,
                   })}
                 </Tag>
@@ -4298,7 +4248,6 @@ export function NewsSourcesContent() {
               {record.crawlTaskRunningCount > 0 ? (
                 <Tag color="blue">
                   {t("newsSources.queueCounts.active", {
-                    defaultValue: "Active: {{count}}",
                     count: record.crawlTaskRunningCount,
                   })}
                 </Tag>
@@ -4310,9 +4259,7 @@ export function NewsSourcesContent() {
                   router.push(`/admin/ops/crawl-tasks?sourceId=${record.id}`)
                 }
               >
-                {t("newsSources.actions.viewTasks", {
-                  defaultValue: "Crawl tasks",
-                })}
+                {t("newsSources.actions.viewTasks")}
               </Button>
             </Space>
             <Typography.Text
@@ -4326,7 +4273,7 @@ export function NewsSourcesContent() {
       },
     },
     {
-      title: t("newsSources.columns.type", { defaultValue: "Type" }),
+      title: t("newsSources.columns.type"),
       dataIndex: "siteType",
       key: "siteType",
       width: 110,
@@ -4338,7 +4285,7 @@ export function NewsSourcesContent() {
       },
     },
     {
-      title: t("newsSources.columns.template", { defaultValue: "Template" }),
+      title: t("newsSources.columns.template"),
       dataIndex: "crawlTemplateId",
       key: "crawlTemplateId",
       width: 160,
@@ -4360,7 +4307,7 @@ export function NewsSourcesContent() {
       },
     },
     {
-      title: t("newsSources.columns.strategy", { defaultValue: "Strategy" }),
+      title: t("newsSources.columns.strategy"),
       key: "strategy",
       width: 300,
       render: (_: unknown, record) => {
@@ -4368,9 +4315,7 @@ export function NewsSourcesContent() {
         if (!strategyTags.length) {
           return (
             <Typography.Text type="secondary">
-              {t("newsSources.columns.strategyEmpty", {
-                defaultValue: "Default",
-              })}
+              {t("newsSources.columns.strategyEmpty")}
             </Typography.Text>
           );
         }
@@ -4386,21 +4331,19 @@ export function NewsSourcesContent() {
       },
     },
     {
-      title: t("newsSources.columns.frequency", {
-        defaultValue: "Frequency (s)",
-      }),
+      title: t("newsSources.columns.frequency"),
       dataIndex: "frequencySeconds",
       key: "frequencySeconds",
       width: 120,
     },
     {
-      title: t("newsSources.columns.priority", { defaultValue: "Priority" }),
+      title: t("newsSources.columns.priority"),
       dataIndex: "priority",
       key: "priority",
       width: 90,
     },
     {
-      title: t("newsSources.columns.status", { defaultValue: "Status" }),
+      title: t("newsSources.columns.status"),
       dataIndex: "isActive",
       key: "isActive",
       width: 170,
@@ -4419,7 +4362,6 @@ export function NewsSourcesContent() {
             title={
               circuitOpenUntil
                 ? t("newsSources.health.circuitOpenUntil", {
-                    defaultValue: "Circuit open until {{time}}",
                     time: formatDateTime(
                       circuitOpenUntil.toISOString(),
                       locale,
@@ -4429,15 +4371,11 @@ export function NewsSourcesContent() {
                       },
                     ),
                   })
-                : t("newsSources.health.circuitOpen", {
-                    defaultValue: "Circuit open",
-                  })
+                : t("newsSources.health.circuitOpen")
             }
           >
             <Tag color="red">
-              {t("newsSources.health.circuitOpen", {
-                defaultValue: "Circuit open",
-              })}
+              {t("newsSources.health.circuitOpen")}
             </Tag>
           </Tooltip>
         ) : failureCount > 0 ? (
@@ -4445,25 +4383,23 @@ export function NewsSourcesContent() {
             title={
               lastFailureAt
                 ? t("newsSources.health.lastFailureAt", {
-                    defaultValue: "Last failure {{time}}",
                     time: formatDateTime(lastFailureAt, locale, {
                       dateStyle: "medium",
                       timeStyle: "short",
                     }),
                   })
-                : t("newsSources.health.failing", { defaultValue: "Failing" })
+                : t("newsSources.health.failing")
             }
           >
             <Tag color="orange">
               {t("newsSources.health.failingCount", {
-                defaultValue: "Failing ({{count}})",
                 count: failureCount,
               })}
             </Tag>
           </Tooltip>
         ) : value ? (
           <Tag color="green">
-            {t("newsSources.health.healthy", { defaultValue: "Healthy" })}
+            {t("newsSources.health.healthy")}
           </Tag>
         ) : null;
 
@@ -4485,7 +4421,7 @@ export function NewsSourcesContent() {
       },
     },
     {
-      title: t("newsSources.columns.nextRun", { defaultValue: "Next run" }),
+      title: t("newsSources.columns.nextRun"),
       dataIndex: "nextRunAt",
       key: "nextRunAt",
       width: 190,
@@ -4510,7 +4446,7 @@ export function NewsSourcesContent() {
           <Space size={6} wrap>
             {overdue ? (
               <Tag color="gold">
-                {t("newsSources.nextRun.due", { defaultValue: "Due" })}
+                {t("newsSources.nextRun.due")}
               </Tag>
             ) : null}
             {isBackpressured && backpressureUntil ? (
@@ -4521,19 +4457,13 @@ export function NewsSourcesContent() {
                       {typeof backpressurePendingJobs === "number" &&
                       typeof backpressureThreshold === "number"
                         ? t("newsSources.nextRun.backpressureReason", {
-                            defaultValue:
-                              "Backpressure: crawl queue pending {{pendingJobs}} > threshold {{threshold}}.",
                             pendingJobs: backpressurePendingJobs,
                             threshold: backpressureThreshold,
                           })
-                        : t("newsSources.nextRun.backpressureReasonFallback", {
-                            defaultValue:
-                              "Backpressure: crawl queue backlog is high.",
-                          })}
+                        : t("newsSources.nextRun.backpressureReasonFallback")}
                     </Typography.Text>
                     <Typography.Text type="secondary">
                       {t("newsSources.nextRun.backpressureUntil", {
-                        defaultValue: "Delayed until {{time}}",
                         time: formatDateTime(backpressureUntil, locale, {
                           dateStyle: "medium",
                           timeStyle: "short",
@@ -4544,9 +4474,7 @@ export function NewsSourcesContent() {
                 }
               >
                 <Tag color="orange">
-                  {t("newsSources.nextRun.backpressure", {
-                    defaultValue: "Backpressure",
-                  })}
+                  {t("newsSources.nextRun.backpressure")}
                 </Tag>
               </Tooltip>
             ) : null}
@@ -4561,7 +4489,7 @@ export function NewsSourcesContent() {
       },
     },
     {
-      title: t("newsSources.columns.lastRun", { defaultValue: "Last run" }),
+      title: t("newsSources.columns.lastRun"),
       dataIndex: "lastRunAt",
       key: "lastRunAt",
       width: 160,
@@ -4574,9 +4502,7 @@ export function NewsSourcesContent() {
           : t("common.never"),
     },
     {
-      title: t("newsSources.columns.lastSuccess", {
-        defaultValue: "Last success",
-      }),
+      title: t("newsSources.columns.lastSuccess"),
       dataIndex: "lastSuccessAt",
       key: "lastSuccessAt",
       width: 160,
@@ -4590,7 +4516,7 @@ export function NewsSourcesContent() {
           : t("common.never"),
     },
     {
-      title: t("newsSources.columns.stats24h", { defaultValue: "24h" }),
+      title: t("newsSources.columns.stats24h"),
       key: "stats24h",
       width: 110,
       responsive: ["md"],
@@ -4611,7 +4537,7 @@ export function NewsSourcesContent() {
         const rateLabel =
           typeof successRate === "number" && Number.isFinite(successRate)
             ? `${Math.round(successRate * 100)}%`
-            : t("common.emptyValue", { defaultValue: "-" });
+            : t("common.emptyValue");
         const color =
           typeof successRate === "number" && Number.isFinite(successRate)
             ? successRate >= 0.9
@@ -4624,7 +4550,7 @@ export function NewsSourcesContent() {
         const avgLabel =
           typeof avgDurationMs === "number" && Number.isFinite(avgDurationMs)
             ? `${(avgDurationMs / 1000).toFixed(1)}s`
-            : t("common.emptyValue", { defaultValue: "-" });
+            : t("common.emptyValue");
 
         return (
           <Tooltip
@@ -4632,20 +4558,17 @@ export function NewsSourcesContent() {
               <Space direction="vertical" size={0}>
                 <Typography.Text>
                   {t("newsSources.stats24h.jobs", {
-                    defaultValue: "{{ok}} ok / {{fail}} fail",
                     ok: completed,
                     fail: failed,
                   })}
                 </Typography.Text>
                 <Typography.Text type="secondary">
                   {t("newsSources.stats24h.avgDuration", {
-                    defaultValue: "Avg duration: {{value}}",
                     value: avgLabel,
                   })}
                 </Typography.Text>
                 <Typography.Text type="secondary">
                   {t("newsSources.stats24h.backpressure", {
-                    defaultValue: "Backpressure (24h): {{count}}",
                     count: backpressureCount,
                   })}
                 </Typography.Text>
@@ -4656,7 +4579,6 @@ export function NewsSourcesContent() {
               <Tag color={color}>{rateLabel}</Tag>
               <Typography.Text type="secondary">
                 {t("newsSources.stats24h.jobsShort", {
-                  defaultValue: "{{ok}}/{{fail}}",
                   ok: completed,
                   fail: failed,
                 })}
@@ -4667,7 +4589,7 @@ export function NewsSourcesContent() {
       },
     },
     {
-      title: t("newsSources.columns.latest", { defaultValue: "Latest" }),
+      title: t("newsSources.columns.latest"),
       key: "latest",
       width: 380,
       responsive: ["md"],
@@ -4694,11 +4616,9 @@ export function NewsSourcesContent() {
             title={
               jobError
                 ? t("newsSources.latest.jobError", {
-                    defaultValue: "Job failed: {{error}}",
                     error: jobError,
                   })
                 : t("newsSources.latest.jobId", {
-                    defaultValue: "Job: {{id}}",
                     id: job.id,
                   })
             }
@@ -4712,29 +4632,21 @@ export function NewsSourcesContent() {
         );
         const ingestPathTag = isRssPrefetched ? (
           <Tag color="cyan">
-            {t("newsSources.latest.rssPrefetched", {
-              defaultValue: "RSS prefetched",
-            })}
+            {t("newsSources.latest.rssPrefetched")}
           </Tag>
         ) : null;
         const prefetchedMarkdownSourceTag =
           prefetchedMarkdownSource === "content" ? (
             <Tag color="green">
-              {t("newsSources.latest.rssPrefetchedContent", {
-                defaultValue: "RSS content",
-              })}
+              {t("newsSources.latest.rssPrefetchedContent")}
             </Tag>
           ) : prefetchedMarkdownSource === "description" ? (
             <Tag color="gold">
-              {t("newsSources.latest.rssPrefetchedSummary", {
-                defaultValue: "RSS summary",
-              })}
+              {t("newsSources.latest.rssPrefetchedSummary")}
             </Tag>
           ) : prefetchedMarkdownSource === "stub" ? (
             <Tag color="orange">
-              {t("newsSources.latest.rssPrefetchedStub", {
-                defaultValue: "RSS stub",
-              })}
+              {t("newsSources.latest.rssPrefetchedStub")}
             </Tag>
           ) : null;
 
@@ -4743,11 +4655,9 @@ export function NewsSourcesContent() {
             title={
               taskError
                 ? t("newsSources.latest.taskError", {
-                    defaultValue: "Task failed: {{error}}",
                     error: taskError,
                   })
                 : t("newsSources.latest.taskId", {
-                    defaultValue: "Task: {{id}}",
                     id: task.id,
                   })
             }
@@ -4760,9 +4670,7 @@ export function NewsSourcesContent() {
         const noTaskHint =
           !task && isRssPrefetched ? (
             <Typography.Text type="secondary">
-              {t("newsSources.latest.noCrawlTask", {
-                defaultValue: "Pipeline direct ingest (no crawl task).",
-              })}
+              {t("newsSources.latest.noCrawlTask")}
             </Typography.Text>
           ) : null;
 
@@ -4771,7 +4679,7 @@ export function NewsSourcesContent() {
             size="small"
             onClick={() => router.push(`/admin/ops/crawl-tasks/${task.id}`)}
           >
-            {t("newsSources.actions.openTask", { defaultValue: "Open task" })}
+            {t("newsSources.actions.openTask")}
           </Button>
         ) : null;
 
@@ -4813,7 +4721,7 @@ export function NewsSourcesContent() {
       },
     },
     {
-      title: t("newsSources.columns.group", { defaultValue: "Group" }),
+      title: t("newsSources.columns.group"),
       dataIndex: "group",
       key: "group",
       width: 140,
@@ -4823,11 +4731,10 @@ export function NewsSourcesContent() {
       title: t("common.actions"),
       key: "actions",
       width: 340,
-      fixed: "right",
       render: (_, record) => (
         <Space wrap>
           <Button size="small" onClick={() => void handlePreview(record)}>
-            {t("newsSources.actions.preview", { defaultValue: "Preview" })}
+            {t("newsSources.actions.preview")}
           </Button>
           {canManage ? (
             <Button size="small" onClick={() => openEdit(record)}>
@@ -4839,25 +4746,18 @@ export function NewsSourcesContent() {
               title={
                 record.nextRunAt
                   ? t("newsSources.schedule.current", {
-                      defaultValue: "Current: {{time}}",
                       time: formatDateTime(record.nextRunAt, locale, {
                         dateStyle: "medium",
                         timeStyle: "short",
                       }),
                     })
-                  : t("newsSources.schedule.none", {
-                      defaultValue: "No schedule set.",
-                    })
+                  : t("newsSources.schedule.none")
               }
             >
               <Button size="small" onClick={() => openSchedule(record)}>
                 {record.nextRunAt
-                  ? t("newsSources.actions.reschedule", {
-                      defaultValue: "Reschedule",
-                    })
-                  : t("newsSources.actions.schedule", {
-                      defaultValue: "Schedule",
-                    })}
+                  ? t("newsSources.actions.reschedule")
+                  : t("newsSources.actions.schedule")}
               </Button>
             </Tooltip>
           ) : null}
@@ -4868,7 +4768,7 @@ export function NewsSourcesContent() {
               loading={dispatchingSourceIds.has(record.id)}
               disabled={dispatchingSourceIds.has(record.id)}
             >
-              {t("newsSources.actions.runNow", { defaultValue: "Run now" })}
+              {t("newsSources.actions.runNow")}
             </Button>
           ) : null}
           {canManage ? (
@@ -4877,9 +4777,7 @@ export function NewsSourcesContent() {
                 items: [
                   {
                     key: "view-tasks",
-                    label: t("newsSources.actions.viewTasks", {
-                      defaultValue: "Crawl tasks",
-                    }),
+                    label: t("newsSources.actions.viewTasks"),
                     onClick: () =>
                       router.push(
                         `/admin/ops/crawl-tasks?sourceId=${record.id}`,
@@ -4888,23 +4786,17 @@ export function NewsSourcesContent() {
                   { type: "divider" },
                   {
                     key: "retry-latest",
-                    label: t("newsSources.ops.retryLatest.label", {
-                      defaultValue: "Retry latest failed run",
-                    }),
+                    label: t("newsSources.ops.retryLatest.label"),
                     onClick: () => void handleRetryLatestFailedTask(record),
                   },
                   {
                     key: "cancel-queued",
-                    label: t("newsSources.ops.cancelQueued.label", {
-                      defaultValue: "Cancel queued crawls",
-                    }),
+                    label: t("newsSources.ops.cancelQueued.label"),
                     onClick: () => void handleCancelQueued(record),
                   },
                   {
                     key: "clear-inflight",
-                    label: t("newsSources.ops.clearInflight.label", {
-                      defaultValue: "Clear in-flight jobs",
-                    }),
+                    label: t("newsSources.ops.clearInflight.label"),
                     onClick: () => void handleClearInflight(record),
                   },
                 ],
@@ -4913,7 +4805,7 @@ export function NewsSourcesContent() {
               trigger={["click"]}
             >
               <Button size="small" loading={opsLoadingSourceIds.has(record.id)}>
-                {t("newsSources.actions.ops", { defaultValue: "Ops" })}
+                {t("newsSources.actions.ops")}
               </Button>
             </Dropdown>
           ) : null}
@@ -4929,7 +4821,7 @@ export function NewsSourcesContent() {
 
   const previewColumns: ColumnsType<NewsSourcePreviewCandidate> = [
     {
-      title: t("newsSources.preview.columns.url", { defaultValue: "URL" }),
+      title: t("newsSources.preview.columns.url"),
       dataIndex: "url",
       key: "url",
       render: (value: string, record) => (
@@ -4950,9 +4842,7 @@ export function NewsSourcesContent() {
       ),
     },
     {
-      title: t("newsSources.preview.columns.relevance", {
-        defaultValue: "Relevance",
-      }),
+      title: t("newsSources.preview.columns.relevance"),
       dataIndex: "relevanceScore",
       key: "relevanceScore",
       width: 110,
@@ -4962,9 +4852,7 @@ export function NewsSourcesContent() {
           : "-",
     },
     {
-      title: t("newsSources.preview.columns.timeSignal", {
-        defaultValue: "Time signal",
-      }),
+      title: t("newsSources.preview.columns.timeSignal"),
       key: "timeSignal",
       width: 220,
       render: (_: unknown, record) => {
@@ -4978,9 +4866,7 @@ export function NewsSourcesContent() {
                 })}
               </Typography.Text>
               <Tag color="green">
-                {t("newsSources.preview.timePublished", {
-                  defaultValue: "Published",
-                })}
+                {t("newsSources.preview.timePublished")}
               </Tag>
             </Space>
           );
@@ -4997,14 +4883,10 @@ export function NewsSourcesContent() {
               </Typography.Text>
               <Space size={4} wrap>
                 <Tag color="blue">
-                  {t("newsSources.preview.timeCrawled", {
-                    defaultValue: "Crawled",
-                  })}
+                  {t("newsSources.preview.timeCrawled")}
                 </Tag>
                 <Tag color="orange">
-                  {t("newsSources.preview.publishDateMissing", {
-                    defaultValue: "Publish date missing",
-                  })}
+                  {t("newsSources.preview.publishDateMissing")}
                 </Tag>
               </Space>
             </Space>
@@ -5015,27 +4897,23 @@ export function NewsSourcesContent() {
       },
     },
     {
-      title: t("newsSources.preview.columns.status", {
-        defaultValue: "Status",
-      }),
+      title: t("newsSources.preview.columns.status"),
       dataIndex: "status",
       key: "status",
       width: 110,
       render: (value: NewsSourcePreviewCandidate["status"]) =>
         value === "success" ? (
           <Tag color="green">
-            {t("common.success", { defaultValue: "Success" })}
+            {t("common.success")}
           </Tag>
         ) : (
           <Tag color="red">
-            {t("common.failed", { defaultValue: "Failed" })}
+            {t("common.failed")}
           </Tag>
         ),
     },
     {
-      title: t("newsSources.preview.columns.dedupe", {
-        defaultValue: "Dedupe",
-      }),
+      title: t("newsSources.preview.columns.dedupe"),
       dataIndex: "alreadyCrawled",
       key: "alreadyCrawled",
       width: 160,
@@ -5043,13 +4921,11 @@ export function NewsSourcesContent() {
         <Space direction="vertical" size={2}>
           {record.alreadyCrawled ? (
             <Tag color="default">
-              {t("newsSources.preview.alreadyCrawled", {
-                defaultValue: "Crawled",
-              })}
+              {t("newsSources.preview.alreadyCrawled")}
             </Tag>
           ) : (
             <Tag color="blue">
-              {t("newsSources.preview.newUrl", { defaultValue: "New" })}
+              {t("newsSources.preview.newUrl")}
             </Tag>
           )}
           {record.alreadyQueued ? (
@@ -5057,18 +4933,13 @@ export function NewsSourcesContent() {
               title={
                 record.inFlightStatus
                   ? t("newsSources.preview.inFlightStatus", {
-                      defaultValue: "In-flight: {{status}}",
                       status: record.inFlightStatus,
                     })
-                  : t("newsSources.preview.inFlight", {
-                      defaultValue: "In-flight",
-                    })
+                  : t("newsSources.preview.inFlight")
               }
             >
               <Tag color="orange">
-                {t("newsSources.preview.inFlight", {
-                  defaultValue: "In-flight",
-                })}
+                {t("newsSources.preview.inFlight")}
               </Tag>
             </Tooltip>
           ) : null}
@@ -5082,7 +4953,7 @@ export function NewsSourcesContent() {
       ),
     },
     {
-      title: t("newsSources.preview.columns.error", { defaultValue: "Error" }),
+      title: t("newsSources.preview.columns.error"),
       dataIndex: "error",
       key: "error",
       render: (value?: string) =>
@@ -5103,7 +4974,7 @@ export function NewsSourcesContent() {
       {contextHolder}
       <Card
         className="content-card"
-        title={t("newsSources.title", { defaultValue: "News Sources" })}
+        title={t("newsSources.title")}
         extra={
           <Space wrap>
             <Button
@@ -5111,13 +4982,11 @@ export function NewsSourcesContent() {
               onClick={() => void refreshAll()}
               loading={loading || crawlQueueLoading}
             >
-              {t("common.refresh", { defaultValue: "Refresh" })}
+              {t("common.refresh")}
             </Button>
             <Space size={6} wrap>
               <Typography.Text type="secondary">
-                {t("newsSources.autoRefresh.label", {
-                  defaultValue: "Auto refresh",
-                })}
+                {t("newsSources.autoRefresh.label")}
               </Typography.Text>
               <Switch
                 checked={autoRefreshEnabled}
@@ -5138,9 +5007,7 @@ export function NewsSourcesContent() {
             </Space>
             <Space size={6} wrap>
               <Typography.Text type="secondary">
-                {t("newsSources.liveUpdates.label", {
-                  defaultValue: "Live updates",
-                })}
+                {t("newsSources.liveUpdates.label")}
               </Typography.Text>
               <Switch
                 checked={liveUpdatesEnabled}
@@ -5165,20 +5032,12 @@ export function NewsSourcesContent() {
                     }
                   >
                     {liveError
-                      ? t("newsSources.liveUpdates.error", {
-                          defaultValue: "Error",
-                        })
+                      ? t("newsSources.liveUpdates.error")
                       : liveStatus === "connected"
-                        ? t("newsSources.liveUpdates.connected", {
-                            defaultValue: "Live",
-                          })
+                        ? t("newsSources.liveUpdates.connected")
                         : liveStatus === "connecting"
-                          ? t("newsSources.liveUpdates.connecting", {
-                              defaultValue: "Connecting",
-                            })
-                          : t("newsSources.liveUpdates.disconnected", {
-                              defaultValue: "Disconnected",
-                            })}
+                          ? t("newsSources.liveUpdates.connecting")
+                          : t("newsSources.liveUpdates.disconnected")}
                     {liveStatus === "connected" && liveEventCount > 0
                       ? ` · ${liveEventCount}`
                       : ""}
@@ -5189,14 +5048,10 @@ export function NewsSourcesContent() {
             {canManage ? (
               <Space>
                 <Button onClick={() => void openOpmlImport()}>
-                  {t("newsSources.actions.importOpml", {
-                    defaultValue: "Import OPML",
-                  })}
+                  {t("newsSources.actions.importOpml")}
                 </Button>
                 <Button type="primary" onClick={openCreate}>
-                  {t("newsSources.actions.new", {
-                    defaultValue: "New source",
-                  })}
+                  {t("newsSources.actions.new")}
                 </Button>
               </Space>
             ) : null}
@@ -5209,16 +5064,14 @@ export function NewsSourcesContent() {
           />
           <Card
             size="small"
-            title={t("newsSources.readiness.title", {
-              defaultValue: "Situation Monitor readiness",
-            })}
+            title={t("newsSources.readiness.title")}
             extra={
               <Button
                 size="small"
                 onClick={() => void loadReadinessSummary()}
                 loading={readinessLoading}
               >
-                {t("common.refresh", { defaultValue: "Refresh" })}
+                {t("common.refresh")}
               </Button>
             }
           >
@@ -5226,9 +5079,7 @@ export function NewsSourcesContent() {
               <Alert
                 type="warning"
                 showIcon
-                message={t("newsSources.readiness.loadFailed", {
-                  defaultValue: "Failed to load readiness summary",
-                })}
+                message={t("newsSources.readiness.loadFailed")}
                 description={readinessError}
                 style={{ marginBottom: 12 }}
               />
@@ -5239,56 +5090,37 @@ export function NewsSourcesContent() {
                   type={readinessTone}
                   showIcon
                   message={
-                    readinessSummary.active === 0
-                      ? t("newsSources.readiness.noActiveSources", {
-                          defaultValue:
-                            "Situation Monitor cannot queue new collection because there are no active news sources.",
-                        })
-                      : readinessSummary.circuitOpen > 0 ||
-                          readinessSummary.failing > 0
-                        ? t("newsSources.readiness.degraded", {
-                            defaultValue:
-                              "Some sources are degraded and may reduce Situation Monitor coverage.",
-                          })
-                        : t("newsSources.readiness.ready", {
-                            defaultValue:
-                              "News source scheduling looks healthy for Situation Monitor refresh.",
-                          })
+                    readinessState === "empty"
+                      ? t("newsSources.readiness.noSourcesConfigured")
+                      : readinessState === "inactive"
+                      ? t("newsSources.readiness.noActiveSources")
+                      : readinessState === "degraded"
+                        ? t("newsSources.readiness.degraded")
+                        : t("newsSources.readiness.ready")
                   }
                   description={
-                    readinessSummary.active === 0
-                      ? t("newsSources.readiness.noActiveSourcesDescription", {
-                          defaultValue:
-                            "Activate at least one source or import a source list before relying on Situation Monitor refresh.",
-                        })
-                      : readinessSummary.circuitOpen > 0 ||
-                          readinessSummary.failing > 0
-                        ? t("newsSources.readiness.degradedDescription", {
-                            defaultValue:
-                              "Review circuit-open and failing sources before relying on fresh Situation Monitor data.",
-                          })
+                    readinessState === "empty"
+                      ? t("newsSources.readiness.noSourcesConfiguredDescription")
+                      : readinessState === "inactive"
+                      ? t("newsSources.readiness.noActiveSourcesDescription")
+                      : readinessState === "degraded"
+                        ? t("newsSources.readiness.degradedDescription")
                         : undefined
                   }
                   action={
                     canManage ? (
                       <Space wrap>
                         <Button size="small" onClick={openCreate}>
-                          {t("newsSources.actions.new", {
-                            defaultValue: "Create source",
-                          })}
+                          {t("newsSources.actions.new")}
                         </Button>
                         <Button
                           size="small"
                           onClick={() => void openOpmlImport()}
                         >
-                          {t("newsSources.actions.importOpml", {
-                            defaultValue: "Import OPML",
-                          })}
+                          {t("newsSources.actions.importOpml")}
                         </Button>
                         <Button size="small" href={schedulerSettingsHref}>
-                          {t("newsSources.readiness.openSchedulerSettings", {
-                            defaultValue: "Open scheduler settings",
-                          })}
+                          {t("newsSources.readiness.openSchedulerSettings")}
                         </Button>
                       </Space>
                     ) : null
@@ -5297,41 +5129,31 @@ export function NewsSourcesContent() {
                 <Row gutter={[16, 12]}>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.readiness.total", {
-                        defaultValue: "Total sources",
-                      })}
+                      title={t("newsSources.readiness.total")}
                       value={readinessSummary.total}
                     />
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.readiness.active", {
-                        defaultValue: "Active",
-                      })}
+                      title={t("newsSources.readiness.active")}
                       value={readinessSummary.active}
                     />
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.readiness.inactive", {
-                        defaultValue: "Inactive",
-                      })}
+                      title={t("newsSources.readiness.inactive")}
                       value={readinessSummary.inactive}
                     />
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.readiness.circuitOpen", {
-                        defaultValue: "Circuit open",
-                      })}
+                      title={t("newsSources.readiness.circuitOpen")}
                       value={readinessSummary.circuitOpen}
                     />
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.readiness.failing", {
-                        defaultValue: "Failing",
-                      })}
+                      title={t("newsSources.readiness.failing")}
                       value={readinessSummary.failing}
                     />
                   </Col>
@@ -5340,23 +5162,21 @@ export function NewsSourcesContent() {
             ) : (
               <Typography.Text type="secondary">
                 {readinessLoading
-                  ? t("common.loading", { defaultValue: "Loading..." })
-                  : t("common.noData", { defaultValue: "No data" })}
+                  ? t("common.loading")
+                  : t("common.noData")}
               </Typography.Text>
             )}
           </Card>
           <Card
             size="small"
-            title={t("newsSources.queue.title", {
-              defaultValue: "Crawl4AI queue",
-            })}
+            title={t("newsSources.queue.title")}
             extra={
               <Button
                 size="small"
                 onClick={() => void loadCrawlQueueStats()}
                 loading={crawlQueueLoading}
               >
-                {t("common.refresh", { defaultValue: "Refresh" })}
+                {t("common.refresh")}
               </Button>
             }
           >
@@ -5364,9 +5184,7 @@ export function NewsSourcesContent() {
               <Alert
                 type="warning"
                 showIcon
-                message={t("newsSources.queue.loadFailed", {
-                  defaultValue: "Failed to load queue stats",
-                })}
+                message={t("newsSources.queue.loadFailed")}
                 description={crawlQueueError}
                 style={{ marginBottom: 12 }}
               />
@@ -5376,56 +5194,43 @@ export function NewsSourcesContent() {
                 <Row gutter={[16, 12]}>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.queue.pending", {
-                        defaultValue: "Pending",
-                      })}
+                      title={t("newsSources.queue.pending")}
                       value={crawlQueueStats.pending}
                     />
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.queue.waiting", {
-                        defaultValue: "Waiting",
-                      })}
+                      title={t("newsSources.queue.waiting")}
                       value={crawlQueueStats.counts.waiting ?? 0}
                     />
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.queue.active", {
-                        defaultValue: "Active",
-                      })}
+                      title={t("newsSources.queue.active")}
                       value={crawlQueueStats.counts.active ?? 0}
                     />
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.queue.delayed", {
-                        defaultValue: "Delayed",
-                      })}
+                      title={t("newsSources.queue.delayed")}
                       value={crawlQueueStats.counts.delayed ?? 0}
                     />
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.queue.failed", {
-                        defaultValue: "Failed",
-                      })}
+                      title={t("newsSources.queue.failed")}
                       value={crawlQueueStats.counts.failed ?? 0}
                     />
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.queue.concurrency", {
-                        defaultValue: "Concurrency",
-                      })}
+                      title={t("newsSources.queue.concurrency")}
                       value={crawlQueueStats.maxConcurrency ?? "-"}
                     />
                   </Col>
                 </Row>
                 <Typography.Text type="secondary">
                   {t("newsSources.queue.updatedAt", {
-                    defaultValue: "Updated {{time}}",
                     time: formatDateTime(crawlQueueStats.updatedAt, locale, {
                       dateStyle: "medium",
                       timeStyle: "short",
@@ -5436,33 +5241,29 @@ export function NewsSourcesContent() {
             ) : (
               <Typography.Text type="secondary">
                 {crawlQueueLoading
-                  ? t("common.loading", { defaultValue: "Loading..." })
-                  : t("common.noData", { defaultValue: "No data" })}
+                  ? t("common.loading")
+                  : t("common.noData")}
               </Typography.Text>
             )}
           </Card>
 
           <Card
             size="small"
-            title={t("newsSources.quality.title", {
-              defaultValue: "Crawl quality",
-            })}
+            title={t("newsSources.quality.title")}
             extra={
               <Space size={8}>
                 <Button
                   size="small"
                   onClick={() => void router.push("/admin/alerts")}
                 >
-                  {t("newsSources.quality.manageThresholds", {
-                    defaultValue: "Manage thresholds",
-                  })}
+                  {t("newsSources.quality.manageThresholds")}
                 </Button>
                 <Button
                   size="small"
                   onClick={() => void loadCrawlQualityStats()}
                   loading={crawlQualityLoading}
                 >
-                  {t("common.refresh", { defaultValue: "Refresh" })}
+                  {t("common.refresh")}
                 </Button>
               </Space>
             }
@@ -5471,9 +5272,7 @@ export function NewsSourcesContent() {
               <Alert
                 type="warning"
                 showIcon
-                message={t("newsSources.quality.loadFailed", {
-                  defaultValue: "Failed to load quality stats",
-                })}
+                message={t("newsSources.quality.loadFailed")}
                 description={crawlQualityError}
                 style={{ marginBottom: 12 }}
               />
@@ -5483,17 +5282,13 @@ export function NewsSourcesContent() {
                 <Row gutter={[16, 12]}>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.quality.taskCount", {
-                        defaultValue: "Tasks",
-                      })}
+                      title={t("newsSources.quality.taskCount")}
                       value={crawlQualityStats.taskCount}
                     />
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.quality.lowSignal", {
-                        defaultValue: "Low signal",
-                      })}
+                      title={t("newsSources.quality.lowSignal")}
                       value={Number(
                         (crawlQualityStats.lowSignalRatio * 100).toFixed(1),
                       )}
@@ -5502,9 +5297,7 @@ export function NewsSourcesContent() {
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.quality.emptyMarkdown", {
-                        defaultValue: "Empty markdown",
-                      })}
+                      title={t("newsSources.quality.emptyMarkdown")}
                       value={Number(
                         (crawlQualityStats.emptyMarkdownRate * 100).toFixed(1),
                       )}
@@ -5513,9 +5306,7 @@ export function NewsSourcesContent() {
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.quality.expansionTrigger", {
-                        defaultValue: "Expansion trigger",
-                      })}
+                      title={t("newsSources.quality.expansionTrigger")}
                       value={Number(
                         (crawlQualityStats.expansionTriggerRate * 100).toFixed(
                           1,
@@ -5526,9 +5317,7 @@ export function NewsSourcesContent() {
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.quality.expansionSuccess", {
-                        defaultValue: "Expansion success",
-                      })}
+                      title={t("newsSources.quality.expansionSuccess")}
                       value={Number(
                         (crawlQualityStats.expansionSuccessRate * 100).toFixed(
                           1,
@@ -5539,9 +5328,7 @@ export function NewsSourcesContent() {
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Statistic
-                      title={t("newsSources.quality.avgMarkdownChars", {
-                        defaultValue: "Avg markdown chars",
-                      })}
+                      title={t("newsSources.quality.avgMarkdownChars")}
                       value={crawlQualityStats.avgMarkdownChars}
                     />
                   </Col>
@@ -5549,9 +5336,7 @@ export function NewsSourcesContent() {
                 <Row gutter={[16, 12]}>
                   <Col xs={12} sm={8} md={6}>
                     <Statistic
-                      title={t("newsSources.quality.publishConfidenceRejects", {
-                        defaultValue: "Publish-confidence rejects",
-                      })}
+                      title={t("newsSources.quality.publishConfidenceRejects")}
                       value={
                         crawlQualityStats.candidateRejects?.publishConfidence ??
                         0
@@ -5560,9 +5345,7 @@ export function NewsSourcesContent() {
                   </Col>
                   <Col xs={12} sm={8} md={6}>
                     <Statistic
-                      title={t("newsSources.quality.patternRejects", {
-                        defaultValue: "Pattern rejects",
-                      })}
+                      title={t("newsSources.quality.patternRejects")}
                       value={
                         (crawlQualityStats.candidateRejects?.includePattern ??
                           0) +
@@ -5573,9 +5356,7 @@ export function NewsSourcesContent() {
                   </Col>
                   <Col xs={12} sm={8} md={6}>
                     <Statistic
-                      title={t("newsSources.quality.fitMarkdownPreference", {
-                        defaultValue: "Fit markdown preference",
-                      })}
+                      title={t("newsSources.quality.fitMarkdownPreference")}
                       value={Number(
                         (
                           (crawlQualityStats.fitMarkdownPreferenceRate ?? 0) *
@@ -5587,9 +5368,7 @@ export function NewsSourcesContent() {
                   </Col>
                   <Col xs={12} sm={8} md={6}>
                     <Statistic
-                      title={t("newsSources.quality.headSignalSuccess", {
-                        defaultValue: "Head signal success",
-                      })}
+                      title={t("newsSources.quality.headSignalSuccess")}
                       value={Number(
                         (
                           (crawlQualityStats.headSignalSuccessRate ?? 0) * 100
@@ -5602,9 +5381,7 @@ export function NewsSourcesContent() {
                 <Row gutter={[16, 12]}>
                   <Col xs={12} sm={8} md={6}>
                     <Statistic
-                      title={t("newsSources.quality.headSignalSoftFailure", {
-                        defaultValue: "Head signal soft-failure",
-                      })}
+                      title={t("newsSources.quality.headSignalSoftFailure")}
                       value={Number(
                         (
                           (crawlQualityStats.headSignalSoftFailureRate ?? 0) *
@@ -5616,9 +5393,7 @@ export function NewsSourcesContent() {
                   </Col>
                   <Col xs={12} sm={8} md={6}>
                     <Statistic
-                      title={t("newsSources.quality.headSignalTruncated", {
-                        defaultValue: "Head signal truncated",
-                      })}
+                      title={t("newsSources.quality.headSignalTruncated")}
                       value={Number(
                         (
                           (crawlQualityStats.headSignalTruncatedRate ?? 0) * 100
@@ -5631,9 +5406,6 @@ export function NewsSourcesContent() {
                     <Statistic
                       title={t(
                         "newsSources.quality.headSignalNoPublishSignal",
-                        {
-                          defaultValue: "Head signal no-publish",
-                        },
                       )}
                       value={Number(
                         (
@@ -5651,27 +5423,28 @@ export function NewsSourcesContent() {
                       title={
                         <Space size={4} wrap>
                           <span>
-                            {t("newsSources.quality.http304HitRate", {
-                              defaultValue: "HTTP 304 hit",
-                            })}
+                            {t("newsSources.quality.http304HitRate")}
                           </span>
                           <Tag
                             color={
-                              crawlQualityThresholdStatus?.http304Breached
+                              (crawlQualityThresholdStatus?.preflightRunCount ??
+                                0) <= 0
+                                ? "default"
+                                : crawlQualityThresholdStatus?.http304Breached
                                 ? "red"
                                 : "green"
                             }
                           >
-                            {crawlQualityThresholdStatus?.http304Breached
-                              ? t(
-                                  "newsSources.quality.thresholdStatusBreached",
-                                  {
-                                    defaultValue: "breach",
-                                  },
-                                )
-                              : t("newsSources.quality.thresholdStatusNormal", {
-                                  defaultValue: "normal",
-                                })}
+                            {(crawlQualityThresholdStatus?.preflightRunCount ??
+                              0) <= 0
+                              ? t("newsSources.quality.thresholdStatusNoData")
+                              : crawlQualityThresholdStatus?.http304Breached
+                                ? t(
+                                    "newsSources.quality.thresholdStatusBreached",
+                                  )
+                                : t(
+                                    "newsSources.quality.thresholdStatusNormal",
+                                  )}
                           </Tag>
                           <Tag>
                             {`<= ${Number(
@@ -5682,12 +5455,21 @@ export function NewsSourcesContent() {
                           </Tag>
                         </Space>
                       }
-                      value={Number(
-                        ((crawlQualityStats.http304HitRate ?? 0) * 100).toFixed(
-                          1,
-                        ),
-                      )}
-                      suffix="%"
+                      value={
+                        (crawlQualityThresholdStatus?.preflightRunCount ?? 0) >
+                        0
+                          ? Number(
+                              ((crawlQualityStats.http304HitRate ?? 0) * 100)
+                                .toFixed(1),
+                            )
+                          : "-"
+                      }
+                      suffix={
+                        (crawlQualityThresholdStatus?.preflightRunCount ?? 0) >
+                        0
+                          ? "%"
+                          : ""
+                      }
                     />
                   </Col>
                   <Col xs={12} sm={8} md={6}>
@@ -5695,27 +5477,28 @@ export function NewsSourcesContent() {
                       title={
                         <Space size={4} wrap>
                           <span>
-                            {t("newsSources.quality.preflightFailureRate", {
-                              defaultValue: "Preflight failure",
-                            })}
+                            {t("newsSources.quality.preflightFailureRate")}
                           </span>
                           <Tag
                             color={
-                              crawlQualityThresholdStatus?.preflightFailureBreached
+                              (crawlQualityThresholdStatus?.preflightRunCount ??
+                                0) <= 0
+                                ? "default"
+                                : crawlQualityThresholdStatus?.preflightFailureBreached
                                 ? "red"
                                 : "green"
                             }
                           >
-                            {crawlQualityThresholdStatus?.preflightFailureBreached
-                              ? t(
-                                  "newsSources.quality.thresholdStatusBreached",
-                                  {
-                                    defaultValue: "breach",
-                                  },
-                                )
-                              : t("newsSources.quality.thresholdStatusNormal", {
-                                  defaultValue: "normal",
-                                })}
+                            {(crawlQualityThresholdStatus?.preflightRunCount ??
+                              0) <= 0
+                              ? t("newsSources.quality.thresholdStatusNoData")
+                              : crawlQualityThresholdStatus?.preflightFailureBreached
+                                ? t(
+                                    "newsSources.quality.thresholdStatusBreached",
+                                  )
+                                : t(
+                                    "newsSources.quality.thresholdStatusNormal",
+                                  )}
                           </Tag>
                           <Tag>
                             {`>= ${Number(
@@ -5727,12 +5510,23 @@ export function NewsSourcesContent() {
                           </Tag>
                         </Space>
                       }
-                      value={Number(
-                        (
-                          (crawlQualityStats.preflightFailureRate ?? 0) * 100
-                        ).toFixed(1),
-                      )}
-                      suffix="%"
+                      value={
+                        (crawlQualityThresholdStatus?.preflightRunCount ?? 0) >
+                        0
+                          ? Number(
+                              (
+                                (crawlQualityStats.preflightFailureRate ?? 0) *
+                                100
+                              ).toFixed(1),
+                            )
+                          : "-"
+                      }
+                      suffix={
+                        (crawlQualityThresholdStatus?.preflightRunCount ?? 0) >
+                        0
+                          ? "%"
+                          : ""
+                      }
                     />
                   </Col>
                   <Col xs={12} sm={8} md={6}>
@@ -5740,27 +5534,28 @@ export function NewsSourcesContent() {
                       title={
                         <Space size={4} wrap>
                           <span>
-                            {t("newsSources.quality.orgHashDedupeHitRate", {
-                              defaultValue: "Org hash dedupe hit",
-                            })}
+                            {t("newsSources.quality.orgHashDedupeHitRate")}
                           </span>
                           <Tag
                             color={
-                              crawlQualityThresholdStatus?.orgHashDedupeBreached
+                              (crawlQualityThresholdStatus?.dedupeEvaluatedCount ??
+                                0) <= 0
+                                ? "default"
+                                : crawlQualityThresholdStatus?.orgHashDedupeBreached
                                 ? "red"
                                 : "green"
                             }
                           >
-                            {crawlQualityThresholdStatus?.orgHashDedupeBreached
-                              ? t(
-                                  "newsSources.quality.thresholdStatusBreached",
-                                  {
-                                    defaultValue: "breach",
-                                  },
-                                )
-                              : t("newsSources.quality.thresholdStatusNormal", {
-                                  defaultValue: "normal",
-                                })}
+                            {(crawlQualityThresholdStatus?.dedupeEvaluatedCount ??
+                              0) <= 0
+                              ? t("newsSources.quality.thresholdStatusNoData")
+                              : crawlQualityThresholdStatus?.orgHashDedupeBreached
+                                ? t(
+                                    "newsSources.quality.thresholdStatusBreached",
+                                  )
+                                : t(
+                                    "newsSources.quality.thresholdStatusNormal",
+                                  )}
                           </Tag>
                           <Tag>
                             {`>= ${Number(
@@ -5772,29 +5567,42 @@ export function NewsSourcesContent() {
                           </Tag>
                         </Space>
                       }
-                      value={Number(
-                        (
-                          (crawlQualityStats.orgHashDedupeHitRate ?? 0) * 100
-                        ).toFixed(1),
-                      )}
-                      suffix="%"
+                      value={
+                        (crawlQualityThresholdStatus?.dedupeEvaluatedCount ??
+                          0) > 0
+                          ? Number(
+                              (
+                                (crawlQualityStats.orgHashDedupeHitRate ?? 0) *
+                                100
+                              ).toFixed(1),
+                            )
+                          : "-"
+                      }
+                      suffix={
+                        (crawlQualityThresholdStatus?.dedupeEvaluatedCount ??
+                          0) > 0
+                          ? "%"
+                          : ""
+                      }
                     />
                   </Col>
                 </Row>
                 <Typography.Text type="secondary">
-                  {t("newsSources.quality.thresholdHint", {
-                    defaultValue:
-                      "Threshold tags come from active alert rules and are evaluated over the selected window.",
-                  })}
+                  {t("newsSources.quality.thresholdHint")}
                 </Typography.Text>
+                {crawlQualityStats.taskCount === 0 ? (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message={t("newsSources.quality.noSamples")}
+                    description={t("newsSources.quality.noSamplesDescription")}
+                  />
+                ) : null}
                 {crawlQualityRateAlerts.length > 0 ? (
                   <Alert
                     type="warning"
                     showIcon
-                    message={t("newsSources.quality.crawlQualityAlertTitle", {
-                      defaultValue:
-                        "Crawl quality warning: one or more quality rates crossed configured thresholds",
-                    })}
+                    message={t("newsSources.quality.crawlQualityAlertTitle")}
                     description={crawlQualityRateAlerts
                       .map((entry) =>
                         t(
@@ -5806,44 +5614,25 @@ export function NewsSourcesContent() {
                               entry.key === "softFailure"
                                 ? t(
                                     "newsSources.quality.headSignalSoftFailure",
-                                    {
-                                      defaultValue: "soft-failure",
-                                    },
                                   )
                                 : entry.key === "truncated"
                                   ? t(
                                       "newsSources.quality.headSignalTruncated",
-                                      {
-                                        defaultValue: "truncated",
-                                      },
                                     )
                                   : entry.key === "noPublishSignal"
                                     ? t(
                                         "newsSources.quality.headSignalNoPublishSignal",
-                                        {
-                                          defaultValue: "no-publish-signal",
-                                        },
                                       )
                                     : entry.key === "preflightFailure"
                                       ? t(
                                           "newsSources.quality.preflightFailureRate",
-                                          {
-                                            defaultValue: "preflight-failure",
-                                          },
                                         )
                                       : entry.key === "orgHashDedupeHigh"
                                         ? t(
                                             "newsSources.quality.orgHashDedupeHitRate",
-                                            {
-                                              defaultValue:
-                                                "org-hash-dedupe-hit",
-                                            },
                                           )
                                         : t(
                                             "newsSources.quality.http304HitRate",
-                                            {
-                                              defaultValue: "http-304-hit",
-                                            },
                                           ),
                             overall: Number(
                               (entry.overallRate * 100).toFixed(1),
@@ -5854,12 +5643,8 @@ export function NewsSourcesContent() {
                             ),
                             extremeLabel:
                               entry.direction === "high"
-                                ? t("newsSources.quality.highestSource", {
-                                    defaultValue: "highest",
-                                  })
-                                : t("newsSources.quality.lowestSource", {
-                                    defaultValue: "lowest",
-                                  }),
+                                ? t("newsSources.quality.highestSource")
+                                : t("newsSources.quality.lowestSource"),
                             source: entry.extremeSource?.sourceId ?? "unknown",
                             sourceRate: Number(
                               ((entry.extremeSource?.rate ?? 0) * 100).toFixed(
@@ -5874,8 +5659,6 @@ export function NewsSourcesContent() {
                 ) : null}
                 <Typography.Text type="secondary">
                   {t("newsSources.quality.publishConfidenceBuckets", {
-                    defaultValue:
-                      "Confidence buckets: <0.4={{lt04}}, 0.4~0.6={{from04To06}}, 0.6~0.8={{from06To08}}, >=0.8={{gte08}}",
                     lt04: crawlQualityStats.publishConfidenceBuckets?.lt04 ?? 0,
                     from04To06:
                       crawlQualityStats.publishConfidenceBuckets?.from04To06 ??
@@ -5889,7 +5672,6 @@ export function NewsSourcesContent() {
                 </Typography.Text>
                 <Typography.Text type="secondary">
                   {t("newsSources.quality.updatedAt", {
-                    defaultValue: "Window {{from}} - {{to}}",
                     from: formatDateTime(crawlQualityStats.from, locale, {
                       dateStyle: "medium",
                       timeStyle: "short",
@@ -5904,8 +5686,8 @@ export function NewsSourcesContent() {
             ) : (
               <Typography.Text type="secondary">
                 {crawlQualityLoading
-                  ? t("common.loading", { defaultValue: "Loading..." })
-                  : t("common.noData", { defaultValue: "No data" })}
+                  ? t("common.loading")
+                  : t("common.noData")}
               </Typography.Text>
             )}
           </Card>
@@ -5913,7 +5695,6 @@ export function NewsSourcesContent() {
           {lastUpdatedAt ? (
             <Typography.Text type="secondary">
               {t("newsSources.autoRefresh.updatedAt", {
-                defaultValue: "Updated at {{time}}",
                 time: formatDateTime(lastUpdatedAt, locale, {
                   dateStyle: "medium",
                   timeStyle: "short",
@@ -5927,7 +5708,6 @@ export function NewsSourcesContent() {
               <Space wrap>
                 <Typography.Text strong>
                   {t("newsSources.selection.count", {
-                    defaultValue: "Selected: {{count}}",
                     count: selectedSourceIds.length,
                   })}
                 </Typography.Text>
@@ -5935,37 +5715,33 @@ export function NewsSourcesContent() {
                   onClick={() => openBatchSchedule(selectedSources)}
                   disabled={scheduleLoading}
                 >
-                  {t("newsSources.actions.schedule", {
-                    defaultValue: "Schedule",
-                  })}
+                  {t("newsSources.actions.schedule")}
                 </Button>
                 <Button
                   type="primary"
                   onClick={() => void handleBatchRunNow()}
                   loading={batchRunLoading}
                 >
-                  {t("newsSources.actions.runNow", { defaultValue: "Run now" })}
+                  {t("newsSources.actions.runNow")}
                 </Button>
                 <Button
                   onClick={() => void handleBatchToggleActive(true)}
                   loading={batchToggleLoading}
                 >
-                  {t("common.enable", { defaultValue: "Enable" })}
+                  {t("common.enable")}
                 </Button>
                 <Button
                   onClick={() => void handleBatchToggleActive(false)}
                   loading={batchToggleLoading}
                 >
-                  {t("common.disable", { defaultValue: "Disable" })}
+                  {t("common.disable")}
                 </Button>
                 <Dropdown
                   menu={{
                     items: [
                       {
                         key: "clear-group",
-                        label: t("newsSources.actions.clearGroup", {
-                          defaultValue: "Clear group",
-                        }),
+                        label: t("newsSources.actions.clearGroup"),
                         onClick: () => void handleBatchSetGroup(null),
                       },
                       ...uniqueGroups.map((g) => ({
@@ -5978,13 +5754,11 @@ export function NewsSourcesContent() {
                   disabled={batchGroupLoading}
                 >
                   <Button loading={batchGroupLoading}>
-                    {t("newsSources.actions.setGroup", {
-                      defaultValue: "Set group",
-                    })}
+                    {t("newsSources.actions.setGroup")}
                   </Button>
                 </Dropdown>
                 <Button onClick={() => setSelectedSourceIds([])}>
-                  {t("common.clear", { defaultValue: "Clear" })}
+                  {t("common.clear")}
                 </Button>
               </Space>
             </Card>
@@ -5992,9 +5766,7 @@ export function NewsSourcesContent() {
           <Input
             id="news-sources-search"
             name="newsSourcesSearch"
-            placeholder={t("newsSources.searchPlaceholder", {
-              defaultValue: "Search by name or URL",
-            })}
+            placeholder={t("newsSources.searchPlaceholder")}
             allowClear
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
@@ -6002,10 +5774,9 @@ export function NewsSourcesContent() {
           <Table
             rowKey="id"
             loading={loading}
-            tableLayout="fixed"
             columns={columns}
             dataSource={sources}
-            scroll={{ x: 2400 }}
+            scroll={{ x: "max-content" }}
             rowSelection={
               canManage
                 ? {
@@ -6021,7 +5792,6 @@ export function NewsSourcesContent() {
               total: sourceTotal,
               showTotal: (total) =>
                 t("common.totalCount", {
-                  defaultValue: "Total {{count}}",
                   count: total,
                 }),
               showSizeChanger: screens.md,
@@ -6076,8 +5846,8 @@ export function NewsSourcesContent() {
           open={modalOpen}
           title={
             editingSource
-              ? t("newsSources.actions.edit", { defaultValue: "Edit source" })
-              : t("newsSources.actions.new", { defaultValue: "New source" })
+              ? t("newsSources.actions.edit")
+              : t("newsSources.actions.new")
           }
           onCancel={() => {
             setModalOpen(false);
@@ -6091,70 +5861,60 @@ export function NewsSourcesContent() {
         >
           <Form.Item
             name="name"
-            label={t("newsSources.fields.name", { defaultValue: "Name" })}
+            label={t("newsSources.fields.name")}
             rules={[{ required: true }]}
           >
             <Input />
           </Form.Item>
           <Form.Item
             name="url"
-            label={t("newsSources.fields.url", { defaultValue: "URL" })}
+            label={t("newsSources.fields.url")}
             rules={[{ required: true, type: "url" }]}
           >
             <Input />
           </Form.Item>
           <Form.Item
             name="siteType"
-            label={t("newsSources.fields.type", { defaultValue: "Type" })}
+            label={t("newsSources.fields.type")}
             rules={[{ required: true }]}
           >
             <Select options={siteTypeOptions} />
           </Form.Item>
           <Form.Item
             name="language"
-            label={t("newsSources.fields.language", {
-              defaultValue: "Language",
-            })}
+            label={t("newsSources.fields.language")}
           >
             <Input
-              placeholder={t("newsSources.fields.languageHint", {
-                defaultValue: "e.g. en, zh",
-              })}
+              placeholder={t("newsSources.fields.languageHint")}
             />
           </Form.Item>
           {showCrawlSettings ? (
             <Form.Item
               name="crawlTemplateId"
-              label={t("newsSources.fields.template", {
-                defaultValue: "Crawl template",
-              })}
+              label={t("newsSources.fields.template")}
             >
               <Select
                 showSearch
                 allowClear
                 options={templateOptions}
-                placeholder={t("common.none", { defaultValue: "None" })}
+                placeholder={t("common.none")}
               />
             </Form.Item>
           ) : null}
           <Form.Item
             name="workflowId"
-            label={t("newsSources.fields.workflow", {
-              defaultValue: "Workflow",
-            })}
+            label={t("newsSources.fields.workflow")}
           >
             <Select
               showSearch
               allowClear
               options={workflowOptions}
-              placeholder={t("common.none", { defaultValue: "None" })}
+              placeholder={t("common.none")}
             />
           </Form.Item>
           <Form.Item
             name="workflowBindingMode"
-            label={t("newsSources.fields.workflowMode", {
-              defaultValue: "Workflow version mode",
-            })}
+            label={t("newsSources.fields.workflowMode")}
           >
             <Select
               options={[
@@ -6165,15 +5925,13 @@ export function NewsSourcesContent() {
           </Form.Item>
           <Form.Item
             name="workflowVersionId"
-            label={t("newsSources.fields.workflowVersion", {
-              defaultValue: "Pinned workflow version",
-            })}
+            label={t("newsSources.fields.workflowVersion")}
           >
             <Input placeholder="workflow-version-id" />
           </Form.Item>
           <Form.Item
             name="group"
-            label={t("newsSources.fields.group", { defaultValue: "Group" })}
+            label={t("newsSources.fields.group")}
           >
             <Select
               showSearch
@@ -6181,9 +5939,7 @@ export function NewsSourcesContent() {
               mode="tags"
               maxCount={1}
               options={uniqueGroups.map((g) => ({ value: g, label: g }))}
-              placeholder={t("newsSources.fields.groupPlaceholder", {
-                defaultValue: "Select or type a group",
-              })}
+              placeholder={t("newsSources.fields.groupPlaceholder")}
               notFoundContent={null}
               filterOption={(input, option) =>
                 ((option?.label as string) ?? "")
@@ -6194,34 +5950,25 @@ export function NewsSourcesContent() {
           </Form.Item>
 
           <Typography.Title level={5} style={{ marginBottom: 0 }}>
-            {t("newsSources.sections.schedule", { defaultValue: "Schedule" })}
+            {t("newsSources.sections.schedule")}
           </Typography.Title>
           <Typography.Text type="secondary">
-            {t("newsSources.sections.scheduleHint", {
-              defaultValue:
-                "Choose interval scheduling (frequency) or a cron expression with optional time window.",
-            })}
+            {t("newsSources.sections.scheduleHint")}
           </Typography.Text>
 
           <Form.Item
             name="scheduleMode"
-            label={t("newsSources.fields.scheduleMode", {
-              defaultValue: "Schedule mode",
-            })}
+            label={t("newsSources.fields.scheduleMode")}
           >
             <Select
               options={[
                 {
                   value: "interval",
-                  label: t("newsSources.scheduleMode.interval", {
-                    defaultValue: "Interval",
-                  }),
+                  label: t("newsSources.scheduleMode.interval"),
                 },
                 {
                   value: "cron",
-                  label: t("newsSources.scheduleMode.cron", {
-                    defaultValue: "Cron",
-                  }),
+                  label: t("newsSources.scheduleMode.cron"),
                 },
               ]}
             />
@@ -6244,9 +5991,7 @@ export function NewsSourcesContent() {
                 <>
                   <Form.Item
                     name="cronExpression"
-                    label={t("newsSources.fields.cronExpression", {
-                      defaultValue: "Cron expression",
-                    })}
+                    label={t("newsSources.fields.cronExpression")}
                     dependencies={["scheduleMode"]}
                     rules={[
                       ({ getFieldValue: get }) => ({
@@ -6262,10 +6007,7 @@ export function NewsSourcesContent() {
                           }
                           return Promise.reject(
                             new Error(
-                              t("newsSources.fields.cronExpressionRequired", {
-                                defaultValue:
-                                  "Cron expression is required for cron mode.",
-                              }),
+                              t("newsSources.fields.cronExpressionRequired"),
                             ),
                           );
                         },
@@ -6276,68 +6018,47 @@ export function NewsSourcesContent() {
                   </Form.Item>
                   <Form.Item
                     name="cronTimezone"
-                    label={t("newsSources.fields.cronTimezone", {
-                      defaultValue: "Timezone (IANA)",
-                    })}
-                    tooltip={t("newsSources.fields.cronTimezoneHint", {
-                      defaultValue:
-                        "Examples: UTC, Asia/Shanghai, America/New_York.",
-                    })}
+                    label={t("newsSources.fields.cronTimezone")}
+                    tooltip={t("newsSources.fields.cronTimezoneHint")}
                   >
                     <Input placeholder="UTC" />
                   </Form.Item>
                   <Form.Item
                     name="cronWindowDaysOfWeek"
-                    label={t("newsSources.fields.cronWindowDays", {
-                      defaultValue: "Allowed weekdays (optional)",
-                    })}
+                    label={t("newsSources.fields.cronWindowDays")}
                   >
                     <Select
                       mode="multiple"
                       allowClear
-                      placeholder={t("common.none", { defaultValue: "None" })}
+                      placeholder={t("common.none")}
                       options={[
                         {
                           value: 1,
-                          label: t("common.weekday.mon", {
-                            defaultValue: "Mon",
-                          }),
+                          label: t("common.weekday.mon"),
                         },
                         {
                           value: 2,
-                          label: t("common.weekday.tue", {
-                            defaultValue: "Tue",
-                          }),
+                          label: t("common.weekday.tue"),
                         },
                         {
                           value: 3,
-                          label: t("common.weekday.wed", {
-                            defaultValue: "Wed",
-                          }),
+                          label: t("common.weekday.wed"),
                         },
                         {
                           value: 4,
-                          label: t("common.weekday.thu", {
-                            defaultValue: "Thu",
-                          }),
+                          label: t("common.weekday.thu"),
                         },
                         {
                           value: 5,
-                          label: t("common.weekday.fri", {
-                            defaultValue: "Fri",
-                          }),
+                          label: t("common.weekday.fri"),
                         },
                         {
                           value: 6,
-                          label: t("common.weekday.sat", {
-                            defaultValue: "Sat",
-                          }),
+                          label: t("common.weekday.sat"),
                         },
                         {
                           value: 0,
-                          label: t("common.weekday.sun", {
-                            defaultValue: "Sun",
-                          }),
+                          label: t("common.weekday.sun"),
                         },
                       ]}
                     />
@@ -6346,9 +6067,7 @@ export function NewsSourcesContent() {
                     <Col span={12}>
                       <Form.Item
                         name="cronWindowStartHour"
-                        label={t("newsSources.fields.cronWindowStartHour", {
-                          defaultValue: "Start hour (0-23)",
-                        })}
+                        label={t("newsSources.fields.cronWindowStartHour")}
                       >
                         <InputNumber
                           min={0}
@@ -6360,9 +6079,7 @@ export function NewsSourcesContent() {
                     <Col span={12}>
                       <Form.Item
                         name="cronWindowEndHour"
-                        label={t("newsSources.fields.cronWindowEndHour", {
-                          defaultValue: "End hour (1-24)",
-                        })}
+                        label={t("newsSources.fields.cronWindowEndHour")}
                       >
                         <InputNumber
                           min={1}
@@ -6379,233 +6096,98 @@ export function NewsSourcesContent() {
 
           <Form.Item
             name="frequencySeconds"
-            label={t("newsSources.fields.frequency", {
-              defaultValue: "Frequency (seconds)",
-            })}
+            label={t("newsSources.fields.frequency")}
             rules={[{ required: true }]}
           >
             <InputNumber min={60} max={2_592_000} style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item
             name="priority"
-            label={t("newsSources.fields.priority", {
-              defaultValue: "Priority",
-            })}
+            label={t("newsSources.fields.priority")}
             rules={[{ required: true }]}
           >
             <InputNumber min={-100} max={100} style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item
             name="isActive"
-            label={t("newsSources.fields.active", { defaultValue: "Active" })}
+            label={t("newsSources.fields.active")}
             valuePropName="checked"
           >
             <Switch />
           </Form.Item>
           <Form.Item
             name="keywords"
-            label={t("newsSources.fields.keywords", {
-              defaultValue: "Keywords",
-            })}
+            label={t("newsSources.fields.keywords")}
           >
             <Input.TextArea
               autoSize={{ minRows: 2, maxRows: 6 }}
-              placeholder={t("newsSources.fields.keywordsHint", {
-                defaultValue: "One keyword per line",
-              })}
+              placeholder={t("newsSources.fields.keywordsHint")}
             />
           </Form.Item>
           <Form.Item
             name="tags"
-            label={t("newsSources.fields.tags", { defaultValue: "Tags" })}
+            label={t("newsSources.fields.tags")}
           >
             <Input.TextArea
               autoSize={{ minRows: 2, maxRows: 6 }}
-              placeholder={t("newsSources.fields.tagsHint", {
-                defaultValue: "One tag per line",
-              })}
+              placeholder={t("newsSources.fields.tagsHint")}
             />
           </Form.Item>
           <Form.Item
             name="summaryHints"
-            label={t("newsSources.fields.summaryHints", {
-              defaultValue: "Summary hints",
-            })}
+            label={t("newsSources.fields.summaryHints")}
           >
             <Input.TextArea
               autoSize={{ minRows: 2, maxRows: 6 }}
-              placeholder={t("newsSources.fields.summaryHintsHint", {
-                defaultValue: "One hint per line",
-              })}
+              placeholder={t("newsSources.fields.summaryHintsHint")}
             />
           </Form.Item>
           <Form.Item
             name="metadataJson"
-            label={t("newsSources.fields.metadata", {
-              defaultValue: "Metadata (JSON)",
-            })}
+            label={t("newsSources.fields.metadata")}
           >
             <Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} />
           </Form.Item>
           {showCrawlSettings ? (
             <>
-              <Form.Item
-                name="crawlProxyMode"
-                label={t("newsSources.fields.crawlProxyMode", {
-                  defaultValue: "Proxy",
-                })}
-                tooltip={t("newsSources.fields.crawlProxyModeHint", {
-                  defaultValue:
-                    "Auto keeps proxyUrl/proxyConfig from crawlOptions JSON. Enabled overrides crawlOptions with the Proxy URL below. Disabled removes any proxy settings.",
-                })}
-              >
-                <Select
-                  options={[
-                    {
-                      label: t("newsSources.crawlTriState.auto", {
-                        defaultValue: "Auto (inherit)",
-                      }),
-                      value: "auto",
-                    },
-                    {
-                      label: t("newsSources.crawlTriState.enable", {
-                        defaultValue: "Enabled",
-                      }),
-                      value: "enable",
-                    },
-                    {
-                      label: t("newsSources.crawlTriState.disable", {
-                        defaultValue: "Disabled",
-                      }),
-                      value: "disable",
-                    },
-                  ]}
-                />
-              </Form.Item>
-              <Form.Item
-                noStyle
-                shouldUpdate={(prevValues, nextValues) =>
-                  prevValues.crawlProxyMode !== nextValues.crawlProxyMode
-                }
-              >
-                {({ getFieldValue }) => {
-                  const modeRaw = getFieldValue("crawlProxyMode");
-                  const mode =
-                    modeRaw === "enable"
-                      ? "enable"
-                      : modeRaw === "disable"
-                        ? "disable"
-                        : "auto";
-                  if (mode !== "enable") {
-                    return null;
-                  }
-
-                  return (
-                    <Form.Item
-                      name="crawlProxyUrl"
-                      label={t("newsSources.fields.crawlProxyUrl", {
-                        defaultValue: "Proxy URL",
-                      })}
-                      tooltip={t("newsSources.fields.crawlProxyUrlHint", {
-                        defaultValue:
-                          "If crawl4ai runs in Docker and your proxy is on this machine, use host.docker.internal instead of localhost/127.0.0.1.",
-                      })}
-                      rules={[
-                        {
-                          required: true,
-                          message: t("newsSources.errors.proxyUrlRequired", {
-                            defaultValue:
-                              "Proxy URL is required when proxy is enabled.",
-                          }),
-                        },
-                      ]}
-                    >
-                      <Space.Compact style={{ width: "100%" }}>
-                        <Input placeholder="http://host.docker.internal:7890" />
-                        <Button
-                          onClick={() => {
-                            const current = String(
-                              form.getFieldValue("crawlProxyUrl") ?? "",
-                            );
-                            const next =
-                              translateLocalProxyToDockerHost(current);
-                            if (next !== current) {
-                              form.setFieldsValue({ crawlProxyUrl: next });
-                            }
-                          }}
-                        >
-                          {t("newsSources.actions.useDockerHostProxy", {
-                            defaultValue: "Use Docker host",
-                          })}
-                        </Button>
-                        <Button
-                          onClick={() =>
-                            form.setFieldsValue({
-                              crawlProxyMode: "disable",
-                              crawlProxyUrl: "",
-                            })
-                          }
-                        >
-                          {t("common.clear", { defaultValue: "Clear" })}
-                        </Button>
-                      </Space.Compact>
-                    </Form.Item>
-                  );
-                }}
-              </Form.Item>
+              <Alert
+                type="warning"
+                showIcon
+                message={t("newsSources.crawl.proxyDisabledTitle")}
+                description={t("newsSources.crawl.proxyDisabledDescription")}
+              />
 
               <Typography.Title level={5} style={{ marginBottom: 0 }}>
-                {t("newsSources.sections.crawlStrategy", {
-                  defaultValue: "Crawl strategy",
-                })}
+                {t("newsSources.sections.crawlStrategy")}
               </Typography.Title>
               <Typography.Text type="secondary">
-                {t("newsSources.sections.crawlStrategyHint", {
-                  defaultValue:
-                    "Tune full-page scanning, list/detail expansion, and quality defaults without using LLM extraction during crawl.",
-                })}
+                {t("newsSources.sections.crawlStrategyHint")}
               </Typography.Text>
               <Alert
                 style={{ marginBottom: 12, marginTop: 8 }}
                 showIcon
                 type="info"
-                message={t("newsSources.hints.noLlmTitle", {
-                  defaultValue: "No LLM in crawl stage",
-                })}
-                description={t("newsSources.hints.noLlmDescription", {
-                  defaultValue:
-                    "Crawl4AI stage should only fetch and clean content. Run summarization and analysis in downstream pipeline tasks.",
-                })}
+                message={t("newsSources.hints.noLlmTitle")}
+                description={t("newsSources.hints.noLlmDescription")}
               />
               <Form.Item
                 name="crawlScanMode"
-                label={t("newsSources.fields.crawlScanMode", {
-                  defaultValue: "Scan mode",
-                })}
-                tooltip={t("newsSources.fields.crawlScanModeHint", {
-                  defaultValue:
-                    "Full page simulates scrolling for dynamic pages. Virtual scroll lets you control container and scroll cadence for infinite feeds.",
-                })}
+                label={t("newsSources.fields.crawlScanMode")}
+                tooltip={t("newsSources.fields.crawlScanModeHint")}
               >
                 <Select
                   options={[
                     {
                       value: "default",
-                      label: t("newsSources.scanMode.default", {
-                        defaultValue: "Default",
-                      }),
+                      label: t("newsSources.scanMode.default"),
                     },
                     {
                       value: "full_page",
-                      label: t("newsSources.scanMode.fullPage", {
-                        defaultValue: "Full-page scanning",
-                      }),
+                      label: t("newsSources.scanMode.fullPage"),
                     },
                     {
                       value: "virtual_scroll",
-                      label: t("newsSources.scanMode.virtualScroll", {
-                        defaultValue: "Virtual scroll",
-                      }),
+                      label: t("newsSources.scanMode.virtualScroll"),
                     },
                   ]}
                 />
@@ -6656,9 +6238,7 @@ export function NewsSourcesContent() {
                       {scanMode === "full_page" ? (
                         <Form.Item
                           name="crawlScrollDelayMs"
-                          label={t("newsSources.fields.crawlScrollDelayMs", {
-                            defaultValue: "Scroll delay (ms)",
-                          })}
+                          label={t("newsSources.fields.crawlScrollDelayMs")}
                         >
                           <InputNumber
                             min={0}
@@ -6674,9 +6254,6 @@ export function NewsSourcesContent() {
                             name="crawlVirtualScrollContainerSelector"
                             label={t(
                               "newsSources.fields.crawlVirtualScrollContainerSelector",
-                              {
-                                defaultValue: "Scroll container selector",
-                              },
                             )}
                           >
                             <Input placeholder="body" />
@@ -6685,9 +6262,6 @@ export function NewsSourcesContent() {
                             name="crawlVirtualScrollScrollCount"
                             label={t(
                               "newsSources.fields.crawlVirtualScrollScrollCount",
-                              {
-                                defaultValue: "Scroll count",
-                              },
                             )}
                           >
                             <InputNumber
@@ -6700,9 +6274,6 @@ export function NewsSourcesContent() {
                             name="crawlVirtualScrollScrollBy"
                             label={t(
                               "newsSources.fields.crawlVirtualScrollScrollBy",
-                              {
-                                defaultValue: "Scroll step",
-                              },
                             )}
                           >
                             <Select
@@ -6742,9 +6313,6 @@ export function NewsSourcesContent() {
                                   name="crawlVirtualScrollScrollByPixels"
                                   label={t(
                                     "newsSources.fields.crawlVirtualScrollScrollByPixels",
-                                    {
-                                      defaultValue: "Scroll pixels",
-                                    },
                                   )}
                                 >
                                   <InputNumber
@@ -6761,9 +6329,6 @@ export function NewsSourcesContent() {
                             name="crawlVirtualScrollWaitAfterScrollMs"
                             label={t(
                               "newsSources.fields.crawlVirtualScrollWaitAfterScrollMs",
-                              {
-                                defaultValue: "Wait after scroll (ms)",
-                              },
                             )}
                           >
                             <InputNumber
@@ -6782,9 +6347,7 @@ export function NewsSourcesContent() {
 
               <Form.Item
                 name="crawlQualityProfile"
-                label={t("newsSources.fields.crawlQualityProfile", {
-                  defaultValue: "Quality profile",
-                })}
+                label={t("newsSources.fields.crawlQualityProfile")}
                 tooltip={t("crawl.settings.qualityProfileHint")}
               >
                 <Select
@@ -6811,9 +6374,7 @@ export function NewsSourcesContent() {
               </Form.Item>
               <Form.Item
                 name="crawlPageTypeHint"
-                label={t("newsSources.fields.crawlPageTypeHint", {
-                  defaultValue: "Page type hint",
-                })}
+                label={t("newsSources.fields.crawlPageTypeHint")}
                 tooltip={t("crawl.settings.pageTypeHintHint")}
               >
                 <Select
@@ -6836,9 +6397,7 @@ export function NewsSourcesContent() {
               </Form.Item>
               <Form.Item
                 name="crawlAutoExpandDetails"
-                label={t("newsSources.fields.crawlAutoExpandDetails", {
-                  defaultValue: "Auto expand details",
-                })}
+                label={t("newsSources.fields.crawlAutoExpandDetails")}
                 tooltip={t("crawl.settings.autoExpandDetailsHint")}
                 valuePropName="checked"
               >
@@ -6859,9 +6418,7 @@ export function NewsSourcesContent() {
                     <>
                       <Form.Item
                         name="crawlDetailMaxUrls"
-                        label={t("newsSources.fields.crawlDetailMaxUrls", {
-                          defaultValue: "Max detail URLs",
-                        })}
+                        label={t("newsSources.fields.crawlDetailMaxUrls")}
                         extra={t("crawl.detailExpansion.maxDetailUrlsHint")}
                       >
                         <InputNumber
@@ -6874,9 +6431,6 @@ export function NewsSourcesContent() {
                         name="crawlDetailMinRelevanceScore"
                         label={t(
                           "newsSources.fields.crawlDetailMinRelevanceScore",
-                          {
-                            defaultValue: "Min relevance score",
-                          },
                         )}
                         extra={t("crawl.detailExpansion.minRelevanceScoreHint")}
                       >
@@ -6891,9 +6445,6 @@ export function NewsSourcesContent() {
                         name="crawlDetailRequireSameDomain"
                         label={t(
                           "newsSources.fields.crawlDetailRequireSameDomain",
-                          {
-                            defaultValue: "Require same domain",
-                          },
                         )}
                         extra={t("crawl.detailExpansion.requireSameDomainHint")}
                         valuePropName="checked"
@@ -6904,9 +6455,6 @@ export function NewsSourcesContent() {
                         name="crawlDetailAllowExternalLinks"
                         label={t(
                           "newsSources.fields.crawlDetailAllowExternalLinks",
-                          {
-                            defaultValue: "Allow external links",
-                          },
                         )}
                         extra={t(
                           "crawl.detailExpansion.allowExternalLinksHint",
@@ -6919,16 +6467,9 @@ export function NewsSourcesContent() {
                         name="crawlDetailMinPublishTimeConfidence"
                         label={t(
                           "newsSources.fields.crawlDetailMinPublishTimeConfidence",
-                          {
-                            defaultValue: "Min publish time confidence",
-                          },
                         )}
                         extra={t(
                           "crawl.detailExpansion.minPublishTimeConfidenceHint",
-                          {
-                            defaultValue:
-                              "Prioritize URLs with stronger publish-time signals (0~1).",
-                          },
                         )}
                       >
                         <InputNumber
@@ -6942,16 +6483,9 @@ export function NewsSourcesContent() {
                         name="crawlDetailPreferFitMarkdownForQuality"
                         label={t(
                           "newsSources.fields.crawlDetailPreferFitMarkdownForQuality",
-                          {
-                            defaultValue: "Prefer fit markdown for quality",
-                          },
                         )}
                         extra={t(
                           "crawl.detailExpansion.preferFitMarkdownForQualityHint",
-                          {
-                            defaultValue:
-                              "Use fit_markdown first for low-signal/list-like quality assessment.",
-                          },
                         )}
                         valuePropName="checked"
                       >
@@ -6961,16 +6495,9 @@ export function NewsSourcesContent() {
                         name="crawlDetailExcludeUrlPatterns"
                         label={t(
                           "newsSources.fields.crawlDetailExcludeUrlPatterns",
-                          {
-                            defaultValue: "Exclude URL patterns",
-                          },
                         )}
                         extra={t(
                           "crawl.detailExpansion.excludeUrlPatternsHint",
-                          {
-                            defaultValue:
-                              "Optional patterns to block detail expansion (supports wildcard * and regex /.../).",
-                          },
                         )}
                       >
                         <Select mode="tags" tokenSeparators={[","]} />
@@ -6979,16 +6506,9 @@ export function NewsSourcesContent() {
                         name="crawlDetailIncludeUrlPatterns"
                         label={t(
                           "newsSources.fields.crawlDetailIncludeUrlPatterns",
-                          {
-                            defaultValue: "Include URL patterns",
-                          },
                         )}
                         extra={t(
                           "crawl.detailExpansion.includeUrlPatternsHint",
-                          {
-                            defaultValue:
-                              "Optional allowlist. If set, only matching URLs are followed.",
-                          },
                         )}
                       >
                         <Select mode="tags" tokenSeparators={[","]} />
@@ -6999,33 +6519,21 @@ export function NewsSourcesContent() {
               </Form.Item>
 
               <Typography.Title level={5} style={{ marginBottom: 0 }}>
-                {t("newsSources.sections.crawlMarkdown", {
-                  defaultValue: "RAG markdown",
-                })}
+                {t("newsSources.sections.crawlMarkdown")}
               </Typography.Title>
               <Typography.Text type="secondary">
-                {t("newsSources.sections.crawlMarkdownHint", {
-                  defaultValue:
-                    "Crawl4AI turns crawled pages into clean markdown. Keep content source and escaping aligned with your retrieval pipeline.",
-                })}
+                {t("newsSources.sections.crawlMarkdownHint")}
               </Typography.Text>
               <Alert
                 style={{ marginBottom: 12, marginTop: 8 }}
                 showIcon
                 type="success"
-                message={t("newsSources.hints.ragReadyTitle", {
-                  defaultValue: "RAG-ready markdown",
-                })}
-                description={t("newsSources.hints.ragReadyDescription", {
-                  defaultValue:
-                    "Prefer cleaned_html output for stable embeddings and downstream search indexing.",
-                })}
+                message={t("newsSources.hints.ragReadyTitle")}
+                description={t("newsSources.hints.ragReadyDescription")}
               />
               <Form.Item
                 name="crawlMarkdownContentSource"
-                label={t("newsSources.fields.crawlMarkdownContentSource", {
-                  defaultValue: "Markdown content source",
-                })}
+                label={t("newsSources.fields.crawlMarkdownContentSource")}
               >
                 <Select
                   options={[
@@ -7048,29 +6556,21 @@ export function NewsSourcesContent() {
                 <Col span={12}>
                   <Form.Item
                     name="crawlMarkdownEscapeHtmlMode"
-                    label={t("newsSources.fields.crawlMarkdownEscapeHtmlMode", {
-                      defaultValue: "Escape HTML",
-                    })}
+                    label={t("newsSources.fields.crawlMarkdownEscapeHtmlMode")}
                   >
                     <Select
                       options={[
                         {
                           value: "auto",
-                          label: t("newsSources.crawlTriState.auto", {
-                            defaultValue: "Auto (inherit)",
-                          }),
+                          label: t("newsSources.crawlTriState.auto"),
                         },
                         {
                           value: "enable",
-                          label: t("newsSources.crawlTriState.enable", {
-                            defaultValue: "Enabled",
-                          }),
+                          label: t("newsSources.crawlTriState.enable"),
                         },
                         {
                           value: "disable",
-                          label: t("newsSources.crawlTriState.disable", {
-                            defaultValue: "Disabled",
-                          }),
+                          label: t("newsSources.crawlTriState.disable"),
                         },
                       ]}
                     />
@@ -7079,29 +6579,21 @@ export function NewsSourcesContent() {
                 <Col span={12}>
                   <Form.Item
                     name="crawlMarkdownCitationsMode"
-                    label={t("newsSources.fields.crawlMarkdownCitationsMode", {
-                      defaultValue: "Citations",
-                    })}
+                    label={t("newsSources.fields.crawlMarkdownCitationsMode")}
                   >
                     <Select
                       options={[
                         {
                           value: "auto",
-                          label: t("newsSources.crawlTriState.auto", {
-                            defaultValue: "Auto (inherit)",
-                          }),
+                          label: t("newsSources.crawlTriState.auto"),
                         },
                         {
                           value: "enable",
-                          label: t("newsSources.crawlTriState.enable", {
-                            defaultValue: "Enabled",
-                          }),
+                          label: t("newsSources.crawlTriState.enable"),
                         },
                         {
                           value: "disable",
-                          label: t("newsSources.crawlTriState.disable", {
-                            defaultValue: "Disabled",
-                          }),
+                          label: t("newsSources.crawlTriState.disable"),
                         },
                       ]}
                     />
@@ -7139,28 +6631,20 @@ export function NewsSourcesContent() {
                     previewError =
                       error instanceof Error
                         ? error.message
-                        : t("newsSources.hints.crawlOptionsPreviewError", {
-                            defaultValue:
-                              "Unable to build crawl options preview.",
-                          });
+                        : t("newsSources.hints.crawlOptionsPreviewError");
                   }
 
                   return (
                     <Card
                       size="small"
-                      title={t("newsSources.sections.crawlOptionsPreview", {
-                        defaultValue: "Resolved crawlOptions preview",
-                      })}
+                      title={t("newsSources.sections.crawlOptionsPreview")}
                       style={{ marginBottom: 12 }}
                     >
                       <Typography.Paragraph
                         type="secondary"
                         style={{ marginTop: 0 }}
                       >
-                        {t("newsSources.sections.crawlOptionsPreviewHint", {
-                          defaultValue:
-                            "Shows the final crawlOptions payload after merging structured controls with advanced JSON.",
-                        })}
+                        {t("newsSources.sections.crawlOptionsPreviewHint")}
                       </Typography.Paragraph>
                       {previewError ? (
                         <Alert
@@ -7199,34 +6683,22 @@ export function NewsSourcesContent() {
                       messageApi.error(
                         error instanceof Error
                           ? error.message
-                          : t("common.operationFailed", {
-                              defaultValue: "Operation failed.",
-                            }),
+                          : t("common.operationFailed"),
                       );
                     }
                   }}
                 >
-                  {t("crawl.browser.headers.autoFillSecCh", {
-                    defaultValue: "Auto-fill Sec-CH headers",
-                  })}
+                  {t("crawl.browser.headers.autoFillSecCh")}
                 </Button>
                 <Typography.Text type="secondary">
-                  {t("crawl.browser.headers.autoFillSecChHint", {
-                    defaultValue:
-                      "Adds sec-fetch defaults and, when User-Agent is deterministic Chromium, matching sec-ch headers if missing.",
-                  })}
+                  {t("crawl.browser.headers.autoFillSecChHint")}
                 </Typography.Text>
               </Space>
 
               <Form.Item
                 name="crawlOptionsJson"
-                label={t("newsSources.fields.crawlOptions", {
-                  defaultValue: "Crawl options (JSON)",
-                })}
-                tooltip={t("newsSources.fields.crawlOptionsHint", {
-                  defaultValue:
-                    "Advanced Crawl4AI options. Do not set crawl4ai LLM extraction here (extraction_strategy/llm_config); crawl should only store cleaned markdown, and your configured model runs later in the pipeline.",
-                })}
+                label={t("newsSources.fields.crawlOptions")}
+                tooltip={t("newsSources.fields.crawlOptionsHint")}
                 validateTrigger="onBlur"
                 rules={[
                   {
@@ -7253,6 +6725,13 @@ export function NewsSourcesContent() {
                       ) {
                         throw new Error("crawlOptions must be a JSON object");
                       }
+                      const proxyIssues = findUnsupportedProxyIssues(
+                        parsed,
+                        "config.crawlOptions",
+                      );
+                      if (proxyIssues.length > 0) {
+                        throw new Error(formatPolicyIssues(proxyIssues, t));
+                      }
                       const blockedKeys = findDisallowedCrawl4aiLlmKeys(parsed);
                       if (blockedKeys.length === 0) {
                         return;
@@ -7264,8 +6743,6 @@ export function NewsSourcesContent() {
                           : "";
                       throw new Error(
                         t("newsSources.errors.crawlOptionsLlmBlocked", {
-                          defaultValue:
-                            "crawlOptions contains crawl4ai LLM extraction settings ({{keys}}{{suffix}}). The crawl stage must only fetch and store cleaned markdown; run your configured model in the pipeline stage instead.",
                           keys: list,
                           suffix,
                         }),
@@ -7278,32 +6755,21 @@ export function NewsSourcesContent() {
               </Form.Item>
               <Form.Item
                 name="crawlHeadlessMode"
-                label={t("newsSources.fields.crawlHeadlessMode", {
-                  defaultValue: "Browser mode",
-                })}
-                tooltip={t("newsSources.fields.crawlHeadlessModeHint", {
-                  defaultValue:
-                    "Auto removes crawlOptions.headless so Crawl4AI can decide. Headed mode (headless=false) may require Xvfb/DISPLAY in the crawl4ai container; if you see 'cannot open display' errors, switch to Headless or enable Xvfb in docker-compose.",
-                })}
+                label={t("newsSources.fields.crawlHeadlessMode")}
+                tooltip={t("newsSources.fields.crawlHeadlessModeHint")}
               >
                 <Select
                   options={[
                     {
-                      label: t("newsSources.crawlHeadlessMode.auto", {
-                        defaultValue: "Auto (recommended)",
-                      }),
+                      label: t("newsSources.crawlHeadlessMode.auto"),
                       value: "auto",
                     },
                     {
-                      label: t("newsSources.crawlHeadlessMode.headless", {
-                        defaultValue: "Headless",
-                      }),
+                      label: t("newsSources.crawlHeadlessMode.headless"),
                       value: "headless",
                     },
                     {
-                      label: t("newsSources.crawlHeadlessMode.headed", {
-                        defaultValue: "Headed (Xvfb)",
-                      }),
+                      label: t("newsSources.crawlHeadlessMode.headed"),
                       value: "headed",
                     },
                   ]}
@@ -7313,32 +6779,21 @@ export function NewsSourcesContent() {
                 <Col span={8}>
                   <Form.Item
                     name="crawlUndetectedMode"
-                    label={t("newsSources.fields.crawlUndetectedMode", {
-                      defaultValue: "Undetected browser",
-                    })}
-                    tooltip={t("newsSources.fields.crawlUndetectedModeHint", {
-                      defaultValue:
-                        "Auto removes crawlOptions.enableUndetectedBrowser so templates/defaults can apply. Enable/Disable explicitly overrides templates.",
-                    })}
+                    label={t("newsSources.fields.crawlUndetectedMode")}
+                    tooltip={t("newsSources.fields.crawlUndetectedModeHint")}
                   >
                     <Select
                       options={[
                         {
-                          label: t("newsSources.crawlTriState.auto", {
-                            defaultValue: "Auto (inherit)",
-                          }),
+                          label: t("newsSources.crawlTriState.auto"),
                           value: "auto",
                         },
                         {
-                          label: t("newsSources.crawlTriState.enable", {
-                            defaultValue: "Enabled",
-                          }),
+                          label: t("newsSources.crawlTriState.enable"),
                           value: "enable",
                         },
                         {
-                          label: t("newsSources.crawlTriState.disable", {
-                            defaultValue: "Disabled",
-                          }),
+                          label: t("newsSources.crawlTriState.disable"),
                           value: "disable",
                         },
                       ]}
@@ -7348,32 +6803,21 @@ export function NewsSourcesContent() {
                 <Col span={8}>
                   <Form.Item
                     name="crawlStealthMode"
-                    label={t("newsSources.fields.crawlStealthMode", {
-                      defaultValue: "Stealth mode",
-                    })}
-                    tooltip={t("newsSources.fields.crawlStealthModeHint", {
-                      defaultValue:
-                        "Auto removes crawlOptions.enableStealthMode so templates/defaults can apply. Enable/Disable explicitly overrides templates.",
-                    })}
+                    label={t("newsSources.fields.crawlStealthMode")}
+                    tooltip={t("newsSources.fields.crawlStealthModeHint")}
                   >
                     <Select
                       options={[
                         {
-                          label: t("newsSources.crawlTriState.auto", {
-                            defaultValue: "Auto (inherit)",
-                          }),
+                          label: t("newsSources.crawlTriState.auto"),
                           value: "auto",
                         },
                         {
-                          label: t("newsSources.crawlTriState.enable", {
-                            defaultValue: "Enabled",
-                          }),
+                          label: t("newsSources.crawlTriState.enable"),
                           value: "enable",
                         },
                         {
-                          label: t("newsSources.crawlTriState.disable", {
-                            defaultValue: "Disabled",
-                          }),
+                          label: t("newsSources.crawlTriState.disable"),
                           value: "disable",
                         },
                       ]}
@@ -7383,32 +6827,21 @@ export function NewsSourcesContent() {
                 <Col span={8}>
                   <Form.Item
                     name="crawlAntiBotMode"
-                    label={t("newsSources.fields.crawlAntiBotMode", {
-                      defaultValue: "Anti-bot retry",
-                    })}
-                    tooltip={t("newsSources.fields.crawlAntiBotModeHint", {
-                      defaultValue:
-                        "Auto removes crawlOptions.antiBotMode so templates/defaults can apply. Enable/Disable explicitly controls anti-bot retry when failures occur.",
-                    })}
+                    label={t("newsSources.fields.crawlAntiBotMode")}
+                    tooltip={t("newsSources.fields.crawlAntiBotModeHint")}
                   >
                     <Select
                       options={[
                         {
-                          label: t("newsSources.crawlTriState.auto", {
-                            defaultValue: "Auto (inherit)",
-                          }),
+                          label: t("newsSources.crawlTriState.auto"),
                           value: "auto",
                         },
                         {
-                          label: t("newsSources.crawlTriState.enable", {
-                            defaultValue: "Enabled",
-                          }),
+                          label: t("newsSources.crawlTriState.enable"),
                           value: "enable",
                         },
                         {
-                          label: t("newsSources.crawlTriState.disable", {
-                            defaultValue: "Disabled",
-                          }),
+                          label: t("newsSources.crawlTriState.disable"),
                           value: "disable",
                         },
                       ]}
@@ -7426,9 +6859,7 @@ export function NewsSourcesContent() {
                       )
                     }
                   >
-                    {t("newsSources.presets.cloudflare", {
-                      defaultValue: "Cloudflare preset",
-                    })}
+                    {t("newsSources.presets.cloudflare")}
                   </Button>
                   <Button
                     size="small"
@@ -7438,41 +6869,25 @@ export function NewsSourcesContent() {
                       )
                     }
                   >
-                    {t("newsSources.presets.reutersCf", {
-                      defaultValue: "Reuters + CF preset",
-                    })}
+                    {t("newsSources.presets.reutersCf")}
                   </Button>
                   <Typography.Text type="secondary">
-                    {t("newsSources.presets.cloudflareHint", {
-                      defaultValue:
-                        "Enables undetected + stealth and switches the browser to headed (Xvfb).",
-                    })}
+                    {t("newsSources.presets.cloudflareHint")}
                   </Typography.Text>
                   <Typography.Text type="secondary">
-                    {t("newsSources.presets.reutersCfHint", {
-                      defaultValue:
-                        "Adds Reuters-oriented article defaults (detail page hint + quality-first + cleaned markdown).",
-                    })}
+                    {t("newsSources.presets.reutersCfHint")}
                   </Typography.Text>
                   <Typography.Text type="secondary">
-                    {t("newsSources.presets.cloudflareDefaultHint", {
-                      defaultValue:
-                        "This is now the default for new sources; use Auto/Disable only for low-friction sites.",
-                    })}
+                    {t("newsSources.presets.cloudflareDefaultHint")}
                   </Typography.Text>
                   <Typography.Text type="secondary">
-                    {t("newsSources.presets.cloudflareRuntimeHint", {
-                      defaultValue:
-                        "When challenge pages are detected, API now auto-primes a same-site warmup session and retries with incremental anti-bot backoff.",
-                    })}
+                    {t("newsSources.presets.cloudflareRuntimeHint")}
                   </Typography.Text>
                 </Space>
               </Typography.Paragraph>
               <Form.Item
                 name="forceRefresh"
-                label={t("newsSources.fields.forceRefresh", {
-                  defaultValue: "Force refresh",
-                })}
+                label={t("newsSources.fields.forceRefresh")}
                 valuePropName="checked"
               >
                 <Switch />
@@ -7481,20 +6896,15 @@ export function NewsSourcesContent() {
           ) : null}
 
           <Typography.Title level={5} style={{ marginBottom: 0 }}>
-            {t("newsSources.sections.seed", { defaultValue: "Seed discovery" })}
+            {t("newsSources.sections.seed")}
           </Typography.Title>
           <Typography.Text type="secondary">
-            {t("newsSources.sections.seedHint", {
-              defaultValue:
-                "Discover article URLs from a sitemap, RSS/Atom feed, list page, or deep discovery crawl, then schedule up to N fresh URLs per run.",
-            })}
+            {t("newsSources.sections.seedHint")}
           </Typography.Text>
 
           <Form.Item
             name="seedEnabled"
-            label={t("newsSources.fields.seedEnabled", {
-              defaultValue: "Enable seed discovery",
-            })}
+            label={t("newsSources.fields.seedEnabled")}
             valuePropName="checked"
           >
             <Switch />
@@ -7530,38 +6940,25 @@ export function NewsSourcesContent() {
                 <div style={{ display: seedEnabled ? "block" : "none" }}>
                   <Form.Item
                     name="seedMode"
-                    label={t("newsSources.fields.seedMode", {
-                      defaultValue: "Seed mode",
-                    })}
-                    tooltip={t("newsSources.fields.seedModeHint", {
-                      defaultValue:
-                        "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from a feed URL; List mode extracts links from a listing page; Deep mode performs bounded multi-page discovery and prioritizes latest publish time.",
-                    })}
+                    label={t("newsSources.fields.seedMode")}
+                    tooltip={t("newsSources.fields.seedModeHint")}
                   >
                     <Select
                       options={[
                         {
-                          label: t("newsSources.seedMode.sitemap", {
-                            defaultValue: "Sitemap",
-                          }),
+                          label: t("newsSources.seedMode.sitemap"),
                           value: "sitemap",
                         },
                         {
-                          label: t("newsSources.seedMode.rss", {
-                            defaultValue: "RSS / Atom",
-                          }),
+                          label: t("newsSources.seedMode.rss"),
                           value: "rss",
                         },
                         {
-                          label: t("newsSources.seedMode.list", {
-                            defaultValue: "List page",
-                          }),
+                          label: t("newsSources.seedMode.list"),
                           value: "list",
                         },
                         {
-                          label: t("newsSources.seedMode.deep", {
-                            defaultValue: "Deep discovery",
-                          }),
+                          label: t("newsSources.seedMode.deep"),
                           value: "deep",
                         },
                       ]}
@@ -7574,40 +6971,23 @@ export function NewsSourcesContent() {
                         type="info"
                         showIcon
                         style={{ marginBottom: 12 }}
-                        message={t("newsSources.seed.rssDirectTitle", {
-                          defaultValue: "RSS direct pipeline",
-                        })}
+                        message={t("newsSources.seed.rssDirectTitle")}
                         description={t(
                           "newsSources.seed.rssDirectDescription",
-                          {
-                            defaultValue:
-                              "RSS mode prefetches article content from the feed and queues pipeline jobs directly. Crawl4AI templates, browser options, and proxy settings are ignored while this mode is active.",
-                          },
                         )}
                       />
                       <Form.Item
                         name="seedFeedUrl"
-                        label={t("newsSources.fields.seedFeedUrl", {
-                          defaultValue: "Feed URL (optional)",
-                        })}
-                        tooltip={t("newsSources.fields.seedFeedUrlHint", {
-                          defaultValue:
-                            "If empty, the source URL will be used as the feed URL.",
-                        })}
+                        label={t("newsSources.fields.seedFeedUrl")}
+                        tooltip={t("newsSources.fields.seedFeedUrlHint")}
                       >
                         <Input placeholder="https://example.com/rss.xml" />
                       </Form.Item>
                       <Form.Item
                         name="seedRssAdaptiveEnabled"
-                        label={t("newsSources.fields.seedRssAdaptiveEnabled", {
-                          defaultValue: "Enable RSS adaptive polling",
-                        })}
+                        label={t("newsSources.fields.seedRssAdaptiveEnabled")}
                         tooltip={t(
                           "newsSources.fields.seedRssAdaptiveEnabledHint",
-                          {
-                            defaultValue:
-                              "When enabled, scheduler adjusts RSS polling interval and discovery cache TTL by source hit activity.",
-                          },
                         )}
                         valuePropName="checked"
                       >
@@ -7615,15 +6995,9 @@ export function NewsSourcesContent() {
                       </Form.Item>
                       <Form.Item
                         name="seedRssAdvancedEnabled"
-                        label={t("newsSources.fields.seedRssAdvancedEnabled", {
-                          defaultValue: "Enable RSS advanced fetch settings",
-                        })}
+                        label={t("newsSources.fields.seedRssAdvancedEnabled")}
                         tooltip={t(
                           "newsSources.fields.seedRssAdvancedEnabledHint",
-                          {
-                            defaultValue:
-                              "Override RSS request timeout, body source selection, and no-body fallback for this source.",
-                          },
                         )}
                         valuePropName="checked"
                       >
@@ -7643,16 +7017,9 @@ export function NewsSourcesContent() {
                                 name="seedRssRequestTimeoutMs"
                                 label={t(
                                   "newsSources.fields.seedRssRequestTimeoutMs",
-                                  {
-                                    defaultValue: "RSS request timeout (ms)",
-                                  },
                                 )}
                                 tooltip={t(
                                   "newsSources.fields.seedRssRequestTimeoutMsHint",
-                                  {
-                                    defaultValue:
-                                      "Timeout used when fetching the feed during RSS discovery.",
-                                  },
                                 )}
                               >
                                 <InputNumber
@@ -7666,16 +7033,9 @@ export function NewsSourcesContent() {
                                 name="seedRssBodySourceStrategy"
                                 label={t(
                                   "newsSources.fields.seedRssBodySourceStrategy",
-                                  {
-                                    defaultValue: "Body source strategy",
-                                  },
                                 )}
                                 tooltip={t(
                                   "newsSources.fields.seedRssBodySourceStrategyHint",
-                                  {
-                                    defaultValue:
-                                      "Choose whether prefetched markdown should prefer feed body fields or summary fields.",
-                                  },
                                 )}
                               >
                                 <Select
@@ -7684,27 +7044,18 @@ export function NewsSourcesContent() {
                                       value: "content_first",
                                       label: t(
                                         "newsSources.seedRss.bodySource.contentFirst",
-                                        {
-                                          defaultValue: "Content first",
-                                        },
                                       ),
                                     },
                                     {
                                       value: "content_only",
                                       label: t(
                                         "newsSources.seedRss.bodySource.contentOnly",
-                                        {
-                                          defaultValue: "Content only",
-                                        },
                                       ),
                                     },
                                     {
                                       value: "summary_only",
                                       label: t(
                                         "newsSources.seedRss.bodySource.summaryOnly",
-                                        {
-                                          defaultValue: "Summary only",
-                                        },
                                       ),
                                     },
                                   ]}
@@ -7714,16 +7065,9 @@ export function NewsSourcesContent() {
                                 name="seedRssNoBodyPolicy"
                                 label={t(
                                   "newsSources.fields.seedRssNoBodyPolicy",
-                                  {
-                                    defaultValue: "No-body policy",
-                                  },
                                 )}
                                 tooltip={t(
                                   "newsSources.fields.seedRssNoBodyPolicyHint",
-                                  {
-                                    defaultValue:
-                                      "When a feed item has no usable body markdown, either skip it or build a minimal stub from title and summary.",
-                                  },
                                 )}
                               >
                                 <Select
@@ -7732,19 +7076,12 @@ export function NewsSourcesContent() {
                                       value: "skip",
                                       label: t(
                                         "newsSources.seedRss.noBody.skip",
-                                        {
-                                          defaultValue: "Skip item",
-                                        },
                                       ),
                                     },
                                     {
                                       value: "title_description_stub",
                                       label: t(
                                         "newsSources.seedRss.noBody.stub",
-                                        {
-                                          defaultValue:
-                                            "Build title + summary stub",
-                                        },
                                       ),
                                     },
                                   ]}
@@ -7766,17 +7103,9 @@ export function NewsSourcesContent() {
                                       style={{ marginBottom: 12 }}
                                       message={t(
                                         "newsSources.seed.rssStubWarningTitle",
-                                        {
-                                          defaultValue:
-                                            "Stub fallback also enters the pipeline",
-                                        },
                                       )}
                                       description={t(
                                         "newsSources.seed.rssStubWarningDescription",
-                                        {
-                                          defaultValue:
-                                            "If a feed item has no full body, the scheduler will build a minimal markdown stub from title and summary and send it downstream. Use this only when summary-level content is acceptable.",
-                                        },
                                       )}
                                     />
                                   ) : null
@@ -7791,13 +7120,8 @@ export function NewsSourcesContent() {
                     <>
                       <Form.Item
                         name="seedDomain"
-                        label={t("newsSources.fields.seedDomain", {
-                          defaultValue: "Seed domain (optional)",
-                        })}
-                        tooltip={t("newsSources.fields.seedDomainHint", {
-                          defaultValue:
-                            "Defaults to the source URL origin if empty.",
-                        })}
+                        label={t("newsSources.fields.seedDomain")}
+                        tooltip={t("newsSources.fields.seedDomainHint")}
                       >
                         <Input placeholder="https://example.com" />
                       </Form.Item>
@@ -7805,17 +7129,10 @@ export function NewsSourcesContent() {
                         name="seedPattern"
                         label={
                           seedMode === "list"
-                            ? t("newsSources.fields.seedPatternList", {
-                                defaultValue: "Article URL pattern (optional)",
-                              })
-                            : t("newsSources.fields.seedPattern", {
-                                defaultValue: "URL pattern (optional)",
-                              })
+                            ? t("newsSources.fields.seedPatternList")
+                            : t("newsSources.fields.seedPattern")
                         }
-                        tooltip={t("newsSources.fields.seedPatternHint", {
-                          defaultValue:
-                            "Supports '*' and '?' wildcards, e.g. '*/article/*', '*news*' or '*/2026/*'.",
-                        })}
+                        tooltip={t("newsSources.fields.seedPatternHint")}
                       >
                         <Input placeholder="*news*" />
                       </Form.Item>
@@ -7823,48 +7140,31 @@ export function NewsSourcesContent() {
                   )}
                   <Form.Item
                     name="seedQuery"
-                    label={t("newsSources.fields.seedQuery", {
-                      defaultValue: "Seed query (optional)",
-                    })}
-                    tooltip={t("newsSources.fields.seedQueryHint", {
-                      defaultValue:
-                        "If empty, keywords will be used to score URLs.",
-                    })}
+                    label={t("newsSources.fields.seedQuery")}
+                    tooltip={t("newsSources.fields.seedQueryHint")}
                   >
                     <Input
                       placeholder={t(
                         "newsSources.fields.seedQueryPlaceholder",
-                        {
-                          defaultValue: "e.g. earnings regulation",
-                        },
                       )}
                     />
                   </Form.Item>
                   <Form.Item
                     name="seedMaxUrls"
-                    label={t("newsSources.fields.seedMaxUrls", {
-                      defaultValue: "Max discovered URLs",
-                    })}
+                    label={t("newsSources.fields.seedMaxUrls")}
                   >
                     <InputNumber min={1} max={2000} style={{ width: "100%" }} />
                   </Form.Item>
                   <Form.Item
                     name="seedMaxNewUrlsPerRun"
-                    label={t("newsSources.fields.seedMaxNewUrlsPerRun", {
-                      defaultValue: "Max new URLs per run",
-                    })}
+                    label={t("newsSources.fields.seedMaxNewUrlsPerRun")}
                   >
                     <InputNumber min={1} max={500} style={{ width: "100%" }} />
                   </Form.Item>
                   <Form.Item
                     name="seedScoreThreshold"
-                    label={t("newsSources.fields.seedScoreThreshold", {
-                      defaultValue: "Score threshold",
-                    })}
-                    tooltip={t("newsSources.fields.seedScoreThresholdHint", {
-                      defaultValue:
-                        "0 disables the scoring filter; values range from 0..1.",
-                    })}
+                    label={t("newsSources.fields.seedScoreThreshold")}
+                    tooltip={t("newsSources.fields.seedScoreThresholdHint")}
                   >
                     <InputNumber
                       min={0}
@@ -7875,23 +7175,15 @@ export function NewsSourcesContent() {
                   </Form.Item>
                   <Form.Item
                     name="seedDedupeWindowHours"
-                    label={t("newsSources.fields.seedDedupeWindowHours", {
-                      defaultValue: "Dedupe window (hours)",
-                    })}
+                    label={t("newsSources.fields.seedDedupeWindowHours")}
                   >
                     <InputNumber min={0} max={720} style={{ width: "100%" }} />
                   </Form.Item>
                   <Form.Item
                     name="seedQueryParamAllowlist"
-                    label={t("newsSources.fields.seedQueryParamAllowlist", {
-                      defaultValue: "URL query param allowlist",
-                    })}
+                    label={t("newsSources.fields.seedQueryParamAllowlist")}
                     tooltip={t(
                       "newsSources.fields.seedQueryParamAllowlistHint",
-                      {
-                        defaultValue:
-                          "Only these query keys are kept when building URL fingerprints. Leave empty to use the global scheduler defaults.",
-                      },
                     )}
                   >
                     <Select
@@ -7905,31 +7197,22 @@ export function NewsSourcesContent() {
                       )}
                       placeholder={t(
                         "newsSources.fields.seedQueryParamAllowlistPlaceholder",
-                        {
-                          defaultValue: "id, page, lang",
-                        },
                       )}
                     />
                   </Form.Item>
                   <Space wrap size={[8, 8]} style={{ marginBottom: 8 }}>
                     <Tag color={seedCacheTtlInputDisabled ? "gold" : "blue"}>
                       {seedCacheTtlInputDisabled
-                        ? t("newsSources.seedCachePolicy.globalForcedTag", {
-                            defaultValue: "Global forced strategy",
-                          })
-                        : t("newsSources.seedCachePolicy.sourceAwareTag", {
-                            defaultValue: "Source-aware strategy",
-                          })}
+                        ? t("newsSources.seedCachePolicy.globalForcedTag")
+                        : t("newsSources.seedCachePolicy.sourceAwareTag")}
                     </Tag>
                     <Tag>
                       {t("newsSources.seedCachePolicy.sitemapRssTag", {
-                        defaultValue: "Sitemap/RSS {{ttl}}s",
                         ttl: schedulerSitemapRssTtl,
                       })}
                     </Tag>
                     <Tag>
                       {t("newsSources.seedCachePolicy.listDeepTag", {
-                        defaultValue: "List/Deep {{ttl}}s",
                         ttl: schedulerListDeepTtl,
                       })}
                     </Tag>
@@ -7941,16 +7224,9 @@ export function NewsSourcesContent() {
                       style={{ marginBottom: 12 }}
                       message={t(
                         "newsSources.seedCachePolicy.loadFailedTitle",
-                        {
-                          defaultValue: "Unable to load scheduler cache policy",
-                        },
                       )}
                       description={t(
                         "newsSources.seedCachePolicy.loadFailedDescription",
-                        {
-                          defaultValue:
-                            "Source TTL editing remains enabled. Scheduler runtime may still apply a global override.",
-                        },
                       )}
                     />
                   ) : seedCacheTtlInputDisabled ? (
@@ -7960,15 +7236,10 @@ export function NewsSourcesContent() {
                       style={{ marginBottom: 12 }}
                       message={t(
                         "newsSources.seedCachePolicy.globalForcedTitle",
-                        {
-                          defaultValue: "Global cache TTL override is enabled",
-                        },
                       )}
                       description={t(
                         "newsSources.seedCachePolicy.globalForcedDescription",
                         {
-                          defaultValue:
-                            "Scheduler ignores source seed.cacheTtlSeconds and uses mode defaults (sitemap/rss={{sitemapRss}}s, list/deep={{listDeep}}s). Source value is preserved for future fallback.",
                           sitemapRss: schedulerSitemapRssTtl,
                           listDeep: schedulerListDeepTtl,
                         },
@@ -7981,15 +7252,10 @@ export function NewsSourcesContent() {
                       style={{ marginBottom: 12 }}
                       message={t(
                         "newsSources.seedCachePolicy.sourceAwareTitle",
-                        {
-                          defaultValue: "Source cache TTL is active",
-                        },
                       )}
                       description={t(
                         "newsSources.seedCachePolicy.sourceAwareDescription",
                         {
-                          defaultValue:
-                            "Current source value is used when set; otherwise scheduler falls back to mode defaults (sitemap/rss={{sitemapRss}}s, list/deep={{listDeep}}s).",
                           sitemapRss: schedulerSitemapRssTtl,
                           listDeep: schedulerListDeepTtl,
                         },
@@ -7998,16 +7264,9 @@ export function NewsSourcesContent() {
                   )}
                   <Form.Item
                     name="seedCacheTtlSeconds"
-                    label={t("newsSources.fields.seedCacheTtlSeconds", {
-                      defaultValue: "Seed cache TTL (seconds)",
-                    })}
-                    tooltip={t("newsSources.fields.seedCacheTtlSecondsHint", {
-                      defaultValue:
-                        "Controls discovery result cache duration for this source unless global force strategy is enabled.",
-                    })}
+                    label={t("newsSources.fields.seedCacheTtlSeconds")}
+                    tooltip={t("newsSources.fields.seedCacheTtlSecondsHint")}
                     extra={t("newsSources.seedCachePolicy.effectiveTtlHint", {
-                      defaultValue:
-                        "Effective scheduler TTL for current mode: {{ttl}}s.",
                       ttl: resolvedSeedCachePolicy.effectiveCacheTtlSeconds,
                     })}
                   >
@@ -8020,13 +7279,8 @@ export function NewsSourcesContent() {
                   </Form.Item>
                   <Form.Item
                     name="seedConcurrency"
-                    label={t("newsSources.fields.seedConcurrency", {
-                      defaultValue: "Preview concurrency",
-                    })}
-                    tooltip={t("newsSources.fields.seedConcurrencyHint", {
-                      defaultValue:
-                        "Used by Preview to fetch metadata; scheduling uses lightweight URL scoring.",
-                    })}
+                    label={t("newsSources.fields.seedConcurrency")}
+                    tooltip={t("newsSources.fields.seedConcurrencyHint")}
                   >
                     <InputNumber min={1} max={10} style={{ width: "100%" }} />
                   </Form.Item>
@@ -8034,13 +7288,8 @@ export function NewsSourcesContent() {
                     <>
                       <Form.Item
                         name="seedListMaxPages"
-                        label={t("newsSources.fields.seedListMaxPages", {
-                          defaultValue: "List pages per discovery",
-                        })}
-                        tooltip={t("newsSources.fields.seedListMaxPagesHint", {
-                          defaultValue:
-                            "For List mode, crawl up to N paginated listing pages before scheduling article detail URLs.",
-                        })}
+                        label={t("newsSources.fields.seedListMaxPages")}
+                        tooltip={t("newsSources.fields.seedListMaxPagesHint")}
                       >
                         <InputNumber
                           min={1}
@@ -8050,15 +7299,9 @@ export function NewsSourcesContent() {
                       </Form.Item>
                       <Form.Item
                         name="seedListPageConcurrency"
-                        label={t("newsSources.fields.seedListPageConcurrency", {
-                          defaultValue: "List page concurrency",
-                        })}
+                        label={t("newsSources.fields.seedListPageConcurrency")}
                         tooltip={t(
                           "newsSources.fields.seedListPageConcurrencyHint",
-                          {
-                            defaultValue:
-                              "How many listing pages to crawl in parallel during list discovery.",
-                          },
                         )}
                       >
                         <InputNumber
@@ -8069,16 +7312,10 @@ export function NewsSourcesContent() {
                       </Form.Item>
                       <Form.Item
                         name="seedFollowPagination"
-                        label={t("newsSources.fields.seedFollowPagination", {
-                          defaultValue: "Follow pagination",
-                        })}
+                        label={t("newsSources.fields.seedFollowPagination")}
                         valuePropName="checked"
                         tooltip={t(
                           "newsSources.fields.seedFollowPaginationHint",
-                          {
-                            defaultValue:
-                              "Enable this to follow next/older/load-more list links and discover more article events.",
-                          },
                         )}
                       >
                         <Switch />
@@ -8088,24 +7325,15 @@ export function NewsSourcesContent() {
                   {seedMode === "deep" ? (
                     <>
                       <Typography.Text type="secondary">
-                        {t("newsSources.fields.seedDeepHint", {
-                          defaultValue:
-                            "Deep mode crawls section/list pages in bounded depth/time, then strictly keeps publish-time-ranked article links (no link-score fallback).",
-                        })}
+                        {t("newsSources.fields.seedDeepHint")}
                       </Typography.Text>
                       <Row gutter={[12, 0]}>
                         <Col span={8}>
                           <Form.Item
                             name="seedDeepMaxPages"
-                            label={t("newsSources.fields.seedDeepMaxPages", {
-                              defaultValue: "Deep max pages",
-                            })}
+                            label={t("newsSources.fields.seedDeepMaxPages")}
                             tooltip={t(
                               "newsSources.fields.seedDeepMaxPagesHint",
-                              {
-                                defaultValue:
-                                  "Total number of pages that deep discovery may crawl.",
-                              },
                             )}
                           >
                             <InputNumber
@@ -8118,15 +7346,9 @@ export function NewsSourcesContent() {
                         <Col span={8}>
                           <Form.Item
                             name="seedDeepMaxDepth"
-                            label={t("newsSources.fields.seedDeepMaxDepth", {
-                              defaultValue: "Deep max depth",
-                            })}
+                            label={t("newsSources.fields.seedDeepMaxDepth")}
                             tooltip={t(
                               "newsSources.fields.seedDeepMaxDepthHint",
-                              {
-                                defaultValue:
-                                  "How many link hops from the seed URL are allowed.",
-                              },
                             )}
                           >
                             <InputNumber
@@ -8141,9 +7363,6 @@ export function NewsSourcesContent() {
                             name="seedDeepTimeBudgetSeconds"
                             label={t(
                               "newsSources.fields.seedDeepTimeBudgetSeconds",
-                              {
-                                defaultValue: "Deep time budget (sec)",
-                              },
                             )}
                           >
                             <InputNumber
@@ -8160,9 +7379,6 @@ export function NewsSourcesContent() {
                             name="seedDeepPageConcurrency"
                             label={t(
                               "newsSources.fields.seedDeepPageConcurrency",
-                              {
-                                defaultValue: "Deep page concurrency",
-                              },
                             )}
                           >
                             <InputNumber
@@ -8177,16 +7393,9 @@ export function NewsSourcesContent() {
                             name="seedDeepScoreThreshold"
                             label={t(
                               "newsSources.fields.seedDeepScoreThreshold",
-                              {
-                                defaultValue: "Deep score threshold",
-                              },
                             )}
                             tooltip={t(
                               "newsSources.fields.seedDeepScoreThresholdHint",
-                              {
-                                defaultValue:
-                                  "Optional pre-filter for raw link candidates before publish-time enrichment (0..1); final ranking does not fall back to link score.",
-                              },
                             )}
                           >
                             <InputNumber
@@ -8202,9 +7411,6 @@ export function NewsSourcesContent() {
                             name="seedDeepCandidatePoolSize"
                             label={t(
                               "newsSources.fields.seedDeepCandidatePoolSize",
-                              {
-                                defaultValue: "Candidate pool size",
-                              },
                             )}
                           >
                             <InputNumber
@@ -8217,15 +7423,9 @@ export function NewsSourcesContent() {
                       </Row>
                       <Form.Item
                         name="seedDeepHeadFetchTopK"
-                        label={t("newsSources.fields.seedDeepHeadFetchTopK", {
-                          defaultValue: "Head fetch top K",
-                        })}
+                        label={t("newsSources.fields.seedDeepHeadFetchTopK")}
                         tooltip={t(
                           "newsSources.fields.seedDeepHeadFetchTopKHint",
-                          {
-                            defaultValue:
-                              "For top-K candidates without URL date, fetch head metadata to infer publish time.",
-                          },
                         )}
                       >
                         <InputNumber
@@ -8236,16 +7436,10 @@ export function NewsSourcesContent() {
                       </Form.Item>
                       <Form.Item
                         name="seedDeepPreferPathDate"
-                        label={t("newsSources.fields.seedDeepPreferPathDate", {
-                          defaultValue: "Prefer URL path date",
-                        })}
+                        label={t("newsSources.fields.seedDeepPreferPathDate")}
                         valuePropName="checked"
                         tooltip={t(
                           "newsSources.fields.seedDeepPreferPathDateHint",
-                          {
-                            defaultValue:
-                              "Use /YYYY/MM/DD/ style path date as a fast publish-time signal.",
-                          },
                         )}
                       >
                         <Switch />
@@ -8254,33 +7448,20 @@ export function NewsSourcesContent() {
                         name="seedDeepEnableSecondaryHubs"
                         label={t(
                           "newsSources.fields.seedDeepEnableSecondaryHubs",
-                          {
-                            defaultValue: "Follow secondary hubs",
-                          },
                         )}
                         valuePropName="checked"
                         tooltip={t(
                           "newsSources.fields.seedDeepEnableSecondaryHubsHint",
-                          {
-                            defaultValue:
-                              "Allow exploration of section/topic pages during deep discovery.",
-                          },
                         )}
                       >
                         <Switch />
                       </Form.Item>
                       <Form.Item
                         name="seedDeepIgnoreRobotsTxt"
-                        label={t("newsSources.fields.seedDeepIgnoreRobotsTxt", {
-                          defaultValue: "Ignore robots.txt",
-                        })}
+                        label={t("newsSources.fields.seedDeepIgnoreRobotsTxt")}
                         valuePropName="checked"
                         tooltip={t(
                           "newsSources.fields.seedDeepIgnoreRobotsTxtHint",
-                          {
-                            defaultValue:
-                              "This mode is hard-locked to ignore robots.txt.",
-                          },
                         )}
                       >
                         <Switch disabled />
@@ -8296,9 +7477,7 @@ export function NewsSourcesContent() {
 
       <Modal
         open={opmlModalOpen}
-        title={t("newsSources.opml.title", {
-          defaultValue: "Import RSS Sources from OPML",
-        })}
+        title={t("newsSources.opml.title")}
         width={screens.md ? 1120 : "100%"}
         onCancel={() => {
           setOpmlModalOpen(false);
@@ -8314,7 +7493,7 @@ export function NewsSourcesContent() {
                 setOpmlPreview(null);
               }}
             >
-              {t("common.cancel", { defaultValue: "Cancel" })}
+              {t("common.cancel")}
             </Button>
             <Button
               onClick={() => void handlePreviewOpml()}
@@ -8325,9 +7504,7 @@ export function NewsSourcesContent() {
                   : opmlContent.trim().length === 0
               }
             >
-              {t("newsSources.opml.actions.preview", {
-                defaultValue: "Preview",
-              })}
+              {t("newsSources.opml.actions.preview")}
             </Button>
             <Button
               type="primary"
@@ -8339,9 +7516,7 @@ export function NewsSourcesContent() {
                   0
               }
             >
-              {t("newsSources.opml.actions.import", {
-                defaultValue: "Import",
-              })}
+              {t("newsSources.opml.actions.import")}
             </Button>
           </Space>
         }
@@ -8351,21 +7526,14 @@ export function NewsSourcesContent() {
           <Alert
             type="info"
             showIcon
-            message={t("newsSources.opml.hint.title", {
-              defaultValue: "How import works",
-            })}
-            description={t("newsSources.opml.hint.description", {
-              defaultValue:
-                "url uses OPML htmlUrl, RSS feed uses xmlUrl as seed.feedUrl, duplicates are skipped, and language drives downstream LLM translation in the news pipeline.",
-            })}
+            message={t("newsSources.opml.hint.title")}
+            description={t("newsSources.opml.hint.description")}
           />
 
           <Row gutter={[12, 12]}>
             <Col xs={24} md={8}>
               <Typography.Text strong>
-                {t("newsSources.opml.fields.mode", {
-                  defaultValue: "Import mode",
-                })}
+                {t("newsSources.opml.fields.mode")}
               </Typography.Text>
               <Select<NewsSourceOpmlMode>
                 style={{ width: "100%", marginTop: 6 }}
@@ -8373,15 +7541,11 @@ export function NewsSourcesContent() {
                 onChange={handleOpmlModeChange}
                 options={[
                   {
-                    label: t("newsSources.opml.mode.preset", {
-                      defaultValue: "Built-in preset",
-                    }),
+                    label: t("newsSources.opml.mode.preset"),
                     value: "preset",
                   },
                   {
-                    label: t("newsSources.opml.mode.upload", {
-                      defaultValue: "Upload OPML file",
-                    }),
+                    label: t("newsSources.opml.mode.upload"),
                     value: "upload",
                   },
                 ]}
@@ -8391,9 +7555,7 @@ export function NewsSourcesContent() {
               {opmlMode === "preset" ? (
                 <>
                   <Typography.Text strong>
-                    {t("newsSources.opml.fields.preset", {
-                      defaultValue: "Preset",
-                    })}
+                    {t("newsSources.opml.fields.preset")}
                   </Typography.Text>
                   <Select
                     style={{ width: "100%", marginTop: 6 }}
@@ -8419,9 +7581,7 @@ export function NewsSourcesContent() {
               ) : (
                 <>
                   <Typography.Text strong>
-                    {t("newsSources.opml.fields.file", {
-                      defaultValue: "Upload .opml/.xml",
-                    })}
+                    {t("newsSources.opml.fields.file")}
                   </Typography.Text>
                   <Input
                     style={{ marginTop: 6 }}
@@ -8432,7 +7592,6 @@ export function NewsSourcesContent() {
                   {opmlFileName ? (
                     <Typography.Text type="secondary">
                       {t("newsSources.opml.fields.fileLoaded", {
-                        defaultValue: "Loaded file: {{name}}",
                         name: opmlFileName,
                       })}
                     </Typography.Text>
@@ -8449,14 +7608,10 @@ export function NewsSourcesContent() {
               onChange={(event) =>
                 setOpmlDefaultLanguage(event.target.value.trim())
               }
-              placeholder={t("newsSources.opml.fields.language", {
-                defaultValue: "Target language (e.g. zh/en)",
-              })}
+              placeholder={t("newsSources.opml.fields.language")}
             />
             <Button onClick={handleApplyOpmlDefaultLanguage}>
-              {t("newsSources.opml.actions.applyLanguage", {
-                defaultValue: "Apply language to enabled",
-              })}
+              {t("newsSources.opml.actions.applyLanguage")}
             </Button>
           </Space>
 
@@ -8465,25 +7620,21 @@ export function NewsSourcesContent() {
               <Space wrap>
                 <Tag color="blue">
                   {t("newsSources.opml.summary.total", {
-                    defaultValue: "Total {{count}}",
                     count: opmlPreview.summary.total,
                   })}
                 </Tag>
                 <Tag color="green">
                   {t("newsSources.opml.summary.valid", {
-                    defaultValue: "Valid {{count}}",
                     count: opmlPreview.summary.valid,
                   })}
                 </Tag>
                 <Tag color="gold">
                   {t("newsSources.opml.summary.duplicates", {
-                    defaultValue: "Duplicates {{count}}",
                     count: opmlPreview.summary.duplicates,
                   })}
                 </Tag>
                 <Tag color="purple">
                   {t("newsSources.opml.summary.enabled", {
-                    defaultValue: "Enabled {{count}}",
                     count: opmlPreview.entries.filter((entry) => entry.enabled)
                       .length,
                   })}
@@ -8491,7 +7642,6 @@ export function NewsSourcesContent() {
                 {opmlPreview.title ? (
                   <Typography.Text type="secondary">
                     {t("newsSources.opml.summary.title", {
-                      defaultValue: "Title: {{title}}",
                       title: opmlPreview.title,
                     })}
                   </Typography.Text>
@@ -8504,12 +7654,8 @@ export function NewsSourcesContent() {
             <Alert
               type={opmlImportReport.summary.failed > 0 ? "warning" : "success"}
               showIcon
-              message={t("newsSources.opml.report.title", {
-                defaultValue: "Import completed",
-              })}
+              message={t("newsSources.opml.report.title")}
               description={t("newsSources.opml.report.summary", {
-                defaultValue:
-                  "Created {{created}}, skipped {{skipped}}, failed {{failed}}.",
                 created: opmlImportReport.summary.created,
                 skipped: opmlImportReport.summary.skipped,
                 failed: opmlImportReport.summary.failed,
@@ -8527,9 +7673,7 @@ export function NewsSourcesContent() {
               dataSource={opmlPreview.entries}
               columns={[
                 {
-                  title: t("newsSources.opml.columns.import", {
-                    defaultValue: "Import",
-                  }),
+                  title: t("newsSources.opml.columns.import"),
                   width: 80,
                   render: (_value, record, index) => (
                     <Checkbox
@@ -8544,30 +7688,22 @@ export function NewsSourcesContent() {
                   ),
                 },
                 {
-                  title: t("newsSources.opml.columns.name", {
-                    defaultValue: "Name",
-                  }),
+                  title: t("newsSources.opml.columns.name"),
                   dataIndex: "name",
                   width: 220,
                 },
                 {
-                  title: t("newsSources.opml.columns.siteUrl", {
-                    defaultValue: "Site URL",
-                  }),
+                  title: t("newsSources.opml.columns.siteUrl"),
                   dataIndex: "url",
                   ellipsis: true,
                 },
                 {
-                  title: t("newsSources.opml.columns.feedUrl", {
-                    defaultValue: "Feed URL",
-                  }),
+                  title: t("newsSources.opml.columns.feedUrl"),
                   dataIndex: "feedUrl",
                   ellipsis: true,
                 },
                 {
-                  title: t("newsSources.opml.columns.language", {
-                    defaultValue: "Language",
-                  }),
+                  title: t("newsSources.opml.columns.language"),
                   width: 130,
                   render: (_value, record, index) => (
                     <Input
@@ -8582,26 +7718,20 @@ export function NewsSourcesContent() {
                   ),
                 },
                 {
-                  title: t("newsSources.opml.columns.group", {
-                    defaultValue: "Group",
-                  }),
+                  title: t("newsSources.opml.columns.group"),
                   dataIndex: "group",
                   width: 130,
                   render: (group: string | null) =>
                     group ? <Tag>{group}</Tag> : null,
                 },
                 {
-                  title: t("newsSources.opml.columns.status", {
-                    defaultValue: "Status",
-                  }),
+                  title: t("newsSources.opml.columns.status"),
                   width: 260,
                   render: (_value, record) => {
                     if (record.alreadyExists) {
                       return (
                         <Tag color="gold">
-                          {t("newsSources.opml.status.duplicate", {
-                            defaultValue: "Duplicate",
-                          })}
+                          {t("newsSources.opml.status.duplicate")}
                         </Tag>
                       );
                     }
@@ -8621,9 +7751,7 @@ export function NewsSourcesContent() {
                     }
                     return (
                       <Tag color="green">
-                        {t("newsSources.opml.status.ready", {
-                          defaultValue: "Ready",
-                        })}
+                        {t("newsSources.opml.status.ready")}
                       </Tag>
                     );
                   },
@@ -8632,10 +7760,7 @@ export function NewsSourcesContent() {
             />
           ) : (
             <Typography.Text type="secondary">
-              {t("newsSources.opml.empty", {
-                defaultValue:
-                  "Choose a preset or upload an OPML file, then click Preview.",
-              })}
+              {t("newsSources.opml.empty")}
             </Typography.Text>
           )}
         </Space>
@@ -8647,8 +7772,8 @@ export function NewsSourcesContent() {
           open={createDrawerOpen}
           loading={creatingFromTaskDrawer}
           canWriteItems={canWriteItems}
-          title={t("newsSources.actions.new", { defaultValue: "New source" })}
-          submitLabel={t("common.create", { defaultValue: "Create" })}
+          title={t("newsSources.actions.new")}
+          submitLabel={t("common.create")}
           defaultTemplateKey="news"
           onClose={closeCreateDrawer}
           onSubmit={handleCreateFromTaskDrawer}
@@ -8663,24 +7788,17 @@ export function NewsSourcesContent() {
       >
         <Modal
           open={scheduleOpen}
-          title={t("newsSources.schedule.title", {
-            defaultValue: "Schedule crawl",
-          })}
+          title={t("newsSources.schedule.title")}
           onCancel={closeSchedule}
           onOk={() => scheduleForm.submit()}
           okText={
             scheduleTargets.length > 1
               ? t("newsSources.actions.scheduleBatch", {
-                  defaultValue: "Schedule ({{count}})",
                   count: scheduleTargets.length,
                 })
               : scheduleTargets[0]?.nextRunAt
-                ? t("newsSources.actions.reschedule", {
-                    defaultValue: "Reschedule",
-                  })
-                : t("newsSources.actions.schedule", {
-                    defaultValue: "Schedule",
-                  })
+                ? t("newsSources.actions.reschedule")
+                : t("newsSources.actions.schedule")
           }
           okButtonProps={{ loading: scheduleLoading }}
           destroyOnHidden
@@ -8726,7 +7844,6 @@ export function NewsSourcesContent() {
               showIcon
               style={{ marginBottom: 12 }}
               message={t("newsSources.schedule.enablesSource", {
-                defaultValue: "This will enable {{count}} source(s).",
                 count: scheduleTargets.filter((target) => !target.isActive)
                   .length,
               })}
@@ -8734,9 +7851,7 @@ export function NewsSourcesContent() {
           ) : null}
           <Form.Item
             name="nextRunAt"
-            label={t("newsSources.fields.nextRunAt", {
-              defaultValue: "Next run at",
-            })}
+            label={t("newsSources.fields.nextRunAt")}
             rules={[
               { required: true },
               {
@@ -8744,18 +7859,14 @@ export function NewsSourcesContent() {
                   if (!value || !value.isValid()) {
                     return Promise.reject(
                       new Error(
-                        t("newsSources.schedule.validation.invalid", {
-                          defaultValue: "Please choose a valid date/time.",
-                        }),
+                        t("newsSources.schedule.validation.invalid"),
                       ),
                     );
                   }
                   if (value.isBefore(dayjs())) {
                     return Promise.reject(
                       new Error(
-                        t("newsSources.schedule.validation.future", {
-                          defaultValue: "Next run time must be in the future.",
-                        }),
+                        t("newsSources.schedule.validation.future"),
                       ),
                     );
                   }
@@ -8782,7 +7893,7 @@ export function NewsSourcesContent() {
                 })
               }
             >
-              {t("newsSources.schedule.presets.in5m", { defaultValue: "+5m" })}
+              {t("newsSources.schedule.presets.in5m")}
             </Button>
             <Button
               size="small"
@@ -8792,9 +7903,7 @@ export function NewsSourcesContent() {
                 })
               }
             >
-              {t("newsSources.schedule.presets.in30m", {
-                defaultValue: "+30m",
-              })}
+              {t("newsSources.schedule.presets.in30m")}
             </Button>
             <Button
               size="small"
@@ -8804,7 +7913,7 @@ export function NewsSourcesContent() {
                 })
               }
             >
-              {t("newsSources.schedule.presets.in1h", { defaultValue: "+1h" })}
+              {t("newsSources.schedule.presets.in1h")}
             </Button>
             <Button
               size="small"
@@ -8814,9 +7923,7 @@ export function NewsSourcesContent() {
                 })
               }
             >
-              {t("newsSources.schedule.presets.nextHour", {
-                defaultValue: "Next hour",
-              })}
+              {t("newsSources.schedule.presets.nextHour")}
             </Button>
             <Button
               size="small"
@@ -8826,9 +7933,7 @@ export function NewsSourcesContent() {
                 })
               }
             >
-              {t("newsSources.schedule.presets.tomorrow9", {
-                defaultValue: "Tomorrow 09:00",
-              })}
+              {t("newsSources.schedule.presets.tomorrow9")}
             </Button>
             {scheduleTargets.length === 1 ? (
               <Button
@@ -8842,23 +7947,19 @@ export function NewsSourcesContent() {
                   })
                 }
               >
-                {t("newsSources.schedule.presets.nextInterval", {
-                  defaultValue: "Next interval",
-                })}
+                {t("newsSources.schedule.presets.nextInterval")}
               </Button>
             ) : null}
           </Space>
           {scheduleTargets.length > 1 ? (
             <Typography.Text type="secondary">
               {t("newsSources.schedule.selectedCount", {
-                defaultValue: "Applies to {{count}} sources.",
                 count: scheduleTargets.length,
               })}
             </Typography.Text>
           ) : scheduleTargets.length === 1 ? (
             <Typography.Text type="secondary">
               {t("newsSources.schedule.frequencyHint", {
-                defaultValue: "Frequency: every {{seconds}} seconds.",
                 seconds: scheduleTargets[0]!.frequencySeconds,
               })}
             </Typography.Text>
@@ -8868,9 +7969,7 @@ export function NewsSourcesContent() {
 
       <Modal
         open={previewOpen}
-        title={t("newsSources.preview.title", {
-          defaultValue: "News source preview",
-        })}
+        title={t("newsSources.preview.title")}
         width={screens.md ? 980 : "100%"}
         onCancel={() => {
           setPreviewOpen(false);
@@ -8885,12 +7984,8 @@ export function NewsSourcesContent() {
                 disabled={!previewSource}
               >
                 {previewSource?.nextRunAt
-                  ? t("newsSources.actions.reschedule", {
-                      defaultValue: "Reschedule",
-                    })
-                  : t("newsSources.actions.schedule", {
-                      defaultValue: "Schedule",
-                    })}
+                  ? t("newsSources.actions.reschedule")
+                  : t("newsSources.actions.schedule")}
               </Button>
             ) : null}
             {canManage ? (
@@ -8900,7 +7995,7 @@ export function NewsSourcesContent() {
                 loading={previewRunNowLoading}
                 disabled={!previewSource}
               >
-                {t("newsSources.actions.runNow", { defaultValue: "Run now" })}
+                {t("newsSources.actions.runNow")}
               </Button>
             ) : null}
             <Button
@@ -8908,7 +8003,7 @@ export function NewsSourcesContent() {
               loading={previewLoading}
               disabled={!previewSource}
             >
-              {t("common.refresh", { defaultValue: "Refresh" })}
+              {t("common.refresh")}
             </Button>
             <Button
               type="primary"
@@ -8918,7 +8013,7 @@ export function NewsSourcesContent() {
                 setPreviewData(null);
               }}
             >
-              {t("common.close", { defaultValue: "Close" })}
+              {t("common.close")}
             </Button>
           </Space>
         }
@@ -8938,9 +8033,7 @@ export function NewsSourcesContent() {
                   return (
                     <Space wrap>
                       <Typography.Text type="secondary">
-                        {t("newsSources.preview.strategy", {
-                          defaultValue: "Strategy",
-                        })}
+                        {t("newsSources.preview.strategy")}
                         :
                       </Typography.Text>
                       {strategyTags.map((tag) => (
@@ -8967,40 +8060,29 @@ export function NewsSourcesContent() {
                 }
               >
                 {previewData.mode === "sitemap"
-                  ? t("newsSources.preview.modeSitemap", {
-                      defaultValue: "Sitemap",
-                    })
+                  ? t("newsSources.preview.modeSitemap")
                   : previewData.mode === "rss"
-                    ? t("newsSources.preview.modeRss", { defaultValue: "RSS" })
+                    ? t("newsSources.preview.modeRss")
                     : previewData.mode === "list"
-                      ? t("newsSources.preview.modeList", {
-                          defaultValue: "List page",
-                        })
+                      ? t("newsSources.preview.modeList")
                       : previewData.mode === "deep"
-                        ? t("newsSources.preview.modeDeep", {
-                            defaultValue: "Deep discovery",
-                          })
-                        : t("newsSources.preview.modeSingle", {
-                            defaultValue: "Single",
-                          })}
+                        ? t("newsSources.preview.modeDeep")
+                        : t("newsSources.preview.modeSingle")}
               </Tag>
               <Typography.Text>
                 {t("newsSources.preview.scheduleCount", {
-                  defaultValue: "Would schedule: {{count}}",
                   count: previewData.scheduleCount,
                 })}
               </Typography.Text>
               {typeof previewData.availableToSchedule === "number" ? (
                 <Typography.Text type="secondary">
                   {t("newsSources.preview.availableToSchedule", {
-                    defaultValue: "Available: {{count}}",
                     count: previewData.availableToSchedule,
                   })}
                 </Typography.Text>
               ) : null}
               <Typography.Text type="secondary">
                 {t("newsSources.preview.skippedCount", {
-                  defaultValue: "Skipped: {{count}}",
                   count: previewData.skippedCount,
                 })}
               </Typography.Text>
@@ -9008,7 +8090,6 @@ export function NewsSourcesContent() {
               typeof previewData.inFlightLimit === "number" ? (
                 <Typography.Text type="secondary">
                   {t("newsSources.preview.inFlightCount", {
-                    defaultValue: "In-flight: {{count}}/{{limit}}",
                     count: previewData.inFlightCount,
                     limit: previewData.inFlightLimit,
                   })}
@@ -9020,9 +8101,7 @@ export function NewsSourcesContent() {
             (previewData.deepPreviewError || previewData.deepFailureStats) ? (
               <Card
                 size="small"
-                title={t("newsSources.preview.deepFailure.title", {
-                  defaultValue: "Deep discovery failure stats",
-                })}
+                title={t("newsSources.preview.deepFailure.title")}
               >
                 {previewData.deepPreviewError ? (
                   <Alert
@@ -9036,25 +8115,19 @@ export function NewsSourcesContent() {
                 <Row gutter={[12, 12]}>
                   <Col xs={24} sm={8}>
                     <Statistic
-                      title={t("newsSources.preview.deepFailure.total24h", {
-                        defaultValue: "Failures (24h)",
-                      })}
+                      title={t("newsSources.preview.deepFailure.total24h")}
                       value={previewData.deepFailureStats?.total24h ?? 0}
                     />
                   </Col>
                   <Col xs={24} sm={8}>
                     <Statistic
-                      title={t("newsSources.preview.deepFailure.streak", {
-                        defaultValue: "Current streak",
-                      })}
+                      title={t("newsSources.preview.deepFailure.streak")}
                       value={previewData.deepFailureStats?.streak ?? 0}
                     />
                   </Col>
                   <Col xs={24} sm={8}>
                     <Statistic
-                      title={t("newsSources.preview.deepFailure.nextRetryAt", {
-                        defaultValue: "Next retry",
-                      })}
+                      title={t("newsSources.preview.deepFailure.nextRetryAt")}
                       value={
                         previewData.deepFailureStats?.nextRetryAt
                           ? formatDateTime(
@@ -9085,7 +8158,6 @@ export function NewsSourcesContent() {
                     style={{ display: "block", marginTop: 8 }}
                   >
                     {t("newsSources.preview.deepFailure.lastFailureAt", {
-                      defaultValue: "Last failure: {{time}}",
                       time: formatDateTime(
                         previewData.deepFailureStats.lastFailureAt,
                         locale,
@@ -9112,12 +8184,8 @@ export function NewsSourcesContent() {
         ) : (
           <Typography.Text type="secondary">
             {previewLoading
-              ? t("newsSources.preview.loading", {
-                  defaultValue: "Loading preview...",
-                })
-              : t("newsSources.preview.empty", {
-                  defaultValue: "No preview data.",
-                })}
+              ? t("newsSources.preview.loading")
+              : t("newsSources.preview.empty")}
           </Typography.Text>
         )}
       </Modal>

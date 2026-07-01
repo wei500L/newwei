@@ -116,7 +116,7 @@ function bumpCount(counts: Record<string, number>, key: string) {
 }
 
 function mergeMetadataRecords(
-  ...records: Array<Record<string, unknown> | null | undefined>
+  ...records: (Record<string, unknown> | null | undefined)[]
 ): Record<string, unknown> | undefined {
   const merged: Record<string, unknown> = {};
   for (const record of records) {
@@ -146,7 +146,7 @@ function toNumericRecord(value: unknown): Record<string, number> | undefined {
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-function uniqueStringList(...lists: Array<string[] | undefined>): string[] | undefined {
+function uniqueStringList(...lists: (string[] | undefined)[]): string[] | undefined {
   const merged = Array.from(
     new Set(
       lists.flatMap((list) =>
@@ -1660,10 +1660,10 @@ export class CrawlStrategyLayeredExecutorService {
       maxPages: number;
     };
     profile: CrawlSiteProfileRecord;
-    persistedResults: Array<{
+    persistedResults: {
       id: string;
       sourceUrl: string;
-    }>;
+    }[];
     rawResultsByUrl: Map<string, Crawl4aiArticle>;
   }): Promise<CrawlStrategyNativeDiscoveryMaterialization> {
     const sameDomainHost = new URL(options.node.url).hostname;

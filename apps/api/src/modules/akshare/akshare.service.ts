@@ -26,6 +26,7 @@ import { Queue, type Job, type RepeatableJob, type RepeatOptions } from "bullmq"
 import type Redis from "ioredis";
 import { randomUUID } from "node:crypto";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { REDIS_CLIENT } from "../cache/cache.tokens";
@@ -1122,7 +1123,7 @@ export class AkshareService implements OnModuleInit {
         { dataItemId: config.item.slug },
         {
           removeOnComplete: true,
-          removeOnFail: false,
+          removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
           repeat: effectiveRepeat,
         },
       );

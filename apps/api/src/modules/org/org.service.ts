@@ -1,11 +1,12 @@
 import { DEFAULT_ROLES } from "@modular/config";
-import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
 import { hasMembershipPermission } from "../../common/authz/membership-permissions";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { PrismaService } from "../config/prisma.service";
+import { ActiveOrgRegistryService } from "./active-org-registry.service";
 
 // org.write is admin-only (see @modular/config DEFAULT_ROLES). Managing an org must
 // bind the permission check to the TARGET org, not the caller's active-org claims.
@@ -50,7 +51,11 @@ function isPrismaUniqueConstraintError(error: unknown): boolean {
 
 @Injectable()
 export class OrgService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly activeOrgRegistry?: ActiveOrgRegistryService,
+  ) {}
 
   private static readonly SLUG_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N}-]{1,62}[\p{L}\p{N}]$/u;
 
@@ -210,6 +215,8 @@ export class OrgService {
       throw error;
     }
 
+    await this.activeOrgRegistry?.invalidate();
+
     return {
       id: org.id,
       name: org.name,
@@ -327,6 +334,8 @@ export class OrgService {
       },
       { orgId: normalizedOrgId, actorId, resource: "org", action: auditAction }
     );
+
+    await this.activeOrgRegistry?.invalidate();
 
     return {
       id: updated.id,

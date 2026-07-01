@@ -17,9 +17,21 @@ import { signOut, useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+
+import { useTheme } from "@/hooks/use-theme";
+import { captureClientError } from "@/lib/client-telemetry";
+import { changeLanguage } from "@/lib/i18n";
+import { createTraceHeaders } from "@/lib/trace";
+
 import { buildActionRailNavConfig } from "./action-rail";
 import { resolveActiveItemKey } from "./action-rail-routing";
-import { navigateDrawerItem } from "./top-nav-drawer-navigation";
+import { AvatarFallback } from "./avatar-fallback";
+import { CommandBar } from "./command-bar";
+import { LanguageSwitcher } from "./language-switcher";
+import { NotificationCenter } from "./notification-center";
+import { OrganizationSwitcher } from "./organization-switcher";
+import { SystemDefcon } from "./system-defcon";
+import { TickerTape } from "./ticker-tape";
 import {
   alignDensityModeToBase,
   downgradeDensityModeForBase,
@@ -30,19 +42,7 @@ import {
   upgradeDensityMode,
   type TopNavDensityMode,
 } from "./top-nav-density";
-
-import { captureClientError } from "@/lib/client-telemetry";
-import { useTheme } from "@/hooks/use-theme";
-import { changeLanguage } from "@/lib/i18n";
-import { createTraceHeaders } from "@/lib/trace";
-
-import { AvatarFallback } from "./avatar-fallback";
-import { CommandBar } from "./command-bar";
-import { LanguageSwitcher } from "./language-switcher";
-import { NotificationCenter } from "./notification-center";
-import { OrganizationSwitcher } from "./organization-switcher";
-import { SystemDefcon } from "./system-defcon";
-import { TickerTape } from "./ticker-tape";
+import { navigateDrawerItem } from "./top-nav-drawer-navigation";
 import { UserUiSettingsSyncIndicator } from "./user-ui-settings-sync-indicator";
 
 const formatLabel = (value: string): string =>
@@ -204,9 +204,9 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
   const planLabel = planTier ? formatLabel(planTier) : "Free Plan";
   const statusLabel = subscriptionStatus ? formatLabel(subscriptionStatus) : null;
   const planBadgeLabel = statusLabel ? `${planLabel} · ${statusLabel}` : planLabel;
-  const startNewCrawlLabel = t("nav.newCrawl", { defaultValue: "New Crawl" });
-  const brandShortLabel = t("brand.short", { defaultValue: "M" });
-  const brandFullLabel = t("brand.full", { defaultValue: "Modular" });
+  const startNewCrawlLabel = t("nav.newCrawl");
+  const brandShortLabel = t("brand.short");
+  const brandFullLabel = t("brand.full");
   const menuButtonClassName = showDesktopMenuButton ? "" : "md:hidden";
   const drawerClassName = showDesktopMenuButton ? "" : "md:hidden";
   const isFullMode = densityMode === "full";
@@ -232,12 +232,12 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
     () => [
       {
         key: "lang-zh",
-        label: t("language.chinese", { defaultValue: "简体中文" }),
+        label: t("language.chinese"),
         onClick: () => void changeLanguage("zh-CN"),
       },
       {
         key: "lang-en",
-        label: t("language.english", { defaultValue: "English" }),
+        label: t("language.english"),
         onClick: () => void changeLanguage("en-US"),
       },
     ],
@@ -260,7 +260,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
       { type: "divider" },
       {
         key: "profile",
-        label: t("nav.profile", { defaultValue: "Profile" }),
+        label: t("nav.profile"),
         icon: <UserOutlined />,
         onClick: () => router.push("/profile")
       }
@@ -279,13 +279,13 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
       items.push(
         {
           key: "lang-zh",
-          label: t("language.chinese", { defaultValue: "简体中文" }),
+          label: t("language.chinese"),
           icon: <GlobalOutlined />,
           onClick: () => void changeLanguage("zh-CN"),
         },
         {
           key: "lang-en",
-          label: t("language.english", { defaultValue: "English" }),
+          label: t("language.english"),
           icon: <GlobalOutlined />,
           onClick: () => void changeLanguage("en-US"),
         }
@@ -341,7 +341,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
             icon={<MenuOutlined className="text-lg" aria-hidden />}
             onClick={() => setMobileNavOpen(true)}
             className={menuButtonClassName}
-            aria-label={t("nav.openMenu", { defaultValue: "Open navigation menu" })}
+            aria-label={t("nav.openMenu")}
             aria-expanded={mobileNavOpen}
             aria-controls="mobile-navigation-drawer"
           />
@@ -427,7 +427,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
                 <Button
                   type="text"
                   icon={<SwapOutlined />}
-                  aria-label={t("orgSwitcher.switch", { defaultValue: "Switch organization" })}
+                  aria-label={t("orgSwitcher.switch")}
                   className="hidden xl:inline-flex h-8 w-8 items-center justify-center p-0"
                 />
               </Popover>
@@ -454,7 +454,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
                     <Button
                       type="text"
                       icon={<GlobalOutlined />}
-                      aria-label={t("language.label", { defaultValue: "Language" })}
+                      aria-label={t("language.label")}
                       className="inline-flex h-8 w-8 items-center justify-center p-0"
                     />
                   </Dropdown>
@@ -472,7 +472,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
                   <Button
                     type="text"
                     icon={<SwapOutlined />}
-                    aria-label={t("orgSwitcher.switch", { defaultValue: "Switch organization" })}
+                    aria-label={t("orgSwitcher.switch")}
                     className="inline-flex h-8 w-8 items-center justify-center p-0"
                   />
                 </Popover>
@@ -516,7 +516,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
 
       <Drawer
         id="mobile-navigation-drawer"
-        title={t("nav.menu", { defaultValue: "Menu" })}
+        title={t("nav.menu")}
         placement="left"
         width={320}
         open={mobileNavOpen}
@@ -553,7 +553,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
           {adminNavItems.length > 0 ? (
             <div className="pt-4 border-t border-[var(--border)] flex flex-col gap-2">
               <span className="px-1 text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                {t("nav.adminGroup", { defaultValue: "Admin" })}
+                {t("nav.adminGroup")}
               </span>
               <div className="flex flex-col gap-1">
                 {adminNavItems.map((item) => {

@@ -1,11 +1,11 @@
-import { Injectable } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
 import {
   type WarMapLayerId as SharedWarMapLayerId,
   type WarMapLayerVisibility as SharedWarMapLayerVisibility,
   type WarMapSettings as SharedWarMapSettings,
   normalizeWarMapSettings as normalizeSharedWarMapSettings,
 } from "@modular/utils";
+import { Injectable } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 
 import { PrismaService } from "../config/prisma.service";
@@ -17,9 +17,10 @@ const KEY_WAR_MAP_SETTINGS = "ui:war-map:settings:v1";
 const KEY_SPACETIME_TIMELINE_SETTINGS = "ui:spacetime-timeline:settings:v1";
 const KEY_NEWSNOW_SETTINGS = "ui:newsnow:settings:v1";
 const KEY_RSS_READER_SETTINGS = "ui:rss-reader:settings:v1";
+const KEY_ONBOARDING_SETTINGS = "ui:onboarding:settings:v1";
 
 const MAX_MONITORS = 20;
-const MAX_LAYOUT_ITEMS = 120;
+const MAX_LAYOUT_ITEMS_PER_BREAKPOINT = 64;
 const MAX_VISIBILITY_KEYS = 64;
 const MAX_NEWSNOW_SOURCE_IDS = 200;
 const MAX_NEWSNOW_COLUMNS = 32;
@@ -27,6 +28,8 @@ const MAX_NEWSNOW_AFFINITIES = 300;
 const MAX_RSS_READER_SOURCE_IDS = 500;
 const MAX_RSS_READER_LANGUAGE_FILTERS = 24;
 const NEWSNOW_SOURCE_ID_PATTERN = /^[a-z0-9_-]{1,64}$/i;
+const ONBOARDING_KEY_PATTERN = /^[a-z0-9_-]{1,64}$/i;
+const ONBOARDING_STEP_KEYS = ["today", "events", "map", "finance"] as const;
 
 export interface SituationMonitorUiSettingsResponse {
   version: 1;
@@ -132,6 +135,23 @@ export interface RssReaderUiSettingsResponse {
   settings: RssReaderUiSettings | null;
 }
 
+export type OnboardingStepKey = (typeof ONBOARDING_STEP_KEYS)[number];
+
+export interface OnboardingUiSettings {
+  completed: boolean;
+  dismissed: boolean;
+  checklist: Record<OnboardingStepKey, boolean>;
+  completedTours: Partial<Record<OnboardingStepKey, boolean>>;
+}
+
+export interface OnboardingUiSettingsResponse {
+  version: 1;
+  updatedAt: {
+    settings?: string;
+  };
+  settings: OnboardingUiSettings | null;
+}
+
 export function createDefaultNewsnowUiSettings(): NewsnowUiSettings {
   return {
     focusSources: [],
@@ -151,6 +171,20 @@ export function createDefaultRssReaderUiSettings(): RssReaderUiSettings {
     translationProvider: "deeplx",
     targetLanguage: "zh-CN",
     showOriginalContent: false,
+  };
+}
+
+export function createDefaultOnboardingUiSettings(): OnboardingUiSettings {
+  return {
+    completed: false,
+    dismissed: false,
+    checklist: {
+      today: false,
+      events: false,
+      map: false,
+      finance: false,
+    },
+    completedTours: {},
   };
 }
 
@@ -179,8 +213,23 @@ export interface SituationMonitorLayoutItem {
   static?: boolean;
 }
 
+export const SITUATION_MONITOR_LAYOUT_BREAKPOINTS = [
+  "lg",
+  "md",
+  "sm",
+  "xs",
+  "xxs",
+] as const;
+
+export type SituationMonitorLayoutBreakpoint =
+  (typeof SITUATION_MONITOR_LAYOUT_BREAKPOINTS)[number];
+
+export type SituationMonitorResponsiveLayouts = Partial<
+  Record<SituationMonitorLayoutBreakpoint, SituationMonitorLayoutItem[]>
+>;
+
 export interface SituationMonitorLayout {
-  layout: SituationMonitorLayoutItem[];
+  layouts: SituationMonitorResponsiveLayouts;
   visibility: Record<string, boolean>;
 }
 
@@ -356,19 +405,48 @@ function normalizeLayoutItem(
 }
 
 function normalizeLayout(value: unknown): SituationMonitorLayout {
-  const defaults: SituationMonitorLayout = { layout: [], visibility: {} };
+  const defaults: SituationMonitorLayout = { layouts: {}, visibility: {} };
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return defaults;
   }
   const record = value as Record<string, unknown>;
 
-  const rawLayout = record.layout;
-  const layout = Array.isArray(rawLayout)
-    ? rawLayout
+  const layouts: SituationMonitorResponsiveLayouts = {};
+  const rawLayouts = record.layouts;
+
+  if (
+    rawLayouts &&
+    typeof rawLayouts === "object" &&
+    !Array.isArray(rawLayouts)
+  ) {
+    const layoutRecord = rawLayouts as Record<string, unknown>;
+    for (const breakpoint of SITUATION_MONITOR_LAYOUT_BREAKPOINTS) {
+      const rawLayout = layoutRecord[breakpoint];
+      if (!Array.isArray(rawLayout)) {
+        continue;
+      }
+
+      const normalizedLayout = rawLayout
         .map((entry) => normalizeLayoutItem(entry))
         .filter((entry): entry is SituationMonitorLayoutItem => Boolean(entry))
-        .slice(0, MAX_LAYOUT_ITEMS)
-    : [];
+        .slice(0, MAX_LAYOUT_ITEMS_PER_BREAKPOINT);
+
+      if (normalizedLayout.length > 0) {
+        layouts[breakpoint] = normalizedLayout;
+      }
+    }
+  }
+
+  if (!layouts.lg && Array.isArray(record.layout)) {
+    const normalizedLegacyLayout = record.layout
+      .map((entry) => normalizeLayoutItem(entry))
+      .filter((entry): entry is SituationMonitorLayoutItem => Boolean(entry))
+      .slice(0, MAX_LAYOUT_ITEMS_PER_BREAKPOINT);
+
+    if (normalizedLegacyLayout.length > 0) {
+      layouts.lg = normalizedLegacyLayout;
+    }
+  }
 
   const visibility: Record<string, boolean> = {};
   const rawVisibility = record.visibility;
@@ -394,7 +472,7 @@ function normalizeLayout(value: unknown): SituationMonitorLayout {
     }
   }
 
-  return { layout, visibility };
+  return { layouts, visibility };
 }
 
 function normalizeWindowHours(value: unknown): number {
@@ -559,8 +637,14 @@ function normalizeNewsnowSourceId(value: unknown): string | null {
   return NEWSNOW_SOURCE_ID_PATTERN.test(trimmed) ? trimmed : null;
 }
 
-function clampNewsnowInt(value: unknown, min: number, max: number, fallback = 0): number {
-  const raw = typeof value === "number" && Number.isFinite(value) ? value : Number.NaN;
+function clampNewsnowInt(
+  value: unknown,
+  min: number,
+  max: number,
+  fallback = 0,
+): number {
+  const raw =
+    typeof value === "number" && Number.isFinite(value) ? value : Number.NaN;
   if (!Number.isFinite(raw)) {
     return fallback;
   }
@@ -579,7 +663,8 @@ function clampNewsnowFloat(
   max: number,
   fallback = 0,
 ): number {
-  const raw = typeof value === "number" && Number.isFinite(value) ? value : Number.NaN;
+  const raw =
+    typeof value === "number" && Number.isFinite(value) ? value : Number.NaN;
   if (!Number.isFinite(raw)) {
     return fallback;
   }
@@ -592,7 +677,10 @@ function clampNewsnowFloat(
   return raw;
 }
 
-function normalizeNewsnowSourceList(value: unknown, maxCount: number): string[] {
+function normalizeNewsnowSourceList(
+  value: unknown,
+  maxCount: number,
+): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -615,7 +703,9 @@ function normalizeNewsnowSourceList(value: unknown, maxCount: number): string[] 
   return out;
 }
 
-function normalizeNewsnowColumnOrders(value: unknown): Record<string, string[]> {
+function normalizeNewsnowColumnOrders(
+  value: unknown,
+): Record<string, string[]> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
   }
@@ -630,7 +720,10 @@ function normalizeNewsnowColumnOrders(value: unknown): Record<string, string[]> 
     if (!normalizedColumn) {
       continue;
     }
-    const normalizedList = normalizeNewsnowSourceList(rawList, MAX_NEWSNOW_SOURCE_IDS);
+    const normalizedList = normalizeNewsnowSourceList(
+      rawList,
+      MAX_NEWSNOW_SOURCE_IDS,
+    );
     if (normalizedList.length === 0) {
       continue;
     }
@@ -658,13 +751,22 @@ function normalizeNewsnowSourceAffinity(
     if (!normalizedSourceId) {
       continue;
     }
-    if (!rawAffinity || typeof rawAffinity !== "object" || Array.isArray(rawAffinity)) {
+    if (
+      !rawAffinity ||
+      typeof rawAffinity !== "object" ||
+      Array.isArray(rawAffinity)
+    ) {
       continue;
     }
     const affinity = rawAffinity as Record<string, unknown>;
     out[normalizedSourceId] = {
       score: clampNewsnowFloat(affinity.score, 0, 100, 0),
-      openOriginalCount: clampNewsnowInt(affinity.openOriginalCount, 0, 1_000_000, 0),
+      openOriginalCount: clampNewsnowInt(
+        affinity.openOriginalCount,
+        0,
+        1_000_000,
+        0,
+      ),
       openEventCount: clampNewsnowInt(affinity.openEventCount, 0, 1_000_000, 0),
       openItemCount: clampNewsnowInt(affinity.openItemCount, 0, 1_000_000, 0),
       refreshCount: clampNewsnowInt(affinity.refreshCount, 0, 1_000_000, 0),
@@ -705,7 +807,10 @@ export function normalizeNewsnowUiSettings(value: unknown): NewsnowUiSettings {
 
   const record = value as Record<string, unknown>;
   return {
-    focusSources: normalizeNewsnowSourceList(record.focusSources, MAX_NEWSNOW_SOURCE_IDS),
+    focusSources: normalizeNewsnowSourceList(
+      record.focusSources,
+      MAX_NEWSNOW_SOURCE_IDS,
+    ),
     columnOrders: normalizeNewsnowColumnOrders(record.columnOrders),
     hideCrossSourceDuplicates: Boolean(record.hideCrossSourceDuplicates),
     sortMode: normalizeNewsnowSortMode(record.sortMode),
@@ -790,7 +895,9 @@ function normalizeRssReaderTargetLanguage(value: unknown): string {
   return normalized.length > 0 ? normalized.slice(0, 32) : "zh-CN";
 }
 
-export function normalizeRssReaderUiSettings(value: unknown): RssReaderUiSettings {
+export function normalizeRssReaderUiSettings(
+  value: unknown,
+): RssReaderUiSettings {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return createDefaultRssReaderUiSettings();
   }
@@ -798,11 +905,61 @@ export function normalizeRssReaderUiSettings(value: unknown): RssReaderUiSetting
   const record = value as Record<string, unknown>;
   return {
     selectedSourceIds: normalizeRssReaderSourceIds(record.selectedSourceIds),
-    sourceLanguageFilters: normalizeRssReaderLanguageFilters(record.sourceLanguageFilters),
+    sourceLanguageFilters: normalizeRssReaderLanguageFilters(
+      record.sourceLanguageFilters,
+    ),
     translationEnabled: record.translationEnabled === true,
-    translationProvider: normalizeRssReaderTranslationProvider(record.translationProvider),
+    translationProvider: normalizeRssReaderTranslationProvider(
+      record.translationProvider,
+    ),
     targetLanguage: normalizeRssReaderTargetLanguage(record.targetLanguage),
     showOriginalContent: record.showOriginalContent === true,
+  };
+}
+
+export function normalizeOnboardingUiSettings(
+  value: unknown,
+): OnboardingUiSettings {
+  const defaults = createDefaultOnboardingUiSettings();
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return defaults;
+  }
+
+  const record = value as Record<string, unknown>;
+  const checklist = { ...defaults.checklist };
+  const rawChecklist =
+    record.checklist &&
+    typeof record.checklist === "object" &&
+    !Array.isArray(record.checklist)
+      ? (record.checklist as Record<string, unknown>)
+      : {};
+
+  for (const key of ONBOARDING_STEP_KEYS) {
+    checklist[key] = rawChecklist[key] === true;
+  }
+
+  const completedTours: Partial<Record<OnboardingStepKey, boolean>> = {};
+  const rawTours =
+    record.completedTours &&
+    typeof record.completedTours === "object" &&
+    !Array.isArray(record.completedTours)
+      ? (record.completedTours as Record<string, unknown>)
+      : {};
+
+  for (const key of ONBOARDING_STEP_KEYS) {
+    if (rawTours[key] === true && ONBOARDING_KEY_PATTERN.test(key)) {
+      completedTours[key] = true;
+    }
+  }
+
+  const allChecklistComplete = ONBOARDING_STEP_KEYS.every((key) => checklist[key]);
+
+  return {
+    completed: record.completed === true || allChecklistComplete,
+    dismissed: record.dismissed === true,
+    checklist,
+    completedTours,
   };
 }
 
@@ -1089,6 +1246,48 @@ export class UserSettingsService {
     }
 
     return this.getRssReaderUiSettings(orgId, userId);
+  }
+
+  async getOnboardingUiSettings(
+    orgId: string,
+    userId: string,
+  ): Promise<OnboardingUiSettingsResponse> {
+    const record = await this.prisma.userSetting.findUnique({
+      where: {
+        orgId_userId_key: {
+          orgId,
+          userId,
+          key: KEY_ONBOARDING_SETTINGS,
+        },
+      },
+      select: { key: true, value: true, updatedAt: true },
+    });
+
+    return {
+      version: 1,
+      updatedAt: {
+        ...(record ? { settings: record.updatedAt.toISOString() } : {}),
+      },
+      settings: record ? normalizeOnboardingUiSettings(record.value) : null,
+    };
+  }
+
+  async updateOnboardingUiSettings(
+    orgId: string,
+    userId: string,
+    input: { settings?: Record<string, unknown> },
+  ): Promise<OnboardingUiSettingsResponse> {
+    if (input.settings !== undefined) {
+      const settings = normalizeOnboardingUiSettings(input.settings);
+      await this.upsert(
+        orgId,
+        userId,
+        KEY_ONBOARDING_SETTINGS,
+        this.toPrismaJson(settings),
+      );
+    }
+
+    return this.getOnboardingUiSettings(orgId, userId);
   }
 
   private async upsert(

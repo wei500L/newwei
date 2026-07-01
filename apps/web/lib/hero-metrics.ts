@@ -1,8 +1,8 @@
 "use client";
 
 import { NetworkStatus } from "@apollo/client";
-import { useMemo } from "react";
 import { useSession } from "next-auth/react";
+import { useMemo } from "react";
 
 import type { DashboardHeroMetricsQuery, DashboardHeroMetricsQueryVariables } from "@/graphql/generated";
 import { useDashboardHeroMetricsQuery } from "@/graphql/generated";

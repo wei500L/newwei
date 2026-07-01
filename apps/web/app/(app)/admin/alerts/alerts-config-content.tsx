@@ -83,7 +83,7 @@ export function AlertsConfigContent() {
 
   if (!canManageAlerts) {
     return (
-      <Card className="content-card" title={t("alerts.config.title", { defaultValue: "Alert Configuration" })}>
+      <Card className="content-card" title={t("alerts.config.title")}>
         <Alert
           type="warning"
           message={t("settings.adminOnly.title")}
@@ -99,12 +99,12 @@ export function AlertsConfigContent() {
     try {
       await triggerRule({ variables: { ruleId } });
       await refetch();
-      message.success(t("alerts.rules.triggered", { defaultValue: "Alert rule queued." }));
+      message.success(t("alerts.rules.triggered"));
     } catch (error) {
       message.error(
         error instanceof Error
           ? error.message
-          : t("alerts.rules.triggerFailed", { defaultValue: "Failed to trigger rule." })
+          : t("alerts.rules.triggerFailed")
       );
     }
   };
@@ -113,7 +113,7 @@ export function AlertsConfigContent() {
     <div className="flex flex-col gap-6">
       <Space align="center" size="middle">
         <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("alerts.config.title", { defaultValue: "Alert Configuration" })}
+          {t("alerts.config.title")}
         </Typography.Title>
         <Button size="small" onClick={() => void refetch()}>
           {t("common.refresh")}
@@ -124,7 +124,7 @@ export function AlertsConfigContent() {
         <Col xs={24} xl={14}>
           <Card
             className="content-card"
-            title={t("alerts.config.rulesTitle", { defaultValue: "Rules" })}
+            title={t("alerts.config.rulesTitle")}
           >
             <List
               dataSource={rules}
@@ -132,9 +132,7 @@ export function AlertsConfigContent() {
                 emptyText: (
                   <ChartEmptyState
                     className="h-auto py-6"
-                    description={t("alerts.center.emptyRules", {
-                      defaultValue: "No alert rules configured."
-                    })}
+                    description={t("alerts.center.emptyRules")}
                   />
                 )
               }}
@@ -147,7 +145,7 @@ export function AlertsConfigContent() {
                       loading={triggeringRule}
                       onClick={() => void handleTrigger(rule.id)}
                     >
-                      {t("alerts.rules.triggerNow", { defaultValue: "Trigger now" })}
+                      {t("alerts.rules.triggerNow")}
                     </Button>
                   ]}
                 >
@@ -166,20 +164,16 @@ export function AlertsConfigContent() {
                             provider: rule.metricProvider,
                             metric: rule.metricSlug,
                             cooldown: rule.cooldownSeconds,
-                            interval: rule.checkIntervalSec,
-                            defaultValue:
-                              "Provider {{provider}} · Metric {{metric}} · Cooldown {{cooldown}}s · Interval {{interval}}s"
+                            interval: rule.checkIntervalSec
                           })}
                         </Typography.Text>
                         <Typography.Text type="secondary">
                           {t("alerts.center.detail.window", {
-                            defaultValue: "Window {{minutes}} min",
                             minutes: rule.changeWindowMin ?? t("common.notAvailable")
                           })}
                         </Typography.Text>
                         <Typography.Text type="secondary">
                           {t("alerts.rules.threshold", {
-                            defaultValue: "Threshold {{threshold}}",
                             threshold: buildThresholdSummary(
                               rule.operator,
                               rule.thresholdValue ?? undefined,
@@ -193,8 +187,7 @@ export function AlertsConfigContent() {
                           {t("alerts.rules.channels", {
                             channels:
                               rule.channels.map((channel) => channel.name).join(", ") ||
-                              t("common.notAvailable"),
-                            defaultValue: "Channels: {{channels}}"
+                              t("common.notAvailable")
                           })}
                         </Typography.Text>
                       </Space>

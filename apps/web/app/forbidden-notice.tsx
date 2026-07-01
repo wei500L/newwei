@@ -24,8 +24,8 @@ export function ForbiddenNotice() {
         key: "access-denied",
         type: "warning",
         content: reason
-          ? `${t("common.accessDenied", { defaultValue: "Access denied" })}: ${reason}`
-          : t("common.accessDenied", { defaultValue: "Access denied" }),
+          ? `${t("common.accessDenied")}: ${reason}`
+          : t("common.accessDenied"),
         duration: 2.2
       });
     });

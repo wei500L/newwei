@@ -36,6 +36,7 @@ import { useSession } from 'next-auth/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { MarkdownViewer } from '@/components/markdown-viewer';
 import {
   asRecord,
   buildUserPromptFromRun,
@@ -52,7 +53,6 @@ import {
   isAssistantKnowledgeSourceSupported,
   type AssistantKnowledgeSource,
 } from '@/lib/assistant-knowledge-source';
-import { MarkdownViewer } from '@/components/markdown-viewer';
 import dayjs from '@/lib/dayjs';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 
@@ -535,7 +535,6 @@ export function AssistantContent() {
       const errMessage = err instanceof Error ? err.message : String(err);
       messageApi.error(
         t('assistant.streamError', {
-          defaultValue: 'Assistant stream error: {{error}}',
           error: errMessage,
         }),
       );
@@ -684,25 +683,25 @@ export function AssistantContent() {
 
   const promptStrings = useMemo<BuildUserPromptStrings>(
     () => ({
-      queryFallback: t('assistant.chat.queryFallback', { defaultValue: 'New query' }),
-      reportLabel: t('assistant.chat.reportLabel', { defaultValue: 'Report' }),
-      forecastLabel: t('assistant.chat.forecastLabel', { defaultValue: 'Forecast' }),
-      dailyLabel: t('assistant.chat.daily', { defaultValue: 'Daily' }),
-      weeklyLabel: t('assistant.chat.weekly', { defaultValue: 'Weekly' }),
-      unknownIndicator: t('assistant.chat.unknownIndicator', { defaultValue: 'Unknown indicator' }),
-      topicLabel: t('assistant.chat.topicLabel', { defaultValue: 'Topic' }),
-      limitLabel: t('assistant.chat.limitLabel', { defaultValue: 'Limit' }),
-      lookbackLabel: t('assistant.chat.lookbackLabel', { defaultValue: 'Lookback' }),
-      modelLabel: t('assistant.chat.modelLabel', { defaultValue: 'Model' }),
+      queryFallback: t('assistant.chat.queryFallback'),
+      reportLabel: t('assistant.chat.reportLabel'),
+      forecastLabel: t('assistant.chat.forecastLabel'),
+      dailyLabel: t('assistant.chat.daily'),
+      weeklyLabel: t('assistant.chat.weekly'),
+      unknownIndicator: t('assistant.chat.unknownIndicator'),
+      topicLabel: t('assistant.chat.topicLabel'),
+      limitLabel: t('assistant.chat.limitLabel'),
+      lookbackLabel: t('assistant.chat.lookbackLabel'),
+      modelLabel: t('assistant.chat.modelLabel'),
     }),
     [t],
   );
 
   const replyStrings = useMemo<ResolveAssistantReplyStrings>(
     () => ({
-      thinking: t('assistant.chat.thinking', { defaultValue: 'Thinking…' }),
-      queued: t('assistant.chat.queued', { defaultValue: 'Queued…' }),
-      blockedFallback: t('assistant.blocked.title', { defaultValue: 'Blocked by safety checks' }),
+      thinking: t('assistant.chat.thinking'),
+      queued: t('assistant.chat.queued'),
+      blockedFallback: t('assistant.blocked.title'),
     }),
     [t],
   );
@@ -722,7 +721,7 @@ export function AssistantContent() {
         ? output.summary.trim()
         : typeof run.summary === 'string' && run.summary.trim().length > 0
           ? run.summary.trim()
-          : t('assistant.blocked.title', { defaultValue: 'Blocked by safety checks' });
+          : t('assistant.blocked.title');
 
     const appliedGuardrailsRaw = output.appliedGuardrails;
     const appliedGuardrails = Array.isArray(appliedGuardrailsRaw)
@@ -793,13 +792,9 @@ export function AssistantContent() {
     setConversationId(null);
   };
 
-  const title = t('pages.assistant.title', { defaultValue: 'AI Assistant' });
-  const subtitle = t('pages.assistant.subtitle', {
-    defaultValue: 'Natural language analysis powered by your data pipeline.',
-  });
-  const placeholder = t('assistant.chat.placeholder', {
-    defaultValue: 'Ask anything about your pipeline data…',
-  });
+  const title = t('pages.assistant.title');
+  const subtitle = t('pages.assistant.subtitle');
+  const placeholder = t('assistant.chat.placeholder');
   const runtimeCapabilities = runtimeCapabilitiesData?.assistantRuntimeCapabilities ?? null;
   const webSearchCapabilityChecking = runtimeCapabilitiesLoading && runtimeCapabilities === null;
   const webSearchCapabilityKnown = runtimeCapabilities !== null;
@@ -807,40 +802,22 @@ export function AssistantContent() {
   const webSearchOptionDisabled = webSearchCapabilityChecking || !webSearchSupportedByModel;
   const knowledgeSourceSupported = isAssistantKnowledgeSourceSupported(knowledgeSource, runtimeCapabilities);
   const knowledgeSourceBlocked = knowledgeSource === 'web_search' && !knowledgeSourceSupported;
-  const knowledgeSourceUnsupportedMessage = t('assistant.chat.knowledgeSource.unsupported', {
-    defaultValue: 'Web search is unavailable for the active assistant model profile.',
-  });
-  const knowledgeSourceDetectingMessage = t('assistant.chat.knowledgeSource.detecting', {
-    defaultValue: 'Detecting model capability for web search…',
-  });
-  const knowledgeSourceFallbackMessage = t('assistant.chat.knowledgeSource.switchedToSiteDb', {
-    defaultValue:
-      'Web search is unavailable for the active assistant model profile. Switched to site database.',
-  });
+  const knowledgeSourceUnsupportedMessage = t('assistant.chat.knowledgeSource.unsupported');
+  const knowledgeSourceDetectingMessage = t('assistant.chat.knowledgeSource.detecting');
+  const knowledgeSourceFallbackMessage = t('assistant.chat.knowledgeSource.switchedToSiteDb');
   const knowledgeSourceHint =
     knowledgeSource === 'web_search'
-      ? t('assistant.chat.knowledgeSource.hintWebSearch', {
-          defaultValue: 'Use web search for latest external facts and include source links.',
-        })
-      : t('assistant.chat.knowledgeSource.hintSiteDb', {
-          defaultValue: 'Use your site database for grounded answers on collected content.',
-        });
+      ? t('assistant.chat.knowledgeSource.hintWebSearch')
+      : t('assistant.chat.knowledgeSource.hintSiteDb');
   const knowledgeSourceCapabilityMessage = webSearchCapabilityChecking
     ? knowledgeSourceDetectingMessage
     : webSearchSupportedByModel
-      ? t('assistant.chat.knowledgeSource.configReady', {
-          defaultValue: 'Web search is enabled by the active model profile (apiSurface=responses).',
-        })
+      ? t('assistant.chat.knowledgeSource.configReady')
       : runtimeCapabilities?.apiSurface && runtimeCapabilities.apiSurface !== 'responses'
         ? t('assistant.chat.knowledgeSource.configNeedsResponses', {
-            defaultValue:
-              'Active model profile uses apiSurface={{apiSurface}}. Switch to responses to enable web search.',
             apiSurface: runtimeCapabilities.apiSurface,
           })
-        : t('assistant.chat.knowledgeSource.configNeedsToggle', {
-            defaultValue:
-              'Active model profile has Assistant web search turned off. Enable it in LLM Gateway settings.',
-          });
+        : t('assistant.chat.knowledgeSource.configNeedsToggle');
   const knowledgeSourceCapabilityClass = webSearchCapabilityChecking
     ? 'text-slate-500 dark:text-slate-400'
     : webSearchSupportedByModel
@@ -877,12 +854,12 @@ export function AssistantContent() {
     const messageValue = messageRaw.trim();
 
     if (!messageValue) {
-      messageApi.warning(t('assistant.messageRequired', { defaultValue: 'Please enter a question.' }));
+      messageApi.warning(t('assistant.messageRequired'));
       return;
     }
 
     if (!canRunAssistant) {
-      messageApi.warning(t('common.accessDenied', { defaultValue: 'Access denied' }));
+      messageApi.warning(t('common.accessDenied'));
       return;
     }
 
@@ -938,22 +915,20 @@ export function AssistantContent() {
       }
       const errMessage = err instanceof Error ? err.message : String(err);
       messageApi.error(
-        t('assistant.requestFailed', { defaultValue: 'Request failed: {{error}}', error: errMessage }),
+        t('assistant.requestFailed', { error: errMessage }),
       );
     }
   };
 
   const handleDeleteRun = async (run: AssistantRun) => {
     if (!canRunAssistant) {
-      messageApi.warning(t('common.accessDenied', { defaultValue: 'Access denied' }));
+      messageApi.warning(t('common.accessDenied'));
       return;
     }
 
     if (run.status === 'running') {
       messageApi.warning(
-        t('assistant.chat.deleteRunningDenied', {
-          defaultValue: 'Cannot delete a running conversation. Please wait until it finishes.',
-        }),
+        t('assistant.chat.deleteRunningDenied'),
       );
       return;
     }
@@ -985,25 +960,20 @@ export function AssistantContent() {
 
         setActiveRunId((current) => (current === run.id ? null : current));
         messageApi.success(
-          t('assistant.chat.deleteSuccess', {
-            defaultValue: 'Conversation deleted.',
-          }),
+          t('assistant.chat.deleteSuccess'),
         );
         void refetch();
         return;
       }
 
       messageApi.warning(
-        t('assistant.chat.deleteNotFound', {
-          defaultValue: 'Conversation no longer exists.',
-        }),
+        t('assistant.chat.deleteNotFound'),
       );
       void refetch();
     } catch (err) {
       const errMessage = err instanceof Error ? err.message : String(err);
       messageApi.error(
         t('assistant.chat.deleteFailed', {
-          defaultValue: 'Failed to delete conversation: {{error}}',
           error: errMessage,
         }),
       );
@@ -1014,12 +984,10 @@ export function AssistantContent() {
 
   const confirmDeleteRun = (run: AssistantRun) => {
     Modal.confirm({
-      title: t('assistant.chat.deleteConfirmTitle', { defaultValue: 'Delete this conversation?' }),
-      content: t('assistant.chat.deleteConfirmDescription', {
-        defaultValue: 'This action cannot be undone.',
-      }),
-      okText: t('common.delete', { defaultValue: 'Delete' }),
-      cancelText: t('common.cancel', { defaultValue: 'Cancel' }),
+      title: t('assistant.chat.deleteConfirmTitle'),
+      content: t('assistant.chat.deleteConfirmDescription'),
+      okText: t('common.delete'),
+      cancelText: t('common.cancel'),
       okButtonProps: { danger: true },
       onOk: async () => {
         await handleDeleteRun(run);
@@ -1027,8 +995,8 @@ export function AssistantContent() {
     });
   };
 
-  const runListEmpty = t('assistant.chat.emptyHistory', { defaultValue: 'No assistant runs yet.' });
-  const designKicker = t('assistant.hero.kicker', { defaultValue: 'INTELLIGENCE CONSOLE' });
+  const runListEmpty = t('assistant.chat.emptyHistory');
+  const designKicker = t('assistant.hero.kicker');
 
   const renderRunHistory = (containerClassName: string, onRunSelect?: () => void) => (
     <div className={`${styles.historyScroll} ${containerClassName}`}>
@@ -1082,7 +1050,7 @@ export function AssistantContent() {
                   onKeyDown={(event) => {
                     event.stopPropagation();
                   }}
-                  aria-label={t('assistant.chat.deleteConversation', { defaultValue: 'Delete conversation' })}
+                  aria-label={t('assistant.chat.deleteConversation')}
                 />
                 <div className="ml-2 w-full">
                   <Space size={6} wrap style={{ marginBottom: 8 }}>
@@ -1096,7 +1064,7 @@ export function AssistantContent() {
                     </span>
                     {blocked ? (
                       <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-300/60 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/40">
-                        {t('assistant.blocked.tag', { defaultValue: 'Blocked' })}
+                        {t('assistant.blocked.tag')}
                       </span>
                     ) : null}
                   </Space>
@@ -1128,7 +1096,7 @@ export function AssistantContent() {
         <Alert
           type="error"
           showIcon
-          message={t('common.unexpectedError', { defaultValue: 'Unexpected error' })}
+          message={t('common.unexpectedError')}
           description={error instanceof Error ? error.message : String(error)}
         />
       ) : null}
@@ -1148,7 +1116,7 @@ export function AssistantContent() {
                 disabled={!activeRun || querySaving}
                 className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:bg-white hover:text-sky-700 hover:shadow-md dark:border-white/15 dark:bg-slate-900/65 dark:text-slate-200 dark:hover:border-sky-400/50 dark:hover:bg-slate-900/82 dark:hover:text-sky-300"
               >
-                {t('assistant.chat.newConversation', { defaultValue: 'New' })}
+                {t('assistant.chat.newConversation')}
               </Button>
               <Button
                 icon={<ReloadOutlined />}
@@ -1156,14 +1124,14 @@ export function AssistantContent() {
                 loading={loading}
                 className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md dark:border-white/15 dark:bg-slate-900/65 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:bg-slate-900/82"
               >
-                {t('common.refresh', { defaultValue: 'Refresh' })}
+                {t('common.refresh')}
               </Button>
               <Button
                 icon={<HistoryOutlined />}
                 className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md xl:hidden dark:border-white/15 dark:bg-slate-900/65 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:bg-slate-900/82"
                 onClick={() => setHistoryDrawerOpen(true)}
               >
-                {t('assistant.chat.historyTitle', { defaultValue: 'History' })} ({runs.length})
+                {t('assistant.chat.historyTitle')} ({runs.length})
               </Button>
             </Space>
           </div>
@@ -1182,10 +1150,10 @@ export function AssistantContent() {
             <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4 dark:border-slate-700/70">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                  {t('assistant.chat.historyTitle', { defaultValue: 'History' })}
+                  {t('assistant.chat.historyTitle')}
                 </p>
                 <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  {t('assistant.chat.recentConversations', { defaultValue: 'Recent conversations' })}
+                  {t('assistant.chat.recentConversations')}
                 </p>
               </div>
               <Space size={8}>
@@ -1199,7 +1167,7 @@ export function AssistantContent() {
                     historyCollapsed ? '' : 'rotate-180'
                   }`}
                   onClick={() => setHistoryCollapsed(true)}
-                  aria-label={t('assistant.chat.hideHistory', { defaultValue: 'Hide history' })}
+                  aria-label={t('assistant.chat.hideHistory')}
                 />
               </Space>
             </div>
@@ -1220,12 +1188,12 @@ export function AssistantContent() {
                       onClick={() => setHistoryCollapsed((collapsed) => !collapsed)}
                       aria-label={
                         historyCollapsed
-                          ? t('assistant.chat.showHistory', { defaultValue: 'Show history' })
-                          : t('assistant.chat.hideHistory', { defaultValue: 'Hide history' })
+                          ? t('assistant.chat.showHistory')
+                          : t('assistant.chat.hideHistory')
                       }
                     />
                     <span className="text-base font-bold text-slate-900 dark:text-slate-100">
-                      {t('assistant.chat.conversationTitle', { defaultValue: 'Conversation' })}
+                      {t('assistant.chat.conversationTitle')}
                     </span>
                     {activeRun ? (
                       <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 ring-1 ring-inset ring-slate-300/60 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/60">
@@ -1241,7 +1209,7 @@ export function AssistantContent() {
                     ) : null}
                     {activeBlocked ? (
                       <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-300/60 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/40">
-                        {t('assistant.blocked.tag', { defaultValue: 'Blocked' })}
+                        {t('assistant.blocked.tag')}
                       </span>
                     ) : null}
                   </Space>
@@ -1251,7 +1219,7 @@ export function AssistantContent() {
                       className="rounded-xl border-slate-200/80 bg-white/80 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md xl:hidden dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:bg-slate-900/88"
                       onClick={() => setHistoryDrawerOpen(true)}
                     >
-                      {t('assistant.chat.historyTitle', { defaultValue: 'History' })} ({runs.length})
+                      {t('assistant.chat.historyTitle')} ({runs.length})
                     </Button>
                     {activeRun ? (
                       <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -1279,9 +1247,7 @@ export function AssistantContent() {
                       <RobotOutlined className="text-3xl text-slate-400 dark:text-slate-300" />
                     </div>
                     <p className="mt-4 max-w-sm text-sm font-semibold text-slate-500 dark:text-slate-300">
-                      {t('assistant.chat.emptyConversation', {
-                        defaultValue: 'Start by sending a message. Your latest run will appear here.',
-                      })}
+                      {t('assistant.chat.emptyConversation')}
                     </p>
                   </div>
                 ) : (
@@ -1301,7 +1267,7 @@ export function AssistantContent() {
                             <RobotOutlined />
                           </div>
                           <span className="text-[15px] font-bold text-slate-900 dark:text-slate-100">
-                            {t('assistant.chat.assistantLabel', { defaultValue: 'Assistant' })}
+                            {t('assistant.chat.assistantLabel')}
                           </span>
                           {activeIsStreaming ? <Spin size="small" className="text-sky-600" /> : null}
                         </Space>
@@ -1317,17 +1283,17 @@ export function AssistantContent() {
                         {hasActiveModelInfo ? (
                           <div className={styles.modelInfoCard}>
                             <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-                              {t('assistant.chat.modelInfoTitle', { defaultValue: 'Model info' })}
+                              {t('assistant.chat.modelInfoTitle')}
                             </span>
                             <Space wrap style={{ marginTop: 10 }}>
                               {activeModelInfo?.llmModel ? (
                                 <span className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 ring-1 ring-sky-200/70 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-400/40">
-                                  {t('assistant.chat.modelLabel', { defaultValue: 'Model' })}: {activeModelInfo.llmModel}
+                                  {t('assistant.chat.modelLabel')}: {activeModelInfo.llmModel}
                                 </span>
                               ) : null}
                               {activeModelInfo?.forecastModel ? (
                                 <span className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200/70 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-400/40">
-                                  {t('assistant.chat.forecastModelLabel', { defaultValue: 'Forecast model' })}:{' '}
+                                  {t('assistant.chat.forecastModelLabel')}:{' '}
                                   {activeModelInfo.forecastModel}
                                 </span>
                               ) : null}
@@ -1339,10 +1305,10 @@ export function AssistantContent() {
                                       : 'bg-white text-slate-600 ring-slate-200/70 dark:bg-slate-700/40 dark:text-slate-300 dark:ring-slate-500/60'
                                   }`}
                                 >
-                                  {t('assistant.chat.modelServiceLabel', { defaultValue: 'Model service' })}:{' '}
+                                  {t('assistant.chat.modelServiceLabel')}:{' '}
                                   {activeModelInfo?.modelServiceUsed
-                                    ? t('assistant.chat.modelServiceUsed', { defaultValue: 'Used' })
-                                    : t('assistant.chat.modelServiceNotUsed', { defaultValue: 'Not used' })}
+                                    ? t('assistant.chat.modelServiceUsed')
+                                    : t('assistant.chat.modelServiceNotUsed')}
                                 </span>
                               ) : null}
                             </Space>
@@ -1355,7 +1321,7 @@ export function AssistantContent() {
                             type="error"
                             showIcon
                             icon={<CloseCircleOutlined />}
-                            message={t('assistant.chat.errorLabel', { defaultValue: 'Error details' })}
+                            message={t('assistant.chat.errorLabel')}
                             description={activeRun.error}
                           />
                         ) : null}
@@ -1365,30 +1331,26 @@ export function AssistantContent() {
                             style={{ marginTop: 16, borderRadius: 14 }}
                             type="warning"
                             showIcon
-                            message={t('assistant.blocked.title', { defaultValue: 'Blocked by safety checks' })}
+                            message={t('assistant.blocked.title')}
                             description={
                               <Space direction="vertical" size={4}>
                                 <span className="font-semibold text-slate-900 dark:text-slate-100">{activeBlocked.message}</span>
                                 {activeBlocked.code ? (
                                   <span className="text-slate-600 dark:text-slate-300">
-                                    {t('assistant.blocked.details.code', { defaultValue: 'Reason code' })}:{' '}
+                                    {t('assistant.blocked.details.code')}:{' '}
                                     {activeBlocked.code}
                                   </span>
                                 ) : null}
                                 {activeBlocked.upstreamStatus !== null ? (
                                   <span className="text-slate-600 dark:text-slate-300">
-                                    {t('assistant.blocked.details.upstreamStatus', {
-                                      defaultValue: 'Upstream status',
-                                    })}
+                                    {t('assistant.blocked.details.upstreamStatus')}
                                     : {activeBlocked.upstreamStatus}
                                   </span>
                                 ) : null}
                                 {activeBlocked.appliedGuardrails.length > 0 ? (
                                   <Space wrap>
                                     <span className="text-slate-600 dark:text-slate-300">
-                                      {t('assistant.blocked.details.guardrails', {
-                                        defaultValue: 'Applied guardrails',
-                                      })}
+                                      {t('assistant.blocked.details.guardrails')}
                                       :
                                     </span>
                                     {activeBlocked.appliedGuardrails.map((name) => (
@@ -1409,12 +1371,12 @@ export function AssistantContent() {
                         {canViewAssistantJson ? (
                           <details className={`${styles.adminDetailsCard} mt-4 p-1`}>
                             <summary className={`${styles.adminDetailsSummary} cursor-pointer px-4 py-3 text-sm font-bold`}>
-                              {t('assistant.chat.adminDetailsTitle', { defaultValue: 'Admin debug details (JSON)' })}
+                              {t('assistant.chat.adminDetailsTitle')}
                             </summary>
                             <div className="space-y-4 px-4 pb-4 pt-2">
                               <div>
                                 <span className={`${styles.adminJsonLabel} text-xs font-bold uppercase tracking-widest`}>
-                                  {t('assistant.chat.inputJsonTitle', { defaultValue: 'Input JSON' })}
+                                  {t('assistant.chat.inputJsonTitle')}
                                 </span>
                                 <pre className={`${styles.adminJsonPreview} mt-2 max-h-48 overflow-auto rounded-xl p-4 text-xs font-mono whitespace-pre-wrap`}>
                                   {JSON.stringify(activeRun.input ?? null, null, 2)}
@@ -1422,7 +1384,7 @@ export function AssistantContent() {
                               </div>
                               <div>
                                 <span className={`${styles.adminJsonLabel} text-xs font-bold uppercase tracking-widest`}>
-                                  {t('assistant.chat.outputJsonTitle', { defaultValue: 'Output JSON' })}
+                                  {t('assistant.chat.outputJsonTitle')}
                                 </span>
                                 <pre className={`${styles.adminJsonPreview} mt-2 max-h-64 overflow-auto rounded-xl p-4 text-xs font-mono whitespace-pre-wrap`}>
                                   {JSON.stringify(activeRun.output ?? null, null, 2)}
@@ -1443,10 +1405,8 @@ export function AssistantContent() {
                     style={{ marginBottom: 16, borderRadius: 14 }}
                     type="warning"
                     showIcon
-                    message={t('common.accessDenied', { defaultValue: 'Access denied' })}
-                    description={t('assistant.runPermissionRequired', {
-                      defaultValue: 'You do not have permission to run assistant tasks.',
-                    })}
+                    message={t('common.accessDenied')}
+                    description={t('assistant.runPermissionRequired')}
                   />
                 ) : null}
 
@@ -1475,9 +1435,7 @@ export function AssistantContent() {
                     onBlur={() => scheduleComposerCollapse()}
                     autoSize={composerExpanded ? { minRows: 2, maxRows: 6 } : { minRows: 1, maxRows: 1 }}
                     placeholder={placeholder}
-                    aria-label={t('assistant.chat.inputAriaLabel', {
-                      defaultValue: 'Assistant message input',
-                    })}
+                    aria-label={t('assistant.chat.inputAriaLabel')}
                     disabled={!canRunAssistant || querySaving}
                     className={`rounded-2xl px-5 text-[15px] transition-all ${
                       composerExpanded ? 'py-4' : 'py-2.5'
@@ -1500,7 +1458,7 @@ export function AssistantContent() {
                       <div className="flex flex-wrap items-center gap-2">
                         <Space size={8} wrap>
                           <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                            {t('assistant.chat.knowledgeSource.label', { defaultValue: 'Knowledge source' })}
+                            {t('assistant.chat.knowledgeSource.label')}
                           </span>
                           <Segmented
                             size="small"
@@ -1508,19 +1466,15 @@ export function AssistantContent() {
                             onChange={(value) => setKnowledgeSource(value as AssistantKnowledgeSource)}
                             options={[
                               {
-                                label: t('assistant.chat.knowledgeSource.siteDb', { defaultValue: 'Site database' }),
+                                label: t('assistant.chat.knowledgeSource.siteDb'),
                                 value: 'site_db',
                               },
                               {
                                 label: webSearchCapabilityChecking
-                                  ? t('assistant.chat.knowledgeSource.webSearchChecking', {
-                                      defaultValue: 'Web search (checking capability...)',
-                                    })
+                                  ? t('assistant.chat.knowledgeSource.webSearchChecking')
                                   : webSearchOptionDisabled
-                                  ? t('assistant.chat.knowledgeSource.webSearchDisabled', {
-                                      defaultValue: 'Web search (model unsupported)',
-                                    })
-                                  : t('assistant.chat.knowledgeSource.webSearch', { defaultValue: 'Web search' }),
+                                  ? t('assistant.chat.knowledgeSource.webSearchDisabled')
+                                  : t('assistant.chat.knowledgeSource.webSearch'),
                                 value: 'web_search',
                                 disabled: webSearchOptionDisabled,
                               },
@@ -1542,7 +1496,7 @@ export function AssistantContent() {
                           }}
                           disabled={!canRunAssistant}
                         >
-                          {t('assistant.chat.quickReport', { defaultValue: 'Quick Report' })}
+                          {t('assistant.chat.quickReport')}
                         </Button>
                         <Button
                           icon={<RobotOutlined />}
@@ -1558,10 +1512,10 @@ export function AssistantContent() {
                           }}
                           disabled={!canRunAssistant}
                         >
-                          {t('assistant.chat.quickForecast', { defaultValue: 'Quick Forecast' })}
+                          {t('assistant.chat.quickForecast')}
                         </Button>
                         <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                          {t('assistant.chat.enterHint', { defaultValue: 'Enter to send, Shift+Enter for newline.' })}
+                          {t('assistant.chat.enterHint')}
                         </span>
                       </div>
                       <Button
@@ -1572,7 +1526,7 @@ export function AssistantContent() {
                         disabled={!canRunAssistant || knowledgeSourceBlocked}
                         onClick={() => void submitQuery()}
                       >
-                        {t('assistant.chat.send', { defaultValue: 'Send' })}
+                        {t('assistant.chat.send')}
                       </Button>
                     </div>
                     {knowledgeSourceBlocked ? (
@@ -1593,7 +1547,7 @@ export function AssistantContent() {
       <Drawer
         title={
           <span className="text-base font-semibold text-slate-900 dark:text-slate-100">
-            {t('assistant.chat.historyTitle', { defaultValue: 'History' })}
+            {t('assistant.chat.historyTitle')}
           </span>
         }
         placement="left"
@@ -1614,14 +1568,14 @@ export function AssistantContent() {
               disabled={!activeRun || querySaving}
               className="rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-sky-700 hover:shadow-md dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-sky-400/50 dark:hover:text-sky-300"
             >
-              {t('assistant.chat.newConversation', { defaultValue: 'New' })}
+              {t('assistant.chat.newConversation')}
             </Button>
             <Button
               onClick={() => refetch()}
               loading={loading}
               className="rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200"
             >
-              {t('common.refresh', { defaultValue: 'Refresh' })}
+              {t('common.refresh')}
             </Button>
           </Space>
         }
@@ -1633,12 +1587,12 @@ export function AssistantContent() {
       </Drawer>
 
       <Modal
-        title={t('assistant.chat.quickReportTitle', { defaultValue: 'Quick Report' })}
+        title={t('assistant.chat.quickReportTitle')}
         open={reportModalOpen}
         onCancel={() => setReportModalOpen(false)}
         onOk={() => reportForm.submit()}
         confirmLoading={reportSaving}
-        okText={t('assistant.submit', { defaultValue: 'Run' })}
+        okText={t('assistant.submit')}
       >
         <Form
           form={reportForm}
@@ -1646,7 +1600,7 @@ export function AssistantContent() {
           initialValues={DEFAULT_REPORT_VALUES}
           onFinish={async (values) => {
             if (!canRunAssistant) {
-              messageApi.warning(t('common.accessDenied', { defaultValue: 'Access denied' }));
+              messageApi.warning(t('common.accessDenied'));
               return;
             }
 
@@ -1680,39 +1634,39 @@ export function AssistantContent() {
             } catch (err) {
               const errMessage = err instanceof Error ? err.message : String(err);
               messageApi.error(
-                t('assistant.requestFailed', { defaultValue: 'Request failed: {{error}}', error: errMessage }),
+                t('assistant.requestFailed', { error: errMessage }),
               );
             }
           }}
         >
           <Form.Item
             name="period"
-            label={t('assistant.report.period', { defaultValue: 'Period' })}
+            label={t('assistant.report.period')}
             rules={[{ required: true }]}
           >
             <Select
               options={[
-                { value: 'daily', label: t('assistant.report.daily', { defaultValue: 'Daily' }) },
-                { value: 'weekly', label: t('assistant.report.weekly', { defaultValue: 'Weekly' }) },
+                { value: 'daily', label: t('assistant.report.daily') },
+                { value: 'weekly', label: t('assistant.report.weekly') },
               ]}
             />
           </Form.Item>
-          <Form.Item name="topic" label={t('assistant.report.topic', { defaultValue: 'Topic filter (optional)' })}>
-            <Input placeholder={t('assistant.report.topicPlaceholder', { defaultValue: 'e.g. new energy' })} />
+          <Form.Item name="topic" label={t('assistant.report.topic')}>
+            <Input placeholder={t('assistant.report.topicPlaceholder')} />
           </Form.Item>
-          <Form.Item name="limit" label={t('assistant.report.limit', { defaultValue: 'Max items' })}>
+          <Form.Item name="limit" label={t('assistant.report.limit')}>
             <InputNumber min={1} max={100} style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title={t('assistant.chat.quickForecastTitle', { defaultValue: 'Quick Forecast' })}
+        title={t('assistant.chat.quickForecastTitle')}
         open={forecastModalOpen}
         onCancel={() => setForecastModalOpen(false)}
         onOk={() => forecastForm.submit()}
         confirmLoading={forecastSaving}
-        okText={t('assistant.submit', { defaultValue: 'Run' })}
+        okText={t('assistant.submit')}
       >
         <Form
           form={forecastForm}
@@ -1720,16 +1674,14 @@ export function AssistantContent() {
           initialValues={DEFAULT_FORECAST_VALUES}
           onFinish={async (values) => {
             if (!canRunAssistant) {
-              messageApi.warning(t('common.accessDenied', { defaultValue: 'Access denied' }));
+              messageApi.warning(t('common.accessDenied'));
               return;
             }
 
             const series = typeof values.series === 'string' ? values.series.trim() : '';
             if (!series) {
               messageApi.warning(
-                t('assistant.forecast.seriesRequired', {
-                  defaultValue: 'Please enter a series.',
-                }),
+                t('assistant.forecast.seriesRequired'),
               );
               return;
             }
@@ -1781,19 +1733,16 @@ export function AssistantContent() {
             } catch (err) {
               const errMessage = err instanceof Error ? err.message : String(err);
               messageApi.error(
-                t('assistant.requestFailed', { defaultValue: 'Request failed: {{error}}', error: errMessage }),
+                t('assistant.requestFailed', { error: errMessage }),
               );
             }
           }}
         >
           <Form.Item
             name="series"
-            label={t('assistant.forecast.series', { defaultValue: 'Economic indicator' })}
+            label={t('assistant.forecast.series')}
             rules={[{ required: true }]}
-            extra={t('assistant.forecast.seriesHelp', {
-              defaultValue:
-                "Enter indicator name or identifier. Advanced formats like 'slug.field' or 'economic:slug:latest' are also supported.",
-            })}
+            extra={t('assistant.forecast.seriesHelp')}
           >
             <AutoComplete
               options={seriesOptions}
@@ -1802,9 +1751,7 @@ export function AssistantContent() {
               notFoundContent={suggestionsLoading ? <Spin size="small" /> : null}
             >
               <Input
-                placeholder={t('assistant.forecast.seriesPlaceholder', {
-                  defaultValue: 'Enter indicator name or identifier, e.g. USD Index, GDP...',
-                })}
+                placeholder={t('assistant.forecast.seriesPlaceholder')}
                 suffix={suggestionsLoading ? <Spin size="small" /> : null}
               />
             </AutoComplete>
@@ -1812,39 +1759,39 @@ export function AssistantContent() {
 
           <Form.Item
             name="lookbackDays"
-            label={t('assistant.forecast.lookbackDays', { defaultValue: 'Lookback days' })}
+            label={t('assistant.forecast.lookbackDays')}
           >
             <InputNumber min={7} max={3650} style={{ width: '100%' }} />
           </Form.Item>
 
-          <Form.Item name="modelKind" label={t('assistant.forecast.modelKind', { defaultValue: 'Model' })}>
+          <Form.Item name="modelKind" label={t('assistant.forecast.modelKind')}>
             <Select
               options={[
-                { value: 'ets', label: t('assistant.forecast.model.ets', { defaultValue: 'ETS' }) },
-                { value: 'arima', label: t('assistant.forecast.model.arima', { defaultValue: 'ARIMA' }) },
+                { value: 'ets', label: t('assistant.forecast.model.ets') },
+                { value: 'arima', label: t('assistant.forecast.model.arima') },
               ]}
             />
           </Form.Item>
 
           <Form.Item
             name="seasonalPeriod"
-            label={t('assistant.forecast.seasonalPeriod', { defaultValue: 'Seasonal period' })}
+            label={t('assistant.forecast.seasonalPeriod')}
           >
             <InputNumber min={0} max={366} style={{ width: '100%' }} />
           </Form.Item>
 
           <Form.Item
             name="confidenceLevel"
-            label={t('assistant.forecast.confidenceLevel', { defaultValue: 'Confidence level' })}
+            label={t('assistant.forecast.confidenceLevel')}
           >
             <InputNumber min={0.5} max={0.999} step={0.01} style={{ width: '100%' }} />
           </Form.Item>
 
           <Form.Item
             name="sourceField"
-            label={t('assistant.forecast.sourceField', { defaultValue: 'Source field (optional)' })}
+            label={t('assistant.forecast.sourceField')}
           >
-            <Input placeholder={t('assistant.forecast.sourceFieldPlaceholder', { defaultValue: 'e.g. close or last' })} />
+            <Input placeholder={t('assistant.forecast.sourceFieldPlaceholder')} />
           </Form.Item>
         </Form>
       </Modal>

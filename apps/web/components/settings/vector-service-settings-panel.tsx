@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Form, Input, InputNumber, Modal, Space, Spin, Switch, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Descriptions, Form, Input, InputNumber, Modal, Space, Spin, Switch, Tag, Typography, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -34,6 +34,26 @@ interface VectorServiceSettingsFormValues {
   maxRetries: number;
 }
 
+interface VectorServiceDiagnosticsResponse {
+  snapshotAt: string;
+  source: VectorServiceSettingsSource;
+  enabled: boolean;
+  configured: boolean;
+  fallbackToMongo: boolean;
+  baseUrl: string | null;
+  timeoutMs: number;
+  maxRetries: number;
+  hasToken: boolean;
+  tokenSource: VectorServiceTokenSource;
+  temporarilyUnavailable: boolean;
+  unavailableUntil: string | null;
+  consecutiveFailures: number;
+  lastOperation: "search" | "upsert" | null;
+  lastFailureAt: string | null;
+  lastErrorName: string | null;
+  lastErrorMessage: string | null;
+}
+
 const EMPTY_SETTINGS: VectorServiceSettingsResponse = {
   source: "env",
   enabled: false,
@@ -55,6 +75,7 @@ export function VectorServiceSettingsPanel() {
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<VectorServiceDiagnosticsResponse | null>(null);
   const enabled = Form.useWatch("enabled", form);
   const clearToken = Form.useWatch("clearToken", form);
 
@@ -67,9 +88,13 @@ export function VectorServiceSettingsPanel() {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const response = await apiClient.get<VectorServiceSettingsResponse>("system-settings/vector-service");
-      const data = response.data ?? EMPTY_SETTINGS;
+      const [settingsResponse, diagnosticsResponse] = await Promise.all([
+        apiClient.get<VectorServiceSettingsResponse>("system-settings/vector-service"),
+        apiClient.get<VectorServiceDiagnosticsResponse>("system-settings/vector-service/diagnostics"),
+      ]);
+      const data = settingsResponse.data ?? EMPTY_SETTINGS;
       setSettings(data);
+      setDiagnostics(diagnosticsResponse.data ?? null);
       form.setFieldsValue({
         enabled: data.enabled,
         fallbackToMongo: data.fallbackToMongo,
@@ -115,6 +140,10 @@ export function VectorServiceSettingsPanel() {
       );
       const data = response.data ?? EMPTY_SETTINGS;
       setSettings(data);
+      const diagnosticsResponse = await apiClient.get<VectorServiceDiagnosticsResponse>(
+        "system-settings/vector-service/diagnostics"
+      );
+      setDiagnostics(diagnosticsResponse.data ?? null);
       form.setFieldsValue({
         enabled: data.enabled,
         fallbackToMongo: data.fallbackToMongo,
@@ -157,6 +186,10 @@ export function VectorServiceSettingsPanel() {
           );
           const data = response.data ?? EMPTY_SETTINGS;
           setSettings(data);
+          const diagnosticsResponse = await apiClient.get<VectorServiceDiagnosticsResponse>(
+            "system-settings/vector-service/diagnostics"
+          );
+          setDiagnostics(diagnosticsResponse.data ?? null);
           form.setFieldsValue({
             enabled: data.enabled,
             fallbackToMongo: data.fallbackToMongo,
@@ -232,6 +265,87 @@ export function VectorServiceSettingsPanel() {
           {settings.baseUrl ? <Tag color="geekblue">{settings.baseUrl}</Tag> : <Tag>-</Tag>}
         </Space>
       </Space>
+
+      {diagnostics ? (
+        <Card
+          size="small"
+          title={t("systemSettings.vectorService.diagnostics.title")}
+          style={{ marginBottom: "1rem" }}
+        >
+          <Space direction="vertical" size="small" style={{ width: "100%" }}>
+            <Space wrap>
+              <Tag color={diagnostics.configured ? "green" : "orange"}>
+                {diagnostics.configured
+                  ? t("systemSettings.vectorService.diagnostics.configured")
+                  : t("systemSettings.vectorService.diagnostics.incomplete")}
+              </Tag>
+              <Tag color={diagnostics.temporarilyUnavailable ? "red" : "green"}>
+                {diagnostics.temporarilyUnavailable
+                  ? t("systemSettings.vectorService.diagnostics.backoffActive")
+                  : t("systemSettings.vectorService.diagnostics.available")}
+              </Tag>
+              <Tag>{diagnostics.lastOperation ?? "idle"}</Tag>
+            </Space>
+
+            {diagnostics.lastErrorMessage ? (
+              <Alert
+                type={diagnostics.temporarilyUnavailable ? "warning" : "info"}
+                showIcon
+                message={diagnostics.lastErrorName ?? "Runtime warning"}
+                description={diagnostics.lastErrorMessage}
+              />
+            ) : null}
+
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item
+                label={t("systemSettings.vectorService.diagnostics.labels.snapshot")}
+              >
+                {diagnostics.snapshotAt}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("systemSettings.vectorService.diagnostics.labels.source")}
+              >
+                {diagnostics.source}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("systemSettings.vectorService.diagnostics.labels.baseUrl")}
+              >
+                {diagnostics.baseUrl ?? "-"}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("systemSettings.vectorService.diagnostics.labels.timeout")}
+              >
+                {diagnostics.timeoutMs} ms
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("systemSettings.vectorService.diagnostics.labels.maxRetries")}
+              >
+                {diagnostics.maxRetries}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("systemSettings.vectorService.diagnostics.labels.fallback")}
+              >
+                {diagnostics.fallbackToMongo ? "true" : "false"}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("systemSettings.vectorService.diagnostics.labels.consecutiveFailures")}
+              >
+                {diagnostics.consecutiveFailures}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("systemSettings.vectorService.diagnostics.labels.unavailableUntil")}
+              >
+                {diagnostics.unavailableUntil ?? "-"}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("systemSettings.vectorService.diagnostics.labels.lastFailureAt")}
+              >
+                {diagnostics.lastFailureAt ?? "-"}
+              </Descriptions.Item>
+            </Descriptions>
+          </Space>
+        </Card>
+      ) : null}
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item name="enabled" valuePropName="checked" label={t("systemSettings.vectorService.fields.enabled")}>

@@ -16,8 +16,9 @@ jest.mock("../audit/audit-log.writer", () => ({
     writeAuditLogBestEffortMock(...args),
 }));
 
-import { LlmRequestLogService } from "./llm-request-log.service";
 import { REQUIRED_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS } from "../system-settings/llm-request-log-settings.service";
+
+import { LlmRequestLogService } from "./llm-request-log.service";
 
 async function readStream(stream: AsyncIterable<unknown>): Promise<string> {
   const chunks: string[] = [];
@@ -119,6 +120,9 @@ describe("LlmRequestLogService", () => {
     >;
     expect(payload.feature).toBe("situation_monitor_monitors");
     expect(payload.gatewayProfileId).toBe("profile-1");
+    expect(payload.governanceApplied).toBeNull();
+    expect(payload.authMode).toBeNull();
+    expect(payload.governanceTargetProfileId).toBeNull();
     expect(payload).not.toHaveProperty("runtimeRequestId");
     expect(payload).not.toHaveProperty("runtimeDecision");
     expect(payload).not.toHaveProperty("currentConcurrency");
@@ -471,7 +475,9 @@ describe("LlmRequestLogService", () => {
     const probeSelect = jest.fn().mockReturnValue({ limit: probeLimit });
     const close = jest.fn().mockResolvedValue(undefined);
     const cursor = {
-      async *[Symbol.asyncIterator]() {},
+      async *[Symbol.asyncIterator]() {
+        yield* [];
+      },
       close,
     };
     const cursorFactory = jest.fn().mockReturnValue(cursor);
@@ -647,6 +653,16 @@ describe("LlmRequestLogService", () => {
         { _id: "error", count: 2 },
       ])
       .mockResolvedValueOnce([
+        {
+          governedRequestCount: 6,
+          directRequestCount: 4,
+          governedCostUsd: 0.09,
+          directCostUsd: 0.03,
+          managedRuntimeKeyRequestCount: 6,
+          profileKeyRequestCount: 4,
+        },
+      ])
+      .mockResolvedValueOnce([
         { _id: "LiteLLM returned invalid JSON for news event brief", count: 2 },
       ]);
     modelMock.countDocuments = jest.fn().mockResolvedValue(10);
@@ -666,6 +682,14 @@ describe("LlmRequestLogService", () => {
       error: 2,
       successRate: 0.8,
       errorRate: 0.2,
+    });
+    expect(result.governanceBreakdown).toEqual({
+      governedRequestCount: 6,
+      directRequestCount: 4,
+      governedCostUsd: 0.09,
+      directCostUsd: 0.03,
+      managedRuntimeKeyRequestCount: 6,
+      profileKeyRequestCount: 4,
     });
     expect(result.latency).toEqual({
       avgMs: 200,

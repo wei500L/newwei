@@ -1,5 +1,6 @@
 import type { EconomicDashboardRefreshPreset } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
+import { createHash } from "node:crypto";
 
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
 import { RateLimitConfigService } from "../system-settings/rate-limit-config.service";
@@ -8,6 +9,12 @@ import { RateLimitPolicyService } from "../system-settings/rate-limit-policy.ser
 import { RateLimiterService } from "./rate-limiter.service";
 
 const CRAWL_TASK_FEATURE = "crawl_task";
+const PASSWORD_RESET_FEATURE = "auth.password_reset";
+const PASSWORD_RESET_DEFAULT_EMAIL_LIMIT = 3;
+const PASSWORD_RESET_DEFAULT_IP_LIMIT = 10;
+const PASSWORD_RESET_DEFAULT_WINDOW_SECONDS = 900;
+const PASSWORD_RESET_RATE_LIMIT_MESSAGE =
+  "Too many password reset requests. Please wait before trying again.";
 
 @Injectable()
 export class ActionRateLimitService {
@@ -34,6 +41,28 @@ export class ActionRateLimitService {
         message: "Too many crawl tasks created from this IP. Please wait before creating new tasks."
       });
     }
+  }
+
+  async enforcePasswordResetRequest(email: string, ip?: string) {
+    const { userLimit, ipLimit, windowSeconds } =
+      await this.resolvePasswordResetPolicy();
+    const normalizedIp = ip?.trim();
+    if (normalizedIp) {
+      await this.consumeOrThrow({
+        key: `auth:password-reset:ip:${normalizedIp}`,
+        limit: ipLimit,
+        windowSeconds,
+        message: PASSWORD_RESET_RATE_LIMIT_MESSAGE
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    await this.consumeOrThrow({
+      key: `auth:password-reset:email:${this.hashIdentifier(normalizedEmail)}`,
+      limit: userLimit,
+      windowSeconds,
+      message: PASSWORD_RESET_RATE_LIMIT_MESSAGE
+    });
   }
 
   async enforceRbacWrite(orgId: string, actorId: string) {
@@ -102,5 +131,33 @@ export class ActionRateLimitService {
       ipLimit: fallback.limit,
       windowSeconds: fallback.windowSeconds
     };
+  }
+
+  private async resolvePasswordResetPolicy(): Promise<{
+    userLimit: number;
+    ipLimit: number;
+    windowSeconds: number;
+  }> {
+    const policy = await this.rateLimitPolicies.getPolicy(PASSWORD_RESET_FEATURE);
+    if (policy) {
+      if (!policy.enabled) {
+        return { userLimit: 0, ipLimit: 0, windowSeconds: policy.windowSeconds };
+      }
+      return {
+        userLimit: policy.userLimit,
+        ipLimit: policy.ipLimit,
+        windowSeconds: policy.windowSeconds
+      };
+    }
+
+    return {
+      userLimit: PASSWORD_RESET_DEFAULT_EMAIL_LIMIT,
+      ipLimit: PASSWORD_RESET_DEFAULT_IP_LIMIT,
+      windowSeconds: PASSWORD_RESET_DEFAULT_WINDOW_SECONDS
+    };
+  }
+
+  private hashIdentifier(value: string) {
+    return createHash("sha256").update(value).digest("hex");
   }
 }

@@ -3,8 +3,8 @@ import { Args, Context, Query, Resolver } from "@nestjs/graphql";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
-import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { ArchiveService } from "../../modules/archive/archive.service";
+import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import {
   ArchiveCalendarInput,

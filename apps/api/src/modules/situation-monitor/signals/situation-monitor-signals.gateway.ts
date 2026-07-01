@@ -1,8 +1,4 @@
-import {
-  createLogger,
-  RealtimeSocketErrorCode,
-  type RealtimeSocketErrorPayload,
-} from "@modular/utils";
+import { createLogger } from "@modular/utils";
 import { OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
 import {
@@ -21,9 +17,14 @@ import {
   type JwtPayload,
 } from "../../auth/auth.service";
 import { EnvService } from "../../config/config.service";
-import { SituationMonitorMonitorsService } from "../situation-monitor-monitors.service";
-import { WsConnectionRateLimiterService } from "../../websocket/ws-connection-rate-limiter.service";
+import {
+  buildRealtimeSocketErrorPayload,
+  shouldRecordFailedSocketAuth,
+} from "../../websocket/socket-error-payloads";
 import { UserSessionManager } from "../../websocket/user-session-manager.service";
+import { WsConnectionRateLimiterService } from "../../websocket/ws-connection-rate-limiter.service";
+import { SituationMonitorMonitorsService } from "../situation-monitor-monitors.service";
+
 import { SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM } from "./situation-monitor-signals.constants";
 import { SituationMonitorSignalsDispatcher } from "./situation-monitor-signals.dispatcher";
 import type {
@@ -94,14 +95,45 @@ export class SituationMonitorSignalsGateway
     const ip = this.extractClientIp(client);
 
     try {
-      if (!this.isOriginAllowed(this.extractOrigin(client))) {
-        throw new Error("Origin not allowed");
-      }
-
       const ipRateLimit =
         await this.connectionRateLimiter.checkConnectionRateLimit(ip ?? "");
       if (!ipRateLimit.allowed) {
-        throw new Error("Too many connection attempts");
+        this.logger.warn(
+          { socketId: client.id, ip },
+          "Situation monitor socket connection rate limited",
+        );
+        client.emit(
+          "situation:error",
+          buildRealtimeSocketErrorPayload(
+            "Rate limit exceeded",
+            ipRateLimit.retryAfterMs,
+          ),
+        );
+        client.disconnect(true);
+        return;
+      }
+
+      const backoffDelay = await this.connectionRateLimiter.getBackoffDelay(
+        ip ?? "",
+      );
+      if (backoffDelay > 0) {
+        this.logger.warn(
+          { socketId: client.id, ip, backoffDelay },
+          "Situation monitor socket connection in backoff period",
+        );
+        client.emit(
+          "situation:error",
+          buildRealtimeSocketErrorPayload(
+            "Too many failed attempts",
+            backoffDelay,
+          ),
+        );
+        client.disconnect(true);
+        return;
+      }
+
+      if (!this.isOriginAllowed(this.extractOrigin(client))) {
+        throw new Error("Origin not allowed");
       }
 
       const token = this.extractToken(client);
@@ -112,7 +144,19 @@ export class SituationMonitorSignalsGateway
           payload.sub,
         );
       if (!userRateLimit.allowed) {
-        throw new Error("Too many connection attempts");
+        this.logger.warn(
+          { socketId: client.id, ip, userId: payload.sub },
+          "Situation monitor socket user connection attempts throttled",
+        );
+        client.emit(
+          "situation:error",
+          buildRealtimeSocketErrorPayload(
+            "Too many connection attempts",
+            userRateLimit.retryAfterMs,
+          ),
+        );
+        client.disconnect(true);
+        return;
       }
 
       await this.ensureNotRevoked(payload);
@@ -123,6 +167,7 @@ export class SituationMonitorSignalsGateway
       if (!profile.permissions.includes("items.read")) {
         throw new Error("Insufficient permissions");
       }
+      await this.connectionRateLimiter.clearBackoff(ip ?? "");
 
       client.data.user = profile;
       client.data.clientIp = ip;
@@ -156,11 +201,9 @@ export class SituationMonitorSignalsGateway
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      const responseMessage =
-        errorMessage === "Too many connections" ||
-        errorMessage === "Too many connection attempts"
-          ? errorMessage
-          : "Unauthorized";
+      if (shouldRecordFailedSocketAuth(errorMessage)) {
+        await this.connectionRateLimiter.recordFailedAuth(ip ?? "");
+      }
       this.sessions.unregister(client);
       this.logger.warn(
         { socketId: client.id, ip, error: errorMessage },
@@ -168,7 +211,7 @@ export class SituationMonitorSignalsGateway
       );
       client.emit(
         "situation:error",
-        this.toSocketErrorPayload(responseMessage),
+        buildRealtimeSocketErrorPayload(errorMessage),
       );
       client.disconnect(true);
     }
@@ -195,42 +238,56 @@ export class SituationMonitorSignalsGateway
       return;
     }
 
-    const users = this.getConnectedUsers();
-    if (users.length === 0) {
+    const usersByOrg = this.getConnectedUsersByOrg();
+    if (usersByOrg.size === 0) {
       return;
     }
 
     await Promise.allSettled(
-      users.map(async ({ orgId, userId }) => {
-        const payload = await this.augmentPayloadForUser(event, orgId, userId);
-        this.sessions.emitToUser(this.server, userId, event.type, payload);
+      Array.from(usersByOrg.entries()).map(async ([orgId, userIds]) => {
+        const payloadsByUser = await this.augmentPayloadForOrg(
+          event,
+          orgId,
+          userIds,
+        );
+        for (const userId of userIds) {
+          this.sessions.emitToUser(
+            this.server,
+            userId,
+            event.type,
+            payloadsByUser.get(userId) ?? event.payload,
+          );
+        }
       }),
     );
   }
 
-  private async augmentPayloadForUser(
+  private async augmentPayloadForOrg(
     event: SupportedSituationMonitorRealtimeEvent,
     orgId: string,
-    userId: string,
-  ) {
+    userIds: string[],
+  ): Promise<Map<string, SupportedSituationMonitorRealtimeEvent["payload"]>> {
+    const fallback = new Map(
+      userIds.map((userId) => [userId, event.payload] as const),
+    );
     if (!this.monitors) {
-      return event.payload;
+      return fallback;
     }
 
     try {
       if (event.type === "situation:telegram.update") {
         const payload = event.payload as SituationTelegramRealtimePayload;
-        return await this.monitors.augmentTelegramRealtimePayload(
+        return await this.monitors.augmentTelegramRealtimePayloadForUsers(
           orgId,
-          userId,
+          userIds,
           payload,
         );
       }
 
       const payload = event.payload as SituationOrefRealtimePayload;
-      return await this.monitors.augmentOrefRealtimePayload(
+      return await this.monitors.augmentOrefRealtimePayloadForUsers(
         orgId,
-        userId,
+        userIds,
         payload,
       );
     } catch (error) {
@@ -238,12 +295,12 @@ export class SituationMonitorSignalsGateway
         {
           eventType: event.type,
           orgId,
-          userId,
+          userCount: userIds.length,
           error: error instanceof Error ? error.message : String(error),
         },
         "Failed to augment situation monitor realtime payload",
       );
-      return event.payload;
+      return fallback;
     }
   }
 
@@ -339,27 +396,6 @@ export class SituationMonitorSignalsGateway
 
     return undefined;
   }
-  private toSocketErrorPayload(
-    errorMessage: string,
-  ): RealtimeSocketErrorPayload {
-    if (errorMessage === "Too many connections") {
-      return {
-        code: RealtimeSocketErrorCode.TooManyConnections,
-        message: "Too many connections",
-      };
-    }
-    if (errorMessage === "Too many connection attempts") {
-      return {
-        code: RealtimeSocketErrorCode.TooManyConnectionAttempts,
-        message: "Too many connection attempts",
-      };
-    }
-    return {
-      code: RealtimeSocketErrorCode.Unauthorized,
-      message: "Unauthorized",
-    };
-  }
-
   private extractClientIp(client: Socket): string | undefined {
     const forwardedHeader = client.handshake.headers["x-forwarded-for"];
     const forwarded = Array.isArray(forwardedHeader)
@@ -415,10 +451,10 @@ export class SituationMonitorSignalsGateway
     return allowlist.includes(normalizedOrigin);
   }
 
-  private getConnectedUsers() {
+  private getConnectedUsersByOrg() {
     const sockets = this.server?.sockets?.sockets;
     if (!sockets) {
-      return [] as Array<{ orgId: string; userId: string }>;
+      return new Map<string, string[]>();
     }
 
     const users = new Map<string, { orgId: string; userId: string }>();
@@ -432,6 +468,12 @@ export class SituationMonitorSignalsGateway
         userId: profile.id,
       });
     }
-    return Array.from(users.values());
+    const usersByOrg = new Map<string, string[]>();
+    for (const { orgId, userId } of users.values()) {
+      const userIds = usersByOrg.get(orgId) ?? [];
+      userIds.push(userId);
+      usersByOrg.set(orgId, userIds);
+    }
+    return usersByOrg;
   }
 }

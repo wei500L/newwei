@@ -2,13 +2,14 @@
 
 import {
   DragOutlined,
+  MoreOutlined,
   ReloadOutlined,
   StarFilled,
   StarOutlined,
 } from "@ant-design/icons";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Button, Skeleton, Tooltip, message } from "antd";
+import { Button, Dropdown, Skeleton, Tooltip, message } from "antd";
 import { useRouter } from "next/navigation";
 import {
   memo,
@@ -30,7 +31,12 @@ import {
   getPrimaryRuntimeSecretKey,
 } from '@/lib/news-source-runtime-secrets';
 import { shouldShowRuntimeSecretCta } from '@/lib/news-source-runtime-secrets-ui';
-import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
+import {
+  hideSessionBehaviorKey,
+  isSessionHiddenBehaviorKey,
+  subscribeSessionHiddenBehaviorKeys,
+  trackUserNewsBehavior,
+} from "@/lib/user-news-behavior";
 
 import {
   useNewsSource,
@@ -401,6 +407,9 @@ export const NewsnowCard = memo(function NewsnowCard({
   const glowColor = auraGlowColorMap[source.color] || "rgba(59,130,246,0.15)";
   
   const sourceBehaviorKey = useMemo(() => id.trim() || source.name, [id, source.name]);
+  const [isSourceHidden, setIsSourceHidden] = useState(() =>
+    isSessionHiddenBehaviorKey("newsnowSources", sourceBehaviorKey),
+  );
   const runtimeSecretsSettingsHref = useMemo(
     () =>
       buildAdminSettingsHref({
@@ -436,12 +445,8 @@ export const NewsnowCard = memo(function NewsnowCard({
   const sourceErrorTitle = useMemo(
     () =>
       isRuntimeSecretRequiredError
-        ? t('pages.newsnow.runtimeSecrets.requiredTitle', {
-            defaultValue: 'Missing runtime secret',
-          })
-        : t('pages.newsnow.source.fetchFailed', {
-            defaultValue: 'Failed to fetch source',
-          }),
+        ? t('pages.newsnow.runtimeSecrets.requiredTitle')
+        : t('pages.newsnow.source.fetchFailed'),
     [isRuntimeSecretRequiredError, t],
   );
   const runtimeSecretRequiredKeysLabel = useMemo(() => {
@@ -449,36 +454,38 @@ export const NewsnowCard = memo(function NewsnowCard({
       return null;
     }
     return t('pages.newsnow.runtimeSecrets.requiredKeys', {
-      defaultValue: 'Required keys: {{keys}}',
       keys: sourceError.requiredKeys.join(', '),
     });
   }, [isRuntimeSecretRequiredError, sourceError?.requiredKeys, t]);
   const runtimeSecretsLinkLabel = useMemo(() => {
     if (runtimeSecretPrimaryKey) {
       return t('pages.newsnow.runtimeSecrets.openSettingsWithKey', {
-        defaultValue: 'Go to System Settings > News source secrets (Suggested: {{key}})',
         key: runtimeSecretPrimaryKey,
       });
     }
-    return t('pages.newsnow.runtimeSecrets.openSettings', {
-      defaultValue: 'Go to System Settings > News source secrets',
-    });
+    return t('pages.newsnow.runtimeSecrets.openSettings');
   }, [runtimeSecretPrimaryKey, t]);
   const runtimeSecretsEmptyLabel = useMemo(() => {
     if (runtimeSecretPrimaryKey) {
       return t('pages.newsnow.runtimeSecrets.maybeRequiredWithKey', {
-        defaultValue: 'This source may require a runtime secret first (Suggested: {{key}})',
         key: runtimeSecretPrimaryKey,
       });
     }
-    return t('pages.newsnow.runtimeSecrets.maybeRequired', {
-      defaultValue: 'This source may require a runtime secret first',
-    });
+    return t('pages.newsnow.runtimeSecrets.maybeRequired');
   }, [runtimeSecretPrimaryKey, t]);
 
   useEffect(() => {
     setIconLoadError(false);
   }, [iconUrl]);
+
+  useEffect(() => {
+    setIsSourceHidden(
+      isSessionHiddenBehaviorKey("newsnowSources", sourceBehaviorKey),
+    );
+    return subscribeSessionHiddenBehaviorKeys("newsnowSources", (keys) => {
+      setIsSourceHidden(keys.includes(sourceBehaviorKey));
+    });
+  }, [sourceBehaviorKey]);
 
   const dedupMetaMap =
     crossSourceMetaByItemId ?? EMPTY_CROSS_SOURCE_META_BY_ITEM_ID;
@@ -1120,6 +1127,10 @@ export const NewsnowCard = memo(function NewsnowCard({
     trackOriginalOpen,
   ]);
 
+  if (isSourceHidden) {
+    return null;
+  }
+
   return (
     <article
       ref={setArticleNodeRef}
@@ -1230,6 +1241,9 @@ export const NewsnowCard = memo(function NewsnowCard({
                         {personalizedScoreDetail?.behaviorScore.toFixed(2)} ×{" "}
                         {((personalizedScoreDetail?.behaviorWeight ?? 0) * 100).toFixed(0)}%
                       </div>
+                      <div>
+                        负向扣分 {personalizedScoreDetail?.negativeContribution.toFixed(2)}
+                      </div>
                       <div>关注加分 {personalizedScoreDetail?.focusBonus.toFixed(2)}</div>
                     </div>
                   }
@@ -1257,17 +1271,17 @@ export const NewsnowCard = memo(function NewsnowCard({
               ) : null}
               {data?.updatedTime && freshness.level === "fresh" ? (
                 <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                  {t("common.freshnessFresh", { defaultValue: "Fresh" })}
+                  {t("common.freshnessFresh")}
                 </span>
               ) : null}
               {data?.updatedTime && freshness.level === "aging" ? (
                 <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-                  {t("common.freshnessWarm", { defaultValue: "Warm" })} {freshnessDelayLabel}
+                  {t("common.freshnessWarm")} {freshnessDelayLabel}
                 </span>
               ) : null}
               {data?.updatedTime && freshness.level === "stale" ? (
                 <span className="rounded-full bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
-                  {t("common.freshnessStale", { defaultValue: "Stale" })} {freshnessDelayLabel}
+                  {t("common.freshnessStale")} {freshnessDelayLabel}
                 </span>
               ) : null}
             </div>
@@ -1314,6 +1328,41 @@ export const NewsnowCard = memo(function NewsnowCard({
               {prefetchedEventIds.length > 0 ? ` ${prefetchedEventIds.length}` : ""}
             </Button>
           </Tooltip>
+          <Dropdown
+            trigger={["click"]}
+            menu={{
+              items: [
+                {
+                  key: "hide-source",
+                  label: t("common.hide"),
+                  onClick: () => {
+                    hideSessionBehaviorKey("newsnowSources", sourceBehaviorKey);
+                    setIsSourceHidden(true);
+                  },
+                },
+                {
+                  key: "not-interested-source",
+                  label: t("common.notInterested"),
+                  onClick: () => {
+                    hideSessionBehaviorKey("newsnowSources", sourceBehaviorKey);
+                    setIsSourceHidden(true);
+                    void trackUserNewsBehavior({
+                      type: "not_interested",
+                      source: sourceBehaviorKey,
+                    });
+                  },
+                },
+              ],
+            }}
+          >
+            <Button
+              type="text"
+              size="small"
+              icon={<MoreOutlined />}
+              className="h-7 w-7 text-[var(--secondary-foreground)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+              aria-label={t("common.actions")}
+            />
+          </Dropdown>
           <Tooltip title={dragDisabled ? "智能排序中已禁用拖动" : "拖动排序"}>
             <button
               type="button"

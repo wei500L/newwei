@@ -40,12 +40,11 @@ export function LiveAlertsToasts() {
     ].filter(Boolean) as string[];
     const contextSuffix = contextTags.length > 0 ? ` · ${contextTags.slice(0, 3).join(" · ")}` : "";
     return t("alerts.live.message", {
-      defaultValue: "[{{severity}}] {{title}} · value {{value}} · change {{change}}{{context}}",
       severity: evt.severity,
-      title: evt.ruleName ?? evt.metricSlug ?? t("alerts.events.triggered", { defaultValue: "Alert triggered" }),
-      value: metricValue ?? t("common.notAvailable", { defaultValue: "N/A" }),
+      title: evt.ruleName ?? evt.metricSlug ?? t("alerts.events.triggered"),
+      value: metricValue ?? t("common.notAvailable"),
       change:
-        changePercent !== null ? `${changePercent.toFixed(2)}%` : t("common.notAvailable", { defaultValue: "N/A" }),
+        changePercent !== null ? `${changePercent.toFixed(2)}%` : t("common.notAvailable"),
       context: contextSuffix
     });
   }, [t]);
@@ -65,13 +64,12 @@ export function LiveAlertsToasts() {
         alerts.length === 1
           ? formatAlertMessage(firstAlert)
           : t("alerts.live.batchMessage", {
-              defaultValue: "{{count}} alerts triggered · {{titles}}",
               count: alerts.length,
               titles: alerts
                 .map((evt) =>
                   evt.ruleName ??
                   evt.metricSlug ??
-                  t("alerts.events.triggered", { defaultValue: "Alert triggered" }),
+                  t("alerts.events.triggered"),
                 )
                 .filter((title, index, values) => values.indexOf(title) === index)
                 .slice(0, 3)

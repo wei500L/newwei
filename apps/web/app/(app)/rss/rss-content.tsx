@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { FilterState } from "@/app/(app)/items/components/faceted-search";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
@@ -24,7 +25,6 @@ import {
   resolveTopRssSourceIds
 } from "@/lib/rss-reader-ui";
 import type { NormalizedRssReaderPreferences } from "@/lib/rss-reader-ui";
-import type { FilterState } from "@/app/(app)/items/components/faceted-search";
 import {
   isChineseTargetLanguage,
   RSS_TRANSLATION_STATUS_QUERY,
@@ -35,6 +35,7 @@ import {
 } from "@/lib/rss-translation";
 
 import { ItemsView } from "../items/items-view";
+
 import { RSS_ITEMS_VIEW_PRESET } from "./rss-reader-preset";
 
 const DEFAULT_WINDOW_DAYS = 7;
@@ -454,12 +455,10 @@ export function RssContent() {
                 source.language,
                 source.siteHostname ?? source.feedHostname,
                 t("pages.rss.activityCount", {
-                  count: source.itemCountWindow,
-                  defaultValue: "{{count}} recent items"
+                  count: source.itemCountWindow
                 }),
                 source.latestItemAt
                   ? t("pages.rss.latestSourceItem", {
-                      defaultValue: "Latest {{time}}",
                       time: dayjs(source.latestItemAt).format("MM-DD HH:mm")
                     })
                   : null
@@ -479,18 +478,14 @@ export function RssContent() {
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <div>
             <Typography.Title level={3} style={{ marginBottom: 8 }}>
-              {t("pages.rss.title", { defaultValue: "RSS Reader" })}
+              {t("pages.rss.title")}
             </Typography.Title>
             <Typography.Text type="secondary">
-              {t("pages.rss.subtitle", {
-                defaultValue: "Read processed articles from RSS sources in a focused stream."
-              })}
+              {t("pages.rss.subtitle")}
             </Typography.Text>
             <br />
             <Typography.Text type="secondary">
-              {t("pages.rss.readerHint", {
-                defaultValue: "Optimized for focused scanning with layered filters."
-              })}
+              {t("pages.rss.readerHint")}
             </Typography.Text>
           </div>
 
@@ -498,7 +493,7 @@ export function RssContent() {
             <Alert
               type="error"
               showIcon
-              message={t("pages.rss.loadFailed", { defaultValue: "Failed to load RSS sources." })}
+              message={t("pages.rss.loadFailed")}
               description={error.message}
             />
           ) : null}
@@ -506,7 +501,7 @@ export function RssContent() {
           {sourceUiState.showLoading || !preferencesHydrated ? (
             <Space direction="vertical" size="small" style={{ width: "100%" }}>
               <Typography.Text strong>
-                {t("pages.rss.sourceLabel", { defaultValue: "RSS Sources" })}
+                {t("pages.rss.sourceLabel")}
               </Typography.Text>
               <Skeleton.Input active block style={{ width: "100%", height: 32 }} />
               <Skeleton.Input active size="small" style={{ width: 180 }} />
@@ -514,13 +509,13 @@ export function RssContent() {
           ) : null}
 
           {sourceUiState.showEmpty ? (
-            <Empty description={t("pages.rss.emptySources", { defaultValue: "No RSS sources with recent items were found." })} />
+            <Empty description={t("pages.rss.emptySources")} />
           ) : null}
 
           {showSourceControls ? (
             <Space direction="vertical" size="small" style={{ width: "100%" }}>
               <Typography.Text strong>
-                {t("pages.rss.sourceLabel", { defaultValue: "RSS Sources" })}
+                {t("pages.rss.sourceLabel")}
               </Typography.Text>
               <Space wrap>
                 <Select
@@ -528,9 +523,7 @@ export function RssContent() {
                   allowClear
                   size="small"
                   style={{ minWidth: 220 }}
-                  placeholder={t("pages.rss.languageFilterPlaceholder", {
-                    defaultValue: "All languages"
-                  })}
+                  placeholder={t("pages.rss.languageFilterPlaceholder")}
                   value={sourceLanguageFilters}
                   options={sourceLanguageOptions.map((option) => ({
                     value: option.value,
@@ -541,9 +534,7 @@ export function RssContent() {
                 />
                 {sourceLanguageFilters.length > 0 ? (
                   <Button size="small" onClick={() => setSourceLanguageFilters([])}>
-                    {t("pages.rss.clearLanguageFilter", {
-                      defaultValue: "All languages"
-                    })}
+                    {t("pages.rss.clearLanguageFilter")}
                   </Button>
                 ) : null}
               </Space>
@@ -576,8 +567,7 @@ export function RssContent() {
                     disabled={hasTopSourcesSelected}
                   >
                     {t("pages.rss.selectTopSources", {
-                      count: TOP_RSS_SOURCES_SHORTCUT_COUNT,
-                      defaultValue: "Top {{count}}"
+                      count: TOP_RSS_SOURCES_SHORTCUT_COUNT
                     })}
                   </Button>
                 ) : null}
@@ -589,7 +579,7 @@ export function RssContent() {
                   }}
                   disabled={displayedSelectedSourceIds.length === 0}
                 >
-                  {t("pages.rss.clearSources", { defaultValue: "Clear all" })}
+                  {t("pages.rss.clearSources")}
                 </Button>
               </Space>
               <Select
@@ -597,7 +587,7 @@ export function RssContent() {
                 allowClear
                 showSearch
                 style={{ width: "100%" }}
-                placeholder={t("pages.rss.sourcePlaceholder", { defaultValue: "Select RSS sources" })}
+                placeholder={t("pages.rss.sourcePlaceholder")}
                 options={selectOptions}
                 value={visibleSelectedSourceIds}
                 onChange={(next) => {
@@ -614,38 +604,32 @@ export function RssContent() {
               />
               <Typography.Text type="secondary">
                 {t("pages.rss.selectedCount", {
-                  count: displayedSelectedSourceIds.length,
-                  defaultValue: "{{count}} sources selected"
+                  count: displayedSelectedSourceIds.length
                 })}
               </Typography.Text>
               <Typography.Text type="secondary">
                 {t("pages.rss.visibleSourcesCount", {
                   visible: visibleSources.length,
-                  total: sortedSources.length,
-                  defaultValue: "Showing {{visible}} of {{total}} sources"
+                  total: sortedSources.length
                 })}
               </Typography.Text>
               <Typography.Text type="secondary">
-                {t("pages.rss.sourceSortHint", {
-                  defaultValue: "Sources are sorted by recent activity, then latest publish time."
-                })}
+                {t("pages.rss.sourceSortHint")}
               </Typography.Text>
               <Typography.Text type="secondary">
-                {t("pages.rss.preferencesHint", {
-                  defaultValue: "This page syncs your selected sources and translation settings to your account."
-                })}
+                {t("pages.rss.preferencesHint")}
               </Typography.Text>
             </Space>
           ) : null}
 
           <Space direction="vertical" size="small" style={{ width: "100%" }}>
             <Typography.Text strong>
-              {t("pages.rss.translation.title", { defaultValue: "Translation" })}
+              {t("pages.rss.translation.title")}
             </Typography.Text>
             <Space wrap>
               <Space>
                 <Typography.Text>
-                  {t("pages.rss.translation.enable", { defaultValue: "Enable" })}
+                  {t("pages.rss.translation.enable")}
                 </Typography.Text>
                 <Switch
                   checked={translationEnabled}
@@ -668,10 +652,10 @@ export function RssContent() {
                 disabled={!preferencesReady || !translationEnabled}
               >
                 <Radio.Button value="deeplx">
-                  {t("pages.rss.translation.provider.deeplx", { defaultValue: "DeepLX API" })}
+                  {t("pages.rss.translation.provider.deeplx")}
                 </Radio.Button>
                 <Radio.Button value="llm">
-                  {t("pages.rss.translation.provider.llm", { defaultValue: "LLM" })}
+                  {t("pages.rss.translation.provider.llm")}
                 </Radio.Button>
               </Radio.Group>
 
@@ -689,9 +673,7 @@ export function RssContent() {
               {preferencesReady && translationEnabled ? (
                 <Space>
                   <Typography.Text>
-                    {t("pages.rss.translation.showOriginal", {
-                      defaultValue: "Show original"
-                    })}
+                    {t("pages.rss.translation.showOriginal")}
                   </Typography.Text>
                   <Switch
                     checked={showOriginalContent}
@@ -703,19 +685,14 @@ export function RssContent() {
             </Space>
 
             <Typography.Text type="secondary">
-              {t("pages.rss.translation.scopeHint", {
-                defaultValue:
-                  "Only titles and summaries are translated here. Items without translated content stay in the original language."
-              })}
+              {t("pages.rss.translation.scopeHint")}
             </Typography.Text>
 
             {preferencesReady && translationEnabled && selectedProviderStatus && !selectedProviderStatus.available ? (
               <Alert
                 type="warning"
                 showIcon
-                message={t("pages.rss.translation.unavailable", {
-                  defaultValue: "Selected translation source is unavailable."
-                })}
+                message={t("pages.rss.translation.unavailable")}
                 description={selectedProviderStatus.message ?? t("common.notAvailable")}
               />
             ) : null}
@@ -728,9 +705,7 @@ export function RssContent() {
               <Alert
                 type="warning"
                 showIcon
-                message={t("pages.rss.translation.targetUnsupported", {
-                  defaultValue: "Target language is not supported by selected source."
-                })}
+                message={t("pages.rss.translation.targetUnsupported")}
                 description={selectedProviderStatus.message ?? t("common.notAvailable")}
               />
             ) : null}
@@ -739,7 +714,7 @@ export function RssContent() {
               <Alert
                 type="error"
                 showIcon
-                message={t("pages.rss.translation.failed", { defaultValue: "Translation failed." })}
+                message={t("pages.rss.translation.failed")}
                 description={translationError}
               />
             ) : null}
@@ -757,7 +732,7 @@ export function RssContent() {
         <Alert
           type="info"
           showIcon
-          message={t("pages.rss.sourcePlaceholder", { defaultValue: "Select RSS sources" })}
+          message={t("pages.rss.sourcePlaceholder")}
         />
       ) : null}
 

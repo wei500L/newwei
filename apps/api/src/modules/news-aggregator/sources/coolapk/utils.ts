@@ -1,5 +1,5 @@
-import { md5 } from "../crypto";
 import { encodeBase64 } from "../base64";
+import { md5 } from "../crypto";
 
 // https://github.com/DIYgod/RSSHub/blob/master/lib/routes/coolapk/utils.ts
 function getRandomDEVICE_ID() {

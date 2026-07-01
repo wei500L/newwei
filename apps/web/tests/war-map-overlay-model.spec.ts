@@ -5,17 +5,12 @@ import {
   buildWarMapOverlayViewModel,
   resolveOverlayDensity,
 } from "../app/(app)/dashboard/charts/war-map/war-map-overlay-model";
+import { translateTestKey } from "./i18n-test-utils";
 
 const t = (
-  _key: string,
-  options?: { defaultValue?: string; [key: string]: unknown },
-) =>
-  typeof options?.defaultValue === "string"
-    ? options.defaultValue.replace(/\{\{(\w+)\}\}/g, (_match, token) => {
-        const value = options[token];
-        return value == null ? `{{${token}}}` : String(value);
-      })
-    : _key;
+  key: string,
+  options?: Record<string, unknown>,
+) => translateTestKey(key, options);
 
 describe("war-map overlay model", () => {
   it("resolves density from container breakpoints", () => {
@@ -34,9 +29,12 @@ describe("war-map overlay model", () => {
       }),
     ).toEqual({
       overlayTopClassName: "top-4",
-      overlayRailWidth: 360,
-      overlayPanelMaxHeight: 264,
-      controlsPanelWidth: 320,
+      overlayRailWidth: 252,
+      overlayPanelMaxHeight: 372,
+      controlsPanelWidth: 336,
+      legendPanelWidth: 308,
+      controlsDrawerHeight: 468,
+      standaloneDrawerHeight: 0,
       inspectorPanelHeight: 312,
       inspectorPanelWidth: 360,
       showActionLabels: true,
@@ -51,12 +49,38 @@ describe("war-map overlay model", () => {
       }),
     ).toEqual({
       overlayTopClassName: "top-20",
-      overlayRailWidth: 300,
-      overlayPanelMaxHeight: 220,
-      controlsPanelWidth: 300,
+      overlayRailWidth: 208,
+      overlayPanelMaxHeight: 340,
+      controlsPanelWidth: 288,
+      legendPanelWidth: 280,
+      controlsDrawerHeight: 400,
+      standaloneDrawerHeight: 0,
       inspectorPanelHeight: 220,
       inspectorPanelWidth: 320,
       showActionLabels: false,
+    });
+  });
+
+  it("adds standalone legend dock and drawer sizing without changing embedded widths", () => {
+    expect(
+      buildWarMapOverlayLayout({
+        wrapperWidth: 1400,
+        wrapperHeight: 900,
+        overlayDensity: "expanded",
+        hasNonFatalErrors: false,
+        layoutVariant: "standalone",
+      }),
+    ).toEqual({
+      overlayTopClassName: "top-4",
+      overlayRailWidth: 252,
+      overlayPanelMaxHeight: 520,
+      controlsPanelWidth: 336,
+      legendPanelWidth: 308,
+      controlsDrawerHeight: 640,
+      standaloneDrawerHeight: 486,
+      inspectorPanelHeight: 380,
+      inspectorPanelWidth: 360,
+      showActionLabels: true,
     });
   });
 
@@ -87,7 +111,6 @@ describe("war-map overlay model", () => {
       "view",
       "transport",
       "feeds",
-      "legend",
     ]);
     expect(viewModel.controlsSectionMeta.overview.label).toBe("Overview");
     expect(viewModel.controlsTabs.some((tab) => tab.key === "overview")).toBe(

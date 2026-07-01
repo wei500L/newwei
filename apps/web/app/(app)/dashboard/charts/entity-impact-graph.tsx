@@ -1,5 +1,6 @@
 "use client";
 
+import { IdcardOutlined, WarningOutlined } from "@ant-design/icons";
 import {
   App,
   Button,
@@ -12,7 +13,6 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import { WarningOutlined } from "@ant-design/icons";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,11 +20,19 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
-import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
-import { useEntityImpactGraphSettingsQuery } from "@/graphql/generated";
+import { RequestErrorBanner } from "@/components/request-error-banner";
+import {
+  useEntityImpactGraphSettingsQuery,
+  useKnowledgeEntityByNameLazyQuery,
+} from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { usePendingAction } from "@/hooks/use-pending-action";
+import {
+  useEntityImpactGraph,
+  type EntityImpactLink,
+} from "@/hooks/useEntityImpactGraph";
+import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import {
   buildEntityGraphConnectionMap,
   ENTITY_GRAPH_DEFAULT_CATEGORIES,
@@ -38,11 +46,6 @@ import {
   type EntityGraphEdgeType,
   type EntityGraphLabelDensity,
 } from "@/lib/entity-impact-graph";
-import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
-import {
-  useEntityImpactGraph,
-  type EntityImpactLink,
-} from "@/hooks/useEntityImpactGraph";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 const { Text } = Typography;
@@ -75,6 +78,17 @@ const resolveCategoryList = (input: string[] | undefined) => {
 
 const getCategoryConfig = (type: string) =>
   CATEGORY_CONFIG[normalizeEntityGraphCategory(type)] ?? DEFAULT_CATEGORY;
+
+const resolveKnowledgeEntityTypeForImpactNode = (type: string) => {
+  const normalized = normalizeEntityGraphCategory(type);
+  if (normalized === "stock") {
+    return "instrument";
+  }
+  if (normalized === "commodity" || normalized === "person") {
+    return normalized;
+  }
+  return undefined;
+};
 
 const escapeHtml = (value: unknown) =>
   String(value ?? "")
@@ -138,6 +152,10 @@ export function EntityImpactGraph() {
   const { pending: refreshingSettings, run: refreshSettings } = usePendingAction(
     () => refetchSettings(),
   );
+  const [resolveKnowledgeEntityByName, { loading: resolvingEntityCard }] =
+    useKnowledgeEntityByNameLazyQuery({
+      fetchPolicy: "network-only",
+    });
 
   const settings = settingsData?.entityImpactGraphSettings;
   const enabled = settings?.enabled ?? true;
@@ -199,7 +217,7 @@ export function EntityImpactGraph() {
     () => refetch(),
   );
 
-  const emptyMessage = t("dashboard.dataEmpty", { defaultValue: "No data" });
+  const emptyMessage = t("dashboard.dataEmpty");
 
   const filteredGraph = useMemo(
     () =>
@@ -299,17 +317,11 @@ export function EntityImpactGraph() {
 
   const categoryLabels = useMemo(
     () => ({
-      person: t("dashboard.charts.entityGraph.person", {
-        defaultValue: "Person",
-      }),
-      organization: t("dashboard.charts.entityGraph.organization", {
-        defaultValue: "Organization",
-      }),
-      stock: t("dashboard.charts.entityGraph.stock", { defaultValue: "Stock" }),
-      commodity: t("dashboard.charts.entityGraph.commodity", {
-        defaultValue: "Commodity",
-      }),
-      other: t("dashboard.charts.entityGraph.other", { defaultValue: "Other" }),
+      person: t("dashboard.charts.entityGraph.person"),
+      organization: t("dashboard.charts.entityGraph.organization"),
+      stock: t("dashboard.charts.entityGraph.stock"),
+      commodity: t("dashboard.charts.entityGraph.commodity"),
+      other: t("dashboard.charts.entityGraph.other"),
     }),
     [t],
   );
@@ -475,7 +487,7 @@ export function EntityImpactGraph() {
               : [];
             const relatedLabel =
               related.length > 0
-                ? `${t("dashboard.charts.entityGraph.relatedEntities", { defaultValue: "Related" })}: ${related.join(", ")}`
+                ? `${t("dashboard.charts.entityGraph.relatedEntities")}: ${related.join(", ")}`
                 : "";
             const safeNodeName = escapeHtml(data.name ?? "-");
             const safeType = escapeHtml(original.type ?? "-");
@@ -484,13 +496,13 @@ export function EntityImpactGraph() {
             const safeWindowLabel = escapeHtml(windowLabel);
 
             return [
-              `<div style=\"font-weight:600;margin-bottom:6px;\">${safeNodeName}</div>`,
-              `<div>${t("dashboard.charts.entityGraph.type", { defaultValue: "Type" })}: ${safeType}</div>`,
-              `<div>${t("dashboard.charts.entityGraph.category", { defaultValue: "Category" })}: ${safeCategoryName}</div>`,
-              `<div>${t("dashboard.charts.entityGraph.weight", { defaultValue: "Weight" })}: ${Number(data.value ?? 0).toFixed(1)}</div>`,
-              `<div>${t("dashboard.charts.entityGraph.connections", { defaultValue: "Connections" })}: ${original.connectionCount ?? 0}</div>`,
+              `<div style="font-weight:600;margin-bottom:6px;">${safeNodeName}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.type")}: ${safeType}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.category")}: ${safeCategoryName}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.weight")}: ${Number(data.value ?? 0).toFixed(1)}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.connections")}: ${original.connectionCount ?? 0}</div>`,
               relatedLabel ? `<div>${safeRelatedLabel}</div>` : "",
-              `<div style=\"color:#94a3b8;margin-top:6px;\">${t("dashboard.charts.entityGraph.window", { defaultValue: "Window" })}: ${safeWindowLabel}</div>`,
+              `<div style="color:#94a3b8;margin-top:6px;">${t("dashboard.charts.entityGraph.window")}: ${safeWindowLabel}</div>`,
             ].join("");
           }
 
@@ -517,22 +529,18 @@ export function EntityImpactGraph() {
             const target = nodeNameById.get(targetId) ?? targetId;
             const linkTypeLabel =
               normalizedType === "correlation"
-                ? t("dashboard.charts.entityGraph.correlation", {
-                    defaultValue: "Correlation",
-                  })
-                : t("dashboard.charts.entityGraph.coOccurrence", {
-                    defaultValue: "Co-occurrence",
-                  });
+                ? t("dashboard.charts.entityGraph.correlation")
+                : t("dashboard.charts.entityGraph.coOccurrence");
             const safeSource = escapeHtml(source);
             const safeTarget = escapeHtml(target);
             const safeWindowLabel = escapeHtml(windowLabel);
             const safeLinkTypeLabel = escapeHtml(linkTypeLabel);
 
             return [
-              `<div style=\"font-weight:600;margin-bottom:6px;\">${safeSource} -> ${safeTarget}</div>`,
-              `<div>${t("dashboard.charts.entityGraph.linkType", { defaultValue: "Link Type" })}: ${safeLinkTypeLabel}</div>`,
-              `<div>${t("dashboard.charts.entityGraph.strength", { defaultValue: "Strength" })}: ${Number(data.value ?? 0).toFixed(normalizedType === "correlation" ? 2 : 0)}</div>`,
-              `<div style=\"color:#94a3b8;margin-top:6px;\">${t("dashboard.charts.entityGraph.window", { defaultValue: "Window" })}: ${safeWindowLabel}</div>`,
+              `<div style="font-weight:600;margin-bottom:6px;">${safeSource} -> ${safeTarget}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.linkType")}: ${safeLinkTypeLabel}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.strength")}: ${Number(data.value ?? 0).toFixed(normalizedType === "correlation" ? 2 : 0)}</div>`,
+              `<div style="color:#94a3b8;margin-top:6px;">${t("dashboard.charts.entityGraph.window")}: ${safeWindowLabel}</div>`,
             ].join("");
           }
 
@@ -541,9 +549,7 @@ export function EntityImpactGraph() {
       },
       series: [
         {
-          name: t("dashboard.charts.entityGraph.title", {
-            defaultValue: "Entity Impact Graph",
-          }),
+          name: t("dashboard.charts.entityGraph.title"),
           type: "graph",
           layout: "force",
           data: transformedNodes,
@@ -597,7 +603,6 @@ export function EntityImpactGraph() {
       const toastId = toast.loading(
         t("dashboard.charts.entityGraph.openingSearch", {
           query: normalized,
-          defaultValue: `Opening search for "${normalized}"...`,
         }),
       );
       const handle = window.open(
@@ -610,15 +615,12 @@ export function EntityImpactGraph() {
           toast.success(
             t("dashboard.charts.entityGraph.openedSearch", {
               query: normalized,
-              defaultValue: `Search opened for "${normalized}" in a new tab`,
             }),
             { id: toastId },
           );
         } else {
           toast.error(
-            t("common.popupBlocked", {
-              defaultValue: "Popup blocked. Please allow popups for this site.",
-            }),
+            t("common.popupBlocked"),
             { id: toastId },
           );
         }
@@ -631,12 +633,44 @@ export function EntityImpactGraph() {
     async (value: string) => {
       try {
         await navigator.clipboard.writeText(value);
-        toast.success(t("common.copied", { defaultValue: "Copied" }));
+        toast.success(t("common.copied"));
       } catch {
-        toast.error(t("common.copyFailed", { defaultValue: "Copy failed" }));
+        toast.error(t("common.copyFailed"));
       }
     },
     [t],
+  );
+
+  const openIntelligenceCardForEntity = useCallback(
+    async (name: string, type: string) => {
+      const normalizedName = name.trim();
+      if (!normalizedName) {
+        return;
+      }
+      try {
+        const result = await resolveKnowledgeEntityByName({
+          variables: {
+            name: normalizedName,
+            type: resolveKnowledgeEntityTypeForImpactNode(type),
+          },
+        });
+        const entity = result.data?.knowledgeEntityByName;
+        if (!entity?.id) {
+          toast.error(
+            t("entities.intelligence.resolveFailed"),
+          );
+          return;
+        }
+        window.location.assign(`/entities/${encodeURIComponent(entity.id)}`);
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : t("entities.intelligence.resolveFailed"),
+        );
+      }
+    },
+    [resolveKnowledgeEntityByName, t],
   );
 
   const handleNodeClick = useCallback(
@@ -657,7 +691,6 @@ export function EntityImpactGraph() {
         message.info(
           t("dashboard.charts.entityGraph.nodeSelected", {
             node: nodeName,
-            defaultValue: `Selected: ${nodeName}`,
           }),
         );
       }
@@ -784,9 +817,7 @@ export function EntityImpactGraph() {
   const handleReflow = useCallback(() => {
     setGraphRenderSeed((seed) => seed + 1);
     message.success(
-      t("dashboard.charts.entityGraph.reflowed", {
-        defaultValue: "Graph layout refreshed",
-      }),
+      t("dashboard.charts.entityGraph.reflowed"),
     );
   }, [message, t]);
 
@@ -812,11 +843,8 @@ export function EntityImpactGraph() {
       <div className="h-[400px]">
         <ChartEmptyState
           variant="permission"
-          title={t("common.accessDenied", { defaultValue: "Access denied" })}
-          description={t("common.accessDeniedDescription", {
-            defaultValue:
-              "You don't have permission to view this data. Contact an administrator if you need access.",
-          })}
+          title={t("common.accessDenied")}
+          description={t("common.accessDeniedDescription")}
         />
       </div>
     );
@@ -827,11 +855,9 @@ export function EntityImpactGraph() {
       <div className="h-[400px]">
         <ChartEmptyState
           variant="error"
-          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          title={t("dashboard.dataAbnormal")}
           description={settingsError.message}
-          actionLabel={t("dashboard.actions.retryFetch", {
-            defaultValue: "Retry fetch"
-          })}
+          actionLabel={t("dashboard.actions.retryFetch")}
           actionLoading={refreshingSettings}
           onAction={() => {
             void refreshSettings();
@@ -846,12 +872,8 @@ export function EntityImpactGraph() {
       <div className="h-[400px]">
         <ChartEmptyState
           variant="offline"
-          title={t("dashboard.charts.entityGraph.disabledTitle", {
-            defaultValue: "Disabled",
-          })}
-          description={t("dashboard.charts.entityGraph.disabledDescription", {
-            defaultValue: "Disabled by admin",
-          })}
+          title={t("dashboard.charts.entityGraph.disabledTitle")}
+          description={t("dashboard.charts.entityGraph.disabledDescription")}
         />
       </div>
     );
@@ -878,11 +900,9 @@ export function EntityImpactGraph() {
       <div className="h-[400px]">
         <ChartEmptyState
           variant="error"
-          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          title={t("dashboard.dataAbnormal")}
           description={error instanceof Error ? error.message : emptyMessage}
-          actionLabel={t("dashboard.actions.retryFetch", {
-            defaultValue: "Retry fetch"
-          })}
+          actionLabel={t("dashboard.actions.retryFetch")}
           actionLoading={refreshingGraph}
           onAction={() => {
             void refreshGraph();
@@ -936,26 +956,21 @@ export function EntityImpactGraph() {
 
         <div className="entity-graph-meta-row">
           <Tag color="default" className="text-xs">
-            {t("dashboard.charts.entityGraph.range", { defaultValue: "Range" })}
+            {t("dashboard.charts.entityGraph.range")}
             : {range}
           </Tag>
           <Tag color="default" className="text-xs">
-            {t("dashboard.charts.entityGraph.window", {
-              defaultValue: "Window",
-            })}
+            {t("dashboard.charts.entityGraph.window")}
             : {windowLabel}
           </Tag>
           <Tag color="geekblue" className="text-xs">
-            {t("dashboard.charts.entityGraph.aggregation", {
-              defaultValue: "Aggregation: window graph",
-            })}
+            {t("dashboard.charts.entityGraph.aggregation")}
           </Tag>
           {degradationStats.filteredLinks > 0 ? (
             <Tooltip
               title={t("dashboard.charts.entityGraph.filteredLinksTooltip", {
                 filtered: degradationStats.filteredLinks,
-                total: degradationStats.totalLinks,
-                defaultValue: `${degradationStats.filteredLinks} 个链接在规范化过程中被隐藏（无效引用、自环、重复或异常值），以确保图表正常显示。`
+                total: degradationStats.totalLinks
               })}
             >
               <Tag
@@ -964,8 +979,7 @@ export function EntityImpactGraph() {
                 className="text-xs cursor-help"
               >
                 {t("dashboard.charts.entityGraph.filteredLinks", {
-                  count: degradationStats.filteredLinks,
-                  defaultValue: `已隐藏 ${degradationStats.filteredLinks} 个链接`
+                  count: degradationStats.filteredLinks
                 })}
               </Tag>
             </Tooltip>
@@ -975,9 +989,7 @@ export function EntityImpactGraph() {
         <div className="entity-graph-toolbar">
           <div className="entity-graph-group">
             <span className="entity-graph-group-label">
-              {t("dashboard.charts.entityGraph.categoryFilter", {
-                defaultValue: "Categories",
-              })}
+              {t("dashboard.charts.entityGraph.categoryFilter")}
             </span>
             <Space size={6} wrap>
               {ENTITY_GRAPH_DEFAULT_CATEGORIES.map((category) => {
@@ -1003,20 +1015,14 @@ export function EntityImpactGraph() {
 
           <div className="entity-graph-group">
             <span className="entity-graph-group-label">
-              {t("dashboard.charts.entityGraph.edgeFilter", {
-                defaultValue: "Edge Types",
-              })}
+              {t("dashboard.charts.entityGraph.edgeFilter")}
             </span>
             <Space size={6} wrap>
               {EDGE_TYPE_OPTIONS.map((edgeType) => {
                 const edgeLabel =
                   edgeType === "correlation"
-                    ? t("dashboard.charts.entityGraph.correlation", {
-                        defaultValue: "Correlation",
-                      })
-                    : t("dashboard.charts.entityGraph.coOccurrence", {
-                        defaultValue: "Co-occurrence",
-                      });
+                    ? t("dashboard.charts.entityGraph.correlation")
+                    : t("dashboard.charts.entityGraph.coOccurrence");
                 const isActive = selectedEdgeTypes.includes(edgeType);
                 return (
                   <Button
@@ -1040,9 +1046,7 @@ export function EntityImpactGraph() {
 
           <div className="entity-graph-group">
             <span className="entity-graph-group-label">
-              {t("dashboard.charts.entityGraph.labels", {
-                defaultValue: "Labels",
-              })}
+              {t("dashboard.charts.entityGraph.labels")}
             </span>
             <Segmented<EntityGraphLabelDensity>
               size="small"
@@ -1050,15 +1054,11 @@ export function EntityImpactGraph() {
               onChange={(value) => setLabelDensity(value)}
               options={[
                 {
-                  label: t("dashboard.charts.entityGraph.labelCompact", {
-                    defaultValue: "Compact",
-                  }),
+                  label: t("dashboard.charts.entityGraph.labelCompact"),
                   value: "compact",
                 },
                 {
-                  label: t("dashboard.charts.entityGraph.labelStandard", {
-                    defaultValue: "Standard",
-                  }),
+                  label: t("dashboard.charts.entityGraph.labelStandard"),
                   value: "standard",
                 },
               ]}
@@ -1067,9 +1067,7 @@ export function EntityImpactGraph() {
 
           <div className="entity-graph-group entity-graph-confidence">
             <Text type="secondary" className="text-xs whitespace-nowrap">
-              {t("dashboard.charts.entityGraph.confidenceFilter", {
-                defaultValue: "Entity confidence",
-              })}
+              {t("dashboard.charts.entityGraph.confidenceFilter")}
             </Text>
             <Slider
               min={0}
@@ -1090,12 +1088,10 @@ export function EntityImpactGraph() {
 
           <div className="entity-graph-group entity-graph-actions">
             <Button size="small" onClick={handleReflow}>
-              {t("dashboard.charts.entityGraph.reflow", {
-                defaultValue: "Reflow",
-              })}
+              {t("dashboard.charts.entityGraph.reflow")}
             </Button>
             <Button size="small" onClick={handleResetFilters}>
-              {t("common.reset", { defaultValue: "Reset" })}
+              {t("common.reset")}
             </Button>
           </div>
         </div>
@@ -1141,14 +1137,28 @@ export function EntityImpactGraph() {
                       type="text"
                       size="small"
                       block
+                      icon={<IdcardOutlined />}
+                      loading={resolvingEntityCard}
+                      onClick={() => {
+                        void openIntelligenceCardForEntity(
+                          contextMenu.nodeName,
+                          selectedNodeRecord?.type ?? "",
+                        );
+                        setContextMenu(null);
+                      }}
+                    >
+                      {t("entities.intelligence.openCard")}
+                    </Button>
+                    <Button
+                      type="text"
+                      size="small"
+                      block
                       onClick={() => {
                         openSearchForEntity(contextMenu.nodeName);
                         setContextMenu(null);
                       }}
                     >
-                      {t("dashboard.charts.entityGraph.openSearch", {
-                        defaultValue: "Open search",
-                      })}
+                      {t("dashboard.charts.entityGraph.openSearch")}
                     </Button>
                     <Button
                       type="text"
@@ -1159,7 +1169,7 @@ export function EntityImpactGraph() {
                         setContextMenu(null);
                       }}
                     >
-                      {t("common.copy", { defaultValue: "Copy" })}
+                      {t("common.copy")}
                     </Button>
                     <Button
                       type="text"
@@ -1170,7 +1180,7 @@ export function EntityImpactGraph() {
                         setContextMenu(null);
                       }}
                     >
-                      {t("common.details", { defaultValue: "Details" })}
+                      {t("common.details")}
                     </Button>
                   </div>
                 </div>
@@ -1180,12 +1190,9 @@ export function EntityImpactGraph() {
         ) : (
           <div className="entity-graph-canvas h-[320px] md:h-[400px] flex items-center justify-center">
             <ChartEmptyState
-              title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
-              description={t("dashboard.charts.entityGraph.filteredEmpty", {
-                defaultValue:
-                  "No nodes match the active filters. Reset filters or broaden categories to continue.",
-              })}
-              actionLabel={t("common.reset", { defaultValue: "Reset" })}
+              title={t("dashboard.dataEmpty")}
+              description={t("dashboard.charts.entityGraph.filteredEmpty")}
+              actionLabel={t("common.reset")}
               onAction={handleResetFilters}
             />
           </div>
@@ -1194,34 +1201,24 @@ export function EntityImpactGraph() {
         <div className="entity-graph-footer">
           <div className="entity-graph-kpis">
             <Tag>
-              {t("dashboard.charts.entityGraph.visibleNodes", {
-                defaultValue: "Visible nodes",
-              })}
+              {t("dashboard.charts.entityGraph.visibleNodes")}
               : {visibleNodes.length}
             </Tag>
             <Tag>
-              {t("dashboard.charts.entityGraph.visibleLinks", {
-                defaultValue: "Visible links",
-              })}
+              {t("dashboard.charts.entityGraph.visibleLinks")}
               : {safeLinks.length}
             </Tag>
             <Tag>
-              {t("dashboard.charts.entityGraph.totalNodes", {
-                defaultValue: "Total nodes",
-              })}
+              {t("dashboard.charts.entityGraph.totalNodes")}
               : {metadata?.totalNodes ?? nodes.length}
             </Tag>
             <Tag>
-              {t("dashboard.charts.entityGraph.totalLinks", {
-                defaultValue: "Total links",
-              })}
+              {t("dashboard.charts.entityGraph.totalLinks")}
               : {metadata?.totalLinks ?? links.length}
             </Tag>
           </div>
           <Text type="secondary" className="text-xs">
-            {t("dashboard.charts.entityGraph.hint", {
-              defaultValue: "Tip: right-click a node for quick actions.",
-            })}
+            {t("dashboard.charts.entityGraph.hint")}
           </Text>
         </div>
       </div>
@@ -1233,9 +1230,7 @@ export function EntityImpactGraph() {
         width={drawerWidth}
         title={
           selectedNodeRecord?.name ??
-          t("dashboard.charts.entityGraph.detailsTitle", {
-            defaultValue: "Details",
-          })
+          t("dashboard.charts.entityGraph.detailsTitle")
         }
         extra={
           <Button
@@ -1245,7 +1240,7 @@ export function EntityImpactGraph() {
               setDrawerOpen(false);
             }}
           >
-            {t("common.clear", { defaultValue: "Clear" })}
+            {t("common.clear")}
           </Button>
         }
       >
@@ -1253,53 +1248,53 @@ export function EntityImpactGraph() {
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
             <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
               <Text type="secondary" className="block">
-                {t("dashboard.charts.entityGraph.type", {
-                  defaultValue: "Type",
-                })}
+                {t("dashboard.charts.entityGraph.type")}
                 : {selectedNodeRecord.type}
               </Text>
               <Text type="secondary" className="block">
-                {t("dashboard.charts.entityGraph.category", {
-                  defaultValue: "Category",
-                })}
+                {t("dashboard.charts.entityGraph.category")}
                 : {selectedNodeRecord.category}
               </Text>
               <Text type="secondary" className="block">
-                {t("dashboard.charts.entityGraph.weight", {
-                  defaultValue: "Weight",
-                })}
+                {t("dashboard.charts.entityGraph.weight")}
                 : {Number(selectedNodeRecord.value ?? 0).toFixed(1)}
               </Text>
               <Text type="secondary" className="block">
-                {t("dashboard.charts.entityGraph.connections", {
-                  defaultValue: "Connections",
-                })}
+                {t("dashboard.charts.entityGraph.connections")}
                 : {relatedEntities.length}
               </Text>
             </div>
 
             <Space wrap>
               <Button
+                icon={<IdcardOutlined />}
+                loading={resolvingEntityCard}
+                onClick={() => {
+                  void openIntelligenceCardForEntity(
+                    selectedNodeRecord.name,
+                    selectedNodeRecord.type,
+                  );
+                }}
+              >
+                {t("entities.intelligence.openCard")}
+              </Button>
+              <Button
                 type="primary"
                 onClick={() => openSearchForEntity(selectedNodeRecord.name)}
               >
-                {t("dashboard.charts.entityGraph.openSearch", {
-                  defaultValue: "Open search",
-                })}
+                {t("dashboard.charts.entityGraph.openSearch")}
               </Button>
               <Button
                 onClick={() => void copyEntityName(selectedNodeRecord.name)}
               >
-                {t("common.copy", { defaultValue: "Copy" })}
+                {t("common.copy")}
               </Button>
             </Space>
 
             {relatedEntities.length > 0 ? (
               <div>
                 <Text type="secondary" className="block mb-2">
-                  {t("dashboard.charts.entityGraph.relatedEntities", {
-                    defaultValue: "Related",
-                  })}
+                  {t("dashboard.charts.entityGraph.relatedEntities")}
                 </Text>
                 <div className="flex flex-wrap gap-2">
                   {relatedEntities.slice(0, 18).map(({ id, name }) => (
@@ -1317,9 +1312,7 @@ export function EntityImpactGraph() {
               </div>
             ) : (
               <Text type="secondary">
-                {t("dashboard.charts.entityGraph.noRelatedEntities", {
-                  defaultValue: "No related entities found.",
-                })}
+                {t("dashboard.charts.entityGraph.noRelatedEntities")}
               </Text>
             )}
           </Space>

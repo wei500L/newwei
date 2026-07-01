@@ -2,6 +2,7 @@
 
 import { SearchOutlined } from "@ant-design/icons";
 import { Alert, Button, Input, Skeleton, Slider, Space, Tag, Typography, message } from "antd";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -12,6 +13,7 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import { useGetKnowledgeGraphSubgraphQuery, useKnowledgeGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { usePendingAction } from "@/hooks/use-pending-action";
+import { buildKnowledgeGraphExplorerHref } from "@/lib/knowledge-graph-explorer";
 
 const { Text } = Typography;
 
@@ -116,7 +118,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
     (value?: string) => {
       const next = (value ?? seedDraft).trim();
       if (!next) {
-        messageApi.warning(t("dashboard.charts.knowledgeGraphSeedRequired", { defaultValue: "Enter an entity name" }));
+        messageApi.warning(t("dashboard.charts.knowledgeGraphSeedRequired"));
         return;
       }
       setSeedName(next);
@@ -146,6 +148,11 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
 
   const graph = data?.getKnowledgeGraphSubgraph ?? null;
   const degreeMap = useMemo(() => (graph ? buildDegreeMap(graph.edges) : new Map<string, number>()), [graph]);
+  const explorerHref = buildKnowledgeGraphExplorerHref({
+    seedName,
+    maxDepth,
+    maxNodes
+  });
 
   useEffect(() => {
     if (!graph || !containerRef.current) {
@@ -538,11 +545,8 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
       <div className="h-[420px]">
         <ChartEmptyState
           variant="permission"
-          title={t("common.accessDenied", { defaultValue: "Access denied" })}
-          description={t("common.accessDeniedDescription", {
-            defaultValue:
-              "You don't have permission to view this data. Contact an administrator if you need access."
-          })}
+          title={t("common.accessDenied")}
+          description={t("common.accessDeniedDescription")}
         />
       </div>
     );
@@ -561,11 +565,9 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
       <div className="h-[420px]">
         <ChartEmptyState
           variant="error"
-          title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          title={t("dashboard.dataAbnormal")}
           description={settingsError.message}
-          actionLabel={t("dashboard.actions.retryFetch", {
-            defaultValue: "Retry fetch"
-          })}
+          actionLabel={t("dashboard.actions.retryFetch")}
           actionLoading={refreshingSettings}
           onAction={() => {
             void refreshSettings();
@@ -580,8 +582,8 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
       <div className="h-[420px]">
         <ChartEmptyState
           variant="offline"
-          title={t("dashboard.charts.knowledgeGraphDisabledTitle", { defaultValue: "Disabled" })}
-          description={t("dashboard.charts.knowledgeGraphDisabledDescription", { defaultValue: "Disabled by admin" })}
+          title={t("dashboard.charts.knowledgeGraphDisabledTitle")}
+          description={t("dashboard.charts.knowledgeGraphDisabledDescription")}
         />
       </div>
     );
@@ -596,14 +598,14 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
             value={seedDraft}
             onChange={(evt) => setSeedDraft(evt.target.value)}
             onPressEnter={(event) => handleSearch(event.currentTarget.value)}
-            placeholder={t("dashboard.charts.knowledgeGraphSeedPlaceholder", { defaultValue: "Entity name" })}
+            placeholder={t("dashboard.charts.knowledgeGraphSeedPlaceholder")}
             allowClear
           />
           <Button
             type="primary"
             icon={<SearchOutlined />}
             loading={loading}
-            aria-label={t("common.search", { defaultValue: "Search" })}
+            aria-label={t("common.search")}
             onClick={() => handleSearch()}
           />
         </Space.Compact>
@@ -614,22 +616,25 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
           }}
           disabled={!graph}
         >
-          {t("dashboard.charts.knowledgeGraphReflow", { defaultValue: "Reflow" })}
+          {t("dashboard.charts.knowledgeGraphReflow")}
         </Button>
         <Space size="middle">
           <div>
             <Text type="secondary">
-              {t("dashboard.charts.knowledgeGraphDepth", { defaultValue: "Depth" })}: {maxDepth}
+              {t("dashboard.charts.knowledgeGraphDepth")}: {maxDepth}
             </Text>
             <Slider min={1} max={5} step={1} value={maxDepth} onChange={(value) => setMaxDepth(value)} style={{ width: 140 }} />
           </div>
           <div>
             <Text type="secondary">
-              {t("dashboard.charts.knowledgeGraphMaxNodes", { defaultValue: "Max nodes" })}: {maxNodes}
+              {t("dashboard.charts.knowledgeGraphMaxNodes")}: {maxNodes}
             </Text>
             <Slider min={50} max={180} step={10} value={maxNodes} onChange={(value) => setMaxNodes(value)} style={{ width: 160 }} />
           </div>
         </Space>
+        <Link href={explorerHref}>
+          <Button>{t("pages.knowledgeGraph.actions.openExplorer")}</Button>
+        </Link>
       </div>
 
       {settings ? (
@@ -657,7 +662,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
         <Alert
           type="error"
           showIcon
-          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          message={t("dashboard.dataAbnormal")}
           description={error.message}
           action={
             <Button
@@ -668,9 +673,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
                 void refreshGraph();
               }}
             >
-              {t("dashboard.actions.retryFetch", {
-                defaultValue: "Retry fetch"
-              })}
+              {t("dashboard.actions.retryFetch")}
             </Button>
           }
           style={{ marginBottom: "0.75rem" }}
@@ -680,10 +683,8 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
       {!seedName ? (
         <div className="h-[380px]">
           <ChartEmptyState
-            title={t("dashboard.charts.knowledgeGraphEmptyTitle", { defaultValue: "No data" })}
-            description={t("dashboard.charts.knowledgeGraphEmptyDescription", {
-              defaultValue: "Search an entity to load real graph data"
-            })}
+            title={t("dashboard.charts.knowledgeGraphEmptyTitle")}
+            description={t("dashboard.charts.knowledgeGraphEmptyDescription")}
           />
         </div>
       ) : loading ? (
@@ -705,10 +706,8 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
       ) : (
         <div className="h-[380px]">
           <ChartEmptyState
-            title={t("dashboard.charts.knowledgeGraphNotFoundTitle", { defaultValue: "Not found" })}
-            description={t("dashboard.charts.knowledgeGraphNotFoundDescription", {
-              defaultValue: "No graph data found for this entity"
-            })}
+            title={t("dashboard.charts.knowledgeGraphNotFoundTitle")}
+            description={t("dashboard.charts.knowledgeGraphNotFoundDescription")}
           />
         </div>
       )}

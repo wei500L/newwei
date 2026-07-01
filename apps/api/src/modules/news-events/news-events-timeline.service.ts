@@ -4,11 +4,18 @@ import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { NewsEventStatus, Prisma } from "@prisma/client";
 
+import {
+  claimSchedulerTick,
+  settleWithConcurrency,
+} from "../../common/multi-tenant-scheduler";
+import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
+import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
+import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 
 import {
   NewsEventsSettingsService,
-  type NewsEventSettings
+  type NewsEventSettings,
 } from "./news-events-settings.service";
 
 const logger = createLogger({ name: "news-events-timeline" });
@@ -26,6 +33,8 @@ const DEFAULT_MAX_PHASE_SUMMARIES = 8;
 const KL_EPSILON = 1e-6;
 const CLASSIFICATION_CACHE_TTL_MS = 5 * 60 * 1000;
 const CACHE_PRUNE_INTERVAL_MS = 60 * 1000;
+const TIMELINE_REBUILD_TICK_GATE_TTL_MS = 9 * 60_000 + 45_000;
+const TIMELINE_REBUILD_ORG_LOCK_TTL_MS = 9 * 60_000;
 const MIN_DRIFT_KL_THRESHOLD = 0;
 const MAX_DRIFT_KL_THRESHOLD = 5;
 const MIN_MAX_CATEGORY_DISTRIBUTION_ITEMS = 4;
@@ -116,7 +125,7 @@ interface TimelineMetadataPayload {
   topicDriftSummary: string | null;
   driftWarnings: TopicDriftWarning[];
   phaseSummaries: TimelinePhaseSummary[];
-  subEvents: Array<{
+  subEvents: {
     id: string;
     parentEventId: string;
     phase: number;
@@ -127,7 +136,7 @@ interface TimelineMetadataPayload {
     itemCount: number;
     bucketCount: number;
     summary: string;
-  }>;
+  }[];
   updatedAt: string;
 }
 
@@ -152,6 +161,8 @@ interface TimelineRuntimeSettings {
   maxPhaseSummaries: number;
 }
 
+type NewsEventsTimelineSchedulerOrgRunStatus = "completed" | "skipped";
+
 @Injectable()
 export class NewsEventsTimelineService {
   private readonly processedItemClassificationCache = new Map<
@@ -161,39 +172,109 @@ export class NewsEventsTimelineService {
   private processedItemClassificationCacheLastPruneAt = 0;
 
   constructor(
+    private readonly cache: CacheService,
     private readonly prisma: PrismaService,
-    private readonly settings: NewsEventsSettingsService
+    private readonly activeOrgRegistry: ActiveOrgRegistryService,
+    private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
+    private readonly settings: NewsEventsSettingsService,
   ) {}
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async rebuildRecentTimelines() {
-    const orgs = await this.prisma.org.findMany({
-      where: { isActive: true },
-      select: { id: true }
-    });
+    const claimed = await claimSchedulerTick(
+      this.cache,
+      "cron:news-events-timeline:tick-gate",
+      TIMELINE_REBUILD_TICK_GATE_TTL_MS,
+    );
+    if (!claimed) {
+      logger.info(
+        "Skipped news event timeline rebuild tick because another instance already claimed this interval",
+      );
+      return;
+    }
 
-    for (const org of orgs) {
-      try {
-        await this.rebuildOrg(org.id);
-      } catch (error) {
-        logger.warn({ err: error, orgId: org.id }, "News event timeline rebuild failed");
+    const orgs = await this.activeOrgRegistry.listActiveOrgs();
+
+    if (orgs.length === 0) {
+      return;
+    }
+
+    const runtime = await this.schedulerSettings.getRuntimeSettings();
+    const concurrency = runtime.newsEventsTimelineOrgConcurrency;
+    logger.info(
+      { orgCount: orgs.length, concurrency },
+      "News event timeline rebuild tick started",
+    );
+
+    const results = await settleWithConcurrency(
+      orgs,
+      concurrency,
+      async (org) => this.rebuildOrgWithLock(org.id),
+    );
+
+    let failedOrgs = 0;
+    let skippedOrgs = 0;
+    for (const result of results) {
+      if (result.status === "rejected") {
+        failedOrgs += 1;
+        logger.warn(
+          { err: result.reason, orgId: result.item.id },
+          "News event timeline rebuild failed",
+        );
+        continue;
+      }
+      if (result.value === "skipped") {
+        skippedOrgs += 1;
       }
     }
+
+    logger.info(
+      { orgCount: orgs.length, concurrency, failedOrgs, skippedOrgs },
+      "News event timeline rebuild tick completed",
+    );
+  }
+
+  private async rebuildOrgWithLock(
+    orgId: string,
+  ): Promise<NewsEventsTimelineSchedulerOrgRunStatus> {
+    const locked = await this.cache.withLock(
+      `cron:news-events-timeline:org:${orgId}`,
+      TIMELINE_REBUILD_ORG_LOCK_TTL_MS,
+      async () => {
+        await this.rebuildOrg(orgId);
+        return "completed" as const;
+      },
+    );
+
+    if (locked !== null) {
+      return locked;
+    }
+
+    logger.info(
+      { orgId },
+      "Skipped news event timeline rebuild because previous org run is still in progress",
+    );
+    return "skipped";
   }
 
   private async rebuildOrg(orgId: string) {
     const settings = await this.settings.getSettings(orgId);
-    if (!settings.enabled || !settings.ingestionEnabled || !settings.timelineEnabled) {
+    if (
+      !settings.enabled ||
+      !settings.ingestionEnabled ||
+      !settings.timelineEnabled
+    ) {
       return;
     }
-    const timelineRuntimeSettings = this.resolveTimelineRuntimeSettings(settings);
+    const timelineRuntimeSettings =
+      this.resolveTimelineRuntimeSettings(settings);
 
     const windowDays = Math.max(settings.backfillDays, settings.lookbackDays);
     const since = new Date(Date.now() - windowDays * DAY_MS);
     const events = await this.prisma.newsEvent.findMany({
       where: { orgId, status: NewsEventStatus.active, lastAt: { gte: since } },
       orderBy: [{ lastAt: "desc" }, { startAt: "desc" }],
-      take: settings.timelineMaxEventsPerRun
+      take: settings.timelineMaxEventsPerRun,
     });
 
     if (events.length === 0) {
@@ -225,7 +306,10 @@ export class NewsEventsTimelineService {
 
       const buckets = this.groupByDayBucket(items);
       const bucketKeys = Array.from(buckets.keys()).sort();
-      const timelineEntryMetadataByBucket: Record<string, TimelineEntryClassificationMetadata> = {};
+      const timelineEntryMetadataByBucket: Record<
+        string,
+        TimelineEntryClassificationMetadata
+      > = {};
       const builtEntries: BuiltTimelineEntry[] = [];
 
       for (const bucketKey of bucketKeys) {
@@ -237,22 +321,26 @@ export class NewsEventsTimelineService {
           event.id,
           bucket.bucketStart,
           bucket.items,
-          timelineRuntimeSettings
+          timelineRuntimeSettings,
         );
         const keyPoints =
           entry.keyPoints === null
             ? Prisma.DbNull
-            : (JSON.parse(JSON.stringify(entry.keyPoints)) as Prisma.InputJsonValue);
+            : (JSON.parse(
+                JSON.stringify(entry.keyPoints),
+              ) as Prisma.InputJsonValue);
         const referencedArticleIds =
           entry.referencedArticleIds.length > 0
-            ? (JSON.parse(JSON.stringify(entry.referencedArticleIds)) as Prisma.InputJsonValue)
+            ? (JSON.parse(
+                JSON.stringify(entry.referencedArticleIds),
+              ) as Prisma.InputJsonValue)
             : Prisma.DbNull;
         await this.prisma.newsEventTimelineEntry.upsert({
           where: {
             eventId_bucketStart: {
               eventId: entry.eventId,
-              bucketStart: entry.bucketStart
-            }
+              bucketStart: entry.bucketStart,
+            },
           },
           create: {
             orgId,
@@ -261,14 +349,14 @@ export class NewsEventsTimelineService {
             title: entry.title,
             summary: entry.summary,
             keyPoints,
-            referencedArticleIds
+            referencedArticleIds,
           },
           update: {
             title: entry.title,
             summary: entry.summary,
             keyPoints,
-            referencedArticleIds
-          }
+            referencedArticleIds,
+          },
         });
         timelineEntryMetadataByBucket[this.toBucketKey(entry.bucketStart)] =
           entry.classification;
@@ -279,7 +367,7 @@ export class NewsEventsTimelineService {
       const analysis = this.analyzeTimeline(
         items,
         builtEntries,
-        timelineRuntimeSettings
+        timelineRuntimeSettings,
       );
       if (analysis.topicDriftWarning) {
         driftWarnings += 1;
@@ -290,7 +378,7 @@ export class NewsEventsTimelineService {
             summary: analysis.topicDriftSummary,
             warningCount: analysis.driftWarnings.length,
           },
-          "Topic drift warning detected during timeline rebuild"
+          "Topic drift warning detected during timeline rebuild",
         );
       }
 
@@ -298,11 +386,11 @@ export class NewsEventsTimelineService {
         event.id,
         event.metadata,
         timelineEntryMetadataByBucket,
-        analysis
+        analysis,
       );
       await this.prisma.newsEvent.update({
         where: { id: event.id },
-        data: { metadata }
+        data: { metadata },
       });
 
       processedEvents += 1;
@@ -324,21 +412,27 @@ export class NewsEventsTimelineService {
         classificationLookupMsTotal,
         classificationProcessedItemIdsTotal,
         classificationCacheHitsTotal,
-        classificationCacheHitRate: Math.round(classificationCacheHitRate * 10_000) / 10_000,
-        classificationCoverage: Math.round(classificationCoverage * 10_000) / 10_000
+        classificationCacheHitRate:
+          Math.round(classificationCacheHitRate * 10_000) / 10_000,
+        classificationCoverage:
+          Math.round(classificationCoverage * 10_000) / 10_000,
       },
-      "News event timeline rebuild completed"
+      "News event timeline rebuild completed",
     );
   }
 
   private async loadEventItems(
     orgId: string,
     eventId: string,
-    windowDays: number
+    windowDays: number,
   ): Promise<LoadEventItemsResult> {
     const since = new Date(Date.now() - windowDays * DAY_MS);
     const rows = await this.prisma.newsEventItem.findMany({
-      where: { orgId, eventId, processedArticle: { processedAt: { gte: since } } },
+      where: {
+        orgId,
+        eventId,
+        processedArticle: { processedAt: { gte: since } },
+      },
       orderBy: [{ createdAt: "desc" }],
       take: MAX_ITEMS_PER_EVENT,
       include: {
@@ -353,18 +447,18 @@ export class NewsEventsTimelineService {
             qualityScore: true,
             publishedAt: true,
             processedAt: true,
-            article: { select: { crawlAt: true } }
-          }
-        }
-      }
+            article: { select: { crawlAt: true } },
+          },
+        },
+      },
     });
 
     const processedItemIds = Array.from(
       new Set(
         rows
           .map((row) => this.normalizeOptionalString(row.processedItemId))
-          .filter((value): value is string => Boolean(value))
-      )
+          .filter((value): value is string => Boolean(value)),
+      ),
     );
     const classificationLookupStartedAt = Date.now();
     const { classificationById, cacheHits } =
@@ -373,10 +467,13 @@ export class NewsEventsTimelineService {
 
     const items = rows.map((row) => {
       const processed = row.processedArticle;
-      const timestamp = processed.publishedAt ?? processed.article?.crawlAt ?? processed.processedAt;
+      const timestamp =
+        processed.publishedAt ??
+        processed.article?.crawlAt ??
+        processed.processedAt;
       const processedItemId = this.normalizeOptionalString(row.processedItemId);
       const classification = processedItemId
-        ? classificationById.get(processedItemId) ?? null
+        ? (classificationById.get(processedItemId) ?? null)
         : null;
       const legacyCategory =
         classification?.legacyCategory ??
@@ -385,7 +482,7 @@ export class NewsEventsTimelineService {
         this.normalizeCategoryPath(classification?.categoryPath) ??
         (legacyCategory ? legacyCategory : null);
       const categoryConfidence = this.normalizeConfidence(
-        classification?.categoryConfidence
+        classification?.categoryConfidence,
       );
       return {
         processedArticleId: processed.id,
@@ -398,13 +495,13 @@ export class NewsEventsTimelineService {
         qualityScore: this.normalizeConfidence(processed.qualityScore),
         legacyCategory,
         categoryPath,
-        categoryConfidence
+        categoryConfidence,
       };
     });
     const classifiedItems = items.filter(
       (item) =>
         this.normalizeCategoryPath(item.categoryPath) !== null ||
-        this.normalizeLegacyCategory(item.legacyCategory) !== null
+        this.normalizeLegacyCategory(item.legacyCategory) !== null,
     ).length;
 
     logger.debug(
@@ -414,9 +511,9 @@ export class NewsEventsTimelineService {
         processedItemIds: processedItemIds.length,
         cacheHits,
         lookupMs: classificationLookupMs,
-        classifiedItems
+        classifiedItems,
       },
-      "Loaded timeline classification metadata"
+      "Loaded timeline classification metadata",
     );
 
     return {
@@ -425,13 +522,16 @@ export class NewsEventsTimelineService {
         processedItemIds: processedItemIds.length,
         cacheHits,
         lookupMs: classificationLookupMs,
-        classifiedItems
-      }
+        classifiedItems,
+      },
     };
   }
 
   private groupByDayBucket(items: TimelineSourceItem[]) {
-    const buckets = new Map<string, { bucketStart: Date; items: TimelineSourceItem[] }>();
+    const buckets = new Map<
+      string,
+      { bucketStart: Date; items: TimelineSourceItem[] }
+    >();
     for (const item of items) {
       const bucketStart = this.toUtcDayStart(item.timestamp);
       const bucketKey = this.toBucketKey(bucketStart);
@@ -449,34 +549,38 @@ export class NewsEventsTimelineService {
     eventId: string,
     bucketStart: Date,
     items: TimelineSourceItem[],
-    runtimeSettings: TimelineRuntimeSettings
+    runtimeSettings: TimelineRuntimeSettings,
   ): BuiltTimelineEntry {
     const sorted = items
       .slice()
-      .sort((a, b) =>
-        this.compareTimelineItems(a, b, runtimeSettings)
-      );
+      .sort((a, b) => this.compareTimelineItems(a, b, runtimeSettings));
     const primary = sorted[0]!;
-    const referencedArticleIds = Array.from(new Set(items.map((item) => item.articleId)))
+    const referencedArticleIds = Array.from(
+      new Set(items.map((item) => item.articleId)),
+    )
       .filter((id) => typeof id === "string" && id.length > 0)
       .sort()
       .slice(0, MAX_REFERENCED_ARTICLES_PER_BUCKET);
-    const weightedCategoryDistribution =
-      this.buildWeightedCategoryDistribution(items, runtimeSettings);
-    const weightedPrefixDistribution =
-      this.collapseDistributionToPrefix(weightedCategoryDistribution);
-    const normalizedDistribution = this.normalizeDistribution(
-      weightedPrefixDistribution
+    const weightedCategoryDistribution = this.buildWeightedCategoryDistribution(
+      items,
+      runtimeSettings,
     );
-    const dominantCategoryPath =
-      this.pickDominantCategoryPath(weightedCategoryDistribution);
+    const weightedPrefixDistribution = this.collapseDistributionToPrefix(
+      weightedCategoryDistribution,
+    );
+    const normalizedDistribution = this.normalizeDistribution(
+      weightedPrefixDistribution,
+    );
+    const dominantCategoryPath = this.pickDominantCategoryPath(
+      weightedCategoryDistribution,
+    );
     const dominantCategoryPrefix =
       this.pickDominantCategoryPath(weightedPrefixDistribution) ??
       this.normalizeCategoryPrefix(dominantCategoryPath);
     const categoryConfidence = this.computeBucketCategoryConfidence(
       items,
       dominantCategoryPath,
-      runtimeSettings
+      runtimeSettings,
     );
     const tentative =
       categoryConfidence !== null &&
@@ -486,7 +590,7 @@ export class NewsEventsTimelineService {
       categoryConfidence > runtimeSettings.highConfidenceThreshold;
     const primaryImportance = this.computeItemImportance(
       primary,
-      runtimeSettings
+      runtimeSettings,
     );
 
     return {
@@ -502,17 +606,17 @@ export class NewsEventsTimelineService {
         tentative,
         anchor,
         importanceScore: Math.round(primaryImportance * 10_000) / 10_000,
-        itemCount: items.length
+        itemCount: items.length,
       },
       distribution: normalizedDistribution,
-      dominantCategoryPrefix
+      dominantCategoryPrefix,
     };
   }
 
   private compareTimelineItems(
     a: TimelineSourceItem,
     b: TimelineSourceItem,
-    runtimeSettings: TimelineRuntimeSettings
+    runtimeSettings: TimelineRuntimeSettings,
   ) {
     const importanceDelta =
       this.computeItemImportance(b, runtimeSettings) -
@@ -536,13 +640,13 @@ export class NewsEventsTimelineService {
 
   private computeItemImportance(
     item: TimelineSourceItem,
-    runtimeSettings: TimelineRuntimeSettings
+    runtimeSettings: TimelineRuntimeSettings,
   ): number {
     const confidence = this.normalizeConfidence(item.categoryConfidence);
     const effectiveConfidence =
       confidence !== null
         ? confidence
-        : this.normalizeConfidence(runtimeSettings.confidenceFallback) ?? 0.5;
+        : (this.normalizeConfidence(runtimeSettings.confidenceFallback) ?? 0.5);
     const quality = this.normalizeConfidence(item.qualityScore) ?? 0.5;
     let score = 0.72 * effectiveConfidence + 0.28 * quality;
     if (effectiveConfidence < runtimeSettings.lowConfidenceThreshold) {
@@ -555,7 +659,7 @@ export class NewsEventsTimelineService {
 
   private buildWeightedCategoryDistribution(
     items: TimelineSourceItem[],
-    runtimeSettings: TimelineRuntimeSettings
+    runtimeSettings: TimelineRuntimeSettings,
   ): Map<string, number> {
     const aggregate = new Map<string, number>();
     for (const item of items) {
@@ -567,14 +671,14 @@ export class NewsEventsTimelineService {
   }
 
   private collapseDistributionToPrefix(
-    distribution: Map<string, number>
+    distribution: Map<string, number>,
   ): Map<string, number> {
     const prefixDistribution = new Map<string, number>();
     for (const [path, weight] of distribution.entries()) {
       const prefix = this.normalizeCategoryPrefix(path);
       prefixDistribution.set(
         prefix,
-        (prefixDistribution.get(prefix) ?? 0) + weight
+        (prefixDistribution.get(prefix) ?? 0) + weight,
       );
     }
     return prefixDistribution;
@@ -583,7 +687,7 @@ export class NewsEventsTimelineService {
   private computeBucketCategoryConfidence(
     items: TimelineSourceItem[],
     dominantCategoryPath: string | null,
-    runtimeSettings: TimelineRuntimeSettings
+    runtimeSettings: TimelineRuntimeSettings,
   ): number | null {
     let weighted = 0;
     let totalWeight = 0;
@@ -612,11 +716,11 @@ export class NewsEventsTimelineService {
   private analyzeTimeline(
     items: TimelineSourceItem[],
     entries: BuiltTimelineEntry[],
-    runtimeSettings: TimelineRuntimeSettings
+    runtimeSettings: TimelineRuntimeSettings,
   ): TimelineAnalysis {
     const countDistribution = this.computeCountCategoryDistribution(
       items,
-      runtimeSettings.maxCategoryDistributionItems
+      runtimeSettings.maxCategoryDistributionItems,
     );
     const sortedEntries = entries
       .slice()
@@ -640,7 +744,7 @@ export class NewsEventsTimelineService {
       evaluatedTransitions += 1;
       const divergence = this.computeKlDivergence(
         previous.distribution,
-        current.distribution
+        current.distribution,
       );
       if (divergence > maxKl) {
         maxKl = divergence;
@@ -651,7 +755,7 @@ export class NewsEventsTimelineService {
           toBucketStart: this.toBucketKey(current.bucketStart),
           klDivergence: Math.round(divergence * 10_000) / 10_000,
           fromCategoryPrefix: previous.dominantCategoryPrefix,
-          toCategoryPrefix: current.dominantCategoryPrefix
+          toCategoryPrefix: current.dominantCategoryPrefix,
         });
       }
     }
@@ -663,20 +767,22 @@ export class NewsEventsTimelineService {
       crossCategoryShare > runtimeSettings.crossCategoryWarningShare;
     const phaseSummaries = this.buildPhaseSummaries(
       sortedEntries,
-      runtimeSettings
+      runtimeSettings,
     );
     const topicDriftWarning =
-      crossCategoryWarning || driftWarnings.length > 0 || phaseSummaries.length > 1;
+      crossCategoryWarning ||
+      driftWarnings.length > 0 ||
+      phaseSummaries.length > 1;
 
     const summaryParts: string[] = [];
     if (crossCategoryWarning) {
       summaryParts.push(
-        `cross-category share ${(crossCategoryShare * 100).toFixed(1)}%`
+        `cross-category share ${(crossCategoryShare * 100).toFixed(1)}%`,
       );
     }
     if (driftWarnings.length > 0 || evaluatedTransitions > 0) {
       summaryParts.push(
-        `max KL ${maxKl.toFixed(3)} across ${evaluatedTransitions} evaluated transitions`
+        `max KL ${maxKl.toFixed(3)} across ${evaluatedTransitions} evaluated transitions`,
       );
     }
     if (phaseSummaries.length > 1) {
@@ -689,13 +795,13 @@ export class NewsEventsTimelineService {
       topicDriftSummary:
         summaryParts.length > 0 ? summaryParts.join("; ") : null,
       driftWarnings,
-      phaseSummaries
+      phaseSummaries,
     };
   }
 
   private computeCountCategoryDistribution(
     items: TimelineSourceItem[],
-    maxItems: number
+    maxItems: number,
   ): CategoryDistributionEntry[] {
     const aggregate = new Map<string, number>();
     for (const item of items) {
@@ -703,7 +809,10 @@ export class NewsEventsTimelineService {
       aggregate.set(path, (aggregate.get(path) ?? 0) + 1);
     }
 
-    const total = Array.from(aggregate.values()).reduce((sum, count) => sum + count, 0);
+    const total = Array.from(aggregate.values()).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
     if (total <= 0) {
       return [];
     }
@@ -712,18 +821,21 @@ export class NewsEventsTimelineService {
       .map(([categoryPath, count]) => ({
         categoryPath,
         count,
-        share: Math.round((count / total) * 10_000) / 10_000
+        share: Math.round((count / total) * 10_000) / 10_000,
       }))
-      .sort((a, b) => b.count - a.count || a.categoryPath.localeCompare(b.categoryPath))
+      .sort(
+        (a, b) =>
+          b.count - a.count || a.categoryPath.localeCompare(b.categoryPath),
+      )
       .slice(0, Math.max(1, maxItems));
   }
 
   private normalizeDistribution(
-    distribution: Map<string, number>
+    distribution: Map<string, number>,
   ): Record<string, number> {
     const total = Array.from(distribution.values()).reduce(
       (sum, weight) => sum + (Number.isFinite(weight) ? weight : 0),
-      0
+      0,
     );
     if (total <= 0) {
       return {};
@@ -740,7 +852,7 @@ export class NewsEventsTimelineService {
   }
 
   private pickDominantCategoryPath(
-    distribution: Map<string, number>
+    distribution: Map<string, number>,
   ): string | null {
     let bestPath: string | null = null;
     let bestWeight = 0;
@@ -758,7 +870,7 @@ export class NewsEventsTimelineService {
 
   private computeKlDivergence(
     previous: Record<string, number>,
-    next: Record<string, number>
+    next: Record<string, number>,
   ): number {
     const keys = new Set<string>([
       ...Object.keys(previous),
@@ -779,26 +891,26 @@ export class NewsEventsTimelineService {
 
   private buildPhaseSummaries(
     entries: BuiltTimelineEntry[],
-    runtimeSettings: TimelineRuntimeSettings
+    runtimeSettings: TimelineRuntimeSettings,
   ): TimelinePhaseSummary[] {
     if (entries.length === 0) {
       return [];
     }
 
-    const phases: Array<{
+    const phases: {
       startAt: Date;
       endAt: Date;
       categoryPrefix: string;
       itemCount: number;
       bucketCount: number;
-    }> = [];
+    }[] = [];
 
     let current = {
       startAt: entries[0]!.bucketStart,
       endAt: entries[0]!.bucketStart,
       categoryPrefix: entries[0]!.dominantCategoryPrefix,
       itemCount: entries[0]!.classification.itemCount,
-      bucketCount: 1
+      bucketCount: 1,
     };
 
     for (let idx = 1; idx < entries.length; idx += 1) {
@@ -807,8 +919,7 @@ export class NewsEventsTimelineService {
       const comparable =
         previous.classification.itemCount >=
           runtimeSettings.minBucketItemsForDrift &&
-        next.classification.itemCount >=
-          runtimeSettings.minBucketItemsForDrift;
+        next.classification.itemCount >= runtimeSettings.minBucketItemsForDrift;
       const driftScore = comparable
         ? this.computeKlDivergence(previous.distribution, next.distribution)
         : 0;
@@ -824,33 +935,35 @@ export class NewsEventsTimelineService {
           endAt: next.bucketStart,
           categoryPrefix: next.dominantCategoryPrefix,
           itemCount: next.classification.itemCount,
-          bucketCount: 1
+          bucketCount: 1,
         };
       } else {
         current = {
           ...current,
           endAt: next.bucketStart,
           itemCount: current.itemCount + next.classification.itemCount,
-          bucketCount: current.bucketCount + 1
+          bucketCount: current.bucketCount + 1,
         };
       }
     }
 
     phases.push(current);
 
-    return phases.slice(0, runtimeSettings.maxPhaseSummaries).map((phase, idx) => {
-      const label = `${this.describePrefix(phase.categoryPrefix)} stage`;
-      return {
-        phase: idx + 1,
-        label,
-        categoryPrefix: phase.categoryPrefix,
-        startAt: phase.startAt.toISOString(),
-        endAt: phase.endAt.toISOString(),
-        itemCount: phase.itemCount,
-        bucketCount: phase.bucketCount,
-        summary: `${label} (${phase.categoryPrefix})`
-      };
-    });
+    return phases
+      .slice(0, runtimeSettings.maxPhaseSummaries)
+      .map((phase, idx) => {
+        const label = `${this.describePrefix(phase.categoryPrefix)} stage`;
+        return {
+          phase: idx + 1,
+          label,
+          categoryPrefix: phase.categoryPrefix,
+          startAt: phase.startAt.toISOString(),
+          endAt: phase.endAt.toISOString(),
+          itemCount: phase.itemCount,
+          bucketCount: phase.bucketCount,
+          summary: `${label} (${phase.categoryPrefix})`,
+        };
+      });
   }
 
   private describePrefix(prefix: string): string {
@@ -890,7 +1003,7 @@ export class NewsEventsTimelineService {
     eventId: string,
     existingMetadata: Prisma.JsonValue | null,
     entries: Record<string, TimelineEntryClassificationMetadata>,
-    analysis: TimelineAnalysis
+    analysis: TimelineAnalysis,
   ): Prisma.InputJsonValue {
     const base =
       existingMetadata &&
@@ -899,7 +1012,9 @@ export class NewsEventsTimelineService {
         ? { ...(existingMetadata as Record<string, unknown>) }
         : {};
     const existingTimeline =
-      base.timeline && typeof base.timeline === "object" && !Array.isArray(base.timeline)
+      base.timeline &&
+      typeof base.timeline === "object" &&
+      !Array.isArray(base.timeline)
         ? (base.timeline as Record<string, unknown>)
         : null;
     const existingEntries =
@@ -908,13 +1023,13 @@ export class NewsEventsTimelineService {
       typeof existingTimeline.entries === "object" &&
       !Array.isArray(existingTimeline.entries)
         ? this.normalizeTimelineEntries(
-            existingTimeline.entries as Record<string, unknown>
+            existingTimeline.entries as Record<string, unknown>,
           )
         : {};
     const timeline: TimelineMetadataPayload = {
       entries: {
         ...existingEntries,
-        ...entries
+        ...entries,
       },
       categoryDistribution: analysis.categoryDistribution,
       topicDriftWarning: analysis.topicDriftWarning,
@@ -922,17 +1037,17 @@ export class NewsEventsTimelineService {
       driftWarnings: analysis.driftWarnings,
       phaseSummaries: analysis.phaseSummaries,
       subEvents: this.buildTimelineSubEvents(eventId, analysis.phaseSummaries),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
     const merged = {
       ...base,
-      timeline
+      timeline,
     };
     return JSON.parse(JSON.stringify(merged)) as Prisma.InputJsonValue;
   }
 
   private normalizeTimelineEntries(
-    value: Record<string, unknown>
+    value: Record<string, unknown>,
   ): Record<string, TimelineEntryClassificationMetadata> {
     const normalized: Record<string, TimelineEntryClassificationMetadata> = {};
     for (const [bucketKey, raw] of Object.entries(value)) {
@@ -948,7 +1063,9 @@ export class NewsEventsTimelineService {
       normalized[bucketKey] = {
         categoryPath: this.normalizeCategoryPath(entry.categoryPath),
         categoryConfidence:
-          rawConfidence === null ? null : Math.max(0, Math.min(1, rawConfidence)),
+          rawConfidence === null
+            ? null
+            : Math.max(0, Math.min(1, rawConfidence)),
         tentative: Boolean(entry.tentative),
         anchor: Boolean(entry.anchor),
         importanceScore:
@@ -961,7 +1078,7 @@ export class NewsEventsTimelineService {
           Number.isFinite(entry.itemCount) &&
           entry.itemCount > 0
             ? Math.round(entry.itemCount)
-            : 0
+            : 0,
       };
     }
     return normalized;
@@ -969,7 +1086,7 @@ export class NewsEventsTimelineService {
 
   private buildTimelineSubEvents(
     eventId: string,
-    phaseSummaries: TimelinePhaseSummary[]
+    phaseSummaries: TimelinePhaseSummary[],
   ): TimelineMetadataPayload["subEvents"] {
     return phaseSummaries.map((phase) => ({
       id: `${eventId}:${phase.phase}`,
@@ -981,32 +1098,32 @@ export class NewsEventsTimelineService {
       endAt: phase.endAt,
       itemCount: phase.itemCount,
       bucketCount: phase.bucketCount,
-      summary: phase.summary
+      summary: phase.summary,
     }));
   }
 
   private resolveTimelineRuntimeSettings(
-    settings: Partial<NewsEventSettings>
+    settings: Partial<NewsEventSettings>,
   ): TimelineRuntimeSettings {
     const rawLowConfidenceThreshold = this.normalizeBoundedNumber(
       settings.timelineLowConfidenceThreshold,
       0,
       1,
-      DEFAULT_LOW_CONFIDENCE_THRESHOLD
+      DEFAULT_LOW_CONFIDENCE_THRESHOLD,
     );
     const rawHighConfidenceThreshold = this.normalizeBoundedNumber(
       settings.timelineHighConfidenceThreshold,
       0,
       1,
-      DEFAULT_HIGH_CONFIDENCE_THRESHOLD
+      DEFAULT_HIGH_CONFIDENCE_THRESHOLD,
     );
     const lowConfidenceThreshold = Math.min(
       rawLowConfidenceThreshold,
-      rawHighConfidenceThreshold
+      rawHighConfidenceThreshold,
     );
     const highConfidenceThreshold = Math.max(
       rawLowConfidenceThreshold,
-      rawHighConfidenceThreshold
+      rawHighConfidenceThreshold,
     );
 
     return {
@@ -1014,7 +1131,7 @@ export class NewsEventsTimelineService {
         settings.minCategoryConfidenceForGate,
         0,
         1,
-        lowConfidenceThreshold
+        lowConfidenceThreshold,
       ),
       lowConfidenceThreshold,
       highConfidenceThreshold,
@@ -1022,42 +1139,45 @@ export class NewsEventsTimelineService {
         settings.timelineDriftKlThreshold,
         MIN_DRIFT_KL_THRESHOLD,
         MAX_DRIFT_KL_THRESHOLD,
-        DEFAULT_KL_DIVERGENCE_THRESHOLD
+        DEFAULT_KL_DIVERGENCE_THRESHOLD,
       ),
       minBucketItemsForDrift: this.normalizeBoundedInt(
         settings.timelineMinBucketItemsForDrift,
         MIN_MIN_BUCKET_ITEMS_FOR_DRIFT,
         MAX_MIN_BUCKET_ITEMS_FOR_DRIFT,
-        DEFAULT_MIN_BUCKET_ITEMS_FOR_DRIFT
+        DEFAULT_MIN_BUCKET_ITEMS_FOR_DRIFT,
       ),
       crossCategoryWarningShare: this.normalizeBoundedNumber(
         settings.timelineCrossCategoryWarningShare,
         0,
         1,
-        DEFAULT_CROSS_CATEGORY_WARNING_SHARE
+        DEFAULT_CROSS_CATEGORY_WARNING_SHARE,
       ),
       maxCategoryDistributionItems: this.normalizeBoundedInt(
         settings.timelineMaxCategoryDistributionItems,
         MIN_MAX_CATEGORY_DISTRIBUTION_ITEMS,
         MAX_MAX_CATEGORY_DISTRIBUTION_ITEMS,
-        DEFAULT_MAX_CATEGORY_DISTRIBUTION_ITEMS
+        DEFAULT_MAX_CATEGORY_DISTRIBUTION_ITEMS,
       ),
       maxPhaseSummaries: this.normalizeBoundedInt(
         settings.timelineMaxPhaseSummaries,
         MIN_MAX_PHASE_SUMMARIES,
         MAX_MAX_PHASE_SUMMARIES,
-        DEFAULT_MAX_PHASE_SUMMARIES
-      )
+        DEFAULT_MAX_PHASE_SUMMARIES,
+      ),
     };
   }
 
   private async loadProcessedItemClassificationMap(
-    processedItemIds: string[]
+    processedItemIds: string[],
   ): Promise<{
     classificationById: Map<string, ProcessedItemClassification | null>;
     cacheHits: number;
   }> {
-    const classificationById = new Map<string, ProcessedItemClassification | null>();
+    const classificationById = new Map<
+      string,
+      ProcessedItemClassification | null
+    >();
     if (processedItemIds.length === 0) {
       return { classificationById, cacheHits: 0 };
     }
@@ -1099,12 +1219,12 @@ export class NewsEventsTimelineService {
         }
         found.add(id);
         const classification = this.extractClassificationFromResult(
-          (doc as { result?: unknown }).result
+          (doc as { result?: unknown }).result,
         );
         classificationById.set(id, classification);
         this.processedItemClassificationCache.set(id, {
           expiresAt: now + CLASSIFICATION_CACHE_TTL_MS,
-          value: classification
+          value: classification,
         });
       }
 
@@ -1115,13 +1235,13 @@ export class NewsEventsTimelineService {
         classificationById.set(id, null);
         this.processedItemClassificationCache.set(id, {
           expiresAt: now + CLASSIFICATION_CACHE_TTL_MS,
-          value: null
+          value: null,
         });
       }
     } catch (error) {
       logger.warn(
         { err: error, ids: pendingIds.length },
-        "Failed to load timeline classification context from Mongo"
+        "Failed to load timeline classification context from Mongo",
       );
     }
 
@@ -1129,10 +1249,16 @@ export class NewsEventsTimelineService {
   }
 
   private pruneExpiredProcessedItemClassificationCache(now: number): void {
-    if (now - this.processedItemClassificationCacheLastPruneAt < CACHE_PRUNE_INTERVAL_MS) {
+    if (
+      now - this.processedItemClassificationCacheLastPruneAt <
+      CACHE_PRUNE_INTERVAL_MS
+    ) {
       return;
     }
-    for (const [key, entry] of this.processedItemClassificationCache.entries()) {
+    for (const [
+      key,
+      entry,
+    ] of this.processedItemClassificationCache.entries()) {
       if (entry.expiresAt <= now) {
         this.processedItemClassificationCache.delete(key);
       }
@@ -1141,13 +1267,13 @@ export class NewsEventsTimelineService {
   }
 
   private extractClassificationFromResult(
-    value: unknown
+    value: unknown,
   ): ProcessedItemClassification {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return {
         legacyCategory: null,
         categoryPath: null,
-        categoryConfidence: null
+        categoryConfidence: null,
       };
     }
     const record = value as Record<string, unknown>;
@@ -1164,7 +1290,7 @@ export class NewsEventsTimelineService {
       categoryPath:
         this.normalizeCategoryPath(record.category_path) ??
         this.normalizeCategoryPath(record.categoryPath),
-      categoryConfidence: this.normalizeConfidence(rawConfidence)
+      categoryConfidence: this.normalizeConfidence(rawConfidence),
     };
   }
 
@@ -1182,7 +1308,9 @@ export class NewsEventsTimelineService {
 
   private normalizeCategoryPrefix(path: string | null): string {
     const normalized = this.normalizeCategoryPath(path) ?? "uncategorized";
-    const segments = normalized.split("/").filter((segment) => segment.length > 0);
+    const segments = normalized
+      .split("/")
+      .filter((segment) => segment.length > 0);
     if (segments.length >= 2) {
       return `${segments[0]}/${segments[1]}`;
     }
@@ -1203,7 +1331,7 @@ export class NewsEventsTimelineService {
       return null;
     }
     return new Set(["politics", "tech", "finance", "gov", "ai", "intel"]).has(
-      normalized
+      normalized,
     )
       ? normalized
       : null;
@@ -1227,7 +1355,7 @@ export class NewsEventsTimelineService {
     value: unknown,
     min: number,
     max: number,
-    fallback: number
+    fallback: number,
   ): number {
     const numeric =
       typeof value === "number"
@@ -1251,7 +1379,7 @@ export class NewsEventsTimelineService {
     value: unknown,
     min: number,
     max: number,
-    fallback: number
+    fallback: number,
   ): number {
     const numeric = this.normalizeBoundedNumber(value, min, max, fallback);
     const rounded = Math.round(numeric);
@@ -1277,6 +1405,8 @@ export class NewsEventsTimelineService {
 
   private toUtcDayStart(value: Date): Date {
     const d = new Date(value);
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    return new Date(
+      Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+    );
   }
 }

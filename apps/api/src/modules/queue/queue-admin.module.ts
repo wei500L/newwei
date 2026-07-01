@@ -15,6 +15,8 @@ import { AssistantModule } from "../assistant/assistant.module";
 import { EnvService } from "../config/config.service";
 import { CRAWL_QUEUE_HOT_NAME, CRAWL_QUEUE_NAME, CRAWL_QUEUE_NORMAL_NAME } from "../crawl/crawl.constants";
 import { CrawlModule } from "../crawl/crawl.module";
+import { NEWS_EVENT_CLUSTERING_RECOVERY_QUEUE_NAME } from "../news-events/news-event-clustering-recovery.constants";
+import { NewsEventsModule } from "../news-events/news-events.module";
 import { SITUATION_MONITOR_SIGNALS_QUEUE_NAME } from "../situation-monitor/signals/situation-monitor-signals.constants";
 import { SituationMonitorSignalsModule } from "../situation-monitor/signals/situation-monitor-signals.module";
 
@@ -54,6 +56,7 @@ const createBullBoardBasicAuthMiddleware = (
     AnalysisModule,
     AssistantModule,
     AlertsModule,
+    NewsEventsModule,
     SituationMonitorSignalsModule,
     BullBoardModule.forRootAsync({
       inject: [EnvService],
@@ -81,6 +84,7 @@ const createBullBoardBasicAuthMiddleware = (
       { name: ANALYSIS_QUEUE_NAME, adapter: BullMQAdapter },
       { name: ASSISTANT_QUEUE_NAME, adapter: BullMQAdapter },
       { name: ALERTS_QUEUE_NAME, adapter: BullMQAdapter },
+      { name: NEWS_EVENT_CLUSTERING_RECOVERY_QUEUE_NAME, adapter: BullMQAdapter },
       { name: SITUATION_MONITOR_SIGNALS_QUEUE_NAME, adapter: BullMQAdapter },
     )
   ]

@@ -22,14 +22,14 @@ import { resolveLocale } from "@/lib/i18n";
 
 import { CandlestickCard } from "../components/candlestick-card";
 import {
+  formatAxisLabelMultiline,
+  resolveEconomicSeriesLabel,
+} from "../utils/economic-series-labels";
+import {
   calculatePercentChange,
   filterValuesByDays,
   getSeriesField,
 } from "../utils/series";
-import {
-  formatAxisLabelMultiline,
-  resolveEconomicSeriesLabel,
-} from "../utils/economic-series-labels";
 
 const indexTabs = [
   { key: "shanghai_composite_index" },
@@ -149,7 +149,7 @@ export default function EconomicShortPage() {
         const formattedScore =
           typeof score === "number"
             ? score
-            : t("common.notAvailable", { defaultValue: "N/A" });
+            : t("common.notAvailable");
         return t("dashboard.economicShort.heatmap.tooltip", {
           defaultValue: heatmapTooltipDefault,
           period: bucket.label,

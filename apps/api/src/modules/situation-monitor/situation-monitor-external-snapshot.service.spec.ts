@@ -1,0 +1,464 @@
+import { SituationMonitorExternalSnapshotStatus } from "@prisma/client";
+
+import { SituationMonitorExternalSnapshotService } from "./situation-monitor-external-snapshot.service";
+
+describe("SituationMonitorExternalSnapshotService", () => {
+  const cache = {
+    get: jest.fn(),
+    set: jest.fn(),
+    withLock: jest.fn(),
+  };
+  const prisma = {
+    situationMonitorExternalSnapshot: {
+      create: jest.fn(),
+      deleteMany: jest.fn(),
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+    },
+  };
+  const external = {
+    isGdeltEnabled: jest.fn(),
+    fetchGdeltCategoryHeadlines: jest.fn(),
+  };
+
+  let service: SituationMonitorExternalSnapshotService;
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    cache.get.mockResolvedValue(null);
+    cache.set.mockResolvedValue(undefined);
+    cache.withLock.mockImplementation(
+      async (_key: string, _ttlMs: number, runner: () => Promise<unknown>) =>
+        await runner(),
+    );
+    prisma.situationMonitorExternalSnapshot.create.mockResolvedValue(undefined);
+    prisma.situationMonitorExternalSnapshot.deleteMany.mockResolvedValue({
+      count: 0,
+    });
+    prisma.situationMonitorExternalSnapshot.findFirst.mockResolvedValue(null);
+    prisma.situationMonitorExternalSnapshot.findMany.mockResolvedValue([]);
+    external.isGdeltEnabled.mockReturnValue(true);
+    external.fetchGdeltCategoryHeadlines.mockResolvedValue({ headlines: [] });
+    service = new SituationMonitorExternalSnapshotService(
+      cache as never,
+      prisma as never,
+      external as never,
+    );
+    jest.spyOn(service as never, "delay" as never).mockResolvedValue(undefined);
+  });
+
+  it("skips scheduled work when GDELT snapshots are disabled", async () => {
+    external.isGdeltEnabled.mockReturnValue(false);
+
+    await service.refreshScheduled();
+
+    expect(cache.withLock).not.toHaveBeenCalled();
+  });
+
+  it("rebuilds a partial snapshot and reuses previous category data when a fetch fails", async () => {
+    const previousPayload = {
+      source: "scheduler",
+      scope: "gdelt_global",
+      variantKey: "default",
+      status: SituationMonitorExternalSnapshotStatus.completed,
+      generatedAt: "2026-03-28T11:00:00.000Z",
+      expiresAt: "2026-03-28T11:20:00.000Z",
+      partial: false,
+      warnings: [],
+      diagnostics: {
+        requestedCategories: 6,
+        fetchedCategories: ["politics"],
+        reusedCategories: [],
+        failedCategories: [],
+        totalHeadlines: 1,
+      },
+      categoryStates: {
+        politics: {
+          status: "fresh",
+          articleCount: 1,
+          contentGeneratedAt: "2026-03-28T11:00:00.000Z",
+        },
+        tech: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        finance: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        gov: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        ai: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        intel: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      },
+      headlinesByCategory: {
+        politics: [
+          {
+            id: "cached-politics",
+            title: "Cached politics headline",
+            link: "https://example.com/cached-politics",
+            source: "GDELT",
+            timestamp: Date.parse("2026-03-28T10:45:00.000Z"),
+            category: "politics",
+            origin: "gdelt",
+            isAlert: false,
+          },
+        ],
+        tech: [],
+        finance: [],
+        gov: [],
+        ai: [],
+        intel: [],
+      },
+    };
+    cache.get
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(previousPayload);
+    external.fetchGdeltCategoryHeadlines.mockImplementation(
+      async (category: string) => {
+        if (category === "politics") {
+          return {
+            headlines: [],
+            warning: {
+              code: "gdelt_rate_limited",
+              message: "GDELT fallback is rate limited right now.",
+              detail: "HTTP 429 Too Many Requests",
+            },
+          };
+        }
+        if (category === "tech") {
+          return {
+            headlines: [
+              {
+                id: "fresh-tech",
+                title: "Chip exports tighten across cloud vendors",
+                link: "https://example.com/fresh-tech",
+                source: "GDELT",
+                timestamp: Date.parse("2026-03-28T12:00:00.000Z"),
+                category: "tech",
+                origin: "gdelt",
+                isAlert: false,
+              },
+            ],
+          };
+        }
+        return { headlines: [] };
+      },
+    );
+
+    const result = await service.forceRefresh();
+
+    expect(external.fetchGdeltCategoryHeadlines).toHaveBeenNthCalledWith(
+      1,
+      "politics",
+      20,
+      { bypassCache: true, timeoutMs: 20_000 },
+    );
+    expect(prisma.situationMonitorExternalSnapshot.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: SituationMonitorExternalSnapshotStatus.partial,
+          payload: expect.objectContaining({
+            categoryStates: expect.objectContaining({
+              politics: expect.objectContaining({
+                status: "reused",
+                reasonCode: "gdelt_rate_limited",
+                contentGeneratedAt: "2026-03-28T11:00:00.000Z",
+              }),
+              tech: expect.objectContaining({
+                status: "fresh",
+                articleCount: 1,
+              }),
+            }),
+          }),
+        }),
+      }),
+    );
+    expect(cache.set).toHaveBeenCalledTimes(2);
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: SituationMonitorExternalSnapshotStatus.partial,
+        availableCategoryCount: 2,
+        warningCount: 1,
+        lastFullSuccessAt: null,
+        lastNonSuccessAt: null,
+        rolling24hSuccessRate: null,
+        rolling24hRateLimitedCount: 0,
+        rolling24hAverageAvailableCategoryCount: null,
+      }),
+    );
+  });
+
+  it("restores the latest snapshot from history when caches are empty", async () => {
+    const payload = {
+      source: "scheduler",
+      scope: "gdelt_global",
+      variantKey: "default",
+      status: SituationMonitorExternalSnapshotStatus.completed,
+      generatedAt: "2026-03-28T12:00:00.000Z",
+      expiresAt: "2026-03-28T12:20:00.000Z",
+      partial: false,
+      warnings: [],
+      diagnostics: {
+        requestedCategories: 6,
+        fetchedCategories: ["finance"],
+        reusedCategories: [],
+        failedCategories: [],
+        totalHeadlines: 1,
+      },
+      categoryStates: {
+        politics: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        tech: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        finance: {
+          status: "fresh",
+          articleCount: 1,
+          contentGeneratedAt: "2026-03-28T12:00:00.000Z",
+        },
+        gov: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        ai: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        intel: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      },
+      headlinesByCategory: {
+        politics: [],
+        tech: [],
+        finance: [
+          {
+            id: "finance-1",
+            title: "Treasury yields extend their move higher",
+            link: "https://example.com/finance-1",
+            source: "GDELT",
+            timestamp: Date.parse("2026-03-28T12:00:00.000Z"),
+            category: "finance",
+            origin: "gdelt",
+            isAlert: false,
+          },
+        ],
+        gov: [],
+        ai: [],
+        intel: [],
+      },
+    };
+    prisma.situationMonitorExternalSnapshot.findFirst
+      .mockResolvedValueOnce({
+        payload,
+        generatedAt: new Date(payload.generatedAt),
+        createdAt: new Date(payload.generatedAt),
+      })
+      .mockResolvedValueOnce({
+        generatedAt: new Date(payload.generatedAt),
+      })
+      .mockResolvedValueOnce(null);
+
+    const result = await service.getStatusSummary();
+
+    expect(prisma.situationMonitorExternalSnapshot.findFirst).toHaveBeenCalled();
+    expect(cache.set).toHaveBeenCalled();
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: SituationMonitorExternalSnapshotStatus.completed,
+        availableCategoryCount: 1,
+        warningCount: 0,
+        lastFullSuccessAt: payload.generatedAt,
+        lastNonSuccessAt: null,
+        rolling24hSuccessRate: null,
+        rolling24hRateLimitedCount: 0,
+        rolling24hAverageAvailableCategoryCount: null,
+      }),
+    );
+  });
+
+  it("does not reuse previous category data when gdelt returns an empty result without warnings", async () => {
+    const previousPayload = {
+      source: "scheduler",
+      scope: "gdelt_global",
+      variantKey: "default",
+      status: SituationMonitorExternalSnapshotStatus.completed,
+      generatedAt: "2026-03-28T11:00:00.000Z",
+      expiresAt: "2026-03-28T11:20:00.000Z",
+      partial: false,
+      warnings: [],
+      diagnostics: {
+        requestedCategories: 6,
+        fetchedCategories: ["finance"],
+        reusedCategories: [],
+        failedCategories: [],
+        totalHeadlines: 1,
+      },
+      categoryStates: {
+        politics: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        tech: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        finance: {
+          status: "fresh",
+          articleCount: 1,
+          contentGeneratedAt: "2026-03-28T11:00:00.000Z",
+        },
+        gov: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        ai: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+        intel: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      },
+      headlinesByCategory: {
+        politics: [],
+        tech: [],
+        finance: [createHeadline("finance-previous", "finance")],
+        gov: [],
+        ai: [],
+        intel: [],
+      },
+    };
+    cache.get
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(previousPayload);
+    external.fetchGdeltCategoryHeadlines.mockResolvedValue({ headlines: [] });
+
+    await service.forceRefresh();
+
+    expect(prisma.situationMonitorExternalSnapshot.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          payload: expect.objectContaining({
+            headlinesByCategory: expect.objectContaining({
+              finance: [],
+            }),
+            categoryStates: expect.objectContaining({
+              finance: expect.objectContaining({
+                status: "empty",
+                articleCount: 0,
+                contentGeneratedAt: null,
+              }),
+            }),
+            diagnostics: expect.objectContaining({
+              reusedCategories: [],
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("reports rolling 24h snapshot health metrics", async () => {
+    const completedAt = new Date("2026-03-28T12:00:00.000Z");
+    const partialAt = new Date("2026-03-28T11:00:00.000Z");
+    prisma.situationMonitorExternalSnapshot.findMany.mockResolvedValue([
+      {
+        status: SituationMonitorExternalSnapshotStatus.completed,
+        generatedAt: completedAt,
+        createdAt: completedAt,
+        payload: {
+          ...createPayload({
+            status: SituationMonitorExternalSnapshotStatus.completed,
+            generatedAt: completedAt.toISOString(),
+            warnings: [],
+            headlinesByCategory: {
+              politics: [createHeadline("politics-1", "politics")],
+              tech: [createHeadline("tech-1", "tech")],
+            },
+          }),
+        },
+      },
+      {
+        status: SituationMonitorExternalSnapshotStatus.partial,
+        generatedAt: partialAt,
+        createdAt: partialAt,
+        payload: {
+          ...createPayload({
+            status: SituationMonitorExternalSnapshotStatus.partial,
+            generatedAt: partialAt.toISOString(),
+            warnings: [
+              {
+                code: "gdelt_rate_limited",
+                message: "GDELT fallback is rate limited right now.",
+              },
+            ],
+            headlinesByCategory: {
+              finance: [createHeadline("finance-1", "finance")],
+            },
+          }),
+        },
+      },
+    ]);
+    prisma.situationMonitorExternalSnapshot.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        generatedAt: completedAt,
+      })
+      .mockResolvedValueOnce({
+        generatedAt: partialAt,
+      });
+
+    const result = await service.getStatusSummary();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        lastFullSuccessAt: completedAt.toISOString(),
+        lastNonSuccessAt: partialAt.toISOString(),
+        rolling24hSuccessRate: 50,
+        rolling24hRateLimitedCount: 1,
+        rolling24hAverageAvailableCategoryCount: 1.5,
+      }),
+    );
+    expect(result.nextScheduledAt).toEqual(expect.any(String));
+  });
+});
+
+function createHeadline(
+  id: string,
+  category: string,
+): {
+  id: string;
+  title: string;
+  link: string;
+  source: string;
+  timestamp: number;
+  category: string;
+  origin: string;
+  isAlert: boolean;
+} {
+  return {
+    id,
+    title: `${category} headline`,
+    link: `https://example.com/${id}`,
+    source: "GDELT",
+    timestamp: Date.parse("2026-03-28T12:00:00.000Z"),
+    category,
+    origin: "gdelt",
+    isAlert: false,
+  };
+}
+
+function createPayload(input?: {
+  status?: SituationMonitorExternalSnapshotStatus;
+  generatedAt?: string;
+  warnings?: { code: string; message: string; detail?: string }[];
+  headlinesByCategory?: Partial<Record<string, unknown[]>>;
+}) {
+  const generatedAt = input?.generatedAt ?? "2026-03-28T12:00:00.000Z";
+  return {
+    source: "scheduler",
+    scope: "gdelt_global",
+    variantKey: "default",
+    status: input?.status ?? SituationMonitorExternalSnapshotStatus.completed,
+    generatedAt,
+    expiresAt: "2026-03-28T12:20:00.000Z",
+    partial:
+      (input?.status ?? SituationMonitorExternalSnapshotStatus.completed) !==
+      SituationMonitorExternalSnapshotStatus.completed,
+    warnings: input?.warnings ?? [],
+    diagnostics: {
+      requestedCategories: 6,
+      fetchedCategories: [],
+      reusedCategories: [],
+      failedCategories: [],
+      totalHeadlines: 0,
+    },
+    categoryStates: {
+      politics: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      tech: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      finance: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      gov: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      ai: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+      intel: { status: "empty", articleCount: 0, contentGeneratedAt: null },
+    },
+    headlinesByCategory: {
+      politics: [],
+      tech: [],
+      finance: [],
+      gov: [],
+      ai: [],
+      intel: [],
+      ...(input?.headlinesByCategory ?? {}),
+    },
+  };
+}

@@ -4,12 +4,12 @@ import { Queue, QueueEvents, Worker } from 'bullmq';
 
 import { ArchivePreparationSettingsService } from '../system-settings/archive-preparation-settings.service';
 
+import { ArchivePreparationQueueService } from './archive-preparation-queue.service';
 import {
   ARCHIVE_PREPARATION_QUEUE,
   ARCHIVE_PREPARATION_QUEUE_EVENTS,
   ARCHIVE_PREPARATION_QUEUE_NAME,
 } from './archive-preparation.constants';
-import { ArchivePreparationQueueService } from './archive-preparation-queue.service';
 import type { ArchivePreparationJobPayload } from './archive-preparation.types';
 import { ArchiveService } from './archive.service';
 

@@ -8,10 +8,9 @@ import {
   fetchSituationMonitorMonitors,
 } from '@/app/(app)/situation-monitor/monitors-query';
 import { SITUATION_MONITOR_MONITORS_UPDATED_EVENT } from '@/app/(app)/situation-monitor/utils/monitor-events';
-import { createApiClient } from '@/lib/api-client';
+import type { createApiClient } from '@/lib/api-client';
 
 import {
-  WAR_MAP_QUERY_KEYS,
   buildWarMapBaseRequestParams,
   buildWarMapEventsQueryKey,
   buildWarMapLayerRequestParams,

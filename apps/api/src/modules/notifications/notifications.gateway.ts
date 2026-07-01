@@ -1,8 +1,4 @@
 import { createLogger } from "@modular/utils";
-import {
-  NotificationSocketErrorCode,
-  type NotificationSocketErrorPayload,
-} from "@modular/utils";
 import { OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import {
   WebSocketGateway,
@@ -20,8 +16,12 @@ import {
   JwtPayload,
 } from "../auth/auth.service";
 import { EnvService } from "../config/config.service";
-import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
+import {
+  buildNotificationSocketErrorPayload,
+  shouldRecordFailedSocketAuth,
+} from "../websocket/socket-error-payloads";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
+import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
 
 import {
   NotificationDispatcher,
@@ -94,14 +94,45 @@ export class NotificationsGateway
   async handleConnection(client: Socket) {
     const ip = this.extractClientIp(client);
     try {
-      if (!this.isOriginAllowed(this.extractOrigin(client))) {
-        throw new Error("Origin not allowed");
-      }
-
       const ipRateLimit =
         await this.connectionRateLimiter.checkConnectionRateLimit(ip ?? "");
       if (!ipRateLimit.allowed) {
-        throw new Error("Too many connection attempts");
+        this.logger.warn(
+          { socketId: client.id, ip },
+          "Notification socket connection rate limited",
+        );
+        client.emit(
+          "notification:error",
+          buildNotificationSocketErrorPayload(
+            "Rate limit exceeded",
+            ipRateLimit.retryAfterMs,
+          ),
+        );
+        client.disconnect(true);
+        return;
+      }
+
+      const backoffDelay = await this.connectionRateLimiter.getBackoffDelay(
+        ip ?? "",
+      );
+      if (backoffDelay > 0) {
+        this.logger.warn(
+          { socketId: client.id, ip, backoffDelay },
+          "Notification socket connection in backoff period",
+        );
+        client.emit(
+          "notification:error",
+          buildNotificationSocketErrorPayload(
+            "Too many failed attempts",
+            backoffDelay,
+          ),
+        );
+        client.disconnect(true);
+        return;
+      }
+
+      if (!this.isOriginAllowed(this.extractOrigin(client))) {
+        throw new Error("Origin not allowed");
       }
 
       const token = this.extractToken(client);
@@ -111,7 +142,19 @@ export class NotificationsGateway
           payload.sub,
         );
       if (!userRateLimit.allowed) {
-        throw new Error("Too many connection attempts");
+        this.logger.warn(
+          { socketId: client.id, ip, userId: payload.sub },
+          "Notification socket user connection attempts throttled",
+        );
+        client.emit(
+          "notification:error",
+          buildNotificationSocketErrorPayload(
+            "Too many connection attempts",
+            userRateLimit.retryAfterMs,
+          ),
+        );
+        client.disconnect(true);
+        return;
       }
 
       await this.ensureNotRevoked(payload);
@@ -119,6 +162,7 @@ export class NotificationsGateway
         payload.sub,
         payload.orgId,
       );
+      await this.connectionRateLimiter.clearBackoff(ip ?? "");
 
       client.data.user = profile;
       client.data.clientIp = ip;
@@ -150,7 +194,10 @@ export class NotificationsGateway
       this.unregisterClient(client);
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      const response = this.toSocketErrorPayload(errorMessage);
+      if (shouldRecordFailedSocketAuth(errorMessage)) {
+        await this.connectionRateLimiter.recordFailedAuth(ip ?? "");
+      }
+      const response = buildNotificationSocketErrorPayload(errorMessage);
       this.logger.warn(
         { socketId: client.id, ip, error: errorMessage },
         "Notification socket authentication failed",
@@ -259,27 +306,6 @@ export class NotificationsGateway
 
     throw new Error("Missing auth token");
   }
-  private toSocketErrorPayload(
-    errorMessage: string,
-  ): NotificationSocketErrorPayload {
-    if (errorMessage === "Too many connections") {
-      return {
-        code: NotificationSocketErrorCode.TooManyConnections,
-        message: "Too many connections",
-      };
-    }
-    if (errorMessage === "Too many connection attempts") {
-      return {
-        code: NotificationSocketErrorCode.TooManyConnectionAttempts,
-        message: "Too many connection attempts",
-      };
-    }
-    return {
-      code: NotificationSocketErrorCode.Unauthorized,
-      message: "Unauthorized",
-    };
-  }
-
   private unregisterClient(client: Socket) {
     this.sessions.unregister(client);
   }

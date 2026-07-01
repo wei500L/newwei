@@ -4,7 +4,6 @@ import asyncio
 import base64
 import contextlib
 import ipaddress
-import json
 import logging
 import os
 import socket
@@ -21,8 +20,6 @@ HEADER_LIMIT = int(os.getenv("CRAWL4AI_SSRF_PROXY_HEADER_LIMIT", str(64 * 1024))
 CONNECT_TIMEOUT_SECONDS = float(
   os.getenv("CRAWL4AI_SSRF_PROXY_CONNECT_TIMEOUT_SECONDS", "15"),
 )
-AUTH_USER = "__modular_ssrf_proxy__"
-
 BLOCKED_HOSTS = {
   "169.254.169.254",
   "169.254.170.2",
@@ -148,65 +145,10 @@ def parse_headers(lines: list[str]) -> dict[str, str]:
   return headers
 
 
-def b64url_decode(value: str) -> bytes:
-  padding = "=" * ((4 - len(value) % 4) % 4)
-  return base64.urlsafe_b64decode(f"{value}{padding}")
-
-
-def decode_override_proxy(headers: dict[str, str]) -> Optional[ProxyConfig]:
-  auth = headers.get("proxy-authorization")
-  if not auth or not auth.lower().startswith("basic "):
-    return None
-  try:
-    decoded = base64.b64decode(auth.split(" ", 1)[1]).decode("utf-8")
-  except Exception as exc:  # pragma: no cover - defensive
-    raise ProxyRequestError(
-      HTTPStatus.BAD_REQUEST,
-      f"Invalid proxy authorization header: {exc}",
-    ) from exc
-
-  username, _, password = decoded.partition(":")
-  if username != AUTH_USER or not password:
-    return None
-
-  try:
-    payload = json.loads(b64url_decode(password).decode("utf-8"))
-  except Exception as exc:
-    raise ProxyRequestError(
-      HTTPStatus.BAD_REQUEST,
-      f"Invalid SSRF proxy payload: {exc}",
-    ) from exc
-
-  if not isinstance(payload, dict):
-    raise ProxyRequestError(
-      HTTPStatus.BAD_REQUEST,
-      "Invalid SSRF proxy payload shape",
-    )
-
-  server = payload.get("server")
-  if not isinstance(server, str) or not server.strip():
-    raise ProxyRequestError(
-      HTTPStatus.BAD_REQUEST,
-      "Invalid SSRF proxy upstream server",
-    )
-
-  parsed = parse_proxy_url(server.strip())
-  return ProxyConfig(
-    scheme=parsed.scheme,
-    host=parsed.host,
-    port=parsed.port,
-    username=payload.get("username") if isinstance(payload.get("username"), str) else None,
-    password=payload.get("password") if isinstance(payload.get("password"), str) else None,
-  )
-
-
 def resolve_upstream_proxy(
   request_scheme: str,
   headers: dict[str, str],
 ) -> Optional[ProxyConfig]:
-  override = decode_override_proxy(headers)
-  if override is not None:
-    return override
   return DEFAULT_HTTPS_PROXY if request_scheme == "https" else DEFAULT_HTTP_PROXY
 
 
@@ -425,13 +367,85 @@ async def forward_content_length_body(
     remaining -= len(chunk)
 
 
+async def forward_chunked_body(
+  reader: asyncio.StreamReader,
+  writer: asyncio.StreamWriter,
+) -> None:
+  while True:
+    chunk_header = await reader.readuntil(b"\r\n")
+    if len(chunk_header) > HEADER_LIMIT:
+      raise ProxyRequestError(
+        HTTPStatus.REQUEST_HEADER_FIELDS_TOO_LARGE,
+        "Chunk header exceeds limit",
+      )
+    writer.write(chunk_header)
+    await writer.drain()
+
+    size_text = chunk_header[:-2].split(b";", 1)[0].strip()
+    try:
+      chunk_size = int(size_text, 16)
+    except ValueError as exc:
+      raise ProxyRequestError(
+        HTTPStatus.BAD_REQUEST,
+        "Invalid chunk size in request body",
+      ) from exc
+
+    remaining = chunk_size + 2
+    while remaining > 0:
+      chunk = await reader.read(min(65536, remaining))
+      if not chunk:
+        raise ProxyRequestError(
+          HTTPStatus.BAD_REQUEST,
+          "Unexpected EOF while reading chunked request body",
+        )
+      writer.write(chunk)
+      await writer.drain()
+      remaining -= len(chunk)
+
+    if chunk_size == 0:
+      while True:
+        trailer_line = await reader.readuntil(b"\r\n")
+        if len(trailer_line) > HEADER_LIMIT:
+          raise ProxyRequestError(
+            HTTPStatus.REQUEST_HEADER_FIELDS_TOO_LARGE,
+            "Chunk trailer exceeds limit",
+          )
+        writer.write(trailer_line)
+        await writer.drain()
+        if trailer_line == b"\r\n":
+          return
+
+
+async def forward_request_body(
+  reader: asyncio.StreamReader,
+  writer: asyncio.StreamWriter,
+  headers: dict[str, str],
+) -> None:
+  transfer_encoding = headers.get("transfer-encoding", "")
+  encoding_tokens = [
+    token.strip().lower() for token in transfer_encoding.split(",") if token.strip()
+  ]
+  if encoding_tokens:
+    if "chunked" not in encoding_tokens:
+      raise ProxyRequestError(
+        HTTPStatus.NOT_IMPLEMENTED,
+        "Unsupported Transfer-Encoding for proxy request body",
+      )
+    await forward_chunked_body(reader, writer)
+    return
+  await forward_content_length_body(reader, writer, headers)
+
+
 def rewrite_request_headers(
   original_headers: dict[str, str],
   authority: str,
 ) -> list[str]:
+  has_transfer_encoding = bool(original_headers.get("transfer-encoding"))
   rewritten: list[str] = [f"Host: {authority}", "Connection: close"]
   for name, value in original_headers.items():
     if name in {"host", "proxy-authorization", "proxy-connection", "connection"}:
+      continue
+    if has_transfer_encoding and name == "content-length":
       continue
     rewritten.append(f"{name}: {value}")
   return rewritten
@@ -507,7 +521,7 @@ async def handle_http_request(
   ).encode("latin-1")
   upstream_writer.write(request_bytes)
   await upstream_writer.drain()
-  await forward_content_length_body(client_reader, upstream_writer, headers)
+  await forward_request_body(client_reader, upstream_writer, headers)
   await relay_response(upstream_reader, client_writer)
   upstream_writer.close()
   await upstream_writer.wait_closed()

@@ -28,8 +28,14 @@ describe("ApplicationShutdownService", () => {
     const webSocketAdapterRegistry = {
       disconnectRedisIoAdapter: jest.fn().mockResolvedValue(undefined),
     } as any;
+    const bullmqConnections = {
+      shutdown: jest.fn().mockResolvedValue(undefined),
+    } as any;
 
-    const service = new ApplicationShutdownService(webSocketAdapterRegistry);
+    const service = new ApplicationShutdownService(
+      webSocketAdapterRegistry,
+      bullmqConnections,
+    );
 
     await service.onApplicationShutdown("SIGTERM");
     await service.onApplicationShutdown("SIGINT");
@@ -38,6 +44,7 @@ describe("ApplicationShutdownService", () => {
     expect(
       webSocketAdapterRegistry.disconnectRedisIoAdapter,
     ).toHaveBeenCalledTimes(1);
+    expect(bullmqConnections.shutdown).toHaveBeenCalledTimes(1);
   });
 
   it("continues shutdown when resource teardown fails", async () => {
@@ -49,8 +56,16 @@ describe("ApplicationShutdownService", () => {
         .fn()
         .mockRejectedValueOnce(new Error("redis adapter failed")),
     } as any;
+    const bullmqConnections = {
+      shutdown: jest
+        .fn()
+        .mockRejectedValueOnce(new Error("bullmq failed")),
+    } as any;
 
-    const service = new ApplicationShutdownService(webSocketAdapterRegistry);
+    const service = new ApplicationShutdownService(
+      webSocketAdapterRegistry,
+      bullmqConnections,
+    );
 
     await expect(
       service.onApplicationShutdown("SIGTERM"),

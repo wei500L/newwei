@@ -1,8 +1,4 @@
-import {
-  createLogger,
-  RealtimeSocketErrorCode,
-  type RealtimeSocketErrorPayload,
-} from "@modular/utils";
+import { createLogger } from "@modular/utils";
 import { OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import {
   OnGatewayConnection,
@@ -20,6 +16,10 @@ import {
   JwtPayload,
 } from "../auth/auth.service";
 import { EnvService } from "../config/config.service";
+import {
+  buildRealtimeSocketErrorPayload,
+  shouldRecordFailedSocketAuth,
+} from "../websocket/socket-error-payloads";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
 import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
 
@@ -85,7 +85,7 @@ export class QueueGateway
         );
         client.emit(
           "queue:error",
-          this.toSocketErrorPayload(
+          buildRealtimeSocketErrorPayload(
             "Rate limit exceeded",
             rateLimitResult.retryAfterMs,
           ),
@@ -105,7 +105,10 @@ export class QueueGateway
         );
         client.emit(
           "queue:error",
-          this.toSocketErrorPayload("Too many failed attempts", backoffDelay),
+          buildRealtimeSocketErrorPayload(
+            "Too many failed attempts",
+            backoffDelay,
+          ),
         );
         client.disconnect(true);
         return;
@@ -156,21 +159,21 @@ export class QueueGateway
         "Queue socket connected",
       );
     } catch (error) {
-      // Record failed auth attempt for backoff
-      await this.connectionRateLimiter.recordFailedAuth(ip ?? "");
-
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (shouldRecordFailedSocketAuth(errorMessage)) {
+        await this.connectionRateLimiter.recordFailedAuth(ip ?? "");
+      }
       this.sessions.unregister(client);
       this.logger.warn(
         {
           socketId: client.id,
           ip,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage,
         },
         "Queue socket authentication failed",
       );
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      client.emit("queue:error", this.toSocketErrorPayload(errorMessage));
+      client.emit("queue:error", buildRealtimeSocketErrorPayload(errorMessage));
       client.disconnect(true);
     }
   }
@@ -318,42 +321,6 @@ export class QueueGateway
     this.server
       .to(this.orgRoom(orgId))
       .emit("queue:event", { orgId, ...payload });
-  }
-
-  private toSocketErrorPayload(
-    errorMessage: string,
-    retryAfterMs?: number,
-  ): RealtimeSocketErrorPayload {
-    if (errorMessage === "Rate limit exceeded") {
-      return {
-        code: RealtimeSocketErrorCode.RateLimitExceeded,
-        message: "Rate limit exceeded",
-        retryAfterMs,
-      };
-    }
-    if (errorMessage === "Too many failed attempts") {
-      return {
-        code: RealtimeSocketErrorCode.TooManyFailedAttempts,
-        message: "Too many failed attempts",
-        retryAfterMs,
-      };
-    }
-    if (errorMessage === "Too many connections") {
-      return {
-        code: RealtimeSocketErrorCode.TooManyConnections,
-        message: "Too many connections",
-      };
-    }
-    if (errorMessage === "Too many connection attempts") {
-      return {
-        code: RealtimeSocketErrorCode.TooManyConnectionAttempts,
-        message: "Too many connection attempts",
-      };
-    }
-    return {
-      code: RealtimeSocketErrorCode.Unauthorized,
-      message: "Unauthorized",
-    };
   }
 
   private orgRoom(orgId: string) {

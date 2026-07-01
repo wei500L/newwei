@@ -114,7 +114,7 @@ const ItemReadModelProcessedSchema = new Schema(
 
 const ItemReadModelSchema = new Schema(
   {
-    orgId: { type: String, index: true, required: true, trim: true },
+    orgId: { type: String, required: true, trim: true },
     itemMetaId: { type: String, required: true, trim: true },
     meta: { type: ItemReadModelMetaSchema, required: true },
     raw: { type: ItemReadModelRawSchema, default: null },
@@ -189,6 +189,13 @@ const ItemReadModelSchema = new Schema(
 ItemReadModelSchema.index({ orgId: 1, itemMetaId: 1 }, { unique: true });
 ItemReadModelSchema.index({ orgId: 1, sortAt: -1, itemMetaId: -1 });
 ItemReadModelSchema.index({ orgId: 1, createdAt: -1, itemMetaId: -1 });
+ItemReadModelSchema.index({ orgId: 1, titleLower: 1, sortAt: -1, itemMetaId: -1 });
+ItemReadModelSchema.index({
+  orgId: 1,
+  externalIdLower: 1,
+  sortAt: -1,
+  itemMetaId: -1,
+});
 ItemReadModelSchema.index({ orgId: 1, sourceId: 1, sortAt: -1 });
 ItemReadModelSchema.index({ orgId: 1, sourceNameLower: 1, sortAt: -1 });
 ItemReadModelSchema.index({ orgId: 1, sentiment: 1, sortAt: -1 });

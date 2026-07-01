@@ -177,3 +177,101 @@ describe('CrawlStrategyWorkflowService.compareVersions', () => {
     );
   });
 });
+
+describe('CrawlStrategyWorkflowService workflow proxy policy', () => {
+  it('rejects creating a workflow draft with discovery crawlOptions proxy overrides', async () => {
+    const prisma = {
+      crawlStrategyWorkflow: {
+        create: jest.fn(),
+      },
+    } as any;
+
+    const service = new CrawlStrategyWorkflowService(prisma, {} as any);
+
+    await expect(
+      service.createWorkflow('org-1', 'user-1', {
+        name: 'Bad Workflow',
+        draftDefinition: {
+          version: 1,
+          metadata: {},
+          settings: {
+            executionMode: 'hybrid',
+            maxDepth: 3,
+            maxPages: 60,
+            timeoutMs: 15000,
+            concurrency: 2,
+            robotsPolicy: 'respect',
+            domainScope: 'registrable_domain',
+          },
+          nodes: [
+            {
+              id: 'list-1',
+              type: 'list-discovery',
+              label: 'List Discovery',
+              position: { x: 0, y: 0 },
+              config: {
+                crawlOptions: {
+                  proxyUrl: 'http://proxy.example.com:8080',
+                },
+              },
+            },
+          ],
+          edges: [],
+        },
+      }),
+    ).rejects.toThrow('Unsupported crawl config');
+    expect(prisma.crawlStrategyWorkflow.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects publishing an existing draft with discovery crawlOptions proxy overrides', async () => {
+    const prisma = {
+      crawlStrategyWorkflow: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'wf-1',
+          orgId: 'org-1',
+          name: 'Bad Workflow',
+          description: null,
+          draftDefinition: {
+            version: 1,
+            metadata: {},
+            settings: {
+              executionMode: 'hybrid',
+              maxDepth: 3,
+              maxPages: 60,
+              timeoutMs: 15000,
+              concurrency: 2,
+              robotsPolicy: 'respect',
+              domainScope: 'registrable_domain',
+            },
+            nodes: [
+              {
+                id: 'deep-1',
+                type: 'deep-discovery',
+                label: 'Deep Discovery',
+                position: { x: 0, y: 0 },
+                config: {
+                  crawlOptions: {
+                    proxyConfig: {
+                      server: 'http://proxy.example.com:8080',
+                    },
+                  },
+                },
+              },
+            ],
+            edges: [],
+          },
+          publishedVersion: null,
+          versions: [],
+        }),
+      },
+      $transaction: jest.fn(),
+    } as any;
+
+    const service = new CrawlStrategyWorkflowService(prisma, {} as any);
+
+    await expect(
+      service.publishWorkflow('org-1', 'user-1', 'wf-1'),
+    ).rejects.toThrow('Unsupported crawl config');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});

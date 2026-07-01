@@ -18,6 +18,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
   Grid,
 } from "antd";
@@ -46,6 +47,10 @@ import {
 } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
+import {
+  findUnsupportedProxyIssues,
+  getCrawlConfigPolicyIssueTranslationKey,
+} from "@/lib/crawl-config-policy";
 import { getCrawlTaskDetailOpsRefreshDecision } from "@/lib/crawl-ops-refresh";
 import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 import {
@@ -55,6 +60,9 @@ import {
 } from "@/lib/crawl-task-head-signal";
 import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { formatRealtimeSocketError } from "@/lib/realtime-socket-errors";
+
+const REALTIME_SOCKET_TIMEOUT_MS = 10_000;
 
 const statusColors: Record<CrawlTaskStatus, string> = {
   pending: "gold",
@@ -127,7 +135,6 @@ const limitOptions = [
   },
 ];
 
-const LOCAL_PROXY_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 const BACKFILL_BATCH_TIMEOUT_MS = 15_000;
 
 const markdownPreviewStyle: CSSProperties = {
@@ -162,27 +169,6 @@ async function withTimeout<T>(
     if (timeoutId !== undefined) {
       clearTimeout(timeoutId);
     }
-  }
-}
-
-function isLocalhostProxyUrl(value: string): boolean {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return false;
-  }
-  try {
-    const parsed = new URL(trimmed);
-    return LOCAL_PROXY_HOSTS.has(parsed.hostname.toLowerCase());
-  } catch {
-    const lower = trimmed.toLowerCase();
-    return (
-      lower.includes("://localhost") ||
-      lower.includes("://127.0.0.1") ||
-      lower.includes("://[::1]") ||
-      lower.startsWith("localhost:") ||
-      lower.startsWith("127.0.0.1:") ||
-      lower.startsWith("[::1]:")
-    );
   }
 }
 
@@ -276,6 +262,20 @@ function safeParseJson<T>(input?: string | null): T | null {
   } catch {
     return null;
   }
+}
+
+function formatPolicyIssues(
+  issues: ReturnType<typeof findUnsupportedProxyIssues>,
+  t: ReturnType<typeof useTranslation>["t"],
+) {
+  return issues
+    .map(
+      (issue) =>
+        `${issue.path}: ${t(getCrawlConfigPolicyIssueTranslationKey(issue.code), {
+          defaultValue: issue.code,
+        })}`,
+    )
+    .join(" ");
 }
 
 function resolveStoredMediaUrl(value?: string) {
@@ -824,6 +824,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const [opsLiveStatus, setOpsLiveStatus] = useState<
     "disconnected" | "connecting" | "connected"
   >("disconnected");
+  const [opsLiveError, setOpsLiveError] = useState<string | null>(null);
 
   const { data, loading, refetch, startPolling, stopPolling } =
     useCrawlTaskQuery({
@@ -959,6 +960,18 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return null;
     }
   }, [task?.config]);
+  const proxyIssues = useMemo(
+    () => findUnsupportedProxyIssues(config, "task.config"),
+    [config],
+  );
+  const hasUnsupportedLegacyProxy = proxyIssues.length > 0;
+  const unsupportedProxyActionHint = useMemo(
+    () =>
+      hasUnsupportedLegacyProxy
+        ? t("crawl.policy.actionBlockedByUnsupportedProxy")
+        : undefined,
+    [hasUnsupportedLegacyProxy, t],
+  );
   const isHeadedTask = useMemo(() => config?.headless === false, [config]);
   const lastErrorHeadedIssue = useMemo(
     () => classifyHeadedIssue(task?.lastError ?? undefined),
@@ -1000,34 +1013,94 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (!canView || !session?.accessToken) {
       opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
+      setOpsLiveError(null);
       return;
     }
 
     opsSocketBootstrappingRef.current = true;
     setOpsLiveStatus("connecting");
+    setOpsLiveError(null);
     let hasConnectedOnce = false;
     const socket = io(`${env.apiRoot}/ops`, {
       auth: { token: session.accessToken },
       transports: ["websocket"],
+      withCredentials: true,
+      autoConnect: false,
+      timeout: REALTIME_SOCKET_TIMEOUT_MS,
     });
     opsSocketRef.current = socket;
+    const connectTimer = window.setTimeout(() => {
+      socket.connect();
+    }, 0);
 
     const handleConnect = () => {
       opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("connected");
+      setOpsLiveError(null);
       if (hasConnectedOnce) {
         scheduleOpsRefresh({ task: true });
         return;
       }
       hasConnectedOnce = true;
     };
-    const handleDisconnect = () => {
+    const getLocalizedError = (
+      payload:
+        | { code?: string; message?: string; retryAfterMs?: number }
+        | undefined,
+      fallbackKind: "socket" | "connect",
+    ) =>
+      formatRealtimeSocketError(payload, t, {
+        keyPrefix: "crawl.liveUpdates.connectionError",
+        fallbackKind,
+        defaults: {
+          unauthorized: "Crawl realtime access expired. Please sign in again.",
+          tooManyConnections:
+            "Crawl realtime connections are at capacity. Please try again later.",
+          tooManyConnectionAttempts:
+            "Too many crawl realtime connection attempts. Please try again later.",
+          rateLimitExceeded:
+            "Crawl realtime connection attempts are too frequent. Please try again later.",
+          tooManyFailedAttempts:
+            "Too many failed crawl realtime sign-in attempts. Please try again later.",
+          timeout: "Connecting to crawl realtime timed out. Please try again.",
+          network:
+            "Unable to connect to crawl realtime. Please check the network and try again.",
+          connect:
+            "Unable to connect to crawl realtime right now. Please try again later.",
+          socket:
+            "Crawl realtime connection is unstable. Please try again later.",
+        },
+      });
+    const handleDisconnect = (reason: string) => {
       opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
+      if (reason === "io client disconnect") {
+        setOpsLiveError(null);
+        return;
+      }
+      setOpsLiveError((currentError) =>
+        currentError ?? getLocalizedError({ message: reason }, "socket"),
+      );
     };
-    const handleConnectError = () => {
+    const handleConnectError = (
+      error: { code?: string; message?: string; retryAfterMs?: number },
+    ) => {
       opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
+      setOpsLiveError(getLocalizedError(error, "connect"));
+    };
+    const handleServerError = (payload: unknown) => {
+      const candidate =
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? (payload as {
+              code?: string;
+              message?: string;
+              retryAfterMs?: number;
+            })
+          : undefined;
+      opsSocketBootstrappingRef.current = false;
+      setOpsLiveStatus("disconnected");
+      setOpsLiveError(getLocalizedError(candidate, "socket"));
     };
     const handleEvent = (payload: unknown) => {
       const refreshDecision = getCrawlTaskDetailOpsRefreshDecision(payload, {
@@ -1043,12 +1116,15 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
     socket.on("connect_error", handleConnectError);
+    socket.on("ops:error", handleServerError);
     socket.on("ops:event", handleEvent);
 
     return () => {
+      window.clearTimeout(connectTimer);
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
       socket.off("connect_error", handleConnectError);
+      socket.off("ops:error", handleServerError);
       socket.off("ops:event", handleEvent);
       socket.disconnect();
       if (opsSocketRef.current === socket) {
@@ -1062,6 +1138,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     scheduleOpsRefresh,
     session?.accessToken,
     taskId,
+    t,
   ]);
 
   useEffect(() => {
@@ -1439,7 +1516,6 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (expansionHeadSignalSummary.softFailures.httpStatus > 0) {
       parts.push(
         t("crawl.detail.expansion.softFailures.httpStatus", {
-          defaultValue: "HTTP non-2xx: {{count}}",
           count: expansionHeadSignalSummary.softFailures.httpStatus,
         }),
       );
@@ -1447,7 +1523,6 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (expansionHeadSignalSummary.softFailures.nonHtml > 0) {
       parts.push(
         t("crawl.detail.expansion.softFailures.nonHtml", {
-          defaultValue: "Non-HTML response: {{count}}",
           count: expansionHeadSignalSummary.softFailures.nonHtml,
         }),
       );
@@ -1455,7 +1530,6 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (expansionHeadSignalSummary.softFailures.emptyHtml > 0) {
       parts.push(
         t("crawl.detail.expansion.softFailures.emptyHtml", {
-          defaultValue: "Empty HTML: {{count}}",
           count: expansionHeadSignalSummary.softFailures.emptyHtml,
         }),
       );
@@ -1463,7 +1537,6 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (expansionHeadSignalSummary.softFailures.networkOrTimeout > 0) {
       parts.push(
         t("crawl.detail.expansion.softFailures.networkOrTimeout", {
-          defaultValue: "Timeout/Network: {{count}}",
           count: expansionHeadSignalSummary.softFailures.networkOrTimeout,
         }),
       );
@@ -1471,7 +1544,6 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (expansionHeadSignalSummary.softFailures.noPublishSignal > 0) {
       parts.push(
         t("crawl.detail.expansion.softFailures.noPublishSignal", {
-          defaultValue: "No publish signal extracted: {{count}}",
           count: expansionHeadSignalSummary.softFailures.noPublishSignal,
         }),
       );
@@ -1494,43 +1566,15 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     const proxyConfig = config.proxyConfig as
       | { server?: string; username?: string; password?: string }
       | undefined;
-    const rawServer = proxyConfig?.server ?? proxyUrl ?? null;
     if (proxyConfig?.server) {
-      const label = t("crawl.detail.proxy.dict", {
-        server: proxyConfig.server,
-        user: proxyConfig.username ?? null,
+      return t("crawl.detail.proxy.unsupportedLegacy", {
+        value: proxyConfig.server,
       });
-      if (rawServer && isLocalhostProxyUrl(rawServer)) {
-        return (
-          <Space direction="vertical" size={0}>
-            <Typography.Text>{label}</Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {t("crawl.detail.proxy.dockerHint", {
-                defaultValue:
-                  "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead.",
-              })}
-            </Typography.Text>
-          </Space>
-        );
-      }
-      return label;
     }
     if (proxyUrl) {
-      const label = proxyUrl;
-      if (rawServer && isLocalhostProxyUrl(rawServer)) {
-        return (
-          <Space direction="vertical" size={0}>
-            <Typography.Text>{label}</Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {t("crawl.detail.proxy.dockerHint", {
-                defaultValue:
-                  "If crawl4ai is running in Docker, localhost/127.0.0.1 proxies won't work inside the container. Use host.docker.internal instead.",
-              })}
-            </Typography.Text>
-          </Space>
-        );
-      }
-      return label;
+      return t("crawl.detail.proxy.unsupportedLegacy", {
+        value: proxyUrl,
+      });
     }
     return t("crawl.detail.proxy.direct");
   }, [config, t]);
@@ -1956,21 +2000,15 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       return null;
     }
     if (waitUntilValue === "domcontentloaded") {
-      return t("crawl.dynamic.waitUntilOptions.domcontentloaded", {
-        defaultValue: "DOMContentLoaded",
-      });
+      return t("crawl.dynamic.waitUntilOptions.domcontentloaded");
     }
     if (waitUntilValue === "networkidle") {
-      return t("crawl.dynamic.waitUntilOptions.networkidle", {
-        defaultValue: "Network idle",
-      });
+      return t("crawl.dynamic.waitUntilOptions.networkidle");
     }
     if (waitUntilValue === "commit") {
-      return t("crawl.dynamic.waitUntilOptions.commit", {
-        defaultValue: "Commit",
-      });
+      return t("crawl.dynamic.waitUntilOptions.commit");
     }
-    return t("crawl.dynamic.waitUntilOptions.load", { defaultValue: "Load" });
+    return t("crawl.dynamic.waitUntilOptions.load");
   }, [t, waitUntilValue]);
 
   const waitTimeoutMs =
@@ -2214,7 +2252,6 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       if (remainingCount > 0) {
         prioritized.push(
           t("crawl.detail.multiUrl.additionalOverrides", {
-            defaultValue: "+{{count}} other overrides",
             count: remainingCount,
           }),
         );
@@ -2226,6 +2263,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
 
   const handleRetry = async () => {
     if (!task) return;
+    if (hasUnsupportedLegacyProxy) {
+      message.error(formatPolicyIssues(proxyIssues, t));
+      return;
+    }
     try {
       await retryTask({ variables: { id: task.id } });
       message.success(t("crawl.detail.retryQueued"));
@@ -2241,9 +2282,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
     if (enabled && !permissions.includes("items.write")) {
       message.error(
-        t("crawl.settings.ingestToItemsNoPermission", {
-          defaultValue: "Requires items.write permission.",
-        }),
+        t("crawl.settings.ingestToItemsNoPermission"),
       );
       return;
     }
@@ -2255,13 +2294,13 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           enabled,
         },
       });
-      message.success(t("common.updated", { defaultValue: "Updated." }));
+      message.success(t("common.updated"));
       await refetch();
     } catch (error) {
       message.error(
         error instanceof Error
           ? error.message
-          : t("common.operationFailed", { defaultValue: "Operation failed." }),
+          : t("common.operationFailed"),
       );
     }
   };
@@ -2273,13 +2312,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if ((task.results?.length ?? 0) === 0 && !task.lastResultAt) {
       const notice: BackfillNotice = {
         type: "info",
-        message: t("crawl.detail.backfill.emptyTitle", {
-          defaultValue: "No results to backfill yet.",
-        }),
-        description: t("crawl.detail.backfill.emptyDescription", {
-          defaultValue:
-            "This task has no crawl results yet, so nothing can be sent to Items.",
-        }),
+        message: t("crawl.detail.backfill.emptyTitle"),
+        description: t("crawl.detail.backfill.emptyDescription"),
       };
       setBackfillNotice(notice);
       message.info(notice.message);
@@ -2300,9 +2334,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     message.loading({
       key: messageKey,
       duration: 0,
-      content: t("crawl.detail.backfill.running", {
-        defaultValue: "Backfilling results...",
-      }),
+      content: t("crawl.detail.backfill.running"),
     });
 
     try {
@@ -2318,10 +2350,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
               },
             }),
             BACKFILL_BATCH_TIMEOUT_MS,
-            t("crawl.detail.backfill.timeout", {
-              defaultValue:
-                "Backfill request timed out. Please try again after refreshing the task.",
-            }),
+            t("crawl.detail.backfill.timeout"),
           );
         const summary:
           | IngestCrawlTaskResultsToItemsMutation["ingestCrawlTaskResultsToItems"]
@@ -2340,8 +2369,6 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           key: messageKey,
           duration: 0,
           content: t("crawl.detail.backfill.progress", {
-            defaultValue:
-              "Backfilling... ({{ingested}} ingested, {{skipped}} skipped, {{failed}} failed)",
             ingested: ingestedTotal,
             skipped: skippedTotal,
             failed: failedTotal,
@@ -2355,8 +2382,6 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       }
 
       const summaryDescription = t("crawl.detail.backfill.summary", {
-        defaultValue:
-          "{{ingested}} ingested, {{skipped}} skipped, {{failed}} failed across {{scanned}} scanned results.",
         ingested: ingestedTotal,
         skipped: skippedTotal,
         failed: failedTotal,
@@ -2366,13 +2391,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       if (scannedTotal === 0) {
         notice = {
           type: "info",
-          message: t("crawl.detail.backfill.emptyTitle", {
-            defaultValue: "No results to backfill yet.",
-          }),
-          description: t("crawl.detail.backfill.emptyDescription", {
-            defaultValue:
-              "This task has no crawl results yet, so nothing can be sent to Items.",
-          }),
+          message: t("crawl.detail.backfill.emptyTitle"),
+          description: t("crawl.detail.backfill.emptyDescription"),
         };
         message.info({
           key: messageKey,
@@ -2381,9 +2401,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       } else if (ingestedTotal === 0 && failedTotal === 0) {
         notice = {
           type: "info",
-          message: t("crawl.detail.backfill.noMissingTitle", {
-            defaultValue: "All crawl results are already in Items.",
-          }),
+          message: t("crawl.detail.backfill.noMissingTitle"),
           description: summaryDescription,
         };
         message.info({
@@ -2393,9 +2411,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       } else if (failedTotal > 0) {
         notice = {
           type: ingestedTotal > 0 ? "warning" : "error",
-          message: t("crawl.detail.backfill.partialTitle", {
-            defaultValue: "Backfill finished with failures.",
-          }),
+          message: t("crawl.detail.backfill.partialTitle"),
           description: summaryDescription,
         };
         if (notice.type === "error") {
@@ -2412,9 +2428,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       } else {
         notice = {
           type: "success",
-          message: t("crawl.detail.backfill.done", {
-            defaultValue: "Queued missing results for Items.",
-          }),
+          message: t("crawl.detail.backfill.done"),
           description: summaryDescription,
         };
         message.success({
@@ -2428,14 +2442,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       const description =
         error instanceof Error
           ? error.message
-          : t("common.operationFailed", {
-              defaultValue: "Operation failed.",
-            });
+          : t("common.operationFailed");
       setBackfillNotice({
         type: "error",
-        message: t("crawl.detail.backfill.failedTitle", {
-          defaultValue: "Backfill failed.",
-        }),
+        message: t("crawl.detail.backfill.failedTitle"),
         description,
       });
       message.error({
@@ -2457,13 +2467,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
 
     Modal.confirm({
-      title: t("crawl.detail.backfill.confirmTitle", {
-        defaultValue: "Send missing results to Items?",
-      }),
-      content: t("crawl.detail.backfill.confirmDescription", {
-        defaultValue:
-          "This will convert crawl results into Items and enqueue LLM processing for results that are not in Items yet.",
-      }),
+      title: t("crawl.detail.backfill.confirmTitle"),
+      content: t("crawl.detail.backfill.confirmDescription"),
       okText: t("common.confirm"),
       cancelText: t("common.cancel"),
       onOk: runBackfillToItems,
@@ -2478,7 +2483,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     const normalizedId = resultId.trim();
     if (!normalizedId) {
       message.error(
-        t("common.invalidInput", { defaultValue: "Invalid input." }),
+        t("common.invalidInput"),
       );
       return;
     }
@@ -2490,9 +2495,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       });
       const createdId = response.data?.createItemFromCrawlResult?.id;
       message.success(
-        t("crawl.detail.ingestQueued", {
-          defaultValue: "Queued for LLM processing and added to Items.",
-        }),
+        t("crawl.detail.ingestQueued"),
       );
       if (createdId) {
         router.push(`/items/${createdId}`);
@@ -2501,7 +2504,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       message.error(
         error instanceof Error
           ? error.message
-          : t("common.operationFailed", { defaultValue: "Operation failed." }),
+          : t("common.operationFailed"),
       );
     } finally {
       setIngestingResultId(null);
@@ -2514,7 +2517,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
       >
         <Typography.Text type="secondary">
-          {t("common.loading", { defaultValue: "Loading..." })}
+          {t("common.loading")}
         </Typography.Text>
       </div>
     );
@@ -2524,7 +2527,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     return (
       <Card
         className="content-card"
-        title={t("crawl.detail.title", { defaultValue: "Crawl Task" })}
+        title={t("crawl.detail.title")}
       >
         <Alert
           type="warning"
@@ -2570,10 +2573,37 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         <Tag color={statusColors[task.status]}>
           {t(`crawl.status.${task.status}`, { defaultValue: task.status })}
         </Tag>
+        <Tag
+          color={
+            opsLiveError
+              ? "red"
+              : opsLiveStatus === "connected"
+                ? "green"
+                : opsLiveStatus === "connecting"
+                  ? "blue"
+                  : undefined
+          }
+        >
+          {opsLiveError
+            ? t("crawl.liveUpdates.error")
+            : opsLiveStatus === "connected"
+              ? t("crawl.liveUpdates.connected")
+              : opsLiveStatus === "connecting"
+                ? t("crawl.liveUpdates.connecting")
+                : t("crawl.liveUpdates.disconnected")}
+        </Tag>
         {canManage ? (
-          <Button onClick={handleRetry} loading={retrying}>
-            {t("crawl.detail.retry")}
-          </Button>
+          <Tooltip title={unsupportedProxyActionHint}>
+            <span>
+              <Button
+                onClick={handleRetry}
+                loading={retrying}
+                disabled={hasUnsupportedLegacyProxy}
+              >
+                {t("crawl.detail.retry")}
+              </Button>
+            </span>
+          </Tooltip>
         ) : null}
         {canCreateItem ? (
           <Button
@@ -2581,22 +2611,45 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             loading={backfillRunning}
             disabled={backfillUnavailable}
           >
-            {t("crawl.detail.backfill.button", {
-              defaultValue: "Backfill to Items",
-            })}
+            {t("crawl.detail.backfill.button")}
           </Button>
         ) : null}
         {canCreateItem && backfillUnavailable ? (
           <Typography.Text type="secondary">
-            {t("crawl.detail.backfill.emptyHint", {
-              defaultValue: "No crawl results available yet.",
-            })}
+            {t("crawl.detail.backfill.emptyHint")}
           </Typography.Text>
         ) : null}
         <Typography.Link href={task.targetUrl} target="_blank" rel="noreferrer">
           {t("crawl.detail.openSource")}
         </Typography.Link>
       </Space>
+      {hasUnsupportedLegacyProxy ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t("crawl.proxy.unsupportedLegacyTitle")}
+          description={formatPolicyIssues(proxyIssues, t)}
+        />
+      ) : null}
+      {opsLiveError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t("crawl.liveUpdates.alertTitle")}
+          description={
+            <Space direction="vertical" size={4}>
+              <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
+                {opsLiveError}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {t("crawl.liveUpdates.fallbackHint")}
+              </Typography.Text>
+            </Space>
+          }
+        />
+      ) : null}
       {backfillNotice ? (
         <Alert
           type={backfillNotice.type}
@@ -2619,9 +2672,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           }
           showIcon
           style={{ marginBottom: 16 }}
-          message={t("crawl.detail.latestError", {
-            defaultValue: "Latest error",
-          })}
+          message={t("crawl.detail.latestError")}
           description={
             <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
               {task.lastError}
@@ -2634,41 +2685,25 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message={t("crawl.runtimeGuide.title", {
-            defaultValue: "Headed mode and Xvfb",
-          })}
+          message={t("crawl.runtimeGuide.title")}
           description={
             <Space direction="vertical" size={2}>
               <Typography.Text type="secondary">
-                {t("crawl.runtimeGuide.noAutoBootstrap", {
-                  defaultValue:
-                    "This console only provides guidance and does not auto-start Xvfb for you.",
-                })}
+                {t("crawl.runtimeGuide.noAutoBootstrap")}
               </Typography.Text>
               <Typography.Text type="secondary">
-                {t("crawl.runtimeGuide.principleBody", {
-                  defaultValue:
-                    "When headless=false, Chromium needs a display server. Xvfb provides a virtual X11 display (for example :99) so headed rendering can run in containers without a physical monitor.",
-                })}
+                {t("crawl.runtimeGuide.principleBody")}
               </Typography.Text>
               <details>
                 <summary>
-                  {t("crawl.runtimeGuide.stepsTitle", {
-                    defaultValue: "Recommended checks",
-                  })}
+                  {t("crawl.runtimeGuide.stepsTitle")}
                 </summary>
                 <Space direction="vertical" size={2} style={{ marginTop: 6 }}>
                   <Typography.Text type="secondary">
-                    {`1. ${t("crawl.runtimeGuide.step1", {
-                      defaultValue:
-                        "Prefer Headless for routine crawls, and use Headed only when anti-bot scenarios need it.",
-                    })}`}
+                    {`1. ${t("crawl.runtimeGuide.step1")}`}
                   </Typography.Text>
                   <Typography.Text type="secondary">
-                    {`2. ${t("crawl.runtimeGuide.step2", {
-                      defaultValue:
-                        "When using Headed, ensure Xvfb/DISPLAY are configured in the crawl4ai container.",
-                    })}`}
+                    {`2. ${t("crawl.runtimeGuide.step2")}`}
                   </Typography.Text>
                 </Space>
               </details>
@@ -2681,19 +2716,14 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message={t("crawl.runtimeGuide.displayIssueTitle", {
-            defaultValue: "Detected DISPLAY/Xvfb dependency issue",
-          })}
+          message={t("crawl.runtimeGuide.displayIssueTitle")}
           description={
             <Space direction="vertical" size={2}>
               <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
                 {task.lastError}
               </Typography.Text>
               <Typography.Text type="secondary">
-                {t("crawl.runtimeGuide.displayIssueHint", {
-                  defaultValue:
-                    "Headed runtime failed because DISPLAY/Xvfb is unavailable. Enable Xvfb in crawl4ai or switch this task to Headless.",
-                })}
+                {t("crawl.runtimeGuide.displayIssueHint")}
               </Typography.Text>
             </Space>
           }
@@ -2704,19 +2734,14 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message={t("crawl.runtimeGuide.timeoutIssueTitle", {
-            defaultValue: "Headed runtime timed out",
-          })}
+          message={t("crawl.runtimeGuide.timeoutIssueTitle")}
           description={
             <Space direction="vertical" size={2}>
               <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
                 {task.lastError}
               </Typography.Text>
               <Typography.Text type="secondary">
-                {t("crawl.runtimeGuide.timeoutIssueHint", {
-                  defaultValue:
-                    "Display may be ready, but browser startup/navigation timed out. Check crawl4ai load and task timeout settings.",
-                })}
+                {t("crawl.runtimeGuide.timeoutIssueHint")}
               </Typography.Text>
             </Space>
           }
@@ -2726,9 +2751,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         <Card
           size="small"
           style={{ marginBottom: 16 }}
-          title={t("crawl.detail.strategy.title", {
-            defaultValue: "Crawl strategy",
-          })}
+          title={t("crawl.detail.strategy.title")}
         >
           <Space wrap size={[4, 6]}>
             {crawlStrategyTags}
@@ -2737,10 +2760,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             type="secondary"
             style={{ marginBottom: 0, marginTop: 8 }}
           >
-            {t("crawl.detail.strategy.noLlmHint", {
-              defaultValue:
-                "Crawl stage is deterministic (fetch + clean markdown only). Run LLM summarization and analysis in downstream pipelines.",
-            })}
+            {t("crawl.detail.strategy.noLlmHint")}
           </Typography.Paragraph>
         </Card>
       ) : null}
@@ -2769,9 +2789,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           {storeMediaEnabled ? t("common.enabled") : t("common.disabled")}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.ingestToItems", {
-            defaultValue: "Auto send to Items",
-          })}
+          label={t("crawl.detail.fields.ingestToItems")}
         >
           {canManage ? (
             <Space direction="vertical" size={4}>
@@ -2782,13 +2800,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
               />
               <Typography.Text type="secondary">
                 {permissions.includes("items.write")
-                  ? t("crawl.settings.ingestToItemsHint", {
-                      defaultValue:
-                        "New crawl results will be converted into Items and queued for LLM processing.",
-                    })
-                  : t("crawl.settings.ingestToItemsNoPermission", {
-                      defaultValue: "Requires items.write permission.",
-                    })}
+                  ? t("crawl.settings.ingestToItemsHint")
+                  : t("crawl.settings.ingestToItemsNoPermission")}
               </Typography.Text>
             </Space>
           ) : ingestToItemsEnabled ? (
@@ -2798,26 +2811,20 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           )}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.lastRunItems", {
-            defaultValue: "Last run → Items",
-          })}
+          label={t("crawl.detail.fields.lastRunItems")}
         >
           {task.lastRunSummary
             ? t("crawl.detail.lastRunItemsValue", {
-                defaultValue: "{{queued}} queued, {{failed}} failed",
                 queued: task.lastRunSummary.itemsQueued ?? 0,
                 failed: task.lastRunSummary.itemsQueueFailed ?? 0,
               })
             : t("common.emptyValue")}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.lastRunResults", {
-            defaultValue: "Last run results",
-          })}
+          label={t("crawl.detail.fields.lastRunResults")}
         >
           {task.lastRunSummary
             ? t("crawl.detail.lastRunResultsValue", {
-                defaultValue: "{{inserted}} inserted, {{skipped}} skipped",
                 inserted: task.lastRunSummary.inserted,
                 skipped: task.lastRunSummary.skipped,
               })
@@ -2929,9 +2936,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           )}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.expansionMetrics", {
-            defaultValue: "Expansion metrics",
-          })}
+          label={t("crawl.detail.fields.expansionMetrics")}
         >
           {expansionSummary || expansionHeadSignalSummary ? (
             <Space direction="vertical" size={0}>
@@ -3062,15 +3067,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                       showIcon
                       style={{ marginTop: 8 }}
                       message={t("crawl.detail.expansion.softFailureMessage", {
-                        defaultValue:
-                          "{{count}} publish-signal enrichment fetches soft-failed (non-blocking)",
                         count: expansionHeadSignalSummary.softFailureCount,
                       })}
                       description={t(
                         "crawl.detail.expansion.softFailureDescription",
                         {
-                          defaultValue:
-                            "Soft failures only reduce publish-time confidence and do not fail the crawl task. {{details}}",
                           details: expansionHeadSignalSoftFailureDetails,
                         },
                       )}
@@ -3084,8 +3085,6 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                       message={t(
                         "crawl.detail.expansion.urlPathFallbackMessage",
                         {
-                          defaultValue:
-                            "{{count}}/{{total}} candidates fell back to url-path publish confidence",
                           count: expansionHeadSignalFallbackHint.fallbackCount,
                           total:
                             expansionHeadSignalFallbackHint.totalCandidates,
@@ -3094,8 +3093,6 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                       description={t(
                         "crawl.detail.expansion.urlPathFallbackDescription",
                         {
-                          defaultValue:
-                            "URL-path fallback keeps crawl running (non-blocking), but can reduce publish-time confidence quality. Current fallback ratio: {{ratio}}%.",
                           ratio: Number(
                             (
                               expansionHeadSignalFallbackHint.fallbackRatio *
@@ -3117,18 +3114,12 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           {adjustViewportEnabled ? t("common.enabled") : t("common.disabled")}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.headless", {
-            defaultValue: "Headless mode",
-          })}
+          label={t("crawl.detail.fields.headless")}
         >
           {typeof config?.headless === "boolean"
             ? config.headless
-              ? t("crawl.detail.headless.headless", {
-                  defaultValue: "Headless",
-                })
-              : t("crawl.detail.headless.headed", {
-                  defaultValue: "Headed (Xvfb)",
-                })
+              ? t("crawl.detail.headless.headless")
+              : t("crawl.detail.headless.headed")
             : t("crawl.detail.serverDefault")}
         </Descriptions.Item>
         <Descriptions.Item label={t("crawl.detail.fields.undetectedBrowser")}>
@@ -3142,17 +3133,13 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             : t("common.disabled")}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.antiBotMode", {
-            defaultValue: "Anti-bot retry",
-          })}
+          label={t("crawl.detail.fields.antiBotMode")}
         >
           {config?.antiBotMode === "enabled"
-            ? t("crawl.detail.antiBotMode.enabled", { defaultValue: "Enabled" })
+            ? t("crawl.detail.antiBotMode.enabled")
             : config?.antiBotMode === "disabled"
-              ? t("crawl.detail.antiBotMode.disabled", {
-                  defaultValue: "Disabled",
-                })
-              : t("crawl.detail.antiBotMode.auto", { defaultValue: "Auto" })}
+              ? t("crawl.detail.antiBotMode.disabled")
+              : t("crawl.detail.antiBotMode.auto")}
         </Descriptions.Item>
         <Descriptions.Item label={t("crawl.detail.fields.managedBrowser")}>
           {managedBrowserEnabled ? t("common.enabled") : t("common.disabled")}
@@ -3259,68 +3246,50 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             : t("crawl.detail.default")}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.waitUntil", {
-            defaultValue: "Navigation wait",
-          })}
+          label={t("crawl.detail.fields.waitUntil")}
         >
           {waitUntilSummary ?? t("crawl.detail.default")}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.pageTimeout", {
-            defaultValue: "Page timeout",
-          })}
+          label={t("crawl.detail.fields.pageTimeout")}
         >
           {pageTimeoutMs != null
             ? `${Math.round(pageTimeoutMs)} ms`
             : t("crawl.detail.default")}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.delayBeforeReturnHtml", {
-            defaultValue: "Post-load delay",
-          })}
+          label={t("crawl.detail.fields.delayBeforeReturnHtml")}
         >
           {delayBeforeReturnHtmlMs != null
             ? `${Math.round(delayBeforeReturnHtmlMs)} ms`
             : t("crawl.detail.default")}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.meanDelay", {
-            defaultValue: "Mean delay",
-          })}
+          label={t("crawl.detail.fields.meanDelay")}
         >
           {meanDelayMs != null
             ? `${Math.round(meanDelayMs)} ms`
             : t("crawl.detail.default")}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.maxDelayRange", {
-            defaultValue: "Delay jitter",
-          })}
+          label={t("crawl.detail.fields.maxDelayRange")}
         >
           {maxDelayRangeMs != null
             ? `${Math.round(maxDelayRangeMs)} ms`
             : t("crawl.detail.default")}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.semaphoreCount", {
-            defaultValue: "Internal semaphore",
-          })}
+          label={t("crawl.detail.fields.semaphoreCount")}
         >
           {semaphoreCount != null ? semaphoreCount : t("crawl.detail.default")}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.robotsPolicy", {
-            defaultValue: "robots.txt policy",
-          })}
+          label={t("crawl.detail.fields.robotsPolicy")}
         >
-          {t("crawl.detail.robotsPolicy.ignore", {
-            defaultValue: "Ignore (always)",
-          })}
+          {t("crawl.detail.robotsPolicy.ignore")}
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("crawl.detail.fields.removeForms", {
-            defaultValue: "Remove forms",
-          })}
+          label={t("crawl.detail.fields.removeForms")}
         >
           {removeFormsEnabled == null
             ? t("crawl.detail.default")
@@ -3811,9 +3780,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                                   router.push(`/items/${result.itemId}`)
                                 }
                               >
-                                {t("crawl.detail.openItem", {
-                                  defaultValue: "Open Item",
-                                })}
+                                {t("crawl.detail.openItem")}
                               </Button>
                             ) : null}
                           </>
@@ -3825,9 +3792,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                             }
                             onClick={() => handleCreateItem(result.id)}
                           >
-                            {t("crawl.detail.ingestToItems", {
-                              defaultValue: "Send to Items",
-                            })}
+                            {t("crawl.detail.ingestToItems")}
                           </Button>
                         ) : null}
                       </Space>

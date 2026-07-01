@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 
+import { CrawlResultService } from "./crawl-result.service";
 import type {
   CrawlDetailExpansionOptions,
   CrawlPageTypeHint,
@@ -7,7 +8,6 @@ import type {
   CrawlTaskOptions
 } from "./crawl.types";
 import type { Crawl4aiArticle } from "./crawl4ai.client";
-import { CrawlResultService } from "./crawl-result.service";
 
 export type CrawlPageKind = "detail" | "list" | "mixed" | "blocked";
 export type CrawlPublishTimeSource = "meta" | "time_tag" | "jsonld" | "url_path" | "none";
@@ -590,7 +590,7 @@ export class CrawlQualityStrategyService {
         return ts;
       }
     }
-    const dashedDate = /(20\d{2})[-_/\.]([01]\d)[-_/\.]([0-3]\d)/.exec(path);
+    const dashedDate = /(20\d{2})[-_/.]([01]\d)[-_/.]([0-3]\d)/.exec(path);
     if (dashedDate) {
       return toUtcTimestamp(Number(dashedDate[1]), Number(dashedDate[2]), Number(dashedDate[3]));
     }

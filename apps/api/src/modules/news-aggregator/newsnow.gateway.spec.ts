@@ -1,5 +1,5 @@
-import { sign } from "jsonwebtoken";
 import { RealtimeSocketErrorCode } from "@modular/utils";
+import { sign } from "jsonwebtoken";
 
 import type { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
 
@@ -43,6 +43,7 @@ describe("NewsnowGateway", () => {
   const sessionsMock = {
     register: jest.fn(),
     unregister: jest.fn(),
+    emitToOrg: jest.fn(),
   } as any;
 
   const registryServiceMock = {
@@ -67,6 +68,9 @@ describe("NewsnowGateway", () => {
   const connectionRateLimiterMock = {
     checkConnectionRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
     checkUserConnectionRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
+    recordFailedAuth: jest.fn().mockResolvedValue(undefined),
+    getBackoffDelay: jest.fn().mockResolvedValue(0),
+    clearBackoff: jest.fn().mockResolvedValue(undefined),
   } as Partial<WsConnectionRateLimiterService>;
 
   let gateway: NewsnowGateway;
@@ -88,6 +92,11 @@ describe("NewsnowGateway", () => {
     connectionRateLimiterMock.checkUserConnectionRateLimit = jest
       .fn()
       .mockResolvedValue({ allowed: true });
+    connectionRateLimiterMock.recordFailedAuth = jest
+      .fn()
+      .mockResolvedValue(undefined);
+    connectionRateLimiterMock.getBackoffDelay = jest.fn().mockResolvedValue(0);
+    connectionRateLimiterMock.clearBackoff = jest.fn().mockResolvedValue(undefined);
     registryServiceMock.getMetadata.mockReturnValue({
       sources: {
         weibo: { name: "微博" },
@@ -173,6 +182,9 @@ describe("NewsnowGateway", () => {
       expect.any(Function),
     );
     expect(client.disconnect).not.toHaveBeenCalled();
+    expect(connectionRateLimiterMock.clearBackoff).toHaveBeenCalledWith(
+      "127.0.0.1",
+    );
   });
 
   it("rejects sockets without required permission", async () => {
@@ -192,6 +204,9 @@ describe("NewsnowGateway", () => {
     });
     expect(client.disconnect).toHaveBeenCalledWith(true);
     expect(sessionsMock.unregister).toHaveBeenCalledWith(client);
+    expect(connectionRateLimiterMock.recordFailedAuth).toHaveBeenCalledWith(
+      "127.0.0.1",
+    );
   });
 
   it("maps max-connection failures to stable websocket error codes", async () => {
@@ -211,9 +226,45 @@ describe("NewsnowGateway", () => {
       message: "Too many connections",
     });
     expect(client.disconnect).toHaveBeenCalledWith(true);
+    expect(connectionRateLimiterMock.recordFailedAuth).not.toHaveBeenCalled();
   });
 
-  it("maps rate-limit failures to stable websocket error codes", async () => {
+  it("maps IP rate-limit failures to stable websocket error codes", async () => {
+    (
+      connectionRateLimiterMock.checkConnectionRateLimit as jest.Mock
+    ).mockResolvedValue({ allowed: false, retryAfterMs: 60000 });
+
+    const client = createClient(createToken());
+
+    await gateway.handleConnection(client);
+
+    expect(client.emit).toHaveBeenCalledWith("newsnow:error", {
+      code: RealtimeSocketErrorCode.RateLimitExceeded,
+      message: "Rate limit exceeded",
+      retryAfterMs: 60000,
+    });
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+  });
+
+  it("maps auth backoff failures to stable websocket error codes", async () => {
+    (
+      connectionRateLimiterMock.getBackoffDelay as jest.Mock
+    ).mockResolvedValue(8000);
+
+    const client = createClient(createToken());
+
+    await gateway.handleConnection(client);
+
+    expect(client.emit).toHaveBeenCalledWith("newsnow:error", {
+      code: RealtimeSocketErrorCode.TooManyFailedAttempts,
+      message: "Too many failed attempts",
+      retryAfterMs: 8000,
+    });
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+    expect(authServiceMock.getUserProfile).not.toHaveBeenCalled();
+  });
+
+  it("maps user connection-attempt throttling to stable websocket error codes", async () => {
     (
       connectionRateLimiterMock.checkUserConnectionRateLimit as jest.Mock
     ).mockResolvedValue({ allowed: false, retryAfterMs: 60000 });
@@ -225,17 +276,19 @@ describe("NewsnowGateway", () => {
     expect(client.emit).toHaveBeenCalledWith("newsnow:error", {
       code: RealtimeSocketErrorCode.TooManyConnectionAttempts,
       message: "Too many connection attempts",
+      retryAfterMs: 60000,
     });
     expect(client.disconnect).toHaveBeenCalledWith(true);
   });
 
-  it("broadcasts realtime events received from dispatcher", async () => {
+  it("broadcasts realtime events received from dispatcher to the event org", async () => {
     gateway.onModuleInit();
 
     expect(dispatcherMock.registerListener).toHaveBeenCalledTimes(1);
     expect(realtimeListener).toBeDefined();
 
     await realtimeListener?.({
+      orgId: "org-1",
       sourceId: "weibo",
       newItemsCount: 2,
       topTitles: ["a", "b"],
@@ -244,10 +297,33 @@ describe("NewsnowGateway", () => {
       timestamp: new Date().toISOString(),
     });
 
-    expect(serverMock.emit).toHaveBeenCalledWith(
+    expect(sessionsMock.emitToOrg).toHaveBeenCalledWith(
+      serverMock,
+      "org-1",
       "newsnow:update",
-      expect.objectContaining({ sourceId: "weibo", newItemsCount: 2 }),
+      expect.objectContaining({
+        orgId: "org-1",
+        sourceId: "weibo",
+        newItemsCount: 2,
+      }),
     );
+    expect(serverMock.emit).not.toHaveBeenCalled();
+  });
+
+  it("drops realtime events without orgId instead of broadcasting to all sockets", async () => {
+    gateway.onModuleInit();
+
+    await realtimeListener?.({
+      sourceId: "weibo",
+      newItemsCount: 2,
+      topTitles: ["a", "b"],
+      updatedTime: new Date().toISOString(),
+      intervalMs: 120000,
+      timestamp: new Date().toISOString(),
+    } as any);
+
+    expect(sessionsMock.emitToOrg).not.toHaveBeenCalled();
+    expect(serverMock.emit).not.toHaveBeenCalled();
   });
 
   it("normalizes active source payloads from the socket", async () => {

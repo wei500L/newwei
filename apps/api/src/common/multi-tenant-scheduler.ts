@@ -12,11 +12,29 @@ export type ConcurrentSettledResult<T, R> =
       reason: unknown;
     };
 
+export interface SchedulerTickGateCache {
+  setIfAbsent<T>(key: string, value: T, ttlSeconds: number): Promise<boolean>;
+}
+
+export async function claimSchedulerTick(
+  cache: SchedulerTickGateCache,
+  key: string,
+  ttlMs: number,
+  now = new Date(),
+): Promise<boolean> {
+  const normalizedTtlSeconds = Math.max(1, Math.ceil(ttlMs / 1000));
+  return cache.setIfAbsent(
+    key,
+    { claimedAt: now.toISOString() },
+    normalizedTtlSeconds,
+  );
+}
+
 export async function settleWithConcurrency<T, R>(
   items: readonly T[],
   concurrency: number,
   worker: (item: T, index: number) => Promise<R>,
-): Promise<Array<ConcurrentSettledResult<T, R>>> {
+): Promise<ConcurrentSettledResult<T, R>[]> {
   if (items.length === 0) {
     return [];
   }

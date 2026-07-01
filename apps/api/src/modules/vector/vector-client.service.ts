@@ -13,6 +13,26 @@ import { VectorServiceSettingsService } from "../system-settings/vector-service-
 
 const logger = createLogger({ name: "vector-client" });
 
+export interface VectorServiceRuntimeDiagnostics {
+  snapshotAt: string;
+  source: "env" | "db";
+  enabled: boolean;
+  configured: boolean;
+  fallbackToMongo: boolean;
+  baseUrl: string | null;
+  timeoutMs: number;
+  maxRetries: number;
+  hasToken: boolean;
+  tokenSource: "stored" | "env" | "none";
+  temporarilyUnavailable: boolean;
+  unavailableUntil: string | null;
+  consecutiveFailures: number;
+  lastOperation: "search" | "upsert" | null;
+  lastFailureAt: string | null;
+  lastErrorName: string | null;
+  lastErrorMessage: string | null;
+}
+
 @Injectable()
 export class VectorClientService {
   private client: VectorClient | null = null;
@@ -20,6 +40,10 @@ export class VectorClientService {
   private lastIncompleteWarnAtMs = 0;
   private consecutiveFailures = 0;
   private unavailableUntilMs = 0;
+  private lastOperation: "search" | "upsert" | null = null;
+  private lastFailureAtMs = 0;
+  private lastErrorName: string | null = null;
+  private lastErrorMessage: string | null = null;
 
   constructor(private readonly settings: VectorServiceSettingsService) {}
 
@@ -148,6 +172,38 @@ export class VectorClientService {
     return cfg.fallbackToMongo;
   }
 
+  async getDiagnostics(): Promise<VectorServiceRuntimeDiagnostics> {
+    const [publicSettings, effective] = await Promise.all([
+      this.settings.getPublicSettings(),
+      this.settings.getEffectiveConfig(),
+    ]);
+    const temporarilyUnavailable = this.isTemporarilyUnavailable();
+
+    return {
+      snapshotAt: new Date().toISOString(),
+      source: publicSettings.source,
+      enabled: effective.enabled,
+      configured: Boolean(effective.baseUrl && effective.token),
+      fallbackToMongo: effective.fallbackToMongo,
+      baseUrl: effective.baseUrl ?? null,
+      timeoutMs: effective.timeoutMs,
+      maxRetries: effective.maxRetries,
+      hasToken: Boolean(effective.token),
+      tokenSource: publicSettings.tokenSource,
+      temporarilyUnavailable,
+      unavailableUntil: temporarilyUnavailable
+        ? new Date(this.unavailableUntilMs).toISOString()
+        : null,
+      consecutiveFailures: this.consecutiveFailures,
+      lastOperation: this.lastOperation,
+      lastFailureAt: this.lastFailureAtMs
+        ? new Date(this.lastFailureAtMs).toISOString()
+        : null,
+      lastErrorName: this.lastErrorName,
+      lastErrorMessage: this.lastErrorMessage,
+    };
+  }
+
   private async resolveClient(): Promise<VectorClient | null> {
     const cfg = await this.settings.getEffectiveConfig();
     if (!cfg.enabled) {
@@ -196,8 +252,13 @@ export class VectorClientService {
   private markUnavailable(error: unknown, operation: "search" | "upsert") {
     const now = Date.now();
     const wasAvailable = now >= this.unavailableUntilMs;
+    const normalizedError = error instanceof Error ? error : null;
 
     this.consecutiveFailures = Math.min(this.consecutiveFailures + 1, 10);
+    this.lastOperation = operation;
+    this.lastFailureAtMs = now;
+    this.lastErrorName = normalizedError?.name ?? null;
+    this.lastErrorMessage = normalizedError?.message ?? null;
 
     let backoffMs = Math.min(60_000, 1_000 * 2 ** Math.max(0, this.consecutiveFailures - 1));
     if (error instanceof VectorUnauthorizedError) {

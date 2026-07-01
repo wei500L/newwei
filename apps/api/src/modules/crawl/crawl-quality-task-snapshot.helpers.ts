@@ -192,18 +192,22 @@ export function buildCrawlQualityTaskSnapshotRows(
     const preflight = preflightByTaskId.get(task.id);
     const dedupe = dedupeByTaskId.get(task.id);
     const markdown = markdownByTaskId.get(task.id);
-    const { taskId: _expansionTaskId, ...expansionCounts } = expansion ?? {
+    const { taskId: expansionTaskId, ...expansionCounts } = expansion ?? {
       taskId: task.id,
     };
-    const { taskId: _preflightTaskId, ...preflightCounts } = preflight ?? {
+    void expansionTaskId;
+    const { taskId: preflightTaskId, ...preflightCounts } = preflight ?? {
       taskId: task.id,
     };
-    const { taskId: _dedupeTaskId, ...dedupeCounts } = dedupe ?? {
+    void preflightTaskId;
+    const { taskId: dedupeTaskId, ...dedupeCounts } = dedupe ?? {
       taskId: task.id,
     };
-    const { taskId: _markdownTaskId, ...markdownCounts } = markdown ?? {
+    void dedupeTaskId;
+    const { taskId: markdownTaskId, ...markdownCounts } = markdown ?? {
       taskId: task.id,
     };
+    void markdownTaskId;
 
     return {
       taskId: task.id,

@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { auth } from "@/lib/auth";
 import { AuraBackground } from "@/components/aura-background";
+import { auth } from "@/lib/auth";
 
+import { OnboardingBoundary } from "./components/onboarding-boundary";
 import { ShellLayout } from "./components/shell";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
@@ -21,7 +22,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <AuraBackground />
-      <ShellLayout>{children}</ShellLayout>
+      <ShellLayout>
+        <OnboardingBoundary>{children}</OnboardingBoundary>
+      </ShellLayout>
     </>
   );
 }

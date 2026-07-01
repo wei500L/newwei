@@ -4,7 +4,10 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
-import { RecordUserNewsBehaviorDto } from "./dto/record-user-news-behavior.dto";
+import {
+  RecordUserNewsBehaviorDto,
+  validateRecordUserNewsBehaviorDto,
+} from "./dto/record-user-news-behavior.dto";
 import { UserNewsBehaviorService } from "./user-news-behavior.service";
 
 @Controller("user-news-behavior")
@@ -17,6 +20,7 @@ export class UserNewsBehaviorController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: RecordUserNewsBehaviorDto,
   ) {
+    validateRecordUserNewsBehaviorDto(body);
     return this.behavior.record({
       orgId: user.orgId,
       userId: user.id,

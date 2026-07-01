@@ -30,4 +30,16 @@ describe("admin quality task logs wiring", () => {
     expect(source).toContain('quality.liveUpdates.stale.title');
     expect(source).toContain("setLiveDirtySources");
   });
+
+  it("connects the quality socket only after listeners are attached", () => {
+    const source = fs.readFileSync(
+      path.resolve(webRoot, "app/(app)/admin/quality/quality-content.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain("autoConnect: false");
+    expect(source).toContain("const connectTimer = window.setTimeout(() => {");
+    expect(source).toContain("socket.connect();");
+    expect(source).toContain("window.clearTimeout(connectTimer);");
+  });
 });

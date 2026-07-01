@@ -102,20 +102,20 @@ export interface WorkflowVersionCompareResult {
     rightSettings: Record<string, unknown>;
     leftNodeIds: string[];
     rightNodeIds: string[];
-    settings?: Array<{
+    settings?: {
       key: string;
       left: unknown;
       right: unknown;
-    }>;
+    }[];
     nodes?: {
       added: WorkflowVersionCompareNode[];
       removed: WorkflowVersionCompareNode[];
-      changed: Array<{
+      changed: {
         id: string;
         left: WorkflowVersionCompareNode;
         right: WorkflowVersionCompareNode;
         changedFields: string[];
-      }>;
+      }[];
     };
     edges?: {
       added: WorkflowVersionCompareEdge[];
@@ -123,11 +123,11 @@ export interface WorkflowVersionCompareResult {
     };
   };
   bindingImpact?: {
-    workflows: Array<{
+    workflows: {
       id: string;
       name: string;
       publishedVersionId?: string | null;
-    }>;
+    }[];
     profiles: WorkflowVersionCompareBindingBucket;
     newsSources: WorkflowVersionCompareBindingBucket;
   };
@@ -168,7 +168,7 @@ export interface WorkflowVersionCompareBindingBucket {
   followingPublishedCount: number;
   leftVersionCount: number;
   rightVersionCount: number;
-  items: Array<{
+  items: {
     id: string;
     name: string;
     workflowId?: string | null;
@@ -183,7 +183,7 @@ export interface WorkflowVersionCompareBindingBucket {
     updatedAt: string;
     matchHost?: string;
     url?: string;
-  }>;
+  }[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -14,7 +14,7 @@ import { RateLimiterService } from "../cache/rate-limiter.service"
 import { PrismaService } from "../config/prisma.service"
 import { NewsSourceRuntimeSecretsService } from "../system-settings/news-source-runtime-secrets.service"
 import { NewsnowPersonalizationSettingsService } from "../system-settings/newsnow-personalization-settings.service"
-import { buildUserNewsBehaviorHashKey } from "../user-news-behavior/user-news-behavior.constants"
+import { UserNewsBehaviorService } from "../user-news-behavior/user-news-behavior.service"
 import {
   createDefaultNewsnowUiSettings,
   normalizeNewsnowUiSettings,
@@ -36,6 +36,7 @@ import {
   NewsSourceRuntimeSecretRequiredError,
 } from "./news-aggregator.errors"
 import type { NewsItem, NewsResolveResponse, SourceID, SourceResponse } from "./news-aggregator.types"
+import { NewsnowActiveSourceRegistryService } from "./newsnow-active-source-registry.service"
 import { NewsnowRealtimeDispatcher } from "./newsnow-realtime.dispatcher"
 
 const LOCK_WAIT_INTERVAL_MS = 200
@@ -67,6 +68,7 @@ export interface NewsnowPersonalizationOrderPayload {
       behaviorWeight: number
       affinityContribution: number
       behaviorContribution: number
+      negativeContribution: number
       focusBonus: number
     }
   >
@@ -89,9 +91,11 @@ export class NewsAggregatorService {
     private readonly prisma: PrismaService,
     private readonly registryService: NewsAggregatorRegistryService,
     private readonly runtimeSecretsService: NewsSourceRuntimeSecretsService,
+    private readonly activeSources: NewsnowActiveSourceRegistryService,
     private readonly newsnowRealtime: NewsnowRealtimeDispatcher,
     private readonly userSettingsService: UserSettingsService,
     private readonly personalizationSettingsService: NewsnowPersonalizationSettingsService,
+    private readonly userNewsBehavior: UserNewsBehaviorService,
   ) {}
 
   async fetchSource(id: string, forceRefresh = false): Promise<SourceResponse> {
@@ -434,16 +438,25 @@ export class NewsAggregatorService {
       string,
       { name?: string; title?: string; home?: string } | undefined
     >
-    const behaviorSourceScores = await this.loadUserBehaviorSourceScores(
+    const behaviorProfile = await this.userNewsBehavior.getPersonalizationProfile(
       input.orgId,
       input.userId,
     )
-    const maxBehaviorSourceScore = Math.max(
+    const positiveBehaviorSourceScores = behaviorProfile.positive.sources
+    const negativeBehaviorSourceScores = behaviorProfile.negative.sources
+    const maxPositiveBehaviorSourceScore = Math.max(
       0,
-      ...Object.values(behaviorSourceScores),
+      ...Object.values(positiveBehaviorSourceScores),
     )
-    const behaviorScoreNormalizer = maxBehaviorSourceScore > 0
-      ? Math.log1p(maxBehaviorSourceScore)
+    const maxNegativeBehaviorSourceScore = Math.max(
+      0,
+      ...Object.values(negativeBehaviorSourceScores),
+    )
+    const positiveBehaviorScoreNormalizer = maxPositiveBehaviorSourceScore > 0
+      ? Math.log1p(maxPositiveBehaviorSourceScore)
+      : 0
+    const negativeBehaviorScoreNormalizer = maxNegativeBehaviorSourceScore > 0
+      ? Math.log1p(maxNegativeBehaviorSourceScore)
       : 0
     const scoringNow = Date.now()
     const scored = manuallyOrdered.map((sourceId, index) => {
@@ -463,26 +476,48 @@ export class NewsAggregatorService {
       const recencyFactor = 1 - elapsedDays / (NEWSNOW_SMART_SCORE_MAX_AGE_DAYS * 1.25)
       const recencyWeighted = baseScore * this.clamp(recencyFactor, 0.2, 1)
       const focusBonus = focusSet.has(sourceId) ? runtimePolicy.focusSourceBonus : 0
-      const behaviorRaw = this.resolveBehaviorSourceScore({
+      const positiveBehaviorRaw = this.resolveBehaviorSourceScore({
         sourceId,
         sourceMeta: sourceMetaRecord[sourceId],
-        behaviorSourceScores,
+        behaviorSourceScores: positiveBehaviorSourceScores,
       })
-      const behaviorNormalized =
-        behaviorRaw > 0 && behaviorScoreNormalizer > 0
-          ? this.clamp(Math.log1p(behaviorRaw) / behaviorScoreNormalizer, 0, 1)
+      const negativeBehaviorRaw = this.resolveBehaviorSourceScore({
+        sourceId,
+        sourceMeta: sourceMetaRecord[sourceId],
+        behaviorSourceScores: negativeBehaviorSourceScores,
+      })
+      const positiveBehaviorNormalized =
+        positiveBehaviorRaw > 0 && positiveBehaviorScoreNormalizer > 0
+          ? this.clamp(
+              Math.log1p(positiveBehaviorRaw) / positiveBehaviorScoreNormalizer,
+              0,
+              1,
+            )
           : 0
-      const behaviorWeighted = behaviorNormalized * 100
+      const negativeBehaviorNormalized =
+        negativeBehaviorRaw > 0 && negativeBehaviorScoreNormalizer > 0
+          ? this.clamp(
+              Math.log1p(negativeBehaviorRaw) / negativeBehaviorScoreNormalizer,
+              0,
+              1,
+            )
+          : 0
+      const behaviorWeighted = (positiveBehaviorNormalized - negativeBehaviorNormalized * 1.15) * 100
       const affinityContribution = recencyWeighted * normalizedWeights.affinity
       const behaviorContribution = behaviorWeighted * normalizedWeights.behavior
+      const negativeContribution = Number(
+        (negativeBehaviorNormalized * 100 * normalizedWeights.behavior).toFixed(4),
+      )
       const combinedScore =
         affinityContribution +
         behaviorContribution +
         focusBonus
+      const displayCombinedScore = this.clamp(combinedScore, 0, 100)
       return {
         sourceId,
         index,
         score: combinedScore,
+        displayScore: displayCombinedScore,
         detail: {
           combinedScore: Number(combinedScore.toFixed(4)),
           affinityScore: Number(recencyWeighted.toFixed(4)),
@@ -491,6 +526,7 @@ export class NewsAggregatorService {
           behaviorWeight: scoreWeights.behavior,
           affinityContribution: Number(affinityContribution.toFixed(4)),
           behaviorContribution: Number(behaviorContribution.toFixed(4)),
+          negativeContribution,
           focusBonus: Number(focusBonus.toFixed(4)),
         },
       }
@@ -506,7 +542,7 @@ export class NewsAggregatorService {
     const sourceScores: Record<string, number> = {}
     const sourceScoreDetails: Record<string, NewsnowPersonalizationOrderPayload["sourceScoreDetails"][string]> = {}
     sorted.forEach((entry) => {
-      sourceScores[entry.sourceId] = Number(entry.score.toFixed(4))
+      sourceScores[entry.sourceId] = Number(entry.displayScore.toFixed(4))
       sourceScoreDetails[entry.sourceId] = entry.detail
     })
 
@@ -1011,42 +1047,6 @@ export class NewsAggregatorService {
     return ordered
   }
 
-  private async loadUserBehaviorSourceScores(orgId: string, userId: string) {
-    const key = buildUserNewsBehaviorHashKey({
-      orgId,
-      userId,
-      kind: "sources",
-    })
-    try {
-      const raw = await this.cacheService.hgetall(key)
-      return this.parseBehaviorScoreRecord(raw)
-    } catch (error) {
-      this.logger.warn(
-        `behavior profile read failed for "${key}": ${error instanceof Error ? error.message : String(error)}`,
-      )
-      return {}
-    }
-  }
-
-  private parseBehaviorScoreRecord(raw: Record<string, string>) {
-    const entries = Object.entries(raw ?? {})
-      .map(([term, value]) => {
-        const normalized = this.normalizeBehaviorTerm(term)
-        if (!normalized) {
-          return null
-        }
-        const score = Number(value)
-        if (!Number.isFinite(score) || score <= 0) {
-          return null
-        }
-        return [normalized, score] as const
-      })
-      .filter((entry): entry is readonly [string, number] => Boolean(entry))
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 500)
-    return Object.fromEntries(entries)
-  }
-
   private resolveBehaviorSourceScore(input: {
     sourceId: string
     sourceMeta?: { name?: string; title?: string; home?: string } | null
@@ -1196,14 +1196,23 @@ export class NewsAggregatorService {
           : new Date().toISOString()
 
     try {
-      await this.newsnowRealtime.publish({
-        orgId,
-        sourceId,
-        newItemsCount,
-        topTitles,
-        updatedTime,
-        intervalMs: Math.max(1_000, intervalMs),
-      })
+      const targetOrgIds = this.resolveRealtimeTargetOrgIds(orgId, sourceId)
+      if (targetOrgIds.length === 0) {
+        return
+      }
+
+      await Promise.all(
+        targetOrgIds.map((targetOrgId) =>
+          this.newsnowRealtime.publish({
+            orgId: targetOrgId,
+            sourceId,
+            newItemsCount,
+            topTitles,
+            updatedTime,
+            intervalMs: Math.max(1_000, intervalMs),
+          }),
+        ),
+      )
     } catch (error) {
       this.logger.warn(
         {
@@ -1214,5 +1223,14 @@ export class NewsAggregatorService {
         "failed to publish newsnow realtime event",
       )
     }
+  }
+
+  private resolveRealtimeTargetOrgIds(orgId: string | undefined, sourceId: SourceID) {
+    const explicitOrgId = typeof orgId === "string" ? orgId.trim() : ""
+    if (explicitOrgId) {
+      return [explicitOrgId]
+    }
+
+    return this.activeSources.getOrgIdsForSource(sourceId)
   }
 }

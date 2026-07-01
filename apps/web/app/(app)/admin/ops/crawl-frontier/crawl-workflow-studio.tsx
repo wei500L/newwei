@@ -39,8 +39,13 @@ import type { ColumnsType } from "antd/es/table";
 import "@xyflow/react/dist/style.css";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
+import {
+  findUnsupportedWorkflowProxyIssues,
+  getCrawlConfigPolicyIssueTranslationKey,
+} from "@/lib/crawl-config-policy";
 
 import {
   buildWorkflowCandidateTraceChain,
@@ -232,6 +237,20 @@ function parseObject(value: string) {
   return parsed as AnyRecord;
 }
 
+function formatPolicyIssues(
+  issues: ReturnType<typeof findUnsupportedWorkflowProxyIssues>,
+  t: ReturnType<typeof useTranslation>["t"],
+) {
+  return issues
+    .map(
+      (issue) =>
+        `${issue.path}: ${t(getCrawlConfigPolicyIssueTranslationKey(issue.code), {
+          defaultValue: issue.code,
+        })}`,
+    )
+    .join(" ");
+}
+
 function nodeToCanvasNode(
   definitionNode: WorkflowDefinition["nodes"][number],
 ): Node {
@@ -311,6 +330,7 @@ function WorkflowStudioInner({
   canManage: boolean;
   selectedWorkflowIdHint?: string | null;
 }) {
+  const { t } = useTranslation();
   const { data: session } = useSession();
   const token = session?.accessToken;
   const apiClient = useMemo(
@@ -356,6 +376,19 @@ function WorkflowStudioInner({
   const [trialProfileId, setTrialProfileId] = useState<string>();
   const [trialNewsSourceId, setTrialNewsSourceId] = useState<string>();
   const [trialMaxCandidates, setTrialMaxCandidates] = useState<number>(100);
+
+  const workflowPolicyIssues = useMemo(
+    () => findUnsupportedWorkflowProxyIssues(definition, "draftDefinition"),
+    [definition],
+  );
+  const hasWorkflowPolicyIssues = workflowPolicyIssues.length > 0;
+  const workflowPolicyBlockedHint = useMemo(
+    () =>
+      hasWorkflowPolicyIssues
+        ? t("crawl.policy.actionBlockedByUnsupportedProxy")
+        : undefined,
+    [hasWorkflowPolicyIssues, t],
+  );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -452,11 +485,13 @@ function WorkflowStudioInner({
       }
     } catch (error) {
       console.warn("Failed to load crawl workflow studio", error);
-      messageApi.error("Failed to load crawl strategy workflows");
+      messageApi.error(
+        t("crawlFrontier.workflowStudio.errors.load"),
+      );
     } finally {
       setLoading(false);
     }
-  }, [apiClient, messageApi, selectedWorkflowId]);
+  }, [apiClient, messageApi, selectedWorkflowId, t]);
 
   useEffect(() => {
     void loadData();
@@ -564,24 +599,49 @@ function WorkflowStudioInner({
     [definition, selectedNodeId, setNodes],
   );
 
+  const validateWorkflowDefinition = useCallback(
+    (nextDefinition: WorkflowDefinition) => {
+      const issues = findUnsupportedWorkflowProxyIssues(
+        nextDefinition,
+        "draftDefinition",
+      );
+      if (issues.length === 0) {
+        return true;
+      }
+      messageApi.error(formatPolicyIssues(issues, t));
+      return false;
+    },
+    [messageApi, t],
+  );
+
   const saveDraft = useCallback(async () => {
     if (!apiClient || !selectedWorkflow || !definition) return;
+    const nextDefinition = workflowDefinitionFromCanvas(definition, nodes, edges);
+    if (!validateWorkflowDefinition(nextDefinition)) {
+      return false;
+    }
     setSaving(true);
     try {
       const payload = {
         name: workflowMeta.name.trim() || selectedWorkflow.name,
         description: workflowMeta.description.trim() || undefined,
-        draftDefinition: workflowDefinitionFromCanvas(definition, nodes, edges),
+        draftDefinition: nextDefinition,
       };
       await apiClient.patch(
         `admin/crawl-frontier/workflows/${selectedWorkflow.id}/draft`,
         payload,
       );
-      messageApi.success("Workflow draft saved");
+      messageApi.success(
+        t("crawlFrontier.workflowStudio.messages.draftSaved"),
+      );
       await loadData();
+      return true;
     } catch (error) {
       console.warn("Failed to save crawl workflow draft", error);
-      messageApi.error("Failed to save workflow draft");
+      messageApi.error(
+        t("crawlFrontier.workflowStudio.errors.saveDraft"),
+      );
+      return false;
     } finally {
       setSaving(false);
     }
@@ -593,6 +653,8 @@ function WorkflowStudioInner({
     messageApi,
     nodes,
     selectedWorkflow,
+    t,
+    validateWorkflowDefinition,
     workflowMeta.description,
     workflowMeta.name,
   ]);
@@ -601,20 +663,27 @@ function WorkflowStudioInner({
     if (!apiClient || !selectedWorkflow) return;
     setPublishing(true);
     try {
-      await saveDraft();
+      const saved = await saveDraft();
+      if (!saved) {
+        return;
+      }
       await apiClient.post(
         `admin/crawl-frontier/workflows/${selectedWorkflow.id}/publish`,
         {},
       );
-      messageApi.success("Workflow published");
+      messageApi.success(
+        t("crawlFrontier.workflowStudio.messages.published"),
+      );
       await loadData();
     } catch (error) {
       console.warn("Failed to publish crawl workflow", error);
-      messageApi.error("Failed to publish workflow");
+      messageApi.error(
+        t("crawlFrontier.workflowStudio.errors.publish"),
+      );
     } finally {
       setPublishing(false);
     }
-  }, [apiClient, loadData, messageApi, saveDraft, selectedWorkflow]);
+  }, [apiClient, loadData, messageApi, saveDraft, selectedWorkflow, t]);
 
   const createWorkflow = useCallback(async () => {
     if (!apiClient) return;
@@ -633,18 +702,23 @@ function WorkflowStudioInner({
       }
     } catch (error) {
       console.warn("Failed to create crawl workflow", error);
-      messageApi.error("Failed to create workflow");
+      messageApi.error(
+        t("crawlFrontier.workflowStudio.errors.create"),
+      );
     } finally {
       setSaving(false);
     }
-  }, [apiClient, loadData, messageApi]);
+  }, [apiClient, loadData, messageApi, t]);
 
   const runTrial = useCallback(
     async (workflowVersionId?: string, successLabel?: string) => {
       if (!apiClient || !selectedWorkflow) return;
       setTrialLoading(true);
       try {
-        await saveDraft();
+        const saved = await saveDraft();
+        if (!saved) {
+          return;
+        }
         const response = await apiClient.post<WorkflowTrialResult>(
           `admin/crawl-frontier/workflows/${selectedWorkflow.id}/trial-run`,
           {
@@ -656,10 +730,15 @@ function WorkflowStudioInner({
           },
         );
         setTrialResult(response.data ?? null);
-        messageApi.success(successLabel ?? "Workflow trial run completed");
+        messageApi.success(
+          successLabel ??
+            t("crawlFrontier.workflowStudio.messages.trialCompleted"),
+        );
       } catch (error) {
         console.warn("Failed to trial run crawl workflow", error);
-        messageApi.error("Failed to trial run workflow");
+        messageApi.error(
+          t("crawlFrontier.workflowStudio.errors.trial"),
+        );
       } finally {
         setTrialLoading(false);
       }
@@ -673,6 +752,7 @@ function WorkflowStudioInner({
       trialNewsSourceId,
       trialProfileId,
       trialSeedUrl,
+      t,
     ],
   );
 
@@ -690,11 +770,13 @@ function WorkflowStudioInner({
       setCompareResult(response.data ?? null);
     } catch (error) {
       console.warn("Failed to compare crawl workflow versions", error);
-      messageApi.error("Failed to compare workflow versions");
+      messageApi.error(
+        t("crawlFrontier.workflowStudio.errors.compare"),
+      );
     } finally {
       setCompareLoading(false);
     }
-  }, [apiClient, compareLeftVersionId, compareRightVersionId, messageApi]);
+  }, [apiClient, compareLeftVersionId, compareRightVersionId, messageApi, t]);
 
   const replayWorkflowRun = useCallback(
     async (runId: string) => {
@@ -707,23 +789,27 @@ function WorkflowStudioInner({
         );
         messageApi.success(
           response.data?.runId
-            ? `Replay created: ${response.data.runId}`
-            : "Workflow replay completed",
+            ? t("crawlFrontier.workflowStudio.messages.replayCreated", {
+                runId: response.data.runId,
+              })
+            : t("crawlFrontier.workflowStudio.messages.replayCompleted"),
         );
       } catch (error) {
         console.warn("Failed to replay crawl workflow run", error);
-        messageApi.error("Failed to replay workflow run");
+        messageApi.error(
+          t("crawlFrontier.workflowStudio.errors.replay"),
+        );
       } finally {
         setReplayingRunId(null);
       }
     },
-    [apiClient, messageApi],
+    [apiClient, messageApi, t],
   );
 
   const candidateColumns = useMemo<ColumnsType<WorkflowCandidate>>(
     () => [
       {
-        title: "Candidate",
+        title: t("crawlFrontier.workflowStudio.candidates.columns.candidate"),
         key: "url",
         render: (_, record) => (
           <Space direction="vertical" size={0}>
@@ -740,7 +826,7 @@ function WorkflowStudioInner({
         ),
       },
       {
-        title: "Status",
+        title: t("crawlFrontier.workflowStudio.candidates.columns.status"),
         key: "status",
         width: 120,
         render: (_, record) => (
@@ -758,7 +844,7 @@ function WorkflowStudioInner({
         ),
       },
       {
-        title: "Signals",
+        title: t("crawlFrontier.workflowStudio.candidates.columns.signals"),
         key: "signals",
         width: 240,
         render: (_, record) => (
@@ -777,23 +863,23 @@ function WorkflowStudioInner({
         ),
       },
       {
-        title: "Reason",
+        title: t("crawlFrontier.workflowStudio.candidates.columns.reason"),
         dataIndex: "rejectedReason",
         key: "rejectedReason",
         width: 140,
       },
       {
-        title: "Actions",
+        title: t("crawlFrontier.workflowStudio.candidates.columns.actions"),
         key: "actions",
         width: 110,
         render: (_, record) => (
           <Button size="small" onClick={() => setCandidateDrawer(record)}>
-            Explain
+            {t("crawlFrontier.workflowStudio.candidates.actions.explain")}
           </Button>
         ),
       },
     ],
-    [],
+    [t],
   );
 
   return (
@@ -801,7 +887,7 @@ function WorkflowStudioInner({
       {messageContextHolder}
       <Card
         className="content-card"
-        title="Workflow Strategy Studio"
+        title={t("crawlFrontier.workflowStudio.title")}
         extra={
           <Space wrap>
             <Button
@@ -809,38 +895,48 @@ function WorkflowStudioInner({
               loading={saving}
               disabled={!canManage}
             >
-              New Workflow
+              {t("crawlFrontier.workflowStudio.actions.newWorkflow")}
             </Button>
             <Button
               onClick={() => void saveDraft()}
               loading={saving}
-              disabled={!canManage || !selectedWorkflow}
+              disabled={!canManage || !selectedWorkflow || hasWorkflowPolicyIssues}
             >
-              Save Draft
+              {t("crawlFrontier.workflowStudio.actions.saveDraft")}
             </Button>
-            <Button
-              type="primary"
-              onClick={() => void publishWorkflow()}
-              loading={publishing}
-              disabled={!canManage || !selectedWorkflow}
-            >
-              Publish
-            </Button>
-            <Button
-              type="primary"
-              ghost
-              onClick={() => void runTrial()}
-              loading={trialLoading}
-              disabled={!selectedWorkflow}
-            >
-              Trial Run
-            </Button>
+            <Tooltip title={workflowPolicyBlockedHint}>
+              <span>
+                <Button
+                  type="primary"
+                  onClick={() => void publishWorkflow()}
+                  loading={publishing}
+                  disabled={
+                    !canManage || !selectedWorkflow || hasWorkflowPolicyIssues
+                  }
+                >
+                  {t("crawlFrontier.workflowStudio.actions.publish")}
+                </Button>
+              </span>
+            </Tooltip>
+            <Tooltip title={workflowPolicyBlockedHint}>
+              <span>
+                <Button
+                  type="primary"
+                  ghost
+                  onClick={() => void runTrial()}
+                  loading={trialLoading}
+                  disabled={!selectedWorkflow || hasWorkflowPolicyIssues}
+                >
+                  {t("crawlFrontier.workflowStudio.actions.trialRun")}
+                </Button>
+              </span>
+            </Tooltip>
             {trialResult ? (
               <Button
                 onClick={() => void replayWorkflowRun(trialResult.runId)}
                 loading={replayingRunId === trialResult.runId}
               >
-                Replay Last Run
+                {t("crawlFrontier.workflowStudio.actions.replayLastRun")}
               </Button>
             ) : null}
           </Space>
@@ -853,7 +949,17 @@ function WorkflowStudioInner({
             <Spin />
           </div>
         ) : (
-          <Row gutter={[16, 16]} align="stretch">
+          <>
+            {workflowPolicyIssues.length > 0 ? (
+              <Alert
+                type="error"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={t("crawl.proxy.unsupportedLegacyTitle")}
+                description={formatPolicyIssues(workflowPolicyIssues, t)}
+              />
+            ) : null}
+            <Row gutter={[16, 16]} align="stretch">
             <Col xs={24} xl={5}>
               <Space
                 direction="vertical"
@@ -862,7 +968,7 @@ function WorkflowStudioInner({
               >
                 <Card
                   size="small"
-                  title="Workflows"
+                  title={t("crawlFrontier.workflowStudio.sections.workflows")}
                   bodyStyle={{ padding: 12 }}
                 >
                   <Select
@@ -874,7 +980,9 @@ function WorkflowStudioInner({
                       label: workflow.name,
                       value: workflow.id,
                     }))}
-                    placeholder="Select workflow"
+                    placeholder={t(
+                      "crawlFrontier.workflowStudio.placeholders.selectWorkflow",
+                    )}
                   />
                   <Space
                     direction="vertical"
@@ -891,7 +999,9 @@ function WorkflowStudioInner({
                               name: event.target.value,
                             }))
                           }
-                          placeholder="Workflow name"
+                          placeholder={t(
+                            "crawlFrontier.workflowStudio.placeholders.workflowName",
+                          )}
                         />
                         <Input.TextArea
                           value={workflowMeta.description}
@@ -902,29 +1012,38 @@ function WorkflowStudioInner({
                             }))
                           }
                           rows={3}
-                          placeholder="Workflow description"
+                          placeholder={t(
+                            "crawlFrontier.workflowStudio.placeholders.workflowDescription",
+                          )}
                         />
                         <Alert
                           type="info"
                           showIcon
                           message={
                             selectedWorkflow.publishedVersionId
-                              ? `Published versions: ${selectedWorkflow.versions.length}`
-                              : "Draft only"
+                              ? t(
+                                  "crawlFrontier.workflowStudio.status.publishedVersions",
+                                  {
+                                    count: selectedWorkflow.versions.length,
+                                  },
+                                )
+                              : t("crawlFrontier.workflowStudio.status.draftOnly")
                           }
                         />
                       </>
                     ) : (
                       <Empty
                         image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description="Select or create a workflow"
+                        description={t(
+                          "crawlFrontier.workflowStudio.empty.selectWorkflow",
+                        )}
                       />
                     )}
                   </Space>
                 </Card>
                 <Card
                   size="small"
-                  title="Version Compare"
+                  title={t("crawlFrontier.workflowStudio.sections.compare")}
                   bodyStyle={{ padding: 12 }}
                 >
                   <Space
@@ -934,7 +1053,9 @@ function WorkflowStudioInner({
                   >
                     <Select
                       allowClear
-                      placeholder="Left version"
+                      placeholder={t(
+                        "crawlFrontier.workflowStudio.placeholders.leftVersion",
+                      )}
                       value={compareLeftVersionId}
                       onChange={setCompareLeftVersionId}
                       options={(selectedWorkflow?.versions ?? []).map(
@@ -946,7 +1067,9 @@ function WorkflowStudioInner({
                     />
                     <Select
                       allowClear
-                      placeholder="Right version"
+                      placeholder={t(
+                        "crawlFrontier.workflowStudio.placeholders.rightVersion",
+                      )}
                       value={compareRightVersionId}
                       onChange={setCompareRightVersionId}
                       options={(selectedWorkflow?.versions ?? []).map(
@@ -964,34 +1087,58 @@ function WorkflowStudioInner({
                           !compareLeftVersionId || !compareRightVersionId
                         }
                       >
-                        Compare Versions
+                        {t("crawlFrontier.workflowStudio.actions.compareVersions")}
                       </Button>
-                      <Button
-                        onClick={() =>
-                          void runTrial(
-                            compareLeftVersionId,
-                            compareLeftVersion
-                              ? `Trial run started from v${compareLeftVersion.version}`
-                              : "Workflow trial run completed",
-                          )
-                        }
-                        disabled={!compareLeftVersionId}
-                      >
-                        Run Left
-                      </Button>
-                      <Button
-                        onClick={() =>
-                          void runTrial(
-                            compareRightVersionId,
-                            compareRightVersion
-                              ? `Trial run started from v${compareRightVersion.version}`
-                              : "Workflow trial run completed",
-                          )
-                        }
-                        disabled={!compareRightVersionId}
-                      >
-                        Run Right
-                      </Button>
+                      <Tooltip title={workflowPolicyBlockedHint}>
+                        <span>
+                          <Button
+                            onClick={() =>
+                              void runTrial(
+                                compareLeftVersionId,
+                                compareLeftVersion
+                                  ? t(
+                                      "crawlFrontier.workflowStudio.messages.trialStartedFromVersion",
+                                      {
+                                        version: compareLeftVersion.version,
+                                      },
+                                    )
+                                  : t(
+                                      "crawlFrontier.workflowStudio.messages.trialCompleted",
+                                    ),
+                              )
+                            }
+                            disabled={!compareLeftVersionId || hasWorkflowPolicyIssues}
+                          >
+                            {t("crawlFrontier.workflowStudio.actions.runLeft")}
+                          </Button>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title={workflowPolicyBlockedHint}>
+                        <span>
+                          <Button
+                            onClick={() =>
+                              void runTrial(
+                                compareRightVersionId,
+                                compareRightVersion
+                                  ? t(
+                                      "crawlFrontier.workflowStudio.messages.trialStartedFromVersion",
+                                      {
+                                        version: compareRightVersion.version,
+                                      },
+                                    )
+                                  : t(
+                                      "crawlFrontier.workflowStudio.messages.trialCompleted",
+                                    ),
+                              )
+                            }
+                            disabled={
+                              !compareRightVersionId || hasWorkflowPolicyIssues
+                            }
+                          >
+                            {t("crawlFrontier.workflowStudio.actions.runRight")}
+                          </Button>
+                        </span>
+                      </Tooltip>
                     </Space>
                     {compareSummary ? (
                       <Space
@@ -1000,29 +1147,54 @@ function WorkflowStudioInner({
                         style={{ width: "100%" }}
                       >
                         <Descriptions size="small" column={1} bordered>
-                          <Descriptions.Item label="Node delta">
+                          <Descriptions.Item
+                            label={t(
+                              "crawlFrontier.workflowStudio.compare.labels.nodeDelta",
+                            )}
+                          >
                             {compareSummary.nodeCountDelta}
                           </Descriptions.Item>
-                          <Descriptions.Item label="Edge delta">
+                          <Descriptions.Item
+                            label={t(
+                              "crawlFrontier.workflowStudio.compare.labels.edgeDelta",
+                            )}
+                          >
                             {compareSummary.edgeCountDelta}
                           </Descriptions.Item>
-                          <Descriptions.Item label="Changed settings">
+                          <Descriptions.Item
+                            label={t(
+                              "crawlFrontier.workflowStudio.compare.labels.changedSettings",
+                            )}
+                          >
                             {compareSummary.changedSettings.length > 0
                               ? compareSummary.changedSettings.join(", ")
                               : "-"}
                           </Descriptions.Item>
-                          <Descriptions.Item label="Changed nodes">
+                          <Descriptions.Item
+                            label={t(
+                              "crawlFrontier.workflowStudio.compare.labels.changedNodes",
+                            )}
+                          >
                             {compareSummary.changedNodeIds.length > 0
                               ? compareSummary.changedNodeIds.join(", ")
                               : "-"}
                           </Descriptions.Item>
-                          <Descriptions.Item label="Binding impact">
+                          <Descriptions.Item
+                            label={t(
+                              "crawlFrontier.workflowStudio.compare.labels.bindingImpact",
+                            )}
+                          >
                             {`${compareSummary.profileImpactCount} profiles / ${compareSummary.newsSourceImpactCount} news sources`}
                           </Descriptions.Item>
                         </Descriptions>
                         {(compareResult!.definitionDiff.settings ?? []).length >
                         0 ? (
-                          <Card size="small" title="Settings Diff">
+                          <Card
+                            size="small"
+                            title={t(
+                              "crawlFrontier.workflowStudio.compare.cards.settingsDiff",
+                            )}
+                          >
                             <Space
                               direction="vertical"
                               size={8}
@@ -1049,7 +1221,12 @@ function WorkflowStudioInner({
                             </Space>
                           </Card>
                         ) : null}
-                        <Card size="small" title="Node Diff">
+                        <Card
+                          size="small"
+                          title={t(
+                            "crawlFrontier.workflowStudio.compare.cards.nodeDiff",
+                          )}
+                        >
                           <Space
                             direction="vertical"
                             size={8}
@@ -1060,7 +1237,11 @@ function WorkflowStudioInner({
                             ).map((node) => (
                               <Card key={`added-${node.id}`} size="small">
                                 <Space wrap size={[6, 6]}>
-                                  <Tag color="green">added</Tag>
+                                  <Tag color="green">
+                                    {t(
+                                      "crawlFrontier.workflowStudio.compare.tags.added",
+                                    )}
+                                  </Tag>
                                   <Tag>{node.type}</Tag>
                                   <Typography.Text strong>
                                     {node.label}
@@ -1073,7 +1254,11 @@ function WorkflowStudioInner({
                             ).map((node) => (
                               <Card key={`removed-${node.id}`} size="small">
                                 <Space wrap size={[6, 6]}>
-                                  <Tag color="red">removed</Tag>
+                                  <Tag color="red">
+                                    {t(
+                                      "crawlFrontier.workflowStudio.compare.tags.removed",
+                                    )}
+                                  </Tag>
                                   <Tag>{node.type}</Tag>
                                   <Typography.Text strong>
                                     {node.label}
@@ -1091,7 +1276,11 @@ function WorkflowStudioInner({
                                   style={{ width: "100%" }}
                                 >
                                   <Space wrap size={[6, 6]}>
-                                    <Tag color="gold">changed</Tag>
+                                    <Tag color="gold">
+                                      {t(
+                                        "crawlFrontier.workflowStudio.compare.tags.changed",
+                                      )}
+                                    </Tag>
                                     <Tag>{node.right.type}</Tag>
                                     <Typography.Text strong>
                                       {node.right.label}
@@ -1110,12 +1299,19 @@ function WorkflowStudioInner({
                             (compareResult!.definitionDiff.nodes?.changed
                               .length ?? 0) === 0 ? (
                               <Typography.Text type="secondary">
-                                No node-level differences detected.
+                                {t(
+                                  "crawlFrontier.workflowStudio.compare.empty.nodeDiff",
+                                )}
                               </Typography.Text>
                             ) : null}
                           </Space>
                         </Card>
-                        <Card size="small" title="Edge Diff">
+                        <Card
+                          size="small"
+                          title={t(
+                            "crawlFrontier.workflowStudio.compare.cards.edgeDiff",
+                          )}
+                        >
                           <Space
                             direction="vertical"
                             size={8}
@@ -1143,23 +1339,38 @@ function WorkflowStudioInner({
                             (compareResult!.definitionDiff.edges?.removed
                               .length ?? 0) === 0 ? (
                               <Typography.Text type="secondary">
-                                No edge-level differences detected.
+                                {t(
+                                  "crawlFrontier.workflowStudio.compare.empty.edgeDiff",
+                                )}
                               </Typography.Text>
                             ) : null}
                           </Space>
                         </Card>
                         {compareResult!.bindingImpact ? (
-                          <Card size="small" title="Binding Impact">
+                          <Card
+                            size="small"
+                            title={t(
+                              "crawlFrontier.workflowStudio.compare.cards.bindingImpact",
+                            )}
+                          >
                             <Space
                               direction="vertical"
                               size={10}
                               style={{ width: "100%" }}
                             >
                               <Descriptions size="small" column={1} bordered>
-                                <Descriptions.Item label="Profiles">
+                                <Descriptions.Item
+                                  label={t(
+                                    "crawlFrontier.workflowStudio.compare.labels.profiles",
+                                  )}
+                                >
                                   {`${compareResult!.bindingImpact.profiles.total} total · ${compareResult!.bindingImpact.profiles.followingPublishedCount} following published`}
                                 </Descriptions.Item>
-                                <Descriptions.Item label="News sources">
+                                <Descriptions.Item
+                                  label={t(
+                                    "crawlFrontier.workflowStudio.compare.labels.newsSources",
+                                  )}
+                                >
                                   {`${compareResult!.bindingImpact.newsSources.total} total · ${compareResult!.bindingImpact.newsSources.followingPublishedCount} following published`}
                                 </Descriptions.Item>
                               </Descriptions>
@@ -1238,14 +1449,16 @@ function WorkflowStudioInner({
                       </Space>
                     ) : (
                       <Typography.Text type="secondary">
-                        Select two versions to inspect workflow drift.
+                        {t(
+                          "crawlFrontier.workflowStudio.compare.empty.selectVersions",
+                        )}
                       </Typography.Text>
                     )}
                   </Space>
                 </Card>
                 <Card
                   size="small"
-                  title="Node Palette"
+                  title={t("crawlFrontier.workflowStudio.sections.nodePalette")}
                   bodyStyle={{ padding: 12 }}
                 >
                   <Space wrap size={[8, 8]}>
@@ -1264,7 +1477,7 @@ function WorkflowStudioInner({
                 </Card>
                 <Card
                   size="small"
-                  title="Trial Run"
+                  title={t("crawlFrontier.workflowStudio.sections.trialRun")}
                   bodyStyle={{ padding: 12 }}
                 >
                   <Space
@@ -1275,12 +1488,16 @@ function WorkflowStudioInner({
                     <Input
                       value={trialSeedUrl}
                       onChange={(event) => setTrialSeedUrl(event.target.value)}
-                      placeholder="https://example.com/news"
+                      placeholder={t(
+                        "crawlFrontier.workflowStudio.placeholders.trialSeedUrl",
+                      )}
                     />
                     <Select
                       allowClear
                       showSearch
-                      placeholder="Bind a profile"
+                      placeholder={t(
+                        "crawlFrontier.workflowStudio.placeholders.bindProfile",
+                      )}
                       value={trialProfileId}
                       onChange={setTrialProfileId}
                       options={profileOptions}
@@ -1288,7 +1505,9 @@ function WorkflowStudioInner({
                     <Select
                       allowClear
                       showSearch
-                      placeholder="Bind a news source"
+                      placeholder={t(
+                        "crawlFrontier.workflowStudio.placeholders.bindNewsSource",
+                      )}
                       value={trialNewsSourceId}
                       onChange={setTrialNewsSourceId}
                       options={newsSourceOptions}
@@ -1305,13 +1524,17 @@ function WorkflowStudioInner({
                     <Alert
                       type="warning"
                       showIcon
-                      message="Trial run uses the same workflow engine as the backend strategy runtime."
+                      message={t(
+                        "crawlFrontier.workflowStudio.hints.trialRuntime",
+                      )}
                     />
                   </Space>
                 </Card>
                 <Card
                   size="small"
-                  title="Linked Frontier Runs"
+                  title={t(
+                    "crawlFrontier.workflowStudio.sections.linkedFrontierRuns",
+                  )}
                   bodyStyle={{ padding: 12 }}
                 >
                   <Space
@@ -1321,8 +1544,9 @@ function WorkflowStudioInner({
                   >
                     {linkedFrontierRuns.length === 0 ? (
                       <Typography.Text type="secondary">
-                        No production frontier runs are currently linked to this
-                        workflow.
+                        {t(
+                          "crawlFrontier.workflowStudio.empty.noLinkedFrontierRuns",
+                        )}
                       </Typography.Text>
                     ) : (
                       linkedFrontierRuns.slice(0, 6).map((run) => (
@@ -1367,7 +1591,7 @@ function WorkflowStudioInner({
             <Col xs={24} xl={12}>
               <Card
                 size="small"
-                title="Canvas"
+                title={t("crawlFrontier.workflowStudio.sections.canvas")}
                 bodyStyle={{ padding: 0, height: 720, background: "#f8fafc" }}
               >
                 {definition ? (
@@ -1397,7 +1621,11 @@ function WorkflowStudioInner({
                       justifyContent: "center",
                     }}
                   >
-                    <Empty description="Create a workflow to start editing" />
+                    <Empty
+                      description={t(
+                        "crawlFrontier.workflowStudio.empty.createToEdit",
+                      )}
+                    />
                   </div>
                 )}
               </Card>
@@ -1410,13 +1638,15 @@ function WorkflowStudioInner({
               >
                 <Card
                   size="small"
-                  title="Inspector"
+                  title={t("crawlFrontier.workflowStudio.sections.inspector")}
                   bodyStyle={{ padding: 12 }}
                 >
                   {!selectedNodeDefinition || !selectedNodeSchema ? (
                     <Empty
                       image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description="Select a node to inspect"
+                      description={t(
+                        "crawlFrontier.workflowStudio.empty.selectNode",
+                      )}
                     />
                   ) : (
                     <Space
@@ -1432,7 +1662,9 @@ function WorkflowStudioInner({
                             label: event.target.value,
                           }))
                         }
-                        placeholder="Node label"
+                        placeholder={t(
+                          "crawlFrontier.workflowStudio.placeholders.nodeLabel",
+                        )}
                       />
                       {Object.entries(
                         selectedNodeSchema.configSchema.properties ?? {},
@@ -1624,14 +1856,20 @@ function WorkflowStudioInner({
                 </Card>
                 <Card
                   size="small"
-                  title="Workflow Settings"
+                  title={t(
+                    "crawlFrontier.workflowStudio.sections.workflowSettings",
+                  )}
                   bodyStyle={{ padding: 12 }}
                 >
                   {definition ? (
                     <Form layout="vertical">
                       <Row gutter={[12, 0]}>
                         <Col span={12}>
-                          <Form.Item label="Execution Mode">
+                          <Form.Item
+                            label={t(
+                              "crawlFrontier.workflowStudio.settings.executionMode",
+                            )}
+                          >
                             <Select
                               value={definition.settings.executionMode}
                               onChange={(value) =>
@@ -1657,7 +1895,11 @@ function WorkflowStudioInner({
                           </Form.Item>
                         </Col>
                         <Col span={12}>
-                          <Form.Item label="Robots Policy">
+                          <Form.Item
+                            label={t(
+                              "crawlFrontier.workflowStudio.settings.robotsPolicy",
+                            )}
+                          >
                             <Select
                               value={definition.settings.robotsPolicy}
                               onChange={(value) =>
@@ -1683,7 +1925,11 @@ function WorkflowStudioInner({
                       </Row>
                       <Row gutter={[12, 0]}>
                         <Col span={12}>
-                          <Form.Item label="Max Depth">
+                          <Form.Item
+                            label={t(
+                              "crawlFrontier.workflowStudio.settings.maxDepth",
+                            )}
+                          >
                             <InputNumber
                               min={1}
                               max={8}
@@ -1706,7 +1952,11 @@ function WorkflowStudioInner({
                           </Form.Item>
                         </Col>
                         <Col span={12}>
-                          <Form.Item label="Max Pages">
+                          <Form.Item
+                            label={t(
+                              "crawlFrontier.workflowStudio.settings.maxPages",
+                            )}
+                          >
                             <InputNumber
                               min={1}
                               max={500}
@@ -1733,19 +1983,30 @@ function WorkflowStudioInner({
                   ) : (
                     <Empty
                       image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description="No workflow selected"
+                      description={t(
+                        "crawlFrontier.workflowStudio.empty.noWorkflowSelected",
+                      )}
                     />
                   )}
                 </Card>
               </Space>
             </Col>
-          </Row>
+            </Row>
+          </>
         )}
       </Card>
 
-      <Card className="content-card" size="small" title="Trial Run Result">
+      <Card
+        className="content-card"
+        size="small"
+        title={t("crawlFrontier.workflowStudio.sections.trialResult")}
+      >
         {!trialResult ? (
-          <Empty description="Run a workflow trial to inspect step logs and candidate flow" />
+          <Empty
+            description={t(
+              "crawlFrontier.workflowStudio.empty.trialResult",
+            )}
+          />
         ) : (
           <Space direction="vertical" size="large" style={{ width: "100%" }}>
             <Row gutter={[16, 16]}>
@@ -1788,7 +2049,12 @@ function WorkflowStudioInner({
             </Row>
             <Row gutter={[16, 16]}>
               <Col xs={24} xl={9}>
-                <Card size="small" title="Step Timeline">
+                <Card
+                  size="small"
+                  title={t(
+                    "crawlFrontier.workflowStudio.trial.cards.stepTimeline",
+                  )}
+                >
                   <Space
                     direction="vertical"
                     size={10}
@@ -1839,7 +2105,12 @@ function WorkflowStudioInner({
                   size="large"
                   style={{ width: "100%" }}
                 >
-                  <Card size="small" title="Candidate Flow">
+                  <Card
+                    size="small"
+                    title={t(
+                      "crawlFrontier.workflowStudio.trial.cards.candidateFlow",
+                    )}
+                  >
                     <Table
                       rowKey="id"
                       columns={candidateColumns}
@@ -1848,7 +2119,12 @@ function WorkflowStudioInner({
                       size="small"
                     />
                   </Card>
-                  <Card size="small" title="System Events">
+                  <Card
+                    size="small"
+                    title={t(
+                      "crawlFrontier.workflowStudio.trial.cards.systemEvents",
+                    )}
+                  >
                     <Space
                       direction="vertical"
                       size="middle"
@@ -1856,7 +2132,9 @@ function WorkflowStudioInner({
                     >
                       {trialResult.systemEvents.length === 0 ? (
                         <Typography.Text type="secondary">
-                          No system events were recorded during this run.
+                          {t(
+                            "crawlFrontier.workflowStudio.trial.empty.systemEvents",
+                          )}
                         </Typography.Text>
                       ) : (
                         trialResult.systemEvents.map((event, index) => (
@@ -1928,11 +2206,18 @@ function WorkflowStudioInner({
                 </Space>
               </Col>
             </Row>
-            <Card size="small" title="Parameter Sources">
+            <Card
+              size="small"
+              title={t(
+                "crawlFrontier.workflowStudio.trial.cards.parameterSources",
+              )}
+            >
               <Space wrap size={[6, 6]}>
                 {trialResult.parameterSources.length === 0 ? (
                   <Typography.Text type="secondary">
-                    No workflow parameter overrides were recorded.
+                    {t(
+                      "crawlFrontier.workflowStudio.trial.empty.parameterSources",
+                    )}
                   </Typography.Text>
                 ) : (
                   trialResult.parameterSources.map((entry) => (
@@ -1948,7 +2233,7 @@ function WorkflowStudioInner({
       </Card>
 
       <Drawer
-        title="Candidate Explanation"
+        title={t("crawlFrontier.workflowStudio.drawer.candidateExplanation")}
         open={Boolean(candidateDrawer)}
         onClose={() => setCandidateDrawer(null)}
         width={720}
@@ -1985,7 +2270,10 @@ function WorkflowStudioInner({
                 </Space>
               </Space>
             </Card>
-            <Card size="small" title="Trace Summary">
+            <Card
+              size="small"
+              title={t("crawlFrontier.workflowStudio.drawer.traceSummary")}
+            >
               {(() => {
                 const summary =
                   buildWorkflowCandidateTraceSummary(candidateDrawer);
@@ -2039,7 +2327,10 @@ function WorkflowStudioInner({
                 );
               })()}
             </Card>
-            <Card size="small" title="Trace">
+            <Card
+              size="small"
+              title={t("crawlFrontier.workflowStudio.drawer.trace")}
+            >
               <Space
                 direction="vertical"
                 size="middle"
@@ -2132,11 +2423,18 @@ function WorkflowStudioInner({
                             items={[
                               {
                                 key: `${step.key}-snapshots`,
-                                label: "Raw snapshots",
+                                label: t(
+                                  "crawlFrontier.workflowStudio.drawer.rawSnapshots",
+                                ),
                                 children: (
                                   <Row gutter={[12, 12]}>
                                     <Col xs={24} md={12}>
-                                      <Card size="small" title="Before">
+                                      <Card
+                                        size="small"
+                                        title={t(
+                                          "crawlFrontier.workflowStudio.drawer.before",
+                                        )}
+                                      >
                                         <Typography.Paragraph
                                           style={{
                                             marginBottom: 0,
@@ -2151,7 +2449,12 @@ function WorkflowStudioInner({
                                       </Card>
                                     </Col>
                                     <Col xs={24} md={12}>
-                                      <Card size="small" title="After">
+                                      <Card
+                                        size="small"
+                                        title={t(
+                                          "crawlFrontier.workflowStudio.drawer.after",
+                                        )}
+                                      >
                                         <Typography.Paragraph
                                           style={{
                                             marginBottom: 0,

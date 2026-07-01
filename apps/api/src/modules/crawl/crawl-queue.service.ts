@@ -1,16 +1,18 @@
 import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
 import { Job, Queue } from "bullmq";
+
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 
 import { CrawlActivityService } from "./crawl-activity.service";
 import { CrawlSettingsService } from "./crawl-settings.service";
 import {
   CRAWL_QUEUE_HOT,
   CRAWL_QUEUE_HOT_NAME,
+  CRAWL_QUEUE_LEGACY,
   CRAWL_QUEUE_LLM_JUDGE,
-  CRAWL_QUEUE_LLM_JUDGE_NAME,
   CRAWL_QUEUE_LLM_LEARN,
-  CRAWL_QUEUE_LLM_LEARN_NAME,
+  CRAWL_QUEUE_NAME,
   CRAWL_QUEUE_NORMAL,
   CRAWL_QUEUE_NORMAL_NAME,
 } from "./crawl.constants";
@@ -127,10 +129,13 @@ export class CrawlQueueService {
     private readonly llmLearnQueue: Queue<CrawlJobData>,
     private readonly crawlSettings: CrawlSettingsService,
     private readonly activity: CrawlActivityService,
+    @Optional()
+    @Inject(CRAWL_QUEUE_LEGACY)
+    private readonly legacyQueue?: Queue<CrawlJobData>,
   ) {}
 
-  private queueEntries(): QueueEntry[] {
-    return [
+  private queueEntries(includeLegacy = false): QueueEntry[] {
+    const entries: QueueEntry[] = [
       {
         queueClass: "hot",
         queueName: CRAWL_QUEUE_HOT_NAME,
@@ -142,6 +147,14 @@ export class CrawlQueueService {
         queue: this.normalQueue,
       },
     ];
+    if (includeLegacy && this.legacyQueue) {
+      entries.push({
+        queueClass: "normal",
+        queueName: CRAWL_QUEUE_NAME,
+        queue: this.legacyQueue,
+      });
+    }
+    return entries;
   }
 
   private getQueueEntry(queueClass: CrawlQueueClass): QueueEntry {
@@ -156,6 +169,24 @@ export class CrawlQueueService {
           queueName: CRAWL_QUEUE_NORMAL_NAME,
           queue: this.normalQueue,
         };
+  }
+
+  private getQueueEntriesForClass(queueClass: CrawlQueueClass): QueueEntry[] {
+    if (queueClass === "hot") {
+      return [this.getQueueEntry("hot")];
+    }
+    return this.queueEntries(true).filter((entry) => entry.queueClass === "normal");
+  }
+
+  private getLegacyQueueEntry(): QueueEntry | null {
+    if (!this.legacyQueue) {
+      return null;
+    }
+    return {
+      queueClass: "normal",
+      queueName: CRAWL_QUEUE_NAME,
+      queue: this.legacyQueue,
+    };
   }
 
   private asQueueWithGlobalConcurrencyApi(queue: Queue<CrawlJobData>) {
@@ -201,7 +232,7 @@ export class CrawlQueueService {
           id: deduplicationId,
         },
         removeOnComplete: true,
-        removeOnFail: false,
+        removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
         attempts,
         backoff: settings.retryBackoffMs
           ? {
@@ -243,7 +274,7 @@ export class CrawlQueueService {
           id: deduplicationId,
         },
         removeOnComplete: true,
-        removeOnFail: false,
+        removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
         attempts,
         backoff: settings.retryBackoffMs
           ? {
@@ -277,7 +308,7 @@ export class CrawlQueueService {
           id: `crawl-frontier-llm-judge:${options.nodeId}:${options.payload.mode}`,
         },
         removeOnComplete: true,
-        removeOnFail: false,
+        removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
         attempts: 1,
         backoff: settings.retryBackoffMs
           ? {
@@ -309,7 +340,7 @@ export class CrawlQueueService {
           id: `crawl-frontier-llm-learn:${options.runId}`,
         },
         removeOnComplete: true,
-        removeOnFail: false,
+        removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
         attempts: 1,
         backoff: settings.retryBackoffMs
           ? {
@@ -326,7 +357,7 @@ export class CrawlQueueService {
     const scanLimit = 5_000;
     const pageSize = 200;
 
-    for (const entry of this.queueEntries()) {
+    for (const entry of this.queueEntries(true)) {
       for (let start = 0; start < scanLimit; start += pageSize) {
         const end = Math.min(scanLimit - 1, start + pageSize - 1);
         const jobs = await entry.queue.getJobs([...states], start, end);
@@ -370,7 +401,7 @@ export class CrawlQueueService {
 
   async getPendingJobCount(): Promise<number> {
     const entries = await Promise.all(
-      this.queueEntries().map(async (entry) => {
+      this.queueEntries(true).map(async (entry) => {
         const counts = (await entry.queue.getJobCounts(
           "waiting",
           "delayed",
@@ -387,7 +418,7 @@ export class CrawlQueueService {
     const pageSize = 500;
     const taskIds = new Set<string>();
 
-    for (const entry of this.queueEntries()) {
+    for (const entry of this.queueEntries(true)) {
       for (let start = 0; start < scanLimit; start += pageSize) {
         const end = Math.min(scanLimit - 1, start + pageSize - 1);
         const jobs = await entry.queue.getJobs([...states], start, end);
@@ -411,7 +442,7 @@ export class CrawlQueueService {
     const pageSize = 500;
     const taskIds = new Set<string>();
 
-    for (const entry of this.queueEntries()) {
+    for (const entry of this.queueEntries(true)) {
       for (let start = 0; start < scanLimit; start += pageSize) {
         const end = Math.min(scanLimit - 1, start + pageSize - 1);
         const jobs = await entry.queue.getJobs([...states], start, end);
@@ -441,7 +472,7 @@ export class CrawlQueueService {
     let removed = 0;
     const removedTaskIds = new Set<string>();
 
-    for (const entry of this.queueEntries()) {
+    for (const entry of this.queueEntries(true)) {
       for (let start = 0; start < scanLimit; start += pageSize) {
         const end = Math.min(scanLimit - 1, start + pageSize - 1);
         const jobs = await entry.queue.getJobs([...states], start, end);
@@ -487,8 +518,12 @@ export class CrawlQueueService {
   }
 
   async getJobCounts(): Promise<QueueCounts> {
-    const byQueue = await this.getJobCountsByQueue();
-    return mergeCounts(byQueue.hot, byQueue.normal);
+    const [byQueue, legacyCounts] = await Promise.all([
+      this.getJobCountsByQueue(),
+      this.getLegacyJobCounts(),
+    ]);
+    const mergedPrimary = mergeCounts(byQueue.hot, byQueue.normal);
+    return legacyCounts ? mergeCounts(mergedPrimary, legacyCounts) : mergedPrimary;
   }
 
   async getJobCountsByQueue(): Promise<Record<CrawlQueueClass, QueueCounts>> {
@@ -516,26 +551,33 @@ export class CrawlQueueService {
 
   async pauseQueue(queueClass?: CrawlQueueClass) {
     if (queueClass) {
-      await this.getQueueEntry(queueClass).queue.pause();
+      await Promise.all(
+        this.getQueueEntriesForClass(queueClass).map((entry) => entry.queue.pause()),
+      );
       return;
     }
-    await Promise.all(this.queueEntries().map((entry) => entry.queue.pause()));
+    await Promise.all(this.queueEntries(true).map((entry) => entry.queue.pause()));
   }
 
   async resumeQueue(queueClass?: CrawlQueueClass) {
     if (queueClass) {
-      await this.getQueueEntry(queueClass).queue.resume();
+      await Promise.all(
+        this.getQueueEntriesForClass(queueClass).map((entry) => entry.queue.resume()),
+      );
       return;
     }
-    await Promise.all(this.queueEntries().map((entry) => entry.queue.resume()));
+    await Promise.all(this.queueEntries(true).map((entry) => entry.queue.resume()));
   }
 
   async isPaused(queueClass?: CrawlQueueClass) {
     if (queueClass) {
-      return this.getQueueEntry(queueClass).queue.isPaused();
+      const states = await Promise.all(
+        this.getQueueEntriesForClass(queueClass).map((entry) => entry.queue.isPaused()),
+      );
+      return states.every(Boolean);
     }
     const all = await Promise.all(
-      this.queueEntries().map((entry) => entry.queue.isPaused()),
+      this.queueEntries(true).map((entry) => entry.queue.isPaused()),
     );
     return all.every(Boolean);
   }
@@ -558,17 +600,19 @@ export class CrawlQueueService {
     );
 
     if (queueClass) {
-      const queueWithApi = this.asQueueWithGlobalConcurrencyApi(
-        this.getQueueEntry(queueClass).queue,
+      await Promise.all(
+        this.getQueueEntriesForClass(queueClass).map(async (entry) => {
+          const queueWithApi = this.asQueueWithGlobalConcurrencyApi(entry.queue);
+          if (typeof queueWithApi.setGlobalConcurrency === "function") {
+            await queueWithApi.setGlobalConcurrency(concurrency);
+          }
+        }),
       );
-      if (typeof queueWithApi.setGlobalConcurrency === "function") {
-        await queueWithApi.setGlobalConcurrency(concurrency);
-      }
       return;
     }
 
     await Promise.all(
-      this.queueEntries().map(async (entry) => {
+      this.queueEntries(true).map(async (entry) => {
         const queueWithApi = this.asQueueWithGlobalConcurrencyApi(entry.queue);
         if (typeof queueWithApi.setGlobalConcurrency === "function") {
           await queueWithApi.setGlobalConcurrency(concurrency);
@@ -663,6 +707,43 @@ export class CrawlQueueService {
         paused: pausedByQueue.normal,
         effectiveConcurrency: effectiveByQueue.normal,
       },
+    };
+  }
+
+  async getLegacyJobCounts(): Promise<QueueCounts | null> {
+    const entry = this.getLegacyQueueEntry();
+    if (!entry) {
+      return null;
+    }
+    const counts = await entry.queue.getJobCounts(
+      "waiting",
+      "active",
+      "delayed",
+      "failed",
+      "paused",
+    );
+    return counts as QueueCounts;
+  }
+
+  async getLegacyRuntimeStats(): Promise<CrawlQueueClassRuntimeStats | null> {
+    const entry = this.getLegacyQueueEntry();
+    if (!entry) {
+      return null;
+    }
+    const [counts, paused, effectiveConcurrency] = await Promise.all([
+      this.getLegacyJobCounts(),
+      entry.queue.isPaused(),
+      this.getEffectiveConcurrency("normal"),
+    ]);
+    if (!counts) {
+      return null;
+    }
+    return {
+      queueName: entry.queueName,
+      counts,
+      pending: sumPendingFromCounts(counts),
+      paused,
+      effectiveConcurrency,
     };
   }
 }

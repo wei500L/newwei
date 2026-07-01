@@ -1,11 +1,11 @@
 "use client";
 
 import { gql, useMutation, useQuery } from "@apollo/client";
+import { NEWS_INDICATOR_RECOMMENDED_SLUGS } from "@modular/utils";
 import { Alert, Button, Form, InputNumber, Select, Space, Spin, Switch, Typography, message } from "antd";
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { NEWS_INDICATOR_RECOMMENDED_SLUGS } from "@modular/utils";
 import { captureClientError } from "@/lib/client-telemetry";
 
 interface NewsIndicatorSettingsModel {
@@ -138,10 +138,10 @@ export function NewsIndicatorSettingsPanel() {
       const payload: FormValues = { ...values, indicatorSlugs: normalizeIndicatorSlugs(values.indicatorSlugs ?? []) };
       await updateSettings({ variables: { input: payload } });
       await refetch();
-      messageApi.success(t("settings.newsIndicator.messages.saved", { defaultValue: "Saved" }));
+      messageApi.success(t("settings.newsIndicator.messages.saved"));
     } catch (err) {
       captureClientError("Failed to save news indicator settings", err);
-      messageApi.error(t("settings.newsIndicator.messages.saveFailed", { defaultValue: "Failed to save" }));
+      messageApi.error(t("settings.newsIndicator.messages.saveFailed"));
     }
   };
 
@@ -157,18 +157,14 @@ export function NewsIndicatorSettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
-        {t("settings.newsIndicator.description", {
-          defaultValue: "Discover lead-lag relationships between news signals and economic indicators with backtests."
-        })}
+        {t("settings.newsIndicator.description")}
       </Typography.Paragraph>
 
       <Alert
         type="info"
         showIcon
-        message={t("settings.newsIndicator.notice.title", { defaultValue: "Guardrails" })}
-        description={t("settings.newsIndicator.notice.body", {
-          defaultValue: "Only enable after economic data and sentiment snapshots are available."
-        })}
+        message={t("settings.newsIndicator.notice.title")}
+        description={t("settings.newsIndicator.notice.body")}
         style={{ marginBottom: "1rem" }}
       />
 
@@ -176,7 +172,7 @@ export function NewsIndicatorSettingsPanel() {
         <Alert
           type="error"
           showIcon
-          message={t("settings.newsIndicator.messages.loadFailed", { defaultValue: "Failed to load settings" })}
+          message={t("settings.newsIndicator.messages.loadFailed")}
           description={error.message}
           style={{ marginBottom: "1rem" }}
         />
@@ -184,7 +180,7 @@ export function NewsIndicatorSettingsPanel() {
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
-          label={t("settings.newsIndicator.fields.enabled", { defaultValue: "Enabled" })}
+          label={t("settings.newsIndicator.fields.enabled")}
           name="enabled"
           valuePropName="checked"
         >
@@ -192,25 +188,21 @@ export function NewsIndicatorSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsIndicator.fields.ingestionEnabled", { defaultValue: "Ingestion enabled" })}
+          label={t("settings.newsIndicator.fields.ingestionEnabled")}
           name="ingestionEnabled"
           valuePropName="checked"
-          extra={t("settings.newsIndicator.hints.ingestionEnabled", {
-            defaultValue: "Controls scheduled refresh jobs."
-          })}
+          extra={t("settings.newsIndicator.hints.ingestionEnabled")}
         >
           <Switch />
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsIndicator.fields.indicatorSlugs", { defaultValue: "Indicator slugs" })}
+          label={t("settings.newsIndicator.fields.indicatorSlugs")}
           name="indicatorSlugs"
           extra={
             <Space direction="vertical" size={4}>
               <Typography.Text type="secondary">
-                {t("settings.newsIndicator.hints.indicatorSlugs", {
-                  defaultValue: "Use EconomicDataItem.slug values; max 50."
-                })}
+                {t("settings.newsIndicator.hints.indicatorSlugs")}
               </Typography.Text>
               <div>
                 <Button
@@ -223,9 +215,7 @@ export function NewsIndicatorSettingsPanel() {
                     form.setFieldsValue({ indicatorSlugs: merged });
                   }}
                 >
-                  {t("settings.newsIndicator.actions.applyRecommended", {
-                    defaultValue: "Add recommended key-monitor indicators"
-                  })}
+                  {t("settings.newsIndicator.actions.applyRecommended")}
                 </Button>
               </div>
             </Space>
@@ -235,25 +225,23 @@ export function NewsIndicatorSettingsPanel() {
             mode="tags"
             tokenSeparators={[",", " ", "\n", "\t"]}
             options={indicatorOptions}
-            placeholder={t("settings.newsIndicator.placeholders.indicatorSlugs", {
-              defaultValue: "Enter indicator slugs"
-            })}
+            placeholder={t("settings.newsIndicator.placeholders.indicatorSlugs")}
           />
         </Form.Item>
 
         <Space style={{ width: "100%" }} size="middle" direction="vertical">
           <Form.Item
-          label={t("settings.newsIndicator.fields.windowDays", { defaultValue: "Window days" })}
+          label={t("settings.newsIndicator.fields.windowDays")}
           name="windowDays"
-          rules={[{ required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }]}
+          rules={[{ required: true, message: t("settings.newsIndicator.validation.required") }]}
         >
           <InputNumber min={7} max={3650} style={{ width: "100%" }} />
         </Form.Item>
 
           <Form.Item
-          label={t("settings.newsIndicator.fields.maxLagDays", { defaultValue: "Max lag days" })}
+          label={t("settings.newsIndicator.fields.maxLagDays")}
           name="maxLagDays"
-          rules={[{ required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }]}
+          rules={[{ required: true, message: t("settings.newsIndicator.validation.required") }]}
         >
           <InputNumber min={0} max={30} style={{ width: "100%" }} />
         </Form.Item>
@@ -261,29 +249,26 @@ export function NewsIndicatorSettingsPanel() {
 
         <Space style={{ width: "100%" }} size="middle" direction="vertical">
           <Form.Item
-          label={t("settings.newsIndicator.fields.minSampleSize", { defaultValue: "Min sample size" })}
+          label={t("settings.newsIndicator.fields.minSampleSize")}
           name="minSampleSize"
-          extra={t("settings.newsIndicator.hints.minSampleSize", {
-            defaultValue:
-              "Minimum number of days with overlapping sentiment snapshots and indicator points; roughly equals minimum news-days needed."
-          })}
-          rules={[{ required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }]}
+          extra={t("settings.newsIndicator.hints.minSampleSize")}
+          rules={[{ required: true, message: t("settings.newsIndicator.validation.required") }]}
         >
           <InputNumber min={10} max={2000} style={{ width: "100%" }} />
         </Form.Item>
 
           <Form.Item
-          label={t("settings.newsIndicator.fields.minAbsCorrelation", { defaultValue: "Min abs correlation" })}
+          label={t("settings.newsIndicator.fields.minAbsCorrelation")}
           name="minAbsCorrelation"
-          rules={[{ required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }]}
+          rules={[{ required: true, message: t("settings.newsIndicator.validation.required") }]}
         >
           <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
         </Form.Item>
 
           <Form.Item
-          label={t("settings.newsIndicator.fields.maxPValue", { defaultValue: "Max p-value" })}
+          label={t("settings.newsIndicator.fields.maxPValue")}
           name="maxPValue"
-          rules={[{ required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }]}
+          rules={[{ required: true, message: t("settings.newsIndicator.validation.required") }]}
         >
           <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
         </Form.Item>
@@ -291,28 +276,26 @@ export function NewsIndicatorSettingsPanel() {
 
         <Space style={{ width: "100%" }} size="middle" direction="vertical">
           <Form.Item
-          label={t("settings.newsIndicator.fields.topEntities", { defaultValue: "Top entities" })}
+          label={t("settings.newsIndicator.fields.topEntities")}
           name="topEntities"
-          rules={[{ required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }]}
+          rules={[{ required: true, message: t("settings.newsIndicator.validation.required") }]}
         >
           <InputNumber min={0} max={500} style={{ width: "100%" }} />
         </Form.Item>
 
           <Form.Item
-          label={t("settings.newsIndicator.fields.topTopics", { defaultValue: "Top topics" })}
+          label={t("settings.newsIndicator.fields.topTopics")}
           name="topTopics"
-          rules={[{ required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }]}
+          rules={[{ required: true, message: t("settings.newsIndicator.validation.required") }]}
         >
           <InputNumber min={0} max={500} style={{ width: "100%" }} />
         </Form.Item>
 
           <Form.Item
-            label={t("settings.newsIndicator.fields.maxAssociationsPerIndicator", {
-              defaultValue: "Max associations per indicator"
-            })}
+            label={t("settings.newsIndicator.fields.maxAssociationsPerIndicator")}
             name="maxAssociationsPerIndicator"
             rules={[
-              { required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }
+              { required: true, message: t("settings.newsIndicator.validation.required") }
             ]}
           >
             <InputNumber min={1} max={200} style={{ width: "100%" }} />
@@ -320,46 +303,46 @@ export function NewsIndicatorSettingsPanel() {
         </Space>
 
         <Typography.Title level={5} style={{ marginTop: "1.5rem" }}>
-          {t("settings.newsIndicator.sections.backtest", { defaultValue: "Backtest" })}
+          {t("settings.newsIndicator.sections.backtest")}
         </Typography.Title>
 
         <Space style={{ width: "100%" }} size="middle" direction="vertical">
           <Form.Item
-          label={t("settings.newsIndicator.fields.backtestTriggerZScore", { defaultValue: "Trigger z-score" })}
+          label={t("settings.newsIndicator.fields.backtestTriggerZScore")}
           name="backtestTriggerZScore"
-          rules={[{ required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }]}
+          rules={[{ required: true, message: t("settings.newsIndicator.validation.required") }]}
         >
           <InputNumber min={0} max={10} step={0.1} style={{ width: "100%" }} />
         </Form.Item>
 
           <Form.Item
-          label={t("settings.newsIndicator.fields.backtestBaselineDays", { defaultValue: "Baseline days" })}
+          label={t("settings.newsIndicator.fields.backtestBaselineDays")}
           name="backtestBaselineDays"
-          rules={[{ required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }]}
+          rules={[{ required: true, message: t("settings.newsIndicator.validation.required") }]}
         >
           <InputNumber min={5} max={365} style={{ width: "100%" }} />
         </Form.Item>
 
           <Form.Item
-          label={t("settings.newsIndicator.fields.backtestHoldoutDays", { defaultValue: "Holdout days" })}
+          label={t("settings.newsIndicator.fields.backtestHoldoutDays")}
           name="backtestHoldoutDays"
-          rules={[{ required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }]}
+          rules={[{ required: true, message: t("settings.newsIndicator.validation.required") }]}
         >
           <InputNumber min={0} max={365} style={{ width: "100%" }} />
         </Form.Item>
         </Space>
 
         <Form.Item
-          label={t("settings.newsIndicator.fields.cacheTtlSeconds", { defaultValue: "Cache TTL (seconds)" })}
+          label={t("settings.newsIndicator.fields.cacheTtlSeconds")}
           name="cacheTtlSeconds"
-          rules={[{ required: true, message: t("settings.newsIndicator.validation.required", { defaultValue: "Required" }) }]}
+          rules={[{ required: true, message: t("settings.newsIndicator.validation.required") }]}
         >
           <InputNumber min={0} max={3600} step={10} style={{ width: "100%" }} />
         </Form.Item>
 
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving} disabled={loading}>
-            {t("common.saveChanges", { defaultValue: "Save changes" })}
+            {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>

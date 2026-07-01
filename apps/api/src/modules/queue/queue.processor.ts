@@ -17,10 +17,11 @@ import { NotificationType, PipelineJobStatus } from "@prisma/client";
 import { Worker, UnrecoverableError, type Queue } from "bullmq";
 import { Types } from "mongoose";
 
+import { BULLMQ_DLQ_JOB_RETENTION } from "../../common/bullmq-retention";
 import { ItemStatus } from "../../common/pipeline-status";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
-import { toBullmqConnection } from "../config/redis-connection";
+import { NewsSourceOpsSnapshotService } from "../crawl/news-source-ops-snapshot.service";
 import { NewsPipelineService } from "../news-pipeline/news-pipeline.service";
 import type {
   PipelineJobContext,
@@ -28,7 +29,6 @@ import type {
 } from "../news-pipeline/news-pipeline.types";
 import { NotificationsService } from "../notifications/notifications.service";
 import { writeTaskLogBestEffort } from "../observability/task-log.writer";
-import { NewsSourceOpsSnapshotService } from "../crawl/news-source-ops-snapshot.service";
 
 import {
   ITEM_PIPELINE_QUEUE_NAME,
@@ -86,7 +86,6 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    const config = this.env.bullmqConfig;
     const concurrency =
       this.env.newsPipelineEnv.processQueueConcurrency > 0
         ? this.env.newsPipelineEnv.processQueueConcurrency
@@ -218,7 +217,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
         });
       },
       {
-        connection: toBullmqConnection(config.connection),
+        connection: this.queue.opts.connection,
         concurrency,
       },
     );
@@ -319,8 +318,8 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           try {
             await this.dlqQueue.add("dlq", dlqPayload, {
               jobId: dlqJobId,
-              removeOnComplete: false,
-              removeOnFail: false,
+              removeOnComplete: BULLMQ_DLQ_JOB_RETENTION,
+              removeOnFail: BULLMQ_DLQ_JOB_RETENTION,
               attempts: 1,
             });
             logger.warn(
@@ -416,6 +415,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
       duplicateSimilarity: 1,
       summaryEmbedding: 1,
       summaryEmbeddingModel: 1,
+      summaryEmbeddingDimensions: 1,
     };
     if (!options.error) {
       unset.error = 1;

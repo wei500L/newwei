@@ -25,6 +25,10 @@ const envMock = {
   systemSettingsEncryptionKey: undefined as string | undefined
 } as any;
 
+const authSecurityMock = {
+  invalidate: jest.fn().mockResolvedValue(undefined),
+} as any;
+
 describe("SystemSecuritySettingsService", () => {
   let service: SystemSecuritySettingsService;
   let cacheState: any;
@@ -57,7 +61,12 @@ describe("SystemSecuritySettingsService", () => {
     prismaMock.auditLog.create = jest.fn().mockResolvedValue(undefined);
     prismaMock.auditLogOutbox.create = jest.fn().mockResolvedValue({ id: "outbox-1" });
 
-    service = new SystemSecuritySettingsService(prismaMock, cacheMock, envMock);
+    service = new SystemSecuritySettingsService(
+      prismaMock,
+      cacheMock,
+      envMock,
+      authSecurityMock,
+    );
   });
 
   it("defaults to encryption disabled when no setting exists", async () => {
@@ -80,7 +89,10 @@ describe("SystemSecuritySettingsService", () => {
 
   it("rejects enabling encryption when env key is missing", async () => {
     await expect(
-      service.updateSettings("org-1", "actor-1", { secretEncryptionEnabled: true })
+      service.updateSettings("org-1", "actor-1", {
+        secretEncryptionEnabled: true,
+        mfaPolicy: "off",
+      })
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -88,10 +100,12 @@ describe("SystemSecuritySettingsService", () => {
     envMock.systemSettingsEncryptionKey = "0".repeat(64);
 
     const updated = await service.updateSettings("org-1", "actor-1", {
-      secretEncryptionEnabled: true
+      secretEncryptionEnabled: true,
+      mfaPolicy: "admins_only",
     });
 
     expect(updated.secretEncryptionEnabled).toBe(true);
+    expect(updated.mfaPolicy).toBe("admins_only");
     expect(persistedValue?.secretEncryptionEnabled).toBe(true);
   });
 
@@ -103,7 +117,10 @@ describe("SystemSecuritySettingsService", () => {
 
   it("encodeSecretForStorage encrypts when enabled and key valid", async () => {
     envMock.systemSettingsEncryptionKey = "0".repeat(64);
-    await service.updateSettings("org-1", "actor-1", { secretEncryptionEnabled: true });
+    await service.updateSettings("org-1", "actor-1", {
+      secretEncryptionEnabled: true,
+      mfaPolicy: "off",
+    });
 
     const encoded = await service.encodeSecretForStorage("hello");
     expect(encoded).toBeTruthy();
@@ -111,4 +128,3 @@ describe("SystemSecuritySettingsService", () => {
     expect((encoded as any).__enc).toBe("system-settings:v1");
   });
 });
-

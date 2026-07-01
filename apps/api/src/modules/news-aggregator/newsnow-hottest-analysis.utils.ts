@@ -159,17 +159,17 @@ export function buildSignalKey(input: {
 }
 
 export function buildGlobalInputSignature(input: {
-  entries: Array<{
+  entries: {
     sourceId: string;
     failed: boolean;
-    items: Array<{
+    items: {
       id: string;
       title: string;
       url: string;
       heatText: string | null;
       rank: number;
-    }>;
-  }>;
+    }[];
+  }[];
 }): string {
   const payload = input.entries
     .map((entry) => ({
@@ -236,12 +236,10 @@ export function computeFreshness(input: {
 }
 
 export function buildHeuristicClusters(
-  signals: Array<
-    Pick<
+  signals: Pick<
       NewsnowHotSignal | NewsnowHotSignalSeed,
       'signalKey' | 'sourceId' | 'title' | 'heatValue' | 'rank'
-    >
-  >,
+    >[],
 ): NewsnowHotSignalCluster[] {
   if (signals.length === 0) {
     return [];

@@ -2,14 +2,14 @@ import { getQueueToken } from "@nestjs/bull-shared";
 import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
-import { EnvService } from "../config/config.service";
-import { toBullmqConnection } from "../config/redis-connection";
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
+import { BullmqConnectionService } from "../config/bullmq-connection.service";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 
 import { AnalysisPromptService } from "./analysis-prompt.service";
-import { AnalysisQueueEventPublisher } from "./analysis-queue-event.publisher";
 import { AnalysisQueueCleanupService } from "./analysis-queue-cleanup.service";
+import { AnalysisQueueEventPublisher } from "./analysis-queue-event.publisher";
 import { ANALYSIS_QUEUE, ANALYSIS_QUEUE_EVENTS, ANALYSIS_QUEUE_NAME } from "./analysis.constants";
 import { AnalysisProcessor } from "./analysis.processor";
 import { ANALYSIS_PUBSUB, createAnalysisPubSub } from "./analysis.pubsub";
@@ -25,10 +25,16 @@ import { AnalysisService } from "./analysis.service";
     AnalysisQueueCleanupService,
     {
       provide: ANALYSIS_QUEUE,
-      inject: [EnvService, AnalysisQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: AnalysisQueueCleanupService) => {
+      inject: [AnalysisQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: AnalysisQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const queue = new Queue(ANALYSIS_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.getSharedConnection(),
+          defaultJobOptions: {
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
+          },
         });
         cleanup.track(queue);
         return queue;
@@ -36,10 +42,15 @@ import { AnalysisService } from "./analysis.service";
     },
     {
       provide: ANALYSIS_QUEUE_EVENTS,
-      inject: [EnvService, AnalysisQueueCleanupService],
-      useFactory: (env: EnvService, cleanup: AnalysisQueueCleanupService) => {
+      inject: [AnalysisQueueCleanupService, BullmqConnectionService],
+      useFactory: (
+        cleanup: AnalysisQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
+      ) => {
         const events = new QueueEvents(ANALYSIS_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.createDedicatedConnectionOptions(
+            `events:${ANALYSIS_QUEUE_NAME}`,
+          ),
         });
         cleanup.track(events);
         return events;

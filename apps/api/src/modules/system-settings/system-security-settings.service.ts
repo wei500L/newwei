@@ -6,6 +6,7 @@ import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
+import { AuthSecurityService } from "../auth/auth-security.service";
 import {
   decodeSystemSettingsKey,
   encryptStringValueV1,
@@ -14,6 +15,7 @@ import {
 
 export interface SystemSecuritySettingsPublic {
   secretEncryptionEnabled: boolean;
+  mfaPolicy: "off" | "admins_only" | "all_users";
   encryptionKeyPresent: boolean;
   encryptionKeyValid: boolean;
   encryptionKeyError: string | null;
@@ -21,6 +23,7 @@ export interface SystemSecuritySettingsPublic {
 
 interface StoredSystemSecuritySettings {
   secretEncryptionEnabled?: unknown;
+  mfaPolicy?: unknown;
 }
 
 interface CachedSystemSecuritySettings {
@@ -40,16 +43,19 @@ export class SystemSecuritySettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
-    private readonly env: EnvService
+    private readonly env: EnvService,
+    private readonly authSecurity: AuthSecurityService,
   ) {}
 
   async getPublicSettings(): Promise<SystemSecuritySettingsPublic> {
     const stored = await this.loadStoredSettings();
     const keyStatus = this.resolveEnvKeyStatus();
     const secretEncryptionEnabled = this.asBoolean(stored?.secretEncryptionEnabled, false);
+    const mfaPolicy = this.asMfaPolicy(stored?.mfaPolicy);
 
     return {
       secretEncryptionEnabled,
+      mfaPolicy,
       encryptionKeyPresent: keyStatus.present,
       encryptionKeyValid: keyStatus.valid,
       encryptionKeyError: keyStatus.error ?? null
@@ -59,7 +65,7 @@ export class SystemSecuritySettingsService {
   async updateSettings(
     orgId: string,
     actorId: string,
-    input: { secretEncryptionEnabled: boolean }
+    input: { secretEncryptionEnabled: boolean; mfaPolicy: "off" | "admins_only" | "all_users" }
   ): Promise<SystemSecuritySettingsPublic> {
     const keyStatus = this.resolveEnvKeyStatus();
     if (input.secretEncryptionEnabled && !keyStatus.valid) {
@@ -70,7 +76,8 @@ export class SystemSecuritySettingsService {
     }
 
     const nextStored: StoredSystemSecuritySettings = {
-      secretEncryptionEnabled: input.secretEncryptionEnabled
+      secretEncryptionEnabled: input.secretEncryptionEnabled,
+      mfaPolicy: input.mfaPolicy,
     };
 
     await this.prisma.systemSetting.upsert({
@@ -100,6 +107,7 @@ export class SystemSecuritySettingsService {
           action: "system_security_update",
           metadata: this.toPrismaJson({
             secretEncryptionEnabled: input.secretEncryptionEnabled,
+            mfaPolicy: input.mfaPolicy,
             encryptionKeyPresent: keyStatus.present,
             encryptionKeyValid: keyStatus.valid
           } satisfies Prisma.InputJsonObject)
@@ -109,6 +117,7 @@ export class SystemSecuritySettingsService {
     );
 
     await this.invalidateCache();
+    await this.authSecurity.invalidate();
     return this.getPublicSettings();
   }
 
@@ -195,6 +204,13 @@ export class SystemSecuritySettingsService {
 
   private asBoolean(value: unknown, fallback: boolean): boolean {
     return typeof value === "boolean" ? value : fallback;
+  }
+
+  private asMfaPolicy(value: unknown): "off" | "admins_only" | "all_users" {
+    if (value === "admins_only" || value === "all_users" || value === "off") {
+      return value;
+    }
+    return "off";
   }
 
   private toPrismaJson(value: unknown): Prisma.InputJsonValue {

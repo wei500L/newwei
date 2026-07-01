@@ -1,7 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { WarningOutlined } from "@ant-design/icons";
+import { useQuery } from "@tanstack/react-query";
 import { Drawer, List, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
@@ -10,8 +10,8 @@ import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
-import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { createApiClient } from "@/lib/api-client";
@@ -576,8 +576,8 @@ export function SpacetimePropagation({
     return (
       <div className="h-[360px]">
         <ChartEmptyState
-          title={t("dashboard.charts.spacetimePropagation.emptyTitle", { defaultValue: "No event selected" })}
-          description={t("dashboard.charts.spacetimePropagation.emptyDescription", { defaultValue: "Select an event to render its propagation flow." })}
+          title={t("dashboard.charts.spacetimePropagation.emptyTitle")}
+          description={t("dashboard.charts.spacetimePropagation.emptyDescription")}
         />
       </div>
     );
@@ -606,8 +606,8 @@ export function SpacetimePropagation({
     return (
       <div className="h-[360px]">
         <ChartEmptyState
-          title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
-          description={t("dashboard.charts.spacetimePropagation.empty", { defaultValue: "No propagation signals found in the selected range." })}
+          title={t("dashboard.dataEmpty")}
+          description={t("dashboard.charts.spacetimePropagation.empty")}
         />
       </div>
     );
@@ -637,7 +637,6 @@ export function SpacetimePropagation({
         {linkedSourceSet.size > 0 ? (
           <Tag color="cyan" className="text-xs">
             {t("dashboard.charts.spacetimePropagation.linkedSources", {
-              defaultValue: "Linked sources: {{count}}",
               count: linkedSourceSet.size
             })}
           </Tag>
@@ -654,8 +653,7 @@ export function SpacetimePropagation({
               hidden: degradationStats.hiddenEdges,
               filtered: degradationStats.filteredEdges,
               selfLoops: degradationStats.selfLoops,
-              total: degradationStats.totalEdges,
-              defaultValue: `${degradationStats.hiddenEdges} 条传播链已被隐藏（无效引用 ${degradationStats.filteredEdges} / 自环 ${degradationStats.selfLoops}，两者可能重叠），以确保传播图正常显示。`
+              total: degradationStats.totalEdges
             })}
           >
             <Tag
@@ -666,18 +664,14 @@ export function SpacetimePropagation({
               {t("dashboard.charts.spacetimePropagation.filtered", {
                 hidden: degradationStats.hiddenEdges,
                 filtered: degradationStats.filteredEdges,
-                selfLoops: degradationStats.selfLoops,
-                defaultValue: `已隐藏 ${degradationStats.hiddenEdges} 条链（无效 ${degradationStats.filteredEdges} / 自环 ${degradationStats.selfLoops}）`
+                selfLoops: degradationStats.selfLoops
               })}
             </Tag>
           </Tooltip>
         ) : null}
       </Space>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        {t("dashboard.charts.spacetimePropagation.caption", {
-          defaultValue:
-            "Directed source diffusion: duplicate links are evidence-backed; time links are recency-inferred."
-        })}
+        {t("dashboard.charts.spacetimePropagation.caption")}
       </Typography.Text>
       {showStalePropagationErrorBanner ? (
         <div className="mb-2">
@@ -694,7 +688,7 @@ export function SpacetimePropagation({
       <DashboardChart option={option} theme={echartsTheme} height={360} onEvents={onEvents} />
 
       <Drawer
-        title={selectedSource ?? t("dashboard.charts.spacetimePropagation.details", { defaultValue: "Details" })}
+        title={selectedSource ?? t("dashboard.charts.spacetimePropagation.details")}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         width={520}
@@ -703,12 +697,12 @@ export function SpacetimePropagation({
           {selectedSource ? <Tag color="blue">{selectedSource}</Tag> : null}
           {cursorStartIso && cursorEndIso ? (
             <Tag>
-              {t("dashboard.charts.spacetimePropagation.window", { defaultValue: "Window" })}:{" "}
+              {t("dashboard.charts.spacetimePropagation.window")}:{" "}
               {formatDateTime(cursorStartIso, locale, { dateStyle: "medium" })} -{" "}
               {formatDateTime(cursorEndIso, locale, { dateStyle: "medium" })}
             </Tag>
           ) : null}
-          {drawerUpdatedAtLabel ? <Tag>{t("dashboard.updatedAt", { defaultValue: "Updated" })}: {drawerUpdatedAtLabel}</Tag> : null}
+          {drawerUpdatedAtLabel ? <Tag>{t("dashboard.updatedAt")}: {drawerUpdatedAtLabel}</Tag> : null}
         </Space>
 
         {articlesQuery.isLoading && !articlesQuery.data ? (
@@ -734,10 +728,8 @@ export function SpacetimePropagation({
             if (!hasArticles) {
               return (
                 <ChartEmptyState
-                  title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
-                  description={t("dashboard.charts.spacetimePropagation.noArticles", {
-                    defaultValue: "No articles found for this source in the selected window."
-                  })}
+                  title={t("dashboard.dataEmpty")}
+                  description={t("dashboard.charts.spacetimePropagation.noArticles")}
                 />
               );
             }
@@ -770,7 +762,7 @@ export function SpacetimePropagation({
                                 {title || url}
                               </a>
                             ) : (
-                              <span>{title || t("common.emptyValue", { defaultValue: "N/A" })}</span>
+                              <span>{title || t("common.emptyValue")}</span>
                             )
                           }
                           description={
@@ -795,9 +787,7 @@ export function SpacetimePropagation({
                 />
                 {payload?.hasMore ? (
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {t("dashboard.charts.spacetimePropagation.moreHint", {
-                      defaultValue: "More articles available. Narrow the time range to inspect further."
-                    })}
+                    {t("dashboard.charts.spacetimePropagation.moreHint")}
                   </Typography.Text>
                 ) : null}
               </>

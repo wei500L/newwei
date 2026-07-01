@@ -1,6 +1,6 @@
+import { parseRelativeDate } from "./date";
 import { myFetch } from "./fetch";
 import { defineSource } from "./source";
-import { parseRelativeDate } from "./date";
 
 interface Jin10Item {
   id: string

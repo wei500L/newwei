@@ -1,7 +1,7 @@
 "use client";
 
 import { useApolloClient } from "@apollo/client";
-import { Alert, Badge, Divider, List, Skeleton, Space, Tag, Typography } from "antd";
+import { Alert, App, Badge, Divider, List, Skeleton, Space, Tag, Typography } from "antd";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useEffect } from "react";
@@ -11,7 +11,9 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import type { AlertEventsStreamSubscription } from "@/graphql/generated";
 import { AlertEventsStreamDocument, useAlertEventsQuery } from "@/graphql/generated";
 import { usePendingAction } from "@/hooks/use-pending-action";
+import { createCoalescedRefetchScheduler } from "@/lib/coalesced-refetch";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { useTimedValueDeduper } from "@/lib/use-realtime-helpers";
 
 const severityColor: Record<string, string> = {
   low: "green",
@@ -29,6 +31,7 @@ const eventStatusBadge: Record<string, "success" | "processing" | "error" | "def
 
 export function AlertPanel() {
   const { t, i18n } = useTranslation();
+  const { message } = App.useApp();
   const locale = resolveLocale(i18n.language);
   const client = useApolloClient();
   const { data: session, status } = useSession();
@@ -43,22 +46,46 @@ export function AlertPanel() {
   const { pending: refreshingEvents, run: refreshEvents } = usePendingAction(
     () => refetchEvents(),
   );
+  const shouldShowStreamError = useTimedValueDeduper(30_000);
 
   useEffect(() => {
     if (!authenticated || !canReadAlerts) {
       return;
     }
+    const refetchScheduler = createCoalescedRefetchScheduler(() =>
+      refetchEvents(),
+    );
     const sub = client
       .subscribe<AlertEventsStreamSubscription>({
         query: AlertEventsStreamDocument
       })
       .subscribe({
         next: () => {
-          void refetchEvents();
+          refetchScheduler.schedule();
+        },
+        error: (error) => {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          const toastMessage = t("alerts.streamError", { error: errorMessage });
+          if (!shouldShowStreamError(toastMessage)) {
+            return;
+          }
+          message.error(toastMessage);
         }
       });
-    return () => sub.unsubscribe();
-  }, [authenticated, canReadAlerts, client, refetchEvents]);
+    return () => {
+      sub.unsubscribe();
+      refetchScheduler.cancel();
+    };
+  }, [
+    authenticated,
+    canReadAlerts,
+    client,
+    message,
+    refetchEvents,
+    shouldShowStreamError,
+    t,
+  ]);
 
   const events = eventsData?.alertEvents ?? [];
   if (status === "loading") {
@@ -69,11 +96,8 @@ export function AlertPanel() {
     return (
       <ChartEmptyState
         variant="permission"
-        title={t("common.accessDenied", { defaultValue: "Access denied" })}
-        description={t("common.accessDeniedDescription", {
-          defaultValue:
-            "You don't have permission to view this data. Contact an administrator if you need access."
-        })}
+        title={t("common.accessDenied")}
+        description={t("common.accessDeniedDescription")}
       />
     );
   }
@@ -82,18 +106,14 @@ export function AlertPanel() {
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <Alert
         type={canManageAlerts ? "info" : "warning"}
-        message={t("alerts.center.configNotice.title", {
-          defaultValue: "Alert rules are managed in Admin"
-        })}
+        message={t("alerts.center.configNotice.title")}
         description={
           canManageAlerts ? (
             <Link href="/admin/alerts">
-              {t("alerts.center.configNotice.link", { defaultValue: "Open alert configuration" })}
+              {t("alerts.center.configNotice.link")}
             </Link>
           ) : (
-            t("alerts.center.configNotice.description", {
-              defaultValue: "Alert rule configuration is limited to administrators."
-            })
+            t("alerts.center.configNotice.description")
           )
         }
       />
@@ -105,11 +125,9 @@ export function AlertPanel() {
             presentation="banner"
             variant="error"
             className="mb-3"
-            title={t("alerts.events.loadFailedTitle", { defaultValue: "Failed to load alert events" })}
+            title={t("alerts.events.loadFailedTitle")}
             description={error instanceof Error ? error.message : String(error)}
-            actionLabel={t("dashboard.actions.retryFetch", {
-              defaultValue: "Retry fetch"
-            })}
+            actionLabel={t("dashboard.actions.retryFetch")}
             actionLoading={refreshingEvents}
             onAction={() => {
               void refreshEvents();
@@ -122,10 +140,8 @@ export function AlertPanel() {
         ) : events.length === 0 ? (
           <ChartEmptyState
             className="h-auto py-6"
-            title={t("alerts.events.emptyTitle", { defaultValue: "No alerts yet" })}
-            description={t("alerts.events.emptyDescription", {
-              defaultValue: "Alerts will appear here once a rule triggers.",
-            })}
+            title={t("alerts.events.emptyTitle")}
+            description={t("alerts.events.emptyDescription")}
           />
         ) : (
           <List

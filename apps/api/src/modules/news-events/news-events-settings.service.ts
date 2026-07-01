@@ -6,10 +6,22 @@ import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 
+export const NEWS_EVENT_CLUSTERING_MODES = [
+  "vector",
+  "bertopic_primary",
+] as const;
+
+export type NewsEventClusteringMode =
+  (typeof NEWS_EVENT_CLUSTERING_MODES)[number];
+
 export interface NewsEventSettings {
   enabled: boolean;
   ingestionEnabled: boolean;
   timelineEnabled: boolean;
+  clusteringMode: NewsEventClusteringMode;
+  bertopicMinItemsPerGroup: number;
+  bertopicMaxItemsPerRequest: number;
+  bertopicMinTopicSize: number;
   forceAuthoritativeMode: boolean;
   forceMinAuthoritativeSources: number;
   maxBatchSize: number;
@@ -37,6 +49,10 @@ export interface NewsEventSettingsInput {
   enabled: boolean;
   ingestionEnabled: boolean;
   timelineEnabled: boolean;
+  clusteringMode: NewsEventClusteringMode;
+  bertopicMinItemsPerGroup: number;
+  bertopicMaxItemsPerRequest: number;
+  bertopicMinTopicSize: number;
   forceAuthoritativeMode: boolean;
   forceMinAuthoritativeSources: number;
   maxBatchSize: number;
@@ -100,6 +116,12 @@ const MIN_CACHE_TTL_SECONDS = 0;
 const MAX_CACHE_TTL_SECONDS = 3600;
 const MIN_FORCE_MIN_AUTHORITATIVE_SOURCES = 1;
 const MAX_FORCE_MIN_AUTHORITATIVE_SOURCES = 5;
+const MIN_BERTOPIC_MIN_ITEMS_PER_GROUP = 2;
+const MAX_BERTOPIC_MIN_ITEMS_PER_GROUP = 100;
+const MIN_BERTOPIC_MAX_ITEMS_PER_REQUEST = 2;
+const MAX_BERTOPIC_MAX_ITEMS_PER_REQUEST = 500;
+const MIN_BERTOPIC_MIN_TOPIC_SIZE = 2;
+const MAX_BERTOPIC_MIN_TOPIC_SIZE = 100;
 
 @Injectable()
 export class NewsEventsSettingsService {
@@ -218,6 +240,10 @@ export class NewsEventsSettingsService {
       enabled: false,
       ingestionEnabled: false,
       timelineEnabled: true,
+      clusteringMode: "vector",
+      bertopicMinItemsPerGroup: 8,
+      bertopicMaxItemsPerRequest: 32,
+      bertopicMinTopicSize: 4,
       forceAuthoritativeMode: false,
       forceMinAuthoritativeSources: 1,
       maxBatchSize: 100,
@@ -267,6 +293,21 @@ export class NewsEventsSettingsService {
       rawTimelineLowConfidenceThreshold,
       rawTimelineHighConfidenceThreshold,
     );
+    const bertopicMinItemsPerGroup = this.clampInt(
+      value.bertopicMinItemsPerGroup,
+      MIN_BERTOPIC_MIN_ITEMS_PER_GROUP,
+      MAX_BERTOPIC_MIN_ITEMS_PER_GROUP,
+      defaults.bertopicMinItemsPerGroup,
+    );
+    const bertopicMaxItemsPerRequest = Math.max(
+      bertopicMinItemsPerGroup,
+      this.clampInt(
+        value.bertopicMaxItemsPerRequest,
+        MIN_BERTOPIC_MAX_ITEMS_PER_REQUEST,
+        MAX_BERTOPIC_MAX_ITEMS_PER_REQUEST,
+        defaults.bertopicMaxItemsPerRequest,
+      ),
+    );
 
     return {
       enabled:
@@ -279,6 +320,18 @@ export class NewsEventsSettingsService {
         typeof value.timelineEnabled === "boolean"
           ? value.timelineEnabled
           : defaults.timelineEnabled,
+      clusteringMode: this.normalizeClusteringMode(
+        value.clusteringMode,
+        defaults.clusteringMode,
+      ),
+      bertopicMinItemsPerGroup,
+      bertopicMaxItemsPerRequest,
+      bertopicMinTopicSize: this.clampInt(
+        value.bertopicMinTopicSize,
+        MIN_BERTOPIC_MIN_TOPIC_SIZE,
+        MAX_BERTOPIC_MIN_TOPIC_SIZE,
+        defaults.bertopicMinTopicSize,
+      ),
       forceAuthoritativeMode:
         typeof value.forceAuthoritativeMode === "boolean"
           ? value.forceAuthoritativeMode
@@ -413,6 +466,21 @@ export class NewsEventsSettingsService {
       return Number.isFinite(parsed) ? parsed : null;
     }
     return null;
+  }
+
+  private normalizeClusteringMode(
+    value: unknown,
+    fallback: NewsEventClusteringMode,
+  ): NewsEventClusteringMode {
+    if (typeof value !== "string") {
+      return fallback;
+    }
+    const normalized = value.trim();
+    return NEWS_EVENT_CLUSTERING_MODES.includes(
+      normalized as NewsEventClusteringMode,
+    )
+      ? (normalized as NewsEventClusteringMode)
+      : fallback;
   }
 
   private clampInt(value: unknown, min: number, max: number, fallback: number) {

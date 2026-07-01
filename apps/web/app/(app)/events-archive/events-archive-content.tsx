@@ -29,6 +29,7 @@ import dayjs from "@/lib/dayjs";
 import { trackSearchTelemetry } from "@/lib/search-telemetry";
 import { safeHttpUrl } from "@/lib/url";
 import { useDebounceValue } from "@/lib/use-debounce-value";
+
 import {
   ARCHIVE_PAGE_SIZE,
   DEFAULT_REGION,
@@ -98,20 +99,20 @@ interface ArchiveDetailData {
   sourceUrl?: string | null;
   sourceLabel?: string | null;
   classification?: ArchiveClassificationDetail | null;
-  timeline: Array<{
+  timeline: {
     id: string;
     bucketStart: string;
     title?: string | null;
     summary?: string | null;
-  }>;
-  relatedArticles: Array<{
+  }[];
+  relatedArticles: {
     processedArticleId: string;
     title?: string | null;
     summary?: string | null;
     publishedAt?: string | null;
     sourceLabel?: string | null;
     sourceUrl?: string | null;
-  }>;
+  }[];
 }
 
 const ARCHIVE_DIGEST_QUERY = gql`
@@ -469,12 +470,8 @@ export function EventsArchiveContent() {
   );
   const sectionLabels = useMemo(
     () => ({
-      geo: t("pages.eventsArchive.sections.geo", {
-        defaultValue: "地缘热点组",
-      }),
-      macro: t("pages.eventsArchive.sections.macro", {
-        defaultValue: "宏观事务组",
-      }),
+      geo: t("pages.eventsArchive.sections.geo"),
+      macro: t("pages.eventsArchive.sections.macro"),
     }),
     [t],
   );
@@ -760,39 +757,23 @@ export function EventsArchiveContent() {
       return null;
     }
     if (!searchMode) {
-      return t("pages.eventsArchive.errors.digestLoadFailed", {
-        defaultValue: "归档加载失败，请稍后重试。",
-      });
+      return t("pages.eventsArchive.errors.digestLoadFailed");
     }
     switch (digestAppCode) {
       case "ARCHIVE_EMBEDDING_UNAVAILABLE":
-        return t("pages.eventsArchive.errors.embeddingUnavailable", {
-          defaultValue: "语义检索模型未配置，请联系管理员。",
-        });
+        return t("pages.eventsArchive.errors.embeddingUnavailable");
       case "ARCHIVE_EMBEDDING_FAILED":
-        return t("pages.eventsArchive.errors.embeddingFailed", {
-          defaultValue: "语义向量生成失败，请稍后重试。",
-        });
+        return t("pages.eventsArchive.errors.embeddingFailed");
       case "ARCHIVE_EMBEDDING_INVALID_RESPONSE":
-        return t("pages.eventsArchive.errors.embeddingInvalidResponse", {
-          defaultValue: "语义向量返回异常，请稍后重试。",
-        });
+        return t("pages.eventsArchive.errors.embeddingInvalidResponse");
       case "ARCHIVE_VECTOR_UNAVAILABLE":
-        return t("pages.eventsArchive.errors.vectorUnavailable", {
-          defaultValue: "向量召回服务不可用，请稍后重试。",
-        });
+        return t("pages.eventsArchive.errors.vectorUnavailable");
       case "ARCHIVE_RERANK_FAILED":
-        return t("pages.eventsArchive.errors.rerankFailed", {
-          defaultValue: "结果精排失败，请稍后重试。",
-        });
+        return t("pages.eventsArchive.errors.rerankFailed");
       case "ARCHIVE_RERANK_INVALID_RESPONSE":
-        return t("pages.eventsArchive.errors.rerankInvalidResponse", {
-          defaultValue: "结果精排返回异常，请稍后重试。",
-        });
+        return t("pages.eventsArchive.errors.rerankInvalidResponse");
       case "ARCHIVE_SCAN_LIMIT_EXCEEDED":
-        return t("pages.eventsArchive.errors.scanLimitExceeded", {
-          defaultValue: "当前筛选范围过大，请缩小日期或条件后重试。",
-        });
+        return t("pages.eventsArchive.errors.scanLimitExceeded");
       default:
         return digestError.message;
     }
@@ -809,26 +790,18 @@ export function EventsArchiveContent() {
     if (preparation.state === "FAILED") {
       return {
         type: "warning" as const,
-        message: t("pages.eventsArchive.preparation.failedTitle", {
-          defaultValue: "归档后台补齐失败",
-        }),
+        message: t("pages.eventsArchive.preparation.failedTitle"),
         description:
           preparation.errorMessage?.trim() ||
-          t("pages.eventsArchive.preparation.failedBody", {
-            defaultValue: "后台任务已中断，请点击刷新后重试。",
-          }),
+          t("pages.eventsArchive.preparation.failedBody"),
       };
     }
 
     if (preparation.state === "PARTIAL") {
       return {
         type: "info" as const,
-        message: t("pages.eventsArchive.preparation.partialTitle", {
-          defaultValue: "归档数据正在后台补齐",
-        }),
+        message: t("pages.eventsArchive.preparation.partialTitle"),
         description: t("pages.eventsArchive.preparation.partialBody", {
-          defaultValue:
-            "当前已展示 {{ready}} 条就绪结果，仍有 {{missing}} 条待补齐；日历标记与每日计数仅覆盖已准备部分。",
           ready: preparation.readyCount,
           missing: preparation.missingCount,
         }),
@@ -838,34 +811,22 @@ export function EventsArchiveContent() {
     if (searchMode) {
       return {
         type: "info" as const,
-        message: t("pages.eventsArchive.preparation.searchCoverageTitle", {
-          defaultValue: "搜索状态与归档预热分离显示",
-        }),
-        description: t("pages.eventsArchive.preparation.searchCoverageBody", {
-          defaultValue:
-            "当前搜索功能可用，但归档底库仍在后台补齐，搜索结果只覆盖已完成归档分类的记录。",
-        }),
+        message: t("pages.eventsArchive.preparation.searchCoverageTitle"),
+        description: t("pages.eventsArchive.preparation.searchCoverageBody"),
       };
     }
 
     return {
       type: "info" as const,
-      message: t("pages.eventsArchive.preparation.loadingTitle", {
-        defaultValue: "归档数据准备中",
-      }),
-      description: t("pages.eventsArchive.preparation.loadingBody", {
-        defaultValue:
-          "后台正在预热归档分类；日历标记与每日计数暂只覆盖已准备部分，请稍后刷新查看完整结果。",
-      }),
+      message: t("pages.eventsArchive.preparation.loadingTitle"),
+      description: t("pages.eventsArchive.preparation.loadingBody"),
     };
   }, [preparation, searchMode, t]);
   const calendarCoverageHint = useMemo(() => {
     if (!hasPreparationPending || searchMode) {
       return null;
     }
-    return t("pages.eventsArchive.preparation.calendarCoverageHint", {
-      defaultValue: "日历标记和本日统计当前仅覆盖已完成归档分类的部分数据。",
-    });
+    return t("pages.eventsArchive.preparation.calendarCoverageHint");
   }, [hasPreparationPending, searchMode, t]);
   const searchFeedback = useMemo(() => {
     if (!normalizedSearchInput) {
@@ -874,17 +835,13 @@ export function EventsArchiveContent() {
     if (isSearchPending) {
       return {
         tone: "pending" as const,
-        message: t("pages.eventsArchive.searchFeedback.updating", {
-          defaultValue: "Updating search…",
-        }),
+        message: t("pages.eventsArchive.searchFeedback.updating"),
       };
     }
     if (isSearchQueryTooShort) {
       return {
         tone: "info" as const,
         message: t("pages.eventsArchive.searchFeedback.tooShort", {
-          defaultValue:
-            "Enter at least {{min}} characters to start semantic archive search.",
           min: MIN_ARCHIVE_SEARCH_QUERY_LENGTH,
         }),
       };
@@ -892,32 +849,25 @@ export function EventsArchiveContent() {
     if (digestLoading && searchMode) {
       return {
         tone: "loading" as const,
-        message: t("pages.eventsArchive.searchFeedback.loading", {
-          defaultValue: "Searching archive…",
-        }),
+        message: t("pages.eventsArchive.searchFeedback.loading"),
       };
     }
     if (digestError && searchMode) {
       return {
         tone: "error" as const,
-        message: t("pages.eventsArchive.searchFeedback.error", {
-          defaultValue: "Search failed. Please retry.",
-        }),
+        message: t("pages.eventsArchive.searchFeedback.error"),
       };
     }
     if (searchMode && totalCount === 0) {
       return {
         tone: "empty" as const,
-        message: t("pages.eventsArchive.searchFeedback.empty", {
-          defaultValue: "No matching records.",
-        }),
+        message: t("pages.eventsArchive.searchFeedback.empty"),
       };
     }
     if (searchMode) {
       return {
         tone: "ready" as const,
         message: t("pages.eventsArchive.searchFeedback.ready", {
-          defaultValue: "{{count}} records matched",
           count: totalCount,
         }),
       };
@@ -944,12 +894,8 @@ export function EventsArchiveContent() {
   const currentRegionLabel =
     regionOptions.find((region) => region.value === currentRegion)?.label ??
     currentRegion;
-  const unknownCountryLabel = t("pages.eventsArchive.unknownCountry", {
-    defaultValue: "未知",
-  });
-  const untitledArchiveLabel = t("pages.eventsArchive.untitled", {
-    defaultValue: "未命名事件",
-  });
+  const unknownCountryLabel = t("pages.eventsArchive.unknownCountry");
+  const untitledArchiveLabel = t("pages.eventsArchive.untitled");
 
   const handleDateSelect = (value: Dayjs | null) => {
     if (!value) {
@@ -1065,13 +1011,10 @@ export function EventsArchiveContent() {
         <div className="relative flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="flex max-w-3xl flex-col gap-2">
             <Typography.Title level={4} style={{ margin: 0 }}>
-              {t("pages.eventsArchive.title", { defaultValue: "历史档案日报" })}
+              {t("pages.eventsArchive.title")}
             </Typography.Title>
             <Typography.Text type="secondary" className="max-w-2xl">
-              {t("pages.eventsArchive.subtitle", {
-                defaultValue:
-                  "按日期回溯已处理新闻情报，并按预设领域编年归档。",
-              })}
+              {t("pages.eventsArchive.subtitle")}
             </Typography.Text>
           </div>
 
@@ -1128,7 +1071,6 @@ export function EventsArchiveContent() {
                       className="archive-toolbar__metric"
                     >
                       {t("pages.eventsArchive.dailyCount", {
-                        defaultValue: "本日 {{count}} 条动态",
                         count: totalCount,
                       })}
                     </Typography.Title>
@@ -1197,7 +1139,6 @@ export function EventsArchiveContent() {
                         maxTagCount="responsive"
                         placeholder={t(
                           "pages.eventsArchive.filters.weightPlaceholder",
-                          { defaultValue: "所有权重" },
                         )}
                       />
                     </div>
@@ -1206,7 +1147,7 @@ export function EventsArchiveContent() {
                       onClick={() => refetchDigest()}
                       loading={digestLoading}
                     >
-                      {t("common.refresh", { defaultValue: "Refresh" })}
+                      {t("common.refresh")}
                     </Button>
                   </div>
 
@@ -1218,9 +1159,7 @@ export function EventsArchiveContent() {
                       }
                       value={searchInput}
                       onChange={(event) => setSearchInput(event.target.value)}
-                      placeholder={t("pages.eventsArchive.searchPlaceholder", {
-                        defaultValue: "搜索国家、事件、关键词...",
-                      })}
+                      placeholder={t("pages.eventsArchive.searchPlaceholder")}
                     />
                     <div className="archive-toolbar__feedback-slot">
                       {searchFeedback && searchFeedbackVisualState ? (
@@ -1258,12 +1197,8 @@ export function EventsArchiveContent() {
               showIcon
               message={
                 searchMode
-                  ? t("pages.eventsArchive.errors.searchFailedTitle", {
-                      defaultValue: "智能搜索失败",
-                    })
-                  : t("pages.eventsArchive.errors.digestFailedTitle", {
-                      defaultValue: "归档加载失败",
-                    })
+                  ? t("pages.eventsArchive.errors.searchFailedTitle")
+                  : t("pages.eventsArchive.errors.digestFailedTitle")
               }
               description={
                 <div className="flex flex-col gap-1">
@@ -1291,16 +1226,11 @@ export function EventsArchiveContent() {
             <Alert
               type="error"
               showIcon
-              message={t("pages.eventsArchive.errors.calendarFailedTitle", {
-                defaultValue: "日历加载失败",
-              })}
+              message={t("pages.eventsArchive.errors.calendarFailedTitle")}
               description={
                 <div className="flex flex-col gap-1">
                   <span>
-                    {t("pages.eventsArchive.errors.calendarFailed", {
-                      defaultValue:
-                        "日期标记与前进导航不可用，请稍后刷新重试。",
-                    })}
+                    {t("pages.eventsArchive.errors.calendarFailed")}
                   </span>
                   {calendarTraceId ? (
                     <Typography.Text type="secondary" className="text-xs">
@@ -1319,15 +1249,11 @@ export function EventsArchiveContent() {
           ) : totalCount === 0 ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t("pages.eventsArchive.empty", {
-                defaultValue: "该日期暂无归档",
-              })}
+              description={t("pages.eventsArchive.empty")}
             >
               {debouncedSearch.trim().length > 0 ? (
                 <Typography.Text type="secondary">
-                  {t("pages.eventsArchive.emptySearchHint", {
-                    defaultValue: "尝试使用更通用的关键词",
-                  })}
+                  {t("pages.eventsArchive.emptySearchHint")}
                 </Typography.Text>
               ) : null}
             </Empty>
@@ -1384,9 +1310,7 @@ export function EventsArchiveContent() {
                             {items.length === 0 ? (
                               <div className="rounded-2xl border border-dashed border-slate-300/80 bg-slate-50/80 px-4 py-6 text-center dark:border-slate-700/80 dark:bg-slate-900/65">
                                 <Typography.Text type="secondary">
-                                  {t("pages.eventsArchive.groupEmpty", {
-                                    defaultValue: "暂无动态",
-                                  })}
+                                  {t("pages.eventsArchive.groupEmpty")}
                                 </Typography.Text>
                               </div>
                             ) : (
@@ -1405,23 +1329,14 @@ export function EventsArchiveContent() {
                                     item.matchOrigin === "HYBRID"
                                       ? t(
                                           "pages.eventsArchive.matchOrigin.hybrid",
-                                          {
-                                            defaultValue: "混合",
-                                          },
                                         )
                                       : item.matchOrigin === "SEMANTIC"
                                         ? t(
                                             "pages.eventsArchive.matchOrigin.semantic",
-                                            {
-                                              defaultValue: "语义",
-                                            },
                                           )
                                         : item.matchOrigin === "LEXICAL"
                                           ? t(
                                               "pages.eventsArchive.matchOrigin.lexical",
-                                              {
-                                                defaultValue: "词法",
-                                              },
                                             )
                                           : null;
                                   return (
@@ -1433,9 +1348,6 @@ export function EventsArchiveContent() {
                                       aria-haspopup="dialog"
                                       aria-label={t(
                                         "pages.eventsArchive.detail.open",
-                                        {
-                                          defaultValue: "打开事件详情",
-                                        },
                                       )}
                                       onClick={() =>
                                         openArchiveDetail(
@@ -1507,8 +1419,6 @@ export function EventsArchiveContent() {
                                                 {t(
                                                   "pages.eventsArchive.relevanceTag",
                                                   {
-                                                    defaultValue:
-                                                      "相关度 {{percent}}%",
                                                     percent: relevancePercent,
                                                   },
                                                 )}
@@ -1546,9 +1456,6 @@ export function EventsArchiveContent() {
                                           aria-haspopup="dialog"
                                           aria-label={t(
                                             "pages.eventsArchive.detail.open",
-                                            {
-                                              defaultValue: "打开事件详情",
-                                            },
                                           )}
                                           onClick={(event) => {
                                             event.preventDefault();
@@ -1574,9 +1481,7 @@ export function EventsArchiveContent() {
                                 )}
                                 onClick={() => handleLoadMore(vertical)}
                               >
-                                {t("pages.eventsArchive.loadMore", {
-                                  defaultValue: "加载更多",
-                                })}
+                                {t("pages.eventsArchive.loadMore")}
                               </Button>
                             ) : null}
                           </div>
@@ -1592,9 +1497,7 @@ export function EventsArchiveContent() {
       </Card>
 
       <Drawer
-        title={t("pages.eventsArchive.detail.title", {
-          defaultValue: "事件详情",
-        })}
+        title={t("pages.eventsArchive.detail.title")}
         placement="right"
         width={screens.lg ? 620 : "100%"}
         open={Boolean(selectedDetailId)}
@@ -1612,17 +1515,13 @@ export function EventsArchiveContent() {
           </div>
         ) : detailError ? (
           <Typography.Text type="danger">
-            {t("pages.eventsArchive.detail.loadFailed", {
-              defaultValue: "加载详情失败。",
-            })}
+            {t("pages.eventsArchive.detail.loadFailed")}
             : {detailError.message}
           </Typography.Text>
         ) : !detail ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={t("pages.eventsArchive.detail.notFound", {
-              defaultValue: "未找到详情。",
-            })}
+            description={t("pages.eventsArchive.detail.notFound")}
           />
         ) : (
           <div className="flex flex-col gap-4 pb-2">
@@ -1642,16 +1541,11 @@ export function EventsArchiveContent() {
             <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
               <div className="flex flex-col gap-3">
                 <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                  {t("pages.eventsArchive.detail.classification", {
-                    defaultValue: "分类依据",
-                  })}
+                  {t("pages.eventsArchive.detail.classification")}
                 </Typography.Text>
                 {!detailClassification ? (
                   <Typography.Text type="secondary">
-                    {t("pages.eventsArchive.detail.classificationPending", {
-                      defaultValue:
-                        "分类准备中，后台完成归档后会显示判定依据。",
-                    })}
+                    {t("pages.eventsArchive.detail.classificationPending")}
                   </Typography.Text>
                 ) : (
                   <>
@@ -1678,9 +1572,7 @@ export function EventsArchiveContent() {
                       </span>
                       {detailClassification.isStale ? (
                         <span className="inline-flex rounded-full border border-rose-300/80 bg-rose-50/80 px-2.5 py-1 text-[11px] font-medium text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
-                          {t("pages.eventsArchive.detail.classificationStale", {
-                            defaultValue: "展示旧分类结果",
-                          })}
+                          {t("pages.eventsArchive.detail.classificationStale")}
                         </span>
                       ) : null}
                     </div>
@@ -1690,10 +1582,6 @@ export function EventsArchiveContent() {
                         <Typography.Text className="block text-sm text-amber-800 dark:text-amber-100">
                           {t(
                             "pages.eventsArchive.detail.classificationStaleHint",
-                            {
-                              defaultValue:
-                                "当前分类结果与现行模型或分类版本不一致，正在展示最近一次可用的归档判断。",
-                            },
                           )}
                         </Typography.Text>
                         {visibleClassificationStaleReasons.length > 0 ? (
@@ -1714,9 +1602,7 @@ export function EventsArchiveContent() {
                     <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
                       <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800/80 dark:bg-slate-900/70">
                         <Typography.Text className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                          {t("pages.eventsArchive.detail.embeddingModel", {
-                            defaultValue: "Embedding model",
-                          })}
+                          {t("pages.eventsArchive.detail.embeddingModel")}
                         </Typography.Text>
                         <Typography.Paragraph className="!mb-0 mt-1 break-all text-sm text-slate-700 dark:text-slate-200">
                           {detailClassification.embeddingModel}
@@ -1724,9 +1610,7 @@ export function EventsArchiveContent() {
                       </div>
                       <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800/80 dark:bg-slate-900/70">
                         <Typography.Text className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                          {t("pages.eventsArchive.detail.rerankModel", {
-                            defaultValue: "Rerank model",
-                          })}
+                          {t("pages.eventsArchive.detail.rerankModel")}
                         </Typography.Text>
                         <Typography.Paragraph className="!mb-0 mt-1 break-all text-sm text-slate-700 dark:text-slate-200">
                           {detailClassification.rerankModel}
@@ -1765,7 +1649,6 @@ export function EventsArchiveContent() {
                               </span>
                               <Typography.Text className="text-xs font-medium text-slate-500 dark:text-slate-400">
                                 {t("pages.eventsArchive.detail.fusedScore", {
-                                  defaultValue: "融合 {{percent}}%",
                                   percent: fusedPercent,
                                 })}
                               </Typography.Text>
@@ -1782,9 +1665,6 @@ export function EventsArchiveContent() {
                                   key: "rule",
                                   label: t(
                                     "pages.eventsArchive.detail.ruleScore",
-                                    {
-                                      defaultValue: "Rule",
-                                    },
                                   ),
                                   value: entry.ruleScore,
                                 },
@@ -1792,9 +1672,6 @@ export function EventsArchiveContent() {
                                   key: "embedding",
                                   label: t(
                                     "pages.eventsArchive.detail.embeddingScore",
-                                    {
-                                      defaultValue: "Embedding",
-                                    },
                                   ),
                                   value: entry.embeddingScore,
                                 },
@@ -1802,17 +1679,12 @@ export function EventsArchiveContent() {
                                   key: "rerank",
                                   label: t(
                                     "pages.eventsArchive.detail.rerankScore",
-                                    {
-                                      defaultValue: "Rerank",
-                                    },
                                   ),
                                   value: entry.rerankScore,
                                 },
                                 {
                                   key: "fused",
-                                  label: t("pages.eventsArchive.detail.fused", {
-                                    defaultValue: "Fusion",
-                                  }),
+                                  label: t("pages.eventsArchive.detail.fused"),
                                   value: entry.fusedScore,
                                 },
                               ].map((metric) => (
@@ -1841,9 +1713,7 @@ export function EventsArchiveContent() {
             <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
               <div className="flex flex-col gap-3">
                 <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                  {t("pages.eventsArchive.detail.entities", {
-                    defaultValue: "涉及国家/实体",
-                  })}
+                  {t("pages.eventsArchive.detail.entities")}
                 </Typography.Text>
                 {detail.fullEntities.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
@@ -1858,9 +1728,7 @@ export function EventsArchiveContent() {
                   </div>
                 ) : (
                   <Typography.Text type="secondary">
-                    {t("pages.eventsArchive.detail.entitiesEmpty", {
-                      defaultValue: "暂无标签",
-                    })}
+                    {t("pages.eventsArchive.detail.entitiesEmpty")}
                   </Typography.Text>
                 )}
               </div>
@@ -1869,15 +1737,11 @@ export function EventsArchiveContent() {
             <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
               <div className="flex flex-col gap-2">
                 <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                  {t("pages.eventsArchive.detail.source", {
-                    defaultValue: "来源",
-                  })}
+                  {t("pages.eventsArchive.detail.source")}
                 </Typography.Text>
                 <Typography.Text className="text-sm text-slate-700 dark:text-slate-200">
                   {detail.sourceLabel ||
-                    t("pages.eventsArchive.detail.sourceUnknown", {
-                      defaultValue: "未知来源",
-                    })}
+                    t("pages.eventsArchive.detail.sourceUnknown")}
                 </Typography.Text>
                 {safeHttpUrl(detail.sourceUrl) ? (
                   <a
@@ -1886,9 +1750,7 @@ export function EventsArchiveContent() {
                     rel="noreferrer"
                     className="text-sm font-medium text-sky-700 transition-colors hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
                   >
-                    {t("pages.eventsArchive.detail.openOriginal", {
-                      defaultValue: "打开原文链接",
-                    })}
+                    {t("pages.eventsArchive.detail.openOriginal")}
                   </a>
                 ) : null}
               </div>
@@ -1897,15 +1759,11 @@ export function EventsArchiveContent() {
             <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
               <div className="flex flex-col gap-3">
                 <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                  {t("pages.eventsArchive.detail.timeline", {
-                    defaultValue: "时间线",
-                  })}
+                  {t("pages.eventsArchive.detail.timeline")}
                 </Typography.Text>
                 {detail.timeline.length === 0 ? (
                   <Typography.Text type="secondary">
-                    {t("pages.eventsArchive.detail.timelineEmpty", {
-                      defaultValue: "暂无关联时间线",
-                    })}
+                    {t("pages.eventsArchive.detail.timelineEmpty")}
                   </Typography.Text>
                 ) : (
                   <div className="flex flex-col gap-3">
@@ -1937,15 +1795,11 @@ export function EventsArchiveContent() {
             <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
               <div className="flex flex-col gap-3">
                 <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                  {t("pages.eventsArchive.detail.related", {
-                    defaultValue: "关联原文",
-                  })}
+                  {t("pages.eventsArchive.detail.related")}
                 </Typography.Text>
                 {detail.relatedArticles.length === 0 ? (
                   <Typography.Text type="secondary">
-                    {t("pages.eventsArchive.detail.relatedEmpty", {
-                      defaultValue: "暂无关联原文",
-                    })}
+                    {t("pages.eventsArchive.detail.relatedEmpty")}
                   </Typography.Text>
                 ) : (
                   <div className="flex flex-col gap-3">
@@ -1985,9 +1839,7 @@ export function EventsArchiveContent() {
                               rel="noreferrer"
                               className="text-sm font-medium text-sky-700 transition-colors hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
                             >
-                              {t("pages.eventsArchive.detail.openOriginal", {
-                                defaultValue: "打开原文链接",
-                              })}
+                              {t("pages.eventsArchive.detail.openOriginal")}
                             </a>
                           ) : null}
                         </div>

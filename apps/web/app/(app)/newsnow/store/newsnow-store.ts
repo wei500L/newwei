@@ -1,5 +1,5 @@
-import { createWithEqualityFn as create } from "zustand/traditional";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
+import { createWithEqualityFn as create } from "zustand/traditional";
 
 import {
   buildNewsnowSnapshotHash,

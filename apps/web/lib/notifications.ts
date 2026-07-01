@@ -23,8 +23,7 @@ export interface NotificationPresentationCopy {
   toastText: string;
 }
 
-export interface NotificationStreamErrorPayload
-  extends RealtimeSocketErrorPayload {}
+export type NotificationStreamErrorPayload = RealtimeSocketErrorPayload;
 
 export interface ResolveNotificationLinkOptions {
   canReadAlerts?: boolean;
@@ -51,6 +50,9 @@ const NotificationPresentationKind = {
   NewsSourceSchedulerBackpressure: "news_source_scheduler_backpressure",
   ClassificationQualityThresholdExceeded:
     "classification_quality_threshold_exceeded",
+  UserDigestReady: "user_digest_ready",
+  UserDigestEmpty: "user_digest_empty",
+  UserDigestDeliveryFailed: "user_digest_delivery_failed",
 } as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -137,7 +139,6 @@ const appendTechnicalDetail = (
     return body;
   }
   const detail = t("notifications.technicalDetail", {
-    defaultValue: "System detail: {{detail}}",
     detail: technicalDetail,
   });
   return joinSentences(body, detail, locale);
@@ -247,20 +248,16 @@ export const formatNotificationPresentation = (
       const skipped = formatCount(toNumberValue(params.skipped), locale);
       const retryableFailures = toNumberValue(params.retryableFailures);
       const body = t("notifications.presentation.crawlCompleted.body", {
-        defaultValue:
-          "Inserted {{inserted}} item(s), skipped {{skipped}} item(s){{retryableSuffix}}.",
         inserted: inserted || "0",
         skipped: skipped || "0",
         retryableSuffix:
           retryableFailures && retryableFailures > 0
             ? t("notifications.presentation.crawlCompleted.retryableSuffix", {
-                defaultValue: ", retryable failures {{count}}",
                 count: formatCount(retryableFailures, locale),
               })
             : "",
       });
       const title = t("notifications.presentation.crawlCompleted.title", {
-        defaultValue: "Crawl completed: {{taskLabel}}",
         taskLabel,
       });
       return { title, body, toastText: title };
@@ -271,13 +268,10 @@ export const formatNotificationPresentation = (
         return fallback;
       }
       const title = t("notifications.presentation.crawlFailed.title", {
-        defaultValue: "Crawl failed: {{taskLabel}}",
         taskLabel,
       });
       const body = appendTechnicalDetail(
-        t("notifications.presentation.crawlFailed.body", {
-          defaultValue: "The crawl task did not complete successfully.",
-        }),
+        t("notifications.presentation.crawlFailed.body"),
         technicalDetail,
         locale,
         t,
@@ -293,11 +287,8 @@ export const formatNotificationPresentation = (
         toStringValue(params.summary) ??
         toStringValue(params.resultSummary) ??
         item.body ??
-        t("notifications.presentation.analysisCompleted.body", {
-          defaultValue: "The analysis result is ready.",
-        });
+        t("notifications.presentation.analysisCompleted.body");
       const title = t("notifications.presentation.analysisCompleted.title", {
-        defaultValue: "Analysis completed: {{analysisLabel}}",
         analysisLabel,
       });
       return { title, body: summary, toastText: title };
@@ -308,13 +299,10 @@ export const formatNotificationPresentation = (
         return fallback;
       }
       const title = t("notifications.presentation.analysisFailed.title", {
-        defaultValue: "Analysis failed: {{analysisLabel}}",
         analysisLabel,
       });
       const body = appendTechnicalDetail(
-        t("notifications.presentation.analysisFailed.body", {
-          defaultValue: "The analysis job did not complete successfully.",
-        }),
+        t("notifications.presentation.analysisFailed.body"),
         technicalDetail,
         locale,
         t,
@@ -340,19 +328,16 @@ export const formatNotificationPresentation = (
       const details = [
         metricValue
           ? t("notifications.presentation.alertTriggered.metricValue", {
-              defaultValue: "current value {{value}}",
               value: metricValue,
             })
           : null,
         changePercent
           ? t("notifications.presentation.alertTriggered.changePercent", {
-              defaultValue: "change {{value}}",
               value: changePercent,
             })
           : null,
         contextSummary
           ? t("notifications.presentation.alertTriggered.context", {
-              defaultValue: "context {{value}}",
               value: contextSummary,
             })
           : null,
@@ -360,7 +345,6 @@ export const formatNotificationPresentation = (
       const triggerCondition = toStringValue(technicalDetail);
       const structuredDetail = details.length
         ? t("notifications.presentation.alertTriggered.body", {
-            defaultValue: "Triggered alert condition: {{details}}.",
             details: details.join(locale === "zh-CN" ? "，" : ", "),
           })
         : null;
@@ -369,7 +353,6 @@ export const formatNotificationPresentation = (
           ? joinSentences(triggerCondition, structuredDetail, locale)
           : (triggerCondition ?? structuredDetail ?? item.body ?? null);
       const title = t("notifications.presentation.alertTriggered.title", {
-        defaultValue: "Alert triggered: {{ruleName}}",
         ruleName,
       });
       return { title, body, toastText: title };
@@ -383,15 +366,12 @@ export const formatNotificationPresentation = (
       const title = t(
         "notifications.presentation.newsSourceCircuitOpened.title",
         {
-          defaultValue: "Source paused: {{sourceLabel}}",
           sourceLabel,
         },
       );
       const body = t(
         "notifications.presentation.newsSourceCircuitOpened.body",
         {
-          defaultValue:
-            "Consecutive failures reached {{count}} and the source is paused until {{until}}.",
           count:
             formatCount(toNumberValue(params.consecutiveFailures), locale) ||
             "0",
@@ -408,13 +388,10 @@ export const formatNotificationPresentation = (
       const title = t(
         "notifications.presentation.newsSourceAutoDisabled.title",
         {
-          defaultValue: "Source disabled: {{sourceLabel}}",
           sourceLabel,
         },
       );
       const body = t("notifications.presentation.newsSourceAutoDisabled.body", {
-        defaultValue:
-          "Consecutive failures reached {{count}} and the source was automatically disabled.",
         count:
           formatCount(toNumberValue(params.consecutiveFailures), locale) || "0",
       });
@@ -428,15 +405,12 @@ export const formatNotificationPresentation = (
       const title = t(
         "notifications.presentation.newsSourceRssBodyMissingSpike.title",
         {
-          defaultValue: "RSS body missing spike: {{sourceLabel}}",
           sourceLabel,
         },
       );
       const body = t(
         "notifications.presentation.newsSourceRssBodyMissingSpike.body",
         {
-          defaultValue:
-            "In the last 24 hours, items without usable body reached {{count}}; threshold {{threshold}}.",
           count:
             formatCount(toNumberValue(params.sourceCount24h), locale) || "0",
           threshold:
@@ -453,15 +427,12 @@ export const formatNotificationPresentation = (
       const title = t(
         "notifications.presentation.newsSourcePipelineRetrySpike.title",
         {
-          defaultValue: "Pipeline retry spike: {{sourceLabel}}",
           sourceLabel,
         },
       );
       const body = t(
         "notifications.presentation.newsSourcePipelineRetrySpike.body",
         {
-          defaultValue:
-            "In the last 24 hours, pipeline retries reached {{count}}; threshold {{threshold}}.",
           count:
             formatCount(toNumberValue(params.sourceCount24h), locale) || "0",
           threshold:
@@ -477,15 +448,10 @@ export const formatNotificationPresentation = (
       }
       const title = t(
         "notifications.presentation.newsSourceSchedulerBackpressure.title",
-        {
-          defaultValue: "Scheduler backpressure warning",
-        },
       );
       const body = t(
         "notifications.presentation.newsSourceSchedulerBackpressure.body",
         {
-          defaultValue:
-            "{{delayedCount}} source(s) were delayed until {{rescheduleAt}}; pending jobs {{pendingJobs}}, threshold {{threshold}}.",
           delayedCount:
             formatCount(toNumberValue(params.delayedCount), locale) || "0",
           rescheduleAt,
@@ -500,13 +466,10 @@ export const formatNotificationPresentation = (
     case NotificationPresentationKind.ClassificationQualityThresholdExceeded: {
       const title = t(
         "notifications.presentation.classificationQualityThresholdExceeded.title",
-        {
-          defaultValue: "Classification quality threshold exceeded",
-        },
       );
       const window =
         toStringValue(params.window) ??
-        t("common.notAvailable", { defaultValue: "N/A" });
+        t("common.notAvailable");
       const latencySummary = toStringValue(
         params.latencySummary ?? params.latencyAlertSummary,
       );
@@ -520,7 +483,6 @@ export const formatNotificationPresentation = (
                 ? t(
                     "notifications.presentation.classificationQualityThresholdExceeded.latency",
                     {
-                      defaultValue: "Latency: {{summary}}",
                       summary: latencySummary,
                     },
                   )
@@ -529,7 +491,6 @@ export const formatNotificationPresentation = (
                 ? t(
                     "notifications.presentation.classificationQualityThresholdExceeded.gate",
                     {
-                      defaultValue: "Category gates: {{summary}}",
                       summary: gateSummary,
                     },
                   )
@@ -545,11 +506,46 @@ export const formatNotificationPresentation = (
         t(
           "notifications.presentation.classificationQualityThresholdExceeded.body",
           {
-            defaultValue:
-              "Classification quality thresholds were exceeded in the {{window}} window. Review system monitoring for details.",
             window,
           },
-        );
+      );
+      return { title, body, toastText: title };
+    }
+    case NotificationPresentationKind.UserDigestReady: {
+      const eventCount = formatCount(toNumberValue(params.eventCount), locale);
+      const generatedAt = formatTimestamp(params.generatedAt, locale);
+      const title = t("notifications.presentation.userDigestReady.title");
+      const body = t("notifications.presentation.userDigestReady.body", {
+        count: eventCount || "0",
+        generatedSuffix: generatedAt
+          ? t("notifications.presentation.userDigestReady.generatedSuffix", {
+              value: generatedAt,
+            })
+          : "",
+      });
+      return { title, body, toastText: title };
+    }
+    case NotificationPresentationKind.UserDigestEmpty: {
+      const title = t("notifications.presentation.userDigestEmpty.title");
+      const body = t("notifications.presentation.userDigestEmpty.body");
+      return { title, body, toastText: title };
+    }
+    case NotificationPresentationKind.UserDigestDeliveryFailed: {
+      const title = t(
+        "notifications.presentation.userDigestDeliveryFailed.title",
+      );
+      const targetEmail = toStringValue(params.targetEmail);
+      const detail =
+        technicalDetail ||
+        toStringValue(params.message) ||
+        item.body ||
+        t("notifications.presentation.userDigestDeliveryFailed.body");
+      const body = targetEmail
+        ? t("notifications.presentation.userDigestDeliveryFailed.bodyWithEmail", {
+            email: targetEmail,
+            detail,
+          })
+        : detail;
       return { title, body, toastText: title };
     }
     default:
@@ -610,7 +606,7 @@ export const resolveNotificationLink = (
   if (directLink) {
     return {
       href: directLink,
-      label: t("notifications.openLink", { defaultValue: "Open" }),
+      label: t("notifications.openLink"),
     };
   }
 
@@ -618,7 +614,7 @@ export const resolveNotificationLink = (
   if (taskId) {
     return {
       href: `/crawl/${taskId}`,
-      label: t("notifications.openTask", { defaultValue: "Open task" }),
+      label: t("notifications.openTask"),
     };
   }
 
@@ -633,7 +629,7 @@ export const resolveNotificationLink = (
   if (itemId) {
     return {
       href: `/items/${itemId}`,
-      label: t("notifications.openItem", { defaultValue: "Open item" }),
+      label: t("notifications.openItem"),
     };
   }
 
@@ -641,7 +637,7 @@ export const resolveNotificationLink = (
   if (analysisId) {
     return {
       href: `/dashboard?panel=analysis&analysisId=${encodeURIComponent(analysisId)}`,
-      label: t("notifications.openAnalysis", { defaultValue: "Open analysis" }),
+      label: t("notifications.openAnalysis"),
     };
   }
 
@@ -654,7 +650,7 @@ export const resolveNotificationLink = (
   if (alertEventId && options.canReadAlerts !== false) {
     return {
       href: `/alerts?eventId=${encodeURIComponent(alertEventId)}`,
-      label: t("notifications.openAlert", { defaultValue: "Open alert" }),
+      label: t("notifications.openAlert"),
     };
   }
 

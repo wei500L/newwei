@@ -1,6 +1,6 @@
-import { Type } from "class-transformer";
 import { ArgsType, Field, ID, InputType, Int, Float, registerEnumType } from "@nestjs/graphql";
 import { CrawlTaskStatus } from "@prisma/client";
+import { Type } from "class-transformer";
 import {
   IsArray,
   IsBoolean,
@@ -49,18 +49,6 @@ export class CrawlTimeRangeInput {
 
   @Field({ nullable: true })
   to?: string;
-}
-
-@InputType()
-export class CrawlProxyConfigInput {
-  @Field()
-  server!: string;
-
-  @Field({ nullable: true })
-  username?: string;
-
-  @Field({ nullable: true })
-  password?: string;
 }
 
 @InputType()
@@ -554,12 +542,6 @@ export class CrawlOptionsInput {
 
   @Field(() => Boolean, { nullable: true })
   removeForms?: boolean;
-
-  @Field({ nullable: true })
-  proxyUrl?: string;
-
-  @Field(() => CrawlProxyConfigInput, { nullable: true })
-  proxyConfig?: CrawlProxyConfigInput;
 
   @Field(() => [String], { nullable: true })
   additionalUrls?: string[];

@@ -1,31 +1,6 @@
-import { Injectable, OnModuleDestroy } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 
-type Closeable = {
-  close?: () => Promise<unknown> | void;
-};
+import { BullmqQueueCleanupService } from "../../common/bullmq-queue-cleanup.service";
 
 @Injectable()
-export class AkshareQueueCleanupService implements OnModuleDestroy {
-  private readonly closeables = new Set<Closeable>();
-
-  track<T extends Closeable>(closeable: T): T {
-    this.closeables.add(closeable);
-    return closeable;
-  }
-
-  async onModuleDestroy() {
-    const tasks = [...this.closeables].map(async (entry) => {
-      if (typeof entry.close !== "function") {
-        return;
-      }
-      try {
-        await entry.close();
-      } catch {
-        // best-effort cleanup
-      }
-    });
-
-    this.closeables.clear();
-    await Promise.allSettled(tasks);
-  }
-}
+export class AkshareQueueCleanupService extends BullmqQueueCleanupService {}

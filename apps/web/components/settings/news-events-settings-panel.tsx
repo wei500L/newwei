@@ -4,18 +4,27 @@ import { gql, useMutation, useQuery } from "@apollo/client";
 import {
   Alert,
   Button,
+  Card,
+  Descriptions,
   Form,
   InputNumber,
+  Select,
   Space,
   Spin,
   Switch,
+  Table,
   Tag,
   Typography,
   message,
 } from "antd";
-import { useEffect, useMemo } from "react";
+import { useSession } from "next-auth/react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
+import { createApiClient } from "@/lib/api-client";
+import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
 import {
   TIMELINE_PRESET_VALUES,
@@ -30,6 +39,10 @@ interface NewsEventSettingsModel {
   enabled: boolean;
   ingestionEnabled: boolean;
   timelineEnabled: boolean;
+  clusteringMode: "vector" | "bertopic_primary";
+  bertopicMinItemsPerGroup: number;
+  bertopicMaxItemsPerRequest: number;
+  bertopicMinTopicSize: number;
   forceAuthoritativeMode: boolean;
   forceMinAuthoritativeSources: number;
   maxBatchSize: number;
@@ -65,6 +78,10 @@ interface FormValues {
   enabled: boolean;
   ingestionEnabled: boolean;
   timelineEnabled: boolean;
+  clusteringMode: "vector" | "bertopic_primary";
+  bertopicMinItemsPerGroup: number;
+  bertopicMaxItemsPerRequest: number;
+  bertopicMinTopicSize: number;
   forceAuthoritativeMode: boolean;
   forceMinAuthoritativeSources: number;
   maxBatchSize: number;
@@ -88,12 +105,70 @@ interface FormValues {
   cacheTtlSeconds: number;
 }
 
+interface ClusteringReadinessResponse {
+  modelService: {
+    ready: boolean;
+    enabled: boolean;
+    baseUrl: string | null;
+    hasToken: boolean;
+  };
+  llmBackfill: {
+    ready: boolean;
+    profileId: string | null;
+    profileName: string | null;
+    model: string | null;
+    apiSurface: "chat_completions" | "responses" | null;
+  };
+  recoveryAutomation?: {
+    enabled: boolean;
+    intervalSeconds: number;
+    retryAfterSeconds: number;
+    batchSize: number;
+    actorId: string;
+  };
+}
+
+interface ClusteringFailureOverview {
+  pendingCount: number;
+  processingCount: number;
+  resolvedCount: number;
+  ignoredCount: number;
+  latestFailureAt: string | null;
+}
+
+interface ClusteringFailureRow {
+  groupId: string;
+  status: "pending" | "processing" | "resolved" | "ignored";
+  clusteringMode: string;
+  failureReason: string;
+  failureMessage: string | null;
+  language: string | null;
+  embeddingModel: string | null;
+  itemCount: number;
+  sampleTitles: string[];
+  attemptCount: number;
+  lastAttemptAt: string | null;
+  lastError: string | null;
+  activeJobId: string | null;
+  progressProcessedCount: number;
+  progressTotalCount: number;
+  lastRecoveryModel: string | null;
+  resolvedAt: string | null;
+  resolutionMode: string | null;
+  resolvedEventIds: string[];
+  createdAt: string;
+}
+
 const NEWS_EVENT_SETTINGS_QUERY = gql`
   query NewsEventSettings {
     newsEventSettings {
       enabled
       ingestionEnabled
       timelineEnabled
+      clusteringMode
+      bertopicMinItemsPerGroup
+      bertopicMaxItemsPerRequest
+      bertopicMinTopicSize
       forceAuthoritativeMode
       forceMinAuthoritativeSources
       maxBatchSize
@@ -125,6 +200,10 @@ const UPDATE_NEWS_EVENT_SETTINGS_MUTATION = gql`
       enabled
       ingestionEnabled
       timelineEnabled
+      clusteringMode
+      bertopicMinItemsPerGroup
+      bertopicMaxItemsPerRequest
+      bertopicMinTopicSize
       forceAuthoritativeMode
       forceMinAuthoritativeSources
       maxBatchSize
@@ -152,8 +231,21 @@ const UPDATE_NEWS_EVENT_SETTINGS_MUTATION = gql`
 
 export function NewsEventsSettingsPanel() {
   const { t } = useTranslation();
+  const { data: session } = useSession();
   const [form] = Form.useForm<FormValues>();
   const [messageApi, contextHolder] = message.useMessage();
+  const [clusteringReadiness, setClusteringReadiness] =
+    useState<ClusteringReadinessResponse | null>(null);
+  const [failureOverview, setFailureOverview] =
+    useState<ClusteringFailureOverview | null>(null);
+  const [failureRows, setFailureRows] = useState<ClusteringFailureRow[]>([]);
+  const [failuresLoading, setFailuresLoading] = useState(false);
+  const [actionGroupId, setActionGroupId] = useState<string | null>(null);
+
+  const apiClient = useMemo(
+    () => createApiClient({ accessToken: session?.accessToken }),
+    [session?.accessToken],
+  );
 
   const { data, loading, refetch, error } = useQuery<QueryData>(
     NEWS_EVENT_SETTINGS_QUERY,
@@ -164,6 +256,11 @@ export function NewsEventsSettingsPanel() {
 
   const [updateSettings, { loading: saving }] = useMutation<MutationData>(
     UPDATE_NEWS_EVENT_SETTINGS_MUTATION,
+  );
+  const watchedClusteringMode = Form.useWatch("clusteringMode", form);
+  const watchedBertopicMinItemsPerGroup = Form.useWatch(
+    "bertopicMinItemsPerGroup",
+    form,
   );
   const watchedLowConfidenceThreshold = Form.useWatch(
     "timelineLowConfidenceThreshold",
@@ -192,12 +289,48 @@ export function NewsEventsSettingsPanel() {
     form,
   );
 
+  const loadClusteringAdminState = useCallback(async () => {
+    setFailuresLoading(true);
+    try {
+      const [readinessResponse, overviewResponse, failuresResponse] =
+        await Promise.all([
+          apiClient.get<ClusteringReadinessResponse>(
+            "system-settings/news-events/clustering/readiness",
+          ),
+          apiClient.get<ClusteringFailureOverview>(
+            "system-settings/news-events/clustering/overview",
+          ),
+          apiClient.get<ClusteringFailureRow[]>(
+            "system-settings/news-events/clustering/failures",
+            {
+              params: { limit: 20 },
+            },
+          ),
+        ]);
+      setClusteringReadiness(readinessResponse.data ?? null);
+      setFailureOverview(overviewResponse.data ?? null);
+      setFailureRows(
+        Array.isArray(failuresResponse.data) ? failuresResponse.data : [],
+      );
+    } catch (error) {
+      captureClientError("Failed to load news event clustering admin state", error);
+      messageApi.error(
+        extractApiError(error).message ||
+          t("settings.newsEvents.messages.clusteringAdminLoadFailed"),
+      );
+    } finally {
+      setFailuresLoading(false);
+    }
+  }, [apiClient, messageApi, t]);
+
+  useEffect(() => {
+    void loadClusteringAdminState();
+  }, [loadClusteringAdminState]);
+
   const applyTimelinePreset = (preset: TimelinePresetKey) => {
     form.setFieldsValue(TIMELINE_PRESET_VALUES[preset]);
     messageApi.success(
-      t("settings.newsEvents.messages.presetApplied", {
-        defaultValue: "Preset applied. Save changes to persist.",
-      }),
+      t("settings.newsEvents.messages.presetApplied"),
     );
   };
 
@@ -275,22 +408,14 @@ export function NewsEventsSettingsPanel() {
   const closestTimelinePresetLabel = useMemo(() => {
     switch (timelinePresetSelection) {
       case "conservative":
-        return t("settings.newsEvents.presets.conservative", {
-          defaultValue: "Conservative",
-        });
+        return t("settings.newsEvents.presets.conservative");
       case "aggressive":
-        return t("settings.newsEvents.presets.aggressive", {
-          defaultValue: "Aggressive",
-        });
+        return t("settings.newsEvents.presets.aggressive");
       case "custom":
-        return t("settings.newsEvents.presets.custom", {
-          defaultValue: "Custom",
-        });
+        return t("settings.newsEvents.presets.custom");
       case "balanced":
       default:
-        return t("settings.newsEvents.presets.balanced", {
-          defaultValue: "Balanced",
-        });
+        return t("settings.newsEvents.presets.balanced");
     }
   }, [t, timelinePresetSelection]);
 
@@ -298,18 +423,267 @@ export function NewsEventsSettingsPanel() {
     try {
       await updateSettings({ variables: { input: values } });
       await refetch();
+      await loadClusteringAdminState();
       messageApi.success(
-        t("settings.newsEvents.messages.saved", { defaultValue: "Saved" }),
+        t("settings.newsEvents.messages.saved"),
       );
     } catch (err) {
       captureClientError("Failed to save news event settings", err);
       messageApi.error(
-        t("settings.newsEvents.messages.saveFailed", {
-          defaultValue: "Failed to save",
-        }),
+        t("settings.newsEvents.messages.saveFailed"),
       );
     }
   };
+
+  const modelServiceReady = Boolean(
+    clusteringReadiness?.modelService.ready,
+  );
+  const llmBackfillReady = Boolean(clusteringReadiness?.llmBackfill.ready);
+  const recoveryAutomation = clusteringReadiness?.recoveryAutomation;
+  const automationEnabled = Boolean(recoveryAutomation?.enabled);
+
+  const formatSecondsAsMinutes = useCallback(
+    (seconds: number | null | undefined) => {
+      const safeSeconds = Math.max(0, Number(seconds ?? 0));
+      const minutes = Math.max(1, Math.round(safeSeconds / 60));
+      return t("settings.newsEvents.clusteringQueue.automation.minutes", {
+        count: minutes,
+      });
+    },
+    [t],
+  );
+
+  const getAutoRetryFeedback = useCallback(
+    (row: ClusteringFailureRow) => {
+      if (!automationEnabled) {
+        return null;
+      }
+      if (row.status === "processing") {
+        return {
+          color: "processing",
+          text: t(
+            "settings.newsEvents.clusteringQueue.automation.processing",
+          ),
+        };
+      }
+      if (row.status !== "pending") {
+        return null;
+      }
+      if (!llmBackfillReady) {
+        return {
+          color: "warning",
+          text: t("settings.newsEvents.clusteringQueue.automation.blocked"),
+        };
+      }
+      if (!row.lastAttemptAt) {
+        return {
+          color: "blue",
+          text: t("settings.newsEvents.clusteringQueue.automation.nextTick"),
+        };
+      }
+
+      const retryAfterMs =
+        Math.max(0, recoveryAutomation?.retryAfterSeconds ?? 0) * 1000;
+      const nextRetryAt = new Date(
+        new Date(row.lastAttemptAt).getTime() + retryAfterMs,
+      );
+      if (nextRetryAt.getTime() <= Date.now()) {
+        return {
+          color: "blue",
+          text: t("settings.newsEvents.clusteringQueue.automation.eligible"),
+        };
+      }
+
+      return {
+        color: "default",
+        text: t("settings.newsEvents.clusteringQueue.automation.after", {
+          time: nextRetryAt.toLocaleString(),
+        }),
+      };
+    },
+    [automationEnabled, llmBackfillReady, recoveryAutomation, t],
+  );
+
+  const handleLlmBackfill = useCallback(
+    async (groupId: string) => {
+      setActionGroupId(groupId);
+      try {
+        await apiClient.post(
+          `system-settings/news-events/clustering/failures/${groupId}/llm-backfill`,
+        );
+        messageApi.success(
+          t("settings.newsEvents.messages.llmBackfillQueued"),
+        );
+        await loadClusteringAdminState();
+      } catch (error) {
+        captureClientError("Failed to queue news event llm backfill", error);
+        messageApi.error(
+          extractApiError(error).message ||
+            t("settings.newsEvents.messages.llmBackfillFailed"),
+        );
+      } finally {
+        setActionGroupId((current) => (current === groupId ? null : current));
+      }
+    },
+    [apiClient, loadClusteringAdminState, messageApi, t],
+  );
+
+  const handleIgnoreFailure = useCallback(
+    async (groupId: string) => {
+      setActionGroupId(groupId);
+      try {
+        await apiClient.post(
+          `system-settings/news-events/clustering/failures/${groupId}/ignore`,
+        );
+        messageApi.success(
+          t("settings.newsEvents.messages.failureIgnored"),
+        );
+        await loadClusteringAdminState();
+      } catch (error) {
+        captureClientError("Failed to ignore clustering failure group", error);
+        messageApi.error(
+          extractApiError(error).message ||
+            t("settings.newsEvents.messages.failureIgnoreFailed"),
+        );
+      } finally {
+        setActionGroupId((current) => (current === groupId ? null : current));
+      }
+    },
+    [apiClient, loadClusteringAdminState, messageApi, t],
+  );
+
+  const failureColumns = useMemo(
+    () => [
+      {
+        title: t("settings.newsEvents.clusteringQueue.columns.group"),
+        dataIndex: "groupId",
+        key: "groupId",
+        render: (value: string, row: ClusteringFailureRow) => (
+          <Space direction="vertical" size={2}>
+            <Typography.Text strong>{value}</Typography.Text>
+            <Typography.Text type="secondary">
+              {row.failureReason}
+            </Typography.Text>
+          </Space>
+        ),
+      },
+      {
+        title: t("settings.newsEvents.clusteringQueue.columns.status"),
+        key: "status",
+        render: (_: unknown, row: ClusteringFailureRow) => (
+          <Space wrap>
+            <Tag
+              color={
+                row.status === "pending"
+                  ? "warning"
+                  : row.status === "processing"
+                    ? "processing"
+                  : row.status === "resolved"
+                    ? "success"
+                    : "default"
+              }
+            >
+              {row.status}
+            </Tag>
+            {row.lastRecoveryModel ? <Tag>{row.lastRecoveryModel}</Tag> : null}
+            {row.embeddingModel ? <Tag>{row.embeddingModel}</Tag> : null}
+            {row.language ? <Tag>{row.language}</Tag> : null}
+          </Space>
+        ),
+      },
+      {
+        title: t("settings.newsEvents.clusteringQueue.columns.items"),
+        dataIndex: "itemCount",
+        key: "itemCount",
+        width: 90,
+      },
+      {
+        title: t("settings.newsEvents.clusteringQueue.columns.recovery"),
+        key: "recovery",
+        render: (_: unknown, row: ClusteringFailureRow) => {
+          const autoRetryFeedback = getAutoRetryFeedback(row);
+          return (
+            <Space direction="vertical" size={4}>
+              <Typography.Text type="secondary">
+                {row.progressTotalCount > 0
+                  ? `${row.progressProcessedCount}/${row.progressTotalCount}`
+                  : "-"}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                {t("settings.newsEvents.clusteringQueue.automation.attempts", {
+                  count: row.attemptCount,
+                })}
+              </Typography.Text>
+              {autoRetryFeedback ? (
+                <Tag color={autoRetryFeedback.color}>
+                  {autoRetryFeedback.text}
+                </Tag>
+              ) : null}
+              {row.activeJobId ? (
+                <Typography.Text type="secondary" ellipsis>
+                  {row.activeJobId}
+                </Typography.Text>
+              ) : null}
+              {row.lastError ? (
+                <Typography.Text type="danger" ellipsis>
+                  {row.lastError}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          );
+        },
+      },
+      {
+        title: t("settings.newsEvents.clusteringQueue.columns.samples"),
+        key: "sampleTitles",
+        render: (_: unknown, row: ClusteringFailureRow) =>
+          row.sampleTitles.length > 0 ? (
+            <Space direction="vertical" size={2}>
+              {row.sampleTitles.slice(0, 3).map((title) => (
+                <Typography.Text key={`${row.groupId}:${title}`} ellipsis>
+                  {title}
+                </Typography.Text>
+              ))}
+            </Space>
+          ) : (
+            <Typography.Text type="secondary">-</Typography.Text>
+          ),
+      },
+      {
+        title: t("settings.newsEvents.clusteringQueue.columns.actions"),
+        key: "actions",
+        render: (_: unknown, row: ClusteringFailureRow) => (
+          <Space wrap>
+            <Button
+              size="small"
+              type="primary"
+              disabled={row.status !== "pending" || !llmBackfillReady}
+              loading={actionGroupId === row.groupId}
+              onClick={() => void handleLlmBackfill(row.groupId)}
+            >
+              {t("settings.newsEvents.clusteringQueue.actions.llmBackfill")}
+            </Button>
+            <Button
+              size="small"
+              disabled={row.status !== "pending"}
+              loading={actionGroupId === row.groupId}
+              onClick={() => void handleIgnoreFailure(row.groupId)}
+            >
+              {t("settings.newsEvents.clusteringQueue.actions.ignore")}
+            </Button>
+          </Space>
+        ),
+      },
+    ],
+    [
+      actionGroupId,
+      getAutoRetryFeedback,
+      handleIgnoreFailure,
+      handleLlmBackfill,
+      llmBackfillReady,
+      t,
+    ],
+  );
 
   if (loading && !data?.newsEventSettings) {
     return (
@@ -325,22 +699,14 @@ export function NewsEventsSettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
-        {t("settings.newsEvents.description", {
-          defaultValue:
-            "Cluster processed news articles into events and generate timelines.",
-        })}
+        {t("settings.newsEvents.description")}
       </Typography.Paragraph>
 
       <Alert
         type="info"
         showIcon
-        message={t("settings.newsEvents.notice.title", {
-          defaultValue: "Notes",
-        })}
-        description={t("settings.newsEvents.notice.body", {
-          defaultValue:
-            "Ingestion runs on a schedule. Disable timeline if you only need clustering.",
-        })}
+        message={t("settings.newsEvents.notice.title")}
+        description={t("settings.newsEvents.notice.body")}
         style={{ marginBottom: "1rem" }}
       />
 
@@ -348,19 +714,19 @@ export function NewsEventsSettingsPanel() {
         <Alert
           type="error"
           showIcon
-          message={t("settings.newsEvents.messages.loadFailed", {
-            defaultValue: "Failed to load settings",
-          })}
+          message={t("settings.newsEvents.messages.loadFailed")}
           description={error.message}
           style={{ marginBottom: "1rem" }}
         />
       ) : null}
 
+      <Typography.Title level={5} style={{ marginTop: 0 }}>
+        {t("settings.newsEvents.sections.clustering")}
+      </Typography.Title>
+
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
-          label={t("settings.newsEvents.fields.enabled", {
-            defaultValue: "Enabled",
-          })}
+          label={t("settings.newsEvents.fields.enabled")}
           name="enabled"
           valuePropName="checked"
         >
@@ -368,41 +734,162 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.ingestionEnabled", {
-            defaultValue: "Ingestion enabled",
-          })}
+          label={t("settings.newsEvents.fields.clusteringMode")}
+          name="clusteringMode"
+          extra={t("settings.newsEvents.hints.clusteringMode")}
+          rules={[
+            {
+              required: true,
+              message: t("settings.newsEvents.validation.required"),
+            },
+          ]}
+        >
+          <Select
+            options={[
+              {
+                value: "vector",
+                label: t("settings.newsEvents.options.clusteringMode.vector"),
+              },
+              {
+                value: "bertopic_primary",
+                label: t(
+                  "settings.newsEvents.options.clusteringMode.bertopicPrimary",
+                ),
+              },
+            ]}
+          />
+        </Form.Item>
+
+        {watchedClusteringMode === "bertopic_primary" ? (
+          <>
+            <Alert
+              type={modelServiceReady ? "info" : "warning"}
+              showIcon
+              style={{ marginBottom: "1rem" }}
+              message={t("settings.newsEvents.clusteringMode.notice.title")}
+              description={
+                <Space direction="vertical" size={4}>
+                  <Typography.Text>
+                    {modelServiceReady
+                      ? t(
+                          "settings.newsEvents.clusteringMode.notice.ready",
+                        )
+                      : t(
+                          "settings.newsEvents.clusteringMode.notice.notReady",
+                        )}
+                  </Typography.Text>
+                  <Link
+                    href={buildAdminSettingsHref({
+                      page: "ai",
+                      panel: "model-service",
+                    })}
+                  >
+                    {t("settings.newsEvents.clusteringMode.actions.modelService")}
+                  </Link>
+                </Space>
+              }
+            />
+
+            <Space style={{ width: "100%" }} size="middle" direction="vertical">
+              <Form.Item
+                label={t("settings.newsEvents.fields.bertopicMinItemsPerGroup")}
+                name="bertopicMinItemsPerGroup"
+                extra={t("settings.newsEvents.hints.bertopicMinItemsPerGroup")}
+                rules={[
+                  {
+                    required: true,
+                    message: t("settings.newsEvents.validation.required"),
+                  },
+                ]}
+              >
+                <InputNumber min={2} max={100} step={1} style={{ width: "100%" }} />
+              </Form.Item>
+
+              <Form.Item
+                label={t("settings.newsEvents.fields.bertopicMaxItemsPerRequest")}
+                name="bertopicMaxItemsPerRequest"
+                dependencies={["bertopicMinItemsPerGroup"]}
+                extra={t("settings.newsEvents.hints.bertopicMaxItemsPerRequest")}
+                rules={[
+                  {
+                    required: true,
+                    message: t("settings.newsEvents.validation.required"),
+                  },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      const minItemsPerGroup = Number(
+                        getFieldValue("bertopicMinItemsPerGroup"),
+                      );
+                      if (
+                        !Number.isFinite(value) ||
+                        !Number.isFinite(minItemsPerGroup) ||
+                        value >= minItemsPerGroup
+                      ) {
+                        return Promise.resolve();
+                      }
+                      return Promise.reject(
+                        new Error(
+                          t(
+                            "settings.newsEvents.validation.bertopicMaxItemsMustBeAtLeastMinGroup",
+                          ),
+                        ),
+                      );
+                    },
+                  }),
+                ]}
+              >
+                <InputNumber
+                  min={
+                    typeof watchedBertopicMinItemsPerGroup === "number"
+                      ? Math.max(2, watchedBertopicMinItemsPerGroup)
+                      : 2
+                  }
+                  max={500}
+                  step={1}
+                  style={{ width: "100%" }}
+                />
+              </Form.Item>
+
+              <Form.Item
+                label={t("settings.newsEvents.fields.bertopicMinTopicSize")}
+                name="bertopicMinTopicSize"
+                extra={t("settings.newsEvents.hints.bertopicMinTopicSize")}
+                rules={[
+                  {
+                    required: true,
+                    message: t("settings.newsEvents.validation.required"),
+                  },
+                ]}
+              >
+                <InputNumber min={2} max={100} step={1} style={{ width: "100%" }} />
+              </Form.Item>
+            </Space>
+          </>
+        ) : null}
+
+        <Form.Item
+          label={t("settings.newsEvents.fields.ingestionEnabled")}
           name="ingestionEnabled"
           valuePropName="checked"
-          extra={t("settings.newsEvents.hints.ingestionEnabled", {
-            defaultValue: "Controls scheduled ingestion jobs.",
-          })}
+          extra={t("settings.newsEvents.hints.ingestionEnabled")}
         >
           <Switch />
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.timelineEnabled", {
-            defaultValue: "Timeline enabled",
-          })}
+          label={t("settings.newsEvents.fields.timelineEnabled")}
           name="timelineEnabled"
           valuePropName="checked"
-          extra={t("settings.newsEvents.hints.timelineEnabled", {
-            defaultValue: "Builds bucketed timeline entries for each event.",
-          })}
+          extra={t("settings.newsEvents.hints.timelineEnabled")}
         >
           <Switch />
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.forceAuthoritativeMode", {
-            defaultValue: "Force authoritative mode",
-          })}
+          label={t("settings.newsEvents.fields.forceAuthoritativeMode")}
           name="forceAuthoritativeMode"
           valuePropName="checked"
-          extra={t("settings.newsEvents.hints.forceAuthoritativeMode", {
-            defaultValue:
-              "When enabled, all dashboard timeline event queries are forced to authoritative sources.",
-          })}
+          extra={t("settings.newsEvents.hints.forceAuthoritativeMode")}
         >
           <Switch />
         </Form.Item>
@@ -412,24 +899,15 @@ export function NewsEventsSettingsPanel() {
             <Form.Item
               label={t(
                 "settings.newsEvents.fields.forceMinAuthoritativeSources",
-                {
-                  defaultValue: "Min authoritative sources",
-                },
               )}
               name="forceMinAuthoritativeSources"
               extra={t(
                 "settings.newsEvents.hints.forceMinAuthoritativeSources",
-                {
-                  defaultValue:
-                    "Minimum unique authoritative sources required when force authoritative mode is enabled.",
-                },
               )}
               rules={[
                 {
                   required: true,
-                  message: t("settings.newsEvents.validation.required", {
-                    defaultValue: "Required",
-                  }),
+                  message: t("settings.newsEvents.validation.required"),
                 },
               ]}
             >
@@ -444,16 +922,12 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.maxBatchSize", {
-            defaultValue: "Max batch size",
-          })}
+          label={t("settings.newsEvents.fields.maxBatchSize")}
           name="maxBatchSize"
           rules={[
             {
               required: true,
-              message: t("settings.newsEvents.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsEvents.validation.required"),
             },
           ]}
         >
@@ -462,16 +936,12 @@ export function NewsEventsSettingsPanel() {
 
         <Space style={{ width: "100%" }} size="middle" direction="vertical">
           <Form.Item
-            label={t("settings.newsEvents.fields.backfillDays", {
-              defaultValue: "Backfill days",
-            })}
+            label={t("settings.newsEvents.fields.backfillDays")}
             name="backfillDays"
             rules={[
               {
                 required: true,
-                message: t("settings.newsEvents.validation.required", {
-                  defaultValue: "Required",
-                }),
+                message: t("settings.newsEvents.validation.required"),
               },
             ]}
           >
@@ -479,16 +949,12 @@ export function NewsEventsSettingsPanel() {
           </Form.Item>
 
           <Form.Item
-            label={t("settings.newsEvents.fields.lookbackDays", {
-              defaultValue: "Lookback days",
-            })}
+            label={t("settings.newsEvents.fields.lookbackDays")}
             name="lookbackDays"
             rules={[
               {
                 required: true,
-                message: t("settings.newsEvents.validation.required", {
-                  defaultValue: "Required",
-                }),
+                message: t("settings.newsEvents.validation.required"),
               },
             ]}
           >
@@ -497,16 +963,12 @@ export function NewsEventsSettingsPanel() {
         </Space>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.timelineMaxEventsPerRun", {
-            defaultValue: "Timeline max events per run",
-          })}
+          label={t("settings.newsEvents.fields.timelineMaxEventsPerRun")}
           name="timelineMaxEventsPerRun"
           rules={[
             {
               required: true,
-              message: t("settings.newsEvents.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsEvents.validation.required"),
             },
           ]}
         >
@@ -514,19 +976,13 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.vectorMinScore", {
-            defaultValue: "Vector min score",
-          })}
+          label={t("settings.newsEvents.fields.vectorMinScore")}
           name="vectorMinScore"
-          extra={t("settings.newsEvents.hints.vectorMinScore", {
-            defaultValue: "Higher = stricter vector assignment.",
-          })}
+          extra={t("settings.newsEvents.hints.vectorMinScore")}
           rules={[
             {
               required: true,
-              message: t("settings.newsEvents.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsEvents.validation.required"),
             },
           ]}
         >
@@ -534,19 +990,13 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.crossLanguagePenalty", {
-            defaultValue: "Cross-language penalty",
-          })}
+          label={t("settings.newsEvents.fields.crossLanguagePenalty")}
           name="crossLanguagePenalty"
-          extra={t("settings.newsEvents.hints.crossLanguagePenalty", {
-            defaultValue: "Penalty applied when languages differ (0–1).",
-          })}
+          extra={t("settings.newsEvents.hints.crossLanguagePenalty")}
           rules={[
             {
               required: true,
-              message: t("settings.newsEvents.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsEvents.validation.required"),
             },
           ]}
         >
@@ -554,15 +1004,10 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.classificationGateEnabled", {
-            defaultValue: "Classification gate enabled",
-          })}
+          label={t("settings.newsEvents.fields.classificationGateEnabled")}
           name="classificationGateEnabled"
           valuePropName="checked"
-          extra={t("settings.newsEvents.hints.classificationGateEnabled", {
-            defaultValue:
-              "Use classification labels as a conservative gate during event assignment.",
-          })}
+          extra={t("settings.newsEvents.hints.classificationGateEnabled")}
         >
           <Switch />
         </Form.Item>
@@ -571,34 +1016,22 @@ export function NewsEventsSettingsPanel() {
           {({ getFieldValue }) => (
             <>
               <Form.Item
-                label={t("settings.newsEvents.fields.categoryConflictReject", {
-                  defaultValue: "Reject category conflicts",
-                })}
+                label={t("settings.newsEvents.fields.categoryConflictReject")}
                 name="categoryConflictReject"
                 valuePropName="checked"
-                extra={t("settings.newsEvents.hints.categoryConflictReject", {
-                  defaultValue:
-                    "When enabled, conflicting category candidates are rejected from vector merge.",
-                })}
+                extra={t("settings.newsEvents.hints.categoryConflictReject")}
               >
                 <Switch disabled={!getFieldValue("classificationGateEnabled")} />
               </Form.Item>
 
               <Form.Item
-                label={t("settings.newsEvents.fields.categorySoftPenalty", {
-                  defaultValue: "Category soft penalty",
-                })}
+                label={t("settings.newsEvents.fields.categorySoftPenalty")}
                 name="categorySoftPenalty"
-                extra={t("settings.newsEvents.hints.categorySoftPenalty", {
-                  defaultValue:
-                    "Penalty multiplier (0-1) for partial category mismatch when hard rejection is off.",
-                })}
+                extra={t("settings.newsEvents.hints.categorySoftPenalty")}
                 rules={[
                   {
                     required: true,
-                    message: t("settings.newsEvents.validation.required", {
-                      defaultValue: "Required",
-                    }),
+                    message: t("settings.newsEvents.validation.required"),
                   },
                 ]}
               >
@@ -614,24 +1047,15 @@ export function NewsEventsSettingsPanel() {
               <Form.Item
                 label={t(
                   "settings.newsEvents.fields.minCategoryConfidenceForGate",
-                  {
-                    defaultValue: "Min category confidence",
-                  },
                 )}
                 name="minCategoryConfidenceForGate"
                 extra={t(
                   "settings.newsEvents.hints.minCategoryConfidenceForGate",
-                  {
-                    defaultValue:
-                      "Only enforce category gate when signal confidence reaches this threshold.",
-                  },
                 )}
                 rules={[
                   {
                     required: true,
-                    message: t("settings.newsEvents.validation.required", {
-                      defaultValue: "Required",
-                    }),
+                    message: t("settings.newsEvents.validation.required"),
                   },
                 ]}
               >
@@ -648,19 +1072,12 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Typography.Title level={5} style={{ marginTop: "1.5rem" }}>
-          {t("settings.newsEvents.sections.timelineClassification", {
-            defaultValue: "Timeline classification & drift",
-          })}
+          {t("settings.newsEvents.sections.timelineClassification")}
         </Typography.Title>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.timelinePreset", {
-            defaultValue: "Recommended preset",
-          })}
-          extra={t("settings.newsEvents.hints.timelinePreset", {
-            defaultValue:
-              "Apply a tuned template for timeline confidence and drift sensitivity.",
-          })}
+          label={t("settings.newsEvents.fields.timelinePreset")}
+          extra={t("settings.newsEvents.hints.timelinePreset")}
         >
           <Space wrap>
             <Button
@@ -671,9 +1088,7 @@ export function NewsEventsSettingsPanel() {
               }
               onClick={() => applyTimelinePreset("conservative")}
             >
-              {t("settings.newsEvents.presets.conservative", {
-                defaultValue: "Conservative",
-              })}
+              {t("settings.newsEvents.presets.conservative")}
             </Button>
             <Button
               type={
@@ -681,9 +1096,7 @@ export function NewsEventsSettingsPanel() {
               }
               onClick={() => applyTimelinePreset("balanced")}
             >
-              {t("settings.newsEvents.presets.balanced", {
-                defaultValue: "Balanced",
-              })}
+              {t("settings.newsEvents.presets.balanced")}
             </Button>
             <Button
               type={
@@ -693,16 +1106,12 @@ export function NewsEventsSettingsPanel() {
               }
               onClick={() => applyTimelinePreset("aggressive")}
             >
-              {t("settings.newsEvents.presets.aggressive", {
-                defaultValue: "Aggressive",
-              })}
+              {t("settings.newsEvents.presets.aggressive")}
             </Button>
           </Space>
           <Space size={6} style={{ marginTop: 8 }}>
             <Typography.Text type="secondary">
-              {t("settings.newsEvents.hints.closestPreset", {
-                defaultValue: "Closest match:",
-              })}
+              {t("settings.newsEvents.hints.closestPreset")}
             </Typography.Text>
             <Tag
               color={
@@ -717,24 +1126,15 @@ export function NewsEventsSettingsPanel() {
         <Form.Item
           label={t(
             "settings.newsEvents.fields.timelinePresetCustomDistanceThreshold",
-            {
-              defaultValue: "Preset custom distance threshold",
-            },
           )}
           name="timelinePresetCustomDistanceThreshold"
           extra={t(
             "settings.newsEvents.hints.timelinePresetCustomDistanceThreshold",
-            {
-              defaultValue:
-                "When the closest preset distance is above this threshold, preset matching is shown as Custom.",
-            },
           )}
           rules={[
             {
               required: true,
-              message: t("settings.newsEvents.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsEvents.validation.required"),
             },
           ]}
         >
@@ -742,21 +1142,14 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.timelineLowConfidenceThreshold", {
-            defaultValue: "Low confidence threshold",
-          })}
+          label={t("settings.newsEvents.fields.timelineLowConfidenceThreshold")}
           name="timelineLowConfidenceThreshold"
           dependencies={["timelineHighConfidenceThreshold"]}
-          extra={t("settings.newsEvents.hints.timelineLowConfidenceThreshold", {
-            defaultValue:
-              "Entries below this confidence are marked tentative in timeline output.",
-          })}
+          extra={t("settings.newsEvents.hints.timelineLowConfidenceThreshold")}
           rules={[
             {
               required: true,
-              message: t("settings.newsEvents.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsEvents.validation.required"),
             },
             {
               validator: async (_rule, value: number | null | undefined) => {
@@ -771,10 +1164,7 @@ export function NewsEventsSettingsPanel() {
                   return;
                 }
                 throw new Error(
-                  t("settings.newsEvents.validation.lowMustBeAtMostHigh", {
-                    defaultValue:
-                      "Low confidence threshold must be less than or equal to high confidence threshold.",
-                  }),
+                  t("settings.newsEvents.validation.lowMustBeAtMostHigh"),
                 );
               },
             },
@@ -784,21 +1174,14 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.timelineHighConfidenceThreshold", {
-            defaultValue: "High confidence threshold",
-          })}
+          label={t("settings.newsEvents.fields.timelineHighConfidenceThreshold")}
           name="timelineHighConfidenceThreshold"
           dependencies={["timelineLowConfidenceThreshold"]}
-          extra={t("settings.newsEvents.hints.timelineHighConfidenceThreshold", {
-            defaultValue:
-              "Entries above this confidence are marked as timeline anchors.",
-          })}
+          extra={t("settings.newsEvents.hints.timelineHighConfidenceThreshold")}
           rules={[
             {
               required: true,
-              message: t("settings.newsEvents.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsEvents.validation.required"),
             },
             {
               validator: async (_rule, value: number | null | undefined) => {
@@ -813,10 +1196,7 @@ export function NewsEventsSettingsPanel() {
                   return;
                 }
                 throw new Error(
-                  t("settings.newsEvents.validation.highMustBeAtLeastLow", {
-                    defaultValue:
-                      "High confidence threshold must be greater than or equal to low confidence threshold.",
-                  }),
+                  t("settings.newsEvents.validation.highMustBeAtLeastLow"),
                 );
               },
             },
@@ -826,20 +1206,13 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.timelineDriftKlThreshold", {
-            defaultValue: "Drift KL threshold",
-          })}
+          label={t("settings.newsEvents.fields.timelineDriftKlThreshold")}
           name="timelineDriftKlThreshold"
-          extra={t("settings.newsEvents.hints.timelineDriftKlThreshold", {
-            defaultValue:
-              "Higher threshold means fewer topic drift splits between adjacent timeline buckets.",
-          })}
+          extra={t("settings.newsEvents.hints.timelineDriftKlThreshold")}
           rules={[
             {
               required: true,
-              message: t("settings.newsEvents.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsEvents.validation.required"),
             },
           ]}
         >
@@ -847,23 +1220,15 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.timelineMinBucketItemsForDrift", {
-            defaultValue: "Min items per bucket for drift",
-          })}
+          label={t("settings.newsEvents.fields.timelineMinBucketItemsForDrift")}
           name="timelineMinBucketItemsForDrift"
           extra={t(
             "settings.newsEvents.hints.timelineMinBucketItemsForDrift",
-            {
-              defaultValue:
-                "Only compare drift when both adjacent buckets have at least this many signals.",
-            },
           )}
           rules={[
             {
               required: true,
-              message: t("settings.newsEvents.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsEvents.validation.required"),
             },
           ]}
         >
@@ -871,23 +1236,15 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.timelineCrossCategoryWarningShare", {
-            defaultValue: "Cross-category warning share",
-          })}
+          label={t("settings.newsEvents.fields.timelineCrossCategoryWarningShare")}
           name="timelineCrossCategoryWarningShare"
           extra={t(
             "settings.newsEvents.hints.timelineCrossCategoryWarningShare",
-            {
-              defaultValue:
-                "Trigger a cross-category warning when non-dominant categories exceed this share.",
-            },
           )}
           rules={[
             {
               required: true,
-              message: t("settings.newsEvents.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsEvents.validation.required"),
             },
           ]}
         >
@@ -895,23 +1252,15 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.timelineMaxCategoryDistributionItems", {
-            defaultValue: "Max category distribution items",
-          })}
+          label={t("settings.newsEvents.fields.timelineMaxCategoryDistributionItems")}
           name="timelineMaxCategoryDistributionItems"
           extra={t(
             "settings.newsEvents.hints.timelineMaxCategoryDistributionItems",
-            {
-              defaultValue:
-                "Limit of category slices returned by timeline/category-distribution metadata.",
-            },
           )}
           rules={[
             {
               required: true,
-              message: t("settings.newsEvents.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsEvents.validation.required"),
             },
           ]}
         >
@@ -919,20 +1268,13 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.timelineMaxPhaseSummaries", {
-            defaultValue: "Max phase summaries",
-          })}
+          label={t("settings.newsEvents.fields.timelineMaxPhaseSummaries")}
           name="timelineMaxPhaseSummaries"
-          extra={t("settings.newsEvents.hints.timelineMaxPhaseSummaries", {
-            defaultValue:
-              "Upper bound for staged timeline summaries generated per event.",
-          })}
+          extra={t("settings.newsEvents.hints.timelineMaxPhaseSummaries")}
           rules={[
             {
               required: true,
-              message: t("settings.newsEvents.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsEvents.validation.required"),
             },
           ]}
         >
@@ -940,16 +1282,12 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.cacheTtlSeconds", {
-            defaultValue: "Cache TTL (seconds)",
-          })}
+          label={t("settings.newsEvents.fields.cacheTtlSeconds")}
           name="cacheTtlSeconds"
           rules={[
             {
               required: true,
-              message: t("settings.newsEvents.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsEvents.validation.required"),
             },
           ]}
         >
@@ -963,10 +1301,112 @@ export function NewsEventsSettingsPanel() {
             loading={saving}
             disabled={loading}
           >
-            {t("common.saveChanges", { defaultValue: "Save changes" })}
+            {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>
+
+      <Typography.Title level={5} style={{ marginTop: "1.5rem" }}>
+        {t("settings.newsEvents.sections.clusteringQueue")}
+      </Typography.Title>
+
+      <Card>
+        <Space direction="vertical" size="middle" style={{ display: "flex" }}>
+          <Descriptions
+            size="small"
+            column={2}
+            items={[
+              {
+                key: "pendingCount",
+                label: t("settings.newsEvents.clusteringQueue.overview.pending"),
+                children: failureOverview?.pendingCount ?? 0,
+              },
+              {
+                key: "processingCount",
+                label: t(
+                  "settings.newsEvents.clusteringQueue.overview.processing",
+                ),
+                children: failureOverview?.processingCount ?? 0,
+              },
+              {
+                key: "resolvedCount",
+                label: t(
+                  "settings.newsEvents.clusteringQueue.overview.resolved",
+                ),
+                children: failureOverview?.resolvedCount ?? 0,
+              },
+              {
+                key: "ignoredCount",
+                label: t("settings.newsEvents.clusteringQueue.overview.ignored"),
+                children: failureOverview?.ignoredCount ?? 0,
+              },
+              {
+                key: "latestFailureAt",
+                label: t("settings.newsEvents.clusteringQueue.overview.latest"),
+                children: failureOverview?.latestFailureAt ? (
+                  new Date(failureOverview.latestFailureAt).toLocaleString()
+                ) : (
+                  <Typography.Text type="secondary">-</Typography.Text>
+                ),
+              },
+            ]}
+          />
+
+          <Alert
+            type={llmBackfillReady ? "info" : "warning"}
+            showIcon
+            message={t("settings.newsEvents.clusteringQueue.notice.title")}
+            description={
+              <Space direction="vertical" size={4}>
+                <Typography.Text>
+                  {t("settings.newsEvents.clusteringQueue.notice.body")}
+                </Typography.Text>
+                <Typography.Text>
+                  {llmBackfillReady
+                    ? t("settings.newsEvents.clusteringQueue.notice.ready")
+                    : t("settings.newsEvents.clusteringQueue.notice.notReady")}
+                </Typography.Text>
+                {automationEnabled && recoveryAutomation ? (
+                  <Typography.Text type="secondary">
+                    {t(
+                      "settings.newsEvents.clusteringQueue.notice.automation",
+                      {
+                        interval: formatSecondsAsMinutes(
+                          recoveryAutomation.intervalSeconds,
+                        ),
+                        backoff: formatSecondsAsMinutes(
+                          recoveryAutomation.retryAfterSeconds,
+                        ),
+                        batchSize: recoveryAutomation.batchSize,
+                      },
+                    )}
+                  </Typography.Text>
+                ) : null}
+                <Link
+                  href={buildAdminSettingsHref({
+                    page: "ai",
+                    panel: "llm-gateway",
+                  })}
+                >
+                  {t("settings.newsEvents.clusteringQueue.actions.openLlmGateway")}
+                </Link>
+              </Space>
+            }
+          />
+
+          <Table<ClusteringFailureRow>
+            rowKey="groupId"
+            loading={failuresLoading}
+            columns={failureColumns}
+            dataSource={failureRows}
+            pagination={false}
+            scroll={{ x: 920 }}
+            locale={{
+              emptyText: t("settings.newsEvents.clusteringQueue.empty"),
+            }}
+          />
+        </Space>
+      </Card>
     </>
   );
 }

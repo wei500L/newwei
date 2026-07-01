@@ -1,10 +1,16 @@
 import { AxiosError, AxiosHeaders } from "axios";
 
+import {
+  decodeSystemSettingsKey,
+  encryptStringValueV1,
+} from "../storage/storage-settings.crypto";
 import { LiteLlmProxyGovernanceService } from "./litellm-proxy-governance.service";
 
 const mockAxiosPost = jest.fn();
+const mockAxiosGet = jest.fn();
 const mockAxiosCreate = jest.fn(() => ({
   post: mockAxiosPost,
+  get: mockAxiosGet,
 }));
 
 jest.mock("axios", () => ({
@@ -67,6 +73,7 @@ describe("LiteLlmProxyGovernanceService", () => {
   } as any;
   const gatewaySettingsMock = {
     getProfileSummary: jest.fn(),
+    getRuntimeBindingSnapshot: jest.fn(),
   } as any;
 
   let service: LiteLlmProxyGovernanceService;
@@ -106,7 +113,14 @@ describe("LiteLlmProxyGovernanceService", () => {
 
     mockAxiosCreate.mockImplementation(() => ({
       post: mockAxiosPost,
+      get: mockAxiosGet,
     }));
+    mockAxiosGet.mockResolvedValue(okResponse());
+    gatewaySettingsMock.getRuntimeBindingSnapshot = jest.fn().mockResolvedValue({
+      completionProfileId: "profile-1",
+      embeddingProfileId: "profile-1",
+      rerankProfileId: "profile-1",
+    });
 
     service = new LiteLlmProxyGovernanceService(
       prismaMock,
@@ -207,7 +221,7 @@ describe("LiteLlmProxyGovernanceService", () => {
     expect(managedApiKey).toBe("runtime-key-1");
   });
 
-  it("prefers the LiteLLM master key for test-time auth on the governed profile", async () => {
+  it("resolves profile-key auth without replacing it with the LiteLLM master key", async () => {
     persistedValue = {
       enabled: true,
       targetProfileId: "profile-1",
@@ -217,24 +231,74 @@ describe("LiteLlmProxyGovernanceService", () => {
       "http://localhost:4001/v1/chat/completions",
       "profile-key",
       "profile-1",
-    );
-
-    expect(resolved).toBe("master-key");
-  });
-
-  it("does not use the LiteLLM master key when the draft apiBase diverges", async () => {
-    persistedValue = {
-      enabled: true,
-      targetProfileId: "profile-1",
-    };
-
-    const resolved = await service.resolveTestingApiKey(
-      "https://attacker.example/v1/chat/completions",
-      "profile-key",
-      "profile-1",
+      "profile_key",
     );
 
     expect(resolved).toBe("profile-key");
+  });
+
+  it("requires the managed runtime key only for the exact governed target profile", async () => {
+    persistedValue = {
+      enabled: true,
+      targetProfileId: "profile-1",
+      managedRuntimeKey: "runtime-key-1",
+    };
+
+    await expect(
+      service.resolveTestingApiKey(
+        "https://attacker.example/v1/chat/completions",
+        "profile-key",
+        "profile-1",
+        "managed_runtime_key",
+      ),
+    ).rejects.toThrow("Selected profile is not the active LiteLLM governance target");
+
+    const resolved = await service.resolveTestingApiKey(
+      "http://localhost:4001/v1/chat/completions",
+      "profile-key",
+      "profile-1",
+      "managed_runtime_key",
+    );
+
+    expect(resolved).toBe("runtime-key-1");
+  });
+
+  it("fails closed when the managed runtime key is unreadable", async () => {
+    envMock.systemSettingsEncryptionKey =
+      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    persistedValue = {
+      enabled: true,
+      targetProfileId: "profile-1",
+      managedRuntimeKey: encryptStringValueV1(
+        "runtime-key-1",
+        decodeSystemSettingsKey(envMock.systemSettingsEncryptionKey),
+      ),
+    };
+    envMock.systemSettingsEncryptionKey = undefined;
+
+    await expect(
+      service.getManagedRuntimeApiKeyForProfile(
+        "profile-1",
+        "http://localhost:4001/v1/chat/completions",
+      ),
+    ).rejects.toThrow(
+      "LiteLLM governance is enabled but the managed runtime key is unreadable",
+    );
+  });
+
+  it("uses exact target matching instead of governing sibling profiles on the same LiteLLM base", async () => {
+    persistedValue = {
+      enabled: true,
+      targetProfileId: "profile-1",
+      managedRuntimeKey: "runtime-key-1",
+    };
+
+    const resolved = await service.getManagedRuntimeApiKeyForProfile(
+      "profile-3",
+      "http://localhost:4001/v1/chat/completions",
+    );
+
+    expect(resolved).toBeNull();
   });
 
   it("does not disable managed resources when governance stays on the same LiteLLM instance", async () => {
@@ -253,9 +317,15 @@ describe("LiteLlmProxyGovernanceService", () => {
       .fn()
       .mockResolvedValueOnce(okResponse())
       .mockResolvedValueOnce(okResponse());
+    gatewaySettingsMock.getRuntimeBindingSnapshot.mockResolvedValueOnce({
+      completionProfileId: "profile-3",
+      embeddingProfileId: null,
+      rerankProfileId: null,
+    });
 
-    mockAxiosCreate.mockImplementation((config: { baseURL?: string }) => ({
+    mockAxiosCreate.mockImplementation(() => ({
       post: sameProxyPost,
+      get: mockAxiosGet,
     }));
 
     const result = await service.updateSettings("org-1", "actor-1", {
@@ -270,7 +340,7 @@ describe("LiteLlmProxyGovernanceService", () => {
     expect(result.apiBase).toBe("http://localhost:4001/v1");
     expect(result.managedTeamId).toBe("managed-team-1");
     expect(result.managedRuntimeKeyAlias).toBe("runtime-key-alias-1");
-    expect(mockAxiosCreate).toHaveBeenCalledTimes(1);
+    expect(mockAxiosCreate).toHaveBeenCalledTimes(2);
     expect(sameProxyPost).toHaveBeenCalledTimes(2);
     expect(sameProxyPost).toHaveBeenNthCalledWith(
       1,
@@ -321,15 +391,20 @@ describe("LiteLlmProxyGovernanceService", () => {
       .fn()
       .mockResolvedValueOnce(okResponse())
       .mockResolvedValueOnce(okResponse());
+    gatewaySettingsMock.getRuntimeBindingSnapshot.mockResolvedValueOnce({
+      completionProfileId: "profile-2",
+      embeddingProfileId: null,
+      rerankProfileId: null,
+    });
 
     mockAxiosCreate.mockImplementation((config: { baseURL?: string }) => {
       if (config.baseURL === "http://localhost:4002/v1") {
-        return { post: newProxyPost };
+        return { post: newProxyPost, get: mockAxiosGet };
       }
       if (config.baseURL === "http://localhost:4001/v1") {
-        return { post: oldProxyPost };
+        return { post: oldProxyPost, get: mockAxiosGet };
       }
-      return { post: jest.fn() };
+      return { post: jest.fn(), get: mockAxiosGet };
     });
 
     const result = await service.updateSettings("org-1", "actor-1", {
@@ -344,7 +419,7 @@ describe("LiteLlmProxyGovernanceService", () => {
     expect(result.apiBase).toBe("http://localhost:4002/v1");
     expect(result.managedTeamId).toBe("managed-team-1");
     expect(result.managedRuntimeKeyAlias).toBe("runtime-key-alias-2");
-    expect(mockAxiosCreate).toHaveBeenCalledTimes(2);
+    expect(mockAxiosCreate).toHaveBeenCalledTimes(3);
     expect(newProxyPost).toHaveBeenCalledTimes(3);
     expect(newProxyPost).toHaveBeenNthCalledWith(
       1,
@@ -430,15 +505,20 @@ describe("LiteLlmProxyGovernanceService", () => {
         }),
       );
     const oldProxyPost = jest.fn();
+    gatewaySettingsMock.getRuntimeBindingSnapshot.mockResolvedValueOnce({
+      completionProfileId: "profile-2",
+      embeddingProfileId: null,
+      rerankProfileId: null,
+    });
 
     mockAxiosCreate.mockImplementation((config: { baseURL?: string }) => {
       if (config.baseURL === "http://localhost:4002/v1") {
-        return { post: newProxyPost };
+        return { post: newProxyPost, get: mockAxiosGet };
       }
       if (config.baseURL === "http://localhost:4001/v1") {
-        return { post: oldProxyPost };
+        return { post: oldProxyPost, get: mockAxiosGet };
       }
-      return { post: jest.fn() };
+      return { post: jest.fn(), get: mockAxiosGet };
     });
 
     await expect(

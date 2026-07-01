@@ -18,6 +18,7 @@
 - [常用命令](#常用命令)
 - [项目结构](#项目结构)
 - [配置指南](#配置指南)
+- [AIS Relay](#ais-relay)
 - [并发控制说明](#并发控制说明)
 - [API 文档入口](#api-文档入口)
 - [开发规范](#开发规范)
@@ -129,7 +130,7 @@ flowchart LR
 ### 🌍 态势监控（全球事件追踪与可视化）
 
 - 态势洞察聚合：`situation-monitor`（分类、叙事模式、相关性、主角实体、告警关键词等）
-- 外部数据兜底与翻译：支持 GDELT 兜底与翻译 API（见 `SITUATION_MONITOR_*` 配置）
+- 外部数据兜底与翻译：支持 GDELT 兜底与翻译 API（见 `SITUATION_MONITOR_*` 配置）；本地 Docker/WSL 下的 GDELT IPv4 兼容兜底说明见 [docs/gdelt-ipv4-fallback.md](./docs/gdelt-ipv4-fallback.md)
 - 地理与地图图层：`geo`、`dashboard`（含世界地图资产与传播/时空热力相关图表服务）
 
 ### 🧠 知识图谱（实体关系、证据与审核）
@@ -239,6 +240,7 @@ pnpm dev
 
 - Docker 方式下建议保持 `infra/docker/.env` 中的 `CRAWL4AI_SSRF_PROXY_URL=http://127.0.0.1:18080`。这会让 Crawl4AI worker 在实际抓取时通过本地 SSRF 代理完成 DNS 解析和内网地址阻断，而不是只依赖 API 入口处的预检。
 - Web 管理页 `http://localhost:3000/admin/ops/crawl-monitor` 与抓取任务页内置的 Crawl4AI 状态卡会显示 `SSRF proxy OK / FAILED / OFF`。如果这里显示 `OFF`，说明部署没有启用 worker 侧 DNS rebinding 防护。
+- `situation-monitor` / `realtime-signals` 在本地 Docker、WSL、双栈 DNS/出口不稳定环境中访问 `api.gdeltproject.org` 失败时，会只对该主机做一次 IPv4 重试；这不是全局网络策略，详见 [docs/gdelt-ipv4-fallback.md](./docs/gdelt-ipv4-fallback.md)。
 - 生产环境建议在首次部署或引入新索引后显式执行一次 `pnpm mongo:indexes`，避免在关闭 `autoIndex` 的环境里漏掉 `ProcessedItem` 或 `TaskLog` 的新索引。
 
 ### 种子数据（首次必填）
@@ -294,7 +296,7 @@ pnpm dev
 
 - `apps/api/src/main.ts`：REST 全局前缀 `/api`、Swagger `/docs`、CORS、Socket.IO Redis adapter
 - `apps/api/src/graphql/graphql.module.ts`：GraphQL code-first 生成 `apps/api/schema.gql`，并配置复杂度/深度限制
-- `apps/ais-relay/src/index.ts`：AISStream WebSocket 聚合为 `/ais/snapshot` + `/health` 的轻量 relay
+- `apps/ais-relay/src/index.ts`：AISStream WebSocket 聚合为 `/ais/snapshot`、`/health` 和 `/healthz/live` 的轻量 relay
 - `apps/web/app/`：Next.js App Router 路由组（`(app)` 控制台、`(portal)` 门户、`(reader)` 阅读器、`(auth)` 登录）
 - `infra/docker/docker-compose.yml`：本地完整栈服务定义与端口映射
 - `config/news-pipeline.config.yaml`：新闻清洗管道配置（本地）
@@ -319,6 +321,8 @@ pnpm dev
 pnpm --filter infra-scripts run env:check
 ```
 
+该检查当前也会覆盖 AIS relay 相关配置，包括 `REALTIME_SIGNALS_AIS_*`、`AISSTREAM_URL`、`AISSTREAM_API_KEY`、`AIS_RELAY_SHARED_SECRET` 与健康阈值类变量。
+
 ### 关键配置项速览
 
 - 数据库：`DATABASE_URL`（可选，宿主机优先）、`MYSQL_*`、`MONGO_URI`、`REDIS_*`
@@ -327,11 +331,29 @@ pnpm --filter infra-scripts run env:check
 - 抓取：`CRAWL4AI_BASE_URL`、`CRAWL4AI_DASHBOARD_URL`、`CRAWL4AI_SSRF_PROXY_URL`、`CRAWL4AI_*`
 - LLM 网关：`LITELLM_API_BASE`、`LITELLM_API_KEY`、`LITELLM_MODEL`、`LITELLM_EMBEDDING_MODEL`
 - 向量：`VECTOR_SERVICE_ENABLED`、`VECTOR_SERVICE_BASE_URL`、`VECTOR_INTERNAL_TOKEN`、`QDRANT_URL`
-- 实时信号：`REALTIME_SIGNALS_AIS_BASE_URL`、`REALTIME_SIGNALS_AIS_SHARED_SECRET`（AIS relay 访问地址与 Bearer 鉴权），`AISSTREAM_API_KEY`、`AIS_RELAY_SHARED_SECRET`、`AIS_RELAY_PORT`（本仓库内置 `apps/ais-relay` 服务），`REALTIME_SIGNALS_OPENSKY_BASE_URL`、`REALTIME_SIGNALS_OPENSKY_TOKEN_URL`、`REALTIME_SIGNALS_OPENSKY_CLIENT_ID`、`REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET`（OpenSky 飞行数据源），`REALTIME_SIGNALS_OPENSKY_DAILY_CREDIT_BUDGET`、`REALTIME_SIGNALS_OPENSKY_DAY_INTERVAL_SEC`、`REALTIME_SIGNALS_OPENSKY_NIGHT_INTERVAL_SEC`、`REALTIME_SIGNALS_OPENSKY_DAY_START_HKT`、`REALTIME_SIGNALS_OPENSKY_NIGHT_START_HKT`、`REALTIME_SIGNALS_OPENSKY_WARNING_REMAINING_PCT`、`REALTIME_SIGNALS_OPENSKY_CRITICAL_REMAINING_PCT`（OpenSky credits 预算与香港时间日夜调度），以及 `REALTIME_SIGNALS_ACLED_USERNAME`、`REALTIME_SIGNALS_ACLED_PASSWORD`、`REALTIME_SIGNALS_ACLED_CLIENT_ID`（自动刷新 ACLED token）
+- 实时信号：`REALTIME_SIGNALS_AIS_BASE_URL`、`REALTIME_SIGNALS_AIS_SHARED_SECRET`（AIS relay 访问地址与 Bearer 鉴权），`AISSTREAM_API_KEY`、`AIS_RELAY_SHARED_SECRET`、`AIS_RELAY_PORT`、`AISSTREAM_URL`、`AIS_RELAY_HEALTH_NO_MESSAGES_AFTER_CONNECT_MS`、`AIS_RELAY_HEALTH_STALE_MESSAGES_MS`（本仓库内置 `apps/ais-relay` 服务，上游覆盖与降级阈值），`REALTIME_SIGNALS_OPENSKY_BASE_URL`、`REALTIME_SIGNALS_OPENSKY_TOKEN_URL`、`REALTIME_SIGNALS_OPENSKY_CLIENT_ID`、`REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET`（OpenSky 飞行数据源），`REALTIME_SIGNALS_OPENSKY_DAILY_CREDIT_BUDGET`、`REALTIME_SIGNALS_OPENSKY_DAY_INTERVAL_SEC`、`REALTIME_SIGNALS_OPENSKY_NIGHT_INTERVAL_SEC`、`REALTIME_SIGNALS_OPENSKY_DAY_START_HKT`、`REALTIME_SIGNALS_OPENSKY_NIGHT_START_HKT`、`REALTIME_SIGNALS_OPENSKY_WARNING_REMAINING_PCT`、`REALTIME_SIGNALS_OPENSKY_CRITICAL_REMAINING_PCT`（OpenSky credits 预算与香港时间日夜调度），以及 `REALTIME_SIGNALS_ACLED_USERNAME`、`REALTIME_SIGNALS_ACLED_PASSWORD`、`REALTIME_SIGNALS_ACLED_CLIENT_ID`（自动刷新 ACLED token）
 - 助手安全：`ASSISTANT_GUARDRAILS_ENABLED`、`ASSISTANT_GUARDRAILS`
 - 对象存储：`S3_*`（Docker 默认用 MinIO）
 - 经济数据：`AKSHARE_ENABLED`、`AKSHARE_HTTP_BASE_URL`、`AKSHARE_ADMIN_TOKEN`
 - 模型服务：`MODEL_SERVICE_ENABLED`、`MODEL_SERVICE_BASE_URL`、`MODEL_SERVICE_INTERNAL_TOKEN`
+
+## AIS Relay
+
+`apps/ais-relay` 现在有独立镜像构建链，不再复用 `runtime.Dockerfile`。如果只想构建或排障 AIS relay，直接使用：
+
+```bash
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml build ais-relay
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml up -d ais-relay
+```
+
+关键约束：
+
+- `AISSTREAM_API_KEY` 缺失时，relay 会直接启动失败。
+- `/healthz/live` 只表示 relay 进程在线，Docker Compose 现在使用它作为容器健康探针。
+- `/health` 的 HTTP 200 不代表运行态健康，真正状态看响应体里的 `status`；`degraded` 仍表示上游或解析质量问题，但不再阻塞 `api` 启动。
+- 如果需要做确定性 smoke test，可以用 `AISSTREAM_URL` 把上游切到本地 mock WebSocket。
+
+详细接口、降级原因码和环境变量说明见 [apps/ais-relay/README.md](./apps/ais-relay/README.md)。
 
 ## 并发控制说明
 
@@ -364,6 +386,7 @@ pnpm --filter infra-scripts run env:check
 - 登录限流：`RATE_LIMIT_LOGIN` / `RATE_LIMIT_LOGIN_WINDOW`
 - 抓取任务创建限流：`RATE_LIMIT_CRAWL_TASK_CREATE` / `RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW`
 - RBAC 写操作限流：`RATE_LIMIT_RBAC_WRITE` / `RATE_LIMIT_RBAC_WRITE_WINDOW`
+- 忘记密码限流：`Settings → Rate Limit Policies` 中的 `auth.password_reset`，默认每邮箱 3 次、每 IP 10 次、窗口 900 秒
 - 环境变量仅提供兜底默认值，推荐在控制台 `Settings → Rate Limits` 动态调整并写入数据库
 
 ## API 文档入口
@@ -432,6 +455,7 @@ pnpm docker:down
 说明：
 
 - `CRAWL4AI_SSRF_PROXY_PORT` 默认是容器内 `18080`，只供 crawl4ai 容器内浏览器进程访问，不映射到宿主机端口。
+- 本地 `situation-monitor` 如果遇到 `GDELT fallback request failed` 一类报错，当前 API 会只对 `api.gdeltproject.org` 在失败后追加一次 IPv4 请求；这主要用于 Docker/WSL 的网络兼容兜底，不会影响其他外部 provider，详见 [docs/gdelt-ipv4-fallback.md](./docs/gdelt-ipv4-fallback.md)。
 - 更完整的上线/验证手册见 [docs/crawl4ai-ssrf-proxy-deployment.md](./docs/crawl4ai-ssrf-proxy-deployment.md)
 
 ### 生产环境注意事项（建议）
@@ -441,6 +465,7 @@ pnpm docker:down
 - 为 MySQL/Mongo/Redis/Qdrant/MinIO 配置持久化卷与备份策略
 - 如需横向扩展 WebSocket，启用 `WS_REDIS_ADAPTER_ENABLED=true`
 - 不要在生产环境关闭 `CRAWL4AI_SSRF_PROXY_URL`，否则前端监控页会显示 `SSRF proxy OFF`，并且 Crawl4AI worker 将失去抓取侧 DNS rebinding 防护
+- `GDELT` 的 IPv4 fallback 主要是本地 Docker/WSL 网络兼容兜底。稳定的生产出口通常会在首轮 `fetch()` 成功，因此不会实际触发；是否保留该兜底可按你的出口网络验证结果决定，详见 [docs/gdelt-ipv4-fallback.md](./docs/gdelt-ipv4-fallback.md)。
 - 可将 `GET /api/healthz` 中的 `crawl4aiSsrfProxy` 组件接入现有监控系统；代理关闭或不可达时它会变为 `down`
 
 ### 常见问题（排障速记）
@@ -475,6 +500,14 @@ pnpm docker:down
 <summary>4. Vector Service 401（Missing internal token）</summary>
 
 - Vector Service 受 `x-internal-token` 保护，确保 API 与向量服务使用同一 `VECTOR_INTERNAL_TOKEN`
+</details>
+
+<details>
+<summary>5. Situation Monitor 提示 “GDELT fallback request failed” / “No internal Situation Monitor items are available yet”</summary>
+
+- `GDELT fallback request failed` 表示访问 `api.gdeltproject.org` 的首轮请求失败，或 GDELT 返回了限流/异常响应。当前 API 只会对该主机尝试一次 IPv4 重试，不会把 IPv4 强制应用到其他 provider。
+- `No internal Situation Monitor items are available yet` 通常不是 GDELT 故障，而是当前 workspace 还没有启用 `NewsSource`，因此 `INT` 统计和内部分析内容为空。
+- 详细触发条件、实现位置和生产环境建议见 [docs/gdelt-ipv4-fallback.md](./docs/gdelt-ipv4-fallback.md)。
 </details>
 
 ## 贡献指南

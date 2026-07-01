@@ -1,10 +1,11 @@
 "use client";
 
-import { UploadOutlined } from "@ant-design/icons";
+import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import {
   Alert,
   Button,
   Card,
+  Divider,
   Form,
   Input,
   Spin,
@@ -14,6 +15,7 @@ import {
 } from "antd";
 import type { UploadProps } from "antd";
 import type { RcFile } from "antd/es/upload";
+import type { AxiosResponse } from "axios";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -22,6 +24,11 @@ import { AvatarFallback } from "@/components/avatar-fallback";
 import { createApiClient } from "@/lib/api-client";
 import type { AuthenticatedUser } from "@/lib/auth";
 import { captureClientError } from "@/lib/client-telemetry";
+import {
+  downloadBlobFile,
+  filenameFromContentDisposition,
+  formatDateForFilename,
+} from "@/lib/data-export";
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ALLOWED_AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -43,14 +50,30 @@ interface EmailBindingFormValues {
   code: string;
 }
 
+interface ProfileFormValues {
+  firstName: string;
+  lastName: string;
+}
+
+interface ChangePasswordFormValues {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
 export function ProfileContent() {
   const { t } = useTranslation();
   const { data: session, status, update } = useSession();
+  const [profileForm] = Form.useForm<ProfileFormValues>();
+  const [passwordForm] = Form.useForm<ChangePasswordFormValues>();
   const [emailForm] = Form.useForm<EmailBindingFormValues>();
   const [messageApi, contextHolder] = message.useMessage();
   const [uploading, setUploading] = useState(false);
   const [sendingEmailCode, setSendingEmailCode] = useState(false);
   const [verifyingEmail, setVerifyingEmail] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
   const [emailCodeCooldown, setEmailCodeCooldown] = useState(0);
   const [pendingEmailHint, setPendingEmailHint] = useState<string | null>(null);
 
@@ -77,6 +100,13 @@ export function ProfileContent() {
     }
     emailForm.setFieldsValue({ email: displayEmail });
   }, [displayEmail, emailForm]);
+
+  useEffect(() => {
+    profileForm.setFieldsValue({
+      firstName: user?.firstName ?? "",
+      lastName: user?.lastName ?? "",
+    });
+  }, [profileForm, user?.firstName, user?.lastName]);
 
   useEffect(() => {
     if (emailCodeCooldown <= 0) {
@@ -217,6 +247,95 @@ export function ProfileContent() {
     }
   }, [apiClient, emailForm, messageApi, t, update]);
 
+  const handleSaveProfile = useCallback(async () => {
+    try {
+      const values = await profileForm.validateFields();
+      setSavingProfile(true);
+      const response = await apiClient.patch<AuthenticatedUser>("auth/profile", {
+        firstName: values.firstName.trim(),
+        lastName: values.lastName.trim(),
+      });
+      await update({ user: response.data });
+      messageApi.success(
+        t("profile.details.success"),
+      );
+    } catch (error) {
+      const validationError =
+        typeof error === "object" &&
+        error !== null &&
+        "errorFields" in error &&
+        Array.isArray((error as { errorFields?: unknown }).errorFields);
+      if (validationError) {
+        return;
+      }
+      captureClientError("Failed to update profile details", error);
+      messageApi.error(
+        t("profile.details.failed"),
+      );
+    } finally {
+      setSavingProfile(false);
+    }
+  }, [apiClient, messageApi, profileForm, t, update]);
+
+  const handleChangePassword = useCallback(async () => {
+    try {
+      const values = await passwordForm.validateFields();
+      setChangingPassword(true);
+      await apiClient.post("auth/change-password", {
+        currentPassword: values.currentPassword,
+        newPassword: values.newPassword,
+      });
+      passwordForm.resetFields();
+      messageApi.success(
+        t("profile.password.success"),
+      );
+    } catch (error) {
+      const validationError =
+        typeof error === "object" &&
+        error !== null &&
+        "errorFields" in error &&
+        Array.isArray((error as { errorFields?: unknown }).errorFields);
+      if (validationError) {
+        return;
+      }
+      captureClientError("Failed to change password", error);
+      messageApi.error(
+        t("profile.password.failed"),
+      );
+    } finally {
+      setChangingPassword(false);
+    }
+  }, [apiClient, messageApi, passwordForm, t]);
+
+  const handleExportUserData = useCallback(async () => {
+    try {
+      setExportingData(true);
+      const response = await apiClient.get<Blob, AxiosResponse<Blob>>(
+        "auth/data-export",
+        { responseType: "blob" },
+      );
+      const rawContentDisposition = response.headers?.["content-disposition"];
+      const contentDisposition = Array.isArray(rawContentDisposition)
+        ? rawContentDisposition.join("; ")
+        : rawContentDisposition;
+      const fallbackFilename = `wei-user-data-${formatDateForFilename(new Date())}.json`;
+      downloadBlobFile(
+        response.data,
+        filenameFromContentDisposition(contentDisposition) ?? fallbackFilename,
+      );
+      messageApi.success(
+        t("profile.dataExport.success"),
+      );
+    } catch (error) {
+      captureClientError("Failed to export user data", error);
+      messageApi.error(
+        t("profile.dataExport.failed"),
+      );
+    } finally {
+      setExportingData(false);
+    }
+  }, [apiClient, messageApi, t]);
+
   if (status === "loading") {
     return (
       <div
@@ -282,6 +401,138 @@ export function ProfileContent() {
             {t("profile.avatar.requirements")}
           </Typography.Text>
         </div>
+        <Divider style={{ margin: 0 }} />
+        <div className="flex flex-col gap-2">
+          <Typography.Text strong>
+            {t("profile.details.title")}
+          </Typography.Text>
+          <Typography.Paragraph type="secondary">
+            {t("profile.details.description")}
+          </Typography.Paragraph>
+          <Form form={profileForm} layout="vertical">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Form.Item
+                label={t("profile.details.firstName")}
+                name="firstName"
+                rules={[
+                  {
+                    required: true,
+                    message: t("profile.details.firstNameRequired"),
+                  },
+                ]}
+              >
+                <Input maxLength={80} autoComplete="given-name" size="large" />
+              </Form.Item>
+              <Form.Item
+                label={t("profile.details.lastName")}
+                name="lastName"
+                rules={[
+                  {
+                    required: true,
+                    message: t("profile.details.lastNameRequired"),
+                  },
+                ]}
+              >
+                <Input maxLength={80} autoComplete="family-name" size="large" />
+              </Form.Item>
+            </div>
+            <Button
+              type="primary"
+              onClick={() => void handleSaveProfile()}
+              loading={savingProfile}
+            >
+              {t("profile.details.save")}
+            </Button>
+          </Form>
+        </div>
+        <Divider style={{ margin: 0 }} />
+        <div className="flex flex-col gap-2">
+          <Typography.Text strong>
+            {t("profile.password.title")}
+          </Typography.Text>
+          <Typography.Paragraph type="secondary">
+            {t("profile.password.description")}
+          </Typography.Paragraph>
+          <Form form={passwordForm} layout="vertical">
+            <Form.Item
+              label={t("profile.password.current")}
+              name="currentPassword"
+              rules={[
+                {
+                  required: true,
+                  message: t("profile.password.currentRequired"),
+                },
+              ]}
+            >
+              <Input.Password autoComplete="current-password" size="large" />
+            </Form.Item>
+            <Form.Item
+              label={t("profile.password.new")}
+              name="newPassword"
+              rules={[
+                {
+                  required: true,
+                  message: t("profile.password.newRequired"),
+                },
+                {
+                  min: 8,
+                  message: t("profile.password.newMin"),
+                },
+              ]}
+            >
+              <Input.Password autoComplete="new-password" size="large" />
+            </Form.Item>
+            <Form.Item
+              label={t("profile.password.confirm")}
+              name="confirmPassword"
+              dependencies={["newPassword"]}
+              rules={[
+                {
+                  required: true,
+                  message: t("profile.password.confirmRequired"),
+                },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    if (!value || getFieldValue("newPassword") === value) {
+                      return Promise.resolve();
+                    }
+                    return Promise.reject(
+                      new Error(
+                        t("profile.password.confirmMismatch"),
+                      ),
+                    );
+                  },
+                }),
+              ]}
+            >
+              <Input.Password autoComplete="new-password" size="large" />
+            </Form.Item>
+            <Button
+              type="primary"
+              onClick={() => void handleChangePassword()}
+              loading={changingPassword}
+            >
+              {t("profile.password.submit")}
+            </Button>
+          </Form>
+        </div>
+        <Divider style={{ margin: 0 }} />
+        <div className="flex flex-col gap-2">
+          <Typography.Text strong>
+            {t("profile.dataExport.title")}
+          </Typography.Text>
+          <Typography.Paragraph type="secondary">
+            {t("profile.dataExport.description")}
+          </Typography.Paragraph>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() => void handleExportUserData()}
+            loading={exportingData}
+          >
+            {t("profile.dataExport.download")}
+          </Button>
+        </div>
+        <Divider style={{ margin: 0 }} />
         <div className="flex flex-col gap-2">
           <Typography.Text strong>
             {t("profile.emailBinding.title")}

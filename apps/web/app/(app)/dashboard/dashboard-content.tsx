@@ -126,6 +126,7 @@ const SectorHeatmap = dynamic(
 const WarMap = dynamic(
   () => import("./charts/war-map").then((mod) => mod.WarMap),
   {
+    ssr: false,
     loading: () => <DashboardSkeleton className="h-full" rows={6} />,
   },
 );
@@ -173,8 +174,12 @@ const MarketPulse = dynamic(
   },
 );
 
-const MetricDrillDown = dynamic(() =>
-  import("./metric-drilldown").then((mod) => mod.MetricDrillDown),
+const MetricDrillDown = dynamic(
+  () => import("./metric-drilldown").then((mod) => mod.MetricDrillDown),
+  {
+    ssr: false,
+    loading: () => <DashboardSkeleton className="min-h-[420px]" rows={6} />,
+  },
 );
 
 const QueueChart = dynamic(
@@ -204,20 +209,20 @@ function DashboardStreamStatusLine({
     const status = streamState.status;
     if (status === "live") {
       return {
-        label: t("dashboard.stream.status.live", { defaultValue: "Live" }),
+        label: t("dashboard.stream.status.live"),
         dotClass: "bg-emerald-500",
         pulse: true,
       };
     }
     if (status === "paused") {
       return {
-        label: t("dashboard.stream.status.paused", { defaultValue: "Paused" }),
+        label: t("dashboard.stream.status.paused"),
         dotClass: "bg-amber-500",
         pulse: false,
       };
     }
     return {
-      label: t("dashboard.stream.status.offline", { defaultValue: "Offline" }),
+      label: t("dashboard.stream.status.offline"),
       dotClass: "bg-red-500",
       pulse: false,
     };
@@ -231,9 +236,7 @@ function DashboardStreamStatusLine({
     if (prevStatus === null) return;
     if (streamState.status === "offline") {
       toast.error(
-        t("dashboard.stream.offline", {
-          defaultValue: "Live updates unavailable",
-        }),
+        t("dashboard.stream.offline"),
         { id: DASHBOARD_STREAM_TOAST_ID },
       );
       return;
@@ -243,9 +246,7 @@ function DashboardStreamStatusLine({
     }
     if (prevStatus === "offline" && streamState.status === "live") {
       toast.success(
-        t("dashboard.stream.liveRecovered", {
-          defaultValue: "Live updates restored",
-        }),
+        t("dashboard.stream.liveRecovered"),
         { id: DASHBOARD_STREAM_TOAST_ID, duration: 4_000 },
       );
     }
@@ -282,14 +283,14 @@ function DashboardStreamStatusLine({
       <span>{streamStatusMeta.label}</span>
       <span className="text-slate-600">|</span>
       <span title={lastUpdateTitle}>
-        {t("dashboard.stream.lastUpdate", { defaultValue: "Last update" })}:{" "}
+        {t("dashboard.stream.lastUpdate")}:{" "}
         {lastUpdateLabel}
       </span>
       {streamState.status === "live" && streamState.lastMessageAt ? (
         <>
           <span className="text-slate-600">|</span>
           <span title={lastMessageTitle}>
-            {t("dashboard.stream.heartbeat", { defaultValue: "Heartbeat" })}:{" "}
+            {t("dashboard.stream.heartbeat")}:{" "}
             {lastMessageLabel}
           </span>
         </>
@@ -298,7 +299,7 @@ function DashboardStreamStatusLine({
         <>
           <span className="text-slate-600">|</span>
           <span>
-            {t("dashboard.stream.retries", { defaultValue: "Retries" })}:{" "}
+            {t("dashboard.stream.retries")}:{" "}
             {streamState.retryCount}
           </span>
         </>
@@ -310,14 +311,14 @@ function DashboardStreamStatusLine({
             className="inline-block max-w-[360px] truncate align-bottom text-red-400"
             title={streamState.error}
           >
-            {t("dashboard.stream.error", { defaultValue: "Error" })}:{" "}
+            {t("dashboard.stream.error")}:{" "}
             {errorPreview}
           </span>
         </>
       ) : null}
       <span className="text-slate-600">|</span>
       <span>
-        {t("dashboard.stream.window", { defaultValue: "Window" })}: {range} (
+        {t("dashboard.stream.window")}: {range} (
         {formatDashboardDate(start)} to {formatDashboardDate(end)})
       </span>
     </div>
@@ -526,15 +527,10 @@ export function DashboardContent() {
             void refreshQueueStats();
           },
           actionLoading: refreshingQueueStats,
-          actionLabelOverride: t("dashboard.actions.retryFetch", {
-            defaultValue: "Retry fetch",
-          }),
+          actionLabelOverride: t("dashboard.actions.retryFetch"),
         })
       : null;
-  const heroPermissionDescription = t("dashboard.hero.permissionRequired", {
-    defaultValue:
-      "Hero metrics require the economicdata.read permission. Switch to an organization with access or contact an administrator.",
-  });
+  const heroPermissionDescription = t("dashboard.hero.permissionRequired");
 
   return (
     <div className="flex gap-6 h-full items-start">
@@ -546,12 +542,12 @@ export function DashboardContent() {
         <div className="glass-panel border border-[var(--border)] px-4 py-3">
           <div className="flex items-center justify-between gap-3 mb-2">
             <span className="text-xs text-slate-600 font-medium">
-              {t("dashboard.timeRange.title", { defaultValue: "Time Range" })}
+              {t("dashboard.timeRange.title")}
             </span>
             <Space size={8}>
               {isRangeUpdating ? (
                 <Tag color="processing" className="text-xs">
-                  {t("common.loading", { defaultValue: "Loading..." })}
+                  {t("common.loading")}
                 </Tag>
               ) : null}
               {hasActiveFilters ? (
@@ -561,7 +557,7 @@ export function DashboardContent() {
                   onClick={resetFilters}
                   className="px-0"
                 >
-                  {t("common.reset", { defaultValue: "Reset" })}
+                  {t("common.reset")}
                 </Button>
               ) : null}
             </Space>
@@ -584,9 +580,7 @@ export function DashboardContent() {
             />
             <Space>
               <span className="text-xs text-slate-500">
-                {t("dashboard.systemStatus.title", {
-                  defaultValue: "System status",
-                })}
+                {t("dashboard.systemStatus.title")}
               </span>
               <Switch
                 size="small"
@@ -614,9 +608,7 @@ export function DashboardContent() {
               <ChartEmptyState
                 className="h-auto"
                 variant="permission"
-                title={t("common.accessDenied", {
-                  defaultValue: "Access denied",
-                })}
+                title={t("common.accessDenied")}
                 description={heroPermissionDescription}
               />
             </div>
@@ -671,14 +663,12 @@ export function DashboardContent() {
           <div className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] overflow-hidden flex flex-col">
             <div className="px-5 pt-4">
               <h3 className="text-lg text-slate-700">
-                {t("dashboard.charts.warMap.title", {
-                  defaultValue: "Indicator Situation Map",
-                })}
+                {t("dashboard.charts.warMap.title")}
               </h3>
             </div>
-            <div className="min-h-0 flex-1">
+            <div className="min-h-0 flex flex-1">
               <WarMap
-                className="h-full"
+                className="flex-1"
                 streamState={dashboardStreamState}
                 onEffectiveRangeChange={handleWarMapRealtimeQueryChange}
                 onRealtimeQueryChange={handleWarMapRealtimeQueryChange}
@@ -688,9 +678,7 @@ export function DashboardContent() {
 
           {/* Sector Heatmap - Side Panel */}
           <Card
-            title={t("dashboard.charts.sectorHeatmap", {
-              defaultValue: "Sector Performance",
-            })}
+            title={t("dashboard.charts.sectorHeatmap")}
             className="glass-card h-[500px]"
             variant="borderless"
           >
@@ -717,9 +705,7 @@ export function DashboardContent() {
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <div className="xl:col-span-3">
             <Card
-              title={t("dashboard.charts.entityImpactGraph", {
-                defaultValue: "Entity Impact Graph",
-              })}
+              title={t("dashboard.charts.entityImpactGraph")}
               className="glass-card"
               variant="borderless"
             >
@@ -732,9 +718,7 @@ export function DashboardContent() {
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <div className="xl:col-span-3">
             <Card
-              title={t("dashboard.charts.knowledgeGraphTitle", {
-                defaultValue: "Knowledge Graph",
-              })}
+              title={t("dashboard.charts.knowledgeGraphTitle")}
               className="glass-card"
               variant="borderless"
             >
@@ -755,13 +739,8 @@ export function DashboardContent() {
                 style={{ height: QUEUE_STATS_CARD_MIN_HEIGHT }}
               >
                 <ChartEmptyState
-                  title={t("common.accessDenied", {
-                    defaultValue: "Access denied",
-                  })}
-                  description={t("common.accessDeniedDescription", {
-                    defaultValue:
-                      "You don't have permission to view this data. Contact an administrator if you need access.",
-                  })}
+                  title={t("common.accessDenied")}
+                  description={t("common.accessDeniedDescription")}
                   variant="permission"
                 />
               </div>
@@ -847,19 +826,11 @@ export function DashboardContent() {
                       <div style={{ height: QUEUE_STATS_CHART_HEIGHT }}>
                         <ChartEmptyState
                           className="h-full"
-                          title={t("dashboard.ticker.empty", {
-                            defaultValue: "No metrics yet",
-                          })}
+                          title={t("dashboard.ticker.empty")}
                           description={t(
                             "dashboard.errors.metricsUnavailableHint",
-                            {
-                              defaultValue:
-                                "No system metrics were returned. Try pulling the data from the server again, or contact an administrator if this persists.",
-                            },
                           )}
-                          actionLabel={t("dashboard.actions.fetchLatest", {
-                            defaultValue: "Pull latest data",
-                          })}
+                          actionLabel={t("dashboard.actions.fetchLatest")}
                           actionLoading={refreshingQueueStats}
                           onAction={() => {
                             void refreshQueueStats();

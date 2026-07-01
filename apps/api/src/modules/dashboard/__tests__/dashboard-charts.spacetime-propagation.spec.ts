@@ -120,9 +120,7 @@ describe("DashboardChartsService.getSpacetimePropagation", () => {
     expect(prisma.newsEventItem.findMany).toHaveBeenCalledTimes(1);
     expect(mongoFindMock).toHaveBeenCalledTimes(1);
 
-    const [filterArg] = mongoFindMock.mock.calls[0] as Array<
-      Record<string, unknown>
-    >;
+    const [filterArg] = mongoFindMock.mock.calls[0] as Record<string, unknown>[];
     const ids = (((filterArg._id as { $in?: unknown }).$in ?? []) as string[])
       .slice()
       .sort();
@@ -289,9 +287,7 @@ describe("DashboardChartsService.getSpacetimePropagation", () => {
       { eventId: EVENT_ID },
     );
 
-    const [filterArg] = mongoFindMock.mock.calls[0] as Array<
-      Record<string, unknown>
-    >;
+    const [filterArg] = mongoFindMock.mock.calls[0] as Record<string, unknown>[];
     const ids = (((filterArg._id as { $in?: unknown }).$in ?? []) as string[])
       .slice()
       .sort();

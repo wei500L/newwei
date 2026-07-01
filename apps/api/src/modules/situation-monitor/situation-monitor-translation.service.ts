@@ -1,6 +1,6 @@
-import axios from "axios";
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
+import axios from "axios";
 import { createHash } from "node:crypto";
 
 import { CacheService } from "../cache/cache.service";
@@ -187,6 +187,29 @@ export class SituationMonitorTranslationService {
           if (Array.isArray(entry.keyPoints)) {
             for (const point of entry.keyPoints) {
               collect(point);
+            }
+          }
+        }
+      }
+    }
+
+    if (insights.clusters) {
+      for (const list of Object.values(insights.clusters)) {
+        for (const cluster of list) {
+          collect(cluster.lead.title);
+          collect(cluster.lead.summary);
+          if (Array.isArray(cluster.lead.keyPoints)) {
+            for (const point of cluster.lead.keyPoints) {
+              collect(point);
+            }
+          }
+          for (const entry of cluster.items ?? []) {
+            collect(entry.title);
+            collect(entry.summary);
+            if (Array.isArray(entry.keyPoints)) {
+              for (const point of entry.keyPoints) {
+                collect(point);
+              }
             }
           }
         }
@@ -794,6 +817,17 @@ export class SituationMonitorTranslationService {
       for (const list of Object.values(insights.headlines)) {
         for (const entry of list) {
           applyHeadline(entry);
+        }
+      }
+    }
+
+    if (insights.clusters) {
+      for (const list of Object.values(insights.clusters)) {
+        for (const cluster of list) {
+          applyHeadline(cluster.lead);
+          for (const entry of cluster.items ?? []) {
+            applyHeadline(entry);
+          }
         }
       }
     }

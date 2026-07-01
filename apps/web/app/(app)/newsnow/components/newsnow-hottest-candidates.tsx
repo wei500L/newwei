@@ -129,6 +129,11 @@ function DomesticOpinionPanel({
             Domestic Pulse
           </p>
           <h2 className="mt-1 text-lg font-semibold text-[var(--foreground)]">国内舆情指数</h2>
+          <div className="mt-1 text-xs text-[var(--secondary-foreground)]/72">
+            当前口径基于现有热榜与新闻管道规则算法，未使用{' '}
+            <span className="font-mono text-[11px] text-emerald-100/80">embedding</span> /{' '}
+            <span className="font-mono text-[11px] text-emerald-100/80">rerank</span>
+          </div>
         </div>
         <div className="text-xs text-emerald-100/70">热榜底座 + 新闻管道补强</div>
       </div>

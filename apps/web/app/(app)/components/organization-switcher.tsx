@@ -68,7 +68,7 @@ export function OrganizationSwitcher({
     }
 
     if (isSelectedDisabled) {
-      setError(t("orgSwitcher.error.disabledOrganization", { defaultValue: "Organization is disabled" }));
+      setError(t("orgSwitcher.error.disabledOrganization"));
       return;
     }
 

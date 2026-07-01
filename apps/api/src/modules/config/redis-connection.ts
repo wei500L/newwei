@@ -1,5 +1,5 @@
-import type { RedisOptions } from 'ioredis';
-import type { RedisClientOptions } from 'redis';
+import type { RedisOptions } from "ioredis";
+import type { RedisClientOptions } from "redis";
 
 export interface RedisConnectionConfig {
   host?: string;
@@ -7,6 +7,8 @@ export interface RedisConnectionConfig {
   username?: string;
   password?: string;
   db?: number;
+  enableAutoPipelining?: boolean;
+  maxRetriesPerRequest?: number;
 }
 
 export function toIoredisConnection(
@@ -18,13 +20,18 @@ export function toIoredisConnection(
     username: config.username,
     password: config.password,
     db: config.db,
+    enableAutoPipelining: config.enableAutoPipelining,
+    maxRetriesPerRequest: config.maxRetriesPerRequest,
   };
 }
 
 export function toBullmqConnection(
   config: RedisConnectionConfig,
 ): RedisOptions {
-  return toIoredisConnection(config);
+  return {
+    ...toIoredisConnection(config),
+    maxRetriesPerRequest: null,
+  };
 }
 
 export function toNodeRedisConnection(

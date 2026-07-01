@@ -46,6 +46,11 @@ function isTranslateCallExpression(expression) {
   );
 }
 
+function getLineAndColumn(sourceFile, position) {
+  const { line, character } = sourceFile.getLineAndCharacterOfPosition(position);
+  return { line: line + 1, column: character + 1 };
+}
+
 function buildOptionsMap(optionsObjectLiteral, sourceFile) {
   const map = new Map();
   if (!optionsObjectLiteral) return map;
@@ -82,7 +87,7 @@ function templateToI18nString(templateNode, sourceFile, optionsMap) {
   return result;
 }
 
-function extractDefaultString(callExpression, sourceFile) {
+function extractDefaultString(callExpression, sourceFile, options = {}) {
   const [_, arg1, arg2] = callExpression.arguments;
 
   const optionsObjectLiteral =
@@ -101,7 +106,9 @@ function extractDefaultString(callExpression, sourceFile) {
       ts.isTemplateExpression(arg1))
   ) {
     if (ts.isStringLiteralLike(arg1)) return arg1.text;
-    return templateToI18nString(arg1, sourceFile, optionsMap);
+    if (ts.isNoSubstitutionTemplateLiteral(arg1)) return arg1.text;
+    if (!options.strictTemplates) return templateToI18nString(arg1, sourceFile, optionsMap);
+    return templateToI18nStringStrict(arg1, sourceFile, optionsMap);
   }
 
   // t('key', { defaultValue: 'Default' })
@@ -112,13 +119,166 @@ function extractDefaultString(callExpression, sourceFile) {
       if (propName !== 'defaultValue') continue;
       const init = prop.initializer;
       if (ts.isStringLiteralLike(init)) return init.text;
-      if (ts.isNoSubstitutionTemplateLiteral(init) || ts.isTemplateExpression(init)) {
+      if (ts.isNoSubstitutionTemplateLiteral(init)) return init.text;
+      if (ts.isTemplateExpression(init) && !options.strictTemplates) {
         return templateToI18nString(init, sourceFile, optionsMap);
       }
+      if (ts.isTemplateExpression(init)) return templateToI18nStringStrict(init, sourceFile, optionsMap);
     }
   }
 
   return null;
+}
+
+function templateToI18nStringStrict(templateNode, sourceFile, optionsMap) {
+  if (!ts.isTemplateExpression(templateNode)) {
+    return null;
+  }
+
+  let result = templateNode.head.text;
+  for (const span of templateNode.templateSpans) {
+    const expressionText = span.expression.getText(sourceFile).trim();
+    const mapped = optionsMap.get(expressionText);
+    if (!mapped) {
+      return null;
+    }
+    result += `{{${mapped}}}`;
+    result += span.literal.text;
+  }
+
+  return result;
+}
+
+function getDefaultValueProperty(objectLiteral) {
+  for (const prop of objectLiteral.properties) {
+    if (!ts.isPropertyAssignment(prop)) continue;
+    if (getPropName(prop.name) === 'defaultValue') return prop;
+  }
+  return null;
+}
+
+function getStaticDefaultValueFromNode(node, sourceFile, optionsMap) {
+  if (ts.isStringLiteralLike(node)) return node.text;
+  if (ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  if (ts.isTemplateExpression(node)) {
+    return templateToI18nStringStrict(node, sourceFile, optionsMap);
+  }
+  return null;
+}
+
+function getInitializerKind(node) {
+  if (!node) return 'unknown';
+  if (ts.isStringLiteralLike(node)) return 'string';
+  if (ts.isNoSubstitutionTemplateLiteral(node)) return 'template';
+  if (ts.isTemplateExpression(node)) return 'templateExpression';
+  if (ts.isIdentifier(node)) return 'identifier';
+  if (ts.isPropertyAccessExpression(node)) return 'propertyAccess';
+  if (ts.isElementAccessExpression(node)) return 'elementAccess';
+  if (ts.isCallExpression(node)) return 'call';
+  if (ts.isConditionalExpression(node)) return 'conditional';
+  if (ts.isBinaryExpression(node)) return 'binary';
+  return ts.SyntaxKind[node.kind] || String(node.kind);
+}
+
+function collectTranslationDefaultValueUsages(appRootDir) {
+  const sourceFiles = listSourceFiles(appRootDir);
+  const staticDefaults = [];
+  const dynamicDefaults = [];
+
+  for (const filePath of sourceFiles) {
+    const sourceText = fs.readFileSync(filePath, 'utf8');
+    const kind = filePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+    const sourceFile = ts.createSourceFile(
+      filePath,
+      sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+      kind
+    );
+
+    const visit = (node) => {
+      if (ts.isCallExpression(node) && isTranslateCallExpression(node.expression)) {
+        const [arg0, arg1, arg2] = node.arguments;
+        if (arg0 && ts.isStringLiteralLike(arg0)) {
+          const key = arg0.text;
+          const recordUsage = (target, usage) => {
+            const location = getLineAndColumn(sourceFile, usage.node.getStart(sourceFile));
+            target.push({
+              filePath,
+              key,
+              kind: usage.kind,
+              defaultValue: usage.defaultValue,
+              initializerKind: usage.initializerKind,
+              line: location.line,
+              column: location.column,
+              text: usage.node.getText(sourceFile),
+            });
+          };
+
+          if (
+            arg1 &&
+            (ts.isStringLiteralLike(arg1) ||
+              ts.isNoSubstitutionTemplateLiteral(arg1) ||
+              ts.isTemplateExpression(arg1))
+          ) {
+            const optionsObjectLiteral =
+              arg2 && ts.isObjectLiteralExpression(arg2) ? arg2 : null;
+            const defaultValue = getStaticDefaultValueFromNode(
+              arg1,
+              sourceFile,
+              buildOptionsMap(optionsObjectLiteral, sourceFile)
+            );
+            if (defaultValue != null) {
+              recordUsage(staticDefaults, {
+                node: arg1,
+                kind: 'defaultArgument',
+                defaultValue,
+                initializerKind: getInitializerKind(arg1),
+              });
+            } else {
+              recordUsage(dynamicDefaults, {
+                node: arg1,
+                kind: 'defaultArgument',
+                defaultValue: null,
+                initializerKind: getInitializerKind(arg1),
+              });
+            }
+          }
+
+          for (const arg of [arg1, arg2]) {
+            if (!arg || !ts.isObjectLiteralExpression(arg)) continue;
+            const defaultValueProp = getDefaultValueProperty(arg);
+            if (!defaultValueProp) continue;
+            const defaultValue = getStaticDefaultValueFromNode(
+              defaultValueProp.initializer,
+              sourceFile,
+              buildOptionsMap(arg, sourceFile)
+            );
+            if (defaultValue != null) {
+              recordUsage(staticDefaults, {
+                node: defaultValueProp,
+                kind: 'defaultValueProperty',
+                defaultValue,
+                initializerKind: getInitializerKind(defaultValueProp.initializer),
+              });
+            } else {
+              recordUsage(dynamicDefaults, {
+                node: defaultValueProp,
+                kind: 'defaultValueProperty',
+                defaultValue: null,
+                initializerKind: getInitializerKind(defaultValueProp.initializer),
+              });
+            }
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+
+    visit(sourceFile);
+  }
+
+  return { staticDefaults, dynamicDefaults };
 }
 
 function collectTranslationKeys(appRootDir) {
@@ -231,6 +391,7 @@ function findPrefixConflicts(keys) {
 }
 
 module.exports = {
+  collectTranslationDefaultValueUsages,
   collectTranslationKeys,
   findPrefixConflicts,
   flattenKeys,

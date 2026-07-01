@@ -4,6 +4,7 @@ import {
   ItemReadModelModel,
   type ItemReadModel,
   type MongoConnection,
+  type ProcessedItem,
 } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
 import {
@@ -15,7 +16,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { Prisma, type ItemMeta } from "@prisma/client";
-import { Types, type PipelineStage } from "mongoose";
+import { Types, type PipelineStage, type ProjectionType } from "mongoose";
 import { createHash, randomUUID } from "node:crypto";
 
 import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
@@ -32,7 +33,7 @@ import {
   NormalizedNewsPayloadSchema
 } from "../news-pipeline/news-pipeline.schema";
 import { QueueService } from "../queue/queue.service";
-import { buildUserNewsBehaviorHashKey } from "../user-news-behavior/user-news-behavior.constants";
+import { UserNewsBehaviorService } from "../user-news-behavior/user-news-behavior.service";
 import { VectorClientService } from "../vector/vector-client.service";
 
 import { CreateItemDto } from "./dto/create-item.dto";
@@ -42,6 +43,7 @@ import {
   type ItemReadModelRawSnapshotInput,
   buildItemReadModelDocument,
 } from "./item-read-model.utils";
+import { ItemsElasticsearchService } from "./items-elasticsearch.service";
 
 const MAX_CURSOR_PAGE_SIZE = 50;
 const FULLTEXT_MIN_TOKEN_LENGTH = 3;
@@ -77,6 +79,38 @@ const EVENT_GROUPS_CACHE_TTL_SECONDS = 120;
 const PERSONALIZED_CANDIDATE_MIN = 180;
 const PERSONALIZED_CANDIDATE_MAX = 1600;
 const PERSONALIZED_CANDIDATE_MULTIPLIER = 8;
+const ITEM_READ_MODEL_META_ROW_PROJECTION: Record<string, 1> = {
+  orgId: 1,
+  itemMetaId: 1,
+  "meta.id": 1,
+  "meta.externalId": 1,
+  "meta.name": 1,
+  "meta.status": 1,
+  "meta.mongoRef": 1,
+  "meta.version": 1,
+  "meta.publishedAt": 1,
+  "meta.sortAt": 1,
+  "meta.createdAt": 1,
+  "meta.updatedAt": 1,
+};
+const PROCESSED_READ_MODEL_SNAPSHOT_PROJECTION: Record<string, 1> = {
+  _id: 1,
+  rawItemId: 1,
+  itemMetaId: 1,
+  pipelineJobId: 1,
+  sourceId: 1,
+  status: 1,
+  error: 1,
+  tags: 1,
+  result: 1,
+  duplicateOf: 1,
+  duplicateSimilarity: 1,
+  summaryEmbeddingModel: 1,
+  summaryEmbeddingDimensions: 1,
+  llm: 1,
+  createdAt: 1,
+  updatedAt: 1,
+};
 const DEFAULT_RECENCY_HALFLIFE_HOURS = 48;
 const DEFAULT_WEIGHT_RERANK = 0.55;
 const DEFAULT_WEIGHT_RECENCY = 0.25;
@@ -147,15 +181,30 @@ export interface ItemMetaRow {
   updatedAt: Date;
 }
 
-type ItemListRow = ItemMetaRow & { relevanceScore?: number; rankOffset?: number };
+type ItemSearchHighlights = Record<string, string[]>;
+type ItemListRow = ItemMetaRow & {
+  relevanceScore?: number;
+  rankOffset?: number;
+  searchHighlights?: ItemSearchHighlights | null;
+};
 
 interface ItemPersonalizationProfile {
-  sources: Record<string, number>;
-  topics: Record<string, number>;
-  entities: Record<string, number>;
-  items: Record<string, number>;
-  events: Record<string, number>;
-  domains: Record<string, number>;
+  positive: {
+    sources: Record<string, number>;
+    topics: Record<string, number>;
+    entities: Record<string, number>;
+    items: Record<string, number>;
+    events: Record<string, number>;
+    domains: Record<string, number>;
+  };
+  negative: {
+    sources: Record<string, number>;
+    topics: Record<string, number>;
+    entities: Record<string, number>;
+    items: Record<string, number>;
+    events: Record<string, number>;
+    domains: Record<string, number>;
+  };
 }
 
 interface PersonalizedCandidateRow {
@@ -324,7 +373,8 @@ type SearchCandidateSource =
   | "meta"
   | "processed"
   | "processedArticle"
-  | "vector";
+  | "vector"
+  | "elasticsearch";
 
 export interface RssSourceOption {
   id: string;
@@ -346,7 +396,9 @@ export class ItemsService {
     private readonly cache: CacheService,
     private readonly env: EnvService,
     private readonly liteLlm: LiteLlmService,
+    private readonly userNewsBehavior: UserNewsBehaviorService,
     @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection,
+    @Optional() private readonly elasticsearch?: ItemsElasticsearchService,
     @Optional() private readonly vectorClient?: VectorClientService
   ) {
     void this._mongo; // Ensure Mongo connection provider is instantiated.
@@ -440,6 +492,7 @@ export class ItemsService {
       duplicateSimilarity?: unknown;
       summaryEmbedding?: unknown;
       summaryEmbeddingModel?: unknown;
+      summaryEmbeddingDimensions?: unknown;
       llm?: unknown;
       createdAt?: unknown;
       updatedAt?: unknown;
@@ -472,9 +525,13 @@ export class ItemsService {
         : typeof (record.duplicateOf as { toString?: () => string } | undefined)?.toString === "function"
           ? (record.duplicateOf as { toString(): string }).toString()
           : "";
-    const summaryEmbeddingDimensions = Array.isArray(record.summaryEmbedding)
-      ? record.summaryEmbedding.length
-      : null;
+    const summaryEmbeddingDimensions =
+      typeof record.summaryEmbeddingDimensions === "number" &&
+      Number.isFinite(record.summaryEmbeddingDimensions)
+        ? record.summaryEmbeddingDimensions
+        : Array.isArray(record.summaryEmbedding)
+          ? record.summaryEmbedding.length
+          : null;
     const errorRaw =
       record.error && typeof record.error === "object" && !Array.isArray(record.error)
         ? (record.error as { message?: unknown; name?: unknown })
@@ -652,10 +709,13 @@ export class ItemsService {
     if (itemMetaIds.length === 0) {
       return new Map<string, ItemReadModel>();
     }
-    const docs = (await ItemReadModelModel.find({
-      orgId,
-      itemMetaId: { $in: itemMetaIds },
-    }).lean()) as ItemReadModel[];
+    const docs = (await ItemReadModelModel.find(
+      {
+        orgId,
+        itemMetaId: { $in: itemMetaIds },
+      },
+      ITEM_READ_MODEL_META_ROW_PROJECTION,
+    ).lean()) as ItemReadModel[];
     const byId = new Map<string, ItemReadModel>();
     for (const doc of docs) {
       if (!doc?.itemMetaId || byId.has(doc.itemMetaId)) {
@@ -706,7 +766,10 @@ export class ItemsService {
       return new Map<string, ItemReadModelProcessedSnapshotInput>();
     }
 
-    const docs = await ProcessedItemModel.aggregate(this.buildLatestItemSnapshotPipeline(itemMetaIds));
+    const docs = await ProcessedItemModel.aggregate([
+      ...this.buildLatestItemSnapshotPipeline(itemMetaIds),
+      { $project: PROCESSED_READ_MODEL_SNAPSHOT_PROJECTION },
+    ]);
     const processedByItemMetaId = new Map<string, ItemReadModelProcessedSnapshotInput>();
     for (const processedDoc of docs) {
       const snapshot = this.toProcessedReadModelSnapshot(processedDoc);
@@ -1682,7 +1745,7 @@ export class ItemsService {
           ? { sortAt: -1, itemMetaId: -1 }
           : { createdAt: -1, itemMetaId: -1 };
       const [docs, total] = await Promise.all([
-        ItemReadModelModel.find(match)
+        ItemReadModelModel.find(match, ITEM_READ_MODEL_META_ROW_PROJECTION)
           .sort(sort)
           .skip(skip)
           .limit(take)
@@ -1838,7 +1901,7 @@ export class ItemsService {
           ? { sortAt: -1, itemMetaId: -1 }
           : { createdAt: -1, itemMetaId: -1 };
 
-      const docs = (await ItemReadModelModel.find(match)
+      const docs = (await ItemReadModelModel.find(match, ITEM_READ_MODEL_META_ROW_PROJECTION)
         .sort(sort)
         .limit(take + 1)
         .lean()) as ItemReadModel[];
@@ -2189,7 +2252,7 @@ export class ItemsService {
         )
           .sort({ sortAt: -1, itemMetaId: -1 })
           .limit(input.take)
-          .lean()) as Array<{ itemMetaId?: string; createdAt?: Date; sortAt?: Date }>)
+          .lean()) as { itemMetaId?: string; createdAt?: Date; sortAt?: Date }[])
       : await this.prisma.itemMeta.findMany({
           where: input.cursor
             ? {
@@ -2254,7 +2317,7 @@ export class ItemsService {
   }
 
   private resolvePersonalizedCandidateCursor(
-    candidates: Array<{ id?: string; itemMetaId?: string; createdAt?: Date; sortAt?: Date }>,
+    candidates: { id?: string; itemMetaId?: string; createdAt?: Date; sortAt?: Date }[],
   ): PersonalizedCandidateCursor | null {
     for (let index = candidates.length - 1; index >= 0; index -= 1) {
       const candidate = candidates[index];
@@ -2279,12 +2342,18 @@ export class ItemsService {
     profile: ItemPersonalizationProfile;
   }): Promise<RankedItem[]> {
     const profileEnabled =
-      Object.keys(input.profile.sources).length > 0 ||
-      Object.keys(input.profile.topics).length > 0 ||
-      Object.keys(input.profile.entities).length > 0 ||
-      Object.keys(input.profile.items).length > 0 ||
-      Object.keys(input.profile.events).length > 0 ||
-      Object.keys(input.profile.domains).length > 0;
+      Object.keys(input.profile.positive.sources).length > 0 ||
+      Object.keys(input.profile.positive.topics).length > 0 ||
+      Object.keys(input.profile.positive.entities).length > 0 ||
+      Object.keys(input.profile.positive.items).length > 0 ||
+      Object.keys(input.profile.positive.events).length > 0 ||
+      Object.keys(input.profile.positive.domains).length > 0 ||
+      Object.keys(input.profile.negative.sources).length > 0 ||
+      Object.keys(input.profile.negative.topics).length > 0 ||
+      Object.keys(input.profile.negative.entities).length > 0 ||
+      Object.keys(input.profile.negative.items).length > 0 ||
+      Object.keys(input.profile.negative.events).length > 0 ||
+      Object.keys(input.profile.negative.domains).length > 0;
     if (input.candidates.length === 0) {
       return [];
     }
@@ -2308,40 +2377,74 @@ export class ItemsService {
           };
         }
 
-        const sourceScore = this.resolveSourcePreferenceScore(
+        const positiveSourceScore = this.resolveSourcePreferenceScore(
           feature,
-          input.profile.sources,
+          input.profile.positive.sources,
         );
-        const topicScore = this.sumPreferenceScore(
+        const negativeSourceScore = this.resolveSourcePreferenceScore(
+          feature,
+          input.profile.negative.sources,
+        );
+        const positiveTopicScore = this.sumPreferenceScore(
           feature?.topics ?? [],
-          input.profile.topics,
+          input.profile.positive.topics,
           6,
         );
-        const entityScore = this.sumPreferenceScore(
+        const negativeTopicScore = this.sumPreferenceScore(
+          feature?.topics ?? [],
+          input.profile.negative.topics,
+          6,
+        );
+        const positiveEntityScore = this.sumPreferenceScore(
           feature?.entities ?? [],
-          input.profile.entities,
+          input.profile.positive.entities,
+          6,
+        );
+        const negativeEntityScore = this.sumPreferenceScore(
+          feature?.entities ?? [],
+          input.profile.negative.entities,
           6,
         );
         const itemPreferenceId = this.normalizeBehaviorId(candidate.id);
-        const itemScore = itemPreferenceId
-          ? (input.profile.items[itemPreferenceId] ?? 0)
+        const positiveItemScore = itemPreferenceId
+          ? (input.profile.positive.items[itemPreferenceId] ?? 0)
           : 0;
-        const eventScore = this.sumPreferenceScore(
+        const negativeItemScore = itemPreferenceId
+          ? (input.profile.negative.items[itemPreferenceId] ?? 0)
+          : 0;
+        const positiveEventScore = this.sumPreferenceScore(
           feature?.eventIds ?? [],
-          input.profile.events,
+          input.profile.positive.events,
           4,
         );
-        const domainScore = feature?.domain
-          ? (input.profile.domains[feature.domain] ?? 0)
+        const negativeEventScore = this.sumPreferenceScore(
+          feature?.eventIds ?? [],
+          input.profile.negative.events,
+          4,
+        );
+        const positiveDomainScore = feature?.domain
+          ? (input.profile.positive.domains[feature.domain] ?? 0)
           : 0;
-        const behaviorRaw =
-          sourceScore * 1.15 +
-          topicScore +
-          entityScore * 0.9 +
-          itemScore * 1.45 +
-          eventScore * 1.2 +
-          domainScore * 0.75;
-        const behaviorScore = Math.log1p(Math.max(0, behaviorRaw));
+        const negativeDomainScore = feature?.domain
+          ? (input.profile.negative.domains[feature.domain] ?? 0)
+          : 0;
+        const positiveRaw =
+          positiveSourceScore * 1.15 +
+          positiveTopicScore +
+          positiveEntityScore * 0.9 +
+          positiveItemScore * 1.45 +
+          positiveEventScore * 1.2 +
+          positiveDomainScore * 0.75;
+        const negativeRaw =
+          negativeSourceScore * 1.15 +
+          negativeTopicScore +
+          negativeEntityScore * 0.9 +
+          negativeItemScore * 1.45 +
+          negativeEventScore * 1.2 +
+          negativeDomainScore * 0.75;
+        const behaviorScore =
+          Math.log1p(Math.max(0, positiveRaw)) -
+          Math.log1p(Math.max(0, negativeRaw * 1.15));
         return {
           id: candidate.id,
           score: behaviorScore * 0.78 + recencyScore * 0.22,
@@ -2633,44 +2736,40 @@ export class ItemsService {
     orgId: string,
     userId: string,
   ): Promise<ItemPersonalizationProfile> {
-    const [sourcesRaw, topicsRaw, entitiesRaw, itemsRaw, eventsRaw, domainsRaw] =
-      await Promise.all([
-        this.cache.hgetall(
-          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "sources" }),
-        ),
-        this.cache.hgetall(
-          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "topics" }),
-        ),
-        this.cache.hgetall(
-          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "entities" }),
-        ),
-        this.cache.hgetall(
-          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "items" }),
-        ),
-        this.cache.hgetall(
-          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "events" }),
-        ),
-        this.cache.hgetall(
-          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "domains" }),
-        ),
-      ]);
-
+    const profile = await this.userNewsBehavior.getPersonalizationProfile(
+      orgId,
+      userId,
+    );
     return {
-      sources: this.parseBehaviorScores(sourcesRaw),
-      topics: this.parseBehaviorScores(topicsRaw),
-      entities: this.parseBehaviorScores(entitiesRaw),
-      items: this.parseBehaviorScores(itemsRaw, (value) =>
-        this.normalizeBehaviorId(value),
-      ),
-      events: this.parseBehaviorScores(eventsRaw, (value) =>
-        this.normalizeBehaviorId(value),
-      ),
-      domains: this.parseBehaviorScores(domainsRaw),
+      positive: {
+        sources: this.parseBehaviorScores(profile.positive.sources),
+        topics: this.parseBehaviorScores(profile.positive.topics),
+        entities: this.parseBehaviorScores(profile.positive.entities),
+        items: this.parseBehaviorScores(profile.positive.items, (value) =>
+          this.normalizeBehaviorId(value),
+        ),
+        events: this.parseBehaviorScores(profile.positive.events, (value) =>
+          this.normalizeBehaviorId(value),
+        ),
+        domains: this.parseBehaviorScores(profile.positive.domains),
+      },
+      negative: {
+        sources: this.parseBehaviorScores(profile.negative.sources),
+        topics: this.parseBehaviorScores(profile.negative.topics),
+        entities: this.parseBehaviorScores(profile.negative.entities),
+        items: this.parseBehaviorScores(profile.negative.items, (value) =>
+          this.normalizeBehaviorId(value),
+        ),
+        events: this.parseBehaviorScores(profile.negative.events, (value) =>
+          this.normalizeBehaviorId(value),
+        ),
+        domains: this.parseBehaviorScores(profile.negative.domains),
+      },
     };
   }
 
   private parseBehaviorScores(
-    raw: Record<string, string>,
+    raw: Record<string, string | number>,
     normalizeKey: (value?: string) => string | null = (value) =>
       this.normalizePreferenceKey(value),
   ): Record<string, number> {
@@ -2896,7 +2995,7 @@ export class ItemsService {
         }
       | undefined;
 
-    while (true) {
+    for (;;) {
       const pageMatch: Record<string, unknown> = { ...match };
       if (cursor) {
         pageMatch.$or = [
@@ -2981,6 +3080,7 @@ export class ItemsService {
       processed: 1.15,
       processedArticle: 1.05,
       vector: 1.45,
+      elasticsearch: 1.6,
     };
     const scoreById = new Map<
       string,
@@ -3050,7 +3150,7 @@ export class ItemsService {
           contentType: 1,
           tags: 1,
         },
-      ).lean()) as Array<{
+      ).lean()) as {
         region?: string | null;
         location?: string | null;
         topics?: string[];
@@ -3058,7 +3158,7 @@ export class ItemsService {
         sentiment?: string | null;
         contentType?: string | null;
         tags?: string[];
-      }>;
+      }[];
 
       const regionCounts = new Map<string, number>();
       const topicCounts = new Map<string, number>();
@@ -3422,14 +3522,14 @@ export class ItemsService {
 
     type SuggestionType = "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT";
     type SuggestionOrigin = "LEXICAL" | "SEMANTIC" | "HYBRID";
-    type SuggestionEntry = {
+    interface SuggestionEntry {
       type: SuggestionType;
       value: string;
       score: number;
       hits: number;
       lexicalScore: number;
       semanticScore: number;
-    };
+    }
 
     const clampedLimit = Math.min(Math.max(limit, 1), 25);
     const semanticLimit = Math.min(80, clampedLimit * 6);
@@ -4572,13 +4672,13 @@ export class ItemsService {
       )
         .sort({ score: { $meta: "textScore" }, sortAt: -1, itemMetaId: -1 })
         .limit(MAX_SEARCH_MATCHES)
-        .lean()) as Array<{ itemMetaId?: string }>;
+        .lean()) as { itemMetaId?: string }[];
       return this.dedupeItemMetaIds(
         docs.map((doc) => (typeof doc.itemMetaId === "string" ? doc.itemMetaId : "")),
       );
     }
 
-    const regex = new RegExp(`^${this.escapeRegex(strategy.term.trim().toLowerCase())}`, "i");
+    const regex = new RegExp(`^${this.escapeRegex(strategy.term.trim().toLowerCase())}`);
     const docs = (await ItemReadModelModel.find(
       {
         $and: [
@@ -4600,7 +4700,7 @@ export class ItemsService {
     )
       .sort({ sortAt: -1, itemMetaId: -1 })
       .limit(MAX_SEARCH_MATCHES)
-      .lean()) as Array<{ itemMetaId?: string }>;
+      .lean()) as { itemMetaId?: string }[];
 
     return this.dedupeItemMetaIds(
       docs.map((doc) => (typeof doc.itemMetaId === "string" ? doc.itemMetaId : "")),
@@ -4762,11 +4862,13 @@ export class ItemsService {
       if (strategy.type === "none") {
         return [];
       }
-      const [lexicalIds, vectorIds] = await Promise.all([
+      const [elasticHits, lexicalIds, vectorIds] = await Promise.all([
+        this.elasticsearch?.search(orgId, search, MAX_SEARCH_MATCHES).catch(() => null) ?? Promise.resolve(null),
         this.resolveReadModelSearchIds(orgId, strategy),
         this.resolveVectorSearchIds(orgId, search),
       ]);
       return this.rankSearchCandidateIds({
+        elasticsearch: elasticHits?.map((hit) => hit.id),
         meta: lexicalIds,
         vector: vectorIds,
       });
@@ -4777,14 +4879,16 @@ export class ItemsService {
       return [];
     }
 
-    const [metaIds, processedIds, processedArticleIds, vectorIds] = await Promise.all([
+    const [elasticHits, metaIds, processedIds, processedArticleIds, vectorIds] = await Promise.all([
+      this.elasticsearch?.search(orgId, search, MAX_SEARCH_MATCHES).catch(() => null) ?? Promise.resolve(null),
       this.resolveMetaSearchIds(orgId, strategy),
-      this.resolveProcessedSearchIds(orgId, search),
+      this.resolveProcessedSearchIds(orgId, strategy),
       this.resolveProcessedArticleSearchIds(orgId, strategy),
       this.resolveVectorSearchIds(orgId, search),
     ]);
 
     return this.rankSearchCandidateIds({
+      elasticsearch: elasticHits?.map((hit) => hit.id),
       meta: metaIds,
       processed: processedIds,
       processedArticle: processedArticleIds,
@@ -4798,7 +4902,7 @@ export class ItemsService {
       const docs = (await ItemReadModelModel.find(match, { itemMetaId: 1 })
         .sort({ sortAt: -1, itemMetaId: -1 })
         .limit(MAX_SEARCH_MATCHES)
-        .lean()) as Array<{ itemMetaId?: string }>;
+        .lean()) as { itemMetaId?: string }[];
       return this.dedupeItemMetaIds(
         docs.map((doc) => (typeof doc.itemMetaId === "string" ? doc.itemMetaId : "")),
       );
@@ -5008,7 +5112,7 @@ export class ItemsService {
         },
         { $sort: { count: -1, sourceName: 1 } },
         { $limit: SEARCH_SUGGESTIONS_MAX_SOURCE_SCAN },
-      ])) as Array<{ sourceName?: string; count?: number }>;
+      ])) as { sourceName?: string; count?: number }[];
       return new Map(
         rows
           .map((row) => {
@@ -5380,34 +5484,37 @@ export class ItemsService {
     return this.dedupeItemMetaIds(items.map((item) => item.id));
   }
 
-  private async resolveProcessedSearchIds(orgId: string, search: string) {
-    const tokens = this.tokenizeSearch(search, MONGO_MIN_TOKEN_LENGTH);
-    if (tokens.length === 0) {
+  private buildMongoTextSearchQuery(strategy: SearchStrategy): string | null {
+    if (strategy.type !== "fulltext") {
+      return null;
+    }
+
+    const tokens = strategy.query
+      .split(/\s+/)
+      .map((token) => token.replace(/\*+$/g, "").trim())
+      .filter((token) => token.length >= FULLTEXT_MIN_TOKEN_LENGTH);
+
+    return tokens.length > 0 ? tokens.join(" ") : null;
+  }
+
+  private async resolveProcessedSearchIds(orgId: string, strategy: SearchStrategy) {
+    const textQuery = this.buildMongoTextSearchQuery(strategy);
+    if (!textQuery) {
       return [];
     }
 
-    const regexes = tokens.map((token) => new RegExp(this.escapeRegex(token), "i"));
-    const tokenFilters = regexes.map((regex) => ({
-      $or: [
-        { "result.title": regex },
-        { "result.subtitle": regex },
-        { "result.summary": regex },
-        { "result.topics": regex },
-        { "result.key_points": regex },
-        { "result.entities.name": regex },
-        { "result.location": regex },
-        { tags: regex }
-      ]
-    }));
-
-    const match = {
-      orgId,
-      status: PipelineStageStatus.Completed,
-      ...(tokenFilters.length ? { $and: tokenFilters } : {})
-    };
-
-    const records = await ProcessedItemModel.find(match, { itemMetaId: 1 })
-      .sort({ createdAt: -1 })
+    const records = await ProcessedItemModel.find(
+      {
+        orgId,
+        status: PipelineStageStatus.Completed,
+        $text: { $search: textQuery },
+      },
+      {
+        itemMetaId: 1,
+        score: { $meta: "textScore" },
+      } as unknown as ProjectionType<ProcessedItem>,
+    )
+      .sort({ score: { $meta: "textScore" }, createdAt: -1 })
       .limit(MAX_SEARCH_MATCHES)
       .lean();
 
@@ -5501,6 +5608,11 @@ export class ItemsService {
     const pageIds = pageRows.map((row) => row.id);
     const rowsById = await this.fetchItemMetaRowsByIds(options.orgId, pageIds);
     const scoreById = new Map(pageRows.map((row) => [row.id, row.score]));
+    const highlightsById = await this.loadSearchHighlights(
+      options.orgId,
+      options.search,
+      pageIds,
+    );
 
     const items: ItemListRow[] = [];
     for (const id of pageIds) {
@@ -5511,7 +5623,8 @@ export class ItemsService {
       const score = scoreById.get(id);
       items.push({
         ...row,
-        ...(typeof score === "number" ? { relevanceScore: score } : {})
+        ...(typeof score === "number" ? { relevanceScore: score } : {}),
+        searchHighlights: highlightsById.get(id) ?? null,
       });
     }
 
@@ -5561,6 +5674,11 @@ export class ItemsService {
     const slicedRows = hasNextPage ? pageRows.slice(0, options.first) : pageRows;
     const pageIds = slicedRows.map((row) => row.id);
     const rowsById = await this.fetchItemMetaRowsByIds(options.orgId, pageIds);
+    const highlightsById = await this.loadSearchHighlights(
+      options.orgId,
+      options.search,
+      pageIds,
+    );
 
     const items: ItemListRow[] = [];
     for (let idx = 0; idx < pageIds.length; idx += 1) {
@@ -5576,7 +5694,8 @@ export class ItemsService {
       items.push({
         ...row,
         relevanceScore: rankedRow.score,
-        rankOffset: startOffset + idx
+        rankOffset: startOffset + idx,
+        searchHighlights: highlightsById.get(id) ?? null,
       });
     }
 
@@ -5804,6 +5923,21 @@ export class ItemsService {
       });
 
     return ranked.map((entry) => ({ id: entry.id, score: entry.score }));
+  }
+
+  private async loadSearchHighlights(
+    orgId: string,
+    search: string,
+    ids: string[],
+  ): Promise<Map<string, ItemSearchHighlights>> {
+    if (!this.elasticsearch || ids.length === 0 || !search.trim()) {
+      return new Map();
+    }
+    try {
+      return await this.elasticsearch.getHighlights(orgId, search, ids);
+    } catch {
+      return new Map();
+    }
   }
 
   private async tryRerankCandidates(options: {

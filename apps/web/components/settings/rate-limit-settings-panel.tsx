@@ -21,8 +21,8 @@ import {
   useUpdateRateLimitSettingsMutation,
 } from "@/graphql/generated";
 import type { UpdateRateLimitSettingsMutationVariables } from "@/graphql/generated";
-import { captureClientError } from "@/lib/client-telemetry";
 import { buildAdminLogsHref } from "@/lib/admin-logs";
+import { captureClientError } from "@/lib/client-telemetry";
 
 interface RateLimitFieldGroupProps {
   title: string;

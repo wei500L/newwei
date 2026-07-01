@@ -74,10 +74,10 @@ export const TRANSLATE_RSS_ITEMS_MUTATION = gql`
   }
 `;
 
-export const RSS_TRANSLATION_TARGET_LANGUAGE_OPTIONS: Array<{
+export const RSS_TRANSLATION_TARGET_LANGUAGE_OPTIONS: {
   value: string;
   label: string;
-}> = [
+}[] = [
   { value: "zh-CN", label: "中文（简体）" },
   { value: "en", label: "English" }
 ];

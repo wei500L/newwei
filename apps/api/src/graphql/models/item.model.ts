@@ -238,6 +238,15 @@ export class ProcessedItemPreviewModelGraph {
 }
 
 @ObjectType()
+export class ItemSearchHighlightModel {
+  @Field()
+  field!: string;
+
+  @Field(() => [String])
+  snippets!: string[];
+}
+
+@ObjectType()
 export class ItemModel {
   @Field(() => ID)
   id!: string;
@@ -262,6 +271,12 @@ export class ItemModel {
     description: "Search relevance score (0-1) when rankingMode is RELEVANCE."
   })
   relevanceScore?: number | null;
+
+  @Field(() => [ItemSearchHighlightModel], {
+    nullable: true,
+    description: "Highlighted search snippets when Elasticsearch matched the item."
+  })
+  searchHighlights?: ItemSearchHighlightModel[] | null;
 
   @Field()
   createdAt!: Date;

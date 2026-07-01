@@ -7,6 +7,7 @@ import { TooManyRequestsException } from "../../common/exceptions/too-many-reque
 import { AuthService } from "./auth.service";
 
 const prismaMock = {
+  $transaction: jest.fn(),
   user: {
     findUnique: jest.fn(),
     findFirst: jest.fn(),
@@ -23,6 +24,9 @@ const prismaMock = {
     findUnique: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
+  },
+  globalRoleAssignment: {
+    findMany: jest.fn(),
   },
   auditLog: {
     create: jest.fn(),
@@ -104,11 +108,29 @@ const emailServiceMock = {
   buildVerificationCodeTextTemplate: jest.fn().mockReturnValue("code"),
 } as any;
 
+const platformAccessMock = {
+  getGlobalRoles: jest.fn().mockResolvedValue([]),
+} as any;
+
+const mfaServiceMock = {
+  getStatus: jest.fn().mockResolvedValue({
+    enabled: false,
+    recoveryCodesRemaining: 0,
+  }),
+  getLoginRequirement: jest.fn().mockResolvedValue("none"),
+  shouldRequireMfa: jest.fn().mockResolvedValue(false),
+  createLoginChallenge: jest.fn(),
+  createEnrollmentChallenge: jest.fn(),
+  consumeLoginChallenge: jest.fn(),
+  consumeEnrollmentChallenge: jest.fn(),
+} as any;
+
 describe("AuthService", () => {
   let service: AuthService;
 
   beforeEach(() => {
     jest.resetAllMocks();
+    prismaMock.$transaction = jest.fn().mockResolvedValue([]);
     const wrapStore = new Map<string, unknown>();
     cacheMock.wrap = jest.fn(
       async (
@@ -142,6 +164,13 @@ describe("AuthService", () => {
     });
     cacheMock.setIfAbsent = jest.fn().mockResolvedValue(true);
     cacheMock.incr = jest.fn().mockResolvedValue(1);
+    platformAccessMock.getGlobalRoles = jest.fn().mockResolvedValue([]);
+    mfaServiceMock.getStatus = jest.fn().mockResolvedValue({
+      enabled: false,
+      recoveryCodesRemaining: 0,
+    });
+    mfaServiceMock.getLoginRequirement = jest.fn().mockResolvedValue("none");
+    mfaServiceMock.shouldRequireMfa = jest.fn().mockResolvedValue(false);
     service = new AuthService(
       prismaMock,
       envMock,
@@ -155,6 +184,8 @@ describe("AuthService", () => {
       orgServiceMock,
       storageServiceMock,
       emailServiceMock,
+      platformAccessMock,
+      mfaServiceMock,
     );
   });
 
@@ -200,6 +231,54 @@ describe("AuthService", () => {
     expect(user.roleIds).toEqual(["role-1"]);
   });
 
+  it("returns an MFA enrollment challenge when policy applies to an unenrolled user", async () => {
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      firstName: "Test",
+      lastName: "User",
+      isActive: true,
+      memberships: [
+        {
+          orgId: "org-1",
+          org: { isActive: true },
+          roleId: "role-1",
+          role: {
+            permissions: [
+              {
+                permission: { name: "items.read" },
+              },
+            ],
+          },
+          roles: [],
+        },
+      ],
+    });
+    mfaServiceMock.getLoginRequirement = jest.fn().mockResolvedValue("enroll");
+    mfaServiceMock.createEnrollmentChallenge = jest.fn().mockResolvedValue({
+      challengeId: "challenge-1",
+      expiresAt: "2026-04-18T00:00:00.000Z",
+    });
+
+    const result = await service.beginTrustedLogin("user-1", "org-1");
+
+    expect(mfaServiceMock.createEnrollmentChallenge).toHaveBeenCalledWith({
+      userId: "user-1",
+      orgId: "org-1",
+      ipAddress: undefined,
+      userAgent: undefined,
+      action: "login",
+    });
+    expect(result).toMatchObject({
+      mfaEnrollmentRequired: true,
+      enrollmentChallengeId: "challenge-1",
+      user: {
+        id: "user-1",
+        mfaEnrollmentRequired: true,
+      },
+    });
+  });
+
   it("unions permissions across multiple roles in the same org", async () => {
     const password = await bcrypt.hash("password", 10);
     prismaMock.user.findUnique = jest.fn().mockResolvedValue({
@@ -223,9 +302,9 @@ describe("AuthService", () => {
               },
             },
             {
-              roleId: "role-billing",
+              roleId: "role-ops",
               role: {
-                permissions: [{ permission: { name: "billing.manage" } }],
+                permissions: [{ permission: { name: "settings.manage" } }],
               },
             },
           ],
@@ -238,9 +317,9 @@ describe("AuthService", () => {
       "password",
       "org-1",
     );
-    expect(user.roleIds).toEqual(["role-editor", "role-billing"]);
+    expect(user.roleIds).toEqual(["role-editor", "role-ops"]);
     expect(user.permissions).toEqual(
-      expect.arrayContaining(["items.read", "billing.manage"]),
+      expect.arrayContaining(["items.read", "settings.manage"]),
     );
   });
 
@@ -444,6 +523,38 @@ describe("AuthService", () => {
       roleIds: ["role-1"],
       permissions: ["items.read"],
       isActive: true,
+    });
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      emailVerified: null,
+      pendingEmail: null,
+      firstName: "Test",
+      lastName: "User",
+      avatarUrl: null,
+      lastLoginAt: null,
+      isActive: true,
+      memberships: [
+        {
+          orgId: "org-1",
+          isActive: true,
+          org: {
+            id: "org-1",
+            isActive: true,
+            subscription: null,
+          },
+          roleId: "role-1",
+          role: {
+            name: "admin",
+            permissions: [
+              {
+                permission: { name: "items.read" },
+              },
+            ],
+          },
+          roles: [],
+        },
+      ],
     });
     jest
       .spyOn(service as any, "signRefreshToken")
@@ -745,6 +856,34 @@ describe("AuthService", () => {
     await expect(
       service.validateUser("no-org@example.com", "password"),
     ).rejects.toThrow(UnauthorizedException);
+  });
+
+  it("preserves raw whitespace semantics when changing passwords", async () => {
+    const currentPassword = " old ";
+    const newPassword = "old  ";
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      passwordHash: await bcrypt.hash(currentPassword, 10),
+    });
+    prismaMock.user.update = jest.fn().mockResolvedValue({
+      id: "user-1",
+    });
+    prismaMock.refreshToken.updateMany = jest.fn().mockResolvedValue({
+      count: 1,
+    });
+    prismaMock.membership.findMany = jest.fn().mockResolvedValue([]);
+
+    await service.changePassword(
+      "user-1",
+      "org-1",
+      currentPassword,
+      newPassword,
+    );
+
+    const passwordHash =
+      prismaMock.user.update.mock.calls[0][0].data.passwordHash;
+    expect(await bcrypt.compare(newPassword, passwordHash)).toBe(true);
+    expect(await bcrypt.compare(newPassword.trim(), passwordHash)).toBe(false);
   });
 
   it("treats missing users as unauthorized when loading profiles", async () => {

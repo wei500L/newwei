@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { EconomicDataValueType } from '@prisma/client';
 
 import { FinancialDataProviderSettingsService } from '../../system-settings/financial-data-provider-settings.service';
-
 import type {
   FinancialDataItemConfig,
   FinnhubFinancialDataProviderConfig,

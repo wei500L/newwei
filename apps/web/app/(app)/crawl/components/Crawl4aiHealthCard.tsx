@@ -24,12 +24,12 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 
+import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 import {
   getCrawl4aiSsrfProxyStatus,
   parseCrawl4aiSsrfProxyRuntimeState,
   type Crawl4aiSsrfProxyRuntimeState,
 } from "@/lib/crawl4ai-ssrf-proxy";
-import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 
 type HealthStatus = "loading" | "healthy" | "unreachable";
 
@@ -325,10 +325,7 @@ export function Crawl4aiHealthCard({
       return (
         <Space direction="vertical" size={2}>
           <Typography.Text type="secondary">
-            {t("crawl.monitor.troubleshoot.notFound", {
-              defaultValue:
-                "Crawl4AI monitoring endpoints are missing. This usually means the crawl4ai image tag is wrong/too old (Docker Hub :latest is a common culprit). Prefer the floating Docker Hub tag :0 or a recent release tag.",
-            })}
+            {t("crawl.monitor.troubleshoot.notFound")}
           </Typography.Text>
           <Typography.Text code>
             CRAWL4AI_IMAGE=unclecode/crawl4ai:0
@@ -344,10 +341,7 @@ export function Crawl4aiHealthCard({
       return (
         <Space direction="vertical" size={2}>
           <Typography.Text type="secondary">
-            {t("crawl.monitor.troubleshoot.baseUrlMissing", {
-              defaultValue:
-                "CRAWL4AI_BASE_URL is not configured for the web runtime. Set it and restart the web server.",
-            })}
+            {t("crawl.monitor.troubleshoot.baseUrlMissing")}
           </Typography.Text>
           <Typography.Text code>
             CRAWL4AI_BASE_URL=http://crawl4ai:11235
@@ -363,10 +357,7 @@ export function Crawl4aiHealthCard({
       return (
         <Space direction="vertical" size={2}>
           <Typography.Text type="secondary">
-            {t("crawl.monitor.troubleshoot.upstreamUnavailable", {
-              defaultValue:
-                "Crawl4AI is not reachable from the web server. Ensure the extras profile is running, then check the crawl4ai container logs.",
-            })}
+            {t("crawl.monitor.troubleshoot.upstreamUnavailable")}
           </Typography.Text>
           <Typography.Text code>
             pnpm docker:up:extras -d crawl4ai
@@ -379,10 +370,7 @@ export function Crawl4aiHealthCard({
     if (errorInfo.kind === "timeout") {
       return (
         <Typography.Text type="secondary">
-          {t("crawl.monitor.troubleshoot.timeout", {
-            defaultValue:
-              "Monitor request timed out. Crawl4AI may be overloaded or starting up. Check container health and try again.",
-          })}
+          {t("crawl.monitor.troubleshoot.timeout")}
         </Typography.Text>
       );
     }
@@ -390,10 +378,7 @@ export function Crawl4aiHealthCard({
     if (errorInfo.kind === "unauthorized" || errorInfo.kind === "forbidden") {
       return (
         <Typography.Text type="secondary">
-          {t("crawl.monitor.troubleshoot.auth", {
-            defaultValue:
-              "Access denied. Make sure you are logged in and have crawl.read/crawl.write permissions.",
-          })}
+          {t("crawl.monitor.troubleshoot.auth")}
         </Typography.Text>
       );
     }
@@ -501,30 +486,26 @@ export function Crawl4aiHealthCard({
   const statusTag =
     status === "healthy" ? (
       <Tag color="green">
-        {t("crawl.monitor.quickStatus.healthy", { defaultValue: "Healthy" })}
+        {t("crawl.monitor.quickStatus.healthy")}
       </Tag>
     ) : status === "unreachable" ? (
       <Tag color="red">
-        {t("crawl.monitor.quickStatus.unreachable", {
-          defaultValue: "Unreachable",
-        })}
+        {t("crawl.monitor.quickStatus.unreachable")}
       </Tag>
     ) : (
       <Tag color="blue">
-        {t("common.loading", { defaultValue: "Loading..." })}
+        {t("common.loading")}
       </Tag>
     );
 
   const headedTag =
     runtime?.headedOk === true ? (
       <Tag color="green">
-        {t("crawl.monitor.runtime.headedOk", { defaultValue: "Headed OK" })}
+        {t("crawl.monitor.runtime.headedOk")}
       </Tag>
     ) : runtime?.headedOk === false ? (
       <Tag color="red">
-        {t("crawl.monitor.runtime.headedFailed", {
-          defaultValue: "Headed failed",
-        })}
+        {t("crawl.monitor.runtime.headedFailed")}
       </Tag>
     ) : null;
 
@@ -532,27 +513,20 @@ export function Crawl4aiHealthCard({
   const ssrfProxyTag =
     ssrfProxyStatus === "healthy" ? (
       <Tag color="green">
-        {t("crawl.monitor.runtime.ssrfProxyOk", {
-          defaultValue: "SSRF proxy OK",
-        })}
+        {t("crawl.monitor.runtime.ssrfProxyOk")}
       </Tag>
     ) : ssrfProxyStatus === "failing" ? (
       <Tag color="red">
-        {t("crawl.monitor.runtime.ssrfProxyFailed", {
-          defaultValue: "SSRF proxy failed",
-        })}
+        {t("crawl.monitor.runtime.ssrfProxyFailed")}
       </Tag>
     ) : ssrfProxyStatus === "disabled" ? (
       <Tag color="orange">
-        {t("crawl.monitor.runtime.ssrfProxyDisabled", {
-          defaultValue: "SSRF proxy OFF",
-        })}
+        {t("crawl.monitor.runtime.ssrfProxyDisabled")}
       </Tag>
     ) : null;
 
   const updatedText = snapshot?.receivedAt
     ? t("crawl.monitor.quickStatus.updatedAt", {
-        defaultValue: "Updated {{time}}",
         time: dayjs(snapshot.receivedAt).format("HH:mm:ss"),
       })
     : null;
@@ -572,9 +546,7 @@ export function Crawl4aiHealthCard({
       title={
         <Space size={8}>
           <Typography.Text>
-            {t("crawl.monitor.quickStatus.title", {
-              defaultValue: "Crawl4AI status",
-            })}
+            {t("crawl.monitor.quickStatus.title")}
           </Typography.Text>
           {statusTag}
           {headedTag}
@@ -592,7 +564,7 @@ export function Crawl4aiHealthCard({
             onClick={load}
             loading={refreshing}
           >
-            {t("common.refresh", { defaultValue: "Refresh" })}
+            {t("common.refresh")}
           </Button>
           {onOpenMonitor ? (
             <Button
@@ -600,7 +572,7 @@ export function Crawl4aiHealthCard({
               icon={<DashboardOutlined />}
               onClick={onOpenMonitor}
             >
-              {t("crawl.monitor.open", { defaultValue: "Monitor" })}
+              {t("crawl.monitor.open")}
             </Button>
           ) : null}
         </Space>
@@ -611,9 +583,7 @@ export function Crawl4aiHealthCard({
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          message={t("crawl.monitor.quickStatus.unreachable", {
-            defaultValue: "Unreachable",
-          })}
+          message={t("crawl.monitor.quickStatus.unreachable")}
           description={
             <Space direction="vertical" size={6} style={{ width: "100%" }}>
               <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
@@ -644,9 +614,7 @@ export function Crawl4aiHealthCard({
         </Col>
         <Col xs={12} sm={8} md={4}>
           <Statistic
-            title={t("crawl.monitor.overview.totalBrowsers", {
-              defaultValue: "Total",
-            })}
+            title={t("crawl.monitor.overview.totalBrowsers")}
             value={poolTotal ?? "-"}
           />
           {poolBreakdown ? (
@@ -655,9 +623,7 @@ export function Crawl4aiHealthCard({
         </Col>
         <Col xs={12} sm={8} md={4}>
           <Statistic
-            title={t("crawl.monitor.overview.successRate", {
-              defaultValue: "Success rate",
-            })}
+            title={t("crawl.monitor.overview.successRate")}
             value={snapshot?.successRatePercent ?? "-"}
             suffix={
               typeof snapshot?.successRatePercent === "number" ? "%" : undefined
@@ -666,9 +632,7 @@ export function Crawl4aiHealthCard({
         </Col>
         <Col xs={12} sm={8} md={4}>
           <Statistic
-            title={t("crawl.monitor.overview.avgLatency", {
-              defaultValue: "Avg latency",
-            })}
+            title={t("crawl.monitor.overview.avgLatency")}
             value={snapshot?.avgLatencyMs ?? "-"}
             suffix={
               typeof snapshot?.avgLatencyMs === "number" ? "ms" : undefined
@@ -677,9 +641,7 @@ export function Crawl4aiHealthCard({
         </Col>
         <Col xs={12} sm={8} md={4}>
           <Statistic
-            title={t("crawl.monitor.overview.totalRequests", {
-              defaultValue: "Total requests",
-            })}
+            title={t("crawl.monitor.overview.totalRequests")}
             value={snapshot?.totalRequests ?? "-"}
           />
         </Col>
@@ -689,8 +651,6 @@ export function Crawl4aiHealthCard({
         <Space direction="vertical" size={4} style={{ marginTop: 12 }}>
           <Typography.Text type="secondary">
             {t("crawl.monitor.runtime.summary", {
-              defaultValue:
-                "Runtime: headless={{headless}} · headed={{headed}} · SSRF proxy={{proxy}}",
               headless: runtime.headlessOk ? "OK" : "FAILED",
               headed: runtime.headedOk ? "OK" : "FAILED",
               proxy:
@@ -710,16 +670,11 @@ export function Crawl4aiHealthCard({
             <Alert
               type="warning"
               showIcon
-              message={t("crawl.monitor.runtime.ssrfProxyRiskTitle", {
-                defaultValue: "Worker-side SSRF proxy is disabled",
-              })}
+              message={t("crawl.monitor.runtime.ssrfProxyRiskTitle")}
               description={
                 <Space direction="vertical" size={2}>
                   <Typography.Text>
-                    {t("crawl.monitor.runtime.ssrfProxyRiskBody", {
-                      defaultValue:
-                        "CRAWL4AI_SSRF_PROXY_URL is not configured. API-side URL validation still runs, but the worker no longer pins/blocks DNS resolution at fetch time, so DNS rebinding protection is incomplete.",
-                    })}
+                    {t("crawl.monitor.runtime.ssrfProxyRiskBody")}
                   </Typography.Text>
                   <Typography.Text code>
                     CRAWL4AI_SSRF_PROXY_URL=http://127.0.0.1:18080
@@ -731,9 +686,7 @@ export function Crawl4aiHealthCard({
             <Alert
               type="warning"
               showIcon
-              message={t("crawl.monitor.runtime.ssrfProxyFailedTitle", {
-                defaultValue: "Worker-side SSRF proxy is configured but unreachable",
-              })}
+              message={t("crawl.monitor.runtime.ssrfProxyFailedTitle")}
               description={
                 <Space direction="vertical" size={2}>
                   {runtime.ssrfProxy.error ? (
@@ -747,10 +700,7 @@ export function Crawl4aiHealthCard({
                     </Typography.Text>
                   ) : null}
                   <Typography.Text type="secondary">
-                    {t("crawl.monitor.runtime.ssrfProxyFailedBody", {
-                      defaultValue:
-                        "Crawl4AI accepted the proxy configuration, but the browser could not use it. Verify the local proxy process is started inside the crawl4ai container and recreate the service if needed.",
-                    })}
+                    {t("crawl.monitor.runtime.ssrfProxyFailedBody")}
                   </Typography.Text>
                 </Space>
               }
@@ -762,16 +712,10 @@ export function Crawl4aiHealthCard({
               showIcon
               message={
                 runtimeHeadedIssue === "display"
-                  ? t("crawl.runtimeGuide.displayIssueTitle", {
-                      defaultValue: "Detected DISPLAY/Xvfb dependency issue",
-                    })
+                  ? t("crawl.runtimeGuide.displayIssueTitle")
                   : runtimeHeadedIssue === "timeout"
-                    ? t("crawl.runtimeGuide.timeoutIssueTitle", {
-                        defaultValue: "Headed runtime timed out",
-                      })
-                    : t("crawl.monitor.runtime.headedFailed", {
-                        defaultValue: "Headed failed",
-                      })
+                    ? t("crawl.runtimeGuide.timeoutIssueTitle")
+                    : t("crawl.monitor.runtime.headedFailed")
               }
               description={
                 <Space direction="vertical" size={2}>
@@ -780,19 +724,10 @@ export function Crawl4aiHealthCard({
                   </Typography.Text>
                   <Typography.Text type="secondary">
                     {runtimeHeadedIssue === "display"
-                      ? t("crawl.runtimeGuide.displayIssueHint", {
-                          defaultValue:
-                            "Headed runtime failed because DISPLAY/Xvfb is unavailable. Enable Xvfb in crawl4ai or switch this task to Headless.",
-                        })
+                      ? t("crawl.runtimeGuide.displayIssueHint")
                       : runtimeHeadedIssue === "timeout"
-                        ? t("crawl.runtimeGuide.timeoutIssueHint", {
-                            defaultValue:
-                              "Display may be ready, but browser startup/navigation timed out. Check crawl4ai load and timeout settings.",
-                          })
-                        : t("crawl.runtimeGuide.noAutoBootstrap", {
-                            defaultValue:
-                              "This console only provides guidance and does not auto-start Xvfb for you.",
-                          })}
+                        ? t("crawl.runtimeGuide.timeoutIssueHint")
+                        : t("crawl.runtimeGuide.noAutoBootstrap")}
                   </Typography.Text>
                 </Space>
               }

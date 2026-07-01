@@ -61,4 +61,22 @@ describe("admin settings shared panel extraction", () => {
     expect(accessComponentSource).not.toContain("@/app/(app)");
     expect(storageComponentSource).not.toContain("@/app/(app)");
   });
+
+  it("surfaces separate preflight and post-clean quality thresholds", () => {
+    const panelSource = read(
+      "components/settings/news-extraction-settings-panel.tsx",
+    );
+    const graphqlSource = read("graphql/settings.graphql");
+
+    expect(panelSource).toContain('name={["preflightGate", "minQualityScore"]}');
+    expect(panelSource).toContain(
+      "settings.newsExtraction.fields.minPreflightQualityScore",
+    );
+    expect(panelSource).toContain(
+      "settings.newsExtraction.fields.minCleanedQualityScore",
+    );
+    expect(graphqlSource).toMatch(
+      /preflightGate\s*\{[\s\S]*minWordCount[\s\S]*minQualityScore[\s\S]*rejectBotChallenge/,
+    );
+  });
 });

@@ -293,19 +293,19 @@ export class PipelineQualityService {
       ? (processedAggResult[0] ?? {})
       : {};
     const statusAgg = Array.isArray(processedAgg.statusAgg)
-      ? (processedAgg.statusAgg as Array<{ _id?: unknown; count?: unknown }>)
+      ? (processedAgg.statusAgg as { _id?: unknown; count?: unknown }[])
       : [];
     const latencyAgg = Array.isArray(processedAgg.latencyAgg)
-      ? (processedAgg.latencyAgg as Array<{ avgLatencyMs?: number }>)
+      ? (processedAgg.latencyAgg as { avgLatencyMs?: number }[])
       : [];
     const llmAgg = Array.isArray(processedAgg.llmAgg)
-      ? (processedAgg.llmAgg as Array<{
+      ? (processedAgg.llmAgg as {
           _id?: unknown;
           count?: unknown;
           avgLatencyMs?: number;
           avgCostUsd?: number;
           avgTotalTokens?: number;
-        }>)
+        }[])
       : [];
 
     const totals = {

@@ -223,7 +223,7 @@ export function DrilldownChart({
         <Alert
           type="error"
           showIcon
-          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+          message={t("dashboard.dataAbnormal")}
           description={error?.message}
           action={
             <Button
@@ -234,9 +234,7 @@ export function DrilldownChart({
                 void refreshData();
               }}
             >
-              {t("dashboard.actions.retryFetch", {
-                defaultValue: "Retry fetch"
-              })}
+              {t("dashboard.actions.retryFetch")}
             </Button>
           }
           style={{ marginBottom: 12 }}
@@ -245,7 +243,7 @@ export function DrilldownChart({
       {!isLoading && points.length === 0 ? (
         <Alert
           type="info"
-          message={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+          message={t("dashboard.dataEmpty")}
           showIcon
           style={{ marginBottom: 12 }}
         />

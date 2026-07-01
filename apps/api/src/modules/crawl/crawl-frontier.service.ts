@@ -10,19 +10,19 @@ import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
 
 import {
+  CrawlFrontierLlmService,
+  type FrontierLlmCandidate,
+} from "./crawl-frontier-llm.service";
+import {
   classifyFrontierFailureKind,
   computeFrontierPageTypeBudgets,
   estimateFreshnessScore,
   inferFrontierPageType,
-  isUtilityFrontierLinkText,
   normalizeCrawlSiteProfileConfig,
-  prioritizeFrontierCandidates,
   resolveEffectiveLlmAssistConfig,
   resolveFreshnessBucket,
   resolveLocaleScopeLanguage,
-  resolveNodeQueueClass,
   scoreFrontierCandidate,
-  shouldRejectFrontierUrl,
   toRegistrableDomain,
 } from "./crawl-frontier.utils";
 import {
@@ -45,10 +45,12 @@ import {
 } from "./crawl-strategy-root-executor.service";
 import { CrawlStrategyRunRecorderService } from "./crawl-strategy-run-recorder.service";
 import { CrawlStrategyWorkflowService } from "./crawl-strategy-workflow.service";
-import {
-  CrawlFrontierLlmService,
-  type FrontierLlmCandidate,
-} from "./crawl-frontier-llm.service";
+import { CrawlStrategyWorkflowRunKind } from "./crawl-strategy.types";
+import type {
+  CrawlStrategyParameterSource,
+  CrawlStrategyWorkflowDefinition,
+  CrawlStrategyWorkflowOrigin,
+} from "./crawl-strategy.types";
 import type {
   CrawlBrowserHeader,
   CrawlDeepCrawlComponent,
@@ -71,17 +73,14 @@ import {
   type Crawl4aiArticle,
   type Crawl4aiResponse,
 } from "./crawl4ai.client";
-import { CrawlStrategyWorkflowRunKind } from "./crawl-strategy.types";
-import type {
-  CrawlStrategyParameterSource,
-  CrawlStrategyWorkflowDefinition,
-  CrawlStrategyWorkflowOrigin,
-} from "./crawl-strategy.types";
 import {
   CreateCrawlFrontierRunDto,
   ListCrawlFrontierRunDto,
 } from "./dto/crawl-frontier.dto";
-import { buildCanonicalUrlFingerprint, resolveQueryParamAllowlist } from "./url-fingerprint";
+import {
+  buildCanonicalUrlFingerprint,
+  resolveQueryParamAllowlist,
+} from "./url-fingerprint";
 
 interface FrontierLifecycleNode {
   id: string;
@@ -144,7 +143,7 @@ function toFiniteNumber(value: unknown): number | null {
 }
 
 function mergeMetadataRecords(
-  ...records: Array<Record<string, unknown> | null | undefined>
+  ...records: (Record<string, unknown> | null | undefined)[]
 ): Record<string, unknown> | undefined {
   const merged: Record<string, unknown> = {};
   for (const record of records) {
@@ -176,7 +175,7 @@ function toNumericRecord(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-function uniqueStringList(...lists: Array<string[] | undefined>): string[] | undefined {
+function uniqueStringList(...lists: (string[] | undefined)[]): string[] | undefined {
   const merged = Array.from(
     new Set(
       lists.flatMap((list) =>
@@ -228,7 +227,7 @@ function normalizeHeaderName(value: string): string {
 }
 
 function mergeBrowserHeaders(
-  ...headerSets: Array<CrawlBrowserHeader[] | undefined>
+  ...headerSets: (CrawlBrowserHeader[] | undefined)[]
 ): CrawlBrowserHeader[] | undefined {
   const merged = new Map<string, CrawlBrowserHeader>();
   for (const headerSet of headerSets) {
@@ -1482,6 +1481,7 @@ export class CrawlFrontierService {
     const persisted = await this.persistFrontierResponse({
       response,
       node: options.node,
+      profile: options.profile,
       runId: options.run.id,
       task: options.task,
       crawlOptions,
@@ -1645,6 +1645,7 @@ export class CrawlFrontierService {
     const persisted = await this.persistFrontierResponse({
       response,
       node: options.node,
+      profile: options.profile,
       runId: options.run.id,
       task: options.task,
       crawlOptions: baseOptions,
@@ -1712,22 +1713,22 @@ export class CrawlFrontierService {
     const shouldFallbackToLayered =
       options.run.executionMode === "hybrid" &&
       options.profile.config.nativeOptions?.fallbackToLayered !== false &&
-      (createdCount === 0 ||
-        (minAcceptedResults > 0 && createdCount < minAcceptedResults) ||
+      (acceptedCount === 0 ||
+        (minAcceptedResults > 0 && acceptedCount < minAcceptedResults) ||
         (minArticleResults > 0 && selectedPageTypeCounts.article < minArticleResults));
     if (shouldFallbackToLayered) {
       nativeWarningFlags.add("native_fallback_layered");
     }
-    if (createdCount === 0) {
+    if (acceptedCount === 0) {
       nativeWarningFlags.add("native_zero_accepted");
     }
 
-    const rootResults = response.results.filter(
-      (entry) =>
-        typeof entry.url === "string" &&
-        entry.url.trim().length > 0 &&
-        entry.url.trim() === options.node.url,
+    const rootResults = response.results.filter((entry) =>
+      this.isCanonicalUrlMatch(entry.url, options.node.url, options.profile.config),
     );
+    if (response.results.length > 0 && rootResults.length === 0) {
+      nativeWarningFlags.add("native_self_result_mismatch");
+    }
     const fallbackDiscoveryMetadata = shouldFallbackToLayered
       ? await this.discoverChildNodes({
           node: options.node,
@@ -1736,7 +1737,7 @@ export class CrawlFrontierService {
           maxDepth: options.run.maxDepth,
           maxPages: options.run.maxPages,
           profile: options.profile,
-          results: rootResults.length > 0 ? rootResults : response.results.slice(0, 1),
+          results: rootResults,
           maxDepthOverride: rootSeedPlan.topologyBudgetDepth,
           maxNewNodes: rootSeedPlan.topologyBudgetPages,
           metadataPatch: rootSeedPlan.topologyMetadataPatch,
@@ -1745,13 +1746,14 @@ export class CrawlFrontierService {
     await this.recordNativeFallbackExecution({
       workflowRunId: options.run.workflowRunId,
       node: options.node,
+      acceptedCount,
       createdCount,
       minAcceptedResults,
       minArticleResults,
       nativeAcceptedArticles: selectedPageTypeCounts.article,
       fallbackDiscoveryMetadata,
       triggerReason:
-        createdCount === 0
+        acceptedCount === 0
           ? "native_zero_accepted"
           : selectedPageTypeCounts.article < minArticleResults
             ? "native_article_below_threshold"
@@ -1804,7 +1806,8 @@ export class CrawlFrontierService {
       nativeSelectedPageTypeCounts: selectedPageTypeCounts,
       nativeRejectionCounts: rejectionCounts,
       nativeWarningFlags: Array.from(nativeWarningFlags),
-      nativeAcceptedResults: createdCount,
+      nativeAcceptedResults: acceptedCount,
+      nativeSelectedResults: createdCount,
       nativeAcceptedArticles: selectedPageTypeCounts.article,
       nativeFallbackActivated: shouldFallbackToLayered,
     };
@@ -2024,6 +2027,10 @@ export class CrawlFrontierService {
         Object.keys(cleanMarkdown).length > 0
           ? (cleanMarkdown as CrawlTaskOptions["cleanMarkdown"])
           : undefined,
+      additionalUrls: undefined,
+      multiUrlConfigs: undefined,
+      proxyUrl: undefined,
+      proxyConfig: undefined,
     };
   }
 
@@ -2272,9 +2279,9 @@ export class CrawlFrontierService {
       strategyResolvedFrom,
       strategyAutoResolved,
       filterChainSynthesized:
-        Boolean(filterChain) && !Boolean(nativeOptions.filterChain),
+        Boolean(filterChain) && !nativeOptions.filterChain,
       urlScorerSynthesized:
-        Boolean(urlScorer) && !Boolean(nativeOptions.urlScorer),
+        Boolean(urlScorer) && !nativeOptions.urlScorer,
     };
   }
 
@@ -2428,6 +2435,7 @@ export class CrawlFrontierService {
   private async persistFrontierResponse(options: {
     response: { runId?: string | null; results: Crawl4aiArticle[] };
     node: CrawlFrontierNodeRecord;
+    profile: CrawlSiteProfileRecord;
     runId: string;
     task: CrawlTask;
     crawlOptions: CrawlTaskOptions;
@@ -2473,9 +2481,13 @@ export class CrawlFrontierService {
       }
     }
     const selfResult =
-      resultBySourceUrl.get(options.node.url) ??
-      persistedResults[0] ??
-      null;
+      persistedResults.find((result) =>
+        this.isCanonicalUrlMatch(
+          result.sourceUrl,
+          options.node.url,
+          options.profile.config,
+        ),
+      ) ?? null;
     return {
       summary,
       selfResult,
@@ -2720,12 +2732,13 @@ export class CrawlFrontierService {
     crawlOptions: CrawlTaskOptions;
   }): Record<string, unknown> {
     const selfResponse =
-      options.response.results.find(
-        (entry) =>
-          typeof entry.url === "string" &&
-          entry.url.trim().length > 0 &&
-          entry.url.trim() === options.node.url,
-      ) ?? options.response.results[0];
+      options.response.results.find((entry) =>
+        this.isCanonicalUrlMatch(
+          entry.url,
+          options.node.url,
+          options.profile.config,
+        ),
+      ) ?? null;
     const statusCode =
       typeof selfResponse?.statusCode === "number"
         ? selfResponse.statusCode
@@ -2754,6 +2767,9 @@ export class CrawlFrontierService {
     }
     if (typeof statusCode === "number" && statusCode >= 400) {
       warningFlags.push(`http_${statusCode}`);
+    }
+    if (!selfResponse && options.response.results.length > 0) {
+      warningFlags.push("self_result_mismatch");
     }
     const freshnessScore = estimateFreshnessScore(options.node.url, options.profile.config);
     const crawlOptionsDiagnostics = this.buildCrawlOptionsDiagnostics(
@@ -2786,6 +2802,43 @@ export class CrawlFrontierService {
           : undefined,
       ...crawlOptionsDiagnostics,
     };
+  }
+
+  private resolveCanonicalUrlMatchKey(
+    value: string,
+    queryParamAllowlist?: unknown,
+  ): string | null {
+    const fingerprint = buildCanonicalUrlFingerprint(value, queryParamAllowlist);
+    return fingerprint?.fingerprint ?? fingerprint?.canonicalUrl ?? null;
+  }
+
+  private isCanonicalUrlMatch(
+    left: string | null | undefined,
+    right: string | null | undefined,
+    configOrMetadata?: unknown,
+  ): boolean {
+    const leftUrl = typeof left === "string" ? left.trim() : "";
+    const rightUrl = typeof right === "string" ? right.trim() : "";
+    if (!leftUrl || !rightUrl) {
+      return false;
+    }
+    const queryParamAllowlist = isPlainObject(configOrMetadata)
+      ? resolveQueryParamAllowlist(
+          (configOrMetadata as Record<string, unknown>).urlQueryParamAllowlist,
+        )
+      : undefined;
+    const leftKey = this.resolveCanonicalUrlMatchKey(
+      leftUrl,
+      queryParamAllowlist,
+    );
+    const rightKey = this.resolveCanonicalUrlMatchKey(
+      rightUrl,
+      queryParamAllowlist,
+    );
+    if (leftKey && rightKey) {
+      return leftKey === rightKey;
+    }
+    return leftUrl === rightUrl;
   }
 
   private buildCrawlOptionsDiagnostics(
@@ -3389,6 +3442,7 @@ export class CrawlFrontierService {
   private async recordNativeFallbackExecution(options: {
     workflowRunId?: string | null;
     node: Pick<CrawlFrontierNodeRecord, "id">;
+    acceptedCount: number;
     createdCount: number;
     minAcceptedResults: number;
     minArticleResults: number;
@@ -3525,9 +3579,7 @@ export class CrawlFrontierService {
         : undefined;
       if (metadata) {
         const nodeCandidateStats = toNumericRecord(metadata.candidateStats);
-        for (const key of Object.keys(candidateStats) as Array<
-          keyof typeof candidateStats
-        >) {
+        for (const key of Object.keys(candidateStats) as (keyof typeof candidateStats)[]) {
           candidateStats[key] += nodeCandidateStats?.[key] ?? 0;
         }
         const nodeRejectionCounts = toNumericRecord(metadata.rejectionCounts);
@@ -4538,7 +4590,7 @@ export class CrawlFrontierService {
     const missingFieldCounts: Record<string, number> = {};
     const errorCounts: Record<string, number> = {};
     const modelCounts: Record<string, number> = {};
-    let available = articles.length;
+    const available = articles.length;
     let attempted = 0;
     let applied = 0;
     let failed = 0;

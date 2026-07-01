@@ -1,8 +1,10 @@
+import * as cheerio from "cheerio"
+
+import type { NewsItem } from "../news-aggregator.types"
+
 import { myFetch } from "./fetch";
 import { defineSource, defineRSSSource } from "./source";
 
-import type { NewsItem } from "../news-aggregator.types"
-import * as cheerio from "cheerio"
 
 const hot = defineSource(async () => {
   const baseUrl = "https://www.chongbuluo.com/"

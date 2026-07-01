@@ -1,20 +1,31 @@
 import {
   computeEconomicSeriesInsights,
-  type EconomicDashboardRefreshPreset as EconomicDashboardRefreshPresetValue
+  type EconomicDashboardRefreshPreset as EconomicDashboardRefreshPresetValue,
 } from "@modular/utils";
 import { ForbiddenException, UseGuards } from "@nestjs/common";
-import { Args, Context, Mutation, Query, Resolver } from "@nestjs/graphql";
+import {
+  Args,
+  Context,
+  Info,
+  Mutation,
+  Query,
+  Resolver,
+} from "@nestjs/graphql";
 import { EconomicDataFrequency, EconomicDataValueType } from "@prisma/client";
 
-import { resolveRequestIp } from "../../common/request-ip";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
+import { resolveRequestIp } from "../../common/request-ip";
 import { AkshareService } from "../../modules/akshare/akshare.service";
+import { PaginatedResult } from "../../modules/akshare/akshare.types";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { ActionRateLimitService } from "../../modules/cache/action-rate-limit.service";
-import { PaginatedResult } from "../../modules/akshare/akshare.types";
 import { HasPermission } from "../decorators/has-permission.decorator";
-import { DateRangeInput, PaginationInput, TriggerDataFetchInput } from "../dto/economic-data.input";
+import {
+  DateRangeInput,
+  PaginationInput,
+  TriggerDataFetchInput,
+} from "../dto/economic-data.input";
 import type { GqlRequest } from "../graphql.types";
 import { EconomicDataWithInsightsModel } from "../models/economic-data-with-insights.model";
 import {
@@ -23,22 +34,25 @@ import {
   EconomicDataPointModel,
   EconomicDataRefreshPresetStatusModel,
   PaginatedEconomicDataPointsModel,
-  TimeGranularity
+  TimeGranularity,
 } from "../models/economic-data.model";
 import {
   EconomicInsightClassification,
   EconomicInsightDirection,
-  EconomicSeriesInsightModel
+  EconomicSeriesInsightModel,
 } from "../models/economic-insights.model";
+import {
+  type CacheableResolveInfo,
+  setPrivateResponseCacheHint,
+} from "../response-cache-hints";
 import { parseMetadata } from "../schemas/economic-data.schema";
-
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
 export class EconomicDataResolver {
   constructor(
     private readonly akshareService: AkshareService,
-    private readonly actionRateLimit: ActionRateLimitService
+    private readonly actionRateLimit: ActionRateLimitService,
   ) {}
 
   private requireUser(req: GqlRequest): AuthenticatedUser {
@@ -49,7 +63,10 @@ export class EconomicDataResolver {
     return user;
   }
 
-  private resolveDefaultGranularityForRange(start: Date, end: Date): TimeGranularity {
+  private resolveDefaultGranularityForRange(
+    start: Date,
+    end: Date,
+  ): TimeGranularity {
     const diffMs = Math.max(0, end.getTime() - start.getTime());
     const minuteMs = 60 * 1000;
     const hourMs = 60 * minuteMs;
@@ -65,7 +82,9 @@ export class EconomicDataResolver {
     return TimeGranularity.day;
   }
 
-  private parseGranularity(raw: string | null | undefined): TimeGranularity | null {
+  private parseGranularity(
+    raw: string | null | undefined,
+  ): TimeGranularity | null {
     switch (raw) {
       case "realtime":
         return TimeGranularity.realtime;
@@ -111,12 +130,15 @@ export class EconomicDataResolver {
     }
   }
 
-  private coarsestTimeGranularity(a: TimeGranularity, b: TimeGranularity): TimeGranularity {
+  private coarsestTimeGranularity(
+    a: TimeGranularity,
+    b: TimeGranularity,
+  ): TimeGranularity {
     return this.timeGranularityRank(a) >= this.timeGranularityRank(b) ? a : b;
   }
 
   private defaultFrequencyToTimeGranularity(
-    frequency: EconomicDataFrequency | null | undefined
+    frequency: EconomicDataFrequency | null | undefined,
   ): TimeGranularity | null {
     switch (frequency) {
       case EconomicDataFrequency.realtime:
@@ -135,9 +157,11 @@ export class EconomicDataResolver {
 
   private resolveEffectiveGranularity(
     requested: TimeGranularity | null | undefined,
-    defaultFrequency: EconomicDataFrequency | null | undefined
+    defaultFrequency: EconomicDataFrequency | null | undefined,
   ): TimeGranularity {
-    const base = this.defaultFrequencyToTimeGranularity(defaultFrequency) ?? TimeGranularity.day;
+    const base =
+      this.defaultFrequencyToTimeGranularity(defaultFrequency) ??
+      TimeGranularity.day;
     return requested ?? base;
   }
 
@@ -159,7 +183,7 @@ export class EconomicDataResolver {
       displayName: item.displayName ?? item.slug,
       groupLabel: item.groupLabel ?? undefined,
       defaultUnit: item.defaultUnit ?? null,
-      metadata: parseMetadata(item.metadata)
+      metadata: parseMetadata(item.metadata),
     };
   }
 
@@ -168,14 +192,20 @@ export class EconomicDataResolver {
   async getEconomicData(
     @Args("category") category: string,
     @Args("timeRange") timeRange: DateRangeInput,
-    @Args("granularity", { type: () => TimeGranularity, nullable: true }) granularity?: TimeGranularity
+    @Args("granularity", { type: () => TimeGranularity, nullable: true })
+    granularity?: TimeGranularity,
+    @Info() info?: CacheableResolveInfo,
   ): Promise<EconomicDataPointModel[]> {
+    setPrivateResponseCacheHint(info);
     const start = new Date(timeRange.start);
     const end = new Date(timeRange.end);
-    const resolvedGranularity = granularity ?? this.resolveDefaultGranularityForRange(start, end);
+    const resolvedGranularity =
+      granularity ?? this.resolveDefaultGranularityForRange(start, end);
     const baseGranularity = granularity
       ? null
-      : this.parseGranularity(await this.akshareService.getCategoryBaseGranularity(category));
+      : this.parseGranularity(
+          await this.akshareService.getCategoryBaseGranularity(category),
+        );
     const appliedGranularity = baseGranularity
       ? this.coarsestTimeGranularity(resolvedGranularity, baseGranularity)
       : resolvedGranularity;
@@ -188,9 +218,14 @@ export class EconomicDataResolver {
           end,
           appliedGranularity,
           undefined,
-          { skipGranularityValidation: true }
+          { skipGranularityValidation: true },
         )
-      : await this.akshareService.getDataByCategory(category, start, end, appliedGranularity);
+      : await this.akshareService.getDataByCategory(
+          category,
+          start,
+          end,
+          appliedGranularity,
+        );
     // Handle both legacy array return and paginated result
     const dataPoints = Array.isArray(points) ? points : points.data;
     return dataPoints.map((point) => ({
@@ -200,7 +235,7 @@ export class EconomicDataResolver {
       unit: point.unit,
       sourceField: point.sourceField,
       dataType: point.dataType,
-      item: this.mapItemToModel(point.item)
+      item: this.mapItemToModel(point.item),
     }));
   }
 
@@ -209,14 +244,20 @@ export class EconomicDataResolver {
   async getEconomicDataWithInsights(
     @Args("category") category: string,
     @Args("timeRange") timeRange: DateRangeInput,
-    @Args("granularity", { type: () => TimeGranularity, nullable: true }) granularity?: TimeGranularity
+    @Args("granularity", { type: () => TimeGranularity, nullable: true })
+    granularity?: TimeGranularity,
+    @Info() info?: CacheableResolveInfo,
   ): Promise<EconomicDataWithInsightsModel> {
+    setPrivateResponseCacheHint(info);
     const start = new Date(timeRange.start);
     const end = new Date(timeRange.end);
-    const resolvedGranularity = granularity ?? this.resolveDefaultGranularityForRange(start, end);
+    const resolvedGranularity =
+      granularity ?? this.resolveDefaultGranularityForRange(start, end);
     const baseGranularity = granularity
       ? null
-      : this.parseGranularity(await this.akshareService.getCategoryBaseGranularity(category));
+      : this.parseGranularity(
+          await this.akshareService.getCategoryBaseGranularity(category),
+        );
     const appliedGranularity = baseGranularity
       ? this.coarsestTimeGranularity(resolvedGranularity, baseGranularity)
       : resolvedGranularity;
@@ -228,35 +269,41 @@ export class EconomicDataResolver {
           end,
           appliedGranularity,
           undefined,
-          { skipGranularityValidation: true }
+          { skipGranularityValidation: true },
         )
-      : await this.akshareService.getDataByCategory(category, start, end, appliedGranularity);
+      : await this.akshareService.getDataByCategory(
+          category,
+          start,
+          end,
+          appliedGranularity,
+        );
     const dataPoints = Array.isArray(points) ? points : points.data;
 
     const mappedPoints = dataPoints.map((point) => ({
       timestamp: point.recordedAt,
       effectiveGranularity: this.resolveEffectiveGranularity(
         appliedGranularity,
-        point.item?.defaultFrequency
+        point.item?.defaultFrequency,
       ),
       value: Number(point.value),
       unit: point.unit,
       sourceField: point.sourceField,
       dataType: point.dataType,
-      item: this.mapItemToModel(point.item)
+      item: this.mapItemToModel(point.item),
     }));
 
     const insights = computeEconomicSeriesInsights(
       dataPoints.map((point) => ({
         recordedAt: point.recordedAt,
-        value: typeof point.value === "number" ? point.value : Number(point.value),
+        value:
+          typeof point.value === "number" ? point.value : Number(point.value),
         unit: point.unit,
         sourceField: point.sourceField,
         item: {
           slug: point.item.slug,
-          defaultUnit: point.item.defaultUnit
-        }
-      }))
+          defaultUnit: point.item.defaultUnit,
+        },
+      })),
     ).map((insight) => ({
       itemSlug: insight.itemSlug,
       seriesKey: insight.seriesKey,
@@ -272,12 +319,12 @@ export class EconomicDataResolver {
       zScore: insight.zScore,
       direction: insight.direction as EconomicInsightDirection,
       classification: insight.classification as EconomicInsightClassification,
-      message: insight.message
+      message: insight.message,
     }));
 
     return {
       points: mappedPoints,
-      insights
+      insights,
     };
   }
 
@@ -286,24 +333,31 @@ export class EconomicDataResolver {
   async getEconomicDataInsights(
     @Args("category") category: string,
     @Args("timeRange") timeRange: DateRangeInput,
-    @Args("granularity", { type: () => TimeGranularity, nullable: true }) granularity?: TimeGranularity
+    @Args("granularity", { type: () => TimeGranularity, nullable: true })
+    granularity?: TimeGranularity,
   ): Promise<EconomicSeriesInsightModel[]> {
     const start = new Date(timeRange.start);
     const end = new Date(timeRange.end);
-    const points = await this.akshareService.getDataByCategory(category, start, end, granularity);
+    const points = await this.akshareService.getDataByCategory(
+      category,
+      start,
+      end,
+      granularity,
+    );
     const dataPoints = Array.isArray(points) ? points : points.data;
 
     const insights = computeEconomicSeriesInsights(
       dataPoints.map((point) => ({
         recordedAt: point.recordedAt,
-        value: typeof point.value === "number" ? point.value : Number(point.value),
+        value:
+          typeof point.value === "number" ? point.value : Number(point.value),
         unit: point.unit,
         sourceField: point.sourceField,
         item: {
           slug: point.item.slug,
-          defaultUnit: point.item.defaultUnit
-        }
-      }))
+          defaultUnit: point.item.defaultUnit,
+        },
+      })),
     );
 
     return insights.map((insight) => ({
@@ -321,7 +375,7 @@ export class EconomicDataResolver {
       zScore: insight.zScore,
       direction: insight.direction as EconomicInsightDirection,
       classification: insight.classification as EconomicInsightClassification,
-      message: insight.message
+      message: insight.message,
     }));
   }
 
@@ -330,18 +384,20 @@ export class EconomicDataResolver {
   async getEconomicDataPaginated(
     @Args("category") category: string,
     @Args("timeRange") timeRange: DateRangeInput,
-    @Args("granularity", { type: () => TimeGranularity, nullable: true }) granularity?: TimeGranularity,
-    @Args("pagination", { type: () => PaginationInput, nullable: true }) pagination?: PaginationInput
+    @Args("granularity", { type: () => TimeGranularity, nullable: true })
+    granularity?: TimeGranularity,
+    @Args("pagination", { type: () => PaginationInput, nullable: true })
+    pagination?: PaginationInput,
   ): Promise<PaginatedEconomicDataPointsModel> {
     const start = new Date(timeRange.start);
     const end = new Date(timeRange.end);
-    const result = await this.akshareService.getDataByCategory(
+    const result = (await this.akshareService.getDataByCategory(
       category,
       start,
       end,
       granularity,
-      pagination ?? { limit: 100 }
-    ) as PaginatedResult<{
+      pagination ?? { limit: 100 },
+    )) as PaginatedResult<{
       recordedAt: Date;
       value: { toNumber(): number } | number;
       unit: string | null;
@@ -359,12 +415,16 @@ export class EconomicDataResolver {
 
     const dataPoints = result.data.map((point) => ({
       timestamp: point.recordedAt,
-      effectiveGranularity: this.resolveEffectiveGranularity(granularity, point.item?.defaultFrequency),
-      value: typeof point.value === "number" ? point.value : Number(point.value),
+      effectiveGranularity: this.resolveEffectiveGranularity(
+        granularity,
+        point.item?.defaultFrequency,
+      ),
+      value:
+        typeof point.value === "number" ? point.value : Number(point.value),
       unit: point.unit,
       sourceField: point.sourceField,
       dataType: point.dataType,
-      item: this.mapItemToModel(point.item)
+      item: this.mapItemToModel(point.item),
     }));
 
     return {
@@ -372,8 +432,8 @@ export class EconomicDataResolver {
       pagination: {
         hasMore: result.pagination.hasMore,
         nextCursor: result.pagination.nextCursor,
-        totalCount: result.pagination.totalCount
-      }
+        totalCount: result.pagination.totalCount,
+      },
     };
   }
 
@@ -389,7 +449,7 @@ export class EconomicDataResolver {
       lastRunAt: config.lastRunAt ?? undefined,
       lastStatus: config.lastStatus ?? undefined,
       lastError: config.lastError ?? undefined,
-      item: this.mapItemToModel(config.item)
+      item: this.mapItemToModel(config.item),
     }));
   }
 
@@ -397,14 +457,14 @@ export class EconomicDataResolver {
   @Query(() => EconomicDataRefreshPresetStatusModel)
   async economicDataRefreshPresetStatus(
     @Args("preset", { type: () => EconomicDashboardRefreshPreset })
-    preset: EconomicDashboardRefreshPreset
+    preset: EconomicDashboardRefreshPreset,
   ): Promise<EconomicDataRefreshPresetStatusModel> {
     const summary = await this.akshareService.getRefreshPresetStatus(
-      preset as unknown as EconomicDashboardRefreshPresetValue
+      preset as unknown as EconomicDashboardRefreshPresetValue,
     );
     return {
       ...summary,
-      preset
+      preset,
     };
   }
 
@@ -412,18 +472,21 @@ export class EconomicDataResolver {
   @Mutation(() => EconomicDataFetchConfigModel)
   async updateEconomicDataFetchConfig(
     @Args("slug") slug: string,
-    @Args("frequency", { type: () => EconomicDataFrequency, nullable: true }) frequency?: EconomicDataFrequency,
+    @Args("frequency", { type: () => EconomicDataFrequency, nullable: true })
+    frequency?: EconomicDataFrequency,
     @Args("repeatCron", { nullable: true }) repeatCron?: string,
-    @Args("isEnabled", { nullable: true }) isEnabled?: boolean
+    @Args("isEnabled", { nullable: true }) isEnabled?: boolean,
   ): Promise<EconomicDataFetchConfigModel> {
     const updated = await this.akshareService.updateFetchConfig(slug, {
       frequency,
       repeatCron: repeatCron ?? null,
-      isEnabled
+      isEnabled,
     });
     const rawItem = updated.item ?? { slug };
     const itemSlug =
-      typeof rawItem?.slug === "string" && rawItem.slug.trim() ? rawItem.slug : slug;
+      typeof rawItem?.slug === "string" && rawItem.slug.trim()
+        ? rawItem.slug
+        : slug;
     return {
       id: updated.id,
       frequency: updated.frequency,
@@ -432,13 +495,15 @@ export class EconomicDataResolver {
       lastRunAt: updated.lastRunAt ?? undefined,
       lastStatus: updated.lastStatus ?? undefined,
       lastError: updated.lastError ?? undefined,
-      item: this.mapItemToModel({ ...rawItem, slug: itemSlug })
+      item: this.mapItemToModel({ ...rawItem, slug: itemSlug }),
     };
   }
 
   @HasPermission("economicdata.manage")
   @Mutation(() => Boolean)
-  async triggerDataFetch(@Args("input") input: TriggerDataFetchInput): Promise<boolean> {
+  async triggerDataFetch(
+    @Args("input") input: TriggerDataFetchInput,
+  ): Promise<boolean> {
     await this.akshareService.triggerDataFetch(input.slugs);
     return true;
   }
@@ -448,20 +513,20 @@ export class EconomicDataResolver {
   async triggerEconomicDataRefreshPreset(
     @Context("req") req: GqlRequest,
     @Args("preset", { type: () => EconomicDashboardRefreshPreset })
-    preset: EconomicDashboardRefreshPreset
+    preset: EconomicDashboardRefreshPreset,
   ): Promise<boolean> {
     const requester = this.requireUser(req);
     await this.actionRateLimit.enforceEconomicDataRefreshPreset(
       requester.orgId,
-      preset as unknown as EconomicDashboardRefreshPresetValue
+      preset as unknown as EconomicDashboardRefreshPresetValue,
     );
     await this.akshareService.triggerDataFetchForPreset(
       preset as unknown as EconomicDashboardRefreshPresetValue,
       {
         actorId: requester.id,
         orgId: requester.orgId,
-        ipAddress: resolveRequestIp(req) ?? null
-      }
+        ipAddress: resolveRequestIp(req) ?? null,
+      },
     );
     return true;
   }

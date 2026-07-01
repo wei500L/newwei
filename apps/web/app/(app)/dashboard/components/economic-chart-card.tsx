@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
+import { useChartTheme } from "@/hooks/use-chart-theme";
 import type { EconomicSeriesInsightsMap, EconomicSeriesMap } from "@/hooks/useEconomicData";
 import dayjs from "@/lib/dayjs";
 import { normalizeUnit } from "@/lib/economic-units";
@@ -28,6 +29,7 @@ export interface EconomicChartCardProps {
   series: SeriesConfig[];
   insights?: EconomicSeriesInsightsMap;
   meta?: ReactNode;
+  chartLazy?: boolean;
 }
 
 export function EconomicChartCard({
@@ -37,9 +39,11 @@ export function EconomicChartCard({
   series,
   insights,
   meta,
+  chartLazy = true,
 }: EconomicChartCardProps) {
   const { t } = useTranslation();
   const { token } = theme.useToken();
+  const chartTheme = useChartTheme();
   
   const option = useMemo(() => buildOption(seriesMap, series), [seriesMap, series]);
   const hasSeries = useMemo(() => {
@@ -158,7 +162,12 @@ export function EconomicChartCard({
     >
       {hasSeries ? (
         <>
-          <DashboardChart option={option} height={360} />
+          <DashboardChart
+            option={option}
+            height={360}
+            lazy={chartLazy}
+            theme={chartTheme.echartsTheme}
+          />
           {stats?.insight && (
             <Flex 
               align="center" 
@@ -173,7 +182,7 @@ export function EconomicChartCard({
             >
                <BulbOutlined style={{ color: token.colorPrimary }} />
                <Typography.Text style={{ fontSize: 13, color: token.colorTextSecondary }}>
-                 {t("dashboard.insight.label", { defaultValue: "Insight" })}: {stats.insight}
+                 {t("dashboard.insight.label")}: {stats.insight}
                </Typography.Text>
             </Flex>
           )}
@@ -181,10 +190,8 @@ export function EconomicChartCard({
       ) : (
         <ChartEmptyState
           className="h-[360px]"
-          title={t("dashboard.charts.noDataRange", { defaultValue: "No Data Found for Selected Range" })}
-          description={t("dashboard.dataEmptyHint", {
-            defaultValue: "No data for the selected range. Try expanding the range."
-          })}
+          title={t("dashboard.charts.noDataRange")}
+          description={t("dashboard.dataEmptyHint")}
         />
       )}
     </Card>

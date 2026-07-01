@@ -1,9 +1,9 @@
 import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { CacheModule } from "../cache/cache.module";
-import { EnvService } from "../config/config.service";
-import { toBullmqConnection } from "../config/redis-connection";
+import { BullmqConnectionService } from "../config/bullmq-connection.service";
 import { NewsEventsModule } from "../news-events/news-events.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
@@ -32,13 +32,19 @@ import { ArchiveService } from "./archive.service";
     ArchiveService,
     {
       provide: ARCHIVE_PREPARATION_QUEUE,
-      inject: [EnvService, ArchivePreparationQueueCleanupService],
+      inject: [
+        ArchivePreparationQueueCleanupService,
+        BullmqConnectionService,
+      ],
       useFactory: (
-        env: EnvService,
         cleanup: ArchivePreparationQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
       ) => {
         const queue = new Queue(ARCHIVE_PREPARATION_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.getSharedConnection(),
+          defaultJobOptions: {
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
+          },
         });
         cleanup.track(queue);
         return queue;
@@ -46,13 +52,18 @@ import { ArchiveService } from "./archive.service";
     },
     {
       provide: ARCHIVE_PREPARATION_QUEUE_EVENTS,
-      inject: [EnvService, ArchivePreparationQueueCleanupService],
+      inject: [
+        ArchivePreparationQueueCleanupService,
+        BullmqConnectionService,
+      ],
       useFactory: (
-        env: EnvService,
         cleanup: ArchivePreparationQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
       ) => {
         const events = new QueueEvents(ARCHIVE_PREPARATION_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.createDedicatedConnectionOptions(
+            `events:${ARCHIVE_PREPARATION_QUEUE_NAME}`,
+          ),
         });
         cleanup.track(events);
         return events;

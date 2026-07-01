@@ -1,10 +1,12 @@
-import { myFetch } from "./fetch";
-import { defineSource } from "./source";
 
 import process from "node:process"
+
 import { NewsSourceRuntimeSecretRequiredError } from "../news-aggregator.errors"
-import { PRODUCTHUNT_RUNTIME_SECRETS_CONFIG } from '../news-source-runtime-secrets.catalog'
 import type { NewsItem } from "../news-aggregator.types"
+import { PRODUCTHUNT_RUNTIME_SECRETS_CONFIG } from '../news-source-runtime-secrets.catalog'
+
+import { myFetch } from "./fetch";
+import { defineSource } from "./source";
 
 function resolveRuntimeSecret(secrets: Record<string, string> | undefined, keys: string[]) {
   if (!secrets) {

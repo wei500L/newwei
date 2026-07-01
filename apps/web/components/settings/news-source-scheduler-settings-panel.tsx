@@ -503,14 +503,9 @@ export function NewsSourceSchedulerSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("systemSettings.newsSourceScheduler.fields.seedUrlQueryParamAllowlist", {
-            defaultValue: "Seed URL query param allowlist",
-          })}
+          label={t("systemSettings.newsSourceScheduler.fields.seedUrlQueryParamAllowlist")}
           name="seedUrlQueryParamAllowlist"
-          extra={t("systemSettings.newsSourceScheduler.hints.seedUrlQueryParamAllowlist", {
-            defaultValue:
-              "Only these query keys are kept when canonicalizing discovered URLs (e.g. keep id/page, drop utm_*).",
-          })}
+          extra={t("systemSettings.newsSourceScheduler.hints.seedUrlQueryParamAllowlist")}
           rules={[
             {
               validator: async (_, value: unknown) => {
@@ -520,7 +515,6 @@ export function NewsSourceSchedulerSettingsPanel() {
                   throw new Error(
                     t(
                       "systemSettings.newsSourceScheduler.validation.seedUrlQueryParamAllowlistLimit",
-                      { defaultValue: "At most 64 keys." },
                     ),
                   );
                 }
@@ -528,10 +522,6 @@ export function NewsSourceSchedulerSettingsPanel() {
                   throw new Error(
                     t(
                       "systemSettings.newsSourceScheduler.validation.seedUrlQueryParamAllowlistInvalid",
-                      {
-                        defaultValue:
-                          "Each key must match [a-z0-9_.-] and be up to 64 chars.",
-                      },
                     ),
                   );
                 }
@@ -548,15 +538,12 @@ export function NewsSourceSchedulerSettingsPanel() {
             }))}
             placeholder={t(
               "systemSettings.newsSourceScheduler.placeholders.seedUrlQueryParamAllowlist",
-              { defaultValue: "id, page, lang" },
             )}
           />
         </Form.Item>
 
         <Typography.Title level={5}>
-          {t("systemSettings.newsSourceScheduler.sections.rssAdaptive", {
-            defaultValue: "RSS adaptive polling strategy",
-          })}
+          {t("systemSettings.newsSourceScheduler.sections.rssAdaptive")}
         </Typography.Title>
 
         <Form.Item
@@ -613,10 +600,6 @@ export function NewsSourceSchedulerSettingsPanel() {
                   throw new Error(
                     t(
                       "systemSettings.newsSourceScheduler.validation.rssAdaptiveWarmHitRatePercentOrdering",
-                      {
-                        defaultValue:
-                          "Warm hit-rate threshold must be less than or equal to hot hit-rate threshold.",
-                      },
                     ),
                   );
                 }
@@ -778,10 +761,6 @@ export function NewsSourceSchedulerSettingsPanel() {
                   throw new Error(
                     t(
                       "systemSettings.newsSourceScheduler.validation.rssAdaptiveColdMaxIntervalSecondsOrdering",
-                      {
-                        defaultValue:
-                          "Cold max interval must be greater than or equal to warm min interval.",
-                      },
                     ),
                   );
                 }
@@ -849,10 +828,6 @@ export function NewsSourceSchedulerSettingsPanel() {
                   throw new Error(
                     t(
                       "systemSettings.newsSourceScheduler.validation.rssAdaptiveWarmDiscoveryCacheTtlCapSecondsOrdering",
-                      {
-                        defaultValue:
-                          "Warm discovery TTL cap must be greater than or equal to hot discovery TTL cap.",
-                      },
                     ),
                   );
                 }

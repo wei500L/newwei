@@ -66,3 +66,13 @@ export class UpdateLlmGatewayProxyGovernanceDto {
   @Max(MAX_PARALLEL_REQUESTS)
   maxParallelRequests?: number;
 }
+
+export class LiteLlmProxyGovernancePreflightDto {
+  @ApiPropertyOptional({
+    description:
+      "Optional target profile id to validate before enabling LiteLLM governance.",
+  })
+  @IsOptional()
+  @IsString()
+  targetProfileId?: string | null;
+}

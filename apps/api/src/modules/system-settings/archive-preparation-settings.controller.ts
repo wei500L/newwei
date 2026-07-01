@@ -4,8 +4,9 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import type { AuthenticatedUser } from '../auth/auth.service';
-import { UpdateArchivePreparationSettingsDto } from './dto/archive-preparation-settings.dto';
+
 import { ArchivePreparationSettingsService } from './archive-preparation-settings.service';
+import { UpdateArchivePreparationSettingsDto } from './dto/archive-preparation-settings.dto';
 
 @ApiTags('system-settings')
 @ApiBearerAuth()

@@ -1,5 +1,5 @@
-import { normalizeCrawlSiteProfileConfig } from './crawl-frontier.utils';
 import { CrawlFrontierService } from './crawl-frontier.service';
+import { normalizeCrawlSiteProfileConfig } from './crawl-frontier.utils';
 import { CrawlStrategyLayeredExecutorService } from './crawl-strategy-layered-executor.service';
 import { CrawlStrategyRootExecutorService } from './crawl-strategy-root-executor.service';
 
@@ -153,6 +153,7 @@ describe('CrawlFrontierService layered extraction tracing', () => {
       node: {
         id: 'node-root',
       },
+      acceptedCount: 1,
       createdCount: 1,
       minAcceptedResults: 3,
       minArticleResults: 2,

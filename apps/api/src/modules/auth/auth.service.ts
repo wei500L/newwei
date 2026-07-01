@@ -28,6 +28,8 @@ import { RateLimitConfigService } from "../system-settings/rate-limit-config.ser
 import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
 import { AuthCacheSettingsService } from "./auth-cache-settings.service";
 import { AuthEmailCodeSettingsService } from "./auth-email-code-settings.service";
+import { MfaService } from "./mfa.service";
+import { PlatformAccessService } from "./platform-access.service";
 import { UpdateProfileDto } from "./dto/profile.dto";
 import { RefreshTokenBlacklistService } from "./refresh-token-blacklist.service";
 
@@ -56,13 +58,57 @@ export interface AuthenticatedUser {
   isActive?: boolean;
   planTier?: string | null;
   subscriptionStatus?: string | null;
+  globalRoles?: string[];
+  mfaEnabled?: boolean;
+  mfaRequired?: boolean;
+  mfaEnrollmentRequired?: boolean;
   accessTokenId?: string;
   accessTokenExpiresAt?: number;
 }
 
-interface MembershipRole extends MembershipRoleWithPermissions {}
+export interface AuthenticatedLoginResult {
+  user: AuthenticatedUser;
+  accessToken: string;
+  refreshToken: string;
+  organizations: {
+    id: string;
+    name?: string;
+    slug?: string;
+    isActive?: boolean;
+  }[];
+  expiresIn: number;
+}
+
+export interface MfaChallengeResult {
+  user: AuthenticatedUser;
+  organizations: {
+    id: string;
+    name?: string;
+    slug?: string;
+    isActive?: boolean;
+  }[];
+  mfaRequired: true;
+  authChallengeId: string;
+  challengeExpiresAt: string;
+}
+
+export interface MfaEnrollmentChallengeResult {
+  user: AuthenticatedUser;
+  organizations: {
+    id: string;
+    name?: string;
+    slug?: string;
+    isActive?: boolean;
+  }[];
+  mfaEnrollmentRequired: true;
+  enrollmentChallengeId: string;
+  challengeExpiresAt: string;
+}
+
+type MembershipRole = MembershipRoleWithPermissions;
 
 interface MembershipRecord extends MembershipWithRoles<MembershipRole> {
+  orgId: string;
   isActive?: boolean;
   org?: {
     isActive?: boolean;
@@ -102,6 +148,8 @@ export class AuthService {
     private readonly orgService: OrgService,
     private readonly storageService: StorageService,
     private readonly emailService: EmailService,
+    private readonly platformAccess: PlatformAccessService,
+    private readonly mfaService: MfaService,
   ) {}
 
   private async validateRateLimit(identifier: string) {
@@ -171,7 +219,8 @@ export class AuthService {
     scene: EmailCodeScene,
     identifier: string,
   ) {
-    const { ttlSeconds, maxAttempts } = await this.authEmailCodeSettings.getSettings();
+    const { ttlSeconds, maxAttempts } =
+      await this.authEmailCodeSettings.getSettings();
     const attempts = await this.cache.incr(
       this.buildEmailCodeAttemptsKey(scene, identifier),
       ttlSeconds,
@@ -207,21 +256,17 @@ export class AuthService {
     }
   }
 
-  private isMembershipAccessible(
-    membership: {
-      isActive?: boolean;
-      org?: { isActive?: boolean } | null;
-    },
-  ): boolean {
+  private isMembershipAccessible(membership: {
+    isActive?: boolean;
+    org?: { isActive?: boolean } | null;
+  }): boolean {
     return (membership.org?.isActive ?? true) && (membership.isActive ?? true);
   }
 
-  private assertMembershipAccessible(
-    membership: {
-      isActive?: boolean;
-      org?: { isActive?: boolean } | null;
-    },
-  ) {
+  private assertMembershipAccessible(membership: {
+    isActive?: boolean;
+    org?: { isActive?: boolean } | null;
+  }) {
     if (!(membership.org?.isActive ?? true)) {
       throw new UnauthorizedException("Organization disabled");
     }
@@ -247,8 +292,8 @@ export class AuthService {
       );
     }
     if (!orgIdOrSlug) {
-      const activeMemberships = memberships.filter(
-        (membership) => this.isMembershipAccessible(membership),
+      const activeMemberships = memberships.filter((membership) =>
+        this.isMembershipAccessible(membership),
       );
 
       if (memberships.length === 1) {
@@ -305,7 +350,11 @@ export class AuthService {
     membership: MembershipRecord,
   ): Pick<
     AuthenticatedUser,
-    "primaryRoleId" | "roleIds" | "permissions" | "planTier" | "subscriptionStatus"
+    | "primaryRoleId"
+    | "roleIds"
+    | "permissions"
+    | "planTier"
+    | "subscriptionStatus"
   > {
     return {
       primaryRoleId: membership.roleId ?? null,
@@ -314,6 +363,199 @@ export class AuthService {
       planTier: membership.org?.planTier ?? null,
       subscriptionStatus: membership.org?.subscriptionStatus ?? null,
     };
+  }
+
+  private async buildAuthenticatedUser(
+    user: {
+      id: string;
+      email: string;
+      emailVerified?: Date | null;
+      lastLoginAt?: Date | null;
+      pendingEmail?: string | null;
+      firstName: string;
+      lastName: string;
+      avatarUrl?: string | null;
+      isActive?: boolean;
+    },
+    membership: MembershipRecord,
+  ): Promise<AuthenticatedUser> {
+    const {
+      primaryRoleId,
+      roleIds,
+      permissions,
+      planTier,
+      subscriptionStatus,
+    } = this.buildMembershipClaims(membership);
+    const [globalRoles, mfaStatus] = await Promise.all([
+      this.platformAccess.getGlobalRoles(user.id),
+      this.mfaService.getStatus(user.id),
+    ]);
+
+    return {
+      id: user.id,
+      email: user.email,
+      emailVerified: this.formatEmailVerified(user.emailVerified),
+      lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
+      pendingEmail: user.pendingEmail ?? null,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      avatarUrl: user.avatarUrl ?? null,
+      isActive: (user.isActive ?? true) && (membership.isActive ?? true),
+      orgId: membership.orgId,
+      primaryRoleId,
+      roleIds,
+      permissions,
+      planTier,
+      subscriptionStatus,
+      globalRoles,
+      mfaEnabled: mfaStatus.enabled,
+      mfaRequired: false,
+      mfaEnrollmentRequired: false,
+    };
+  }
+
+  private async finalizeLogin(
+    authUser: AuthenticatedUser,
+    ipAddress?: string,
+    userAgent?: string,
+    action = "login",
+  ): Promise<AuthenticatedLoginResult> {
+    const { token: accessToken, expiresAt } = this.signAccessToken(authUser);
+    const { token: refreshToken } = await this.signRefreshToken(
+      authUser,
+      ipAddress,
+      userAgent,
+    );
+
+    await this.prisma.user.update({
+      where: { id: authUser.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    await writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId: authUser.orgId,
+          actorId: authUser.id,
+          resource: "auth",
+          action,
+          metadata: { email: authUser.email, userAgent: userAgent ?? null },
+          ipAddress,
+        },
+      },
+      {
+        orgId: authUser.orgId,
+        actorId: authUser.id,
+        resource: "auth",
+        action,
+      },
+    );
+
+    const organizations = await this.orgService.listOrganizationOptionsForUser(
+      authUser.id,
+    );
+    return {
+      user: authUser,
+      accessToken,
+      refreshToken,
+      organizations,
+      expiresIn: expiresAt ? Math.floor((expiresAt - Date.now()) / 1000) : 900,
+    };
+  }
+
+  private async completeTrustedLogin(
+    userId: string,
+    orgId: string,
+    ipAddress?: string,
+    userAgent?: string,
+    action = "login",
+    options?: { skipMfa?: boolean },
+  ): Promise<
+    AuthenticatedLoginResult | MfaChallengeResult | MfaEnrollmentChallengeResult
+  > {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        memberships: {
+          orderBy: { createdAt: "asc" },
+          include: {
+            org: true,
+            roles: {
+              include: {
+                role: {
+                  include: {
+                    permissions: {
+                      include: { permission: true },
+                    },
+                  },
+                },
+              },
+            },
+            role: {
+              include: {
+                permissions: {
+                  include: { permission: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException("Invalid credentials");
+    }
+
+    const membership = this.pickMembership(user.memberships, orgId, {
+      requireExplicitOrg: false,
+    });
+    this.assertMembershipAccessible(membership);
+
+    const authUser = await this.buildAuthenticatedUser(user, membership);
+    if (!options?.skipMfa) {
+      const loginRequirement = await this.mfaService.getLoginRequirement(
+        user.id,
+        membership.orgId,
+      );
+      if (loginRequirement !== "none") {
+        const organizations =
+          await this.orgService.listOrganizationOptionsForUser(user.id);
+
+        if (loginRequirement === "verify") {
+          const challenge = await this.mfaService.createLoginChallenge({
+            userId: user.id,
+            orgId: membership.orgId,
+            ipAddress,
+            userAgent,
+          });
+          return {
+            user: { ...authUser, mfaRequired: true },
+            organizations,
+            mfaRequired: true,
+            authChallengeId: challenge.challengeId,
+            challengeExpiresAt: challenge.expiresAt,
+          };
+        }
+
+        const challenge = await this.mfaService.createEnrollmentChallenge({
+          userId: user.id,
+          orgId: membership.orgId,
+          ipAddress,
+          userAgent,
+          action,
+        });
+        return {
+          user: { ...authUser, mfaEnrollmentRequired: true },
+          organizations,
+          mfaEnrollmentRequired: true,
+          enrollmentChallengeId: challenge.challengeId,
+          challengeExpiresAt: challenge.expiresAt,
+        };
+      }
+    }
+
+    return this.finalizeLogin(authUser, ipAddress, userAgent, action);
   }
 
   async validateUser(
@@ -369,26 +611,7 @@ export class AuthService {
     });
     this.assertMembershipAccessible(primaryMembership);
 
-    const { primaryRoleId, roleIds, permissions, planTier, subscriptionStatus } =
-      this.buildMembershipClaims(primaryMembership);
-
-    return {
-      id: user.id,
-      email: user.email,
-      emailVerified: this.formatEmailVerified(user.emailVerified),
-      lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
-      pendingEmail: user.pendingEmail,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      avatarUrl: user.avatarUrl,
-      isActive: user.isActive && (primaryMembership.isActive ?? true),
-      orgId: primaryMembership.orgId,
-      primaryRoleId,
-      roleIds,
-      permissions,
-      planTier,
-      subscriptionStatus,
-    };
+    return this.buildAuthenticatedUser(user, primaryMembership);
   }
 
   private signAccessToken(user: AuthenticatedUser) {
@@ -501,49 +724,13 @@ export class AuthService {
     const normalizedEmail = this.normalizeEmail(email);
     await this.validateRateLimit(`login:${ipAddress ?? normalizedEmail}`);
     const user = await this.validateUser(normalizedEmail, password, orgId);
-
-    const { token: accessToken, expiresAt } = this.signAccessToken(user);
-    const { token: refreshToken } = await this.signRefreshToken(
-      user,
+    return this.completeTrustedLogin(
+      user.id,
+      user.orgId,
       ipAddress,
       userAgent,
+      "login",
     );
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    });
-
-    await writeAuditLogBestEffort(
-      this.prisma,
-      {
-        data: {
-          orgId: user.orgId,
-          actorId: user.id,
-          resource: "auth",
-          action: "login",
-          metadata: { email: normalizedEmail, userAgent: userAgent ?? null },
-          ipAddress,
-        },
-      },
-      {
-        orgId: user.orgId,
-        actorId: user.id,
-        resource: "auth",
-        action: "login",
-      },
-    );
-
-    const organizations = await this.orgService.listOrganizationOptionsForUser(
-      user.id,
-    );
-    return {
-      user,
-      accessToken,
-      refreshToken,
-      organizations,
-      expiresIn: expiresAt ? Math.floor((expiresAt - Date.now()) / 1000) : 900,
-    };
   }
 
   async sendVerificationCode(
@@ -881,72 +1068,17 @@ export class AuthService {
     });
     this.assertMembershipAccessible(primaryMembership);
 
-    const { primaryRoleId, roleIds, permissions, planTier, subscriptionStatus } =
-      this.buildMembershipClaims(primaryMembership);
-    const authUser: AuthenticatedUser = {
-      id: user.id,
-      email: user.email,
-      emailVerified: this.formatEmailVerified(user.emailVerified),
-      lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
-      pendingEmail: user.pendingEmail,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      avatarUrl: user.avatarUrl,
-      isActive: user.isActive && (primaryMembership.isActive ?? true),
-      orgId: primaryMembership.orgId,
-      primaryRoleId,
-      roleIds,
-      permissions,
-      planTier,
-      subscriptionStatus,
-    };
-
-    const { token: accessToken, expiresAt } = this.signAccessToken(authUser);
-    const { token: refreshToken } = await this.signRefreshToken(
-      authUser,
-      ipAddress,
-      userAgent,
-    );
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    });
     await this.clearEmailCodeState("login", normalizedEmail);
     await this.cache.del(
       this.buildEmailCodeCooldownKey("login", normalizedEmail),
     );
-
-    await writeAuditLogBestEffort(
-      this.prisma,
-      {
-        data: {
-          orgId: authUser.orgId,
-          actorId: authUser.id,
-          resource: "auth",
-          action: "login_with_code",
-          metadata: { email: normalizedEmail, userAgent: userAgent ?? null },
-          ipAddress,
-        },
-      },
-      {
-        orgId: authUser.orgId,
-        actorId: authUser.id,
-        resource: "auth",
-        action: "login_with_code",
-      },
+    return this.completeTrustedLogin(
+      user.id,
+      primaryMembership.orgId,
+      ipAddress,
+      userAgent,
+      "login_with_code",
     );
-
-    const organizations = await this.orgService.listOrganizationOptionsForUser(
-      authUser.id,
-    );
-    return {
-      user: authUser,
-      accessToken,
-      refreshToken,
-      organizations,
-      expiresIn: expiresAt ? Math.floor((expiresAt - Date.now()) / 1000) : 900,
-    };
   }
 
   async refresh(
@@ -1032,26 +1164,10 @@ export class AuthService {
         );
         this.assertMembershipAccessible(primaryMembership);
 
-        const { primaryRoleId, roleIds, permissions, planTier, subscriptionStatus } =
-          this.buildMembershipClaims(primaryMembership);
-
-        const authUser: AuthenticatedUser = {
-          id: user.id,
-          email: user.email,
-          emailVerified: this.formatEmailVerified(user.emailVerified),
-          lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
-          pendingEmail: user.pendingEmail,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          avatarUrl: user.avatarUrl,
-          isActive: user.isActive && (primaryMembership.isActive ?? true),
-          orgId: primaryMembership.orgId,
-          primaryRoleId,
-          roleIds,
-          permissions,
-          planTier,
-          subscriptionStatus,
-        };
+        const authUser = await this.buildAuthenticatedUser(
+          user,
+          primaryMembership,
+        );
 
         const { token: accessToken, expiresAt } =
           this.signAccessToken(authUser);
@@ -1170,7 +1286,27 @@ export class AuthService {
     orgId: string | undefined,
     input: UpdateProfileDto,
   ) {
-    const updates: { avatarUrl?: string | null } = {};
+    const updates: {
+      firstName?: string;
+      lastName?: string;
+      avatarUrl?: string | null;
+    } = {};
+
+    if (input.firstName !== undefined) {
+      const trimmed = input.firstName.trim();
+      if (!trimmed) {
+        throw new BadRequestException("First name cannot be empty");
+      }
+      updates.firstName = trimmed;
+    }
+
+    if (input.lastName !== undefined) {
+      const trimmed = input.lastName.trim();
+      if (!trimmed) {
+        throw new BadRequestException("Last name cannot be empty");
+      }
+      updates.lastName = trimmed;
+    }
 
     if (input.avatarUrl !== undefined) {
       const trimmed = input.avatarUrl.trim();
@@ -1196,6 +1332,56 @@ export class AuthService {
 
     await this.invalidateProfileCache(userId, orgId);
     return this.getUserProfile(userId, orgId);
+  }
+
+  async changePassword(
+    userId: string,
+    orgId: string | undefined,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    if (!currentPassword || !newPassword) {
+      throw new BadRequestException("Password fields are required");
+    }
+    if (currentPassword === newPassword) {
+      throw new BadRequestException(
+        "New password must be different from current password",
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        passwordHash: true,
+      },
+    });
+    if (!user) {
+      throw new UnauthorizedException("Invalid credentials");
+    }
+
+    const passwordValid = await bcrypt.compare(
+      currentPassword,
+      user.passwordHash,
+    );
+    if (!passwordValid) {
+      throw new UnauthorizedException("Invalid credentials");
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+    ]);
+
+    await this.invalidateProfileCache(userId, orgId);
   }
 
   async getUserProfile(userId: string, orgId?: string) {
@@ -1244,26 +1430,7 @@ export class AuthService {
           throw new UnauthorizedException("User disabled");
         }
 
-        const { primaryRoleId, roleIds, permissions, planTier, subscriptionStatus } =
-          this.buildMembershipClaims(membership);
-
-        return {
-          id: user.id,
-          email: user.email,
-          emailVerified: this.formatEmailVerified(user.emailVerified),
-          lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
-          pendingEmail: user.pendingEmail,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          avatarUrl: user.avatarUrl,
-          isActive: user.isActive && (membership.isActive ?? true),
-          orgId: membership.orgId,
-          primaryRoleId,
-          roleIds,
-          permissions,
-          planTier,
-          subscriptionStatus,
-        };
+        return this.buildAuthenticatedUser(user, membership);
       },
       {
         lockTtlMs: settings.lockTtlMs,
@@ -1271,5 +1438,70 @@ export class AuthService {
         maxWaitMs: settings.maxWaitMs,
       },
     );
+  }
+
+  async beginTrustedLogin(
+    userId: string,
+    orgId: string,
+    ipAddress?: string,
+    userAgent?: string,
+    action = "login",
+  ) {
+    return this.completeTrustedLogin(
+      userId,
+      orgId,
+      ipAddress,
+      userAgent,
+      action,
+    );
+  }
+
+  async completeMfaLogin(
+    challengeId: string,
+    code: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
+    const challenge = await this.mfaService.consumeLoginChallenge(
+      challengeId,
+      code,
+    );
+    return this.completeTrustedLogin(
+      challenge.userId,
+      challenge.orgId,
+      ipAddress ?? challenge.ipAddress ?? undefined,
+      userAgent ?? challenge.userAgent ?? undefined,
+      challenge.action === "login_with_oidc"
+        ? "login_with_oidc"
+        : "login_with_mfa",
+      { skipMfa: true },
+    );
+  }
+
+  async completeMfaEnrollmentLogin(
+    challengeId: string,
+    code: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
+    const challenge = await this.mfaService.consumeEnrollmentChallenge(
+      challengeId,
+      code,
+    );
+    const result = await this.completeTrustedLogin(
+      challenge.userId,
+      challenge.orgId,
+      ipAddress ?? challenge.ipAddress ?? undefined,
+      userAgent ?? challenge.userAgent ?? undefined,
+      challenge.action,
+      { skipMfa: true },
+    );
+    if (!("accessToken" in result)) {
+      throw new UnauthorizedException("MFA enrollment could not be completed");
+    }
+    return {
+      ...result,
+      recoveryCodes: challenge.recoveryCodes,
+    };
   }
 }

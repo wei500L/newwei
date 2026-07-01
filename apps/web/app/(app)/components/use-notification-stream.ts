@@ -7,6 +7,8 @@ import { io, type Socket } from "socket.io-client";
 import type { NotificationType } from "@/graphql/generated";
 import { env } from "@/lib/env";
 
+const REALTIME_SOCKET_TIMEOUT_MS = 10_000;
+
 export interface NotificationMessage {
   id: string;
   orgId?: string;
@@ -23,6 +25,7 @@ export interface NotificationConnectionError {
   kind: "socket" | "connect";
   code?: string;
   message?: string;
+  retryAfterMs?: number;
 }
 
 interface NotificationStreamState {
@@ -60,6 +63,7 @@ export function useNotificationStream(
       auth: { token },
       withCredentials: true,
       autoConnect: false,
+      timeout: REALTIME_SOCKET_TIMEOUT_MS,
     });
     socketRef.current = socket;
 
@@ -75,7 +79,9 @@ export function useNotificationStream(
     const handleDisconnect = () =>
       setState((prev) => ({ ...prev, connected: false }));
     const handleSocketError = (
-      payload: { code?: string; message?: string } | undefined,
+      payload:
+        | { code?: string; message?: string; retryAfterMs?: number }
+        | undefined,
     ) => {
       setState((prev) => ({
         ...prev,
@@ -83,12 +89,15 @@ export function useNotificationStream(
           kind: "socket",
           code: payload?.code,
           message: payload?.message,
+          retryAfterMs: payload?.retryAfterMs,
         },
         connected: false,
       }));
     };
     const handleConnectError = (
-      error: { code?: string; message?: string } | undefined,
+      error:
+        | { code?: string; message?: string; retryAfterMs?: number }
+        | undefined,
     ) => {
       setState((prev) => ({
         ...prev,
@@ -96,6 +105,7 @@ export function useNotificationStream(
           kind: "connect",
           code: error?.code,
           message: error?.message,
+          retryAfterMs: error?.retryAfterMs,
         },
         connected: false,
       }));

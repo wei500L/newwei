@@ -30,7 +30,6 @@ import {
   type CrawlDiscoveryTimestampSource,
 } from "../crawl/crawl-metadata.service";
 import { CrawlQueueService } from "../crawl/crawl-queue.service";
-import { NewsSourceOpsSnapshotService } from "../crawl/news-source-ops-snapshot.service";
 import { CrawlStrategyWorkflowService } from "../crawl/crawl-strategy-workflow.service";
 import { CrawlTaskService } from "../crawl/crawl-task.service";
 import { CRAWL_HOT_PRIORITY_THRESHOLD } from "../crawl/crawl.constants";
@@ -45,6 +44,7 @@ import {
   type DeepDiscoveryFailureState,
   type DeepDiscoveryFailureStats24h,
 } from "../crawl/deep-discovery-failure";
+import { NewsSourceOpsSnapshotService } from "../crawl/news-source-ops-snapshot.service";
 import {
   buildCanonicalUrlFingerprint,
   resolveQueryParamAllowlist,

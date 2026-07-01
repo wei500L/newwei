@@ -695,7 +695,7 @@ export class CrawlResultService {
 
   private selectOrgDedupeWinner(
     created: Pick<CrawlResult, "id" | "fetchedAt" | "createdAt">,
-    existing: Array<Pick<CrawlResult, "id" | "fetchedAt" | "createdAt">>,
+    existing: Pick<CrawlResult, "id" | "fetchedAt" | "createdAt">[],
   ): Pick<CrawlResult, "id" | "fetchedAt"> {
     const candidates = [created, ...existing];
     candidates.sort((left, right) => {

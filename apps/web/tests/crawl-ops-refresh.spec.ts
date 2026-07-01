@@ -101,7 +101,7 @@ describe('crawl ops refresh decisions', () => {
       'utf8',
     );
 
-    expect(source).toContain('Adaptive sampled metrics p95/error/headroom');
+    expect(source).toContain('t("crawl.ops.adaptiveMetrics")');
     expect(source).toContain('latencySampleCount');
     expect(source).toContain('samplingMode');
   });

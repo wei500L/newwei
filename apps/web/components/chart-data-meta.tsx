@@ -24,9 +24,7 @@ export function ChartDataMeta({
 }: ChartDataMetaProps) {
   const { t } = useTranslation();
 
-  const latestLabel = t("dashboard.dataLatest.label", {
-    defaultValue: "Latest"
-  });
+  const latestLabel = t("dashboard.dataLatest.label");
   const formattedLatest = latestTimestamp
     ? formatDateTime(latestTimestamp.toISOString(), locale, {
         year: "numeric",
@@ -39,20 +37,16 @@ export function ChartDataMeta({
 
   const statusTag =
     state === "delayed" ? (
-      <Tag color="orange">{t("dashboard.dataDelayed.short", { defaultValue: "Delayed" })}</Tag>
+      <Tag color="orange">{t("dashboard.dataDelayed.short")}</Tag>
     ) : state === "backfilling" ? (
-      <Tag color="blue">{t("dashboard.dataBackfilling.short", { defaultValue: "Updating" })}</Tag>
+      <Tag color="blue">{t("dashboard.dataBackfilling.short")}</Tag>
     ) : null;
 
   const statusTooltip =
     state === "delayed"
-      ? t("dashboard.dataDelayed.tooltip", {
-          defaultValue: "Data is delayed. Latest point is behind the selected range."
-        })
+      ? t("dashboard.dataDelayed.tooltip")
       : state === "backfilling"
-        ? t("dashboard.dataBackfilling.tooltip", {
-            defaultValue: "Data is being backfilled and may update shortly."
-          })
+        ? t("dashboard.dataBackfilling.tooltip")
         : null;
 
   return (
@@ -69,17 +63,12 @@ export function ChartDataMeta({
       </Tooltip>
       {onRefresh ? (
         <Tooltip
-          title={t("dashboard.actions.fetchLatestTooltip", {
-            defaultValue:
-              "Pull the current view from the server again. This does not trigger a server-side refresh job."
-          })}
+          title={t("dashboard.actions.fetchLatestTooltip")}
         >
           <Button
             size="small"
             type="text"
-            aria-label={t("dashboard.actions.fetchLatest", {
-              defaultValue: "Pull latest data"
-            })}
+            aria-label={t("dashboard.actions.fetchLatest")}
             icon={<ReloadOutlined />}
             loading={refreshing}
             disabled={refreshing}

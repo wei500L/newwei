@@ -267,7 +267,7 @@ async function fetchValidatedUpstream(
   let currentUpstream = upstream;
   let redirectCount = 0;
 
-  while (true) {
+  for (;;) {
     const upstreamResponse = await fetch(currentUpstream, {
       method: "GET",
       headers: buildUpstreamHeaders(request, config.referer),

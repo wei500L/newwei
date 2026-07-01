@@ -12,5 +12,6 @@ export * from "./economic-refresh-presets";
 export * from "./news-indicator-presets";
 export * from "./alert-metric-slugs";
 export * from "./notification-presentation";
+export * from "./realtime-signals-contract";
 export * from "./url-canonical";
 export * from "./war-map-contract";

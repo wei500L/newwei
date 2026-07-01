@@ -2,14 +2,15 @@ import { createLogger } from "@modular/utils";
 import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
 import type { Queue, QueueEvents } from "bullmq";
 
+import { keepsFinishedJob } from "../../common/bullmq-retention";
+
 import { QueueOrgStatsService, type TrackedJobStatus } from "./queue-org-stats.service";
 import { PIPELINE_QUEUE, PIPELINE_QUEUE_EVENTS } from "./queue.constants";
 
 interface JobDataWithOrg { orgId?: string }
 
 function keepFlagFromRemoveOption(value: unknown): boolean {
-  if (value === true) return false;
-  return true;
+  return keepsFinishedJob(value as Parameters<typeof keepsFinishedJob>[0]);
 }
 
 @Injectable()

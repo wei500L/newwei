@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsBoolean,
+  IsEnum,
   IsIn,
   IsOptional,
   IsString,
@@ -12,6 +13,12 @@ import {
   Min,
   ValidateNested,
 } from "class-validator";
+
+import {
+  NewsExtractionPipelineModeModel,
+  NewsExtractionProviderIdModel,
+  NewsEventClusteringModeModel,
+} from "../models/settings.model";
 
 @InputType()
 export class RateLimitBucketInput {
@@ -193,6 +200,158 @@ export class UpdateNewsPromptConfigInput {
   @Field()
   @MaxLength(12000)
   userPromptTemplate!: string;
+
+  @Field()
+  @MaxLength(6000)
+  entitySystemPromptTemplate!: string;
+
+  @Field()
+  @MaxLength(12000)
+  entityUserPromptTemplate!: string;
+
+  @Field()
+  @MaxLength(4000)
+  sentimentSystemPromptTemplate!: string;
+
+  @Field()
+  @MaxLength(8000)
+  sentimentUserPromptTemplate!: string;
+
+  @Field()
+  @MaxLength(6000)
+  kgSystemPromptTemplate!: string;
+
+  @Field()
+  @MaxLength(12000)
+  kgUserPromptTemplate!: string;
+}
+
+@InputType()
+export class NewsExtractionPreflightGateSettingsInput {
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(10_000)
+  minWordCount?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  minQualityScore?: number;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  rejectBotChallenge?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  rejectListLike?: boolean;
+}
+
+@InputType()
+export class NewsExtractionPostCleanGateSettingsInput {
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  minQualityScore?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(100_000)
+  minCleanedChars?: number;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  requireSummary?: boolean;
+}
+
+@InputType()
+export class NewsExtractionCapabilitiesSettingsInput {
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  entities?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  sentiment?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  kg?: boolean;
+}
+
+@InputType()
+export class NewsExtractionProvidersSettingsInput {
+  @Field(() => NewsExtractionProviderIdModel, { nullable: true })
+  @IsOptional()
+  @IsEnum(NewsExtractionProviderIdModel)
+  clean?: NewsExtractionProviderIdModel;
+
+  @Field(() => NewsExtractionProviderIdModel, { nullable: true })
+  @IsOptional()
+  @IsEnum(NewsExtractionProviderIdModel)
+  entities?: NewsExtractionProviderIdModel;
+
+  @Field(() => NewsExtractionProviderIdModel, { nullable: true })
+  @IsOptional()
+  @IsEnum(NewsExtractionProviderIdModel)
+  sentiment?: NewsExtractionProviderIdModel;
+
+  @Field(() => NewsExtractionProviderIdModel, { nullable: true })
+  @IsOptional()
+  @IsEnum(NewsExtractionProviderIdModel)
+  kg?: NewsExtractionProviderIdModel;
+}
+
+@InputType()
+export class UpdateNewsExtractionSettingsInput {
+  @Field(() => NewsExtractionPipelineModeModel, { nullable: true })
+  @IsOptional()
+  @IsEnum(NewsExtractionPipelineModeModel)
+  pipelineMode?: NewsExtractionPipelineModeModel;
+
+  @Field(() => NewsExtractionPreflightGateSettingsInput, { nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NewsExtractionPreflightGateSettingsInput)
+  preflightGate?: NewsExtractionPreflightGateSettingsInput;
+
+  @Field(() => NewsExtractionPostCleanGateSettingsInput, { nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NewsExtractionPostCleanGateSettingsInput)
+  postCleanGate?: NewsExtractionPostCleanGateSettingsInput;
+
+  @Field(() => NewsExtractionCapabilitiesSettingsInput, { nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NewsExtractionCapabilitiesSettingsInput)
+  capabilities?: NewsExtractionCapabilitiesSettingsInput;
+
+  @Field(() => NewsExtractionProvidersSettingsInput, { nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NewsExtractionProvidersSettingsInput)
+  providers?: NewsExtractionProvidersSettingsInput;
 }
 
 @InputType()
@@ -323,6 +482,29 @@ export class UpdateNewsEventSettingsInput {
   @Field(() => Boolean)
   @IsBoolean()
   timelineEnabled!: boolean;
+
+  @Field(() => NewsEventClusteringModeModel, { nullable: true })
+  @IsOptional()
+  @IsEnum(NewsEventClusteringModeModel)
+  clusteringMode?: NewsEventClusteringModeModel;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(2)
+  @Max(100)
+  bertopicMinItemsPerGroup?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(2)
+  @Max(500)
+  bertopicMaxItemsPerRequest?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(2)
+  @Max(100)
+  bertopicMinTopicSize?: number;
 
   @Field(() => Boolean, { nullable: true })
   @IsOptional()

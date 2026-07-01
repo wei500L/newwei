@@ -14,7 +14,7 @@ export function SentimentBadge({
   sentiment,
   showTrend,
   trendDirection,
-  className
+  className,
 }: SentimentBadgeProps) {
   const { t } = useTranslation();
 
@@ -29,18 +29,18 @@ export function SentimentBadge({
   switch (normalized) {
     case "positive":
       color = "success";
-      label = t("items.sentiment.positive", { defaultValue: "Positive" });
+      label = t("items.sentiment.positive");
       glowColor = "rgba(34, 197, 94, 0.2)";
       break;
     case "negative":
       color = "error";
-      label = t("items.sentiment.negative", { defaultValue: "Negative" });
+      label = t("items.sentiment.negative");
       glowColor = "rgba(239, 68, 68, 0.2)";
       break;
     case "neutral":
     default:
       color = "default";
-      label = t("items.sentiment.neutral", { defaultValue: "Neutral" });
+      label = t("items.sentiment.neutral");
       glowColor = "rgba(100, 100, 100, 0.2)";
   }
 
@@ -53,11 +53,7 @@ export function SentimentBadge({
     : null;
 
   return (
-    <Tooltip
-      title={t("items.sentiment.tooltip", {
-        defaultValue: "Sentiment inferred by AI model analysis"
-      })}
-    >
+    <Tooltip title={t("items.sentiment.tooltip")}>
       <Tag
         color={color}
         bordered={false}

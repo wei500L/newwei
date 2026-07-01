@@ -145,10 +145,10 @@ export function filterRuntimeSecretSources<
   Meta extends NewsSourceMetadataLike,
   Row extends PersistedRuntimeSecretRowLike,
 >( 
-  entries: Array<RuntimeSecretSourceEntry<Meta>>,
+  entries: RuntimeSecretSourceEntry<Meta>[],
   rows: Row[],
   filters: RuntimeSecretSourceFilters,
-): Array<RuntimeSecretSourceEntry<Meta>> {
+): RuntimeSecretSourceEntry<Meta>[] {
   const configuredSourceIds = new Set(listConfiguredRuntimeSecretSourceIds(rows));
 
   return entries.filter(({ sourceId, metadata }) => {

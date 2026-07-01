@@ -1,4 +1,6 @@
 import { ProcessedItemModel } from "@modular/mongo";
+
+import * as fetchModule from "../../common/http/fetch-with-ipv4-fallback";
 import { REALTIME_SIGNALS_INGEST_LOCK_TTL_MS } from "./realtime-signals.constants";
 import { RealtimeSignalsService } from "./realtime-signals.service";
 import type { RealtimeSignalsRuntimeConfig } from "./realtime-signals.types";
@@ -95,8 +97,19 @@ const createRealtimeSignalsCache = () => {
         loader: () => Promise<unknown>,
       ) => loader(),
     ),
+    setIfAbsent: jest.fn().mockResolvedValue(true),
   };
 };
+
+const createSchedulerSettings = (concurrency = 2) => ({
+  getRuntimeSettings: jest.fn().mockResolvedValue({
+    realtimeSignalsOrgConcurrency: concurrency,
+  }),
+});
+
+const createActiveOrgRegistry = (orgs = [{ id: "org-1" }]) => ({
+  listActiveOrgs: jest.fn().mockResolvedValue(orgs),
+});
 
 describe("RealtimeSignalsService unrest merge", () => {
   const buildService = () => {
@@ -116,7 +129,18 @@ describe("RealtimeSignalsService unrest merge", () => {
       { realtimeSignalsConfig: envConfig } as any,
       store as any,
       {} as any,
+      createActiveOrgRegistry() as any,
+      createSchedulerSettings() as any,
     );
+    jest
+      .spyOn(service as any, "persistAircraftTransportSnapshot")
+      .mockResolvedValue(undefined);
+    jest
+      .spyOn(service as any, "persistAisTransportSnapshot")
+      .mockResolvedValue(undefined);
+    jest
+      .spyOn(service as any, "persistTransportTelemetry")
+      .mockResolvedValue(undefined);
     return { service, store, cache };
   };
 
@@ -419,7 +443,7 @@ describe("RealtimeSignalsService unrest merge", () => {
       (result[0]?.context as Record<string, unknown>).latestObservedAt,
     ).toBe("2026-03-02T11:59:55.000Z");
     const storedSnapshot = store.setLatestAdsbSnapshot.mock.calls[0]?.[1] as
-      | { aircraft?: Array<Record<string, unknown>> }
+      | { aircraft?: Record<string, unknown>[] }
       | undefined;
     expect(storedSnapshot?.aircraft?.[0]?.countryCode).toBeUndefined();
   });
@@ -444,6 +468,14 @@ describe("RealtimeSignalsService unrest merge", () => {
           clients: 3,
           droppedMessages: 4,
         },
+        diagnostics: {
+          healthState: "ok",
+          positionReportsSeen: 1200,
+          positionReportsProcessed: 42,
+          ignoredPositionReports: 0,
+          parseErrors: 0,
+          lastHealthyAt: "2026-03-02T12:00:00.000Z",
+        },
         disruptions: [
           {
             id: "global-gap-spike",
@@ -467,7 +499,7 @@ describe("RealtimeSignalsService unrest merge", () => {
         ],
         candidateReports: [
           {
-            mmsi: "123456789",
+            mmsi: 123456789,
             name: "USS Example",
             lat: 30,
             lon: 40,
@@ -497,15 +529,6 @@ describe("RealtimeSignalsService unrest merge", () => {
       context: {
         source: "relay",
         configured: true,
-        connected: true,
-        disruptions: 1,
-        densityRegions: 1,
-        candidateCount: 1,
-        vesselCount: 42,
-        allVesselsAvailable: false,
-        snapshotUpdatedAt: "2026-03-02T12:00:00.000Z",
-        messageCount: 1200,
-        droppedMessages: 4,
         countryCodes: [],
       },
     });
@@ -521,6 +544,14 @@ describe("RealtimeSignalsService unrest merge", () => {
           messages: 1200,
           clients: 3,
           droppedMessages: 4,
+        },
+        diagnostics: {
+          healthState: "ok",
+          positionReportsSeen: 1200,
+          positionReportsProcessed: 42,
+          ignoredPositionReports: 0,
+          parseErrors: 0,
+          lastHealthyAt: "2026-03-02T12:00:00.000Z",
         },
         hasVesselSnapshot: false,
         disruptions: [
@@ -558,6 +589,61 @@ describe("RealtimeSignalsService unrest merge", () => {
       }),
       600,
     );
+  });
+
+  it("marks AIS runtime diagnostics as error when the relay reports degraded processing", () => {
+    const { service } = buildService();
+    const now = Date.parse("2026-03-02T12:00:30.000Z");
+
+    const result = (service as any).resolveRuntimeSourceStatus({
+      source: "ais",
+      sourceConfig: {
+        enabled: true,
+        intervalSec: 60,
+      },
+      sourceState: {
+        source: "ais",
+        status: "success",
+        lastAttemptAt: "2026-03-02T12:00:00.000Z",
+        lastSuccessAt: "2026-03-02T12:00:00.000Z",
+      },
+      lastRunMs: Date.parse("2026-03-02T12:00:00.000Z"),
+      context: {
+        configured: true,
+      },
+      aisRuntime: {
+        diagnostics: {
+          configured: true,
+          connected: true,
+          healthState: "degraded",
+          allVesselsAvailable: false,
+          candidateCount: 0,
+          vesselCount: 0,
+          disruptionsCount: 0,
+          densityRegions: 0,
+          messageCount: 0,
+          droppedMessages: 0,
+          positionReportsSeen: 0,
+          positionReportsProcessed: 0,
+          ignoredPositionReports: 0,
+          parseErrors: 0,
+          statusReasonCode: "ais_position_reports_not_retained",
+          statusReason:
+            "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
+        },
+        statusReasonCode: "ais_position_reports_not_retained",
+        statusReason:
+          "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
+      },
+      nowMs: now,
+    });
+
+    expect(result).toEqual({
+      status: "error",
+      code: "ais_position_reports_not_retained",
+      reason:
+        "AIS relay is receiving position reports, but none are being retained as vessel snapshots.",
+    });
   });
 
   it("fails AIS refreshes when the relay payload is malformed", async () => {
@@ -723,6 +809,8 @@ describe("RealtimeSignalsService unrest merge", () => {
       { realtimeSignalsConfig: envConfig } as any,
       {} as any,
       settings as any,
+      createActiveOrgRegistry() as any,
+      createSchedulerSettings() as any,
     );
     const fetchJsonSpy = jest
       .spyOn(service as any, "fetchJsonWithRetry")
@@ -862,6 +950,8 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
       { realtimeSignalsConfig: envConfig } as any,
       store as any,
       settings as any,
+      createActiveOrgRegistry() as any,
+      createSchedulerSettings() as any,
     );
     return { service, prisma, cache, store, settings };
   };
@@ -1006,6 +1096,119 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
     nowSpy.mockRestore();
   });
 
+  it("backs off failed refresh attempts until the next eligible time", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-03-03T00:00:00.000Z"));
+    const { service, store } = buildService();
+    const runtime = {
+      ...runtimeConfig,
+      sources: {
+        opensky: { enabled: false, intervalSec: 60 },
+        ais: { enabled: false, intervalSec: 60 },
+        unrest: { enabled: false, intervalSec: 60 },
+        outages: { enabled: true, intervalSec: 60 },
+        keyword_spike: { enabled: false, intervalSec: 60 },
+        pizzint: { enabled: false, intervalSec: 60 },
+        gdelt_tension: { enabled: false, intervalSec: 60 },
+        polymarket_leads: { enabled: false, intervalSec: 60 },
+      },
+    } satisfies RealtimeSignalsRuntimeConfig;
+    let sourceState: Record<string, unknown> | null = null;
+
+    store.getInsightSnapshot.mockResolvedValue({
+      keywordSpikes: [],
+      predictionLeads: [],
+      tensions: [],
+    });
+    store.getLastRun.mockResolvedValue(null);
+    store.getSourceState.mockImplementation(async () => sourceState);
+    store.setSourceState.mockImplementation(
+      async (_orgId: string, state: Record<string, unknown>) => {
+        sourceState = state;
+      },
+    );
+
+    const rateLimitedError = Object.assign(
+      new Error("HTTP 429 Too Many Requests"),
+      {
+        rateLimit: {
+          retryAfterSec: 90,
+          rateLimit: '"default";r=0;t=90',
+          rateLimitPolicy: '"default";q=1200;w=300',
+          cfRay: "abc123-NRT",
+        },
+        retryAfterMs: 90_000,
+        status: 429,
+        statusText: "Too Many Requests",
+      },
+    );
+    const fetchSourceSpy = jest
+      .spyOn(service as any, "fetchSource")
+      .mockRejectedValue(rateLimitedError);
+
+    await service.refreshOrg("org-1", runtime);
+    await service.refreshOrg("org-1", runtime);
+
+    expect(fetchSourceSpy).toHaveBeenCalledTimes(1);
+    expect(store.setSourceState).toHaveBeenCalledWith(
+      "org-1",
+      expect.objectContaining({
+        source: "outages",
+        lastErrorCode: "upstream_rate_limited",
+        lastErrorStatus: 429,
+        lastRateLimit: expect.objectContaining({
+          retryAfterSec: 90,
+          rateLimit: '"default";r=0;t=90',
+        }),
+        nextEligibleAt: "2026-03-03T00:01:30.000Z",
+      }),
+    );
+
+    jest.setSystemTime(new Date("2026-03-03T00:01:31.000Z"));
+    await service.refreshOrg("org-1", runtime);
+    expect(fetchSourceSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("classifies DNS resolution failures without relying on raw message matching", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-03-03T00:00:00.000Z"));
+    const { service, store } = buildService();
+    const runtime = {
+      ...runtimeConfig,
+      sources: {
+        opensky: { enabled: false, intervalSec: 60 },
+        ais: { enabled: false, intervalSec: 60 },
+        unrest: { enabled: false, intervalSec: 60 },
+        outages: { enabled: true, intervalSec: 60 },
+        keyword_spike: { enabled: false, intervalSec: 60 },
+        pizzint: { enabled: false, intervalSec: 60 },
+        gdelt_tension: { enabled: false, intervalSec: 60 },
+        polymarket_leads: { enabled: false, intervalSec: 60 },
+      },
+    } satisfies RealtimeSignalsRuntimeConfig;
+
+    store.getInsightSnapshot.mockResolvedValue({
+      keywordSpikes: [],
+      predictionLeads: [],
+      tensions: [],
+    });
+    store.getLastRun.mockResolvedValue(null);
+    store.getSourceState.mockResolvedValue(null);
+
+    const dnsError = Object.assign(new TypeError("fetch failed"), {
+      cause: { code: "ENOTFOUND" },
+    });
+    jest.spyOn(service as any, "fetchSource").mockRejectedValue(dnsError);
+
+    await service.refreshOrg("org-1", runtime);
+
+    expect(store.setSourceState).toHaveBeenCalledWith(
+      "org-1",
+      expect.objectContaining({
+        source: "outages",
+        lastErrorCode: "dns_resolution_failed",
+      }),
+    );
+  });
+
   it("drops stale insight entries when serving situation monitor snapshot", async () => {
     const now = Date.parse("2026-03-03T00:00:00.000Z");
     const nowSpy = jest.spyOn(Date, "now").mockReturnValue(now);
@@ -1067,13 +1270,14 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
 });
 
 describe("RealtimeSignalsService scheduler lock", () => {
-  it("uses the configured ingest lock TTL for cron refresh", async () => {
+  it("claims the scheduler tick before refreshing orgs with org locks", async () => {
     const prisma = {
       org: {
         findMany: jest.fn().mockResolvedValue([{ id: "org-1" }]),
       },
     };
     const cache = {
+      setIfAbsent: jest.fn().mockResolvedValue(true),
       withLock: jest.fn(
         async (_key: string, _ttlMs: number, runner: () => Promise<void>) => {
           await runner();
@@ -1090,16 +1294,78 @@ describe("RealtimeSignalsService scheduler lock", () => {
       { realtimeSignalsConfig: envConfig } as any,
       {} as any,
       settings as any,
+      createActiveOrgRegistry() as any,
+      createSchedulerSettings() as any,
     );
     jest.spyOn(service, "refreshOrg").mockResolvedValue();
 
     await service.refreshScheduled();
 
     expect(cache.withLock).toHaveBeenCalledWith(
-      "cron:realtime-signals",
+      "cron:realtime-signals:org:org-1",
       REALTIME_SIGNALS_INGEST_LOCK_TTL_MS,
       expect.any(Function),
     );
+    expect(cache.setIfAbsent).toHaveBeenCalledWith(
+      "cron:realtime-signals:tick-gate",
+      expect.any(Object),
+      55,
+    );
+  });
+});
+
+describe("RealtimeSignalsService fetch retries", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("does not blindly retry HTTP 429 responses", async () => {
+    const service = new RealtimeSignalsService(
+      {} as any,
+      createRealtimeSignalsCache() as any,
+      {} as any,
+      { realtimeSignalsConfig: envConfig } as any,
+      {} as any,
+      { getRuntimeConfig: jest.fn().mockResolvedValue(runtimeConfig) } as any,
+      createActiveOrgRegistry() as any,
+      createSchedulerSettings() as any,
+    );
+    const fetchSpy = jest
+      .spyOn(fetchModule, "fetchWithIpv4Fallback")
+      .mockResolvedValue({
+        ok: false,
+        status: 429,
+        statusText: "Too Many Requests",
+        headers: new Headers({
+          "cf-ray": "abc123-NRT",
+          ratelimit: '"default";r=0;t=120',
+          "ratelimit-policy": '"default";q=1200;w=300',
+          "retry-after": "120",
+        }),
+        text: jest.fn().mockResolvedValue("{}"),
+      } as any);
+
+    let capturedError: any;
+    try {
+      await (service as any).fetchJsonWithRetry("https://example.com", {
+        ...runtimeConfig,
+        maxRetries: 2,
+      });
+    } catch (error) {
+      capturedError = error;
+    }
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(capturedError).toMatchObject({
+      status: 429,
+      retryAfterMs: 120_000,
+      rateLimit: {
+        retryAfterSec: 120,
+        rateLimit: '"default";r=0;t=120',
+        rateLimitPolicy: '"default";q=1200;w=300',
+        cfRay: "abc123-NRT",
+      },
+    });
   });
 });
 
@@ -1138,6 +1404,8 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       { realtimeSignalsConfig: envConfig } as any,
       store as any,
       settings as any,
+      createActiveOrgRegistry() as any,
+      createSchedulerSettings() as any,
     );
     return { service, prisma, store, settings, cache };
   };
@@ -1178,6 +1446,7 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
     const openskySource = result.sources.find(
       (source) => source.source === "opensky",
     );
+    const aisSource = result.sources.find((source) => source.source === "ais");
     expect(openskySource?.openskySnapshot).toEqual({
       freshness: "missing",
       rawAircraftCount: 0,
@@ -1189,6 +1458,203 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       droppedMissingIdentityCount: 0,
       droppedStalePositionCount: 0,
       deduplicatedCount: 0,
+    });
+    expect(aisSource?.aisDiagnostics).toEqual({
+      configured: true,
+      connected: false,
+      healthState: "ok",
+      allVesselsAvailable: false,
+      candidateCount: 0,
+      vesselCount: 0,
+      disruptionsCount: 0,
+      densityRegions: 0,
+      messageCount: 0,
+      droppedMessages: 0,
+      positionReportsSeen: 0,
+      positionReportsProcessed: 0,
+      ignoredPositionReports: 0,
+      parseErrors: 0,
+    });
+  });
+
+  it("surfaces typed AIS diagnostics and product contract codes in runtime diagnostics", async () => {
+    const { service, prisma, store } = buildService();
+    prisma.processedArticle.count.mockResolvedValue(0);
+    prisma.processedArticle.findFirst.mockResolvedValue(null);
+    jest.spyOn(service as any, "getMongoMarkerReadiness").mockResolvedValue({
+      recentProcessedItems: 0,
+      recentProcessedItemsWithLocation: 0,
+    });
+    store.getLatestAisSnapshot.mockResolvedValue({
+      source: "relay",
+      sourceEndpoint: "https://relay.example.com/ais/snapshot",
+      updatedAt: "2026-03-12T03:30:00.000Z",
+      status: {
+        connected: true,
+        vessels: 4,
+        messages: 120,
+        clients: 1,
+        droppedMessages: 2,
+      },
+      diagnostics: {
+        healthState: "ok",
+        positionReportsSeen: 120,
+        positionReportsProcessed: 4,
+        ignoredPositionReports: 0,
+        parseErrors: 0,
+        lastHealthyAt: "2026-03-12T03:29:00.000Z",
+        lastConnectedAt: "2026-03-12T03:28:00.000Z",
+        lastMessageAt: "2026-03-12T03:29:59.000Z",
+      },
+      disruptions: [],
+      density: [],
+      candidateReports: [],
+      vessels: [],
+      hasVesselSnapshot: false,
+    });
+    store.getSourceState.mockImplementation(
+      async (_orgId: string, source: string) =>
+        source === "ais"
+          ? {
+              source: "ais",
+              status: "success",
+              lastAttemptAt: "2026-03-12T03:30:00.000Z",
+              lastSuccessAt: "2026-03-12T03:30:00.000Z",
+              context: {
+                source: "relay",
+                configured: true,
+              },
+            }
+          : null,
+    );
+
+    const result = await service.getRuntimeDiagnostics("org-1");
+    const aisSource = result.sources.find((source) => source.source === "ais");
+
+    expect(aisSource).toMatchObject({
+      status: "error",
+      statusReasonCode: "ais_snapshot_missing_vessels_contract",
+      statusReason:
+        "AIS relay reports tracked vessels, but the snapshot payload omits vessels[] and only exposes aggregated signals.",
+      aisDiagnostics: {
+        configured: true,
+        connected: true,
+        healthState: "ok",
+        snapshotUpdatedAt: "2026-03-12T03:30:00.000Z",
+        allVesselsAvailable: false,
+        candidateCount: 0,
+        vesselCount: 4,
+        disruptionsCount: 0,
+        densityRegions: 0,
+        messageCount: 120,
+        droppedMessages: 2,
+        positionReportsSeen: 120,
+        positionReportsProcessed: 4,
+        ignoredPositionReports: 0,
+        parseErrors: 0,
+        statusReasonCode: "ais_snapshot_missing_vessels_contract",
+        statusReason:
+          "AIS relay reports tracked vessels, but the snapshot payload omits vessels[] and only exposes aggregated signals.",
+        lastHealthyAt: "2026-03-12T03:29:00.000Z",
+        lastConnectedAt: "2026-03-12T03:28:00.000Z",
+        lastMessageAt: "2026-03-12T03:29:59.000Z",
+      },
+    });
+  });
+
+  it("surfaces retry timing and rate-limit headers in runtime diagnostics", async () => {
+    const { service, prisma, store } = buildService();
+    prisma.processedArticle.count.mockResolvedValue(0);
+    prisma.processedArticle.findFirst.mockResolvedValue(null);
+    jest.spyOn(service as any, "getMongoMarkerReadiness").mockResolvedValue({
+      recentProcessedItems: 0,
+      recentProcessedItemsWithLocation: 0,
+    });
+    store.getSourceState.mockImplementation(
+      async (_orgId: string, source: string) =>
+        source === "outages"
+          ? {
+              source: "outages",
+              status: "error",
+              lastAttemptAt: "2026-03-12T03:30:00.000Z",
+              nextEligibleAt: "2026-03-12T03:32:00.000Z",
+              lastErrorAt: "2026-03-12T03:30:00.000Z",
+              lastError: "HTTP 429 Too Many Requests",
+              lastErrorCode: "upstream_rate_limited",
+              lastErrorStatus: 429,
+              lastRateLimit: {
+                retryAfterSec: 120,
+                rateLimit: '"default";r=0;t=120',
+                rateLimitPolicy: '"default";q=1200;w=300',
+                cfRay: "abc123-NRT",
+              },
+            }
+          : null,
+    );
+
+    const result = await service.getRuntimeDiagnostics("org-1");
+
+    expect(
+      result.sources.find((source) => source.source === "outages"),
+    ).toMatchObject({
+      status: "error",
+      statusReasonCode: "upstream_rate_limited",
+      lastAttemptAt: "2026-03-12T03:30:00.000Z",
+      nextEligibleAt: "2026-03-12T03:32:00.000Z",
+      lastErrorCode: "upstream_rate_limited",
+      lastErrorStatus: 429,
+      lastRateLimit: {
+        retryAfterSec: 120,
+        rateLimit: '"default";r=0;t=120',
+        rateLimitPolicy: '"default";q=1200;w=300',
+        cfRay: "abc123-NRT",
+      },
+    });
+  });
+
+  it("keeps non-429 errors distinct even when rate-limit headers are present", async () => {
+    const { service, prisma, store } = buildService();
+    prisma.processedArticle.count.mockResolvedValue(0);
+    prisma.processedArticle.findFirst.mockResolvedValue(null);
+    jest.spyOn(service as any, "getMongoMarkerReadiness").mockResolvedValue({
+      recentProcessedItems: 0,
+      recentProcessedItemsWithLocation: 0,
+    });
+    store.getSourceState.mockImplementation(
+      async (_orgId: string, source: string) =>
+        source === "outages"
+          ? {
+              source: "outages",
+              status: "error",
+              lastAttemptAt: "2026-03-12T03:30:00.000Z",
+              nextEligibleAt: "2026-03-12T03:32:00.000Z",
+              lastErrorAt: "2026-03-12T03:30:00.000Z",
+              lastError: "HTTP 403 Forbidden",
+              lastErrorCode: "upstream_auth_failed",
+              lastErrorStatus: 403,
+              lastRateLimit: {
+                retryAfterSec: 120,
+                rateLimit: '"default";r=0;t=120',
+                rateLimitPolicy: '"default";q=1200;w=300',
+                cfRay: "abc123-NRT",
+              },
+            }
+          : null,
+    );
+
+    const result = await service.getRuntimeDiagnostics("org-1");
+
+    expect(
+      result.sources.find((source) => source.source === "outages"),
+    ).toMatchObject({
+      status: "error",
+      statusReasonCode: "upstream_auth_failed",
+      lastErrorCode: "upstream_auth_failed",
+      lastErrorStatus: 403,
+      lastRateLimit: {
+        retryAfterSec: 120,
+        rateLimit: '"default";r=0;t=120',
+      },
     });
   });
 
@@ -1247,7 +1713,7 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
     expect(countDocumentsSpy).not.toHaveBeenCalled();
     expect(aggregateSpy).toHaveBeenCalledTimes(1);
     const pipeline = aggregateSpy.mock.calls[0]?.[0] as
-      | Array<Record<string, unknown>>
+      | Record<string, unknown>[]
       | undefined;
     expect(pipeline?.[0]).toEqual({
       $match: {
@@ -1388,6 +1854,8 @@ describe("RealtimeSignalsService processed article term coverage", () => {
       { realtimeSignalsConfig: envConfig } as any,
       {} as any,
       { getRuntimeConfig: jest.fn().mockResolvedValue(runtimeConfig) } as any,
+      createActiveOrgRegistry() as any,
+      createSchedulerSettings() as any,
     );
     return { service, prisma, cache };
   };

@@ -10,7 +10,7 @@ jest.mock('@modular/utils', () => ({
   runWithTraceId: jest.fn(async (_traceId: string, fn: () => Promise<any>) => fn()),
 }));
 
-const workerInstances: Array<{ on: jest.Mock; close: jest.Mock<Promise<void>, []> }> = [];
+const workerInstances: { on: jest.Mock; close: jest.Mock<Promise<void>, []> }[] = [];
 
 jest.mock('bullmq', () => ({
   Worker: jest.fn().mockImplementation(() => {
@@ -32,30 +32,30 @@ jest.mock('./situation-monitor/signals/situation-monitor-telegram-scheduler', ()
   upsertTelegramPollScheduler: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { AnalysisProcessor } from './analysis/analysis.processor';
-import { AssistantProcessor } from './assistant/assistant.processor';
 import { AkshareQueueProcessor } from './akshare/akshare.processor';
 import { AlertsProcessor } from './alerts/alerts.processor';
+import { AnalysisProcessor } from './analysis/analysis.processor';
 import { ArchivePreparationProcessor } from './archive/archive-preparation.processor';
+import { AssistantProcessor } from './assistant/assistant.processor';
 import { SituationMonitorSignalsProcessor } from './situation-monitor/signals/situation-monitor-signals.processor';
 
-type EventsMock = {
+interface EventsMock {
   on: jest.Mock;
   off: jest.Mock;
-};
+}
 
-type ProcessorUnderTest = {
+interface ProcessorUnderTest {
   onModuleDestroy: () => Promise<unknown>;
-};
+}
 
-type TestCase = {
+interface TestCase {
   name: string;
   create: () => {
     events: EventsMock;
     processor: ProcessorUnderTest;
     start: () => Promise<unknown>;
   };
-};
+}
 
 function createEvents(): EventsMock {
   return {

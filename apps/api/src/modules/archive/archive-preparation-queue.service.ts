@@ -2,6 +2,7 @@ import { createLogger, ensureTraceId, getCurrentTraceId } from '@modular/utils';
 import { Inject, Injectable } from '@nestjs/common';
 import { Queue } from 'bullmq';
 
+import { BULLMQ_FAILED_JOB_RETENTION } from '../../common/bullmq-retention';
 import { CacheService } from '../cache/cache.service';
 
 import {
@@ -103,7 +104,7 @@ export class ArchivePreparationQueueService {
           age: ARCHIVE_PREPARATION_STATUS_TTL_SECONDS,
           count: 1000,
         },
-        removeOnFail: false,
+        removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
         attempts: 5,
         backoff: {
           type: 'exponential',

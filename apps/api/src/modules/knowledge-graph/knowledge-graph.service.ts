@@ -46,6 +46,13 @@ export interface SeedRelationInput {
   properties?: Record<string, unknown>;
 }
 
+export interface ReviewedRelationInput {
+  subject: SeedEntityRef;
+  predicate: KnowledgeRelationType;
+  object: SeedEntityRef;
+  properties?: Record<string, unknown>;
+}
+
 export interface IngestProcessedArticleInput {
   orgId: string;
   articleId: string;
@@ -88,6 +95,22 @@ export interface KnowledgeGraphSubgraphResult {
   edges: KnowledgeEdge[];
 }
 
+export interface KnowledgeGraphEdgeEvidenceResult {
+  id: string;
+  confidence: number | null;
+  extractorVersion: string | null;
+  createdAt: Date;
+  evidence: Record<string, unknown> | null;
+  article: {
+    id: string;
+    url: string;
+    title: string | null;
+    summary: string | null;
+    language: string | null;
+    crawlAt: Date;
+  };
+}
+
 @Injectable()
 export class KnowledgeGraphService {
   private readonly logger = createLogger({ name: "knowledge-graph" });
@@ -108,6 +131,50 @@ export class KnowledgeGraphService {
       orderBy: { createdAt: "desc" },
       take,
       include: { entity: true }
+    });
+  }
+
+  async listEdgeEvidence(
+    orgId: string,
+    edgeId: string,
+    limit: number
+  ): Promise<KnowledgeGraphEdgeEvidenceResult[]> {
+    const take = Math.min(Math.max(limit, 1), 50);
+    const rows = await this.prisma.knowledgeEdgeEvidence.findMany({
+      where: { orgId, edgeId },
+      take,
+      orderBy: [{ article: { crawlAt: "desc" } }, { createdAt: "desc" }],
+      include: {
+        article: {
+          include: {
+            processed: true
+          }
+        }
+      }
+    });
+
+    return rows.map((row) => {
+      const processed = row.article.processed;
+      const evidence =
+        row.evidence && typeof row.evidence === "object" && !Array.isArray(row.evidence)
+          ? (row.evidence as Record<string, unknown>)
+          : null;
+
+      return {
+        id: row.id,
+        confidence: row.confidence ?? null,
+        extractorVersion: row.extractorVersion ?? null,
+        createdAt: row.createdAt,
+        evidence,
+        article: {
+          id: row.articleId,
+          url: row.article.url,
+          title: processed?.title ?? row.article.titleGuess ?? null,
+          summary: processed?.summary ?? null,
+          language: processed?.language ?? row.article.language ?? null,
+          crawlAt: row.article.crawlAt
+        }
+      };
     });
   }
 
@@ -298,6 +365,78 @@ export class KnowledgeGraphService {
     });
 
     return { edgesUpserted };
+  }
+
+  normalizeReviewedRelation(value: unknown): ReviewedRelationInput | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+
+    const record = value as Record<string, unknown>;
+    const subject = this.parseSeedEntityRef(record.subject);
+    const object = this.parseSeedEntityRef(record.object);
+    const predicateRaw = typeof record.predicate === "string" ? record.predicate.trim() : "";
+    const predicate = this.normalizeRelationType(predicateRaw);
+    const properties = this.toOptionalObject(record.properties);
+
+    if (!subject || !object || !predicate) {
+      return null;
+    }
+
+    return {
+      subject,
+      predicate,
+      object,
+      properties
+    };
+  }
+
+  async upsertReviewedRelationEdge(
+    tx: Prisma.TransactionClient,
+    input: {
+      orgId: string;
+      relation: ReviewedRelationInput;
+      confidence: number;
+      now: Date;
+    }
+  ): Promise<KnowledgeEdge> {
+    const from = await this.upsertEntity(tx, input.orgId, input.relation.subject, {
+      source: KnowledgeRecordSource.user
+    });
+    const to = await this.upsertEntity(tx, input.orgId, input.relation.object, {
+      source: KnowledgeRecordSource.user
+    });
+
+    const where = {
+      orgId_type_fromEntityId_toEntityId: {
+        orgId: input.orgId,
+        type: input.relation.predicate,
+        fromEntityId: from.id,
+        toEntityId: to.id
+      }
+    };
+    const existing = await tx.knowledgeEdge.findUnique({ where });
+    if (existing) {
+      return existing;
+    }
+
+    const properties = input.relation.properties
+      ? { ...input.relation.properties, recordSource: KnowledgeRecordSource.user }
+      : { recordSource: KnowledgeRecordSource.user };
+
+    return tx.knowledgeEdge.create({
+      data: {
+        orgId: input.orgId,
+        type: input.relation.predicate,
+        fromEntityId: from.id,
+        toEntityId: to.id,
+        weight: 0,
+        confidence: this.toConfidence(input.confidence) ?? 0.5,
+        properties: toPrismaJsonValueOrUndefined(properties),
+        firstSeenAt: input.now,
+        lastSeenAt: input.now
+      }
+    });
   }
 
   async getSubgraph(input: KnowledgeGraphSubgraphInput): Promise<KnowledgeGraphSubgraphResult | null> {
@@ -546,6 +685,28 @@ export class KnowledgeGraphService {
       return null;
     }
     return { name, type };
+  }
+
+  private parseSeedEntityRef(value: unknown): SeedEntityRef | null {
+    const base = this.parseEntityRef(value);
+    if (!base || !value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+
+    const record = value as Record<string, unknown>;
+    const aliases = Array.isArray(record.aliases)
+      ? record.aliases
+          .map((alias) => (typeof alias === "string" ? alias.trim() : ""))
+          .filter((alias) => alias.length > 0)
+          .slice(0, 20)
+      : undefined;
+    const properties = this.toOptionalObject(record.properties);
+
+    return {
+      ...base,
+      ...(aliases && aliases.length > 0 ? { aliases } : {}),
+      ...(properties ? { properties } : {})
+    };
   }
 
   private toConfidence(value: unknown): number | null {

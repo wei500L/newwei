@@ -24,16 +24,16 @@ function createDeferred<T>(): Deferred<T> {
 describe("SentimentSnapshotIngestionService", () => {
   it("fans out org snapshot rebuild with configured concurrency", async () => {
     const cache = {
+      setIfAbsent: jest.fn().mockResolvedValue(true),
       withLock: jest.fn(),
     } as any;
-    const prisma = {
-      org: {
-        findMany: jest.fn().mockResolvedValue([
-          { id: "org-1" },
-          { id: "org-2" },
-          { id: "org-3" },
-        ]),
-      },
+    const prisma = {} as any;
+    const activeOrgRegistry = {
+      listActiveOrgs: jest.fn().mockResolvedValue([
+        { id: "org-1" },
+        { id: "org-2" },
+        { id: "org-3" },
+      ]),
     } as any;
     const schedulerSettings = {
       getRuntimeSettings: jest.fn().mockResolvedValue({
@@ -43,6 +43,7 @@ describe("SentimentSnapshotIngestionService", () => {
     const service = new SentimentSnapshotIngestionService(
       cache,
       prisma,
+      activeOrgRegistry,
       schedulerSettings,
     );
 
@@ -62,17 +63,19 @@ describe("SentimentSnapshotIngestionService", () => {
     let maxActive = 0;
     let started = 0;
 
-    jest.spyOn(service as any, "rebuildOrg").mockImplementation(async (orgId: string) => {
-      started += 1;
-      active += 1;
-      maxActive = Math.max(maxActive, active);
-      if (started === 2) {
-        startedTwo.resolve();
-      }
+    jest
+      .spyOn(service as any, "rebuildOrg")
+      .mockImplementation(async (orgId: string) => {
+        started += 1;
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        if (started === 2) {
+          startedTwo.resolve();
+        }
 
-      await releases.get(orgId)!.promise;
-      active -= 1;
-    });
+        await releases.get(orgId)!.promise;
+        active -= 1;
+      });
 
     const runPromise = service.rebuildRecentSnapshots();
 

@@ -16,6 +16,9 @@ describe("NewsAggregatorController", () => {
   const domesticOpinionIndexService = {
     getDomesticOpinionIndex: jest.fn(),
   }
+  const recommendedService = {
+    getRecommendedFeed: jest.fn(),
+  }
 
   let controller: NewsAggregatorController
 
@@ -25,6 +28,7 @@ describe("NewsAggregatorController", () => {
       newsAggregatorService as any,
       hottestAnalysisService as any,
       domesticOpinionIndexService as any,
+      recommendedService as any,
     )
   })
 
@@ -258,5 +262,26 @@ describe("NewsAggregatorController", () => {
       ),
     ).toThrow(BadRequestException)
     expect(newsAggregatorService.getPersonalizedSourceOrderForUser).not.toHaveBeenCalled()
+  })
+
+  it("delegates recommended feed request with parsed limit and latest flags", async () => {
+    recommendedService.getRecommendedFeed.mockResolvedValue({
+      scope: "hottest",
+      generatedAt: new Date().toISOString(),
+      degraded: false,
+      items: [],
+    })
+
+    await controller.getRecommendedFeed(
+      { id: "user-1", orgId: "org-1", permissions: ["items.read"] } as any,
+      { limit: "12", latest: "true" },
+    )
+
+    expect(recommendedService.getRecommendedFeed).toHaveBeenCalledWith({
+      orgId: "org-1",
+      userId: "user-1",
+      limit: 12,
+      forceRefresh: true,
+    })
   })
 })

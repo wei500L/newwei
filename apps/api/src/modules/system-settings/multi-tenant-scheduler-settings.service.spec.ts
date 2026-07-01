@@ -30,10 +30,17 @@ describe("MultiTenantSchedulerSettingsService", () => {
   it("returns default value when db record does not exist", async () => {
     await expect(service.getSettings()).resolves.toEqual({
       source: "default",
+      realtimeSignalsOrgConcurrency: 4,
+      newsEventsTimelineOrgConcurrency: 2,
       newsEventsIngestionOrgConcurrency: 4,
       knowledgeGraphIngestionOrgConcurrency: 4,
       sentimentSnapshotOrgConcurrency: 2,
       newsnowHottestAnalysisOrgConcurrency: 6,
+      classificationQualityAlertOrgConcurrency: 4,
+      newsIndicatorAssociationOrgConcurrency: 2,
+      crawlQualityTaskSnapshotOrgConcurrency: 2,
+      situationMonitorOrefDefaultRuleOrgConcurrency: 16,
+      userDigestDeliveryOrgConcurrency: 4,
     });
   });
 
@@ -62,19 +69,33 @@ describe("MultiTenantSchedulerSettingsService", () => {
     prisma.systemSetting.findUnique.mockResolvedValue({
       key: "multi_tenant_scheduler_runtime_settings",
       value: {
+        realtimeSignalsOrgConcurrency: 3,
+        newsEventsTimelineOrgConcurrency: 2,
         newsEventsIngestionOrgConcurrency: "6",
         knowledgeGraphIngestionOrgConcurrency: 5,
         sentimentSnapshotOrgConcurrency: 3,
         newsnowHottestAnalysisOrgConcurrency: 8,
+        classificationQualityAlertOrgConcurrency: 4,
+        newsIndicatorAssociationOrgConcurrency: 2,
+        crawlQualityTaskSnapshotOrgConcurrency: 3,
+        situationMonitorOrefDefaultRuleOrgConcurrency: 12,
+        userDigestDeliveryOrgConcurrency: 2,
       },
     });
 
     await expect(service.getSettings()).resolves.toEqual({
       source: "db",
+      realtimeSignalsOrgConcurrency: 3,
+      newsEventsTimelineOrgConcurrency: 2,
       newsEventsIngestionOrgConcurrency: 6,
       knowledgeGraphIngestionOrgConcurrency: 5,
       sentimentSnapshotOrgConcurrency: 3,
       newsnowHottestAnalysisOrgConcurrency: 8,
+      classificationQualityAlertOrgConcurrency: 4,
+      newsIndicatorAssociationOrgConcurrency: 2,
+      crawlQualityTaskSnapshotOrgConcurrency: 3,
+      situationMonitorOrefDefaultRuleOrgConcurrency: 12,
+      userDigestDeliveryOrgConcurrency: 2,
     });
   });
 
@@ -88,10 +109,17 @@ describe("MultiTenantSchedulerSettingsService", () => {
 
     await expect(service.getSettings()).resolves.toEqual({
       source: "db",
+      realtimeSignalsOrgConcurrency: 4,
+      newsEventsTimelineOrgConcurrency: 2,
       newsEventsIngestionOrgConcurrency: 5,
       knowledgeGraphIngestionOrgConcurrency: 4,
       sentimentSnapshotOrgConcurrency: 2,
       newsnowHottestAnalysisOrgConcurrency: 6,
+      classificationQualityAlertOrgConcurrency: 4,
+      newsIndicatorAssociationOrgConcurrency: 2,
+      crawlQualityTaskSnapshotOrgConcurrency: 2,
+      situationMonitorOrefDefaultRuleOrgConcurrency: 16,
+      userDigestDeliveryOrgConcurrency: 4,
     });
   });
 
@@ -99,10 +127,17 @@ describe("MultiTenantSchedulerSettingsService", () => {
     prisma.systemSetting.findUnique.mockResolvedValue({
       key: "multi_tenant_scheduler_runtime_settings",
       value: {
+        realtimeSignalsOrgConcurrency: 4,
+        newsEventsTimelineOrgConcurrency: 2,
         newsEventsIngestionOrgConcurrency: 7,
         knowledgeGraphIngestionOrgConcurrency: 4,
         sentimentSnapshotOrgConcurrency: 2,
         newsnowHottestAnalysisOrgConcurrency: 6,
+        classificationQualityAlertOrgConcurrency: 5,
+        newsIndicatorAssociationOrgConcurrency: 2,
+        crawlQualityTaskSnapshotOrgConcurrency: 2,
+        situationMonitorOrefDefaultRuleOrgConcurrency: 16,
+        userDigestDeliveryOrgConcurrency: 3,
       },
     });
 
@@ -115,10 +150,17 @@ describe("MultiTenantSchedulerSettingsService", () => {
 
   it("updates settings and writes audit log", async () => {
     await service.updateSettings("org-1", "actor-1", {
+      realtimeSignalsOrgConcurrency: 4,
+      newsEventsTimelineOrgConcurrency: 2,
       newsEventsIngestionOrgConcurrency: 5,
       knowledgeGraphIngestionOrgConcurrency: 4,
       sentimentSnapshotOrgConcurrency: 3,
       newsnowHottestAnalysisOrgConcurrency: 7,
+      classificationQualityAlertOrgConcurrency: 4,
+      newsIndicatorAssociationOrgConcurrency: 2,
+      crawlQualityTaskSnapshotOrgConcurrency: 2,
+      situationMonitorOrefDefaultRuleOrgConcurrency: 16,
+      userDigestDeliveryOrgConcurrency: 4,
     });
 
     expect(prisma.systemSetting.upsert).toHaveBeenCalledWith(
@@ -132,10 +174,17 @@ describe("MultiTenantSchedulerSettingsService", () => {
   it("rejects invalid update payload without silently falling back", async () => {
     await expect(
       service.updateSettings("org-1", "actor-1", {
+        realtimeSignalsOrgConcurrency: 4,
+        newsEventsTimelineOrgConcurrency: 2,
         newsEventsIngestionOrgConcurrency: 17,
         knowledgeGraphIngestionOrgConcurrency: 4,
         sentimentSnapshotOrgConcurrency: 2,
         newsnowHottestAnalysisOrgConcurrency: 6,
+        classificationQualityAlertOrgConcurrency: 4,
+        newsIndicatorAssociationOrgConcurrency: 2,
+        crawlQualityTaskSnapshotOrgConcurrency: 2,
+        situationMonitorOrefDefaultRuleOrgConcurrency: 16,
+        userDigestDeliveryOrgConcurrency: 4,
       }),
     ).rejects.toThrow(
       "newsEventsIngestionOrgConcurrency must be an integer between 1 and 16",

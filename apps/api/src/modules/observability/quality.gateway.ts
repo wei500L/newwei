@@ -4,14 +4,18 @@ import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway, WebSocketSe
 import { verify } from "jsonwebtoken";
 import { Server, Socket } from "socket.io";
 
-import { AnalysisQueueEventPublisher } from "../analysis/analysis-queue-event.publisher";
 import { AlertsQueueEventPublisher } from "../alerts/alerts-queue-event.publisher";
+import { AnalysisQueueEventPublisher } from "../analysis/analysis-queue-event.publisher";
+import { AssistantQueueEventPublisher } from "../assistant/assistant-queue-event.publisher";
 import { AccessTokenBlacklistService } from "../auth/access-token-blacklist.service";
 import { AuthService, type AuthenticatedUser, type JwtPayload } from "../auth/auth.service";
-import { AssistantQueueEventPublisher } from "../assistant/assistant-queue-event.publisher";
 import { EnvService } from "../config/config.service";
 import { CrawlQueueEventPublisher } from "../crawl/crawl-queue-event.publisher";
 import { QueueEventPublisher } from "../queue/queue-event.publisher";
+import {
+  buildRealtimeSocketErrorPayload,
+  shouldRecordFailedSocketAuth,
+} from "../websocket/socket-error-payloads";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
 import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
 
@@ -101,7 +105,13 @@ export class QualityGateway implements OnGatewayConnection, OnGatewayDisconnect,
       const rateLimitResult = await this.connectionRateLimiter.checkConnectionRateLimit(ip ?? "");
       if (!rateLimitResult.allowed) {
         this.logger.warn({ socketId: client.id, ip }, "WebSocket connection rate limited");
-        client.emit("quality:error", { message: "Rate limit exceeded", retryAfterMs: rateLimitResult.retryAfterMs });
+        client.emit(
+          "quality:error",
+          buildRealtimeSocketErrorPayload(
+            "Rate limit exceeded",
+            rateLimitResult.retryAfterMs,
+          ),
+        );
         client.disconnect(true);
         return;
       }
@@ -109,7 +119,13 @@ export class QualityGateway implements OnGatewayConnection, OnGatewayDisconnect,
       const backoffDelay = await this.connectionRateLimiter.getBackoffDelay(ip ?? "");
       if (backoffDelay > 0) {
         this.logger.warn({ socketId: client.id, ip, backoffDelay }, "WebSocket connection in backoff period");
-        client.emit("quality:error", { message: "Too many failed attempts", retryAfterMs: backoffDelay });
+        client.emit(
+          "quality:error",
+          buildRealtimeSocketErrorPayload(
+            "Too many failed attempts",
+            backoffDelay,
+          ),
+        );
         client.disconnect(true);
         return;
       }
@@ -142,13 +158,20 @@ export class QualityGateway implements OnGatewayConnection, OnGatewayDisconnect,
         "Quality socket connected"
       );
     } catch (error) {
-      await this.connectionRateLimiter.recordFailedAuth(ip ?? "");
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (shouldRecordFailedSocketAuth(errorMessage)) {
+        await this.connectionRateLimiter.recordFailedAuth(ip ?? "");
+      }
       this.sessions.unregister(client);
       this.logger.warn(
-        { socketId: client.id, ip, error: error instanceof Error ? error.message : String(error) },
+        { socketId: client.id, ip, error: errorMessage },
         "Quality socket authentication failed"
       );
-      client.emit("quality:error", { message: "Unauthorized" });
+      client.emit(
+        "quality:error",
+        buildRealtimeSocketErrorPayload(errorMessage),
+      );
       client.disconnect(true);
     }
   }

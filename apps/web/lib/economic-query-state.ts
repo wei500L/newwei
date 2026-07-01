@@ -9,6 +9,10 @@ export function resolveEconomicQueryData<T>({
   previousData?: T;
   networkStatus: NetworkStatus;
 }): T | null {
+  if (networkStatus === NetworkStatus.setVariables) {
+    return null;
+  }
+
   return data ?? previousData ?? null;
 }
 

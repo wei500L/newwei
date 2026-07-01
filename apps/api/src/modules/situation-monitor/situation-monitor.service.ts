@@ -19,15 +19,24 @@ import {
   classifySituationMonitorCategory,
   SituationMonitorCategoryClassificationSource,
 } from "./classification/category-classifier";
+import {
+  buildSituationMonitorEventClusters,
+  summarizeSituationMonitorCategoryClusters,
+  summarizeSituationMonitorClusterQuality,
+} from "./clustering/event-clustering";
 import { SITUATION_PANELS } from "./config/situations";
 import { WORLD_LEADERS } from "./config/world-leaders";
 import { FinancialMainlineSnapshotService } from "./external/financial-mainline-snapshot.service";
 import {
   SituationMonitorExternalService,
   type SituationMonitorExternalWarning,
-  type SituationMonitorGdeltFetchResult,
   type SituationMonitorGdeltHeadlineCandidate,
 } from "./external/situation-monitor-external.service";
+import {
+  SituationMonitorExternalSnapshotService,
+  type SituationMonitorExternalSnapshotCategoryState,
+  type SituationMonitorExternalSnapshotPayload,
+} from "./situation-monitor-external-snapshot.service";
 import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
 import {
   ALERT_KEYWORDS,
@@ -38,6 +47,7 @@ import {
 import type {
   SituationMonitorAlertHeadline,
   SituationMonitorCryptoItem,
+  SituationMonitorEventCluster,
   SituationMonitorFedSnapshot,
   SituationMonitorHeadline,
   SituationMonitorMatchResult,
@@ -64,6 +74,9 @@ export interface SituationMonitorInsightsCategoryDiagnostics {
   internalCount: number;
   gdeltFallbackCount: number;
   totalCount: number;
+  clusterCount: number;
+  mixedSourceClusterCount: number;
+  distinctSourceCount: number;
 }
 
 export interface SituationMonitorInsightsDiagnostics {
@@ -80,15 +93,57 @@ export interface SituationMonitorWarning {
   detail?: string;
 }
 
+export interface SituationMonitorCoverageSummary {
+  mode: "internal+external" | "external-only" | "internal-only" | "empty";
+  articleCount: number;
+  clusterCount: number;
+  internalAnalyzedItems: number;
+  externalAnalyzedItems: number;
+  mixedSourceClusterCount: number;
+  dedupeRatio: number | null;
+  avgSourcesPerCluster: number | null;
+  visibleCategoryCount: number;
+  missingCategories: SituationMonitorCategory[];
+  hasOlderItemsOutsideWindow: boolean;
+  recommendedWindowHours: number | null;
+}
+
+export interface SituationMonitorQualitySummary {
+  generatedAt: string;
+  windowHours: number;
+  mode: SituationMonitorCoverageSummary["mode"];
+  articleCount: number;
+  clusterCount: number;
+  mixedSourceClusterCount: number;
+  dedupeRatio: number | null;
+  avgSourcesPerCluster: number | null;
+}
+
 export interface SituationMonitorInsightsResponse {
   generatedAt: string;
   windowHours: number;
   maxItems: number;
   analyzedItems: number;
   diagnostics?: SituationMonitorInsightsDiagnostics;
+  coverageSummary?: SituationMonitorCoverageSummary;
   warnings?: SituationMonitorWarning[];
+  externalSnapshot?: {
+    source: "scheduler";
+    status: "completed" | "partial" | "failed" | "idle";
+    stale: boolean;
+    partial: boolean;
+    generatedAt: string | null;
+    expiresAt: string | null;
+    availableCategoryCount: number;
+    categories: Record<
+      SituationMonitorCategory,
+      SituationMonitorExternalSnapshotCategoryState
+    >;
+    warnings: SituationMonitorWarning[];
+  };
   translation?: { target: "zh-CN"; applied: boolean; error?: string };
   headlines?: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
+  clusters?: Record<SituationMonitorCategory, SituationMonitorEventCluster[]>;
   alerts?: SituationMonitorAlertHeadline[];
   leaders?: SituationMonitorWorldLeader[];
   situations?: SituationMonitorSituationPanel[];
@@ -111,6 +166,7 @@ export class SituationMonitorService {
   constructor(
     private readonly cache: CacheService,
     private readonly external: SituationMonitorExternalService,
+    private readonly externalSnapshots: SituationMonitorExternalSnapshotService,
     private readonly financialMainlineSnapshots: FinancialMainlineSnapshotService,
     private readonly feedback: SituationMonitorFeedbackService,
     private readonly realtimeSignals: RealtimeSignalsService,
@@ -130,7 +186,7 @@ export class SituationMonitorService {
       debug?: boolean;
     }
   ): Promise<SituationMonitorInsightsResponse> {
-    const windowHours = this.clampInt(options?.windowHours, 1, 168, 24);
+    const windowHours = this.clampInt(options?.windowHours, 1, 168, 72);
     const maxItems = this.clampInt(options?.maxItems, 50, 1000, 400);
     const maxHeadlinesPerCategory = 12;
     const analysisPerCategory = Math.max(
@@ -171,6 +227,11 @@ export class SituationMonitorService {
 
       const core = await this.cache.wrap(cacheKey, INSIGHTS_CACHE_TTL_SECONDS_CORE, async () => {
         const warnings: SituationMonitorWarning[] = [];
+        const snapshot = allowGdeltFallback
+          ? await this.externalSnapshots.getLatestSnapshot({
+              includeDatabase: true,
+            })
+          : { payload: null, stale: false };
         const headlines = await this.buildHeadlinesByCategory({
           orgId,
           since,
@@ -181,10 +242,50 @@ export class SituationMonitorService {
           debug,
           warnings,
         });
+        if (snapshot.payload) {
+          this.mergeSnapshotHeadlinesByCategory({
+            byCategory: headlines,
+            snapshot: snapshot.payload,
+            since,
+            maxPerCategory: analysisPerCategory,
+          });
+          for (const warning of snapshot.payload.warnings) {
+            warnings.push(
+              this.createSituationMonitorWarningFromExternal({
+                ...warning,
+                source: "gdelt",
+              }),
+            );
+          }
+        }
 
-        const displayHeadlines = this.toDisplayHeadlines(headlines, maxHeadlinesPerCategory);
+        const displayHeadlines = this.toDisplayHeadlines(
+          headlines,
+          maxHeadlinesPerCategory,
+        );
+        const allClusters = buildSituationMonitorEventClusters(headlines, {
+          maxClustersPerCategory: analysisPerCategory,
+          maxItemsPerCluster: 6,
+        });
+        const displayClusters = this.toDisplayClusters(allClusters, 6);
         const analysisNews = this.flattenHeadlinesForAnalysis(headlines);
         const analyzedItems = analysisNews.length;
+        const hasOlderInternalItemsOutsideWindow =
+          await this.hasInternalCoverageOutsideWindow({
+            orgId,
+            since,
+            scope,
+          });
+        const diagnostics = this.buildDiagnostics(headlines, allClusters, scope);
+        const coverageSummary = this.buildCoverageSummary({
+          analysisNews,
+          headlines,
+          clusters: allClusters,
+          snapshot: snapshot.payload,
+          since,
+          windowHours,
+          hasOlderInternalItemsOutsideWindow,
+        });
 
         const nowMinute = Math.floor(Date.now() / 60_000);
         const previousMinute = nowMinute - MOMENTUM_WINDOW_MINUTES;
@@ -260,9 +361,19 @@ export class SituationMonitorService {
         const mainCharacter = calculateMainCharacter(analysisNews);
 
         return {
-          diagnostics: this.buildDiagnostics(displayHeadlines, scope),
+          diagnostics,
+          coverageSummary,
           headlines: displayHeadlines,
+          clusters: displayClusters,
           analyzedItems,
+          ...(allowGdeltFallback || snapshot.payload
+            ? {
+                externalSnapshot: this.createExternalSnapshotInfo(
+                  snapshot.payload,
+                  snapshot.stale,
+                ),
+              }
+            : {}),
           ...(warnings.length > 0 ? { warnings } : {}),
           alerts: this.buildAlerts(displayHeadlines),
           leaders: this.buildWorldLeaders(analysisNews),
@@ -337,6 +448,37 @@ export class SituationMonitorService {
     return response;
   }
 
+  async getQualitySummary(
+    orgId: string,
+    options?: {
+      windowHours?: number;
+      scope?: "tagged" | "all";
+    },
+  ): Promise<SituationMonitorQualitySummary | null> {
+    const insights = await this.getInsights(orgId, {
+      sections: ["core"],
+      windowHours: options?.windowHours ?? 72,
+      maxItems: 400,
+      scope: options?.scope ?? "all",
+    });
+
+    if (!insights.coverageSummary) {
+      return null;
+    }
+
+    return {
+      generatedAt: insights.generatedAt,
+      windowHours: insights.windowHours,
+      mode: insights.coverageSummary.mode,
+      articleCount: insights.coverageSummary.articleCount,
+      clusterCount: insights.coverageSummary.clusterCount,
+      mixedSourceClusterCount:
+        insights.coverageSummary.mixedSourceClusterCount,
+      dedupeRatio: insights.coverageSummary.dedupeRatio,
+      avgSourcesPerCluster: insights.coverageSummary.avgSourcesPerCluster,
+    };
+  }
+
   private insightsCacheKey(options: {
     orgId: string;
     section: "core" | "external";
@@ -366,18 +508,27 @@ export class SituationMonitorService {
 
   private buildDiagnostics(
     headlines: Record<SituationMonitorCategory, SituationMonitorHeadline[]>,
+    clusters: Record<SituationMonitorCategory, SituationMonitorEventCluster[]>,
     scope: "tagged" | "all",
   ): SituationMonitorInsightsDiagnostics {
     const categories = {} as Record<SituationMonitorCategory, SituationMonitorInsightsCategoryDiagnostics>;
 
     for (const category of SITUATION_MONITOR_CATEGORIES) {
       const entries = headlines[category] ?? [];
+      const categoryClusters = clusters[category] ?? [];
       const internalCount = entries.filter((entry) => entry.origin === "items").length;
       const gdeltFallbackCount = entries.filter((entry) => entry.origin === "gdelt").length;
+      const clusterMetrics = summarizeSituationMonitorCategoryClusters(
+        entries,
+        categoryClusters,
+      );
       categories[category] = {
         internalCount,
         gdeltFallbackCount,
         totalCount: entries.length,
+        clusterCount: clusterMetrics.clusterCount,
+        mixedSourceClusterCount: clusterMetrics.mixedSourceClusterCount,
+        distinctSourceCount: clusterMetrics.distinctSourceCount,
       };
     }
 
@@ -385,6 +536,75 @@ export class SituationMonitorService {
       requestedScope: scope,
       effectiveScope: scope,
       categories,
+    };
+  }
+
+  private buildCoverageSummary(options: {
+    analysisNews: SituationNewsItem[];
+    headlines: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
+    clusters: Record<SituationMonitorCategory, SituationMonitorEventCluster[]>;
+    snapshot: SituationMonitorExternalSnapshotPayload | null;
+    since: Date;
+    windowHours: number;
+    hasOlderInternalItemsOutsideWindow: boolean;
+  }): SituationMonitorCoverageSummary {
+    const internalAnalyzedItems = options.analysisNews.filter(
+      (entry) => entry.origin === "items",
+    ).length;
+    const externalAnalyzedItems = options.analysisNews.filter(
+      (entry) => entry.origin === "gdelt",
+    ).length;
+    const qualitySummary = summarizeSituationMonitorClusterQuality({
+      headlinesByCategory: options.headlines,
+      clustersByCategory: options.clusters,
+    });
+    const visibleCategoryCount = SITUATION_MONITOR_CATEGORIES.filter(
+      (category) => (options.clusters[category] ?? []).length > 0,
+    ).length;
+    const missingCategories = SITUATION_MONITOR_CATEGORIES.filter(
+      (category) => (options.clusters[category] ?? []).length === 0,
+    );
+    const sinceTimestamp = options.since.getTime();
+    const hasOlderSnapshotItemsOutsideWindow = Boolean(
+      options.snapshot &&
+        SITUATION_MONITOR_CATEGORIES.some((category) =>
+          (options.snapshot?.headlinesByCategory[category] ?? []).some(
+            (headline) =>
+              typeof headline.timestamp === "number" &&
+              headline.timestamp < sinceTimestamp,
+          ),
+        ),
+    );
+    const hasOlderItemsOutsideWindow =
+      options.windowHours < 168 &&
+      (options.hasOlderInternalItemsOutsideWindow ||
+        hasOlderSnapshotItemsOutsideWindow);
+
+    return {
+      mode:
+        internalAnalyzedItems > 0 && externalAnalyzedItems > 0
+          ? "internal+external"
+          : internalAnalyzedItems > 0
+            ? "internal-only"
+            : externalAnalyzedItems > 0
+              ? "external-only"
+              : "empty",
+      articleCount: qualitySummary.articleCount,
+      clusterCount: qualitySummary.clusterCount,
+      internalAnalyzedItems,
+      externalAnalyzedItems,
+      mixedSourceClusterCount: qualitySummary.mixedSourceClusterCount,
+      dedupeRatio: qualitySummary.dedupeRatio,
+      avgSourcesPerCluster: qualitySummary.avgSourcesPerCluster,
+      visibleCategoryCount,
+      missingCategories,
+      hasOlderItemsOutsideWindow,
+      recommendedWindowHours:
+        hasOlderItemsOutsideWindow &&
+        options.windowHours < 168 &&
+        options.analysisNews.length < 12
+          ? 168
+          : null,
     };
   }
 
@@ -409,7 +629,7 @@ export class SituationMonitorService {
   }
 
   private buildRealtimePredictiveSignals(snapshot: {
-    keywordSpikes: Array<{
+    keywordSpikes: {
       id: string;
       term: string;
       count: number;
@@ -417,14 +637,14 @@ export class SituationMonitorService {
       multiplier: number;
       sourceCount: number;
       confidence: number;
-    }>;
-    predictionLeads: Array<{
+    }[];
+    predictionLeads: {
       id: string;
       title: string;
       shift: number;
       newsActivity: number;
       confidence: number;
-    }>;
+    }[];
   }) {
     const predictiveSignals: NonNullable<
       ReturnType<typeof analyzeCorrelations>["results"]
@@ -506,19 +726,11 @@ export class SituationMonitorService {
       Math.max(options.maxItems, options.maxPerCategory * SITUATION_MONITOR_CATEGORIES.length * 4)
     );
 
-    const processedMatch: Record<string, unknown> = {
+    const processedMatch = this.buildProcessedItemsSinceMatch({
       orgId: options.orgId,
-      status: "completed",
-      duplicateOf: null,
-      $or: [
-        { sortAt: { $gte: options.since } },
-        { sortAt: { $exists: false }, ingestedAt: { $gte: options.since } },
-        { sortAt: null, ingestedAt: { $gte: options.since } },
-        { sortAt: { $exists: false }, ingestedAt: { $exists: false }, createdAt: { $gte: options.since } },
-        { sortAt: null, ingestedAt: { $exists: false }, createdAt: { $gte: options.since } }
-      ],
-      ...(options.scope === "tagged" ? { tags: SOURCE_TAG } : {}),
-    };
+      since: options.since,
+      scope: options.scope,
+    });
 
     const processed = await ProcessedItemModel.find(processedMatch)
       .sort({ sortAt: -1, ingestedAt: -1, createdAt: -1 })
@@ -527,6 +739,7 @@ export class SituationMonitorService {
         _id: 1,
         rawItemId: 1,
         itemMetaId: 1,
+        duplicateOf: 1,
         tags: 1,
         sortAt: 1,
         ingestedAt: 1,
@@ -649,10 +862,18 @@ export class SituationMonitorService {
         typeof (item as { itemMetaId?: unknown }).itemMetaId === "string"
           ? (item as { itemMetaId?: string }).itemMetaId?.trim()
           : "";
+      const duplicateOfRaw = (item as { duplicateOf?: unknown }).duplicateOf;
+      const duplicateOf =
+        typeof duplicateOfRaw === "string"
+          ? duplicateOfRaw.trim()
+          : duplicateOfRaw
+            ? String(duplicateOfRaw).trim()
+            : "";
 
       byCategory[classification.category].push({
         id: String((item as { _id?: unknown })._id ?? link),
         itemMetaId: itemMetaId || undefined,
+        duplicateOf: duplicateOf || undefined,
         title: trimmedTitle,
         link,
         source,
@@ -678,63 +899,189 @@ export class SituationMonitorService {
       });
     }
 
-    if (options.allowGdeltFallback) {
-      const fills = SITUATION_MONITOR_CATEGORIES.flatMap((category) => {
-        const remaining = options.maxPerCategory - byCategory[category].length;
-        if (remaining <= 0) {
-          return [];
-        }
-        return [{ category, remaining }];
-      });
+    return byCategory;
+  }
 
-      if (fills.length > 0) {
-        const gdeltLimit = Math.min(
-          250,
-          Math.max(
-            50,
-            fills.reduce((sum, entry) => sum + entry.remaining, 0) * 4,
-          ),
-        );
-        const gdeltResult = await this.external
-          .fetchGdeltHeadlines(gdeltLimit)
-          .catch((error) => ({
-            headlines: [],
-            warning: {
-              code: "gdelt_request_failed",
-              message: "GDELT fallback request failed.",
-              detail: this.safeErrorMessage(error),
-            },
-          } satisfies SituationMonitorGdeltFetchResult));
-        if (gdeltResult.warning) {
-          options.warnings?.push(
-            this.createSituationMonitorWarningFromExternal({
-              ...gdeltResult.warning,
-              source: "gdelt",
-            }),
-          );
-        }
-        const existingLinksByCategory = new Map<
-          SituationMonitorCategory,
-          Set<string>
-        >(
-          SITUATION_MONITOR_CATEGORIES.map((category) => [
-            category,
-            new Set(byCategory[category].map((headline) => headline.link)),
-          ]),
-        );
-
-        for (const headline of gdeltResult.headlines) {
-          this.tryAppendGdeltHeadline({
-            headline,
-            byCategory,
-            maxPerCategory: options.maxPerCategory,
-            existingLinksByCategory,
-          });
-        }
-      }
+  private async hasInternalCoverageOutsideWindow(options: {
+    orgId: string;
+    since: Date;
+    scope: "tagged" | "all";
+  }): Promise<boolean> {
+    const oldestTrackedAt = new Date(Date.now() - 168 * 60 * 60 * 1000);
+    if (options.since <= oldestTrackedAt) {
+      return false;
     }
 
-    return byCategory;
+    const olderItems = await ProcessedItemModel.find(
+      this.buildProcessedItemsBeforeMatch({
+        orgId: options.orgId,
+        since: options.since,
+        floor: oldestTrackedAt,
+        scope: options.scope,
+      }),
+    )
+      .sort({ sortAt: -1, ingestedAt: -1, createdAt: -1 })
+      .limit(1)
+      .select({ _id: 1 })
+      .lean()
+      .exec();
+
+    return olderItems.length > 0;
+  }
+
+  private buildProcessedItemsSinceMatch(options: {
+    orgId: string;
+    since: Date;
+    scope: "tagged" | "all";
+  }): Record<string, unknown> {
+    return {
+      orgId: options.orgId,
+      status: "completed",
+      duplicateOf: null,
+      $or: [
+        { sortAt: { $gte: options.since } },
+        { sortAt: { $exists: false }, ingestedAt: { $gte: options.since } },
+        { sortAt: null, ingestedAt: { $gte: options.since } },
+        {
+          sortAt: { $exists: false },
+          ingestedAt: { $exists: false },
+          createdAt: { $gte: options.since },
+        },
+        {
+          sortAt: null,
+          ingestedAt: { $exists: false },
+          createdAt: { $gte: options.since },
+        },
+      ],
+      ...(options.scope === "tagged" ? { tags: SOURCE_TAG } : {}),
+    };
+  }
+
+  private buildProcessedItemsBeforeMatch(options: {
+    orgId: string;
+    since: Date;
+    floor: Date;
+    scope: "tagged" | "all";
+  }): Record<string, unknown> {
+    return {
+      orgId: options.orgId,
+      status: "completed",
+      duplicateOf: null,
+      $or: [
+        { sortAt: { $lt: options.since, $gte: options.floor } },
+        {
+          sortAt: { $exists: false },
+          ingestedAt: { $lt: options.since, $gte: options.floor },
+        },
+        { sortAt: null, ingestedAt: { $lt: options.since, $gte: options.floor } },
+        {
+          sortAt: { $exists: false },
+          ingestedAt: { $exists: false },
+          createdAt: { $lt: options.since, $gte: options.floor },
+        },
+        {
+          sortAt: null,
+          ingestedAt: { $exists: false },
+          createdAt: { $lt: options.since, $gte: options.floor },
+        },
+      ],
+      ...(options.scope === "tagged" ? { tags: SOURCE_TAG } : {}),
+    };
+  }
+
+  private mergeSnapshotHeadlinesByCategory(options: {
+    byCategory: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
+    snapshot: SituationMonitorExternalSnapshotPayload;
+    since: Date;
+    maxPerCategory: number;
+  }) {
+    const existingLinksByCategory = new Map<
+      SituationMonitorCategory,
+      Set<string>
+    >(
+      SITUATION_MONITOR_CATEGORIES.map((category) => [
+        category,
+        new Set(options.byCategory[category].map((headline) => headline.link)),
+      ]),
+    );
+    const sinceTimestamp = options.since.getTime();
+
+    for (const category of SITUATION_MONITOR_CATEGORIES) {
+      const snapshotHeadlines = options.snapshot.headlinesByCategory[category] ?? [];
+      for (const headline of snapshotHeadlines) {
+        if (
+          typeof headline.timestamp !== "number" ||
+          headline.timestamp < sinceTimestamp
+        ) {
+          continue;
+        }
+        this.tryAppendCategoryGdeltHeadline({
+          category,
+          headline,
+          byCategory: options.byCategory,
+          maxPerCategory: options.maxPerCategory,
+          existingLinksByCategory,
+        });
+      }
+    }
+  }
+
+  private createExternalSnapshotInfo(
+    snapshot: SituationMonitorExternalSnapshotPayload | null,
+    stale: boolean,
+  ): NonNullable<SituationMonitorInsightsResponse["externalSnapshot"]> {
+    const warningItems = (snapshot?.warnings ?? []).map((warning) =>
+      this.createSituationMonitorWarningFromExternal({
+        ...warning,
+        source: "gdelt",
+      }),
+    );
+    return {
+      source: "scheduler",
+      status:
+        snapshot?.status === "failed"
+          ? "failed"
+          : snapshot?.status === "partial"
+            ? "partial"
+            : snapshot?.status === "completed"
+              ? "completed"
+              : "idle",
+      stale,
+      partial: snapshot?.partial ?? false,
+      generatedAt: snapshot?.generatedAt ?? null,
+      expiresAt: snapshot?.expiresAt ?? null,
+      availableCategoryCount: snapshot
+        ? SITUATION_MONITOR_CATEGORIES.filter(
+            (category) => snapshot.headlinesByCategory[category].length > 0,
+          ).length
+        : 0,
+      categories: snapshot
+        ? SITUATION_MONITOR_CATEGORIES.reduce(
+            (accumulator, category) => {
+              accumulator[category] = snapshot.categoryStates[category];
+              return accumulator;
+            },
+            {} as Record<
+              SituationMonitorCategory,
+              SituationMonitorExternalSnapshotCategoryState
+            >,
+          )
+        : SITUATION_MONITOR_CATEGORIES.reduce(
+            (accumulator, category) => {
+              accumulator[category] = {
+                status: "empty",
+                articleCount: 0,
+                contentGeneratedAt: null,
+              };
+              return accumulator;
+            },
+            {} as Record<
+              SituationMonitorCategory,
+              SituationMonitorExternalSnapshotCategoryState
+            >,
+          ),
+      warnings: warningItems,
+    };
   }
 
   private createSituationMonitorWarningFromExternal(
@@ -750,6 +1097,103 @@ export class SituationMonitorService {
       message: warning.message,
       ...(warning.detail ? { detail: warning.detail } : {}),
     };
+  }
+
+  private collectGdeltWarning(
+    groups: Map<
+      string,
+      {
+        warning: SituationMonitorExternalWarning;
+        categories: Set<SituationMonitorCategory>;
+        details: Set<string>;
+      }
+    >,
+    category: SituationMonitorCategory,
+    warning: SituationMonitorExternalWarning,
+  ) {
+    const existing = groups.get(warning.code);
+    if (existing) {
+      existing.categories.add(category);
+      if (warning.detail) {
+        existing.details.add(warning.detail);
+      }
+      return;
+    }
+
+    groups.set(warning.code, {
+      warning,
+      categories: new Set([category]),
+      details: warning.detail ? new Set([warning.detail]) : new Set(),
+    });
+  }
+
+  private formatAggregatedGdeltWarningDetail(
+    categories: Set<SituationMonitorCategory>,
+    details: Set<string>,
+  ) {
+    const orderedCategories = SITUATION_MONITOR_CATEGORIES.filter((category) =>
+      categories.has(category),
+    );
+    if (orderedCategories.length === 0 && details.size === 0) {
+      return undefined;
+    }
+
+    const parts: string[] = [];
+    if (orderedCategories.length > 0) {
+      parts.push(`Categories: ${orderedCategories.join(", ")}`);
+    }
+    if (details.size > 0) {
+      parts.push(Array.from(details).join(" | "));
+    }
+    return parts.join(". ");
+  }
+
+  private async delay(ms: number) {
+    if (ms <= 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private tryAppendCategoryGdeltHeadline(options: {
+    category: SituationMonitorCategory;
+    headline: SituationMonitorHeadline;
+    byCategory: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
+    maxPerCategory: number;
+    existingLinksByCategory: Map<SituationMonitorCategory, Set<string>>;
+  }) {
+    const normalizedTitle =
+      typeof options.headline.title === "string"
+        ? options.headline.title.trim()
+        : "";
+    const normalizedLink =
+      typeof options.headline.link === "string"
+        ? options.headline.link.trim()
+        : "";
+
+    if (
+      !normalizedTitle ||
+      this.isPlaceholderTitle(normalizedTitle) ||
+      !normalizedLink
+    ) {
+      return;
+    }
+    if (options.byCategory[options.category].length >= options.maxPerCategory) {
+      return;
+    }
+
+    const existingLinks = options.existingLinksByCategory.get(options.category);
+    if (!existingLinks || existingLinks.has(normalizedLink)) {
+      return;
+    }
+
+    existingLinks.add(normalizedLink);
+    options.byCategory[options.category].push({
+      ...options.headline,
+      title: normalizedTitle,
+      link: normalizedLink,
+      category: options.category,
+    });
   }
 
   private tryAppendGdeltHeadline(options: {
@@ -856,6 +1300,20 @@ export class SituationMonitorService {
     return result;
   }
 
+  private toDisplayClusters(
+    clusters: Record<SituationMonitorCategory, SituationMonitorEventCluster[]>,
+    maxPerCategory: number,
+  ): Record<SituationMonitorCategory, SituationMonitorEventCluster[]> {
+    return {
+      politics: clusters.politics.slice(0, maxPerCategory),
+      tech: clusters.tech.slice(0, maxPerCategory),
+      finance: clusters.finance.slice(0, maxPerCategory),
+      gov: clusters.gov.slice(0, maxPerCategory),
+      ai: clusters.ai.slice(0, maxPerCategory),
+      intel: clusters.intel.slice(0, maxPerCategory),
+    };
+  }
+
   private flattenHeadlinesForAnalysis(
     headlines: Record<SituationMonitorCategory, SituationMonitorHeadline[]>,
   ): SituationNewsItem[] {
@@ -866,6 +1324,7 @@ export class SituationMonitorService {
         link: headline.link,
         source: headline.source,
         timestamp: headline.timestamp,
+        origin: headline.origin,
         itemMetaId: headline.itemMetaId,
         summary: headline.summary,
         keyPoints: headline.keyPoints,

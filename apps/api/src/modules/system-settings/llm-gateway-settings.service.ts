@@ -44,6 +44,8 @@ export type LlmGatewayResolvedConfig = LiteLlmEnvConfig &
     assistantModel?: string;
     assistantWebSearchEnabled: boolean;
     managedByLiteLlmProxyGovernance?: boolean;
+    governanceAuthMode?: "profile_key" | "managed_runtime_key";
+    governanceTargetProfileId?: string | null;
   };
 
 export type LlmGatewayProfilePublic = Omit<LiteLlmEnvConfig, "apiKey"> &
@@ -72,6 +74,12 @@ export interface LlmGatewayProfileSummary {
   name: string;
   apiBase: string;
   enabled: boolean;
+}
+
+export interface LlmGatewayRuntimeBindingSnapshot {
+  completionProfileId: string | null;
+  embeddingProfileId: string | null;
+  rerankProfileId: string | null;
 }
 
 export type LlmGatewayProfileInput =
@@ -446,6 +454,17 @@ export class LlmGatewaySettingsService {
     };
   }
 
+  async getRuntimeBindingSnapshot(): Promise<LlmGatewayRuntimeBindingSnapshot> {
+    const settings = await this.loadSettings();
+    return {
+      completionProfileId:
+        this.resolveRuntimeProfile(settings, "completion")?.id ?? null,
+      embeddingProfileId:
+        this.resolveRuntimeProfile(settings, "embedding")?.id ?? null,
+      rerankProfileId: this.resolveRuntimeProfile(settings, "rerank")?.id ?? null,
+    };
+  }
+
   private async applyManagedProxyGovernance(
     profile: StoredProfile,
     config: LlmGatewayResolvedConfig
@@ -470,7 +489,9 @@ export class LlmGatewaySettingsService {
       ...config,
       apiBase: governanceApiBase,
       apiKey: managedApiKey,
-      managedByLiteLlmProxyGovernance: true
+      managedByLiteLlmProxyGovernance: true,
+      governanceAuthMode: "managed_runtime_key",
+      governanceTargetProfileId: profile.id,
     };
   }
 
@@ -495,7 +516,9 @@ export class LlmGatewaySettingsService {
       rerankFallbackModels: profile.rerankFallbackModels,
       sendMetadata: profile.sendMetadata,
       responseFormatMode: profile.responseFormatMode,
-      apiSurface: profile.apiSurface
+      apiSurface: profile.apiSurface,
+      governanceAuthMode: "profile_key",
+      governanceTargetProfileId: null,
     };
   }
 
@@ -518,6 +541,61 @@ export class LlmGatewaySettingsService {
       }
     }
     return null;
+  }
+
+  private resolveRuntimeProfile(
+    settings: StoredSettings,
+    kind: "completion" | "embedding" | "rerank",
+  ): StoredProfile | null {
+    if (kind === "completion") {
+      if (settings.activeId) {
+        const active = settings.profiles.find(
+          (profile) => profile.id === settings.activeId && profile.enabled,
+        );
+        if (active) {
+          return active;
+        }
+      }
+      return this.resolveDefaultProfile(settings, "completion");
+    }
+
+    if (kind === "embedding") {
+      const resolvedId =
+        settings.embeddingActiveId ??
+        (settings.embeddingMode === "use_default" ? null : settings.activeId);
+      if (resolvedId) {
+        const explicit = settings.profiles.find(
+          (profile) =>
+            profile.id === resolvedId &&
+            profile.enabled &&
+            Boolean(profile.embeddingModel),
+        );
+        if (explicit) {
+          return explicit;
+        }
+      }
+      return settings.embeddingMode === "use_default" || !resolvedId
+        ? this.resolveDefaultProfile(settings, "embedding")
+        : null;
+    }
+
+    const resolvedId =
+      settings.rerankActiveId ??
+      (settings.rerankMode === "use_default" ? null : settings.activeId);
+    if (resolvedId) {
+      const explicit = settings.profiles.find(
+        (profile) =>
+          profile.id === resolvedId &&
+          profile.enabled &&
+          Boolean(profile.rerankModel),
+      );
+      if (explicit) {
+        return explicit;
+      }
+    }
+    return settings.rerankMode === "use_default" || !resolvedId
+      ? this.resolveDefaultProfile(settings, "rerank")
+      : null;
   }
 
   private async loadSettings(): Promise<StoredSettings> {

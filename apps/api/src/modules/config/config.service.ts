@@ -52,9 +52,39 @@ export interface AuthEmailCodeConfig {
   maxAttempts: number;
 }
 
+export interface AuthMfaChallengeConfig {
+  maxAttempts: number;
+}
+
 export interface BullBoardConfig {
   username?: string;
   password?: string;
+}
+
+export interface MongoEnvConfig {
+  maxPoolSize: number;
+  minPoolSize: number;
+  autoIndex: boolean;
+  bufferCommands: boolean;
+}
+
+export interface PrismaEnvConfig {
+  connectionLimit: number;
+  poolTimeoutSeconds: number;
+  transactionMaxWaitMs: number;
+  transactionTimeoutMs: number;
+}
+
+export interface RedisTuningConfig {
+  enableAutoPipelining: boolean;
+  maxRetriesPerRequest: number;
+}
+
+export interface HttpAgentEnvConfig {
+  keepAliveEnabled: boolean;
+  maxSockets: number;
+  maxFreeSockets: number;
+  timeoutMs: number;
 }
 
 export interface CrawlTaskJanitorConfig {
@@ -123,6 +153,25 @@ export interface ItemsSearchRankingConfig {
   rerankMaxCandidates: number;
   rerankTimeoutMs: number;
   recencyHalfLifeHours: number;
+}
+
+export interface ElasticsearchConfig {
+  enabled: boolean;
+  node?: string;
+  username?: string;
+  password?: string;
+  apiKey?: string;
+  itemsIndex: string;
+  itemsAlias: string;
+  requestTimeoutMs: number;
+}
+
+export interface ObservabilityEnvConfig {
+  otelEnabled: boolean;
+  otelServiceName: string;
+  otelExporterOtlpEndpoint?: string;
+  otelTraceSampleRate: number;
+  metricsDefaultBuckets?: number[];
 }
 
 export interface ModelServiceConfig {
@@ -220,6 +269,65 @@ export class EnvService extends ConfigService<ApiEnv> {
       username: this.get<string | undefined>("REDIS_USERNAME", { infer: true }),
       password: this.get<string | undefined>("REDIS_PASSWORD", { infer: true }),
       db: this.get<number>("REDIS_DB", { infer: true }) ?? 0,
+      enableAutoPipelining:
+        this.get<boolean>("REDIS_ENABLE_AUTO_PIPELINING", { infer: true }) ??
+        true,
+      maxRetriesPerRequest:
+        this.get<number>("REDIS_MAX_RETRIES_PER_REQUEST", { infer: true }) ??
+        3,
+    };
+  }
+
+  get mongoConfig(): MongoEnvConfig {
+    return {
+      maxPoolSize:
+        this.get<number>("MONGO_MAX_POOL_SIZE", { infer: true }) ?? 20,
+      minPoolSize:
+        this.get<number>("MONGO_MIN_POOL_SIZE", { infer: true }) ?? 0,
+      autoIndex:
+        this.get<boolean>("MONGO_AUTO_INDEX", { infer: true }) ??
+        process.env.NODE_ENV !== "production",
+      bufferCommands:
+        this.get<boolean>("MONGO_BUFFER_COMMANDS", { infer: true }) ?? false,
+    };
+  }
+
+  get prismaConfig(): PrismaEnvConfig {
+    return {
+      connectionLimit:
+        this.get<number>("PRISMA_CONNECTION_LIMIT", { infer: true }) ?? 10,
+      poolTimeoutSeconds:
+        this.get<number>("PRISMA_POOL_TIMEOUT_SECONDS", { infer: true }) ?? 10,
+      transactionMaxWaitMs:
+        this.get<number>("PRISMA_TRANSACTION_MAX_WAIT_MS", { infer: true }) ??
+        5_000,
+      transactionTimeoutMs:
+        this.get<number>("PRISMA_TRANSACTION_TIMEOUT_MS", { infer: true }) ??
+        15_000,
+    };
+  }
+
+  get redisTuning(): RedisTuningConfig {
+    return {
+      enableAutoPipelining:
+        this.get<boolean>("REDIS_ENABLE_AUTO_PIPELINING", { infer: true }) ??
+        true,
+      maxRetriesPerRequest:
+        this.get<number>("REDIS_MAX_RETRIES_PER_REQUEST", { infer: true }) ??
+        3,
+    };
+  }
+
+  get httpAgentConfig(): HttpAgentEnvConfig {
+    return {
+      keepAliveEnabled:
+        this.get<boolean>("HTTP_KEEP_ALIVE_ENABLED", { infer: true }) ?? true,
+      maxSockets:
+        this.get<number>("HTTP_AGENT_MAX_SOCKETS", { infer: true }) ?? 64,
+      maxFreeSockets:
+        this.get<number>("HTTP_AGENT_MAX_FREE_SOCKETS", { infer: true }) ?? 16,
+      timeoutMs:
+        this.get<number>("HTTP_AGENT_TIMEOUT_MS", { infer: true }) ?? 60_000,
     };
   }
 
@@ -356,6 +464,14 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  get authMfaChallengeConfig(): AuthMfaChallengeConfig {
+    return {
+      maxAttempts:
+        this.get<number>("AUTH_MFA_CHALLENGE_MAX_ATTEMPTS", { infer: true }) ??
+        5,
+    };
+  }
+
   get auditLogRetentionDays() {
     return this.get<number>("AUDIT_LOG_RETENTION_DAYS", { infer: true }) ?? 90;
   }
@@ -377,6 +493,15 @@ export class EnvService extends ConfigService<ApiEnv> {
       complexityLimit:
         this.get<number>("GRAPHQL_COMPLEXITY_LIMIT", { infer: true }) ?? 2000,
       corsOrigin: this.get("CORS_ORIGIN", { infer: true }),
+      apqEnabled:
+        this.get<boolean>("GRAPHQL_APQ_ENABLED", { infer: true }) ?? true,
+      responseCacheEnabled:
+        this.get<boolean>("GRAPHQL_RESPONSE_CACHE_ENABLED", { infer: true }) ??
+        true,
+      responseCacheMaxAgeSeconds:
+        this.get<number>("GRAPHQL_RESPONSE_CACHE_MAX_AGE_SECONDS", {
+          infer: true,
+        }) ?? 30,
     };
   }
 
@@ -877,6 +1002,34 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  get elasticsearchConfig(): ElasticsearchConfig {
+    return {
+      enabled:
+        this.get<boolean>("ELASTICSEARCH_ENABLED", { infer: true }) ?? false,
+      node: this.get<string | undefined>("ELASTICSEARCH_NODE", {
+        infer: true,
+      }),
+      username: this.get<string | undefined>("ELASTICSEARCH_USERNAME", {
+        infer: true,
+      }),
+      password: this.get<string | undefined>("ELASTICSEARCH_PASSWORD", {
+        infer: true,
+      }),
+      apiKey: this.get<string | undefined>("ELASTICSEARCH_API_KEY", {
+        infer: true,
+      }),
+      itemsIndex:
+        this.get<string>("ELASTICSEARCH_ITEMS_INDEX", { infer: true }) ??
+        "items-v1",
+      itemsAlias:
+        this.get<string>("ELASTICSEARCH_ITEMS_ALIAS", { infer: true }) ??
+        "items-current",
+      requestTimeoutMs:
+        this.get<number>("ELASTICSEARCH_REQUEST_TIMEOUT_MS", { infer: true }) ??
+        3_000,
+    };
+  }
+
   get itemsReadModelEnabled(): boolean {
     return this.get<boolean>("ITEMS_READ_MODEL_ENABLED", { infer: true }) ?? false;
   }
@@ -1117,6 +1270,31 @@ export class EnvService extends ConfigService<ApiEnv> {
         this.get<number>("ANALYSIS_STREAM_FLUSH_CHARS", { infer: true }) ?? 80,
       streamFlushMs:
         this.get<number>("ANALYSIS_STREAM_FLUSH_MS", { infer: true }) ?? 250,
+    };
+  }
+
+  get observabilityConfig(): ObservabilityEnvConfig {
+    const rawBuckets =
+      this.get<string | undefined>("METRICS_DEFAULT_BUCKETS", {
+        infer: true,
+      }) ?? "";
+    const metricsDefaultBuckets = rawBuckets
+      .split(",")
+      .map((entry) => Number(entry.trim()))
+      .filter((entry) => Number.isFinite(entry) && entry > 0);
+    return {
+      otelEnabled: this.get<boolean>("OTEL_ENABLED", { infer: true }) ?? false,
+      otelServiceName:
+        this.get<string>("OTEL_SERVICE_NAME", { infer: true }) ??
+        "modular-api",
+      otelExporterOtlpEndpoint: this.get<string | undefined>(
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        { infer: true },
+      ),
+      otelTraceSampleRate:
+        this.get<number>("OTEL_TRACE_SAMPLE_RATE", { infer: true }) ?? 0.05,
+      metricsDefaultBuckets:
+        metricsDefaultBuckets.length > 0 ? metricsDefaultBuckets : undefined,
     };
   }
 

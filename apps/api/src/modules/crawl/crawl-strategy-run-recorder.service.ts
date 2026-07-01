@@ -467,13 +467,13 @@ export class CrawlStrategyRunRecorderService {
   }
 
   private mapRun(run: WorkflowRunRecord & {
-    steps: Prisma.CrawlStrategyWorkflowRunStepGetPayload<{}>[];
+    steps: Prisma.CrawlStrategyWorkflowRunStepGetPayload<Prisma.CrawlStrategyWorkflowRunStepDefaultArgs>[];
     candidatesDetail: Prisma.CrawlStrategyWorkflowRunCandidateGetPayload<{
       include: {
         traces: true;
       };
     }>[];
-    events: Prisma.CrawlStrategyWorkflowRunEventGetPayload<{}>[];
+    events: Prisma.CrawlStrategyWorkflowRunEventGetPayload<Prisma.CrawlStrategyWorkflowRunEventDefaultArgs>[];
   }) {
     return {
       id: run.id,
@@ -517,7 +517,9 @@ export class CrawlStrategyRunRecorderService {
     };
   }
 
-  private mapStep(step: Prisma.CrawlStrategyWorkflowRunStepGetPayload<{}>) {
+  private mapStep(
+    step: Prisma.CrawlStrategyWorkflowRunStepGetPayload<Prisma.CrawlStrategyWorkflowRunStepDefaultArgs>,
+  ) {
     return {
       stepKey: step.stepKey,
       nodeId: step.workflowNodeId ?? step.stepKey,
@@ -585,7 +587,9 @@ export class CrawlStrategyRunRecorderService {
     };
   }
 
-  private mapEvent(event: Prisma.CrawlStrategyWorkflowRunEventGetPayload<{}>) {
+  private mapEvent(
+    event: Prisma.CrawlStrategyWorkflowRunEventGetPayload<Prisma.CrawlStrategyWorkflowRunEventDefaultArgs>,
+  ) {
     return {
       id: event.id,
       sequence: event.sequence,

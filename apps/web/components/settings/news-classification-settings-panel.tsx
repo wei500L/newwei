@@ -67,7 +67,7 @@ function getGraphqlErrorMessage(error: unknown): string | null {
   }
 
   const graphQLErrors = (
-    error as { graphQLErrors?: Array<{ message?: unknown }> }
+    error as { graphQLErrors?: { message?: unknown }[] }
   ).graphQLErrors;
   if (Array.isArray(graphQLErrors) && graphQLErrors.length > 0) {
     const firstMessage = graphQLErrors[0]?.message;
@@ -159,21 +159,14 @@ export function NewsClassificationSettingsPanel() {
   ) => {
     switch (validationError.code) {
       case "invalidJson":
-        return t("settings.newsClassification.validation.invalidJson", {
-          defaultValue: "Taxonomy JSON is invalid",
-        });
+        return t("settings.newsClassification.validation.invalidJson");
       case "mustBeArray":
-        return t("settings.newsClassification.validation.mustBeArray", {
-          defaultValue: "Taxonomy JSON must be an array",
-        });
+        return t("settings.newsClassification.validation.mustBeArray");
       case "minItems":
-        return t("settings.newsClassification.validation.minItems", {
-          defaultValue: "Taxonomy must contain at least one node",
-        });
+        return t("settings.newsClassification.validation.minItems");
       case "nodeInvalid":
       default:
         return t("settings.newsClassification.validation.nodeInvalid", {
-          defaultValue: "Taxonomy node #{{index}} is invalid: {{field}}",
           index: validationError.index ?? "?",
           field: validationError.field ?? "node",
         });
@@ -231,17 +224,13 @@ export function NewsClassificationSettingsPanel() {
       });
       await refetch();
       messageApi.success(
-        t("settings.newsClassification.messages.saved", {
-          defaultValue: "Saved",
-        }),
+        t("settings.newsClassification.messages.saved"),
       );
     } catch (err) {
       captureClientError("Failed to save news classification settings", err);
       messageApi.error(
         getGraphqlErrorMessage(err) ??
-          t("settings.newsClassification.messages.saveFailed", {
-            defaultValue: "Failed to save classification settings",
-          }),
+          t("settings.newsClassification.messages.saveFailed"),
       );
     }
   };
@@ -260,22 +249,14 @@ export function NewsClassificationSettingsPanel() {
     <>
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
-        {t("settings.newsClassification.description", {
-          defaultValue:
-            "Configure multi-layer news classification (LLM + Embedding + Reranker) and taxonomy.",
-        })}
+        {t("settings.newsClassification.description")}
       </Typography.Paragraph>
 
       <Alert
         type="info"
         showIcon
-        message={t("settings.newsClassification.notice.title", {
-          defaultValue: "Execution behavior",
-        })}
-        description={t("settings.newsClassification.notice.body", {
-          defaultValue:
-            "Strict mode stops the pipeline when any enabled classification layer fails.",
-        })}
+        message={t("settings.newsClassification.notice.title")}
+        description={t("settings.newsClassification.notice.body")}
         style={{ marginBottom: "1rem" }}
       />
 
@@ -283,9 +264,7 @@ export function NewsClassificationSettingsPanel() {
         <Alert
           type="error"
           showIcon
-          message={t("settings.newsClassification.messages.loadFailed", {
-            defaultValue: "Failed to load settings",
-          })}
+          message={t("settings.newsClassification.messages.loadFailed")}
           description={error.message}
           style={{ marginBottom: "1rem" }}
         />
@@ -293,9 +272,7 @@ export function NewsClassificationSettingsPanel() {
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
-          label={t("settings.newsClassification.fields.enabled", {
-            defaultValue: "Enabled",
-          })}
+          label={t("settings.newsClassification.fields.enabled")}
           name="enabled"
           valuePropName="checked"
         >
@@ -303,9 +280,7 @@ export function NewsClassificationSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsClassification.fields.strictFail", {
-            defaultValue: "Strict fail",
-          })}
+          label={t("settings.newsClassification.fields.strictFail")}
           name="strictFail"
           valuePropName="checked"
         >
@@ -314,9 +289,7 @@ export function NewsClassificationSettingsPanel() {
 
         <Space style={{ width: "100%" }} direction="vertical">
           <Form.Item
-            label={t("settings.newsClassification.fields.enableLlm", {
-              defaultValue: "Enable LLM layer",
-            })}
+            label={t("settings.newsClassification.fields.enableLlm")}
             name="enableLlm"
             valuePropName="checked"
           >
@@ -324,9 +297,7 @@ export function NewsClassificationSettingsPanel() {
           </Form.Item>
 
           <Form.Item
-            label={t("settings.newsClassification.fields.enableEmbedding", {
-              defaultValue: "Enable Embedding layer",
-            })}
+            label={t("settings.newsClassification.fields.enableEmbedding")}
             name="enableEmbedding"
             valuePropName="checked"
           >
@@ -334,9 +305,7 @@ export function NewsClassificationSettingsPanel() {
           </Form.Item>
 
           <Form.Item
-            label={t("settings.newsClassification.fields.enableRerank", {
-              defaultValue: "Enable Reranker layer",
-            })}
+            label={t("settings.newsClassification.fields.enableRerank")}
             name="enableRerank"
             valuePropName="checked"
           >
@@ -345,25 +314,19 @@ export function NewsClassificationSettingsPanel() {
         </Space>
 
         <Form.Item
-          label={t("settings.newsClassification.fields.llmModel", {
-            defaultValue: "Override LLM model (optional)",
-          })}
+          label={t("settings.newsClassification.fields.llmModel")}
           name="llmModel"
         >
           <Input allowClear />
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsClassification.fields.minConfidence", {
-            defaultValue: "Minimum confidence",
-          })}
+          label={t("settings.newsClassification.fields.minConfidence")}
           name="minConfidence"
           rules={[
             {
               required: true,
-              message: t("settings.newsClassification.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsClassification.validation.required"),
             },
           ]}
         >
@@ -371,16 +334,12 @@ export function NewsClassificationSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsClassification.fields.embeddingTopK", {
-            defaultValue: "Embedding Top-K",
-          })}
+          label={t("settings.newsClassification.fields.embeddingTopK")}
           name="embeddingTopK"
           rules={[
             {
               required: true,
-              message: t("settings.newsClassification.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsClassification.validation.required"),
             },
           ]}
         >
@@ -388,16 +347,12 @@ export function NewsClassificationSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsClassification.fields.rerankTopN", {
-            defaultValue: "Rerank Top-N",
-          })}
+          label={t("settings.newsClassification.fields.rerankTopN")}
           name="rerankTopN"
           rules={[
             {
               required: true,
-              message: t("settings.newsClassification.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsClassification.validation.required"),
             },
           ]}
         >
@@ -405,16 +360,12 @@ export function NewsClassificationSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsClassification.fields.cacheTtlSeconds", {
-            defaultValue: "Cache TTL (seconds)",
-          })}
+          label={t("settings.newsClassification.fields.cacheTtlSeconds")}
           name="cacheTtlSeconds"
           rules={[
             {
               required: true,
-              message: t("settings.newsClassification.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsClassification.validation.required"),
             },
           ]}
         >
@@ -422,16 +373,12 @@ export function NewsClassificationSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsClassification.fields.taxonomyVersion", {
-            defaultValue: "Taxonomy version",
-          })}
+          label={t("settings.newsClassification.fields.taxonomyVersion")}
           name="taxonomyVersion"
           rules={[
             {
               required: true,
-              message: t("settings.newsClassification.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsClassification.validation.required"),
             },
           ]}
         >
@@ -439,20 +386,13 @@ export function NewsClassificationSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsClassification.fields.taxonomyJson", {
-            defaultValue: "Taxonomy JSON",
-          })}
+          label={t("settings.newsClassification.fields.taxonomyJson")}
           name="taxonomyJson"
-          extra={t("settings.newsClassification.hints.taxonomyJson", {
-            defaultValue:
-              "Provide a JSON array of taxonomy nodes with path/displayName/description/legacyCategory/keywords/synonyms.",
-          })}
+          extra={t("settings.newsClassification.hints.taxonomyJson")}
           rules={[
             {
               required: true,
-              message: t("settings.newsClassification.validation.required", {
-                defaultValue: "Required",
-              }),
+              message: t("settings.newsClassification.validation.required"),
             },
           ]}
         >
@@ -466,7 +406,7 @@ export function NewsClassificationSettingsPanel() {
             loading={saving}
             disabled={loading}
           >
-            {t("common.saveChanges", { defaultValue: "Save changes" })}
+            {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>

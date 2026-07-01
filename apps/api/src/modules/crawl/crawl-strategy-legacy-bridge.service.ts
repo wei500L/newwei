@@ -1,17 +1,17 @@
 import { Injectable } from '@nestjs/common';
 
 import { normalizeCrawlSiteProfileConfig } from './crawl-frontier.utils';
-import type {
-  CrawlSiteExecutionMode,
-  CrawlSiteProfileConfig,
-  CrawlSiteProfileRecord,
-} from './crawl.types';
 import {
   CrawlStrategyWorkflowNodeType,
   createEmptyWorkflowDefinition,
   isRecord,
   type CrawlStrategyWorkflowDefinition,
 } from './crawl-strategy.types';
+import type {
+  CrawlSiteExecutionMode,
+  CrawlSiteProfileConfig,
+  CrawlSiteProfileRecord,
+} from './crawl.types';
 
 interface LegacyNewsSourceInput {
   url: string;
@@ -47,9 +47,10 @@ export class CrawlStrategyLegacyBridgeService {
       (node) => node.type === CrawlStrategyWorkflowNodeType.SeedDiscovery,
     );
     if (seedNode) {
+      const seedMode = config.seedDiscovery?.mode ?? 'robots';
       seedNode.config = {
         ...seedNode.config,
-        mode: config.seedDiscovery?.mode === 'disabled' ? 'sitemap' : 'sitemap',
+        mode: seedMode,
         maxUrls: config.seedDiscovery?.maxSeedUrls ?? 40,
       };
     }

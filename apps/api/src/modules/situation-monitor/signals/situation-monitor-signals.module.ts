@@ -2,10 +2,12 @@ import { getQueueToken } from '@nestjs/bull-shared';
 import { Module } from '@nestjs/common';
 import { Queue, QueueEvents } from 'bullmq';
 
+import { BULLMQ_FAILED_JOB_RETENTION } from '../../../common/bullmq-retention';
 import { AlertsModule } from '../../alerts/alerts.module';
 import { AuthModule } from '../../auth/auth.module';
-import { EnvService } from '../../config/config.service';
-import { toBullmqConnection } from '../../config/redis-connection';
+import { BullmqConnectionService } from '../../config/bullmq-connection.service';
+
+import { SituationMonitorSignalsQueueCleanupService } from './situation-monitor-signals-queue-cleanup.service';
 import {
   SITUATION_MONITOR_SIGNALS_QUEUE,
   SITUATION_MONITOR_SIGNALS_QUEUE_EVENTS,
@@ -14,7 +16,6 @@ import {
 import { SituationMonitorSignalsDispatcher } from './situation-monitor-signals.dispatcher';
 import { SituationMonitorSignalsGateway } from './situation-monitor-signals.gateway';
 import { SituationMonitorSignalsProcessor } from './situation-monitor-signals.processor';
-import { SituationMonitorSignalsQueueCleanupService } from './situation-monitor-signals-queue-cleanup.service';
 import { SituationMonitorSignalsService } from './situation-monitor-signals.service';
 
 @Module({
@@ -27,16 +28,19 @@ import { SituationMonitorSignalsService } from './situation-monitor-signals.serv
     SituationMonitorSignalsQueueCleanupService,
     {
       provide: SITUATION_MONITOR_SIGNALS_QUEUE,
-      inject: [EnvService, SituationMonitorSignalsQueueCleanupService],
+      inject: [
+        SituationMonitorSignalsQueueCleanupService,
+        BullmqConnectionService,
+      ],
       useFactory: (
-        env: EnvService,
         cleanup: SituationMonitorSignalsQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
       ) => {
         const queue = new Queue(SITUATION_MONITOR_SIGNALS_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.getSharedConnection(),
           defaultJobOptions: {
             removeOnComplete: true,
-            removeOnFail: false,
+            removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
             attempts: 3,
             backoff: {
               type: 'exponential',
@@ -50,13 +54,18 @@ import { SituationMonitorSignalsService } from './situation-monitor-signals.serv
     },
     {
       provide: SITUATION_MONITOR_SIGNALS_QUEUE_EVENTS,
-      inject: [EnvService, SituationMonitorSignalsQueueCleanupService],
+      inject: [
+        SituationMonitorSignalsQueueCleanupService,
+        BullmqConnectionService,
+      ],
       useFactory: (
-        env: EnvService,
         cleanup: SituationMonitorSignalsQueueCleanupService,
+        bullmqConnections: BullmqConnectionService,
       ) => {
         const events = new QueueEvents(SITUATION_MONITOR_SIGNALS_QUEUE_NAME, {
-          connection: toBullmqConnection(env.redisConfig),
+          connection: bullmqConnections.createDedicatedConnectionOptions(
+            `events:${SITUATION_MONITOR_SIGNALS_QUEUE_NAME}`,
+          ),
         });
         cleanup.track(events);
         return events;

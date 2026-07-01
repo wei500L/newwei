@@ -4,8 +4,7 @@ import {
   AnalysisResultModel,
   type AnalysisResultDocument,
 } from "@modular/mongo";
-import { NotificationPresentationKind } from "@modular/utils";
-import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
+import { NotificationPresentationKind , createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { Inject, Injectable } from "@nestjs/common";
 // eslint-disable-next-line import/no-unresolved
 import { NotificationType } from "@prisma/client";

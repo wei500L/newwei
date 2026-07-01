@@ -1,6 +1,7 @@
 "use client";
 
 import { gql, useApolloClient, useMutation } from "@apollo/client";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import {
   Alert,
   Badge,
@@ -34,7 +35,7 @@ import type { EChartsOption } from "echarts";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
@@ -48,6 +49,7 @@ import {
   useAlertRuleTuningSuggestionQuery,
 } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import { createCoalescedRefetchScheduler } from "@/lib/coalesced-refetch";
 import {
   buildCsv,
   downloadCsv,
@@ -70,9 +72,15 @@ import {
   resolveAlertCenterAccess,
   resolveSelectedEventId,
   resolveFilterTimeWindow,
+  type AlertEventItem,
   type AlertDatePreset,
   type AlertFilterState,
 } from "./alert-center.utils";
+import {
+  ALERT_EVENT_ROW_ESTIMATE_PX,
+  shouldUpdateAlertEventsMetric,
+  shouldVirtualizeAlertEvents,
+} from "./alert-events-virtualization";
 
 const severityColor: Record<string, string> = {
   low: "green",
@@ -277,9 +285,7 @@ const EconomicAnomalyEvidence = ({
   if (!context) {
     return (
       <Typography.Text type="secondary">
-        {t("alerts.center.evidence.empty", {
-          defaultValue: "No evidence available.",
-        })}
+        {t("alerts.center.evidence.empty")}
       </Typography.Text>
     );
   }
@@ -350,39 +356,31 @@ const EconomicAnomalyEvidence = ({
         <>
           <Descriptions size="small" bordered column={2}>
             <Descriptions.Item
-              label={t("alerts.center.evidence.observed", {
-                defaultValue: "Observed",
-              })}
+              label={t("alerts.center.evidence.observed")}
             >
               {typeof observed === "number"
                 ? observed
                 : t("common.notAvailable")}
             </Descriptions.Item>
             <Descriptions.Item
-              label={t("alerts.center.evidence.expected", {
-                defaultValue: "Expected",
-              })}
+              label={t("alerts.center.evidence.expected")}
             >
               {expected}
             </Descriptions.Item>
             <Descriptions.Item
-              label={t("alerts.center.evidence.residual", {
-                defaultValue: "Residual",
-              })}
+              label={t("alerts.center.evidence.residual")}
             >
               {typeof residual === "number"
                 ? residual
                 : t("common.notAvailable")}
             </Descriptions.Item>
             <Descriptions.Item
-              label={t("alerts.center.evidence.sigma", {
-                defaultValue: "Sigma",
-              })}
+              label={t("alerts.center.evidence.sigma")}
             >
               {sigma}
             </Descriptions.Item>
             <Descriptions.Item
-              label={t("alerts.center.evidence.ci", { defaultValue: "CI" })}
+              label={t("alerts.center.evidence.ci")}
               span={2}
             >
               {typeof lower === "number" && typeof upper === "number"
@@ -394,9 +392,7 @@ const EconomicAnomalyEvidence = ({
             <Card size="small" style={{ marginTop: 8 }}>
               <Space direction="vertical" size={8} style={{ width: "100%" }}>
                 <Typography.Text type="secondary">
-                  {t("alerts.center.evidence.ciVisualization", {
-                    defaultValue: "Confidence interval visualization",
-                  })}
+                  {t("alerts.center.evidence.ciVisualization")}
                 </Typography.Text>
                 <div style={{ position: "relative", height: 22 }}>
                   <div
@@ -425,7 +421,7 @@ const EconomicAnomalyEvidence = ({
                     }}
                   />
                   <Tooltip
-                    title={`${t("alerts.center.evidence.expected", { defaultValue: "Expected" })}: ${expected}`}
+                    title={`${t("alerts.center.evidence.expected")}: ${expected}`}
                   >
                     <div
                       style={{
@@ -439,7 +435,7 @@ const EconomicAnomalyEvidence = ({
                     />
                   </Tooltip>
                   <Tooltip
-                    title={`${t("alerts.center.evidence.observed", { defaultValue: "Observed" })}: ${observed}`}
+                    title={`${t("alerts.center.evidence.observed")}: ${observed}`}
                   >
                     <div
                       style={{
@@ -466,16 +462,12 @@ const EconomicAnomalyEvidence = ({
         <Alert
           type="warning"
           showIcon
-          message={t("alerts.center.evidence.fallback", {
-            defaultValue: "Model service unavailable. Using fallback detector.",
-          })}
+          message={t("alerts.center.evidence.fallback")}
           description={safeJsonStringify(fallback)}
         />
       ) : (
         <Typography.Text type="secondary">
-          {t("alerts.center.evidence.empty", {
-            defaultValue: "No evidence available.",
-          })}
+          {t("alerts.center.evidence.empty")}
         </Typography.Text>
       )}
     </Space>
@@ -526,8 +518,8 @@ const EntitySentimentEvidence = ({
       xAxis: {
         type: "category",
         data: [
-          t("alerts.center.evidence.window", { defaultValue: "Window" }),
-          t("alerts.center.evidence.baseline", { defaultValue: "Baseline" }),
+          t("alerts.center.evidence.window"),
+          t("alerts.center.evidence.baseline"),
         ],
       },
       yAxis: {
@@ -554,9 +546,7 @@ const EntitySentimentEvidence = ({
   if (!safeContext) {
     return (
       <Typography.Text type="secondary">
-        {t("alerts.center.evidence.empty", {
-          defaultValue: "No evidence available.",
-        })}
+        {t("alerts.center.evidence.empty")}
       </Typography.Text>
     );
   }
@@ -620,7 +610,7 @@ const EntitySentimentEvidence = ({
 
       <Descriptions size="small" bordered column={1}>
         <Descriptions.Item
-          label={t("alerts.center.evidence.window", { defaultValue: "Window" })}
+          label={t("alerts.center.evidence.window")}
         >
           <Space direction="vertical" size={0}>
             {windowMinutes ? (
@@ -633,7 +623,6 @@ const EntitySentimentEvidence = ({
             ) : null}
             <Typography.Text>
               {t("alerts.center.evidence.negRatio", {
-                defaultValue: "Negative ratio {{ratio}} ({{neg}} / {{total}})",
                 ratio:
                   formatPercent(windowNegativeRatio, 1) ||
                   t("common.notAvailable"),
@@ -650,9 +639,7 @@ const EntitySentimentEvidence = ({
           </Space>
         </Descriptions.Item>
         <Descriptions.Item
-          label={t("alerts.center.evidence.baseline", {
-            defaultValue: "Baseline",
-          })}
+          label={t("alerts.center.evidence.baseline")}
         >
           <Space direction="vertical" size={0}>
             {baselineMinutes ? (
@@ -665,7 +652,6 @@ const EntitySentimentEvidence = ({
             ) : null}
             <Typography.Text>
               {t("alerts.center.evidence.negRatio", {
-                defaultValue: "Negative ratio {{ratio}} ({{neg}} / {{total}})",
                 ratio:
                   formatPercent(baselineNegativeRatio, 1) ||
                   t("common.notAvailable"),
@@ -686,9 +672,7 @@ const EntitySentimentEvidence = ({
       {Object.keys(ratioTrendOption).length > 0 ? (
         <Card size="small">
           <Typography.Text type="secondary">
-            {t("alerts.center.evidence.sentimentCompare", {
-              defaultValue: "Negative sentiment ratio comparison",
-            })}
+            {t("alerts.center.evidence.sentimentCompare")}
           </Typography.Text>
           <DashboardChart option={ratioTrendOption} height={200} />
         </Card>
@@ -698,9 +682,7 @@ const EntitySentimentEvidence = ({
         <>
           <Divider style={{ margin: "8px 0" }} />
           <Typography.Text type="secondary">
-            {t("alerts.center.evidence.evidenceItems", {
-              defaultValue: "Evidence items",
-            })}
+            {t("alerts.center.evidence.evidenceItems")}
           </Typography.Text>
           <List
             size="small"
@@ -716,9 +698,7 @@ const EntitySentimentEvidence = ({
               const ingestedAt =
                 toStringValue(record?.ingestedAt) ??
                 toStringValue(record?.createdAt);
-              const ingestedLabel = t("items.time.ingested", {
-                defaultValue: "Ingested",
-              });
+              const ingestedLabel = t("items.time.ingested");
               const formatOptions = {
                 year: "numeric",
                 month: "2-digit",
@@ -776,9 +756,7 @@ const EntitySentimentEvidence = ({
         </>
       ) : (
         <Typography.Text type="secondary">
-          {t("alerts.center.evidence.noEvidenceItems", {
-            defaultValue: "No evidence items.",
-          })}
+          {t("alerts.center.evidence.noEvidenceItems")}
         </Typography.Text>
       )}
     </Space>
@@ -799,9 +777,7 @@ const EntityAssociationEvidence = ({
   if (!context) {
     return (
       <Typography.Text type="secondary">
-        {t("alerts.center.evidence.empty", {
-          defaultValue: "No evidence available.",
-        })}
+        {t("alerts.center.evidence.empty")}
       </Typography.Text>
     );
   }
@@ -840,9 +816,7 @@ const EntityAssociationEvidence = ({
       {sourceEventId ? (
         <Descriptions size="small" bordered column={1}>
           <Descriptions.Item
-            label={t("alerts.center.evidence.sourceEvent", {
-              defaultValue: "Source event",
-            })}
+            label={t("alerts.center.evidence.sourceEvent")}
           >
             <Space direction="vertical" size={2}>
               <Space size="small" wrap>
@@ -858,34 +832,26 @@ const EntityAssociationEvidence = ({
                 </Typography.Text>
               ) : null}
               <Button size="small" onClick={() => onOpenEvent(sourceEventId)}>
-                {t("alerts.center.evidence.openSourceEvent", {
-                  defaultValue: "Open source event",
-                })}
+                {t("alerts.center.evidence.openSourceEvent")}
               </Button>
             </Space>
           </Descriptions.Item>
         </Descriptions>
       ) : (
         <Typography.Text type="secondary">
-          {t("alerts.center.evidence.sourceEventMissing", {
-            defaultValue: "No source event.",
-          })}
+          {t("alerts.center.evidence.sourceEventMissing")}
         </Typography.Text>
       )}
 
       <Divider style={{ margin: "8px 0" }} />
       <Typography.Text type="secondary">
-        {t("alerts.center.evidence.targets", {
-          defaultValue: "Associated targets",
-        })}
+        {t("alerts.center.evidence.targets")}
       </Typography.Text>
       <List
         size="small"
         dataSource={targets}
         locale={{
-          emptyText: t("alerts.center.evidence.targetsEmpty", {
-            defaultValue: "No targets.",
-          }),
+          emptyText: t("alerts.center.evidence.targetsEmpty"),
         }}
         renderItem={(item, index) => {
           const record = isRecord(item) ? item : null;
@@ -910,7 +876,6 @@ const EntityAssociationEvidence = ({
                 </Space>
                 <Typography.Text type="secondary">
                   {t("alerts.center.evidence.targetMeta", {
-                    defaultValue: "weight {{weight}} · conf {{conf}}",
                     weight: formatFixed(weight, 3) || t("common.notAvailable"),
                     conf:
                       formatFixed(confidence, 3) || t("common.notAvailable"),
@@ -952,9 +917,7 @@ const RealtimeSignalEvidence = ({
   if (!context) {
     return (
       <Typography.Text type="secondary">
-        {t("alerts.center.evidence.empty", {
-          defaultValue: "No evidence available.",
-        })}
+        {t("alerts.center.evidence.empty")}
       </Typography.Text>
     );
   }
@@ -987,107 +950,77 @@ const RealtimeSignalEvidence = ({
   const summaryRows = [
     {
       key: "militaryCount",
-      label: t("alerts.center.evidence.realtime.militaryCount", {
-        defaultValue: "Military flights",
-      }),
+      label: t("alerts.center.evidence.realtime.militaryCount"),
       value: toNumber(context.militaryCount),
     },
     {
       key: "currentValidPositionCount",
-      label: t("alerts.center.evidence.realtime.currentValidPositionCount", {
-        defaultValue: "Current valid positions",
-      }),
+      label: t("alerts.center.evidence.realtime.currentValidPositionCount"),
       value: toNumber(context.currentValidPositionCount),
     },
     {
       key: "snapshotValidPositionCount",
-      label: t("alerts.center.evidence.realtime.snapshotValidPositionCount", {
-        defaultValue: "Map snapshot positions",
-      }),
+      label: t("alerts.center.evidence.realtime.snapshotValidPositionCount"),
       value: toNumber(context.snapshotValidPositionCount),
     },
     {
       key: "droppedStalePositionCount",
-      label: t("alerts.center.evidence.realtime.droppedStalePositionCount", {
-        defaultValue: "Dropped stale positions",
-      }),
+      label: t("alerts.center.evidence.realtime.droppedStalePositionCount"),
       value: toNumber(context.droppedStalePositionCount),
     },
     {
       key: "disruptions",
-      label: t("alerts.center.evidence.realtime.disruptions", {
-        defaultValue: "AIS disruptions",
-      }),
+      label: t("alerts.center.evidence.realtime.disruptions"),
       value: toNumber(context.disruptions),
     },
     {
       key: "outages",
-      label: t("alerts.center.evidence.realtime.outages", {
-        defaultValue: "Internet outages",
-      }),
+      label: t("alerts.center.evidence.realtime.outages"),
       value: toNumber(context.outages),
     },
     {
       key: "unrestCount",
-      label: t("alerts.center.evidence.realtime.unrest", {
-        defaultValue: "Unrest events",
-      }),
+      label: t("alerts.center.evidence.realtime.unrest"),
       value: toNumber(context.unrestCount),
     },
     {
       key: "acledCount",
-      label: t("alerts.center.evidence.realtime.acled", {
-        defaultValue: "ACLED",
-      }),
+      label: t("alerts.center.evidence.realtime.acled"),
       value: toNumber(context.acledCount),
     },
     {
       key: "gdeltCount",
-      label: t("alerts.center.evidence.realtime.gdelt", {
-        defaultValue: "GDELT",
-      }),
+      label: t("alerts.center.evidence.realtime.gdelt"),
       value: toNumber(context.gdeltCount),
     },
     {
       key: "dedupeReducedBy",
-      label: t("alerts.center.evidence.realtime.dedupeReducedBy", {
-        defaultValue: "Deduped",
-      }),
+      label: t("alerts.center.evidence.realtime.dedupeReducedBy"),
       value: toNumber(context.dedupeReducedBy),
     },
     {
       key: "defcon",
-      label: t("alerts.center.evidence.realtime.defcon", {
-        defaultValue: "DEFCON",
-      }),
+      label: t("alerts.center.evidence.realtime.defcon"),
       value: toNumber(context.defcon),
     },
     {
       key: "adjustedScore",
-      label: t("alerts.center.evidence.realtime.adjustedScore", {
-        defaultValue: "Adjusted score",
-      }),
+      label: t("alerts.center.evidence.realtime.adjustedScore"),
       value: toNumber(context.adjustedScore),
     },
     {
       key: "openLocations",
-      label: t("alerts.center.evidence.realtime.openLocations", {
-        defaultValue: "Open locations",
-      }),
+      label: t("alerts.center.evidence.realtime.openLocations"),
       value: toNumber(context.openLocations),
     },
     {
       key: "activeSpikes",
-      label: t("alerts.center.evidence.realtime.activeSpikes", {
-        defaultValue: "Active spikes",
-      }),
+      label: t("alerts.center.evidence.realtime.activeSpikes"),
       value: toNumber(context.activeSpikes),
     },
     {
       key: "avgPop",
-      label: t("alerts.center.evidence.realtime.avgPop", {
-        defaultValue: "Avg pop",
-      }),
+      label: t("alerts.center.evidence.realtime.avgPop"),
       value: toNumber(context.avgPop),
     },
   ].filter((entry) => typeof entry.value === "number");
@@ -1119,17 +1052,13 @@ const RealtimeSignalEvidence = ({
       <Space size={[6, 6]} wrap>
         {source ? (
           <Tag color="blue">
-            {t("alerts.center.evidence.realtime.source", {
-              defaultValue: "Source",
-            })}
+            {t("alerts.center.evidence.realtime.source")}
             : {source}
           </Tag>
         ) : null}
         {stale ? (
           <Tag color="red">
-            {t("alerts.center.evidence.realtime.stale", {
-              defaultValue: "Stale snapshot",
-            })}
+            {t("alerts.center.evidence.realtime.stale")}
           </Tag>
         ) : null}
         {snapshotFreshness ? (
@@ -1142,23 +1071,18 @@ const RealtimeSignalEvidence = ({
                   : "default"
             }
           >
-            {t("alerts.center.evidence.realtime.snapshotFreshness", {
-              defaultValue: "Snapshot",
-            })}
+            {t("alerts.center.evidence.realtime.snapshotFreshness")}
             : {snapshotFreshnessLabel}
           </Tag>
         ) : null}
         {snapshotRetainedPrevious ? (
           <Tag color="gold">
-            {t("alerts.center.evidence.realtime.snapshotRetainedPrevious", {
-              defaultValue: "Retained previous snapshot",
-            })}
+            {t("alerts.center.evidence.realtime.snapshotRetainedPrevious")}
           </Tag>
         ) : null}
         {typeof maxStaleMinutes === "number" ? (
           <Tag>
             {t("alerts.center.evidence.realtime.maxStaleMinutes", {
-              defaultValue: "Max stale {{minutes}} min",
               minutes: maxStaleMinutes,
             })}
           </Tag>
@@ -1168,7 +1092,6 @@ const RealtimeSignalEvidence = ({
       {latestTimestamp ? (
         <Typography.Text type="secondary">
           {t("alerts.center.evidence.realtime.latestTimestamp", {
-            defaultValue: "Latest point {{time}}",
             time: formatDateTime(latestTimestamp, locale, {
               year: "numeric",
               month: "2-digit",
@@ -1184,9 +1107,7 @@ const RealtimeSignalEvidence = ({
 
       {!hasStructuredEvidence ? (
         <Typography.Text type="secondary">
-          {t("alerts.center.evidence.realtime.emptyStructured", {
-            defaultValue: "No structured realtime evidence fields.",
-          })}
+          {t("alerts.center.evidence.realtime.emptyStructured")}
         </Typography.Text>
       ) : null}
 
@@ -1203,9 +1124,7 @@ const RealtimeSignalEvidence = ({
       {countryCodes.length > 0 ? (
         <div>
           <Typography.Text type="secondary">
-            {t("alerts.center.evidence.realtime.countryCodes", {
-              defaultValue: "Country codes",
-            })}
+            {t("alerts.center.evidence.realtime.countryCodes")}
           </Typography.Text>
           <div style={{ marginTop: 6 }}>
             <Space size={[6, 6]} wrap>
@@ -1221,9 +1140,7 @@ const RealtimeSignalEvidence = ({
         <>
           <Divider style={{ margin: "8px 0" }} />
           <Typography.Text type="secondary">
-            {t("alerts.center.evidence.realtime.tensions", {
-              defaultValue: "Top tensions",
-            })}
+            {t("alerts.center.evidence.realtime.tensions")}
           </Typography.Text>
           <List
             size="small"
@@ -1259,9 +1176,7 @@ const RealtimeSignalEvidence = ({
         <>
           <Divider style={{ margin: "8px 0" }} />
           <Typography.Text type="secondary">
-            {t("alerts.center.evidence.realtime.leads", {
-              defaultValue: "Prediction leads",
-            })}
+            {t("alerts.center.evidence.realtime.leads")}
           </Typography.Text>
           <List
             size="small"
@@ -1295,9 +1210,7 @@ const RealtimeSignalEvidence = ({
         <>
           <Divider style={{ margin: "8px 0" }} />
           <Typography.Text type="secondary">
-            {t("alerts.center.evidence.realtime.spikes", {
-              defaultValue: "Keyword spikes",
-            })}
+            {t("alerts.center.evidence.realtime.spikes")}
           </Typography.Text>
           <List
             size="small"
@@ -1436,6 +1349,8 @@ export function AlertCenterContent() {
   const [openFilterPanelKeys, setOpenFilterPanelKeys] = useState<string[]>([]);
   const [listPage, setListPage] = useState<number>(1);
   const [listPageSize, setListPageSize] = useState<number>(30);
+  const eventsListRef = useRef<HTMLDivElement | null>(null);
+  const [eventsListScrollMargin, setEventsListScrollMargin] = useState(0);
   const [exportScope, setExportScope] = useState<AlertExportScope>("selected");
   const [expandMessage, setExpandMessage] = useState<boolean>(false);
   const [expandContext, setExpandContext] = useState<boolean>(false);
@@ -1471,17 +1386,23 @@ export function AlertCenterContent() {
     if (!shouldQueryEvents) {
       return;
     }
+    const refetchScheduler = createCoalescedRefetchScheduler(() =>
+      refetchEvents(),
+    );
     const sub = client
       .subscribe({
         query: AlertEventsStreamDocument,
       })
       .subscribe({
         next: () => {
-          void refetchEvents();
+          refetchScheduler.schedule();
         },
       });
 
-    return () => sub.unsubscribe();
+    return () => {
+      sub.unsubscribe();
+      refetchScheduler.cancel();
+    };
   }, [client, refetchEvents, shouldQueryEvents]);
 
   const sortedEvents = useMemo(() => {
@@ -1647,9 +1568,7 @@ export function AlertCenterContent() {
         messageApi.error(
           error instanceof Error
             ? error.message
-            : t("common.error.unexpected", {
-                defaultValue: "Unexpected error",
-              }),
+            : t("common.error.unexpected"),
         );
       }
     }
@@ -1703,7 +1622,6 @@ export function AlertCenterContent() {
     if (successCount > 0) {
       messageApi.success(
         t("alerts.center.batch.updateSuccess", {
-          defaultValue: "Updated {{count}} alerts to {{status}}.",
           count: successCount,
           status,
         }),
@@ -1712,7 +1630,6 @@ export function AlertCenterContent() {
     if (failCount > 0) {
       messageApi.warning(
         t("alerts.center.batch.updatePartial", {
-          defaultValue: "{{count}} alerts failed to update.",
           count: failCount,
         }),
       );
@@ -1771,10 +1688,102 @@ export function AlertCenterContent() {
     const start = (listPage - 1) * listPageSize;
     return filteredEvents.slice(start, start + listPageSize);
   }, [filteredEvents, listPage, listPageSize]);
+  const shouldVirtualizeCurrentEvents = shouldVirtualizeAlertEvents(
+    currentPageEvents.length,
+  );
+  const eventVirtualizer = useWindowVirtualizer({
+    count: currentPageEvents.length,
+    estimateSize: () => ALERT_EVENT_ROW_ESTIMATE_PX,
+    overscan: 5,
+    enabled: shouldVirtualizeCurrentEvents,
+    scrollMargin: eventsListScrollMargin,
+  });
+  const virtualEventRows = shouldVirtualizeCurrentEvents
+    ? eventVirtualizer.getVirtualItems()
+    : [];
+  const eventListTopSpacer =
+    virtualEventRows.length > 0
+      ? Math.max(0, virtualEventRows[0]!.start - eventsListScrollMargin)
+      : 0;
+  const eventListBottomSpacer =
+    virtualEventRows.length > 0
+      ? Math.max(
+          0,
+          eventVirtualizer.getTotalSize() -
+            virtualEventRows[virtualEventRows.length - 1]!.end,
+        )
+      : 0;
+  const currentPageEventEntries = shouldVirtualizeCurrentEvents
+    ? virtualEventRows
+        .map((row) => {
+          const event = currentPageEvents[row.index];
+          return event ? { event, key: event.id, virtualIndex: row.index } : null;
+        })
+        .filter(
+          (entry): entry is { event: AlertEventItem; key: string; virtualIndex: number } =>
+            entry !== null,
+        )
+    : currentPageEvents.map((event, index) => ({
+        event,
+        key: event.id,
+        virtualIndex: index,
+      }));
   const exportEvents = useMemo(
     () => (exportScope === "page" ? currentPageEvents : selectedEventsForBatch),
     [currentPageEvents, exportScope, selectedEventsForBatch],
   );
+
+  useEffect(() => {
+    if (!shouldVirtualizeCurrentEvents) {
+      setEventsListScrollMargin(0);
+      return;
+    }
+
+    let frameId: number | null = null;
+    const scheduleUpdate = () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(() => {
+        const node = eventsListRef.current;
+        if (!node) {
+          return;
+        }
+        const nextScrollMargin = node.getBoundingClientRect().top + window.scrollY;
+        setEventsListScrollMargin((previous) =>
+          shouldUpdateAlertEventsMetric(previous, nextScrollMargin)
+            ? nextScrollMargin
+            : previous,
+        );
+      });
+    };
+
+    scheduleUpdate();
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => scheduleUpdate());
+    if (eventsListRef.current) {
+      resizeObserver?.observe(eventsListRef.current);
+    }
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate);
+    };
+  }, [currentPageEvents.length, shouldVirtualizeCurrentEvents]);
+
+  useEffect(() => {
+    if (shouldVirtualizeCurrentEvents) {
+      eventVirtualizer.measure();
+    }
+  }, [currentPageEvents.length, eventVirtualizer, shouldVirtualizeCurrentEvents]);
 
   const handleExportCsv = async () => {
     if (exportEvents.length === 0) {
@@ -1789,17 +1798,13 @@ export function AlertCenterContent() {
       const filename = `alerts-${formatDateForFilename(new Date())}.csv`;
       downloadCsv({ csv, filename });
       messageApi.success(
-        t("alerts.center.export.success", {
-          defaultValue: "Export completed.",
-        }),
+        t("alerts.center.export.success"),
       );
     } catch (error) {
       messageApi.error(
         error instanceof Error
           ? error.message
-          : t("alerts.center.export.failed", {
-              defaultValue: "Export failed.",
-            }),
+          : t("alerts.center.export.failed"),
       );
     }
   };
@@ -1820,17 +1825,13 @@ export function AlertCenterContent() {
       );
       downloadTextFile(payload, filename, "application/json;charset=utf-8");
       messageApi.success(
-        t("alerts.center.export.success", {
-          defaultValue: "Export completed.",
-        }),
+        t("alerts.center.export.success"),
       );
     } catch (error) {
       messageApi.error(
         error instanceof Error
           ? error.message
-          : t("alerts.center.export.failed", {
-              defaultValue: "Export failed.",
-            }),
+          : t("alerts.center.export.failed"),
       );
     }
   };
@@ -2099,11 +2100,9 @@ export function AlertCenterContent() {
       tooltip: { trigger: "axis" },
       legend: {
         data: [
-          t("alerts.center.filters.severity.low", { defaultValue: "Low" }),
-          t("alerts.center.filters.severity.medium", {
-            defaultValue: "Medium",
-          }),
-          t("alerts.center.filters.severity.high", { defaultValue: "High" }),
+          t("alerts.center.filters.severity.low"),
+          t("alerts.center.filters.severity.medium"),
+          t("alerts.center.filters.severity.high"),
         ],
       },
       grid: { top: 36, left: 26, right: 14, bottom: 30, containLabel: true },
@@ -2114,27 +2113,21 @@ export function AlertCenterContent() {
       yAxis: { type: "value", minInterval: 1 },
       series: [
         {
-          name: t("alerts.center.filters.severity.low", {
-            defaultValue: "Low",
-          }),
+          name: t("alerts.center.filters.severity.low"),
           type: "line",
           smooth: true,
           data: trendPoints.map((point) => point.low),
           lineStyle: { color: "#16a34a" },
         },
         {
-          name: t("alerts.center.filters.severity.medium", {
-            defaultValue: "Medium",
-          }),
+          name: t("alerts.center.filters.severity.medium"),
           type: "line",
           smooth: true,
           data: trendPoints.map((point) => point.medium),
           lineStyle: { color: "#ea580c" },
         },
         {
-          name: t("alerts.center.filters.severity.high", {
-            defaultValue: "High",
-          }),
+          name: t("alerts.center.filters.severity.high"),
           type: "line",
           smooth: true,
           data: trendPoints.map((point) => point.high),
@@ -2155,12 +2148,8 @@ export function AlertCenterContent() {
       grid: { top: 30, left: 26, right: 20, bottom: 30, containLabel: true },
       legend: {
         data: [
-          t("alerts.center.analysis.triggerFrequency", {
-            defaultValue: "Trigger frequency",
-          }),
-          t("alerts.center.analysis.falsePositiveTrend", {
-            defaultValue: "False positive rate",
-          }),
+          t("alerts.center.analysis.triggerFrequency"),
+          t("alerts.center.analysis.falsePositiveTrend"),
         ],
       },
       xAxis: {
@@ -2180,18 +2169,14 @@ export function AlertCenterContent() {
       ],
       series: [
         {
-          name: t("alerts.center.analysis.triggerFrequency", {
-            defaultValue: "Trigger frequency",
-          }),
+          name: t("alerts.center.analysis.triggerFrequency"),
           type: "bar",
           barMaxWidth: 24,
           data: ruleTrendAnalysis.points.map((point) => point.triggers),
           itemStyle: { color: colors.primary },
         },
         {
-          name: t("alerts.center.analysis.falsePositiveTrend", {
-            defaultValue: "False positive rate",
-          }),
+          name: t("alerts.center.analysis.falsePositiveTrend"),
           type: "line",
           yAxisIndex: 1,
           smooth: true,
@@ -2209,9 +2194,7 @@ export function AlertCenterContent() {
 
   const trendWindowLabel = useMemo(() => {
     if (filterWindow.startMs === null || filterWindow.endMs === null) {
-      return t("alerts.center.trend.followFilters", {
-        defaultValue: "Following current filters",
-      });
+      return t("alerts.center.trend.followFilters");
     }
     const startLabel = formatDateTime(filterWindow.startMs, locale, {
       month: "2-digit",
@@ -2440,15 +2423,13 @@ export function AlertCenterContent() {
     try {
       await navigator.clipboard.writeText(safeJsonStringify(context));
       messageApi.success(
-        t("alerts.center.contextCopied", { defaultValue: "Copied." }),
+        t("alerts.center.contextCopied"),
       );
     } catch (error) {
       messageApi.error(
         error instanceof Error
           ? error.message
-          : t("alerts.center.contextCopyFailed", {
-              defaultValue: "Copy failed.",
-            }),
+          : t("alerts.center.contextCopyFailed"),
       );
     }
   };
@@ -2459,10 +2440,10 @@ export function AlertCenterContent() {
     }
 
     const markdownLines = [
-      `# ${t("alerts.center.markdown.title", { defaultValue: "Alert detail" })}`,
+      `# ${t("alerts.center.markdown.title")}`,
       "",
       `- **ID**: ${selectedEvent.id}`,
-      `- **${t("alerts.center.detail.triggeredAt", { defaultValue: "Triggered at" })}**: ${formatDateTime(
+      `- **${t("alerts.center.detail.triggeredAt")}**: ${formatDateTime(
         selectedEvent.triggeredAt,
         locale,
         {
@@ -2475,27 +2456,27 @@ export function AlertCenterContent() {
           timeZoneName: "short",
         },
       )}`,
-      `- **${t("alerts.center.detail.rule", { defaultValue: "Rule" })}**: ${selectedEvent.ruleName ?? t("common.notAvailable")}`,
-      `- **${t("alerts.center.detail.metric", { defaultValue: "Metric {{metric}}", metric: "" })}**: ${selectedEvent.metricSlug ?? t("common.notAvailable")}`,
-      `- **${t("alerts.center.detail.provider", { defaultValue: "Provider {{provider}}", provider: "" })}**: ${metricProviderLabel(selectedEvent.metricProvider)}`,
-      `- **${t("alerts.center.detail.status", { defaultValue: "Status" })}**: ${selectedEvent.status}`,
-      `- **${t("alerts.center.detail.metricValue", { defaultValue: "Metric value" })}**: ${selectedEvent.metricValue}`,
-      `- **${t("alerts.center.detail.threshold", { defaultValue: "Threshold" })}**: ${thresholdSummary}`,
+      `- **${t("alerts.center.detail.rule")}**: ${selectedEvent.ruleName ?? t("common.notAvailable")}`,
+      `- **${t("alerts.center.detail.metric", { metric: "" })}**: ${selectedEvent.metricSlug ?? t("common.notAvailable")}`,
+      `- **${t("alerts.center.detail.provider", { provider: "" })}**: ${metricProviderLabel(selectedEvent.metricProvider)}`,
+      `- **${t("alerts.center.detail.status")}**: ${selectedEvent.status}`,
+      `- **${t("alerts.center.detail.metricValue")}**: ${selectedEvent.metricValue}`,
+      `- **${t("alerts.center.detail.threshold")}**: ${thresholdSummary}`,
       "",
-      `## ${t("alerts.center.detail.message", { defaultValue: "Message" })}`,
+      `## ${t("alerts.center.detail.message")}`,
       selectedEvent.message ?? t("alerts.events.triggered"),
       "",
-      `## ${t("alerts.center.detail.context", { defaultValue: "Context" })}`,
+      `## ${t("alerts.center.detail.context")}`,
       "```json",
       safeJsonStringify(context ?? {}),
       "```",
       "",
-      `## ${t("alerts.center.detail.deliveries", { defaultValue: "Deliveries" })}`,
+      `## ${t("alerts.center.detail.deliveries")}`,
     ];
 
     if (selectedEvent.deliveries.length === 0) {
       markdownLines.push(
-        `- ${t("alerts.center.deliveriesEmpty", { defaultValue: "No delivery records." })}`,
+        `- ${t("alerts.center.deliveriesEmpty")}`,
       );
     } else {
       selectedEvent.deliveries.forEach((delivery) => {
@@ -2508,17 +2489,13 @@ export function AlertCenterContent() {
     try {
       await navigator.clipboard.writeText(markdownLines.join("\n"));
       messageApi.success(
-        t("alerts.center.markdown.copied", {
-          defaultValue: "Copied as Markdown.",
-        }),
+        t("alerts.center.markdown.copied"),
       );
     } catch (error) {
       messageApi.error(
         error instanceof Error
           ? error.message
-          : t("alerts.center.contextCopyFailed", {
-              defaultValue: "Copy failed.",
-            }),
+          : t("alerts.center.contextCopyFailed"),
       );
     }
   };
@@ -2532,11 +2509,11 @@ export function AlertCenterContent() {
     ? [
         {
           key: "overview",
-          label: t("alerts.center.tabs.overview", { defaultValue: "Overview" }),
+          label: t("alerts.center.tabs.overview"),
           children: (
             <Space direction="vertical" size="middle" style={{ width: "100%" }}>
               <DetailRow
-                label={t("alerts.center.detail.rule", { defaultValue: "Rule" })}
+                label={t("alerts.center.detail.rule")}
               >
                 <Space direction="vertical" size={2}>
                   <Typography.Text strong>
@@ -2544,14 +2521,12 @@ export function AlertCenterContent() {
                   </Typography.Text>
                   <Typography.Text type="secondary">
                     {t("alerts.center.detail.metric", {
-                      defaultValue: "Metric {{metric}}",
                       metric:
                         selectedEvent.metricSlug ?? t("common.notAvailable"),
                     })}
                   </Typography.Text>
                   <Typography.Text type="secondary">
                     {t("alerts.center.detail.provider", {
-                      defaultValue: "Provider {{provider}}",
                       provider: metricProviderLabel(
                         selectedEvent.metricProvider,
                       ),
@@ -2560,14 +2535,11 @@ export function AlertCenterContent() {
                 </Space>
               </DetailRow>
               <DetailRow
-                label={t("alerts.center.detail.threshold", {
-                  defaultValue: "Threshold",
-                })}
+                label={t("alerts.center.detail.threshold")}
               >
                 <Space direction="vertical" size={2}>
                   <Typography.Text>
                     {t("alerts.center.detail.operator", {
-                      defaultValue: "Operator {{operator}}",
                       operator:
                         selectedEvent.operator ?? t("common.notAvailable"),
                     })}
@@ -2579,7 +2551,6 @@ export function AlertCenterContent() {
                   evidenceWindowMinutes !== undefined ? (
                     <Typography.Text type="secondary">
                       {t("alerts.center.detail.window", {
-                        defaultValue: "Window {{minutes}} min",
                         minutes: evidenceWindowMinutes,
                       })}
                     </Typography.Text>
@@ -2587,9 +2558,7 @@ export function AlertCenterContent() {
                 </Space>
               </DetailRow>
               <DetailRow
-                label={t("alerts.center.detail.triggeredAt", {
-                  defaultValue: "Triggered at",
-                })}
+                label={t("alerts.center.detail.triggeredAt")}
               >
                 <Typography.Text>
                   {formatDateTime(selectedEvent.triggeredAt, locale, {
@@ -2604,9 +2573,7 @@ export function AlertCenterContent() {
                 </Typography.Text>
               </DetailRow>
               <DetailRow
-                label={t("alerts.center.detail.metricValue", {
-                  defaultValue: "Metric value",
-                })}
+                label={t("alerts.center.detail.metricValue")}
               >
                 <Space direction="vertical" size={2}>
                   <Space size="small" align="baseline">
@@ -2620,7 +2587,6 @@ export function AlertCenterContent() {
                     ) : null}
                     <Typography.Text type="secondary">
                       {t("alerts.center.detail.changePercent", {
-                        defaultValue: "Change {{value}}",
                         value: formatMetricChange(
                           selectedEvent.changePercent,
                           t("common.notAvailable"),
@@ -2631,7 +2597,6 @@ export function AlertCenterContent() {
                   {evidencePrevious !== undefined ? (
                     <Typography.Text type="secondary">
                       {t("alerts.center.detail.previousValue", {
-                        defaultValue: "Previous {{value}}",
                         value: evidencePrevious,
                       })}
                     </Typography.Text>
@@ -2639,7 +2604,6 @@ export function AlertCenterContent() {
                   {evidenceRecordedAtLabel ? (
                     <Typography.Text type="secondary">
                       {t("alerts.center.detail.recordedAt", {
-                        defaultValue: "Recorded at {{time}}",
                         time: evidenceRecordedAtLabel,
                       })}
                     </Typography.Text>
@@ -2647,9 +2611,7 @@ export function AlertCenterContent() {
                 </Space>
               </DetailRow>
               <DetailRow
-                label={t("alerts.center.detail.source", {
-                  defaultValue: "Source",
-                })}
+                label={t("alerts.center.detail.source")}
               >
                 {evidenceSource || evidenceSourceDoc ? (
                   <Space direction="vertical" size={2}>
@@ -2673,9 +2635,7 @@ export function AlertCenterContent() {
                 )}
               </DetailRow>
               <DetailRow
-                label={t("alerts.center.detail.objects", {
-                  defaultValue: "Objects",
-                })}
+                label={t("alerts.center.detail.objects")}
               >
                 {objectEntries.length > 0 ? (
                   <Space size={[8, 8]} wrap>
@@ -2687,16 +2647,12 @@ export function AlertCenterContent() {
                   </Space>
                 ) : (
                   <Typography.Text type="secondary">
-                    {t("alerts.center.detail.objectsEmpty", {
-                      defaultValue: "No object context.",
-                    })}
+                    {t("alerts.center.detail.objectsEmpty")}
                   </Typography.Text>
                 )}
               </DetailRow>
               <DetailRow
-                label={t("alerts.center.detail.status", {
-                  defaultValue: "Status",
-                })}
+                label={t("alerts.center.detail.status")}
               >
                 <Space>
                   <Tag color={severityColor[selectedEvent.severity] ?? "blue"}>
@@ -2706,9 +2662,7 @@ export function AlertCenterContent() {
                 </Space>
               </DetailRow>
               <DetailRow
-                label={t("alerts.center.detail.message", {
-                  defaultValue: "Message",
-                })}
+                label={t("alerts.center.detail.message")}
               >
                 <Typography.Paragraph
                   style={{ marginBottom: 4 }}
@@ -2723,19 +2677,13 @@ export function AlertCenterContent() {
                     onClick={() => setExpandMessage((prev) => !prev)}
                   >
                     {expandMessage
-                      ? t("alerts.center.actions.collapse", {
-                          defaultValue: "Collapse",
-                        })
-                      : t("alerts.center.actions.expand", {
-                          defaultValue: "Expand",
-                        })}
+                      ? t("alerts.center.actions.collapse")
+                      : t("alerts.center.actions.expand")}
                   </Button>
                 ) : null}
               </DetailRow>
               <DetailRow
-                label={t("alerts.center.detail.context", {
-                  defaultValue: "Context",
-                })}
+                label={t("alerts.center.detail.context")}
               >
                 <Space direction="vertical" size={4} style={{ width: "100%" }}>
                   <Button
@@ -2743,9 +2691,7 @@ export function AlertCenterContent() {
                     onClick={() => void handleCopyRawContext()}
                     disabled={!context}
                   >
-                    {t("alerts.center.detail.copyRawContext", {
-                      defaultValue: "Copy raw",
-                    })}
+                    {t("alerts.center.detail.copyRawContext")}
                   </Button>
                   {visibleAdditionalContext.length > 0 ? (
                     visibleAdditionalContext.map(([key, value]) => (
@@ -2760,9 +2706,7 @@ export function AlertCenterContent() {
                     ))
                   ) : (
                     <Typography.Text type="secondary">
-                      {t("alerts.center.detail.contextEmpty", {
-                        defaultValue: "No additional context.",
-                      })}
+                      {t("alerts.center.detail.contextEmpty")}
                     </Typography.Text>
                   )}
                   {additionalContext.length > 6 ? (
@@ -2772,11 +2716,8 @@ export function AlertCenterContent() {
                       onClick={() => setExpandContext((prev) => !prev)}
                     >
                       {expandContext
-                        ? t("alerts.center.actions.showLessContext", {
-                            defaultValue: "Show less context",
-                          })
+                        ? t("alerts.center.actions.showLessContext")
                         : t("alerts.center.actions.showAllContext", {
-                            defaultValue: "Show all context ({{count}})",
                             count: additionalContext.length,
                           })}
                     </Button>
@@ -2788,13 +2729,11 @@ export function AlertCenterContent() {
         },
         {
           key: "evidence",
-          label: t("alerts.center.tabs.evidence", { defaultValue: "Evidence" }),
+          label: t("alerts.center.tabs.evidence"),
           children: (
             <Space direction="vertical" size="middle" style={{ width: "100%" }}>
               <DetailRow
-                label={t("alerts.center.detail.evidence", {
-                  defaultValue: "Evidence",
-                })}
+                label={t("alerts.center.detail.evidence")}
               >
                 {selectedEvent.metricProvider ===
                 AlertMetricProvider.EconomicAnomaly ? (
@@ -2829,24 +2768,18 @@ export function AlertCenterContent() {
                   />
                 ) : (
                   <Typography.Text type="secondary">
-                    {t("alerts.center.evidence.unsupported", {
-                      defaultValue: "No structured evidence for this provider.",
-                    })}
+                    {t("alerts.center.evidence.unsupported")}
                   </Typography.Text>
                 )}
               </DetailRow>
 
               <Card
                 size="small"
-                title={t("alerts.center.analysis.similarTitle", {
-                  defaultValue: "Similar alerts",
-                })}
+                title={t("alerts.center.analysis.similarTitle")}
               >
                 {similarAlerts.length === 0 ? (
                   <Typography.Text type="secondary">
-                    {t("alerts.center.analysis.similarEmpty", {
-                      defaultValue: "No similar alerts in current data window.",
-                    })}
+                    {t("alerts.center.analysis.similarEmpty")}
                   </Typography.Text>
                 ) : (
                   <List
@@ -2869,12 +2802,8 @@ export function AlertCenterContent() {
                             </Button>
                             <Tag color="blue">
                               {item.reason === "same_rule"
-                                ? t("alerts.center.analysis.sameRule", {
-                                    defaultValue: "Same rule",
-                                  })
-                                : t("alerts.center.analysis.sameMetric", {
-                                    defaultValue: "Same metric",
-                                  })}
+                                ? t("alerts.center.analysis.sameRule")
+                                : t("alerts.center.analysis.sameMetric")}
                             </Tag>
                             <Tag>{item.event.status}</Tag>
                           </Space>
@@ -2897,24 +2826,18 @@ export function AlertCenterContent() {
 
               <Card
                 size="small"
-                title={t("alerts.center.analysis.ruleTrendTitle", {
-                  defaultValue: "Rule frequency and FP trend",
-                })}
+                title={t("alerts.center.analysis.ruleTrendTitle")}
               >
                 <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
                   <Col xs={24} sm={8}>
                     <Statistic
-                      title={t("alerts.center.analysis.totalTriggers", {
-                        defaultValue: "Total triggers",
-                      })}
+                      title={t("alerts.center.analysis.totalTriggers")}
                       value={ruleTrendAnalysis.totalTriggers}
                     />
                   </Col>
                   <Col xs={24} sm={8}>
                     <Statistic
-                      title={t("alerts.center.analysis.dailyAverage", {
-                        defaultValue: "Daily average",
-                      })}
+                      title={t("alerts.center.analysis.dailyAverage")}
                       value={Number(
                         ruleTrendAnalysis.averageDailyTriggers.toFixed(2),
                       )}
@@ -2922,9 +2845,7 @@ export function AlertCenterContent() {
                   </Col>
                   <Col xs={24} sm={8}>
                     <Statistic
-                      title={t("alerts.center.analysis.falsePositiveRate", {
-                        defaultValue: "False positive rate",
-                      })}
+                      title={t("alerts.center.analysis.falsePositiveRate")}
                       value={
                         typeof ruleTrendAnalysis.falsePositiveRate === "number"
                           ? Number(
@@ -2945,9 +2866,7 @@ export function AlertCenterContent() {
                 {ruleTrendAnalysis.points.length === 0 ? (
                   <ChartEmptyState
                     className="h-auto py-6"
-                    description={t("alerts.center.analysis.ruleTrendEmpty", {
-                      defaultValue: "No rule trend data in current time range.",
-                    })}
+                    description={t("alerts.center.analysis.ruleTrendEmpty")}
                   />
                 ) : (
                   <DashboardChart
@@ -2962,7 +2881,7 @@ export function AlertCenterContent() {
         },
         {
           key: "replay",
-          label: t("alerts.center.tabs.replay", { defaultValue: "Replay" }),
+          label: t("alerts.center.tabs.replay"),
           children: (
             <Space direction="vertical" size="middle" style={{ width: "100%" }}>
               <Space size="small" wrap>
@@ -2981,15 +2900,10 @@ export function AlertCenterContent() {
                   loading={replayLoading}
                   disabled={!selectedEvent}
                 >
-                  {t("alerts.center.detail.openReplay", {
-                    defaultValue: "Open replay",
-                  })}
+                  {t("alerts.center.detail.openReplay")}
                 </Button>
                 <Typography.Text type="secondary">
-                  {t("alerts.center.detail.replayHint", {
-                    defaultValue:
-                      "Shows recent metric history around this alert.",
-                  })}
+                  {t("alerts.center.detail.replayHint")}
                 </Typography.Text>
               </Space>
               {replayLoading ? (
@@ -3000,9 +2914,7 @@ export function AlertCenterContent() {
                 <Alert
                   type="error"
                   showIcon
-                  message={t("alerts.center.detail.replayError", {
-                    defaultValue: "Failed to load replay.",
-                  })}
+                  message={t("alerts.center.detail.replayError")}
                   description={replayError.message}
                 />
               ) : replay ? (
@@ -3015,18 +2927,14 @@ export function AlertCenterContent() {
                 ) : (
                   <ChartEmptyState
                     className="h-auto py-8"
-                    description={t("alerts.center.detail.replayEmpty", {
-                      defaultValue: "No replay data available for this event.",
-                    })}
+                    description={t("alerts.center.detail.replayEmpty")}
                   />
                 )
               ) : (
                 <Alert
                   type="info"
                   showIcon
-                  message={t("alerts.center.detail.replayUnsupported", {
-                    defaultValue: "Replay is not available for this provider.",
-                  })}
+                  message={t("alerts.center.detail.replayUnsupported")}
                 />
               )}
             </Space>
@@ -3034,13 +2942,11 @@ export function AlertCenterContent() {
         },
         {
           key: "feedback",
-          label: t("alerts.center.tabs.feedback", { defaultValue: "Feedback" }),
+          label: t("alerts.center.tabs.feedback"),
           children: (
             <Space direction="vertical" size="middle" style={{ width: "100%" }}>
               <DetailRow
-                label={t("alerts.center.detail.feedback", {
-                  defaultValue: "Feedback",
-                })}
+                label={t("alerts.center.detail.feedback")}
               >
                 <Space direction="vertical" size={8} style={{ width: "100%" }}>
                   <Space size="small" wrap>
@@ -3054,15 +2960,12 @@ export function AlertCenterContent() {
                       </Tag>
                     ) : (
                       <Tag>
-                        {t("alerts.center.detail.unreviewed", {
-                          defaultValue: "unreviewed",
-                        })}
+                        {t("alerts.center.detail.unreviewed")}
                       </Tag>
                     )}
                     {feedbackUpdatedAtLabel ? (
                       <Typography.Text type="secondary">
                         {t("alerts.center.detail.feedbackUpdatedAt", {
-                          defaultValue: "Updated {{time}}",
                           time: feedbackUpdatedAtLabel,
                         })}
                       </Typography.Text>
@@ -3070,7 +2973,6 @@ export function AlertCenterContent() {
                     {feedbackUpdatedById ? (
                       <Typography.Text type="secondary">
                         {t("alerts.center.detail.feedbackUpdatedBy", {
-                          defaultValue: "By {{user}}",
                           user: feedbackUpdatedById,
                         })}
                       </Typography.Text>
@@ -3081,15 +2983,11 @@ export function AlertCenterContent() {
                     <Typography.Text>{feedbackStoredNote}</Typography.Text>
                   ) : reviewStatus ? (
                     <Typography.Text type="secondary">
-                      {t("alerts.center.detail.feedbackEmpty", {
-                        defaultValue: "No feedback note.",
-                      })}
+                      {t("alerts.center.detail.feedbackEmpty")}
                     </Typography.Text>
                   ) : (
                     <Typography.Text type="secondary">
-                      {t("alerts.center.detail.feedbackNotReviewed", {
-                        defaultValue: "Not reviewed yet.",
-                      })}
+                      {t("alerts.center.detail.feedbackNotReviewed")}
                     </Typography.Text>
                   )}
 
@@ -3105,10 +3003,6 @@ export function AlertCenterContent() {
                         rows={2}
                         placeholder={t(
                           "alerts.center.detail.feedbackNotePlaceholder",
-                          {
-                            defaultValue:
-                              "Optional note (why confirmed/ignored)",
-                          },
                         )}
                       />
                       <Space wrap>
@@ -3120,9 +3014,7 @@ export function AlertCenterContent() {
                             void handleEventStatusUpdate("confirmed")
                           }
                         >
-                          {t("alerts.center.detail.confirm", {
-                            defaultValue: "Confirm",
-                          })}
+                          {t("alerts.center.detail.confirm")}
                         </Button>
                         <Button
                           size="small"
@@ -3131,52 +3023,39 @@ export function AlertCenterContent() {
                             void handleEventStatusUpdate("ignored")
                           }
                         >
-                          {t("alerts.center.detail.ignore", {
-                            defaultValue: "Ignore",
-                          })}
+                          {t("alerts.center.detail.ignore")}
                         </Button>
                         <Button
                           size="small"
                           loading={updatingStatus}
                           onClick={() => void handleQuickConfirm()}
                         >
-                          {t("alerts.center.actions.quickConfirm", {
-                            defaultValue: "One-click confirm",
-                          })}
+                          {t("alerts.center.actions.quickConfirm")}
                         </Button>
                       </Space>
                     </>
                   ) : (
                     <Typography.Text type="secondary">
-                      {t("alerts.center.detail.feedbackAdminOnly", {
-                        defaultValue:
-                          "Feedback actions are available to administrators only.",
-                      })}
+                      {t("alerts.center.detail.feedbackAdminOnly")}
                     </Typography.Text>
                   )}
                 </Space>
               </DetailRow>
 
               <DetailRow
-                label={t("alerts.center.detail.tuning", {
-                  defaultValue: "Tuning suggestion",
-                })}
+                label={t("alerts.center.detail.tuning")}
               >
                 {canManageAlerts ? (
                   tuningLoading ? (
                     <Spin size="small" />
                   ) : tuningError ? (
                     <Typography.Text type="secondary">
-                      {t("alerts.center.detail.tuningError", {
-                        defaultValue: "Failed to load tuning suggestion.",
-                      })}
+                      {t("alerts.center.detail.tuningError")}
                     </Typography.Text>
                   ) : tuningData?.alertRuleTuningSuggestion ? (
                     <Space direction="vertical" size={2}>
                       <Typography.Text type="secondary">
                         {t("alerts.center.detail.tuningStats", {
-                          defaultValue:
-                            "Reviewed {{reviewed}} · Confirmed {{confirmed}} · Ignored {{ignored}} · FP rate {{rate}}",
                           reviewed:
                             tuningData.alertRuleTuningSuggestion.reviewedEvents,
                           confirmed:
@@ -3197,16 +3076,13 @@ export function AlertCenterContent() {
                         </Typography.Text>
                       ) : (
                         <Typography.Text type="secondary">
-                          {t("alerts.center.detail.tuningEmpty", {
-                            defaultValue: "No tuning suggestion.",
-                          })}
+                          {t("alerts.center.detail.tuningEmpty")}
                         </Typography.Text>
                       )}
                       {typeof tuningData.alertRuleTuningSuggestion
                         .suggestedThresholdValue === "number" ? (
                         <Typography.Text type="secondary">
                           {t("alerts.center.detail.tuningThreshold", {
-                            defaultValue: "Suggested threshold {{value}}",
                             value:
                               tuningData.alertRuleTuningSuggestion
                                 .suggestedThresholdValue,
@@ -3219,8 +3095,6 @@ export function AlertCenterContent() {
                         .suggestedThresholdUpper === "number" ? (
                         <Typography.Text type="secondary">
                           {t("alerts.center.detail.tuningRange", {
-                            defaultValue:
-                              "Suggested range {{lower}} - {{upper}}",
                             lower:
                               tuningData.alertRuleTuningSuggestion
                                 .suggestedThresholdLower ??
@@ -3240,10 +3114,7 @@ export function AlertCenterContent() {
                   )
                 ) : (
                   <Typography.Text type="secondary">
-                    {t("alerts.center.detail.feedbackAdminOnly", {
-                      defaultValue:
-                        "Feedback actions are available to administrators only.",
-                    })}
+                    {t("alerts.center.detail.feedbackAdminOnly")}
                   </Typography.Text>
                 )}
               </DetailRow>
@@ -3252,17 +3123,13 @@ export function AlertCenterContent() {
         },
         {
           key: "deliveries",
-          label: t("alerts.center.tabs.deliveries", {
-            defaultValue: "Deliveries",
-          }),
+          label: t("alerts.center.tabs.deliveries"),
           children: (
             <List
               size="small"
               dataSource={selectedEvent.deliveries}
               locale={{
-                emptyText: t("alerts.center.deliveriesEmpty", {
-                  defaultValue: "No delivery records.",
-                }),
+                emptyText: t("alerts.center.deliveriesEmpty"),
               }}
               renderItem={(delivery) => (
                 <List.Item>
@@ -3320,43 +3187,28 @@ export function AlertCenterContent() {
               void handleRefresh();
             },
             actionLoading: eventsLoading,
-            actionLabelOverride: t("dashboard.actions.retryFetch", {
-              defaultValue: "Retry fetch",
-            }),
+            actionLabelOverride: t("dashboard.actions.retryFetch"),
             includeDetailText: false,
           });
           const errorKind = classifyRequestError(eventsError).kind;
           const description =
             errorKind === "permission" || errorKind === "auth"
-              ? t("alerts.center.loadFailed.permission", {
-                  defaultValue:
-                    "This session cannot read alert history for the current workspace. Verify that the account has alerts.read access, then retry.",
-                })
+              ? t("alerts.center.loadFailed.permission")
               : errorKind === "network" ||
                   errorKind === "timeout" ||
                   errorKind === "service"
-                ? t("alerts.center.loadFailed.service", {
-                    defaultValue:
-                      "Alert history is temporarily unavailable. Check API connectivity or alert service health, then retry.",
-                  })
-                : t("alerts.center.loadFailed.default", {
-                    defaultValue:
-                      "Alert history could not be loaded. Check workspace access and backend health, then retry.",
-                  });
+                ? t("alerts.center.loadFailed.service")
+                : t("alerts.center.loadFailed.default");
 
           return {
             ...baseState,
-            title: t("alerts.center.loadFailed.title", {
-              defaultValue: "Unable to load alert history",
-            }),
+            title: t("alerts.center.loadFailed.title"),
             description: (
               <div className="flex flex-col items-center gap-1">
                 <span>{description}</span>
                 {baseState.detailText ? (
                   <span className="font-mono text-[10px] opacity-80">
-                    {t("alerts.center.loadFailed.detail", {
-                      defaultValue: "Technical detail",
-                    })}
+                    {t("alerts.center.loadFailed.detail")}
                     : {baseState.detailText}
                   </span>
                 ) : null}
@@ -3373,7 +3225,7 @@ export function AlertCenterContent() {
 
         <Space align="center" size="middle" wrap>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            {t("alerts.center.title", { defaultValue: "Alert Center" })}
+            {t("alerts.center.title")}
           </Typography.Title>
         </Space>
 
@@ -3391,18 +3243,15 @@ export function AlertCenterContent() {
 
         <Space align="center" size="middle" wrap>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            {t("alerts.center.title", { defaultValue: "Alert Center" })}
+            {t("alerts.center.title")}
           </Typography.Title>
         </Space>
 
         <ChartEmptyState
           className="h-auto py-10"
           variant="permission"
-          title={t("common.accessDenied", { defaultValue: "Access denied" })}
-          description={t("common.accessDeniedDescription", {
-            defaultValue:
-              "You don't have permission to view this data. Contact an administrator if you need access.",
-          })}
+          title={t("common.accessDenied")}
+          description={t("common.accessDeniedDescription")}
         />
       </div>
     );
@@ -3415,7 +3264,7 @@ export function AlertCenterContent() {
 
         <Space align="center" size="middle" wrap>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            {t("alerts.center.title", { defaultValue: "Alert Center" })}
+            {t("alerts.center.title")}
           </Typography.Title>
         </Space>
 
@@ -3433,7 +3282,7 @@ export function AlertCenterContent() {
 
       <Space align="center" size="middle" wrap>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("alerts.center.title", { defaultValue: "Alert Center" })}
+          {t("alerts.center.title")}
         </Typography.Title>
         <Button size="small" onClick={() => void handleRefresh()}>
           {t("common.refresh")}
@@ -3445,8 +3294,6 @@ export function AlertCenterContent() {
           type="warning"
           showIcon
           message={t("alerts.center.sampleWarning.message", {
-            defaultValue:
-              "Metrics and trends are based on the latest {{count}} alerts currently loaded.",
             count: eventsLimit,
           })}
           description={
@@ -3456,14 +3303,10 @@ export function AlertCenterContent() {
                 onClick={() => void handleLoadMoreEvents()}
                 loading={eventsLoading}
               >
-                {t("alerts.center.sampleWarning.loadMore", {
-                  defaultValue: "Load more history",
-                })}
+                {t("alerts.center.sampleWarning.loadMore")}
               </Button>
             ) : (
-              t("alerts.center.sampleWarning.reachLimit", {
-                defaultValue: "Reached client-side history limit.",
-              })
+              t("alerts.center.sampleWarning.reachLimit")
             )
           }
         />
@@ -3473,9 +3316,7 @@ export function AlertCenterContent() {
         <Col xs={12} sm={8} xl={4}>
           <Card size="small" className="content-card">
             <Statistic
-              title={t("alerts.center.stats.total", {
-                defaultValue: "Total alerts",
-              })}
+              title={t("alerts.center.stats.total")}
               value={stats.total}
             />
           </Card>
@@ -3483,9 +3324,7 @@ export function AlertCenterContent() {
         <Col xs={12} sm={8} xl={4}>
           <Card size="small" className="content-card">
             <Statistic
-              title={t("alerts.center.stats.pending", {
-                defaultValue: "Pending",
-              })}
+              title={t("alerts.center.stats.pending")}
               value={stats.pending}
             />
           </Card>
@@ -3493,9 +3332,7 @@ export function AlertCenterContent() {
         <Col xs={12} sm={8} xl={4}>
           <Card size="small" className="content-card">
             <Statistic
-              title={t("alerts.center.stats.confirmed", {
-                defaultValue: "Confirmed",
-              })}
+              title={t("alerts.center.stats.confirmed")}
               value={stats.confirmed}
             />
           </Card>
@@ -3503,9 +3340,7 @@ export function AlertCenterContent() {
         <Col xs={12} sm={8} xl={4}>
           <Card size="small" className="content-card">
             <Statistic
-              title={t("alerts.center.stats.ignored", {
-                defaultValue: "Ignored",
-              })}
+              title={t("alerts.center.stats.ignored")}
               value={stats.ignored}
             />
           </Card>
@@ -3513,9 +3348,7 @@ export function AlertCenterContent() {
         <Col xs={24} sm={8} xl={8}>
           <Card size="small" className="content-card">
             <Statistic
-              title={t("alerts.center.stats.falsePositiveRate", {
-                defaultValue: "False positive rate",
-              })}
+              title={t("alerts.center.stats.falsePositiveRate")}
               value={falsePositivePercent ?? "--"}
               suffix={falsePositivePercent !== null ? "%" : undefined}
             />
@@ -3535,9 +3368,7 @@ export function AlertCenterContent() {
           items={[
             {
               key: "filters",
-              label: t("alerts.center.filters.title", {
-                defaultValue: "Filters",
-              }),
+              label: t("alerts.center.filters.title"),
               children: (
                 <Space
                   direction="vertical"
@@ -3547,9 +3378,7 @@ export function AlertCenterContent() {
                   <Row gutter={[12, 12]}>
                     <Col xs={24} md={12} xl={8}>
                       <Typography.Text type="secondary">
-                        {t("alerts.center.filters.severity.label", {
-                          defaultValue: "Severity",
-                        })}
+                        {t("alerts.center.filters.severity.label")}
                       </Typography.Text>
                       <Select
                         mode="multiple"
@@ -3575,9 +3404,7 @@ export function AlertCenterContent() {
                     </Col>
                     <Col xs={24} md={12} xl={8}>
                       <Typography.Text type="secondary">
-                        {t("alerts.center.filters.status.label", {
-                          defaultValue: "Status",
-                        })}
+                        {t("alerts.center.filters.status.label")}
                       </Typography.Text>
                       <Select
                         mode="multiple"
@@ -3600,9 +3427,7 @@ export function AlertCenterContent() {
                     </Col>
                     <Col xs={24} md={12} xl={8}>
                       <Typography.Text type="secondary">
-                        {t("alerts.center.filters.provider.label", {
-                          defaultValue: "Metric provider",
-                        })}
+                        {t("alerts.center.filters.provider.label")}
                       </Typography.Text>
                       <Select
                         mode="multiple"
@@ -3625,9 +3450,7 @@ export function AlertCenterContent() {
                     </Col>
                     <Col xs={24} md={12} xl={12}>
                       <Typography.Text type="secondary">
-                        {t("alerts.center.filters.ruleKeyword.label", {
-                          defaultValue: "Rule name search",
-                        })}
+                        {t("alerts.center.filters.ruleKeyword.label")}
                       </Typography.Text>
                       <Input
                         allowClear
@@ -3640,17 +3463,12 @@ export function AlertCenterContent() {
                         }
                         placeholder={t(
                           "alerts.center.filters.ruleKeyword.placeholder",
-                          {
-                            defaultValue: "Search by rule name",
-                          },
                         )}
                       />
                     </Col>
                     <Col xs={24} md={12} xl={12}>
                       <Typography.Text type="secondary">
-                        {t("alerts.center.filters.time.label", {
-                          defaultValue: "Time range",
-                        })}
+                        {t("alerts.center.filters.time.label")}
                       </Typography.Text>
                       <Space
                         direction="vertical"
@@ -3661,30 +3479,21 @@ export function AlertCenterContent() {
                           block
                           options={[
                             {
-                              label: t("alerts.center.filters.time.today", {
-                                defaultValue: "Today",
-                              }),
+                              label: t("alerts.center.filters.time.today"),
                               value: "today",
                             },
                             {
-                              label: t("alerts.center.filters.time.last7Days", {
-                                defaultValue: "Last 7 days",
-                              }),
+                              label: t("alerts.center.filters.time.last7Days"),
                               value: "7d",
                             },
                             {
                               label: t(
                                 "alerts.center.filters.time.last30Days",
-                                {
-                                  defaultValue: "Last 30 days",
-                                },
                               ),
                               value: "30d",
                             },
                             {
-                              label: t("alerts.center.filters.time.custom", {
-                                defaultValue: "Custom",
-                              }),
+                              label: t("alerts.center.filters.time.custom"),
                               value: "custom",
                             },
                           ]}
@@ -3720,11 +3529,10 @@ export function AlertCenterContent() {
 
                   <Space wrap>
                     <Button onClick={handleResetFilters}>
-                      {t("common.reset", { defaultValue: "Reset" })}
+                      {t("common.reset")}
                     </Button>
                     <Typography.Text type="secondary">
                       {t("alerts.center.filters.resultCount", {
-                        defaultValue: "{{count}} / {{total}} alerts",
                         count: filteredEvents.length,
                         total: sortedEvents.length,
                       })}
@@ -3740,9 +3548,7 @@ export function AlertCenterContent() {
 
         <Space wrap size={[8, 8]}>
           <Typography.Text type="secondary">
-            {t("alerts.center.quickTags.title", {
-              defaultValue: "Quick filters",
-            })}
+            {t("alerts.center.quickTags.title")}
           </Typography.Text>
           <CheckableTag
             checked={filterState.providers.includes(
@@ -3752,9 +3558,7 @@ export function AlertCenterContent() {
               toggleProviderTag(AlertMetricProvider.EconomicAnomaly, checked)
             }
           >
-            {t("alerts.center.quickTags.economicAnomaly", {
-              defaultValue: "Economic anomaly",
-            })}
+            {t("alerts.center.quickTags.economicAnomaly")}
           </CheckableTag>
           <CheckableTag
             checked={filterState.providers.includes(
@@ -3764,9 +3568,7 @@ export function AlertCenterContent() {
               toggleProviderTag(AlertMetricProvider.EntitySentiment, checked)
             }
           >
-            {t("alerts.center.quickTags.entitySentiment", {
-              defaultValue: "Entity sentiment",
-            })}
+            {t("alerts.center.quickTags.entitySentiment")}
           </CheckableTag>
           <CheckableTag
             checked={filterState.providers.includes(
@@ -3776,9 +3578,7 @@ export function AlertCenterContent() {
               toggleProviderTag(AlertMetricProvider.EntityAssociation, checked)
             }
           >
-            {t("alerts.center.quickTags.entityAssociation", {
-              defaultValue: "Entity association",
-            })}
+            {t("alerts.center.quickTags.entityAssociation")}
           </CheckableTag>
           <CheckableTag
             checked={filterState.providers.includes(
@@ -3788,32 +3588,26 @@ export function AlertCenterContent() {
               toggleProviderTag(AlertMetricProvider.RealtimeSignal, checked)
             }
           >
-            {t("alerts.center.quickTags.realtimeSignal", {
-              defaultValue: "Realtime signal",
-            })}
+            {t("alerts.center.quickTags.realtimeSignal")}
           </CheckableTag>
           <CheckableTag
             checked={filterState.datePreset === "7d"}
             onChange={(checked) => toggleTimeTag("7d", checked)}
           >
-            {t("alerts.center.quickTags.last7Days", {
-              defaultValue: "Last 7 days",
-            })}
+            {t("alerts.center.quickTags.last7Days")}
           </CheckableTag>
           <CheckableTag
             checked={filterState.datePreset === "30d"}
             onChange={(checked) => toggleTimeTag("30d", checked)}
           >
-            {t("alerts.center.quickTags.last30Days", {
-              defaultValue: "Last 30 days",
-            })}
+            {t("alerts.center.quickTags.last30Days")}
           </CheckableTag>
         </Space>
       </Card>
 
       <Card
         className="content-card"
-        title={t("alerts.center.trend.title", { defaultValue: "Alert trend" })}
+        title={t("alerts.center.trend.title")}
         extra={
           <Typography.Text type="secondary">{trendWindowLabel}</Typography.Text>
         }
@@ -3821,9 +3615,7 @@ export function AlertCenterContent() {
         {trendPoints.length === 0 ? (
           <ChartEmptyState
             className="h-auto py-8"
-            description={t("alerts.center.trend.empty", {
-              defaultValue: "No trend data in current filter range.",
-            })}
+            description={t("alerts.center.trend.empty")}
           />
         ) : (
           <DashboardChart
@@ -3838,9 +3630,7 @@ export function AlertCenterContent() {
         <Col xs={24} xl={14}>
           <Card
             className="content-card"
-            title={t("alerts.center.eventsTitle", {
-              defaultValue: "Trigger History",
-            })}
+            title={t("alerts.center.eventsTitle")}
             extra={
               <Button size="small" onClick={() => void refetchEvents()}>
                 {t("common.refresh")}
@@ -3859,13 +3649,10 @@ export function AlertCenterContent() {
                       handleSelectAllVisible(event.target.checked)
                     }
                   >
-                    {t("alerts.center.batch.selectVisible", {
-                      defaultValue: "Select visible",
-                    })}
+                    {t("alerts.center.batch.selectVisible")}
                   </Checkbox>
                   <Typography.Text type="secondary">
                     {t("alerts.center.batch.selectedCount", {
-                      defaultValue: "{{count}} selected",
                       count: selectedEventIds.length,
                     })}
                   </Typography.Text>
@@ -3873,8 +3660,6 @@ export function AlertCenterContent() {
                     <>
                       <Tag color="gold">
                         {t("alerts.center.batch.hiddenSelected", {
-                          defaultValue:
-                            "{{count}} selected outside current filters",
                           count: hiddenSelectedCount,
                         })}
                       </Tag>
@@ -3887,9 +3672,7 @@ export function AlertCenterContent() {
                           )
                         }
                       >
-                        {t("alerts.center.batch.clearHidden", {
-                          defaultValue: "Clear hidden selection",
-                        })}
+                        {t("alerts.center.batch.clearHidden")}
                       </Button>
                     </>
                   ) : null}
@@ -3904,22 +3687,17 @@ export function AlertCenterContent() {
                     }
                     options={[
                       {
-                        label: t("alerts.center.export.scopeSelected", {
-                          defaultValue: "Selected alerts",
-                        }),
+                        label: t("alerts.center.export.scopeSelected"),
                         value: "selected",
                       },
                       {
-                        label: t("alerts.center.export.scopePage", {
-                          defaultValue: "Current page",
-                        }),
+                        label: t("alerts.center.export.scopePage"),
                         value: "page",
                       },
                     ]}
                   />
                   <Typography.Text type="secondary">
                     {t("alerts.center.export.scopeCount", {
-                      defaultValue: "{{count}} rows ready",
                       count: exportEvents.length,
                     })}
                   </Typography.Text>
@@ -3929,9 +3707,7 @@ export function AlertCenterContent() {
                       setIncludeRawExport(event.target.checked)
                     }
                   >
-                    {t("alerts.center.export.includeRaw", {
-                      defaultValue: "Include raw context",
-                    })}
+                    {t("alerts.center.export.includeRaw")}
                   </Checkbox>
                   {canManageAlerts ? (
                     <>
@@ -3940,9 +3716,7 @@ export function AlertCenterContent() {
                         style={{ width: 180 }}
                         value={bulkNote}
                         onChange={(event) => setBulkNote(event.target.value)}
-                        placeholder={t("alerts.center.batch.notePlaceholder", {
-                          defaultValue: "Optional batch note",
-                        })}
+                        placeholder={t("alerts.center.batch.notePlaceholder")}
                       />
                       <Button
                         size="small"
@@ -3951,9 +3725,7 @@ export function AlertCenterContent() {
                         disabled={selectedEventIds.length === 0}
                         onClick={() => void handleBulkUpdate("confirmed")}
                       >
-                        {t("alerts.center.batch.confirm", {
-                          defaultValue: "Batch confirm",
-                        })}
+                        {t("alerts.center.batch.confirm")}
                       </Button>
                       <Button
                         size="small"
@@ -3961,9 +3733,7 @@ export function AlertCenterContent() {
                         disabled={selectedEventIds.length === 0}
                         onClick={() => void handleBulkUpdate("ignored")}
                       >
-                        {t("alerts.center.batch.ignore", {
-                          defaultValue: "Batch ignore",
-                        })}
+                        {t("alerts.center.batch.ignore")}
                       </Button>
                     </>
                   ) : null}
@@ -3973,18 +3743,14 @@ export function AlertCenterContent() {
                     disabled={exportEvents.length === 0}
                     onClick={() => void handleExportCsv()}
                   >
-                    {t("alerts.center.export.csv", {
-                      defaultValue: "Export CSV",
-                    })}
+                    {t("alerts.center.export.csv")}
                   </Button>
                   <Button
                     size="small"
                     disabled={exportEvents.length === 0}
                     onClick={handleExportJson}
                   >
-                    {t("alerts.center.export.json", {
-                      defaultValue: "Export JSON",
-                    })}
+                    {t("alerts.center.export.json")}
                   </Button>
                 </Space>
               </div>
@@ -3999,7 +3765,6 @@ export function AlertCenterContent() {
                   status="active"
                   format={() =>
                     t("alerts.center.batch.progress", {
-                      defaultValue: "{{done}} / {{total}} processed",
                       done: batchProgress.done,
                       total: batchProgress.total,
                     })
@@ -4007,20 +3772,30 @@ export function AlertCenterContent() {
                 />
               ) : null}
 
-              <List
-                loading={eventsLoading}
-                dataSource={currentPageEvents}
-                locale={{
-                  emptyText: (
-                    <ChartEmptyState
-                      className="h-auto py-6"
-                      description={t("alerts.center.emptyEvents", {
-                        defaultValue: "No recent alerts.",
-                      })}
-                    />
-                  ),
-                }}
-                renderItem={(event) => {
+              <div ref={eventsListRef}>
+                <List
+                  loading={eventsLoading}
+                  dataSource={currentPageEventEntries}
+                  header={
+                    shouldVirtualizeCurrentEvents && eventListTopSpacer > 0 ? (
+                      <div style={{ height: eventListTopSpacer }} />
+                    ) : null
+                  }
+                  footer={
+                    shouldVirtualizeCurrentEvents && eventListBottomSpacer > 0 ? (
+                      <div style={{ height: eventListBottomSpacer }} />
+                    ) : null
+                  }
+                  locale={{
+                    emptyText: (
+                      <ChartEmptyState
+                        className="h-auto py-6"
+                        description={t("alerts.center.emptyEvents")}
+                      />
+                    ),
+                  }}
+                  renderItem={(entry) => {
+                  const event = entry.event;
                   const isSelected = event.id === selectedEventId;
                   const eventContext =
                     event.context && typeof event.context === "object"
@@ -4083,8 +3858,6 @@ export function AlertCenterContent() {
                       </Typography.Text>
                       <Typography.Text type="secondary">
                         {t("alerts.events.evidence", {
-                          defaultValue:
-                            "Evidence {{source}} · Threshold {{threshold}}",
                           source:
                             eventEvidenceSource ?? t("common.notAvailable"),
                           threshold: eventThresholdSummary,
@@ -4160,8 +3933,6 @@ export function AlertCenterContent() {
                                   </Typography.Text>
                                   <Typography.Text type="secondary">
                                     {t("alerts.events.evidence", {
-                                      defaultValue:
-                                        "Evidence {{source}} · Threshold {{threshold}}",
                                       source:
                                         eventEvidenceSource ??
                                         t("common.notAvailable"),
@@ -4171,8 +3942,6 @@ export function AlertCenterContent() {
                                 </Space>
                                 <Typography.Text type="secondary">
                                   {t("alerts.center.eventSummary", {
-                                    defaultValue:
-                                      "Rule {{rule}} · Metric {{metric}}",
                                     rule:
                                       event.ruleName ??
                                       t("common.notAvailable"),
@@ -4209,8 +3978,9 @@ export function AlertCenterContent() {
                       </div>
                     </List.Item>
                   );
-                }}
-              />
+                  }}
+                />
+              </div>
 
               {filteredEvents.length > listPageSize ? (
                 <Pagination
@@ -4226,7 +3996,6 @@ export function AlertCenterContent() {
                   }}
                   showTotal={(total, range) =>
                     t("alerts.center.batch.pageSummary", {
-                      defaultValue: "Showing {{start}}-{{end}} of {{total}}",
                       start: total === 0 ? 0 : range[0],
                       end: total === 0 ? 0 : range[1],
                       total,
@@ -4241,9 +4010,7 @@ export function AlertCenterContent() {
         <Col xs={24} xl={10}>
           <Card
             className="content-card"
-            title={t("alerts.center.evidenceTitle", {
-              defaultValue: "Evidence Details",
-            })}
+            title={t("alerts.center.evidenceTitle")}
             extra={
               <Space wrap>
                 <Button
@@ -4253,25 +4020,21 @@ export function AlertCenterContent() {
                   }
                   disabled={!previousEventId}
                 >
-                  {t("alerts.center.actions.previous", {
-                    defaultValue: "Previous",
-                  })}
+                  {t("alerts.center.actions.previous")}
                 </Button>
                 <Button
                   size="small"
                   onClick={() => nextEventId && handleSelectEvent(nextEventId)}
                   disabled={!nextEventId}
                 >
-                  {t("alerts.center.actions.next", { defaultValue: "Next" })}
+                  {t("alerts.center.actions.next")}
                 </Button>
                 <Button
                   size="small"
                   onClick={() => void handleCopyAlertMarkdown()}
                   disabled={!selectedEvent}
                 >
-                  {t("alerts.center.actions.copyMarkdown", {
-                    defaultValue: "Copy Markdown",
-                  })}
+                  {t("alerts.center.actions.copyMarkdown")}
                 </Button>
               </Space>
             }
@@ -4286,10 +4049,7 @@ export function AlertCenterContent() {
                   <Alert
                     type="warning"
                     showIcon
-                    message={t("alerts.center.actions.filteredOut", {
-                      defaultValue:
-                        "Selected event is outside the current filters.",
-                    })}
+                    message={t("alerts.center.actions.filteredOut")}
                   />
                 ) : null}
                 <Tabs
@@ -4301,9 +4061,7 @@ export function AlertCenterContent() {
             ) : (
               <ChartEmptyState
                 className="h-auto py-6"
-                description={t("alerts.center.selectEvent", {
-                  defaultValue: "Select an event to see evidence details.",
-                })}
+                description={t("alerts.center.selectEvent")}
               />
             )}
           </Card>

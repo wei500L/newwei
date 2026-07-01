@@ -89,7 +89,7 @@ const STALE_TTL_MULTIPLIER_MIN = 1;
 const STALE_TTL_MULTIPLIER_MAX = 20;
 const STALE_TTL_FIXED_MS_MIN = 1_000;
 const STALE_TTL_FIXED_MS_MAX = 3_600_000;
-const STALE_TTL_STRATEGY_VALUES: ReadonlyArray<NewsnowPersonalizationStaleTtlStrategy> = [
+const STALE_TTL_STRATEGY_VALUES: readonly NewsnowPersonalizationStaleTtlStrategy[] = [
   'multiplier',
   'fixed',
 ];
@@ -588,8 +588,8 @@ export class NewsnowPersonalizationSettingsService {
   }
 
   private normalizeMetricIncrements(input: NewsnowPersonalizationRuntimeMetricsIncrements) {
-    const entries = Object.entries(input) as Array<[string, unknown]>;
-    const normalized: Array<[string, number]> = [];
+    const entries = Object.entries(input) as [string, unknown][];
+    const normalized: [string, number][] = [];
     for (const [field, raw] of entries) {
       const value = this.toPositiveInt(raw);
       if (value <= 0) {

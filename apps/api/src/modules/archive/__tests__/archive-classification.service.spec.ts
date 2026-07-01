@@ -9,17 +9,17 @@ jest.mock('@modular/utils', () => ({
 
 import { createHash } from 'node:crypto';
 
-import { ArchiveClassificationService } from '../archive-classification.service';
-import type { ArchiveHybridClassificationInput } from '../archive-classification.service';
 import {
   ARCHIVE_CLASSIFICATION_PIPELINE_VERSION,
   ARCHIVE_CLASSIFICATION_TAXONOMY_VERSION,
   ARCHIVE_CLASSIFICATION_TEXT_VERSION,
 } from '../archive-classification.constants';
+import { ArchiveClassificationService } from '../archive-classification.service';
+import type { ArchiveHybridClassificationInput } from '../archive-classification.service';
+import { ARCHIVE_VERTICAL_ANCHOR_ENTRIES } from '../archive-taxonomy';
 import {
   type ArchiveRuleVerticalSignals,
 } from '../archive.classifier';
-import { ARCHIVE_VERTICAL_ANCHOR_ENTRIES } from '../archive-taxonomy';
 import {
   ArchiveClassificationDecisionReason,
   ArchiveRegion,

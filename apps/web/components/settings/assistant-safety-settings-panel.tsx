@@ -145,9 +145,7 @@ export function AssistantSafetySettingsPanel() {
     } catch (error) {
       captureClientError("Failed to load assistant safety settings", error);
       setErrorMessage(
-        t("settings.assistantSafety.errors.loadFailed", {
-          defaultValue: "Failed to load assistant safety settings."
-        })
+        t("settings.assistantSafety.errors.loadFailed")
       );
     } finally {
       setLoading(false);
@@ -169,7 +167,7 @@ export function AssistantSafetySettingsPanel() {
       captureClientError("Failed to load assistant safety metrics", error);
       messageApi.error(
         extractApiError(error).message ??
-          t("settings.assistantSafety.metrics.errors.loadFailed", { defaultValue: "Failed to load metrics." })
+          t("settings.assistantSafety.metrics.errors.loadFailed")
       );
     } finally {
       setMetricsLoading(false);
@@ -186,13 +184,13 @@ export function AssistantSafetySettingsPanel() {
       const response = await apiClient.get<AssistantSafetyDiagnosticsResponse>("system-settings/assistant-safety/diagnostics");
       setDiagnostics(response.data ?? null);
       messageApi.success(
-        t("settings.assistantSafety.diagnostics.messages.done", { defaultValue: "Diagnostics completed." })
+        t("settings.assistantSafety.diagnostics.messages.done")
       );
     } catch (error) {
       captureClientError("Failed to run assistant safety diagnostics", error);
       messageApi.error(
         extractApiError(error).message ??
-          t("settings.assistantSafety.diagnostics.errors.failed", { defaultValue: "Diagnostics failed." })
+          t("settings.assistantSafety.diagnostics.errors.failed")
       );
     } finally {
       setDiagnosticsLoading(false);
@@ -214,13 +212,13 @@ export function AssistantSafetySettingsPanel() {
         outputModerationEnabled: data.outputModerationEnabled
       });
       messageApi.success(
-        t("settings.assistantSafety.messages.saved", { defaultValue: "Saved." })
+        t("settings.assistantSafety.messages.saved")
       );
     } catch (error) {
       captureClientError("Failed to save assistant safety settings", error);
       messageApi.error(
         extractApiError(error).message ??
-          t("settings.assistantSafety.errors.saveFailed", { defaultValue: "Save failed." })
+          t("settings.assistantSafety.errors.saveFailed")
       );
     } finally {
       setSaving(false);
@@ -229,10 +227,8 @@ export function AssistantSafetySettingsPanel() {
 
   const handleReset = async () => {
     Modal.confirm({
-      title: t("settings.assistantSafety.reset.modal.title", { defaultValue: "Reset to env defaults?" }),
-      content: t("settings.assistantSafety.reset.modal.content", {
-        defaultValue: "This removes the database override and falls back to the env configuration."
-      }),
+      title: t("settings.assistantSafety.reset.modal.title"),
+      content: t("settings.assistantSafety.reset.modal.content"),
       okText: t("common.confirm"),
       cancelText: t("common.cancel"),
       okButtonProps: { danger: true },
@@ -248,13 +244,13 @@ export function AssistantSafetySettingsPanel() {
             outputModerationEnabled: data.outputModerationEnabled
           });
           messageApi.success(
-            t("settings.assistantSafety.reset.messages.done", { defaultValue: "Reset." })
+            t("settings.assistantSafety.reset.messages.done")
           );
         } catch (error) {
           captureClientError("Failed to reset assistant safety settings", error);
           messageApi.error(
             extractApiError(error).message ??
-              t("settings.assistantSafety.reset.errors.failed", { defaultValue: "Reset failed." })
+              t("settings.assistantSafety.reset.errors.failed")
           );
         } finally {
           setResetting(false);
@@ -271,9 +267,7 @@ export function AssistantSafetySettingsPanel() {
     } catch (error) {
       captureClientError("Failed to load OpenAI keys settings", error);
       setKeysErrorMessage(
-        t("settings.assistantSafety.openaiKeys.errors.loadFailed", {
-          defaultValue: "Failed to load OpenAI keys configuration."
-        })
+        t("settings.assistantSafety.openaiKeys.errors.loadFailed")
       );
     }
   }, [apiClient, t]);
@@ -307,16 +301,13 @@ export function AssistantSafetySettingsPanel() {
     const keys = pendingKeys;
     if (keys.length === 0) {
       messageApi.warning(
-        t("settings.assistantSafety.openaiKeys.messages.emptyInput", {
-          defaultValue: "Please paste at least one key."
-        })
+        t("settings.assistantSafety.openaiKeys.messages.emptyInput")
       );
       return;
     }
     if (willExceedLimit) {
       messageApi.warning(
         t("settings.assistantSafety.openaiKeys.messages.tooManyKeys", {
-          defaultValue: "Too many keys. Max {{max}}.",
           max: MAX_OPENAI_KEYS
         })
       );
@@ -329,13 +320,13 @@ export function AssistantSafetySettingsPanel() {
       setOpenaiKeys(response.data ?? EMPTY_OPENAI_KEYS);
       openaiForm.resetFields();
       messageApi.success(
-        t("settings.assistantSafety.openaiKeys.messages.appended", { defaultValue: "Added." })
+        t("settings.assistantSafety.openaiKeys.messages.appended")
       );
     } catch (error) {
       captureClientError("Failed to append OpenAI keys settings", error);
       messageApi.error(
         extractApiError(error).message ??
-          t("settings.assistantSafety.openaiKeys.errors.appendFailed", { defaultValue: "Add failed." })
+          t("settings.assistantSafety.openaiKeys.errors.appendFailed")
       );
     } finally {
       setSavingKeys(false);
@@ -346,28 +337,21 @@ export function AssistantSafetySettingsPanel() {
     const keys = pendingKeys;
     if (keys.length === 0) {
       messageApi.warning(
-        t("settings.assistantSafety.openaiKeys.messages.emptyInput", {
-          defaultValue: "Please paste at least one key."
-        })
+        t("settings.assistantSafety.openaiKeys.messages.emptyInput")
       );
       return;
     }
     if (keys.length > MAX_OPENAI_KEYS) {
       messageApi.warning(
         t("settings.assistantSafety.openaiKeys.messages.tooManyKeys", {
-          defaultValue: "Too many keys. Max {{max}}.",
           max: MAX_OPENAI_KEYS
         })
       );
       return;
     }
     Modal.confirm({
-      title: t("settings.assistantSafety.openaiKeys.replace.modal.title", {
-        defaultValue: "Replace key list?"
-      }),
-      content: t("settings.assistantSafety.openaiKeys.replace.modal.content", {
-        defaultValue: "This will overwrite the stored key list."
-      }),
+      title: t("settings.assistantSafety.openaiKeys.replace.modal.title"),
+      content: t("settings.assistantSafety.openaiKeys.replace.modal.content"),
       okText: t("common.confirm"),
       cancelText: t("common.cancel"),
       okButtonProps: { danger: true },
@@ -379,13 +363,13 @@ export function AssistantSafetySettingsPanel() {
           setOpenaiKeys(response.data ?? EMPTY_OPENAI_KEYS);
           openaiForm.resetFields();
           messageApi.success(
-            t("settings.assistantSafety.openaiKeys.messages.saved", { defaultValue: "Saved." })
+            t("settings.assistantSafety.openaiKeys.messages.saved")
           );
         } catch (error) {
           captureClientError("Failed to save OpenAI keys settings", error);
           messageApi.error(
             extractApiError(error).message ??
-              t("settings.assistantSafety.openaiKeys.errors.saveFailed", { defaultValue: "Save failed." })
+              t("settings.assistantSafety.openaiKeys.errors.saveFailed")
           );
         } finally {
           setSavingKeys(false);
@@ -396,12 +380,8 @@ export function AssistantSafetySettingsPanel() {
 
   const handleRemoveOpenAiKey = (fingerprint: string) => {
     Modal.confirm({
-      title: t("settings.assistantSafety.openaiKeys.remove.modal.title", {
-        defaultValue: "Remove this key?"
-      }),
-      content: t("settings.assistantSafety.openaiKeys.remove.modal.content", {
-        defaultValue: "This removes the selected key from the database."
-      }),
+      title: t("settings.assistantSafety.openaiKeys.remove.modal.title"),
+      content: t("settings.assistantSafety.openaiKeys.remove.modal.content"),
       okText: t("common.confirm"),
       cancelText: t("common.cancel"),
       okButtonProps: { danger: true },
@@ -412,13 +392,13 @@ export function AssistantSafetySettingsPanel() {
           const response = await apiClient.delete<OpenAiKeysSettingsResponse>(`system-settings/openai-keys/key/${fingerprint}`);
           setOpenaiKeys(response.data ?? EMPTY_OPENAI_KEYS);
           messageApi.success(
-            t("settings.assistantSafety.openaiKeys.remove.messages.done", { defaultValue: "Removed." })
+            t("settings.assistantSafety.openaiKeys.remove.messages.done")
           );
         } catch (error) {
           captureClientError("Failed to remove OpenAI key", error);
           messageApi.error(
             extractApiError(error).message ??
-              t("settings.assistantSafety.openaiKeys.remove.errors.failed", { defaultValue: "Remove failed." })
+              t("settings.assistantSafety.openaiKeys.remove.errors.failed")
           );
         } finally {
           setRemovingKey(null);
@@ -429,12 +409,8 @@ export function AssistantSafetySettingsPanel() {
 
   const handleResetOpenAiKeys = async () => {
     Modal.confirm({
-      title: t("settings.assistantSafety.openaiKeys.reset.modal.title", {
-        defaultValue: "Clear OpenAI keys?"
-      }),
-      content: t("settings.assistantSafety.openaiKeys.reset.modal.content", {
-        defaultValue: "This removes stored OpenAI API keys from the database."
-      }),
+      title: t("settings.assistantSafety.openaiKeys.reset.modal.title"),
+      content: t("settings.assistantSafety.openaiKeys.reset.modal.content"),
       okText: t("common.confirm"),
       cancelText: t("common.cancel"),
       okButtonProps: { danger: true },
@@ -446,13 +422,13 @@ export function AssistantSafetySettingsPanel() {
           setOpenaiKeys(response.data ?? EMPTY_OPENAI_KEYS);
           openaiForm.resetFields();
           messageApi.success(
-            t("settings.assistantSafety.openaiKeys.reset.messages.done", { defaultValue: "Cleared." })
+            t("settings.assistantSafety.openaiKeys.reset.messages.done")
           );
         } catch (error) {
           captureClientError("Failed to reset OpenAI keys settings", error);
           messageApi.error(
             extractApiError(error).message ??
-              t("settings.assistantSafety.openaiKeys.reset.errors.failed", { defaultValue: "Clear failed." })
+              t("settings.assistantSafety.openaiKeys.reset.errors.failed")
           );
         } finally {
           setResettingKeys(false);
@@ -463,9 +439,9 @@ export function AssistantSafetySettingsPanel() {
 
   const sourceTag =
     settings.source === "db" ? (
-      <Tag color="purple">{t("settings.assistantSafety.source.db", { defaultValue: "DB override" })}</Tag>
+      <Tag color="purple">{t("settings.assistantSafety.source.db")}</Tag>
     ) : (
-      <Tag>{t("settings.assistantSafety.source.env", { defaultValue: "Env" })}</Tag>
+      <Tag>{t("settings.assistantSafety.source.env")}</Tag>
     );
 
   const enabledTag = settings.enabled ? (
@@ -487,7 +463,7 @@ export function AssistantSafetySettingsPanel() {
       {contextHolder}
       <Card
         size="small"
-        title={t("settings.assistantSafety.title", { defaultValue: "Assistant Safety" })}
+        title={t("settings.assistantSafety.title")}
         extra={
           <Space wrap>
             {sourceTag}
@@ -499,44 +475,32 @@ export function AssistantSafetySettingsPanel() {
           <Alert
             type="info"
             showIcon
-            message={t("settings.assistantSafety.hint.title", {
-              defaultValue: "Guardrails are enforced via LiteLLM Proxy"
-            })}
+            message={t("settings.assistantSafety.hint.title")}
             description={
               <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                {t("settings.assistantSafety.hint.body", {
-                  defaultValue:
-                    "Enable/disable moderation guardrails for the AI assistant. Make sure the LiteLLM Proxy config defines the required guardrails."
-                })}
+                {t("settings.assistantSafety.hint.body")}
               </Typography.Paragraph>
             }
           />
 
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            {t("settings.assistantSafety.docs.scope", {
-              defaultValue:
-                "This setting ONLY affects the AI Assistant page (/assistant). Other features using LiteLlmService (news pipeline / analysis / monitoring) do not pass guardrails, so they are NOT moderated by this switch."
-            })}
+            {t("settings.assistantSafety.docs.scope")}
           </Typography.Paragraph>
 
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            {t("settings.assistantSafety.docs.setupTitle", { defaultValue: "Setup checklist:" })}
+            {t("settings.assistantSafety.docs.setupTitle")}
           </Typography.Paragraph>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>
-            {t("settings.assistantSafety.docs.setupBody", {
-              defaultValue:
-                "1) Configure LiteLLM Proxy guardrails in infra/litellm/litellm-config.yaml (openai-moderation-pre / openai-moderation-post).\n2) In this panel, save OpenAI API keys (stored in MySQL).\n3) Set LITELLM_CONFIG_INTERNAL_TOKEN in both API and litellm env (root .env or infra/docker/.env) so litellm can fetch keys on startup, then restart the litellm service.\n4) (Optional) In this panel, enable output moderation if you also want to moderate assistant responses (may impact streaming)."
-            })}
+            {t("settings.assistantSafety.docs.setupBody")}
           </Typography.Paragraph>
 
           <Space wrap>
             <Button onClick={() => void runDiagnostics()} loading={diagnosticsLoading}>
-              {t("settings.assistantSafety.diagnostics.actions.run", { defaultValue: "Run diagnostics" })}
+              {t("settings.assistantSafety.diagnostics.actions.run")}
             </Button>
             {diagnostics?.checkedAt ? (
               <Typography.Text type="secondary">
                 {t("settings.assistantSafety.diagnostics.lastChecked", {
-                  defaultValue: "Last checked: {{time}}",
                   time: new Date(diagnostics.checkedAt).toLocaleString()
                 })}
               </Typography.Text>
@@ -546,44 +510,42 @@ export function AssistantSafetySettingsPanel() {
           {diagnostics ? (
             <Descriptions size="small" column={1} bordered>
               <Descriptions.Item
-                label={t("settings.assistantSafety.diagnostics.fields.litellmBase", { defaultValue: "LiteLLM base" })}
+                label={t("settings.assistantSafety.diagnostics.fields.litellmBase")}
               >
                 {diagnostics.litellm.apiBase}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("settings.assistantSafety.diagnostics.fields.litellmLiveliness", { defaultValue: "Liveliness" })}
+                label={t("settings.assistantSafety.diagnostics.fields.litellmLiveliness")}
               >
                 {diagnostics.litellm.liveliness.ok ? (
-                  <Tag color="green">{t("common.ok", { defaultValue: "OK" })}</Tag>
+                  <Tag color="green">{t("common.ok")}</Tag>
                 ) : (
-                  <Tag color="red">{t("common.failed", { defaultValue: "Failed" })}</Tag>
+                  <Tag color="red">{t("common.failed")}</Tag>
                 )}
                 {diagnostics.litellm.liveliness.status ? ` (HTTP ${diagnostics.litellm.liveliness.status})` : ""}
                 {diagnostics.litellm.liveliness.error ? `: ${diagnostics.litellm.liveliness.error}` : ""}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("settings.assistantSafety.diagnostics.fields.litellmModels", { defaultValue: "Models endpoint" })}
+                label={t("settings.assistantSafety.diagnostics.fields.litellmModels")}
               >
                 {diagnostics.litellm.models.ok ? (
-                  <Tag color="green">{t("common.ok", { defaultValue: "OK" })}</Tag>
+                  <Tag color="green">{t("common.ok")}</Tag>
                 ) : (
-                  <Tag color="red">{t("common.failed", { defaultValue: "Failed" })}</Tag>
+                  <Tag color="red">{t("common.failed")}</Tag>
                 )}
                 {diagnostics.litellm.models.status ? ` (HTTP ${diagnostics.litellm.models.status})` : ""}
                 {typeof diagnostics.litellm.models.count === "number" ? `, ${diagnostics.litellm.models.count} models` : ""}
                 {diagnostics.litellm.models.error ? `: ${diagnostics.litellm.models.error}` : ""}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("settings.assistantSafety.diagnostics.fields.litellmGuardrailsList", {
-                  defaultValue: "Guardrails list"
-                })}
+                label={t("settings.assistantSafety.diagnostics.fields.litellmGuardrailsList")}
               >
                 <Space direction="vertical" size={4} style={{ display: "flex" }}>
                   <Space wrap>
                     {diagnostics.litellm.guardrails.ok ? (
-                      <Tag color="green">{t("common.ok", { defaultValue: "OK" })}</Tag>
+                      <Tag color="green">{t("common.ok")}</Tag>
                     ) : (
-                      <Tag color="red">{t("common.failed", { defaultValue: "Failed" })}</Tag>
+                      <Tag color="red">{t("common.failed")}</Tag>
                     )}
                     {diagnostics.litellm.guardrails.status ? (
                       <Typography.Text type="secondary">{`HTTP ${diagnostics.litellm.guardrails.status}`}</Typography.Text>
@@ -591,7 +553,6 @@ export function AssistantSafetySettingsPanel() {
                     {typeof diagnostics.litellm.guardrails.count === "number" ? (
                       <Typography.Text type="secondary">
                         {t("settings.assistantSafety.diagnostics.guardrails.count", {
-                          defaultValue: "{{count}} guardrails",
                           count: diagnostics.litellm.guardrails.count
                         })}
                       </Typography.Text>
@@ -599,14 +560,11 @@ export function AssistantSafetySettingsPanel() {
                     {diagnostics.litellm.guardrails.ok && (diagnostics.litellm.guardrails.expected ?? []).length > 0 ? (
                       diagnostics.litellm.guardrails.missing.length === 0 ? (
                         <Tag color="green">
-                          {t("settings.assistantSafety.diagnostics.guardrails.allPresent", {
-                            defaultValue: "All expected present"
-                          })}
+                          {t("settings.assistantSafety.diagnostics.guardrails.allPresent")}
                         </Tag>
                       ) : (
                         <Tag color="orange">
                           {t("settings.assistantSafety.diagnostics.guardrails.missingCount", {
-                            defaultValue: "Missing {{count}}",
                             count: diagnostics.litellm.guardrails.missing.length
                           })}
                         </Tag>
@@ -629,7 +587,7 @@ export function AssistantSafetySettingsPanel() {
                 </Space>
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("settings.assistantSafety.diagnostics.fields.guardrails", { defaultValue: "Effective guardrails" })}
+                label={t("settings.assistantSafety.diagnostics.fields.guardrails")}
               >
                 {(diagnostics.assistantSafety.guardrails ?? []).length > 0 ? (
                   <Space wrap>
@@ -642,21 +600,21 @@ export function AssistantSafetySettingsPanel() {
                 )}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("settings.assistantSafety.diagnostics.fields.openaiKeys", { defaultValue: "OpenAI keys" })}
+                label={t("settings.assistantSafety.diagnostics.fields.openaiKeys")}
               >
                 <Space wrap>
                   <Tag>{t("settings.assistantSafety.openaiKeys.status.count", { count: diagnostics.openaiKeys.keysCount })}</Tag>
                   {diagnostics.openaiKeys.restartRequired ? (
                     <Tag color="orange">
-                      {t("settings.assistantSafety.openaiKeys.status.restartRequired", { defaultValue: "Restart required" })}
+                      {t("settings.assistantSafety.openaiKeys.status.restartRequired")}
                     </Tag>
                   ) : diagnostics.openaiKeys.appliedAt ? (
                     <Tag color="green">
-                      {t("settings.assistantSafety.openaiKeys.status.applied", { defaultValue: "Applied" })}
+                      {t("settings.assistantSafety.openaiKeys.status.applied")}
                     </Tag>
                   ) : (
                     <Tag color="default">
-                      {t("settings.assistantSafety.openaiKeys.status.notApplied", { defaultValue: "Not applied yet" })}
+                      {t("settings.assistantSafety.openaiKeys.status.notApplied")}
                     </Tag>
                   )}
                 </Space>
@@ -668,20 +626,20 @@ export function AssistantSafetySettingsPanel() {
 
           <Space wrap align="center">
             <Typography.Text strong>
-              {t("settings.assistantSafety.metrics.title", { defaultValue: "Safety metrics" })}
+              {t("settings.assistantSafety.metrics.title")}
             </Typography.Text>
             <Select
               style={{ width: 140 }}
               value={metricsDays}
               onChange={(value) => setMetricsDays(Number(value))}
               options={[
-                { value: 7, label: t("settings.assistantSafety.metrics.days", { defaultValue: "Last {{days}} days", days: 7 }) },
-                { value: 14, label: t("settings.assistantSafety.metrics.days", { defaultValue: "Last {{days}} days", days: 14 }) },
-                { value: 30, label: t("settings.assistantSafety.metrics.days", { defaultValue: "Last {{days}} days", days: 30 }) }
+                { value: 7, label: t("settings.assistantSafety.metrics.days", { days: 7 }) },
+                { value: 14, label: t("settings.assistantSafety.metrics.days", { days: 14 }) },
+                { value: 30, label: t("settings.assistantSafety.metrics.days", { days: 30 }) }
               ]}
             />
             <Button onClick={() => void loadMetrics()} loading={metricsLoading}>
-              {t("common.refresh", { defaultValue: "Refresh" })}
+              {t("common.refresh")}
             </Button>
           </Space>
 
@@ -693,19 +651,19 @@ export function AssistantSafetySettingsPanel() {
             pagination={false}
             columns={[
               {
-                title: t("settings.assistantSafety.metrics.columns.date", { defaultValue: "Date" }),
+                title: t("settings.assistantSafety.metrics.columns.date"),
                 dataIndex: "date",
                 key: "date",
                 width: 110
               },
               {
-                title: t("settings.assistantSafety.metrics.columns.total", { defaultValue: "Total" }),
+                title: t("settings.assistantSafety.metrics.columns.total"),
                 dataIndex: "totalRuns",
                 key: "totalRuns",
                 width: 90
               },
               {
-                title: t("settings.assistantSafety.metrics.columns.blocked", { defaultValue: "Blocked" }),
+                title: t("settings.assistantSafety.metrics.columns.blocked"),
                 dataIndex: "blockedRuns",
                 key: "blockedRuns",
                 width: 100,
@@ -716,22 +674,20 @@ export function AssistantSafetySettingsPanel() {
                 )
               },
               {
-                title: t("settings.assistantSafety.metrics.columns.rate", { defaultValue: "Blocked rate" }),
+                title: t("settings.assistantSafety.metrics.columns.rate"),
                 dataIndex: "blockedRate",
                 key: "blockedRate",
                 width: 120,
                 render: (value: number) => `${(Number(value) * 100).toFixed(1)}%`
               },
               {
-                title: t("settings.assistantSafety.metrics.columns.moderationCalls", {
-                  defaultValue: "Moderation calls (est.)"
-                }),
+                title: t("settings.assistantSafety.metrics.columns.moderationCalls"),
                 key: "moderationCalls",
                 width: 170,
                 render: (_value: unknown, row: AssistantSafetyMetricsRow) => row.totalRuns * callsPerRun
               },
               {
-                title: t("settings.assistantSafety.metrics.columns.guardrails", { defaultValue: "Guardrails" }),
+                title: t("settings.assistantSafety.metrics.columns.guardrails"),
                 dataIndex: "guardrails",
                 key: "guardrails",
                 render: (value: AssistantSafetyMetricsRow["guardrails"]) => (
@@ -745,7 +701,7 @@ export function AssistantSafetySettingsPanel() {
                 )
               },
               {
-                title: t("settings.assistantSafety.metrics.columns.codes", { defaultValue: "Codes" }),
+                title: t("settings.assistantSafety.metrics.columns.codes"),
                 dataIndex: "codes",
                 key: "codes",
                 render: (value: AssistantSafetyMetricsRow["codes"]) => (
@@ -766,88 +722,69 @@ export function AssistantSafetySettingsPanel() {
           <Space direction="vertical" size={8}>
             <Space wrap>
               <Typography.Text strong>
-                {t("settings.assistantSafety.openaiKeys.title", {
-                  defaultValue: "OpenAI keys (LiteLLM upstream)"
-                })}
+                {t("settings.assistantSafety.openaiKeys.title")}
               </Typography.Text>
               {openaiKeys.hasKeys ? (
                 <Tag color="green">
-                  {t("settings.assistantSafety.openaiKeys.status.configured", {
-                    defaultValue: "Configured"
-                  })}
+                  {t("settings.assistantSafety.openaiKeys.status.configured")}
                 </Tag>
               ) : (
                 <Tag color="default">
-                  {t("settings.assistantSafety.openaiKeys.status.empty", {
-                    defaultValue: "Not configured"
-                  })}
+                  {t("settings.assistantSafety.openaiKeys.status.empty")}
                 </Tag>
               )}
               <Tag>
                 {t("settings.assistantSafety.openaiKeys.status.count", {
-                  defaultValue: "{{count}} keys",
                   count: openaiKeys.keysCount
                 })}
               </Tag>
               <Tag>
                 {t("settings.assistantSafety.openaiKeys.status.remaining", {
-                  defaultValue: "{{count}} slots left",
                   count: remainingKeySlots
                 })}
               </Tag>
               {openaiKeys.restartRequired ? (
                 <Tag color="orange">
-                  {t("settings.assistantSafety.openaiKeys.status.restartRequired", {
-                    defaultValue: "Restart required"
-                  })}
+                  {t("settings.assistantSafety.openaiKeys.status.restartRequired")}
                 </Tag>
               ) : openaiKeys.hasKeys ? (
                 openaiKeys.appliedAt ? (
                   <Tag color="green">
-                    {t("settings.assistantSafety.openaiKeys.status.applied", { defaultValue: "Applied" })}
+                    {t("settings.assistantSafety.openaiKeys.status.applied")}
                   </Tag>
                 ) : (
                   <Tag color="orange">
-                    {t("settings.assistantSafety.openaiKeys.status.notApplied", { defaultValue: "Not applied yet" })}
+                    {t("settings.assistantSafety.openaiKeys.status.notApplied")}
                   </Tag>
                 )
               ) : null}
               {openaiKeys.internalTokenConfigured ? (
                 <Tag color="green">
-                  {t("settings.assistantSafety.openaiKeys.status.tokenOk", {
-                    defaultValue: "Internal token configured"
-                  })}
+                  {t("settings.assistantSafety.openaiKeys.status.tokenOk")}
                 </Tag>
               ) : (
                 <Tag color="red">
-                  {t("settings.assistantSafety.openaiKeys.status.tokenMissing", {
-                    defaultValue: "Missing internal token"
-                  })}
+                  {t("settings.assistantSafety.openaiKeys.status.tokenMissing")}
                 </Tag>
               )}
               {openaiKeys.keysCount > 1 ? (
                 <Tag color="geekblue">
-                  {t("settings.assistantSafety.openaiKeys.status.lbOn", { defaultValue: "LB on" })}
+                  {t("settings.assistantSafety.openaiKeys.status.lbOn")}
                 </Tag>
               ) : (
                 <Tag>
-                  {t("settings.assistantSafety.openaiKeys.status.lbOff", { defaultValue: "LB off" })}
+                  {t("settings.assistantSafety.openaiKeys.status.lbOff")}
                 </Tag>
               )}
             </Space>
 
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              {t("settings.assistantSafety.openaiKeys.description", {
-                defaultValue:
-                  "These keys are stored in MySQL and fetched by LiteLLM Proxy at startup (requires LITELLM_CONFIG_INTERNAL_TOKEN), used for OpenAI model calls and omni-moderation guardrails. If you provide multiple keys, assistant moderation calls are spread across them. Restart the litellm service after updating."
-              })}
+              {t("settings.assistantSafety.openaiKeys.description")}
             </Typography.Paragraph>
 
             {openaiKeys.keysCount > 0 ? (
               <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
                 {t("settings.assistantSafety.openaiKeys.quotaHint", {
-                  defaultValue:
-                    "Estimated free moderation quota: {{quota}} calls/day ({{perKey}} per key). Current assistant settings use {{callsPerRun}} call(s) per run.",
                   quota: estimatedDailyQuota,
                   perKey: OPENAI_MODERATION_FREE_CALLS_PER_DAY,
                   callsPerRun
@@ -856,29 +793,21 @@ export function AssistantSafetySettingsPanel() {
             ) : null}
 
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              {t("settings.assistantSafety.openaiKeys.compliance", {
-                defaultValue:
-                  "Please ensure your usage complies with OpenAI's terms. Do not use multiple keys to bypass provider limits or billing policies."
-              })}
+              {t("settings.assistantSafety.openaiKeys.compliance")}
             </Typography.Paragraph>
 
             {!openaiKeys.internalTokenConfigured ? (
               <Alert
                 type="warning"
                 showIcon
-                message={t("settings.assistantSafety.openaiKeys.warnings.tokenMissing", {
-                  defaultValue:
-                    "LITELLM_CONFIG_INTERNAL_TOKEN is not configured. LiteLLM cannot fetch keys from MySQL at startup."
-                })}
+                message={t("settings.assistantSafety.openaiKeys.warnings.tokenMissing")}
               />
             ) : null}
             {openaiKeys.restartRequired ? (
               <Alert
                 type="warning"
                 showIcon
-                message={t("settings.assistantSafety.openaiKeys.warnings.restartRequired", {
-                  defaultValue: "Key list changed; restart litellm to apply the new keys."
-                })}
+                message={t("settings.assistantSafety.openaiKeys.warnings.restartRequired")}
                 description={
                   <Typography.Paragraph
                     style={{ marginBottom: 0 }}
@@ -899,23 +828,17 @@ export function AssistantSafetySettingsPanel() {
             <Form form={openaiForm} layout="vertical" initialValues={{ openaiKeys: "" }}>
               <Form.Item
                 name="openaiKeys"
-                label={t("settings.assistantSafety.openaiKeys.fields.keys", { defaultValue: "OpenAI API keys" })}
-                extra={t("settings.assistantSafety.openaiKeys.fields.keysHint", {
-                  defaultValue:
-                    "Comma or newline separated. Add (append) will merge/dedupe; Save (replace) will overwrite the stored list."
-                })}
+                label={t("settings.assistantSafety.openaiKeys.fields.keys")}
+                extra={t("settings.assistantSafety.openaiKeys.fields.keysHint")}
               >
                 <Input.TextArea
                   autoSize={{ minRows: 3, maxRows: 8 }}
-                  placeholder={t("settings.assistantSafety.openaiKeys.fields.keysPlaceholder", {
-                    defaultValue: "sk-...\nsk-...\n..."
-                  })}
+                  placeholder={t("settings.assistantSafety.openaiKeys.fields.keysPlaceholder")}
                 />
               </Form.Item>
 
               <Typography.Text type="secondary">
                 {t("settings.assistantSafety.openaiKeys.preview", {
-                  defaultValue: "Detected {{count}} key(s) in input.",
                   count: pendingKeys.length
                 })}
               </Typography.Text>
@@ -924,7 +847,6 @@ export function AssistantSafetySettingsPanel() {
                   type="warning"
                   showIcon
                   message={t("settings.assistantSafety.openaiKeys.warnings.tooManyKeys", {
-                    defaultValue: "This would exceed the max {{max}} keys limit.",
                     max: MAX_OPENAI_KEYS
                   })}
                 />
@@ -932,16 +854,16 @@ export function AssistantSafetySettingsPanel() {
 
               <Space wrap>
                 <Button type="primary" onClick={() => void handleAppendOpenAiKeys()} loading={savingKeys}>
-                  {t("settings.assistantSafety.openaiKeys.actions.append", { defaultValue: "Add (append)" })}
+                  {t("settings.assistantSafety.openaiKeys.actions.append")}
                 </Button>
                 <Button danger onClick={() => void handleReplaceOpenAiKeys()} loading={savingKeys}>
-                  {t("settings.assistantSafety.openaiKeys.actions.replace", { defaultValue: "Save (replace)" })}
+                  {t("settings.assistantSafety.openaiKeys.actions.replace")}
                 </Button>
                 <Button onClick={() => void loadOpenAiKeys()} disabled={savingKeys || resettingKeys}>
-                  {t("common.refresh", { defaultValue: "Refresh" })}
+                  {t("common.refresh")}
                 </Button>
                 <Button danger onClick={handleResetOpenAiKeys} loading={resettingKeys} disabled={savingKeys}>
-                  {t("settings.assistantSafety.openaiKeys.reset.action", { defaultValue: "Clear keys" })}
+                  {t("settings.assistantSafety.openaiKeys.reset.action")}
                 </Button>
               </Space>
             </Form>
@@ -949,7 +871,7 @@ export function AssistantSafetySettingsPanel() {
             <Divider style={{ margin: "8px 0" }} />
 
             <Typography.Text type="secondary">
-              {t("settings.assistantSafety.openaiKeys.list.title", { defaultValue: "Stored key fingerprints" })}
+              {t("settings.assistantSafety.openaiKeys.list.title")}
             </Typography.Text>
 
             {openaiKeys.keyFingerprints.length > 0 ? (
@@ -969,7 +891,7 @@ export function AssistantSafetySettingsPanel() {
               </Space>
             ) : (
               <Typography.Text type="secondary">
-                {t("settings.assistantSafety.openaiKeys.list.empty", { defaultValue: "No keys stored." })}
+                {t("settings.assistantSafety.openaiKeys.list.empty")}
               </Typography.Text>
             )}
 
@@ -978,13 +900,10 @@ export function AssistantSafetySettingsPanel() {
                 <Divider style={{ margin: "8px 0" }} />
 
                 <Typography.Text type="secondary">
-                  {t("settings.assistantSafety.openaiKeys.buckets.title", { defaultValue: "Load balancing buckets" })}
+                  {t("settings.assistantSafety.openaiKeys.buckets.title")}
                 </Typography.Text>
                 <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                  {t("settings.assistantSafety.openaiKeys.buckets.hint", {
-                    defaultValue:
-                      "Assistant moderation requests are deterministically assigned to a bucket; each bucket maps to a specific guardrail name and upstream key."
-                  })}
+                  {t("settings.assistantSafety.openaiKeys.buckets.hint")}
                 </Typography.Paragraph>
                 <Table
                   size="small"
@@ -993,27 +912,25 @@ export function AssistantSafetySettingsPanel() {
                   dataSource={lbBuckets}
                   columns={[
                     {
-                      title: t("settings.assistantSafety.openaiKeys.buckets.columns.bucket", { defaultValue: "Bucket" }),
+                      title: t("settings.assistantSafety.openaiKeys.buckets.columns.bucket"),
                       dataIndex: "bucket",
                       key: "bucket",
                       width: 90
                     },
                     {
-                      title: t("settings.assistantSafety.openaiKeys.buckets.columns.fingerprint", {
-                        defaultValue: "Key fingerprint"
-                      }),
+                      title: t("settings.assistantSafety.openaiKeys.buckets.columns.fingerprint"),
                       dataIndex: "fingerprint",
                       key: "fingerprint",
                       render: (value: string) => `${value.slice(0, 8)}…${value.slice(-4)}`
                     },
                     {
-                      title: t("settings.assistantSafety.openaiKeys.buckets.columns.pre", { defaultValue: "Pre-call" }),
+                      title: t("settings.assistantSafety.openaiKeys.buckets.columns.pre"),
                       dataIndex: "guardrailPre",
                       key: "guardrailPre",
                       render: (value: string) => <Typography.Text code>{value}</Typography.Text>
                     },
                     {
-                      title: t("settings.assistantSafety.openaiKeys.buckets.columns.post", { defaultValue: "Post-call" }),
+                      title: t("settings.assistantSafety.openaiKeys.buckets.columns.post"),
                       dataIndex: "guardrailPost",
                       key: "guardrailPost",
                       render: (value: string) => <Typography.Text code>{value}</Typography.Text>
@@ -1026,11 +943,11 @@ export function AssistantSafetySettingsPanel() {
             <Divider style={{ margin: "8px 0" }} />
 
             <Typography.Text type="secondary">
-              {t("settings.assistantSafety.openaiKeys.applied.title", { defaultValue: "Applied by LiteLLM" })}
+              {t("settings.assistantSafety.openaiKeys.applied.title")}
               {openaiKeys.appliedAt ? (
                 <Typography.Text type="secondary">
                   {" "}
-                  ({t("settings.assistantSafety.openaiKeys.applied.at", { defaultValue: "at" })}{" "}
+                  ({t("settings.assistantSafety.openaiKeys.applied.at")}{" "}
                   {new Date(openaiKeys.appliedAt).toLocaleString()})
                 </Typography.Text>
               ) : null}
@@ -1038,7 +955,7 @@ export function AssistantSafetySettingsPanel() {
 
             {openaiKeys.appliedSource ? (
               <Typography.Text type="secondary">
-                {t("settings.assistantSafety.openaiKeys.applied.source", { defaultValue: "Source" })}:{" "}
+                {t("settings.assistantSafety.openaiKeys.applied.source")}:{" "}
                 <Tag>{openaiKeys.appliedSource}</Tag>
               </Typography.Text>
             ) : null}
@@ -1053,13 +970,13 @@ export function AssistantSafetySettingsPanel() {
               </Space>
             ) : (
               <Typography.Text type="secondary">
-                {t("settings.assistantSafety.openaiKeys.applied.empty", { defaultValue: "No applied keys reported yet." })}
+                {t("settings.assistantSafety.openaiKeys.applied.empty")}
               </Typography.Text>
             )}
           </Space>
 
           <Typography.Text type="secondary">
-            {t("settings.assistantSafety.guardrails.label", { defaultValue: "Effective guardrails" })}:
+            {t("settings.assistantSafety.guardrails.label")}:
           </Typography.Text>
           <Space wrap>
             {(settings.guardrails ?? []).length > 0 ? (
@@ -1077,7 +994,7 @@ export function AssistantSafetySettingsPanel() {
 
           <Form form={form} layout="vertical" onFinish={handleSave}>
             <Form.Item
-              label={t("settings.assistantSafety.fields.enabled", { defaultValue: "Enable guardrails" })}
+              label={t("settings.assistantSafety.fields.enabled")}
               name="enabled"
               valuePropName="checked"
             >
@@ -1085,14 +1002,10 @@ export function AssistantSafetySettingsPanel() {
             </Form.Item>
 
             <Form.Item
-              label={t("settings.assistantSafety.fields.outputModerationEnabled", {
-                defaultValue: "Enable output moderation"
-              })}
+              label={t("settings.assistantSafety.fields.outputModerationEnabled")}
               name="outputModerationEnabled"
               valuePropName="checked"
-              extra={t("settings.assistantSafety.fields.outputModerationHint", {
-                defaultValue: "May buffer streaming responses depending on upstream guardrail behavior."
-              })}
+              extra={t("settings.assistantSafety.fields.outputModerationHint")}
             >
               <Switch />
             </Form.Item>
@@ -1102,10 +1015,10 @@ export function AssistantSafetySettingsPanel() {
                 {t("common.save")}
               </Button>
               <Button onClick={() => void loadSettings()} disabled={saving || resetting}>
-                {t("common.refresh", { defaultValue: "Refresh" })}
+                {t("common.refresh")}
               </Button>
               <Button danger onClick={handleReset} loading={resetting} disabled={saving}>
-                {t("settings.assistantSafety.reset.action", { defaultValue: "Reset to env" })}
+                {t("settings.assistantSafety.reset.action")}
               </Button>
             </Space>
           </Form>

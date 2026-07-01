@@ -41,17 +41,32 @@ describe("Crawl4aiQueueController permissions", () => {
 describe("Crawl4aiQueueController queue stats", () => {
   it("returns aggregate queue stats including per-queue runtime and adaptive details", async () => {
     const crawlQueue = {
+      getRuntimeStatsByQueue: jest.fn().mockResolvedValue({
+        hot: {
+          queueName: CRAWL_QUEUE_HOT_NAME,
+          counts: { waiting: 1, active: 1, delayed: 0, failed: 0 },
+          pending: 2,
+          paused: false,
+          effectiveConcurrency: 3
+        },
+        normal: {
+          queueName: CRAWL_QUEUE_NORMAL_NAME,
+          counts: { waiting: 1, active: 0, delayed: 3, failed: 0 },
+          pending: 4,
+          paused: false,
+          effectiveConcurrency: 1
+        }
+      }),
+      getLegacyRuntimeStats: jest.fn().mockResolvedValue({
+        queueName: CRAWL_QUEUE_NAME,
+        counts: { waiting: 2, active: 0, delayed: 0, failed: 1, paused: 0 },
+        pending: 2,
+        paused: false,
+        effectiveConcurrency: 1
+      }),
       getJobCountsByQueue: jest.fn().mockResolvedValue({
         hot: { waiting: 1, active: 1, delayed: 0, failed: 0 },
         normal: { waiting: 1, active: 0, delayed: 3, failed: 0 }
-      }),
-      getPausedByQueue: jest.fn().mockResolvedValue({
-        hot: false,
-        normal: false
-      }),
-      getGlobalConcurrencyByQueue: jest.fn().mockResolvedValue({
-        hot: 3,
-        normal: 1
       })
     } as any;
 
@@ -104,9 +119,10 @@ describe("Crawl4aiQueueController queue stats", () => {
         queueMode: CRAWL_QUEUE_MODE,
         queueNames: {
           hot: CRAWL_QUEUE_HOT_NAME,
-          normal: CRAWL_QUEUE_NORMAL_NAME
+          normal: CRAWL_QUEUE_NORMAL_NAME,
+          legacy: CRAWL_QUEUE_NAME
         },
-        pending: 6,
+        pending: 8,
         paused: false,
         maxConcurrency: 4,
         effectiveConcurrency: 4,
@@ -118,6 +134,10 @@ describe("Crawl4aiQueueController queue stats", () => {
           normal: expect.objectContaining({
             queueName: CRAWL_QUEUE_NORMAL_NAME,
             pending: 4
+          }),
+          legacy: expect.objectContaining({
+            queueName: CRAWL_QUEUE_NAME,
+            pending: 2
           })
         },
         adaptive: expect.objectContaining({

@@ -12,13 +12,22 @@ import {
   Int,
 } from "@nestjs/graphql";
 import type DataLoader from "dataloader";
-import type { GraphQLResolveInfo, SelectionNode } from "graphql";
+import type { GraphQLResolveInfo } from "graphql";
 import { Loader } from "nestjs-dataloader";
 
 import { PermissionsAll } from "../../common/decorators/permissions.decorator";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
+import {
+  itemReadModelPublishedAt,
+  itemReadModelToMetaGraph,
+  itemReadModelToProcessedGraph,
+  itemReadModelToProcessedPreviewGraph,
+  itemReadModelToRawGraph,
+  itemReadModelToRawPreviewGraph,
+} from "../../modules/items/item-read-model.utils";
+import { ItemsRssTranslationService } from "../../modules/items/items-rss-translation.service";
 import { ItemsService } from "../../modules/items/items.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import {
@@ -31,12 +40,18 @@ import {
   TranslateRssItemsInput
 } from "../dto/item.input";
 import type { GqlRequest } from "../graphql.types";
-import { ItemReadModelLoader } from "../loaders/item-read-model.loader";
 import { ItemMetaLoader } from "../loaders/item-meta.loader";
+import {
+  ItemReadModelLoader,
+  ItemReadModelProcessedLoader,
+  ItemReadModelProcessedPreviewLoader,
+  ItemReadModelRawLoader,
+  ItemReadModelRawPreviewLoader,
+} from "../loaders/item-read-model.loader";
 import type { ProcessedItemPreviewDoc } from "../loaders/processed-item-preview.loader";
 import { ProcessedItemPreviewLoader } from "../loaders/processed-item-preview.loader";
 import type { ProcessedItemDoc } from "../loaders/processed-item.loader";
-import { ProcessedItemLoader } from "../loaders/processed-item.loader";
+import { ProcessedItemLoader, ProcessedItemScalarLoader } from "../loaders/processed-item.loader";
 import type { RawItemPreviewDoc } from "../loaders/raw-item-preview.loader";
 import { RawItemPreviewLoader } from "../loaders/raw-item-preview.loader";
 import type { RawItemDoc } from "../loaders/raw-item.loader";
@@ -55,22 +70,14 @@ import {
   RssTranslationProviderStatusModel,
   TranslateRssItemsPayloadModel
 } from "../models/item.model";
+import { PageInfo } from "../models/page-info.model";
 import {
   SearchSuggestionModel,
   SearchSuggestionOrigin,
   SearchSuggestionType
 } from "../models/search-suggestion.model";
-import { PageInfo } from "../models/page-info.model";
 import { normalizeProcessedResult } from "../utils/normalize-processed-result";
-import { ItemsRssTranslationService } from "../../modules/items/items-rss-translation.service";
-import {
-  itemReadModelPublishedAt,
-  itemReadModelToMetaGraph,
-  itemReadModelToProcessedGraph,
-  itemReadModelToProcessedPreviewGraph,
-  itemReadModelToRawGraph,
-  itemReadModelToRawPreviewGraph,
-} from "../../modules/items/item-read-model.utils";
+import { selectionContainsField } from "../utils/selection-contains-field";
 
 interface ItemsCursorPayload {
   id: string;
@@ -131,66 +138,17 @@ function normalizeIsoDateTimeString(value: unknown): string | null {
   return parsed ? parsed.toISOString() : null;
 }
 
-function selectionContainsField(
-  selections: readonly SelectionNode[] | undefined,
-  fieldName: string,
-  fragments?: GraphQLResolveInfo["fragments"],
-  visitedFragmentNames: Set<string> = new Set(),
-): boolean {
-  if (!selections || selections.length === 0) {
-    return false;
-  }
-  for (const selection of selections) {
-    if (selection.kind === "Field") {
-      if (selection.name.value === fieldName) {
-        return true;
-      }
-      if (selection.selectionSet && selectionContainsField(selection.selectionSet.selections, fieldName)) {
-        return true;
-      }
-      continue;
-    }
-    if (selection.kind === "InlineFragment") {
-      if (
-        selectionContainsField(
-          selection.selectionSet.selections,
-          fieldName,
-          fragments,
-          visitedFragmentNames,
-        )
-      ) {
-        return true;
-      }
-      continue;
-    }
-    if (selection.kind === "FragmentSpread") {
-      const fragmentName = selection.name.value;
-      if (visitedFragmentNames.has(fragmentName)) {
-        continue;
-      }
-      const fragment = fragments?.[fragmentName];
-      if (!fragment) {
-        continue;
-      }
-      visitedFragmentNames.add(fragmentName);
-      if (
-        selectionContainsField(
-          fragment.selectionSet.selections,
-          fieldName,
-          fragments,
-          visitedFragmentNames,
-        )
-      ) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 function queryRequestsTotalCount(info?: GraphQLResolveInfo): boolean {
   const rootSelections = info?.fieldNodes?.flatMap((node) => node.selectionSet?.selections ?? []) ?? [];
   return selectionContainsField(rootSelections, "totalCount", info?.fragments);
+}
+
+function queryRequestsProcessedResult(info?: GraphQLResolveInfo): boolean {
+  const selections = info?.fieldNodes?.flatMap((node) => node.selectionSet?.selections ?? []) ?? [];
+  return (
+    selectionContainsField(selections, "result", info?.fragments) ||
+    selectionContainsField(selections, "resultJson", info?.fragments)
+  );
 }
 
 function resolvePublishedAtFromProcessedResult(result: unknown): string | null {
@@ -741,7 +699,10 @@ export class ItemsResolver {
 
     const readModel = await itemReadModelLoader.load(item.metaId);
     if (readModel) {
-      return itemReadModelPublishedAt(readModel);
+      const fromReadModel = itemReadModelPublishedAt(readModel);
+      if (fromReadModel) {
+        return fromReadModel;
+      }
     }
 
     const processed = await processedLoader.load(item.metaId);
@@ -759,7 +720,7 @@ export class ItemsResolver {
   @ResolveField(() => RawItemPreviewModelGraph, { nullable: true })
   async rawPreview(
     @Parent() item: ItemModel,
-    @Loader(ItemReadModelLoader) itemReadModelLoader: DataLoader<string, any>,
+    @Loader(ItemReadModelRawPreviewLoader) itemReadModelLoader: DataLoader<string, any>,
     @Loader(RawItemPreviewLoader) rawLoader: DataLoader<string, RawItemPreviewDoc | null>
   ): Promise<RawItemPreviewModelGraph | null> {
     const readModel = await itemReadModelLoader.load(item.metaId);
@@ -814,7 +775,7 @@ export class ItemsResolver {
   @ResolveField(() => ProcessedItemPreviewModelGraph, { nullable: true })
   async processedPreview(
     @Parent() item: ItemModel,
-    @Loader(ItemReadModelLoader)
+    @Loader(ItemReadModelProcessedPreviewLoader)
     itemReadModelLoader: DataLoader<string, any>,
     @Loader(ProcessedItemPreviewLoader)
     processedLoader: DataLoader<string, ProcessedItemPreviewDoc | null>
@@ -878,7 +839,7 @@ export class ItemsResolver {
   @ResolveField(() => RawItemModelGraph, { nullable: true })
   async raw(
     @Parent() item: ItemModel,
-    @Loader(ItemReadModelLoader) itemReadModelLoader: DataLoader<string, any>,
+    @Loader(ItemReadModelRawLoader) itemReadModelLoader: DataLoader<string, any>,
     @Loader(RawItemLoader) rawLoader: DataLoader<string, RawItemDoc | null>
   ): Promise<RawItemModelGraph | null> {
     const readModel = await itemReadModelLoader.load(item.metaId);
@@ -898,13 +859,21 @@ export class ItemsResolver {
   @ResolveField(() => ProcessedItemModelGraph, { nullable: true })
   async processed(
     @Parent() item: ItemModel,
-    @Loader(ItemReadModelLoader) itemReadModelLoader: DataLoader<string, any>,
-    @Loader(ProcessedItemLoader) processedLoader: DataLoader<string, ProcessedItemDoc | null>
+    @Info() info: GraphQLResolveInfo,
+    @Loader(ItemReadModelProcessedLoader) fullItemReadModelLoader: DataLoader<string, any>,
+    @Loader(ItemReadModelProcessedPreviewLoader)
+    scalarItemReadModelLoader: DataLoader<string, any>,
+    @Loader(ProcessedItemLoader) fullProcessedLoader: DataLoader<string, ProcessedItemDoc | null>,
+    @Loader(ProcessedItemScalarLoader)
+    scalarProcessedLoader: DataLoader<string, ProcessedItemDoc | null>
   ): Promise<ProcessedItemModelGraph | null> {
+    const includeResult = queryRequestsProcessedResult(info);
+    const itemReadModelLoader = includeResult ? fullItemReadModelLoader : scalarItemReadModelLoader;
     const readModel = await itemReadModelLoader.load(item.metaId);
     if (readModel) {
       return itemReadModelToProcessedGraph(readModel);
     }
+    const processedLoader = includeResult ? fullProcessedLoader : scalarProcessedLoader;
     const processed = await processedLoader.load(item.metaId);
     if (!processed) {
       return null;
@@ -930,7 +899,14 @@ export class ItemsResolver {
     orgId: string;
     publishedAt?: Date | null;
     relevanceScore?: number | null;
+    searchHighlights?: Record<string, string[]> | null;
   }): ItemModel {
+    const searchHighlights =
+      meta.searchHighlights && typeof meta.searchHighlights === "object"
+        ? Object.entries(meta.searchHighlights)
+            .filter(([, snippets]) => Array.isArray(snippets) && snippets.length > 0)
+            .map(([field, snippets]) => ({ field, snippets }))
+        : null;
     return {
       id: meta.id,
       metaId: meta.id,
@@ -942,6 +918,7 @@ export class ItemsResolver {
         typeof meta.relevanceScore === "number" && Number.isFinite(meta.relevanceScore)
           ? meta.relevanceScore
           : null,
+      searchHighlights,
       createdAt: meta.createdAt,
       updatedAt: meta.updatedAt,
       orgId: meta.orgId,

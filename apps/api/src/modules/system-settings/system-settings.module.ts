@@ -1,16 +1,22 @@
-import { Global, Module } from "@nestjs/common";
 import { LlmRequestLogModel } from "@modular/mongo";
+import { Global, Module, forwardRef } from "@nestjs/common";
 
 import { AkshareModule } from "../akshare/akshare.module";
 import { AuthModule } from "../auth/auth.module";
 import { GeoModule } from "../geo/geo.module";
+import {
+  LLM_REQUEST_LOG_MODEL,
+  LlmRequestLogService,
+} from "../news-pipeline/llm-request-log.service";
+import { ObservabilitySnapshotService } from "../observability/observability-snapshot.service";
 import { RealtimeSignalsModule } from "../realtime-signals/realtime-signals.module";
 import { SituationMonitorSignalsModule } from "../situation-monitor/signals/situation-monitor-signals.module";
+import { SituationMonitorModule } from "../situation-monitor/situation-monitor.module";
 
-import { AssistantSafetyDiagnosticsService } from "./assistant-safety-diagnostics.service";
-import { AssistantSafetyMetricsService } from "./assistant-safety-metrics.service";
 import { ArchivePreparationSettingsController } from "./archive-preparation-settings.controller";
 import { ArchivePreparationSettingsService } from "./archive-preparation-settings.service";
+import { AssistantSafetyDiagnosticsService } from "./assistant-safety-diagnostics.service";
+import { AssistantSafetyMetricsService } from "./assistant-safety-metrics.service";
 import { AssistantSafetySettingsController } from "./assistant-safety-settings.controller";
 import { AssistantSafetySettingsService } from "./assistant-safety-settings.service";
 import { AuditLogSettingsController } from "./audit-log-settings.controller";
@@ -22,17 +28,15 @@ import { FinancialDataProviderSettingsService } from "./financial-data-provider-
 import { GeoNominatimSettingsController } from "./geo-nominatim-settings.controller";
 import { GeoNominatimSettingsService } from "./geo-nominatim-settings.service";
 import { GeoNominatimTestController } from "./geo-nominatim-test.controller";
-import { LlmGatewaySettingsController } from "./llm-gateway-settings.controller";
-import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
-import { LlmRequestLogSettingsController } from "./llm-request-log-settings.controller";
-import { LlmRequestLogSettingsService } from "./llm-request-log-settings.service";
-import { LlmGatewayTestService } from "./llm-gateway-test.service";
 import { LiteLlmProxyGovernanceService } from "./litellm-proxy-governance.service";
 import { LiteLlmProxyLoadBalancingSettingsService } from "./litellm-proxy-lb-settings.service";
+import { LlmGatewaySettingsController } from "./llm-gateway-settings.controller";
+import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
+import { LlmGatewayTestService } from "./llm-gateway-test.service";
+import { LlmRequestLogSettingsController } from "./llm-request-log-settings.controller";
+import { LlmRequestLogSettingsService } from "./llm-request-log-settings.service";
 import { ModelServiceSettingsController } from "./model-service-settings.controller";
 import { ModelServiceSettingsService } from "./model-service-settings.service";
-import { MultiTenantSchedulerSettingsController } from "./multi-tenant-scheduler-settings.controller";
-import { MultiTenantSchedulerSettingsService } from "./multi-tenant-scheduler-settings.service";
 import { NewsSourceRuntimeSecretsController } from "./news-source-runtime-secrets.controller";
 import { NewsSourceRuntimeSecretsService } from "./news-source-runtime-secrets.service";
 import { NewsSourceSchedulerSettingsController } from "./news-source-scheduler-settings.controller";
@@ -61,8 +65,6 @@ import { TaskLogSettingsController } from "./task-log-settings.controller";
 import { TaskLogSettingsService } from "./task-log-settings.service";
 import { VectorServiceSettingsController } from "./vector-service-settings.controller";
 import { VectorServiceSettingsService } from "./vector-service-settings.service";
-import { LLM_REQUEST_LOG_MODEL } from "../news-pipeline/llm-request-log.service";
-import { ObservabilitySnapshotService } from "../observability/observability-snapshot.service";
 
 @Global()
 @Module({
@@ -71,6 +73,7 @@ import { ObservabilitySnapshotService } from "../observability/observability-sna
     AuthModule,
     GeoModule,
     RealtimeSignalsModule,
+    forwardRef(() => SituationMonitorModule),
     SituationMonitorSignalsModule,
   ],
   controllers: [
@@ -89,7 +92,6 @@ import { ObservabilitySnapshotService } from "../observability/observability-sna
     OpenAiKeysInternalController,
     SystemSecuritySettingsController,
     ModelServiceSettingsController,
-    MultiTenantSchedulerSettingsController,
     LlmRequestLogSettingsController,
     NewsSourceRuntimeSecretsController,
     NewsSourceSchedulerSettingsController,
@@ -112,6 +114,7 @@ import { ObservabilitySnapshotService } from "../observability/observability-sna
       provide: LLM_REQUEST_LOG_MODEL,
       useValue: LlmRequestLogModel,
     },
+    LlmRequestLogService,
     LlmGatewaySettingsService,
     LlmGatewayTestService,
     LiteLlmProxyGovernanceService,
@@ -119,7 +122,6 @@ import { ObservabilitySnapshotService } from "../observability/observability-sna
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
-    MultiTenantSchedulerSettingsService,
     LlmRequestLogSettingsService,
     NewsSourceRuntimeSecretsService,
     NewsSourceSchedulerSettingsService,
@@ -152,7 +154,6 @@ import { ObservabilitySnapshotService } from "../observability/observability-sna
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
-    MultiTenantSchedulerSettingsService,
     LlmRequestLogSettingsService,
     NewsSourceRuntimeSecretsService,
     NewsSourceSchedulerSettingsService,

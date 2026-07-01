@@ -771,46 +771,38 @@ export function SpacetimeGeoHeatmap({
 
         const lines = [
           point.name,
-          `${t("dashboard.charts.spacetimeGeoHeatmap.tooltip.window", {
-            defaultValue: "window",
-          })}: ${windowLabel}`,
+          `${t("dashboard.charts.spacetimeGeoHeatmap.tooltip.window")}: ${windowLabel}`,
         ];
 
         if (bucketLabel) {
           lines.push(
-            `${t("dashboard.charts.spacetimeGeoHeatmap.tooltip.bucket", {
-              defaultValue: "bucket",
-            })}: ${bucketLabel} (${bucketGranularityLabel})`,
+            `${t("dashboard.charts.spacetimeGeoHeatmap.tooltip.bucket")}: ${bucketLabel} (${bucketGranularityLabel})`,
           );
         }
 
         lines.push(
-          `${t("dashboard.charts.spacetimeGeoHeatmap.tooltip.articles", {
-            defaultValue: "articles",
-          })}: ${point.viewTotal}`,
+          `${t("dashboard.charts.spacetimeGeoHeatmap.tooltip.articles")}: ${point.viewTotal}`,
         );
         lines.push(
-          `${t("dashboard.charts.spacetimeGeoHeatmap.tooltip.sentimentIndex", {
-            defaultValue: "sentiment index",
-          })}: ${normalizedSentimentText}`,
+          `${t("dashboard.charts.spacetimeGeoHeatmap.tooltip.sentimentIndex")}: ${normalizedSentimentText}`,
         );
         lines.push(
-          `${t("items.sentiment.positive", { defaultValue: "Positive" })}: ${pos} (${ratio(
+          `${t("items.sentiment.positive")}: ${pos} (${ratio(
             pos,
           )}%)`,
         );
         lines.push(
-          `${t("items.sentiment.neutral", { defaultValue: "Neutral" })}: ${neu} (${ratio(
+          `${t("items.sentiment.neutral")}: ${neu} (${ratio(
             neu,
           )}%)`,
         );
         lines.push(
-          `${t("items.sentiment.negative", { defaultValue: "Negative" })}: ${neg} (${ratio(
+          `${t("items.sentiment.negative")}: ${neg} (${ratio(
             neg,
           )}%)`,
         );
         lines.push(
-          `${t("common.unknown", { defaultValue: "Unknown" })}: ${unk} (${ratio(unk)}%)`,
+          `${t("common.unknown")}: ${unk} (${ratio(unk)}%)`,
         );
 
         return { text: lines.join("\n") };
@@ -874,15 +866,11 @@ export function SpacetimeGeoHeatmap({
       <div ref={containerRef} className="h-full">
         <ChartEmptyState
           variant="error"
-          title={t("dashboard.charts.spacetimeGeoHeatmap.geoFailedTitle", {
-            defaultValue: "Map failed",
-          })}
+          title={t("dashboard.charts.spacetimeGeoHeatmap.geoFailedTitle")}
           description={
-            geoErrorMessage ?? t("dashboard.dataAbnormal", { defaultValue: "Data error" })
+            geoErrorMessage ?? t("dashboard.dataAbnormal")
           }
-          actionLabel={t("dashboard.actions.retryFetch", {
-            defaultValue: "Retry fetch"
-          })}
+          actionLabel={t("dashboard.actions.retryFetch")}
           actionLoading={refreshingGeo}
           onAction={() => {
             void refreshGeo();
@@ -898,9 +886,7 @@ export function SpacetimeGeoHeatmap({
 
   const drilldownTitle =
     selectedPoint?.name ??
-    t("dashboard.charts.spacetimeGeoHeatmap.details", {
-      defaultValue: "Details",
-    });
+    t("dashboard.charts.spacetimeGeoHeatmap.details");
 
   return (
     <>
@@ -909,12 +895,8 @@ export function SpacetimeGeoHeatmap({
           <Space size="small" wrap>
             <Tag color={enabled ? "green" : "default"}>
               {enabled
-                ? t("dashboard.charts.spacetimeGeoHeatmap.active", {
-                    defaultValue: "Active",
-                  })
-                : t("dashboard.charts.spacetimeGeoHeatmap.inactive", {
-                    defaultValue: "Inactive",
-                  })}
+                ? t("dashboard.charts.spacetimeGeoHeatmap.active")
+                : t("dashboard.charts.spacetimeGeoHeatmap.inactive")}
             </Tag>
             <Tag color="default" className="text-xs">
               Range: {range}
@@ -927,22 +909,18 @@ export function SpacetimeGeoHeatmap({
             </Tag>
             {includeBuckets && cursorBucketIso ? (
               <Tag color="purple">
-                {t("dashboard.charts.spacetimeGeoHeatmap.bucket", {
-                  defaultValue: "Bucket",
-                })}
+                {t("dashboard.charts.spacetimeGeoHeatmap.bucket")}
                 : {formatDateTime(cursorBucketIso, locale, { dateStyle: "medium" })}
               </Tag>
             ) : null}
             {updatedAtLabel ? (
               <Tag>
-                {t("dashboard.updatedAt", { defaultValue: "Updated" })}: {updatedAtLabel}
+                {t("dashboard.updatedAt")}: {updatedAtLabel}
               </Tag>
             ) : null}
           </Space>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t("dashboard.charts.spacetimeGeoHeatmap.caption", {
-              defaultValue: "Heat + dominant sentiment overlay (click a dot for details).",
-            })}
+            {t("dashboard.charts.spacetimeGeoHeatmap.caption")}
           </Typography.Text>
         </div>
 
@@ -981,16 +959,12 @@ export function SpacetimeGeoHeatmap({
             <div className="absolute inset-0">
               <ChartEmptyState
                 variant="error"
-                title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
+                title={t("dashboard.dataAbnormal")}
                 description={
                   getApiErrorMessage(heatmapQuery.error) ??
-                  t("common.serviceUnavailable", {
-                    defaultValue: "Service is unavailable. Please try again.",
-                  })
+                  t("common.serviceUnavailable")
                 }
-                actionLabel={t("dashboard.actions.retryFetch", {
-                  defaultValue: "Retry fetch"
-                })}
+                actionLabel={t("dashboard.actions.retryFetch")}
                 actionLoading={refreshingHeatmap}
                 onAction={() => {
                   void refreshHeatmap();
@@ -1002,15 +976,11 @@ export function SpacetimeGeoHeatmap({
           {!heatmapQuery.isLoading && !heatmapQuery.error && !hasVisiblePoints ? (
             <div className="absolute inset-0 flex items-center justify-center">
               <ChartEmptyState
-                title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
+                title={t("dashboard.dataEmpty")}
                 description={
                   includeBuckets
-                    ? t("dashboard.charts.spacetimeGeoHeatmap.emptyBucket", {
-                        defaultValue: "No geo-tagged news in this bucket.",
-                      })
-                    : t("dashboard.charts.spacetimeGeoHeatmap.empty", {
-                        defaultValue: "No geo-tagged news in the selected range.",
-                      })
+                    ? t("dashboard.charts.spacetimeGeoHeatmap.emptyBucket")
+                    : t("dashboard.charts.spacetimeGeoHeatmap.empty")
                 }
               />
             </div>
@@ -1022,7 +992,7 @@ export function SpacetimeGeoHeatmap({
                 variant="error"
                 title={mapLoadError.title}
                 description={mapLoadError.description}
-                actionLabel={t("common.retry", { defaultValue: "Retry" })}
+                actionLabel={t("common.retry")}
                 onAction={retryMapLoad}
               />
             </div>
@@ -1049,15 +1019,13 @@ export function SpacetimeGeoHeatmap({
           {selectedPoint?.id ? <Tag>id: {selectedPoint.id}</Tag> : null}
           {drilldownBucketStart ? (
             <Tag color="purple">
-              {t("dashboard.charts.spacetimeGeoHeatmap.bucket", {
-                defaultValue: "Bucket",
-              })}
+              {t("dashboard.charts.spacetimeGeoHeatmap.bucket")}
               : {formatDateTime(drilldownBucketStart, locale, { dateStyle: "medium" })}
             </Tag>
           ) : null}
           {drilldownUpdatedAtLabel ? (
             <Tag>
-              {t("dashboard.updatedAt", { defaultValue: "Updated" })}: {drilldownUpdatedAtLabel}
+              {t("dashboard.updatedAt")}: {drilldownUpdatedAtLabel}
             </Tag>
           ) : null}
         </Space>
@@ -1088,10 +1056,8 @@ export function SpacetimeGeoHeatmap({
             if (!hasArticles) {
               return (
                 <ChartEmptyState
-                  title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
-                  description={t("dashboard.charts.spacetimeGeoHeatmap.noArticles", {
-                    defaultValue: "No articles found for this point.",
-                  })}
+                  title={t("dashboard.dataEmpty")}
+                  description={t("dashboard.charts.spacetimeGeoHeatmap.noArticles")}
                 />
               );
             }
@@ -1127,9 +1093,7 @@ export function SpacetimeGeoHeatmap({
                             ) : (
                               <span>
                                 {title ||
-                                  t("common.emptyValue", {
-                                    defaultValue: "N/A",
-                                  })}
+                                  t("common.emptyValue")}
                               </span>
                             )
                           }
@@ -1174,23 +1138,15 @@ export function SpacetimeGeoHeatmap({
                       }}
                       loading={articlesQuery.isFetching}
                     >
-                      {t("dashboard.charts.spacetimeGeoHeatmap.loadMore", {
-                        defaultValue: "Load more",
-                      })}
+                      {t("dashboard.charts.spacetimeGeoHeatmap.loadMore")}
                     </Button>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      {t("dashboard.charts.spacetimeGeoHeatmap.moreHint", {
-                        defaultValue:
-                          "More articles available. Narrow the time range to inspect further.",
-                      })}
+                      {t("dashboard.charts.spacetimeGeoHeatmap.moreHint")}
                     </Typography.Text>
                   </Space>
                 ) : payload?.hasMore ? (
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {t("dashboard.charts.spacetimeGeoHeatmap.moreLimitHint", {
-                      defaultValue:
-                        "Reached the backend page cap. Narrow the time range or bucket to inspect more.",
-                    })}
+                    {t("dashboard.charts.spacetimeGeoHeatmap.moreLimitHint")}
                   </Typography.Text>
                 ) : null}
               </>

@@ -1,12 +1,12 @@
 "use client";
 
 import { CloseOutlined, ExpandOutlined } from "@ant-design/icons";
-import { Button, Drawer, List, Space, Spin, Tag, Typography } from "antd";
-
 import type {
   WarMapTransportDetail,
   WarMapTransportTrackPoint,
 } from "@modular/utils";
+import { Button, Drawer, List, Space, Spin, Tag, Typography } from "antd";
+
 
 import { formatDateTime, type SupportedLocale } from "@/lib/i18n";
 
@@ -47,11 +47,9 @@ function getSelectedInspectorTitle(
 
   return selectedInspector.kind === "event-cluster"
     ? t("dashboard.charts.warMap.panel.signalsSummary", {
-        defaultValue: "{{count}} nearby signals",
         count: selectedInspector.count,
       })
     : t("dashboard.charts.warMap.panel.newsSummary", {
-        defaultValue: "{{count}} nearby news items",
         count: selectedInspector.count,
       });
 }
@@ -100,20 +98,12 @@ export function WarMapInspectorPanel({
             >
               {selectedInspector.kind === "event" ||
               selectedInspector.kind === "event-cluster"
-                ? t("dashboard.charts.warMap.overlay.signalLegend", {
-                    defaultValue: "Signals",
-                  })
+                ? t("dashboard.charts.warMap.overlay.signalLegend")
                 : selectedInspector.kind === "flight"
-                  ? t("dashboard.charts.warMap.overlay.flights", {
-                      defaultValue: "Flights",
-                    })
+                  ? t("dashboard.charts.warMap.overlay.flights")
                   : selectedInspector.kind === "vessel"
-                    ? t("dashboard.charts.warMap.layerNames.ais", {
-                        defaultValue: "AIS traffic",
-                      })
-                : t("dashboard.charts.warMap.overlay.newsLegend", {
-                    defaultValue: "News & monitors",
-                  })}
+                    ? t("dashboard.charts.warMap.layerNames.ais")
+                : t("dashboard.charts.warMap.overlay.newsLegend")}
             </Typography.Text>
             <Space size={[6, 6]} wrap>
               <Tag
@@ -127,25 +117,16 @@ export function WarMapInspectorPanel({
               >
                 {selectedInspector.kind === "event" ||
                 selectedInspector.kind === "event-cluster"
-                  ? t("dashboard.charts.warMap.panel.signalsTitle", {
-                      defaultValue: "Nearby signals",
-                    })
+                  ? t("dashboard.charts.warMap.panel.signalsTitle")
                   : selectedInspector.kind === "flight"
-                    ? t("dashboard.charts.warMap.overlay.flights", {
-                        defaultValue: "Flights",
-                      })
+                    ? t("dashboard.charts.warMap.overlay.flights")
                     : selectedInspector.kind === "vessel"
-                      ? t("dashboard.charts.warMap.layerNames.ais", {
-                          defaultValue: "AIS traffic",
-                        })
-                  : t("dashboard.charts.warMap.panel.newsTitle", {
-                      defaultValue: "Nearby news",
-                    })}
+                      ? t("dashboard.charts.warMap.layerNames.ais")
+                  : t("dashboard.charts.warMap.panel.newsTitle")}
               </Tag>
               {"count" in selectedInspector ? (
                 <Tag color="default" className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
                   {t("dashboard.charts.warMap.panel.count", {
-                    defaultValue: "{{count}} items",
                     count: selectedInspector.count,
                   })}
                 </Tag>
@@ -155,41 +136,23 @@ export function WarMapInspectorPanel({
               {"item" in selectedInspector
                 ? selectedInspector.item.label
                 : selectedInspector.kind === "event-cluster"
-                  ? t("dashboard.charts.warMap.panel.signalsTitle", {
-                      defaultValue: "Nearby signals",
-                    })
-                  : t("dashboard.charts.warMap.panel.newsTitle", {
-                      defaultValue: "Nearby news",
-                    })}
+                  ? t("dashboard.charts.warMap.panel.signalsTitle")
+                  : t("dashboard.charts.warMap.panel.newsTitle")}
             </Typography.Title>
             <Typography.Text type="secondary">
               {"item" in selectedInspector
                 ? selectedInspector.kind === "event"
-                  ? t("dashboard.charts.warMap.panel.signalDetailSummary", {
-                      defaultValue: "Signal details for the selected location.",
-                    })
+                  ? t("dashboard.charts.warMap.panel.signalDetailSummary")
                   : selectedInspector.kind === "flight"
-                    ? t("dashboard.charts.warMap.panel.flightDetailSummary", {
-                        defaultValue:
-                          "Latest aircraft state plus recent persisted change points.",
-                      })
+                    ? t("dashboard.charts.warMap.panel.flightDetailSummary")
                     : selectedInspector.kind === "vessel"
-                      ? t("dashboard.charts.warMap.panel.vesselDetailSummary", {
-                          defaultValue:
-                            "Latest vessel state plus recent persisted change points.",
-                        })
-                  : t("dashboard.charts.warMap.panel.newsDetailSummary", {
-                      defaultValue: "News details for the selected marker.",
-                    })
+                      ? t("dashboard.charts.warMap.panel.vesselDetailSummary")
+                  : t("dashboard.charts.warMap.panel.newsDetailSummary")
                 : selectedInspector.kind === "event-cluster"
                   ? t("dashboard.charts.warMap.panel.signalsSummary", {
-                      defaultValue:
-                        "{{count}} nearby signals at this zoom level.",
                       count: selectedInspector.count,
                     })
                   : t("dashboard.charts.warMap.panel.newsSummary", {
-                      defaultValue:
-                        "{{count}} nearby news items at this zoom level.",
                       count: selectedInspector.count,
                     })}
             </Typography.Text>
@@ -202,9 +165,7 @@ export function WarMapInspectorPanel({
               icon={<ExpandOutlined />}
               onClick={onZoomToSelectedInspector}
             >
-              {t("dashboard.charts.warMap.panel.zoomIn", {
-                defaultValue: "Zoom in",
-              })}
+              {t("dashboard.charts.warMap.panel.zoomIn")}
             </Button>
             {useDesktopInspector ? (
               <Button
@@ -213,7 +174,7 @@ export function WarMapInspectorPanel({
                 className={resolveOverlayButtonClassName()}
                 onClick={onMinimizeInspector}
               >
-                {t("common.minimize", { defaultValue: "Minimize" })}
+                {t("common.minimize")}
               </Button>
             ) : null}
             {useDesktopInspector ? (
@@ -226,9 +187,7 @@ export function WarMapInspectorPanel({
                 })}
                 icon={<CloseOutlined />}
                 onClick={onCloseInspector}
-                aria-label={t("common.close", {
-                  defaultValue: "Close",
-                })}
+                aria-label={t("common.close")}
               />
             ) : null}
           </Space>
@@ -261,23 +220,17 @@ export function WarMapInspectorPanel({
                   <div className="flex flex-col gap-2">
                     <Space size={[6, 6]} wrap>
                       <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
-                        {t("dashboard.charts.warMap.tooltip.alerts", {
-                          defaultValue: "Alerts",
-                        })}
+                        {t("dashboard.charts.warMap.tooltip.alerts")}
                         : {item.alertCount ?? 0}
                       </Tag>
                       <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
-                        {t("dashboard.charts.warMap.stats.news", {
-                          defaultValue: "News",
-                        })}
+                        {t("dashboard.charts.warMap.stats.news")}
                         : {item.newsCount ?? 0}
                       </Tag>
                     </Space>
                     {item.latestAt ? (
                       <Typography.Text type="secondary" className="text-xs">
-                        {t("dashboard.charts.warMap.panel.latest", {
-                          defaultValue: "Latest",
-                        })}
+                        {t("dashboard.charts.warMap.panel.latest")}
                         :{" "}
                         {formatDateTime(item.latestAt, locale, {
                           dateStyle: "medium",
@@ -297,13 +250,9 @@ export function WarMapInspectorPanel({
           dataSource={selectedInspector.members}
           renderItem={(item) => {
             const timestampLabel = item.publishedAt
-              ? t("dashboard.charts.warMap.tooltip.published", {
-                  defaultValue: "Published",
-                })
+              ? t("dashboard.charts.warMap.tooltip.published")
               : item.ingestedAt
-                ? t("dashboard.charts.warMap.tooltip.ingested", {
-                    defaultValue: "Ingested",
-                  })
+                ? t("dashboard.charts.warMap.tooltip.ingested")
                 : null;
             const timestamp = item.publishedAt ?? item.ingestedAt;
 
@@ -319,9 +268,7 @@ export function WarMapInspectorPanel({
                     disabled={!item.url}
                     onClick={() => onOpenNewsLink(item.url)}
                   >
-                    {t("dashboard.charts.warMap.panel.openOriginal", {
-                      defaultValue: "Open",
-                    })}
+                    {t("dashboard.charts.warMap.panel.openOriginal")}
                   </Button>,
                 ]}
               >
@@ -388,23 +335,17 @@ export function WarMapInspectorPanel({
               )}
             </Tag>
             <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
-              {t("dashboard.charts.warMap.tooltip.alerts", {
-                defaultValue: "Alerts",
-              })}
+              {t("dashboard.charts.warMap.tooltip.alerts")}
               : {selectedInspector.item.alertCount ?? 0}
             </Tag>
             <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
-              {t("dashboard.charts.warMap.stats.news", {
-                defaultValue: "News",
-              })}
+              {t("dashboard.charts.warMap.stats.news")}
               : {selectedInspector.item.newsCount ?? 0}
             </Tag>
           </Space>
           {selectedInspector.item.latestAt ? (
             <Typography.Text type="secondary">
-              {t("dashboard.charts.warMap.panel.latest", {
-                defaultValue: "Latest",
-              })}
+              {t("dashboard.charts.warMap.panel.latest")}
               :{" "}
               {formatDateTime(selectedInspector.item.latestAt, locale, {
                 dateStyle: "medium",
@@ -421,14 +362,10 @@ export function WarMapInspectorPanel({
               {selectedInspector.kind === "flight"
                 ? (selectedInspector.item.displayCategoryZh ??
                   selectedInspector.item.displayCategory ??
-                  t("dashboard.charts.warMap.overlay.flights", {
-                    defaultValue: "Flights",
-                  }))
+                  t("dashboard.charts.warMap.overlay.flights"))
                 : (selectedInspector.item.shipTypeLabelZh ??
                   selectedInspector.item.shipTypeLabel ??
-                  t("dashboard.charts.warMap.stats.aisVessels", {
-                    defaultValue: "Vessels",
-                  }))}
+                  t("dashboard.charts.warMap.stats.aisVessels"))}
             </Tag>
             {selectedInspector.kind === "flight" ? (
               <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
@@ -444,9 +381,7 @@ export function WarMapInspectorPanel({
             {selectedInspector.kind === "vessel" &&
             selectedInspector.item.isMilitaryCandidate ? (
               <Tag color="red" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
-                {t("dashboard.charts.warMap.legend.aisMilitary", {
-                  defaultValue: "Military / government",
-                })}
+                {t("dashboard.charts.warMap.legend.aisMilitary")}
               </Tag>
             ) : null}
           </Space>
@@ -474,9 +409,7 @@ export function WarMapInspectorPanel({
           </Space>
           {selectedInspector.item.latestAt ? (
             <Typography.Text type="secondary">
-              {t("dashboard.charts.warMap.tooltip.observed", {
-                defaultValue: "Observed",
-              })}
+              {t("dashboard.charts.warMap.tooltip.observed")}
               :{" "}
               {formatDateTime(selectedInspector.item.latestAt, locale, {
                 dateStyle: "medium",
@@ -486,9 +419,7 @@ export function WarMapInspectorPanel({
           ) : null}
           {selectedInspector.item.sourceUpdatedAt ? (
             <Typography.Text type="secondary">
-              {t("dashboard.charts.warMap.tooltip.updated", {
-                defaultValue: "Updated",
-              })}
+              {t("dashboard.charts.warMap.tooltip.updated")}
               :{" "}
               {formatDateTime(selectedInspector.item.sourceUpdatedAt, locale, {
                 dateStyle: "medium",
@@ -530,17 +461,13 @@ export function WarMapInspectorPanel({
               ) : null}
               {typeof selectedInspector.item.heading === "number" ? (
                 <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
-                  {t("dashboard.charts.warMap.tooltip.heading", {
-                    defaultValue: "Heading",
-                  })}
+                  {t("dashboard.charts.warMap.tooltip.heading")}
                   : {Math.round(selectedInspector.item.heading)}°
                 </Tag>
               ) : null}
               {typeof selectedInspector.item.course === "number" ? (
                 <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
-                  {t("dashboard.charts.warMap.tooltip.course", {
-                    defaultValue: "Course",
-                  })}
+                  {t("dashboard.charts.warMap.tooltip.course")}
                   : {Math.round(selectedInspector.item.course)}°
                 </Tag>
               ) : null}
@@ -549,9 +476,7 @@ export function WarMapInspectorPanel({
 
           <div className="rounded-xl border border-[var(--border)] bg-white/70 px-3 py-3 dark:bg-slate-950/55">
             <Typography.Text strong className="block text-xs text-slate-700 dark:text-slate-200">
-              {t("dashboard.charts.warMap.panel.recentTrackPoints", {
-                defaultValue: "Recent change points",
-              })}
+              {t("dashboard.charts.warMap.panel.recentTrackPoints")}
             </Typography.Text>
             {transportDetailLoading ? (
               <div className="py-4 text-center">
@@ -585,33 +510,25 @@ export function WarMapInspectorPanel({
               />
             ) : (
               <Typography.Text type="secondary" className="mt-2 block text-xs">
-                {t("dashboard.charts.warMap.panel.noTrackPoints", {
-                  defaultValue: "No persisted track points in the current range.",
-                })}
+                {t("dashboard.charts.warMap.panel.noTrackPoints")}
               </Typography.Text>
             )}
           </div>
           {transportDetail?.summary ? (
             <Space size={[6, 6]} wrap>
               <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
-                {t("dashboard.charts.warMap.panel.trackPointCount", {
-                  defaultValue: "Points",
-                })}
+                {t("dashboard.charts.warMap.panel.trackPointCount")}
                 : {transportDetail.summary.pointCount}
               </Tag>
               {typeof transportDetail.summary.totalDistanceKm === "number" ? (
                 <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
-                  {t("dashboard.charts.warMap.panel.trackDistance", {
-                    defaultValue: "Distance",
-                  })}
+                  {t("dashboard.charts.warMap.panel.trackDistance")}
                   : {transportDetail.summary.totalDistanceKm} km
                 </Tag>
               ) : null}
               {typeof transportDetail.summary.maxSpeed === "number" ? (
                 <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
-                  {t("dashboard.charts.warMap.tooltip.speed", {
-                    defaultValue: "Speed",
-                  })}
+                  {t("dashboard.charts.warMap.tooltip.speed")}
                   : {transportDetail.summary.maxSpeed}
                 </Tag>
               ) : null}
@@ -642,12 +559,8 @@ export function WarMapInspectorPanel({
           selectedInspector.item.ingestedAt ? (
             <Typography.Text type="secondary">
               {selectedInspector.item.publishedAt
-                ? t("dashboard.charts.warMap.tooltip.published", {
-                    defaultValue: "Published",
-                  })
-                : t("dashboard.charts.warMap.tooltip.ingested", {
-                    defaultValue: "Ingested",
-                  })}
+                ? t("dashboard.charts.warMap.tooltip.published")
+                : t("dashboard.charts.warMap.tooltip.ingested")}
               :{" "}
               {formatDateTime(
                 selectedInspector.item.publishedAt ??
@@ -668,9 +581,7 @@ export function WarMapInspectorPanel({
             disabled={!selectedInspector.item.url}
             onClick={() => onOpenNewsLink(selectedInspector.item.url)}
           >
-            {t("dashboard.charts.warMap.panel.openOriginal", {
-              defaultValue: "Open original",
-            })}
+            {t("dashboard.charts.warMap.panel.openOriginal")}
           </Button>
         </div>
       )}
@@ -707,20 +618,12 @@ export function WarMapInspectorPanel({
             >
               {selectedInspector.kind === "event" ||
               selectedInspector.kind === "event-cluster"
-                ? t("dashboard.charts.warMap.panel.signalsTitle", {
-                    defaultValue: "Nearby signals",
-                  })
+                ? t("dashboard.charts.warMap.panel.signalsTitle")
                 : selectedInspector.kind === "flight"
-                  ? t("dashboard.charts.warMap.overlay.flights", {
-                      defaultValue: "Flights",
-                    })
+                  ? t("dashboard.charts.warMap.overlay.flights")
                   : selectedInspector.kind === "vessel"
-                    ? t("dashboard.charts.warMap.layerNames.ais", {
-                        defaultValue: "AIS traffic",
-                      })
-                : t("dashboard.charts.warMap.panel.newsTitle", {
-                    defaultValue: "Nearby news",
-                  })}
+                    ? t("dashboard.charts.warMap.layerNames.ais")
+                : t("dashboard.charts.warMap.panel.newsTitle")}
             </Typography.Text>
             <Typography.Text strong className="block truncate text-sm text-slate-900 dark:text-slate-100">
               {selectedInspectorTitle}
@@ -732,9 +635,7 @@ export function WarMapInspectorPanel({
             className={resolveOverlayButtonClassName({ tone: "active" })}
             onClick={onExpandInspector}
           >
-            {t("dashboard.charts.warMap.overlay.expandInspector", {
-              defaultValue: "Expand details",
-            })}
+            {t("dashboard.charts.warMap.overlay.expandInspector")}
           </Button>
           <Button
             size="small"
@@ -745,9 +646,7 @@ export function WarMapInspectorPanel({
             })}
             icon={<CloseOutlined />}
             onClick={onCloseInspector}
-            aria-label={t("common.close", {
-              defaultValue: "Close",
-            })}
+            aria-label={t("common.close")}
           />
         </div>
       </div>

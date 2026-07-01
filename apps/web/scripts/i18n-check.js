@@ -2,6 +2,7 @@ const path = require('node:path');
 const process = require('node:process');
 
 const {
+  collectTranslationDefaultValueUsages,
   collectTranslationKeys,
   findPrefixConflicts,
   flattenKeys,
@@ -22,6 +23,8 @@ function main() {
 
   const used = collectTranslationKeys(appRootDir);
   const usedKeys = new Set(used.keys());
+  const { staticDefaults, dynamicDefaults } =
+    collectTranslationDefaultValueUsages(appRootDir);
 
   const prefixConflicts = findPrefixConflicts(usedKeys);
   if (prefixConflicts.length) {
@@ -42,8 +45,16 @@ function main() {
     if (!hasTranslationKey(zhKeys, key)) missingZhFromEn.push(key);
   }
 
-  if (!missingInEn.length && !missingInZh.length && !missingZhFromEn.length) {
+  if (
+    !missingInEn.length &&
+    !missingInZh.length &&
+    !missingZhFromEn.length &&
+    !staticDefaults.length
+  ) {
     console.log('[i18n] OK: locales cover all used keys and zh matches en.');
+    if (dynamicDefaults.length) {
+      console.log(`[i18n] Dynamic translation defaultValue fallbacks: ${dynamicDefaults.length}`);
+    }
     return;
   }
 
@@ -59,9 +70,18 @@ function main() {
     console.error('[i18n] zh.json is missing keys present in en.json:');
     for (const key of missingZhFromEn) console.error(`- ${key}`);
   }
+  if (staticDefaults.length) {
+    console.error('[i18n] Static translation defaultValue entries must be moved to locale files:');
+    for (const item of staticDefaults.slice(0, 200)) {
+      const relativePath = path.relative(appRootDir, item.filePath);
+      console.error(`- ${relativePath}:${item.line}:${item.column} ${item.key}`);
+    }
+    if (staticDefaults.length > 200) {
+      console.error(`... and ${staticDefaults.length - 200} more`);
+    }
+  }
 
   process.exit(1);
 }
 
 main();
-

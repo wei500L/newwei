@@ -38,6 +38,12 @@ import {
   NewsDedupeSettingsService,
   type NewsDedupeSettingsInput,
 } from "../../modules/news-pipeline/news-dedupe-settings.service";
+import {
+  NewsExtractionPipelineMode,
+  NewsExtractionProviderId,
+  NewsExtractionSettingsService,
+  type NewsExtractionSettingsInput,
+} from "../../modules/news-pipeline/news-extraction-settings.service";
 import { NewsPromptConfigService } from "../../modules/news-pipeline/news-prompt-config.service";
 import { AuditLogSettingsService } from "../../modules/system-settings/audit-log-settings.service";
 import {
@@ -51,6 +57,7 @@ import {
   UpdateCrawlClientSettingsInput,
   UpdateAuthCacheSettingsInput,
   UpdateNewsPromptConfigInput,
+  UpdateNewsExtractionSettingsInput,
   UpdateEntityImpactGraphSettingsInput,
   UpdateKnowledgeGraphSettingsInput,
   ResetNewsEventSourcePolicyInput,
@@ -79,6 +86,9 @@ import {
   ClassificationQualitySettingsModel,
   NewsClassificationSettingsModel,
   NewsDedupeSettingsModel,
+  NewsExtractionPipelineModeModel,
+  NewsExtractionProviderIdModel,
+  NewsExtractionSettingsModel,
   NewsPromptConfigModel,
   AuthCacheSettingsModel,
   RateLimitSettingsModel,
@@ -99,6 +109,7 @@ export class SettingsResolver {
     private readonly newsClassificationSettingsService: NewsClassificationSettingsService,
     private readonly newsClassificationQualitySettingsService: NewsClassificationQualitySettingsService,
     private readonly newsDedupeSettingsService: NewsDedupeSettingsService,
+    private readonly newsExtractionSettingsService: NewsExtractionSettingsService,
     private readonly newsPromptConfigService: NewsPromptConfigService,
     private readonly auditLogSettings: AuditLogSettingsService,
     private readonly crawlSettings: CrawlSettingsService,
@@ -245,6 +256,13 @@ export class SettingsResolver {
       enabled: input.enabled,
       ingestionEnabled: input.ingestionEnabled,
       timelineEnabled: input.timelineEnabled,
+      clusteringMode: input.clusteringMode ?? current.clusteringMode,
+      bertopicMinItemsPerGroup:
+        input.bertopicMinItemsPerGroup ?? current.bertopicMinItemsPerGroup,
+      bertopicMaxItemsPerRequest:
+        input.bertopicMaxItemsPerRequest ?? current.bertopicMaxItemsPerRequest,
+      bertopicMinTopicSize:
+        input.bertopicMinTopicSize ?? current.bertopicMinTopicSize,
       forceAuthoritativeMode:
         input.forceAuthoritativeMode ?? current.forceAuthoritativeMode,
       forceMinAuthoritativeSources:
@@ -502,7 +520,9 @@ export class SettingsResolver {
   ): Promise<ClassificationQualitySettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
-    return this.newsClassificationQualitySettingsService.getSettings(user.orgId);
+    return this.newsClassificationQualitySettingsService.getSettings(
+      user.orgId,
+    );
   }
 
   @HasPermission("settings.manage")
@@ -718,6 +738,98 @@ export class SettingsResolver {
   }
 
   @HasPermission("settings.manage")
+  @Query(() => NewsExtractionSettingsModel)
+  async newsExtractionSettings(
+    @Context("req") req: GqlRequest,
+  ): Promise<NewsExtractionSettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    const settings = await this.newsExtractionSettingsService.getSettings(
+      user.orgId,
+    );
+    return {
+      pipelineMode: this.toNewsExtractionPipelineModeModel(
+        settings.pipelineMode,
+      ),
+      preflightGate: settings.preflightGate,
+      postCleanGate: settings.postCleanGate,
+      capabilities: settings.capabilities,
+      providers: {
+        clean: this.toNewsExtractionProviderIdModel(settings.providers.clean),
+        entities: this.toNewsExtractionProviderIdModel(
+          settings.providers.entities,
+        ),
+        sentiment: this.toNewsExtractionProviderIdModel(
+          settings.providers.sentiment,
+        ),
+        kg: this.toNewsExtractionProviderIdModel(settings.providers.kg),
+      },
+    };
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => NewsExtractionSettingsModel)
+  async updateNewsExtractionSettings(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: UpdateNewsExtractionSettingsInput,
+  ): Promise<NewsExtractionSettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    const settingsInput: NewsExtractionSettingsInput = {
+      pipelineMode:
+        input.pipelineMode === undefined
+          ? undefined
+          : this.toNewsExtractionPipelineMode(input.pipelineMode),
+      preflightGate: input.preflightGate,
+      postCleanGate: input.postCleanGate,
+      capabilities: input.capabilities,
+      providers: input.providers
+        ? {
+            clean:
+              input.providers.clean === undefined
+                ? undefined
+                : this.toNewsExtractionProviderId(input.providers.clean),
+            entities:
+              input.providers.entities === undefined
+                ? undefined
+                : this.toNewsExtractionProviderId(input.providers.entities),
+            sentiment:
+              input.providers.sentiment === undefined
+                ? undefined
+                : this.toNewsExtractionProviderId(input.providers.sentiment),
+            kg:
+              input.providers.kg === undefined
+                ? undefined
+                : this.toNewsExtractionProviderId(input.providers.kg),
+          }
+        : undefined,
+    };
+    const settings = await this.newsExtractionSettingsService.updateSettings(
+      user.orgId,
+      user.id,
+      settingsInput,
+    );
+    return {
+      pipelineMode: this.toNewsExtractionPipelineModeModel(
+        settings.pipelineMode,
+      ),
+      preflightGate: settings.preflightGate,
+      postCleanGate: settings.postCleanGate,
+      capabilities: settings.capabilities,
+      providers: {
+        clean: this.toNewsExtractionProviderIdModel(settings.providers.clean),
+        entities: this.toNewsExtractionProviderIdModel(
+          settings.providers.entities,
+        ),
+        sentiment: this.toNewsExtractionProviderIdModel(
+          settings.providers.sentiment,
+        ),
+        kg: this.toNewsExtractionProviderIdModel(settings.providers.kg),
+      },
+    };
+  }
+
+  @HasPermission("settings.manage")
   @Query(() => NewsPromptConfigModel)
   async newsPromptConfig(
     @Context("req") req: GqlRequest,
@@ -764,6 +876,34 @@ export class SettingsResolver {
     if (!adminRole) {
       throw new ForbiddenException("Admin access required");
     }
+  }
+
+  private toNewsExtractionPipelineModeModel(
+    value: NewsExtractionPipelineMode,
+  ): NewsExtractionPipelineModeModel {
+    return value === NewsExtractionPipelineMode.staged
+      ? NewsExtractionPipelineModeModel.staged
+      : NewsExtractionPipelineModeModel.legacy;
+  }
+
+  private toNewsExtractionPipelineMode(
+    value: NewsExtractionPipelineModeModel,
+  ): NewsExtractionPipelineMode {
+    return value === NewsExtractionPipelineModeModel.staged
+      ? NewsExtractionPipelineMode.staged
+      : NewsExtractionPipelineMode.legacy;
+  }
+
+  private toNewsExtractionProviderIdModel(
+    _value: NewsExtractionProviderId,
+  ): NewsExtractionProviderIdModel {
+    return NewsExtractionProviderIdModel.llm;
+  }
+
+  private toNewsExtractionProviderId(
+    _value: NewsExtractionProviderIdModel,
+  ): NewsExtractionProviderId {
+    return NewsExtractionProviderId.llm;
   }
 
   private toSourcePolicyModel(

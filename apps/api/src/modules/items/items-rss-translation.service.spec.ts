@@ -14,7 +14,7 @@ jest.mock("@modular/mongo", () => ({
 }));
 
 function mockProcessedRecords(
-  records: Array<{ itemMetaId: string; result: unknown }>,
+  records: { itemMetaId: string; result: unknown }[],
 ) {
   const lean = jest.fn().mockResolvedValue(
     records.map((record) => ({
@@ -275,7 +275,7 @@ describe("ItemsRssTranslationService", () => {
     const acompletion = jest
       .fn()
       .mockImplementation(
-        async (input: { messages: Array<{ content: string }> }) => {
+        async (input: { messages: { content: string }[] }) => {
           const text = input.messages[1]?.content.split("\n").at(-1) ?? "";
           active += 1;
           maxActive = Math.max(maxActive, active);
@@ -343,7 +343,7 @@ describe("ItemsRssTranslationService", () => {
     const acompletion = jest
       .fn()
       .mockImplementation(
-        async (input: { messages: Array<{ content: string }> }) => {
+        async (input: { messages: { content: string }[] }) => {
           const text = input.messages[1]?.content.split("\n").at(-1) ?? "";
           active += 1;
           maxActive = Math.max(maxActive, active);

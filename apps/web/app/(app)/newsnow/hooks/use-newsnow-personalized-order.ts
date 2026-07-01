@@ -19,6 +19,7 @@ export interface PersonalizedSourceScoreDetail {
   behaviorWeight: number;
   affinityContribution: number;
   behaviorContribution: number;
+  negativeContribution: number;
   focusBonus: number;
 }
 
@@ -147,15 +148,15 @@ function normalizeScoreDetails(
       out[sourceId] = {
         combinedScore:
           typeof detail.combinedScore === 'number' && Number.isFinite(detail.combinedScore)
-            ? Math.max(0, Math.min(100, detail.combinedScore))
+            ? detail.combinedScore
             : fallbackCombined,
         affinityScore:
           typeof detail.affinityScore === 'number' && Number.isFinite(detail.affinityScore)
-            ? Math.max(0, Math.min(100, detail.affinityScore))
+            ? detail.affinityScore
             : 0,
         behaviorScore:
           typeof detail.behaviorScore === 'number' && Number.isFinite(detail.behaviorScore)
-            ? Math.max(0, Math.min(100, detail.behaviorScore))
+            ? detail.behaviorScore
             : 0,
         affinityWeight:
           typeof detail.affinityWeight === 'number' && Number.isFinite(detail.affinityWeight)
@@ -168,12 +169,17 @@ function normalizeScoreDetails(
         affinityContribution:
           typeof detail.affinityContribution === 'number' &&
           Number.isFinite(detail.affinityContribution)
-            ? Math.max(0, Math.min(100, detail.affinityContribution))
+            ? detail.affinityContribution
             : 0,
         behaviorContribution:
           typeof detail.behaviorContribution === 'number' &&
           Number.isFinite(detail.behaviorContribution)
-            ? Math.max(0, Math.min(100, detail.behaviorContribution))
+            ? detail.behaviorContribution
+            : 0,
+        negativeContribution:
+          typeof detail.negativeContribution === 'number' &&
+          Number.isFinite(detail.negativeContribution)
+            ? detail.negativeContribution
             : 0,
         focusBonus:
           typeof detail.focusBonus === 'number' && Number.isFinite(detail.focusBonus)
@@ -191,6 +197,7 @@ function normalizeScoreDetails(
       behaviorWeight: scoreWeights.behavior,
       affinityContribution: 0,
       behaviorContribution: 0,
+      negativeContribution: 0,
       focusBonus: 0,
     };
   }

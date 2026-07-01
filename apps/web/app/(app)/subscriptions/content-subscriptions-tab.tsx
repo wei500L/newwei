@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
+import { emitSituationMonitorMonitorsUpdated } from "@/app/(app)/situation-monitor/utils/monitor-events";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -33,7 +34,7 @@ import {
   buildContentSubscriptionKey,
 } from "@/lib/content-subscriptions";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
-import { emitSituationMonitorMonitorsUpdated } from "@/app/(app)/situation-monitor/utils/monitor-events";
+import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
 
 interface ContentSubscriptionsTabProps {
   accessToken?: string;
@@ -53,9 +54,17 @@ const DATE_TIME_FORMAT = {
   minute: "2-digit",
 } as const;
 const UNCATEGORIZED_TAXONOMY_FILTER = "__uncategorized__";
+const CONTENT_SUBSCRIPTION_KIND_ORDER: ContentSubscriptionKind[] = [
+  "topic",
+  "entity",
+  "source",
+  "keyword",
+  "geo",
+];
 
 interface GroupedItems<
   T extends {
+    kind: ContentSubscriptionKind;
     taxonomyPath: string | null;
     taxonomyDisplayName: string | null;
     taxonomyLabels: string[];
@@ -65,6 +74,74 @@ interface GroupedItems<
   title: string;
   labels: string[];
   items: T[];
+}
+
+function getContentSubscriptionKindLabel(
+  kind: ContentSubscriptionKind,
+  t: ReturnType<typeof useTranslation>["t"],
+) {
+  switch (kind) {
+    case "topic":
+      return t("subscriptions.content.kindTopics");
+    case "entity":
+      return t("subscriptions.content.kindEntities");
+    case "source":
+      return t("subscriptions.content.kindSources");
+    case "keyword":
+      return t("subscriptions.content.kindKeywords");
+    case "geo":
+      return t("subscriptions.content.kindGeos");
+  }
+}
+
+function getContentSubscriptionKindColor(kind: ContentSubscriptionKind) {
+  switch (kind) {
+    case "topic":
+      return "blue";
+    case "entity":
+      return "purple";
+    case "source":
+      return "gold";
+    case "keyword":
+      return "green";
+    case "geo":
+      return "cyan";
+  }
+}
+
+function parseKeywordEntries(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\n,]/)
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, 10);
+}
+
+function toMetadataRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function buildSubscriptionSearchText(item: ContentSubscriptionItem) {
+  const metadata = toMetadataRecord(item.metadata);
+  return [
+    item.displayValue,
+    item.normalizedValue,
+    item.taxonomyDisplayName ?? "",
+    ...(item.taxonomyLabels ?? []),
+    typeof metadata?.sourceId === "string" ? metadata.sourceId : "",
+    typeof metadata?.language === "string" ? metadata.language : "",
+    typeof metadata?.countryCodeAlpha2 === "string"
+      ? metadata.countryCodeAlpha2
+      : "",
+  ]
+    .join(" ")
+    .toLowerCase();
 }
 
 export function ContentSubscriptionsTab({
@@ -89,6 +166,8 @@ export function ContentSubscriptionsTab({
   const [recommendations, setRecommendations] =
     useState<ContentSubscriptionCatalogResponse | null>(null);
   const [subscriptionQuery, setSubscriptionQuery] = useState("");
+  const [keywordInput, setKeywordInput] = useState("");
+  const [addingKeywords, setAddingKeywords] = useState(false);
   const [catalogInput, setCatalogInput] = useState("");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogKind, setCatalogKind] = useState<
@@ -134,9 +213,7 @@ export function ContentSubscriptionsTab({
     } catch (error) {
       captureClientError("Failed to load content subscription catalog", error);
       message.error(
-        t("subscriptions.content.catalogLoadFailed", {
-          defaultValue: "Failed to load subscription catalog.",
-        }),
+        t("subscriptions.content.catalogLoadFailed"),
       );
     } finally {
       setLoadingCatalog(false);
@@ -156,21 +233,13 @@ export function ContentSubscriptionsTab({
         error,
       );
       setRecommendationsWarning({
-        message: t("subscriptions.content.recommendationsLoadFailed", {
-          defaultValue: "Failed to load recommendations.",
-        }),
+        message: t("subscriptions.content.recommendationsLoadFailed"),
         description: t(
           "subscriptions.content.recommendationsLoadFailedDescription",
-          {
-            defaultValue:
-              "Recommendations are temporarily unavailable. You can still manage subscriptions and browse the catalog.",
-          },
         ),
       });
       message.warning(
-        t("subscriptions.content.recommendationsLoadFailed", {
-          defaultValue: "Failed to load recommendations.",
-        }),
+        t("subscriptions.content.recommendationsLoadFailed"),
       );
     }
   }, [apiClient, message, t]);
@@ -188,23 +257,13 @@ export function ContentSubscriptionsTab({
         subscriptionsResult.reason,
       );
       setSubscriptionRefreshWarning({
-        message: t("subscriptions.content.refreshFailedAfterMutation", {
-          defaultValue:
-            "Changes were saved, but the latest subscription list could not be reloaded.",
-        }),
+        message: t("subscriptions.content.refreshFailedAfterMutation"),
         description: t(
           "subscriptions.content.refreshFailedAfterMutationDescription",
-          {
-            defaultValue:
-              "Your add/remove action has completed. The page is still showing the previous subscription snapshot until reload succeeds.",
-          },
         ),
       });
       message.warning(
-        t("subscriptions.content.refreshFailedAfterMutation", {
-          defaultValue:
-            "Changes were saved, but the latest subscription list could not be reloaded.",
-        }),
+        t("subscriptions.content.refreshFailedAfterMutation"),
       );
       return false;
     }
@@ -230,21 +289,11 @@ export function ContentSubscriptionsTab({
           subscriptionsResult.reason,
         );
         setSubscriptionRefreshWarning({
-          message: t("subscriptions.content.loadFailed", {
-            defaultValue: "Failed to load content subscriptions.",
-          }),
-          description: t(
-            "subscriptions.content.loadFailedDescription",
-            {
-              defaultValue:
-                "The subscriptions list could not be loaded. Retry to restore the latest subscription state.",
-            },
-          ),
+          message: t("subscriptions.content.loadFailed"),
+          description: t("subscriptions.content.loadFailedDescription"),
         });
         message.error(
-          t("subscriptions.content.loadFailed", {
-            defaultValue: "Failed to load content subscriptions.",
-          }),
+          t("subscriptions.content.loadFailed"),
         );
       } else {
         setSubscriptionRefreshWarning(null);
@@ -289,16 +338,9 @@ export function ContentSubscriptionsTab({
     if (!query) {
       return subscriptions?.items ?? [];
     }
-    return (subscriptions?.items ?? []).filter((item) => {
-      return [
-        item.displayValue,
-        item.taxonomyDisplayName ?? "",
-        ...(item.taxonomyLabels ?? []),
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(query);
-    });
+    return (subscriptions?.items ?? []).filter((item) =>
+      buildSubscriptionSearchText(item).includes(query),
+    );
   }, [subscriptionQuery, subscriptions?.items]);
 
   const subscriptionGroups = useMemo(
@@ -339,6 +381,124 @@ export function ContentSubscriptionsTab({
     );
   }, [catalog?.items, selectedCatalogKeys]);
 
+  const trackSubscriptionRemoval = useCallback(
+    (
+      item: Pick<
+        ContentSubscriptionItem,
+        "kind" | "displayValue" | "normalizedValue"
+      >,
+    ) => {
+      if (item.kind === "topic") {
+        void trackUserNewsBehavior({
+          type: "unsubscribe",
+          topics: [item.displayValue],
+        });
+        return;
+      }
+      if (item.kind === "entity") {
+        void trackUserNewsBehavior({
+          type: "unsubscribe",
+          entities: [item.displayValue],
+        });
+        return;
+      }
+      if (item.kind === "source") {
+        void trackUserNewsBehavior({
+          type: "not_interested",
+          source: item.normalizedValue,
+        });
+      }
+    },
+    [],
+  );
+
+  const renderMetadata = useCallback(
+    (item: { kind: ContentSubscriptionKind; metadata?: unknown }) => {
+      const metadata = toMetadataRecord(item.metadata);
+      if (!metadata) {
+        return null;
+      }
+
+      const tags: Array<{ key: string; label: string }> = [];
+      if (item.kind === "source") {
+        if (typeof metadata.sourceId === "string") {
+          tags.push({
+            key: "sourceId",
+            label: t("subscriptions.content.metadataSourceId", {
+              value: metadata.sourceId,
+            }),
+          });
+        }
+        if (typeof metadata.language === "string") {
+          tags.push({
+            key: "language",
+            label: t("subscriptions.content.metadataLanguage", {
+              value: metadata.language,
+            }),
+          });
+        }
+      }
+      if (
+        item.kind === "geo" &&
+        typeof metadata.countryCodeAlpha2 === "string"
+      ) {
+        tags.push({
+          key: "country",
+          label: t("subscriptions.content.metadataCountry", {
+            value: metadata.countryCodeAlpha2,
+          }),
+        });
+      }
+
+      const links: Array<{ key: string; label: string }> = [];
+      if (item.kind === "source" && typeof metadata.siteUrl === "string") {
+        links.push({
+          key: "siteUrl",
+          label: t("subscriptions.content.metadataSite", {
+            value: metadata.siteUrl,
+          }),
+        });
+      }
+      if (item.kind === "source" && typeof metadata.feedUrl === "string") {
+        links.push({
+          key: "feedUrl",
+          label: t("subscriptions.content.metadataFeed", {
+            value: metadata.feedUrl,
+          }),
+        });
+      }
+
+      if (tags.length === 0 && links.length === 0) {
+        return null;
+      }
+
+      return (
+        <Space direction="vertical" size={4}>
+          {tags.length > 0 ? (
+            <Space wrap size={[4, 4]}>
+              {tags.map((entry) => (
+                <Tag key={`${item.kind}:${entry.key}`}>{entry.label}</Tag>
+              ))}
+            </Space>
+          ) : null}
+          {links.length > 0 ? (
+            <Space direction="vertical" size={0}>
+              {links.map((entry) => (
+                <Typography.Text
+                  key={`${item.kind}:${entry.key}`}
+                  type="secondary"
+                >
+                  {entry.label}
+                </Typography.Text>
+              ))}
+            </Space>
+          ) : null}
+        </Space>
+      );
+    },
+    [t],
+  );
+
   useEffect(() => {
     const availableKeys = new Set(
       filteredSubscriptions.map((item) =>
@@ -365,10 +525,7 @@ export function ContentSubscriptionsTab({
     if (removableSelectedSubscriptionItems.length === 0) {
       if (selectedSubscriptionItems.some((item) => item.manualMonitorOwned)) {
         message.info(
-          t("subscriptions.content.monitorOwnedRemoveBlocked", {
-            defaultValue:
-              "Monitor-owned subscriptions must be edited from My Monitors.",
-          }),
+          t("subscriptions.content.monitorOwnedRemoveBlocked"),
         );
       }
       return;
@@ -379,14 +536,15 @@ export function ContentSubscriptionsTab({
         {
           subscriptions: removableSelectedSubscriptionItems.map((item) => ({
             kind: item.kind,
-            value: item.displayValue,
+            value: item.normalizedValue,
           })),
         },
       );
+      removableSelectedSubscriptionItems.forEach((item) =>
+        trackSubscriptionRemoval(item),
+      );
       message.success(
-        t("subscriptions.content.batchRemoved", {
-          defaultValue: "Subscriptions removed.",
-        }),
+        t("subscriptions.content.batchRemoved"),
       );
       setSelectedSubscriptionKeys([]);
       await refreshSubscriptionViews();
@@ -394,9 +552,7 @@ export function ContentSubscriptionsTab({
     } catch (error) {
       captureClientError("Failed to remove content subscriptions", error);
       message.error(
-        t("subscriptions.content.batchRemoveFailed", {
-          defaultValue: "Failed to remove selected subscriptions.",
-        }),
+        t("subscriptions.content.batchRemoveFailed"),
       );
     }
   }, [
@@ -406,6 +562,7 @@ export function ContentSubscriptionsTab({
     removableSelectedSubscriptionItems,
     selectedSubscriptionItems,
     t,
+    trackSubscriptionRemoval,
   ]);
 
   const openOwnerMonitor = useCallback(
@@ -435,7 +592,7 @@ export function ContentSubscriptionsTab({
         {
           subscriptions: items.map((item) => ({
             kind: item.kind,
-            value: item.displayValue,
+            value: item.normalizedValue,
             source,
           })),
         },
@@ -449,21 +606,16 @@ export function ContentSubscriptionsTab({
       if (subscribedCount > 0) {
         message.success(
           t("subscriptions.content.batchAdded", {
-            defaultValue: "Added {{count}} subscriptions.",
             count: subscribedCount,
           }),
         );
       } else if (limitReached) {
         message.warning(
-          t("subscriptions.content.limitReached", {
-            defaultValue: "Subscription limit reached for this type.",
-          }),
+          t("subscriptions.content.limitReached"),
         );
       } else {
         message.info(
-          t("subscriptions.content.noChanges", {
-            defaultValue: "No new subscriptions were added.",
-          }),
+          t("subscriptions.content.noChanges"),
         );
       }
       setSelectedCatalogKeys([]);
@@ -474,21 +626,76 @@ export function ContentSubscriptionsTab({
     } catch (error) {
       captureClientError("Failed to add content subscriptions", error);
       message.error(
-        t("subscriptions.content.batchAddFailed", {
-          defaultValue: "Failed to add selected subscriptions.",
-        }),
+        t("subscriptions.content.batchAddFailed"),
       );
     }
   };
+
+  const handleAddKeywords = useCallback(
+    async (value: string) => {
+      const keywords = parseKeywordEntries(value);
+      if (keywords.length === 0) {
+        return;
+      }
+
+      setAddingKeywords(true);
+      try {
+        const response = await apiClient.post<ContentSubscriptionBatchResponse>(
+          "user-content-subscriptions/batch-upsert",
+          {
+            subscriptions: keywords.map((keyword) => ({
+              kind: "keyword",
+              value: keyword,
+              source: "manual",
+            })),
+          },
+        );
+        const subscribedCount = (response.data?.items ?? []).filter(
+          (item) => item.status === "subscribed",
+        ).length;
+        const limitReached = (response.data?.items ?? []).some(
+          (item) => item.status === "limit_reached",
+        );
+
+        if (subscribedCount > 0) {
+          message.success(
+            t("subscriptions.content.keywordsAdded", {
+              count: subscribedCount,
+            }),
+          );
+          setKeywordInput("");
+        } else if (limitReached) {
+          message.warning(
+            t("subscriptions.content.limitReached"),
+          );
+        } else {
+          message.info(
+            t("subscriptions.content.noChanges"),
+          );
+        }
+
+        await refreshSubscriptionViews();
+        if (subscribedCount > 0) {
+          emitSituationMonitorMonitorsUpdated("subscriptions");
+        }
+      } catch (error) {
+        captureClientError("Failed to add keyword subscriptions", error);
+        message.error(
+          t("subscriptions.content.keywordAddFailed"),
+        );
+      } finally {
+        setAddingKeywords(false);
+      }
+    },
+    [apiClient, message, refreshSubscriptionViews, t],
+  );
 
   if (!accessToken) {
     return (
       <ChartEmptyState
         variant="permission"
-        title={t("common.accessDenied", { defaultValue: "Access denied" })}
-        description={t("subscriptions.content.signInRequired", {
-          defaultValue: "Please sign in to manage content subscriptions.",
-        })}
+        title={t("common.accessDenied")}
+        description={t("subscriptions.content.signInRequired")}
       />
     );
   }
@@ -505,27 +712,19 @@ export function ContentSubscriptionsTab({
       >
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <Typography.Text type="secondary">
-            {t("subscriptions.content.summary", {
-              defaultValue:
-                "Manage personalized topic and entity subscriptions, browse by taxonomy, and add AI-ranked recommendations.",
-            })}
+            {t("subscriptions.content.summary")}
           </Typography.Text>
           <Space wrap size={[8, 8]}>
-            <Tag color="blue">
-              {t("subscriptions.content.topicCount", {
-                defaultValue: "Topics: {{count}}",
-                count: subscriptions?.counts.topic ?? 0,
-              })}
-            </Tag>
-            <Tag color="purple">
-              {t("subscriptions.content.entityCount", {
-                defaultValue: "Entities: {{count}}",
-                count: subscriptions?.counts.entity ?? 0,
-              })}
-            </Tag>
+            {CONTENT_SUBSCRIPTION_KIND_ORDER.map((kind) => (
+              <Tag key={kind} color={getContentSubscriptionKindColor(kind)}>
+                {t(`subscriptions.content.${kind}Count`, {
+                  defaultValue: `${getContentSubscriptionKindLabel(kind, t)}: {{count}}`,
+                  count: subscriptions?.counts[kind] ?? 0,
+                })}
+              </Tag>
+            ))}
             <Tag>
               {t("subscriptions.content.limitLabel", {
-                defaultValue: "Per type limit: {{count}}",
                 count: subscriptions?.limitPerKind ?? 50,
               })}
             </Tag>
@@ -543,7 +742,7 @@ export function ContentSubscriptionsTab({
           onClose={() => setSubscriptionRefreshWarning(null)}
           action={
             <Button size="small" onClick={() => void loadAll()}>
-              {t("common.retry", { defaultValue: "Retry" })}
+              {t("common.retry")}
             </Button>
           }
         />
@@ -551,18 +750,14 @@ export function ContentSubscriptionsTab({
 
       <Card
         className="content-card"
-        title={t("subscriptions.content.currentTitle", {
-          defaultValue: "Content subscriptions",
-        })}
+        title={t("subscriptions.content.currentTitle")}
         extra={
           <Space size="small">
             <Input.Search
               allowClear
               value={subscriptionQuery}
               onChange={(event) => setSubscriptionQuery(event.target.value)}
-              placeholder={t("subscriptions.content.searchPlaceholder", {
-                defaultValue: "Search subscribed topics or entities",
-              })}
+              placeholder={t("subscriptions.content.searchPlaceholder")}
               style={{ width: 260 }}
             />
             <Button
@@ -570,9 +765,7 @@ export function ContentSubscriptionsTab({
               disabled={removableSelectedSubscriptionItems.length === 0}
               onClick={() => void handleBatchRemove()}
             >
-              {t("subscriptions.content.batchUnsubscribe", {
-                defaultValue: "Unsubscribe selected",
-              })}
+              {t("subscriptions.content.batchUnsubscribe")}
             </Button>
           </Space>
         }
@@ -581,9 +774,7 @@ export function ContentSubscriptionsTab({
           <Skeleton active paragraph={{ rows: 6 }} />
         ) : subscriptionGroups.length === 0 ? (
           <Empty
-            description={t("subscriptions.content.currentEmpty", {
-              defaultValue: "No content subscriptions yet.",
-            })}
+            description={t("subscriptions.content.currentEmpty")}
           />
         ) : (
           <Collapse
@@ -602,9 +793,7 @@ export function ContentSubscriptionsTab({
                             type="link"
                             onClick={() => openOwnerMonitor(item)}
                           >
-                            {t("subscriptions.content.openMonitor", {
-                              defaultValue: "Open monitor",
-                            })}
+                            {t("subscriptions.content.openMonitor")}
                           </Button>
                         ) : (
                           <Button
@@ -613,7 +802,7 @@ export function ContentSubscriptionsTab({
                             danger
                             onClick={() => void handleBatchRemoveSingle(item)}
                           >
-                            {t("common.remove", { defaultValue: "Remove" })}
+                            {t("common.remove")}
                           </Button>
                         ),
                       ]}
@@ -656,9 +845,9 @@ export function ContentSubscriptionsTab({
                               {item.displayValue}
                             </Typography.Text>
                             <Tag
-                              color={item.kind === "topic" ? "blue" : "purple"}
+                              color={getContentSubscriptionKindColor(item.kind)}
                             >
-                              {item.kind}
+                              {getContentSubscriptionKindLabel(item.kind, t)}
                             </Tag>
                             {item.taxonomyDisplayName ? (
                               <Tag>{item.taxonomyDisplayName}</Tag>
@@ -680,9 +869,7 @@ export function ContentSubscriptionsTab({
                             {!item.manualMonitorOwned &&
                             item.systemSyncOwned ? (
                               <Tag color="purple">
-                                {t("situationMonitor.monitors.systemSync", {
-                                  defaultValue: "System sync",
-                                })}
+                                {t("situationMonitor.monitors.systemSync")}
                               </Tag>
                             ) : null}
                           </Space>
@@ -693,12 +880,10 @@ export function ContentSubscriptionsTab({
                               ))}
                             </Space>
                           ) : null}
+                          {renderMetadata(item)}
                           {item.manualMonitorOwned ? (
                             <Typography.Text type="secondary">
-                              {t("subscriptions.content.monitorOwnedHint", {
-                                defaultValue:
-                                  "Managed by My Monitors. Edit the owning monitor to change this subscription.",
-                              })}
+                              {t("subscriptions.content.monitorOwnedHint")}
                             </Typography.Text>
                           ) : null}
                         </Space>
@@ -714,9 +899,27 @@ export function ContentSubscriptionsTab({
 
       <Card
         className="content-card"
-        title={t("subscriptions.content.catalogTitle", {
-          defaultValue: "Browse by category",
-        })}
+        title={t("subscriptions.content.keywordComposerTitle")}
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Typography.Text type="secondary">
+            {t("subscriptions.content.keywordComposerDescription")}
+          </Typography.Text>
+          <Input.Search
+            allowClear
+            enterButton={t("subscriptions.content.keywordComposerAction")}
+            value={keywordInput}
+            onChange={(event) => setKeywordInput(event.target.value)}
+            onSearch={(value) => void handleAddKeywords(value)}
+            loading={addingKeywords}
+            placeholder={t("subscriptions.content.keywordComposerPlaceholder")}
+          />
+        </Space>
+      </Card>
+
+      <Card
+        className="content-card"
+        title={t("subscriptions.content.catalogTitle")}
         extra={
           <Space size="small">
             <Select
@@ -725,21 +928,27 @@ export function ContentSubscriptionsTab({
               options={[
                 {
                   value: "all",
-                  label: t("subscriptions.content.kindAll", {
-                    defaultValue: "All types",
-                  }),
+                  label: t("subscriptions.content.kindAll"),
                 },
                 {
                   value: "topic",
-                  label: t("subscriptions.content.kindTopics", {
-                    defaultValue: "Topics",
-                  }),
+                  label: t("subscriptions.content.kindTopics"),
                 },
                 {
                   value: "entity",
-                  label: t("subscriptions.content.kindEntities", {
-                    defaultValue: "Entities",
-                  }),
+                  label: t("subscriptions.content.kindEntities"),
+                },
+                {
+                  value: "source",
+                  label: t("subscriptions.content.kindSources"),
+                },
+                {
+                  value: "keyword",
+                  label: t("subscriptions.content.kindKeywords"),
+                },
+                {
+                  value: "geo",
+                  label: t("subscriptions.content.kindGeos"),
                 },
               ]}
               onChange={(value) => setCatalogKind(value)}
@@ -749,21 +958,17 @@ export function ContentSubscriptionsTab({
               value={catalogInput}
               onChange={(event) => setCatalogInput(event.target.value)}
               onSearch={(value) => setCatalogQuery(value)}
-              placeholder={t("subscriptions.content.catalogSearch", {
-                defaultValue: "Search the subscription catalog",
-              })}
+              placeholder={t("subscriptions.content.catalogSearch")}
               style={{ width: 260 }}
             />
             <Button onClick={() => setCatalogQuery(catalogInput)}>
-              {t("common.search", { defaultValue: "Search" })}
+              {t("common.search")}
             </Button>
             <Button
               disabled={selectedCatalogItems.length === 0}
               onClick={() => void handleBatchSubscribe(selectedCatalogItems)}
             >
-              {t("subscriptions.content.batchSubscribe", {
-                defaultValue: "Subscribe selected",
-              })}
+              {t("subscriptions.content.batchSubscribe")}
             </Button>
           </Space>
         }
@@ -775,9 +980,7 @@ export function ContentSubscriptionsTab({
               type={taxonomyFilter === null ? "primary" : "default"}
               onClick={() => setTaxonomyFilter(null)}
             >
-              {t("subscriptions.content.allCategories", {
-                defaultValue: "All categories",
-              })}
+              {t("subscriptions.content.allCategories")}
             </Button>
             {taxonomyOptions.map((option) => (
               <Button
@@ -794,9 +997,7 @@ export function ContentSubscriptionsTab({
             <Skeleton active paragraph={{ rows: 6 }} />
           ) : catalogGroups.length === 0 ? (
             <Empty
-              description={t("subscriptions.content.catalogEmpty", {
-                defaultValue: "No catalog matches the current filter.",
-              })}
+              description={t("subscriptions.content.catalogEmpty")}
             />
           ) : (
             <Collapse
@@ -822,12 +1023,8 @@ export function ContentSubscriptionsTab({
                               onClick={() => void handleBatchSubscribe([item])}
                             >
                               {isSubscribed
-                                ? t("subscriptions.content.subscribed", {
-                                    defaultValue: "Subscribed",
-                                  })
-                                : t("subscriptions.content.subscribe", {
-                                    defaultValue: "Subscribe",
-                                  })}
+                                ? t("subscriptions.content.subscribed")
+                                : t("subscriptions.content.subscribe")}
                             </Button>,
                           ]}
                         >
@@ -866,25 +1063,26 @@ export function ContentSubscriptionsTab({
                                   {item.displayValue}
                                 </Typography.Text>
                                 <Tag
-                                  color={
-                                    item.kind === "topic" ? "blue" : "purple"
-                                  }
+                                  color={getContentSubscriptionKindColor(
+                                    item.kind,
+                                  )}
                                 >
-                                  {item.kind}
+                                  {getContentSubscriptionKindLabel(
+                                    item.kind,
+                                    t,
+                                  )}
                                 </Tag>
                                 {item.taxonomyDisplayName ? (
                                   <Tag>{item.taxonomyDisplayName}</Tag>
                                 ) : null}
                                 <Tag>
                                   {t("subscriptions.content.itemCount", {
-                                    defaultValue: "{{count}} items",
                                     count: item.count,
                                   })}
                                 </Tag>
                               </Space>
                               <Typography.Text type="secondary">
                                 {t("subscriptions.content.lastSeenAt", {
-                                  defaultValue: "Last seen {{time}}",
                                   time: formatDateTime(
                                     item.lastSeenAt,
                                     locale,
@@ -892,6 +1090,7 @@ export function ContentSubscriptionsTab({
                                   ),
                                 })}
                               </Typography.Text>
+                              {renderMetadata(item)}
                             </Space>
                           </Space>
                         </List.Item>
@@ -910,15 +1109,11 @@ export function ContentSubscriptionsTab({
         title={
           <Space wrap size={[8, 8]}>
             <span>
-              {t("subscriptions.content.recommendationsTitle", {
-                defaultValue: "Recommended subscriptions",
-              })}
+              {t("subscriptions.content.recommendationsTitle")}
             </span>
             {recommendationsWarning ? (
               <Tag color="warning">
-                {t("subscriptions.content.degradedBadge", {
-                  defaultValue: "Degraded",
-                })}
+                {t("subscriptions.content.degradedBadge")}
               </Tag>
             ) : null}
           </Space>
@@ -935,7 +1130,7 @@ export function ContentSubscriptionsTab({
               onClose={() => setRecommendationsWarning(null)}
               action={
                 <Button size="small" onClick={() => void loadRecommendations()}>
-                  {t("common.retry", { defaultValue: "Retry" })}
+                  {t("common.retry")}
                 </Button>
               }
             />
@@ -974,12 +1169,8 @@ export function ContentSubscriptionsTab({
                         }
                       >
                         {isSubscribed
-                          ? t("subscriptions.content.subscribed", {
-                              defaultValue: "Subscribed",
-                            })
-                          : t("subscriptions.content.addOne", {
-                              defaultValue: "Add",
-                            })}
+                          ? t("subscriptions.content.subscribed")
+                          : t("subscriptions.content.addOne")}
                       </Button>,
                     ]}
                   >
@@ -989,8 +1180,10 @@ export function ContentSubscriptionsTab({
                           <Typography.Text strong>
                             {item.displayValue}
                           </Typography.Text>
-                          <Tag color={item.kind === "topic" ? "blue" : "purple"}>
-                            {item.kind}
+                          <Tag
+                            color={getContentSubscriptionKindColor(item.kind)}
+                          >
+                            {getContentSubscriptionKindLabel(item.kind, t)}
                           </Tag>
                           {item.taxonomyDisplayName ? (
                             <Tag>{item.taxonomyDisplayName}</Tag>
@@ -1001,18 +1194,17 @@ export function ContentSubscriptionsTab({
                         <Space wrap size={[6, 6]}>
                           <Typography.Text type="secondary">
                             {t("subscriptions.content.itemCount", {
-                              defaultValue: "{{count}} items",
                               count: item.count,
                             })}
                           </Typography.Text>
                           {typeof item.score === "number" ? (
                             <Typography.Text type="secondary">
                               {t("subscriptions.content.relevanceScore", {
-                                defaultValue: "Relevance {{score}}",
                                 score: item.score.toFixed(2),
                               })}
                             </Typography.Text>
                           ) : null}
+                          {renderMetadata(item)}
                         </Space>
                       }
                     />
@@ -1035,9 +1227,10 @@ export function ContentSubscriptionsTab({
       await apiClient.post<ContentSubscriptionBatchResponse>(
         "user-content-subscriptions/batch-delete",
         {
-          subscriptions: [{ kind: item.kind, value: item.displayValue }],
+          subscriptions: [{ kind: item.kind, value: item.normalizedValue }],
         },
       );
+      trackSubscriptionRemoval(item);
       setSelectedSubscriptionKeys((current) =>
         current.filter(
           (entry) =>
@@ -1046,18 +1239,14 @@ export function ContentSubscriptionsTab({
         ),
       );
       message.success(
-        t("subscriptions.content.removedSingle", {
-          defaultValue: "Subscription removed.",
-        }),
+        t("subscriptions.content.removedSingle"),
       );
       await refreshSubscriptionViews();
       emitSituationMonitorMonitorsUpdated("subscriptions");
     } catch (error) {
       captureClientError("Failed to remove single content subscription", error);
       message.error(
-        t("subscriptions.content.removeSingleFailed", {
-          defaultValue: "Failed to remove subscription.",
-        }),
+        t("subscriptions.content.removeSingleFailed"),
       );
     }
   }
@@ -1065,6 +1254,7 @@ export function ContentSubscriptionsTab({
 
 function groupByTaxonomy<
   T extends {
+    kind: ContentSubscriptionKind;
     taxonomyPath: string | null;
     taxonomyDisplayName: string | null;
     taxonomyLabels: string[];

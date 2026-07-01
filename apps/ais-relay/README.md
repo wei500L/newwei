@@ -1,0 +1,103 @@
+# AIS Relay
+
+`apps/ais-relay` 是一个独立的 AISStream 聚合服务。它把上游 WebSocket 报文归并成 HTTP 快照，供 `apps/api` 通过 `/ais/snapshot` 拉取，并通过 `/health` 暴露运行与降级状态。
+
+## 接口
+
+- `GET /healthz/live`
+  - 无鉴权
+  - 仅表示 relay HTTP 进程在线，可用于容器 liveness / startup probe
+- `GET /health`
+  - 无鉴权
+  - 返回 `status: "ok" | "degraded"`
+  - `diagnostics` 包含最近连接、收包、解析错误、忽略计数和降级原因
+- `GET /ais/snapshot`
+  - 需要 `Authorization: Bearer <AIS_RELAY_SHARED_SECRET>`，除非 relay 未配置共享密钥
+  - 默认返回 `disruptions`、`density`、`vessels`
+  - `?candidates=true` 时额外返回 `candidateReports`
+
+## 健康状态
+
+`/healthz/live` 的 HTTP `200` 只表示 relay 进程在线，适合 Docker / K8s 的容器探针。
+
+`/health` 的 HTTP 状态码始终是 `200`，真正的运行态健康语义在响应体的 `status` 字段里。这里的 `degraded` 代表上游断流、停滞或解析质量问题，不应再阻止依赖服务启动。
+
+`diagnostics.statusReasonCode` 的权威枚举与 API/Web 共享，定义在 `packages/utils/src/realtime-signals-contract.ts` 的 `AIS_RELAY_REASON_CODES` / `AisRelayReasonCode`。
+
+## 环境变量
+
+上游与服务本身：
+
+- `AISSTREAM_API_KEY`
+  - 必填。缺失时进程启动即失败。
+- `AISSTREAM_URL`
+  - 可选。默认是 `wss://stream.aisstream.io/v0/stream`。
+  - 适合 smoke test、内网代理或录制回放。
+- `AIS_RELAY_UPSTREAM_URL`
+  - 兼容旧别名。新配置优先使用 `AISSTREAM_URL`。
+- `AIS_RELAY_PORT`
+  - relay 对外 HTTP 端口，默认 `3004`。
+- `AIS_RELAY_SHARED_SECRET`
+  - `/ais/snapshot` 的 Bearer 鉴权密钥。
+
+健康阈值：
+
+- `AIS_RELAY_HEALTH_NO_MESSAGES_AFTER_CONNECT_MS`
+  - WebSocket 已建立但长时间没有任何上游消息时，转为 `degraded`。
+- `AIS_RELAY_HEALTH_STALE_MESSAGES_MS`
+  - WebSocket 仍保持打开但消息流停滞时，转为 `degraded`。
+- `AIS_RELAY_HEALTH_MIN_POSITION_REPORTS`
+  - 进入“保留失败/忽略比例/解析错误”判定前的最小样本数。
+- `AIS_RELAY_HEALTH_MAX_IGNORED_RATIO_PERCENT`
+  - 位置报文被忽略的最大容忍比例。
+- `AIS_RELAY_HEALTH_MAX_PARSE_ERROR_RATIO_PERCENT`
+  - 上游 payload 解析错误的最大容忍比例。
+
+API 访问 relay 需要同步配置：
+
+- `REALTIME_SIGNALS_AIS_BASE_URL`
+- `REALTIME_SIGNALS_AIS_SHARED_SECRET`
+
+修改根目录 `.env` 或 `infra/docker/.env` 后，建议执行：
+
+```bash
+pnpm --filter infra-scripts run env:check
+```
+
+当前检查会覆盖 AIS relay 的 base URL、共享密钥、上游地址和健康阈值格式。
+
+## 本地运行
+
+```bash
+pnpm --filter @modular/ais-relay build
+AISSTREAM_API_KEY=... \
+AIS_RELAY_SHARED_SECRET=... \
+pnpm --filter @modular/ais-relay run start
+```
+
+## Docker
+
+relay 使用专用镜像定义：
+
+- Dockerfile: `infra/docker/ais-relay.Dockerfile`
+- Compose service: `infra/docker/docker-compose.yml`
+
+构建与启动：
+
+```bash
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml build ais-relay
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml up -d ais-relay
+```
+
+确定性启动 smoke test：
+
+```bash
+pnpm docker:smoke:ais-relay-startup
+```
+
+这条脚本会：
+
+- 用临时 Compose project 启动 `mock-ais-upstream`、`ais-relay`、`api`
+- 把 relay 上游固定到一个“连上但不发消息”的本地 WebSocket mock
+- 验证 relay `/health` 进入 `ais_upstream_no_messages_after_connect`
+- 同时验证容器 health 仍然基于 `/healthz/live`，不会卡住 `api` 启动

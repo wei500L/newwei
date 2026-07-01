@@ -70,12 +70,12 @@ export interface NewsSourceOpsSummary {
   stats24h: NewsSourceStats24hSnapshot;
 }
 
-type NewsSourceOpsSnapshotRecord = {
+interface NewsSourceOpsSnapshotRecord {
   latestJob?: unknown;
   latestCrawlTask?: unknown;
   latestArticle?: unknown;
   stats24h?: unknown;
-};
+}
 
 @Injectable()
 export class NewsSourceOpsSnapshotService {
@@ -690,11 +690,11 @@ export class NewsSourceOpsSnapshotService {
   }
 
   private buildStats24h(
-    jobs: Array<{
+    jobs: {
       status: PipelineJobStatus;
       startedAt: Date | null;
       completedAt: Date | null;
-    }>,
+    }[],
   ): NewsSourceStats24hSnapshot {
     let completed = 0;
     let failed = 0;

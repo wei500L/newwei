@@ -8,6 +8,7 @@ import type { Prisma } from '@prisma/client';
 import { toPrismaJsonValue } from '../../common/prisma-json';
 import { PrismaService } from '../config/prisma.service';
 
+import { assertSupportedWorkflowDefinition } from './crawl-config-policy';
 import { normalizeCrawlSiteProfileConfig } from './crawl-frontier.utils';
 import { CrawlStrategyLegacyBridgeService } from './crawl-strategy-legacy-bridge.service';
 import {
@@ -45,13 +46,6 @@ type WorkflowRecord = Prisma.CrawlStrategyWorkflowGetPayload<{
     };
   };
 }>;
-
-interface WorkflowSummary {
-  workflowId: string;
-  workflowVersionId: string;
-  workflowName: string;
-  version: number;
-}
 
 @Injectable()
 export class CrawlStrategyWorkflowService {
@@ -114,6 +108,7 @@ export class CrawlStrategyWorkflowService {
       throw new BadRequestException('name is required');
     }
     const definition = this.normalizeWorkflowDefinition(input.draftDefinition);
+    assertSupportedWorkflowDefinition(definition, 'draftDefinition');
     const created = await this.prisma.crawlStrategyWorkflow.create({
       data: {
         orgId,
@@ -141,6 +136,8 @@ export class CrawlStrategyWorkflowService {
     input: UpdateCrawlStrategyWorkflowDraftDto,
   ) {
     const existing = await this.ensureWorkflow(orgId, id);
+    const definition = this.normalizeWorkflowDefinition(input.draftDefinition);
+    assertSupportedWorkflowDefinition(definition, 'draftDefinition');
     const updated = await this.prisma.crawlStrategyWorkflow.update({
       where: { id: existing.id },
       data: {
@@ -148,9 +145,7 @@ export class CrawlStrategyWorkflowService {
         ...(input.description !== undefined
           ? { description: this.normalizeOptionalString(input.description) }
           : {}),
-        draftDefinition: toPrismaJsonValue(
-          this.normalizeWorkflowDefinition(input.draftDefinition),
-        ),
+        draftDefinition: toPrismaJsonValue(definition),
         updatedById: actorId,
       },
       include: {
@@ -185,6 +180,7 @@ export class CrawlStrategyWorkflowService {
         ? this.normalizeOptionalString(input.description)
         : workflow.description;
     const definition = this.normalizeWorkflowDefinition(workflow.draftDefinition);
+    assertSupportedWorkflowDefinition(definition, 'draftDefinition');
 
     const published = await this.prisma.$transaction(async (tx) => {
       const version = await tx.crawlStrategyWorkflowVersion.create({

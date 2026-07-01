@@ -6,17 +6,21 @@ import {
   createLogger,
 } from "@modular/utils";
 import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import {
   ContentSubscriptionKind,
   ContentSubscriptionSource,
   Prisma,
   SituationMonitorMonitorKind,
 } from "@prisma/client";
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
 
+import {
+  canonicalizeGeoValue,
+  extractGeoCountryAlpha2,
+} from "../../common/geo-subscription";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
 import { GeocodeBounds, GeocodingService } from "../geo/geocoding.service";
@@ -28,12 +32,6 @@ import type {
   SituationMonitorPreviewDto,
   UpdateSituationMonitorDto,
 } from "./dto/situation-monitor-monitor.dto";
-import type { SituationMonitorInsightsResponse } from "./situation-monitor.service";
-import type {
-  SituationMonitorMatchGeoStatus,
-  SituationMonitorMatchReason,
-  SituationMonitorMatchResult,
-} from "./situation-monitor.types";
 import type {
   OrefAlert,
   OrefHistoryEntry,
@@ -44,6 +42,12 @@ import type {
   SituationTelegramFeedResponse,
   TelegramSignalItem,
 } from "./signals/situation-monitor-signals.types";
+import type { SituationMonitorInsightsResponse } from "./situation-monitor.service";
+import type {
+  SituationMonitorMatchGeoStatus,
+  SituationMonitorMatchReason,
+  SituationMonitorMatchResult,
+} from "./situation-monitor.types";
 
 const LEGACY_MONITORS_USER_SETTING_KEY = "ui:situation-monitor:monitors:v1";
 const MAX_MANUAL_MONITORS = 20;
@@ -59,6 +63,9 @@ const RERANK_INCLUDE_THRESHOLD = 0.55;
 const RERANK_SHORTLIST_LIMIT = 8;
 const SYSTEM_SYNC_MONITOR_NAME = "Subscription Sync";
 const SYSTEM_SYNC_MONITOR_COLOR = "#9254de";
+const CONTENT_SUBSCRIPTION_KIND_SOURCE = "source" as ContentSubscriptionKind;
+const CONTENT_SUBSCRIPTION_KIND_KEYWORD = "keyword" as ContentSubscriptionKind;
+const CONTENT_SUBSCRIPTION_KIND_GEO = "geo" as ContentSubscriptionKind;
 
 interface MonitorLocation {
   name: string;
@@ -83,6 +90,8 @@ export interface StoredMonitorDto {
   rawKeywords: string[];
   approvedTopics: string[];
   approvedEntities: string[];
+  approvedSources: string[];
+  approvedGeos: string[];
   approvedLexicalTerms: string[];
   rejectedSuggestions: RejectedSuggestionState;
   location?: MonitorLocation;
@@ -125,6 +134,8 @@ interface NormalizedMonitorRecord {
   rawKeywords: string[];
   approvedTopics: string[];
   approvedEntities: string[];
+  approvedSources: string[];
+  approvedGeos: string[];
   approvedLexicalTerms: string[];
   rejectedSuggestions: RejectedSuggestionState;
   location?: MonitorLocation;
@@ -155,6 +166,7 @@ interface MonitorCandidate {
   topics: string[];
   entities: string[];
   location?: string;
+  geoTexts: string[];
   extraTexts: string[];
 }
 
@@ -165,7 +177,7 @@ interface OwnershipEntry {
   systemSyncOwned: boolean;
 }
 
-type CatalogRow = {
+interface CatalogRow {
   kind: ContentSubscriptionKind;
   normalizedValue: string;
   displayValue: string;
@@ -173,7 +185,7 @@ type CatalogRow = {
   lastSeenAt: Date;
   taxonomyPath: string | null;
   embeddingVector: Prisma.JsonValue | null;
-};
+}
 
 @Injectable()
 export class SituationMonitorMonitorsService {
@@ -210,6 +222,8 @@ export class SituationMonitorMonitorsService {
       rawKeywords,
       approvedTopics: [],
       approvedEntities: [],
+      approvedSources: [],
+      approvedGeos: [],
       approvedLexicalTerms: [],
       location: locationResolution ?? undefined,
     });
@@ -545,6 +559,7 @@ export class SituationMonitorMonitorsService {
           topics: entry.topics ?? [],
           entities: entry.entities ?? [],
           location: entry.location,
+          geoTexts: entry.location ? [entry.location] : [],
           extraTexts: entry.keyPoints ?? [],
         });
       }
@@ -565,6 +580,7 @@ export class SituationMonitorMonitorsService {
         topics: entry.topics ?? [],
         entities: entry.entities ?? [],
         location: entry.location,
+        geoTexts: entry.location ? [entry.location] : [],
         extraTexts: entry.keyPoints ?? [],
       });
     }
@@ -581,6 +597,7 @@ export class SituationMonitorMonitorsService {
           category: `situation:${panel.id}`,
           topics: [],
           entities: [],
+          geoTexts: [],
           extraTexts: [panel.title, panel.subtitle],
         });
       }
@@ -617,6 +634,31 @@ export class SituationMonitorMonitorsService {
       ...payload,
       monitorMatches: await this.matchCandidates(orgId, userId, candidates),
     };
+  }
+
+  async augmentTelegramRealtimePayloadForUsers(
+    orgId: string,
+    userIds: string[],
+    payload: SituationTelegramRealtimePayload,
+  ): Promise<Map<string, SituationTelegramRealtimePayload>> {
+    const normalizedUserIds = this.normalizeUserIds(userIds);
+    const candidates = (payload.items ?? []).map((item) =>
+      this.telegramCandidate(item),
+    );
+    const matchesByUser = await this.matchCandidatesForUsers(
+      orgId,
+      normalizedUserIds,
+      candidates,
+    );
+    return new Map(
+      normalizedUserIds.map((userId) => [
+        userId,
+        {
+          ...payload,
+          monitorMatches: matchesByUser.get(userId) ?? [],
+        },
+      ]),
+    );
   }
 
   async augmentOrefAlerts(
@@ -658,6 +700,50 @@ export class SituationMonitorMonitorsService {
       alertMonitorMatches,
       ...(historyEntry ? { historyMonitorMatches } : {}),
     };
+  }
+
+  async augmentOrefRealtimePayloadForUsers(
+    orgId: string,
+    userIds: string[],
+    payload: SituationOrefRealtimePayload,
+  ): Promise<Map<string, SituationOrefRealtimePayload>> {
+    const normalizedUserIds = this.normalizeUserIds(userIds);
+    const historyEntry = payload.historyEntry ?? undefined;
+    const alertCandidates = (payload.alerts ?? []).map((alert) =>
+      this.orefAlertCandidate(alert, "oref_alert"),
+    );
+    const historyCandidates = historyEntry
+      ? historyEntry.alerts.map((alert) =>
+          this.orefHistoryCandidate(alert, historyEntry),
+        )
+      : [];
+    const [alertMatchesByUser, historyMatchesByUser] = await Promise.all([
+      this.matchCandidatesForUsers(orgId, normalizedUserIds, alertCandidates),
+      historyCandidates.length > 0
+        ? this.matchCandidatesForUsers(
+            orgId,
+            normalizedUserIds,
+            historyCandidates,
+          )
+        : Promise.resolve(
+            new Map<string, SituationMonitorMatchResult[]>(
+              normalizedUserIds.map((userId) => [userId, []]),
+            ),
+          ),
+    ]);
+
+    return new Map(
+      normalizedUserIds.map((userId) => [
+        userId,
+        {
+          ...payload,
+          alertMonitorMatches: alertMatchesByUser.get(userId) ?? [],
+          ...(historyEntry
+            ? { historyMonitorMatches: historyMatchesByUser.get(userId) ?? [] }
+            : {}),
+        },
+      ]),
+    );
   }
 
   async augmentOrefHistory(
@@ -721,6 +807,16 @@ export class SituationMonitorMonitorsService {
     return ownership;
   }
 
+  private normalizeUserIds(userIds: string[]): string[] {
+    return Array.from(
+      new Set(
+        userIds
+          .map((userId) => userId.trim())
+          .filter((userId) => userId.length > 0),
+      ),
+    );
+  }
+
   private async matchCandidates(
     orgId: string,
     userId: string,
@@ -742,6 +838,80 @@ export class SituationMonitorMonitorsService {
       monitors,
       candidates,
     );
+    return await this.matchCandidatesWithPreparedData(
+      orgId,
+      monitors,
+      candidates,
+      candidateEmbeddings,
+    );
+  }
+
+  private async matchCandidatesForUsers(
+    orgId: string,
+    userIds: string[],
+    candidates: MonitorCandidate[],
+  ): Promise<Map<string, SituationMonitorMatchResult[]>> {
+    const normalizedUserIds = this.normalizeUserIds(userIds);
+    const emptyResults = new Map<string, SituationMonitorMatchResult[]>(
+      normalizedUserIds.map((userId) => [userId, []]),
+    );
+    if (normalizedUserIds.length === 0 || candidates.length === 0) {
+      return emptyResults;
+    }
+
+    const rows = await this.prisma.situationMonitorMonitor.findMany({
+      where: { orgId, userId: { in: normalizedUserIds } },
+      orderBy: [{ userId: "asc" }, { kind: "asc" }, { createdAt: "desc" }],
+    });
+    if (rows.length === 0) {
+      return emptyResults;
+    }
+
+    const monitorsByUser = new Map<string, NormalizedMonitorRecord[]>();
+    const allMonitors: NormalizedMonitorRecord[] = [];
+    for (const row of rows) {
+      const monitor = this.normalizeMonitorRow(row);
+      if (!monitor.enabled) {
+        continue;
+      }
+
+      const rowUserId = row.userId;
+      const monitors = monitorsByUser.get(rowUserId) ?? [];
+      monitors.push(monitor);
+      monitorsByUser.set(rowUserId, monitors);
+      allMonitors.push(monitor);
+    }
+
+    if (allMonitors.length === 0) {
+      return emptyResults;
+    }
+
+    const candidateEmbeddings = await this.embedCandidateBatch(
+      orgId,
+      allMonitors,
+      candidates,
+    );
+    const results = new Map<string, SituationMonitorMatchResult[]>();
+    for (const userId of normalizedUserIds) {
+      results.set(
+        userId,
+        await this.matchCandidatesWithPreparedData(
+          orgId,
+          monitorsByUser.get(userId) ?? [],
+          candidates,
+          candidateEmbeddings,
+        ),
+      );
+    }
+    return results;
+  }
+
+  private async matchCandidatesWithPreparedData(
+    orgId: string,
+    monitors: NormalizedMonitorRecord[],
+    candidates: MonitorCandidate[],
+    candidateEmbeddings: Map<string, number[]>,
+  ): Promise<SituationMonitorMatchResult[]> {
     const results: SituationMonitorMatchResult[] = [];
 
     for (const monitor of monitors) {
@@ -1033,7 +1203,32 @@ export class SituationMonitorMonitorsService {
       });
     }
 
-    const geoStatus = this.resolveGeoStatus(monitor, candidate, haystack);
+    const sourceHits = collectSetHits(monitor.approvedSources, [
+      candidate.source,
+    ]);
+    if (sourceHits.length > 0) {
+      matchedTerms.push(...sourceHits);
+      reasons.push({
+        code: "source",
+        label: "Source matched",
+        matchedValues: sourceHits,
+      });
+    }
+
+    const geoSubscriptionHits = collectGeoHits(
+      monitor.approvedGeos,
+      candidate.geoTexts,
+    );
+    if (geoSubscriptionHits.length > 0) {
+      matchedTerms.push(...geoSubscriptionHits);
+      reasons.push({
+        code: "geo",
+        label: "Geo subscription matched",
+        matchedValues: geoSubscriptionHits,
+      });
+    }
+
+    const geoStatus = this.resolveGeoStatus(monitor, candidate);
     let baseScore = 0;
     if (keywordHits.length > 0) {
       baseScore += 0.42;
@@ -1043,6 +1238,12 @@ export class SituationMonitorMonitorsService {
     }
     if (entityHits.length > 0) {
       baseScore += 0.18;
+    }
+    if (sourceHits.length > 0) {
+      baseScore += 0.18;
+    }
+    if (geoSubscriptionHits.length > 0) {
+      baseScore += 0.12;
     }
     if (geoStatus === "matched") {
       baseScore += 0.08;
@@ -1062,27 +1263,20 @@ export class SituationMonitorMonitorsService {
   private resolveGeoStatus(
     monitor: NormalizedMonitorRecord,
     candidate: MonitorCandidate,
-    haystack: string,
   ): SituationMonitorMatchGeoStatus {
     if (!monitor.location) {
       return "not_configured";
     }
 
-    const normalizedLocationName = normalizeTerm(monitor.location.name);
-    if (normalizedLocationName && haystack.includes(normalizedLocationName)) {
+    if (
+      collectGeoHits([monitor.location.name], candidate.geoTexts).length > 0
+    ) {
       return "matched";
     }
 
-    const candidateCountry = extractCountryCodeFromText(
-      [
-        candidate.location ?? "",
-        candidate.title,
-        candidate.summary ?? "",
-        ...candidate.extraTexts,
-        ...candidate.topics,
-        ...candidate.entities,
-      ].join(" "),
-    );
+    const candidateCountry = candidate.geoTexts
+      .map((entry) => extractGeoCountryAlpha2(entry))
+      .find((entry): entry is string => Boolean(entry));
 
     if (
       candidateCountry &&
@@ -1258,6 +1452,15 @@ export class SituationMonitorMonitorsService {
           !manualOwned.has(this.subscriptionKey(row.kind, row.normalizedValue)),
       )
       .map((row) => row.displayValue);
+    const keywordSubscriptions = subscriptions
+      .filter((row) => row.kind === CONTENT_SUBSCRIPTION_KIND_KEYWORD)
+      .map((row) => row.displayValue);
+    const sourceSubscriptions = subscriptions
+      .filter((row) => row.kind === CONTENT_SUBSCRIPTION_KIND_SOURCE)
+      .map((row) => row.displayValue);
+    const geoSubscriptions = subscriptions
+      .filter((row) => row.kind === CONTENT_SUBSCRIPTION_KIND_GEO)
+      .map((row) => row.displayValue);
 
     const approvedTopics = normalizeStringList(
       orphanTopics,
@@ -1267,17 +1470,28 @@ export class SituationMonitorMonitorsService {
       orphanEntities,
       MAX_APPROVED_SUGGESTIONS,
     );
+    const approvedSources = normalizeStringList(
+      sourceSubscriptions,
+      MAX_APPROVED_SUGGESTIONS,
+    );
+    const approvedGeos = normalizeStringList(
+      geoSubscriptions,
+      MAX_APPROVED_SUGGESTIONS,
+    );
+    const rawKeywords = normalizeKeywordList(keywordSubscriptions);
     const approvedLexicalTerms = normalizeStringList(
-      orphanTopics.concat(orphanEntities),
+      orphanTopics.concat(orphanEntities, keywordSubscriptions),
       MAX_APPROVED_TERMS,
     );
     const embeddingPayload = await this.buildQueryEmbedding(
       orgId,
       this.buildQueryText({
         name: SYSTEM_SYNC_MONITOR_NAME,
-        rawKeywords: [],
+        rawKeywords,
         approvedTopics,
         approvedEntities,
+        approvedSources,
+        approvedGeos,
         approvedLexicalTerms,
       }),
     );
@@ -1286,9 +1500,11 @@ export class SituationMonitorMonitorsService {
       name: SYSTEM_SYNC_MONITOR_NAME,
       enabled: true,
       color: SYSTEM_SYNC_MONITOR_COLOR,
-      rawKeywords: toPrismaJsonValue([]),
+      rawKeywords: toPrismaJsonValue(rawKeywords),
       approvedTopics: toPrismaJsonValue(approvedTopics),
       approvedEntities: toPrismaJsonValue(approvedEntities),
+      approvedSources: toPrismaJsonValue(approvedSources),
+      approvedGeos: toPrismaJsonValue(approvedGeos),
       approvedLexicalTerms: toPrismaJsonValue(approvedLexicalTerms),
       rejectedSuggestions: toPrismaJsonValue({
         topics: [],
@@ -1367,6 +1583,8 @@ export class SituationMonitorMonitorsService {
           rawKeywords,
           approvedTopics: [],
           approvedEntities: [],
+          approvedSources: [],
+          approvedGeos: [],
           approvedLexicalTerms: rawKeywords,
           location,
         }),
@@ -1420,7 +1638,10 @@ export class SituationMonitorMonitorsService {
   }
 
   private normalizeMonitorRow(
-    row: Prisma.SituationMonitorMonitorGetPayload<Record<string, never>>,
+    row: Prisma.SituationMonitorMonitorGetPayload<Record<string, never>> & {
+      approvedSources?: Prisma.JsonValue | null;
+      approvedGeos?: Prisma.JsonValue | null;
+    },
   ): NormalizedMonitorRecord {
     return {
       id: row.id,
@@ -1438,6 +1659,14 @@ export class SituationMonitorMonitorsService {
       ),
       approvedEntities: parseStringArray(
         row.approvedEntities,
+        MAX_APPROVED_SUGGESTIONS,
+      ),
+      approvedSources: parseStringArray(
+        row.approvedSources ?? null,
+        MAX_APPROVED_SUGGESTIONS,
+      ),
+      approvedGeos: parseStringArray(
+        row.approvedGeos ?? null,
         MAX_APPROVED_SUGGESTIONS,
       ),
       approvedLexicalTerms: parseStringArray(
@@ -1478,6 +1707,8 @@ export class SituationMonitorMonitorsService {
       rawKeywords: string[];
       approvedTopics?: string[];
       approvedEntities?: string[];
+      approvedSources?: string[];
+      approvedGeos?: string[];
       approvedLexicalTerms?: string[];
       rejectedTopics?: string[];
       rejectedEntities?: string[];
@@ -1501,6 +1732,14 @@ export class SituationMonitorMonitorsService {
     );
     const approvedEntities = normalizeStringList(
       input.approvedEntities ?? [],
+      MAX_APPROVED_SUGGESTIONS,
+    );
+    const approvedSources = normalizeStringList(
+      input.approvedSources ?? [],
+      MAX_APPROVED_SUGGESTIONS,
+    );
+    const approvedGeos = normalizeStringList(
+      input.approvedGeos ?? [],
       MAX_APPROVED_SUGGESTIONS,
     );
     const approvedLexicalTerms = normalizeStringList(
@@ -1529,6 +1768,8 @@ export class SituationMonitorMonitorsService {
         rawKeywords,
         approvedTopics,
         approvedEntities,
+        approvedSources,
+        approvedGeos,
         approvedLexicalTerms,
         location: location ?? undefined,
       }),
@@ -1541,6 +1782,8 @@ export class SituationMonitorMonitorsService {
       rawKeywords: toPrismaJsonValue(rawKeywords),
       approvedTopics: toPrismaJsonValue(approvedTopics),
       approvedEntities: toPrismaJsonValue(approvedEntities),
+      approvedSources: toPrismaJsonValue(approvedSources),
+      approvedGeos: toPrismaJsonValue(approvedGeos),
       approvedLexicalTerms: toPrismaJsonValue(approvedLexicalTerms),
       rejectedSuggestions: toPrismaJsonValue(rejectedSuggestions),
       locationName: location?.name ?? null,
@@ -1597,6 +1840,8 @@ export class SituationMonitorMonitorsService {
     rawKeywords: string[];
     approvedTopics: string[];
     approvedEntities: string[];
+    approvedSources: string[];
+    approvedGeos: string[];
     approvedLexicalTerms: string[];
     location?: MonitorLocation;
   }) {
@@ -1610,6 +1855,12 @@ export class SituationMonitorMonitorsService {
         : "",
       input.approvedEntities.length > 0
         ? `entities=${input.approvedEntities.join(", ")}`
+        : "",
+      input.approvedSources.length > 0
+        ? `sources=${input.approvedSources.join(", ")}`
+        : "",
+      input.approvedGeos.length > 0
+        ? `geos=${input.approvedGeos.join(", ")}`
         : "",
       input.approvedLexicalTerms.length > 0
         ? `lexical=${input.approvedLexicalTerms.join(", ")}`
@@ -1742,7 +1993,7 @@ export class SituationMonitorMonitorsService {
     orgId: string,
     queryText: string,
     rows: CatalogRow[],
-  ): Promise<Array<{ row: CatalogRow; score: number }> & { model?: string }> {
+  ): Promise<{ row: CatalogRow; score: number }[] & { model?: string }> {
     try {
       const response = await this.liteLlm.embedding({
         orgId,
@@ -1756,7 +2007,7 @@ export class SituationMonitorMonitorsService {
       const vector = response.data?.[0]?.embedding;
       const normalized = Array.isArray(vector) ? normalizeVector(vector) : [];
       if (normalized.length === 0) {
-        return [] as Array<{ row: CatalogRow; score: number }> & {
+        return [] as { row: CatalogRow; score: number }[] & {
           model?: string;
         };
       }
@@ -1772,7 +2023,7 @@ export class SituationMonitorMonitorsService {
           Boolean(entry),
         )
         .sort((a, b) => b.score - a.score || b.row.count - a.row.count)
-        .slice(0, 16) as Array<{ row: CatalogRow; score: number }> & {
+        .slice(0, 16) as { row: CatalogRow; score: number }[] & {
         model?: string;
       };
       ranked.model = normalizeOptionalString(response.model) ?? undefined;
@@ -1782,7 +2033,7 @@ export class SituationMonitorMonitorsService {
         { err: error, orgId },
         "Failed to rank preview catalog by embedding",
       );
-      return [] as Array<{ row: CatalogRow; score: number }> & {
+      return [] as { row: CatalogRow; score: number }[] & {
         model?: string;
       };
     }
@@ -1791,10 +2042,10 @@ export class SituationMonitorMonitorsService {
   private async tryRerankCatalogRows(
     orgId: string,
     queryText: string,
-    rows: Array<{ row: CatalogRow; score: number }>,
+    rows: { row: CatalogRow; score: number }[],
   ) {
     if (rows.length === 0) {
-      return [] as Array<{ row: CatalogRow; score: number }>;
+      return [] as { row: CatalogRow; score: number }[];
     }
     try {
       const response = await this.liteLlm.rerank({
@@ -1966,6 +2217,7 @@ export class SituationMonitorMonitorsService {
       category: item.topic,
       topics: item.topic ? [item.topic] : [],
       entities: [],
+      geoTexts: [],
       extraTexts: item.tags ?? [],
     };
   }
@@ -1986,6 +2238,7 @@ export class SituationMonitorMonitorsService {
       category: alert.cat,
       topics: [],
       entities: [],
+      geoTexts: areas,
       extraTexts: areas,
     };
   }
@@ -2331,6 +2584,49 @@ function collectSetHits(expected: string[], values: string[]): string[] {
       }
     }
   }
+  return hits;
+}
+
+function collectGeoHits(expected: string[], values: string[]): string[] {
+  const structuredValues = values
+    .map((entry) => normalizeTerm(entry))
+    .filter(Boolean);
+  const structuredCountries = new Set(
+    values
+      .map((entry) => extractGeoCountryAlpha2(entry))
+      .filter((entry): entry is string => Boolean(entry)),
+  );
+  const hits: string[] = [];
+
+  for (const entry of normalizeStringList(expected, MAX_APPROVED_TERMS)) {
+    const canonical = canonicalizeGeoValue(entry);
+    if (
+      canonical.countryCodeAlpha2 &&
+      structuredCountries.has(canonical.countryCodeAlpha2)
+    ) {
+      hits.push(entry);
+    } else {
+      const normalized = normalizeTerm(
+        canonical.displayValue || canonical.normalizedValue,
+      );
+      const shortAscii =
+        normalized.length <= 3 && /^[a-z0-9]+$/.test(normalized);
+      const matched = shortAscii
+        ? structuredValues.some((value) => value === normalized)
+        : structuredValues.some(
+            (value) => value === normalized || value.includes(normalized),
+          );
+      if (!matched) {
+        continue;
+      }
+      hits.push(entry);
+    }
+
+    if (hits.length >= 6) {
+      break;
+    }
+  }
+
   return hits;
 }
 

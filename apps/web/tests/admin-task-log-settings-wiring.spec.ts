@@ -22,7 +22,7 @@ describe("admin task log settings wiring", () => {
 
     expect(navigationSource).toContain('titleKey: "settings.tabs.taskLogs"');
     expect(navigationSource).toContain('id: "task-logs"');
-    expect(registrySource).toContain("'task-logs': TaskLogSettingsPanel");
+    expect(registrySource).toContain('"task-logs": TaskLogSettingsPanel');
     expect(panelSource).toContain("system-settings/task-logs");
   });
 });

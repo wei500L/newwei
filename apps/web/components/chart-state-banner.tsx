@@ -73,22 +73,18 @@ export function ChartStateBanner({
         variant={isOffline ? "offline" : "error"}
         title={
           isOffline
-            ? t("dashboard.dataOffline.title", { defaultValue: "Offline" })
-            : t("dashboard.dataAbnormal", { defaultValue: "Data error" })
+            ? t("dashboard.dataOffline.title")
+            : t("dashboard.dataAbnormal")
         }
         description={
           isOffline
-            ? t("dashboard.dataOffline.description", {
-                defaultValue: "Cannot reach the service. Check your connection and retry."
-              })
+            ? t("dashboard.dataOffline.description")
             : error?.message ??
-              t("common.error.unexpected", { defaultValue: "Unexpected error" })
+              t("common.error.unexpected")
         }
         actionLabel={
           onRetry
-            ? t("dashboard.actions.retryFetch", {
-                defaultValue: "Retry fetch"
-              })
+            ? t("dashboard.actions.retryFetch")
             : undefined
         }
         actionLoading={refreshing}
@@ -105,10 +101,8 @@ export function ChartStateBanner({
       <ChartEmptyState
         presentation="banner"
         variant="backfilling"
-        title={t("dashboard.dataBackfilling.title", { defaultValue: "Updating data" })}
-        description={t("dashboard.dataBackfilling.description", {
-          defaultValue: "Data is being backfilled. Values may update shortly."
-        })}
+        title={t("dashboard.dataBackfilling.title")}
+        description={t("dashboard.dataBackfilling.description")}
       />
     );
   }
@@ -130,15 +124,12 @@ export function ChartStateBanner({
     const description =
       formattedLatest && lagText && intervalText
         ? t("dashboard.dataDelayed.explained", {
-            defaultValue:
-              "Latest data at {{time}} (≈{{lag}} behind). Expected interval ≈{{interval}}.",
             time: formattedLatest,
             lag: lagText,
             interval: intervalText
           })
         : latestTimestamp
           ? t("dashboard.dataDelayed.latest", {
-              defaultValue: "Latest data at {{time}}.",
               time:
                 formattedLatest ??
                 formatDateTime(latestTimestamp.toISOString(), locale, {
@@ -149,21 +140,17 @@ export function ChartStateBanner({
                   minute: "2-digit"
                 })
             })
-          : t("dashboard.dataDelayed.missing", {
-              defaultValue: "Latest data time unavailable."
-            });
+          : t("dashboard.dataDelayed.missing");
 
     return (
       <ChartEmptyState
         presentation="banner"
         variant="delayed"
-        title={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
+        title={t("dashboard.dataDelayed.title")}
         description={description}
         actionLabel={
           onRetry
-            ? t("dashboard.actions.fetchLatest", {
-                defaultValue: "Pull latest data"
-              })
+            ? t("dashboard.actions.fetchLatest")
             : undefined
         }
         actionLoading={refreshing}
@@ -175,10 +162,8 @@ export function ChartStateBanner({
   if (state === "empty") {
     return (
       <ChartEmptyState
-        title={t("dashboard.dataEmpty", { defaultValue: "No data" })}
-        description={t("dashboard.dataEmptyHint", {
-          defaultValue: "No data for the selected range. Try expanding the range."
-        })}
+        title={t("dashboard.dataEmpty")}
+        description={t("dashboard.dataEmptyHint")}
       />
     );
   }

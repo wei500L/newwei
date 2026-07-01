@@ -1,16 +1,30 @@
 "use client";
 
-import { Tabs } from "antd";
+import { Skeleton, Tabs } from "antd";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import KeyMonitorPage from "@/app/(app)/dashboard/key-monitor/page";
-
-import { MarketOverview } from "./market-overview";
-import { NewsIndicatorAssociations } from "./news-indicator-associations";
-
 const DEFAULT_TAB = "overview";
+
+const MarketOverview = dynamic(
+  () => import("./market-overview").then((mod) => mod.MarketOverview),
+  { loading: () => <Skeleton active paragraph={{ rows: 8 }} /> },
+);
+
+const KeyMonitorPage = dynamic(
+  () => import("@/app/(app)/dashboard/key-monitor/page"),
+  { loading: () => <Skeleton active paragraph={{ rows: 10 }} /> },
+);
+
+const NewsIndicatorAssociations = dynamic(
+  () =>
+    import("./news-indicator-associations").then(
+      (mod) => mod.NewsIndicatorAssociations,
+    ),
+  { loading: () => <Skeleton active paragraph={{ rows: 8 }} /> },
+);
 
 export function MarketContent() {
   const { t } = useTranslation();
@@ -22,18 +36,15 @@ export function MarketContent() {
     () => [
       {
         key: "overview",
-        label: t("finance.market.overview", { defaultValue: "Market Overview" }),
-        content: <MarketOverview />
+        label: t("finance.market.overview"),
       },
       {
         key: "monitor",
-        label: t("finance.market.monitor", { defaultValue: "Key Monitor" }),
-        content: <KeyMonitorPage />
+        label: t("finance.market.monitor"),
       },
       {
         key: "associations",
-        label: t("finance.market.associations", { defaultValue: "News ↔ Indicators" }),
-        content: <NewsIndicatorAssociations />
+        label: t("finance.market.associations"),
       }
     ],
     [t]
@@ -55,6 +66,16 @@ export function MarketContent() {
     router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
   };
 
+  const renderTabContent = (key: string) => {
+    if (key === "monitor") {
+      return <KeyMonitorPage />;
+    }
+    if (key === "associations") {
+      return <NewsIndicatorAssociations />;
+    }
+    return <MarketOverview />;
+  };
+
   return (
     <Tabs
       activeKey={activeKey}
@@ -63,7 +84,7 @@ export function MarketContent() {
       items={tabs.map((tab) => ({
         key: tab.key,
         label: tab.label,
-        children: tab.content
+        children: tab.key === activeKey ? renderTabContent(tab.key) : null
       }))}
     />
   );

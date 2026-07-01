@@ -13,7 +13,6 @@ import {
   getCurrentTraceId,
   NotificationPresentationKind,
 } from "@modular/utils";
-import { Queue } from "bullmq";
 import {
   BadRequestException,
   Inject,
@@ -22,7 +21,9 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { NotificationType } from "@prisma/client";
+import { Queue } from "bullmq";
 
+import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { writeAuditLogBestEffort } from "../../modules/audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
@@ -35,6 +36,7 @@ import {
 } from "../news-events/news-event-source-classifier";
 import { NewsClassificationQualitySettingsService } from "../news-pipeline/news-classification-quality-settings.service";
 import { NotificationsService } from "../notifications/notifications.service";
+
 import {
   CLASSIFICATION_QUALITY_QUEUE,
   type ClassificationQualityJobPayload,
@@ -59,24 +61,24 @@ export interface ClassificationQualitySummary {
   from: string;
   to: string;
   totalItems: number;
-  methodDistribution: Array<{
+  methodDistribution: {
     group: "llm_embedding_rerank" | "rule_fallback";
     count: number;
     share: number;
-  }>;
-  confidenceHistogram: Array<{
+  }[];
+  confidenceHistogram: {
     bucket: string;
     min: number;
     max: number;
     count: number;
-  }>;
-  confidenceTrend: Array<{
+  }[];
+  confidenceTrend: {
     bucketStart: string;
     total: number;
     avgConfidence: number | null;
     lowConfidenceCount: number;
-  }>;
-  lowConfidenceSources: Array<{
+  }[];
+  lowConfidenceSources: {
     sourceId: string;
     sourceName: string;
     sourceUrl: string;
@@ -84,7 +86,7 @@ export interface ClassificationQualitySummary {
     lowConfidenceCount: number;
     lowConfidenceRate: number;
     avgConfidence: number | null;
-  }>;
+  }[];
   latencyPercentiles: {
     llm: {
       sampleSize: number;
@@ -112,24 +114,24 @@ export interface ClassificationQualitySummary {
     rejectRate: number;
     penalizedRate: number;
   };
-  sourceCategoryBreakdown: Array<{
+  sourceCategoryBreakdown: {
     sourceType: ClassifiedSourceType;
     categoryPrefix: string;
     count: number;
-  }>;
+  }[];
   pendingReviewCount: number;
-  alertStatus: Array<{
+  alertStatus: {
     stage: "llm" | "embedding" | "rerank";
     thresholdMs: number;
     p95Ms: number | null;
     triggered: boolean;
-  }>;
-  gateAlertStatus: Array<{
+  }[];
+  gateAlertStatus: {
     metric: "reject_rate" | "penalized_rate";
     threshold: number;
     value: number;
     triggered: boolean;
-  }>;
+  }[];
   sampling: {
     classifiedItems: {
       matched: number;
@@ -159,7 +161,7 @@ export interface ClassificationSourceItemsResponse {
   sourceId: string;
   from: string;
   to: string;
-  items: Array<{
+  items: {
     processedItemId: string;
     itemMetaId: string | null;
     articleUrl: string | null;
@@ -169,7 +171,7 @@ export interface ClassificationSourceItemsResponse {
     confidence: number | null;
     method: string | null;
     createdAt: string;
-  }>;
+  }[];
   nextCursor: string | null;
 }
 
@@ -640,7 +642,7 @@ export class ClassificationQualityService {
     );
     const sourceMap = await this.loadSourceMapByIds(input.orgId, sourceIds);
 
-    const strataMap = new Map<string, Array<Record<string, unknown>>>();
+    const strataMap = new Map<string, Record<string, unknown>[]>();
     for (const doc of docs) {
       const processedItemId = this.readId(doc?._id);
       if (!processedItemId) {
@@ -740,12 +742,12 @@ export class ClassificationQualityService {
     orgId: string;
     actorId: string;
     sampleId: string;
-    annotations: Array<{
+    annotations: {
       processedItemId: string;
       humanCategoryPath: string;
       note?: string | null;
       quickTags?: string[];
-    }>;
+    }[];
   }) {
     const sampleId = input.sampleId.trim();
     if (!sampleId) {
@@ -855,7 +857,7 @@ export class ClassificationQualityService {
         {
           jobId: `classification-quality-report:${jobId}`,
           removeOnComplete: true,
-          removeOnFail: false,
+          removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
           attempts: 3,
           backoff: {
             type: "exponential",
@@ -917,7 +919,7 @@ export class ClassificationQualityService {
         {
           jobId,
           removeOnComplete: true,
-          removeOnFail: false,
+          removeOnFail: BULLMQ_FAILED_JOB_RETENTION,
           attempts: 3,
           backoff: {
             type: "exponential",
@@ -1170,13 +1172,13 @@ export class ClassificationQualityService {
     };
 
     const aggregated = await ProcessedItemModel.aggregate<{
-      total: Array<{ count: number }>;
-      sampled: Array<{
+      total: { count: number }[];
+      sampled: {
         _id: unknown;
         sourceId?: unknown;
         createdAt?: unknown;
         result?: unknown;
-      }>;
+      }[];
     }>([
       { $match: processedItemsWhere },
       {
@@ -1498,8 +1500,8 @@ export class ClassificationQualityService {
     };
 
     const aggregated = await TaskLogModel.aggregate<{
-      total: Array<{ count: number }>;
-      sampled: Array<{ data?: unknown }>;
+      total: { count: number }[];
+      sampled: { data?: unknown }[];
     }>([
       { $match: logsWhere },
       {
@@ -1580,8 +1582,8 @@ export class ClassificationQualityService {
     };
 
     const aggregated = await TaskLogModel.aggregate<{
-      total: Array<{ count: number }>;
-      sampled: Array<{ data?: unknown }>;
+      total: { count: number }[];
+      sampled: { data?: unknown }[];
     }>([
       { $match: logsWhere },
       {

@@ -37,7 +37,7 @@ export class ProcessedItemEventIdLoader {
           id: true,
           cleanedMarkdownRef: true
         }
-      })) as Array<{ id: string; cleanedMarkdownRef: string | null }>;
+      })) as { id: string; cleanedMarkdownRef: string | null }[];
 
       const processedArticleIdByProcessedItemId = new Map<string, string>();
       for (const row of processedArticles) {
@@ -62,7 +62,7 @@ export class ProcessedItemEventIdLoader {
           processedArticleId: true,
           eventId: true
         }
-      })) as Array<{ processedArticleId: string; eventId: string }>;
+      })) as { processedArticleId: string; eventId: string }[];
 
       const eventIdByProcessedArticleId = new Map<string, string>();
       for (const row of memberships) {

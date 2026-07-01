@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 
+import { OnboardingPageVisit } from "../components/onboarding-page-visit";
 import { TodayContent } from "./today-content";
 
 export default async function TodayPage() {
@@ -10,5 +11,13 @@ export default async function TodayPage() {
     redirect("/login");
   }
 
-  return <TodayContent />;
+  return (
+    <OnboardingPageVisit
+      step="today"
+      title="Daily briefing"
+      description="This page is the fastest way to understand what changed today before you branch into deeper views."
+    >
+      <TodayContent />
+    </OnboardingPageVisit>
+  );
 }

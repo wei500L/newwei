@@ -43,7 +43,7 @@ describe("CrawlMetricProvider", () => {
   });
 
   it("computes preflight failure rate from preflight task logs", async () => {
-    mockedTaskLogAggregate.mockImplementation((pipeline?: Array<Record<string, unknown>>) => {
+    mockedTaskLogAggregate.mockImplementation((pipeline?: Record<string, unknown>[]) => {
       const match = pipeline?.[0]?.$match as { stage?: string; createdAt?: { $lt?: Date } } | undefined;
       if (match?.stage !== "preflight") {
         return [];
@@ -75,7 +75,7 @@ describe("CrawlMetricProvider", () => {
   });
 
   it("computes http 304 hit rate and change percent", async () => {
-    mockedTaskLogAggregate.mockImplementation((pipeline?: Array<Record<string, unknown>>) => {
+    mockedTaskLogAggregate.mockImplementation((pipeline?: Record<string, unknown>[]) => {
       const match = pipeline?.[0]?.$match as { stage?: string; createdAt?: { $lt?: Date } } | undefined;
       if (match?.stage !== "preflight") {
         return [];
@@ -102,7 +102,7 @@ describe("CrawlMetricProvider", () => {
   });
 
   it("computes org hash dedupe hit rate from dedupe logs", async () => {
-    mockedTaskLogAggregate.mockImplementation((pipeline?: Array<Record<string, unknown>>) => {
+    mockedTaskLogAggregate.mockImplementation((pipeline?: Record<string, unknown>[]) => {
       const match = pipeline?.[0]?.$match as { stage?: string; createdAt?: { $lt?: Date } } | undefined;
       if (match?.stage !== "dedupe") {
         return [];

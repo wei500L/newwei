@@ -1,11 +1,18 @@
 import { createApiClient, getCachedApiSession } from './api-client';
+import { emitNewsnowPersonalizationUpdated } from './newsnow-personalization-events';
 
 export type UserNewsBehaviorType =
   | 'view'
   | 'click'
   | 'open_event'
   | 'open_item'
-  | 'bookmark';
+  | 'bookmark'
+  | 'share'
+  | 'engaged_read'
+  | 'deep_read'
+  | 'completed_read'
+  | 'not_interested'
+  | 'unsubscribe';
 
 export interface UserNewsBehaviorPayload {
   type: UserNewsBehaviorType;
@@ -22,9 +29,24 @@ const DEDUP_WINDOW_MS = 2000;
 const SESSION_VIEW_DEDUP_KEY = 'user-news-behavior:view:v1';
 const SESSION_VIEW_TTL_MS = 12 * 60 * 60 * 1000;
 const MAX_SESSION_VIEW_ENTRIES = 1200;
+const HIDDEN_EVENT_NAME = 'user-news-behavior:hidden-updated';
+const HIDDEN_SURFACE_STORAGE_KEYS = {
+  items: 'user-news-behavior:hidden:items:v1',
+  newsnowItems: 'user-news-behavior:hidden:newsnow-items:v1',
+  newsnowSources: 'user-news-behavior:hidden:newsnow-sources:v1',
+} as const;
 const recentEvents = new Map<string, number>();
 const sessionViewedEvents = new Map<string, number>();
 let sessionViewCacheHydrated = false;
+
+export type UserNewsBehaviorHiddenSurface =
+  keyof typeof HIDDEN_SURFACE_STORAGE_KEYS;
+
+export interface ShareTrackedNewsLinkInput {
+  title: string;
+  url: string;
+  behavior: UserNewsBehaviorPayload;
+}
 
 function canReadItems(permissions: unknown): boolean {
   if (!Array.isArray(permissions)) {
@@ -118,7 +140,7 @@ function persistSessionViewCache(now: number) {
   if (typeof window === 'undefined') {
     return;
   }
-  const compactEntries: Array<[string, number]> = [];
+  const compactEntries: [string, number][] = [];
   for (const [key, ts] of sessionViewedEvents.entries()) {
     if (now - ts > SESSION_VIEW_TTL_MS) {
       continue;
@@ -152,6 +174,65 @@ function shouldSkipViewInSession(key: string, now: number) {
   }
   persistSessionViewCache(now);
   return false;
+}
+
+function getHiddenSurfaceStorageKey(surface: UserNewsBehaviorHiddenSurface) {
+  return HIDDEN_SURFACE_STORAGE_KEYS[surface];
+}
+
+function readHiddenSet(surface: UserNewsBehaviorHiddenSurface): Set<string> {
+  if (typeof window === 'undefined') {
+    return new Set();
+  }
+  try {
+    const raw = window.sessionStorage.getItem(getHiddenSurfaceStorageKey(surface));
+    if (!raw) {
+      return new Set();
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return new Set();
+    }
+    return new Set(
+      parsed
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function writeHiddenSet(
+  surface: UserNewsBehaviorHiddenSurface,
+  next: Set<string>,
+) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(
+      getHiddenSurfaceStorageKey(surface),
+      JSON.stringify(Array.from(next)),
+    );
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function emitHiddenSurfaceUpdated(surface: UserNewsBehaviorHiddenSurface) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.dispatchEvent(
+    new CustomEvent<{ surface: UserNewsBehaviorHiddenSurface }>(
+      HIDDEN_EVENT_NAME,
+      {
+        detail: { surface },
+      },
+    ),
+  );
 }
 
 export async function trackUserNewsBehavior(payload: UserNewsBehaviorPayload) {
@@ -198,7 +279,132 @@ export async function trackUserNewsBehavior(payload: UserNewsBehaviorPayload) {
       ...(topics ? { topics } : {}),
       ...(entities ? { entities } : {}),
     });
+    if (type === 'not_interested' || type === 'unsubscribe') {
+      emitNewsnowPersonalizationUpdated({ updatedAt: Date.now() });
+    }
   } catch {
     // Keep interaction non-blocking.
   }
+}
+
+export async function shareTrackedNewsLink(
+  input: ShareTrackedNewsLinkInput,
+): Promise<boolean> {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const normalizedUrl = normalizeValue(input.url, 2048);
+  if (!normalizedUrl) {
+    return false;
+  }
+  const trackingUrl = normalizeValue(input.behavior.url, 2048) ?? normalizedUrl;
+
+  try {
+    if (typeof navigator.share === 'function') {
+      await navigator.share({
+        title: input.title,
+        url: normalizedUrl,
+      });
+      await trackUserNewsBehavior({
+        ...input.behavior,
+        type: 'share',
+        url: trackingUrl,
+      });
+      return true;
+    }
+  } catch (error) {
+    if ((error as { name?: string } | null)?.name === 'AbortError') {
+      return false;
+    }
+    // Continue to clipboard fallback.
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(normalizedUrl);
+      await trackUserNewsBehavior({
+        ...input.behavior,
+        type: 'share',
+        url: trackingUrl,
+      });
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
+export function getSessionHiddenBehaviorKeys(
+  surface: UserNewsBehaviorHiddenSurface,
+): string[] {
+  return Array.from(readHiddenSet(surface));
+}
+
+export function isSessionHiddenBehaviorKey(
+  surface: UserNewsBehaviorHiddenSurface,
+  key: string,
+): boolean {
+  const normalizedKey = normalizeValue(key, 256);
+  if (!normalizedKey) {
+    return false;
+  }
+  return readHiddenSet(surface).has(normalizedKey);
+}
+
+export function hideSessionBehaviorKey(
+  surface: UserNewsBehaviorHiddenSurface,
+  key: string,
+) {
+  const normalizedKey = normalizeValue(key, 256);
+  if (!normalizedKey || typeof window === 'undefined') {
+    return false;
+  }
+  const next = readHiddenSet(surface);
+  if (next.has(normalizedKey)) {
+    return false;
+  }
+  next.add(normalizedKey);
+  writeHiddenSet(surface, next);
+  emitHiddenSurfaceUpdated(surface);
+  return true;
+}
+
+export function subscribeSessionHiddenBehaviorKeys(
+  surface: UserNewsBehaviorHiddenSurface,
+  handler: (keys: string[]) => void,
+) {
+  if (typeof window === 'undefined') {
+    return () => undefined;
+  }
+
+  const emit = () => {
+    handler(getSessionHiddenBehaviorKeys(surface));
+  };
+
+  const onCustomEvent = (
+    event: Event,
+  ) => {
+    const customEvent = event as CustomEvent<{ surface?: UserNewsBehaviorHiddenSurface }>;
+    if (customEvent.detail?.surface && customEvent.detail.surface !== surface) {
+      return;
+    }
+    emit();
+  };
+
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== getHiddenSurfaceStorageKey(surface)) {
+      return;
+    }
+    emit();
+  };
+
+  window.addEventListener(HIDDEN_EVENT_NAME, onCustomEvent);
+  window.addEventListener('storage', onStorage);
+  return () => {
+    window.removeEventListener(HIDDEN_EVENT_NAME, onCustomEvent);
+    window.removeEventListener('storage', onStorage);
+  };
 }

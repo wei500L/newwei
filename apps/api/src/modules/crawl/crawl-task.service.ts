@@ -30,6 +30,7 @@ import type {
   CrawlTaskView,
 } from "./crawl.types";
 import { clampResultLimit, coerceDate, normalizeKeywords } from "./crawl.utils";
+import { assertNoUnsupportedProxy } from "./crawl-config-policy";
 import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import {
@@ -121,6 +122,7 @@ export class CrawlTaskService {
       userId,
       rawOptions,
     );
+    assertNoUnsupportedProxy(normalizedRawOptions, "options");
     assertNoCrawl4aiLlmOptions(normalizedRawOptions, "options");
 
     const keywords = normalizeKeywords(dto.keywords);
@@ -509,7 +511,7 @@ export class CrawlTaskService {
       return true;
     });
 
-    let attempted = candidates.length;
+    const attempted = candidates.length;
     let ingested = 0;
     let failed = 0;
 
@@ -565,6 +567,7 @@ export class CrawlTaskService {
       !Array.isArray(task.config)
         ? (task.config as Record<string, unknown>)
         : null;
+    assertNoUnsupportedProxy(config, "task.config");
     const ingestToItems = config?.ingestToItems === true;
     if (ingestToItems && !actorPermissions?.includes("items.write")) {
       throw new ForbiddenException(

@@ -5,8 +5,8 @@ import { createRequire } from "node:module";
 import { Public } from "../../common/decorators/public.decorator";
 import { PrismaService } from "../config/prisma.service";
 
-import { Crawl4aiHealthIndicator } from "./crawl4ai.health";
 import { Crawl4aiSsrfProxyHealthIndicator } from "./crawl4ai-ssrf-proxy.health";
+import { Crawl4aiHealthIndicator } from "./crawl4ai.health";
 import { LlmGatewayHealthIndicator } from "./llm-gateway.health";
 import { MongoHealthIndicator } from "./mongo.health";
 import { RedisHealthIndicator } from "./redis.health";
