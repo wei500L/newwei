@@ -30,6 +30,10 @@ external/
 # Local/temp directories
 .codex-local/
 .claude/
+/.ccg/
+/.tmp.driveupload/
+/.tmp.drivedownload/
+/node_modules_old/
 
 # External data repositories (not project source)
 e6d2bf860ccc367fe37ff953ba6de66b/
@@ -64,3 +68,11 @@ worldmonitor/
 
 # Unrelated CTF helper scripts — do not belong to this project
 tools/ctf-*
+
+# --- 额外忽略的构建产物与缓存 ---
+# 常见构建输出与包文件
+.parcel-cache/
+.output/
+.yalc/
+*.tgz
+*.zip
