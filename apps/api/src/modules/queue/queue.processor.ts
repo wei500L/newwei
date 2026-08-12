@@ -1,4 +1,4 @@
-import { ProcessedItemModel, RawItemModel } from "@modular/mongo";
+import { ItemReadModelModel, ProcessedItemModel, RawItemModel } from "@modular/mongo";
 import {
   createLogger,
   ensureTraceId,
@@ -429,6 +429,9 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
         $setOnInsert: {
           _id: processedId,
           createdAt: now,
+          updatedAt: now,
+          ingestedAt: now,
+          sortAt: now,
           tags: [],
         },
       },
@@ -770,6 +773,33 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
             attempts: Math.max(options.attemptsMade, 0),
           },
         }),
+      );
+    }
+
+    if (options.finalFailure && options.itemMetaId) {
+      // Keep the read model in sync with the failure state: without this the
+      // list/search layer keeps showing the item's previous completed content
+      // (or its initial pending state) long after the item actually failed.
+      const normalizedError = this.normalizeError(options.error);
+      actions.push(
+        ItemReadModelModel.updateOne(
+          {
+            orgId: options.orgId,
+            itemMetaId: options.itemMetaId,
+          },
+          {
+            $set: {
+              status: ItemStatus.Failed,
+              "processed.status": ItemStatus.Failed,
+              "processed.error": {
+                message: normalizedError.message,
+                name: normalizedError.name ?? null,
+              },
+              "processed.updatedAt": now,
+              updatedAt: now,
+            },
+          },
+        ),
       );
     }
 

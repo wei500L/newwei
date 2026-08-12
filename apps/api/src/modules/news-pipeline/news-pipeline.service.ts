@@ -930,33 +930,41 @@ export class NewsPipelineService implements OnModuleDestroy {
       }),
     );
 
-    const persistResult = await this.runStage(
-      job,
-      "persist",
-      async () =>
-        this.persistProcessedResult({
-          job,
-          raw,
-          payload,
-          article,
-          cleaned: cleanedWithClassification,
-          llm,
-          contentHash,
-          processedArticleId,
-          articleMetadataPatch,
-          processedItemId: job.processedItemId,
-          summaryEmbedding: dedupe.summaryEmbedding ?? undefined,
-          summaryEmbeddingModel: dedupe.summaryEmbeddingModel ?? undefined,
-          duplicateOf: dedupe.duplicateOf ?? undefined,
-          duplicateSimilarity: dedupe.duplicateSimilarity ?? undefined,
-        }),
-      {
-        onErrorData: () => ({
-          rawItemId: raw.id,
-          itemMetaId: job.itemMetaId,
-        }),
-      },
-    );
+    let persistResult;
+    try {
+      persistResult = await this.runStage(
+        job,
+        "persist",
+        async () =>
+          this.persistProcessedResult({
+            job,
+            raw,
+            payload,
+            article,
+            cleaned: cleanedWithClassification,
+            llm,
+            contentHash,
+            processedArticleId,
+            articleMetadataPatch,
+            processedItemId: job.processedItemId,
+            summaryEmbedding: dedupe.summaryEmbedding ?? undefined,
+            summaryEmbeddingModel: dedupe.summaryEmbeddingModel ?? undefined,
+            duplicateOf: dedupe.duplicateOf ?? undefined,
+            duplicateSimilarity: dedupe.duplicateSimilarity ?? undefined,
+          }),
+        {
+          onErrorData: () => ({
+            rawItemId: raw.id,
+            itemMetaId: job.itemMetaId,
+          }),
+        },
+      );
+    } catch (error) {
+      // The dedupe stage already marked the item Duplicate; if persist fails
+      // the item must not stay Duplicate with no processed document.
+      await this.revertDuplicateMarkOnPersistFailure(job, dedupe.duplicateOf);
+      throw error;
+    }
 
     const document = persistResult.processedItem.toJSON() as { id?: string };
     return {
@@ -1221,40 +1229,48 @@ export class NewsPipelineService implements OnModuleDestroy {
       };
       await this.recordStageOutcome(job, "dedupe", stagedCleaned.stage_meta.dedupe);
 
-      const persistResult = await this.runStage(
-        job,
-        "persist",
-        async () =>
-          this.persistProcessedResult({
-            job,
-            raw,
-            payload,
-            article,
-            cleaned: stagedCleaned,
-            llm,
-            contentHash,
-            processedArticleId,
-            articleMetadataPatch: {
-              ...articleMetadataPatch,
-              extraction: {
-                mode: NewsExtractionPipelineMode.staged,
-                gateRejected: false,
-                preflightQualityScore: preflight.qualityScore ?? null,
+      let persistResult;
+      try {
+        persistResult = await this.runStage(
+          job,
+          "persist",
+          async () =>
+            this.persistProcessedResult({
+              job,
+              raw,
+              payload,
+              article,
+              cleaned: stagedCleaned,
+              llm,
+              contentHash,
+              processedArticleId,
+              articleMetadataPatch: {
+                ...articleMetadataPatch,
+                extraction: {
+                  mode: NewsExtractionPipelineMode.staged,
+                  gateRejected: false,
+                  preflightQualityScore: preflight.qualityScore ?? null,
+                },
               },
-            },
-            processedItemId: job.processedItemId,
-            summaryEmbedding: dedupe.summaryEmbedding ?? undefined,
-            summaryEmbeddingModel: dedupe.summaryEmbeddingModel ?? undefined,
-            duplicateOf: dedupe.duplicateOf ?? undefined,
-            duplicateSimilarity: dedupe.duplicateSimilarity ?? undefined,
-          }),
-        {
-          onErrorData: () => ({
-            rawItemId: raw.id,
-            itemMetaId: job.itemMetaId,
-          }),
-        },
-      );
+              processedItemId: job.processedItemId,
+              summaryEmbedding: dedupe.summaryEmbedding ?? undefined,
+              summaryEmbeddingModel: dedupe.summaryEmbeddingModel ?? undefined,
+              duplicateOf: dedupe.duplicateOf ?? undefined,
+              duplicateSimilarity: dedupe.duplicateSimilarity ?? undefined,
+            }),
+          {
+            onErrorData: () => ({
+              rawItemId: raw.id,
+              itemMetaId: job.itemMetaId,
+            }),
+          },
+        );
+      } catch (error) {
+        // The dedupe stage already marked the item Duplicate; if persist
+        // fails the item must not stay Duplicate with no processed document.
+        await this.revertDuplicateMarkOnPersistFailure(job, dedupe.duplicateOf);
+        throw error;
+      }
 
       const document = persistResult.processedItem.toJSON() as { id?: string };
       return {
@@ -2787,7 +2803,7 @@ export class NewsPipelineService implements OnModuleDestroy {
   }> {
     const contentHash =
       article.contentHash ?? this.hashContent(article.markdown);
-    const existing = await this.findProcessedArticle(contentHash);
+    const existing = await this.findProcessedArticle(contentHash, job.orgId);
     if (existing) {
       const cleanedFromExisting = await this.resolveCleanedNews(existing);
       if (cleanedFromExisting) {
@@ -3145,15 +3161,27 @@ export class NewsPipelineService implements OnModuleDestroy {
   }): Promise<SummaryDedupeResult> {
     const cfg = this.configService.config.pipeline;
     if (options.contentDuplicateOf) {
-      await this.markItemMetaDuplicate(
+      // The content cache may legitimately hit this item's own previous run
+      // (replay / retry clones the same content under a new rawItemId). In
+      // that case the cached processed item belongs to the same itemMetaId,
+      // so it is a cache reuse, not a duplicate — marking it would
+      // permanently flip the item to Duplicate with no recovery path.
+      const isSelfReference = await this.isSelfProcessedItemRef(
         options.job,
         options.contentDuplicateOf,
-        1,
       );
-      return {
-        duplicateOf: options.contentDuplicateOf,
-        duplicateSimilarity: 1,
-      };
+      if (!isSelfReference) {
+        await this.markItemMetaDuplicate(
+          options.job,
+          options.contentDuplicateOf,
+          1,
+        );
+        return {
+          duplicateOf: options.contentDuplicateOf,
+          duplicateSimilarity: 1,
+        };
+      }
+      return {};
     }
 
     if (!cfg.summaryDedupEnabled) {
@@ -3230,6 +3258,7 @@ export class NewsPipelineService implements OnModuleDestroy {
       embeddingData.embedding,
       embeddingData.model,
       threshold,
+      options.job.itemMetaId,
     );
     if (!duplicate) {
       return embeddingBaseResult;
@@ -3286,6 +3315,10 @@ export class NewsPipelineService implements OnModuleDestroy {
       orgId: options.orgId,
       status: "completed",
       duplicateOf: null,
+      // Exclude this item's own previous runs: replay/retry produce identical
+      // content, so the current run's own completed document must never be a
+      // dedupe candidate (quick-similarity would hit 1 and mark it Duplicate).
+      itemMetaId: { $ne: options.job.itemMetaId },
       createdAt: { $gte: cutoff },
       "result.summary": { $exists: true, $ne: null },
     })
@@ -3616,6 +3649,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     embedding: number[],
     model: string,
     threshold: number,
+    excludeItemMetaId?: string,
   ): Promise<{ id: string; similarity: number } | null> {
     const cfg = this.configService.config.pipeline;
     const lookbackMs = cfg.summaryDedupLookbackHours * 60 * 60 * 1000;
@@ -3652,6 +3686,10 @@ export class NewsPipelineService implements OnModuleDestroy {
                 status: "completed",
                 summaryEmbeddingModel: model,
                 duplicateOf: null,
+                // Never allow this item's own previous run to match itself.
+                ...(excludeItemMetaId
+                  ? { itemMetaId: { $ne: excludeItemMetaId } }
+                  : {}),
                 createdAt: { $gte: cutoff },
               },
               { _id: 1 },
@@ -3683,6 +3721,10 @@ export class NewsPipelineService implements OnModuleDestroy {
       summaryEmbeddingModel: model,
       summaryEmbedding: { $exists: true, $ne: [] },
       duplicateOf: null,
+      // Exclude this item's own previous runs from semantic matching.
+      ...(excludeItemMetaId
+        ? { itemMetaId: { $ne: excludeItemMetaId } }
+        : {}),
       createdAt: { $gte: cutoff },
     })
       .select({ summaryEmbedding: 1 })
@@ -3772,6 +3814,143 @@ export class NewsPipelineService implements OnModuleDestroy {
     return base;
   }
 
+  private async isSelfProcessedItemRef(
+    job: PipelineJobContext,
+    ref?: string | null,
+  ): Promise<boolean> {
+    if (!ref || !Types.ObjectId.isValid(ref)) {
+      return false;
+    }
+    const doc = await ProcessedItemModel.exists({
+      _id: new Types.ObjectId(ref),
+      orgId: job.orgId,
+      itemMetaId: job.itemMetaId,
+    });
+    return Boolean(doc);
+  }
+
+  /**
+   * Article rows are sharded by orgId: uniqueness of url/contentHash is per
+   * org, so an upsert must never touch another org's row (previously a global
+   * contentHash unique constraint let org B silently rewrite org A's article,
+   * leaving ProcessedArticle.orgId != Article.orgId).
+   */
+  private async upsertOrgScopedArticle(
+    tx: Prisma.TransactionClient,
+    input: {
+      orgId: string;
+      sourceId: string | null | undefined;
+      contentHash: string;
+      persistedUrl: string;
+      persistedMetadata: Record<string, unknown>;
+      canonical: { fingerprint: string | null } | null;
+      payload: NormalizedNewsPayload;
+      cleaned: CleanedNews;
+      crawlAt: Date;
+    },
+  ): Promise<{ id: string }> {
+    const updateData: Prisma.ArticleUpdateManyMutationInput = {
+      url: input.persistedUrl,
+      urlFingerprint: input.canonical?.fingerprint ?? null,
+      sourceLabel: input.payload.sourceName ?? null,
+      language:
+        input.cleaned.language ?? input.payload.language ?? null,
+      titleGuess: input.cleaned.title ?? undefined,
+      metadata: toPrismaJsonValue(input.persistedMetadata),
+      crawlAt: input.crawlAt,
+    };
+
+    const existing = await tx.article.findFirst({
+      where: {
+        orgId: input.orgId,
+        contentHash: input.contentHash,
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      await tx.article.update({
+        where: { id: existing.id },
+        data: updateData,
+      });
+      return existing;
+    }
+
+    try {
+      return await tx.article.create({
+        data: {
+          orgId: input.orgId,
+          sourceId: input.sourceId,
+          url: input.persistedUrl,
+          urlFingerprint: input.canonical?.fingerprint ?? null,
+          sourceLabel: input.payload.sourceName ?? null,
+          language:
+            input.cleaned.language ?? input.payload.language ?? null,
+          titleGuess: input.cleaned.title ?? undefined,
+          crawlAt: input.crawlAt,
+          contentHash: input.contentHash,
+          metadata: toPrismaJsonValue(input.persistedMetadata),
+        },
+        select: { id: true },
+      });
+    } catch (error) {
+      if (!this.isPrismaUniqueConstraintError(error)) {
+        throw error;
+      }
+      // Concurrent write or the (orgId, url) uniqueness fired (e.g. the URL
+      // was crawled by this org under a different content hash): resolve to
+      // this org's row.
+      const raced = await tx.article.findFirst({
+        where: {
+          orgId: input.orgId,
+          OR: [
+            { contentHash: input.contentHash },
+            { url: input.persistedUrl },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!raced) {
+        throw error;
+      }
+      await tx.article.update({
+        where: { id: raced.id },
+        data: updateData,
+      });
+      return raced;
+    }
+  }
+
+  /**
+   * Reverts a Duplicate mark applied by the dedupe stage when the subsequent
+   * persist fails: leaving the item Duplicate would permanently exclude it
+   * from lists and block every retry path (skipIfDuplicate guards).
+   */
+  private async revertDuplicateMarkOnPersistFailure(
+    job: PipelineJobContext,
+    duplicateOf?: string | null,
+  ) {
+    if (!duplicateOf) {
+      return;
+    }
+    try {
+      const reverted = await this.prisma.itemMeta.updateMany({
+        where: { id: job.itemMetaId, status: ItemStatus.Duplicate },
+        data: { status: ItemStatus.Pending },
+      });
+      if (reverted.count > 0) {
+        this.logger.warn(
+          { itemMetaId: job.itemMetaId, duplicateOf },
+          "Reverted Duplicate mark after persist failure",
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        { error, itemMetaId: job.itemMetaId },
+        "Failed to revert Duplicate mark after persist failure",
+      );
+    }
+  }
+
   private async markItemMetaDuplicate(
     job: PipelineJobContext,
     duplicateOf: string,
@@ -3830,11 +4009,27 @@ export class NewsPipelineService implements OnModuleDestroy {
     return dot / (Math.sqrt(normA) * Math.sqrt(normB));
   }
 
-  private async findProcessedArticle(contentHash: string) {
+  private async findProcessedArticle(contentHash: string, orgId?: string) {
     return this.prisma.processedArticle.findFirst({
-      where: { article: { contentHash } },
+      where: {
+        article: {
+          contentHash,
+          // Content cache hits must stay within the org: without the filter
+          // an org B run would hit org A's article and either cross-tenant
+          // duplicate-mark or read foreign metadata.
+          ...(orgId ? { orgId } : {}),
+        },
+      },
       include: { article: true },
     });
+  }
+
+  private isPrismaUniqueConstraintError(error: unknown): boolean {
+    return Boolean(
+      error &&
+        typeof error === "object" &&
+        (error as { code?: unknown }).code === "P2002",
+    );
   }
 
   private async resolveCleanedNews(
@@ -4376,31 +4571,16 @@ export class NewsPipelineService implements OnModuleDestroy {
           : {}),
       };
 
-      const articleRecord = await tx.article.upsert({
-        where: { contentHash: options.contentHash },
-        update: {
-          url: persistedUrl,
-          urlFingerprint: canonical?.fingerprint ?? null,
-          sourceLabel: options.payload.sourceName ?? null,
-          language:
-            options.cleaned.language ?? options.payload.language ?? null,
-          titleGuess: options.cleaned.title ?? undefined,
-          metadata: toPrismaJsonValue(persistedMetadata),
-          crawlAt,
-        },
-        create: {
-          orgId: options.orgId,
-          sourceId: options.sourceId,
-          url: persistedUrl,
-          urlFingerprint: canonical?.fingerprint ?? null,
-          sourceLabel: options.payload.sourceName ?? null,
-          language:
-            options.cleaned.language ?? options.payload.language ?? null,
-          titleGuess: options.cleaned.title ?? undefined,
-          crawlAt,
-          contentHash: options.contentHash,
-          metadata: toPrismaJsonValue(persistedMetadata),
-        },
+      const articleRecord = await this.upsertOrgScopedArticle(tx, {
+        orgId: options.orgId,
+        sourceId: options.sourceId,
+        contentHash: options.contentHash,
+        persistedUrl,
+        persistedMetadata,
+        canonical,
+        payload: options.payload,
+        cleaned: options.cleaned,
+        crawlAt,
       });
 
       if (options.sourceId) {
@@ -5014,6 +5194,61 @@ export class NewsPipelineService implements OnModuleDestroy {
       this.logger.warn(
         { error: updateError, outboxId, message },
         "Failed to mark Mongo outbox dead",
+      );
+    }
+
+    // The queue job already returned success after createOutboxEntry, so no
+    // worker will ever touch this item again. Without compensation the
+    // processed item would stay in "processing" forever (and the read model
+    // would never reflect the terminal state), leaving zombie items in the
+    // user-facing lists. Mark the in-flight processed item as failed.
+    try {
+      const entry = await this.prisma.mongoOutbox.findUnique({
+        where: { id: outboxId },
+        select: { payload: true },
+      });
+      const payload = this.parseOutboxPayload(entry?.payload ?? null);
+      if (!payload?.document?._id || !payload.document.itemMetaId) {
+        return;
+      }
+      const documentId = new Types.ObjectId(payload.document._id);
+      await ProcessedItemModel.updateOne(
+        {
+          _id: documentId,
+          status: "processing",
+        },
+        {
+          $set: {
+            status: "failed",
+            error: {
+              message: message.slice(0, 2000),
+              name: error instanceof Error ? error.name : "OutboxDeliveryError",
+            },
+            updatedAt: new Date(),
+          },
+        },
+      );
+      await ItemReadModelModel.updateOne(
+        {
+          orgId: payload.document.orgId,
+          itemMetaId: payload.document.itemMetaId,
+        },
+        {
+          $set: {
+            status: ItemStatus.Failed,
+            "processed.status": "failed",
+            "processed.error": {
+              message: message.slice(0, 2000),
+              name: error instanceof Error ? error.name : "OutboxDeliveryError",
+            },
+            updatedAt: new Date(),
+          },
+        },
+      );
+    } catch (compensationError) {
+      this.logger.warn(
+        { error: compensationError, outboxId },
+        "Failed to compensate dead Mongo outbox (processed item left processing)",
       );
     }
   }

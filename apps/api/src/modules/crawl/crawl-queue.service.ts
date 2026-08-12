@@ -205,16 +205,21 @@ export class CrawlQueueService {
     orgId: string,
     triggeredById?: string,
     options?: EnqueueCrawlTaskOptions,
-  ) {
+  ): Promise<{ jobId?: string; deduplicated: boolean }> {
     const settings = await this.crawlSettings.getSettings();
     const attempts = Math.max(1, settings.maxRetries);
     const traceId = ensureTraceId(getCurrentTraceId());
     const queueClass = normalizeQueueClass(options?.priorityClass);
     const queueEntry = this.getQueueEntry(queueClass);
-    const deduplicationId = `crawl-task:${taskId}:${queueClass}`;
+    // Dedup must be task-scoped, NOT queue-class-scoped: retryTask can enqueue
+    // with a different priorityClass than the original run, and a class in the
+    // dedup key would let the same task run concurrently in hot + normal
+    // queues (duplicate crawls, double runCount, competing status writes).
+    const deduplicationId = `crawl-task:${taskId}`;
+    const jobId = `${taskId}-${Date.now()}-${queueClass}`;
     const jobPriority = toBullmqPriority(options?.sourcePriority);
 
-    await queueEntry.queue.add(
+    const added = await queueEntry.queue.add(
       "crawl-task",
       {
         taskId,
@@ -227,7 +232,7 @@ export class CrawlQueueService {
         sourcePriority: options?.sourcePriority,
       },
       {
-        jobId: `${taskId}-${Date.now()}-${queueClass}`,
+        jobId,
         deduplication: {
           id: deduplicationId,
         },
@@ -243,7 +248,21 @@ export class CrawlQueueService {
         priority: jobPriority,
       },
     );
-    await this.activity.markTaskQueued();
+
+    // BullMQ simple-mode deduplication: if a job with the same dedup id is
+    // still alive, add() silently returns the existing job instead of creating
+    // a new one. A deduplicated add must not increment the active-task counter
+    // (the original job already did), and callers must not treat the task as
+    // freshly queued — the crawl is already in flight.
+    const deduplicated = !added || String(added.id ?? "") !== jobId;
+    if (!deduplicated) {
+      await this.activity.markTaskQueued();
+    }
+
+    return {
+      jobId: added?.id ? String(added.id) : undefined,
+      deduplicated,
+    };
   }
 
   async enqueueFrontierNode(options: EnqueueFrontierNodeOptions) {
@@ -252,7 +271,9 @@ export class CrawlQueueService {
     const traceId = ensureTraceId(getCurrentTraceId());
     const queueClass = normalizeQueueClass(options.priorityClass);
     const queueEntry = this.getQueueEntry(queueClass);
-    const deduplicationId = `crawl-frontier-node:${options.frontierNodeId}:${queueClass}`;
+    // Task-scoped dedup (see enqueueTask): a node re-classified by the LLM
+    // judge must not run twice across queues.
+    const deduplicationId = `crawl-frontier-node:${options.frontierNodeId}`;
     const jobPriority = toBullmqPriority(options.sourcePriority);
 
     await queueEntry.queue.add(
@@ -357,6 +378,7 @@ export class CrawlQueueService {
     const scanLimit = 5_000;
     const pageSize = 200;
 
+    let removedCount = 0;
     for (const entry of this.queueEntries(true)) {
       for (let start = 0; start < scanLimit; start += pageSize) {
         const end = Math.min(scanLimit - 1, start + pageSize - 1);
@@ -366,6 +388,7 @@ export class CrawlQueueService {
           matching.map(async (job: Job) => {
             try {
               await job.remove();
+              removedCount += 1;
             } catch (error) {
               if (isJobLockedRemovalError(error)) {
                 return;
@@ -396,6 +419,12 @@ export class CrawlQueueService {
           break;
         }
       }
+    }
+
+    if (removedCount > 0) {
+      // Removed jobs never emit completed/failed events, so compensate the
+      // active-task counter they incremented at enqueue time.
+      await this.activity.markTasksTerminal(removedCount).catch(() => undefined);
     }
   }
 
@@ -512,6 +541,12 @@ export class CrawlQueueService {
           break;
         }
       }
+    }
+
+    if (removed > 0) {
+      // Removed jobs never emit completed/failed events, so compensate the
+      // active-task counter they incremented at enqueue time.
+      await this.activity.markTasksTerminal(removed).catch(() => undefined);
     }
 
     return { scanned, removed, removedTaskIds: Array.from(removedTaskIds) };

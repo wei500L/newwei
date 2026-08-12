@@ -23,7 +23,7 @@ logs
 __pycache__/
 *.pyc
 *.tsbuildinfo
-external/
+/external/
 .ace-tool/
 .cache/
 

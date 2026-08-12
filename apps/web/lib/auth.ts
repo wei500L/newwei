@@ -221,35 +221,76 @@ const config: NextAuthConfig = {
         const accessToken = asString(credentials?.accessToken);
         const refreshToken = asString(credentials?.refreshToken);
         const expiresInRaw = asString(credentials?.expiresIn);
-        const userJson = asString(credentials?.userJson);
         const organizationsJson = asString(credentials?.organizationsJson);
-        if (!accessToken || !refreshToken || !expiresInRaw || !userJson) {
+        if (!accessToken || !refreshToken || !expiresInRaw) {
           return null;
         }
 
+        // The bearer token (not the client-supplied userJson) is the source of
+        // truth: validate it against the API and derive the identity from the
+        // backend response. Otherwise anyone could POST a forged userJson and
+        // obtain a session impersonating an arbitrary user, since middleware
+        // and RSC pages trust the session cookie.
+        const controller = new AbortController();
+        const timeoutId = setTimeout(
+          () => controller.abort(),
+          LOGIN_TIMEOUT_MS,
+        );
+        let user: AuthenticatedUser;
         try {
-          const user = JSON.parse(userJson) as AuthenticatedUser;
-          const organizations = organizationsJson
-            ? (JSON.parse(organizationsJson) as OrganizationOption[])
-            : [{ id: user.orgId }];
-          const expiresIn = Number(expiresInRaw);
-          if (!Number.isFinite(expiresIn)) {
+          const response = await fetch(`${serverEnv.apiBaseUrl}/auth/me`, {
+            method: "GET",
+            headers: createTraceHeaders({
+              Authorization: `Bearer ${accessToken}`,
+            }),
+            signal: controller.signal,
+          });
+          if (!response.ok) {
+            logServerError(
+              "Handoff sign-in rejected: access token failed /auth/me validation",
+              new Error(`status=${response.status}`),
+            );
             return null;
           }
+          user = (await response.json()) as AuthenticatedUser;
+        } catch (error) {
+          const isAbortError =
+            error instanceof Error && error.name === "AbortError";
+          logServerError("Handoff sign-in /auth/me validation failed", error, {
+            meta: {
+              reason: isAbortError ? "timeout" : "fetch_error",
+              timeoutMs: LOGIN_TIMEOUT_MS,
+            },
+          });
+          return null;
+        } finally {
+          clearTimeout(timeoutId);
+        }
 
-          return {
-            id: user.id,
-            email: user.email,
-            name: `${user.firstName} ${user.lastName}`,
-            accessToken,
-            refreshToken,
-            expiresIn,
-            user,
-            organizations,
-          };
-        } catch {
+        const expiresIn = Number(expiresInRaw);
+        if (!Number.isFinite(expiresIn)) {
           return null;
         }
+
+        let organizations: OrganizationOption[];
+        try {
+          organizations = organizationsJson
+            ? (JSON.parse(organizationsJson) as OrganizationOption[])
+            : [{ id: user.orgId }];
+        } catch {
+          organizations = [{ id: user.orgId }];
+        }
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: `${user.firstName} ${user.lastName}`,
+          accessToken,
+          refreshToken,
+          expiresIn,
+          user,
+          organizations,
+        };
       },
     }),
     Credentials({

@@ -18,6 +18,10 @@ import {
 } from "../websocket/socket-error-payloads";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
 import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
+import {
+  isTrustProxyConfigured,
+  resolveSocketClientIp,
+} from "../websocket/socket-client-ip";
 
 interface QualityLiveEventPayload {
   source: "pipeline" | "crawl" | "analysis" | "assistant" | "alerts";
@@ -308,11 +312,9 @@ export class QualityGateway implements OnGatewayConnection, OnGatewayDisconnect,
   }
 
   private extractClientIp(client: Socket) {
-    const forwardedHeader = client.handshake.headers["x-forwarded-for"];
-    const forwarded = Array.isArray(forwardedHeader) ? forwardedHeader[0] : forwardedHeader;
-    const ipFromForwarded = forwarded?.split(",")[0]?.trim();
-    const address = typeof client.handshake.address === "string" ? client.handshake.address : undefined;
-    const detectedIp = ipFromForwarded || address;
-    return detectedIp ? detectedIp.replace(/^::ffff:/, "") : undefined;
+    // Only honor X-Forwarded-For behind a trusted proxy chain; the raw
+    // header is client-controlled and would allow spoofing the
+    // rate-limit/backoff keys (or poisoning a victim IP).
+    return resolveSocketClientIp(client, isTrustProxyConfigured());
   }
 }

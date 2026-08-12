@@ -63,7 +63,6 @@ const COMPOUND_PUBLIC_SUFFIXES = new Set([
 const PAGE_TYPE_BUDGET_PRIORITY: CrawlFrontierPageType[] = [
   "article",
   "category",
-  "article",
   "list",
 ];
 const PAGE_TYPE_DISCOVERY_PRIORITY: Record<
@@ -801,6 +800,19 @@ export function matchUrlPattern(pattern: string, url: string): boolean {
   const normalizedPattern = pattern.trim();
   if (!normalizedPattern) {
     return false;
+  }
+  // A bare path (e.g. "/business/" or "/news/") expresses a pathname
+  // prefix/substring intent; anchoring it against the full URL with ^…$
+  // would never match "https://host/business/xxx" and silently disable the
+  // rule. Treat such patterns as pathname substring matches.
+  if (normalizedPattern.startsWith("/") && !normalizedPattern.includes("*")) {
+    let pathname = "";
+    try {
+      pathname = new URL(url).pathname;
+    } catch {
+      return false;
+    }
+    return pathname.includes(normalizedPattern);
   }
   return wildcardToRegex(normalizedPattern).test(url);
 }

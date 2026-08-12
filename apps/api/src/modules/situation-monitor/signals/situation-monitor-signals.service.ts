@@ -46,6 +46,7 @@ import {
   SITUATION_MONITOR_TELEGRAM_STATE_CACHE_KEY,
   TELEGRAM_POLL_JOB_NAME,
 } from "./situation-monitor-signals.constants";
+import { orefDateToUtc as orefDateToUtcShared } from "./oref-date";
 import { SituationMonitorSignalsDispatcher } from "./situation-monitor-signals.dispatcher";
 import type {
   SituationOrefAlertsResponse,
@@ -1339,67 +1340,7 @@ export class SituationMonitorSignalsService
   }
 
   private orefDateToUtc(dateStr: string): string {
-    if (!dateStr || !dateStr.includes(" ")) {
-      return new Date().toISOString();
-    }
-
-    const [datePart, timePart] = dateStr.split(" ");
-    if (!datePart || !timePart) {
-      return new Date().toISOString();
-    }
-
-    const dateSegments = datePart.split("-");
-    const timeSegments = timePart.split(":");
-    if (dateSegments.length !== 3 || timeSegments.length !== 3) {
-      return new Date().toISOString();
-    }
-
-    const year = Number(dateSegments[0]);
-    const month = Number(dateSegments[1]);
-    const day = Number(dateSegments[2]);
-    const hours = Number(timeSegments[0]);
-    const minutes = Number(timeSegments[1]);
-    const seconds = Number(timeSegments[2]);
-    if (
-      !Number.isFinite(year) ||
-      !Number.isFinite(month) ||
-      !Number.isFinite(day) ||
-      !Number.isFinite(hours) ||
-      !Number.isFinite(minutes) ||
-      !Number.isFinite(seconds)
-    ) {
-      return new Date().toISOString();
-    }
-
-    const format = new Intl.DateTimeFormat("en-US", {
-      timeZone: "Asia/Jerusalem",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-
-    const partsAt = (ms: number): string => {
-      const parts = Object.fromEntries(
-        format
-          .formatToParts(new Date(ms))
-          .map((entry) => [entry.type, entry.value]),
-      );
-      return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
-    };
-
-    const utc2 = Date.UTC(year, month - 1, day, hours - 2, minutes, seconds);
-    const utc3 = Date.UTC(year, month - 1, day, hours - 3, minutes, seconds);
-
-    const candidates: number[] = [];
-    if (partsAt(utc2) === dateStr) candidates.push(utc2);
-    if (partsAt(utc3) === dateStr) candidates.push(utc3);
-
-    const selected = candidates.length > 0 ? Math.min(...candidates) : utc2;
-    return new Date(selected).toISOString();
+    return orefDateToUtcShared(dateStr);
   }
 
   private stripBom(text: string): string {

@@ -64,9 +64,11 @@ export class GeocodingService {
     }
 
     if (!cached.ok) {
-      const negativeTtlMs = (this.env.get<number>("GEO_GEOCODE_NEGATIVE_TTL_SECONDS", { infer: true }) ?? 86_400) * 1000;
+      const negativeTtlMs = this.negativeTtlMs();
       if (Date.now() - cached.cachedAt > negativeTtlMs) {
-        return null;
+        // Negative cache expired: drop it so a later call can re-query
+        // Nominatim instead of being stuck with a stale "no result".
+        await this.cache.del(cacheKey).catch(() => undefined);
       }
       return null;
     }
@@ -148,8 +150,26 @@ export class GeocodingService {
       ? { ok: true, cachedAt: Date.now(), result }
       : { ok: false, cachedAt: Date.now() };
 
-    await this.cache.set(cacheKey, payload, cacheTtlSeconds);
+    // Negative results (transient failure / genuinely unknown place) must use
+    // the short negative TTL, NOT the 30-day positive cache TTL — otherwise a
+    // temporary Nominatim outage silently "confirms" the place doesn't exist
+    // for a month.
+    await this.cache.set(
+      cacheKey,
+      payload,
+      result
+        ? cacheTtlSeconds
+        : Math.max(1, Math.floor(this.negativeTtlMs() / 1000)),
+    );
     return result;
+  }
+
+  private negativeTtlMs(): number {
+    return (
+      (this.env.get<number>("GEO_GEOCODE_NEGATIVE_TTL_SECONDS", {
+        infer: true,
+      }) ?? 86_400) * 1000
+    );
   }
 
   private cacheKey(query: string, countryCodeAlpha2?: string) {

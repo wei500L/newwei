@@ -43,6 +43,9 @@ interface OidcIdTokenClaims extends JWTPayload {
 
 const OIDC_STATE_TTL_SECONDS = 10 * 60;
 const OIDC_CLOCK_TOLERANCE_SECONDS = 60;
+const OIDC_FETCH_TIMEOUT_MS = 8_000;
+const OIDC_DISCOVERY_CACHE_TTL_SECONDS = 60 * 60;
+const OIDC_JWKS_CACHE_TTL_SECONDS = 24 * 60 * 60;
 const OIDC_PUBLIC_ID_TOKEN_ALGORITHMS = [
   "RS256",
   "RS384",
@@ -216,8 +219,10 @@ export class OidcAuthService {
     }
 
     const stateKey = this.stateCacheKey(params.state);
-    const cachedState = await this.cache.get<OidcStatePayload>(stateKey);
-    await this.cache.del(stateKey);
+    // Atomic read-and-delete: two concurrent callbacks for the same state
+    // must not both see the payload (each would try to exchange the same
+    // authorization code with the IdP).
+    const cachedState = await this.cache.getdel<OidcStatePayload>(stateKey);
     if (!cachedState) {
       throw new UnauthorizedException("OIDC state is invalid or expired");
     }
@@ -350,7 +355,18 @@ export class OidcAuthService {
       discoveryUrl,
       "discovery",
     );
-    const response = await fetch(validatedDiscoveryUrl);
+
+    // Discovery documents change rarely; cache per URL so the public SSO
+    // endpoints do not hit the IdP on every login.
+    const cacheKey = `oidc:discovery:${validatedDiscoveryUrl}`;
+    const cached = await this.cache.get<OidcDiscoveryDocument>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const response = await fetch(validatedDiscoveryUrl, {
+      signal: AbortSignal.timeout(OIDC_FETCH_TIMEOUT_MS),
+    });
     if (!response.ok) {
       throw new BadRequestException("Failed to load OIDC discovery document");
     }
@@ -380,6 +396,9 @@ export class OidcAuthService {
     await this.assertAllowedOidcUrl(discovery.token_endpoint, "token");
     await this.assertAllowedOidcUrl(discovery.jwks_uri, "JWKS");
 
+    await this.cache
+      .set(cacheKey, discovery, OIDC_DISCOVERY_CACHE_TTL_SECONDS)
+      .catch(() => undefined);
     return discovery;
   }
 
@@ -401,7 +420,14 @@ export class OidcAuthService {
     if (!apiBaseUrl) {
       throw new BadRequestException("API_BASE_URL is required for OIDC");
     }
-    return `${apiBaseUrl.replace(/\/$/, "")}/api/auth/oidc/callback`;
+    // Strip a trailing path so an API_BASE_URL that already carries the
+    // "/api" global prefix (as the web app normalizes it) does not produce
+    // a doubled "/api/api/..." callback URL that silently breaks SSO.
+    const normalizedBase = apiBaseUrl
+      .trim()
+      .replace(/\/+$/, "")
+      .replace(/\/api\/?$/i, "");
+    return `${normalizedBase}/api/auth/oidc/callback`;
   }
 
   private stateCacheKey(state: string) {
@@ -428,38 +454,81 @@ export class OidcAuthService {
         params.discovery.jwks_uri,
         "JWKS",
       );
-      const response = await fetch(jwksUrl);
-      if (!response.ok) {
-        throw new Error("Failed to load OIDC JWKS");
+
+      // Cache the key set (rotation is rare); if signature verification then
+      // fails, refresh once to cover a just-rotated key with a new kid.
+      const cacheKey = `oidc:jwks:${jwksUrl}`;
+      let jwks = await this.cache.get<JSONWebKeySet>(cacheKey);
+      if (!jwks) {
+        jwks = await this.fetchJwks(jwksUrl);
+        await this.cache
+          .set(cacheKey, jwks, OIDC_JWKS_CACHE_TTL_SECONDS)
+          .catch(() => undefined);
       }
 
-      const jwks = (await response.json()) as JSONWebKeySet;
-      if (!Array.isArray(jwks.keys)) {
-        throw new Error("OIDC JWKS is invalid");
+      try {
+        const { payload } = await jwtVerify<OidcIdTokenClaims>(
+          params.idToken,
+          createLocalJWKSet(jwks),
+          {
+            issuer: params.discovery.issuer,
+            audience: params.clientId,
+            algorithms: OIDC_PUBLIC_ID_TOKEN_ALGORITHMS,
+            clockTolerance: OIDC_CLOCK_TOLERANCE_SECONDS,
+            requiredClaims: ["exp", "sub", "nonce", "email"],
+          },
+        );
+
+        this.assertValidVerifiedClaims(
+          payload,
+          params.clientId,
+          params.nonce,
+          params.requireEmailVerified,
+        );
+        return payload;
+      } catch (signatureError) {
+        // One refresh attempt for key rotation before failing hard.
+        const freshJwks = await this.fetchJwks(jwksUrl);
+        await this.cache
+          .set(cacheKey, freshJwks, OIDC_JWKS_CACHE_TTL_SECONDS)
+          .catch(() => undefined);
+        const { payload } = await jwtVerify<OidcIdTokenClaims>(
+          params.idToken,
+          createLocalJWKSet(freshJwks),
+          {
+            issuer: params.discovery.issuer,
+            audience: params.clientId,
+            algorithms: OIDC_PUBLIC_ID_TOKEN_ALGORITHMS,
+            clockTolerance: OIDC_CLOCK_TOLERANCE_SECONDS,
+            requiredClaims: ["exp", "sub", "nonce", "email"],
+          },
+        );
+
+        this.assertValidVerifiedClaims(
+          payload,
+          params.clientId,
+          params.nonce,
+          params.requireEmailVerified,
+        );
+        return payload;
       }
-
-      const { payload } = await jwtVerify<OidcIdTokenClaims>(
-        params.idToken,
-        createLocalJWKSet(jwks),
-        {
-          issuer: params.discovery.issuer,
-          audience: params.clientId,
-          algorithms: OIDC_PUBLIC_ID_TOKEN_ALGORITHMS,
-          clockTolerance: OIDC_CLOCK_TOLERANCE_SECONDS,
-          requiredClaims: ["exp", "sub", "nonce", "email"],
-        },
-      );
-
-      this.assertValidVerifiedClaims(
-        payload,
-        params.clientId,
-        params.nonce,
-        params.requireEmailVerified,
-      );
-      return payload;
     } catch {
       throw new UnauthorizedException("OIDC identity token validation failed");
     }
+  }
+
+  private async fetchJwks(jwksUrl: URL | string): Promise<JSONWebKeySet> {
+    const response = await fetch(jwksUrl, {
+      signal: AbortSignal.timeout(OIDC_FETCH_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to load OIDC JWKS");
+    }
+    const jwks = (await response.json()) as JSONWebKeySet;
+    if (!Array.isArray(jwks.keys)) {
+      throw new Error("OIDC JWKS is invalid");
+    }
+    return jwks;
   }
 
   private assertValidVerifiedClaims(

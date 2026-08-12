@@ -14,8 +14,12 @@ import { RedisHealthIndicator } from "./redis.health";
 const nodeRequire = createRequire(__filename);
 const pkg = nodeRequire("../../../package.json") as { version?: string };
 
+const HEALTHZ_CACHE_TTL_MS = 5_000;
+
 @Controller("healthz")
 export class HealthController {
+  private cachedHealth: { at: number; value: unknown } | null = null;
+
   constructor(
     private readonly health: HealthCheckService,
     private readonly prismaIndicator: PrismaHealthIndicator,
@@ -32,6 +36,18 @@ export class HealthController {
   @Get()
   @HealthCheck()
   async getHealth() {
+    // The readiness probe is public and runs real dependency checks (MySQL
+    // ping, Redis write probes, Mongo ping, disk stat, LLM gateway DB reads,
+    // a real crawl through the SSRF proxy). Cache briefly so health scraper
+    // storms cannot amplify load on the dependencies themselves.
+    const now = Date.now();
+    if (
+      this.cachedHealth &&
+      now - this.cachedHealth.at < HEALTHZ_CACHE_TTL_MS
+    ) {
+      return this.cachedHealth.value;
+    }
+
     const result = await this.health.check([
       () => this.prismaIndicator.pingCheck("mysql", this.prisma, { timeout: 1500 }),
       () => this.redisIndicator.isHealthy("redis"),
@@ -46,11 +62,13 @@ export class HealthController {
         })
     ]);
 
-    return {
+    const value = {
       ...result,
       version: pkg.version ?? "0.0.0",
       now: new Date().toISOString()
     };
+    this.cachedHealth = { at: Date.now(), value };
+    return value;
   }
 
   @Public()

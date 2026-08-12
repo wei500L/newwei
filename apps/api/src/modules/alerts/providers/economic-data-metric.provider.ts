@@ -59,7 +59,13 @@ export class EconomicDataMetricProvider implements MetricProvider {
     const previousPoint = points[1] ?? null;
     const latest = Number(latestPoint.value);
     const previous = previousPoint ? Number(previousPoint.value) : null;
-    const changePercent = previous ? ((latest - previous) / previous) * 100 : null;
+    // A zero (or non-finite) previous value has no meaningful relative
+    // change; fall back to null explicitly instead of truthiness, so a real
+    // zero does not accidentally produce a divide-by-zero or a NaN.
+    const changePercent =
+      previous !== null && Number.isFinite(previous) && previous !== 0
+        ? ((latest - previous) / previous) * 100
+        : null;
     const item = latestPoint.item;
     const unit = latestPoint.unit ?? item.defaultUnit ?? null;
     const sourceName = item.sourceEndpoint || item.sourceFunction;

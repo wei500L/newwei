@@ -725,7 +725,13 @@ export class ItemsResolver {
   ): Promise<RawItemPreviewModelGraph | null> {
     const readModel = await itemReadModelLoader.load(item.metaId);
     if (readModel) {
-      return itemReadModelToRawPreviewGraph(readModel);
+      // The read-model document may exist without a raw snapshot (hydration
+      // runs before the pipeline produces one). Fall back to the Mongo loader
+      // in that case instead of returning null for a field that has data.
+      const fromReadModel = itemReadModelToRawPreviewGraph(readModel);
+      if (fromReadModel) {
+        return fromReadModel;
+      }
     }
     const raw = await rawLoader.load(item.metaId);
     if (!raw) {
@@ -782,7 +788,12 @@ export class ItemsResolver {
   ): Promise<ProcessedItemPreviewModelGraph | null> {
     const readModel = await itemReadModelLoader.load(item.metaId);
     if (readModel) {
-      return itemReadModelToProcessedPreviewGraph(readModel);
+      // Fall back to the Mongo loader when the read model exists but has no
+      // processed snapshot (see rawPreview for the same rationale).
+      const fromReadModel = itemReadModelToProcessedPreviewGraph(readModel);
+      if (fromReadModel) {
+        return fromReadModel;
+      }
     }
     const processed = await processedLoader.load(item.metaId);
     if (!processed) {
@@ -844,7 +855,10 @@ export class ItemsResolver {
   ): Promise<RawItemModelGraph | null> {
     const readModel = await itemReadModelLoader.load(item.metaId);
     if (readModel) {
-      return itemReadModelToRawGraph(readModel);
+      const fromReadModel = itemReadModelToRawGraph(readModel);
+      if (fromReadModel) {
+        return fromReadModel;
+      }
     }
     const raw = await rawLoader.load(item.metaId);
     if (!raw) {
@@ -871,7 +885,10 @@ export class ItemsResolver {
     const itemReadModelLoader = includeResult ? fullItemReadModelLoader : scalarItemReadModelLoader;
     const readModel = await itemReadModelLoader.load(item.metaId);
     if (readModel) {
-      return itemReadModelToProcessedGraph(readModel);
+      const fromReadModel = itemReadModelToProcessedGraph(readModel);
+      if (fromReadModel) {
+        return fromReadModel;
+      }
     }
     const processedLoader = includeResult ? fullProcessedLoader : scalarProcessedLoader;
     const processed = await processedLoader.load(item.metaId);

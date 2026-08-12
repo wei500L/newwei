@@ -69,6 +69,7 @@ export abstract class BaseParser<TConfig extends AkshareParserConfig = AksharePa
   private tryParseDate(value: unknown): Date | null {
     if (typeof value === "string") {
       const trimmed = value.trim();
+
       const compactHhmmssMatch = trimmed.match(/^(\d{2})(\d{2})(\d{2})$/);
       const compactHhmmMatch = trimmed.match(/^(\d{2})(\d{2})$/);
       const colonMatch = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
@@ -99,13 +100,32 @@ export abstract class BaseParser<TConfig extends AkshareParserConfig = AksharePa
           }
         }
       }
-    }
 
-    const parsed = parseDateTime(value, { timeZone: CommonTimeZone.UTC });
-    if (parsed) {
-      const year = parsed.getUTCFullYear();
-      if (year >= 1000 && year <= 9999) {
-        return parsed;
+      // Naive date-time strings ("2024-01-15 15:30:00") carry no timezone.
+      // They originate from Asia/Shanghai sources, so parse them in that zone
+      // (same convention as the intraday branch above); otherwise they would
+      // land 8 hours early on the UTC timeline.
+      const naiveDateTimeMatch = trimmed.match(
+        /^\d{4}[-/]\d{1,2}[-/]\d{1,2}[ T]\d{1,2}:\d{2}(?::\d{2})?(?!\s*[Zz+-])/,
+      );
+      if (naiveDateTimeMatch) {
+        const parsedNaive = parseDateTime(trimmed, {
+          timeZone: CommonTimeZone.AsiaShanghai,
+        });
+        if (parsedNaive) {
+          const year = parsedNaive.getUTCFullYear();
+          if (year >= 1000 && year <= 9999) {
+            return parsedNaive;
+          }
+        }
+      }
+
+      const parsed = parseDateTime(value, { timeZone: CommonTimeZone.UTC });
+      if (parsed) {
+        const year = parsed.getUTCFullYear();
+        if (year >= 1000 && year <= 9999) {
+          return parsed;
+        }
       }
     }
     return null;

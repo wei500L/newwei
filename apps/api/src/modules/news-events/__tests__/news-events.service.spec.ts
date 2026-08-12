@@ -144,6 +144,7 @@ describe("NewsEventsService", () => {
 
     const tx = {
       newsEventItem: {
+        findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(null),
       },
       newsEvent: {
@@ -231,6 +232,7 @@ describe("NewsEventsService", () => {
 
     const tx = {
       newsEventItem: {
+        findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(null),
       },
       newsEvent: {
@@ -294,6 +296,7 @@ describe("NewsEventsService", () => {
 
       const tx = {
         newsEventItem: {
+          findUnique: jest.fn().mockResolvedValue(null),
           create: jest.fn().mockResolvedValue(null),
         },
         newsEvent: {
@@ -372,6 +375,7 @@ describe("NewsEventsService", () => {
 
     const tx = {
       newsEventItem: {
+        findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(null),
       },
       newsEvent: {
@@ -446,6 +450,7 @@ describe("NewsEventsService", () => {
 
     const tx = {
       newsEventItem: {
+        findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(null),
       },
       newsEvent: {
@@ -538,6 +543,7 @@ describe("NewsEventsService", () => {
 
     const tx = {
       newsEventItem: {
+        findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(null),
       },
       newsEvent: {
@@ -641,6 +647,7 @@ describe("NewsEventsService", () => {
 
     const tx = {
       newsEventItem: {
+        findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(null),
       },
       newsEvent: {

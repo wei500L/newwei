@@ -236,21 +236,26 @@ export class KnowledgeGraphIngestionService {
           { err: error, orgId, articleId: entry.articleId },
           "Knowledge graph ingestion skipped article due to processing error",
         );
-      } finally {
-        try {
-          await this.prisma.knowledgeGraphIngestionState.update({
-            where: { orgId },
-            data: {
-              lastProcessedAt: entry.processedAt,
-              lastProcessedArticleId: entry.articleId,
-            },
-          });
-        } catch (error) {
-          logger.warn(
-            { err: error, orgId, articleId: entry.articleId },
-            "Knowledge graph ingestion failed to advance cursor",
-          );
-        }
+        // The cursor must NOT advance past a failed article: ingestion
+        // resumes at lastProcessedAt/lastProcessedArticleId, so advancing on
+        // failure would permanently skip the article on every future run.
+        continue;
+      }
+      // Only advance the cursor after a fully successful article so transient
+      // errors are retried on the next ingestion tick instead of being lost.
+      try {
+        await this.prisma.knowledgeGraphIngestionState.update({
+          where: { orgId },
+          data: {
+            lastProcessedAt: entry.processedAt,
+            lastProcessedArticleId: entry.articleId,
+          },
+        });
+      } catch (error) {
+        logger.warn(
+          { err: error, orgId, articleId: entry.articleId },
+          "Knowledge graph ingestion failed to advance cursor",
+        );
       }
     }
 

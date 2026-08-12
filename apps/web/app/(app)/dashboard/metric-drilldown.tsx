@@ -174,13 +174,16 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     if (!visible) {
       return;
     }
-    if (geoJsonData) {
-      return;
-    }
+    // The map data is window-scoped: when the drilldown range changes, the
+    // previously cached geoJson must be refetched (otherwise the map layer
+    // silently keeps the old range while the alerts/history beside it show
+    // the new one).
+    setGeoJsonData(null);
+    setGeoMapCenter(null);
+    setGeoMapZoom(null);
+    hasAlignedMapViewRef.current = false;
     if (!session?.accessToken) {
       setGeoJsonData({ type: "FeatureCollection", features: [] });
-      setGeoMapCenter(null);
-      setGeoMapZoom(null);
       setIsGeoJsonLoading(false);
       return;
     }
@@ -231,7 +234,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     return () => {
       cancelled = true;
     };
-  }, [end, geoJsonData, mapLoadFailedLabel, session?.accessToken, start, visible]);
+  }, [end, mapLoadFailedLabel, session?.accessToken, start, visible]);
 
   useEffect(() => {
     if (!visible || !mapContainerRef.current || !hasRenderableMapContainer || mapRef.current) {

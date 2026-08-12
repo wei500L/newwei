@@ -228,10 +228,22 @@ export class PipelineRecoveryService {
       { upsert: true },
     );
 
+    // Re-enqueue the item so the pending state is actually processed:
+    // without this, the item would sit in "pending" forever (nothing else
+    // scans for pending items to pick them up).
+    const job = await this.queueService.enqueueItem(
+      orgId,
+      itemMetaId,
+      sourceRawId,
+      {},
+      { processedItemId: processedItemId.toHexString() },
+    );
+
     return {
       itemMetaId,
       rawItemId: sourceRawId,
       processedItemId: processedItemId.toHexString(),
+      queueJobId: job.id ? String(job.id) : undefined,
     };
   }
 }

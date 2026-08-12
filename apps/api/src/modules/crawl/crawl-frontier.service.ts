@@ -1380,19 +1380,46 @@ export class CrawlFrontierService {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "frontier llm learn failed";
+      const previousLifecycle = isPlainObject(metadata.llmLifecycle)
+        ? (metadata.llmLifecycle as Record<string, unknown>)
+        : {};
+      const previousRetries =
+        typeof previousLifecycle.learnRetryCount === "number" &&
+        Number.isFinite(previousLifecycle.learnRetryCount)
+          ? previousLifecycle.learnRetryCount
+          : 0;
+
       await this.updateRunMetadata(run.id, {
         warningFlags: uniqueStringList(
           coerceStringArray(metadata.warningFlags),
           ["llm_learn_failed"],
         ) ?? ["llm_learn_failed"],
         llmLifecycle: {
-          ...(isPlainObject(metadata.llmLifecycle)
-            ? (metadata.llmLifecycle as Record<string, unknown>)
-            : {}),
+          ...previousLifecycle,
           learnHandledAt: new Date().toISOString(),
           learnError: message,
+          learnRetryCount: previousRetries + 1,
+          // Clear the queued marker so a retry can re-enqueue: without this,
+          // the completion event guard (learnQueuedKey === handledKey) blocks
+          // any second attempt and a transient LLM outage permanently loses
+          // the profile learning for this run.
+          learnQueuedKey: null,
+          learnQueuedAt: null,
         },
       });
+
+      // One bounded retry: LLM outages at the exact completion moment are
+      // common; more than one retry risks hot-looping a broken upstream.
+      if (previousRetries < 1) {
+        await this.queueService.enqueueFrontierLlmLearn({
+          orgId: lifecycleRun.orgId,
+          taskId: (run.crawlTaskId as string | null | undefined) ?? run.id,
+          runId: run.id,
+          payload: {
+            runId: run.id,
+          },
+        });
+      }
     }
 
     return { inserted: 0, skipped: 0 };

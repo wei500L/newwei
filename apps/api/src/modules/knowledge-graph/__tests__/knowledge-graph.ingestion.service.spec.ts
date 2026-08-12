@@ -95,7 +95,7 @@ describe("KnowledgeGraphIngestionService", () => {
     await runPromise;
   });
 
-  it("continues batch ingestion and advances cursor when one article fails", async () => {
+  it("continues batch ingestion but stops the cursor at a failed article so it is retried", async () => {
     const firstProcessedAt = new Date("2026-01-01T00:00:00.000Z");
     const secondProcessedAt = new Date("2026-01-01T00:05:00.000Z");
 
@@ -188,26 +188,16 @@ describe("KnowledgeGraphIngestionService", () => {
     expect(quality.prepareRelationsForIngestion).toHaveBeenCalledTimes(2);
     expect(graph.ingestProcessedArticle).toHaveBeenCalledTimes(1);
     expect(graph.linkArticleEntities).toHaveBeenCalledTimes(1);
-    expect(prisma.knowledgeGraphIngestionState.update).toHaveBeenCalledTimes(2);
-    expect(prisma.knowledgeGraphIngestionState.update).toHaveBeenNthCalledWith(
-      1,
-      {
-        where: { orgId: "org-1" },
-        data: {
-          lastProcessedAt: firstProcessedAt,
-          lastProcessedArticleId: "a-1",
-        },
+    // a-1 failed: the cursor must NOT advance past it, otherwise the failed
+    // article would never be retried on the next ingestion tick. Only a-2
+    // (successful) advances the cursor.
+    expect(prisma.knowledgeGraphIngestionState.update).toHaveBeenCalledTimes(1);
+    expect(prisma.knowledgeGraphIngestionState.update).toHaveBeenCalledWith({
+      where: { orgId: "org-1" },
+      data: {
+        lastProcessedAt: secondProcessedAt,
+        lastProcessedArticleId: "a-2",
       },
-    );
-    expect(prisma.knowledgeGraphIngestionState.update).toHaveBeenNthCalledWith(
-      2,
-      {
-        where: { orgId: "org-1" },
-        data: {
-          lastProcessedAt: secondProcessedAt,
-          lastProcessedArticleId: "a-2",
-        },
-      },
-    );
+    });
   });
 });

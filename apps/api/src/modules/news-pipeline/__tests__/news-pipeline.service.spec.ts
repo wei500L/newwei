@@ -62,6 +62,7 @@ jest.mock("@modular/mongo", () => ({
     }),
     create: jest.fn(),
     find: jest.fn(),
+    exists: jest.fn().mockResolvedValue(false),
     findById: jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue(null),
     }),
@@ -1233,6 +1234,100 @@ describe("NewsPipelineService", () => {
     expect(prisma.mongoOutbox.create).toHaveBeenCalledTimes(1);
     expect(prisma.mongoOutbox.delete).toHaveBeenCalledTimes(1);
     expect(prisma.runInTransaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats a content-cache hit on the item's own previous run as cache reuse, not a duplicate", async () => {
+    // Replay/retry clones the same content under a new rawItemId, so the
+    // content cache matches the item's OWN previous processed run. That must
+    // be treated as cache reuse: marking it Duplicate would permanently hide
+    // the item with no recovery path.
+    const ownProcessedId = "64b5f0c4f6e4b0495c3f4a10";
+    const contentHash = createHash("sha256")
+      .update("# Headline\nBody paragraph")
+      .digest("hex");
+    const processedArticle = {
+      id: "processed-article-1",
+      articleId: "article-1",
+      article: {
+        id: "article-1",
+        orgId: "org-1",
+        sourceId: null,
+        url: "https://example.com/story?ref=news",
+        sourceLabel: "Example",
+        language: "en",
+        titleGuess: null,
+        crawlAt: new Date("2024-01-01T00:00:00Z"),
+        contentHash,
+        markdownRef: null,
+        version: 1,
+        metadata: {},
+        createdAt: new Date("2024-01-01T00:00:00Z"),
+        updatedAt: new Date("2024-01-01T00:00:00Z"),
+      },
+      title: "Existing title",
+      subtitle: null,
+      author: "Reporter",
+      source: "Example",
+      publishedAt: new Date("2024-01-01T00:00:00Z"),
+      category: null,
+      topics: ["news"],
+      summary: "Existing summary",
+      keyPoints: ["Existing summary"],
+      entities: [{ name: "Reporter", type: "Person", confidence: 0.9 }],
+      cleanedMarkdownRef: ownProcessedId,
+      removedNoiseTypes: [],
+      qualityScore: 0.9,
+      llmModel: "openai/gpt-4o-mini",
+      llmPromptVersion: "v1",
+      language: "en",
+      location: "US",
+      promptTokens: 10,
+      completionTokens: 5,
+      totalTokens: 15,
+      costUsd: 0.01,
+      latencyMs: 80,
+      createdAt: new Date("2024-01-01T00:00:00Z"),
+      processedAt: new Date("2024-01-01T00:00:00Z"),
+      updatedAt: new Date("2024-01-01T00:00:00Z"),
+    };
+    (prisma.processedArticle.findFirst as jest.Mock).mockResolvedValueOnce(
+      processedArticle,
+    );
+    (ProcessedItemModel.findById as jest.Mock).mockReturnValueOnce({
+      lean: jest.fn().mockResolvedValue({
+        result: {
+          title: "Existing title",
+          subtitle: null,
+          author: "Reporter",
+          source: "Example",
+          published_at: "2024-01-01T00:00:00Z",
+          language: "en",
+          location: "US",
+          category: null,
+          topics: ["news"],
+          summary: "Existing summary",
+          key_points: ["Existing summary"],
+          entities: [{ name: "Reporter", type: "Person", confidence: 0.9 }],
+          cleaned_markdown: "Clean body from cache",
+          removed_noise_types: [],
+          quality_score: 0.9,
+          llm_model: "openai/gpt-4o-mini",
+          llm_prompt_version: "v1",
+        },
+      }),
+    });
+    // The cached ref belongs to this item's own previous run.
+    (ProcessedItemModel.exists as jest.Mock).mockResolvedValue(true);
+
+    await service.process(job, raw);
+    await flushOutbox();
+
+    expect(prisma.itemMeta.update).not.toHaveBeenCalled();
+    const outboxCalls = (prisma.mongoOutbox.create as jest.Mock).mock.calls;
+    expect(outboxCalls).toHaveLength(1);
+    const document = outboxCalls[0]?.[0]?.data?.payload?.document;
+    expect(document?.duplicateOf).toBeUndefined();
+    expect(document?.status).toBe("completed");
   });
 
   it("marks item meta as duplicate when summary similarity is high", async () => {

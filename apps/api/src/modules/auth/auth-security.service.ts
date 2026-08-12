@@ -41,13 +41,24 @@ export class AuthSecurityService {
 
   async encodeSecret(plain: string) {
     const settings = await this.getStoredSettings();
-    const encryptionEnabled =
+    const configured =
       typeof settings?.secretEncryptionEnabled === "boolean"
         ? settings.secretEncryptionEnabled
-        : false;
+        : null;
     const key = this.resolveSettingsKey();
-    if (encryptionEnabled && key) {
+
+    // Fail-closed: whenever an encryption key is configured, credentials are
+    // encrypted by default. Previously the default was false, so OIDC client
+    // secrets / TOTP factors were stored in plaintext unless the operator
+    // explicitly flipped the switch — a DB leak then exposed every IdP
+    // credential. decodeSecret keeps accepting legacy plaintext for reading.
+    if (key && configured !== false) {
       return encryptStringValueV1(plain, key);
+    }
+    if (configured === true && !key) {
+      throw new Error(
+        "Secret encryption is enabled but SYSTEM_SETTINGS_ENCRYPTION_KEY is not configured",
+      );
     }
     return plain;
   }

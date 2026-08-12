@@ -22,6 +22,14 @@ import {
 } from "../websocket/socket-error-payloads";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
 import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
+import {
+  attachTokenRevalidation,
+  cleanupTokenRevalidation,
+} from "../websocket/socket-token-revalidation";
+import {
+  isTrustProxyConfigured,
+  resolveSocketClientIp,
+} from "../websocket/socket-client-ip";
 
 import { NewsAggregatorRegistryService } from "./news-aggregator-registry.service";
 import { NewsnowActiveSourceRegistryService } from "./newsnow-active-source-registry.service";
@@ -157,8 +165,24 @@ export class NewsnowGateway
       }
       await this.connectionRateLimiter.clearBackoff(ip ?? "");
 
+      // Register the active-sources listener BEFORE the auth round-trips
+      // finish: clients emit it immediately after connect, and a listener
+      // installed after several awaits would miss the first frame (the socket
+      // would never enter the active-source registry and warm/refresh
+      // targeting for that org silently breaks).
+      client.on(ACTIVE_SOURCE_EVENT, (payload: NewsnowSetActiveSourcesPayload) => {
+        this.handleSetActiveSources(client, payload);
+      });
+
       client.data.user = profile;
       client.data.clientIp = ip;
+
+      // Replay a first-frame active-sources emit that arrived before auth
+      // completed.
+      if (client.data.pendingActiveSources !== undefined) {
+        this.handleSetActiveSources(client, client.data.pendingActiveSources);
+        client.data.pendingActiveSources = undefined;
+      }
 
       const { userConnections } = await this.sessions.register(
         this.server,
@@ -173,9 +197,8 @@ export class NewsnowGateway
         orgId: profile.orgId,
         userId: profile.id,
       });
-      client.on(ACTIVE_SOURCE_EVENT, (payload: NewsnowSetActiveSourcesPayload) => {
-        this.handleSetActiveSources(client, payload);
-      });
+      // Re-check revocation/expiry periodically: logout must cut the live socket.
+      attachTokenRevalidation(client, payload, this.accessTokenBlacklist);
       this.logger.info(
         {
           socketId: client.id,
@@ -206,6 +229,7 @@ export class NewsnowGateway
   }
 
   handleDisconnect(client: Socket) {
+    cleanupTokenRevalidation(client);
     const profile = client.data?.user as AuthenticatedUser | undefined;
     this.activeSources.removeSocket(client.id);
     this.sessions.unregister(client);
@@ -288,6 +312,10 @@ export class NewsnowGateway
   ) {
     const profile = client.data?.user as AuthenticatedUser | undefined;
     if (!profile) {
+      // Listener is registered before auth completes (so the client's
+      // first-frame emit is not lost); buffer it until handleConnection
+      // finishes authenticating.
+      client.data.pendingActiveSources = payload;
       return;
     }
 
@@ -347,6 +375,7 @@ export class NewsnowGateway
     );
     const normalized: string[] = [];
     const seen = new Set<string>();
+    let truncated = 0;
 
     for (const entry of value) {
       if (typeof entry !== "string") {
@@ -361,11 +390,19 @@ export class NewsnowGateway
       ) {
         continue;
       }
+      if (normalized.length >= MAX_ACTIVE_SOURCE_IDS) {
+        truncated += 1;
+        continue;
+      }
       seen.add(sourceId);
       normalized.push(sourceId);
-      if (normalized.length >= MAX_ACTIVE_SOURCE_IDS) {
-        break;
-      }
+    }
+
+    if (truncated > 0) {
+      this.logger.warn(
+        { activeCount: normalized.length, truncated, max: MAX_ACTIVE_SOURCE_IDS },
+        "Newsnow active source list truncated at the server-side cap; sources beyond the cap will not receive realtime updates",
+      );
     }
 
     return normalized;
@@ -408,16 +445,9 @@ export class NewsnowGateway
   }
 
   private extractClientIp(client: Socket) {
-    const forwardedHeader = client.handshake.headers["x-forwarded-for"];
-    const forwarded = Array.isArray(forwardedHeader)
-      ? forwardedHeader[0]
-      : forwardedHeader;
-    const ipFromForwarded = forwarded?.split(",")[0]?.trim();
-    const address =
-      typeof client.handshake.address === "string"
-        ? client.handshake.address
-        : undefined;
-    const ip = ipFromForwarded || address;
-    return ip ? ip.replace(/^::ffff:/, "") : undefined;
+    // Only honor X-Forwarded-For behind a trusted proxy chain; the raw
+    // header is client-controlled and would allow spoofing the
+    // rate-limit/backoff keys (or poisoning a victim IP).
+    return resolveSocketClientIp(client, isTrustProxyConfigured());
   }
 }

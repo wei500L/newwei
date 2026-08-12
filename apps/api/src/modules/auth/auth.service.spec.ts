@@ -151,6 +151,11 @@ describe("AuthService", () => {
       .fn()
       .mockResolvedValue({ limit: 5, windowSeconds: 60 });
     refreshTokenBlacklistMock.has = jest.fn().mockResolvedValue(false);
+    // Refresh rotation atomically claims the token first (single-use); the
+    // default mock accepts the claim.
+    prismaMock.refreshToken.updateMany = jest
+      .fn()
+      .mockResolvedValue({ count: 1 });
     authCacheSettingsMock.getSettings = jest.fn().mockResolvedValue({
       profileTtlSeconds: 600,
       lockTtlMs: 5_000,
@@ -164,6 +169,9 @@ describe("AuthService", () => {
     });
     cacheMock.setIfAbsent = jest.fn().mockResolvedValue(true);
     cacheMock.incr = jest.fn().mockResolvedValue(1);
+    // Atomic single-use consumption of email codes / OIDC state deletes the
+    // key; a 1 means this request won the consume.
+    cacheMock.del = jest.fn().mockResolvedValue(1);
     platformAccessMock.getGlobalRoles = jest.fn().mockResolvedValue([]);
     mfaServiceMock.getStatus = jest.fn().mockResolvedValue({
       enabled: false,

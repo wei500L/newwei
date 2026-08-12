@@ -59,6 +59,18 @@ function writeTrackedMilestones(itemId: string, values: Set<string>) {
   }
 }
 
+/**
+ * Dwell/scroll progress keyed by item, kept OUTSIDE the effect: parent
+ * re-renders (translation state, AI insights, reading-time estimation)
+ * recreate the effect body and reset local variables. Without this buffer
+ * every re-render zeroes the accumulated reading time and the engaged/deep/
+ * completed milestones can never be reached.
+ */
+const milestoneProgressByItem = new Map<
+  string,
+  { activeElapsedMs: number; maxScrollDepth: number }
+>();
+
 export function estimateReadingTimeMinutes(text?: string | null): number {
   if (typeof text !== 'string' || !text.trim()) {
     return 1;
@@ -122,8 +134,11 @@ export function useUserNewsReadMilestones(input: {
 
     const tracked = readTrackedMilestones(itemId);
     let activeStartedAt = document.hidden ? 0 : Date.now();
-    let activeElapsedMs = 0;
-    let maxScrollDepth = 0;
+    const progress =
+      milestoneProgressByItem.get(itemId) ??
+      { activeElapsedMs: 0, maxScrollDepth: 0 };
+    let activeElapsedMs = progress.activeElapsedMs;
+    let maxScrollDepth = progress.maxScrollDepth;
 
     const persistMilestone = async (milestoneKey: typeof milestones[number]['key']) => {
       if (tracked.has(milestoneKey)) {
@@ -197,6 +212,12 @@ export function useUserNewsReadMilestones(input: {
 
     return () => {
       updateActiveElapsed();
+      // Persist progress so a sibling re-render (stable input change) does
+      // not lose accumulated reading time.
+      milestoneProgressByItem.set(itemId, {
+        activeElapsedMs,
+        maxScrollDepth,
+      });
       window.clearInterval(timer);
       window.removeEventListener('scroll', onScroll);
       document.removeEventListener('visibilitychange', onVisibilityChange);

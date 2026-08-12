@@ -46,9 +46,17 @@ export class RbacController {
     return this.rbacService.listMembers(user.orgId);
   }
 
-  @Permissions("org.read")
+  @Permissions("settings.manage")
   @Get("audit-logs")
   async auditLogs(@CurrentUser() user: AuthenticatedUser, @Query("limit") limit?: string) {
-    return this.rbacService.auditLogs(user.orgId, limit ? Number(limit) : 20);
+    // Audit records expose actor/ip/metadata; require the same privilege as
+    // the admin audit-log endpoint instead of the org.read default that even
+    // analysts hold.
+    const parsedLimit = Number(limit);
+    const safeLimit =
+      Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.min(Math.trunc(parsedLimit), 200)
+        : 20;
+    return this.rbacService.auditLogs(user.orgId, safeLimit);
   }
 }

@@ -5,10 +5,11 @@ import { XMLParser } from "fast-xml-parser";
 import { createHash } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 
+import { validateSsrfUrlAsync } from "../../common/validators/ssrf-url.validator";
 import { CacheService } from "../cache/cache.service";
 
-import { CrawlExecutionService } from "./crawl-execution.service";
 import { assertNoUnsupportedProxy } from "./crawl-config-policy";
+import { CrawlExecutionService } from "./crawl-execution.service";
 import type {
   CrawlMetadataExtractionInput,
   CrawlMetadataResult,
@@ -20,6 +21,7 @@ import type {
 import { Crawl4aiClient, type Crawl4aiArticle } from "./crawl4ai.client";
 
 const logger = createLogger({ name: "crawl-metadata" });
+const MAX_METADATA_REDIRECT_HOPS = 5;
 
 interface NormalizedMetadataConfig {
   source: CrawlMetadataSource;
@@ -248,6 +250,27 @@ export class CrawlMetadataService {
   }): Promise<CrawlSitemapDiscoveryResult> {
     const domain = this.normalizeDomain(input.domain);
     if (!domain) {
+      return {
+        candidates: [],
+        diagnostics: {
+          discoveryMode: this.normalizeSitemapDiscoveryMode(input.discoveryMode),
+          seedMethod: "none",
+          robotsDiscoveredSitemaps: [],
+          attemptedSitemaps: [],
+          fetchedSitemaps: [],
+          parsedSitemaps: 0,
+          candidateCount: 0,
+        },
+      };
+    }
+    // Defense in depth beyond the DTO: sitemap discovery fetches {domain}
+    // server-side, so reject internal targets even for programmatic callers.
+    const domainSafety = await validateSsrfUrlAsync(domain);
+    if (!domainSafety.valid) {
+      logger.warn(
+        { domain, reason: domainSafety.reason ?? "unsafe" },
+        "Blocked sitemap discovery for unsafe domain",
+      );
       return {
         candidates: [],
         diagnostics: {
@@ -3133,42 +3156,74 @@ export class CrawlMetadataService {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url, {
-        method: "GET",
-        redirect: "follow",
-        headers: {
-          "user-agent":
-            "MetadataBot/1.0 (+https://github.com/unclecode/crawl4ai) crawl-metadata-service",
-          ...(additionalHeaders ?? {}),
-        },
-        signal: controller.signal,
-      });
-      const etag = response.headers.get("etag")?.trim() || undefined;
-      const lastModified =
-        response.headers.get("last-modified")?.trim() || undefined;
-      if (response.status === 304) {
-        return { status: response.status, etag, lastModified };
-      }
-      const buffer = Buffer.from(await response.arrayBuffer());
-      const shouldGunzip =
-        url.toLowerCase().endsWith(".gz") ||
-        (response.headers
-          .get("content-encoding")
-          ?.toLowerCase()
-          .includes("gzip") ??
-          false) ||
-        (response.headers.get("content-type")?.toLowerCase().includes("gzip") ??
-          false);
+      // Follow redirects manually, validating every hop against the SSRF
+      // rules: a safe initial URL can still redirect into an internal
+      // address or cloud metadata endpoint.
+      let currentUrl = url;
+      for (let hop = 0; hop <= MAX_METADATA_REDIRECT_HOPS; hop += 1) {
+        const safety = await validateSsrfUrlAsync(currentUrl);
+        if (!safety.valid) {
+          throw new Error(
+            `Blocked metadata target (potential SSRF): ${safety.reason ?? "unsafe url"}`,
+          );
+        }
+        const response = await fetch(currentUrl, {
+          method: "GET",
+          redirect: "manual",
+          headers: {
+            "user-agent":
+              "MetadataBot/1.0 (+https://github.com/unclecode/crawl4ai) crawl-metadata-service",
+            ...(additionalHeaders ?? {}),
+          },
+          signal: controller.signal,
+        });
+        if (
+          response.status >= 300 &&
+          response.status < 400 &&
+          response.headers.get("location")
+        ) {
+          const location = response.headers.get("location");
+          if (!location) {
+            throw new Error("Metadata request failed: invalid redirect");
+          }
+          try {
+            currentUrl = new URL(location, currentUrl).toString();
+          } catch {
+            throw new Error("Metadata request failed: invalid redirect");
+          }
+          continue;
+        }
+        const etag = response.headers.get("etag")?.trim() || undefined;
+        const lastModified =
+          response.headers.get("last-modified")?.trim() || undefined;
+        if (response.status === 304) {
+          return { status: response.status, etag, lastModified };
+        }
+        const buffer = Buffer.from(await response.arrayBuffer());
+        const shouldGunzip =
+          currentUrl.toLowerCase().endsWith(".gz") ||
+          (response.headers
+            .get("content-encoding")
+            ?.toLowerCase()
+            .includes("gzip") ??
+            false) ||
+          (response.headers
+            .get("content-type")
+            ?.toLowerCase()
+            .includes("gzip") ??
+            false);
 
-      const body = shouldGunzip
-        ? this.decodePossiblyGzippedPayload(buffer)
-        : buffer.toString("utf8");
-      if (!response.ok) {
-        throw new Error(
-          `Metadata request failed with status ${response.status}`,
-        );
+        const body = shouldGunzip
+          ? this.decodePossiblyGzippedPayload(buffer)
+          : buffer.toString("utf8");
+        if (!response.ok) {
+          throw new Error(
+            `Metadata request failed with status ${response.status}`,
+          );
+        }
+        return { status: response.status, body, etag, lastModified };
       }
-      return { status: response.status, body, etag, lastModified };
+      throw new Error("Metadata request failed: too many redirects");
     } finally {
       clearTimeout(timer);
     }

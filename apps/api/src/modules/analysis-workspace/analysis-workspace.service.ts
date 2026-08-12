@@ -475,15 +475,22 @@ export class AnalysisWorkspaceService {
 
   async archiveBoard(orgId: string, user: AnalysisActor, boardId: string) {
     await this.assertBoardActive(orgId, boardId);
-    const activeCount = await this.analysisPrisma.analysisBoard.count({
-      where: { orgId, archivedAt: null },
-    });
-    if (activeCount <= 1) {
-      throw new BadRequestException("Cannot archive the last analysis board");
-    }
-    await this.analysisPrisma.analysisBoard.update({
-      where: { id: boardId },
-      data: { archivedAt: new Date(), updatedById: user.id },
+    // Count + archive inside one transaction so two concurrent requests cannot
+    // both pass the "last active board" check and archive everything.
+    await this.prisma.$transaction(async (tx) => {
+      const activeCount = await tx.analysisBoard.count({
+        where: { orgId, archivedAt: null },
+      });
+      if (activeCount <= 1) {
+        throw new BadRequestException("Cannot archive the last analysis board");
+      }
+      const updated = await tx.analysisBoard.updateMany({
+        where: { id: boardId, orgId, archivedAt: null },
+        data: { archivedAt: new Date(), updatedById: user.id },
+      });
+      if (updated.count !== 1) {
+        throw new BadRequestException("Analysis board is already archived");
+      }
     });
     return { ok: true };
   }
@@ -795,13 +802,28 @@ export class AnalysisWorkspaceService {
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         select: { id: true },
       });
+      // Same-column downward drags: the frontend computes targetIndex against
+      // the list that still CONTAINS the dragged task, while we insert into
+      // the list that excludes it — so the same index lands one position too
+      // far (e.g. dragging B over D in [A,B,C,D] produced [A,C,D,B] instead
+      // of [A,C,B,D]). Shift the insertion index back by one when the target
+      // sits after the dragged task's original position.
+      const sourceIndex = targetTasks.findIndex(
+        (entry: { id: string }) => entry.id === task.id,
+      );
       const targetOrder = targetTasks
         .map((entry: { id: string }) => entry.id)
         .filter((id: string) => id !== task.id);
-      const targetIndex = Math.max(
+      let targetIndex = Math.max(
         0,
         Math.min(input.targetIndex, targetOrder.length),
       );
+      if (
+        task.columnId === targetColumn.id &&
+        input.targetIndex > sourceIndex
+      ) {
+        targetIndex = Math.max(0, targetIndex - 1);
+      }
       targetOrder.splice(targetIndex, 0, task.id);
       await tx.analysisTaskCard.update({
         where: { id: task.id },
@@ -1700,6 +1722,9 @@ export class AnalysisWorkspaceService {
         orderBy,
         rankingMode,
         user.id,
+        // list() clamps pageSize to the cursor page cap (50) by default;
+        // exports must bypass that or the CSV silently truncates at 50 rows.
+        { maxPageSize: MAX_EXPORT_ROWS },
       );
 
     const itemIds = result.items.map((item: ItemMetaRow) => item.id);

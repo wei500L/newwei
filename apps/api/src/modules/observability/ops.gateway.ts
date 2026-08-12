@@ -27,6 +27,14 @@ import {
 } from "../websocket/socket-error-payloads";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
 import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
+import {
+  attachTokenRevalidation,
+  cleanupTokenRevalidation,
+} from "../websocket/socket-token-revalidation";
+import {
+  isTrustProxyConfigured,
+  resolveSocketClientIp,
+} from "../websocket/socket-client-ip";
 
 interface OpsLiveEventPayload {
   source: "pipeline" | "crawl" | "analysis" | "assistant" | "alerts";
@@ -247,6 +255,9 @@ export class OpsGateway
         orgId: profile.orgId,
         userId: profile.id,
       });
+      // Re-check revocation/expiry periodically: logout must cut the live socket.
+      attachTokenRevalidation(client, payload, this.accessTokenBlacklist);
+
       this.logger.info(
         {
           socketId: client.id,
@@ -278,6 +289,7 @@ export class OpsGateway
   }
 
   handleDisconnect(client: Socket) {
+    cleanupTokenRevalidation(client);
     const profile = client.data?.user as AuthenticatedUser | undefined;
     this.sessions.unregister(client);
     this.logger.info(
@@ -423,16 +435,9 @@ export class OpsGateway
   }
 
   private extractClientIp(client: Socket) {
-    const forwardedHeader = client.handshake.headers["x-forwarded-for"];
-    const forwarded = Array.isArray(forwardedHeader)
-      ? forwardedHeader[0]
-      : forwardedHeader;
-    const ipFromForwarded = forwarded?.split(",")[0]?.trim();
-    const address =
-      typeof client.handshake.address === "string"
-        ? client.handshake.address
-        : undefined;
-    const detectedIp = ipFromForwarded || address;
-    return detectedIp ? detectedIp.replace(/^::ffff:/, "") : undefined;
+    // Only honor X-Forwarded-For behind a trusted proxy chain; the raw
+    // header is client-controlled and would allow spoofing the
+    // rate-limit/backoff keys (or poisoning a victim IP).
+    return resolveSocketClientIp(client, isTrustProxyConfigured());
   }
 }

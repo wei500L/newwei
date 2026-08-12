@@ -1,13 +1,15 @@
-import bcrypt from "bcrypt";
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
+import bcrypt from "bcrypt";
 
+import { hasMembershipPermission, collectMembershipPermissionSet } from "../../common/authz/membership-permissions";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { PrismaService } from "../config/prisma.service";
 import { EmailService } from "../email/email.service";
@@ -56,6 +58,9 @@ export class OrgInviteService {
     const normalizedEmail = normalizeEmailAddress(input.email);
     const roleIds = this.normalizeRoleIds(input.roleIds, input.primaryRoleId);
     await this.ensureRoleSet(orgId, input.primaryRoleId, roleIds);
+    // Mirror the RBAC service guards: the actor must not hand out the system
+    // admin role and cannot grant permissions they do not hold themselves.
+    await this.assertRolesAssignable(actorId, orgId, roleIds);
 
     const { rawToken, tokenHash, expiresAt } = this.issueInviteToken();
     const invite = await this.prisma.orgInvite.create({
@@ -137,6 +142,29 @@ export class OrgInviteService {
     });
 
     await this.sendInviteEmail(updated, rawToken, baseUrl);
+
+    await writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId,
+          actorId,
+          resource: "users",
+          action: "invite_resend",
+          metadata: {
+            inviteId: invite.id,
+            email: invite.email,
+          },
+        },
+      },
+      {
+        orgId,
+        actorId,
+        resource: "users",
+        action: "invite_resend",
+      },
+    );
+
     return updated;
   }
 
@@ -152,13 +180,37 @@ export class OrgInviteService {
       throw new NotFoundException("Invite not found");
     }
 
-    return this.prisma.orgInvite.update({
+    const updated = await this.prisma.orgInvite.update({
       where: { id: invite.id },
       data: {
         status: "revoked",
         revokedAt: new Date(),
       },
     });
+
+    await writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId,
+          actorId,
+          resource: "users",
+          action: "invite_revoke",
+          metadata: {
+            inviteId: invite.id,
+            email: invite.email,
+          },
+        },
+      },
+      {
+        orgId,
+        actorId,
+        resource: "users",
+        action: "invite_revoke",
+      },
+    );
+
+    return updated;
   }
 
   async getInviteByToken(token: string) {
@@ -220,7 +272,9 @@ export class OrgInviteService {
       const createdUser = await this.prisma.user.create({
         data: {
           email: invite.email,
-          emailVerified: new Date(),
+          // Do not mark the email as verified: possession of the invite link
+          // (forwarded emails, logs) alone must not grant a verified account.
+          // The user can verify ownership via the standard email binding flow.
           passwordHash: await bcrypt.hash(password, 10),
           firstName,
           lastName,
@@ -230,6 +284,25 @@ export class OrgInviteService {
     }
 
     const membership = await this.prisma.$transaction(async (tx) => {
+      // Atomic single-use claim FIRST: the status check in findInviteByToken
+      // happened outside this transaction, so without this claim two
+      // concurrent accepts could both pass the pending check and each create
+      // a membership (the loser hitting the userId_orgId unique constraint
+      // with a 500).
+      const claimed = await tx.orgInvite.updateMany({
+        where: { id: invite.id, status: "pending" },
+        data: {
+          status: "accepted",
+          acceptedAt: new Date(),
+          acceptedById: userId,
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new ConflictException(
+          "Invitation has already been accepted or revoked",
+        );
+      }
+
       const existingMembership = await tx.membership.findUnique({
         where: {
           userId_orgId: {
@@ -266,15 +339,6 @@ export class OrgInviteService {
           orgId: invite.orgId,
           roleId,
         })),
-      });
-
-      await tx.orgInvite.update({
-        where: { id: invite.id },
-        data: {
-          status: "accepted",
-          acceptedAt: new Date(),
-          acceptedById: userId,
-        },
       });
 
       return tx.membership.findUniqueOrThrow({
@@ -357,6 +421,79 @@ export class OrgInviteService {
     }
   }
 
+  /**
+   * Guards identical to the RBAC service (assignRole): the actor may not
+   * grant the system admin role, and may only grant roles whose permission
+   * set is fully contained in their own. Without this, a member holding only
+   * `users.write` could invite a new org admin and take over the org.
+   */
+  async assertRolesAssignable(actorId: string, orgId: string, roleIds: string[]) {
+    const uniqueRoleIds = Array.from(new Set(roleIds));
+    const actorMembership = await this.prisma.membership.findUnique({
+      where: {
+        userId_orgId: {
+          userId: actorId,
+          orgId,
+        },
+      },
+      include: {
+        role: {
+          include: {
+            permissions: {
+              include: { permission: true },
+            },
+          },
+        },
+        roles: {
+          include: {
+            role: {
+              include: {
+                permissions: {
+                  include: { permission: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!actorMembership) {
+      throw new ForbiddenException("Actor is not a member of the organization");
+    }
+    const actorPermissions = collectMembershipPermissionSet(actorMembership);
+
+    const roles = await this.prisma.role.findMany({
+      where: {
+        orgId,
+        id: { in: uniqueRoleIds },
+      },
+      include: {
+        permissions: {
+          include: { permission: true },
+        },
+      },
+    });
+    if (roles.length !== uniqueRoleIds.length) {
+      throw new BadRequestException("One or more roles are invalid");
+    }
+
+    for (const role of roles) {
+      if (role.isSystem && role.name.toLowerCase() === "admin") {
+        throw new ForbiddenException(
+          "System administrator role cannot be granted via invitations",
+        );
+      }
+      const missing = role.permissions.find(
+        (entry) => !actorPermissions.has(entry.permission.name),
+      );
+      if (missing) {
+        throw new ForbiddenException(
+          "Insufficient permission scope to grant the selected roles",
+        );
+      }
+    }
+  }
+
   private async assertOrgAdmin(userId: string, orgId: string) {
     const membership = await this.prisma.membership.findUnique({
       where: {
@@ -366,10 +503,26 @@ export class OrgInviteService {
         },
       },
       include: {
-        role: true,
+        role: {
+          include: {
+            permissions: {
+              include: {
+                permission: true,
+              },
+            },
+          },
+        },
         roles: {
           include: {
-            role: true,
+            role: {
+              include: {
+                permissions: {
+                  include: {
+                    permission: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -378,14 +531,10 @@ export class OrgInviteService {
       throw new ForbiddenException("Organization admin access required");
     }
 
-    const roleNames = [
-      membership.role?.name,
-      ...(membership.roles ?? []).map((entry) => entry.role?.name),
-    ]
-      .filter((value): value is string => typeof value === "string")
-      .map((value) => value.toLowerCase());
-
-    if (!roleNames.includes("admin")) {
+    // Permission-based (matches the controller guard) instead of role-name
+    // based: the default "manager" role carries users.write but is not named
+    // "admin", so a name check would deadlock it with a 403.
+    if (!hasMembershipPermission(membership, "users.write")) {
       throw new ForbiddenException("Organization admin access required");
     }
   }

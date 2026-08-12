@@ -329,6 +329,9 @@ export const useNewsnowStore = create<NewsnowState>()(
       replacePreferences: (settings) =>
         set((state) => {
           const normalized = normalizeNewsnowPreferenceSettings(settings);
+          // Partial merge: an omitted field (e.g. an older server payload
+          // without sourceAffinity) must NOT wipe the locally accumulated
+          // preference data. Each field is only replaced when provided.
           return {
             focusSources: normalized.focusSources,
             columnOrders: normalized.columnOrders,
@@ -338,7 +341,14 @@ export const useNewsnowStore = create<NewsnowState>()(
               settings.densityMode === undefined
                 ? state.densityMode
                 : normalized.densityMode,
-            sourceAffinity: normalized.sourceAffinity,
+            sourceAffinity:
+              settings.sourceAffinity === undefined ||
+              (typeof settings.sourceAffinity === "object" &&
+                settings.sourceAffinity !== null &&
+                Object.keys(settings.sourceAffinity).length === 0 &&
+                Object.keys(state.sourceAffinity).length > 0)
+                ? state.sourceAffinity
+                : normalized.sourceAffinity,
           };
         }),
       setSourceVisibility: (sourceId, visible) =>

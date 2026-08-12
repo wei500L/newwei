@@ -121,6 +121,7 @@ export class DashboardResolver {
         failed: stats.queue.failed ?? 0,
         delayed: stats.queue.delayed ?? 0
       } satisfies QueueCountsModel,
+      countsAvailable: stats.queueCountsAvailable,
       processedCount: stats.processedCount,
       itemCount: stats.itemCount,
       recentLogs:

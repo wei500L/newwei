@@ -135,8 +135,19 @@ export function DashboardAnalysisFeedProvider({
         const existing = previous[event.id];
         const previousText = existing?.summaryText ?? "";
         const delta = typeof event.summary === "string" ? event.summary : "";
-        const summaryTextRaw =
-          event.status === "running" ? previousText + delta : delta || previousText;
+        // Idempotent append: after a reconnect the server may replay chunks
+        // that were already consumed — appending them again duplicates text.
+        // If the new delta is already a suffix of the accumulated text, skip
+        // it instead of re-adding.
+        const alreadyAppended =
+          event.status === "running" &&
+          delta.length > 0 &&
+          previousText.endsWith(delta);
+        const summaryTextRaw = alreadyAppended
+          ? previousText
+          : event.status === "running"
+            ? previousText + delta
+            : delta || previousText;
         const summaryText =
           summaryTextRaw.length > LIVE_SUMMARY_LIMIT
             ? summaryTextRaw.slice(-LIVE_SUMMARY_LIMIT)

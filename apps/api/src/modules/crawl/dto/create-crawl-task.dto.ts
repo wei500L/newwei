@@ -4,18 +4,21 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsISO8601,
+  IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUrl,
   Max,
-  Min,
-  ValidateNested,
   MaxLength,
-  IsIn,
-  IsNumber,
-  IsObject
+  Min,
+  ValidateBy,
+  ValidateNested,
+  ValidatorConstraint,
+  type ValidatorConstraintInterface,
 } from "class-validator";
 
 import { IsSafeUrl } from "../../../common/validators/is-safe-url.decorator";
@@ -224,6 +227,34 @@ export class CrawlTableExtractionStrategyDto {
   params?: Record<string, unknown>;
 }
 
+const CRAWL_VIRTUAL_SCROLL_MODES = [
+  "container_height",
+  "page_height",
+  "viewport",
+  "pixels",
+] as const;
+
+@ValidatorConstraint({ name: "isCrawlVirtualScrollBy", async: false })
+export class CrawlVirtualScrollByValidator
+  implements ValidatorConstraintInterface
+{
+  validate(value: unknown): boolean {
+    if (typeof value === "string") {
+      return (CRAWL_VIRTUAL_SCROLL_MODES as readonly string[]).includes(
+        value,
+      );
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value) && value >= 1 && value <= 20000;
+    }
+    return false;
+  }
+
+  defaultMessage(): string {
+    return "scrollBy must be a scroll mode or a pixel count between 1 and 20000";
+  }
+}
+
 export class CrawlVirtualScrollConfigDto {
   @IsOptional()
   @IsString()
@@ -237,9 +268,16 @@ export class CrawlVirtualScrollConfigDto {
   @Max(1000)
   scrollCount?: number;
 
+  // Accepts a scroll mode ("container_height" | "page_height" | "viewport" |
+  // "pixels") or a numeric pixel count, matching the stored config form
+  // produced by packages/utils sanitizeVirtualScrollConfig.
   @IsOptional()
-  @IsIn(["container_height", "page_height", "viewport", "pixels"])
-  scrollBy?: "container_height" | "page_height" | "viewport" | "pixels";
+  @ValidateBy({
+    name: "isCrawlVirtualScrollBy",
+    constraints: [],
+    validator: CrawlVirtualScrollByValidator,
+  })
+  scrollBy?: string | number;
 
   @IsOptional()
   @Type(() => Number)

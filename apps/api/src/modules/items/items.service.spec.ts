@@ -2154,10 +2154,13 @@ describe("ItemsService read model hydration", () => {
       ]),
     );
     expect(docsById.has("meta-missing")).toBe(false);
+    // B9: hydration no longer persists an explicit null snapshot for items
+    // whose raw/processed documents are not ready yet — the field is omitted
+    // so resolvers fall back to the Mongo loaders once data arrives.
     expect(docsById.get("meta-1")).toMatchObject({
       itemMetaId: "meta-1",
-      raw: null,
     });
+    expect("raw" in (docsById.get("meta-1") ?? {})).toBe(false);
     expect(docsById.get("meta-2")).toMatchObject({
       itemMetaId: "meta-2",
       raw: expect.objectContaining({ itemMetaId: "meta-2" }),

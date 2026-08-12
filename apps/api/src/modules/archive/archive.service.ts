@@ -197,15 +197,13 @@ export class ArchiveService {
           matchOriginByArticleId: new Map<string, ArchiveMatchOrigin>(),
         };
     if (!search && searchResult.rows.length >= MAX_BASE_SCAN) {
-      this.logger.error(
+      // Do not hard-fail the whole digest page when a large org exceeds the
+      // scan budget: fall back to a truncated-but-usable result instead of a
+      // 503, and keep the diagnostic log so operators can widen the budget.
+      this.logger.warn(
         { orgId, anchorDate: anchorDate.toISOString(), maxScan: MAX_BASE_SCAN },
-        "Archive digest scan limit exceeded.",
+        "Archive digest scan limit reached; returning truncated result.",
       );
-      throw new ServiceUnavailableException({
-        code: "ARCHIVE_SCAN_LIMIT_EXCEEDED",
-        message:
-          "Archive digest scan limit exceeded. Please narrow filters and retry.",
-      });
     }
 
     const grouped = new Map<ArchiveVertical, ArchiveDigestItem[]>(

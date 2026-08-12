@@ -279,6 +279,7 @@ export const NewsnowCard = memo(function NewsnowCard({
   const previousIdsRef = useRef<string[]>([]);
   const openStartedAtRef = useRef<number | null>(null);
   const highlightTimersRef = useRef<Record<string, number>>({});
+  const visibilityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const articleRef = useRef<HTMLElement | null>(null);
   const exposureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasTrackedExposureRef = useRef(false);
@@ -320,7 +321,24 @@ export const NewsnowCard = memo(function NewsnowCard({
     const observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
-        setSourceVisibility(id, Boolean(entry?.isIntersecting));
+        // Debounce the visibility flip: rapid scrolling through a feed
+        // would otherwise toggle each source visible/hidden every frame,
+        // re-enabling the query (and its interval) on every pass.
+        if (entry?.isIntersecting) {
+          if (visibilityTimerRef.current) {
+            clearTimeout(visibilityTimerRef.current);
+            visibilityTimerRef.current = null;
+          }
+          setSourceVisibility(id, true);
+          return;
+        }
+        if (visibilityTimerRef.current) {
+          return;
+        }
+        visibilityTimerRef.current = setTimeout(() => {
+          visibilityTimerRef.current = null;
+          setSourceVisibility(id, false);
+        }, 2_000);
       },
       { threshold: [0, 0.01, VIEW_EXPOSURE_THRESHOLD] },
     );
@@ -328,6 +346,10 @@ export const NewsnowCard = memo(function NewsnowCard({
 
     return () => {
       observer.disconnect();
+      if (visibilityTimerRef.current) {
+        clearTimeout(visibilityTimerRef.current);
+        visibilityTimerRef.current = null;
+      }
       setSourceVisibility(id, false);
     };
   }, [id, setSourceVisibility]);

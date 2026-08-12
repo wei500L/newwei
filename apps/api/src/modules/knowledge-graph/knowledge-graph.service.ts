@@ -424,27 +424,42 @@ export class KnowledgeGraphService {
       ? { ...input.relation.properties, recordSource: KnowledgeRecordSource.user }
       : { recordSource: KnowledgeRecordSource.user };
 
-    return tx.knowledgeEdge.create({
-      data: {
-        orgId: input.orgId,
-        type: input.relation.predicate,
-        fromEntityId: from.id,
-        toEntityId: to.id,
-        weight: 0,
-        confidence: this.toConfidence(input.confidence) ?? 0.5,
-        properties: toPrismaJsonValueOrUndefined(properties),
-        firstSeenAt: input.now,
-        lastSeenAt: input.now
+    try {
+      return await tx.knowledgeEdge.create({
+        data: {
+          orgId: input.orgId,
+          type: input.relation.predicate,
+          fromEntityId: from.id,
+          toEntityId: to.id,
+          weight: 0,
+          confidence: this.toConfidence(input.confidence) ?? 0.5,
+          properties: toPrismaJsonValueOrUndefined(properties),
+          firstSeenAt: input.now,
+          lastSeenAt: input.now
+        }
+      });
+    } catch (error) {
+      // Review-corrected edges can race with the ingestion cron on the
+      // unique (orgId,type,fromEntityId,toEntityId) constraint; reuse the
+      // winner's row instead of failing the whole review transaction.
+      if (!this.isPrismaUniqueConstraintError(error)) {
+        throw error;
       }
-    });
+      const raced = await tx.knowledgeEdge.findUnique({ where });
+      if (!raced) {
+        throw error;
+      }
+      return raced;
+    }
   }
 
-  async getSubgraph(input: KnowledgeGraphSubgraphInput): Promise<KnowledgeGraphSubgraphResult | null> {
+  async getSubgraph(
+    input: KnowledgeGraphSubgraphInput,
+  ): Promise<KnowledgeGraphSubgraphResult | null> {
     const seed = await this.resolveEntityByName(input.orgId, input.seedName, input.seedType);
     if (!seed) {
       return null;
     }
-
     const nodesById = new Map<string, KnowledgeEntity>([[seed.id, seed]]);
     const edgesById = new Map<string, KnowledgeEdge>();
     const visited = new Set<string>();
@@ -802,6 +817,14 @@ export class KnowledgeGraphService {
     return KnowledgeEntityType.organization;
   }
 
+  private isPrismaUniqueConstraintError(error: unknown): boolean {
+    return Boolean(
+      error &&
+        typeof error === "object" &&
+        (error as { code?: unknown }).code === "P2002",
+    );
+  }
+
   private normalizeEntityKey(value: string) {
     return value.trim().replace(/\s+/g, " ").toLowerCase();
   }
@@ -1032,19 +1055,36 @@ export class KnowledgeGraphService {
     });
 
     if (!existing) {
-      return tx.knowledgeEdge.create({
-        data: {
-          orgId: input.orgId,
-          type: input.type,
-          fromEntityId: input.fromEntityId,
-          toEntityId: input.toEntityId,
-          weight: 1,
-          confidence: input.confidence,
-          properties: toPrismaJsonValueOrUndefined(input.properties),
-          firstSeenAt: input.now,
-          lastSeenAt: input.now
+      try {
+        return await tx.knowledgeEdge.create({
+          data: {
+            orgId: input.orgId,
+            type: input.type,
+            fromEntityId: input.fromEntityId,
+            toEntityId: input.toEntityId,
+            weight: 1,
+            confidence: input.confidence,
+            properties: toPrismaJsonValueOrUndefined(input.properties),
+            firstSeenAt: input.now,
+            lastSeenAt: input.now
+          }
+        });
+      } catch (error) {
+        // Concurrent writers (cron ingestion vs seed/review ingestion) can
+        // race on the unique (orgId,type,fromEntityId,toEntityId) constraint;
+        // reuse the winner's row instead of aborting the whole transaction.
+        if (!this.isPrismaUniqueConstraintError(error)) {
+          throw error;
         }
-      });
+        const raced = await tx.knowledgeEdge.findUnique({
+          where,
+          select: { id: true, weight: true, confidence: true, properties: true, firstSeenAt: true }
+        });
+        if (!raced) {
+          throw error;
+        }
+        return raced;
+      }
     }
 
     const prevWeight = Number.isFinite(existing.weight) && existing.weight > 0 ? existing.weight : 1;

@@ -45,6 +45,7 @@ import dayjs from "@/lib/dayjs";
 import {
   buildKnowledgeGraphExplorerHref,
   formatKnowledgeGraphLabel,
+  formatNullableNumber,
   KNOWLEDGE_GRAPH_DEFAULT_EVIDENCE_LIMIT,
   KNOWLEDGE_GRAPH_DEFAULT_MAX_DEPTH,
   KNOWLEDGE_GRAPH_DEFAULT_MAX_NODES,
@@ -609,11 +610,11 @@ export function KnowledgeGraphContent() {
         <Space direction="vertical" size={4}>
           <Tag color="green">
             {t("pages.knowledgeGraph.details.confidence")}:{" "}
-            {selectedEdgeDisplay.confidence.toFixed(2)}
+            {formatNullableNumber(selectedEdgeDisplay.confidence)}
           </Tag>
           <Tag color="purple">
             {t("pages.knowledgeGraph.details.weight")}:{" "}
-            {selectedEdgeDisplay.weight.toFixed(2)}
+            {formatNullableNumber(selectedEdgeDisplay.weight)}
           </Tag>
         </Space>
       </div>

@@ -369,6 +369,25 @@ export class LlmGatewaySettingsService {
       return null;
     }
 
+    // The configured active profile was disabled/removed and traffic silently
+    // fell back to the first enabled profile — a different provider/model may
+    // now be serving all completion traffic. Surface it so the fallback is
+    // deliberate rather than a surprise.
+    if (
+      settings.activeId &&
+      (!activeProfile || !activeProfile.enabled) &&
+      profile.id !== settings.activeId
+    ) {
+      this.logger.warn(
+        {
+          configuredActiveId: settings.activeId,
+          fallbackProfileId: profile.id,
+          fallbackName: profile.name,
+        },
+        "LLM gateway active profile is unavailable; completion traffic fell back to another profile",
+      );
+    }
+
     return this.applyManagedProxyGovernance(
       profile,
       this.toResolvedConfig(profile)

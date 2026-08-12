@@ -24,7 +24,9 @@ describe("CrawlQueueService", () => {
   });
 
   const createQueueMock = () => ({
-    add: jest.fn().mockResolvedValue(undefined),
+    add: jest.fn().mockImplementation((_name: string, _data: unknown, opts?: { jobId?: string }) =>
+      Promise.resolve({ id: opts?.jobId ?? "job-1" }),
+    ),
     getJobs: jest.fn().mockResolvedValue([]),
     getJobCounts: jest
       .fn()
@@ -37,7 +39,8 @@ describe("CrawlQueueService", () => {
   });
 
   const createActivityMock = () => ({
-    markTaskQueued: jest.fn().mockResolvedValue(undefined)
+    markTaskQueued: jest.fn().mockResolvedValue(undefined),
+    markTasksTerminal: jest.fn().mockResolvedValue(undefined)
   });
 
   it("routes enqueueTask to hot queue with source priority", async () => {
@@ -117,6 +120,43 @@ describe("CrawlQueueService", () => {
     expect(opts.priority).toBeUndefined();
     expect(opts.deduplication).toEqual({ id: "crawl-task:task-2:normal" });
     expect(activity.markTaskQueued).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports deduplication and skips the active-task counter when the job already exists", async () => {
+    const hotQueue = createQueueMock();
+    const normalQueue = createQueueMock();
+    const llmJudgeQueue = createQueueMock();
+    const llmLearnQueue = createQueueMock();
+    const activity = createActivityMock();
+    const settings = {
+      getSettings: jest.fn().mockResolvedValue({
+        maxRetries: 2,
+        retryBackoffMs: 1_000,
+        maxConcurrency: 3
+      })
+    } as any;
+    const service = new CrawlQueueService(
+      hotQueue as any,
+      normalQueue as any,
+      llmJudgeQueue as any,
+      llmLearnQueue as any,
+      settings,
+      activity as any,
+    );
+
+    // BullMQ simple-mode deduplication returns the EXISTING job (different
+    // id) instead of the requested new jobId.
+    hotQueue.add.mockResolvedValueOnce({
+      id: "task-1-original-job"
+    });
+
+    const result = await service.enqueueTask("task-1", "org-1", "user-1", {
+      priorityClass: "hot"
+    });
+
+    expect(result.deduplicated).toBe(true);
+    expect(result.jobId).toBe("task-1-original-job");
+    expect(activity.markTaskQueued).not.toHaveBeenCalled();
   });
 
   it("removes matching jobs from both queues and ignores lock errors", async () => {

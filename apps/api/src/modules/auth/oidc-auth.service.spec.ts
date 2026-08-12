@@ -349,6 +349,12 @@ function createServiceHarness(options?: {
       codeVerifier: CODE_VERIFIER,
       nonce: NONCE,
     }),
+    // handleCallback consumes the state atomically via GETDEL.
+    getdel: jest.fn().mockResolvedValue({
+      orgId: ORG_ID,
+      codeVerifier: CODE_VERIFIER,
+      nonce: NONCE,
+    }),
     set: jest.fn(),
     del: jest.fn(),
   };

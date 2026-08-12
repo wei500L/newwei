@@ -23,6 +23,14 @@ import {
 } from "../../websocket/socket-error-payloads";
 import { UserSessionManager } from "../../websocket/user-session-manager.service";
 import { WsConnectionRateLimiterService } from "../../websocket/ws-connection-rate-limiter.service";
+import {
+  isTrustProxyConfigured,
+  resolveSocketClientIp,
+} from "../../websocket/socket-client-ip";
+import {
+  attachTokenRevalidation,
+  cleanupTokenRevalidation,
+} from "../../websocket/socket-token-revalidation";
 import { SituationMonitorMonitorsService } from "../situation-monitor-monitors.service";
 
 import { SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM } from "./situation-monitor-signals.constants";
@@ -182,11 +190,13 @@ export class SituationMonitorSignalsGateway
         },
       );
       await client.join(SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM);
-
       client.emit("situation:connected", {
         orgId: profile.orgId,
         userId: profile.id,
       });
+      // Re-check revocation/expiry periodically: logout must cut the live socket.
+      attachTokenRevalidation(client, payload, this.accessTokenBlacklist);
+
 
       this.logger.info(
         {
@@ -218,6 +228,7 @@ export class SituationMonitorSignalsGateway
   }
 
   handleDisconnect(client: Socket) {
+    cleanupTokenRevalidation(client);
     const profile = client.data?.user as AuthenticatedUser | undefined;
     this.sessions.unregister(client);
     this.logger.info(
@@ -397,17 +408,10 @@ export class SituationMonitorSignalsGateway
     return undefined;
   }
   private extractClientIp(client: Socket): string | undefined {
-    const forwardedHeader = client.handshake.headers["x-forwarded-for"];
-    const forwarded = Array.isArray(forwardedHeader)
-      ? forwardedHeader[0]
-      : forwardedHeader;
-    const ipFromForwarded = forwarded?.split(",")[0]?.trim();
-    const address =
-      typeof client.handshake.address === "string"
-        ? client.handshake.address
-        : undefined;
-    const ip = ipFromForwarded || address;
-    return ip ? ip.replace(/^::ffff:/, "") : undefined;
+    // Only honor X-Forwarded-For behind a trusted proxy chain; the raw header
+    // is client-controlled and would allow spoofing the rate-limit/backoff
+    // keys (or poisoning a victim IP).
+    return resolveSocketClientIp(client, isTrustProxyConfigured());
   }
 
   private extractOrigin(client: Socket): string | undefined {

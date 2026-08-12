@@ -329,6 +329,7 @@ export class UserContentSubscriptionsService {
     );
 
     const results: ContentSubscriptionBatchResultItem[] = [];
+    const toCreate: Prisma.UserContentSubscriptionCreateManyInput[] = [];
     for (const entry of normalized) {
       const key = this.subscriptionKey(entry.kind, entry.normalizedValue);
       const existing = existingByKey.get(key);
@@ -362,30 +363,78 @@ export class UserContentSubscriptionsService {
         continue;
       }
 
-      const created = await this.prisma.userContentSubscription.create({
-        data: {
-          orgId,
-          userId,
-          kind: entry.kind,
-          normalizedValue: entry.normalizedValue,
-          displayValue: resolution.displayValue,
-          taxonomyPath: resolution.taxonomyPath,
-          taxonomyVersion: resolution.taxonomyVersion,
-          source: entry.source ?? ContentSubscriptionSource.manual,
-          metadata: toPrismaJsonValue(resolution.metadata ?? {}),
-        },
+      toCreate.push({
+        orgId,
+        userId,
+        kind: entry.kind,
+        normalizedValue: entry.normalizedValue,
+        displayValue: resolution.displayValue,
+        taxonomyPath: resolution.taxonomyPath,
+        taxonomyVersion: resolution.taxonomyVersion,
+        source: entry.source ?? ContentSubscriptionSource.manual,
+        metadata: toPrismaJsonValue(resolution.metadata ?? {}),
       });
       counts[entry.kind] += 1;
-      results.push(
-        this.toBatchResult(
-          "subscribed",
-          created.kind,
-          created.normalizedValue,
-          created.displayValue,
-          created.taxonomyPath,
-          taxonomy.byPath,
-        ),
+    }
+
+    if (toCreate.length > 0) {
+      try {
+        // Single batched insert with duplicate skipping: per-row creates were
+        // racy (concurrent requests could both pass the count check and one
+        // would hit the unique constraint with a 500) and left partial writes
+        // on failure.
+        await this.prisma.userContentSubscription.createMany({
+          data: toCreate,
+          skipDuplicates: true,
+        });
+      } catch (error) {
+        if (!this.isUniqueConstraintError(error)) {
+          throw error;
+        }
+      }
+
+      // Re-read the rows that actually landed (including ones a concurrent
+      // request inserted between our check and the batch insert) so each
+      // pending entry resolves to subscribed / already_subscribed accurately.
+      const pendingKinds = Array.from(
+        new Set(toCreate.map((row) => row.kind)),
       );
+      const pendingValues = toCreate.map((row) => row.normalizedValue);
+      const createdRows =
+        await this.prisma.userContentSubscription.findMany({
+          where: {
+            orgId,
+            userId,
+            kind: { in: pendingKinds },
+            normalizedValue: { in: pendingValues },
+          },
+        });
+      const createdByKey = new Map(
+        createdRows.map((row) => [
+          this.subscriptionKey(row.kind, row.normalizedValue),
+          row,
+        ]),
+      );
+      for (const entry of normalized) {
+        const key = this.subscriptionKey(entry.kind, entry.normalizedValue);
+        if (existingByKey.has(key)) {
+          continue;
+        }
+        const row = createdByKey.get(key);
+        if (!row) {
+          continue;
+        }
+        results.push(
+          this.toBatchResult(
+            "subscribed",
+            row.kind,
+            row.normalizedValue,
+            row.displayValue,
+            row.taxonomyPath,
+            taxonomy.byPath,
+          ),
+        );
+      }
     }
 
     await this.monitors.reconcileContentSubscriptionSync(orgId, userId);
@@ -2142,6 +2191,14 @@ export class UserContentSubscriptionsService {
       metadata: row.metadata,
       ...(typeof score === "number" && Number.isFinite(score) ? { score } : {}),
     };
+  }
+
+  private isUniqueConstraintError(error: unknown): boolean {
+    return Boolean(
+      error &&
+        typeof error === "object" &&
+        (error as { code?: unknown }).code === "P2002",
+    );
   }
 
   private async readSubscriptionCounts(orgId: string, userId: string) {

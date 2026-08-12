@@ -303,7 +303,7 @@ export interface CrawlGeolocationValue {
 }
 
 export type CrawlVirtualScrollModeValue = "container_height" | "page_height";
-export type CrawlVirtualScrollByValue = CrawlVirtualScrollModeValue | string;
+export type CrawlVirtualScrollByValue = CrawlVirtualScrollModeValue | number;
 
 export interface CrawlVirtualScrollConfigValue {
   containerSelector: string;
@@ -1018,8 +1018,8 @@ export const sanitizeVirtualScrollConfig = (
         : scrollByRaw === "viewport"
           ? "page_height"
           : scrollByRaw === "pixels" && typeof scrollByPixels === "number"
-            ? String(scrollByPixels)
-          : undefined;
+            ? scrollByPixels
+            : undefined;
 
   const hasValue =
     enabled ||

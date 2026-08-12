@@ -425,6 +425,52 @@ describe("ItemsResolver preview fields", () => {
     });
     expect(preview?.history).toEqual([{ timestamp: "2024-01-01", value: 2.5 }]);
   });
+
+  it("falls back to the Mongo raw loader when the read model exists without a raw snapshot", async () => {
+    // B9: hydration may persist a read model before the pipeline produced the
+    // raw/processed documents. A read-model doc with a null snapshot must not
+    // shadow the live Mongo data.
+    const resolver = new ItemsResolver({} as any);
+    const rawLoader = new DataLoader(async (keys: readonly string[]) =>
+      keys.map(() => ({
+        id: "raw-1",
+        itemMetaId: "meta-1",
+        payload: {
+          url: "https://example.com/fallback",
+          sourceName: "Fallback Source"
+        },
+        source: "api",
+        createdAt: new Date("2024-01-02T00:00:00Z"),
+        updatedAt: new Date("2024-01-02T00:00:00Z")
+      }))
+    );
+    const readModelLoader = new DataLoader(async (keys: readonly string[]) =>
+      keys.map(() => ({
+        itemMetaId: "meta-1",
+        meta: {
+          id: "meta-1",
+          externalId: "ext-1",
+          name: "Meta 1",
+          status: "pending",
+          mongoRef: null,
+          createdAt: new Date("2024-01-01T00:00:00Z"),
+          updatedAt: new Date("2024-01-01T00:00:00Z")
+        },
+        raw: null,
+        processed: null
+      }))
+    );
+
+    const preview = await resolver.rawPreview(
+      { metaId: "meta-1" } as any,
+      readModelLoader as any,
+      rawLoader as any
+    );
+    expect(preview).toMatchObject({
+      url: "https://example.com/fallback",
+      sourceName: "Fallback Source"
+    });
+  });
 });
 
 describe("ItemsResolver pagination", () => {

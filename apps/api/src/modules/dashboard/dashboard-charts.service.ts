@@ -449,6 +449,19 @@ interface WarMapLayersOptions {
   zoom?: number;
   flightMode?: "military" | "all";
   aisMode?: "all" | "military" | "density";
+  /**
+   * Pre-computed events/news markers for the same org+range: the SSE stream
+   * already fetched them in this tick, so layers can reuse the SAME promises
+   * instead of re-running the heavy aggregations a second time.
+   */
+  realtimeData?: {
+    events: Promise<
+      Awaited<ReturnType<DashboardChartsService["getWarMapEvents"]>>
+    >;
+    newsMarkers: Promise<
+      Awaited<ReturnType<DashboardChartsService["getWarMapNewsMarkers"]>>
+    >;
+  };
 }
 
 interface WarMapEventsOptions {
@@ -853,6 +866,8 @@ const alertSeverityByRank: Record<number, AlertSeverity> = {
   2: AlertSeverity.medium,
   3: AlertSeverity.high,
 };
+
+const WAR_MAP_ALERT_EVENT_SCAN_LIMIT = 1_000;
 
 const WAR_MAP_LAYER_COLORS: Partial<Record<WarMapLayerId, string>> = {
   conflicts: "#ef4444",
@@ -2208,11 +2223,14 @@ export class DashboardChartsService {
     response: WarMapStaticLayersResponse,
     orgId: string,
     range: DateRange,
+    realtimeData?: WarMapLayersOptions["realtimeData"],
   ): Promise<void> {
-    const [eventsResponse, newsMarkersResponse] = await Promise.all([
-      this.getWarMapEvents(range, orgId, { cluster: false }),
-      this.getWarMapNewsMarkers(range, orgId, { cluster: false }),
-    ]);
+    const [eventsResponse, newsMarkersResponse] = realtimeData
+      ? await Promise.all([realtimeData.events, realtimeData.newsMarkers])
+      : await Promise.all([
+          this.getWarMapEvents(range, orgId, { cluster: false }),
+          this.getWarMapNewsMarkers(range, orgId, { cluster: false }),
+        ]);
 
     const points = this.buildWarMapRealtimeLayerSeedPoints(
       eventsResponse.events,
@@ -2998,6 +3016,7 @@ export class DashboardChartsService {
         response,
         options.orgId,
         options.range,
+        options.realtimeData,
       );
     }
 
@@ -3279,6 +3298,10 @@ export class DashboardChartsService {
           context: true,
         },
         orderBy: { triggeredAt: "desc" },
+        // The 30-day window can hold a large alert backlog; the map only
+        // renders the recent tail, so cap the scan instead of loading all
+        // rows into memory on every SSE tick.
+        take: WAR_MAP_ALERT_EVENT_SCAN_LIMIT,
       }),
       this.loadSharedDashboardQuery<
         SharedWarMapEventArticleRow[],
@@ -5414,6 +5437,23 @@ export class DashboardChartsService {
       return null;
     }
 
+    // Antimeridian handling: for geometries spanning the 180° meridian (e.g.
+    // Russia, Fiji), the naive bounding-box center collapses to lng=0 — the
+    // middle of the Atlantic. Detect the wrap, shift the western hemisphere
+    // longitudes by +360, take the bounding-box center in that space, and
+    // normalize back.
+    let hasFarWest = false;
+    let hasFarEast = false;
+    for (const [lng] of positions) {
+      if (lng < -90) {
+        hasFarWest = true;
+      }
+      if (lng > 90) {
+        hasFarEast = true;
+      }
+    }
+    const wrapOffset = hasFarWest && hasFarEast ? 360 : 0;
+
     let minLng = Number.POSITIVE_INFINITY;
     let maxLng = Number.NEGATIVE_INFINITY;
     let minLat = Number.POSITIVE_INFINITY;
@@ -5423,8 +5463,9 @@ export class DashboardChartsService {
       if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
         continue;
       }
-      minLng = Math.min(minLng, lng);
-      maxLng = Math.max(maxLng, lng);
+      const shiftedLng = wrapOffset > 0 && lng < 0 ? lng + wrapOffset : lng;
+      minLng = Math.min(minLng, shiftedLng);
+      maxLng = Math.max(maxLng, shiftedLng);
       minLat = Math.min(minLat, lat);
       maxLat = Math.max(maxLat, lat);
     }
@@ -5433,8 +5474,13 @@ export class DashboardChartsService {
       return null;
     }
 
+    let centerLng = (minLng + maxLng) / 2;
+    if (centerLng > 180) {
+      centerLng -= 360;
+    }
+
     return {
-      lng: (minLng + maxLng) / 2,
+      lng: centerLng,
       lat: (minLat + maxLat) / 2,
     };
   }

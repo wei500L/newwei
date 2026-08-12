@@ -38,6 +38,8 @@ const CANDIDATE_RETENTION_MS = 2 * 60 * 60 * 1_000;
 const MAX_DENSITY_ZONES = 200;
 const MAX_DENSITY_CELLS = 5_000;
 const RECONNECT_DELAY_MS = 5_000;
+const UPSTREAM_HANDSHAKE_TIMEOUT_MS = 15_000;
+const MAX_RECONNECT_DELAY_MS = 60_000;
 const SNAPSHOT_CACHE_TTL_MS = Math.max(
   2_000,
   readPositiveInt(process.env.AIS_SNAPSHOT_INTERVAL_MS, 5_000),
@@ -181,6 +183,7 @@ const candidateReports = new Map<string, CandidateReport>();
 
 let upstreamSocket: WebSocket | null = null;
 let reconnectTimer: NodeJS.Timeout | null = null;
+let reconnectAttempt = 0;
 let upstreamQueue: RawData[] = [];
 let upstreamQueueReadIndex = 0;
 let drainScheduled = false;
@@ -945,10 +948,19 @@ function scheduleReconnect() {
   if (reconnectTimer) {
     return;
   }
+  // Exponential backoff with jitter (5s → 60s cap): a fixed 5s delay hammers
+  // the upstream during long outages and keeps every instance synced.
+  reconnectAttempt = Math.min(reconnectAttempt + 1, 8);
+  const baseDelay = RECONNECT_DELAY_MS * 2 ** (reconnectAttempt - 1);
+  const capped = Math.min(baseDelay, MAX_RECONNECT_DELAY_MS);
+  const jittered = Math.max(
+    1_000,
+    Math.round(capped * (0.8 + Math.random() * 0.4)),
+  );
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     connectUpstream();
-  }, RECONNECT_DELAY_MS);
+  }, jittered);
   reconnectTimer.unref?.();
 }
 
@@ -970,11 +982,28 @@ function connectUpstream() {
   upstreamSocket = socket;
   clearUpstreamQueue();
 
+  // The `ws` library has no handshake timeout: a black-holed TCP/DNS path
+  // leaves the socket stuck in CONNECTING forever (connectUpstream returns
+  // early on CONNECTING, and the reconnect timer only fires on close), which
+  // would silently kill the relay. Force-terminate after the handshake
+  // budget so the close handler schedules a reconnect.
+  const handshakeTimer = setTimeout(() => {
+    if (socket.readyState === WebSocket.CONNECTING) {
+      lastUpstreamErrorAt = Date.now();
+      lastUpstreamErrorMessage = "connection handshake timed out";
+      console.error("[ais-relay] upstream handshake timed out; terminating");
+      socket.terminate();
+    }
+  }, UPSTREAM_HANDSHAKE_TIMEOUT_MS);
+  handshakeTimer.unref?.();
+
   socket.on("open", () => {
+    clearTimeout(handshakeTimer);
     if (upstreamSocket !== socket) {
       socket.close();
       return;
     }
+    reconnectAttempt = 0;
     lastUpstreamConnectedAt = Date.now();
     console.log("[ais-relay] upstream connected");
     socket.send(
@@ -1004,6 +1033,7 @@ function connectUpstream() {
   });
 
   socket.on("close", (code: number, reasonBuffer: Buffer) => {
+    clearTimeout(handshakeTimer);
     if (upstreamSocket !== socket) {
       return;
     }
@@ -1094,7 +1124,9 @@ const server = createServer((req, res) => {
 
     res.writeHead(200, {
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "public, max-age=2",
+      // Snapshot may carry auth (shared secret): never let a shared cache
+      // serve it to other clients. max-age mirrors the snapshot cadence.
+      "Cache-Control": `private, max-age=${Math.max(1, Math.floor(SNAPSHOT_CACHE_TTL_MS / 1000))}`,
     });
     res.end(
       body ??

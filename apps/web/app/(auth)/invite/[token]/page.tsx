@@ -2,10 +2,11 @@
 
 import { Alert, Button, Form, Input, Spin, Typography, message } from "antd";
 import { useParams, useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 
 import { createApiClient } from "@/lib/api-client";
+import { extractApiError } from "@/lib/api-error";
 
 interface InvitePayload {
   email: string;
@@ -86,40 +87,59 @@ export default function InvitePage() {
           Accept with current account
         </Button>
       ) : invite ? (
-        <Form
-          layout="vertical"
-          initialValues={{
-            firstName: invite.firstName ?? "",
-            lastName: invite.lastName ?? "",
-          }}
-          onFinish={async (values: { firstName: string; lastName: string; password: string }) => {
-            setAccepting(true);
-            try {
-              await apiClient.post(`auth/invitations/${token}/accept`, values);
-              messageApi.success("Invitation accepted. You can sign in now.");
-              router.push("/login");
-            } catch {
-              messageApi.error("Failed to accept invitation");
-            } finally {
-              setAccepting(false);
-            }
-          }}
-        >
-          <Form.Item label="First name" name="firstName" rules={[{ required: true }]}>
-            <Input size="large" />
-          </Form.Item>
-          <Form.Item label="Last name" name="lastName" rules={[{ required: true }]}>
-            <Input size="large" />
-          </Form.Item>
-          <Form.Item label="Password" name="password" rules={[{ required: true }, { min: 8 }]}>
-            <Input.Password size="large" />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit" block loading={accepting}>
-              Accept invitation
-            </Button>
-          </Form.Item>
-        </Form>
+        <>
+          {session?.user?.email && session.user.email !== invite.email ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: "1rem" }}
+              message={`Signed in as ${session.user.email}. Sign out and sign in with ${invite.email} to accept this invitation.`}
+              action={
+                <Button
+                  size="small"
+                  onClick={() => void signOut({ callbackUrl: `/invite/${token}` })}
+                >
+                  Sign out
+                </Button>
+              }
+            />
+          ) : null}
+          <Form
+            layout="vertical"
+            initialValues={{
+              firstName: invite.firstName ?? "",
+              lastName: invite.lastName ?? "",
+            }}
+            onFinish={async (values: { firstName: string; lastName: string; password: string }) => {
+              setAccepting(true);
+              try {
+                await apiClient.post(`auth/invitations/${token}/accept`, values);
+                messageApi.success("Invitation accepted. You can sign in now.");
+                router.push("/login");
+              } catch (error) {
+                const info = extractApiError(error);
+                messageApi.error(info.message || "Failed to accept invitation");
+              } finally {
+                setAccepting(false);
+              }
+            }}
+          >
+            <Form.Item label="First name" name="firstName" rules={[{ required: true }]}>
+              <Input size="large" />
+            </Form.Item>
+            <Form.Item label="Last name" name="lastName" rules={[{ required: true }]}>
+              <Input size="large" />
+            </Form.Item>
+            <Form.Item label="Password" name="password" rules={[{ required: true }, { min: 8 }]}>
+              <Input.Password size="large" />
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" htmlType="submit" block loading={accepting}>
+                Accept invitation
+              </Button>
+            </Form.Item>
+          </Form>
+        </>
       ) : null}
     </div>
   );

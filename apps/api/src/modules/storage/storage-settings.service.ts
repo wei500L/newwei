@@ -41,6 +41,12 @@ export interface StorageSettingsResponse {
   presignedUrlTtlSeconds: number;
   accessKeyId?: string;
   hasSecretAccessKey: boolean;
+  /**
+   * True when a stored encrypted secret exists but could not be decrypted
+   * (e.g. after SYSTEM_SETTINGS_ENCRYPTION_KEY rotation). The console should
+   * surface this instead of silently reporting "not configured".
+   */
+  secretDecryptionFailed: boolean;
 }
 
 const STORAGE_SETTINGS_CACHE_KEY = "storage:settings";
@@ -130,6 +136,12 @@ export class StorageSettingsService {
     const crawlImageStorage =
       this.asProvider(recordMap.get(STORAGE_SETTING_KEYS.crawlImageStorage)) ??
       DEFAULT_CRAWL_IMAGE_STORAGE_PROVIDER;
+    const secretState: { decryptionFailed?: boolean } = {};
+    const secretResolved = this.resolveSecret(
+      recordMap.get(STORAGE_SETTING_KEYS.secretAccessKey),
+      fallback.secretAccessKey,
+      secretState,
+    );
     return {
       crawlImageStorage,
       region:
@@ -150,12 +162,8 @@ export class StorageSettingsService {
       accessKeyId:
         this.asString(recordMap.get(STORAGE_SETTING_KEYS.accessKeyId)) ??
         fallback.accessKeyId,
-      hasSecretAccessKey: Boolean(
-        this.resolveSecret(
-          recordMap.get(STORAGE_SETTING_KEYS.secretAccessKey),
-          fallback.secretAccessKey
-        )
-      )
+      hasSecretAccessKey: Boolean(secretResolved),
+      secretDecryptionFailed: secretState.decryptionFailed === true,
     };
   }
 
@@ -307,8 +315,16 @@ export class StorageSettingsService {
         return;
       }
 
+      // Never persist credential material in audit logs: mask the secret
+      // entirely and keep only a fingerprint (first 4 chars) of the access
+      // key id so operators can still tell WHICH key was changed.
       if (key === "secretAccessKey" && value) {
         metadata[key] = "***";
+        return;
+      }
+      if (key === "accessKeyId" && typeof value === "string" && value.trim()) {
+        const normalized = value.trim();
+        metadata.accessKeyIdFingerprint = `${normalized.slice(0, 4)}***`;
         return;
       }
 
@@ -318,7 +334,11 @@ export class StorageSettingsService {
     return metadata;
   }
 
-  private resolveSecret(value: unknown, fallback: string) {
+  private resolveSecret(
+    value: unknown,
+    fallback: string,
+    state?: { decryptionFailed?: boolean },
+  ) {
     if (!value) {
       return fallback;
     }
@@ -329,12 +349,20 @@ export class StorageSettingsService {
       const key = resolveSettingsKey(this.env);
       if (!key) {
         this.logger.warn("Missing SYSTEM_SETTINGS_ENCRYPTION_KEY for storage secret");
+        if (state) {
+          state.decryptionFailed = true;
+        }
         return fallback;
       }
       try {
         return decryptStringValueV1(value, key);
       } catch (error) {
+        // Key rotation or tampering: surface the failure explicitly instead
+        // of silently falling back to the env value (which may be empty).
         this.logger.warn({ err: error }, "Failed to decrypt storage secret");
+        if (state) {
+          state.decryptionFailed = true;
+        }
         return fallback;
       }
     }

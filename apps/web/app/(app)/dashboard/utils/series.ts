@@ -67,6 +67,19 @@ export function getSeriesField(
   if (resolvedKey) {
     return group.fields[resolvedKey];
   }
+  if (field) {
+    // Fail loud in development: an explicit field name that does not exist in
+    // the series (or its parser metadata) means the requested data point is
+    // missing. Returning the first field silently masks field-name drift and
+    // renders incorrect values (e.g. absolute CPI instead of MoM change).
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(
+        `[getSeriesField] Field "${field}" not found for series "${slug}". ` +
+          `Available fields: ${Object.keys(group.fields).join(", ")}`,
+      );
+    }
+    return undefined;
+  }
   const [first] = Object.values(group.fields);
   return first;
 }

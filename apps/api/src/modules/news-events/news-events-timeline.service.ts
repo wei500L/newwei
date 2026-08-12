@@ -387,6 +387,7 @@ export class NewsEventsTimelineService {
         event.metadata,
         timelineEntryMetadataByBucket,
         analysis,
+        since,
       );
       await this.prisma.newsEvent.update({
         where: { id: event.id },
@@ -1004,6 +1005,7 @@ export class NewsEventsTimelineService {
     existingMetadata: Prisma.JsonValue | null,
     entries: Record<string, TimelineEntryClassificationMetadata>,
     analysis: TimelineAnalysis,
+    retainSince?: Date,
   ): Prisma.InputJsonValue {
     const base =
       existingMetadata &&
@@ -1026,9 +1028,20 @@ export class NewsEventsTimelineService {
             existingTimeline.entries as Record<string, unknown>,
           )
         : {};
+    // Drop buckets that fell out of the retention window: the merge below
+    // only ever grows entries, so without pruning the metadata JSON grows
+    // without bound over an event's lifetime.
+    const retainSinceMs = retainSince ? retainSince.getTime() : Number.NEGATIVE_INFINITY;
+    const retainedEntries: Record<string, TimelineEntryClassificationMetadata> = {};
+    for (const [bucketKey, entry] of Object.entries(existingEntries)) {
+      const bucketMs = Date.parse(bucketKey);
+      if (!Number.isFinite(bucketMs) || bucketMs >= retainSinceMs) {
+        retainedEntries[bucketKey] = entry;
+      }
+    }
     const timeline: TimelineMetadataPayload = {
       entries: {
-        ...existingEntries,
+        ...retainedEntries,
         ...entries,
       },
       categoryDistribution: analysis.categoryDistribution,

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
+import { extractApiError } from "@/lib/api-error";
 
 export default function RegisterPage() {
   const { t } = useTranslation();
@@ -20,8 +21,9 @@ export default function RegisterPage() {
     try {
       await apiClient.post(endpoint, values);
       messageApi.success(t("auth.register.submitted"));
-    } catch {
-      messageApi.error(t("auth.register.submitFailed"));
+    } catch (error) {
+      const info = extractApiError(error);
+      messageApi.error(info.message || t("auth.register.submitFailed"));
     } finally {
       setLoading(false);
     }

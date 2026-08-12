@@ -894,7 +894,12 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
         if (!job?.data?.taskId || !job.data.orgId) {
           return;
         }
-        if (job.data.jobKind !== "frontier_node") {
+        // Only plain crawl tasks (which carry no jobKind) were counted by
+        // markTaskQueued at enqueue time. Frontier node / LLM judge / LLM
+        // learn jobs are never counted, so they must not decrement the
+        // counter here — otherwise the counter drifts to zero and disables
+        // the stale-task janitor's active-count gate.
+        if (!job.data.jobKind) {
           await this.activity.markTasksTerminal(1);
         }
         if (job.data.sourceId && this.newsSourceOpsSnapshots) {
@@ -927,7 +932,7 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
           );
           return;
         }
-        if (job.data.jobKind !== "frontier_node") {
+        if (!job.data.jobKind) {
           await this.activity.markTasksTerminal(1);
         }
         const normalizedReason =

@@ -77,7 +77,7 @@ export function useNewsnowRecommended(limit = 30) {
         `/news-aggregator/recommended?${params.toString()}`,
       );
       return {
-        scope: data?.scope === 'hottest' ? 'hottest' : 'hottest',
+        scope: 'hottest' as const,
         generatedAt:
           typeof data?.generatedAt === 'string'
             ? data.generatedAt

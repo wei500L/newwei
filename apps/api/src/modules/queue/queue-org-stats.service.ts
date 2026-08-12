@@ -96,13 +96,23 @@ export class QueueOrgStatsService {
       return;
     }
 
-    if (newStatus === "completed" && jobMeta.keepCompleted !== "1") {
-      await this.removeJob(jobMeta.orgId, jobId);
-      return;
-    }
-
-    if (newStatus === "failed" && jobMeta.keepFailed !== "1") {
-      await this.removeJob(jobMeta.orgId, jobId);
+    if (
+      (newStatus === "completed" && jobMeta.keepCompleted !== "1") ||
+      (newStatus === "failed" && jobMeta.keepFailed !== "1")
+    ) {
+      // Terminal status without retention: still record the +1 for the
+      // terminal count (dashboards show completed/failed as counters), then
+      // drop the job metadata so the counts stay accurate without leaking
+      // per-job rows. Previously this path only decremented the old status,
+      // so the completed counter was permanently 0 for default jobs.
+      await this.redis.eval(
+        TERMINAL_AND_REMOVE_LUA,
+        2,
+        this.metaKey(jobId),
+        this.countsKey(jobMeta.orgId),
+        newStatus,
+        String(COUNTS_TTL_SECONDS),
+      );
       return;
     }
 
@@ -181,6 +191,29 @@ const REMOVE_JOB_LUA = `
     redis.call('HINCRBY', countsKey, oldStatus, -1)
   end
 
+  redis.call('DEL', metaKey)
+  redis.call('EXPIRE', countsKey, countsTtl)
+  return oldStatus
+`;
+
+const TERMINAL_AND_REMOVE_LUA = `
+  local metaKey = KEYS[1]
+  local countsKey = KEYS[2]
+  local newStatus = ARGV[1]
+  local countsTtl = tonumber(ARGV[2])
+
+  local oldStatus = redis.call('HGET', metaKey, 'status')
+  if oldStatus ~= false and oldStatus == newStatus then
+    redis.call('DEL', metaKey)
+    redis.call('EXPIRE', countsKey, countsTtl)
+    return oldStatus
+  end
+
+  if oldStatus ~= false then
+    redis.call('HINCRBY', countsKey, oldStatus, -1)
+  end
+
+  redis.call('HINCRBY', countsKey, newStatus, 1)
   redis.call('DEL', metaKey)
   redis.call('EXPIRE', countsKey, countsTtl)
   return oldStatus

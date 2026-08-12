@@ -2410,6 +2410,7 @@ type QueueEventModel {
 
 type QueueStatsModel {
   counts: QueueCountsModel!
+  countsAvailable: Boolean!
   itemCount: Int!
   processedCount: Int!
   recentLogs: [QueueEventModel!]!

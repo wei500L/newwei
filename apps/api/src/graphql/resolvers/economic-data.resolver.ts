@@ -82,31 +82,6 @@ export class EconomicDataResolver {
     return TimeGranularity.day;
   }
 
-  private parseGranularity(
-    raw: string | null | undefined,
-  ): TimeGranularity | null {
-    switch (raw) {
-      case "realtime":
-        return TimeGranularity.realtime;
-      case "minute":
-        return TimeGranularity.minute;
-      case "hour":
-        return TimeGranularity.hour;
-      case "day":
-        return TimeGranularity.day;
-      case "week":
-        return TimeGranularity.week;
-      case "month":
-        return TimeGranularity.month;
-      case "quarter":
-        return TimeGranularity.quarter;
-      case "year":
-        return TimeGranularity.year;
-      default:
-        return null;
-    }
-  }
-
   private timeGranularityRank(granularity: TimeGranularity): number {
     switch (granularity) {
       case TimeGranularity.realtime:
@@ -162,7 +137,10 @@ export class EconomicDataResolver {
     const base =
       this.defaultFrequencyToTimeGranularity(defaultFrequency) ??
       TimeGranularity.day;
-    return requested ?? base;
+    if (!requested) {
+      return base;
+    }
+    return this.coarsestTimeGranularity(requested, base);
   }
 
   private mapItemToModel(item: {
@@ -199,34 +177,19 @@ export class EconomicDataResolver {
     setPrivateResponseCacheHint(info);
     const start = new Date(timeRange.start);
     const end = new Date(timeRange.end);
-    const resolvedGranularity =
+    // Granularity is derived from the query window only. Bucketing happens
+    // per-series in the service (coarsest of the requested granularity and
+    // each item's own frequency), so mixed-frequency categories keep their
+    // realtime/daily series intact on short windows instead of collapsing.
+    const appliedGranularity =
       granularity ?? this.resolveDefaultGranularityForRange(start, end);
-    const baseGranularity = granularity
-      ? null
-      : this.parseGranularity(
-          await this.akshareService.getCategoryBaseGranularity(category),
-        );
-    const appliedGranularity = baseGranularity
-      ? this.coarsestTimeGranularity(resolvedGranularity, baseGranularity)
-      : resolvedGranularity;
 
-    const skipGranularityValidation = Boolean(!granularity && baseGranularity);
-    const points = skipGranularityValidation
-      ? await this.akshareService.getDataByCategory(
-          category,
-          start,
-          end,
-          appliedGranularity,
-          undefined,
-          { skipGranularityValidation: true },
-        )
-      : await this.akshareService.getDataByCategory(
-          category,
-          start,
-          end,
-          appliedGranularity,
-        );
-    // Handle both legacy array return and paginated result
+    const points = await this.akshareService.getDataByCategory(
+      category,
+      start,
+      end,
+      appliedGranularity,
+    );
     const dataPoints = Array.isArray(points) ? points : points.data;
     return dataPoints.map((point) => ({
       timestamp: point.recordedAt,
@@ -251,32 +214,14 @@ export class EconomicDataResolver {
     setPrivateResponseCacheHint(info);
     const start = new Date(timeRange.start);
     const end = new Date(timeRange.end);
-    const resolvedGranularity =
+    const appliedGranularity =
       granularity ?? this.resolveDefaultGranularityForRange(start, end);
-    const baseGranularity = granularity
-      ? null
-      : this.parseGranularity(
-          await this.akshareService.getCategoryBaseGranularity(category),
-        );
-    const appliedGranularity = baseGranularity
-      ? this.coarsestTimeGranularity(resolvedGranularity, baseGranularity)
-      : resolvedGranularity;
-    const skipGranularityValidation = Boolean(!granularity && baseGranularity);
-    const points = skipGranularityValidation
-      ? await this.akshareService.getDataByCategory(
-          category,
-          start,
-          end,
-          appliedGranularity,
-          undefined,
-          { skipGranularityValidation: true },
-        )
-      : await this.akshareService.getDataByCategory(
-          category,
-          start,
-          end,
-          appliedGranularity,
-        );
+    const points = await this.akshareService.getDataByCategory(
+      category,
+      start,
+      end,
+      appliedGranularity,
+    );
     const dataPoints = Array.isArray(points) ? points : points.data;
 
     const mappedPoints = dataPoints.map((point) => ({

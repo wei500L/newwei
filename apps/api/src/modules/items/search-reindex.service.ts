@@ -33,7 +33,7 @@ export class SearchReindexService {
 
     let job: SearchReindexJob;
     try {
-      job = this.jobs.create(orgId);
+      job = await this.jobs.create(orgId);
     } catch (error) {
       await lease.release();
       throw error;
@@ -43,7 +43,10 @@ export class SearchReindexService {
     return job;
   }
 
-  getReindexJob(orgId: string, jobId: string): SearchReindexJob | null {
+  async getReindexJob(
+    orgId: string,
+    jobId: string,
+  ): Promise<SearchReindexJob | null> {
     return this.jobs.getForOrg(orgId, jobId);
   }
 
@@ -53,13 +56,13 @@ export class SearchReindexService {
     lease: CacheLockLease,
   ): Promise<void> {
     const stopRenew = lease.startAutoRenew();
-    this.jobs.markRunning(jobId);
+    await this.jobs.markRunning(jobId);
 
     try {
       const result = await this.elasticsearch.reindexOrg(orgId);
-      this.jobs.markCompleted(jobId, result.indexed);
+      await this.jobs.markCompleted(jobId, result.indexed);
     } catch (error) {
-      this.jobs.markFailed(
+      await this.jobs.markFailed(
         jobId,
         error instanceof Error ? error.message : String(error),
       );
@@ -70,7 +73,7 @@ export class SearchReindexService {
       } catch {
         // best-effort
       }
-      this.jobs.prune();
+      await this.jobs.prune();
     }
   }
 

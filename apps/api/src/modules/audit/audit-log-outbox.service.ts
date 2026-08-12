@@ -178,17 +178,33 @@ export class AuditLogOutboxService {
     }
 
     try {
-      await this.prisma.auditLog.create({
-        data: {
+      // At-least-once delivery: the audit row is created before the outbox
+      // row is deleted, so a failure between the two leaves the entry for a
+      // retry. Re-delivery must not insert a duplicate audit row — dedupe by
+      // the exact payload identity (createdAt is written with ms precision).
+      const existing = await this.prisma.auditLog.findFirst({
+        where: {
           orgId: payload.orgId,
-          actorId: payload.actorId,
+          actorId: payload.actorId ?? null,
           resource: payload.resource,
           action: payload.action,
-          metadata: payload.metadata,
-          ipAddress: payload.ipAddress,
           createdAt: payload.createdAt,
         },
+        select: { id: true },
       });
+      if (!existing) {
+        await this.prisma.auditLog.create({
+          data: {
+            orgId: payload.orgId,
+            actorId: payload.actorId,
+            resource: payload.resource,
+            action: payload.action,
+            metadata: payload.metadata,
+            ipAddress: payload.ipAddress,
+            createdAt: payload.createdAt,
+          },
+        });
+      }
       await this.prisma.auditLogOutbox.delete({ where: { id: outboxId } });
     } catch (error) {
       const attempts = claimed?.attempts ?? 1;

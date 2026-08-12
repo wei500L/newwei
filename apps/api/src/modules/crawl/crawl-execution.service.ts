@@ -5,12 +5,14 @@ import {
   sanitizeError,
 } from "@modular/utils";
 import { Injectable, Optional } from "@nestjs/common";
+import { ModuleRef } from "@nestjs/core";
 import type { CrawlTask, Prisma } from "@prisma/client";
 import { NotificationType, PipelineJobStatus } from "@prisma/client";
 import { load } from "cheerio";
 
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
+import { ItemsService } from "../items/items.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { writeTaskLogBestEffort } from "../observability/task-log.writer";
 
@@ -249,6 +251,7 @@ export class CrawlExecutionService {
     private readonly qualityStrategy: CrawlQualityStrategyService,
     private readonly crawlSettings: CrawlSettingsService,
     private readonly notifications: NotificationsService,
+    private readonly moduleRef: ModuleRef,
     @Optional()
     private readonly newsSourceOpsSnapshots?: NewsSourceOpsSnapshotService,
   ) {}
@@ -429,6 +432,28 @@ export class CrawlExecutionService {
 
         if (triggeredById) {
           await this.safeNotifyCrawl(task, summary, triggeredById, "completed");
+        }
+
+        // 304 reuse skips persistResults entirely, so an ingestToItems task
+        // whose reused result was never ingested (fresh switch, or a reuse of
+        // a pre-ingest history run) would silently never reach the pipeline.
+        // createFromCrawlResultsBatch is idempotent, so re-running it is safe.
+        if (ingestToItems && latestHttpValidationState.resultId) {
+          try {
+            const itemsService = this.moduleRef.get(ItemsService, {
+              strict: false,
+            });
+            await itemsService.createFromCrawlResultsBatch(
+              orgId,
+              triggeredById ?? task.createdById,
+              { crawlResultIds: [latestHttpValidationState.resultId] },
+            );
+          } catch (error) {
+            logger.warn(
+              { err: error, taskId, resultId: latestHttpValidationState.resultId },
+              "Failed to ingest reused crawl result on 304 path",
+            );
+          }
         }
 
         return summary;
@@ -620,6 +645,7 @@ export class CrawlExecutionService {
       const persistedSuccesses = this.attachHttpValidationMetadata(
         successes,
         preflightMetadata,
+        task.targetUrl,
       );
 
       let failureRetryableCount = 0;
@@ -1198,11 +1224,35 @@ export class CrawlExecutionService {
   private attachHttpValidationMetadata(
     successes: Crawl4aiArticle[],
     metadata: Record<string, unknown> | null,
+    targetUrl?: string,
   ): Crawl4aiArticle[] {
     if (!metadata || successes.length === 0) {
       return successes;
     }
+    const targetFingerprint = targetUrl
+      ? buildCanonicalUrlFingerprint(targetUrl, [])
+      : null;
     return successes.map((article) => {
+      // The preflight etag/lastModified describe the TARGET url only; writing
+      // them onto detail-expansion articles pollutes their metadata and makes
+      // the 304 reuse decision unstable (a detail row could masquerade as the
+      // target's validation state).
+      if (targetFingerprint) {
+        const articleUrl =
+          typeof article.url === "string" ? article.url.trim() : "";
+        if (articleUrl.length > 0) {
+          const articleFingerprint = buildCanonicalUrlFingerprint(
+            articleUrl,
+            [],
+          );
+          if (
+            !articleFingerprint ||
+            articleFingerprint.fingerprint !== targetFingerprint.fingerprint
+          ) {
+            return article;
+          }
+        }
+      }
       const articleMetadata =
         article.metadata &&
         typeof article.metadata === "object" &&

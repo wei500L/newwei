@@ -1,11 +1,13 @@
 import { DEFAULT_ROLES } from "@modular/config";
-import { BadRequestException, ForbiddenException, Injectable, Optional } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
 import { hasMembershipPermission } from "../../common/authz/membership-permissions";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
+
 import { ActiveOrgRegistryService } from "./active-org-registry.service";
 
 // org.write is admin-only (see @modular/config DEFAULT_ROLES). Managing an org must
@@ -55,6 +57,8 @@ export class OrgService {
     private readonly prisma: PrismaService,
     @Optional()
     private readonly activeOrgRegistry?: ActiveOrgRegistryService,
+    @Optional()
+    private readonly cache?: CacheService,
   ) {}
 
   private static readonly SLUG_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N}-]{1,62}[\p{L}\p{N}]$/u;
@@ -336,6 +340,30 @@ export class OrgService {
     );
 
     await this.activeOrgRegistry?.invalidate();
+
+    if (!isActive && this.cache) {
+      // Members' cached profiles (TTL up to minutes) short-circuit the
+      // org.isActive check inside getUserProfile, so a disabled org's members
+      // would keep working until the cache expires. Drop their profile keys so
+      // the next JWT-authenticated request is rejected immediately.
+      try {
+        const members = await this.prisma.membership.findMany({
+          where: { orgId: normalizedOrgId },
+          select: { userId: true },
+        });
+        await Promise.allSettled(
+          members.map((member) =>
+            this.cache!.del(`profile:${member.userId}:${normalizedOrgId}`),
+          ),
+        );
+      } catch (error) {
+        Logger.warn(
+          { error, orgId: normalizedOrgId },
+          "Failed to invalidate org member profile caches",
+          "OrgService",
+        );
+      }
+    }
 
     return {
       id: updated.id,

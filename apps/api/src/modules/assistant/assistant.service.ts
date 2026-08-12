@@ -164,7 +164,12 @@ export class AssistantService {
     await this.queue.add(
       "query",
       { type: "query", runId: record.id, orgId, traceId },
-      { jobId: `assistant:query:${record.id}`, removeOnComplete: true, attempts: this.env.assistantConfig.maxRetries }
+      {
+        jobId: `assistant:query:${record.id}`,
+        removeOnComplete: true,
+        attempts: this.env.assistantConfig.maxRetries,
+        backoff: { type: "exponential", delay: 2_000 },
+      }
     );
     return record;
   }
@@ -181,7 +186,12 @@ export class AssistantService {
     await this.queue.add(
       "report",
       { type: "report", runId: record.id, orgId, traceId },
-      { jobId: `assistant:report:${record.id}`, removeOnComplete: true, attempts: this.env.assistantConfig.maxRetries }
+      {
+        jobId: `assistant:report:${record.id}`,
+        removeOnComplete: true,
+        attempts: this.env.assistantConfig.maxRetries,
+        backoff: { type: "exponential", delay: 2_000 },
+      }
     );
     return record;
   }
@@ -198,13 +208,21 @@ export class AssistantService {
     await this.queue.add(
       "forecast",
       { type: "forecast", runId: record.id, orgId, traceId },
-      { jobId: `assistant:forecast:${record.id}`, removeOnComplete: true, attempts: this.env.assistantConfig.maxRetries }
+      {
+        jobId: `assistant:forecast:${record.id}`,
+        removeOnComplete: true,
+        attempts: this.env.assistantConfig.maxRetries,
+        backoff: { type: "exponential", delay: 2_000 },
+      }
     );
     return record;
   }
 
   async listRuns(orgId: string, limit = 50) {
-    return AssistantRunModel.find({ orgId }).sort({ createdAt: -1 }).limit(limit).lean();
+    // Clamp the limit: run records carry full input/output documents and an
+    // unbounded limit is a memory/response amplification vector.
+    const cappedLimit = Math.max(1, Math.min(Math.trunc(limit), 100));
+    return AssistantRunModel.find({ orgId }).sort({ createdAt: -1 }).limit(cappedLimit).lean();
   }
 
   async getRuntimeCapabilities(): Promise<AssistantRuntimeCapabilities> {
@@ -323,6 +341,9 @@ export class AssistantService {
       }
 
       record.status = "completed";
+      // A retried run may carry an error from an earlier failed attempt;
+      // clear it so the UI never shows a "successful" run with an old error.
+      record.error = undefined;
       await record.save();
       await this.publish(record.orgId, record.id, record.type, record.status, record.summary ?? undefined, createdAt);
     } catch (error: unknown) {

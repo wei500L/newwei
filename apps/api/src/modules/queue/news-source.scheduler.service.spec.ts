@@ -66,7 +66,7 @@ describe("NewsSourceSchedulerService", () => {
     } as any;
 
     const crawlQueue = {
-      enqueueTask: jest.fn(),
+      enqueueTask: jest.fn().mockResolvedValue({ deduplicated: false }),
     } as any;
     const queueService = {
       enqueueItem: jest.fn(),
@@ -122,6 +122,7 @@ describe("NewsSourceSchedulerService", () => {
       prisma,
       metadataService,
       crawlQueue,
+      { compileNewsSourceOverlay: jest.fn().mockResolvedValue(null) } as any,
       queueService,
       cache,
       env,
@@ -250,6 +251,7 @@ describe("NewsSourceSchedulerService", () => {
       {
         priorityClass: "normal",
         sourcePriority: 0,
+        sourceId: "source-1",
       },
     );
     expect(crawlQueue.enqueueTask).toHaveBeenNthCalledWith(
@@ -260,6 +262,7 @@ describe("NewsSourceSchedulerService", () => {
       {
         priorityClass: "normal",
         sourcePriority: 0,
+        sourceId: "source-1",
       },
     );
   });
@@ -530,6 +533,7 @@ describe("NewsSourceSchedulerService", () => {
       {
         priorityClass: "normal",
         sourcePriority: 0,
+        sourceId: "source-1",
       },
     );
   });
@@ -713,6 +717,7 @@ describe("NewsSourceSchedulerService", () => {
         {
           priorityClass: "normal",
           sourcePriority: 0,
+          sourceId: "source-1",
         },
       );
     } finally {

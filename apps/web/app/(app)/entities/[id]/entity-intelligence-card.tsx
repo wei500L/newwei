@@ -41,6 +41,7 @@ import dayjs from "@/lib/dayjs";
 import {
   buildKnowledgeGraphExplorerHref,
   formatKnowledgeGraphLabel,
+  formatNullableNumber,
   normalizeKnowledgeGraphSeedType,
 } from "@/lib/knowledge-graph-explorer";
 import { SENTIMENT_COLORS } from "@/lib/status-tokens";
@@ -391,11 +392,11 @@ export function EntityIntelligenceCard({
                       <Space wrap>
                         <Text type="secondary">
                           {t("pages.knowledgeGraph.details.confidence")}
-                          : {relationship.edge.confidence.toFixed(2)}
+                          : {formatNullableNumber(relationship.edge.confidence)}
                         </Text>
                         <Text type="secondary">
                           {t("pages.knowledgeGraph.details.weight")}
-                          : {relationship.edge.weight.toFixed(2)}
+                          : {formatNullableNumber(relationship.edge.weight)}
                         </Text>
                         <Text type="secondary">
                           {t("pages.knowledgeGraph.details.evidenceTitle")}

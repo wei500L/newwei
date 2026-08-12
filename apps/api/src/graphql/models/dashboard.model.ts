@@ -30,6 +30,11 @@ export class QueueStatsModel {
   @Field(() => QueueCountsModel)
   counts!: QueueCountsModel;
 
+  /** False when the org queue counters could not be read (Redis failure) —
+   * consumers must not treat all-zero counts as "queue healthy". */
+  @Field(() => Boolean)
+  countsAvailable!: boolean;
+
   @Field(() => Int)
   processedCount!: number;
 

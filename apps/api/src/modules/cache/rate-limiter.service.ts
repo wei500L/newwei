@@ -46,6 +46,21 @@ return {1, active + 1}
 
 const LUA_KEYS = 2;
 
+const COMPENSATE_TIMED_OUT_LUA_SCRIPT = `
+local bucket_key = KEYS[1]
+local now = tonumber(ARGV[1])
+local prefix = ARGV[2]
+local members = redis.call('ZRANGEBYSCORE', bucket_key, now, now)
+local removed = 0
+for i, member in ipairs(members) do
+  if string.sub(member, 1, #prefix) == prefix then
+    redis.call('ZREM', bucket_key, member)
+    removed = removed + 1
+  end
+end
+return removed
+`;
+
 @Injectable()
 export class RateLimiterService {
   private readonly logger = new Logger(RateLimiterService.name);
@@ -147,12 +162,34 @@ export class RateLimiterService {
       return allowed === 1;
     } catch (error) {
       this.recordFailure(error instanceof Error ? error.message : 'unknown redis error');
+      // Fail-open was chosen above, but the in-flight Lua may still complete
+      // and consume a quota slot for THIS request (ZADD with now-sequence).
+      // Compensate so "released" requests do not silently eat a token and
+      // make the limiter stricter than configured under Redis latency spikes.
+      if (this.failOpen) {
+        void this.compensateTimedOutRequest(bucketKey, now).catch(() => undefined);
+      }
       return this.failOpen;
     } finally {
       if (acquiredHalfOpenProbe) {
         this.halfOpenProbeInFlight = false;
       }
     }
+  }
+
+  /**
+   * Best-effort removal of the quota entry our own timed-out request may have
+   * written: members are scored at `now` with a `${now}-<seq>` key, so we can
+   * target exactly the entries for this timestamp.
+   */
+  private async compensateTimedOutRequest(bucketKey: string, now: number) {
+    await this.redis.eval(
+      COMPENSATE_TIMED_OUT_LUA_SCRIPT,
+      1,
+      bucketKey,
+      String(now),
+      `${now}-`,
+    );
   }
 
   private recordSuccess() {

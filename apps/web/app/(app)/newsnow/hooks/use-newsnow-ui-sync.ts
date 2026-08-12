@@ -66,6 +66,29 @@ export function useNewsnowUiSync() {
   const hydratedRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedFingerprintRef = useRef<string | null>(null);
+  const dirtyBeforeHydrationRef = useRef(false);
+  const skipFirstChangeRunRef = useRef(true);
+
+  // If the user interacts (toggle/drag/etc.) before the remote fetch returns,
+  // hydration must not clobber those local changes. Track dirtiness during
+  // the pre-hydration window; fetchRemote then skips replacePreferences and
+  // lets the save effect upload the local state instead.
+  useEffect(() => {
+    if (skipFirstChangeRunRef.current) {
+      skipFirstChangeRunRef.current = false;
+      return;
+    }
+    if (!hydratedRef.current) {
+      dirtyBeforeHydrationRef.current = true;
+    }
+  }, [
+    focusSources,
+    columnOrders,
+    hideCrossSourceDuplicates,
+    sortMode,
+    densityMode,
+    sourceAffinity,
+  ]);
 
   useEffect(() => {
     if (status !== "authenticated" || !accessToken) {
@@ -95,10 +118,13 @@ export function useNewsnowUiSync() {
           return;
         }
         const remoteSettings = response.data?.settings;
-        if (remoteSettings) {
+        if (remoteSettings && !dirtyBeforeHydrationRef.current) {
           replacePreferences(remoteSettings);
           lastSavedFingerprintRef.current = buildFingerprint(remoteSettings);
-        } else {
+        } else if (
+          !remoteSettings &&
+          !dirtyBeforeHydrationRef.current
+        ) {
           // No server prefs for this (org, user). The store persists under a single
           // global localStorage key, so without a reset the previous org's prefs would
           // remain and get uploaded into this org's slot. Reset to defaults and baseline

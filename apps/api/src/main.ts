@@ -3,6 +3,7 @@ import "reflect-metadata";
 import { createLogger } from "@modular/utils";
 import { RequestMethod, ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
 import { json, urlencoded, type NextFunction, type Request, type Response } from "express";
@@ -24,10 +25,33 @@ async function bootstrap() {
   const bootstrapLogger = createLogger({ name: "bootstrap" });
   bootstrapLogger.info({ node: process.version }, "Bootstrapping API");
 
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true
   });
   app.enableShutdownHooks();
+
+  // Rate limits keyed by client IP only work when req.ip reflects the real
+  // client. Behind a reverse proxy the raw socket address is the proxy, which
+  // would turn the login/GraphQL buckets into shared global buckets (a 5x
+  // failed-login burst locks out every user). Trust only explicitly
+  // configured proxy hops; when unset we keep the conservative default so the
+  // header cannot be spoofed by clients.
+  const trustProxyValue = process.env.TRUST_PROXY?.trim();
+  if (trustProxyValue) {
+    if (/^\d+$/.test(trustProxyValue)) {
+      app.set("trust proxy", Number(trustProxyValue));
+    } else if (/^[,\s]+$/.test(trustProxyValue) || trustProxyValue.includes(",")) {
+      app.set(
+        "trust proxy",
+        trustProxyValue
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter(Boolean),
+      );
+    } else {
+      app.set("trust proxy", trustProxyValue);
+    }
+  }
 
   const winstonLogger = app.get(WINSTON_MODULE_NEST_PROVIDER);
   app.useLogger(winstonLogger);
@@ -53,9 +77,15 @@ async function bootstrap() {
   app.use((req: Request, res: Response, next: NextFunction) => {
     const started = Date.now();
     res.on("finish", () => {
+      // Unmatched routes (404/scan traffic) have no route template: label
+      // them with a single bucket, otherwise the raw path becomes an
+      // unbounded Prometheus label cardinality bomb.
+      const routeLabel = req.route?.path
+        ? String(req.route.path)
+        : "unmatched";
       recordHttpRequestMetric({
         method: req.method,
-        route: req.route?.path ? String(req.route.path) : req.path,
+        route: routeLabel,
         statusCode: res.statusCode,
         durationMs: Date.now() - started,
       });

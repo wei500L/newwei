@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
 } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
@@ -206,6 +207,14 @@ export class CrawlTaskService {
     });
     if (!task) {
       throw new NotFoundException("Crawl task not found");
+    }
+    if (task.status === "running") {
+      // Deleting a running task orphans the active BullMQ job: the worker
+      // keeps executing and its writes (status flips, crawl results) hit a
+      // deleted row. Require the operator to cancel first.
+      throw new ConflictException(
+        "Cannot delete a crawl task that is currently running",
+      );
     }
 
     await this.queueService.removeQueuedJobs(taskId);
@@ -575,6 +584,16 @@ export class CrawlTaskService {
       );
     }
     const enqueueOptions = this.extractEnqueueOptions(config);
+
+    // Only failed/completed tasks can be meaningfully retried. Re-enqueueing
+    // a running/queued task is silently deduplicated by BullMQ (same taskId
+    // dedup key), which would flip the UI to "queued" while the original job
+    // keeps running — a misleading no-op.
+    if (task.status === "running" || task.status === "queued") {
+      throw new ConflictException(
+        `Cannot retry a task that is currently ${task.status}`,
+      );
+    }
 
     await this.prisma.crawlTask.update({
       where: { id },

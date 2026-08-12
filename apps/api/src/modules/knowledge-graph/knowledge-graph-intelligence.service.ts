@@ -342,7 +342,7 @@ export class KnowledgeGraphIntelligenceService {
     if (exactRows.length > 0) {
       return exactRows;
     }
-    return this.prisma.entitySentimentSnapshot.findMany({
+    const fallbackRows = await this.prisma.entitySentimentSnapshot.findMany({
       where: {
         orgId,
         entityName: entity.canonicalName,
@@ -351,6 +351,21 @@ export class KnowledgeGraphIntelligenceService {
       },
       orderBy: { bucketStart: "asc" },
     });
+    if (fallbackRows.length === 0) {
+      return fallbackRows;
+    }
+    // The legacy "" rows are ambiguous: another entity with the same name but
+    // a different type may own them. Only fall back when this name has NO
+    // other non-empty type snapshots — otherwise sentiment from a homonym
+    // (company "长城" vs sector "长城") would leak onto the card.
+    const otherTypedCount = await this.prisma.entitySentimentSnapshot.count({
+      where: {
+        orgId,
+        entityName: entity.canonicalName,
+        entityType: { notIn: ["", entity.type] },
+      },
+    });
+    return otherTypedCount > 0 ? [] : fallbackRows;
   }
 
   private computeSentimentTotals(

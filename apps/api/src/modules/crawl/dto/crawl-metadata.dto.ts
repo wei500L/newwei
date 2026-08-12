@@ -1,5 +1,7 @@
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf } from "class-validator";
 
+import { IsSafeUrl } from "../../../common/validators/is-safe-url.decorator";
+
 export class CrawlMetadataRequestDto {
   @IsOptional()
   @IsIn(["sitemap", "urls"])
@@ -8,6 +10,14 @@ export class CrawlMetadataRequestDto {
   @ValidateIf((o) => o.source !== "urls")
   @IsString()
   @MaxLength(255)
+  // Hostname-only guard: sitemap discovery builds https://{domain} requests,
+  // so bare IPs/localhost must be rejected up front (SSRF).
+  @Matches(
+    /^(?![\d.:[\]]+$)(?!localhost$)(?!.*\.local$)(?!.*\.internal$)(?!.*\.lan$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
+    {
+      message: "domain must be a public hostname (no IPs, localhost, or private TLDs)",
+    },
+  )
   domain?: string;
 
   @ValidateIf((o) => o.source === "urls")
@@ -15,6 +25,7 @@ export class CrawlMetadataRequestDto {
   @ArrayMinSize(1)
   @ArrayMaxSize(200)
   @Matches(/^https?:\/\//i, { each: true, message: "each url must include http/https scheme" })
+  @IsSafeUrl({ each: true })
   urls?: string[];
 
   @IsOptional()

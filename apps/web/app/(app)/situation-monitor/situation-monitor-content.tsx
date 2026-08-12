@@ -1786,6 +1786,33 @@ export function SituationMonitorContent() {
     onOrefUpdate: handleRealtimeOrefUpdate,
   });
 
+  // The socket does not replay history, and polling stops while connected —
+  // so events emitted while the connection was down would be permanently
+  // lost. On every reconnect, refresh the feeds once to compensate.
+  const wasRealtimeConnectedRef = useRef(false);
+  useEffect(() => {
+    if (!realtimeState.connected) {
+      wasRealtimeConnectedRef.current = false;
+      return;
+    }
+    if (wasRealtimeConnectedRef.current) {
+      return;
+    }
+    wasRealtimeConnectedRef.current = true;
+    if (telegramSignalActive) {
+      void loadTelegramFeed({ silent: true });
+    }
+    if (orefSignalActive) {
+      void loadOrefSignals({ silent: true });
+    }
+  }, [
+    realtimeState.connected,
+    telegramSignalActive,
+    orefSignalActive,
+    loadTelegramFeed,
+    loadOrefSignals,
+  ]);
+
   const telegramPollingActive =
     telegramSignalActive && !realtimeState.connected;
   const orefPollingActive = orefSignalActive && !realtimeState.connected;

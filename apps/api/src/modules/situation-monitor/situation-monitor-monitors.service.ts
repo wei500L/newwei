@@ -32,6 +32,7 @@ import type {
   SituationMonitorPreviewDto,
   UpdateSituationMonitorDto,
 } from "./dto/situation-monitor-monitor.dto";
+import { orefDateToUtc } from "./signals/oref-date";
 import type {
   OrefAlert,
   OrefHistoryEntry,
@@ -2234,7 +2235,10 @@ export class SituationMonitorMonitorsService {
       summary: alert.desc,
       link: "",
       source: alert.cat || "oref",
-      timestamp: Date.parse(alert.alertDate) || Date.now(),
+      // Parse with the shared Jerusalem-zone converter: Date.parse() would
+      // interpret the naive "YYYY-MM-DD HH:mm:ss" as server-local time and
+      // shift matches by 2-3h relative to the history store.
+      timestamp: Date.parse(orefDateToUtc(alert.alertDate)) || Date.now(),
       category: alert.cat,
       topics: [],
       entities: [],
@@ -2248,7 +2252,7 @@ export class SituationMonitorMonitorsService {
     entry: OrefHistoryEntry,
   ): MonitorCandidate {
     const candidate = this.orefAlertCandidate(alert, "oref_history");
-    candidate.timestamp = Date.parse(entry.timestamp) || candidate.timestamp;
+    candidate.timestamp = Date.parse(orefDateToUtc(entry.timestamp)) || candidate.timestamp;
     candidate.itemKey = `oref-history:${entry.timestamp}:${alert.id}`;
     return candidate;
   }

@@ -20,6 +20,7 @@ import {
 import {
   EconomicDataFrequency,
   EconomicDataRunStatus,
+  EconomicDataValueType,
   Prisma,
 } from "@prisma/client";
 import { Queue, type Job, type RepeatableJob, type RepeatOptions } from "bullmq";
@@ -2268,19 +2269,10 @@ export class AkshareService implements OnModuleInit {
     pagination?: PaginationInput,
     options?: { skipGranularityValidation?: boolean },
   ) {
-    if (granularity && !options?.skipGranularityValidation) {
-      const baseGranularity =
-        await this.getCategoryBaseGranularity(categoryKey);
-      if (
-        baseGranularity &&
-        this.granularityRank(granularity) <
-          this.granularityRank(baseGranularity)
-      ) {
-        throw new BadRequestException(
-          `Requested granularity '${granularity}' is finer than this category's base frequency ('${baseGranularity}').`,
-        );
-      }
-    }
+    // Note: granularity validation against the category's coarsest item frequency
+    // was removed because bucketing is now applied per-series: each series uses
+    // coarsest(requestedGranularity, its own defaultFrequency), so mixed-frequency
+    // categories (e.g. realtime FX + monthly exports) no longer collapse.
 
     const range = granularity
       ? this.alignRangeToGranularityUtc(start, end, granularity)
@@ -2337,40 +2329,132 @@ export class AkshareService implements OnModuleInit {
 
     if (granularity) {
       // Apply bucketing for granularity.
-      // Important: bucket per-series (itemId + sourceField) to avoid mixing different indicators
-      // that share the same category.
+      // Buckets are computed per-series (itemId + sourceField) so different
+      // indicators in the same category are never mixed. Each series buckets at
+      // coarsest(requestedGranularity, seriesFrequency) so high-frequency series
+      // (realtime FX, daily indices) are not collapsed by low-frequency items
+      // (monthly exports) in the same category.
+      //
+      // Aggregation semantics per series:
+      // - realtime series keep the last point per bucket ("latest snapshot").
+      // - percent/yield ratio series keep the last point (as-of value): a
+      //   quarterly bucket of a monthly YoY series is the last month, not a
+      //   meaningless "average YoY".
+      // - OHLC fields aggregate OHLC-aware (first open / max high / min low /
+      //   last close) so candles are not fabricated from arithmetic means.
+      // - everything else uses the bucket mean.
+      const OHLC_FIELDS = new Set(["open", "high", "low", "close"]);
+      const RATE_VALUE_TYPES = new Set<string>([
+        EconomicDataValueType.percent,
+        EconomicDataValueType.yield,
+      ]);
+      type BucketMode =
+        | "realtime"
+        | "rate"
+        | "ohlc-open"
+        | "ohlc-high"
+        | "ohlc-low"
+        | "ohlc-close"
+        | "mean";
       const bucketed = new Map<
         string,
         {
           timestamp: Date;
-          valueSum: number;
           count: number;
+          firstValue: number;
+          maxValue: number;
+          minValue: number;
+          sum: number;
           sample: (typeof points)[number];
+          mode: BucketMode;
         }
       >();
       for (const point of points) {
-        const bucketKey = this.bucketTimestamp(point.recordedAt, granularity);
+        const seriesGranularity = this.coarsestGranularity(
+          granularity,
+          this.defaultFrequencyToGranularity(
+            point.item?.defaultFrequency,
+          ),
+        );
+        const bucketKey = this.bucketTimestamp(
+          point.recordedAt,
+          seriesGranularity,
+        );
         const seriesKey = `${point.itemId}::${point.sourceField ?? ""}::${bucketKey}`;
+        const numericValue = Number(point.value);
+        const sourceField = point.sourceField ?? "";
+        const dataType = point.dataType;
+        const isRealtimeItem =
+          point.item?.defaultFrequency === EconomicDataFrequency.realtime;
+        const isRateSeries =
+          typeof dataType === "string" &&
+          RATE_VALUE_TYPES.has(dataType as EconomicDataValueType);
         const existing = bucketed.get(seriesKey);
         if (existing) {
-          existing.valueSum += Number(point.value);
           existing.count += 1;
+          existing.sum += numericValue;
+          if (numericValue > existing.maxValue) {
+            existing.maxValue = numericValue;
+          }
+          if (numericValue < existing.minValue) {
+            existing.minValue = numericValue;
+          }
+          if (
+            point.recordedAt.getTime() >=
+            existing.sample.recordedAt.getTime()
+          ) {
+            existing.sample = point;
+          }
         } else {
+          let mode: BucketMode;
+          if (isRealtimeItem) {
+            mode = "realtime";
+          } else if (isRateSeries) {
+            mode = "rate";
+          } else if (OHLC_FIELDS.has(sourceField)) {
+            mode = `ohlc-${sourceField}` as BucketMode;
+          } else {
+            mode = "mean";
+          }
           bucketed.set(seriesKey, {
             timestamp: new Date(bucketKey),
-            valueSum: Number(point.value),
             count: 1,
+            firstValue: numericValue,
+            maxValue: numericValue,
+            minValue: numericValue,
+            sum: numericValue,
             sample: point,
+            mode,
           });
         }
       }
       const bucketedResults = Array.from(bucketed.values())
         .map((entry) => {
           const aggregated = entry.sample;
+          let aggregatedValue: number;
+          switch (entry.mode) {
+            case "realtime":
+            case "rate":
+            case "ohlc-close":
+              aggregatedValue = Number(entry.sample.value);
+              break;
+            case "ohlc-open":
+              aggregatedValue = entry.firstValue;
+              break;
+            case "ohlc-high":
+              aggregatedValue = entry.maxValue;
+              break;
+            case "ohlc-low":
+              aggregatedValue = entry.minValue;
+              break;
+            default:
+              aggregatedValue = entry.sum / Math.max(1, entry.count);
+              break;
+          }
           return {
             ...aggregated,
             recordedAt: entry.timestamp,
-            value: new Prisma.Decimal(entry.valueSum / entry.count),
+            value: new Prisma.Decimal(aggregatedValue),
           };
         })
         .sort((a, b) => a.recordedAt.getTime() - b.recordedAt.getTime());

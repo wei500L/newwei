@@ -1303,6 +1303,14 @@ export class AlertsService {
       }
     }
 
+    if (rule.lastTriggeredAt) {
+      const nextAllowed =
+        rule.lastTriggeredAt.getTime() + rule.cooldownSeconds * 1000;
+      if (Date.now() < nextAllowed) {
+        return null;
+      }
+    }
+
     const provider = this.resolveMetricProvider(rule);
     if (!provider) {
       logger.warn(
@@ -1327,6 +1335,29 @@ export class AlertsService {
       return null;
     }
 
+    // Atomically claim the cooldown window BEFORE creating the event: the
+    // rule is evaluated by both the repeat scheduler and one-shot scan jobs
+    // concurrently, and the read-then-write of lastTriggeredAt above is racy.
+    // Only the winner of this conditional update may create the alert event.
+    const claimed = await this.prisma.alertRule.updateMany({
+      where: {
+        id: rule.id,
+        status: AlertStatus.active,
+        OR: [
+          { lastTriggeredAt: null },
+          {
+            lastTriggeredAt: {
+              lte: new Date(Date.now() - rule.cooldownSeconds * 1000),
+            },
+          },
+        ],
+      },
+      data: { lastTriggeredAt: new Date() },
+    });
+    if (claimed.count !== 1) {
+      return null;
+    }
+
     const context = this.normalizeAlertContext({
       latest,
       previous,
@@ -1345,11 +1376,6 @@ export class AlertsService {
         message: triggered.message,
         context: toPrismaJsonValueOrUndefined(context),
       },
-    });
-
-    await this.prisma.alertRule.update({
-      where: { id: rule.id },
-      data: { lastTriggeredAt: new Date() },
     });
 
     const activeChannels = rule.channels
@@ -1388,7 +1414,11 @@ export class AlertsService {
     }
 
     if (inAppDeliveries.length > 0) {
-      void this.deliverInAppNotifications(
+      // Await in-app delivery inside the evaluate job instead of
+      // fire-and-forget: the external channels are queued with retries, but a
+      // detached promise dies with the process and leaves the event +
+      // deliveries stuck in "pending" forever.
+      await this.deliverInAppNotifications(
         rule,
         {
           id: event.id,

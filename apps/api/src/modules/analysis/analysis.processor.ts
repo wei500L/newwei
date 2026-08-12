@@ -46,6 +46,14 @@ export class AnalysisProcessor implements OnModuleInit, OnModuleDestroy {
       } else {
         logger.error({ jobId: job?.id, error }, "Analysis worker failed");
       }
+      // Only announce a failure once the run has exhausted all retries;
+      // transient failures are retried by BullMQ and should not spam the
+      // user with notifications.
+      const attemptsMade = job?.attemptsMade ?? 0;
+      const attempts = job?.opts?.attempts ?? 1;
+      if (job?.data?.analysisId && attemptsMade >= attempts) {
+        void this.analysisService.notifyFinalFailure(job.data.analysisId);
+      }
     });
 
     this.events.on("failed", this.handleQueueFailed);

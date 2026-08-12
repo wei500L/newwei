@@ -128,8 +128,7 @@ describe("EconomicDataResolver", () => {
       expect(result[0].item.metadata).toBeNull();
     });
 
-    it("coarsens granularity when omitted based on category base frequency", async () => {
-      (mockAkshareService.getCategoryBaseGranularity as jest.Mock).mockResolvedValue("week");
+    it("derives granularity from the query window when omitted", async () => {
       (mockAkshareService.getDataByCategory as jest.Mock).mockResolvedValue([
         {
           recordedAt: new Date("2024-01-05T12:00:00Z"),
@@ -153,15 +152,16 @@ describe("EconomicDataResolver", () => {
         { start: "2024-01-01", end: "2024-01-31" },
       );
 
+      // Bucketing is applied per-series inside the service (coarsest of the
+      // requested granularity and each item's own frequency), so the resolver
+      // only resolves a window-derived granularity and passes it through.
       expect(mockAkshareService.getDataByCategory).toHaveBeenCalledWith(
         "economic-indicators",
         new Date("2024-01-01"),
         new Date("2024-01-31"),
-        TimeGranularity.week,
-        undefined,
-        { skipGranularityValidation: true }
+        TimeGranularity.day,
       );
-      expect(result[0]?.effectiveGranularity).toBe(TimeGranularity.week);
+      expect(result[0]?.effectiveGranularity).toBe(TimeGranularity.day);
     });
 
     it("uses backend default granularity when requested granularity is omitted", async () => {
@@ -370,8 +370,7 @@ describe("EconomicDataResolver", () => {
       });
     });
 
-    it("coarsens omitted granularity based on the category base frequency", async () => {
-      (mockAkshareService.getCategoryBaseGranularity as jest.Mock).mockResolvedValue("week");
+    it("derives granularity from the query window when omitted", async () => {
       (mockAkshareService.getDataByCategory as jest.Mock).mockResolvedValue([
         {
           recordedAt: new Date("2024-01-05T00:00:00Z"),
@@ -395,13 +394,14 @@ describe("EconomicDataResolver", () => {
         end: "2024-01-31"
       });
 
+      // The service call uses the window-derived granularity, while the
+      // per-series effective granularity coarsens to the item's own weekly
+      // frequency.
       expect(mockAkshareService.getDataByCategory).toHaveBeenCalledWith(
         "economic-indicators",
         new Date("2024-01-01"),
         new Date("2024-01-31"),
-        TimeGranularity.week,
-        undefined,
-        { skipGranularityValidation: true }
+        TimeGranularity.day,
       );
       expect(result.points[0]?.effectiveGranularity).toBe(TimeGranularity.week);
       expect(result.insights[0]).toMatchObject({

@@ -213,17 +213,17 @@ function NewsnowDndGridContent({
     const activeId = String(active.id);
     const overId = over?.id ? String(over.id) : null;
 
-    setItems((items) => {
-      const newOrder = reorderNewsnowItems(items, activeId, overId);
-      if (newOrder === items) {
-        return items;
-      }
-
-      if (activeId !== overId) {
-        setColumnOrder(columnKey, newOrder);
-      }
-      return newOrder;
-    });
+    // Compute the reorder OUTSIDE the state updater: setItems updaters must
+    // be pure (React may call them twice in StrictMode), and writing the
+    // zustand column order inside the updater is a render-phase side effect.
+    const newOrder = reorderNewsnowItems(items, activeId, overId);
+    if (newOrder === items) {
+      return;
+    }
+    setItems(newOrder);
+    if (activeId !== overId) {
+      setColumnOrder(columnKey, newOrder);
+    }
   }
 
   const sortSettingsOverride = useMemo(() => {

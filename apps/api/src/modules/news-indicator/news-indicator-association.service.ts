@@ -26,6 +26,7 @@ import { NewsIndicatorSettingsService } from "./news-indicator-settings.service"
 const logger = createLogger({ name: "news-indicator-association" });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const BACKTEST_RETENTION_DAYS = 30;
 const MAX_POINTS_PER_INDICATOR = 50_000;
 const ASSOCIATION_WRITE_CHUNK_SIZE = 100;
 
@@ -319,11 +320,27 @@ export class NewsIndicatorAssociationService {
           },
           backtestData: {
             orgId,
-            status: NewsIndicatorBacktestStatus.completed,
+            // holdoutDays === 0 leaves an empty evaluation window
+            // [endAt, endAt) — running the backtest would produce a
+            // misleading all-zero record. Record the skip explicitly instead.
+            status:
+              holdoutDays > 0
+                ? NewsIndicatorBacktestStatus.completed
+                : NewsIndicatorBacktestStatus.failed,
             windowStart: backtestWindowStart,
             windowEnd: analyzedEndAt,
             config: toPrismaJsonValue(backtestConfig),
-            metrics: toPrismaJsonValue(metrics)
+            metrics: toPrismaJsonValue(
+              holdoutDays > 0
+                ? metrics
+                : {
+                    triggers: 0,
+                    evaluatedSignals: 0,
+                    hits: 0,
+                    hitRate: 0,
+                    skipped: "holdout_days_zero",
+                  },
+            ),
           }
         });
       }
@@ -338,6 +355,17 @@ export class NewsIndicatorAssociationService {
       }
 
       associationsUpserted += associations.length;
+      // Keep only the most recent backtest runs per association: this refresh
+      // runs on a schedule, so without retention the table grows without
+      // bound (topEntities × metrics × indicators × runs per day).
+      const retentionCutoff = new Date(Date.now() - BACKTEST_RETENTION_DAYS * DAY_MS);
+      const associationIds = associations.map((association) => association.id);
+      await this.prisma.newsIndicatorAssociationBacktestRun.deleteMany({
+        where: {
+          associationId: { in: associationIds },
+          createdAt: { lt: retentionCutoff },
+        },
+      });
       await this.prisma.newsIndicatorAssociationBacktestRun.createMany({
         data: associations.map((association, index) => ({
           associationId: association.id,

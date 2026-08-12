@@ -10,7 +10,6 @@ import { TooManyRequestsException } from "../../common/exceptions/too-many-reque
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
-import { AuthSecurityService } from "./auth-security.service";
 import {
   buildOtpAuthUri,
   generateRecoveryCodes,
@@ -18,6 +17,7 @@ import {
   hashOpaqueToken,
   verifyTotpCode,
 } from "./auth-flow.utils";
+import { AuthSecurityService } from "./auth-security.service";
 
 interface LoginChallengePayload {
   orgId: string;
@@ -284,7 +284,11 @@ export class MfaService {
     };
   }
 
-  async beginEnrollmentWithChallenge(challengeId: string) {
+  async beginEnrollmentWithChallenge(
+    challengeId: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
     const challenge = await this.getActiveChallenge(
       challengeId,
       "mfa_enrollment",
@@ -295,6 +299,12 @@ export class MfaService {
         "MFA enrollment challenge is invalid or expired",
       );
     }
+
+    // The enrollment challenge id travels through URL redirects (browser
+    // history, referrers, logs). Bind it to the party that initiated the
+    // flow so a third party holding only the id cannot enroll their own TOTP
+    // device and take over the account.
+    this.assertChallengeRequesterMatches(challenge, ipAddress, userAgent);
 
     const user = await this.prisma.user.findUnique({
       where: { id: challenge.userId },
@@ -344,7 +354,12 @@ export class MfaService {
     };
   }
 
-  async consumeEnrollmentChallenge(challengeId: string, code: string) {
+  async consumeEnrollmentChallenge(
+    challengeId: string,
+    code: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
     const invalidChallengeMessage =
       "MFA enrollment challenge is invalid or expired";
     const challenge = await this.getActiveChallenge(
@@ -356,18 +371,34 @@ export class MfaService {
       throw new UnauthorizedException(invalidChallengeMessage);
     }
 
+    this.assertChallengeRequesterMatches(challenge, ipAddress, userAgent);
+
+    // Atomically claim the challenge BEFORE verifyEnrollment: verifyEnrollment
+    // rotates the TOTP secret and regenerates the recovery codes, so two
+    // concurrent completes must not both run it — the loser's rotation would
+    // invalidate the recovery codes returned to the winner.
+    await this.consumeChallengeOrThrow(challenge.id, invalidChallengeMessage);
+
     let enrollment: Awaited<ReturnType<typeof this.verifyEnrollment>>;
     try {
       enrollment = await this.verifyEnrollment(challenge.userId, code);
     } catch (error) {
+      if (this.isMfaCodeFailure(error)) {
+        // Wrong code: give the challenge back so the user can retry with the
+        // same challenge instead of restarting the whole enrollment flow.
+        await this.prisma.authChallenge
+          .updateMany({
+            where: { id: challenge.id, consumedAt: { not: null } },
+            data: { consumedAt: null },
+          })
+          .catch(() => undefined);
+      }
       return this.recordChallengeFailure(
         challenge.id,
         invalidChallengeMessage,
         error,
       );
     }
-
-    await this.consumeChallengeOrThrow(challenge.id, invalidChallengeMessage);
 
     const payload = this.parseLoginChallengePayload(challenge.payload);
     return {
@@ -414,10 +445,15 @@ export class MfaService {
       throw new UnauthorizedException("Invalid MFA verification code");
     }
     await this.prisma.$transaction(async (tx) => {
-      await tx.userRecoveryCode.update({
-        where: { id: recoveryCode.id },
+      // Atomic single-use claim: two concurrent logins must not both consume
+      // the same recovery code (findFirst above is racy on its own).
+      const claimed = await tx.userRecoveryCode.updateMany({
+        where: { id: recoveryCode.id, usedAt: null },
         data: { usedAt: new Date() },
       });
+      if (claimed.count !== 1) {
+        throw new UnauthorizedException("Invalid MFA verification code");
+      }
       await tx.userTotpFactor.updateMany({
         where: { userId },
         data: { lastUsedAt: new Date() },
@@ -573,6 +609,39 @@ export class MfaService {
       .map((value) => value.toLowerCase());
 
     return names.includes("admin");
+  }
+
+  private assertChallengeRequesterMatches(
+    challenge: {
+      payload: Prisma.JsonValue;
+    },
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
+    const payload = this.parseLoginChallengePayload(challenge.payload);
+    if (!payload.ipAddress && !payload.userAgent) {
+      return;
+    }
+
+    if (payload.ipAddress && ipAddress) {
+      const recordedIp = this.normalizeIp(payload.ipAddress);
+      const callerIp = this.normalizeIp(ipAddress);
+      if (callerIp && recordedIp && recordedIp !== callerIp) {
+        throw new UnauthorizedException(
+          "MFA enrollment challenge is invalid or expired",
+        );
+      }
+    }
+
+    if (payload.userAgent && userAgent && payload.userAgent !== userAgent) {
+      throw new UnauthorizedException(
+        "MFA enrollment challenge is invalid or expired",
+      );
+    }
+  }
+
+  private normalizeIp(ip: string): string {
+    return ip.trim().replace(/^::ffff:/, "").toLowerCase();
   }
 
   private parseLoginChallengePayload(

@@ -199,7 +199,10 @@ export function SystemHealthProvider({
         canManageQueue,
         loading: enabled ? loading : false,
         error: enabled ? error : null,
-        counts: queueStats?.counts,
+        // When the org queue counters are unreadable (Redis failure) the
+        // snapshot returns all-zero counts, which must NOT be evaluated as a
+        // healthy queue — treat them as unavailable instead.
+        counts: queueStats?.countsAvailable ? queueStats.counts : null,
       }),
       canManageQueue,
       enabled,

@@ -430,18 +430,30 @@ export class DashboardController {
             .getSpacetimeGeoHeatmap(range, user.orgId)
             .catch(() => null);
 
+          // Shared promises: the stream and the layers enrichment both need
+          // events + news markers; reusing the same promises avoids doubling
+          // the aggregation work on every SSE interval.
+          const warEventsPromise = this.chartsService.getWarMapEvents(
+            warMapRange,
+            user.orgId,
+            warMapEventsOptions,
+          );
+          const warNewsMarkersPromise = this.chartsService.getWarMapNewsMarkers(
+            warMapRange,
+            user.orgId,
+            warMapEventsOptions,
+          );
+
           const [warEvents, warNewsMarkers, warLayers, candlestick] = await Promise.all([
-            this.chartsService.getWarMapEvents(
-              warMapRange,
-              user.orgId,
-              warMapEventsOptions,
-            ),
-            this.chartsService.getWarMapNewsMarkers(
-              warMapRange,
-              user.orgId,
-              warMapEventsOptions,
-            ),
-            this.chartsService.getWarMapLayers(warMapLayersOptions),
+            warEventsPromise,
+            warNewsMarkersPromise,
+            this.chartsService.getWarMapLayers({
+              ...warMapLayersOptions,
+              realtimeData: {
+                events: warEventsPromise,
+                newsMarkers: warNewsMarkersPromise,
+              },
+            }),
             this.chartsService.getFinancialCandlestick(range),
           ]);
           const geoHeatmap = await geoHeatmapPromise;

@@ -1,6 +1,9 @@
 "use client";
 
-import { useApolloClient } from "@apollo/client";
+import {
+  useApolloClient,
+  type ObservableSubscription,
+} from "@apollo/client";
 import { App } from "antd";
 import { useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
@@ -84,29 +87,57 @@ export function LiveAlertsToasts() {
   });
 
   useEffect(() => {
-    const sub = client
-      .subscribe<AlertEventsStreamSubscription>({
-        query: AlertEventsStreamDocument,
-      })
-      .subscribe({
-        next: (payload) => {
-          const evt = payload.data?.alertEvents;
-          if (!evt) {
-            return;
-          }
-          enqueueAlertToast(evt);
-        },
-        error: (error) => {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          const toastMessage = t("alerts.streamError", { error: errorMessage });
-          if (!shouldShowStreamError(toastMessage)) {
-            return;
-          }
-          message.error(toastMessage);
-        },
-      });
+    let active = true;
+    let sub: ObservableSubscription | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+
+    const subscribe = () => {
+      if (!active) {
+        return;
+      }
+      sub?.unsubscribe();
+      sub = client
+        .subscribe<AlertEventsStreamSubscription>({
+          query: AlertEventsStreamDocument,
+        })
+        .subscribe({
+          next: (payload) => {
+            attempt = 0;
+            const evt = payload.data?.alertEvents;
+            if (!evt) {
+              return;
+            }
+            enqueueAlertToast(evt);
+          },
+          error: (error) => {
+            const errorMessage =
+              error instanceof Error ? error.message : String(error);
+            const toastMessage = t("alerts.streamError", { error: errorMessage });
+            if (shouldShowStreamError(toastMessage)) {
+              message.error(toastMessage);
+            }
+            // Apollo Observables terminate on error: without resubscribing,
+            // one transient network blip permanently kills live alerts until
+            // a full page reload. Back off exponentially and retry.
+            if (!active) {
+              return;
+            }
+            attempt += 1;
+            const delayMs = Math.min(30_000, 1_000 * 2 ** Math.min(attempt, 5));
+            retryTimer = setTimeout(subscribe, delayMs);
+          },
+        });
+    };
+
+    subscribe();
+
     return () => {
-      sub.unsubscribe();
+      active = false;
+      sub?.unsubscribe();
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+      }
     };
   }, [client, enqueueAlertToast, message, shouldShowStreamError, t]);
 

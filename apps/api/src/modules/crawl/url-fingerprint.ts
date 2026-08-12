@@ -49,9 +49,16 @@ export const extractUrlQueryParamAllowlistFromTaskConfig = (
     return [...fallback];
   }
 
-  const direct = resolveQueryParamAllowlist(config.urlQueryParamAllowlist, []);
-  if (direct.length > 0) {
-    return direct;
+  const hasExplicitValue = (value: unknown): boolean =>
+    Array.isArray(value) ||
+    (typeof value === "string" && value.trim().length > 0);
+
+  // An explicit EMPTY array means "strip ALL query parameters" and must be
+  // honored — falling back to the default allowlist would silently keep
+  // ?id=&story= params and split one canonical URL into multiple fingerprints.
+  const directRaw = config.urlQueryParamAllowlist;
+  if (hasExplicitValue(directRaw)) {
+    return resolveQueryParamAllowlist(directRaw, []);
   }
 
   const itemPayload =
@@ -60,12 +67,9 @@ export const extractUrlQueryParamAllowlistFromTaskConfig = (
     itemPayload && isRecord(itemPayload.metadata)
       ? itemPayload.metadata
       : undefined;
-  const fromMetadata = resolveQueryParamAllowlist(
-    metadata?.urlQueryParamAllowlist,
-    [],
-  );
-  if (fromMetadata.length > 0) {
-    return fromMetadata;
+  const metadataRaw = metadata?.urlQueryParamAllowlist;
+  if (hasExplicitValue(metadataRaw)) {
+    return resolveQueryParamAllowlist(metadataRaw, []);
   }
 
   return [...fallback];

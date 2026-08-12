@@ -11,6 +11,7 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { AuthEmailCodeSettingsService } from "../auth/auth-email-code-settings.service";
 import type { AuthenticatedUser } from "../auth/auth.service";
+import { PlatformAccessService } from "../auth/platform-access.service";
 import { EnvService } from "../config/config.service";
 import { EmailService } from "../email/email.service";
 
@@ -25,7 +26,8 @@ export class EmailSettingsController {
   constructor(
     private readonly env: EnvService,
     private readonly email: EmailService,
-    private readonly authEmailCodeSettings: AuthEmailCodeSettingsService
+    private readonly authEmailCodeSettings: AuthEmailCodeSettingsService,
+    private readonly platformAccess: PlatformAccessService
   ) {}
 
   @Get()
@@ -79,6 +81,8 @@ export class EmailSettingsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: UpdateAuthEmailCodeSettingsDto
   ) {
+    // Email-code settings are GLOBAL (single key, no org dimension).
+    await this.platformAccess.assertPlatformAdmin(user.id);
     return this.authEmailCodeSettings.updateSettings(user.orgId, user.id, body);
   }
 
@@ -92,7 +96,25 @@ export class EmailSettingsController {
   @ApiBody({ type: EmailTestDto })
   @ApiOkResponse({ type: EmailTestResponseDto })
   async test(@Body() body: EmailTestDto) {
-    const recipient = body.to?.trim() || this.env.smtpConfig.user;
+    const smtpUser = this.env.smtpConfig.user;
+    const recipient = body.to?.trim() || smtpUser;
+    // Restrict the test endpoint to the configured SMTP account: otherwise a
+    // settings.manage holder could use the global sender as a spam relay to
+    // arbitrary addresses.
+    const configuredDomain = smtpUser?.split("@")[1]?.toLowerCase();
+    const recipientDomain = recipient.split("@")[1]?.toLowerCase();
+    if (
+      !configuredDomain ||
+      !recipientDomain ||
+      recipientDomain !== configuredDomain ||
+      recipient.toLowerCase() !== smtpUser.toLowerCase()
+    ) {
+      return {
+        ok: false,
+        error:
+          "Test emails may only be sent to the configured SMTP account to prevent relay abuse",
+      };
+    }
     const subject = body.subject?.trim() || "Test email";
     await this.email.verifyCached(0);
 

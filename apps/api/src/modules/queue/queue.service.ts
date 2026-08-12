@@ -35,6 +35,7 @@ export interface QueueRecentLog {
 
 export interface QueueStatsSnapshot {
   counts: Record<TrackedJobStatus, number>;
+  countsAvailable: boolean;
   recentLogs: QueueRecentLog[];
 }
 
@@ -61,12 +62,12 @@ export class QueueService {
    */
   private async getOrgJobCounts(
     orgId: string,
-  ): Promise<Record<TrackedJobStatus, number>> {
+  ): Promise<Record<TrackedJobStatus, number> | null> {
     try {
       return await this.orgStats.getCounts(orgId);
     } catch (error) {
       this.logger.error({ orgId, error }, "Failed to load org queue counters");
-      return { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 };
+      return null;
     }
   }
 
@@ -84,7 +85,7 @@ export class QueueService {
       typeof meta.processedItemId === "string" &&
       meta.processedItemId.length > 0
         ? meta.processedItemId
-        : new Types.ObjectId().toHexString();
+        : await this.resolveStableProcessedItemId(orgId, itemMetaId);
 
     let job: Job;
     try {
@@ -190,6 +191,36 @@ export class QueueService {
     return job;
   }
 
+  /**
+   * Re-enqueues of the same item (replay, retry, re-scheduling) must reuse the
+   * item's existing processed-item document instead of minting a fresh ObjectId
+   * every time. Otherwise every re-enqueue inserts a second pending document
+   * and the read side (latest-by-createdAt) can surface a stale run.
+   */
+  private async resolveStableProcessedItemId(
+    orgId: string,
+    itemMetaId: string,
+  ): Promise<string> {
+    try {
+      const existing = await ProcessedItemModel.findOne({
+        orgId,
+        itemMetaId,
+      })
+        .select({ _id: 1 })
+        .sort({ createdAt: -1 })
+        .lean();
+      if (existing?._id) {
+        return existing._id.toString();
+      }
+    } catch (error) {
+      this.logger.warn(
+        { error, orgId, itemMetaId },
+        "Failed to resolve existing processed item; minting a new id",
+      );
+    }
+    return new Types.ObjectId().toHexString();
+  }
+
   async stats(orgId: string): Promise<QueueStatsSnapshot> {
     const [jobCounts, logs] = await Promise.all([
       this.getOrgJobCounts(orgId),
@@ -202,12 +233,13 @@ export class QueueService {
 
     return {
       counts: {
-        waiting: jobCounts.waiting,
-        active: jobCounts.active,
-        completed: jobCounts.completed,
-        failed: jobCounts.failed,
-        delayed: jobCounts.delayed,
+        waiting: jobCounts?.waiting ?? 0,
+        active: jobCounts?.active ?? 0,
+        completed: jobCounts?.completed ?? 0,
+        failed: jobCounts?.failed ?? 0,
+        delayed: jobCounts?.delayed ?? 0,
       },
+      countsAvailable: jobCounts !== null,
       recentLogs: logs,
     };
   }

@@ -283,8 +283,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
     ]
   );
 
-  const { data, loading, error, refetch } = useQuery<{ newsEvents: NewsEventListItem[] }>(NEWS_EVENTS_QUERY, {
-    variables: {
+  const { data, loading, error, refetch } = useQuery<{ newsEvents: NewsEventListItem[] }>(NEWS_EVENTS_QUERY, {    variables: {
       limit,
       windowDays,
       status: status === "all" ? undefined : status,
@@ -294,7 +293,11 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
       minCredibilityScore: minCredibilityScore > 0 ? minCredibilityScore : undefined,
       sortBy: sortBy === DEFAULT_SORT_BY ? undefined : sortBy
     },
-    fetchPolicy: "network-only"
+    // cache-and-network keeps the last resolved data visible during refetch:
+    // with network-only, `data` becomes undefined between refetch and
+    // response, and falling back to the SSR initialData would flash content
+    // from the INITIAL filter (or an empty list) after filters change.
+    fetchPolicy: "cache-and-network"
   });
 
   const resolvedData = data ?? initialData ?? undefined;

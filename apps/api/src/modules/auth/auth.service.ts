@@ -167,6 +167,21 @@ export class AuthService {
     }
   }
 
+  /**
+   * Per-account + per-IP buckets: an IP-only key behind a proxy becomes one
+   * shared global bucket (any attacker locks everyone out), while an
+   * email-only key lets distributed attackers brute-force one account
+   * unthrottled. Both dimensions are counted separately.
+   */
+  private buildLoginRateLimitKey(
+    normalizedEmail: string,
+    ipAddress?: string,
+    scene = "login",
+  ): string {
+    const ip = ipAddress?.trim() || "unknown-ip";
+    return `${scene}:${normalizedEmail}:${ip}`;
+  }
+
   private normalizeEmail(email: string) {
     return email.trim().toLowerCase();
   }
@@ -722,7 +737,9 @@ export class AuthService {
     userAgent?: string,
   ) {
     const normalizedEmail = this.normalizeEmail(email);
-    await this.validateRateLimit(`login:${ipAddress ?? normalizedEmail}`);
+    await this.validateRateLimit(
+      this.buildLoginRateLimitKey(normalizedEmail, ipAddress),
+    );
     const user = await this.validateUser(normalizedEmail, password, orgId);
     return this.completeTrustedLogin(
       user.id,
@@ -832,6 +849,14 @@ export class AuthService {
     } catch (error) {
       await this.clearEmailCodeState("bind", userId);
       await this.cache.del(cooldownKey);
+      // Roll back pendingEmail so a failed send does not leave a stale unique
+      // value that blocks other users from binding the same address.
+      await this.prisma.user
+        .updateMany({
+          where: { id: userId, pendingEmail: normalizedEmail },
+          data: { pendingEmail: null },
+        })
+        .catch(() => undefined);
       if (this.isUniqueConstraintError(error)) {
         throw new BadRequestException("Email is already in use");
       }
@@ -1005,7 +1030,9 @@ export class AuthService {
     userAgent?: string,
   ) {
     const normalizedEmail = this.normalizeEmail(email);
-    await this.validateRateLimit(`login-code:${ipAddress ?? normalizedEmail}`);
+    await this.validateRateLimit(
+      this.buildLoginRateLimitKey(normalizedEmail, ipAddress, "login-code"),
+    );
 
     const codeValue = this.normalizeCode(code);
     const payload = await this.cache.get<EmailCodePayload>(
@@ -1068,6 +1095,18 @@ export class AuthService {
     });
     this.assertMembershipAccessible(primaryMembership);
 
+    // Atomically consume the code before completing the login: the code is a
+    // single-use credential, so two concurrent requests holding the same code
+    // must not both succeed. Only the request that deletes the key proceeds;
+    // a 0 return means a concurrent request already consumed it (or it
+    // expired between the hash check and here).
+    const consumed = await this.cache.del(
+      this.buildEmailCodeKey("login", normalizedEmail),
+    );
+    if (consumed !== 1) {
+      throw new UnauthorizedException(INVALID_EMAIL_CODE_MESSAGE);
+    }
+
     await this.clearEmailCodeState("login", normalizedEmail);
     await this.cache.del(
       this.buildEmailCodeCooldownKey("login", normalizedEmail),
@@ -1099,24 +1138,52 @@ export class AuthService {
     const graceSeconds = this.env.authRefreshGraceSeconds;
     const lockTtlMs = Math.max(graceSeconds * 1000, 10_000);
 
+    // Blacklist pre-check OUTSIDE cache.wrap: a cache hit returns the cached
+    // rotation result without executing the loader, so a blacklist check
+    // inside the loader is bypassed during the grace window — letting a
+    // stolen refresh token keep working right after the victim rotates it.
+    const preBlacklisted = await this.refreshTokenBlacklist.has(tokenId);
+    if (preBlacklisted) {
+      throw new UnauthorizedException("Refresh token expired");
+    }
+
     return this.cache.wrap(
       cacheKey,
       graceSeconds,
       async () => {
         const now = new Date();
+
         const isBlacklisted = await this.refreshTokenBlacklist.has(tokenId);
         if (isBlacklisted) {
           throw new UnauthorizedException("Refresh token expired");
         }
+
+        // Atomic single-use claim FIRST: only one request may rotate this
+        // refresh token. The cache.wrap lockless fallback path runs the loader
+        // without a lock when the lock cannot be acquired, so without this
+        // claim two concurrent requests could both pass the blacklist check
+        // and each issue a new token pair from the same credential.
+        const claimed = await this.prisma.refreshToken.updateMany({
+          where: {
+            id: tokenId,
+            revokedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: {
+            revokedAt: now,
+            ipAddress,
+            userAgent,
+          },
+        });
+        if (claimed.count !== 1) {
+          throw new UnauthorizedException("Refresh token expired");
+        }
+
         const record = await this.prisma.refreshToken.findUnique({
           where: { id: tokenId },
         });
 
-        if (!record || record.expiresAt < now) {
-          throw new UnauthorizedException("Refresh token expired");
-        }
-
-        if (record.revokedAt) {
+        if (!record) {
           throw new UnauthorizedException("Refresh token expired");
         }
 
@@ -1176,15 +1243,6 @@ export class AuthService {
           ipAddress,
           userAgent,
         );
-
-        await this.prisma.refreshToken.updateMany({
-          where: { id: tokenId, revokedAt: null },
-          data: {
-            revokedAt: now,
-            ipAddress,
-            userAgent,
-          },
-        });
 
         const blacklistTtlSeconds = this.ttlSecondsUntil(record.expiresAt, now);
         if (blacklistTtlSeconds > 0) {
@@ -1487,6 +1545,8 @@ export class AuthService {
     const challenge = await this.mfaService.consumeEnrollmentChallenge(
       challengeId,
       code,
+      ipAddress,
+      userAgent,
     );
     const result = await this.completeTrustedLogin(
       challenge.userId,

@@ -3,9 +3,9 @@ import { Injectable } from "@nestjs/common";
 import { AlertMetricProvider, AlertRule, MongoOutboxStatus, MongoOutboxType, PipelineJobStatus, Prisma } from "@prisma/client";
 
 import { PrismaService } from "../../config/prisma.service";
+import { setPipelineMetric } from "../../observability/prometheus-metrics";
 
 import { MetricEvaluation, MetricProvider } from "./metric-provider";
-import { setPipelineMetric } from "../../observability/prometheus-metrics";
 
 const PIPELINE_RATE_METRICS = new Set([
   "pipeline.success_rate",
@@ -107,7 +107,10 @@ export class PipelineMetricProvider implements MetricProvider {
       })
     ]);
 
-    const changePercent = previous ? ((latest - previous) / previous) * 100 : null;
+    const changePercent =
+      previous !== null && Number.isFinite(previous) && previous !== 0
+        ? ((latest - previous) / previous) * 100
+        : null;
 
     return {
       latest,

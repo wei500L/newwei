@@ -11,7 +11,7 @@ import {
   type OnModuleInit,
 } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
-import { NotificationType, PipelineJobStatus, Prisma } from "@prisma/client";
+import { CrawlTaskStatus, NotificationType, PipelineJobStatus, Prisma } from "@prisma/client";
 import { parseExpression } from "cron-parser";
 import { createHash } from "node:crypto";
 
@@ -519,6 +519,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           const pipelineJobIds: string[] = [];
           const crawlTaskIds: string[] = [];
           let enqueueFailures = 0;
+          let skippedInFlightCount = 0;
           let rssSkippedNoBodyCount = 0;
 
           for (const job of newJobs) {
@@ -635,110 +636,141 @@ export class NewsSourceSchedulerService implements OnModuleInit {
               },
             };
 
-            const { pipelineJobId, crawlTaskId } =
-              await this.prisma.$transaction(async (tx) => {
-                const pipelineJob = await tx.pipelineJob.create({
-                  data: {
-                    orgId: source.orgId,
-                    sourceId: source.id,
-                    url: job.url,
+            const dispatchResult = await this.prisma.$transaction(async (tx) => {
+              const existingTask = await tx.crawlTask.findFirst({
+                where: {
+                  orgId: source.orgId,
+                  newsSourceId: source.id,
+                  targetUrl: job.url,
+                },
+                select: { id: true, status: true },
+              });
+
+              // The task is already being crawled (job alive or worker
+              // running). Scheduling this URL again would overwrite the task
+              // config with a new pipelineJob id while the in-flight job still
+              // ingests into the old pipelineJob, orphaning the new one in
+              // "queued" forever (and BullMQ would dedup the enqueue anyway).
+              if (
+                existingTask &&
+                (existingTask.status === CrawlTaskStatus.queued ||
+                  existingTask.status === CrawlTaskStatus.running)
+              ) {
+                return { skipped: true as const };
+              }
+
+              const pipelineJob = await tx.pipelineJob.create({
+                data: {
+                  orgId: source.orgId,
+                  sourceId: source.id,
+                  url: job.url,
+                  urlFingerprint:
+                    "urlFingerprint" in job ? job.urlFingerprint : null,
+                  priority: source.priority,
+                  status: PipelineJobStatus.queued,
+                  queueName: ITEM_PIPELINE_QUEUE_NAME,
+                  scheduledFor,
+                  metadata: {
+                    sourceName: source.name,
+                    sourceType: source.siteType,
+                    seedMode: seedConfig ? seedConfig.mode : "single",
+                    seedParentUrl: seedConfig ? seedParentUrl : undefined,
+                    relevanceScore: seedConfig
+                      ? job.relevanceScore
+                      : undefined,
+                    publishedAt,
+                    crawledAt,
+                    effectiveAt,
+                    timestampSource,
                     urlFingerprint:
-                      "urlFingerprint" in job ? job.urlFingerprint : null,
-                    priority: source.priority,
-                    status: PipelineJobStatus.queued,
-                    queueName: ITEM_PIPELINE_QUEUE_NAME,
-                    scheduledFor,
-                    metadata: {
-                      sourceName: source.name,
-                      sourceType: source.siteType,
-                      seedMode: seedConfig ? seedConfig.mode : "single",
-                      seedParentUrl: seedConfig ? seedParentUrl : undefined,
-                      relevanceScore: seedConfig
-                        ? job.relevanceScore
+                      "urlFingerprint" in job
+                        ? job.urlFingerprint
                         : undefined,
-                      publishedAt,
-                      crawledAt,
-                      effectiveAt,
-                      timestampSource,
-                      urlFingerprint:
-                        "urlFingerprint" in job
-                          ? job.urlFingerprint
-                          : undefined,
-                      triggeredById,
-                    },
+                    triggeredById,
                   },
-                });
+                },
+              });
 
-                crawlTaskConfig.pipelineJobId = pipelineJob.id;
-                const crawlTaskConfigForStorage = crawlTaskConfig;
+              crawlTaskConfig.pipelineJobId = pipelineJob.id;
+              const crawlTaskConfigForStorage = crawlTaskConfig;
 
-                const existingTask = await tx.crawlTask.findFirst({
-                  where: {
-                    orgId: source.orgId,
+              let taskId: string;
+              if (existingTask) {
+                const updatedTask = await tx.crawlTask.update({
+                  where: { id: existingTask.id },
+                  data: {
                     newsSourceId: source.id,
-                    targetUrl: job.url,
+                    displayName,
+                    status: "pending",
+                    concurrency: 1,
+                    keywords: payload.keywords,
+                    config: toPrismaJsonValue(crawlTaskConfigForStorage),
+                    lastError: null,
                   },
                   select: { id: true },
                 });
-
-                let taskId: string;
-                if (existingTask) {
-                  const updatedTask = await tx.crawlTask.update({
-                    where: { id: existingTask.id },
-                    data: {
-                      newsSourceId: source.id,
-                      displayName,
-                      status: "pending",
-                      concurrency: 1,
-                      keywords: payload.keywords,
-                      config: toPrismaJsonValue(crawlTaskConfigForStorage),
-                      lastError: null,
-                    },
-                    select: { id: true },
-                  });
-                  taskId = updatedTask.id;
-                } else {
-                  const createdTask = await tx.crawlTask.create({
-                    data: {
-                      orgId: source.orgId,
-                      createdById: triggeredById,
-                      newsSourceId: source.id,
-                      targetUrl: job.url,
-                      displayName,
-                      status: "pending",
-                      concurrency: 1,
-                      keywords: payload.keywords,
-                      config: toPrismaJsonValue(crawlTaskConfigForStorage),
-                    },
-                    select: { id: true },
-                  });
-                  taskId = createdTask.id;
-                }
-
-                await tx.pipelineJob.update({
-                  where: { id: pipelineJob.id },
+                taskId = updatedTask.id;
+              } else {
+                const createdTask = await tx.crawlTask.create({
                   data: {
-                    metadata: {
-                      ...(pipelineJob.metadata as
-                        | Record<string, unknown>
-                        | null
-                        | undefined),
-                      crawlTaskId: taskId,
-                    },
+                    orgId: source.orgId,
+                    createdById: triggeredById,
+                    newsSourceId: source.id,
+                    targetUrl: job.url,
+                    displayName,
+                    status: "pending",
+                    concurrency: 1,
+                    keywords: payload.keywords,
+                    config: toPrismaJsonValue(crawlTaskConfigForStorage),
                   },
+                  select: { id: true },
                 });
+                taskId = createdTask.id;
+              }
 
-                return {
-                  pipelineJobId: pipelineJob.id,
-                  crawlTaskId: taskId,
-                };
+              await tx.pipelineJob.update({
+                where: { id: pipelineJob.id },
+                data: {
+                  metadata: {
+                    ...(pipelineJob.metadata as
+                      | Record<string, unknown>
+                      | null
+                      | undefined),
+                    crawlTaskId: taskId,
+                  },
+                },
               });
+
+              return {
+                pipelineJobId: pipelineJob.id,
+                crawlTaskId: taskId,
+              };
+            });
+
+            if ("skipped" in dispatchResult && dispatchResult.skipped) {
+              skippedInFlightCount += 1;
+              await this.prisma.newsSource
+                .updateMany({
+                  where: {
+                    id: source.id,
+                    OR: [{ nextRunAt: null }, { nextRunAt: { lte: new Date() } }],
+                  },
+                  data: {
+                    nextRunAt: new Date(
+                      Date.now() + schedulerConfig.inFlightRescheduleDelayMs,
+                    ),
+                  },
+                })
+                .catch(() => undefined);
+              continue;
+            }
+            const { pipelineJobId, crawlTaskId } = dispatchResult;
 
             pipelineJobIds.push(pipelineJobId);
             crawlTaskIds.push(crawlTaskId);
 
             try {
-              await this.crawlQueue.enqueueTask(
+              const enqueueResult = await this.crawlQueue.enqueueTask(
                 crawlTaskId,
                 source.orgId,
                 triggeredById,
@@ -748,6 +780,25 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                   sourceId: source.id,
                 },
               );
+              if (enqueueResult.deduplicated) {
+                // A concurrent dispatch/scheduler instance already has this
+                // task in flight: fail the orphan pipeline job so it does not
+                // occupy in-flight capacity (ACTIVE_PIPELINE_JOB_STATUSES)
+                // forever, and leave the task to the live job.
+                skippedInFlightCount += 1;
+                await Promise.allSettled([
+                  this.prisma.pipelineJob.updateMany({
+                    where: { id: pipelineJobId },
+                    data: {
+                      status: PipelineJobStatus.failed,
+                      error:
+                        "Superseded: an in-flight crawl job for the same task is already queued",
+                      completedAt: new Date(),
+                    },
+                  }),
+                ]);
+                continue;
+              }
               await this.prisma.crawlTask.updateMany({
                 where: { id: crawlTaskId },
                 data: { status: "queued" },
@@ -805,10 +856,10 @@ export class NewsSourceSchedulerService implements OnModuleInit {
               );
             }
           }
-          const totalSkippedCount = skippedCount + rssSkippedNoBodyCount;
+          const totalSkippedCount = skippedCount + rssSkippedNoBodyCount + skippedInFlightCount;
           const scheduledCount = Math.max(
             0,
-            newJobs.length - rssSkippedNoBodyCount,
+            newJobs.length - rssSkippedNoBodyCount - enqueueFailures - skippedInFlightCount,
           );
           if (rssSkippedNoBodyCount > 0) {
             await this.recordRssNoBodySkipMetric({
@@ -4412,6 +4463,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
             : source.url
           : undefined;
         let rssSkippedNoBodyCount = 0;
+        let skippedInFlightCount = 0;
 
         for (const job of jobsToEnqueue) {
           const publishedAtTs =
@@ -4526,80 +4578,92 @@ export class NewsSourceSchedulerService implements OnModuleInit {
             },
           };
 
-          const { pipelineJobId, crawlTaskId } = await this.prisma.$transaction(
-            async (tx) => {
-              const pipelineJob = await tx.pipelineJob.create({
-                data: {
-                  orgId: source.orgId,
-                  sourceId: source.id,
-                  url: job.url,
+          const dispatchResult = await this.prisma.$transaction(async (tx) => {
+            const existingTask = await tx.crawlTask.findFirst({
+              where: {
+                orgId: source.orgId,
+                newsSourceId: source.id,
+                targetUrl: job.url,
+              },
+              select: { id: true, status: true },
+            });
+
+            // The task is already being crawled (job alive or worker
+            // running). Scheduling this URL again would overwrite the task
+            // config with a new pipelineJob id while the in-flight job still
+            // ingests into the old pipelineJob, orphaning the new one in
+            // "queued" forever (and BullMQ would dedup the enqueue anyway).
+            if (
+              existingTask &&
+              (existingTask.status === CrawlTaskStatus.queued ||
+                existingTask.status === CrawlTaskStatus.running)
+            ) {
+              return { skipped: true as const };
+            }
+
+            const pipelineJob = await tx.pipelineJob.create({
+              data: {
+                orgId: source.orgId,
+                sourceId: source.id,
+                url: job.url,
+                urlFingerprint:
+                  "urlFingerprint" in job ? job.urlFingerprint : null,
+                priority: source.priority,
+                status: PipelineJobStatus.queued,
+                queueName: ITEM_PIPELINE_QUEUE_NAME,
+                scheduledFor,
+                metadata: {
+                  sourceName: source.name,
+                  sourceType: source.siteType,
+                  seedMode: seedConfig ? seedConfig.mode : "single",
+                  seedParentUrl: seedConfig ? seedParentUrl : undefined,
+                  relevanceScore: seedConfig ? job.relevanceScore : undefined,
+                  publishedAt,
+                  crawledAt,
+                  effectiveAt,
+                  timestampSource,
                   urlFingerprint:
-                    "urlFingerprint" in job ? job.urlFingerprint : null,
-                  priority: source.priority,
-                  status: PipelineJobStatus.queued,
-                  queueName: ITEM_PIPELINE_QUEUE_NAME,
-                  scheduledFor,
-                  metadata: {
-                    sourceName: source.name,
-                    sourceType: source.siteType,
-                    seedMode: seedConfig ? seedConfig.mode : "single",
-                    seedParentUrl: seedConfig ? seedParentUrl : undefined,
-                    relevanceScore: seedConfig ? job.relevanceScore : undefined,
-                    publishedAt,
-                    crawledAt,
-                    effectiveAt,
-                    timestampSource,
-                    urlFingerprint:
-                      "urlFingerprint" in job ? job.urlFingerprint : undefined,
-                  },
+                    "urlFingerprint" in job ? job.urlFingerprint : undefined,
                 },
-              });
+              },
+            });
 
-              crawlTaskConfig.pipelineJobId = pipelineJob.id;
-              const crawlTaskConfigForStorage = crawlTaskConfig;
+            crawlTaskConfig.pipelineJobId = pipelineJob.id;
+            const crawlTaskConfigForStorage = crawlTaskConfig;
 
-              const existingTask = await tx.crawlTask.findFirst({
-                where: {
-                  orgId: source.orgId,
+            let taskId: string;
+            if (existingTask) {
+              const updatedTask = await tx.crawlTask.update({
+                where: { id: existingTask.id },
+                data: {
                   newsSourceId: source.id,
-                  targetUrl: job.url,
+                  displayName,
+                  status: "pending",
+                  concurrency: 1,
+                  keywords: payload.keywords,
+                  config: toPrismaJsonValue(crawlTaskConfigForStorage),
+                  lastError: null,
                 },
                 select: { id: true },
               });
-
-              let taskId: string;
-              if (existingTask) {
-                const updatedTask = await tx.crawlTask.update({
-                  where: { id: existingTask.id },
-                  data: {
-                    newsSourceId: source.id,
-                    displayName,
-                    status: "pending",
-                    concurrency: 1,
-                    keywords: payload.keywords,
-                    config: toPrismaJsonValue(crawlTaskConfigForStorage),
-                    lastError: null,
-                  },
-                  select: { id: true },
-                });
-                taskId = updatedTask.id;
-              } else {
-                const createdTask = await tx.crawlTask.create({
-                  data: {
-                    orgId: source.orgId,
-                    createdById: crawlActorId,
-                    newsSourceId: source.id,
-                    targetUrl: job.url,
-                    displayName,
-                    status: "pending",
-                    concurrency: 1,
-                    keywords: payload.keywords,
-                    config: toPrismaJsonValue(crawlTaskConfigForStorage),
-                  },
-                  select: { id: true },
-                });
-                taskId = createdTask.id;
-              }
+              taskId = updatedTask.id;
+            } else {
+              const createdTask = await tx.crawlTask.create({
+                data: {
+                  orgId: source.orgId,
+                  createdById: crawlActorId,
+                  newsSourceId: source.id,
+                  targetUrl: job.url,
+                  displayName,
+                  status: "pending",
+                  concurrency: 1,
+                  keywords: payload.keywords,
+                  config: toPrismaJsonValue(crawlTaskConfigForStorage),
+                },
+                select: { id: true },
+              });
+              taskId = createdTask.id;
+            }
 
               await tx.pipelineJob.update({
                 where: { id: pipelineJob.id },
@@ -4621,8 +4685,27 @@ export class NewsSourceSchedulerService implements OnModuleInit {
             },
           );
 
+          if ("skipped" in dispatchResult && dispatchResult.skipped) {
+            skippedInFlightCount += 1;
+            await this.prisma.newsSource
+              .updateMany({
+                where: {
+                  id: source.id,
+                  OR: [{ nextRunAt: null }, { nextRunAt: { lte: new Date() } }],
+                },
+                data: {
+                  nextRunAt: new Date(
+                    Date.now() + schedulerConfig.inFlightRescheduleDelayMs,
+                  ),
+                },
+              })
+              .catch(() => undefined);
+            continue;
+          }
+          const { pipelineJobId, crawlTaskId } = dispatchResult;
+
           try {
-            await this.crawlQueue.enqueueTask(
+            const enqueueResult = await this.crawlQueue.enqueueTask(
               crawlTaskId,
               source.orgId,
               crawlActorId,
@@ -4632,6 +4715,25 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                 sourceId: source.id,
               },
             );
+            if (enqueueResult.deduplicated) {
+              // A concurrent scheduler instance already has this task in
+              // flight: fail the orphan pipeline job so it does not occupy
+              // in-flight capacity (ACTIVE_PIPELINE_JOB_STATUSES) forever,
+              // and leave the task to the live job.
+              skippedInFlightCount += 1;
+              await this.prisma.pipelineJob
+                .updateMany({
+                  where: { id: pipelineJobId },
+                  data: {
+                    status: PipelineJobStatus.failed,
+                    error:
+                      "Superseded: an in-flight crawl job for the same task is already queued",
+                    completedAt: new Date(),
+                  },
+                })
+                .catch(() => undefined);
+              continue;
+            }
             await this.prisma.crawlTask.updateMany({
               where: { id: crawlTaskId },
               data: { status: "queued" },

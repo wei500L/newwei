@@ -63,14 +63,14 @@ export class Crawl4aiSsrfProxyHealthIndicator extends HealthIndicator {
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
     const probe = await this.getProbe();
     if (probe.ok) {
+      // Do NOT echo the proxy URL: /healthz is unauthenticated and the proxy
+      // address is internal deployment detail.
       return this.getStatus(key, true, {
-        url: probe.url,
         durationMs: probe.durationMs,
       });
     }
     const message = probe.message ?? "crawl4ai SSRF proxy probe failed";
     const result = this.getStatus(key, false, {
-      url: probe.url,
       durationMs: probe.durationMs,
       message,
     });

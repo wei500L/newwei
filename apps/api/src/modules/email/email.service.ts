@@ -157,6 +157,9 @@ export class EmailService implements OnModuleDestroy {
     const bcc = options.bcc
       ? this.normalizeEmailTarget(options.bcc)
       : undefined;
+    const replyTo = options.replyTo
+      ? this.normalizeEmailTarget(options.replyTo)
+      : undefined;
 
     const traceId = getCurrentTraceId();
     const headers = traceId ? { "x-trace-id": traceId } : undefined;
@@ -171,7 +174,7 @@ export class EmailService implements OnModuleDestroy {
         to,
         ...(cc ? { cc } : {}),
         ...(bcc ? { bcc } : {}),
-        ...(options.replyTo ? { replyTo: options.replyTo } : {}),
+        ...(replyTo ? { replyTo } : {}),
         subject: options.subject,
         text: options.text,
         html: options.html,

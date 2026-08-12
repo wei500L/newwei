@@ -66,6 +66,7 @@ import {
   ItemReadModelRawPreviewLoader,
 } from "./loaders/item-read-model.loader";
 import { ProcessedItemEventIdLoader } from "./loaders/processed-item-event-id.loader";
+import { ProcessedItemDuplicateLoader } from "./loaders/processed-item-duplicate.loader";
 import { ProcessedItemPreviewLoader } from "./loaders/processed-item-preview.loader";
 import {
   ProcessedItemLoader,
@@ -96,6 +97,10 @@ import {
   ProcessedItemEventResolver,
   ProcessedItemPreviewEventResolver,
 } from "./resolvers/processed-item-event.resolver";
+import {
+  ProcessedItemDuplicateResolver,
+  ProcessedItemPreviewDuplicateResolver,
+} from "./resolvers/processed-item-duplicate.resolver";
 import { ProcessedItemResolver } from "./resolvers/processed-item.resolver";
 import { RbacResolver } from "./resolvers/rbac.resolver";
 import { SentimentResolver } from "./resolvers/sentiment.resolver";
@@ -447,6 +452,8 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
     ProcessedItemResolver,
     ProcessedItemEventResolver,
     ProcessedItemPreviewEventResolver,
+    ProcessedItemDuplicateResolver,
+    ProcessedItemPreviewDuplicateResolver,
     TopicsResolver,
     NewsEventsResolver,
     NewsIndicatorResolver,
@@ -481,6 +488,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
     ProcessedItemScalarLoader,
     ProcessedItemPreviewLoader,
     ProcessedItemEventIdLoader,
+    ProcessedItemDuplicateLoader,
     GqlAuthGuard,
     GqlPermissionsGuard,
     GraphqlRateLimitGuard,
@@ -489,16 +497,20 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
       useClass: DataLoaderInterceptor,
     },
     {
+      // Rate-limit BEFORE auth: otherwise unauthenticated requests are
+      // short-circuited by GqlAuthGuard and never counted, letting attackers
+      // run an unlimited 401/validation storm against the public GraphQL
+      // surface.
+      provide: APP_GUARD,
+      useExisting: GraphqlRateLimitGuard,
+    },
+    {
       provide: APP_GUARD,
       useExisting: GqlAuthGuard,
     },
     {
       provide: APP_GUARD,
       useExisting: GqlPermissionsGuard,
-    },
-    {
-      provide: APP_GUARD,
-      useExisting: GraphqlRateLimitGuard,
     },
   ],
 })

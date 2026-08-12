@@ -286,8 +286,10 @@ export default function ReaderPage() {
     itemId: item?.id ?? undefined,
     eventId: item?.processed?.eventId ?? undefined,
     source,
-    topics: topics.slice(0, 6),
-    entities: entities.slice(0, 6),
+    // Stable slices: passing a freshly created array here would restart the
+    // milestones effect (and its dwell timers) on every render.
+    topics: useMemo(() => topics.slice(0, 6), [topics]),
+    entities: useMemo(() => entities.slice(0, 6), [entities]),
     url: originalUrl ?? undefined,
     estimatedReadingTimeMinutes: estimatedReadingTime,
     enabled: Boolean(item?.id),

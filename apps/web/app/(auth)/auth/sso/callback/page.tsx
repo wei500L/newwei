@@ -56,20 +56,36 @@ export default function SsoCallbackPage() {
 
     let active = true;
     void (async () => {
-      const result = await signIn("handoff", {
-        handoffToken,
-        redirect: false,
-      });
-      if (!active) {
-        return;
+      try {
+        const result = await signIn("handoff", {
+          handoffToken,
+          redirect: false,
+        });
+        if (!active) {
+          return;
+        }
+        if (result?.error) {
+          setChallengeError(result.error);
+          return;
+        }
+        await syncApiSessionCache().catch(() => null);
+        router.replace("/dashboard");
+      } catch (error) {
+        // The handoff token is single-use and already consumed server-side;
+        // a network failure here cannot be retried via this page, so surface
+        // an actionable error instead of spinning forever.
+        if (active) {
+          setChallengeError(
+            classifyRequestError(error).kind === "network"
+              ? "Connection lost while completing sign-in. Please return to the login page and try again."
+              : "Sign-in could not be completed. Please return to the login page and try again.",
+          );
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
       }
-      setLoading(false);
-      if (result?.error) {
-        setChallengeError(result.error);
-        return;
-      }
-      await syncApiSessionCache().catch(() => null);
-      router.replace("/dashboard");
     })();
 
     return () => {
@@ -189,6 +205,16 @@ export default function SsoCallbackPage() {
           message={challengeError}
           style={{ marginTop: "1rem" }}
         />
+      ) : null}
+      {challengeError && !challengeId && !enrollmentChallengeId ? (
+        <Button
+          type="primary"
+          block
+          style={{ marginTop: "1rem" }}
+          href="/login"
+        >
+          Back to login
+        </Button>
       ) : null}
       {challengeId ? (
         <Form

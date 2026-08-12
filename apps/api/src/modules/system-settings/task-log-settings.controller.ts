@@ -4,6 +4,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
+import { PlatformAccessService } from "../auth/platform-access.service";
 
 import { UpdateTaskLogSettingsDto } from "./dto/task-log-settings.dto";
 import { TaskLogSettingsService } from "./task-log-settings.service";
@@ -12,7 +13,10 @@ import { TaskLogSettingsService } from "./task-log-settings.service";
 @ApiBearerAuth()
 @Controller("system-settings/task-logs")
 export class TaskLogSettingsController {
-  constructor(private readonly settings: TaskLogSettingsService) {}
+  constructor(
+    private readonly settings: TaskLogSettingsService,
+    private readonly platformAccess: PlatformAccessService,
+  ) {}
 
   @Get()
   @Permissions("settings.manage")
@@ -26,12 +30,15 @@ export class TaskLogSettingsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: UpdateTaskLogSettingsDto,
   ) {
+    // Task-log settings are GLOBAL (single key, no org dimension).
+    await this.platformAccess.assertPlatformAdmin(user.id);
     return this.settings.updateSettings(user.orgId, user.id, body.retentionDays);
   }
 
   @Delete()
   @Permissions("settings.manage")
   async reset(@CurrentUser() user: AuthenticatedUser) {
+    await this.platformAccess.assertPlatformAdmin(user.id);
     return this.settings.resetToDefault(user.orgId, user.id);
   }
 }

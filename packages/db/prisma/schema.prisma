@@ -1303,7 +1303,7 @@ model Article {
   language       String?
   titleGuess     String?
   crawlAt        DateTime
-  contentHash    String      @unique
+  contentHash    String
   markdownRef    String?
   version        Int         @default(1)
   metadata       Json?
@@ -1316,7 +1316,11 @@ model Article {
   entityLinks            ArticleEntityLink[]
   archiveClassification  ArchiveArticleClassification?
 
-  @@unique([url, contentHash])
+  // orgId acts as the shard key: uniqueness of url/contentHash is PER ORG,
+  // otherwise an upsert for org B would silently rewrite org A's row and
+  // cross-tenant data would mix (ProcessedArticle.orgId != Article.orgId).
+  @@unique([orgId, url])
+  @@unique([orgId, contentHash])
   @@index([orgId, crawlAt])
   @@index([orgId, sourceId, crawlAt])
   @@index([orgId, urlFingerprint, crawlAt])
@@ -1324,8 +1328,8 @@ model Article {
 
 model ProcessedArticle {
   id                 String                 @id @default(cuid())
-  org                Org?                   @relation(fields: [orgId], references: [id])
-  orgId              String?
+  org                Org                    @relation(fields: [orgId], references: [id])
+  orgId              String
   article            Article                @relation(fields: [articleId], references: [id])
   articleId          String                 @unique
   status             ProcessedArticleStatus @default(completed)
@@ -1692,6 +1696,11 @@ model AlertEvent {
   createdAt     DateTime         @default(now())
 
   deliveries AlertDelivery[]
+
+  // Org-scoped event queries (rule: { orgId }, orderBy triggeredAt desc)
+  // currently filesort after a join; the ruleId+triggeredAt composite lets
+  // the event list terminate early on the index.
+  @@index([ruleId, triggeredAt])
 }
 
 model AlertDelivery {
@@ -1706,6 +1715,9 @@ model AlertDelivery {
   error          String?
   sentAt         DateTime?
   createdAt      DateTime                  @default(now())
+
+  // deleteChannel() sweeps pending deliveries by (channelId, status).
+  @@index([channelId, status])
 }
 
 model AlertRuleChannel {

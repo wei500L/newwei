@@ -201,6 +201,7 @@ export class DashboardService {
       itemCount,
       processedCount,
       queue: queueStats.counts,
+      queueCountsAvailable: queueStats.countsAvailable,
       recentQueueLogs: queueStats.recentLogs
     };
   }

@@ -685,6 +685,12 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
           dataType: EconomicDataValueType.percent
         },
         {
+          field: "全国-环比增长",
+          label: "全国CPI环比",
+          unit: "%",
+          dataType: EconomicDataValueType.percent
+        },
+        {
           field: "城市-环比增长",
           label: "城市CPI环比",
           unit: "%",

@@ -68,7 +68,10 @@ export class SystemEventMetricProvider implements MetricProvider {
       })
     ]);
 
-    const changePercent = previous ? ((latest - previous) / previous) * 100 : null;
+    const changePercent =
+      previous !== null && Number.isFinite(previous) && previous !== 0
+        ? ((latest - previous) / previous) * 100
+        : null;
 
     return { latest, previous, changePercent, context: { windowMinutes, resource, action } };
   }

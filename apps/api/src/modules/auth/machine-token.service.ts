@@ -81,8 +81,55 @@ export class MachineTokenService {
     };
   }
 
-  async validate(token: string): Promise<AuthenticatedUser> {
-    const tokenHash = hashToken(token);
+  async list(orgId: string) {
+    return this.prisma.machineAccessToken.findMany({
+      where: { orgId },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        permissions: true,
+        expiresAt: true,
+        lastUsedAt: true,
+        revokedAt: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  async revoke(orgId: string, tokenId: string) {
+    const updated = await this.prisma.machineAccessToken.updateMany({
+      where: { id: tokenId, orgId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    if (updated.count !== 1) {
+      throw new BadRequestException("Machine token not found or already revoked");
+    }
+    return { revoked: true };
+  }
+
+  async rotate(orgId: string, tokenId: string): Promise<CreateMachineTokenResult> {
+    const record = await this.prisma.machineAccessToken.findFirst({
+      where: { id: tokenId, orgId, revokedAt: null },
+    });
+    if (!record) {
+      throw new BadRequestException("Machine token not found or already revoked");
+    }
+    const rawPermissions = record.permissions as Prisma.JsonValue;
+    const permissions = Array.isArray(rawPermissions)
+      ? rawPermissions.filter((entry): entry is string => typeof entry === "string")
+      : [];
+    await this.revoke(orgId, tokenId);
+    return this.create({
+      orgId,
+      actorId: record.createdById ?? undefined,
+      name: record.name,
+      permissions,
+      expiresAt: record.expiresAt,
+    });
+  }
+
+  async validate(token: string): Promise<AuthenticatedUser> {    const tokenHash = hashToken(token);
     const record = await this.prisma.machineAccessToken.findUnique({
       where: { tokenHash },
       include: { org: true },

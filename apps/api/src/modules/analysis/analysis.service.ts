@@ -122,9 +122,12 @@ export class AnalysisService {
   }
 
   async listResults(orgId: string, limit = 50) {
+    // Clamp the limit: run records carry full input/output JSON documents and
+    // an unbounded limit is a memory/response amplification vector.
+    const cappedLimit = Math.max(1, Math.min(Math.trunc(limit), 100));
     return AnalysisResultModel.find({ orgId })
       .sort({ createdAt: -1 })
-      .limit(limit)
+      .limit(cappedLimit)
       .lean();
   }
 
@@ -178,6 +181,10 @@ export class AnalysisService {
         record.summary = output.summary;
       }
       record.status = "completed";
+      // A retried run may carry an error from an earlier failed attempt;
+      // clear it so consumers (and notifications) never see "completed with
+      // an error".
+      record.error = undefined;
       await record.save();
       await this.publish(
         record.orgId,
@@ -204,8 +211,56 @@ export class AnalysisService {
         createdAt,
         record.error ?? undefined,
       );
-      await this.notifyResult(record);
+      // Failure notifications are sent once by the worker's failed handler on
+      // the final attempt only; notifying here would fire once per retry.
       throw error;
+    }
+  }
+
+  /**
+   * Sends the failure notification for a run that exhausted its retries.
+   * Called by the processor's failed handler when attempts are used up, so a
+   * transient failure is not announced multiple times.
+   */
+  async notifyFinalFailure(analysisId: string) {
+    const record = await AnalysisResultModel.findById(analysisId).lean();
+    if (!record) {
+      return;
+    }
+    const status = "failed";
+    const analysisRecord = {
+      orgId: record.orgId,
+      triggeredById: record.triggeredById,
+      status,
+      error: (record as { error?: unknown }).error ?? "Analysis job failed",
+      type: record.type,
+      summary: record.summary,
+      id: (record as { id?: unknown }).id ?? analysisId,
+    };
+    if (!analysisRecord.triggeredById) {
+      return;
+    }
+    try {
+      await this.notifications.notify({
+        orgId: analysisRecord.orgId,
+        userId: analysisRecord.triggeredById,
+        type: NotificationType.analysis_failed,
+        title: `${analysisRecord.type} analysis failed`,
+        body:
+          typeof analysisRecord.error === "string"
+            ? analysisRecord.error
+            : "Analysis job failed",
+        data: {
+          analysisId,
+          status,
+          type: analysisRecord.type,
+          presentation: {
+            kind: NotificationPresentationKind.AnalysisFailed,
+          },
+        },
+      });
+    } catch (error) {
+      logger.warn({ error, analysisId }, "Failed to send analysis failure notification");
     }
   }
 
@@ -339,6 +394,10 @@ export class AnalysisService {
     const stateFilter: Record<string, unknown> = {
       orgId,
       entityKind: { $in: entityKinds },
+      // Only consider objects observed inside the requested window: without
+      // this, "latest position" can come from after the analysis window (or
+      // from arbitrarily old data) and skew the LLM's conclusions.
+      observedAt: { $gte: startDate, $lte: endDate },
     };
     if (bbox) {
       const [minLng, minLat, maxLng, maxLat] = bbox;
@@ -371,7 +430,10 @@ export class AnalysisService {
     );
     const fallbackTrackPointsByObjectKey =
       missingObjectKeys.length > 0
-        ? await this.loadTrackPointsByObjectKeys(orgId, missingObjectKeys)
+        ? await this.loadTrackPointsByObjectKeys(orgId, missingObjectKeys, {
+            startDate,
+            endDate,
+          })
         : new Map<string, Record<string, unknown>[]>();
 
     const objects = states.map((state) => {

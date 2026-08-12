@@ -4,6 +4,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
+import { PlatformAccessService } from "../auth/platform-access.service";
 
 import { AuditLogSettingsService } from "./audit-log-settings.service";
 import { UpdateAuditLogRetentionDto } from "./dto/audit-log-settings.dto";
@@ -12,7 +13,10 @@ import { UpdateAuditLogRetentionDto } from "./dto/audit-log-settings.dto";
 @ApiBearerAuth()
 @Controller("system-settings/audit-log")
 export class AuditLogSettingsController {
-  constructor(private readonly auditLogSettings: AuditLogSettingsService) {}
+  constructor(
+    private readonly auditLogSettings: AuditLogSettingsService,
+    private readonly platformAccess: PlatformAccessService,
+  ) {}
 
   @Get()
   @Permissions("settings.manage")
@@ -27,6 +31,10 @@ export class AuditLogSettingsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: UpdateAuditLogRetentionDto
   ) {
+    // The retention setting is GLOBAL (no org dimension): only platform
+    // admins may change it, otherwise any org's settings.manage holder could
+    // alter retention for every tenant.
+    await this.platformAccess.assertPlatformAdmin(user.id);
     const retentionDays = await this.auditLogSettings.updateRetentionDays(
       user.orgId,
       user.id,

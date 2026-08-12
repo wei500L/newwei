@@ -22,6 +22,14 @@ import {
 } from "../websocket/socket-error-payloads";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
 import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
+import {
+  attachTokenRevalidation,
+  cleanupTokenRevalidation,
+} from "../websocket/socket-token-revalidation";
+import {
+  isTrustProxyConfigured,
+  resolveSocketClientIp,
+} from "../websocket/socket-client-ip";
 
 import {
   NotificationDispatcher,
@@ -180,6 +188,9 @@ export class NotificationsGateway
         orgId: profile.orgId,
         userId: profile.id,
       });
+      // Re-check revocation/expiry periodically: logout or permission
+      // revocation must cut the live socket, not just the next handshake.
+      attachTokenRevalidation(client, payload, this.accessTokenBlacklist);
       this.logger.info(
         {
           socketId: client.id,
@@ -208,6 +219,7 @@ export class NotificationsGateway
   }
 
   handleDisconnect(client: Socket) {
+    cleanupTokenRevalidation(client);
     const profile = client.data?.user as AuthenticatedUser | undefined;
     this.unregisterClient(client);
     this.logger.info(
@@ -311,17 +323,10 @@ export class NotificationsGateway
   }
 
   private extractClientIp(client: Socket) {
-    const forwardedHeader = client.handshake.headers["x-forwarded-for"];
-    const forwarded = Array.isArray(forwardedHeader)
-      ? forwardedHeader[0]
-      : forwardedHeader;
-    const ipFromForwarded = forwarded?.split(",")[0]?.trim();
-    const address =
-      typeof client.handshake.address === "string"
-        ? client.handshake.address
-        : undefined;
-    const ip = ipFromForwarded || address;
-    return ip ? ip.replace(/^::ffff:/, "") : undefined;
+    // Only honor X-Forwarded-For behind a trusted proxy chain; the raw
+    // header is client-controlled and would allow spoofing the
+    // rate-limit/backoff keys (or poisoning a victim IP).
+    return resolveSocketClientIp(client, isTrustProxyConfigured());
   }
 
   private parseAuthorizationHeader(authHeader: string | string[] | undefined) {

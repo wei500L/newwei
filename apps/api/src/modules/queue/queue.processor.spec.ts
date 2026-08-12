@@ -7,6 +7,9 @@ jest.mock("@modular/mongo", () => ({
   ProcessedItemModel: {
     updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
   },
+  ItemReadModelModel: {
+    updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
+  },
   RawItemModel: {
     findById: jest.fn(),
   },

@@ -1905,3 +1905,44 @@ describe("RealtimeSignalsService processed article term coverage", () => {
     jest.useRealTimers();
   });
 });
+
+
+describe("RealtimeSignalsService.toIsoTimestamp", () => {
+  const buildService = () => {
+    const service = new RealtimeSignalsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      { realtimeSignalsConfig: {} } as any,
+      {} as any,
+      {} as any,
+      undefined as any,
+      undefined as any,
+    );
+    return service;
+  };
+
+  it("parses GDELT YYYYMMDDTHHMMSSZ (urlpubtimedate) as UTC", () => {
+    const service = buildService();
+    const result = (service as any).toIsoTimestamp("20240812T143000Z");
+    expect(result).toBe("2024-08-12T14:30:00.000Z");
+  });
+
+  it("parses compact 14-digit UTC datetimes instead of treating them as epoch ms", () => {
+    const service = buildService();
+    const result = (service as any).toIsoTimestamp("20240812143000");
+    expect(result).toBe("2024-08-12T14:30:00.000Z");
+  });
+
+  it("keeps parsing 8-digit dates as midnight UTC", () => {
+    const service = buildService();
+    const result = (service as any).toIsoTimestamp("20240812");
+    expect(result).toBe("2024-08-12T00:00:00.000Z");
+  });
+
+  it("keeps parsing ISO strings unchanged", () => {
+    const service = buildService();
+    const result = (service as any).toIsoTimestamp("2024-08-12T14:30:00.000Z");
+    expect(result).toBe("2024-08-12T14:30:00.000Z");
+  });
+});

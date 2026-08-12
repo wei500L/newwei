@@ -470,7 +470,19 @@ export class CrawlResultService {
           }
         : {}),
     };
-    const fetchedAt = coerceDate(entry.item.publishedAt) ?? new Date();
+    // fetchedAt is the actual fetch moment, not the article's publish time.
+    // Downstream consumers use it for org-content dedupe windows, recency
+    // ordering and the strategy layer's "crawledAt" — all of which must be
+    // wall-clock fetch times. Storing the page's publish time here made old
+    // articles fall outside the dedupe window and let future publish
+    // timestamps leak into ordering. The publish time stays in
+    // entry.item.publishedAt (forwarded to item ingestion) and is also kept
+    // in the result metadata for record.
+    const fetchedAt = new Date();
+    const articlePublishedAt = coerceDate(entry.item.publishedAt);
+    if (articlePublishedAt && !("publishedAt" in metadataRecord)) {
+      metadataRecord.publishedAt = articlePublishedAt.toISOString();
+    }
     const metadata = toPrismaJsonValue(metadataRecord);
     let stage = "create_result";
     let resultId: string | undefined;

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Header,
@@ -180,6 +181,30 @@ export class AuthController {
     });
   }
 
+  @Get("machine-tokens")
+  @Permissions("settings.manage")
+  async listMachineTokens(@CurrentUser() user: AuthenticatedUser) {
+    return this.machineTokenService.list(user.orgId);
+  }
+
+  @Delete("machine-tokens/:tokenId")
+  @Permissions("settings.manage")
+  async revokeMachineToken(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("tokenId") tokenId: string,
+  ) {
+    return this.machineTokenService.revoke(user.orgId, tokenId);
+  }
+
+  @Post("machine-tokens/:tokenId/rotate")
+  @Permissions("settings.manage")
+  async rotateMachineToken(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("tokenId") tokenId: string,
+  ) {
+    return this.machineTokenService.rotate(user.orgId, tokenId);
+  }
+
   @Public()
   @Post("password/forgot")
   @HttpCode(200)
@@ -268,8 +293,13 @@ export class AuthController {
   @Post("mfa/enrollment/start")
   async beginMfaEnrollmentChallenge(
     @Body() body: BeginMfaEnrollmentChallengeDto,
+    @Req() req: Request,
   ) {
-    return this.mfaService.beginEnrollmentWithChallenge(body.challengeId);
+    return this.mfaService.beginEnrollmentWithChallenge(
+      body.challengeId,
+      req.ip,
+      req.get("user-agent") ?? undefined,
+    );
   }
 
   @Public()

@@ -3559,21 +3559,21 @@ export function NewsSourcesContent() {
 
     setBatchToggleLoading(true);
     try {
-      const results = await Promise.allSettled(
-        ids.map((id) =>
-          apiClient.patch(`admin/news-sources/${id}`, { isActive: nextActive }),
-        ),
-      );
-      const okCount = results.filter(
-        (result) => result.status === "fulfilled",
-      ).length;
-      const failedCount = results.length - okCount;
+      const response = await apiClient.patch<{
+        updatedCount: number;
+        requestedCount: number;
+      }>("admin/news-sources/batch/active", {
+        ids,
+        isActive: nextActive,
+      });
+      const okCount = response.data.updatedCount ?? ids.length;
+      const failedCount = Math.max(0, ids.length - okCount);
 
       if (failedCount > 0) {
         messageApi.warning(
           t("newsSources.messages.batchTogglePartial", {
             ok: okCount,
-            total: results.length,
+            total: ids.length,
           }),
         );
       } else {

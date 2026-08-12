@@ -90,6 +90,164 @@ describe("AkshareService.getDataByCategory", () => {
     expect(Number(item2Point?.value)).toBe(100);
   });
 
+  it("aggregates OHLC fields OHLC-aware instead of averaging candle legs", async () => {
+    const prisma = {
+      economicDataPoint: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "c1",
+            itemId: "gold",
+            recordedAt: new Date("2024-01-03T00:00:00Z"),
+            value: new Prisma.Decimal(1900),
+            unit: "USD",
+            sourceField: "open",
+            dataType: EconomicDataValueType.price,
+            item: { defaultFrequency: EconomicDataFrequency.daily },
+          },
+          {
+            id: "c2",
+            itemId: "gold",
+            recordedAt: new Date("2024-01-04T00:00:00Z"),
+            value: new Prisma.Decimal(1950),
+            unit: "USD",
+            sourceField: "high",
+            dataType: EconomicDataValueType.price,
+            item: { defaultFrequency: EconomicDataFrequency.daily },
+          },
+          {
+            id: "c3",
+            itemId: "gold",
+            recordedAt: new Date("2024-01-05T00:00:00Z"),
+            value: new Prisma.Decimal(1890),
+            unit: "USD",
+            sourceField: "low",
+            dataType: EconomicDataValueType.price,
+            item: { defaultFrequency: EconomicDataFrequency.daily },
+          },
+          {
+            id: "c4",
+            itemId: "gold",
+            recordedAt: new Date("2024-01-06T00:00:00Z"),
+            value: new Prisma.Decimal(1930),
+            unit: "USD",
+            sourceField: "close",
+            dataType: EconomicDataValueType.price,
+            item: { defaultFrequency: EconomicDataFrequency.daily },
+          },
+          {
+            id: "c5",
+            itemId: "gold",
+            recordedAt: new Date("2024-01-07T00:00:00Z"),
+            value: new Prisma.Decimal(1910),
+            unit: "USD",
+            sourceField: "close",
+            dataType: EconomicDataValueType.price,
+            item: { defaultFrequency: EconomicDataFrequency.daily },
+          },
+        ]),
+      },
+      economicDataItem: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { defaultFrequency: EconomicDataFrequency.daily },
+          ]),
+      },
+    };
+
+    const service = new AkshareService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    const result = (await service.getDataByCategory(
+      "category",
+      new Date("2024-01-01T00:00:00Z"),
+      new Date("2024-01-31T00:00:00Z"),
+      "month",
+    )) as { sourceField: string; value: Prisma.Decimal }[];
+
+    const byField = Object.fromEntries(
+      result.map((point) => [point.sourceField, Number(point.value)]),
+    );
+    // One bucket per series field; open = first, high = max, low = min,
+    // close = last of the bucket — not arithmetic means.
+    expect(byField["open"]).toBe(1900);
+    expect(byField["high"]).toBe(1950);
+    expect(byField["low"]).toBe(1890);
+    expect(byField["close"]).toBe(1910);
+  });
+
+  it("keeps the last point for percent/yield ratio series instead of averaging", async () => {
+    const prisma = {
+      economicDataPoint: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "m1",
+            itemId: "cpi",
+            recordedAt: new Date("2024-01-31T00:00:00Z"),
+            value: new Prisma.Decimal(2.1),
+            unit: "%",
+            sourceField: "同比",
+            dataType: EconomicDataValueType.percent,
+            item: { defaultFrequency: EconomicDataFrequency.monthly },
+          },
+          {
+            id: "m2",
+            itemId: "cpi",
+            recordedAt: new Date("2024-02-29T00:00:00Z"),
+            value: new Prisma.Decimal(2.3),
+            unit: "%",
+            sourceField: "同比",
+            dataType: EconomicDataValueType.percent,
+            item: { defaultFrequency: EconomicDataFrequency.monthly },
+          },
+          {
+            id: "m3",
+            itemId: "cpi",
+            recordedAt: new Date("2024-03-31T00:00:00Z"),
+            value: new Prisma.Decimal(2.5),
+            unit: "%",
+            sourceField: "同比",
+            dataType: EconomicDataValueType.percent,
+            item: { defaultFrequency: EconomicDataFrequency.monthly },
+          },
+        ]),
+      },
+      economicDataItem: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { defaultFrequency: EconomicDataFrequency.monthly },
+          ]),
+      },
+    };
+
+    const service = new AkshareService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    const result = (await service.getDataByCategory(
+      "category",
+      new Date("2024-01-01T00:00:00Z"),
+      new Date("2024-12-31T00:00:00Z"),
+      "quarter",
+    )) as { sourceField: string; value: Prisma.Decimal }[];
+
+    expect(result).toHaveLength(1);
+    // Q1 as-of value is March's 2.5, not the mean (2.3).
+    expect(Number(result[0]?.value)).toBe(2.5);
+  });
+
   it("does not truncate raw points when granularity bucketing is requested (buckets cover the full range)", async () => {
     const points = Array.from({ length: 200 }, (_, index) => ({
       id: `p-${index}`,

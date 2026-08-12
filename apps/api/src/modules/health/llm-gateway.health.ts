@@ -19,13 +19,24 @@ export class LlmGatewayHealthIndicator extends HealthIndicator {
 
   async isHealthy(key = "llmGateway"): Promise<HealthIndicatorResult> {
     try {
-      const [settingsState, completionCfg, embeddingCfg, rerankCfg] =
-        await Promise.all([
+      // Bound the check: the four settings queries are direct DB reads with
+      // no timeout of their own, and Terminus waits for the slowest check.
+      // When MySQL is wedged this would otherwise hang the whole /healthz
+      // probe and make load balancers think the instance is down.
+      const [
+        settingsState,
+        completionCfg,
+        embeddingCfg,
+        rerankCfg,
+      ] = await withTimeout(
+        Promise.all([
           this.settings.list(),
           this.settings.getActiveConfig(),
           this.settings.getActiveEmbeddingConfig(),
           this.settings.getActiveRerankConfig(),
-        ]);
+        ]),
+        2_000,
+      );
 
       const completionReady = Boolean(completionCfg?.model?.trim());
       const embeddingReady = Boolean(embeddingCfg?.embeddingModel?.trim());
@@ -80,4 +91,19 @@ export class LlmGatewayHealthIndicator extends HealthIndicator {
       throw new HealthCheckError("LLM gateway health check failed", result);
     }
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`LLM gateway health check timed out after ${ms}ms`)),
+      ms,
+    );
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  });
 }

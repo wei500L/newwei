@@ -1,5 +1,6 @@
-import { Prisma, UserNewsBehaviorSignalType } from "@prisma/client";
+import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
+import { Prisma, UserNewsBehaviorSignalType } from "@prisma/client";
 
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
@@ -38,6 +39,13 @@ const NEGATIVE_EVENT_WEIGHT_MAP: Partial<Record<UserNewsBehaviorEventType, numbe
   unsubscribe: 5,
 };
 
+const MILESTONE_EVENT_TYPES = new Set<UserNewsBehaviorEventType>([
+  "engaged_read",
+  "deep_read",
+  "completed_read",
+]);
+const MILESTONE_DEDUPE_TTL_SECONDS = 48 * 60 * 60;
+
 const MAX_TERM_LENGTH = 96;
 const MAX_ID_LENGTH = 128;
 const MAX_TERMS_PER_DIMENSION = 8;
@@ -61,9 +69,7 @@ const PERSISTED_SIGNAL_DIMENSIONS = [
 
 type UserNewsBehaviorScoreRecord = Record<string, number>;
 
-type UserNewsBehaviorScoreDimensions = {
-  [K in (typeof USER_NEWS_BEHAVIOR_DIMENSIONS)[number]]: UserNewsBehaviorScoreRecord;
-};
+type UserNewsBehaviorScoreDimensions = Record<(typeof USER_NEWS_BEHAVIOR_DIMENSIONS)[number], UserNewsBehaviorScoreRecord>;
 
 export interface UserNewsBehaviorProfile {
   actions: UserNewsBehaviorScoreRecord;
@@ -113,6 +119,8 @@ export interface UserNewsCollaborativeProfile {
 
 @Injectable()
 export class UserNewsBehaviorService {
+  private readonly logger = createLogger({ name: "user-news-behavior" });
+
   constructor(
     private readonly cache: CacheService,
     private readonly prisma: PrismaService,
@@ -143,6 +151,36 @@ export class UserNewsBehaviorService {
       userId: input.userId,
       dayKey: today,
     });
+
+    // Milestone events (engaged/deep/completed read) are "achievements" that
+    // must be counted once per item per day, regardless of how many tabs or
+    // retries fire them. The client-side dedupe is per-tab and unreliable.
+    if (
+      MILESTONE_EVENT_TYPES.has(input.type) &&
+      (itemId || eventId)
+    ) {
+      const milestoneDedupeKey =
+        `user-news-behavior:milestone:${input.orgId}:${input.userId}:` +
+        `${input.type}:${today}:${itemId ?? eventId}`;
+      try {
+        const acquired = await this.cache.setIfAbsent(
+          milestoneDedupeKey,
+          { at: Date.now() },
+          MILESTONE_DEDUPE_TTL_SECONDS,
+        );
+        if (!acquired) {
+          // Already recorded for this item today — ignore the duplicate.
+          return;
+        }
+      } catch (error) {
+        // Fail-open: Redis hiccups must not drop legitimate events.
+        this.logger.warn(
+          { error, orgId: input.orgId, userId: input.userId, type: input.type },
+          "Milestone dedupe check failed; recording event",
+        );
+      }
+    }
+
     const aggregateDeltas: {
       signalType: UserNewsBehaviorSignalType;
       signalKey: string;
@@ -552,6 +590,23 @@ export class UserNewsBehaviorService {
   }
 
   private async markSimilaritySnapshotsDirty(orgId: string, userId: string) {
+    // Throttle the org-wide dirty fan-out: every view/click would otherwise
+    // flip EVERY other user's similarity snapshot to dirty (and the next read
+    // of each snapshot triggers a full recompute — a thundering herd in large
+    // orgs). One dirty pass per user per throttle window is plenty for the
+    // recompute to see the fresh signals.
+    const throttleKey = `user-news-behavior:sim-dirty:${orgId}:${userId}`;
+    const DIRTY_THROTTLE_SECONDS = 60;
+    const acquired = await this.cache.setIfAbsent(
+      throttleKey,
+      { at: Date.now() },
+      DIRTY_THROTTLE_SECONDS,
+    );
+    if (!acquired) {
+      // Someone marked this user's snapshots dirty within the window.
+      return;
+    }
+
     await this.prisma.$transaction([
       this.prisma.userNewsSimilaritySnapshot.upsert({
         where: {

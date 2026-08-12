@@ -168,7 +168,12 @@ export class PublicPortalService {
       itemsLimit: 24,
       timelineLimit: 12,
     });
-    if (!event || !event.title || !event.summary) {
+    // Archived events must stay out of the public portal: archiving is the
+    // "take-down" operation and the portal is unauthenticated.
+    if (!event || event.status !== NewsEventStatus.active) {
+      return null;
+    }
+    if (!event.title || !event.summary) {
       return null;
     }
 
@@ -280,8 +285,17 @@ export class PublicPortalService {
   ): Promise<PublicPortalStory[]> {
     const stories: PublicPortalStory[] = [];
     let cursor: { lastAt: Date; startAt: Date; id: string } | null = null;
+    let pagesScanned = 0;
+    // Bound the scan: an unknown topicSlug currently filters in memory, so
+    // without a page cap a single public request could walk the entire active
+    // event table (each page also runs heat/authority aggregations).
+    const MAX_STORY_PAGES = 30;
 
     while (stories.length < options.limit) {
+      if (pagesScanned >= MAX_STORY_PAGES) {
+        break;
+      }
+      pagesScanned += 1;
       const cursorFilter: Prisma.NewsEventWhereInput = cursor
         ? {
             OR: [

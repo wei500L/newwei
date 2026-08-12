@@ -732,7 +732,9 @@ export class ItemsService {
       new Set(
         metas
           .map((meta) => meta.mongoRef.trim())
-          .filter((mongoRef) => mongoRef.length > 0),
+          .filter(
+            (mongoRef) => mongoRef.length > 0 && Types.ObjectId.isValid(mongoRef),
+          ),
       ),
     );
     const latestRawIds = metas
@@ -963,15 +965,28 @@ export class ItemsService {
         processed: processedByItemMetaId.get(meta.id) ?? null,
       }));
       const sourceIdByItemMetaId = await this.resolveReadModelSourceIds(orgId, records);
-      const docs = records.map((record) =>
-        buildItemReadModelDocument({
+      const docs = records.map((record) => {
+        const doc = buildItemReadModelDocument({
           meta: record.meta,
           raw: record.raw ?? undefined,
           processed: record.processed ?? undefined,
           sourceId: sourceIdByItemMetaId.get(record.meta.id),
-        }),
-      );
+        });
+        if (!record.raw) {
+          delete (doc as Partial<ItemReadModel>).raw;
+        }
+        if (!record.processed) {
+          delete (doc as Partial<ItemReadModel>).processed;
+        }
+        return doc;
+      });
 
+      // A missing snapshot at hydration time (raw/processed not created yet)
+      // must not be persisted as an explicit null: the GraphQL resolvers
+      // treat a read-model document with a null snapshot as authoritative and
+      // skip the Mongo loaders, so a null placeholder would permanently mask
+      // data that arrives later. Unset the field instead so resolvers fall
+      // back to the loaders until the outbox delivery populates it.
       await ItemReadModelModel.bulkWrite(
         docs.map((doc) => ({
           updateOne: {
@@ -981,6 +996,10 @@ export class ItemsService {
             },
             update: {
               $set: doc,
+              $unset: {
+                ...(doc.raw ? {} : { raw: 1 }),
+                ...(doc.processed ? {} : { processed: 1 }),
+              },
             },
             upsert: true,
           },
@@ -1690,9 +1709,19 @@ export class ItemsService {
     orderBy: ItemsOrderBy = "CREATED_DESC",
     rankingMode: ItemsRankingMode = "RECENCY",
     userId?: string,
+    options?: { maxPageSize?: number },
   ) {
     const normalizedPageSize = Number.isFinite(pageSize) ? Math.floor(pageSize) : 10;
-    const take = Math.min(Math.max(normalizedPageSize, 1), MAX_CURSOR_PAGE_SIZE);
+    // Batch consumers (CSV export) need a larger page; the interactive
+    // controller path keeps the cursor-page cap of 50.
+    const cap = Math.max(
+      1,
+      Math.min(
+        Math.trunc(options?.maxPageSize ?? MAX_CURSOR_PAGE_SIZE),
+        50_000,
+      ),
+    );
+    const take = Math.min(Math.max(normalizedPageSize, 1), cap);
     const normalizedPage = Number.isFinite(page) ? Math.floor(page) : 1;
     const safePage = Math.max(normalizedPage, 1);
     const skip = (safePage - 1) * take;
@@ -3756,7 +3785,10 @@ export class ItemsService {
       throw new NotFoundException("Item not found");
     }
 
-    const rawItem = itemMeta.mongoRef ? await RawItemModel.findById(itemMeta.mongoRef).lean() : null;
+    const rawItem =
+      itemMeta.mongoRef && Types.ObjectId.isValid(itemMeta.mongoRef)
+        ? await RawItemModel.findById(itemMeta.mongoRef).lean()
+        : null;
     const processed = await ProcessedItemModel.findOne({ itemMetaId: itemMeta.id })
       .sort({ createdAt: -1 })
       .lean();

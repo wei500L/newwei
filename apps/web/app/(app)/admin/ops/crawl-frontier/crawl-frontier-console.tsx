@@ -1013,8 +1013,10 @@ export function CrawlFrontierConsole() {
         matchHost: values.matchHost.trim(),
         isActive: values.isActive,
         executionMode: values.executionMode,
-        workflowId: values.workflowId || undefined,
-        workflowVersionId: values.workflowVersionId || undefined,
+        workflowId: values.workflowId?.trim() ? values.workflowId.trim() : null,
+        workflowVersionId: values.workflowVersionId?.trim()
+          ? values.workflowVersionId.trim()
+          : null,
         workflowBindingMode: values.workflowBindingMode ?? "published",
         config,
       };

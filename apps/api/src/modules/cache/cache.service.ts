@@ -23,6 +23,16 @@ export class CacheService implements OnModuleDestroy {
     return value ? (JSON.parse(value) as T) : null;
   }
 
+  /**
+   * Atomically read-and-delete a key (Redis GETDEL). Use for single-use
+   * credentials/state so two concurrent consumers cannot both observe the
+   * value before either deletes it.
+   */
+  async getdel<T>(key: string): Promise<T | null> {
+    const value = await this.redis.getdel(key);
+    return value ? (JSON.parse(value) as T) : null;
+  }
+
   async getMany<T>(keys: string[]): Promise<(T | null)[]> {
     if (keys.length === 0) {
       return [];
@@ -49,7 +59,7 @@ export class CacheService implements OnModuleDestroy {
   }
 
   async del(key: string) {
-    await this.redis.del(key);
+    return this.redis.del(key);
   }
 
   async delMany(keys: string[]) {
@@ -171,11 +181,21 @@ export class CacheService implements OnModuleDestroy {
     }
 
     if (lockToken) {
+      // Renew the lock while the loader runs: expensive loaders (LLM
+      // builds, graph walks) can outlive the default 5s TTL, after which
+      // other requests acquire the lock and execute the same loader
+      // concurrently (thundering herd).
+      const renewInterval = Math.max(1_000, Math.floor(lockTtlMs / 2));
+      const renewTimer = setInterval(() => {
+        void this.extendLock(lockKey, lockToken, lockTtlMs).catch(() => undefined);
+      }, renewInterval);
+      renewTimer.unref?.();
       try {
         const value = await loader();
         await this.set(key, value, ttlSeconds);
         return value;
       } finally {
+        clearInterval(renewTimer);
         await this.releaseLock(lockKey, lockToken);
       }
     }

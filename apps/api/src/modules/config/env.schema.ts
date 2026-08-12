@@ -334,7 +334,9 @@ export const apiEnvSchema = baseEnvSchema
     VECTOR_INTERNAL_TOKEN: z.preprocess(
       (value) =>
         typeof value === "string" && value.trim() === "" ? undefined : value,
-      z.string().min(1).optional(),
+      // Keep the same minimum as apps/vector's schema: a shorter token passes
+      // API validation here but fails to start the vector service.
+      z.string().min(8).optional(),
     ),
     VECTOR_SERVICE_TIMEOUT_MS: z.coerce
       .number()

@@ -23,6 +23,13 @@ export class EntityImpactGraphResolver {
     private readonly entityImpactGraphService: EntityImpactGraphService,
   ) {}
 
+  private clampUnitInterval(value: number): number {
+    if (!Number.isFinite(value)) {
+      return 0.5;
+    }
+    return Math.min(1, Math.max(0, value));
+  }
+
   @HasPermission("dashboards.read")
   @Query(() => EntityImpactGraphModel, {
     description: "Get entity impact graph data for visualization",
@@ -38,15 +45,28 @@ export class EntityImpactGraphResolver {
       throw new ForbiddenException("Unauthenticated");
     }
 
-    // Default date range: last 30 days
+    // Default date range: last 30 days. Inputs are clamped to keep the
+    // underlying aggregation (ProcessedItemModel.aggregate with pairwise
+    // correlation) within a bounded cost envelope.
     const endDate = input?.endDate ?? new Date();
-    const startDate =
+    const rawStartDate =
       input?.startDate ??
       new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const minEntityConfidence = input?.minConfidence ?? 0.5;
-    const minCorrelation = input?.minCorrelation ?? 0.3;
-    const minCoOccurrence = input?.minCoOccurrence ?? 2;
-    const maxNodes = input?.maxNodes ?? 100;
+    const maxWindowMs = 365 * 24 * 60 * 60 * 1000;
+    const startDate =
+      endDate.getTime() - rawStartDate.getTime() > maxWindowMs
+        ? new Date(endDate.getTime() - maxWindowMs)
+        : rawStartDate;
+    const minEntityConfidence = this.clampUnitInterval(input?.minConfidence ?? 0.5);
+    const minCorrelation = this.clampUnitInterval(input?.minCorrelation ?? 0.3);
+    const minCoOccurrence = Math.max(
+      1,
+      Math.min(Math.trunc(input?.minCoOccurrence ?? 2), 100),
+    );
+    const maxNodes = Math.max(
+      1,
+      Math.min(Math.trunc(input?.maxNodes ?? 100), 500),
+    );
     const categories = input?.categories ?? [
       "person",
       "organization",

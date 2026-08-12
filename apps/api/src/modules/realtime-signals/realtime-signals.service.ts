@@ -711,6 +711,19 @@ export class RealtimeSignalsService {
           latestValue: previousSourceState?.latestValue,
           context: previousSourceState?.context,
         });
+        // A failed insight source must keep its previously fetched data
+        // (matching the shouldRun=false carry-forward path): otherwise a
+        // single transient GDELT/Polymarket failure wipes the whole
+        // keywordSpikes/tensions/predictionLeads/pizzint block until the next
+        // successful run.
+        this.carryForwardInsightSnapshot(
+          nextInsight,
+          currentInsight,
+          source,
+          lastRunMs,
+          effectiveIntervalSec,
+          completedAtMs,
+        );
         logger.warn(
           {
             orgId,
@@ -5758,8 +5771,49 @@ export class RealtimeSignalsService {
             return new Date(parsed).toISOString();
           }
         }
+        // GDELT formats: "20240812T143000Z" (gkg_geojson urlpubtimedate)
+        // and compact "20240812143000" / 14-digit UTC timestamps.
+        const compactDateTime = trimmed.match(
+          /^(\d{4})(\d{2})(\d{2})T?(\d{2})(\d{2})(\d{2})Z?$/,
+        );
+        if (compactDateTime) {
+          const [, y, mo, d, h, mi, s] = compactDateTime;
+          const parsed = Date.UTC(
+            Number(y),
+            Number(mo) - 1,
+            Number(d),
+            Number(h),
+            Number(mi),
+            Number(s),
+          );
+          if (Number.isFinite(parsed)) {
+            return new Date(parsed).toISOString();
+          }
+        }
         if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
           const numeric = Number(trimmed);
+          // 14-digit values like "20240812143000" are compact UTC datetimes,
+          // not milliseconds since epoch; treat them as such instead of
+          // producing a year-2610 timestamp.
+          if (/^\d{14}$/.test(trimmed)) {
+            const y = trimmed.slice(0, 4);
+            const mo = trimmed.slice(4, 6);
+            const d = trimmed.slice(6, 8);
+            const h = trimmed.slice(8, 10);
+            const mi = trimmed.slice(10, 12);
+            const s = trimmed.slice(12, 14);
+            const parsed = Date.UTC(
+              Number(y),
+              Number(mo) - 1,
+              Number(d),
+              Number(h),
+              Number(mi),
+              Number(s),
+            );
+            if (Number.isFinite(parsed)) {
+              return new Date(parsed).toISOString();
+            }
+          }
           const ms = numeric > 1_000_000_000_000 ? numeric : numeric * 1_000;
           return new Date(ms).toISOString();
         }

@@ -613,8 +613,7 @@ export function UserUiSettingsSync() {
         hydratingRef.current = true;
         try {
           if (smResult.status === "fulfilled") {
-            const data = smResult.value.data;
-            const remoteLayoutPayload =
+            const data = smResult.value.data;            const remoteLayoutPayload =
               Boolean(data) && data?.layout
                 ? normalizeSituationMonitorLayoutPayload(data.layout)
                 : null;
@@ -670,6 +669,10 @@ export function UserUiSettingsSync() {
                   "user-settings/ui/situation-monitor",
                   payload,
                 );
+                // The user may have switched org/account while the request
+                // was in flight — never write fingerprints or cache for the
+                // OLD context.
+                if (cancelled) return;
                 useUserUiSyncStatusStore
                   .getState()
                   .endSaveSuccess("situation-monitor");
@@ -715,6 +718,7 @@ export function UserUiSettingsSync() {
               },
             } satisfies UiCacheEnvelope<SituationMonitorCachePayload>);
 
+            if (cancelled) return;
             setReady((prev) => ({ ...prev, situationMonitor: true }));
           } else {
             captureClientError(
@@ -730,6 +734,8 @@ export function UserUiSettingsSync() {
           }
 
           if (warMapResult.status === "fulfilled") {
+            // Context may have changed while the request was in flight.
+            if (cancelled) return;
             const data = warMapResult.value.data;
             const remoteHasSettings = Boolean(data) && data.settings !== null;
 
@@ -763,6 +769,7 @@ export function UserUiSettingsSync() {
                 await apiClient.put("user-settings/ui/war-map", {
                   settings: currentSettings,
                 });
+                if (cancelled) return;
                 useUserUiSyncStatusStore.getState().endSaveSuccess("war-map");
                 lastSentRef.current.warMapSettings = currentFingerprint;
                 removeStorageKey(LEGACY_STORAGE_KEY_WAR_MAP_SETTINGS);
@@ -795,6 +802,7 @@ export function UserUiSettingsSync() {
               },
             } satisfies UiCacheEnvelope<WarMapCachePayload>);
 
+            if (cancelled) return;
             setReady((prev) => ({ ...prev, warMap: true }));
           } else {
             captureClientError(

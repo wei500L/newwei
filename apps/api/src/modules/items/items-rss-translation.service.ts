@@ -272,12 +272,12 @@ export class ItemsRssTranslationService {
           });
         }),
       );
-      const translations = translationResults.map((result) => {
-        if (result.status === "rejected") {
-          throw result.reason;
-        }
-        return result.value;
-      });
+      // Skip rejected items instead of failing the whole batch: a single
+      // provider error must not discard translations that already succeeded.
+      // Per-item failure is already counted in `metrics.failureCount`.
+      const translations = translationResults.flatMap((result) =>
+        result.status === "rejected" ? [] : [result.value],
+      );
 
       return {
         provider,

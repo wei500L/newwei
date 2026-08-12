@@ -32,6 +32,19 @@ for (const target of targets) {
       overrideProcessEnv: false,
     });
     resolveMysqlConnectionString(env);
+    // The AIS relay hard-fails at startup without its upstream API key, and
+    // `api` depends on a healthy relay in the Docker stack — an empty key
+    // therefore bricks the default deployment. baseEnvSchema keeps the key
+    // optional for non-relay consumers, so enforce it explicitly here.
+    const rawAisstreamKey = env.AISSTREAM_API_KEY;
+    if (
+      typeof rawAisstreamKey !== "string" ||
+      rawAisstreamKey.trim().length === 0
+    ) {
+      throw new Error(
+        "AISSTREAM_API_KEY is required: the ais-relay refuses to start without it and api depends on a healthy relay",
+      );
+    }
     console.log(`✅ ${target.label} environment configuration looks good.`);
   } catch (error) {
     hasError = true;

@@ -3092,6 +3092,7 @@ export type QueueEventModel = {
 export type QueueStatsModel = {
   __typename?: 'QueueStatsModel';
   counts: QueueCountsModel;
+  countsAvailable: Scalars['Boolean']['output'];
   itemCount: Scalars['Int']['output'];
   processedCount: Scalars['Int']['output'];
   recentLogs: Array<QueueEventModel>;
@@ -4065,7 +4066,7 @@ export type ProcessedItemByIdQuery = { __typename?: 'Query', processedItemById?:
 export type QueueStatsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type QueueStatsQuery = { __typename?: 'Query', queueStats: { __typename?: 'QueueStatsModel', processedCount: number, itemCount: number, counts: { __typename?: 'QueueCountsModel', waiting: number, active: number, completed: number, failed: number, delayed: number }, recentLogs: Array<{ __typename?: 'QueueEventModel', event: string, jobId: string, data?: string | null, timestamp: string }> } };
+export type QueueStatsQuery = { __typename?: 'Query', queueStats: { __typename?: 'QueueStatsModel', processedCount: number, itemCount: number, countsAvailable: boolean, counts: { __typename?: 'QueueCountsModel', waiting: number, active: number, completed: number, failed: number, delayed: number }, recentLogs: Array<{ __typename?: 'QueueEventModel', event: string, jobId: string, data?: string | null, timestamp: string }> } };
 
 export type AccessSettingsMetaQueryVariables = Exact<{ [key: string]: never; }>;
 

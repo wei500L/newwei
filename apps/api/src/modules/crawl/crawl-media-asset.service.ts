@@ -168,13 +168,33 @@ export class CrawlMediaAssetService {
     const baseCreate = this.buildCreateData(normalizedInput, provider);
 
     if (provider === "s3") {
-      const storageKey = this.buildStorageKey(normalizedInput);
-      await this.storage.uploadObject({
-        objectKey: storageKey,
-        body: normalizedInput.data,
-        contentType: normalizedContentType ?? DEFAULT_BINARY_CONTENT_TYPE,
-        cacheControl: "public, max-age=31536000, immutable"
+      // Deduplicate repeated downloads of the same URL: cross-task repeats
+      // are common, and without a content key every repeat uploads a new
+      // object with a random key. Match on (orgId, sourceUrl, contentType,
+      // bytes) as a cheap content proxy and reuse the existing object.
+      const existingAsset = await this.prisma.crawlMediaAsset.findFirst({
+        where: {
+          orgId: normalizedInput.orgId,
+          kind: normalizedInput.kind,
+          sourceUrl: normalizedInput.sourceUrl,
+          contentType: normalizedContentType,
+          bytes: normalizedInput.bytes,
+          provider: "s3",
+        },
+        select: { storageKey: true },
+        orderBy: { createdAt: "asc" },
       });
+
+      const storageKey =
+        existingAsset?.storageKey ?? this.buildStorageKey(normalizedInput);
+      if (!existingAsset) {
+        await this.storage.uploadObject({
+          objectKey: storageKey,
+          body: normalizedInput.data,
+          contentType: normalizedContentType ?? DEFAULT_BINARY_CONTENT_TYPE,
+          cacheControl: "public, max-age=31536000, immutable"
+        });
+      }
 
       try {
         await this.prisma.crawlMediaAsset.create({
@@ -299,7 +319,19 @@ export class CrawlMediaAssetService {
         continue;
       }
       try {
-        await this.storage.deleteObject(record.storageKey);
+        // Deduplicated S3 assets share one object key; only delete it when
+        // no other asset still references it.
+        const otherReferences = await this.prisma.crawlMediaAsset.count({
+          where: {
+            orgId: record.orgId,
+            storageKey: record.storageKey,
+            provider: "s3",
+            resultId: { not: resultId },
+          },
+        });
+        if (otherReferences === 0) {
+          await this.storage.deleteObject(record.storageKey);
+        }
       } catch (error) {
         logger.error(
           {

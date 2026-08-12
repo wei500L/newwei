@@ -140,3 +140,18 @@ export function formatKnowledgeGraphLabel(value: string): string {
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
+
+/**
+ * Renders a possibly-null numeric value without crashing: GraphQL exposes
+ * confidence/weight as nullable floats, and historical/hand-fixed rows can
+ * carry nulls that would otherwise blow up `.toFixed()` at render time.
+ */
+export function formatNullableNumber(
+  value: number | null | undefined,
+  digits = 2,
+): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "-";
+  }
+  return value.toFixed(digits);
+}

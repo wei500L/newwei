@@ -658,6 +658,24 @@ export class NewsEventsService {
     }
 
     return this.prisma.runInTransaction(async (tx) => {
+      // Re-check inside the transaction: a concurrent writer (clustering
+      // cron, LLM backfill worker, admin backfill) may have assigned this
+      // item between the pre-check above and now. Without this re-check,
+      // creating a fresh event for an already-assigned item would commit an
+      // empty "orphan" event and return the wrong eventId to the caller.
+      const raced = await tx.newsEventItem.findUnique({
+        where: {
+          orgId_processedArticleId: {
+            orgId,
+            processedArticleId: signal.processedArticleId,
+          },
+        },
+        select: { id: true, eventId: true },
+      });
+      if (raced) {
+        return { eventId: raced.eventId, created: false };
+      }
+
       const eventId =
         assignment.eventId ??
         (
@@ -684,7 +702,18 @@ export class NewsEventsService {
         });
       } catch (error) {
         if (this.isUniqueConstraintError(error)) {
-          return { eventId, created: false };
+          // Lost the race: resolve the ACTUAL event that holds the item (the
+          // winner's event), never the one created in this transaction.
+          const winner = await tx.newsEventItem.findUnique({
+            where: {
+              orgId_processedArticleId: {
+                orgId,
+                processedArticleId: signal.processedArticleId,
+              },
+            },
+            select: { eventId: true },
+          });
+          return { eventId: winner?.eventId ?? eventId, created: false };
         }
         throw error;
       }
@@ -873,6 +902,23 @@ export class NewsEventsService {
     const primaryEntity = this.pickPrimaryEntity(signal.entities);
 
     return this.prisma.runInTransaction(async (tx) => {
+      // Re-check inside the transaction: a concurrent writer may have
+      // assigned this article between the pre-check above and now. Creating a
+      // fresh event for an already-assigned item would commit an empty
+      // "orphan" event and return the wrong eventId to the caller.
+      const raced = await tx.newsEventItem.findUnique({
+        where: {
+          orgId_processedArticleId: {
+            orgId,
+            processedArticleId: signal.processedArticleId,
+          },
+        },
+        select: { id: true, eventId: true },
+      });
+      if (raced) {
+        return { eventId: raced.eventId, created: false };
+      }
+
       const event = await this.createEvent(tx, orgId, signal, settings, {
         timestamp,
         language,
@@ -896,7 +942,18 @@ export class NewsEventsService {
         });
       } catch (error) {
         if (this.isUniqueConstraintError(error)) {
-          return { eventId: event.id, created: false };
+          // Lost the race: resolve the ACTUAL event holding this item (the
+          // winner's), never the empty event created in this transaction.
+          const winner = await tx.newsEventItem.findUnique({
+            where: {
+              orgId_processedArticleId: {
+                orgId,
+                processedArticleId: signal.processedArticleId,
+              },
+            },
+            select: { eventId: true },
+          });
+          return { eventId: winner?.eventId ?? event.id, created: false };
         }
         throw error;
       }
