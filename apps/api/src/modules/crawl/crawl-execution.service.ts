@@ -10,6 +10,7 @@ import type { CrawlTask, Prisma } from "@prisma/client";
 import { NotificationType, PipelineJobStatus } from "@prisma/client";
 import { load } from "cheerio";
 
+import { validateSsrfUrlAsync } from "../../common/validators/ssrf-url.validator";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { ItemsService } from "../items/items.service";
@@ -68,6 +69,8 @@ import {
 } from "./url-fingerprint";
 
 const logger = createLogger({ name: "crawl-execution-service" });
+
+const MAX_API_SIDE_REDIRECT_HOPS = 5;
 
 export interface CrawlExecutionRetryContext {
   attempt?: number;
@@ -1162,6 +1165,61 @@ export class CrawlExecutionService {
     return headers;
   }
 
+  // Follow redirects manually, validating every hop against the SSRF rules:
+  // a safe initial URL can still redirect into an internal address or cloud
+  // metadata endpoint. Returns null when a hop is blocked or the redirect
+  // chain is invalid/exhausted.
+  private async ssrfSafeFetch(
+    url: string,
+    method: "HEAD" | "GET",
+    headers: Record<string, string>,
+    signal: AbortSignal,
+  ): Promise<Response | null> {
+    let currentUrl = url;
+    for (let hop = 0; hop <= MAX_API_SIDE_REDIRECT_HOPS; hop += 1) {
+      const safety = await validateSsrfUrlAsync(currentUrl);
+      if (!safety.valid) {
+        logger.warn(
+          { url: currentUrl, reason: safety.reason ?? "unsafe url" },
+          "Blocked SSRF target during API-side fetch",
+        );
+        return null;
+      }
+      const response = await fetch(currentUrl, {
+        method,
+        redirect: "manual",
+        signal,
+        headers,
+      });
+      if (
+        response.status >= 300 &&
+        response.status < 400 &&
+        response.headers.get("location")
+      ) {
+        const location = response.headers.get("location");
+        if (!location) {
+          return null;
+        }
+        try {
+          currentUrl = new URL(location, currentUrl).toString();
+        } catch {
+          logger.warn(
+            { url: currentUrl },
+            "Invalid redirect location during API-side fetch",
+          );
+          return null;
+        }
+        continue;
+      }
+      return response;
+    }
+    logger.warn(
+      { url },
+      "Too many redirects during API-side fetch",
+    );
+    return null;
+  }
+
   private async requestConditionalUrlStatus(
     url: string,
     method: "HEAD" | "GET",
@@ -1172,12 +1230,15 @@ export class CrawlExecutionService {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const response = await fetch(url, {
+        const response = await this.ssrfSafeFetch(
+          url,
           method,
-          redirect: "follow",
-          signal: controller.signal,
           headers,
-        });
+          controller.signal,
+        );
+        if (!response) {
+          return null;
+        }
         if (method === "GET" && response.body) {
           await response.body.cancel().catch(() => undefined);
         }
@@ -3968,17 +4029,24 @@ export class CrawlExecutionService {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const response = await fetch(url, {
-          method: "GET",
-          redirect: "follow",
-          signal: controller.signal,
-          headers: {
+        const response = await this.ssrfSafeFetch(
+          url,
+          "GET",
+          {
             accept:
               "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "user-agent":
               "Mozilla/5.0 (compatible; CrawlQualityProbe/1.0; +https://example.com)",
           },
-        });
+          controller.signal,
+        );
+        if (!response) {
+          return {
+            truncated: false,
+            earlyStopped: false,
+            failureReason: "network_or_timeout",
+          };
+        }
         if (!response.ok) {
           return {
             truncated: false,

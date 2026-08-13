@@ -16,6 +16,8 @@ import {
   Min,
 } from "class-validator";
 
+import { IsSafeUrl } from "../../../common/validators/is-safe-url.decorator";
+
 const WORKFLOW_BINDING_MODES = ["published", "pinned"] as const;
 
 export class ListNewsSourceDto {
@@ -50,6 +52,7 @@ export class CreateNewsSourceDto {
   name!: string;
 
   @IsUrl()
+  @IsSafeUrl()
   @MaxLength(2048)
   url!: string;
 
@@ -119,6 +122,7 @@ export class UpdateNewsSourceDto {
 
   @IsOptional()
   @IsUrl()
+  @IsSafeUrl()
   @MaxLength(2048)
   url?: string;
 

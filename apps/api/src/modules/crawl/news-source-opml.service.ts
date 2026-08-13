@@ -3,6 +3,7 @@ import { NewsSourceType, Prisma } from '@prisma/client';
 import { XMLParser } from 'fast-xml-parser';
 
 import { toPrismaJsonValue } from '../../common/prisma-json';
+import { validateSsrfUrlAsync } from '../../common/validators/ssrf-url.validator';
 import { PrismaService } from '../config/prisma.service';
 
 import {
@@ -195,30 +196,35 @@ export class NewsSourceOpmlService {
           entries: [],
         };
 
-    const normalizedEntries = parsed.entries.map((entry) => {
-      const errors: string[] = [];
+    const normalizedEntries = await Promise.all(
+      parsed.entries.map(async (entry) => {
+        const errors: string[] = [];
 
-      const name = entry.name;
-      const rawUrl = entry.url;
-      const rawFeedUrl = entry.feedUrl;
+        const name = entry.name;
+        const rawUrl = entry.url;
+        const rawFeedUrl = entry.feedUrl;
 
-      const url = this.normalizeAndValidateSiteUrl(rawUrl, errors);
-      const feedUrl = this.normalizeAndValidateFeedUrl(rawFeedUrl, errors);
+        const url = await this.normalizeAndValidateSiteUrl(rawUrl, errors);
+        const feedUrl = await this.normalizeAndValidateFeedUrl(
+          rawFeedUrl,
+          errors,
+        );
 
-      const valid = Boolean(url) && Boolean(feedUrl) && errors.length === 0;
+        const valid = Boolean(url) && Boolean(feedUrl) && errors.length === 0;
 
-      return {
-        name,
-        url: url ?? rawUrl,
-        feedUrl: feedUrl ?? rawFeedUrl,
-        language: defaultLanguage,
-        group: entry.group ?? null,
-        enabled: valid,
-        valid,
-        alreadyExists: false,
-        errors,
-      } satisfies NewsSourceOpmlPreviewEntry;
-    });
+        return {
+          name,
+          url: url ?? rawUrl,
+          feedUrl: feedUrl ?? rawFeedUrl,
+          language: defaultLanguage,
+          group: entry.group ?? null,
+          enabled: valid,
+          valid,
+          alreadyExists: false,
+          errors,
+        } satisfies NewsSourceOpmlPreviewEntry;
+      }),
+    );
 
     // Dedupe: keep first occurrence by URL.
     const uniqueEntries: NewsSourceOpmlPreviewEntry[] = [];
@@ -287,34 +293,43 @@ export class NewsSourceOpmlService {
 
     const entries = Array.isArray(options.entries) ? options.entries : [];
 
-    const normalized = entries.map((entry) => {
-      const errors: string[] = [];
+    const normalized = await Promise.all(
+      entries.map(async (entry) => {
+        const errors: string[] = [];
 
-      const name = normalizeOptionalString(entry?.name) ?? '';
-      const urlRaw = normalizeOptionalString(entry?.url) ?? '';
-      const feedUrlRaw = normalizeOptionalString(entry?.feedUrl) ?? '';
+        const name = normalizeOptionalString(entry?.name) ?? '';
+        const urlRaw = normalizeOptionalString(entry?.url) ?? '';
+        const feedUrlRaw = normalizeOptionalString(entry?.feedUrl) ?? '';
 
-      const url = this.normalizeAndValidateSiteUrl(urlRaw, errors);
-      const feedUrl = this.normalizeAndValidateFeedUrl(feedUrlRaw, errors);
-      const language = this.normalizeLanguage(entry?.language);
-      const enabled = entry?.enabled !== false;
-      const siteType = entry?.siteType ?? NewsSourceType.general;
-      const group = normalizeOptionalString(entry?.group) ?? null;
+        const url = await this.normalizeAndValidateSiteUrl(urlRaw, errors);
+        const feedUrl = await this.normalizeAndValidateFeedUrl(
+          feedUrlRaw,
+          errors,
+        );
+        const language = this.normalizeLanguage(entry?.language);
+        const enabled = entry?.enabled !== false;
+        const siteType = entry?.siteType ?? NewsSourceType.general;
+        const group = normalizeOptionalString(entry?.group) ?? null;
 
-      const valid = Boolean(name) && Boolean(url) && Boolean(feedUrl) && errors.length === 0;
+        const valid =
+          Boolean(name) &&
+          Boolean(url) &&
+          Boolean(feedUrl) &&
+          errors.length === 0;
 
-      return {
-        name: name || urlRaw,
-        url: url ?? urlRaw,
-        feedUrl: feedUrl ?? feedUrlRaw,
-        language,
-        enabled,
-        valid,
-        siteType,
-        group,
-        errors,
-      };
-    });
+        return {
+          name: name || urlRaw,
+          url: url ?? urlRaw,
+          feedUrl: feedUrl ?? feedUrlRaw,
+          language,
+          enabled,
+          valid,
+          siteType,
+          group,
+          errors,
+        };
+      }),
+    );
 
     const enabled = normalized.filter((entry) => entry.enabled);
 
@@ -506,7 +521,10 @@ export class NewsSourceOpmlService {
     return lower.length <= 12 ? lower : 'zh';
   }
 
-  private normalizeAndValidateSiteUrl(raw: string, errors: string[]): string | null {
+  // Defense in depth beyond the DTO: imported entries are fetched server-side
+  // (feed/site discovery), so reject internal targets even for programmatic
+  // callers that bypass DTO validation.
+  private async normalizeAndValidateSiteUrl(raw: string, errors: string[]): Promise<string | null> {
     const trimmed = raw.trim();
     if (!trimmed) {
       errors.push('Missing site URL (htmlUrl)');
@@ -514,6 +532,11 @@ export class NewsSourceOpmlService {
     }
     if (!isHttpUrl(trimmed)) {
       errors.push('Site URL must be http/https');
+      return null;
+    }
+    const safety = await validateSsrfUrlAsync(trimmed);
+    if (!safety.valid) {
+      errors.push(`Site URL is not safe: ${safety.reason ?? 'potential SSRF'}`);
       return null;
     }
 
@@ -525,7 +548,7 @@ export class NewsSourceOpmlService {
     }
   }
 
-  private normalizeAndValidateFeedUrl(raw: string, errors: string[]): string | null {
+  private async normalizeAndValidateFeedUrl(raw: string, errors: string[]): Promise<string | null> {
     const trimmed = raw.trim();
     if (!trimmed) {
       errors.push('Missing feed URL (xmlUrl)');
@@ -533,6 +556,11 @@ export class NewsSourceOpmlService {
     }
     if (!isHttpUrl(trimmed)) {
       errors.push('Feed URL must be http/https');
+      return null;
+    }
+    const safety = await validateSsrfUrlAsync(trimmed);
+    if (!safety.valid) {
+      errors.push(`Feed URL is not safe: ${safety.reason ?? 'potential SSRF'}`);
       return null;
     }
 

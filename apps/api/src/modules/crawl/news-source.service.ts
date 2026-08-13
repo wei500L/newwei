@@ -8,6 +8,7 @@ import {
 import { NewsSourceType, PipelineJobStatus, Prisma } from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
+import { validateSsrfUrlAsync } from "../../common/validators/ssrf-url.validator";
 import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
@@ -380,6 +381,7 @@ export class NewsSourceService {
     if (!url) {
       throw new BadRequestException("url is required");
     }
+    await this.assertSafeSourceUrl(url);
     const language = this.normalizeOptionalString(input.language);
     const crawlTemplateId = this.normalizeOptionalNullableString(
       input.crawlTemplateId,
@@ -449,6 +451,7 @@ export class NewsSourceService {
       if (!url) {
         throw new BadRequestException("url is required");
       }
+      await this.assertSafeSourceUrl(url);
       data.url = url;
     }
     if (input.siteType !== undefined) {
@@ -1081,6 +1084,18 @@ export class NewsSourceService {
       byCode,
       updatedAt,
     } satisfies DeepDiscoveryFailureStats24h;
+  }
+
+  // Defense in depth beyond the DTO: news sources are fetched server-side
+  // (conditional preflight, publish-signal probes, RSS/discovery), so reject
+  // internal targets even for programmatic callers that bypass DTO validation.
+  private async assertSafeSourceUrl(url: string) {
+    const safety = await validateSsrfUrlAsync(url);
+    if (!safety.valid) {
+      throw new BadRequestException(
+        `News source URL is not safe: ${safety.reason ?? "potential SSRF"}`,
+      );
+    }
   }
 
   private normalizeOptionalString(value?: string | null) {
