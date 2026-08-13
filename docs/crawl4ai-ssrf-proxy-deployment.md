@@ -65,8 +65,11 @@ Expected:
 Check:
 
 ```bash
-curl -fsS http://localhost:4000/api/healthz | jq .
+curl -fsS -H "Authorization: Bearer <token>" http://localhost:4000/api/healthz | jq .
 ```
+
+The readiness probe now requires authentication (a user JWT or machine token) to
+avoid exposing dependency details and the exact version to anonymous callers.
 
 Expected component:
 
@@ -76,7 +79,7 @@ Expected component:
 }
 ```
 
-If the proxy is disabled or unreachable, `/api/healthz` will report `crawl4aiSsrfProxy` as down. `/api/healthz/live` stays unaffected.
+If the proxy is disabled or unreachable, `/api/healthz` will report `crawl4aiSsrfProxy` as down. `/api/healthz/live` stays unaffected and remains public.
 
 ### Docker Logs
 

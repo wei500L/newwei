@@ -2,6 +2,7 @@ import { Controller, Get } from "@nestjs/common";
 import { DiskHealthIndicator, HealthCheck, HealthCheckService, PrismaHealthIndicator } from "@nestjs/terminus";
 import { createRequire } from "node:module";
 
+import { AllowAuthenticated } from "../../common/decorators/allow-authenticated.decorator";
 import { Public } from "../../common/decorators/public.decorator";
 import { PrismaService } from "../config/prisma.service";
 
@@ -32,14 +33,14 @@ export class HealthController {
     private readonly prisma: PrismaService
   ) {}
 
-  @Public()
+  @AllowAuthenticated()
   @Get()
   @HealthCheck()
   async getHealth() {
-    // The readiness probe is public and runs real dependency checks (MySQL
-    // ping, Redis write probes, Mongo ping, disk stat, LLM gateway DB reads,
-    // a real crawl through the SSRF proxy). Cache briefly so health scraper
-    // storms cannot amplify load on the dependencies themselves.
+    // The readiness probe is authenticated and runs real dependency checks
+    // (MySQL ping, Redis write probes, Mongo ping, disk stat, LLM gateway DB
+    // reads, a real crawl through the SSRF proxy). Cache briefly so health
+    // scraper storms cannot amplify load on the dependencies themselves.
     const now = Date.now();
     if (
       this.cachedHealth &&
@@ -74,10 +75,11 @@ export class HealthController {
   @Public()
   @Get("live")
   getLiveness() {
+    // Public liveness probe: only reports the process being alive. Version,
+    // timestamps and dependency details are withheld from unauthenticated
+    // callers to avoid version disclosure.
     return {
-      status: "ok",
-      version: pkg.version ?? "0.0.0",
-      now: new Date().toISOString()
+      status: "ok"
     };
   }
 }

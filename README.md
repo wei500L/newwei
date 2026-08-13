@@ -208,7 +208,8 @@ pnpm db:seed
 
 - Web 登录页：http://localhost:3000/login
 - Web Crawl4AI 监控页：http://localhost:3000/admin/ops/crawl-monitor
-- API 健康检查：http://localhost:4000/api/healthz
+- API 存活探针：http://localhost:4000/api/healthz/live（公开，仅返回进程状态）
+- API 就绪探针：http://localhost:4000/api/healthz（需登录或机器令牌，返回依赖详情与版本）
 - Swagger UI：http://localhost:4000/docs
 - GraphQL Playground（开发环境）：http://localhost:4000/graphql
 - Bull Board 队列仪表盘：http://localhost:4000/admin/queues（默认关闭，需 `BULL_BOARD_ENABLED=true`）
@@ -372,8 +373,8 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml u
 
 ### 健康检查与就绪语义
 
-- `GET /api/healthz/live`：存活探针（仅进程在线）
-- `GET /api/healthz`：就绪探针（MySQL、Redis、Mongo、Crawl4AI、LLM Gateway、磁盘等）
+- `GET /api/healthz/live`：存活探针（公开，仅报告进程在线，不含版本号/依赖信息）
+- `GET /api/healthz`：就绪探针（需鉴权；MySQL、Redis、Mongo、Crawl4AI、LLM Gateway、磁盘等）
 - `details.llmGateway`：包含 `completionReady/embeddingReady/rerankReady/rerankRequired` 与 active profile 信息
 
 常见故障：
@@ -467,7 +468,7 @@ pnpm docker:down
 - 如需横向扩展 WebSocket，启用 `WS_REDIS_ADAPTER_ENABLED=true`
 - 不要在生产环境关闭 `CRAWL4AI_SSRF_PROXY_URL`，否则前端监控页会显示 `SSRF proxy OFF`，并且 Crawl4AI worker 将失去抓取侧 DNS rebinding 防护
 - `GDELT` 的 IPv4 fallback 主要是本地 Docker/WSL 网络兼容兜底。稳定的生产出口通常会在首轮 `fetch()` 成功，因此不会实际触发；是否保留该兜底可按你的出口网络验证结果决定，详见 [docs/gdelt-ipv4-fallback.md](./docs/gdelt-ipv4-fallback.md)。
-- 可将 `GET /api/healthz` 中的 `crawl4aiSsrfProxy` 组件接入现有监控系统；代理关闭或不可达时它会变为 `down`
+- 可将 `GET /api/healthz`（需鉴权）中的 `crawl4aiSsrfProxy` 组件接入现有监控系统；代理关闭或不可达时它会变为 `down`
 
 ### 常见问题（排障速记）
 
