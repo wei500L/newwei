@@ -59,7 +59,7 @@ const usersById: Record<string, AuthenticatedUser> = {
 };
 
 function createJwt(user: AuthenticatedUser) {
-  const secret = process.env.JWT_SECRET ?? "test-secret-123456";
+  const secret = process.env.JWT_SECRET ?? "test-jwt-secret-0123456789abcdef";
   return sign({ sub: user.id, orgId: user.orgId }, secret, {
     issuer: "modular-monolith",
     audience: "modular-monolith-clients",
@@ -129,7 +129,7 @@ describe("GraphQL API", () => {
   } as unknown as PrismaService;
 
   beforeAll(async () => {
-    process.env.JWT_SECRET = "test-secret-123456";
+    process.env.JWT_SECRET = "test-jwt-secret-0123456789abcdef";
     process.env.MYSQL_HOST = "localhost";
     process.env.MYSQL_PORT = "3306";
     process.env.MYSQL_USER = "root";
@@ -138,7 +138,7 @@ describe("GraphQL API", () => {
     process.env.MONGO_URI = "mongodb://localhost:27017";
     process.env.REDIS_HOST = "127.0.0.1";
     process.env.REDIS_PORT = "6379";
-    process.env.NEXTAUTH_SECRET = "test-nextauth-123456";
+    process.env.NEXTAUTH_SECRET = "test-nextauth-secret-0123456789abcdef";
     process.env.API_BASE_URL = "http://localhost:4000";
     process.env.NEXTAUTH_URL = "http://localhost:3000";
     process.env.JWT_ACCESS_EXPIRES_IN = "15m";

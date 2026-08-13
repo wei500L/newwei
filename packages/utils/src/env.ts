@@ -139,6 +139,31 @@ export function resolveMysqlConnectionString(
   return `mysql://${user}:${encodeURIComponent(password)}@${host}:${port}/${dbName}`;
 }
 
+const DENIED_SECRET_VALUES = new Set([
+  "secret",
+  "password",
+  "changeme",
+  "change_me_please_replace_32_chars",
+]);
+
+const DENIED_SECRET_PATTERNS = [
+  /change[_-]?me/i,
+  /please[_-]?replace/i,
+  /replace[_-]?(me|32[_-]?chars)/i,
+  /^dev[_-]/i,
+];
+
+export const strongSecretSchema = z
+  .string()
+  .min(32, "must be at least 32 characters")
+  .refine((value) => {
+    const normalized = value.trim().toLowerCase();
+    if (DENIED_SECRET_VALUES.has(normalized)) {
+      return false;
+    }
+    return !DENIED_SECRET_PATTERNS.some((pattern) => pattern.test(normalized));
+  }, "must not be a known placeholder or default value");
+
 export function resolvePrismaMysqlConnectionString(
   env: MysqlConnectionEnvLike,
   options: PrismaConnectionPoolOptions = {},
@@ -214,8 +239,8 @@ export const baseEnvSchema = z.object({
   SMTP_GREETING_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   SMTP_SOCKET_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   SMTP_TLS_REJECT_UNAUTHORIZED: envBoolean.default(true),
-  JWT_SECRET: z.string().min(16),
-  NEXTAUTH_SECRET: z.string().min(16),
+  JWT_SECRET: strongSecretSchema,
+  NEXTAUTH_SECRET: strongSecretSchema,
   NEXTAUTH_URL: z.string().url(),
   API_BASE_URL: z.string().url(),
   CRAWL4AI_BASE_URL: z.string().url(),

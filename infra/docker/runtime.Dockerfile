@@ -3,7 +3,7 @@ FROM ${NODE_IMAGE} AS builder
 
 ARG NPM_REGISTRY=https://registry.npmjs.org
 ARG NEXTAUTH_URL=http://localhost:3000
-ARG NEXTAUTH_SECRET=change_me_please_replace_32_chars
+ARG NEXTAUTH_SECRET
 ARG API_BASE_URL=http://api:4000
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/api
 ARG NEXT_PUBLIC_GRAPHQL_APQ_ENABLED=true

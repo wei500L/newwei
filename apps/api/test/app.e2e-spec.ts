@@ -36,7 +36,7 @@ const sampleUser: AuthenticatedUser = {
 };
 
 const createJwt = (user: AuthenticatedUser) => {
-  const secret = process.env.JWT_SECRET ?? "test-secret-123456";
+  const secret = process.env.JWT_SECRET ?? "test-jwt-secret-0123456789abcdef";
   return sign({ sub: user.id, orgId: user.orgId }, secret, {
     issuer: "modular-monolith",
     audience: "modular-monolith-clients",

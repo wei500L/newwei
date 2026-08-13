@@ -460,7 +460,7 @@ pnpm docker:down
 
 ### 生产环境注意事项（建议）
 
-- 将 `.env` 与 `infra/docker/.env` 中的 Secret 改为强随机值（`JWT_SECRET`、`NEXTAUTH_SECRET`、`SYSTEM_SETTINGS_ENCRYPTION_KEY` 等）
+- 将 `.env` 与 `infra/docker/.env` 中的 Secret 改为强随机值（`JWT_SECRET`、`NEXTAUTH_SECRET`、`SYSTEM_SETTINGS_ENCRYPTION_KEY` 等）。`JWT_SECRET`/`NEXTAUTH_SECRET` 必须 ≥32 字符且不得为占位符，否则启动与 `env:check` 会直接失败（fail-fast）。生成方式：`openssl rand -hex 32`
 - 设置 `NODE_ENV=production` 并关闭 `GRAPHQL_PLAYGROUND` 与 `GRAPHQL_INTROSPECTION`
 - 为 MySQL/Mongo/Redis/Qdrant/MinIO 配置持久化卷与备份策略
 - 如需横向扩展 WebSocket，启用 `WS_REDIS_ADAPTER_ENABLED=true`

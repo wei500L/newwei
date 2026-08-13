@@ -1,5 +1,6 @@
 import "server-only";
 
+import { strongSecretSchema } from "@modular/utils";
 import { z } from "zod";
 
 import { env } from "./env";
@@ -7,7 +8,7 @@ import { logServerError } from "./server-logger";
 
 const serverSchema = z.object({
   NEXTAUTH_URL: z.string().url(),
-  NEXTAUTH_SECRET: z.string().min(16)
+  NEXTAUTH_SECRET: strongSecretSchema
 });
 
 const parsed = serverSchema.safeParse({
