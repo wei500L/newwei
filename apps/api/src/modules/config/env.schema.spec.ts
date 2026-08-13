@@ -1,5 +1,7 @@
 import { baseEnvSchema, strongSecretSchema } from "@modular/utils";
 
+import { apiEnvSchema } from "./env.schema";
+
 const validBaseEnv = {
   MONGO_URI: "mongodb://root:secret@localhost:27017/app",
   REDIS_HOST: "localhost",
@@ -61,6 +63,64 @@ describe("baseEnvSchema JWT/NextAuth secrets", () => {
 
   it("accepts valid 32+ char secrets", () => {
     const result = baseEnvSchema.safeParse(validBaseEnv);
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("apiEnvSchema CORS_ORIGIN production enforcement", () => {
+  const validApiEnv = {
+    ...validBaseEnv,
+    MYSQL_HOST: "localhost",
+    MYSQL_PORT: "3306",
+    MYSQL_USER: "root",
+    MYSQL_PASSWORD: "secret",
+    MYSQL_DB: "app",
+  };
+  const productionEnv = { ...validApiEnv, NODE_ENV: "production" };
+
+  it("fails when CORS_ORIGIN is missing in production", () => {
+    const result = apiEnvSchema.safeParse(productionEnv);
+    expect(result.success).toBe(false);
+    expect(
+      result.success ? [] : result.error.flatten().fieldErrors.CORS_ORIGIN,
+    ).toBeTruthy();
+  });
+
+  it("fails when CORS_ORIGIN is blank in production", () => {
+    const result = apiEnvSchema.safeParse({
+      ...productionEnv,
+      CORS_ORIGIN: "  ,  ",
+    });
+    expect(result.success).toBe(false);
+    expect(
+      result.success ? [] : result.error.flatten().fieldErrors.CORS_ORIGIN,
+    ).toBeTruthy();
+  });
+
+  it("fails when CORS_ORIGIN is a wildcard in production", () => {
+    const result = apiEnvSchema.safeParse({
+      ...productionEnv,
+      CORS_ORIGIN: "*",
+    });
+    expect(result.success).toBe(false);
+    expect(
+      result.success ? [] : result.error.flatten().fieldErrors.CORS_ORIGIN,
+    ).toBeTruthy();
+  });
+
+  it("accepts an explicit allowlist in production", () => {
+    const result = apiEnvSchema.safeParse({
+      ...productionEnv,
+      CORS_ORIGIN: "https://console.example.com,https://admin.example.com",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("allows CORS_ORIGIN to be unset outside production", () => {
+    const result = apiEnvSchema.safeParse({
+      ...validApiEnv,
+      NODE_ENV: "development",
+    });
     expect(result.success).toBe(true);
   });
 });

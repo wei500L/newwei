@@ -106,7 +106,7 @@ describe("NotificationsGateway", () => {
   it("emits unauthorized error code when authentication fails", async () => {
     const env = {
       jwtConfig,
-      graphqlConfig: { corsOrigin: undefined },
+      graphqlConfig: { corsOrigin: "http://localhost:3000" },
       webSocketSecurity: {
         maxConnectionsPerUser: 50,
         maxConnectionsPerIp: 50,
@@ -161,7 +161,7 @@ describe("NotificationsGateway", () => {
 
     const env = {
       jwtConfig,
-      graphqlConfig: { corsOrigin: undefined },
+      graphqlConfig: { corsOrigin: "http://localhost:3000" },
       webSocketSecurity: {
         maxConnectionsPerUser: 1,
         maxConnectionsPerIp: 50,
@@ -226,7 +226,7 @@ describe("NotificationsGateway", () => {
 
     const env = {
       jwtConfig,
-      graphqlConfig: { corsOrigin: undefined },
+      graphqlConfig: { corsOrigin: "http://localhost:3000" },
       webSocketSecurity: {
         maxConnectionsPerUser: 50,
         maxConnectionsPerIp: 50,
@@ -284,7 +284,7 @@ describe("NotificationsGateway", () => {
   it("enforces auth backoff before token verification", async () => {
     const env = {
       jwtConfig,
-      graphqlConfig: { corsOrigin: undefined },
+      graphqlConfig: { corsOrigin: "http://localhost:3000" },
       webSocketSecurity: {
         maxConnectionsPerUser: 50,
         maxConnectionsPerIp: 50,
@@ -332,7 +332,7 @@ describe("NotificationsGateway", () => {
   it("preserves retryAfterMs for per-user connection throttling", async () => {
     const env = {
       jwtConfig,
-      graphqlConfig: { corsOrigin: undefined },
+      graphqlConfig: { corsOrigin: "http://localhost:3000" },
       webSocketSecurity: {
         maxConnectionsPerUser: 50,
         maxConnectionsPerIp: 50,
@@ -382,7 +382,7 @@ describe("NotificationsGateway", () => {
   it("disconnects existing clients on module destroy", async () => {
     const env = {
       jwtConfig,
-      graphqlConfig: { corsOrigin: undefined },
+      graphqlConfig: { corsOrigin: "http://localhost:3000" },
       webSocketSecurity: {
         maxConnectionsPerUser: 50,
         maxConnectionsPerIp: 50,

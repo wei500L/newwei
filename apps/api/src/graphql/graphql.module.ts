@@ -18,7 +18,6 @@ import {
   isEnumType,
   isScalarType,
 } from "graphql";
-import Redis from "ioredis";
 import depthLimit from "graphql-depth-limit";
 import {
   type ComplexityEstimator,
@@ -28,9 +27,11 @@ import {
   getComplexity,
   simpleEstimator,
 } from "graphql-query-complexity";
+import Redis from "ioredis";
 import { DataLoaderInterceptor } from "nestjs-dataloader";
 import { join } from "node:path";
 
+import { resolveCorsOriginOption } from "../common/cors/cors-origin";
 import { GqlAuthGuard } from "../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../common/guards/gql-permissions.guard";
 import { AkshareModule } from "../modules/akshare/akshare.module";
@@ -65,8 +66,8 @@ import {
   ItemReadModelRawLoader,
   ItemReadModelRawPreviewLoader,
 } from "./loaders/item-read-model.loader";
-import { ProcessedItemEventIdLoader } from "./loaders/processed-item-event-id.loader";
 import { ProcessedItemDuplicateLoader } from "./loaders/processed-item-duplicate.loader";
+import { ProcessedItemEventIdLoader } from "./loaders/processed-item-event-id.loader";
 import { ProcessedItemPreviewLoader } from "./loaders/processed-item-preview.loader";
 import {
   ProcessedItemLoader,
@@ -83,8 +84,8 @@ import { AssistantResolver } from "./resolvers/assistant.resolver";
 import { CrawlResolver } from "./resolvers/crawl.resolver";
 import { DashboardResolver } from "./resolvers/dashboard.resolver";
 import { EconomicDataResolver } from "./resolvers/economic-data.resolver";
-import { EntityIntelligenceResolver } from "./resolvers/entity-intelligence.resolver";
 import { EntityImpactGraphResolver } from "./resolvers/entity-impact-graph.resolver";
+import { EntityIntelligenceResolver } from "./resolvers/entity-intelligence.resolver";
 import { ItemsResolver } from "./resolvers/items.resolver";
 import { KnowledgeGraphImpactResolver } from "./resolvers/knowledge-graph-impact.resolver";
 import { KnowledgeGraphReviewResolver } from "./resolvers/knowledge-graph-review.resolver";
@@ -94,13 +95,13 @@ import { NewsIndicatorResolver } from "./resolvers/news-indicator.resolver";
 import { NotificationResolver } from "./resolvers/notification.resolver";
 import { OrgResolver } from "./resolvers/org.resolver";
 import {
-  ProcessedItemEventResolver,
-  ProcessedItemPreviewEventResolver,
-} from "./resolvers/processed-item-event.resolver";
-import {
   ProcessedItemDuplicateResolver,
   ProcessedItemPreviewDuplicateResolver,
 } from "./resolvers/processed-item-duplicate.resolver";
+import {
+  ProcessedItemEventResolver,
+  ProcessedItemPreviewEventResolver,
+} from "./resolvers/processed-item-event.resolver";
 import { ProcessedItemResolver } from "./resolvers/processed-item.resolver";
 import { RbacResolver } from "./resolvers/rbac.resolver";
 import { SentimentResolver } from "./resolvers/sentiment.resolver";
@@ -301,12 +302,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
         });
         const complexityDirective = createComplexityDirective();
 
-        const corsOrigin = cfg.corsOrigin
-          ? cfg.corsOrigin
-              .split(",")
-              .map((entry) => entry.trim())
-              .filter(Boolean)
-          : true;
+        const corsOrigin = resolveCorsOriginOption(cfg.corsOrigin);
 
         const estimators: ComplexityEstimator[] = [
           fieldExtensionsEstimator(),

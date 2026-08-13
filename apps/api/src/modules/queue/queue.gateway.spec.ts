@@ -119,7 +119,7 @@ describe("QueueGateway", () => {
 
     const env = {
       jwtConfig,
-      graphqlConfig: { corsOrigin: undefined },
+      graphqlConfig: { corsOrigin: "http://localhost:3000" },
       webSocketSecurity: {
         maxConnectionsPerUser: 1,
         maxConnectionsPerIp: 50,
@@ -173,7 +173,7 @@ describe("QueueGateway", () => {
 
     const env = {
       jwtConfig,
-      graphqlConfig: { corsOrigin: undefined },
+      graphqlConfig: { corsOrigin: "http://localhost:3000" },
       webSocketSecurity: {
         maxConnectionsPerUser: 5,
         maxConnectionsPerIp: 50,
@@ -233,7 +233,7 @@ describe("QueueGateway", () => {
 
     const env = {
       jwtConfig,
-      graphqlConfig: { corsOrigin: undefined },
+      graphqlConfig: { corsOrigin: "http://localhost:3000" },
       webSocketSecurity: {
         maxConnectionsPerUser: 5,
         maxConnectionsPerIp: 50,
@@ -290,7 +290,7 @@ describe("QueueGateway", () => {
 
     const env = {
       jwtConfig,
-      graphqlConfig: { corsOrigin: undefined },
+      graphqlConfig: { corsOrigin: "http://localhost:3000" },
       webSocketSecurity: {
         maxConnectionsPerUser: 5,
         maxConnectionsPerIp: 50,
@@ -355,7 +355,7 @@ describe("QueueGateway", () => {
 
     const env = {
       jwtConfig,
-      graphqlConfig: { corsOrigin: undefined },
+      graphqlConfig: { corsOrigin: "http://localhost:3000" },
       webSocketSecurity: {
         maxConnectionsPerUser: 5,
         maxConnectionsPerIp: 50,

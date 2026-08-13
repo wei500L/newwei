@@ -915,6 +915,24 @@ export const apiEnvSchema = baseEnvSchema
         message: `${key} is required when DATABASE_URL is not set`,
       });
     }
+    // Reflecting arbitrary origins with credentials enabled is unsafe for a
+    // multi-tenant platform: without an explicit allowlist, any site could
+    // issue credentialed cross-origin requests. Production must opt in with
+    // an explicit comma-separated CORS_ORIGIN or refuse to boot.
+    if (
+      value.NODE_ENV === "production" &&
+      !value.CORS_ORIGIN?.split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .some((entry) => entry !== "*")
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["CORS_ORIGIN"],
+        message:
+          "CORS_ORIGIN is required in production: set an explicit comma-separated origin allowlist (e.g. https://console.example.com) before deploying",
+      });
+    }
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

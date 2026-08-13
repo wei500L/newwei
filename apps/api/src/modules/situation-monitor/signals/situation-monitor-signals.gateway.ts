@@ -10,6 +10,10 @@ import {
 import { verify } from "jsonwebtoken";
 import { Server, Socket } from "socket.io";
 
+import {
+  isOriginAllowed as isOriginInAllowlist,
+  parseCorsOriginAllowlist,
+} from "../../../common/cors/cors-origin";
 import { AccessTokenBlacklistService } from "../../auth/access-token-blacklist.service";
 import {
   AuthService,
@@ -18,19 +22,19 @@ import {
 } from "../../auth/auth.service";
 import { EnvService } from "../../config/config.service";
 import {
-  buildRealtimeSocketErrorPayload,
-  shouldRecordFailedSocketAuth,
-} from "../../websocket/socket-error-payloads";
-import { UserSessionManager } from "../../websocket/user-session-manager.service";
-import { WsConnectionRateLimiterService } from "../../websocket/ws-connection-rate-limiter.service";
-import {
   isTrustProxyConfigured,
   resolveSocketClientIp,
 } from "../../websocket/socket-client-ip";
 import {
+  buildRealtimeSocketErrorPayload,
+  shouldRecordFailedSocketAuth,
+} from "../../websocket/socket-error-payloads";
+import {
   attachTokenRevalidation,
   cleanupTokenRevalidation,
 } from "../../websocket/socket-token-revalidation";
+import { UserSessionManager } from "../../websocket/user-session-manager.service";
+import { WsConnectionRateLimiterService } from "../../websocket/ws-connection-rate-limiter.service";
 import { SituationMonitorMonitorsService } from "../situation-monitor-monitors.service";
 
 import { SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM } from "./situation-monitor-signals.constants";
@@ -431,28 +435,10 @@ export class SituationMonitorSignalsGateway
   }
 
   private isOriginAllowed(origin: string | undefined): boolean {
-    if (!origin) {
-      return true;
-    }
-
-    const normalizedOrigin = origin.replace(/\/$/, "");
-    const configured = this.env.graphqlConfig.corsOrigin;
-
-    if (!configured) {
-      return true;
-    }
-
-    const allowlist = String(configured)
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0)
-      .map((entry) => entry.replace(/\/$/, ""));
-
-    if (allowlist.includes("*")) {
-      return true;
-    }
-
-    return allowlist.includes(normalizedOrigin);
+    return isOriginInAllowlist(
+      origin,
+      parseCorsOriginAllowlist(this.env.graphqlConfig.corsOrigin),
+    );
   }
 
   private getConnectedUsersByOrg() {

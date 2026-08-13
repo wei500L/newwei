@@ -4,6 +4,10 @@ import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway, WebSocketSe
 import { verify } from "jsonwebtoken";
 import { Server, Socket } from "socket.io";
 
+import {
+  isOriginAllowed as isOriginInAllowlist,
+  parseCorsOriginAllowlist,
+} from "../../common/cors/cors-origin";
 import { AlertsQueueEventPublisher } from "../alerts/alerts-queue-event.publisher";
 import { AnalysisQueueEventPublisher } from "../analysis/analysis-queue-event.publisher";
 import { AssistantQueueEventPublisher } from "../assistant/assistant-queue-event.publisher";
@@ -13,15 +17,15 @@ import { EnvService } from "../config/config.service";
 import { CrawlQueueEventPublisher } from "../crawl/crawl-queue-event.publisher";
 import { QueueEventPublisher } from "../queue/queue-event.publisher";
 import {
+  isTrustProxyConfigured,
+  resolveSocketClientIp,
+} from "../websocket/socket-client-ip";
+import {
   buildRealtimeSocketErrorPayload,
   shouldRecordFailedSocketAuth,
 } from "../websocket/socket-error-payloads";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
 import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
-import {
-  isTrustProxyConfigured,
-  resolveSocketClientIp,
-} from "../websocket/socket-client-ip";
 
 interface QualityLiveEventPayload {
   source: "pipeline" | "crawl" | "analysis" | "assistant" | "alerts";
@@ -283,25 +287,10 @@ export class QualityGateway implements OnGatewayConnection, OnGatewayDisconnect,
   }
 
   private isOriginAllowed(origin?: string | null) {
-    if (!origin) {
-      return true;
-    }
-    const corsConfig = this.env.graphqlConfig.corsOrigin;
-    if (!corsConfig) {
-      return true;
-    }
-    const allowed = corsConfig
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-      .map((entry) => {
-        try {
-          return new URL(entry).origin;
-        } catch {
-          return entry;
-        }
-      });
-    return allowed.length === 0 || allowed.includes(origin);
+    return isOriginInAllowlist(
+      origin,
+      parseCorsOriginAllowlist(this.env.graphqlConfig.corsOrigin),
+    );
   }
 
   private broadcast(orgId: string, payload: QualityLiveEventPayload) {
