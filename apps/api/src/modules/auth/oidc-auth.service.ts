@@ -17,8 +17,12 @@ import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
+import {
+  generateOpaqueToken,
+  hashOpaqueToken,
+} from "./auth-flow.utils";
 import { AuthSecurityService } from "./auth-security.service";
-import { AuthService } from "./auth.service";
+import { AuthService, type AuthenticatedLoginResult } from "./auth.service";
 
 interface OidcDiscoveryDocument {
   issuer: string;
@@ -32,6 +36,15 @@ interface OidcStatePayload {
   orgId: string;
   codeVerifier: string;
   nonce: string;
+}
+
+interface StoredHandoffPayload {
+  accessToken: Prisma.JsonValue;
+  refreshToken: Prisma.JsonValue;
+  expiresIn: number;
+  user: AuthenticatedLoginResult["user"];
+  organizations: AuthenticatedLoginResult["organizations"];
+  userAgent: string | null;
 }
 
 interface OidcIdTokenClaims extends JWTPayload {
@@ -304,24 +317,44 @@ export class OidcAuthService {
       return result;
     }
 
-    const handoff = await this.prisma.authChallenge.create({
+    // Never persist plaintext tokens: store only encrypted access/refresh
+    // tokens and address the handoff by a high-entropy one-time token whose
+    // hash (not the raw value) is the primary key, so a DB or log read of the
+    // row or the redirect URL alone cannot mint a session.
+    const rawHandoffToken = generateOpaqueToken(32);
+    const encryptedAccessToken = await this.authSecurity.encodeSecret(
+      result.accessToken,
+    );
+    const encryptedRefreshToken = await this.authSecurity.encodeSecret(
+      result.refreshToken,
+    );
+    const handoffPayload = {
+      accessToken: encryptedAccessToken as unknown as Prisma.JsonValue,
+      refreshToken: encryptedRefreshToken as unknown as Prisma.JsonValue,
+      expiresIn: result.expiresIn,
+      user: result.user,
+      organizations: result.organizations,
+      userAgent: params.userAgent ?? null,
+    } satisfies StoredHandoffPayload;
+    await this.prisma.authChallenge.create({
       data: {
+        id: hashOpaqueToken(rawHandoffToken),
         type: "sso_handoff",
         userId: user.id,
         orgId: org.id,
-        payload: result as unknown as Prisma.InputJsonValue,
+        payload: handoffPayload as unknown as Prisma.InputJsonValue,
         expiresAt: new Date(Date.now() + 5 * 60_000),
       },
     });
 
     return {
-      handoffToken: handoff.id,
+      handoffToken: rawHandoffToken,
     };
   }
 
-  async exchangeHandoffToken(handoffToken: string) {
+  async exchangeHandoffToken(handoffToken: string, userAgent?: string) {
     const challenge = await this.prisma.authChallenge.findUnique({
-      where: { id: handoffToken },
+      where: { id: hashOpaqueToken(handoffToken) },
     });
     if (!challenge || challenge.type !== "sso_handoff") {
       throw new UnauthorizedException(
@@ -334,6 +367,31 @@ export class OidcAuthService {
       );
     }
 
+    const payload = this.parseHandoffPayload(challenge.payload);
+    if (
+      typeof payload.expiresIn !== "number" ||
+      !payload.user ||
+      !payload.organizations
+    ) {
+      throw new UnauthorizedException(
+        "SSO handoff token is invalid or expired",
+      );
+    }
+
+    this.assertHandoffRequesterMatches(payload.userAgent, userAgent);
+
+    const accessToken = await this.authSecurity.decodeSecret(
+      payload.accessToken,
+    );
+    const refreshToken = await this.authSecurity.decodeSecret(
+      payload.refreshToken,
+    );
+    if (!accessToken || !refreshToken) {
+      throw new UnauthorizedException(
+        "SSO handoff token is invalid or expired",
+      );
+    }
+
     await this.prisma.authChallenge.update({
       where: { id: challenge.id },
       data: {
@@ -341,7 +399,51 @@ export class OidcAuthService {
       },
     });
 
-    return challenge.payload;
+    return {
+      user: payload.user,
+      accessToken,
+      refreshToken,
+      organizations: payload.organizations,
+      expiresIn: payload.expiresIn,
+    } satisfies AuthenticatedLoginResult;
+  }
+
+  private parseHandoffPayload(
+    value: Prisma.JsonValue,
+  ): Partial<StoredHandoffPayload> {
+    if (!value || Array.isArray(value) || typeof value !== "object") {
+      return {};
+    }
+    const record = value as Record<string, unknown>;
+    return {
+      accessToken: record.accessToken as Prisma.JsonValue,
+      refreshToken: record.refreshToken as Prisma.JsonValue,
+      expiresIn:
+        typeof record.expiresIn === "number" ? record.expiresIn : undefined,
+      user: record.user as StoredHandoffPayload["user"],
+      organizations: Array.isArray(record.organizations)
+        ? (record.organizations as StoredHandoffPayload["organizations"])
+        : undefined,
+      userAgent:
+        typeof record.userAgent === "string" ? record.userAgent : null,
+    };
+  }
+
+  private assertHandoffRequesterMatches(
+    recordedUserAgent: string | null | undefined,
+    providedUserAgent: string | undefined,
+  ) {
+    // Mirrors the mfa_enrollment binding: the handoff token travels through
+    // browser redirects (history/referrers/logs), so an attacker holding only
+    // the leaked token from a different browser gets rejected.
+    if (!recordedUserAgent || !providedUserAgent) {
+      return;
+    }
+    if (recordedUserAgent.trim() !== providedUserAgent.trim()) {
+      throw new UnauthorizedException(
+        "SSO handoff token is invalid or expired",
+      );
+    }
   }
 
   private async fetchDiscovery(config: {

@@ -192,15 +192,21 @@ const config: NextAuthConfig = {
           required: false,
         },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         const handoffToken = asString(credentials?.handoffToken);
         if (handoffToken) {
+          // Forward the browser User-Agent so the API can bind the handoff to
+          // the browser that initiated the SSO callback; the exchange itself
+          // runs server-side, so without this the API would see the Node fetch
+          // User-Agent and reject every legitimate flow.
+          const userAgent = request?.headers?.get("user-agent") ?? undefined;
           const response = await fetch(
             `${serverEnv.apiBaseUrl}/auth/sso/handoff/exchange`,
             {
               method: "POST",
               headers: createTraceHeaders({
                 "Content-Type": "application/json",
+                ...(userAgent ? { "user-agent": userAgent } : {}),
               }),
               body: JSON.stringify({ handoffToken }),
             },

@@ -578,8 +578,14 @@ export class AuthController {
   @Public()
   @Post("sso/handoff/exchange")
   @HttpCode(200)
-  async exchangeHandoffToken(@Body() body: ExchangeHandoffTokenDto) {
-    return this.oidcAuthService.exchangeHandoffToken(body.handoffToken);
+  async exchangeHandoffToken(
+    @Body() body: ExchangeHandoffTokenDto,
+    @Req() req: Request,
+  ) {
+    return this.oidcAuthService.exchangeHandoffToken(
+      body.handoffToken,
+      req.get("user-agent") ?? undefined,
+    );
   }
 
   @Post("logout")
