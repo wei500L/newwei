@@ -57,7 +57,7 @@ import { VectorModule } from "./modules/vector/vector.module";
 import { WebSocketModule } from "./modules/websocket/websocket.module";
 
 const scheduleEnabled = process.env.SCHEDULE_ENABLED !== "false";
-const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
+const bullBoardEnabled = process.env.BULL_BOARD_ENABLED === "true";
 
 @Module({
   imports: [

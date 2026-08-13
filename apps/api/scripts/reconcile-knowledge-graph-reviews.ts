@@ -4,12 +4,6 @@ import { NestFactory } from "@nestjs/core";
 if (!process.env.BULL_BOARD_ENABLED?.trim()) {
   process.env.BULL_BOARD_ENABLED = "false";
 }
-if (!process.env.BULL_BOARD_USERNAME?.trim()) {
-  process.env.BULL_BOARD_USERNAME = "script";
-}
-if (!process.env.BULL_BOARD_PASSWORD?.trim()) {
-  process.env.BULL_BOARD_PASSWORD = "script";
-}
 
 const { AppModule } = require("../src/app.module");
 const { KnowledgeGraphReviewService } = require("../src/modules/knowledge-graph/knowledge-graph-review.service");

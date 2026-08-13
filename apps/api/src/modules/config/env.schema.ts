@@ -22,19 +22,10 @@ const envBoolean = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
-const optionalNonEmptyString = z.preprocess((value) => {
-  if (typeof value === "string" && value.trim() === "") {
-    return undefined;
-  }
-  return value;
-}, z.string().min(1).optional());
-
 export const apiEnvSchema = baseEnvSchema
   .extend({
     PORT: z.coerce.number().int().positive().default(4000),
-    BULL_BOARD_ENABLED: envBoolean.default(true),
-    BULL_BOARD_USERNAME: optionalNonEmptyString,
-    BULL_BOARD_PASSWORD: optionalNonEmptyString,
+    BULL_BOARD_ENABLED: envBoolean.default(false),
     JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
     JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
     JWT_ISSUER: z.string().default("modular-monolith"),

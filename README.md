@@ -211,7 +211,7 @@ pnpm db:seed
 - API 健康检查：http://localhost:4000/api/healthz
 - Swagger UI：http://localhost:4000/docs
 - GraphQL Playground（开发环境）：http://localhost:4000/graphql
-- Bull Board 队列仪表盘：http://localhost:4000/admin/queues
+- Bull Board 队列仪表盘：http://localhost:4000/admin/queues（默认关闭，需 `BULL_BOARD_ENABLED=true`）
 - Crawl4AI Dashboard：http://localhost:8082/dashboard/
 - LiteLLM Proxy（宿主机端口）：http://localhost:4001
 - MinIO S3 Endpoint：http://localhost:9000
@@ -393,7 +393,7 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml u
 
 - Swagger UI：`GET /docs`（JSON：`GET /docs/json`）
 - GraphQL：`POST /graphql`（开发环境可用 Playground，受 `GRAPHQL_PLAYGROUND` 控制）
-- Bull Board：`GET /admin/queues`（可通过 `BULL_BOARD_USERNAME/BULL_BOARD_PASSWORD` 开启 Basic Auth）
+- Bull Board：`GET /admin/queues`（默认关闭；开启需 `BULL_BOARD_ENABLED=true`，访问者需携带具备 `queue.manage` 权限的 JWT）
 
 ## 开发规范
 
