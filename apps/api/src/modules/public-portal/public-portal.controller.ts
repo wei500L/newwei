@@ -23,7 +23,11 @@ export class PublicPortalController {
   @Get("channels/:topic")
   @Header("Cache-Control", CACHE_CONTROL_HEADER)
   async getChannel(@Param("topic") topic: string) {
-    return this.portal.getChannel(topic);
+    const payload = await this.portal.getChannel(topic);
+    if (!payload) {
+      throw new NotFoundException("Channel not found");
+    }
+    return payload;
   }
 
   @Public()

@@ -212,4 +212,51 @@ describe("PublicPortalService", () => {
     );
     expect(prismaMock.newsEvent.findMany.mock.calls[1]?.[0]).not.toHaveProperty("skip");
   });
+
+  it("returns an empty placeholder and never falls back when no org slug is configured", async () => {
+    prismaMock.systemSetting.findUnique = jest.fn().mockResolvedValue(null);
+    prismaMock.org.findFirst = jest.fn();
+
+    const result = await service.getHome();
+
+    expect(result).toEqual({
+      generatedAt: expect.any(String),
+      org: null,
+      featuredStory: null,
+      latestStories: [],
+      channels: [],
+    });
+    expect(prismaMock.org.findFirst).not.toHaveBeenCalled();
+    expect(prismaMock.newsEvent.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns null and never falls back when the configured slug has no matching active org", async () => {
+    prismaMock.org.findFirst = jest.fn().mockResolvedValue(null);
+
+    const result = await service.getChannel("Politics");
+
+    expect(result).toBeNull();
+    expect(prismaMock.org.findFirst).toHaveBeenCalledWith({
+      where: {
+        slug: "public-org",
+        isActive: true,
+      },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+      },
+    });
+    expect(prismaMock.newsEvent.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns null for story details when no org slug is configured", async () => {
+    prismaMock.systemSetting.findUnique = jest.fn().mockResolvedValue(null);
+    prismaMock.org.findFirst = jest.fn();
+
+    const result = await service.getStoryById("some-event-id");
+
+    expect(result).toBeNull();
+    expect(prismaMock.org.findFirst).not.toHaveBeenCalled();
+  });
 });

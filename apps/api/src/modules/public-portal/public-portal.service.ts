@@ -15,6 +15,12 @@ const MIN_ITEM_COUNT = 2;
 const MIN_CREDIBILITY_SCORE = 60;
 const TOPIC_FALLBACK = "Top stories";
 
+export interface PublicPortalOrg {
+  id: string;
+  slug: string;
+  name: string;
+}
+
 export interface PortalTopicSummary {
   topic: string;
   topicSlug: string;
@@ -118,6 +124,16 @@ export class PublicPortalService {
 
   async getHome() {
     const org = await this.resolvePublicOrg();
+    if (!org) {
+      return {
+        generatedAt: new Date().toISOString(),
+        org: null,
+        featuredStory: null,
+        latestStories: [],
+        channels: [],
+      };
+    }
+
     const stories = await this.listPortalStories(org.id, { limit: STORY_LIMIT });
 
     return {
@@ -131,6 +147,10 @@ export class PublicPortalService {
 
   async getChannel(topic: string) {
     const org = await this.resolvePublicOrg();
+    if (!org) {
+      return null;
+    }
+
     const stories = await this.listPortalStories(org.id, {
       limit: 18,
       topicSlug: sanitizeSlugSegment(topic),
@@ -164,6 +184,10 @@ export class PublicPortalService {
     }
 
     const org = await this.resolvePublicOrg();
+    if (!org) {
+      return null;
+    }
+
     const event = await this.newsEvents.getEvent(org.id, normalizedId, {
       itemsLimit: 24,
       timelineLimit: 12,
@@ -465,65 +489,26 @@ export class PublicPortalService {
     );
   }
 
-  private async resolvePublicOrg() {
+  private async resolvePublicOrg(): Promise<PublicPortalOrg | null> {
+    // The public portal must only ever publish the org explicitly configured
+    // via `public_portal_org_slug`. Falling back to "most recent" heuristics
+    // would silently publish arbitrary tenants to an unauthenticated surface.
     const configuredSlug = await this.getConfiguredPublicOrgSlug();
-    if (configuredSlug) {
-      const configuredOrg = await this.prisma.org.findFirst({
-        where: {
-          slug: configuredSlug,
-          isActive: true,
-        },
-        select: {
-          id: true,
-          slug: true,
-          name: true,
-        },
-      });
-      if (configuredOrg) {
-        return configuredOrg;
-      }
+    if (!configuredSlug) {
+      return null;
     }
 
-    const orgFromRecentEvents = await this.prisma.newsEvent.findFirst({
+    return this.prisma.org.findFirst({
       where: {
-        status: NewsEventStatus.active,
-        org: {
-          isActive: true,
-        },
-      },
-      orderBy: [{ lastAt: "desc" }],
-      select: {
-        org: {
-          select: {
-            id: true,
-            slug: true,
-            name: true,
-          },
-        },
-      },
-    });
-
-    if (orgFromRecentEvents?.org) {
-      return orgFromRecentEvents.org;
-    }
-
-    const fallbackOrg = await this.prisma.org.findFirst({
-      where: {
+        slug: configuredSlug,
         isActive: true,
       },
-      orderBy: [{ updatedAt: "desc" }],
       select: {
         id: true,
         slug: true,
         name: true,
       },
     });
-
-    if (!fallbackOrg) {
-      throw new Error("No active organization available for public portal");
-    }
-
-    return fallbackOrg;
   }
 
   private async getConfiguredPublicOrgSlug(): Promise<string | null> {

@@ -88,7 +88,7 @@ export interface PublicPortalStoryDetail extends PublicPortalStory {
 
 export interface PublicPortalHomeResponse {
   generatedAt: string;
-  org: PublicPortalOrg;
+  org: PublicPortalOrg | null;
   featuredStory: PublicPortalStory | null;
   latestStories: PublicPortalStory[];
   channels: PublicPortalTopicSummary[];
@@ -96,7 +96,7 @@ export interface PublicPortalHomeResponse {
 
 export interface PublicPortalChannelResponse {
   generatedAt: string;
-  org: PublicPortalOrg;
+  org: PublicPortalOrg | null;
   topic: string;
   topicSlug: string;
   storyCount: number;
@@ -105,7 +105,7 @@ export interface PublicPortalChannelResponse {
 
 export interface PublicPortalStoryResponse {
   generatedAt: string;
-  org: PublicPortalOrg;
+  org: PublicPortalOrg | null;
   story: PublicPortalStoryDetail;
   relatedStories: PublicPortalStory[];
 }
