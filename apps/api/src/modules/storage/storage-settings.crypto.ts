@@ -16,6 +16,10 @@ export interface EncryptedStringValueV1 {
 
 export class SystemSettingsEncryptionRequiredError extends Error {
   override name = "SystemSettingsEncryptionRequiredError";
+
+  constructor(message?: string) {
+    super(message);
+  }
 }
 
 export class SystemSettingsDecryptionError extends Error {
@@ -102,4 +106,49 @@ export function resolveSettingsKey(env: EnvService): Buffer | undefined {
   } catch {
     return undefined;
   }
+}
+
+export interface SecretEncodingContext {
+  configured: boolean | null;
+  key: Buffer | undefined;
+  isProduction: boolean;
+  onPlaintextFallback?: () => void;
+}
+
+/**
+ * Shared fail-closed secret encoding policy used by every credential write path.
+ *
+ * - A valid key present -> encrypt by default (unless explicitly disabled).
+ * - Explicitly disabled (`configured === false`) -> plaintext escape hatch.
+ * - Enabled but key missing (`configured === true`) -> always throw.
+ * - Production without a key -> throw instead of silently storing plaintext.
+ * - Non-production without a key -> plaintext with a warning callback.
+ */
+export function encodeSecretValue(
+  plain: string,
+  context: SecretEncodingContext
+): string | EncryptedStringValueV1 {
+  const { configured, key, isProduction, onPlaintextFallback } = context;
+
+  if (key) {
+    if (configured === false) {
+      return plain;
+    }
+    return encryptStringValueV1(plain, key);
+  }
+
+  if (configured === true) {
+    throw new SystemSettingsEncryptionRequiredError(
+      "Secret encryption is enabled but SYSTEM_SETTINGS_ENCRYPTION_KEY is not configured"
+    );
+  }
+
+  if (isProduction) {
+    throw new SystemSettingsEncryptionRequiredError(
+      "SYSTEM_SETTINGS_ENCRYPTION_KEY is required to store secrets in production"
+    );
+  }
+
+  onPlaintextFallback?.();
+  return plain;
 }

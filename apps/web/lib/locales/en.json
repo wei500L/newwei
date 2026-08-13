@@ -6698,16 +6698,20 @@
         "secretEncryptionEnabled": "Encrypt stored secrets"
       },
       "hints": {
-        "secretEncryptionEnabled": "When enabled, new/updated secrets are encrypted using SYSTEM_SETTINGS_ENCRYPTION_KEY. Existing records are not migrated automatically."
+        "secretEncryptionEnabled": "When SYSTEM_SETTINGS_ENCRYPTION_KEY is set, secrets are encrypted by default. Keep this enabled (recommended); disabling stores new secrets in plaintext. Existing records are not migrated automatically."
       },
       "alerts": {
         "keyMissing": {
           "title": "SYSTEM_SETTINGS_ENCRYPTION_KEY is not set",
-          "body": "To enable encryption, set SYSTEM_SETTINGS_ENCRYPTION_KEY (32 bytes base64 or 64 hex chars) and restart the API."
+          "body": "Secrets will be stored in plaintext outside production. In production, storing secrets is rejected until SYSTEM_SETTINGS_ENCRYPTION_KEY (32 bytes base64 or 64 hex chars) is configured and the API restarted."
         },
-        "keyReady": {
-          "title": "Encryption key detected",
-          "body": "You can enable secret encryption to store new secrets encrypted in MySQL."
+        "keyInvalid": {
+          "title": "SYSTEM_SETTINGS_ENCRYPTION_KEY is invalid",
+          "body": "Set SYSTEM_SETTINGS_ENCRYPTION_KEY to a 32-byte value (base64) or 64 hex chars, then restart the API."
+        },
+        "disabledWithKey": {
+          "title": "Encryption is disabled despite a configured key",
+          "body": "New secrets will be stored as plaintext. Enable \"Encrypt stored secrets\" to store them encrypted."
         },
         "enabledMissingKey": {
           "title": "Encryption enabled but key is missing/invalid",

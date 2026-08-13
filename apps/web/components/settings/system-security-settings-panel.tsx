@@ -11,6 +11,7 @@ import { captureClientError } from "@/lib/client-telemetry";
 
 interface SystemSecuritySettingsResponse {
   secretEncryptionEnabled: boolean;
+  secretEncryptionActive: boolean;
   mfaPolicy: "off" | "admins_only" | "all_users";
   encryptionKeyPresent: boolean;
   encryptionKeyValid: boolean;
@@ -46,6 +47,7 @@ interface OidcConfigFormValues {
 
 const EMPTY_SETTINGS: SystemSecuritySettingsResponse = {
   secretEncryptionEnabled: false,
+  secretEncryptionActive: false,
   mfaPolicy: "off",
   encryptionKeyPresent: false,
   encryptionKeyValid: false,
@@ -164,7 +166,7 @@ export function SystemSecuritySettingsPanel() {
     return <Tag color="green">{t("systemSettings.security.status.keyPresent")}</Tag>;
   })();
 
-  const encryptionTag = settings.secretEncryptionEnabled ? (
+  const encryptionTag = settings.secretEncryptionActive ? (
     <Tag color="green">{t("systemSettings.security.status.encryptionEnabled")}</Tag>
   ) : (
     <Tag color="default">{t("systemSettings.security.status.encryptionDisabled")}</Tag>
@@ -216,13 +218,25 @@ export function SystemSecuritySettingsPanel() {
       );
     }
 
-    if (!settings.secretEncryptionEnabled && settings.encryptionKeyValid) {
+    if (!settings.secretEncryptionActive && settings.encryptionKeyValid) {
       return (
         <Alert
-          type="info"
+          type="warning"
           showIcon
-          message={t("systemSettings.security.alerts.keyReady.title")}
-          description={t("systemSettings.security.alerts.keyReady.body")}
+          message={t("systemSettings.security.alerts.disabledWithKey.title")}
+          description={t("systemSettings.security.alerts.disabledWithKey.body")}
+          style={{ marginBottom: "1rem" }}
+        />
+      );
+    }
+
+    if (settings.encryptionKeyPresent && !settings.encryptionKeyValid) {
+      return (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("systemSettings.security.alerts.keyInvalid.title")}
+          description={t("systemSettings.security.alerts.keyInvalid.body")}
           style={{ marginBottom: "1rem" }}
         />
       );

@@ -6698,16 +6698,20 @@
         "secretEncryptionEnabled": "加密存储密钥/Token"
       },
       "hints": {
-        "secretEncryptionEnabled": "开启后，新写入/更新的密钥会使用 SYSTEM_SETTINGS_ENCRYPTION_KEY 加密；历史数据不会自动迁移。"
+        "secretEncryptionEnabled": "配置了 SYSTEM_SETTINGS_ENCRYPTION_KEY 时，密钥默认加密存储。建议保持开启；关闭后新写入的密钥将以明文存储。历史数据不会自动迁移。"
       },
       "alerts": {
         "keyMissing": {
           "title": "未配置 SYSTEM_SETTINGS_ENCRYPTION_KEY",
-          "body": "如需开启加密，请配置 SYSTEM_SETTINGS_ENCRYPTION_KEY（32 字节 base64 或 64 位 hex），并重启 API。"
+          "body": "非生产环境将回退为明文存储；生产环境在配置 SYSTEM_SETTINGS_ENCRYPTION_KEY（32 字节 base64 或 64 位 hex）并重启 API 前，将拒绝写入密钥。"
         },
-        "keyReady": {
-          "title": "已检测到加密密钥",
-          "body": "现在可以开启加密，将新写入的密钥加密存储到 MySQL。"
+        "keyInvalid": {
+          "title": "SYSTEM_SETTINGS_ENCRYPTION_KEY 无效",
+          "body": "请将 SYSTEM_SETTINGS_ENCRYPTION_KEY 配置为 32 字节（base64）或 64 位 hex 值，然后重启 API。"
+        },
+        "disabledWithKey": {
+          "title": "已配置密钥但加密未生效",
+          "body": "新写入的密钥将以明文存储。请开启\"加密存储密钥/Token\"以加密存储。"
         },
         "enabledMissingKey": {
           "title": "已开启加密但密钥缺失/无效",

@@ -3,18 +3,20 @@ import { BadRequestException, Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { AuthSecurityService } from "../auth/auth-security.service";
 import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
-import { AuthSecurityService } from "../auth/auth-security.service";
 import {
   decodeSystemSettingsKey,
-  encryptStringValueV1,
+  encodeSecretValue,
+  SystemSettingsEncryptionRequiredError,
   type EncryptedStringValueV1
 } from "../storage/storage-settings.crypto";
 
 export interface SystemSecuritySettingsPublic {
   secretEncryptionEnabled: boolean;
+  secretEncryptionActive: boolean;
   mfaPolicy: "off" | "admins_only" | "all_users";
   encryptionKeyPresent: boolean;
   encryptionKeyValid: boolean;
@@ -50,11 +52,14 @@ export class SystemSecuritySettingsService {
   async getPublicSettings(): Promise<SystemSecuritySettingsPublic> {
     const stored = await this.loadStoredSettings();
     const keyStatus = this.resolveEnvKeyStatus();
-    const secretEncryptionEnabled = this.asBoolean(stored?.secretEncryptionEnabled, false);
+    const configured = this.resolveConfigured(stored?.secretEncryptionEnabled);
+    const secretEncryptionEnabled = configured === true;
+    const secretEncryptionActive = keyStatus.valid && configured !== false;
     const mfaPolicy = this.asMfaPolicy(stored?.mfaPolicy);
 
     return {
       secretEncryptionEnabled,
+      secretEncryptionActive,
       mfaPolicy,
       encryptionKeyPresent: keyStatus.present,
       encryptionKeyValid: keyStatus.valid,
@@ -124,20 +129,30 @@ export class SystemSecuritySettingsService {
   async encodeSecretForStorage(plain: string): Promise<string | EncryptedStringValueV1> {
     const stored = await this.loadStoredSettings();
     const keyStatus = this.resolveEnvKeyStatus();
-    const enabled = this.asBoolean(stored?.secretEncryptionEnabled, false);
 
-    if (!enabled) {
-      return plain;
-    }
-
-    if (!keyStatus.key) {
+    if (this.resolveConfigured(stored?.secretEncryptionEnabled) === true && keyStatus.present && !keyStatus.valid) {
       const details = keyStatus.error ? ` (${keyStatus.error})` : "";
       throw new BadRequestException(
         `Secret encryption is enabled but SYSTEM_SETTINGS_ENCRYPTION_KEY is missing or invalid${details}`
       );
     }
 
-    return encryptStringValueV1(plain, keyStatus.key);
+    try {
+      return encodeSecretValue(plain, {
+        configured: this.resolveConfigured(stored?.secretEncryptionEnabled),
+        key: keyStatus.key,
+        isProduction: process.env.NODE_ENV === "production",
+        onPlaintextFallback: () =>
+          this.logger.warn(
+            "SYSTEM_SETTINGS_ENCRYPTION_KEY is missing; storing secret in plaintext (non-production only)"
+          )
+      });
+    } catch (error) {
+      if (error instanceof SystemSettingsEncryptionRequiredError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
   }
 
   private async loadStoredSettings(): Promise<StoredSystemSecuritySettings | null> {
@@ -202,8 +217,8 @@ export class SystemSecuritySettingsService {
     }
   }
 
-  private asBoolean(value: unknown, fallback: boolean): boolean {
-    return typeof value === "boolean" ? value : fallback;
+  private resolveConfigured(value: unknown): boolean | null {
+    return typeof value === "boolean" ? value : null;
   }
 
   private asMfaPolicy(value: unknown): "off" | "admins_only" | "all_users" {

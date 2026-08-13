@@ -73,6 +73,7 @@ describe("SystemSecuritySettingsService", () => {
     envMock.systemSettingsEncryptionKey = "0".repeat(64);
     const settings = await service.getPublicSettings();
     expect(settings.secretEncryptionEnabled).toBe(false);
+    expect(settings.secretEncryptionActive).toBe(true);
     expect(settings.encryptionKeyPresent).toBe(true);
     expect(settings.encryptionKeyValid).toBe(true);
     expect(settings.encryptionKeyError).toBeNull();
@@ -82,6 +83,7 @@ describe("SystemSecuritySettingsService", () => {
     envMock.systemSettingsEncryptionKey = "not-a-key";
     const settings = await service.getPublicSettings();
     expect(settings.secretEncryptionEnabled).toBe(false);
+    expect(settings.secretEncryptionActive).toBe(false);
     expect(settings.encryptionKeyPresent).toBe(true);
     expect(settings.encryptionKeyValid).toBe(false);
     expect(settings.encryptionKeyError).toContain("SYSTEM_SETTINGS_ENCRYPTION_KEY");
@@ -109,8 +111,21 @@ describe("SystemSecuritySettingsService", () => {
     expect(persistedValue?.secretEncryptionEnabled).toBe(true);
   });
 
-  it("encodeSecretForStorage returns plaintext when encryption disabled", async () => {
+  it("encodeSecretForStorage encrypts by default when key present", async () => {
     envMock.systemSettingsEncryptionKey = "0".repeat(64);
+    const encoded = await service.encodeSecretForStorage("hello");
+    expect(encoded).toBeTruthy();
+    expect(typeof encoded).toBe("object");
+    expect((encoded as any).__enc).toBe("system-settings:v1");
+  });
+
+  it("encodeSecretForStorage returns plaintext when explicitly disabled and key present", async () => {
+    envMock.systemSettingsEncryptionKey = "0".repeat(64);
+    await service.updateSettings("org-1", "actor-1", {
+      secretEncryptionEnabled: false,
+      mfaPolicy: "off",
+    });
+
     const encoded = await service.encodeSecretForStorage("hello");
     expect(encoded).toBe("hello");
   });
@@ -126,5 +141,35 @@ describe("SystemSecuritySettingsService", () => {
     expect(encoded).toBeTruthy();
     expect(typeof encoded).toBe("object");
     expect((encoded as any).__enc).toBe("system-settings:v1");
+  });
+
+  it("encodeSecretForStorage throws when encryption enabled but key missing", async () => {
+    envMock.systemSettingsEncryptionKey = undefined;
+    persistedValue = { secretEncryptionEnabled: true, mfaPolicy: "off" };
+
+    await expect(service.encodeSecretForStorage("hello")).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("encodeSecretForStorage throws in production when key missing (fail-closed)", async () => {
+    const originalEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    envMock.systemSettingsEncryptionKey = undefined;
+    try {
+      await expect(service.encodeSecretForStorage("hello")).rejects.toBeInstanceOf(BadRequestException);
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
+  });
+
+  it("encodeSecretForStorage returns plaintext with warning in non-production when key missing", async () => {
+    const originalEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "development";
+    envMock.systemSettingsEncryptionKey = undefined;
+    try {
+      const encoded = await service.encodeSecretForStorage("hello");
+      expect(encoded).toBe("hello");
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
   });
 });
