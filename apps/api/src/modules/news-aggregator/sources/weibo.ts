@@ -1,14 +1,12 @@
 import * as cheerio from "cheerio"
 
+import { NewsSourceRuntimeSecretRequiredError } from "../news-aggregator.errors"
 import type { NewsItem } from "../news-aggregator.types";
 import { WEIBO_RUNTIME_SECRETS_CONFIG } from '../news-source-runtime-secrets.catalog';
 
 import { myFetch } from "./fetch";
 import { defineSource } from "./source";
 
-
-const DEFAULT_WEIBO_COOKIE =
-  "SUB=_2AkMWIuNSf8NxqwJRmP8dy2rhaoV2ygrEieKgfhKJJRMxHRl-yT9jqk86tRB6PaLNvQZR6zYUcYVT1zSjoSreQHidcUq7"
 
 function resolveRuntimeSecret(secrets: Record<string, string> | undefined, keys: string[]) {
   if (!secrets) {
@@ -30,11 +28,20 @@ export default defineSource(async (context) => {
     context?.secrets,
     WEIBO_RUNTIME_SECRETS_CONFIG.suggestedKeys ?? [],
   )
+  const cookie = runtimeCookie || process.env.WEIBO_COOKIE
+  if (!cookie) {
+    throw new NewsSourceRuntimeSecretRequiredError({
+      sourceId: context?.requestedSourceId ?? context?.sourceId ?? "weibo",
+      requiredKeys: WEIBO_RUNTIME_SECRETS_CONFIG.requiredAnyOfKeys ?? [],
+      message:
+        "Weibo cookie is required; configure a runtime secret or WEIBO_COOKIE",
+    })
+  }
 
   const html = await myFetch(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-      "Cookie": runtimeCookie || process.env.WEIBO_COOKIE || DEFAULT_WEIBO_COOKIE,
+      "Cookie": cookie,
       "referer": url,
     },
   })

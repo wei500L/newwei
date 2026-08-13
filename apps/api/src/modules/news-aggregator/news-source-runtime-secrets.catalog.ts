@@ -1,7 +1,8 @@
 import type { SourceRuntimeSecretsConfig } from './news-aggregator.types';
 
 export const WEIBO_RUNTIME_SECRETS_CONFIG: SourceRuntimeSecretsConfig = {
-  description: 'Optional runtime cookie override for Weibo hot search fetching.',
+  description: 'Required runtime cookie for Weibo hot search fetching.',
+  requiredAnyOfKeys: ['cookie', 'weibo.cookie', 'weibo_cookie'],
   suggestedKeys: ['cookie', 'weibo.cookie', 'weibo_cookie'],
   envFallbackKeys: ['WEIBO_COOKIE'],
 };
