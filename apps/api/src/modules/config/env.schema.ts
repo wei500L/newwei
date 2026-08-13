@@ -933,6 +933,11 @@ export const apiEnvSchema = baseEnvSchema
           "CORS_ORIGIN is required in production: set an explicit comma-separated origin allowlist (e.g. https://console.example.com) before deploying",
       });
     }
-  });
+  })
+  .transform((value) =>
+    value.NODE_ENV === "production"
+      ? { ...value, GRAPHQL_PLAYGROUND: false, GRAPHQL_INTROSPECTION: false }
+      : value,
+  );
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
