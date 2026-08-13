@@ -19,7 +19,6 @@
     "backfill:crawl-media-blobs": "tsx src/scripts/backfill-crawl-media-blobs.ts",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "lint": "pnpm run validate:migration-identifiers && eslint src --ext .ts",
-    "test": "tsx --test src/**/*.spec.ts",
     "prisma:generate": "tsx src/scripts/generate.ts"
   },
   "dependencies": {

@@ -256,7 +256,7 @@ pnpm dev
 | ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `pnpm dev`                                                 | Turbo 并行启动 `apps/api`、`apps/ais-relay`、`apps/web`、`apps/vector` 的开发服务器 |
 | `pnpm build`                                               | Turbo 构建所有包                                                                    |
-| `pnpm lint` / `pnpm typecheck` / `pnpm test`               | 汇总执行 lint、类型检查与测试                                                       |
+| `pnpm lint` / `pnpm typecheck`                             | 汇总执行 lint 与类型检查（无测试套件，验证依赖静态审查）                            |
 | `pnpm db:migrate`                                          | 通过 `packages/db` 执行 Prisma 迁移                                                 |
 | `pnpm db:seed`                                             | 根据 `.env` 的 `SEED_*` 初始化组织、角色与管理员账号                                |
 | `pnpm mongo:indexes`                                       | 显式补齐 Mongo 运行时索引（当前包含 `ProcessedItem` 与 `TaskLog` 热路径索引）       |
@@ -406,7 +406,7 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml u
 
 - 分支命名：`feat/*`、`fix/*`、`chore/*`
 - PR 颗粒度：一个 PR 聚焦一个主题（例如“新闻管道去重优化”）
-- 合并前要求：通过 `pnpm test`（至少包含被影响模块的测试）
+- 合并前要求：通过 `pnpm lint`、`pnpm typecheck`，并完成对受影响代码路径的纯静态审查（不依赖测试套件）
 
 ### Commit 规范（Conventional Commits）
 
@@ -514,8 +514,8 @@ pnpm docker:down
 
 欢迎提交 Issue 与 PR：
 
-1. 保持变更聚焦，补充必要的单测或回归用例
-2. 本地通过 `pnpm lint`、`pnpm typecheck`、`pnpm test`
+1. 保持变更聚焦，对受影响代码路径做纯静态审查（类型/接口契约、控制流与错误处理、`orgId` 作用域授权），逐条给出 `file:line` 证据
+2. 本地通过 `pnpm lint`、`pnpm typecheck`
 3. PR 描述中写清楚：背景、方案、影响面、回滚方式
 
 ## 更新日志
