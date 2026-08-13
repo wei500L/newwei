@@ -8,7 +8,7 @@ This pnpm + Turborepo workspace splits runtime apps under `apps/`: `apps/api` ex
 
 ## Feature Delivery Expectations
 - End-to-end changes: when you implement or change a backend feature in `apps/api`, also update the corresponding UI in `apps/web` so the feature is usable from the console (API + UI + shared types). Only skip UI work when the user explicitly requests a backend-only change.
-- Git: do not create, edit, or manage commits (including commit messages, staging, rebases, or history edits) unless the user explicitly asks.
+- Git: after a fix or feature is complete and verified (lint/typecheck/tests pass), automatically commit and push to the cloud with a Chinese commit message following the repo's emoji + `type(scope)` style (e.g. `🔐 fix(security): ...`). Only stage files you changed; never commit unrelated worktree noise, secrets, or `.env` files. Do not amend, rebase, or force-push.
 - Worktree noise: assume unrelated modified/untracked files are expected (the user often runs multiple Codex CLI sessions in parallel). Do not call them out or ask about them unless they directly block the requested work (e.g., merge conflicts in touched files).
 
 ## Coding Style & Naming Conventions
