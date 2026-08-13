@@ -388,6 +388,7 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml u
 - RBAC 写操作限流：`RATE_LIMIT_RBAC_WRITE` / `RATE_LIMIT_RBAC_WRITE_WINDOW`
 - 忘记密码限流：`Settings → Rate Limit Policies` 中的 `auth.password_reset`，默认每邮箱 3 次、每 IP 10 次、窗口 900 秒
 - 环境变量仅提供兜底默认值，推荐在控制台 `Settings → Rate Limits` 动态调整并写入数据库
+- Redis 故障时限流默认拒绝而非放行（`RATE_LIMIT_REDIS_FAIL_OPEN=false`，fail-closed），避免降级窗口内暴力破解绕过；如业务可接受降级期放宽限流，可显式设为 `true`
 
 ## API 文档入口
 

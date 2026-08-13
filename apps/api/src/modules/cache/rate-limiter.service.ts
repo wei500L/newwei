@@ -87,7 +87,7 @@ export class RateLimiterService {
       5
     );
     this.circuitOpenMs = readEnvInt('RATE_LIMIT_REDIS_CIRCUIT_OPEN_MS', 5_000);
-    this.failOpen = readEnvBoolean('RATE_LIMIT_REDIS_FAIL_OPEN', true);
+    this.failOpen = readEnvBoolean('RATE_LIMIT_REDIS_FAIL_OPEN', false);
 
     this.cleanupLimit = readEnvInt('RATE_LIMIT_REDIS_CLEANUP_LIMIT', 100);
     this.cleanupThreshold = readEnvInt('RATE_LIMIT_REDIS_CLEANUP_THRESHOLD', 1_000);
