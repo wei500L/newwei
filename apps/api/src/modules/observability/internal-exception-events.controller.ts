@@ -2,15 +2,14 @@ import {
   BadRequestException,
   Body,
   Controller,
-  ForbiddenException,
   Headers,
   Post,
-  UnauthorizedException
+  UseGuards,
 } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 
 import { Public } from "../../common/decorators/public.decorator";
-import { EnvService } from "../config/config.service";
+import { LitellmInternalTokenGuard } from "../../common/guards/litellm-internal-token.guard";
 
 import { ExceptionEventsService, type ExceptionEventKind } from "./exception-events.service";
 
@@ -32,32 +31,16 @@ interface ReportExceptionEventBody {
 
 @ApiTags("internal")
 @Public()
+@UseGuards(LitellmInternalTokenGuard)
 @Controller("internal/observability")
 export class InternalExceptionEventsController {
-  constructor(
-    private readonly env: EnvService,
-    private readonly exceptionEvents: ExceptionEventsService
-  ) {}
+  constructor(private readonly exceptionEvents: ExceptionEventsService) {}
 
   @Post("exception-events")
   async report(
-    @Headers("authorization") authorization: string | undefined,
     @Headers("x-trace-id") incomingTraceId: string | undefined,
     @Body() body: ReportExceptionEventBody
   ) {
-    const expected = this.env.liteLlmConfigInternalToken;
-    if (!expected) {
-      throw new ForbiddenException("LITELLM_CONFIG_INTERNAL_TOKEN is not configured");
-    }
-
-    const token = this.extractBearerToken(authorization);
-    if (!token) {
-      throw new UnauthorizedException("Missing bearer token");
-    }
-    if (token !== expected) {
-      throw new UnauthorizedException("Invalid bearer token");
-    }
-
     const message = this.normalizeString(body?.message);
     if (!message) {
       throw new BadRequestException("message is required");
@@ -112,21 +95,5 @@ export class InternalExceptionEventsController {
       return undefined;
     }
     return normalized;
-  }
-
-  private extractBearerToken(header: string | undefined): string | null {
-    if (!header) {
-      return null;
-    }
-    const trimmed = header.trim();
-    if (!trimmed) {
-      return null;
-    }
-    const match = trimmed.match(/^bearer\s+(.+)$/i);
-    if (!match?.[1]) {
-      return null;
-    }
-    const token = match[1].trim();
-    return token.length > 0 ? token : null;
   }
 }
