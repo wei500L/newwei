@@ -489,6 +489,10 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  get swaggerEnabled(): boolean {
+    return this.get<boolean>("SWAGGER_ENABLED", { infer: true }) ?? false;
+  }
+
   get webSocketSecurity(): WebSocketSecurityConfig {
     return {
       maxConnectionsPerUser:

@@ -151,6 +151,9 @@ export const apiEnvSchema = baseEnvSchema
     GRAPHQL_INTROSPECTION: envBoolean.default(
       process.env.NODE_ENV === "production" ? false : true,
     ),
+    SWAGGER_ENABLED: envBoolean.default(
+      process.env.NODE_ENV === "production" ? false : true,
+    ),
     GRAPHQL_DEPTH_LIMIT: z.coerce.number().int().positive().default(8),
     GRAPHQL_COMPLEXITY_LIMIT: z.coerce.number().int().positive().default(2000),
     GRAPHQL_APQ_ENABLED: envBoolean.default(true),
@@ -927,7 +930,12 @@ export const apiEnvSchema = baseEnvSchema
   })
   .transform((value) =>
     value.NODE_ENV === "production"
-      ? { ...value, GRAPHQL_PLAYGROUND: false, GRAPHQL_INTROSPECTION: false }
+      ? {
+          ...value,
+          GRAPHQL_PLAYGROUND: false,
+          GRAPHQL_INTROSPECTION: false,
+          SWAGGER_ENABLED: false,
+        }
       : value,
   );
 

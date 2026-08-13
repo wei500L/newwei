@@ -151,17 +151,19 @@ async function bootstrap() {
 
   const port = env.port;
 
-  bootstrapLogger.info({ port }, "Building Swagger document");
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle("Modular Monolith API")
-    .setDescription("Administrative API surface")
-    .setVersion(pkg.version ?? "0.0.0")
-    .addBearerAuth({ type: "http", scheme: "bearer", bearerFormat: "JWT" })
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup("docs", app, document, {
-    jsonDocumentUrl: "docs/json"
-  });
+  if (env.swaggerEnabled) {
+    bootstrapLogger.info({ port }, "Building Swagger document");
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle("Modular Monolith API")
+      .setDescription("Administrative API surface")
+      .setVersion(pkg.version ?? "0.0.0")
+      .addBearerAuth({ type: "http", scheme: "bearer", bearerFormat: "JWT" })
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup("docs", app, document, {
+      jsonDocumentUrl: "docs/json"
+    });
+  }
 
   bootstrapLogger.info({ port }, "Starting HTTP server");
   await app.listen(port);
