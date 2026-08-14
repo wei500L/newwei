@@ -939,7 +939,7 @@ export class ItemsResolver {
       createdAt: meta.createdAt,
       updatedAt: meta.updatedAt,
       orgId: meta.orgId,
-      meta: undefined as unknown as ItemMetaModel,
+      meta: undefined,
       raw: undefined,
       processed: undefined,
       rawPreview: undefined,

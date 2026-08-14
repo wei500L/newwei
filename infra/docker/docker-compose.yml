@@ -13,7 +13,7 @@ services:
       MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_ROOT_HOST: "%"
     ports:
-      - "${MYSQL_HOST_PORT:-3306}:3306"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:${MYSQL_HOST_PORT:-3306}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     logging: *json-file-logging
@@ -34,7 +34,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: secret
     ports:
-      - "${MONGO_HOST_PORT:-27017}:27017"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:${MONGO_HOST_PORT:-27017}:27017"
     volumes:
       - mongo-data:/data/db
     logging: *json-file-logging
@@ -63,7 +63,7 @@ services:
       REDIS_AOF_PREFLIGHT_LOG_TAIL: ${REDIS_AOF_PREFLIGHT_LOG_TAIL:-40}
       REDIS_AOF_BACKUP_KEEP: ${REDIS_AOF_BACKUP_KEEP:-5}
     ports:
-      - "${REDIS_HOST_PORT:-6379}:6379"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:${REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     logging: *json-file-logging
@@ -81,7 +81,7 @@ services:
       POSTGRES_USER: ${LITELLM_POSTGRES_USER:-litellm}
       POSTGRES_PASSWORD: ${LITELLM_POSTGRES_PASSWORD:-litellm}
     ports:
-      - "5432:5432"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:5432:5432"
     volumes:
       - litellm-postgres-data:/var/lib/postgresql/data
     logging: *json-file-logging
@@ -95,7 +95,7 @@ services:
     image: qdrant/qdrant:v1.10.1
     restart: unless-stopped
     ports:
-      - "6333:6333"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:6333:6333"
     volumes:
       - qdrant-data:/qdrant/storage
     logging: *json-file-logging
@@ -108,7 +108,7 @@ services:
       xpack.security.enabled: "false"
       ES_JAVA_OPTS: ${ELASTICSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
     ports:
-      - "${ELASTICSEARCH_HOST_PORT:-9200}:9200"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:${ELASTICSEARCH_HOST_PORT:-9200}:9200"
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
     logging: *json-file-logging
@@ -127,8 +127,8 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     command: ["server", "/data", "--console-address", ":9001"]
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:9000:9000"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:9001:9001"
     volumes:
       - minio-data:/data
     logging: *json-file-logging
@@ -168,7 +168,7 @@ services:
     environment:
       AKSHARE_ADMIN_TOKEN: ${AKSHARE_ADMIN_TOKEN:-}
     ports:
-      - "${AKSHARE_PORT:-8081}:8081"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:${AKSHARE_PORT:-8081}:8081"
     logging: *json-file-logging
     healthcheck:
       test:
@@ -193,7 +193,7 @@ services:
     environment:
       MODEL_SERVICE_INTERNAL_TOKEN: ${MODEL_SERVICE_INTERNAL_TOKEN:-dev-model-token}
     ports:
-      - "${MODEL_SERVICE_PORT:-8090}:8090"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:${MODEL_SERVICE_PORT:-8090}:8090"
     logging: *json-file-logging
     healthcheck:
       test:
@@ -225,8 +225,9 @@ services:
     command:
       - -ec
       - |
-        if [ -z "${LITELLM_MASTER_KEY:-}" ]; then
-          unset LITELLM_MASTER_KEY
+        if [ -z "$${LITELLM_MASTER_KEY:-}" ]; then
+          echo "[litellm] LITELLM_MASTER_KEY is required; refusing to start without proxy auth." >&2
+          exit 1
         fi
         python /app/generate-litellm-config.py --input /app/config.base.yaml --output /app/config.yaml
         exec litellm --config /app/config.yaml --detailed_debug
@@ -246,7 +247,7 @@ services:
       LITELLM_DEPLOYMENT_RPM: ${LITELLM_DEPLOYMENT_RPM:-}
       LITELLM_DEPLOYMENT_TPM: ${LITELLM_DEPLOYMENT_TPM:-}
     ports:
-      - "4001:4000"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:4001:4000"
     logging: *json-file-logging
     healthcheck:
       test:
@@ -351,7 +352,7 @@ services:
         fi
         exec supervisord -c supervisord.conf
     ports:
-      - "8082:11235"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:8082:11235"
     logging: *json-file-logging
     healthcheck:
       test:
@@ -381,7 +382,7 @@ services:
       - ${DOCKER_DNS_1:-223.5.5.5}
       - ${DOCKER_DNS_2:-114.114.114.114}
     ports:
-      - "${AIS_RELAY_PORT:-3004}:3004"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:${AIS_RELAY_PORT:-3004}:3004"
     logging: *json-file-logging
     healthcheck:
       test:
@@ -404,7 +405,6 @@ services:
         NODE_IMAGE: ${NODE_IMAGE:-node:20}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
         NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
-        NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-}
         API_BASE_URL: ${API_BASE_URL:-http://api:4000}
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
         NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: ${NEXT_PUBLIC_GRAPHQL_APQ_ENABLED:-true}
@@ -441,7 +441,7 @@ services:
       - ${DOCKER_DNS_1:-223.5.5.5}
       - ${DOCKER_DNS_2:-114.114.114.114}
     ports:
-      - "${API_HOST_PORT:-4000}:4000"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:${API_HOST_PORT:-4000}:4000"
     logging: *json-file-logging
     depends_on:
       mysql:
@@ -473,7 +473,6 @@ services:
         NODE_IMAGE: ${NODE_IMAGE:-node:20}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
         NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
-        NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-}
         API_BASE_URL: ${API_BASE_URL:-http://api:4000}
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
         NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: ${NEXT_PUBLIC_GRAPHQL_APQ_ENABLED:-true}
@@ -499,7 +498,7 @@ services:
       - ${DOCKER_DNS_1:-223.5.5.5}
       - ${DOCKER_DNS_2:-114.114.114.114}
     ports:
-      - "4010:4010"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:4010:4010"
     logging: *json-file-logging
     depends_on:
       qdrant:
@@ -519,7 +518,6 @@ services:
         NODE_IMAGE: ${NODE_IMAGE:-node:20}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
         NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
-        NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-}
         API_BASE_URL: ${API_BASE_URL:-http://api:4000}
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
         NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: ${NEXT_PUBLIC_GRAPHQL_APQ_ENABLED:-true}
@@ -559,7 +557,7 @@ services:
       - ${DOCKER_DNS_1:-223.5.5.5}
       - ${DOCKER_DNS_2:-114.114.114.114}
     ports:
-      - "3000:3000"
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:3000:3000"
     logging: *json-file-logging
     depends_on:
       api:

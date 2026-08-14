@@ -11,19 +11,36 @@ const serverSchema = z.object({
   NEXTAUTH_SECRET: strongSecretSchema
 });
 
-const parsed = serverSchema.safeParse({
-  NEXTAUTH_URL: process.env.NEXTAUTH_URL,
-  NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET
-});
+type ServerEnv = typeof env & z.infer<typeof serverSchema>;
 
-if (!parsed.success) {
-  logServerError("Invalid web environment configuration", parsed.error, {
-    meta: parsed.error.flatten().fieldErrors
+let cached: ServerEnv | undefined;
+
+function loadServerEnv(): ServerEnv {
+  if (cached) {
+    return cached;
+  }
+
+  const parsed = serverSchema.safeParse({
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL,
+    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET
   });
-  throw new Error("Invalid web environment configuration");
+
+  if (!parsed.success) {
+    logServerError("Invalid web environment configuration", parsed.error, {
+      meta: parsed.error.flatten().fieldErrors
+    });
+    throw new Error("Invalid web environment configuration");
+  }
+
+  cached = {
+    ...env,
+    ...parsed.data
+  };
+  return cached;
 }
 
-export const serverEnv = {
-  ...env,
-  ...parsed.data
-};
+export const serverEnv: ServerEnv = new Proxy({} as ServerEnv, {
+  get(_target, property, receiver) {
+    return Reflect.get(loadServerEnv(), property, receiver);
+  }
+});

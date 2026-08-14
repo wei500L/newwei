@@ -289,7 +289,7 @@ export class ItemModel {
 
   @HasPermission("items.read")
   @Field(() => ItemMetaModel)
-  meta!: ItemMetaModel;
+  meta?: ItemMetaModel;
 
   @HasPermission("items.read")
   @Field(() => RawItemModelGraph, { nullable: true })

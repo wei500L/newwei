@@ -169,7 +169,7 @@ const config: NextAuthConfig = {
   trustHost: true,
   debug:
     process.env.NEXTAUTH_DEBUG === "1" || process.env.NEXTAUTH_DEBUG === "true",
-  secret: serverEnv.NEXTAUTH_SECRET,
+  secret: process.env.NEXTAUTH_SECRET,
   session: {
     strategy: "jwt",
   },

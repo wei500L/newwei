@@ -5,7 +5,7 @@
 **Date:** 2026-08-13
 **Reviewer:** opencode (deepseek-v4-pro) — fuck-my-shit-mountain skill
 **Commit:** `beb32ead`（branch `main`）
-**Remediation review:** 2026-08-14 — 下文只保留仍开放的 Finding。
+**Remediation review:** 2026-08-14 — 下文只保留仍开放的 Finding。续：已关闭 TYPES-01、DEP-01、REL-04、REL-06、REL-07。
 
 ---
 
@@ -13,7 +13,7 @@
 
 这是一个体量可观、工程底子相当扎实的多租户情报平台（pnpm + Turborepo monorepo：NestJS 11 API + Next.js 15 Web + 向量服务 + AIS relay，Prisma/MySQL + Mongoose/MongoDB + BullMQ/Redis + Qdrant + LiteLLM）。核心安全与一致性基础设施的完成度显著高于同规模项目：认证采用 bcrypt、refresh token 轮换与黑名单、TOTP MFA 与恢复码、按组织隔离的 RBAC、GraphQL 深度/复杂度限制、SSRF 校验器、MongoOutbox 事务外发模式、DataLoader 批量加载、生产环境异常过滤器脱敏、近乎全覆盖的 Docker healthcheck 与启动依赖链。这些都不是"看起来对"，而是有具体实现与单测佐证。
 
-仍开放的风险集中在两处：无 CI、无组件/行为测试（REL-01、TST-03/05/06）；发布面仍是 root 容器、滚动 tag 与默认弱凭据（REL-02~08）。
+仍开放的风险集中在两处：无 CI、无组件/行为测试（REL-01、TST-03/05/06）；发布面仍是 root 容器、滚动 tag 与默认弱凭据（REL-02、REL-03、REL-05、REL-08）。
 
 **亮点**：outbox 事务外发、DataLoader、异常脱敏、SSRF 防护、refresh token 轮换、MFA、组织隔离、新闻管线/助手输入护栏、助手按组织额度、LiteLLM fallback 观测、解析失败进 DLQ、ES/向量降级打点是本项目值得保留并继续沿用的工程资产。
 
@@ -35,16 +35,16 @@ Overall         █████░░░░░  5.3  B
 
 ### Finding Statistics
 
-仍开放（2026-08-14）：
+仍开放（2026-08-14 续，已关 TYPES-01/DEP-01/REL-04/REL-06/REL-07）：
 
 | Severity | Open Confirmed | Open Suspected |
 |----------|----------------|----------------|
 | Critical | 0 | 0 |
-| High | 5 | 0 |
-| Medium | 11 | 0 |
+| High | 4 | 0 |
+| Medium | 7 | 0 |
 | Low | 5 | 0 |
 | Info | 0 | 0 |
-| **Total** | **21** | **0** |
+| **Total** | **16** | **0** |
 
 ## 2. Project Map
 
@@ -98,7 +98,6 @@ Overall         █████░░░░░  5.3  B
 2. **无前端组件渲染测试**（TST-03, High）— 假测试已删，行为测试未重建。
 3. **容器以 root 运行**（REL-02, High）— 抓取浏览器进程以 root 跑，被攻破即容器 root。
 4. **多个 4000–8200 行 god 文件**（MAINT-01, High）— 不可审查、回归面大。
-5. **`undefined as unknown as ItemMetaModel`**（TYPES-01, High）— 伪造类型，下游无法信任空 meta。
 
 ## 4. Detailed Findings
 
@@ -230,22 +229,6 @@ Overall         █████░░░░░  5.3  B
 - Regression test suggestion: 校验清单用 digest。
 - Estimated effort: 1–2 hours
 
-### Finding: REL-04 NEXTAUTH_SECRET 经 build ARG→ENV 烧入镜像
-
-- Severity: Medium
-- Confidence: High
-- Category: Release
-- Status: Confirmed
-- Affected area: `infra/docker/runtime.Dockerfile:6,27`
-- Evidence: `ARG NEXTAUTH_SECRET=change_me_...` + `ENV NEXTAUTH_SECRET=$NEXTAUTH_SECRET`。
-- Problem: 真实密钥若作为 build arg 传入即残留在 `docker history` 与推送镜像。
-- Why it matters: 密钥泄露到镜像层。
-- Realistic failure scenario: 推送镜像 → 任何人 `docker history` 提取密钥。
-- Minimal fix: 仅运行时注入（compose `env_file` 已做，删除 bake）。
-- Better long-term fix: 密钥统一运行时注入。
-- Regression test suggestion: 检查镜像层不含 secret。
-- Estimated effort: <1 hour
-
 ### Finding: REL-05 数据存储默认弱凭据/无鉴权
 
 - Severity: Medium
@@ -261,38 +244,6 @@ Overall         █████░░░░░  5.3  B
 - Better long-term fix: 一键生成强随机凭据并写入 .env。
 - Regression test suggestion: 预检脚本断言无默认凭据。
 - Estimated effort: 0.5–1 day
-
-### Finding: REL-06 端口发布到 0.0.0.0
-
-- Severity: Medium
-- Confidence: High
-- Category: Release
-- Status: Confirmed
-- Affected area: `infra/docker/docker-compose.yml`（多处）
-- Evidence: 3306/27017/6379/9200/9000-9001/4001/8082/3000 等无 `127.0.0.1:` 绑定。
-- Problem: 全栈（含管理控制台、LLM 网关、crawl4ai 面板）对任意网卡可达。
-- Why it matters: 本地栈暴露到局域网。
-- Realistic failure scenario: 本机默认栈被同网段主机访问。
-- Minimal fix: 本地栈绑定 `127.0.0.1`。
-- Better long-term fix: 网络分段 + 端口策略。
-- Regression test suggestion: compose 配置审查。
-- Estimated effort: <1 hour
-
-### Finding: REL-07 LiteLLM master key 默认缺失
-
-- Severity: Medium
-- Confidence: High
-- Category: Release
-- Status: Confirmed
-- Affected area: `infra/docker/docker-compose.yml:228-230`
-- Evidence: 空 `LITELLM_MASTER_KEY` 时 `unset`，代理在 :4001 无鉴权。
-- Problem: 任意客户端可盗用 LLM 网关计费。
-- Why it matters: 计费滥用。
-- Realistic failure scenario: 默认部署 → 局域网任何人用 LLM 网关。
-- Minimal fix: 缺失即 fail-closed 或生成随机 key。
-- Better long-term fix: 网关鉴权强制。
-- Regression test suggestion: 预检断言 key 存在。
-- Estimated effort: <1 hour
 
 ### Finding: REL-08 无 semver/changelog/SBOM/签名
 
@@ -326,22 +277,6 @@ Overall         █████░░░░░  5.3  B
 - Regression test suggestion: 拆分前先补行为测试锚定。
 - Estimated effort: 每文件 1–3 天
 
-### Finding: TYPES-01 `undefined as unknown as ItemMetaModel` 伪造类型
-
-- Severity: High
-- Confidence: High
-- Category: Design
-- Status: Confirmed
-- Affected area: `apps/api/src/graphql/resolvers/items.resolver.ts:942`
-- Evidence: `meta: undefined as unknown as ItemMetaModel`。
-- Problem: 用双重断言把 `undefined` 伪造成模型类型，下游消费方无法信任。
-- Why it matters: 破坏类型安全保证。
-- Realistic failure scenario: meta 缺失 → 下游访问属性崩溃。
-- Minimal fix: 类型改为 `ItemMetaModel | undefined` 并处理空态。
-- Better long-term fix: 边界用运行时校验替代断言。
-- Regression test suggestion: 单测断言 meta 缺失时不崩溃。
-- Estimated effort: <1 hour
-
 ### Finding: TYPES-02 GraphQL 上下文与鉴权守卫类型为 any
 
 - Severity: Medium
@@ -373,22 +308,6 @@ Overall         █████░░░░░  5.3  B
 - Better long-term fix: lint 规则限制 `as unknown as`。
 - Regression test suggestion: lint 规则阻止新增。
 - Estimated effort: 2–3 days
-
-### Finding: DEP-01 supercluster 两个应用均未使用
-
-- Severity: Medium
-- Confidence: High
-- Category: Maintainability
-- Status: Confirmed
-- Affected area: `apps/web/package.json`、`apps/api/package.json`
-- Evidence: 两处均声明 `supercluster` + `@types/supercluster`，全库 0 import。
-- Problem: 两个 bundle/安装均含死依赖。
-- Why it matters: 安装体积与攻击面增大。
-- Realistic failure scenario: 死依赖引入漏洞仍需升级。
-- Minimal fix: 移除。
-- Better long-term fix: 依赖扫描识别未使用依赖。
-- Regression test suggestion: 移除后 `pnpm build` 通过。
-- Estimated effort: <1 hour
 
 ### Finding: DEP-02 three.js 仅 1 文件使用（~600KB chunk）
 
@@ -504,7 +423,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 未度量圈复杂度。
 
-见 MAINT-01、DEP-01、DEP-03。**核心问题**：8 个 4000-8200 行 god 文件（前端面板 + 后端 service）；99 处 `as unknown as` 双重断言；26 处生产 `as any`。**正向**：全库 0 个 TODO/FIXME/HACK；`Record<string, unknown>`（1755 处）为偏好模式。
+见 MAINT-01、DEP-03。**核心问题**：8 个 4000-8200 行 god 文件（前端面板 + 后端 service）；99 处 `as unknown as` 双重断言；26 处生产 `as any`。**正向**：全库 0 个 TODO/FIXME/HACK；`Record<string, unknown>`（1755 处）为偏好模式。
 
 ## 11. Design / Principles Concerns
 
@@ -520,11 +439,11 @@ Overall         █████░░░░░  5.3  B
 
 | Subtype | Count | Critical | High | Medium | Low |
 |---------|-------|----------|------|--------|-----|
-| TypeAssertion（`as any`/`as unknown as`） | 228（99 生产） | 0 | 1 | 2 | 0 |
+| TypeAssertion（`as any`/`as unknown as`） | 228（99 生产） | 0 | 0 | 1 | 0 |
 | InputBoundary（GraphQL 上下文 any） | 2 | 0 | 0 | 1 | 0 |
 | StringlyTyped | 少量（`bertopic_primary`） | 0 | 0 | 0 | 1 |
 
-见 TYPES-01、TYPES-02、TYPES-03。`@ts-ignore` 0、`@ts-nocheck` 0、`@ts-expect-error` 仅测试中 3 处——这是显著优点。非空断言 `!` 约 1599 处中大部分是 NestJS GraphQL `@Field() prop!:` 惯用写法，非真实风险。
+见 TYPES-02、TYPES-03。`@ts-ignore` 0、`@ts-nocheck` 0、`@ts-expect-error` 仅测试中 3 处——这是显著优点。非空断言 `!` 约 1599 处中大部分是 NestJS GraphQL `@Field() prop!:` 惯用写法，非真实风险。TYPES-01（`undefined as unknown as ItemMetaModel`）已于 2026-08-14 关闭。
 
 ## 13. Documentation Analysis
 
@@ -589,8 +508,6 @@ Overall         █████░░░░░  5.3  B
 | Subtype | Count | Affected Surface | Recommended Action |
 |---------|-------|------------------|-------------------|
 | ArtifactProvenance | 2 | `minio:latest`/`crawl4ai:0` 滚动 tag、无 SBOM/签名 | digest 固定 + SBOM + cosign |
-| Reproducibility | 1 | `runtime.Dockerfile` bake `NEXTAUTH_SECRET` | 仅运行时注入 |
-| RegistryHygiene | 1 | `supercluster` 死依赖（DEP-01） | 移除 |
 
 **正向**：`pnpm-lock.yaml` 已提交且 `--frozen-lockfile` 强制；pnpm 9 默认禁用依赖安装脚本（`hasInstallScript` = 0）；LiteLLM 镜像按 SHA-256 digest 固定；`docker-up.js` 有锁文件一致性/迁移 id/Redis AOF 预检；无真实密钥提交历史。
 
@@ -606,7 +523,7 @@ Overall         █████░░░░░  5.3  B
 
 | Subtype | Count | Cost Driver | Recommended Action |
 |---------|-------|-------------|-------------------|
-| ExternalApiCost | 1 | 无 `LITELLM_MASTER_KEY`（REL-07） | fail-closed |
+| ExternalApiCost | 0 | LiteLLM master key 已 fail-closed（原 REL-07） | 保持 |
 
 **正向**：助手按组织小时限流 + in-flight + 月度 token 预算；历史预算有界（1000 字符/消息、8000 总量、runs clamp 100）；去重 LLM 比较次数有上限（默认 12）；输入截断（`maxInputChars`）；所有重试均指数退避 + jitter 且上限 10s；确定性 JSON 解析失败走 `QueuePermanentError` 进 DLQ；LiteLLM fallback / ES / 向量降级打 metric。
 
@@ -627,7 +544,7 @@ Overall         █████░░░░░  5.3  B
 | EnvironmentSeparation | 1 | 大量布尔 `!== "production"` 分支，`NODE_ENV` 未设即走 dev 分支 | 默认生产安全 |
 | SchemaValidation | 1 | ais-relay 无 Zod 校验，`process.env` 直读 + 静默回退 | 集中校验 |
 
-见 REL-07。**正向**：API/vector 用 `@nestjs/config` + Zod `validate`；`env:check` 脚本覆盖 AIS 相关配置；助手按组织额度有 SystemSetting + env 默认。
+**正向**：API/vector 用 `@nestjs/config` + Zod `validate`；`env:check` 脚本覆盖 AIS 与 Docker `LITELLM_MASTER_KEY`；助手按组织额度有 SystemSetting + env 默认。LiteLLM 空 master key 已 fail-closed（原 REL-07）。
 
 ## 19. Observability / Operability Analysis
 
@@ -769,12 +686,11 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 | Dependency | Status | Weight | Used For | Recommended Action |
 |------------|--------|--------|----------|-------------------|
-| supercluster（web+api） | Dead | — | 0 import | Remove |
 | three（web） | Overweight | ~600KB | 1 文件 3D 图 | Dynamic import |
 | axios（web） | Redundant | — | 与 fetch 客户端并存 | Consolidate |
 | antd/echarts/deck.gl（web） | Healthy | 重 | 深度使用 | 校验 chunk 拆分 |
 
-见 DEP-01、DEP-02。
+见 DEP-02。
 
 ## 27. Code Consistency Analysis
 
@@ -819,7 +735,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 **Exclusions / limits**: 未构建镜像。
 
-见 REL-01 ~ REL-08。**正向**：`docker-up.js` 预检（锁文件一致性/迁移 id/Redis AOF 修复）；近乎全覆盖 healthcheck + `depends_on: service_healthy`；ais-relay 多阶段构建 `pnpm deploy --prod` 精简镜像。**缺口**：无 CI、root 容器、可变 tag、默认弱凭据、无版本/SBOM/签名。
+见 REL-01 ~ REL-03、REL-05、REL-08。**正向**：`docker-up.js` 预检（锁文件一致性/迁移 id/Redis AOF 修复）；近乎全覆盖 healthcheck + `depends_on: service_healthy`；ais-relay 多阶段构建 `pnpm deploy --prod` 精简镜像；NEXTAUTH_SECRET 仅运行时注入；compose 端口默认绑 `127.0.0.1`；LiteLLM 空 master key fail-closed。**缺口**：无 CI、root 容器、可变 tag、默认弱凭据、无版本/SBOM/签名。
 
 ## 30. Principles Compliance
 
@@ -830,14 +746,13 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 | Single Responsibility (1.1) | 8+ | High | 4000-8200 行 god 文件/服务 |
 | File Size Limit (1.2) | 20+ | High | 前端面板、crawl/items/dashboard service |
 | Fail-Fast (4.4) | 1 | High | `LITELLM_API_KEY` 可选 |
-| Fail on Missing Config (9.2) | 2 | Critical | `LITELLM_API_KEY`、`LITELLM_MASTER_KEY` |
+| Fail on Missing Config (9.2) | 1 | Critical | `LITELLM_API_KEY` |
 | Don't Swallow Errors (6.1) | 1 | Medium | 图表/摘要静默 null（STAB-04） |
 | Immutability Preference (5.1) | 1 | Medium | `ItemMeta.version` 死字段无乐观锁 |
-| YAGNI (4.2) | 1 | Medium | `supercluster` 死依赖 |
 
 ### Principles Respected
 
-- **Fail-Fast 的正面实现**：`AISSTREAM_API_KEY` 缺失即启动失败；`validateSsrfUrl` 在抓取边界拒绝私网；生产异常过滤器 fail-closed。
+- **Fail-Fast 的正面实现**：`AISSTREAM_API_KEY` 缺失即启动失败；Docker LiteLLM 空 `LITELLM_MASTER_KEY` 拒绝启动；`validateSsrfUrl` 在抓取边界拒绝私网；生产异常过滤器 fail-closed。
 - **Don't Swallow Errors**：全库 0 空 catch（正向）；护栏拦截不重试。
 - **Dependency Inversion (2.4)**：MongoOutbox 抽象了跨库一致性；vector-client/model-service 封装外部依赖。
 - **Test Behavior (8.1)**：行为测试未重建（TST-03）。
@@ -854,15 +769,15 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 1. REL-01 加 CI（lint/typecheck/build）。
 2. REL-02 容器非 root + cap_drop。
-3. REL-03/04/05/06/07 Docker 固定 digest、去 root、随机凭据、127.0.0.1 绑定、LiteLLM key。
+3. REL-03/05 Docker 固定 digest、随机凭据。
 4. TST-03 真实组件/行为测试。
 
 ### Schedule Later（增加维护成本或限制规模）
 
 5. MAINT-01 拆分 god 文件。
-6. TYPES-01/02/03 收紧类型逃逸。
+6. TYPES-02/03 收紧类型逃逸。
 7. REL-08 semver/changelog/SBOM/签名。
-8. DEP-01/02/03 依赖清理与去重。
+8. DEP-02/03 依赖清理与去重。
 9. BAPI-01 补齐分页。
 
 ### Ignore for Now
@@ -872,10 +787,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 ## 32. Quick Wins（低成本高价值，1–2 小时/项）
 
-1. DEP-01 移除 `supercluster`。
-2. TYPES-01 修 `undefined as unknown as ItemMetaModel`。
-3. REL-04 删除 Dockerfile bake 的 secret。
-4. REL-06 端口绑定 `127.0.0.1`。
+（原 DEP-01、TYPES-01、REL-04、REL-06、REL-07 已于 2026-08-14 关闭。）
 
 ## 33. Long-term Refactor Plan
 
