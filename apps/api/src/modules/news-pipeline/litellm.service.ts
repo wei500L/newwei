@@ -18,6 +18,7 @@ import {
   sanitizeUpstreamErrorText,
 } from "../../common/llm-openai-compat";
 import { extractOpenAiTextFromChoice } from "../../common/openai-chat";
+import { recordIntegrationEvent } from "../observability/prometheus-metrics";
 import { AssistantSafetySettingsService } from "../system-settings/assistant-safety-settings.service";
 import {
   LlmGatewaySettingsService,
@@ -89,6 +90,8 @@ export interface LiteLlmCompletionResponse {
   costUsd?: number;
   keySpendUsd?: number;
   latencyMs?: number;
+  requestedModel?: string;
+  fallbackUsed?: boolean;
 }
 
 export interface LiteLlmEmbeddingParams {
@@ -133,6 +136,8 @@ export interface LiteLlmRerankResponse {
   costUsd?: number;
   keySpendUsd?: number;
   latencyMs?: number;
+  requestedModel?: string;
+  fallbackUsed?: boolean;
 }
 
 export interface LiteLlmStreamChunk {
@@ -140,6 +145,8 @@ export interface LiteLlmStreamChunk {
   raw: unknown;
   delta?: string;
   finishReason?: string;
+  requestedModel?: string;
+  fallbackUsed?: boolean;
 }
 
 export interface LiteLlmResponsesParams {
@@ -162,6 +169,8 @@ export interface LiteLlmResponsesResponse {
   costUsd?: number;
   keySpendUsd?: number;
   latencyMs?: number;
+  requestedModel?: string;
+  fallbackUsed?: boolean;
   [key: string]: unknown;
 }
 
@@ -305,34 +314,41 @@ export class LiteLlmService {
     const apiSurface = this.resolveApiSurface(
       (cfg as { apiSurface?: unknown }).apiSurface,
     );
-    const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
-    const uniqueModels = Array.from(
-      new Set(
-        models.filter((model) => typeof model === "string" && model.length > 0),
-      ),
-    );
+    const uniqueModels = this.uniqueModelList([
+      params.model ?? cfg.model,
+      ...cfg.fallbackModels,
+    ]);
+    const requestedModel = uniqueModels[0];
     let lastError: unknown;
     try {
-      for (const model of uniqueModels) {
+      for (let index = 0; index < uniqueModels.length; index += 1) {
+        const model = uniqueModels[index];
+        if (!model) {
+          continue;
+        }
         try {
-          if (apiSurface === "responses") {
-            return await this.executeResponsesCompletionWithRetry(
-              client,
-              cfg,
-              apiKeyConfigured,
-              model,
-              requestParams,
-              runtimeContext,
-            );
-          }
-
-          return await this.executeWithRetry(
-            client,
-            cfg,
-            apiKeyConfigured,
+          const response =
+            apiSurface === "responses"
+              ? await this.executeResponsesCompletionWithRetry(
+                  client,
+                  cfg,
+                  apiKeyConfigured,
+                  model,
+                  requestParams,
+                  runtimeContext,
+                )
+              : await this.executeWithRetry(
+                  client,
+                  cfg,
+                  apiKeyConfigured,
+                  model,
+                  requestParams,
+                  runtimeContext,
+                );
+          return this.annotateSelectedModel(
+            response,
+            requestedModel,
             model,
-            requestParams,
-            runtimeContext,
           );
         } catch (error) {
           if (error instanceof LiteLlmGuardrailViolationError) {
@@ -342,13 +358,13 @@ export class LiteLlmService {
             throw error;
           }
           lastError = error;
-          this.logger.warn(
-            {
-              model,
-              message: error instanceof Error ? error.message : "unknown error",
-            },
-            "LiteLLM completion failed; evaluating fallback",
-          );
+          this.recordModelFallbackOrWarn({
+            operation: "completion_fallback",
+            models: uniqueModels,
+            failedIndex: index,
+            error,
+            exhaustedMessage: "LiteLLM completion failed; no fallback remaining",
+          });
         }
       }
     } finally {
@@ -426,11 +442,16 @@ export class LiteLlmService {
       throw new Error("LiteLLM rerank model is not configured");
     }
 
+    const primaryModel = uniqueModels[0];
     let lastError: unknown;
     try {
-      for (const model of uniqueModels) {
+      for (let index = 0; index < uniqueModels.length; index += 1) {
+        const model = uniqueModels[index];
+        if (!model) {
+          continue;
+        }
         try {
-          return await this.executeRerankWithRetry(
+          const response = await this.executeRerankWithRetry(
             client,
             cfg,
             apiKeyConfigured,
@@ -438,15 +459,20 @@ export class LiteLlmService {
             { ...params, query },
             runtimeContext,
           );
+          return this.annotateSelectedModel(
+            response,
+            primaryModel,
+            model,
+          );
         } catch (error) {
           lastError = error;
-          this.logger.warn(
-            {
-              model,
-              message: error instanceof Error ? error.message : "unknown error",
-            },
-            "LiteLLM rerank failed; evaluating backup model",
-          );
+          this.recordModelFallbackOrWarn({
+            operation: "rerank_fallback",
+            models: uniqueModels,
+            failedIndex: index,
+            error,
+            exhaustedMessage: "LiteLLM rerank failed; no fallback remaining",
+          });
         }
       }
     } finally {
@@ -474,16 +500,19 @@ export class LiteLlmService {
     const apiSurface = this.resolveApiSurface(
       (cfg as { apiSurface?: unknown }).apiSurface,
     );
-    const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
-    const uniqueModels = Array.from(
-      new Set(
-        models.filter((model) => typeof model === "string" && model.length > 0),
-      ),
-    );
+    const uniqueModels = this.uniqueModelList([
+      params.model ?? cfg.model,
+      ...cfg.fallbackModels,
+    ]);
+    const requestedModel = uniqueModels[0];
 
     let lastError: unknown;
     try {
-      for (const model of uniqueModels) {
+      for (let index = 0; index < uniqueModels.length; index += 1) {
+        const model = uniqueModels[index];
+        if (!model) {
+          continue;
+        }
         let started = false;
         try {
           const streamIterator =
@@ -507,7 +536,7 @@ export class LiteLlmService {
 
           for await (const chunk of streamIterator) {
             started = true;
-            yield chunk;
+            yield this.annotateSelectedModel(chunk, requestedModel, model);
           }
           return;
         } catch (error) {
@@ -521,13 +550,13 @@ export class LiteLlmService {
             throw error;
           }
           lastError = error;
-          this.logger.warn(
-            {
-              model,
-              message: error instanceof Error ? error.message : "unknown error",
-            },
-            "LiteLLM stream failed; evaluating fallback",
-          );
+          this.recordModelFallbackOrWarn({
+            operation: "stream_fallback",
+            models: uniqueModels,
+            failedIndex: index,
+            error,
+            exhaustedMessage: "LiteLLM stream failed; no fallback remaining",
+          });
         }
       }
     } finally {
@@ -549,111 +578,139 @@ export class LiteLlmService {
       params.metadata,
       cfg,
     );
-    const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
-    const uniqueModels = Array.from(
-      new Set(
-        models.filter((model) => typeof model === "string" && model.length > 0),
-      ),
-    );
+    const uniqueModels = this.uniqueModelList([
+      params.model ?? cfg.model,
+      ...cfg.fallbackModels,
+    ]);
+    const requestedModel = uniqueModels[0];
 
     const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
 
     let lastError: unknown;
     try {
-      for (const model of uniqueModels) {
+      for (let index = 0; index < uniqueModels.length; index += 1) {
+        const model = uniqueModels[index];
+        if (!model) {
+          continue;
+        }
         let attempt = 0;
         let delayMs = 1_000;
-        while (attempt < maxAttempts) {
-          const attemptStartedAt = Date.now();
-          try {
-            const payload = {
-              model,
-              input: params.input,
-              temperature: params.temperature ?? cfg.temperature,
-              top_p: params.top_p ?? cfg.topP,
-              max_output_tokens:
-                params.max_output_tokens ?? cfg.maxOutputTokens,
-              metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
-            };
-            const start = Date.now();
-            const response =
-              await this.postWithFallback<LiteLlmResponsesResponse>(
-                client,
-                "/v1/responses",
-                "/responses",
-                payload,
-                { timeout: params.timeoutMs ?? cfg.timeoutMs },
+        try {
+          while (attempt < maxAttempts) {
+            const attemptStartedAt = Date.now();
+            try {
+              const payload = {
+                model,
+                input: params.input,
+                temperature: params.temperature ?? cfg.temperature,
+                top_p: params.top_p ?? cfg.topP,
+                max_output_tokens:
+                  params.max_output_tokens ?? cfg.maxOutputTokens,
+                metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
+              };
+              const start = Date.now();
+              const response =
+                await this.postWithFallback<LiteLlmResponsesResponse>(
+                  client,
+                  "/v1/responses",
+                  "/responses",
+                  payload,
+                  { timeout: params.timeoutMs ?? cfg.timeoutMs },
+                );
+              const latencyMs = Date.now() - start;
+              const headerCost = this.extractHeaderCost(
+                response.headers?.["x-litellm-response-cost"] ??
+                  response.headers?.["x-litellm-cost"] ??
+                  response.headers?.["litellm-cost"],
               );
-            const latencyMs = Date.now() - start;
-            const headerCost = this.extractHeaderCost(
-              response.headers?.["x-litellm-response-cost"] ??
-                response.headers?.["x-litellm-cost"] ??
-                response.headers?.["litellm-cost"],
-            );
-            const keySpendUsd = this.extractHeaderCost(
-              response.headers?.["x-litellm-key-spend"],
-            );
-            const payloadCost = this.extractHeaderCost(
-              (response.data as Record<string, unknown>).response_cost,
-            );
-            const costUsd = headerCost ?? payloadCost;
-            const normalizedResponse = {
-              ...response.data,
-              ...(typeof costUsd === "number" ? { costUsd } : {}),
-              ...(typeof keySpendUsd === "number" ? { keySpendUsd } : {}),
-              latencyMs,
-            };
-            this.logRequest({
-              requestType: "responses",
-              model:
-                typeof normalizedResponse.model === "string" &&
-                normalizedResponse.model.trim().length > 0
-                  ? normalizedResponse.model.trim()
-                  : model,
-              status: "success",
-              orgId: params.orgId,
-              metadata: params.metadata,
-              latencyMs,
-              usage: this.normalizeResponsesUsage(normalizedResponse),
-              costUsd,
-              apiSurface: "responses",
-              runtimeContext,
-            });
-            return normalizedResponse;
-          } catch (error) {
-            let normalizedError: unknown = error;
-            if (!(error instanceof LlmCompatibilityError)) {
-              try {
-                this.decorateAxiosError(error, {
-                  apiKeyConfigured,
-                  apiSurface: "responses",
-                });
-              } catch (decoratedError) {
-                normalizedError = decoratedError;
+              const keySpendUsd = this.extractHeaderCost(
+                response.headers?.["x-litellm-key-spend"],
+              );
+              const payloadCost = this.extractHeaderCost(
+                (response.data as Record<string, unknown>).response_cost,
+              );
+              const costUsd = headerCost ?? payloadCost;
+              const normalizedResponse = {
+                ...response.data,
+                ...(typeof costUsd === "number" ? { costUsd } : {}),
+                ...(typeof keySpendUsd === "number" ? { keySpendUsd } : {}),
+                latencyMs,
+              };
+              this.logRequest({
+                requestType: "responses",
+                model:
+                  typeof normalizedResponse.model === "string" &&
+                  normalizedResponse.model.trim().length > 0
+                    ? normalizedResponse.model.trim()
+                    : model,
+                status: "success",
+                orgId: params.orgId,
+                metadata: params.metadata,
+                latencyMs,
+                usage: this.normalizeResponsesUsage(normalizedResponse),
+                costUsd,
+                apiSurface: "responses",
+                runtimeContext,
+              });
+              return this.annotateSelectedModel(
+                normalizedResponse,
+                requestedModel,
+                model,
+              );
+            } catch (error) {
+              let normalizedError: unknown = error;
+              if (!(error instanceof LlmCompatibilityError)) {
+                try {
+                  this.decorateAxiosError(error, {
+                    apiKeyConfigured,
+                    apiSurface: "responses",
+                  });
+                } catch (decoratedError) {
+                  normalizedError = decoratedError;
+                }
               }
+              this.logRequest({
+                requestType: "responses",
+                model,
+                status: "error",
+                orgId: params.orgId,
+                metadata: params.metadata,
+                latencyMs: Date.now() - attemptStartedAt,
+                error: normalizedError,
+                apiSurface: "responses",
+                runtimeContext,
+              });
+              if (normalizedError instanceof LiteLlmGuardrailViolationError) {
+                throw normalizedError;
+              }
+              if (normalizedError instanceof LlmCompatibilityError) {
+                throw normalizedError;
+              }
+              lastError = normalizedError;
+              attempt += 1;
+              if (attempt >= maxAttempts || !this.isRetryable(normalizedError)) {
+                throw normalizedError;
+              }
+              await sleep(delayMs);
+              delayMs = Math.min(delayMs * 2, 10_000);
             }
-            this.logRequest({
-              requestType: "responses",
-              model,
-              status: "error",
-              orgId: params.orgId,
-              metadata: params.metadata,
-              latencyMs: Date.now() - attemptStartedAt,
-              error: normalizedError,
-              apiSurface: "responses",
-              runtimeContext,
-            });
-            if (normalizedError instanceof LlmCompatibilityError) {
-              throw normalizedError;
-            }
-            lastError = normalizedError;
-            attempt += 1;
-            if (attempt >= maxAttempts || !this.isRetryable(normalizedError)) {
-              throw normalizedError;
-            }
-            await sleep(delayMs);
-            delayMs = Math.min(delayMs * 2, 10_000);
           }
+        } catch (error) {
+          if (error instanceof LiteLlmGuardrailViolationError) {
+            throw error;
+          }
+          if (error instanceof LlmCompatibilityError) {
+            throw error;
+          }
+          lastError = error;
+          this.recordModelFallbackOrWarn({
+            operation: "responses_fallback",
+            models: uniqueModels,
+            failedIndex: index,
+            error,
+            exhaustedMessage:
+              "LiteLLM responses request failed; no fallback remaining",
+          });
         }
       }
     } finally {
@@ -2258,6 +2315,75 @@ export class LiteLlmService {
       governanceAuthMode: overrides?.governanceAuthMode ?? "profile_key",
       governanceTargetProfileId: overrides?.governanceTargetProfileId ?? null,
     };
+  }
+
+  private uniqueModelList(models: (string | undefined | null)[]): string[] {
+    return Array.from(
+      new Set(
+        models
+          .filter(
+            (model): model is string =>
+              typeof model === "string" && model.trim().length > 0,
+          )
+          .map((model) => model.trim()),
+      ),
+    );
+  }
+
+  private annotateSelectedModel<T extends { model?: string }>(
+    response: T,
+    requestedModel: string | undefined,
+    usedModel: string,
+  ): T {
+    const resolvedModel =
+      typeof response.model === "string" && response.model.trim().length > 0
+        ? response.model.trim()
+        : usedModel;
+    return {
+      ...response,
+      model: resolvedModel,
+      requestedModel,
+      fallbackUsed: Boolean(requestedModel && usedModel !== requestedModel),
+    };
+  }
+
+  private recordModelFallbackOrWarn(input: {
+    operation: string;
+    models: string[];
+    failedIndex: number;
+    error: unknown;
+    exhaustedMessage: string;
+  }): void {
+    const primaryModel = input.models[0] ?? "";
+    const failedModel = input.models[input.failedIndex] ?? "";
+    const nextModel = input.models[input.failedIndex + 1];
+    if (!nextModel) {
+      this.logger.warn(
+        {
+          model: failedModel,
+          message:
+            input.error instanceof Error ? input.error.message : "unknown error",
+        },
+        input.exhaustedMessage,
+      );
+      return;
+    }
+
+    recordIntegrationEvent({
+      integration: "litellm",
+      operation: input.operation,
+      status: "fallback",
+    });
+    this.logger.warn(
+      {
+        primaryModel,
+        failedModel,
+        nextModel,
+        message:
+          input.error instanceof Error ? input.error.message : "unknown error",
+      },
+      "LiteLLM model fallback engaged",
+    );
   }
 
   private logRequest(params: {

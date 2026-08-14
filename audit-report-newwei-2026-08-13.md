@@ -15,7 +15,7 @@
 
 仍开放的风险集中在两处：无 CI、无组件/行为测试（REL-01、TST-03/05/06）；发布面仍是 root 容器、滚动 tag 与默认弱凭据（REL-02~08）。
 
-**亮点**：outbox 事务外发、DataLoader、异常脱敏、SSRF 防护、refresh token 轮换、MFA、组织隔离、新闻管线/助手输入护栏、助手按组织额度是本项目值得保留并继续沿用的工程资产。
+**亮点**：outbox 事务外发、DataLoader、异常脱敏、SSRF 防护、refresh token 轮换、MFA、组织隔离、新闻管线/助手输入护栏、助手按组织额度、LiteLLM fallback 观测、解析失败进 DLQ、ES/向量降级打点是本项目值得保留并继续沿用的工程资产。
 
 ### Score Dashboard
 
@@ -41,10 +41,10 @@ Overall         █████░░░░░  5.3  B
 |----------|----------------|----------------|
 | Critical | 0 | 0 |
 | High | 5 | 0 |
-| Medium | 16 | 0 |
+| Medium | 11 | 0 |
 | Low | 5 | 0 |
 | Info | 0 | 0 |
-| **Total** | **26** | **0** |
+| **Total** | **21** | **0** |
 
 ## 2. Project Map
 
@@ -101,86 +101,6 @@ Overall         █████░░░░░  5.3  B
 5. **`undefined as unknown as ItemMetaModel`**（TYPES-01, High）— 伪造类型，下游无法信任空 meta。
 
 ## 4. Detailed Findings
-
-### Finding: AI-06 模型静默 fallback
-
-- Severity: Medium
-- Confidence: High
-- Category: Stability
-- Status: Confirmed
-- Affected area: `apps/api/src/modules/news-pipeline/litellm.service.ts:295-339,463-525`
-- Evidence: `acompletion/stream/rerank` 出错即遍历 `[model, ...fallbackModels]`，仅 warn 日志。
-- Problem: 静默切换更廉价/不同能力的模型，用户无感知。
-- Why it matters: 质量/成本漂移不可见。
-- Realistic failure scenario: 主模型故障 → 静默切到低质模型 → 清洗质量下降无人察觉。
-- Minimal fix: fallback 事件打结构化 metric + 暴露实际模型。
-- Better long-term fix: fallback 策略显式化 + 告警。
-- Regression test suggestion: 单测断言 fallback 触发时 emit 了 metric。
-- Estimated effort: 1–2 hours
-
-### Finding: AI-07 畸形 LLM JSON → 最多 5 次重试重跑 LLM（成本放大）
-
-- Severity: Medium
-- Confidence: High
-- Category: Performance
-- Status: Confirmed
-- Affected area: `news-extraction-stage.service.ts:286-298`、`queue.service.ts:107-108`
-- Evidence: `parseStageResponse` 对空/非 JSON/schema 不符抛错；item pipeline job `attempts:5` 指数退避重试。
-- Problem: 持续畸形的模型响应对单篇文章重跑最贵清洗调用至多 5 次。
-- Why it matters: 成本放大。
-- Realistic failure scenario: 某源持续产出畸形 JSON → 每篇 5 次清洗调用。
-- Minimal fix: 对"确定性解析失败"（非网络瞬时）不重试，直接 DLQ。
-- Better long-term fix: 解析失败与瞬时错误分级重试策略。
-- Regression test suggestion: 单测断言 schema 失败不再重试。
-- Estimated effort: 1–2 hours
-
-### Finding: STAB-01 Elasticsearch 搜索错误静默置 null
-
-- Severity: Medium
-- Confidence: High
-- Category: Stability
-- Status: Confirmed
-- Affected area: `apps/api/src/modules/items/items.service.ts:4898,4915`
-- Evidence: `this.elasticsearch?.search(...).catch(() => null)`。
-- Problem: ES 故障不可见，搜索静默退化为词法/向量。
-- Why it matters: 搜索结果质量无声下降。
-- Realistic failure scenario: ES 故障 → 用户搜索结果缺失而无告警。
-- Minimal fix: catch 内打 warn + 计数 metric。
-- Better long-term fix: 统一降级观测 + 就绪探针反映 ES 状态。
-- Regression test suggestion: 单测断言 ES 异常时记日志/metric。
-- Estimated effort: <1 hour
-
-### Finding: STAB-02 向量搜索失败静默返回 []
-
-- Severity: Medium
-- Confidence: High
-- Category: Stability
-- Status: Confirmed
-- Affected area: `apps/api/src/modules/items/items.service.ts:4882-4888`
-- Evidence: `catch { try { return await loader() } catch { return [] } }`。
-- Problem: 向量服务故障静默清空结果，无日志/metric。
-- Why it matters: 向量检索结果无声缺失。
-- Realistic failure scenario: 向量服务故障 → 语义搜索返回空。
-- Minimal fix: 记录降级 + metric。
-- Better long-term fix: 降级路径观测 + 前端提示。
-- Regression test suggestion: 单测断言降级路径有日志。
-- Estimated effort: <1 hour
-
-### Finding: STAB-03 kaopu 源裸 $fetch 无超时
-
-- Severity: Medium
-- Confidence: High
-- Category: Stability
-- Status: Confirmed
-- Affected area: `apps/api/src/modules/news-aggregator/sources/kaopu.ts:13`
-- Evidence: `await $fetch("https://kaopustorage.blob.core.windows.net/...")` 用未配置 `$fetch`，其余源均用 `myFetch`（10s 超时 + 重试）。
-- Problem: 上游挂起可无限阻塞 worker。
-- Why it matters: 单点挂起拖垮抓取 worker。
-- Realistic failure scenario: 上游不响应 → worker 无限阻塞。
-- Minimal fix: 改用 `myFetch`。
-- Better long-term fix: 所有源统一走带超时的 fetch 封装。
-- Regression test suggestion: 单测断言请求带超时。
-- Estimated effort: <1 hour
 
 ### Finding: STAB-04 多处图表/摘要/设置静默 null
 
@@ -554,7 +474,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 未做故障注入/压测。
 
-见 STAB-01 ~ STAB-04。**正确措施**：全库 0 个真正空 catch；几乎所有上游客户端带显式超时（Crawl4AI/LiteLLM/vector/akshare/model-service/GDELT/OpenSky）；生产异常过滤器彻底脱敏；outbox 租约占用正确。
+见 STAB-04。**正确措施**：全库 0 个真正空 catch；几乎所有上游客户端带显式超时（Crawl4AI/LiteLLM/vector/akshare/model-service/GDELT/OpenSky，kaopu 源走 `myFetch`）；ES/向量搜索降级打 warn + metric；生产异常过滤器彻底脱敏；outbox 租约占用正确。
 
 ## 8. Performance Concerns
 
@@ -564,7 +484,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 未测 bundle 拆分与真实负载。
 
-**正向**：DataLoader 全面用于嵌套字段；items/crawlTasks 有 cursor+total 分页；热路径索引迁移存在。**缺口**：AI-07（重试成本放大）、DEP-02（three.js chunk）、BAPI-01（少数列表无分页）。
+**正向**：DataLoader 全面用于嵌套字段；items/crawlTasks 有 cursor+total 分页；热路径索引迁移存在。**缺口**：DEP-02（three.js chunk）、BAPI-01（少数列表无分页）。
 
 ## 9. Testing Gaps
 
@@ -686,11 +606,9 @@ Overall         █████░░░░░  5.3  B
 
 | Subtype | Count | Cost Driver | Recommended Action |
 |---------|-------|-------------|-------------------|
-| LLMCost | 1 | 畸形 JSON 5× 重试（AI-07） | 解析失败不重试 |
 | ExternalApiCost | 1 | 无 `LITELLM_MASTER_KEY`（REL-07） | fail-closed |
-| CostVisibility | 1 | fallback/降级无 metric（AI-06、STAB-01/02） | 结构化成本/降级 metric |
 
-**正向**：助手按组织小时限流 + in-flight + 月度 token 预算；历史预算有界（1000 字符/消息、8000 总量、runs clamp 100）；去重 LLM 比较次数有上限（默认 12）；输入截断（`maxInputChars`）；所有重试均指数退避 + jitter 且上限 10s。
+**正向**：助手按组织小时限流 + in-flight + 月度 token 预算；历史预算有界（1000 字符/消息、8000 总量、runs clamp 100）；去重 LLM 比较次数有上限（默认 12）；输入截断（`maxInputChars`）；所有重试均指数退避 + jitter 且上限 10s；畸形 JSON 解析失败走 `QueuePermanentError` 进 DLQ，不再 5× 重跑 LLM；LiteLLM fallback / ES / 向量降级打 metric。
 
 ## 18. Configuration Safety Analysis
 
@@ -709,7 +627,7 @@ Overall         █████░░░░░  5.3  B
 | EnvironmentSeparation | 1 | 大量布尔 `!== "production"` 分支，`NODE_ENV` 未设即走 dev 分支 | 默认生产安全 |
 | SchemaValidation | 1 | ais-relay 无 Zod 校验，`process.env` 直读 + 静默回退 | 集中校验 |
 
-见 STAB-01/02、REL-07。**正向**：API/vector 用 `@nestjs/config` + Zod `validate`；`env:check` 脚本覆盖 AIS 相关配置；助手按组织额度有 SystemSetting + env 默认。
+见 REL-07。**正向**：API/vector 用 `@nestjs/config` + Zod `validate`；`env:check` 脚本覆盖 AIS 相关配置；助手按组织额度有 SystemSetting + env 默认。
 
 ## 19. Observability / Operability Analysis
 
@@ -723,11 +641,10 @@ Overall         █████░░░░░  5.3  B
 
 | Subtype | Count | Critical Signals Missing | Recommended Action |
 |---------|-------|--------------------------|-------------------|
-| Metrics | 3 | ES/向量/模型 fallback 降级无 metric（STAB-01/02、AI-06） | 降级路径打 metric |
 | HealthCheck | 1 | qdrant/minio 无 healthcheck（`docker-compose.yml:94-101,122-134`） | 补齐 |
 | Debuggability | 1 | 错误响应无安全 correlation handle（部分路径） | 补 traceId 关联 |
 
-**正向**：健康探针语义清晰（`/healthz/live` vs `/health`）；`details.llmGateway` 含 completion/embedding/rerank 就绪状态；生产异常过滤器返回 traceId；OTEL 可启用；Bull Board 提供队列可视。
+**正向**：健康探针语义清晰（`/healthz/live` vs `/health`）；`details.llmGateway` 含 completion/embedding/rerank 就绪状态；生产异常过滤器返回 traceId；OTEL 可启用；Bull Board 提供队列可视；LiteLLM fallback / ES / 向量降级打 `recordIntegrationEvent`。
 
 ## 20. Data Integrity Analysis
 
@@ -760,10 +677,10 @@ Overall         █████░░░░░  5.3  B
 | PromptInjection | 0 | 清洗/分类/助手历史已定界（正向） | 保持 |
 | ToolAuthorization | 0 | 仅 `web_search_preview`，门控确定性（正向） | 保持 |
 | RAGLeakage | 0 | 向量/ES/Mongo 均按 orgId 过滤（正向） | 保持 |
-| ModelFallback | 1 | 静默 fallback（AI-06） | 显式 + metric |
+| ModelFallback | 0 | fallback 打 metric + 暴露实际模型（正向） | 保持 |
 | AbuseCost | 0 | 助手按组织额度 + 新闻管线输入护栏（正向） | 保持 |
 
-见 AI-06 ~ AI-07。**正向**：新闻管线不可信路径默认附加 `openai-moderation-pre`；助手入队前按组织限流/并发/月度 token；清洗与历史用 `<untrusted_*>` 定界；护栏拦截走结构化状态码/头字段且不重试。`web_search_preview` 门控确定性（非 prompt 措辞）；LLM 选择的 slug/field 均对照 DB 候选集校验；planner 失败 fail-closed 到 `unsupported`；组织级检索过滤。
+**正向**：新闻管线不可信路径默认附加 `openai-moderation-pre`；助手入队前按组织限流/并发/月度 token；清洗与历史用 `<untrusted_*>` 定界；护栏拦截走结构化状态码/头字段且不重试。`web_search_preview` 门控确定性（非 prompt 措辞）；LLM 选择的 slug/field 均对照 DB 候选集校验；planner 失败 fail-closed 到 `unsupported`；组织级检索过滤；LiteLLM fallback 结构化 metric；畸形 JSON 解析失败不重试。
 
 ## 22. Testing Authenticity Analysis
 
@@ -797,10 +714,10 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 | Subtype | Count | KeepWithAlert | FailFast | Remove |
 |---------|-------|---------------|----------|--------|
-| SilentFallback | 3 | 3（ES/向量/图表静默降级，STAB-01/02/04） | 0 | 0 |
+| SilentFallback | 1 | 1（图表/摘要静默降级，STAB-04） | 0 | 0 |
 | EmptyCatch | 0 | 0 | 0 | 0 |
 
-**结论**：全库无空 catch（显著优点）；主要风险是"静默降级无观测"（ES/向量/图表）。见 STAB-01/02/04。
+**结论**：全库无空 catch（显著优点）；ES/向量降级已打 warn + metric。仍开放的静默降级见 STAB-04。
 
 ## 24. Frontend State Analysis
 
@@ -914,7 +831,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 | File Size Limit (1.2) | 20+ | High | 前端面板、crawl/items/dashboard service |
 | Fail-Fast (4.4) | 1 | High | `LITELLM_API_KEY` 可选 |
 | Fail on Missing Config (9.2) | 2 | Critical | `LITELLM_API_KEY`、`LITELLM_MASTER_KEY` |
-| Don't Swallow Errors (6.1) | 4 | Medium | ES/向量搜索静默 null/[]、图表 null |
+| Don't Swallow Errors (6.1) | 1 | Medium | 图表/摘要静默 null（STAB-04） |
 | Immutability Preference (5.1) | 1 | Medium | `ItemMeta.version` 死字段无乐观锁 |
 | YAGNI (4.2) | 1 | Medium | `supercluster` 死依赖 |
 
@@ -955,12 +872,10 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 ## 32. Quick Wins（低成本高价值，1–2 小时/项）
 
-1. STAB-01/02 降级路径加 warn + metric。
-2. STAB-03 `kaopu.ts` 改用 `myFetch`。
-3. DEP-01 移除 `supercluster`。
-4. TYPES-01 修 `undefined as unknown as ItemMetaModel`。
-5. REL-04 删除 Dockerfile bake 的 secret。
-6. REL-06 端口绑定 `127.0.0.1`。
+1. DEP-01 移除 `supercluster`。
+2. TYPES-01 修 `undefined as unknown as ItemMetaModel`。
+3. REL-04 删除 Dockerfile bake 的 secret。
+4. REL-06 端口绑定 `127.0.0.1`。
 
 ## 33. Long-term Refactor Plan
 

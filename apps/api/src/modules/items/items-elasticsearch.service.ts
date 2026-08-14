@@ -1,5 +1,6 @@
-import { ItemReadModelModel, type ItemReadModel } from "@modular/mongo";
 import { Client } from "@elastic/elasticsearch";
+import { ItemReadModelModel, type ItemReadModel } from "@modular/mongo";
+import { createLogger } from "@modular/utils";
 import { Injectable, OnModuleInit } from "@nestjs/common";
 
 import { EnvService } from "../config/config.service";
@@ -106,6 +107,7 @@ function normalizeLiteralKeywords(keywords: string[]): string[] {
 
 @Injectable()
 export class ItemsElasticsearchService implements OnModuleInit {
+  private readonly logger = createLogger({ name: "items-elasticsearch" });
   private readonly client: Client | null;
 
   constructor(private readonly env: EnvService) {
@@ -197,7 +199,11 @@ export class ItemsElasticsearchService implements OnModuleInit {
           highlights: extractHighlights(hit.highlight),
         }))
         .filter((hit) => hit.id.length > 0);
-    } catch {
+    } catch (err) {
+      this.logger.warn(
+        { err, orgId },
+        "Elasticsearch literal keyword search failed",
+      );
       recordIntegrationEvent({
         integration: "elasticsearch",
         operation: "items_literal_keyword_search",
@@ -269,7 +275,8 @@ export class ItemsElasticsearchService implements OnModuleInit {
           highlights: extractHighlights(hit.highlight),
         }))
         .filter((hit) => hit.id.length > 0);
-    } catch {
+    } catch (err) {
+      this.logger.warn({ err, orgId }, "Elasticsearch items search failed");
       recordIntegrationEvent({
         integration: "elasticsearch",
         operation: "items_search",

@@ -1,4 +1,4 @@
-import { $fetch } from "./fetch";
+import { myFetch } from "./fetch";
 import { defineSource } from "./source";
 
 type Res = {
@@ -10,7 +10,7 @@ type Res = {
   title: string
 }[]
 export default defineSource(async () => {
-  const res: Res = await $fetch("https://kaopustorage.blob.core.windows.net/news-prod/news_list_hans_0.json")
+  const res: Res = await myFetch("https://kaopustorage.blob.core.windows.net/news-prod/news_list_hans_0.json")
   return res.filter(k => ["财新", "公视"].every(h => k.publisher !== h)).map((k) => {
     return {
       id: k.link,

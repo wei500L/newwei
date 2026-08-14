@@ -3,16 +3,17 @@ import { z } from "zod";
 import { type JsonSchema7Type, zodToJsonSchema } from "zod-to-json-schema";
 
 import { extractFirstJson } from "../../common/llm-json";
+import { QueuePermanentError } from "../queue/queue.error-handling";
 
 import { LiteLlmService } from "./litellm.service";
 import { NewsExtractionProviderId } from "./news-extraction-settings.service";
 import { CleanedNewsSchema, type CleanedNews } from "./news-pipeline.schema";
+import { type NewsPromptConfig } from "./news-prompt-config.service";
 import {
   type EnrichmentPromptInput,
   NewsPromptBuilder,
   type JsonSchemaResponseFormat,
 } from "./news-prompt.builder";
-import { type NewsPromptConfig } from "./news-prompt-config.service";
 
 export interface NewsStageLlmMetadata {
   provider: NewsExtractionProviderId;
@@ -23,6 +24,8 @@ export interface NewsStageLlmMetadata {
   totalTokens: number | null;
   costUsd: number | null;
   latencyMs: number | null;
+  requestedModel?: string | null;
+  fallbackUsed?: boolean;
 }
 
 export interface NewsStageContext {
@@ -130,16 +133,11 @@ export class NewsExtractionStageService {
           CleanedNewsSchema,
         ),
       ) as CleanedNews,
-      llm: {
-        provider: NewsExtractionProviderId.llm,
-        model: response.model,
-        promptVersion: promptConfig.version,
-        promptTokens: response.usage?.prompt_tokens ?? null,
-        completionTokens: response.usage?.completion_tokens ?? null,
-        totalTokens: response.usage?.total_tokens ?? null,
-        costUsd: response.costUsd ?? null,
-        latencyMs: response.latencyMs ?? null,
-      },
+      llm: this.toStageLlmMetadata(
+        response,
+        promptConfig.version,
+        NewsExtractionProviderId.llm,
+      ),
     };
   }
 
@@ -288,13 +286,20 @@ export class NewsExtractionStageService {
     schema: z.ZodSchema<T>,
   ): T {
     if (!content) {
-      throw new Error("LiteLLM returned empty content");
+      throw new QueuePermanentError("LiteLLM returned empty content");
     }
     const jsonText = extractFirstJson(content);
     if (!jsonText) {
-      throw new Error("LiteLLM return was not valid JSON");
+      throw new QueuePermanentError("LiteLLM return was not valid JSON");
     }
-    return schema.parse(JSON.parse(jsonText));
+    try {
+      return schema.parse(JSON.parse(jsonText));
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new QueuePermanentError("LiteLLM return was not valid JSON");
+      }
+      throw error;
+    }
   }
 
   private toStageLlmMetadata(
@@ -311,6 +316,8 @@ export class NewsExtractionStageService {
       totalTokens: response.usage?.total_tokens ?? null,
       costUsd: response.costUsd ?? null,
       latencyMs: response.latencyMs ?? null,
+      requestedModel: response.requestedModel ?? null,
+      fallbackUsed: response.fallbackUsed === true,
     };
   }
 }

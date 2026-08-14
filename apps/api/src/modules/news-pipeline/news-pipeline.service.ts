@@ -42,6 +42,7 @@ import {
 } from "../crawl/url-fingerprint";
 import { buildItemReadModelPatch } from "../items/item-read-model.utils";
 import { writeTaskLogBestEffort } from "../observability/task-log.writer";
+import { QueuePermanentError } from "../queue/queue.error-handling";
 import { VectorClientService } from "../vector/vector-client.service";
 
 import { LiteLlmService } from "./litellm.service";
@@ -4145,18 +4146,18 @@ export class NewsPipelineService implements OnModuleDestroy {
   ): CleanedNews {
     const content = response.choices[0]?.message?.content;
     if (!content) {
-      throw new Error("LiteLLM returned empty content");
+      throw new QueuePermanentError("LiteLLM returned empty content");
     }
     let parsed: unknown;
     const jsonText = extractFirstJson(content);
     if (!jsonText) {
-      throw new Error("LiteLLM return was not valid JSON");
+      throw new QueuePermanentError("LiteLLM return was not valid JSON");
     }
     try {
       parsed = JSON.parse(jsonText);
     } catch (error) {
       this.logger.error({ error }, "Failed to parse LiteLLM JSON output");
-      throw new Error("LiteLLM return was not valid JSON");
+      throw new QueuePermanentError("LiteLLM return was not valid JSON");
     }
     if (options?.fallbackCleanedMarkdown) {
       parsed = this.applyCleanedMarkdownFallback(

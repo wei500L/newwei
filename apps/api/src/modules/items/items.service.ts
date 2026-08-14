@@ -33,6 +33,7 @@ import {
   NormalizedNewsPayload,
   NormalizedNewsPayloadSchema
 } from "../news-pipeline/news-pipeline.schema";
+import { recordIntegrationEvent } from "../observability/prometheus-metrics";
 import { QueueService } from "../queue/queue.service";
 import { UserNewsBehaviorService } from "../user-news-behavior/user-news-behavior.service";
 import { VectorClientService } from "../vector/vector-client.service";
@@ -4930,10 +4931,23 @@ export class ItemsService {
         retryDelayMs: 50,
         maxWaitMs: 2_000,
       });
-    } catch {
+    } catch (cacheError) {
+      this.logger.warn(
+        { err: cacheError, orgId },
+        "Vector search cache wrap failed; retrying loader",
+      );
       try {
         return await loader();
-      } catch {
+      } catch (loaderError) {
+        this.logger.warn(
+          { err: loaderError, orgId },
+          "Vector search degraded to empty results",
+        );
+        recordIntegrationEvent({
+          integration: "vector",
+          operation: "items_vector_search",
+          status: "failure",
+        });
         return [];
       }
     }
@@ -4946,7 +4960,15 @@ export class ItemsService {
         return [];
       }
       const [elasticHits, lexicalIds, vectorIds] = await Promise.all([
-        this.elasticsearch?.search(orgId, search, MAX_SEARCH_MATCHES).catch(() => null) ?? Promise.resolve(null),
+        this.elasticsearch
+          ?.search(orgId, search, MAX_SEARCH_MATCHES)
+          .catch((err: unknown) => {
+            this.logger.warn(
+              { err, orgId },
+              "Elasticsearch search rejected; degrading",
+            );
+            return null;
+          }) ?? Promise.resolve(null),
         this.resolveReadModelSearchIds(orgId, strategy),
         this.resolveVectorSearchIds(orgId, search),
       ]);
@@ -4963,7 +4985,15 @@ export class ItemsService {
     }
 
     const [elasticHits, metaIds, processedIds, processedArticleIds, vectorIds] = await Promise.all([
-      this.elasticsearch?.search(orgId, search, MAX_SEARCH_MATCHES).catch(() => null) ?? Promise.resolve(null),
+      this.elasticsearch
+        ?.search(orgId, search, MAX_SEARCH_MATCHES)
+        .catch((err: unknown) => {
+          this.logger.warn(
+            { err, orgId },
+            "Elasticsearch search rejected; degrading",
+          );
+          return null;
+        }) ?? Promise.resolve(null),
       this.resolveMetaSearchIds(orgId, strategy),
       this.resolveProcessedSearchIds(orgId, strategy),
       this.resolveProcessedArticleSearchIds(orgId, strategy),
