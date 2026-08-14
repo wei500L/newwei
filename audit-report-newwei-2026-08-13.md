@@ -5,7 +5,7 @@
 **Date:** 2026-08-13
 **Reviewer:** opencode (deepseek-v4-pro) — fuck-my-shit-mountain skill
 **Commit:** `beb32ead`（branch `main`）
-**Remediation review:** 2026-08-14 — 对照 `beb32ead..HEAD` 复核。**已解决：SEC-01 ~ SEC-13、DINT-01 ~ DINT-05**。残余：`news-source.scheduler.service.ts` 仍有同类事务内 `RawItemModel.create`（未列入 DINT-01 原范围）。
+**Remediation review:** 2026-08-14 — 对照 `beb32ead..HEAD` 复核。**已解决：SEC-01 ~ SEC-13、DINT-01 ~ DINT-05**（DINT 落地于 `ce2a2cbe`）。残余：`news-source.scheduler.service.ts` 仍有同类事务内 `RawItemModel.create`（未列入 DINT-01 原范围）。
 
 ---
 
@@ -15,7 +15,7 @@
 
 但平台存在两类真实而集中的风险。**第一类是"默认即不安全"的配置面**（审计当日）：`JWT_SECRET`/`NEXTAUTH_SECRET` 在提交的 `.env.example`、`infra/docker/.env.sample` 乃至当前本地 `.env` 中都是 `change_me_please_replace_32_chars`，而校验只检查 `min(16)`，于是这个公开已知的签名密钥能直接通过启动校验——一旦照抄部署即可伪造任意用户 token。同类的还有：系统设置密钥默认不加密（OIDC/TOTP/LLM 密钥明文入库）、Docker "生产"栈显式开启 GraphQL Playground/内省、Bull Board 默认开启且无鉴权、CORS 默认反射任意 Origin、限流默认 fail-open。**2026-08-14 复核：SEC-01 ~ SEC-13 均已落地（见各 Finding 的 Resolved 记录），此类配置面风险已关闭。** **第二类是"虚假的测试信心"**：仓库有 456 个测试文件，但没有 CI、e2e 全部 mock、约 70 个前端测试只是对源码做字符串包含断言、无任何组件渲染测试、覆盖率从未收集。
 
-**2026-08-14 已关闭 DINT-01 ~ DINT-05**：items `create()`/`update()` 改为 MongoOutbox `raw_item` 外发；告警冷却占用与事件/投递同事务；助手/分析 processor 用 `findOneAndUpdate` CAS 占用；知识图谱边 `SELECT ... FOR UPDATE` 后增量；frontier `(runId, urlFingerprint)` 改为唯一约束 + upsert。AI/LLM 侧最突出的仍是护栏只覆盖助手、而处理不可信抓取文本的新闻清洗管线完全无输入审核，且助手无按组织的 token/额度预算。
+**2026-08-14 已关闭 DINT-01 ~ DINT-05**（`ce2a2cbe`）：items `create()`/`update()` 改为 MongoOutbox `raw_item` 外发；告警冷却占用与事件/投递同事务；助手/分析 processor 用 `findOneAndUpdate` CAS 占用；知识图谱边 `SELECT ... FOR UPDATE` 后增量；frontier `(runId, urlFingerprint)` 改为唯一约束 + upsert。AI/LLM 侧最突出的仍是护栏只覆盖助手、而处理不可信抓取文本的新闻清洗管线完全无输入审核，且助手无按组织的 token/额度预算。
 
 **亮点**：outbox 事务外发、DataLoader、异常脱敏、SSRF 防护、refresh token 轮换、MFA、组织隔离是本项目值得保留并继续沿用的工程资产。
 
@@ -33,7 +33,7 @@ Release         ████░░░░░░  4.0  C   无 CI、root 容器、
 Overall         █████░░░░░  5.3  B
 ```
 
-每个维度 0.0–10.0，**越高越好（10=干净，0=屎山）**。评分为基于证据的综合判断，非机械扣分；各维度一句话判据见上表，受限覆盖在对应章节说明。**上表为审计当日（`beb32ead`）基线评分，不因后续修复回溯改写。** 2026-08-14 复核后 Security 面风险已显著下降（SEC-01~SEC-13 Resolved）；Stability 面 DINT-01~05 已落地。
+每个维度 0.0–10.0，**越高越好（10=干净，0=屎山）**。评分为基于证据的综合判断，非机械扣分；各维度一句话判据见上表，受限覆盖在对应章节说明。**上表为审计当日（`beb32ead`）基线评分，不因后续修复回溯改写。** 2026-08-14 复核后 Security 面风险已显著下降（SEC-01~SEC-13 Resolved）；Stability 面 DINT-01~05 已落地（`ce2a2cbe`）。
 
 ### Finding Statistics
 
@@ -126,11 +126,11 @@ Overall         █████░░░░░  5.3  B
 - ~~系统设置密钥默认明文入库~~（SEC-04, High）— `c57ffab9`
 - ~~内部端点明文返回全部 OpenAI 密钥~~（SEC-03, High）— `720417f9`（timingSafeEqual + 读取审计；仍返回全库密钥，残余面见该 Finding）
 - ~~Docker 生产栈 GraphQL Playground/内省 + Bull Board 无鉴权 + 限流 fail-open~~（SEC-08/09/10, Medium）
-- ~~MySQL 事务内写 MongoDB~~（DINT-01, High）— items `create()`/`update()` 改 `raw_item` outbox
-- ~~告警冷却占用与事件/投递非原子~~（DINT-02, Medium）
-- ~~助手/分析处理器状态回退~~（DINT-03, Medium）
-- ~~知识图谱边 weight 丢失更新~~（DINT-04, Medium）
-- ~~CrawlFrontierNode 去重仅为非唯一索引~~（DINT-05, Medium）
+- ~~MySQL 事务内写 MongoDB~~（DINT-01, High）— `ce2a2cbe`（items `create()`/`update()` 改 `raw_item` outbox）
+- ~~告警冷却占用与事件/投递非原子~~（DINT-02, Medium）— `ce2a2cbe`
+- ~~助手/分析处理器状态回退~~（DINT-03, Medium）— `ce2a2cbe`
+- ~~知识图谱边 weight 丢失更新~~（DINT-04, Medium）— `ce2a2cbe`
+- ~~CrawlFrontierNode 去重仅为非唯一索引~~（DINT-05, Medium）— `ce2a2cbe`
 
 ## 4. Detailed Findings
 
@@ -388,7 +388,7 @@ Overall         █████░░░░░  5.3  B
 - Confidence: High
 - Category: Stability
 - Status: Resolved
-- Resolved in: 2026-08-14
+- Resolved in: `ce2a2cbe`（2026-08-14）
 - Resolution evidence: `MongoOutboxType.raw_item` + [`raw-item-outbox.service.ts`](apps/api/src/modules/items/raw-item-outbox.service.ts)；`items.service` `create()`/`update()` 事务内只写 MySQL + outbox，提交后 `deliverNow` 幂等 upsert Mongo。残余：`news-source.scheduler.service.ts` 仍直写 Mongo。
 - Affected area: `apps/api/src/modules/items/items.service.ts:1124-1147,3858-3886`
 - Evidence: `create()` 路径在 Prisma `$transaction` 内执行 `tx.itemMeta.create → RawItemModel.create（Mongo）→ tx.itemMeta.update`。
@@ -407,7 +407,7 @@ Overall         █████░░░░░  5.3  B
 - Confidence: High
 - Category: Stability
 - Status: Resolved
-- Resolved in: 2026-08-14
+- Resolved in: `ce2a2cbe`（2026-08-14）
 - Resolution evidence: `evaluateRule` 将 cooldown CAS `updateMany`、`alertEvent.create` 与 `alertDelivery.create` 包进同一 `$transaction`；入队/in-app 通知/pubsub 仍在 commit 之后。
 - Affected area: `apps/api/src/modules/alerts/alerts.service.ts:1342-1399`
 - Evidence: `evaluateRule` 用 `updateMany` 原子占用 cooldown 后，在事务外创建 `alertEvent`(1368) 与 `alertDelivery`(1388-1399)。
@@ -425,7 +425,7 @@ Overall         █████░░░░░  5.3  B
 - Confidence: High
 - Category: Stability
 - Status: Resolved
-- Resolved in: 2026-08-14
+- Resolved in: `ce2a2cbe`（2026-08-14）
 - Resolution evidence: `AssistantRunModel`/`AnalysisResultModel` 用 `findOneAndUpdate` 仅从 `pending`/`failed` 占用为 `running`；`completed` 与进行中的 `running` 直接跳过。
 - Affected area: `apps/api/src/modules/assistant/assistant.service.ts:282-387`、`analysis.service.ts:134-218`
 - Evidence: `process(job)` 无状态守卫，`findById → status="running" → save → LLM → status="completed" → save`；BullMQ 重试/重复 worker 会把 `completed` 翻回 `running` 并重跑昂贵的 LLM。
@@ -443,7 +443,7 @@ Overall         █████░░░░░  5.3  B
 - Confidence: High
 - Category: Stability
 - Status: Resolved
-- Resolved in: 2026-08-14
+- Resolved in: `ce2a2cbe`（2026-08-14）
 - Resolution evidence: `upsertEdge` 对已存在边（含 create 撞唯一后的胜者）`SELECT ... FOR UPDATE` 后再按原公式增量；不再在 unique race 时丢弃观察。
 - Affected area: `apps/api/src/modules/knowledge-graph/knowledge-graph.service.ts:1052-1106`
 - Evidence: `upsertEdge` 读 `existing.weight/confidence` → `nextWeight = prevWeight + 1` 与加权平均 → 更新；事务内但无 `SELECT ... FOR UPDATE` 行锁。
@@ -461,7 +461,7 @@ Overall         █████░░░░░  5.3  B
 - Confidence: High
 - Category: Stability
 - Status: Resolved
-- Resolved in: 2026-08-14
+- Resolved in: `ce2a2cbe`（2026-08-14）
 - Resolution evidence: `@@unique([runId, urlFingerprint])` + 去重迁移；layered executor 有 fingerprint 的路径改为幂等 `persistFrontierNode`，已存在则跳过重复入队。
 - Affected area: `packages/db/prisma/schema.prisma:705`
 - Evidence: `@@index([runId, urlFingerprint])` 而非 `@@unique`。
@@ -1118,7 +1118,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 未做故障注入/压测。
 
-见 DINT-01 ~ DINT-09、STAB-01 ~ STAB-04。**DINT-01 ~ DINT-05 已 Resolved**（2026-08-14）。**正确措施**：全库 0 个真正空 catch；几乎所有上游客户端带显式超时（Crawl4AI/LiteLLM/vector/akshare/model-service/GDELT/OpenSky）；生产异常过滤器彻底脱敏；outbox 租约占用正确。
+见 DINT-01 ~ DINT-09、STAB-01 ~ STAB-04。**DINT-01 ~ DINT-05 已 Resolved**（`ce2a2cbe`，2026-08-14）。**正确措施**：全库 0 个真正空 catch；几乎所有上游客户端带显式超时（Crawl4AI/LiteLLM/vector/akshare/model-service/GDELT/OpenSky）；生产异常过滤器彻底脱敏；outbox 租约占用正确。
 
 ## 8. Performance Concerns
 
@@ -1516,7 +1516,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 1. ~~SEC-01 拒绝已知占位符密钥（JWT/NextAuth）。~~ **Resolved** `ef09cf92`
 2. ~~SEC-04 生产缺 `SYSTEM_SETTINGS_ENCRYPTION_KEY` 拒绝写密钥。~~ **Resolved** `c57ffab9`
 3. ~~SEC-02 公共门户未配置 slug 时不再回退发布。~~ **Resolved** `072079ce`
-4. ~~**DINT-01 items 跨库写改 outbox。**~~ **Resolved** 2026-08-14（scheduler 路径仍为残余）
+4. ~~**DINT-01 items 跨库写改 outbox。**~~ **Resolved** `ce2a2cbe`（scheduler 路径仍为残余）
 5. ~~SEC-03 内部密钥端点加 timingSafeEqual + 读取审计。~~ **Resolved** `720417f9`（全库密钥最小化返回仍为残余）
 
 ### Fix Before Stable Release（降低可靠性/正确性/安全风险）
@@ -1568,4 +1568,4 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 ---
 
-*本报告由 fuck-my-shit-mountain skill 生成；所有发现均附具体 `file:line` 证据。未修改任何被审代码。2026-08-14 更新 remediation 状态（SEC-01~SEC-13、DINT-01~DINT-05 Resolved）。*
+*本报告由 fuck-my-shit-mountain skill 生成；所有发现均附具体 `file:line` 证据。未修改任何被审代码。2026-08-14 更新 remediation 状态（SEC-01~SEC-13、DINT-01~DINT-05 Resolved；DINT 落地于 `ce2a2cbe`）。*
