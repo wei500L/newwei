@@ -5,7 +5,7 @@
 **Date:** 2026-08-13
 **Reviewer:** opencode (deepseek-v4-pro) — fuck-my-shit-mountain skill
 **Commit:** `beb32ead`（branch `main`）
-**Remediation review:** 2026-08-14 — 已关闭项已从本报告删除。下文只保留仍开放的 Finding。
+**Remediation review:** 2026-08-14 — 下文只保留仍开放的 Finding。
 
 ---
 
@@ -608,7 +608,7 @@ Overall         █████░░░░░  5.3  B
 |---------|-------|-------------|-------------------|
 | ExternalApiCost | 1 | 无 `LITELLM_MASTER_KEY`（REL-07） | fail-closed |
 
-**正向**：助手按组织小时限流 + in-flight + 月度 token 预算；历史预算有界（1000 字符/消息、8000 总量、runs clamp 100）；去重 LLM 比较次数有上限（默认 12）；输入截断（`maxInputChars`）；所有重试均指数退避 + jitter 且上限 10s；畸形 JSON 解析失败走 `QueuePermanentError` 进 DLQ，不再 5× 重跑 LLM；LiteLLM fallback / ES / 向量降级打 metric。
+**正向**：助手按组织小时限流 + in-flight + 月度 token 预算；历史预算有界（1000 字符/消息、8000 总量、runs clamp 100）；去重 LLM 比较次数有上限（默认 12）；输入截断（`maxInputChars`）；所有重试均指数退避 + jitter 且上限 10s；确定性 JSON 解析失败走 `QueuePermanentError` 进 DLQ；LiteLLM fallback / ES / 向量降级打 metric。
 
 ## 18. Configuration Safety Analysis
 
@@ -886,4 +886,4 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 ---
 
-*本报告由 fuck-my-shit-mountain skill 生成；所有发现均附具体 `file:line` 证据。审计当日未改被审代码。2026-08-14 起已关闭 Finding 已从正文删除，仅保留仍开放项。*
+*本报告由 fuck-my-shit-mountain skill 生成；所有发现均附具体 `file:line` 证据。审计当日未改被审代码。下文仅保留仍开放项。*
