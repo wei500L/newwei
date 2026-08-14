@@ -1114,7 +1114,7 @@ Overall         █████░░░░░  5.3  B
 | Subtype | Count | Affected Areas | Recommended Action |
 |---------|-------|----------------|-------------------|
 | ModuleBoundary | 2 | `items.service`(跨 MySQL/Mongo 写，DINT-01 **已 Resolved**)、`crawl-execution.service`(god service) | 拆分服务、抽出仓储边界 |
-| StateOwnership | 2 | `assistant.service`/`analysis.service` 无状态守卫（DINT-03 **已 Resolved**）、`knowledge-graph` 边计数（DINT-04 **已 Resolved**） | 定义单一状态机 owner + 原子占用 |
+| StateOwnership | 2 | `assistant.service`/`analysis.service` 无状态守卫（DINT-03 **已 Resolved**）、`knowledge-graph` 边计数（DINT-04 **已 Resolved**）；告警投递/抓取任务 CAS（DINT-06/08 **已 Resolved**） | 定义单一状态机 owner + 原子占用 |
 | BoundaryContract | 1 | vector 服务信任 body `orgId`（共享 token 后） | 向量边界显式契约 + 服务端重推导 |
 | EvolutionRisk | 3 | 4000-8200 行文件、`CRAWL4AI_JSCODE_ENABLED` 默认开 | 抽取扩展点、收紧默认 |
 
@@ -1515,8 +1515,8 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 | Fail-Fast (4.4) | 3 | High | `JWT_SECRET` 占位符（SEC-01，**已 Resolved**）、`LITELLM_API_KEY` 可选、加密密钥缺失仍写明文（SEC-04 生产路径 **已 Resolved**） |
 | Fail on Missing Config (9.2) | 4 | Critical | JWT/NextAuth 占位符（**已 Resolved**）、`LITELLM_API_KEY`、`SYSTEM_SETTINGS_ENCRYPTION_KEY`（生产写入 **已 Resolved**）、`LITELLM_MASTER_KEY` |
 | Don't Swallow Errors (6.1) | 4 | Medium | ES/向量搜索静默 null/[]、图表 null |
-| Command-Query Separation (3.2) | 1 | Medium | 助手/分析 processor 读改写无占用（DINT-03 **已 Resolved**）；告警投递原子占用（DINT-08 **已 Resolved**） |
-| No Shared Mutable State (5.4) | 1 | Medium | KG 边权重（DINT-04 **已 Resolved**）；告警投递读改写（DINT-08 **已 Resolved**） |
+| Command-Query Separation (3.2) | 0 | Medium | 助手/分析 processor 读改写无占用（DINT-03 **已 Resolved**）；告警投递原子占用（DINT-08 **已 Resolved**） |
+| No Shared Mutable State (5.4) | 0 | Medium | KG 边权重（DINT-04 **已 Resolved**）；告警投递读改写（DINT-08 **已 Resolved**） |
 | Immutability Preference (5.1) | 1 | Medium | `ItemMeta.version` 死字段无乐观锁 |
 | YAGNI (4.2) | 1 | Medium | `supercluster` 死依赖 |
 
@@ -1545,7 +1545,9 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 7. REL-02 容器非 root + cap_drop。
 8. AI-01 护栏覆盖新闻管线。
 9. AI-02 助手按组织额度预算。
-10. ~~DINT-08 告警投递原子占用。~~ **Resolved** `9ef6982b`（同轮关闭 DINT-06/07）
+10. ~~DINT-06 抓取任务 pending→queued CAS。~~ **Resolved** `9ef6982b`
+    ~~DINT-07 摘要邮件发送前占用 nextRunAt。~~ **Resolved** `9ef6982b`
+    ~~DINT-08 告警投递原子占用。~~ **Resolved** `9ef6982b`
 11. ~~SEC-08/09/10 关 GraphQL Playground、Bull Board 默认关、限流 fail-closed。~~ **Resolved** `c95cf8a7` / `beba3df5` / `b693ce92`
 12. REL-03/04/05/06/07 Docker 固定 digest、去 root、随机凭据、127.0.0.1 绑定、LiteLLM key。
 13. ~~TST-01/02 删除假 e2e 与源码文本断言。~~ **Resolved** `a452f264`；残余 TST-03 真实组件/行为测试仍缺。
@@ -1588,4 +1590,4 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 ---
 
-*本报告由 fuck-my-shit-mountain skill 生成；所有发现均附具体 `file:line` 证据。未修改任何被审代码。2026-08-14 更新 remediation 状态（SEC-01~SEC-13、DINT-01~DINT-09、TST-01/02/04 Resolved；DINT-01~05 落地于 `ce2a2cbe`；DINT-01 scheduler 残余与 DINT-06~09 落地于 `9ef6982b`；假测试删除于 `a452f264`）。*
+*本报告由 fuck-my-shit-mountain skill 生成；所有发现均附具体 `file:line` 证据。审计当日未改被审代码。2026-08-14 更新 remediation 状态（SEC-01~SEC-13、DINT-01~DINT-09、TST-01/02/04 Resolved；DINT-01~05 落地于 `ce2a2cbe`；DINT-01 scheduler 残余与 DINT-06~09 落地于 `9ef6982b`；假测试删除于 `a452f264`）。*
