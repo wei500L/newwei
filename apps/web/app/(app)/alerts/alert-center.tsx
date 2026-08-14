@@ -102,6 +102,7 @@ const eventStatusBadge: Record<
 
 const deliveryStatusColor: Record<string, string> = {
   pending: "orange",
+  sending: "blue",
   sent: "green",
   failed: "red",
 };

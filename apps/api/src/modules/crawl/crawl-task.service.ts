@@ -16,6 +16,7 @@ import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { ItemsService } from "../items/items.service";
 
+import { assertNoUnsupportedProxy } from "./crawl-config-policy";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import {
   CrawlQueueService,
@@ -31,7 +32,6 @@ import type {
   CrawlTaskView,
 } from "./crawl.types";
 import { clampResultLimit, coerceDate, normalizeKeywords } from "./crawl.utils";
-import { assertNoUnsupportedProxy } from "./crawl-config-policy";
 import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
 import {
@@ -192,12 +192,17 @@ export class CrawlTaskService {
     );
 
     await this.queueService.enqueueTask(created.id, orgId, userId);
-    await this.prisma.crawlTask.update({
-      where: { id: created.id },
+    await this.prisma.crawlTask.updateMany({
+      where: { id: created.id, status: "pending" },
       data: { status: "queued" },
     });
 
-    return this.toView(created);
+    const refreshed = await this.prisma.crawlTask.findFirst({
+      where: { id: created.id, orgId },
+      include: { _count: { select: { results: true } } },
+    });
+
+    return this.toView(refreshed ?? created);
   }
 
   async deleteTask(orgId: string, userId: string, taskId: string) {

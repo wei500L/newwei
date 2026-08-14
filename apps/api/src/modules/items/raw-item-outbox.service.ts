@@ -2,7 +2,12 @@ import { RawItemModel } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
 import { Inject, Injectable, forwardRef } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { MongoOutboxStatus, MongoOutboxType, Prisma } from "@prisma/client";
+import {
+  MongoOutboxStatus,
+  MongoOutboxType,
+  PipelineJobStatus,
+  Prisma,
+} from "@prisma/client";
 import { Types } from "mongoose";
 import { z } from "zod";
 
@@ -28,6 +33,9 @@ const RawItemOutboxPayloadSchema = z.object({
   rawItemId: z.string().trim().min(1),
   source: z.string().trim().min(1),
   payload: NormalizedNewsPayloadSchema,
+  pipelineJobId: z.string().trim().min(1).optional(),
+  sourceId: z.string().trim().min(1).optional(),
+  priority: z.number().int().optional(),
 });
 
 type RawItemOutboxPayload = z.infer<typeof RawItemOutboxPayloadSchema>;
@@ -63,6 +71,9 @@ export class RawItemOutboxService {
       rawItemId: string;
       source: string;
       payload: NormalizedNewsPayload;
+      pipelineJobId?: string;
+      sourceId?: string;
+      priority?: number;
     },
   ): Promise<string> {
     const entry = await tx.mongoOutbox.create({
@@ -78,6 +89,9 @@ export class RawItemOutboxService {
           rawItemId: input.rawItemId,
           source: input.source,
           payload: input.payload,
+          ...(input.pipelineJobId ? { pipelineJobId: input.pipelineJobId } : {}),
+          ...(input.sourceId ? { sourceId: input.sourceId } : {}),
+          ...(typeof input.priority === "number" ? { priority: input.priority } : {}),
         }),
       },
       select: { id: true },
@@ -175,6 +189,15 @@ export class RawItemOutboxService {
         payload.orgId,
         payload.itemMetaId,
         payload.rawItemId,
+        {
+          ...(payload.pipelineJobId
+            ? { pipelineJobId: payload.pipelineJobId }
+            : {}),
+          ...(payload.sourceId ? { sourceId: payload.sourceId } : {}),
+          ...(typeof payload.priority === "number"
+            ? { priority: payload.priority }
+            : {}),
+        },
       );
       await this.prisma.mongoOutbox.delete({ where: { id: entry.id } });
       return true;
@@ -394,6 +417,33 @@ export class RawItemOutboxService {
           rawItemId: payload.rawItemId,
         },
         "Failed to mark ItemMeta failed after raw-item outbox dead letter",
+      );
+    }
+
+    if (!payload.pipelineJobId) {
+      return;
+    }
+
+    try {
+      await this.prisma.pipelineJob.updateMany({
+        where: {
+          id: payload.pipelineJobId,
+          orgId: payload.orgId,
+        },
+        data: {
+          status: PipelineJobStatus.failed,
+          error: message,
+          completedAt: new Date(),
+        },
+      });
+    } catch (compensateError) {
+      logger.warn(
+        {
+          error: compensateError,
+          outboxId,
+          pipelineJobId: payload.pipelineJobId,
+        },
+        "Failed to mark PipelineJob failed after raw-item outbox dead letter",
       );
     }
   }

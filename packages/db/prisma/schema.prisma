@@ -1784,6 +1784,7 @@ enum AlertEventStatus {
 
 enum AlertDeliveryStatus {
   pending
+  sending
   sent
   failed
 }
@@ -2412,7 +2413,7 @@ model KnowledgeEntityAlias {
   id              String                @id @default(cuid())
   org             Org                   @relation(fields: [orgId], references: [id])
   orgId           String
-  entity          KnowledgeEntity       @relation(fields: [entityId], references: [id])
+  entity          KnowledgeEntity       @relation(fields: [entityId], references: [id], onDelete: Cascade)
   entityId        String
   alias           String
   normalizedAlias String
@@ -2429,9 +2430,9 @@ model KnowledgeEdge {
   org          Org                   @relation(fields: [orgId], references: [id])
   orgId        String
   type         KnowledgeRelationType
-  fromEntity   KnowledgeEntity       @relation("KnowledgeEdgeFrom", fields: [fromEntityId], references: [id])
+  fromEntity   KnowledgeEntity       @relation("KnowledgeEdgeFrom", fields: [fromEntityId], references: [id], onDelete: Cascade)
   fromEntityId String
-  toEntity     KnowledgeEntity       @relation("KnowledgeEdgeTo", fields: [toEntityId], references: [id])
+  toEntity     KnowledgeEntity       @relation("KnowledgeEdgeTo", fields: [toEntityId], references: [id], onDelete: Cascade)
   toEntityId   String
   weight       Float                 @default(1)
   confidence   Float                 @default(0.5)
@@ -2453,9 +2454,9 @@ model KnowledgeEdgeEvidence {
   id               String        @id @default(cuid())
   org              Org           @relation(fields: [orgId], references: [id])
   orgId            String
-  edge             KnowledgeEdge @relation(fields: [edgeId], references: [id])
+  edge             KnowledgeEdge @relation(fields: [edgeId], references: [id], onDelete: Cascade)
   edgeId           String
-  article          Article       @relation(fields: [articleId], references: [id])
+  article          Article       @relation(fields: [articleId], references: [id], onDelete: Cascade)
   articleId        String
   extractorVersion String?
   confidence       Float?

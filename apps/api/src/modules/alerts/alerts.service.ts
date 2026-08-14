@@ -328,7 +328,12 @@ export class AlertsService {
 
     await this.prisma.$transaction(async (tx) => {
       await tx.alertDelivery.updateMany({
-        where: { channelId, status: AlertDeliveryStatus.pending },
+        where: {
+          channelId,
+          status: {
+            in: [AlertDeliveryStatus.pending, AlertDeliveryStatus.sending],
+          },
+        },
         data: {
           status: AlertDeliveryStatus.failed,
           error: "channel deleted",
@@ -1983,17 +1988,21 @@ export class AlertsService {
       config?: unknown;
     } | null;
     if (!channel?.type || !channel?.target) {
-      await this.prisma.alertDelivery.update({
-        where: { id: delivery.id },
-        data: {
+      await this.transitionDeliveryStatus(
+        delivery.id,
+        [AlertDeliveryStatus.pending, AlertDeliveryStatus.sending],
+        {
           status: AlertDeliveryStatus.failed,
           error: "Invalid channel snapshot",
         },
-      });
+      );
       await this.reconcileEventStatus(delivery.eventId);
       return;
     }
-    if (delivery.status !== AlertDeliveryStatus.pending) {
+    if (
+      delivery.status !== AlertDeliveryStatus.pending &&
+      delivery.status !== AlertDeliveryStatus.sending
+    ) {
       await this.reconcileEventStatus(delivery.eventId);
       return;
     }
@@ -2005,14 +2014,15 @@ export class AlertsService {
     const muteUntilMs =
       Math.max(ruleMuteUntilMs ?? 0, channelMuteUntilMs ?? 0) || null;
     if (this.notificationThrottle.isMutedNow(muteUntilMs)) {
-      await this.prisma.alertDelivery.update({
-        where: { id: delivery.id },
-        data: {
+      await this.transitionDeliveryStatus(
+        delivery.id,
+        [AlertDeliveryStatus.pending, AlertDeliveryStatus.sending],
+        {
           status: AlertDeliveryStatus.sent,
           sentAt: new Date(),
           error: `suppressed: muted until ${new Date(muteUntilMs!).toISOString()}`,
         },
-      });
+      );
       await this.reconcileEventStatus(delivery.eventId);
       return;
     }
@@ -2024,45 +2034,56 @@ export class AlertsService {
       channel.type !== AlertChannelType.email &&
       channel.type !== AlertChannelType.webhook
     ) {
-      await this.prisma.alertDelivery.update({
-        where: { id: delivery.id },
-        data: {
+      await this.transitionDeliveryStatus(
+        delivery.id,
+        [AlertDeliveryStatus.pending, AlertDeliveryStatus.sending],
+        {
           status: AlertDeliveryStatus.failed,
           error: `Unsupported channel type ${channel.type}`,
         },
-      });
+      );
       await this.reconcileEventStatus(delivery.eventId);
       return;
     }
 
     try {
-      const hadScheduledAtMs = !!job.data.scheduledAtMs;
-      if (job.data.scheduledAtMs && Date.now() < job.data.scheduledAtMs) {
-        await job.moveToDelayed(job.data.scheduledAtMs, token);
-        throw new DelayedError();
-      }
-
-      if (!job.data.scheduledAtMs) {
-        const channelType = channel.type;
-        const scheduledAtMs =
-          await this.notificationThrottle.reserveNotificationScheduleMs({
-            channelType,
-            channelId: delivery.channelId ?? channel.id ?? null,
-            minIntervalSeconds,
-          });
-        if (scheduledAtMs > Date.now()) {
-          await job.updateData({ ...job.data, scheduledAtMs });
-          await job.moveToDelayed(scheduledAtMs, token);
+      if (delivery.status === AlertDeliveryStatus.pending) {
+        const hadScheduledAtMs = !!job.data.scheduledAtMs;
+        if (job.data.scheduledAtMs && Date.now() < job.data.scheduledAtMs) {
+          await job.moveToDelayed(job.data.scheduledAtMs, token);
           throw new DelayedError();
         }
+
+        if (!job.data.scheduledAtMs) {
+          const channelType = channel.type;
+          const scheduledAtMs =
+            await this.notificationThrottle.reserveNotificationScheduleMs({
+              channelType,
+              channelId: delivery.channelId ?? channel.id ?? null,
+              minIntervalSeconds,
+            });
+          if (scheduledAtMs > Date.now()) {
+            await job.updateData({ ...job.data, scheduledAtMs });
+            await job.moveToDelayed(scheduledAtMs, token);
+            throw new DelayedError();
+          }
+        }
+
+        if (hadScheduledAtMs) {
+          const updated = { ...job.data };
+          if ("scheduledAtMs" in updated) {
+            delete updated.scheduledAtMs;
+          }
+          await job.updateData(updated);
+        }
       }
 
-      if (hadScheduledAtMs) {
-        const updated = { ...job.data };
-        if ("scheduledAtMs" in updated) {
-          delete updated.scheduledAtMs;
-        }
-        await job.updateData(updated);
+      const occupied = await this.occupyDeliveryForSend(
+        delivery.id,
+        delivery.status,
+      );
+      if (!occupied) {
+        return;
       }
 
       if (channel.type === "email") {
@@ -2080,25 +2101,27 @@ export class AlertsService {
       } else {
         throw new Error(`Unsupported channel type ${channel.type}`);
       }
-      await this.prisma.alertDelivery.update({
-        where: { id: delivery.id },
-        data: { status: AlertDeliveryStatus.sent, sentAt: new Date() },
-      });
+      await this.transitionDeliveryStatus(
+        delivery.id,
+        [AlertDeliveryStatus.sending],
+        { status: AlertDeliveryStatus.sent, sentAt: new Date() },
+      );
     } catch (error) {
       if (error instanceof DelayedError) {
         throw error;
       }
       const message = (error as Error)?.message ?? "unknown error";
       const isLastAttempt = job.attemptsMade >= (job.opts.attempts ?? 1);
-      await this.prisma.alertDelivery.update({
-        where: { id: delivery.id },
-        data: {
+      await this.transitionDeliveryStatus(
+        delivery.id,
+        [AlertDeliveryStatus.sending],
+        {
           status: isLastAttempt
             ? AlertDeliveryStatus.failed
             : AlertDeliveryStatus.pending,
           error: message,
         },
-      });
+      );
       logger.error(
         {
           delivery: delivery.id,
@@ -2112,6 +2135,36 @@ export class AlertsService {
     } finally {
       await this.reconcileEventStatus(delivery.eventId);
     }
+  }
+
+  private async occupyDeliveryForSend(
+    deliveryId: string,
+    currentStatus: AlertDeliveryStatus,
+  ): Promise<boolean> {
+    if (currentStatus === AlertDeliveryStatus.sending) {
+      return true;
+    }
+    return this.transitionDeliveryStatus(
+      deliveryId,
+      [AlertDeliveryStatus.pending],
+      { status: AlertDeliveryStatus.sending },
+    );
+  }
+
+  private async transitionDeliveryStatus(
+    deliveryId: string,
+    from: AlertDeliveryStatus[],
+    data: {
+      status: AlertDeliveryStatus;
+      sentAt?: Date;
+      error?: string | null;
+    },
+  ): Promise<boolean> {
+    const updated = await this.prisma.alertDelivery.updateMany({
+      where: { id: deliveryId, status: { in: from } },
+      data,
+    });
+    return updated.count === 1;
   }
 
   private extractMuteUntilMs(input: unknown): number | null {
@@ -2217,10 +2270,12 @@ export class AlertsService {
     if (!deliveries.length) {
       return;
     }
-    const hasPending = deliveries.some(
-      (delivery) => delivery.status === AlertDeliveryStatus.pending,
+    const hasInFlight = deliveries.some(
+      (delivery) =>
+        delivery.status === AlertDeliveryStatus.pending ||
+        delivery.status === AlertDeliveryStatus.sending,
     );
-    if (hasPending) {
+    if (hasInFlight) {
       return;
     }
     const anySent = deliveries.some(

@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 
 import { DatabaseModule } from "../config/database.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
@@ -19,7 +19,7 @@ import { SearchReindexService } from "./search-reindex.service";
 @Module({
   imports: [
     DatabaseModule,
-    QueueModule,
+    forwardRef(() => QueueModule),
     NewsPipelineModule,
     SituationMonitorModule,
     SystemSettingsModule,
@@ -36,6 +36,7 @@ import { SearchReindexService } from "./search-reindex.service";
   controllers: [ItemsController, SearchAdminController],
   exports: [
     ItemsService,
+    RawItemOutboxService,
     ItemsRssTranslationService,
     ItemsElasticsearchService,
   ],

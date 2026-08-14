@@ -50,6 +50,7 @@ type AlertDeliveryModel {
 enum AlertDeliveryStatus {
   failed
   pending
+  sending
   sent
 }
 

@@ -10,6 +10,7 @@ import { AuthModule } from "../auth/auth.module";
 import { CacheModule } from "../cache/cache.module";
 import { BullmqConnectionService } from "../config/bullmq-connection.service";
 import { CrawlModule } from "../crawl/crawl.module";
+import { ItemsModule } from "../items/items.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { SystemSettingsModule } from "../system-settings/system-settings.module";
@@ -36,6 +37,7 @@ import { QueueService } from "./queue.service";
   imports: [
     CacheModule,
     CrawlModule,
+    forwardRef(() => ItemsModule),
     NewsPipelineModule,
     NotificationsModule,
     AuthModule,

@@ -61,6 +61,7 @@ export type AlertDeliveryModel = {
 export enum AlertDeliveryStatus {
   Failed = 'failed',
   Pending = 'pending',
+  Sending = 'sending',
   Sent = 'sent'
 }
 

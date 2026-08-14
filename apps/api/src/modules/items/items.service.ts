@@ -1086,9 +1086,29 @@ export class ItemsService {
     };
   }
 
-  async applyRawItemPersisted(orgId: string, itemMetaId: string, rawItemId: string): Promise<void> {
+  async applyRawItemPersisted(
+    orgId: string,
+    itemMetaId: string,
+    rawItemId: string,
+    enqueue?: {
+      pipelineJobId?: string;
+      sourceId?: string;
+      priority?: number;
+    },
+  ): Promise<void> {
     try {
-      await this.queueService.enqueueItem(orgId, itemMetaId, rawItemId);
+      await this.queueService.enqueueItem(
+        orgId,
+        itemMetaId,
+        rawItemId,
+        typeof enqueue?.priority === "number" ? { priority: enqueue.priority } : {},
+        {
+          ...(enqueue?.pipelineJobId
+            ? { pipelineJobId: enqueue.pipelineJobId }
+            : {}),
+          ...(enqueue?.sourceId ? { sourceId: enqueue.sourceId } : {}),
+        },
+      );
     } catch (error) {
       if (!(error instanceof Error && error.message.includes("already exists"))) {
         throw error;

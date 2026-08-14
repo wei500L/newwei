@@ -246,16 +246,16 @@ export class UserDigestDeliveryService {
     const nextRunAt = this.computeNextRunAt(config, now);
 
     if (!schedule.user.emailVerified) {
-      await this.prisma.userDigestDeliverySchedule.update({
-        where: { id: schedule.id },
-        data: {
-          enabled: false,
-          nextRunAt: null,
-          lastStatus: UserDigestDeliveryStatus.failed,
-          lastStatusAt: now,
-          lastError: "Email is no longer verified for this user",
-        },
+      const claimed = await this.claimDueScheduleSlot(schedule, {
+        enabled: false,
+        nextRunAt: null,
+        lastStatus: UserDigestDeliveryStatus.failed,
+        lastStatusAt: now,
+        lastError: "Email is no longer verified for this user",
       });
+      if (!claimed) {
+        return UserDigestDeliveryStatus.idle;
+      }
       await this.safeNotifyFailure(schedule.orgId, schedule.userId, {
         link: "/today",
         targetEmail: schedule.user.email,
@@ -270,20 +270,28 @@ export class UserDigestDeliveryService {
     );
 
     if (digest.events.length === 0) {
-      await this.prisma.userDigestDeliverySchedule.update({
-        where: { id: schedule.id },
-        data: {
-          nextRunAt,
-          lastStatus: UserDigestDeliveryStatus.empty_notified,
-          lastStatusAt: now,
-          lastError: null,
-        },
+      const claimed = await this.claimDueScheduleSlot(schedule, {
+        nextRunAt,
+        lastStatus: UserDigestDeliveryStatus.empty_notified,
+        lastStatusAt: now,
+        lastError: null,
       });
+      if (!claimed) {
+        return UserDigestDeliveryStatus.idle;
+      }
       await this.safeNotifyEmpty(schedule.orgId, schedule.userId, {
         link: "/today",
         nextRunAt: nextRunAt.toISOString(),
       });
       return UserDigestDeliveryStatus.empty_notified;
+    }
+
+    const claimed = await this.claimDueScheduleSlot(schedule, {
+      nextRunAt,
+      lastStatusAt: now,
+    });
+    if (!claimed) {
+      return UserDigestDeliveryStatus.idle;
     }
 
     try {
@@ -301,7 +309,6 @@ export class UserDigestDeliveryService {
       await this.prisma.userDigestDeliverySchedule.update({
         where: { id: schedule.id },
         data: {
-          nextRunAt,
           lastSentAt: now,
           lastStatus: UserDigestDeliveryStatus.sent,
           lastStatusAt: now,
@@ -323,8 +330,31 @@ export class UserDigestDeliveryService {
         now,
         error,
         "Failed to deliver user digest email",
+        { slotAlreadyClaimed: true },
       );
     }
+  }
+
+  private async claimDueScheduleSlot(
+    schedule: DueScheduleRecord,
+    data: {
+      enabled?: boolean;
+      nextRunAt?: Date | null;
+      lastSentAt?: Date | null;
+      lastStatus?: UserDigestDeliveryStatus;
+      lastStatusAt?: Date;
+      lastError?: string | null;
+    },
+  ): Promise<boolean> {
+    const claimed = await this.prisma.userDigestDeliverySchedule.updateMany({
+      where: {
+        id: schedule.id,
+        enabled: true,
+        nextRunAt: schedule.nextRunAt,
+      },
+      data,
+    });
+    return claimed.count === 1;
   }
 
   private async failDueSchedule(
@@ -332,6 +362,7 @@ export class UserDigestDeliveryService {
     now: Date,
     error: unknown,
     logMessage: string,
+    options?: { slotAlreadyClaimed?: boolean },
   ): Promise<UserDigestDeliveryStatus> {
     const errorMessage = this.toErrorMessage(error);
     const nextRunAt = this.computeNextRunAt(
@@ -353,15 +384,26 @@ export class UserDigestDeliveryService {
       logMessage,
     );
 
-    await this.prisma.userDigestDeliverySchedule.update({
-      where: { id: schedule.id },
-      data: {
-        nextRunAt,
-        lastStatus: UserDigestDeliveryStatus.failed,
-        lastStatusAt: now,
-        lastError: errorMessage,
-      },
-    });
+    if (options?.slotAlreadyClaimed) {
+      await this.prisma.userDigestDeliverySchedule.update({
+        where: { id: schedule.id },
+        data: {
+          lastStatus: UserDigestDeliveryStatus.failed,
+          lastStatusAt: now,
+          lastError: errorMessage,
+        },
+      });
+    } else {
+      await this.prisma.userDigestDeliverySchedule.update({
+        where: { id: schedule.id },
+        data: {
+          nextRunAt,
+          lastStatus: UserDigestDeliveryStatus.failed,
+          lastStatusAt: now,
+          lastError: errorMessage,
+        },
+      });
+    }
     await this.safeNotifyFailure(schedule.orgId, schedule.userId, {
       link: "/today",
       targetEmail: schedule.user.email,

@@ -1,18 +1,20 @@
-import { RawItemModel } from "@modular/mongo";
 import {
   createLogger,
   DEFAULT_URL_QUERY_PARAM_ALLOWLIST,
   NotificationPresentationKind,
 } from "@modular/utils";
 import {
+  Inject,
   Injectable,
   NotFoundException,
   Optional,
+  forwardRef,
   type OnModuleInit,
 } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { CrawlTaskStatus, NotificationType, PipelineJobStatus, Prisma } from "@prisma/client";
 import { parseExpression } from "cron-parser";
+import { Types } from "mongoose";
 import { createHash } from "node:crypto";
 
 import { ItemStatus } from "../../common/pipeline-status";
@@ -49,6 +51,8 @@ import {
   buildCanonicalUrlFingerprint,
   resolveQueryParamAllowlist,
 } from "../crawl/url-fingerprint";
+import { RawItemOutboxService } from "../items/raw-item-outbox.service";
+import { NormalizedNewsPayloadSchema } from "../news-pipeline/news-pipeline.schema";
 import { NotificationsService } from "../notifications/notifications.service";
 import { NewsSourceSchedulerSettingsService } from "../system-settings/news-source-scheduler-settings.service";
 
@@ -231,6 +235,8 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     private readonly crawlTaskService: CrawlTaskService,
     private readonly notifications: NotificationsService,
     private readonly schedulerSettings: NewsSourceSchedulerSettingsService,
+    @Inject(forwardRef(() => RawItemOutboxService))
+    private readonly rawItemOutbox: RawItemOutboxService,
     @Optional()
     private readonly newsSourceOpsSnapshots?: NewsSourceOpsSnapshotService,
   ) {}
@@ -800,7 +806,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                 continue;
               }
               await this.prisma.crawlTask.updateMany({
-                where: { id: crawlTaskId },
+                where: { id: crawlTaskId, status: "pending" },
                 data: { status: "queued" },
               });
               await this.newsSourceOpsSnapshots?.syncQueueCounts(
@@ -2270,6 +2276,24 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         ? `${options.payload.sourceName.trim()}: ${options.job.url}`
         : options.job.url;
 
+    const parsedPayload = NormalizedNewsPayloadSchema.safeParse(itemPayload);
+    if (!parsedPayload.success) {
+      logger.error(
+        {
+          orgId: options.source.orgId,
+          sourceId: options.source.id,
+          url: options.job.url,
+          issues: parsedPayload.error.issues.slice(0, 5),
+        },
+        "RSS prefetched payload failed NormalizedNewsPayloadSchema; skipping outbox write",
+      );
+      return {
+        skippedNoBody: false,
+        enqueueFailed: true,
+      } as const;
+    }
+
+    const rawItemId = new Types.ObjectId().toHexString();
     const created = await this.prisma.$transaction(async (tx) => {
       const pipelineJob = await tx.pipelineJob.create({
         data: {
@@ -2304,20 +2328,20 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           externalId: `newsSourceRss:${pipelineJob.id}`,
           name: this.toItemMetaName(itemNameBase),
           status: ItemStatus.Pending,
-          mongoRef: "",
+          mongoRef: rawItemId,
         },
         select: { id: true },
       });
 
-      const rawItem = await RawItemModel.create({
+      const outboxId = await this.rawItemOutbox.enqueueWrite(tx, {
+        orgId: options.source.orgId,
         itemMetaId: itemMeta.id,
-        payload: itemPayload,
+        rawItemId,
         source: "news-source-rss",
-      });
-
-      await tx.itemMeta.update({
-        where: { id: itemMeta.id },
-        data: { mongoRef: rawItem.id },
+        payload: parsedPayload.data,
+        pipelineJobId: pipelineJob.id,
+        sourceId: options.source.id,
+        priority: options.bullPriority,
       });
 
       await tx.pipelineJob.update({
@@ -2329,7 +2353,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
               | null
               | undefined),
             itemMetaId: itemMeta.id,
-            rawItemId: rawItem.id,
+            rawItemId,
           },
         },
       });
@@ -2337,62 +2361,29 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       return {
         pipelineJobId: pipelineJob.id,
         itemMetaId: itemMeta.id,
-        rawItemId: rawItem.id,
+        rawItemId,
+        outboxId,
       };
     });
 
-    try {
-      await this.queueService.enqueueItem(
-        options.source.orgId,
-        created.itemMetaId,
-        created.rawItemId,
-        { priority: options.bullPriority },
+    const delivered = await this.rawItemOutbox.deliverNow(created.outboxId);
+    if (!delivered) {
+      logger.warn(
         {
-          pipelineJobId: created.pipelineJobId,
-          sourceId: options.source.id,
-        },
-      );
-      return {
-        skippedNoBody: false,
-        enqueueFailed: false,
-        pipelineJobId: created.pipelineJobId,
-      } as const;
-    } catch (queueError) {
-      await Promise.allSettled([
-        this.prisma.pipelineJob.updateMany({
-          where: { id: created.pipelineJobId },
-          data: {
-            status: PipelineJobStatus.failed,
-            error:
-              queueError instanceof Error
-                ? queueError.message
-                : String(queueError),
-            completedAt: new Date(),
-          },
-        }),
-        this.prisma.itemMeta.updateMany({
-          where: {
-            id: created.itemMetaId,
-            status: { not: ItemStatus.Duplicate },
-          },
-          data: { status: ItemStatus.Failed },
-        }),
-      ]);
-      logger.error(
-        {
-          error: queueError,
           orgId: options.source.orgId,
           sourceId: options.source.id,
           pipelineJobId: created.pipelineJobId,
+          outboxId: created.outboxId,
         },
-        "Failed to enqueue RSS prefetched pipeline job",
+        "RSS prefetched raw-item outbox delivery deferred to retry",
       );
-      return {
-        skippedNoBody: false,
-        enqueueFailed: true,
-        pipelineJobId: created.pipelineJobId,
-      } as const;
     }
+
+    return {
+      skippedNoBody: false,
+      enqueueFailed: !delivered,
+      pipelineJobId: created.pipelineJobId,
+    } as const;
   }
 
   private normalizeSeedConfig(
@@ -4735,7 +4726,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
               continue;
             }
             await this.prisma.crawlTask.updateMany({
-              where: { id: crawlTaskId },
+              where: { id: crawlTaskId, status: "pending" },
               data: { status: "queued" },
             });
             await this.newsSourceOpsSnapshots?.syncQueueCounts(
@@ -4807,6 +4798,16 @@ export class NewsSourceSchedulerService implements OnModuleInit {
               rssSkippedNoBodyCount,
             },
             "Skipped RSS candidates without prefetched body markdown",
+          );
+        }
+        if (skippedInFlightCount > 0) {
+          logger.info(
+            {
+              sourceId: source.id,
+              orgId: source.orgId,
+              skippedInFlightCount,
+            },
+            "Skipped news source crawl enqueue because a job is already in flight",
           );
         }
 

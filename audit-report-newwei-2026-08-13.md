@@ -5,7 +5,7 @@
 **Date:** 2026-08-13
 **Reviewer:** opencode (deepseek-v4-pro) — fuck-my-shit-mountain skill
 **Commit:** `beb32ead`（branch `main`）
-**Remediation review:** 2026-08-14 — 对照 `beb32ead..HEAD` 复核。**已解决：SEC-01 ~ SEC-13、DINT-01 ~ DINT-05、TST-01/02/04**（DINT 落地于 `ce2a2cbe`；假测试套件删除于 `a452f264`）。残余：`news-source.scheduler.service.ts` 仍有同类事务内 `RawItemModel.create`（未列入 DINT-01 原范围）。
+**Remediation review:** 2026-08-14 — 对照 `beb32ead..HEAD` 复核。**已解决：SEC-01 ~ SEC-13、DINT-01 ~ DINT-09、TST-01/02/04**（DINT-01~05 落地于 `ce2a2cbe`；DINT-01 残余 scheduler + DINT-06~09 于 2026-08-14 第二轮落地；假测试套件删除于 `a452f264`）。
 
 ---
 
@@ -15,7 +15,7 @@
 
 但平台存在两类真实而集中的风险。**第一类是"默认即不安全"的配置面**（审计当日）：`JWT_SECRET`/`NEXTAUTH_SECRET` 在提交的 `.env.example`、`infra/docker/.env.sample` 乃至当前本地 `.env` 中都是 `change_me_please_replace_32_chars`，而校验只检查 `min(16)`，于是这个公开已知的签名密钥能直接通过启动校验——一旦照抄部署即可伪造任意用户 token。同类的还有：系统设置密钥默认不加密（OIDC/TOTP/LLM 密钥明文入库）、Docker "生产"栈显式开启 GraphQL Playground/内省、Bull Board 默认开启且无鉴权、CORS 默认反射任意 Origin、限流默认 fail-open。**2026-08-14 复核：SEC-01 ~ SEC-13 均已落地（见各 Finding 的 Resolved 记录），此类配置面风险已关闭。** **第二类是"虚假的测试信心"**（审计当日）：仓库有 456 个测试文件，但没有 CI、e2e 全部 mock、约 70 个前端测试只是对源码做字符串包含断言、无任何组件渲染测试、覆盖率从未收集。**2026-08-14 复核：假 e2e / 源码断言 / 私有 spyOn 套件已删除（TST-01/02/04，`a452f264`）；真实组件测试、覆盖率与 CI 仍缺（TST-03/05/06、REL-01）。**
 
-**2026-08-14 已关闭 DINT-01 ~ DINT-05**（`ce2a2cbe`）：items `create()`/`update()` 改为 MongoOutbox `raw_item` 外发；告警冷却占用与事件/投递同事务；助手/分析 processor 用 `findOneAndUpdate` CAS 占用；知识图谱边 `SELECT ... FOR UPDATE` 后增量；frontier `(runId, urlFingerprint)` 改为唯一约束 + upsert。AI/LLM 侧最突出的仍是护栏只覆盖助手、而处理不可信抓取文本的新闻清洗管线完全无输入审核，且助手无按组织的 token/额度预算。
+**2026-08-14 已关闭 DINT-01 ~ DINT-09**（`ce2a2cbe` + 第二轮）：items `create()`/`update()` 与 RSS scheduler 改为 MongoOutbox `raw_item` 外发；告警冷却占用与事件/投递同事务；助手/分析 processor 用 `findOneAndUpdate` CAS 占用；知识图谱边 `SELECT ... FOR UPDATE` 后增量；frontier `(runId, urlFingerprint)` 改为唯一约束 + upsert；抓取任务 `pending→queued` CAS；摘要邮件发送前占用 `nextRunAt`；告警投递 `pending→sending` 原子占用；KG 外键 `onDelete: Cascade`。AI/LLM 侧最突出的仍是护栏只覆盖助手、而处理不可信抓取文本的新闻清洗管线完全无输入审核，且助手无按组织的 token/额度预算。
 
 **亮点**：outbox 事务外发、DataLoader、异常脱敏、SSRF 防护、refresh token 轮换、MFA、组织隔离是本项目值得保留并继续沿用的工程资产。
 
@@ -33,7 +33,7 @@ Release         ████░░░░░░  4.0  C   无 CI、root 容器、
 Overall         █████░░░░░  5.3  B
 ```
 
-每个维度 0.0–10.0，**越高越好（10=干净，0=屎山）**。评分为基于证据的综合判断，非机械扣分；各维度一句话判据见上表，受限覆盖在对应章节说明。**上表为审计当日（`beb32ead`）基线评分，不因后续修复回溯改写。** 2026-08-14 复核后 Security 面风险已显著下降（SEC-01~SEC-13 Resolved）；Stability 面 DINT-01~05 已落地（`ce2a2cbe`）；假测试套件已删除（TST-01/02/04，`a452f264`）。
+每个维度 0.0–10.0，**越高越好（10=干净，0=屎山）**。评分为基于证据的综合判断，非机械扣分；各维度一句话判据见上表，受限覆盖在对应章节说明。**上表为审计当日（`beb32ead`）基线评分，不因后续修复回溯改写。** 2026-08-14 复核后 Security 面风险已显著下降（SEC-01~SEC-13 Resolved）；Stability 面 DINT-01~09 已落地；假测试套件已删除（TST-01/02/04，`a452f264`）。
 
 ### Finding Statistics
 
@@ -54,12 +54,12 @@ Overall         █████░░░░░  5.3  B
 |----------|-------|----------------|----------------|----------|
 | Critical | 1 | 0 | 0 | 1（SEC-01） |
 | High | 13 | 7 | 0 | 6（SEC-02/03/04、DINT-01、TST-01/02） |
-| Medium | 34 | 22 | 1 | 11（SEC-05~10、DINT-02/03/04/05、TST-04） |
+| Medium | 34 | 18 | 1 | 15（SEC-05~10、DINT-02/03/04/05/06/07/08/09、TST-04） |
 | Low | 8 | 5 | 0 | 3（SEC-11/12/13） |
 | Info | 0 | 0 | 0 | 0 |
-| **Total** | **56** | **34** | **1** | **21** |
+| **Total** | **56** | **30** | **1** | **25** |
 
-**已解决：** SEC-01 ~ SEC-13、DINT-01 ~ DINT-05、TST-01/02/04。**残余：** `news-source.scheduler.service.ts` 仍有事务内 `RawItemModel.create`（DINT-01 原范围外）；无真实 e2e/组件测试/CI（TST-03、REL-01）。
+**已解决：** SEC-01 ~ SEC-13、DINT-01 ~ DINT-09、TST-01/02/04。**残余：** 无真实 e2e/组件测试/CI（TST-03、REL-01）。
 
 ## 2. Project Map
 
@@ -117,7 +117,6 @@ Overall         █████░░░░░  5.3  B
 4. **无前端组件渲染测试**（TST-03, High）— 假测试已删，行为测试未重建。
 5. **容器以 root 运行**（REL-02, High）— 抓取浏览器进程以 root 跑，被攻破即容器 root。
 6. **多个 4000–8200 行 god 文件**（MAINT-01, High）— 不可审查、回归面大。
-7. **告警投递发送非原子占用**（DINT-08, Medium）— 重复通知。
 
 已解决（审计后落地，详见第 4 节 Resolved 记录）：
 
@@ -126,11 +125,15 @@ Overall         █████░░░░░  5.3  B
 - ~~系统设置密钥默认明文入库~~（SEC-04, High）— `c57ffab9`
 - ~~内部端点明文返回全部 OpenAI 密钥~~（SEC-03, High）— `720417f9`（timingSafeEqual + 读取审计；仍返回全库密钥，残余面见该 Finding）
 - ~~Docker 生产栈 GraphQL Playground/内省 + Bull Board 无鉴权 + 限流 fail-open~~（SEC-08/09/10, Medium）
-- ~~MySQL 事务内写 MongoDB~~（DINT-01, High）— `ce2a2cbe`（items `create()`/`update()` 改 `raw_item` outbox）
+- ~~MySQL 事务内写 MongoDB~~（DINT-01, High）— `ce2a2cbe`（items `create()`/`update()` 改 `raw_item` outbox；scheduler 残余于 2026-08-14 第二轮关闭）
 - ~~告警冷却占用与事件/投递非原子~~（DINT-02, Medium）— `ce2a2cbe`
 - ~~助手/分析处理器状态回退~~（DINT-03, Medium）— `ce2a2cbe`
 - ~~知识图谱边 weight 丢失更新~~（DINT-04, Medium）— `ce2a2cbe`
 - ~~CrawlFrontierNode 去重仅为非唯一索引~~（DINT-05, Medium）— `ce2a2cbe`
+- ~~抓取任务创建入队/状态竞争~~（DINT-06, Medium）— 2026-08-14
+- ~~摘要邮件发送与 nextRunAt 非原子~~（DINT-07, Medium）— 2026-08-14
+- ~~告警投递发送非原子占用~~（DINT-08, Medium）— 2026-08-14
+- ~~知识图谱关系缺 onDelete~~（DINT-09, Medium）— 2026-08-14
 - ~~e2e 全量 mock~~（TST-01, High）— `a452f264`（假 e2e 已删除；真实 e2e 仍缺）
 - ~~前端源码文本断言测试~~（TST-02, High）— `a452f264`（最小修复「删除」已落地）
 - ~~私有方法 spyOn 实现细节断言~~（TST-04, Medium）— `a452f264`
@@ -392,7 +395,7 @@ Overall         █████░░░░░  5.3  B
 - Category: Stability
 - Status: Resolved
 - Resolved in: `ce2a2cbe`（2026-08-14）
-- Resolution evidence: `MongoOutboxType.raw_item` + [`raw-item-outbox.service.ts`](apps/api/src/modules/items/raw-item-outbox.service.ts)；`items.service` `create()`/`update()` 事务内只写 MySQL + outbox，提交后 `deliverNow` 幂等 upsert Mongo。残余：`news-source.scheduler.service.ts` 仍直写 Mongo。
+- Resolution evidence: `MongoOutboxType.raw_item` + [`raw-item-outbox.service.ts`](apps/api/src/modules/items/raw-item-outbox.service.ts)；`items.service` `create()`/`update()` 事务内只写 MySQL + outbox，提交后 `deliverNow` 幂等 upsert Mongo。scheduler `enqueueRssSeedPipelineJob` 同样预分配 `rawItemId` + outbox（payload 含 `pipelineJobId`/`sourceId`/`priority`），不再在事务内 `RawItemModel.create`。
 - Affected area: `apps/api/src/modules/items/items.service.ts:1124-1147,3858-3886`
 - Evidence: `create()` 路径在 Prisma `$transaction` 内执行 `tx.itemMeta.create → RawItemModel.create（Mongo）→ tx.itemMeta.update`。
 - Relevant behavior: Mongo 写不被 MySQL 事务覆盖；事务在 `itemMeta.update` 失败回滚后，Mongo 的 `RawItem` 文档成为孤儿（兄弟分支 `:1096-1104` 有补偿删除，此路径无）。
@@ -481,7 +484,9 @@ Overall         █████░░░░░  5.3  B
 - Severity: Medium
 - Confidence: High
 - Category: Stability
-- Status: Confirmed
+- Status: Resolved
+- Resolved in: 2026-08-14
+- Resolution evidence: `createTask` 与 news-source scheduler 入队后 `updateMany({ where: { id, status: "pending" }, data: { status: "queued" } })`；`createTask` 回读任务再返回。
 - Affected area: `apps/api/src/modules/crawl/crawl-task.service.ts:156-198`
 - Evidence: `crawlTask.create → writeAuditLogBestEffort → enqueueTask → update(status:"queued")` 无事务；入队在状态更新前，快 worker 可能已置 `running`，随后 195 行无条件写回 `queued`。
 - Problem: 入队与状态更新存在竞争。
@@ -497,7 +502,9 @@ Overall         █████░░░░░  5.3  B
 - Severity: Medium
 - Confidence: High
 - Category: Stability
-- Status: Confirmed
+- Status: Resolved
+- Resolved in: 2026-08-14
+- Resolution evidence: `processDueSchedule` 发送前 `updateMany` CAS 占用 `nextRunAt`；发送失败不再二次推进；空摘要/未验证邮箱路径同样 CAS。
 - Affected area: `apps/api/src/modules/user-digest/user-digest-delivery.service.ts:289-310`
 - Evidence: 先发邮件(294-299)后更新 `nextRunAt/lastSentAt`(301-310)，无条件 `updateMany` 占用。
 - Problem: 崩溃/重叠导致同窗口摘要重复发送。
@@ -513,7 +520,9 @@ Overall         █████░░░░░  5.3  B
 - Severity: Medium
 - Confidence: High
 - Category: Stability
-- Status: Confirmed
+- Status: Resolved
+- Resolved in: 2026-08-14
+- Resolution evidence: `AlertDeliveryStatus.sending` + `handleDeliveryJob` 在 delay 之后、发送之前 CAS `pending→sending`；重试可回收 `sending`；`reconcileEventStatus` 将 `sending` 视为进行中。
 - Affected area: `apps/api/src/modules/alerts/alerts.service.ts:1996-2086`
 - Evidence: `handleDeliveryJob` 普通读判 `pending` 后发送，再标 `sent`，无租约/锁列。
 - Problem: 并发/重投导致重复通知。
@@ -529,7 +538,9 @@ Overall         █████░░░░░  5.3  B
 - Severity: Medium
 - Confidence: High
 - Category: Stability
-- Status: Confirmed
+- Status: Resolved
+- Resolved in: 2026-08-14
+- Resolution evidence: `KnowledgeEntityAlias.entity`、`KnowledgeEdge.fromEntity/toEntity`、`KnowledgeEdgeEvidence.edge/article` 均为 `onDelete: Cascade`；迁移 `20260814141000_knowledge_graph_on_delete_cascade`。
 - Affected area: `packages/db/prisma/schema.prisma:2414,2431,2433,2455,2457`
 - Evidence: `KnowledgeEntityAlias.entity`、`KnowledgeEdge.fromEntity/toEntity`、`KnowledgeEdgeEvidence.edge/article` 无 `onDelete`。
 - Problem: 删除实体/边无级联，可能孤儿。
@@ -1127,7 +1138,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 未做故障注入/压测。
 
-见 DINT-01 ~ DINT-09、STAB-01 ~ STAB-04。**DINT-01 ~ DINT-05 已 Resolved**（`ce2a2cbe`，2026-08-14）。**正确措施**：全库 0 个真正空 catch；几乎所有上游客户端带显式超时（Crawl4AI/LiteLLM/vector/akshare/model-service/GDELT/OpenSky）；生产异常过滤器彻底脱敏；outbox 租约占用正确。
+见 DINT-01 ~ DINT-09、STAB-01 ~ STAB-04。**DINT-01 ~ DINT-09 已 Resolved**（`ce2a2cbe` + 2026-08-14 第二轮）。**正确措施**：全库 0 个真正空 catch；几乎所有上游客户端带显式超时（Crawl4AI/LiteLLM/vector/akshare/model-service/GDELT/OpenSky）；生产异常过滤器彻底脱敏；outbox 租约占用正确。
 
 ## 8. Performance Concerns
 
@@ -1318,10 +1329,10 @@ Overall         █████░░░░░  5.3  B
 | Subtype | Count | Invariants at Risk | Recommended Action |
 |---------|-------|-------------------|-------------------|
 | TransactionBoundary | 2 | 跨库写（DINT-01，**已 Resolved**）、告警冷却（DINT-02，**已 Resolved**） | outbox/事务 |
-| Idempotency | 3 | 助手/分析状态（DINT-03，**已 Resolved**）、摘要邮件（DINT-07）、告警投递（DINT-08） | 条件占用/幂等键 |
-| ConcurrencyConsistency | 2 | KG 边权重（DINT-04，**已 Resolved**）、任务状态（DINT-06） | 行锁/CAS |
+| Idempotency | 3 | 助手/分析状态（DINT-03，**已 Resolved**）、摘要邮件（DINT-07，**已 Resolved**）、告警投递（DINT-08，**已 Resolved**） | 条件占用/幂等键 |
+| ConcurrencyConsistency | 2 | KG 边权重（DINT-04，**已 Resolved**）、任务状态（DINT-06，**已 Resolved**） | 行锁/CAS |
 | MigrationSafety | 1 | 无回滚脚本 | 补 down 迁移或回滚手册 |
-| InvariantValidation | 2 | 缺 onDelete（DINT-09）、去重非唯一（DINT-05，**已 Resolved**） | 约束补齐 |
+| InvariantValidation | 2 | 缺 onDelete（DINT-09，**已 Resolved**）、去重非唯一（DINT-05，**已 Resolved**） | 约束补齐 |
 
 **正向**：MongoOutbox 事务外发 + 租约占用 + 幂等 upsert + 死信补偿；60 个迁移无破坏性操作（仅一次冗余 DROP INDEX）；关键复合唯一约束正确（Article/Membership/CrawlResult/KnowledgeEntity）。
 
@@ -1504,8 +1515,8 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 | Fail-Fast (4.4) | 3 | High | `JWT_SECRET` 占位符（SEC-01，**已 Resolved**）、`LITELLM_API_KEY` 可选、加密密钥缺失仍写明文（SEC-04 生产路径 **已 Resolved**） |
 | Fail on Missing Config (9.2) | 4 | Critical | JWT/NextAuth 占位符（**已 Resolved**）、`LITELLM_API_KEY`、`SYSTEM_SETTINGS_ENCRYPTION_KEY`（生产写入 **已 Resolved**）、`LITELLM_MASTER_KEY` |
 | Don't Swallow Errors (6.1) | 4 | Medium | ES/向量搜索静默 null/[]、图表 null |
-| Command-Query Separation (3.2) | 1 | Medium | 助手/分析 processor 读改写无占用（DINT-03 **已 Resolved**）；告警投递仍非原子（DINT-08） |
-| No Shared Mutable State (5.4) | 1 | Medium | KG 边权重（DINT-04 **已 Resolved**）；告警投递读改写（DINT-08） |
+| Command-Query Separation (3.2) | 1 | Medium | 助手/分析 processor 读改写无占用（DINT-03 **已 Resolved**）；告警投递原子占用（DINT-08 **已 Resolved**） |
+| No Shared Mutable State (5.4) | 1 | Medium | KG 边权重（DINT-04 **已 Resolved**）；告警投递读改写（DINT-08 **已 Resolved**） |
 | Immutability Preference (5.1) | 1 | Medium | `ItemMeta.version` 死字段无乐观锁 |
 | YAGNI (4.2) | 1 | Medium | `supercluster` 死依赖 |
 
@@ -1525,7 +1536,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 1. ~~SEC-01 拒绝已知占位符密钥（JWT/NextAuth）。~~ **Resolved** `ef09cf92`
 2. ~~SEC-04 生产缺 `SYSTEM_SETTINGS_ENCRYPTION_KEY` 拒绝写密钥。~~ **Resolved** `c57ffab9`
 3. ~~SEC-02 公共门户未配置 slug 时不再回退发布。~~ **Resolved** `072079ce`
-4. ~~**DINT-01 items 跨库写改 outbox。**~~ **Resolved** `ce2a2cbe`（scheduler 路径仍为残余）
+4. ~~**DINT-01 items 跨库写改 outbox。**~~ **Resolved** `ce2a2cbe`（scheduler 路径 2026-08-14 第二轮关闭）
 5. ~~SEC-03 内部密钥端点加 timingSafeEqual + 读取审计。~~ **Resolved** `720417f9`（全库密钥最小化返回仍为残余）
 
 ### Fix Before Stable Release（降低可靠性/正确性/安全风险）
@@ -1534,7 +1545,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 7. REL-02 容器非 root + cap_drop。
 8. AI-01 护栏覆盖新闻管线。
 9. AI-02 助手按组织额度预算。
-10. DINT-08 告警投递原子占用（DINT-02/03/04 已 Resolved）。
+10. ~~DINT-08 告警投递原子占用。~~ **Resolved** 2026-08-14（同轮关闭 DINT-06/07）
 11. ~~SEC-08/09/10 关 GraphQL Playground、Bull Board 默认关、限流 fail-closed。~~ **Resolved** `c95cf8a7` / `beba3df5` / `b693ce92`
 12. REL-03/04/05/06/07 Docker 固定 digest、去 root、随机凭据、127.0.0.1 绑定、LiteLLM key。
 13. ~~TST-01/02 删除假 e2e 与源码文本断言。~~ **Resolved** `a452f264`；残余 TST-03 真实组件/行为测试仍缺。
@@ -1544,7 +1555,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 14. MAINT-01 拆分 god 文件。
 15. TYPES-01/02/03 收紧类型逃逸。
 16. REL-08 semver/changelog/SBOM/签名。
-17. DINT-09 onDelete 补齐（DINT-05 唯一约束 **已 Resolved**）。
+17. ~~DINT-09 onDelete 补齐（DINT-05 唯一约束 **已 Resolved**）。~~ **Resolved** 2026-08-14
 18. DEP-01/02/03 依赖清理与去重。
 19. BAPI-01 补齐分页。
 
@@ -1570,11 +1581,11 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 ## 33. Long-term Refactor Plan
 
 1. **拆分 god 文件**（动机：不可审查/回归面大；方法：先补行为测试锚定，再逐面板/逐服务抽取子组件/子服务；风险：合并冲突；测试策略：每步抽取后跑 lint/typecheck；仓库现无测试套件）。
-2. **跨库一致性统一到 outbox**（动机：消除孤儿与多处非原子写；方法：复用 MongoOutbox/AuditLogOutbox/CrawlCleanupOutbox 模式推广到 alerts/digest，以及 **DINT-01 残余的 scheduler 路径**；风险：延迟增加（cron 1min）需立即投递兜底；测试：故障注入 + 幂等重放测试）。
+2. **跨库一致性统一到 outbox**（动机：消除孤儿与多处非原子写；方法：复用 MongoOutbox/AuditLogOutbox/CrawlCleanupOutbox 模式；**DINT-01 scheduler 残余已关闭**；风险：延迟增加（cron 1min）需立即投递兜底；测试：故障注入 + 幂等重放测试）。
 3. **类型系统收紧**（动机：消除 99 处 `as unknown as` 与 GraphQL 上下文 any；方法：定义 `GraphQLContext`/`AuthenticatedUser`，边界用运行时校验；风险：一次性改动大；测试：类型检查 + 关键 resolver 单测）。
 4. **前端测试基础设施**（动机：假源码断言已删，行为测试未重建；方法：jsdom + @testing-library/react + Playwright 关键工作流；风险：初期投入大，且与当前 `AGENTS.md`「禁止 spec」冲突，需先修订指南；测试：以真实回归用例验证）。
 5. **发布管线**（动机：无 CI/版本/SBOM；方法：CI 门禁 + changesets + SBOM + cosign；风险：低；测试：CI 即验证）。
 
 ---
 
-*本报告由 fuck-my-shit-mountain skill 生成；所有发现均附具体 `file:line` 证据。未修改任何被审代码。2026-08-14 更新 remediation 状态（SEC-01~SEC-13、DINT-01~DINT-05、TST-01/02/04 Resolved；DINT 落地于 `ce2a2cbe`；假测试删除于 `a452f264`）。*
+*本报告由 fuck-my-shit-mountain skill 生成；所有发现均附具体 `file:line` 证据。未修改任何被审代码。2026-08-14 更新 remediation 状态（SEC-01~SEC-13、DINT-01~DINT-09、TST-01/02/04 Resolved；DINT-01~05 落地于 `ce2a2cbe`；DINT-01 scheduler 残余与 DINT-06~09 于第二轮落地；假测试删除于 `a452f264`）。*
