@@ -236,6 +236,14 @@ export const classifyQueueError = (error: unknown): ClassifiedQueueError => {
 
   const name = getErrorName(error);
 
+  if (name === "LiteLlmGuardrailViolationError") {
+    return {
+      kind: QueueErrorKind.Permanent,
+      reason: "guardrail",
+      error: serializeQueueError(error),
+    };
+  }
+
   if (name === "UnrecoverableError") {
     const cause = getCause(error);
     const causeReason = cause ? classifyQueueError(cause).reason : undefined;

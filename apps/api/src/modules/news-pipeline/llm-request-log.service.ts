@@ -819,6 +819,46 @@ export class LlmRequestLogService {
     };
   }
 
+  async getTokenUsageByFeaturePrefix(
+    orgId: string,
+    prefix: string,
+    start: Date,
+    end?: Date,
+  ): Promise<number> {
+    const normalizedPrefix = prefix.trim().toLowerCase();
+    if (!normalizedPrefix || !/^[a-z0-9_:\-.]+$/.test(normalizedPrefix)) {
+      return 0;
+    }
+    const escapedPrefix = normalizedPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const prefixPattern = new RegExp(`^${escapedPrefix}`);
+    const createdAt: Record<string, Date> = { $gte: start };
+    if (end instanceof Date && !Number.isNaN(end.getTime())) {
+      createdAt.$lte = end;
+    }
+    const rows = await this.llmRequestLogModel.aggregate<{
+      totalTokens?: number;
+    }>([
+      {
+        $match: {
+          orgId: this.normalizeOrgId(orgId),
+          createdAt,
+          $or: [
+            { feature: prefixPattern },
+            { "metadata.feature": prefixPattern },
+            { "metadata.source": prefixPattern },
+          ],
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalTokens: { $sum: { $ifNull: ["$totalTokens", 0] } },
+        },
+      },
+    ]);
+    return this.toSafeInteger(rows[0]?.totalTokens);
+  }
+
   private normalizeEntry(entry: LlmRequestLogEntry): LlmRequestLogEntry {
     const metadataPolicy = this.resolveMetadataPolicy();
     const metadata = this.normalizeMetadata(entry.metadata, metadataPolicy);

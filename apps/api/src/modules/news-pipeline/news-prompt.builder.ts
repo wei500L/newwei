@@ -4,6 +4,13 @@ import { zodToJsonSchema, type JsonSchema7Type } from "zod-to-json-schema";
 import { CleanedNewsSchema } from "./news-pipeline.schema";
 import { NewsPromptConfig } from "./news-prompt-config.service";
 
+export const UNTRUSTED_ARTICLE_TAG = "untrusted_article";
+
+export function wrapUntrustedArticle(content: string): string {
+  const safe = content.replaceAll(`</${UNTRUSTED_ARTICLE_TAG}>`, `</ ${UNTRUSTED_ARTICLE_TAG}>`);
+  return `<${UNTRUSTED_ARTICLE_TAG}>\n${safe}\n</${UNTRUSTED_ARTICLE_TAG}>`;
+}
+
 export interface PromptInput {
   url: string;
   markdown: string;
@@ -101,7 +108,7 @@ export class NewsPromptBuilder {
       metadata_section: metadataSection,
       keywords_section: keywordsSection,
       summary_hints_section: summaryHintsSection,
-      markdown: input.markdown,
+      markdown: wrapUntrustedArticle(input.markdown),
     });
 
     return this.squashEmptyLines(rendered);
@@ -137,7 +144,7 @@ export class NewsPromptBuilder {
     const rendered = this.renderTemplate(template, {
       title: input.title ?? "",
       summary: input.summary ?? "",
-      markdown: input.markdown,
+      markdown: wrapUntrustedArticle(input.markdown),
       language: input.language ?? "",
     });
     return this.squashEmptyLines(rendered);

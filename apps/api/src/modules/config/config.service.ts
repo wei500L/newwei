@@ -1204,6 +1204,16 @@ export class EnvService extends ConfigService<ApiEnv> {
         this.get<boolean>("ASSISTANT_GUARDRAILS_ENABLED", { infer: true }) ??
         true,
       guardrails,
+      orgSubmitLimitPerHour:
+        this.get<number>("ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR", {
+          infer: true,
+        }) ?? 30,
+      orgMaxInFlight:
+        this.get<number>("ASSISTANT_ORG_MAX_IN_FLIGHT", { infer: true }) ?? 2,
+      orgMonthlyTokenBudget:
+        this.get<number>("ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET", {
+          infer: true,
+        }) ?? 2_000_000,
     };
   }
 

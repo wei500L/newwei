@@ -18,6 +18,7 @@ import {
   sanitizeUpstreamErrorText,
 } from "../../common/llm-openai-compat";
 import { extractOpenAiTextFromChoice } from "../../common/openai-chat";
+import { AssistantSafetySettingsService } from "../system-settings/assistant-safety-settings.service";
 import {
   LlmGatewaySettingsService,
   type LlmGatewayApiSurface,
@@ -222,6 +223,16 @@ const ERROR_RERANK_MODEL_NOT_CONFIGURED =
   "LiteLLM rerank model is not configured in MySQL gateway profiles";
 const UNKNOWN_ORG_ID = "_unknown_";
 const MAX_LOG_ERROR_LENGTH = 1000;
+const OPENAI_MODERATION_PRE_GUARDRAIL = "openai-moderation-pre";
+const UNTRUSTED_CONTENT_FEATURE_TOKENS = new Set([
+  "news-pipeline",
+  "news-classifier",
+  "clean",
+  "crawl_article_repair",
+]);
+const GUARDRAIL_CLIENT_ERROR_STATUSES = new Set([400, 403, 422]);
+const STRUCTURED_GUARDRAIL_SIGNAL =
+  /guardrail|moderation|prompt.?injection|jailbreak|content.?policy|trust.?safety/;
 
 @Injectable()
 export class LiteLlmService {
@@ -233,6 +244,7 @@ export class LiteLlmService {
     private readonly configService: NewsPipelineConfigService,
     private readonly llmGatewaySettings: LlmGatewaySettingsService,
     private readonly llmRequestLogService: LlmRequestLogService,
+    private readonly assistantSafety: AssistantSafetySettingsService,
   ) {}
 
   async getEmbeddingModel(): Promise<string | undefined> {
@@ -282,11 +294,12 @@ export class LiteLlmService {
   async acompletion(
     params: LiteLlmCompletionParams,
   ): Promise<LiteLlmCompletionResponse> {
+    const requestParams = await this.withResolvedGuardrails(params);
     const { cfg, client, apiKeyConfigured } =
       await this.prepareRequest("completion");
     const runtimeContext = await this.startRuntimeRequest(
       "completion",
-      params.metadata,
+      requestParams.metadata,
       cfg,
     );
     const apiSurface = this.resolveApiSurface(
@@ -308,7 +321,7 @@ export class LiteLlmService {
               cfg,
               apiKeyConfigured,
               model,
-              params,
+              requestParams,
               runtimeContext,
             );
           }
@@ -318,7 +331,7 @@ export class LiteLlmService {
             cfg,
             apiKeyConfigured,
             model,
-            params,
+            requestParams,
             runtimeContext,
           );
         } catch (error) {
@@ -450,11 +463,12 @@ export class LiteLlmService {
   async *stream(
     params: LiteLlmCompletionParams,
   ): AsyncGenerator<LiteLlmStreamChunk> {
+    const requestParams = await this.withResolvedGuardrails(params);
     const { cfg, client, apiKeyConfigured } =
       await this.prepareRequest("completion");
     const runtimeContext = await this.startRuntimeRequest(
       "stream",
-      params.metadata,
+      requestParams.metadata,
       cfg,
     );
     const apiSurface = this.resolveApiSurface(
@@ -479,7 +493,7 @@ export class LiteLlmService {
                   cfg,
                   apiKeyConfigured,
                   model,
-                  params,
+                  requestParams,
                   runtimeContext,
                 )
               : this.executeStream(
@@ -487,7 +501,7 @@ export class LiteLlmService {
                   cfg,
                   apiKeyConfigured,
                   model,
-                  params,
+                  requestParams,
                   runtimeContext,
                 );
 
@@ -671,11 +685,11 @@ export class LiteLlmService {
     let attempt = 0;
     let delayMs = 1_000;
     let lastError: unknown;
+    const guardrails = this.normalizeGuardrails(params.guardrails);
 
     while (attempt < maxAttempts) {
       const attemptStartedAt = Date.now();
       try {
-        const guardrails = this.normalizeGuardrails(params.guardrails);
         const textFormat = this.resolveResponsesTextFormat(
           params.response_format,
           cfg.responseFormatMode,
@@ -701,6 +715,7 @@ export class LiteLlmService {
           payload,
           { timeout: params.timeoutMs ?? cfg.timeoutMs },
         );
+        this.throwIfGuardrailsBlockedResponse(response);
         const latencyMs = Date.now() - start;
         const headerCost = this.extractHeaderCost(
           response.headers?.["x-litellm-response-cost"] ??
@@ -753,6 +768,27 @@ export class LiteLlmService {
         });
         return normalizedResponse;
       } catch (error) {
+        if (error instanceof AxiosError) {
+          const guardrailError =
+            this.maybeConvertAxiosErrorToGuardrailViolation(error, guardrails);
+          if (guardrailError) {
+            this.logRequest({
+              requestType: "completion",
+              model,
+              status: "error",
+              orgId: params.orgId,
+              metadata: params.metadata,
+              latencyMs: Date.now() - attemptStartedAt,
+              error: guardrailError,
+              apiSurface: "responses",
+              runtimeContext,
+            });
+            throw guardrailError;
+          }
+        }
+        if (error instanceof LiteLlmGuardrailViolationError) {
+          throw error;
+        }
         let normalizedError: unknown = error;
         try {
           this.decorateAxiosError(error, {
@@ -847,6 +883,24 @@ export class LiteLlmService {
         },
       );
     } catch (error) {
+      if (error instanceof AxiosError) {
+        const guardrailError =
+          this.maybeConvertAxiosErrorToGuardrailViolation(error, guardrails);
+        if (guardrailError) {
+          this.logRequest({
+            requestType: "stream",
+            model,
+            status: "error",
+            orgId: params.orgId,
+            metadata: params.metadata,
+            latencyMs: Date.now() - requestStartedAt,
+            error: guardrailError,
+            apiSurface: "responses",
+            runtimeContext,
+          });
+          throw guardrailError;
+        }
+      }
       let normalizedError: unknown = error;
       try {
         this.decorateAxiosError(error, {
@@ -885,6 +939,28 @@ export class LiteLlmService {
     try {
       if (contentType && !contentType.includes("text/event-stream")) {
         const bodyText = await this.readReadableToString(stream, 128 * 1024);
+        try {
+          const parsed = JSON.parse(bodyText) as unknown;
+          const message = this.extractGuardrailBlockedMessage(parsed);
+          if (message) {
+            const appliedGuardrails = this.getAppliedGuardrailsFromHeaders(
+              response.headers,
+            );
+            const normalized = this.buildUserFacingGuardrailMessage(message);
+            throw new LiteLlmGuardrailViolationError(normalized.message, {
+              code: normalized.code,
+              appliedGuardrails,
+              upstreamStatus: response.status,
+              detail:
+                sanitizeUpstreamErrorText(bodyText, { maxLength: 500 }) ||
+                undefined,
+            });
+          }
+        } catch (error) {
+          if (error instanceof LiteLlmGuardrailViolationError) {
+            throw error;
+          }
+        }
         this.logger.warn(
           {
             model,
@@ -1020,11 +1096,11 @@ export class LiteLlmService {
     let attempt = 0;
     let delayMs = 1_000;
     let lastError: unknown;
+    const guardrails = this.normalizeGuardrails(params.guardrails);
 
     while (attempt < maxAttempts) {
       const attemptStartedAt = Date.now();
       try {
-        const guardrails = this.normalizeGuardrails(params.guardrails);
         const payload = {
           model,
           messages: params.messages,
@@ -1097,7 +1173,7 @@ export class LiteLlmService {
       } catch (error) {
         if (error instanceof AxiosError) {
           const guardrailError =
-            this.maybeConvertAxiosErrorToGuardrailViolation(error);
+            this.maybeConvertAxiosErrorToGuardrailViolation(error, guardrails);
           if (guardrailError) {
             this.logRequest({
               requestType: "completion",
@@ -1112,6 +1188,9 @@ export class LiteLlmService {
             });
             throw guardrailError;
           }
+        }
+        if (error instanceof LiteLlmGuardrailViolationError) {
+          throw error;
         }
         let normalizedError: unknown = error;
         try {
@@ -1208,7 +1287,7 @@ export class LiteLlmService {
     } catch (error) {
       if (error instanceof AxiosError) {
         const guardrailError =
-          this.maybeConvertAxiosErrorToGuardrailViolation(error);
+          this.maybeConvertAxiosErrorToGuardrailViolation(error, guardrails);
         if (guardrailError) {
           this.logRequest({
             requestType: "stream",
@@ -2551,6 +2630,43 @@ export class LiteLlmService {
     return responseFormat;
   }
 
+  private async withResolvedGuardrails(
+    params: LiteLlmCompletionParams,
+  ): Promise<LiteLlmCompletionParams> {
+    return {
+      ...params,
+      guardrails: await this.resolveRequestGuardrails(params),
+    };
+  }
+
+  private async resolveRequestGuardrails(
+    params: LiteLlmCompletionParams,
+  ): Promise<string[] | undefined> {
+    if (params.guardrails !== undefined) {
+      const explicit = this.normalizeGuardrails(params.guardrails);
+      return explicit.length > 0 ? explicit : undefined;
+    }
+    if (!this.isUntrustedContentPath(params.metadata)) {
+      return undefined;
+    }
+    const config = await this.assistantSafety.getEffectiveConfig();
+    if (!config.enabled) {
+      return undefined;
+    }
+    return [OPENAI_MODERATION_PRE_GUARDRAIL];
+  }
+
+  private isUntrustedContentPath(
+    metadata: Record<string, unknown> | undefined,
+  ): boolean {
+    const tokens = [
+      this.normalizeFeatureToken(metadata?.source),
+      this.normalizeFeatureToken(metadata?.feature),
+      this.normalizeFeatureToken(metadata?.stage),
+    ].filter((token): token is string => Boolean(token));
+    return tokens.some((token) => UNTRUSTED_CONTENT_FEATURE_TOKENS.has(token));
+  }
+
   private normalizeGuardrails(raw: unknown): string[] {
     if (!Array.isArray(raw)) {
       return [];
@@ -2639,17 +2755,17 @@ export class LiteLlmService {
 
   private maybeConvertAxiosErrorToGuardrailViolation(
     error: AxiosError,
+    requestedGuardrails: string[] = [],
   ): LiteLlmGuardrailViolationError | null {
     const status = error.response?.status;
-    if (typeof status !== "number") {
-      return null;
-    }
-
     const appliedGuardrails = this.getAppliedGuardrailsFromHeaders(
       error.response?.headers,
     );
+    const structured = this.extractStructuredGuardrailSignal(
+      error.response?.data,
+    );
     const detail = sanitizeUpstreamErrorText(
-      this.extractAxiosErrorText(error),
+      structured.detail || this.extractAxiosErrorText(error),
       { maxLength: 500 },
     );
     const lower = detail.toLowerCase();
@@ -2681,9 +2797,15 @@ export class LiteLlmService {
 
     const looksLikeGuardrail =
       isDefiniteGuardrail || isInjection || isTrustSafety || isModeration;
+    const requestedClientError =
+      requestedGuardrails.length > 0 &&
+      typeof status === "number" &&
+      GUARDRAIL_CLIENT_ERROR_STATUSES.has(status);
     const shouldConvert =
-      looksLikeGuardrail ||
-      (appliedGuardrails.length > 0 && [400, 403, 422].includes(status));
+      appliedGuardrails.length > 0 ||
+      structured.matched ||
+      requestedClientError ||
+      (typeof status === "number" && looksLikeGuardrail);
 
     if (!shouldConvert) {
       return null;
@@ -2693,10 +2815,48 @@ export class LiteLlmService {
     return new LiteLlmGuardrailViolationError(normalized.message, {
       code: normalized.code,
       appliedGuardrails,
-      upstreamStatus: status,
+      upstreamStatus: typeof status === "number" ? status : undefined,
       detail: detail || undefined,
       cause: error,
     });
+  }
+
+  private extractStructuredGuardrailSignal(data: unknown): {
+    matched: boolean;
+    detail: string;
+  } {
+    if (!data || typeof data !== "object") {
+      return { matched: false, detail: "" };
+    }
+    const record = data as Record<string, unknown>;
+    const errorObj =
+      record.error && typeof record.error === "object"
+        ? (record.error as Record<string, unknown>)
+        : null;
+    const metadata =
+      errorObj?.metadata && typeof errorObj.metadata === "object"
+        ? (errorObj.metadata as Record<string, unknown>)
+        : record.metadata && typeof record.metadata === "object"
+          ? (record.metadata as Record<string, unknown>)
+          : null;
+    const parts = [
+      typeof record.message === "string" ? record.message : "",
+      errorObj && typeof errorObj.message === "string" ? errorObj.message : "",
+      errorObj && typeof errorObj.type === "string" ? errorObj.type : "",
+      errorObj && typeof errorObj.code === "string" ? String(errorObj.code) : "",
+      errorObj && typeof errorObj.param === "string" ? errorObj.param : "",
+      metadata && typeof metadata.guardrail === "string"
+        ? metadata.guardrail
+        : "",
+      metadata && typeof metadata.guardrail_name === "string"
+        ? metadata.guardrail_name
+        : "",
+    ].filter((part) => part.length > 0);
+    const joined = parts.join(" ");
+    return {
+      matched: STRUCTURED_GUARDRAIL_SIGNAL.test(joined.toLowerCase()),
+      detail: joined,
+    };
   }
 
   private buildUserFacingGuardrailMessage(detail: string): {

@@ -866,6 +866,24 @@ export const apiEnvSchema = baseEnvSchema
         typeof value === "string" && value.trim() === "" ? undefined : value,
       z.string().default("openai-moderation-pre"),
     ),
+    ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(10_000)
+      .default(30),
+    ASSISTANT_ORG_MAX_IN_FLIGHT: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(100)
+      .default(2),
+    ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000_000_000)
+      .default(2_000_000),
     OTEL_ENABLED: envBoolean.default(false),
     OTEL_SERVICE_NAME: z.string().min(1).default("modular-api"),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.preprocess(

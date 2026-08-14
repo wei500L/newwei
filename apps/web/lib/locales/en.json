@@ -4831,10 +4831,10 @@
       "description": "Manage OpenAI-compatible LLM gateway profiles. The active profile overrides runtime requests made by the API.",
       "guardrails": {
         "title": "AI Assistant content safety (OpenAI omni-moderation)",
-        "scope": "Only applies to the AI Assistant feature: before requests are sent upstream, LiteLLM Proxy calls OpenAI omni-moderation to screen user input. Flagged requests are blocked early to reduce upstream policy risk/bans.",
+        "scope": "Applies to the AI Assistant and news pipeline: before requests are sent upstream, LiteLLM Proxy calls OpenAI omni-moderation to screen untrusted input. Flagged requests are blocked early to reduce upstream policy risk/bans.",
         "howItWorks": {
           "title": "How it works",
-          "body": "The API attaches guardrail names (e.g. openai-moderation-pre) to each Assistant request. LiteLLM Proxy runs these checks in pre_call and blocks unsafe inputs before calling the upstream LLM."
+          "body": "The API attaches guardrail names (e.g. openai-moderation-pre) to Assistant and news-pipeline requests. LiteLLM Proxy runs these checks in pre_call and blocks unsafe inputs before calling the upstream LLM."
         },
         "setup": {
           "title": "Setup",
@@ -5588,10 +5588,10 @@
       },
       "hint": {
         "title": "Guardrails are enforced via LiteLLM Proxy",
-        "body": "Enable/disable moderation guardrails for the AI assistant. Make sure the LiteLLM Proxy config defines the required guardrails."
+        "body": "Enable/disable moderation guardrails for the AI assistant and news pipeline. Make sure the LiteLLM Proxy config defines the required guardrails."
       },
       "docs": {
-        "scope": "This setting ONLY affects the AI Assistant page (/assistant). Other features using LiteLlmService (news pipeline / analysis / monitoring) do not pass guardrails, so they are NOT moderated by this switch.",
+        "scope": "This setting applies to the AI Assistant page (/assistant) and the news pipeline (extraction, dedupe, and classification). Analysis and monitoring do not pass these guardrails.",
         "setupTitle": "Setup checklist:",
         "setupBody": "1) Configure LiteLLM Proxy guardrails in infra/litellm/litellm-config.yaml (openai-moderation-pre / openai-moderation-post).\n2) In this panel, save OpenAI API keys (stored in MySQL).\n3) Set LITELLM_CONFIG_INTERNAL_TOKEN in both API and litellm env (root .env or infra/docker/.env) so litellm can fetch keys on startup, then restart the litellm service.\n4) (Optional) In this panel, enable output moderation if you also want to moderate assistant responses (may impact streaming)."
       },
@@ -5698,6 +5698,42 @@
         "enabled": "Enable guardrails",
         "outputModerationEnabled": "Enable output moderation",
         "outputModerationHint": "May buffer streaming responses depending on upstream guardrail behavior."
+      },
+      "quota": {
+        "title": "Assistant usage quota",
+        "description": "Per-organization limits on assistant submits. Zero means unlimited for that field.",
+        "fields": {
+          "enabled": "Enforce quota",
+          "submitLimitPerHour": "Submits per hour",
+          "maxInFlightPerOrg": "Max in-flight jobs",
+          "monthlyTokenBudget": "Monthly token budget",
+          "zeroUnlimited": "Set to 0 to disable this limit."
+        },
+        "usage": {
+          "monthStart": "Current month (UTC)",
+          "totalTokens": "Tokens used",
+          "inFlight": "Jobs in progress",
+          "unlimited": "unlimited"
+        },
+        "messages": {
+          "saved": "Quota saved"
+        },
+        "errors": {
+          "saveFailed": "Failed to save quota."
+        },
+        "reset": {
+          "action": "Reset to env",
+          "modal": {
+            "title": "Reset quota to env defaults?",
+            "content": "This removes the database override and falls back to the env configuration."
+          },
+          "messages": {
+            "done": "Quota reset."
+          },
+          "errors": {
+            "failed": "Reset failed."
+          }
+        }
       },
       "source": {
         "env": "Env",

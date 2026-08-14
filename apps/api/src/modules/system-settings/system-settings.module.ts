@@ -15,6 +15,8 @@ import { SituationMonitorModule } from "../situation-monitor/situation-monitor.m
 
 import { ArchivePreparationSettingsController } from "./archive-preparation-settings.controller";
 import { ArchivePreparationSettingsService } from "./archive-preparation-settings.service";
+import { AssistantQuotaSettingsController } from "./assistant-quota-settings.controller";
+import { AssistantQuotaSettingsService } from "./assistant-quota-settings.service";
 import { AssistantSafetyDiagnosticsService } from "./assistant-safety-diagnostics.service";
 import { AssistantSafetyMetricsService } from "./assistant-safety-metrics.service";
 import { AssistantSafetySettingsController } from "./assistant-safety-settings.controller";
@@ -88,6 +90,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     GeoNominatimTestController,
     LlmGatewaySettingsController,
     AssistantSafetySettingsController,
+    AssistantQuotaSettingsController,
     OpenAiKeysSettingsController,
     OpenAiKeysInternalController,
     SystemSecuritySettingsController,
@@ -131,6 +134,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     RealtimeSignalsSettingsService,
     VectorServiceSettingsService,
     AssistantSafetySettingsService,
+    AssistantQuotaSettingsService,
     AssistantSafetyDiagnosticsService,
     AssistantSafetyMetricsService,
     OpenAiKeysSettingsService,
@@ -150,6 +154,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     LiteLlmProxyGovernanceService,
     LiteLlmProxyLoadBalancingSettingsService,
     AssistantSafetySettingsService,
+    AssistantQuotaSettingsService,
     OpenAiKeysSettingsService,
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,

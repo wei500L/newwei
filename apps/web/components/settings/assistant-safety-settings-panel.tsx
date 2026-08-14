@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Descriptions, Divider, Form, Input, Modal, Select, Space, Spin, Switch, Table, Tag, Typography, message, theme } from "antd";
+import { Alert, Button, Card, Descriptions, Divider, Form, Input, InputNumber, Modal, Select, Space, Spin, Switch, Table, Tag, Typography, message, theme } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -59,9 +59,29 @@ interface AssistantSafetyMetricsRow {
   codes: { code: string; count: number }[];
 }
 
+interface AssistantQuotaSettingsResponse {
+  source: AssistantSafetySettingsSource;
+  enabled: boolean;
+  submitLimitPerHour: number;
+  maxInFlightPerOrg: number;
+  monthlyTokenBudget: number;
+  usage: {
+    monthStart: string;
+    totalTokens: number;
+    inFlight: number;
+  };
+}
+
 interface AssistantSafetySettingsFormValues {
   enabled: boolean;
   outputModerationEnabled: boolean;
+}
+
+interface AssistantQuotaSettingsFormValues {
+  enabled: boolean;
+  submitLimitPerHour: number;
+  maxInFlightPerOrg: number;
+  monthlyTokenBudget: number;
 }
 
 interface OpenAiKeysFormValues {
@@ -73,6 +93,19 @@ const EMPTY_SETTINGS: AssistantSafetySettingsResponse = {
   enabled: true,
   outputModerationEnabled: false,
   guardrails: []
+};
+
+const EMPTY_QUOTA: AssistantQuotaSettingsResponse = {
+  source: "env",
+  enabled: true,
+  submitLimitPerHour: 30,
+  maxInFlightPerOrg: 2,
+  monthlyTokenBudget: 2_000_000,
+  usage: {
+    monthStart: new Date().toISOString(),
+    totalTokens: 0,
+    inFlight: 0
+  }
 };
 
 const EMPTY_OPENAI_KEYS: OpenAiKeysSettingsResponse = {
@@ -106,12 +139,16 @@ export function AssistantSafetySettingsPanel() {
   const { data: session } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
   const [form] = Form.useForm<AssistantSafetySettingsFormValues>();
+  const [quotaForm] = Form.useForm<AssistantQuotaSettingsFormValues>();
   const [openaiForm] = Form.useForm<OpenAiKeysFormValues>();
   const [settings, setSettings] = useState<AssistantSafetySettingsResponse>(EMPTY_SETTINGS);
+  const [quota, setQuota] = useState<AssistantQuotaSettingsResponse>(EMPTY_QUOTA);
   const [openaiKeys, setOpenaiKeys] = useState<OpenAiKeysSettingsResponse>(EMPTY_OPENAI_KEYS);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingQuota, setSavingQuota] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [resettingQuota, setResettingQuota] = useState(false);
   const [savingKeys, setSavingKeys] = useState(false);
   const [resettingKeys, setResettingKeys] = useState(false);
   const [removingKey, setRemovingKey] = useState<string | null>(null);
@@ -140,6 +177,18 @@ export function AssistantSafetySettingsPanel() {
         outputModerationEnabled: data.outputModerationEnabled
       });
 
+      const quotaResponse = await apiClient.get<AssistantQuotaSettingsResponse>(
+        "system-settings/assistant-quota"
+      );
+      const quotaData = quotaResponse.data ?? EMPTY_QUOTA;
+      setQuota(quotaData);
+      quotaForm.setFieldsValue({
+        enabled: quotaData.enabled,
+        submitLimitPerHour: quotaData.submitLimitPerHour,
+        maxInFlightPerOrg: quotaData.maxInFlightPerOrg,
+        monthlyTokenBudget: quotaData.monthlyTokenBudget
+      });
+
       const keysResponse = await apiClient.get<OpenAiKeysSettingsResponse>("system-settings/openai-keys");
       setOpenaiKeys(keysResponse.data ?? EMPTY_OPENAI_KEYS);
     } catch (error) {
@@ -150,7 +199,7 @@ export function AssistantSafetySettingsPanel() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, form, t]);
+  }, [apiClient, form, quotaForm, t]);
 
   useEffect(() => {
     void loadSettings();
@@ -254,6 +303,65 @@ export function AssistantSafetySettingsPanel() {
           );
         } finally {
           setResetting(false);
+        }
+      }
+    });
+  };
+
+  const applyQuota = (data: AssistantQuotaSettingsResponse) => {
+    setQuota(data);
+    quotaForm.setFieldsValue({
+      enabled: data.enabled,
+      submitLimitPerHour: data.submitLimitPerHour,
+      maxInFlightPerOrg: data.maxInFlightPerOrg,
+      monthlyTokenBudget: data.monthlyTokenBudget
+    });
+  };
+
+  const handleSaveQuota = async (values: AssistantQuotaSettingsFormValues) => {
+    setSavingQuota(true);
+    try {
+      const response = await apiClient.put<AssistantQuotaSettingsResponse>("system-settings/assistant-quota", {
+        enabled: Boolean(values.enabled),
+        submitLimitPerHour: Number(values.submitLimitPerHour),
+        maxInFlightPerOrg: Number(values.maxInFlightPerOrg),
+        monthlyTokenBudget: Number(values.monthlyTokenBudget)
+      });
+      applyQuota(response.data ?? EMPTY_QUOTA);
+      messageApi.success(t("settings.assistantSafety.quota.messages.saved"));
+    } catch (error) {
+      captureClientError("Failed to save assistant quota settings", error);
+      messageApi.error(
+        extractApiError(error).message ?? t("settings.assistantSafety.quota.errors.saveFailed")
+      );
+    } finally {
+      setSavingQuota(false);
+    }
+  };
+
+  const handleResetQuota = async () => {
+    Modal.confirm({
+      title: t("settings.assistantSafety.quota.reset.modal.title"),
+      content: t("settings.assistantSafety.quota.reset.modal.content"),
+      okText: t("common.confirm"),
+      cancelText: t("common.cancel"),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setResettingQuota(true);
+        try {
+          const response = await apiClient.delete<AssistantQuotaSettingsResponse>(
+            "system-settings/assistant-quota"
+          );
+          applyQuota(response.data ?? EMPTY_QUOTA);
+          messageApi.success(t("settings.assistantSafety.quota.reset.messages.done"));
+        } catch (error) {
+          captureClientError("Failed to reset assistant quota settings", error);
+          messageApi.error(
+            extractApiError(error).message ??
+              t("settings.assistantSafety.quota.reset.errors.failed")
+          );
+        } finally {
+          setResettingQuota(false);
         }
       }
     });
@@ -1019,6 +1127,89 @@ export function AssistantSafetySettingsPanel() {
               </Button>
               <Button danger onClick={handleReset} loading={resetting} disabled={saving}>
                 {t("settings.assistantSafety.reset.action")}
+              </Button>
+            </Space>
+          </Form>
+        </Space>
+      </Card>
+
+      <Card
+        size="small"
+        title={t("settings.assistantSafety.quota.title")}
+        extra={
+          <Tag color={quota.enabled ? "green" : "default"}>
+            {quota.enabled ? t("common.enabled") : t("common.disabled")}
+          </Tag>
+        }
+        style={{ marginTop: 16 }}
+      >
+        <Space direction="vertical" size="middle" style={{ display: "flex" }}>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+            {t("settings.assistantSafety.quota.description")}
+          </Typography.Paragraph>
+          <Descriptions size="small" column={1} bordered>
+            <Descriptions.Item label={t("settings.assistantSafety.quota.usage.monthStart")}>
+              {new Date(quota.usage.monthStart).toLocaleString()}
+            </Descriptions.Item>
+            <Descriptions.Item label={t("settings.assistantSafety.quota.usage.totalTokens")}>
+              {quota.usage.totalTokens.toLocaleString()}
+              {quota.monthlyTokenBudget > 0
+                ? ` / ${quota.monthlyTokenBudget.toLocaleString()}`
+                : ` (${t("settings.assistantSafety.quota.usage.unlimited")})`}
+            </Descriptions.Item>
+            <Descriptions.Item label={t("settings.assistantSafety.quota.usage.inFlight")}>
+              {quota.usage.inFlight.toLocaleString()}
+              {quota.maxInFlightPerOrg > 0
+                ? ` / ${quota.maxInFlightPerOrg.toLocaleString()}`
+                : ` (${t("settings.assistantSafety.quota.usage.unlimited")})`}
+            </Descriptions.Item>
+          </Descriptions>
+          <Form form={quotaForm} layout="vertical" onFinish={handleSaveQuota}>
+            <Form.Item
+              label={t("settings.assistantSafety.quota.fields.enabled")}
+              name="enabled"
+              valuePropName="checked"
+            >
+              <Switch />
+            </Form.Item>
+            <Form.Item
+              label={t("settings.assistantSafety.quota.fields.submitLimitPerHour")}
+              name="submitLimitPerHour"
+              extra={t("settings.assistantSafety.quota.fields.zeroUnlimited")}
+            >
+              <InputNumber min={0} max={10000} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              label={t("settings.assistantSafety.quota.fields.maxInFlightPerOrg")}
+              name="maxInFlightPerOrg"
+              extra={t("settings.assistantSafety.quota.fields.zeroUnlimited")}
+            >
+              <InputNumber min={0} max={100} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              label={t("settings.assistantSafety.quota.fields.monthlyTokenBudget")}
+              name="monthlyTokenBudget"
+              extra={t("settings.assistantSafety.quota.fields.zeroUnlimited")}
+            >
+              <InputNumber min={0} max={1_000_000_000_000} style={{ width: "100%" }} />
+            </Form.Item>
+            <Space wrap>
+              <Button type="primary" htmlType="submit" loading={savingQuota}>
+                {t("common.save")}
+              </Button>
+              <Button
+                onClick={() => void loadSettings()}
+                disabled={savingQuota || resettingQuota}
+              >
+                {t("common.refresh")}
+              </Button>
+              <Button
+                danger
+                onClick={() => void handleResetQuota()}
+                loading={resettingQuota}
+                disabled={savingQuota}
+              >
+                {t("settings.assistantSafety.quota.reset.action")}
               </Button>
             </Space>
           </Form>

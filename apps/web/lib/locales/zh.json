@@ -4831,10 +4831,10 @@
       "description": "管理 OpenAI 兼容的 LLM 网关配置。启用的配置会用于后端运行时调用。",
       "guardrails": {
         "title": "AI Assistant 内容安全（OpenAI omni-moderation）",
-        "scope": "仅用于 AI Assistant：在请求发送到上游模型之前，通过 LiteLLM Proxy 调用 OpenAI omni-moderation 做输入审核；命中会直接阻断并返回提示，从源头降低上游 API 风控/封禁风险。",
+        "scope": "用于 AI Assistant 与新闻流水线：在请求发送到上游模型之前，通过 LiteLLM Proxy 调用 OpenAI omni-moderation 做输入审核；命中会直接阻断并返回提示，从源头降低上游 API 风控/封禁风险。",
         "howItWorks": {
           "title": "工作方式",
-          "body": "系统会在每次 Assistant 调用的请求体里附带 guardrails 名称（例如 openai-moderation-pre），由 LiteLLM Proxy 在 pre_call 阶段先跑审核；不通过则不会调用上游模型。"
+          "body": "系统会在 Assistant 与新闻流水线调用的请求体里附带 guardrails 名称（例如 openai-moderation-pre），由 LiteLLM Proxy 在 pre_call 阶段先跑审核；不通过则不会调用上游模型。"
         },
         "setup": {
           "title": "配置步骤",
@@ -5588,10 +5588,10 @@
       },
       "hint": {
         "title": "Guardrails 通过 LiteLLM Proxy 执行",
-        "body": "在这里启用/关闭 AI 助手的内容安全 Guardrails。请确保 LiteLLM Proxy 配置里已定义对应 guardrails。"
+        "body": "在这里启用/关闭 AI 助手与新闻流水线的内容安全 Guardrails。请确保 LiteLLM Proxy 配置里已定义对应 guardrails。"
       },
       "docs": {
-        "scope": "该设置只影响「AI 助手」页面（/assistant）。其他使用 LiteLlmService 的能力（新闻流水线/分析/监测等）不会传 guardrails，因此不会被这套拦截影响。",
+        "scope": "该设置作用于「AI 助手」页面（/assistant）以及新闻流水线（清洗/去重/分类）。分析与监测不会传这套 guardrails。",
         "setupTitle": "启用检查清单：",
         "setupBody": "1）在 infra/litellm/litellm-config.yaml 配置 LiteLLM Proxy guardrails（openai-moderation-pre / openai-moderation-post）。\n2）在本面板配置 OpenAI API 密钥（会写入 MySQL）。\n3）在 API 与 litellm 的环境变量中同时配置 LITELLM_CONFIG_INTERNAL_TOKEN（根目录 .env 或 infra/docker/.env），然后重启 litellm 服务使其在启动时拉取密钥生成配置。\n4）（可选）在本面板启用「输出审核」，用于对 AI 助手的输出再做一次审核（可能影响流式输出）。"
       },
@@ -5698,6 +5698,42 @@
         "enabled": "启用 Guardrails",
         "outputModerationEnabled": "启用输出审核",
         "outputModerationHint": "部分 guardrails 可能会导致流式响应被缓冲。"
+      },
+      "quota": {
+        "title": "助手用量额度",
+        "description": "按组织限制助手提交次数。某一项设为 0 表示不限制该项。",
+        "fields": {
+          "enabled": "启用额度限制",
+          "submitLimitPerHour": "每小时提交次数",
+          "maxInFlightPerOrg": "进行中任务上限",
+          "monthlyTokenBudget": "每月 token 预算",
+          "zeroUnlimited": "设为 0 表示不限制该项。"
+        },
+        "usage": {
+          "monthStart": "本月起始（UTC）",
+          "totalTokens": "已用 token",
+          "inFlight": "进行中任务",
+          "unlimited": "不限"
+        },
+        "messages": {
+          "saved": "额度已保存"
+        },
+        "errors": {
+          "saveFailed": "保存额度失败。"
+        },
+        "reset": {
+          "action": "重置为环境变量",
+          "modal": {
+            "title": "重置额度为环境变量默认值？",
+            "content": "将删除数据库覆盖配置，并回退到环境变量默认值。"
+          },
+          "messages": {
+            "done": "额度已重置"
+          },
+          "errors": {
+            "failed": "重置失败。"
+          }
+        }
       },
       "source": {
         "env": "环境变量",
