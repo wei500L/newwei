@@ -702,7 +702,7 @@ model CrawlFrontierNode {
 
   @@index([runId, status, depth])
   @@index([orgId, pageType, status])
-  @@index([runId, urlFingerprint])
+  @@unique([runId, urlFingerprint])
   @@index([runId, parentNodeId])
 }
 
@@ -1805,6 +1805,7 @@ enum AuditLogOutboxStatus {
 enum MongoOutboxType {
   processed_item
   cleanup_crawl_results
+  raw_item
 }
 
 enum NewsSourceType {

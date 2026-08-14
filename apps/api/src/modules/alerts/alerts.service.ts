@@ -1335,47 +1335,12 @@ export class AlertsService {
       return null;
     }
 
-    // Atomically claim the cooldown window BEFORE creating the event: the
-    // rule is evaluated by both the repeat scheduler and one-shot scan jobs
-    // concurrently, and the read-then-write of lastTriggeredAt above is racy.
-    // Only the winner of this conditional update may create the alert event.
-    const claimed = await this.prisma.alertRule.updateMany({
-      where: {
-        id: rule.id,
-        status: AlertStatus.active,
-        OR: [
-          { lastTriggeredAt: null },
-          {
-            lastTriggeredAt: {
-              lte: new Date(Date.now() - rule.cooldownSeconds * 1000),
-            },
-          },
-        ],
-      },
-      data: { lastTriggeredAt: new Date() },
-    });
-    if (claimed.count !== 1) {
-      return null;
-    }
-
     const context = this.normalizeAlertContext({
       latest,
       previous,
       changePercent,
       ...(providerContext ?? {}),
       ...(triggered.context ?? {}),
-    });
-    const event = await this.prisma.alertEvent.create({
-      data: {
-        ruleId: rule.id,
-        triggeredAt: new Date(),
-        metricValue: new Prisma.Decimal(latest),
-        changePercent: changePercent ?? null,
-        severity: rule.severity,
-        status: AlertEventStatus.pending,
-        message: triggered.message,
-        context: toPrismaJsonValueOrUndefined(context),
-      },
     });
 
     const activeChannels = rule.channels
@@ -1385,32 +1350,107 @@ export class AlertsService {
           !!channel && channel.isActive,
       );
 
-    const externalDeliveries = await Promise.all(
-      activeChannels.map((channel) =>
-        this.prisma.alertDelivery.create({
-          data: {
-            eventId: event.id,
-            channelId: channel.id,
-            channelType: channel.type,
-            targetSnapshot: channel,
-          },
-        }),
-      ),
-    );
+    const muteUntilMs = this.extractMuteUntilMs(rule.metadata);
+    const inAppMuted = this.notificationThrottle.isMutedNow(muteUntilMs);
+    const recipientResolution = inAppMuted
+      ? {
+          candidateUserIds: [] as string[],
+          allowedUserIds: [] as string[],
+          missingPermissionUserIds: [] as string[],
+        }
+      : await this.resolveInAppRecipients(rule);
 
-    const inAppDeliveries = await this.createInAppDeliveries(rule, event.id);
+    // Claim cooldown + persist event/deliveries in one transaction so a crash
+    // after occupying lastTriggeredAt cannot drop the alert with no rows.
+    const persisted = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.alertRule.updateMany({
+        where: {
+          id: rule.id,
+          status: AlertStatus.active,
+          OR: [
+            { lastTriggeredAt: null },
+            {
+              lastTriggeredAt: {
+                lte: new Date(Date.now() - rule.cooldownSeconds * 1000),
+              },
+            },
+          ],
+        },
+        data: { lastTriggeredAt: new Date() },
+      });
+      if (claimed.count !== 1) {
+        return null;
+      }
+
+      const event = await tx.alertEvent.create({
+        data: {
+          ruleId: rule.id,
+          triggeredAt: new Date(),
+          metricValue: new Prisma.Decimal(latest),
+          changePercent: changePercent ?? null,
+          severity: rule.severity,
+          status: AlertEventStatus.pending,
+          message: triggered.message,
+          context: toPrismaJsonValueOrUndefined(context),
+        },
+      });
+
+      const externalDeliveries = await Promise.all(
+        activeChannels.map((channel) =>
+          tx.alertDelivery.create({
+            data: {
+              eventId: event.id,
+              channelId: channel.id,
+              channelType: channel.type,
+              targetSnapshot: channel,
+            },
+          }),
+        ),
+      );
+
+      const inAppDeliveries = await Promise.all(
+        recipientResolution.allowedUserIds.map(async (userId) => {
+          const delivery = await tx.alertDelivery.create({
+            data: {
+              eventId: event.id,
+              channelType: AlertChannelType.in_app,
+              targetSnapshot: { userId },
+            },
+          });
+          return { id: delivery.id, userId };
+        }),
+      );
+
+      const hasAnyDeliveries =
+        externalDeliveries.length > 0 || inAppDeliveries.length > 0;
+      if (!hasAnyDeliveries) {
+        await tx.alertEvent.update({
+          where: { id: event.id },
+          data: { status: AlertEventStatus.delivered },
+        });
+      }
+
+      return { event, externalDeliveries, inAppDeliveries, hasAnyDeliveries };
+    });
+
+    if (!persisted) {
+      return null;
+    }
+
+    const { event, externalDeliveries, inAppDeliveries, hasAnyDeliveries } =
+      persisted;
+
+    this.logFilteredInAppRecipients({
+      orgId: rule.orgId,
+      ruleId: rule.id,
+      eventId: event.id,
+      candidateUserIds: recipientResolution.candidateUserIds,
+      allowedUserIds: recipientResolution.allowedUserIds,
+      missingPermissionUserIds: recipientResolution.missingPermissionUserIds,
+    });
 
     if (externalDeliveries.length > 0) {
       await this.enqueueNotificationJobs(externalDeliveries, rule.orgId);
-    }
-
-    const hasAnyDeliveries =
-      externalDeliveries.length > 0 || inAppDeliveries.length > 0;
-    if (!hasAnyDeliveries) {
-      await this.prisma.alertEvent.update({
-        where: { id: event.id },
-        data: { status: AlertEventStatus.delivered },
-      });
     }
 
     if (inAppDeliveries.length > 0) {
@@ -1455,46 +1495,6 @@ export class AlertsService {
     } satisfies AlertEventPayload);
 
     return { event, deliveries: externalDeliveries };
-  }
-
-  private async createInAppDeliveries(
-    rule: {
-      id?: string;
-      orgId: string;
-      createdById?: string | null;
-      metadata?: Prisma.JsonValue | null;
-    },
-    eventId: string,
-  ) {
-    const muteUntilMs = this.extractMuteUntilMs(rule.metadata);
-    if (this.notificationThrottle.isMutedNow(muteUntilMs)) {
-      return [] as { id: string; userId: string }[];
-    }
-    const recipientResolution = await this.resolveInAppRecipients(rule);
-    this.logFilteredInAppRecipients({
-      orgId: rule.orgId,
-      ruleId: rule.id,
-      eventId,
-      candidateUserIds: recipientResolution.candidateUserIds,
-      allowedUserIds: recipientResolution.allowedUserIds,
-      missingPermissionUserIds: recipientResolution.missingPermissionUserIds,
-    });
-    if (!recipientResolution.allowedUserIds.length) {
-      return [] as { id: string; userId: string }[];
-    }
-    const created = await Promise.all(
-      recipientResolution.allowedUserIds.map(async (userId) => {
-        const delivery = await this.prisma.alertDelivery.create({
-          data: {
-            eventId,
-            channelType: AlertChannelType.in_app,
-            targetSnapshot: { userId },
-          },
-        });
-        return { id: delivery.id, userId };
-      }),
-    );
-    return created;
   }
 
   private async deliverInAppNotifications(

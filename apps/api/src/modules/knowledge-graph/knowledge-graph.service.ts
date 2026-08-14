@@ -4,9 +4,9 @@ import {
   KnowledgeEntityType,
   KnowledgeRelationType,
   KnowledgeRecordSource,
+  Prisma,
   type KnowledgeEdge,
-  type KnowledgeEntity,
-  type Prisma
+  type KnowledgeEntity
 } from "@prisma/client";
 
 import { toPrismaJsonValueOrUndefined } from "../../common/prisma-json";
@@ -1040,18 +1040,16 @@ export class KnowledgeGraphService {
       mode: "observe" | "static";
     }
   ) {
-    const where = {
-      orgId_type_fromEntityId_toEntityId: {
-        orgId: input.orgId,
-        type: input.type,
-        fromEntityId: input.fromEntityId,
-        toEntityId: input.toEntityId
-      }
-    };
-
     const existing = await tx.knowledgeEdge.findUnique({
-      where,
-      select: { id: true, weight: true, confidence: true, properties: true, firstSeenAt: true }
+      where: {
+        orgId_type_fromEntityId_toEntityId: {
+          orgId: input.orgId,
+          type: input.type,
+          fromEntityId: input.fromEntityId,
+          toEntityId: input.toEntityId
+        }
+      },
+      select: { id: true }
     });
 
     if (!existing) {
@@ -1072,19 +1070,62 @@ export class KnowledgeGraphService {
       } catch (error) {
         // Concurrent writers (cron ingestion vs seed/review ingestion) can
         // race on the unique (orgId,type,fromEntityId,toEntityId) constraint;
-        // reuse the winner's row instead of aborting the whole transaction.
+        // lock the winner's row and apply the increment instead of aborting.
         if (!this.isPrismaUniqueConstraintError(error)) {
           throw error;
         }
-        const raced = await tx.knowledgeEdge.findUnique({
-          where,
-          select: { id: true, weight: true, confidence: true, properties: true, firstSeenAt: true }
-        });
-        if (!raced) {
-          throw error;
-        }
-        return raced;
       }
+    }
+
+    return this.lockAndIncrementEdge(tx, input);
+  }
+
+  private async lockAndIncrementEdge(
+    tx: Prisma.TransactionClient,
+    input: {
+      orgId: string;
+      type: KnowledgeRelationType;
+      fromEntityId: string;
+      toEntityId: string;
+      confidence: number;
+      properties?: Record<string, unknown>;
+      now: Date;
+      mode: "observe" | "static";
+    }
+  ) {
+    const rows = await tx.$queryRaw<
+      {
+        id: string;
+        weight: number;
+        confidence: number;
+        properties: Prisma.JsonValue | null;
+        firstSeenAt: Date;
+      }[]
+    >(Prisma.sql`
+      SELECT id, weight, confidence, properties, firstSeenAt
+      FROM KnowledgeEdge
+      WHERE orgId = ${input.orgId}
+        AND type = ${input.type}
+        AND fromEntityId = ${input.fromEntityId}
+        AND toEntityId = ${input.toEntityId}
+      FOR UPDATE
+    `);
+
+    const existing = rows[0];
+    if (!existing) {
+      return tx.knowledgeEdge.create({
+        data: {
+          orgId: input.orgId,
+          type: input.type,
+          fromEntityId: input.fromEntityId,
+          toEntityId: input.toEntityId,
+          weight: 1,
+          confidence: input.confidence,
+          properties: toPrismaJsonValueOrUndefined(input.properties),
+          firstSeenAt: input.now,
+          lastSeenAt: input.now
+        }
+      });
     }
 
     const prevWeight = Number.isFinite(existing.weight) && existing.weight > 0 ? existing.weight : 1;

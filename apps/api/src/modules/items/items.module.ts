@@ -11,6 +11,7 @@ import { ItemsElasticsearchService } from "./items-elasticsearch.service";
 import { ItemsRssTranslationService } from "./items-rss-translation.service";
 import { ItemsController } from "./items.controller";
 import { ItemsService } from "./items.service";
+import { RawItemOutboxService } from "./raw-item-outbox.service";
 import { SearchAdminController } from "./search-admin.controller";
 import { SearchReindexJobStore } from "./search-reindex-job.store";
 import { SearchReindexService } from "./search-reindex.service";
@@ -26,6 +27,7 @@ import { SearchReindexService } from "./search-reindex.service";
   ],
   providers: [
     ItemsService,
+    RawItemOutboxService,
     ItemsRssTranslationService,
     ItemsElasticsearchService,
     SearchReindexJobStore,

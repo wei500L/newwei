@@ -14,6 +14,7 @@ import {
   NotFoundException,
   Optional,
   ServiceUnavailableException,
+  forwardRef,
 } from "@nestjs/common";
 import { Prisma, type ItemMeta } from "@prisma/client";
 import { Types, type PipelineStage, type ProjectionType } from "mongoose";
@@ -44,6 +45,7 @@ import {
   buildItemReadModelDocument,
 } from "./item-read-model.utils";
 import { ItemsElasticsearchService } from "./items-elasticsearch.service";
+import { RawItemOutboxService } from "./raw-item-outbox.service";
 
 const MAX_CURSOR_PAGE_SIZE = 50;
 const FULLTEXT_MIN_TOKEN_LENGTH = 3;
@@ -397,6 +399,8 @@ export class ItemsService {
     private readonly env: EnvService,
     private readonly liteLlm: LiteLlmService,
     private readonly userNewsBehavior: UserNewsBehaviorService,
+    @Inject(forwardRef(() => RawItemOutboxService))
+    private readonly rawItemOutbox: RawItemOutboxService,
     @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection,
     @Optional() private readonly elasticsearch?: ItemsElasticsearchService,
     @Optional() private readonly vectorClient?: VectorClientService
@@ -1082,6 +1086,17 @@ export class ItemsService {
     };
   }
 
+  async applyRawItemPersisted(orgId: string, itemMetaId: string, rawItemId: string): Promise<void> {
+    try {
+      await this.queueService.enqueueItem(orgId, itemMetaId, rawItemId);
+    } catch (error) {
+      if (!(error instanceof Error && error.message.includes("already exists"))) {
+        throw error;
+      }
+    }
+    await this.hydrateItemReadModel(orgId, itemMetaId);
+  }
+
   async create(orgId: string, userId: string, dto: CreateItemDto) {
     const externalId = dto.externalId;
     const existing = await this.prisma.itemMeta.findFirst({
@@ -1090,37 +1105,52 @@ export class ItemsService {
     if (existing) {
       const mongoRef = existing.mongoRef?.trim();
       if (mongoRef) {
+        await this.rawItemOutbox.deliverPendingForItemMeta(orgId, existing.id);
         return { ...existing, rawItemId: mongoRef };
       }
 
       const payload = this.parsePayload(dto.payload);
-      const rawItem = await RawItemModel.create({ itemMetaId: existing.id, payload, source: "api" });
-      const updated = await this.prisma.itemMeta.updateMany({
-        where: { id: existing.id, mongoRef: "" },
-        data: { mongoRef: rawItem.id }
-      });
-      const rawItemId = updated.count > 0 ? rawItem.id : null;
-      if (!rawItemId) {
-        await RawItemModel.deleteOne({ _id: rawItem.id }).catch(() => undefined);
-      } else {
-        try {
-          await this.queueService.enqueueItem(orgId, existing.id, rawItemId);
-        } catch (error) {
-          if (!(error instanceof Error && error.message.includes("already exists"))) {
-            throw error;
-          }
+      const rawItemId = new Types.ObjectId().toHexString();
+      const outboxId = await this.prisma.$transaction(async (tx) => {
+        const claimed = await tx.itemMeta.updateMany({
+          where: { id: existing.id, orgId, mongoRef: "" },
+          data: { mongoRef: rawItemId }
+        });
+        if (claimed.count === 0) {
+          return null;
         }
-        await this.hydrateItemReadModel(orgId, existing.id);
+        return this.rawItemOutbox.enqueueWrite(tx, {
+          orgId,
+          itemMetaId: existing.id,
+          rawItemId,
+          source: "api",
+          payload
+        });
+      });
+      if (!outboxId) {
+        const raced = await this.prisma.itemMeta.findFirst({
+          where: { id: existing.id, orgId }
+        });
+        if (raced?.mongoRef?.trim()) {
+          await this.rawItemOutbox.deliverPendingForItemMeta(orgId, raced.id);
+        }
+        return {
+          ...existing,
+          mongoRef: raced?.mongoRef ?? existing.mongoRef,
+          rawItemId: raced?.mongoRef ?? existing.mongoRef
+        };
       }
+      await this.rawItemOutbox.deliverNow(outboxId);
       return {
         ...existing,
-        mongoRef: rawItemId ?? existing.mongoRef,
-        rawItemId: rawItemId ?? existing.mongoRef
+        mongoRef: rawItemId,
+        rawItemId
       };
     }
 
     const payload = this.parsePayload(dto.payload);
     try {
+      const rawItemId = new Types.ObjectId().toHexString();
       const created = await this.prisma.$transaction(async (tx) => {
         const itemMeta = await tx.itemMeta.create({
           data: {
@@ -1128,22 +1158,19 @@ export class ItemsService {
             externalId,
             name: dto.name,
             status: dto.status ?? ItemStatus.Pending,
-            mongoRef: ""
+            mongoRef: rawItemId
           }
         });
 
-        const rawItem = await RawItemModel.create({
+        const outboxId = await this.rawItemOutbox.enqueueWrite(tx, {
+          orgId,
           itemMetaId: itemMeta.id,
-          payload,
-          source: "api"
+          rawItemId,
+          source: "api",
+          payload
         });
 
-        await tx.itemMeta.update({
-          where: { id: itemMeta.id },
-          data: { mongoRef: rawItem.id }
-        });
-
-        return { itemMeta, rawItem };
+        return { itemMeta, outboxId };
       });
 
       void writeAuditLogBestEffort(
@@ -1160,12 +1187,11 @@ export class ItemsService {
         { orgId, actorId: userId, resource: "item", action: "create" }
       ).catch(() => undefined);
 
-      await this.queueService.enqueueItem(orgId, created.itemMeta.id, created.rawItem.id);
-      await this.hydrateItemReadModel(orgId, created.itemMeta.id);
+      await this.rawItemOutbox.deliverNow(created.outboxId);
 
       return {
         ...created.itemMeta,
-        rawItemId: created.rawItem.id
+        rawItemId
       };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -1173,6 +1199,9 @@ export class ItemsService {
           where: { orgId, externalId }
         });
         if (raced) {
+          if (raced.mongoRef?.trim()) {
+            await this.rawItemOutbox.deliverPendingForItemMeta(orgId, raced.id);
+          }
           return {
             ...raced,
             rawItemId: raced.mongoRef
@@ -3853,7 +3882,7 @@ export class ItemsService {
     }
 
     const normalizedPayload = dto.payload ? this.parsePayload(dto.payload) : undefined;
-    let enqueueRef: string | null = null;
+    let outboxId: string | null = null;
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const updatedMeta = await tx.itemMeta.update({
@@ -3866,17 +3895,19 @@ export class ItemsService {
 
       let newRawRef = existing.mongoRef;
       if (normalizedPayload) {
-        const raw = await RawItemModel.create({
-          itemMetaId: existing.id,
-          payload: normalizedPayload,
-          source: "graphql"
-        });
-        newRawRef = raw.id;
+        const rawItemId = new Types.ObjectId().toHexString();
         await tx.itemMeta.update({
           where: { id: existing.id },
-          data: { mongoRef: raw.id }
+          data: { mongoRef: rawItemId }
         });
-        enqueueRef = raw.id;
+        newRawRef = rawItemId;
+        outboxId = await this.rawItemOutbox.enqueueWrite(tx, {
+          orgId,
+          itemMetaId: existing.id,
+          rawItemId,
+          source: "graphql",
+          payload: normalizedPayload
+        });
       }
 
       return {
@@ -3885,8 +3916,8 @@ export class ItemsService {
       };
     });
 
-    if (enqueueRef) {
-      await this.queueService.enqueueItem(orgId, existing.id, enqueueRef);
+    if (outboxId) {
+      await this.rawItemOutbox.deliverNow(outboxId);
     }
     await this.hydrateItemReadModel(orgId, existing.id);
 

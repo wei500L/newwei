@@ -132,16 +132,18 @@ export class AnalysisService {
   }
 
   async process(job: AnalysisJobPayload) {
-    const record = await AnalysisResultModel.findById(job.analysisId);
+    const record = await AnalysisResultModel.findOneAndUpdate(
+      { _id: job.analysisId, status: { $in: ["pending", "failed"] } },
+      { $set: { status: "running" }, $unset: { error: 1 } },
+      { new: true },
+    );
     if (!record) {
-      logger.warn({ job }, "Analysis record not found");
+      logger.warn({ job }, "Analysis record not claimable");
       return;
     }
     const createdAt = record.createdAt
       ? new Date(record.createdAt)
       : new Date();
-    record.status = "running";
-    await record.save();
     await this.publish(
       record.orgId,
       record.id,

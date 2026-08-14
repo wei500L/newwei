@@ -280,14 +280,16 @@ export class AssistantService {
   }
 
   async process(job: AssistantJobPayload) {
-    const record = await AssistantRunModel.findById(job.runId);
+    const record = await AssistantRunModel.findOneAndUpdate(
+      { _id: job.runId, status: { $in: ["pending", "failed"] } },
+      { $set: { status: "running" }, $unset: { error: 1 } },
+      { new: true },
+    );
     if (!record) {
-      logger.warn({ job }, "Assistant run not found");
+      logger.warn({ job }, "Assistant run not claimable");
       return;
     }
     const createdAt = record.createdAt ? new Date(record.createdAt) : new Date();
-    record.status = "running";
-    await record.save();
     await this.publish(record.orgId, record.id, record.type, record.status, undefined, createdAt);
 
     const baseGuardrails = (await this.assistantSafety.getEffectiveConfig()).guardrails;

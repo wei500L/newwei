@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { toPrismaJsonValue } from '../../common/prisma-json';
 import { PrismaService } from '../config/prisma.service';
@@ -938,46 +939,49 @@ export class CrawlStrategyLayeredExecutorService {
           queueClass,
         },
       });
-      const node = await this.prisma.crawlFrontierNode.create({
-        data: {
-          runId: options.runId,
-          parentNodeId: options.node.id,
-          orgId: options.node.orgId,
-          url: candidate.url,
-          canonicalUrl: canonical?.canonicalUrl,
-          urlFingerprint: canonical?.fingerprint,
-          pageType: candidate.pageType,
-          depth: childDepth,
-          queueClass,
-          status: 'queued',
-          score: candidate.score,
-          freshnessScore: candidate.freshnessScore,
-          queuedAt: new Date(),
-          metadata: toPrismaJsonValue(
-            mergeMetadataRecords(
-              candidate.metadata,
-              {
-                sourceTier: options.profile.config.sourceTier ?? 'tier2',
-              },
-              options.metadataPatch,
-            ),
-          ),
-        },
-      });
-      seenFingerprints.add(dedupeKey);
-      countsByPageType[candidate.pageType] += 1;
-      selectedPageTypeCounts[candidate.pageType] += 1;
-      created += 1;
-      if (candidate.pageType === 'list') {
-        listPagesCreated += 1;
-      }
-      await this.queueService.enqueueFrontierNode({
+      const persisted = await this.persistFrontierNode({
+        runId: options.runId,
+        parentNodeId: options.node.id,
         orgId: options.node.orgId,
-        taskId: options.taskId,
-        frontierRunId: options.runId,
-        frontierNodeId: node.id,
-        priorityClass: queueClass,
+        url: candidate.url,
+        canonicalUrl: canonical?.canonicalUrl,
+        urlFingerprint: canonical?.fingerprint,
+        pageType: candidate.pageType,
+        depth: childDepth,
+        queueClass,
+        status: 'queued',
+        score: candidate.score,
+        freshnessScore: candidate.freshnessScore,
+        queuedAt: new Date(),
+        metadata: toPrismaJsonValue(
+          mergeMetadataRecords(
+            candidate.metadata,
+            {
+              sourceTier: options.profile.config.sourceTier ?? 'tier2',
+            },
+            options.metadataPatch,
+          ),
+        ),
       });
+      const node = persisted.node;
+      seenFingerprints.add(dedupeKey);
+      if (persisted.created) {
+        countsByPageType[candidate.pageType] += 1;
+        selectedPageTypeCounts[candidate.pageType] += 1;
+        created += 1;
+        if (candidate.pageType === 'list') {
+          listPagesCreated += 1;
+        }
+      }
+      if (persisted.created || node.status === 'pending') {
+        await this.queueService.enqueueFrontierNode({
+          orgId: options.node.orgId,
+          taskId: options.taskId,
+          frontierRunId: options.runId,
+          frontierNodeId: node.id,
+          priorityClass: queueClass,
+        });
+      }
       await this.recordCandidateDecision({
         workflowRunId: options.workflowRunId,
         sourceNodeId: options.node.id,
@@ -1391,44 +1395,47 @@ export class CrawlStrategyLayeredExecutorService {
             rank: index + 1,
           },
         });
-        const node = await this.prisma.crawlFrontierNode.create({
-          data: {
-            runId: options.run.id,
-            parentNodeId: options.node.id,
-            orgId: options.node.orgId,
-            url: candidate.url,
-            canonicalUrl: canonical?.canonicalUrl,
-            urlFingerprint: canonical?.fingerprint,
-            pageType: candidate.pageType,
-            depth:
-              candidate.pageType === 'article'
-                ? Math.min(options.run.maxDepth, 3)
-                : 1,
-            queueClass,
-            status: 'queued',
-            score: candidate.score,
-            freshnessScore: candidate.freshnessScore,
-            queuedAt: new Date(),
-            metadata: toPrismaJsonValue(
-              mergeMetadataRecords(candidate.metadata, {
-                sourceTier: options.profile.config.sourceTier ?? 'tier2',
-              }),
-            ),
-          },
-        });
-        seenFingerprints.add(dedupeKey);
-        countsByPageType[candidate.pageType] += 1;
-        created += 1;
-        if (candidate.pageType === 'list') {
-          listPagesCreated += 1;
-        }
-        await this.queueService.enqueueFrontierNode({
+        const persisted = await this.persistFrontierNode({
+          runId: options.run.id,
+          parentNodeId: options.node.id,
           orgId: options.node.orgId,
-          taskId: options.taskId,
-          frontierRunId: options.run.id,
-          frontierNodeId: node.id,
-          priorityClass: queueClass,
+          url: candidate.url,
+          canonicalUrl: canonical?.canonicalUrl,
+          urlFingerprint: canonical?.fingerprint,
+          pageType: candidate.pageType,
+          depth:
+            candidate.pageType === 'article'
+              ? Math.min(options.run.maxDepth, 3)
+              : 1,
+          queueClass,
+          status: 'queued',
+          score: candidate.score,
+          freshnessScore: candidate.freshnessScore,
+          queuedAt: new Date(),
+          metadata: toPrismaJsonValue(
+            mergeMetadataRecords(candidate.metadata, {
+              sourceTier: options.profile.config.sourceTier ?? 'tier2',
+            }),
+          ),
         });
+        const node = persisted.node;
+        seenFingerprints.add(dedupeKey);
+        if (persisted.created) {
+          countsByPageType[candidate.pageType] += 1;
+          created += 1;
+          if (candidate.pageType === 'list') {
+            listPagesCreated += 1;
+          }
+        }
+        if (persisted.created || node.status === 'pending') {
+          await this.queueService.enqueueFrontierNode({
+            orgId: options.node.orgId,
+            taskId: options.taskId,
+            frontierRunId: options.run.id,
+            frontierNodeId: node.id,
+            priorityClass: queueClass,
+          });
+        }
         await this.recordCandidateDecision({
           workflowRunId: options.workflowRunId,
           sourceNodeId: options.node.id,
@@ -2065,33 +2072,36 @@ export class CrawlStrategyLayeredExecutorService {
         },
       });
 
-      await this.prisma.crawlFrontierNode.create({
-        data: {
-          runId: options.run.id,
-          parentNodeId: options.node.id,
-          orgId: options.node.orgId,
-          url: sourceUrl,
-          canonicalUrl: canonical?.canonicalUrl,
-          urlFingerprint: canonical?.fingerprint,
-          pageType,
-          depth: Math.min(options.run.maxDepth, pageType === 'article' ? 3 : 1),
-          queueClass,
-          status: 'completed',
-          crawledAt: new Date(),
-          crawlResultId: result.id,
-          score,
-          freshnessScore,
-          metadata: toPrismaJsonValue({
-            nativeDiscovered: true,
-            sourceTier: options.profile.config.sourceTier ?? 'tier2',
-            discoveryPath: ['home', pageType],
-            frontierPath: ['home', pageType],
-            failureKind,
-            warningFlags,
-            freshnessBucket: resolveFreshnessBucket(freshnessScore),
-          }),
-        },
+      const persisted = await this.persistFrontierNode({
+        runId: options.run.id,
+        parentNodeId: options.node.id,
+        orgId: options.node.orgId,
+        url: sourceUrl,
+        canonicalUrl: canonical?.canonicalUrl,
+        urlFingerprint: canonical?.fingerprint,
+        pageType,
+        depth: Math.min(options.run.maxDepth, pageType === 'article' ? 3 : 1),
+        queueClass,
+        status: 'completed',
+        crawledAt: new Date(),
+        crawlResultId: result.id,
+        score,
+        freshnessScore,
+        metadata: toPrismaJsonValue({
+          nativeDiscovered: true,
+          sourceTier: options.profile.config.sourceTier ?? 'tier2',
+          discoveryPath: ['home', pageType],
+          frontierPath: ['home', pageType],
+          failureKind,
+          warningFlags,
+          freshnessBucket: resolveFreshnessBucket(freshnessScore),
+        }),
       });
+      if (persisted.created) {
+        countsByPageType[pageType] += 1;
+        selectedPageTypeCounts[pageType] += 1;
+        createdCount += 1;
+      }
       await this.recordCandidateDecision({
         workflowRunId: options.workflowRunId,
         sourceNodeId: options.node.id,
@@ -2115,9 +2125,6 @@ export class CrawlStrategyLayeredExecutorService {
         },
       });
       seenFingerprints.add(dedupeKey);
-      countsByPageType[pageType] += 1;
-      selectedPageTypeCounts[pageType] += 1;
-      createdCount += 1;
     }
 
     if (options.workflowRunId) {
@@ -2336,6 +2343,55 @@ export class CrawlStrategyLayeredExecutorService {
       list: 0,
       article: 0,
     };
+  }
+
+  private async persistFrontierNode(data: Prisma.CrawlFrontierNodeUncheckedCreateInput): Promise<{
+    node: { id: string; status: string };
+    created: boolean;
+  }> {
+    const fingerprint =
+      typeof data.urlFingerprint === 'string' && data.urlFingerprint.trim()
+        ? data.urlFingerprint.trim()
+        : null;
+    const runId = typeof data.runId === 'string' ? data.runId : null;
+
+    if (!fingerprint || !runId) {
+      const node = await this.prisma.crawlFrontierNode.create({ data });
+      return { node, created: true };
+    }
+
+    const existing = await this.prisma.crawlFrontierNode.findUnique({
+      where: {
+        runId_urlFingerprint: { runId, urlFingerprint: fingerprint },
+      },
+      select: { id: true, status: true },
+    });
+    if (existing) {
+      return { node: existing, created: false };
+    }
+
+    try {
+      const node = await this.prisma.crawlFrontierNode.create({
+        data: { ...data, urlFingerprint: fingerprint },
+      });
+      return { node, created: true };
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const raced = await this.prisma.crawlFrontierNode.findUnique({
+          where: {
+            runId_urlFingerprint: { runId, urlFingerprint: fingerprint },
+          },
+          select: { id: true, status: true },
+        });
+        if (raced) {
+          return { node: raced, created: false };
+        }
+      }
+      throw error;
+    }
   }
 
   private clampInt(
