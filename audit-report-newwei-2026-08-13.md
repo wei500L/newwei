@@ -5,7 +5,7 @@
 **Date:** 2026-08-13
 **Reviewer:** opencode (deepseek-v4-pro) — fuck-my-shit-mountain skill
 **Commit:** `beb32ead`（branch `main`）
-**Remediation review:** 2026-08-14 — 对照 `beb32ead..HEAD` 复核。**已解决：SEC-01 ~ SEC-13、DINT-01 ~ DINT-09、TST-01/02/04**（DINT-01~05 落地于 `ce2a2cbe`；DINT-01 残余 scheduler + DINT-06~09 落地于 `9ef6982b`；假测试套件删除于 `a452f264`）。
+**Remediation review:** 2026-08-14 — 已关闭项已从本报告删除。下文只保留仍开放的 Finding。
 
 ---
 
@@ -13,9 +13,7 @@
 
 这是一个体量可观、工程底子相当扎实的多租户情报平台（pnpm + Turborepo monorepo：NestJS 11 API + Next.js 15 Web + 向量服务 + AIS relay，Prisma/MySQL + Mongoose/MongoDB + BullMQ/Redis + Qdrant + LiteLLM）。核心安全与一致性基础设施的完成度显著高于同规模项目：认证采用 bcrypt、refresh token 轮换与黑名单、TOTP MFA 与恢复码、按组织隔离的 RBAC、GraphQL 深度/复杂度限制、SSRF 校验器、MongoOutbox 事务外发模式、DataLoader 批量加载、生产环境异常过滤器脱敏、近乎全覆盖的 Docker healthcheck 与启动依赖链。这些都不是"看起来对"，而是有具体实现与单测佐证。
 
-但平台存在两类真实而集中的风险。**第一类是"默认即不安全"的配置面**（审计当日）：`JWT_SECRET`/`NEXTAUTH_SECRET` 在提交的 `.env.example`、`infra/docker/.env.sample` 乃至当前本地 `.env` 中都是 `change_me_please_replace_32_chars`，而校验只检查 `min(16)`，于是这个公开已知的签名密钥能直接通过启动校验——一旦照抄部署即可伪造任意用户 token。同类的还有：系统设置密钥默认不加密（OIDC/TOTP/LLM 密钥明文入库）、Docker "生产"栈显式开启 GraphQL Playground/内省、Bull Board 默认开启且无鉴权、CORS 默认反射任意 Origin、限流默认 fail-open。**2026-08-14 复核：SEC-01 ~ SEC-13 均已落地（见各 Finding 的 Resolved 记录），此类配置面风险已关闭。** **第二类是"虚假的测试信心"**（审计当日）：仓库有 456 个测试文件，但没有 CI、e2e 全部 mock、约 70 个前端测试只是对源码做字符串包含断言、无任何组件渲染测试、覆盖率从未收集。**2026-08-14 复核：假 e2e / 源码断言 / 私有 spyOn 套件已删除（TST-01/02/04，`a452f264`）；真实组件测试、覆盖率与 CI 仍缺（TST-03/05/06、REL-01）。**
-
-**2026-08-14 已关闭 DINT-01 ~ DINT-09**（`ce2a2cbe` + `9ef6982b`）：items `create()`/`update()` 与 RSS scheduler 改为 MongoOutbox `raw_item` 外发；告警冷却占用与事件/投递同事务；助手/分析 processor 用 `findOneAndUpdate` CAS 占用；知识图谱边 `SELECT ... FOR UPDATE` 后增量；frontier `(runId, urlFingerprint)` 改为唯一约束 + upsert；抓取任务 `pending→queued` CAS；摘要邮件发送前占用 `nextRunAt`；告警投递 `pending→sending` 原子占用；KG 外键 `onDelete: Cascade`。AI/LLM 侧最突出的仍是护栏只覆盖助手、而处理不可信抓取文本的新闻清洗管线完全无输入审核，且助手无按组织的 token/额度预算。
+仍开放的风险集中在三处：新闻清洗管线无输入护栏且助手无按组织额度（AI-01/02）；无 CI、无组件/行为测试（REL-01、TST-03/05/06）；发布面仍是 root 容器、滚动 tag 与默认弱凭据（REL-02~08）。AI/LLM 侧最高频路径处理不可信抓取文本，却完全无输入审核。
 
 **亮点**：outbox 事务外发、DataLoader、异常脱敏、SSRF 防护、refresh token 轮换、MFA、组织隔离是本项目值得保留并继续沿用的工程资产。
 
@@ -33,33 +31,20 @@ Release         ████░░░░░░  4.0  C   无 CI、root 容器、
 Overall         █████░░░░░  5.3  B
 ```
 
-每个维度 0.0–10.0，**越高越好（10=干净，0=屎山）**。评分为基于证据的综合判断，非机械扣分；各维度一句话判据见上表，受限覆盖在对应章节说明。**上表为审计当日（`beb32ead`）基线评分，不因后续修复回溯改写。** 2026-08-14 复核后 Security 面风险已显著下降（SEC-01~SEC-13 Resolved）；Stability 面 DINT-01~09 已落地；假测试套件已删除（TST-01/02/04，`a452f264`）。
+每个维度 0.0–10.0，**越高越好（10=干净，0=屎山）**。评分为基于证据的综合判断，非机械扣分；各维度一句话判据见上表。**上表为审计当日（`beb32ead`）基线评分，不因后续修复回溯改写。**
 
 ### Finding Statistics
 
-审计当日（`beb32ead`）：
+仍开放（2026-08-14）：
 
-| Severity | Count | Confirmed | Suspected |
-|----------|-------|-----------|-----------|
-| Critical | 1 | 1 | 0 |
-| High | 13 | 13 | 0 |
-| Medium | 34 | 33 | 1 |
-| Low | 8 | 8 | 0 |
-| Info | 0 | 0 | 0 |
-| **Total** | **56** | **55** | **1** |
-
-2026-08-14 修复复核（对照 `beb32ead..HEAD` 与当前代码）：
-
-| Severity | Count | Open Confirmed | Open Suspected | Resolved |
-|----------|-------|----------------|----------------|----------|
-| Critical | 1 | 0 | 0 | 1（SEC-01） |
-| High | 13 | 7 | 0 | 6（SEC-02/03/04、DINT-01、TST-01/02） |
-| Medium | 34 | 18 | 1 | 15（SEC-05~10、DINT-02/03/04/05/06/07/08/09、TST-04） |
-| Low | 8 | 5 | 0 | 3（SEC-11/12/13） |
-| Info | 0 | 0 | 0 | 0 |
-| **Total** | **56** | **30** | **1** | **25** |
-
-**已解决：** SEC-01 ~ SEC-13、DINT-01 ~ DINT-09、TST-01/02/04。**残余：** 无真实 e2e/组件测试/CI（TST-03、REL-01）。
+| Severity | Open Confirmed | Open Suspected |
+|----------|----------------|----------------|
+| Critical | 0 | 0 |
+| High | 7 | 0 |
+| Medium | 18 | 1 |
+| Low | 5 | 0 |
+| Info | 0 | 0 |
+| **Total** | **30** | **1** |
 
 ## 2. Project Map
 
@@ -109,8 +94,6 @@ Overall         █████░░░░░  5.3  B
 
 ## 3. Top Risks
 
-仍开放（2026-08-14）：
-
 1. **护栏仅覆盖助手**（AI-01, High）— 处理不可信抓取文本的新闻清洗管线无输入审核。
 2. **助手无按组织 token/额度预算**（AI-02, High）— 单组织可无限入队 LLM 任务。
 3. **无 CI/CD**（REL-01, High）— lint/typecheck 从不自动运行；测试套件已删除。
@@ -118,438 +101,7 @@ Overall         █████░░░░░  5.3  B
 5. **容器以 root 运行**（REL-02, High）— 抓取浏览器进程以 root 跑，被攻破即容器 root。
 6. **多个 4000–8200 行 god 文件**（MAINT-01, High）— 不可审查、回归面大。
 
-已解决（审计后落地，详见第 4 节 Resolved 记录）：
-
-- ~~JWT 签名密钥为已知占位符且通过校验~~（SEC-01, Critical）— `ef09cf92`
-- ~~公共门户静默发布任意活跃组织~~（SEC-02, High）— `072079ce`
-- ~~系统设置密钥默认明文入库~~（SEC-04, High）— `c57ffab9`
-- ~~内部端点明文返回全部 OpenAI 密钥~~（SEC-03, High）— `720417f9`（timingSafeEqual + 读取审计；仍返回全库密钥，残余面见该 Finding）
-- ~~Docker 生产栈 GraphQL Playground/内省 + Bull Board 无鉴权 + 限流 fail-open~~（SEC-08/09/10, Medium）
-- ~~MySQL 事务内写 MongoDB~~（DINT-01, High）— `ce2a2cbe`（items `create()`/`update()` 改 `raw_item` outbox；scheduler 残余于 `9ef6982b` 关闭）
-- ~~告警冷却占用与事件/投递非原子~~（DINT-02, Medium）— `ce2a2cbe`
-- ~~助手/分析处理器状态回退~~（DINT-03, Medium）— `ce2a2cbe`
-- ~~知识图谱边 weight 丢失更新~~（DINT-04, Medium）— `ce2a2cbe`
-- ~~CrawlFrontierNode 去重仅为非唯一索引~~（DINT-05, Medium）— `ce2a2cbe`
-- ~~抓取任务创建入队/状态竞争~~（DINT-06, Medium）— `9ef6982b`
-- ~~摘要邮件发送与 nextRunAt 非原子~~（DINT-07, Medium）— `9ef6982b`
-- ~~告警投递发送非原子占用~~（DINT-08, Medium）— `9ef6982b`
-- ~~知识图谱关系缺 onDelete~~（DINT-09, Medium）— `9ef6982b`
-- ~~e2e 全量 mock~~（TST-01, High）— `a452f264`（假 e2e 已删除；真实 e2e 仍缺）
-- ~~前端源码文本断言测试~~（TST-02, High）— `a452f264`（最小修复「删除」已落地）
-- ~~私有方法 spyOn 实现细节断言~~（TST-04, Medium）— `a452f264`
-
 ## 4. Detailed Findings
-
-### Finding: SEC-01 JWT/NextAuth 签名密钥为已知占位符且通过启动校验
-
-- Severity: Critical
-- Confidence: High
-- Category: Security
-- Status: Resolved
-- Resolved in: `ef09cf92`（2026-08-13）
-- Resolution evidence: `packages/utils/src/env.ts` 的 `strongSecretSchema` 拒绝占位符集合/`change_me*`/`dev-*`，且 `min(32)`。
-- Affected area: 认证与令牌签名（全应用）
-- Evidence:
-  - File: `.env.example:43-44`、`infra/docker/.env.sample:48-49`、当前本地 `.env:43-44`（git 忽略）
-  - Function / Module: `packages/utils/src/env.ts:217-218`（`JWT_SECRET: z.string().min(16)`）、`apps/web/lib/env.server.ts:8-11`
-  - Relevant behavior: 三个环境样例文件均写死 `JWT_SECRET=change_me_please_replace_32_chars`、`NEXTAUTH_SECRET=change_me_please_replace_32_chars`；校验仅要求长度 ≥16，该 32 字符占位符完全通过。
-- Problem: 唯一长度校验挡不住"已知弱值"。README/AGENTS 引导操作者直接复制样例文件部署。
-- Why it matters: JWT 签名密钥一旦公开已知，攻击者可离线伪造任意 `sub/orgId/roles` 的 token，冒充任意用户与管理员，且刷新/黑名单机制无法防御伪造。
-- Realistic failure scenario: 运维复制 `.env.sample` 上线 → 攻击者用公开占位符自签 token → 以任意组织管理员身份读写全部情报数据。
-- Minimal fix: 校验拒绝已知占位符集合（`change_me*`/`dev-*`/`secret`/长度<32），或 `env:check` 中对 `JWT_SECRET`/`NEXTAUTH_SECRET` 与示例值做相等比较并在相等时 fail。
-- Better long-term fix: 启动时对 `JWT_SECRET`/`NEXTAUTH_SECRET` 强制"非示例值 + 随机熵"，缺失即拒绝启动（fail-fast，见原则 9.2）。
-- Regression test suggestion: `env.schema` 单测断言 `change_me_please_replace_32_chars` 解析失败。
-- Estimated effort: 1–2 hours
-
-### Finding: SEC-02 公共门户静默发布任意活跃组织
-
-- Severity: High
-- Confidence: High
-- Category: Security
-- Status: Resolved
-- Resolved in: `072079ce`（2026-08-13）
-- Resolution evidence: `resolvePublicOrg()` 未配置 `public_portal_org_slug` 时返回 `null`，不再按最近事件/最近更新组织回退。
-- Affected area: `apps/api/src/modules/public-portal`
-- Evidence:
-  - File: `public-portal.service.ts:468-527`（`resolvePublicOrg()`）
-  - Relevant behavior: `@Public()` 路由暴露的组织选择顺序为 ①`public_portal_org_slug` 设置 ②按最近活跃 `newsEvent` 的组织 ③最近更新的活跃组织。
-- Problem: 未配置 slug 时，任何有近期事件的租户（或最近更新的租户）被静默发布到公网，含故事摘要、实体名、时间线与文章 URL。
-- Why it matters: 这是"隐式/回退型允许列表"而非显式允许列表——跨租户数据泄露路径。
-- Realistic failure scenario: 新组织产生事件后成为"最近活跃"→ 其内部情报自动出现在无需登录的 `/newsnow` 门户。
-- Minimal fix: 未配置 `public_portal_org_slug` 时门户返回空/占位，绝不回退到任意组织。
-- Better long-term fix: 引入显式 `isPublicPortalEnabled` 组织开关 + 发布审批。
-- Regression test suggestion: 单测断言 `resolvePublicOrg` 在无 slug 配置时返回 null（而非回退组织）。
-- Estimated effort: 2–4 hours
-
-### Finding: SEC-03 内部端点明文返回全部 OpenAI 密钥
-
-- Severity: High
-- Confidence: High
-- Category: Security
-- Status: Resolved
-- Resolved in: `720417f9`（2026-08-13）
-- Resolution evidence: `LitellmInternalTokenGuard` 经 `tokensEqual`/`timingSafeEqual` 校验；读取打审计日志。残余：端点仍返回全库明文密钥（长期隔离下发未做）。
-- Affected area: `apps/api/src/modules/system-settings`
-- Evidence:
-  - File: `openai-keys-internal.controller.ts:29-50`
-  - Relevant behavior: `@Public()` 的 `GET /api/internal/litellm/openai-keys` 在校验一个共享 `LITELLM_CONFIG_INTERNAL_TOKEN`（`token !== expected`，非常量时间）后调用 `getPlaintextKeys()` 返回全部组织的明文密钥。
-- Problem: 单一静态 token 保护；泄露/弱 token 即拖走整库 provider 密钥；无按组织作用域与读取审计。
-- Why it matters: 一次 token 泄露 = 全库 OpenAI/LLM 凭据泄露，可用于盗刷。
-- Realistic failure scenario: 攻击者持有/猜出 `LITELLM_CONFIG_INTERNAL_TOKEN` → 请求该内部端点 → 获取所有组织 OpenAI 密钥明文 → 盗刷。
-- Minimal fix: 用 `crypto.timingSafeEqual` 比较；对该端点加 IP 白名单/最小化返回（仅返回调用方组织所需）。
-- Better long-term fix: 密钥按组织/用途隔离下发，读取记录审计日志。
-- Regression test suggestion: 单测验证 token 缺失/错误时 401，且返回结构不含多余组织密钥。
-- Estimated effort: 2–4 hours
-
-### Finding: SEC-04 系统设置密钥默认明文入库
-
-- Severity: High
-- Confidence: High
-- Category: Security
-- Status: Resolved
-- Resolved in: `c57ffab9`（2026-08-13）
-- Resolution evidence: 生产环境缺失 `SYSTEM_SETTINGS_ENCRYPTION_KEY` 时 `encodeSecretForStorage` 拒绝写入（`SystemSettingsEncryptionRequiredError`）；明文回退仅非生产。
-- Affected area: 系统设置与凭证存储
-- Evidence:
-  - File: `apps/api/src/modules/system-settings/system-security-settings.service.ts:124-141`、`apps/api/src/modules/auth/auth-security.service.ts:42-64`
-  - Relevant behavior: `SYSTEM_SETTINGS_ENCRYPTION_KEY` 为空（`.env.example:297`）时 `encodeSecretForStorage` 直接 `return plain`。OIDC client secret、TOTP secret、LLM 网关密钥、向量/模型服务 token、新闻源运行时密钥等均以明文落库。
-- Problem: 加密是"可选 opt-in"，默认关闭；多个服务日志提示"Missing SYSTEM_SETTINGS_ENCRYPTION_KEY"后回退明文。
-- Why it matters: 一次 DB 泄露即暴露全部跨系统凭证。
-- Realistic failure scenario: MySQL 被拖库 → OIDC/TOTP/LLM/存储凭据全部明文外泄。
-- Minimal fix: 生产环境缺失 `SYSTEM_SETTINGS_ENCRYPTION_KEY` 时拒绝写入密钥（fail-closed）。
-- Better long-term fix: 统一凭证存储层，强制加密 + 密钥轮换机制。
-- Regression test suggestion: 单测断言无加密密钥时 `encodeSecretForStorage` 抛错而非返回明文。
-- Estimated effort: 1–2 hours
-
-### Finding: SEC-05 CORS 默认反射任意 Origin + 凭证
-
-- Severity: Medium
-- Confidence: High
-- Category: Security
-- Status: Resolved
-- Resolved in: `50baad7d`（2026-08-13）
-- Resolution evidence: 生产缺失显式 `CORS_ORIGIN` 时 Zod refine 拒绝启动；`origin: true` 反射路径已去掉。
-- Affected area: `apps/api/src/main.ts:147-150`、`apps/api/src/graphql/graphql.module.ts:304-309,372-375`
-- Evidence: `const corsOrigin = env.graphqlConfig.corsOrigin?.split(",") ?? true; app.enableCors({ credentials: true, origin: corsOrigin })`
-- Relevant behavior: `CORS_ORIGIN` 未设置时 `origin: true`，反射任意 Origin 且 `credentials: true`；Socket.IO 网关 `isOriginAllowed()` 同理会放行一切。
-- Problem: 默认生产配置不固定来源白名单。
-- Why it matters: 反射 Origin + credentials 削弱 CSRF 防护，多租户平台应固定显式白名单。
-- Realistic failure scenario: 未配置 `CORS_ORIGIN` 部署 → 任意站点可发起凭据化跨源请求。
-- Minimal fix: 生产环境要求显式 `CORS_ORIGIN`，否则拒绝启动或默认同源。
-- Better long-term fix: 来源白名单 + 按组织配置化。
-- Regression test suggestion: 配置测试断言缺失 `CORS_ORIGIN` 时生产环境启动失败。
-- Estimated effort: 1–2 hours
-
-### Finding: SEC-06 SSO 交接把 access+refresh token 明文入库并经 URL query 返回
-
-- Severity: Medium
-- Confidence: High
-- Category: Security
-- Status: Resolved
-- Resolved in: `2d5cf5a9`（2026-08-13）
-- Resolution evidence: 交接改为高熵一次性 `handoffToken`（库内只存 hash）+ 加密存储 access/refresh token。
-- Affected area: `apps/api/src/modules/auth/oidc-auth.service.ts:307-345`
-- Evidence: `authChallenge.create({ type:"sso_handoff", payload: result ... })`（含 accessToken+refreshToken）；`callbackUrl.searchParams.set("handoffToken", result.handoffToken)`
-- Relevant behavior: 完整登录结果作为 JSON 持久化，单次 `handoffToken` 经浏览器重定向 URL 传递（进入历史/referrer/日志），且未绑定 IP/UA。
-- Problem: 明文 refresh token 落库 + 经 URL 传输。
-- Why it matters: DB 读或日志读即可获取有效 refresh token。
-- Realistic failure scenario: 日志/代理记录回调 URL → 泄露 handoffToken 与关联 payload。
-- Minimal fix: 交接 payload 只存加密后的 refresh token；handoff 绑定 IP/UA 与 TTL。
-- Better long-term fix: 交接改用一次性 opaque token + 服务端会话，不经 URL 传递敏感值。
-- Regression test suggestion: 单测断言 payload 不含明文 refreshToken。
-- Estimated effort: 3–5 hours
-
-### Finding: SEC-07 新闻源 URL 无 SSRF 校验且 API 侧 fetch 跟随重定向不复检
-
-- Severity: Medium
-- Confidence: High
-- Category: Security
-- Status: Resolved
-- Resolved in: `10fd54ac`（2026-08-13）
-- Resolution evidence: 新闻源 DTO 改 `@IsSafeUrl()`；`crawl-execution.service` 对当前 URL 做 `validateSsrfUrlAsync` 复检。
-- Affected area: `apps/api/src/modules/crawl`
-- Evidence:
-  - File: `dto/news-source.dto.ts:52,121`（仅 `@IsUrl()`）；`crawl-execution.service.ts:1165-1179,3971`（`fetch(url,{redirect:"follow"})`）
-  - Relevant behavior: 与 `create-crawl-task.dto.ts:923-925` 的 `@IsSafeUrl()` 不同，新闻源只用 `@IsUrl()`；API 进程自身的条件/etag fetch 未做逐跳 SSRF 复检。
-- Problem: 有 `crawl.write` 权限者可注册指向 `169.254.169.254` 或内网的源；重定向型 SSRF（安全主机→内网）在 API 侧路径不复检。
-- Why it matters: 内网探测/云元数据读取面扩大。
-- Realistic failure scenario: 注册源指向云元数据端点 → API 侧条件抓取被重定向到内网 → 元数据泄露。
-- Minimal fix: 新闻源 URL 复用 `@IsSafeUrl()`；API 侧 fetch 前经 `validateSsrfUrl` 并禁用跟随到私网。
-- Better long-term fix: 所有出网抓取统一走 Crawl4AI SSRF 代理，API 侧仅做元数据预检。
-- Regression test suggestion: 单测断言注册指向私网/云元数据的源被拒绝。
-- Estimated effort: 2–4 hours
-
-### Finding: SEC-08 Docker "生产"栈显式开启 GraphQL Playground + 内省
-
-- Severity: Medium
-- Confidence: High
-- Category: Configuration
-- Status: Resolved
-- Resolved in: `c95cf8a7`（2026-08-13）
-- Resolution evidence: 生产强制 `GRAPHQL_PLAYGROUND`/`GRAPHQL_INTROSPECTION=false`；`infra/docker/.env.sample` 样例改为 false。
-- Affected area: `infra/docker/.env.sample:67,77-78`
-- Evidence: `NODE_ENV=production` 同时 `GRAPHQL_PLAYGROUND=true`、`GRAPHQL_INTROSPECTION=true`
-- Relevant behavior: 显式 env 值覆盖 `env.schema.ts:157-162` 的生产安全默认。
-- Problem: 生产式部署下 schema 全量内省 + 未认证 Playground。
-- Why it matters: 未认证客户端可枚举完整 API schema 与鉴权指令。
-- Realistic failure scenario: 按 `.env.sample` 部署 → 生产暴露 Playground 与内省。
-- Minimal fix: 样例中将两者置 `false` 或删除以用默认。
-- Better long-term fix: 生产构建强制关闭二者，禁止 env 覆盖。
-- Regression test suggestion: 配置测试断言 production 默认关闭二者。
-- Estimated effort: <1 hour
-
-### Finding: SEC-09 Bull Board 默认开启且无鉴权
-
-- Severity: Medium
-- Confidence: High
-- Category: Configuration
-- Status: Resolved
-- Resolved in: `beba3df5`（2026-08-13）
-- Resolution evidence: `BULL_BOARD_ENABLED` 默认 false；挂载时经 `createBullBoardAuthMiddleware` 校验 JWT + `queue.manage`。
-- Affected area: `env.schema.ts:35`、`app.module.ts:60`、`main.ts:61-66`、`.env.example:314-315`
-- Evidence: `BULL_BOARD_ENABLED` 默认 true；`/admin/queues` 排除在 `/api` 前缀外；`BULL_BOARD_USERNAME/PASSWORD` 均空时 `config.service.ts:254-263` 返回空 → 无 Basic Auth。
-- Problem: 默认部署即暴露未认证的队列管理界面（可查看/操作队列）。
-- Why it matters: 队列可被操纵，导致任务删除/重放。
-- Realistic failure scenario: 默认部署 → 未认证访问 `/admin/queues` 操作队列。
-- Minimal fix: 默认关闭，或未配凭据时禁用 UI。
-- Better long-term fix: 队列管理界面接入 RBAC 鉴权。
-- Regression test suggestion: 配置测试断言无凭据时 Bull Board 不挂载。
-- Estimated effort: <1 hour
-
-### Finding: SEC-10 限流默认 fail-open
-
-- Severity: Medium
-- Confidence: High
-- Category: Security
-- Status: Resolved
-- Resolved in: `b693ce92`（2026-08-13）
-- Resolution evidence: `RATE_LIMIT_REDIS_FAIL_OPEN` 默认 `false`；样例文件已记录该开关。
-- Affected area: `apps/api/src/modules/cache/rate-limiter.service.ts:90`
-- Evidence: `this.failOpen = readEnvBoolean('RATE_LIMIT_REDIS_FAIL_OPEN', true)`；未在 `.env.example`/`.env.sample` 记录。
-- Problem: Redis 故障时登录/抓取/RBAC 限流被绕过，恰在基础设施降级时丧失暴力破解防护。
-- Why it matters: 攻击者在 Redis 降级窗口可无限暴力破解登录。
-- Realistic failure scenario: Redis 故障 → 登录限流放行 → 攻击者爆破凭据。
-- Minimal fix: 默认 fail-closed（`false`），并在样例中记录该开关。
-- Better long-term fix: 限流状态本地降级兜底（进程内存窗口）。
-- Regression test suggestion: 单测断言 Redis 异常时默认拒绝而非放行。
-- Estimated effort: 1 hour
-
-### Finding: SEC-11 源码内置微博会话 Cookie
-
-- Severity: Low
-- Confidence: High
-- Category: Security
-- Status: Resolved
-- Resolved in: `227438a9`（2026-08-13）
-- Resolution evidence: 已移除 `DEFAULT_WEIBO_COOKIE`；缺失运行时密钥/`WEIBO_COOKIE` 时抛 `NewsSourceRuntimeSecretRequiredError` 禁用该源。
-- Affected area: `apps/api/src/modules/news-aggregator/sources/weibo.ts:10-11,37`
-- Evidence: `DEFAULT_WEIBO_COOKIE = "SUB=_2AkMWIuNSf8..."`（真实外观会话 cookie），无运行时密钥时被使用。
-- Problem: 会话凭据进入源码并被分发到所有部署。
-- Why it matters: 凭据随源码泄露，且无法轮换。
-- Realistic failure scenario: 仓库公开 → 微博会话 cookie 被滥用。
-- Minimal fix: 移除默认值，缺失 `WEIBO_COOKIE` 时该源禁用；轮换该 cookie。
-- Better long-term fix: 微博源凭据统一走加密的新闻源运行时密钥。
-- Regression test suggestion: 配置测试断言未配置 cookie 时 weibo 源不启动。
-- Estimated effort: 1 hour
-
-### Finding: SEC-12 健康端点公开版本与依赖状态
-
-- Severity: Low
-- Confidence: High
-- Category: Security
-- Status: Resolved
-- Resolved in: `2689c20a`（2026-08-13）
-- Resolution evidence: `/healthz` 就绪探针改为 `@AllowAuthenticated()`；公开 `/healthz/live` 仅返回 `{ status: "ok" }`，不含 version/依赖细节。
-- Affected area: `apps/api/src/modules/health/health.controller.ts:35-72`
-- Evidence: 公开返回 `version`、`now` 及 MySQL/Redis/Mongo/磁盘/crawl4ai 细节。
-- Problem: 版本披露 + 就绪探测的轻微放大面（5s 缓存已缓解）。
-- Why it matters: 精确版本号便于漏洞选择。
-- Realistic failure scenario: 攻击者据版本号定位已知漏洞。
-- Minimal fix: 生产移除 version 或置于鉴权后。
-- Better long-term fix: 分离公开存活探针与鉴权就绪探针。
-- Regression test suggestion: 单测断言生产响应不含精确版本号。
-- Estimated effort: <1 hour
-
-### Finding: SEC-13 Swagger 无条件提供
-
-- Severity: Low
-- Confidence: High
-- Category: Security
-- Status: Resolved
-- Resolved in: `8819ce7a`（2026-08-13）
-- Resolution evidence: `SwaggerModule.setup` 受 `env.swaggerEnabled`/`SWAGGER_ENABLED` 门控；生产默认 false 并强制兜底。
-- Affected area: `apps/api/src/main.ts:154-164`
-- Evidence: `SwaggerModule.setup("docs", ...)` 未按 `NODE_ENV` 门控。
-- Problem: 生产暴露完整 API schema。
-- Why it matters: 完整接口面披露。
-- Realistic failure scenario: 生产环境暴露 `/docs`/`/docs/json`。
-- Minimal fix: 生产默认关闭或加鉴权。
-- Better long-term fix: 文档仅在开发环境挂载。
-- Regression test suggestion: 配置测试断言生产不挂载 `/docs`。
-- Estimated effort: <1 hour
-
-### Finding: DINT-01 MySQL 事务内写 MongoDB（回滚遗留孤儿）
-
-- Severity: High
-- Confidence: High
-- Category: Stability
-- Status: Resolved
-- Resolved in: `ce2a2cbe`（2026-08-14）；scheduler 残余 `9ef6982b`
-- Resolution evidence: `MongoOutboxType.raw_item` + [`raw-item-outbox.service.ts`](apps/api/src/modules/items/raw-item-outbox.service.ts)；`items.service` `create()`/`update()` 事务内只写 MySQL + outbox，提交后 `deliverNow` 幂等 upsert Mongo。scheduler `enqueueRssSeedPipelineJob` 同样预分配 `rawItemId` + outbox（payload 含 `pipelineJobId`/`sourceId`/`priority`），不再在事务内 `RawItemModel.create`。
-- Affected area: `apps/api/src/modules/items/items.service.ts:1124-1147,3858-3886`
-- Evidence: `create()` 路径在 Prisma `$transaction` 内执行 `tx.itemMeta.create → RawItemModel.create（Mongo）→ tx.itemMeta.update`。
-- Relevant behavior: Mongo 写不被 MySQL 事务覆盖；事务在 `itemMeta.update` 失败回滚后，Mongo 的 `RawItem` 文档成为孤儿（兄弟分支 `:1096-1104` 有补偿删除，此路径无）。
-- Problem: 跨数据存储写无补偿。
-- Why it matters: 破坏 `ItemMeta.mongoRef ↔ RawItem` 1:1 引用完整性。
-- Realistic failure scenario: `itemMeta.update` 失败回滚 → MySQL 无记录但 Mongo 遗留 RawItem 文档。
-- Minimal fix: 将 Mongo 写改为 outbox 事务外发（本仓库已有成熟的 MongoOutbox 模式）。
-- Better long-term fix: 全面推广 outbox 覆盖所有跨库写路径。
-- Regression test suggestion: 模拟事务中途失败，断言无孤儿 RawItem 文档。
-- Estimated effort: 3–5 hours
-
-### Finding: DINT-02 告警冷却占用与事件/投递创建非原子
-
-- Severity: Medium
-- Confidence: High
-- Category: Stability
-- Status: Resolved
-- Resolved in: `ce2a2cbe`（2026-08-14）
-- Resolution evidence: `evaluateRule` 将 cooldown CAS `updateMany`、`alertEvent.create` 与 `alertDelivery.create` 包进同一 `$transaction`；入队/in-app 通知/pubsub 仍在 commit 之后。
-- Affected area: `apps/api/src/modules/alerts/alerts.service.ts:1342-1399`
-- Evidence: `evaluateRule` 用 `updateMany` 原子占用 cooldown 后，在事务外创建 `alertEvent`(1368) 与 `alertDelivery`(1388-1399)。
-- Problem: 崩溃于占用后丢告警；崩溃于事件后留 0 投递的 pending 事件。
-- Why it matters: 每个触发应精确产生一个事件 + 其投递。
-- Realistic failure scenario: 进程在占用与事件创建间崩溃 → 冷却被消耗且告警永久丢失。
-- Minimal fix: 事件+投递在同一事务内创建，或改 outbox。
-- Better long-term fix: 告警触发走 outbox 模式。
-- Regression test suggestion: 模拟占用后崩溃，断言无孤立冷却/事件。
-- Estimated effort: 2–4 hours
-
-### Finding: DINT-03 助手/分析处理器重试时状态回退并重跑 LLM
-
-- Severity: Medium
-- Confidence: High
-- Category: Stability
-- Status: Resolved
-- Resolved in: `ce2a2cbe`（2026-08-14）
-- Resolution evidence: `AssistantRunModel`/`AnalysisResultModel` 用 `findOneAndUpdate` 仅从 `pending`/`failed` 占用为 `running`；`completed` 与进行中的 `running` 直接跳过。
-- Affected area: `apps/api/src/modules/assistant/assistant.service.ts:282-387`、`analysis.service.ts:134-218`
-- Evidence: `process(job)` 无状态守卫，`findById → status="running" → save → LLM → status="completed" → save`；BullMQ 重试/重复 worker 会把 `completed` 翻回 `running` 并重跑昂贵的 LLM。
-- Problem: 终端状态非单调。
-- Why it matters: 重复执行昂贵 LLM 且产生错误状态。
-- Realistic failure scenario: 部分成功后重试 → `completed` 记录被翻回 `running` 并重跑。
-- Minimal fix: 处理前用条件更新占用（`status: running` 仅在 `pending` 时），`completed/failed` 时直接跳过。
-- Better long-term fix: 引入显式状态机 + 幂等 jobId 去重。
-- Regression test suggestion: 单测断言对已完成记录重放 job 不改变状态、不重调 LLM。
-- Estimated effort: 2–3 hours
-
-### Finding: DINT-04 知识图谱边 weight/confidence 读改写丢失更新
-
-- Severity: Medium
-- Confidence: High
-- Category: Stability
-- Status: Resolved
-- Resolved in: `ce2a2cbe`（2026-08-14）
-- Resolution evidence: `upsertEdge` 对已存在边（含 create 撞唯一后的胜者）`SELECT ... FOR UPDATE` 后再按原公式增量；不再在 unique race 时丢弃观察。
-- Affected area: `apps/api/src/modules/knowledge-graph/knowledge-graph.service.ts:1052-1106`
-- Evidence: `upsertEdge` 读 `existing.weight/confidence` → `nextWeight = prevWeight + 1` 与加权平均 → 更新；事务内但无 `SELECT ... FOR UPDATE` 行锁。
-- Problem: 并发摄取（cron vs seed/review）同时读到同一 weight 均写同一增量，丢失一次观察。
-- Why it matters: `weight` 不能准确反映观察次数。
-- Realistic failure scenario: 两条摄取并发读同一边 → 各自 +1 → 最终 weight 少 1。
-- Minimal fix: 事务内行锁（`FOR UPDATE`）或原子 `UPDATE ... SET weight = weight + 1`。
-- Better long-term fix: 边权重改为聚合视图/事件溯源。
-- Regression test suggestion: 并发测试断言 N 次摄取后 weight 精确 = N。
-- Estimated effort: 2–3 hours
-
-### Finding: DINT-05 CrawlFrontierNode 去重仅为索引非唯一
-
-- Severity: Medium
-- Confidence: High
-- Category: Stability
-- Status: Resolved
-- Resolved in: `ce2a2cbe`（2026-08-14）
-- Resolution evidence: `@@unique([runId, urlFingerprint])` + 去重迁移；layered executor 有 fingerprint 的路径改为幂等 `persistFrontierNode`，已存在则跳过重复入队。
-- Affected area: `packages/db/prisma/schema.prisma:705`
-- Evidence: `@@index([runId, urlFingerprint])` 而非 `@@unique`。
-- Problem: 并发 frontier 扩展可为同 URL 插入重复节点，虚增 `nodeCount/articleCount` 聚合。
-- Why it matters: 前端聚合数据失真。
-- Realistic failure scenario: 并发扩展同 URL → 重复节点 → 计数虚高。
-- Minimal fix: 改 `@@unique` 并写路径 upsert。
-- Better long-term fix: 引入去重服务统一处理。
-- Regression test suggestion: 并发插入同 fingerprint 断言唯一。
-- Estimated effort: 1–2 hours
-
-### Finding: DINT-06 抓取任务创建非事务 + 入队/状态竞争
-
-- Severity: Medium
-- Confidence: High
-- Category: Stability
-- Status: Resolved
-- Resolved in: `9ef6982b`（2026-08-14）
-- Resolution evidence: `createTask` 与 news-source scheduler 入队后 `updateMany({ where: { id, status: "pending" }, data: { status: "queued" } })`；`createTask` 回读任务再返回。
-- Affected area: `apps/api/src/modules/crawl/crawl-task.service.ts:156-198`
-- Evidence: `crawlTask.create → writeAuditLogBestEffort → enqueueTask → update(status:"queued")` 无事务；入队在状态更新前，快 worker 可能已置 `running`，随后 195 行无条件写回 `queued`。
-- Problem: 入队与状态更新存在竞争。
-- Why it matters: 任务状态与实际队列状态不一致。
-- Realistic failure scenario: worker 快速置 `running` 后被回写 `queued` → 状态回退。
-- Minimal fix: 入队成功后条件更新（`where status:"pending"`）为 queued。
-- Better long-term fix: 任务创建+入队包裹统一状态机。
-- Regression test suggestion: 单测断言已 running 的任务不被回写 queued。
-- Estimated effort: 1–2 hours
-
-### Finding: DINT-07 摘要邮件发送与 nextRunAt 推进非原子
-
-- Severity: Medium
-- Confidence: High
-- Category: Stability
-- Status: Resolved
-- Resolved in: `9ef6982b`（2026-08-14）
-- Resolution evidence: `processDueSchedule` 发送前 `updateMany` CAS 占用 `nextRunAt`；发送失败不再二次推进；空摘要/未验证邮箱路径同样 CAS。
-- Affected area: `apps/api/src/modules/user-digest/user-digest-delivery.service.ts:289-310`
-- Evidence: 先发邮件(294-299)后更新 `nextRunAt/lastSentAt`(301-310)，无条件 `updateMany` 占用。
-- Problem: 崩溃/重叠导致同窗口摘要重复发送。
-- Why it matters: 用户收到重复邮件。
-- Realistic failure scenario: 发送后崩溃 → nextRunAt 未推进 → 下次再选同窗口再发。
-- Minimal fix: 发送前条件占用 `nextRunAt`（CAS）。
-- Better long-term fix: 发送幂等键去重。
-- Regression test suggestion: 并发测试断言每个窗口仅发送一次。
-- Estimated effort: 1–2 hours
-
-### Finding: DINT-08 告警投递发送非原子占用
-
-- Severity: Medium
-- Confidence: High
-- Category: Stability
-- Status: Resolved
-- Resolved in: `9ef6982b`（2026-08-14）
-- Resolution evidence: `AlertDeliveryStatus.sending` + `handleDeliveryJob` 在 delay 之后、发送之前 CAS `pending→sending`；重试可回收 `sending`；`reconcileEventStatus` 将 `sending` 视为进行中。
-- Affected area: `apps/api/src/modules/alerts/alerts.service.ts:1996-2086`
-- Evidence: `handleDeliveryJob` 普通读判 `pending` 后发送，再标 `sent`，无租约/锁列。
-- Problem: 并发/重投导致重复通知。
-- Why it matters: 用户收到重复告警通知。
-- Realistic failure scenario: 两个 worker 同时观察 pending → 均发送 → 重复通知。
-- Minimal fix: 条件 `updateMany(status:"pending"→"sending")` 原子占用。
-- Better long-term fix: 引入投递租约/幂等键。
-- Regression test suggestion: 并发测试断言每投递至多发送一次。
-- Estimated effort: 1–2 hours
-
-### Finding: DINT-09 知识图谱关系缺 onDelete → 孤儿
-
-- Severity: Medium
-- Confidence: High
-- Category: Stability
-- Status: Resolved
-- Resolved in: `9ef6982b`（2026-08-14）
-- Resolution evidence: `KnowledgeEntityAlias.entity`、`KnowledgeEdge.fromEntity/toEntity`、`KnowledgeEdgeEvidence.edge/article` 均为 `onDelete: Cascade`；迁移 `20260814141000_knowledge_graph_on_delete_cascade`。
-- Affected area: `packages/db/prisma/schema.prisma:2414,2431,2433,2455,2457`
-- Evidence: `KnowledgeEntityAlias.entity`、`KnowledgeEdge.fromEntity/toEntity`、`KnowledgeEdgeEvidence.edge/article` 无 `onDelete`。
-- Problem: 删除实体/边无级联，可能孤儿。
-- Why it matters: 引用完整性破坏。
-- Realistic failure scenario: 删除实体 → 遗留别名/边/证据行。
-- Minimal fix: 补齐 `onDelete`（SetNull/Cascade 按语义）。
-- Better long-term fix: 统一 FK 级联策略并加迁移测试。
-- Regression test suggestion: 迁移后测试删除实体不遗留别名。
-- Estimated effort: 1–2 hours
 
 ### Finding: AI-01 护栏仅覆盖助手，新闻清洗管线无输入审核
 
@@ -727,42 +279,6 @@ Overall         █████░░░░░  5.3  B
 - Regression test suggestion: 单测断言失败路径记录日志。
 - Estimated effort: 1 hour
 
-### Finding: TST-01 e2e 全量 mock，非端到端
-
-- Severity: High
-- Confidence: High
-- Category: Testing
-- Status: Resolved
-- Resolved in: `a452f264`（2026-08-13）
-- Resolution evidence: 全仓库 `*.spec.ts`/`*.e2e-spec.ts` 与 Jest 工具链已删除，假 e2e 不再提供虚假信心。残余：仍无真实依赖的 e2e（见 TST-03、REL-01）；`AGENTS.md` 现禁止新增测试文件。
-- Affected area: `apps/api/test/app.e2e-spec.ts:66-143`、`graphql.e2e-spec.ts:152-305`（文件已删除）
-- Evidence: 两个 e2e `overrideProvider` 约 20-25 个 provider（Prisma → `$queryRaw: jest.fn()`、MONGO → `{}`、所有队列 → `{add: jest.fn()}`）；"allows login" 测试 mock `AuthService` 返回硬编码 token，仅断言 200。
-- Problem: 只验证 Nest DI + HTTP 路由，不验证真实 bcrypt/JWT/Mongo/MySQL/Redis。
-- Why it matters: 无法发现启动/连接/真实认证问题。
-- Realistic failure scenario: 真实 DB 连接配置错误，e2e 仍绿。
-- Minimal fix: 引入真实依赖（testcontainers）或至少不 mock 认证/持久化核心路径。
-- Better long-term fix: 用 testcontainers 建完整集成栈。
-- Regression test suggestion: e2e 用真实 DB 跑登录流程。
-- Estimated effort: 1–3 days
-
-### Finding: TST-02 约 70 个前端测试是源码文本断言
-
-- Severity: High
-- Confidence: High
-- Category: Testing
-- Status: Resolved
-- Resolved in: `a452f264`（2026-08-13）
-- Resolution evidence: 最小修复「改为渲染/行为测试**或删除**」已落地——全部 web spec（含 ~70 个源码文本断言）已删除。残余：行为测试未重建（见 TST-03）。
-- Affected area: `apps/web/tests/onboarding-flow.spec.ts:15-54`（代表）+ ~69 个（文件已删除）
-- Evidence: `fs.readFileSync(...).toContain('<OnboardingBoundary>{children}</OnboardingBoundary>')`；27 个文件名带 "wiring"。
-- Problem: 校验源码文本而非行为；改名/提常量即挂，真实回归却通过。
-- Why it matters: 测试价值为负（脆弱且不防回归）。
-- Realistic failure scenario: 逻辑错误不改变匹配文本 → 测试仍绿。
-- Minimal fix: 改为渲染/行为测试或删除。
-- Better long-term fix: 建立基于 @testing-library/react 的行为测试基线。
-- Regression test suggestion: 用 @testing-library/react 断言实际渲染与交互。
-- Estimated effort: 2–4 days
-
 ### Finding: TST-03 无前端组件渲染测试
 
 - Severity: High
@@ -778,24 +294,6 @@ Overall         █████░░░░░  5.3  B
 - Better long-term fix: 关键工作流（登录后列表/设置保存）组件级测试 + Playwright。
 - Regression test suggestion: 关键工作流组件级测试。
 - Estimated effort: 2–4 days
-
-### Finding: TST-04 54 处私有方法 spyOn（实现细节断言）
-
-- Severity: Medium
-- Confidence: High
-- Category: Testing
-- Status: Resolved
-- Resolved in: `a452f264`（2026-08-13）
-- Resolution evidence: 含 54 处 `jest.spyOn(service as any, …)` 的 spec 已全部删除，实现细节断言不再提供虚假信心。残余：公开行为测试未重建。
-- Affected area: `user-content-subscriptions.service.spec.ts`（20+ 处）等（文件已删除）
-- Evidence: `jest.spyOn(service as any, "loadTopicCandidates")` 等替换类自身私有 helper。
-- Problem: 单测退化为"桩之间的接线"，真正私有逻辑不执行。
-- Why it matters: 最易出错的私有逻辑未被验证。
-- Realistic failure scenario: 私有方法被重写为错误实现，测试仍绿。
-- Minimal fix: 改测公开行为或抽出可注入依赖。
-- Better long-term fix: 以行为契约重构测试。
-- Regression test suggestion: 以行为重写代表性用例。
-- Estimated effort: 2–3 days
 
 ### Finding: TST-05 覆盖率配置了但从不收集/无阈值
 
@@ -1113,8 +611,7 @@ Overall         █████░░░░░  5.3  B
 
 | Subtype | Count | Affected Areas | Recommended Action |
 |---------|-------|----------------|-------------------|
-| ModuleBoundary | 2 | `items.service`(跨 MySQL/Mongo 写，DINT-01 **已 Resolved**)、`crawl-execution.service`(god service) | 拆分服务、抽出仓储边界 |
-| StateOwnership | 2 | `assistant.service`/`analysis.service` 无状态守卫（DINT-03 **已 Resolved**）、`knowledge-graph` 边计数（DINT-04 **已 Resolved**）；告警投递/抓取任务 CAS（DINT-06/08 **已 Resolved**） | 定义单一状态机 owner + 原子占用 |
+| ModuleBoundary | 1 | `crawl-execution.service`(god service) | 拆分服务、抽出仓储边界 |
 | BoundaryContract | 1 | vector 服务信任 body `orgId`（共享 token 后） | 向量边界显式契约 + 服务端重推导 |
 | EvolutionRisk | 3 | 4000-8200 行文件、`CRAWL4AI_JSCODE_ENABLED` 默认开 | 抽取扩展点、收紧默认 |
 
@@ -1128,7 +625,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 未做动态渗透/依赖 CVE 扫描。
 
-见第 4 节 SEC-01 ~ SEC-13（**2026-08-14 起均为 Resolved**）。已核实的**正确措施**：bcrypt cost 10、refresh token 轮换+黑名单、TOTP MFA+恢复码、jti 登出黑名单、issuer/audience 校验、每次请求回查 DB profile、actor 不可授予超出自身权限、`validateSsrfUrl`（RFC1918/环回/链路本地/云元数据/DNS rebinding）、GraphQL 深度/复杂度/CSRF 防护、生产异常脱敏、机器 token 仅 `metrics.read`。审计后已关闭：占位符 JWT 密钥、weibo 内置 cookie、公共门户回退发布、CORS 反射、限流 fail-open、Bull Board 默认暴露、生产 Playground/Swagger。
+已核实的**正确措施**：bcrypt cost 10、refresh token 轮换+黑名单、TOTP MFA+恢复码、jti 登出黑名单、issuer/audience 校验、每次请求回查 DB profile、actor 不可授予超出自身权限、`validateSsrfUrl`（RFC1918/环回/链路本地/云元数据/DNS rebinding）、GraphQL 深度/复杂度/CSRF 防护、生产异常脱敏、机器 token 仅 `metrics.read`。本维度无仍开放的 Finding。
 
 ## 7. Stability Concerns
 
@@ -1138,7 +635,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 未做故障注入/压测。
 
-见 DINT-01 ~ DINT-09、STAB-01 ~ STAB-04。**DINT-01 ~ DINT-09 已 Resolved**（`ce2a2cbe` + `9ef6982b`）。**正确措施**：全库 0 个真正空 catch；几乎所有上游客户端带显式超时（Crawl4AI/LiteLLM/vector/akshare/model-service/GDELT/OpenSky）；生产异常过滤器彻底脱敏；outbox 租约占用正确。
+见 STAB-01 ~ STAB-04。**正确措施**：全库 0 个真正空 catch；几乎所有上游客户端带显式超时（Crawl4AI/LiteLLM/vector/akshare/model-service/GDELT/OpenSky）；生产异常过滤器彻底脱敏；outbox 租约占用正确。
 
 ## 8. Performance Concerns
 
@@ -1158,7 +655,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 审计当日未跑全量套件。
 
-见 TST-01 ~ TST-07。**正向（审计当日）**：API 单测质量高（auth/MFA/litellm/queue processor 均为真实行为与错误路径）；数据回填脚本测试了恢复游标与幂等。**2026-08-14：** TST-01/02/04 已 Resolved（假 e2e / 源码断言 / 私有 spyOn 删除）。**缺口仍开放**：无 CI（REL-01）、无组件测试（TST-03）、vector 零测试（TST-06）、无覆盖率门禁（TST-05）、生产路径 `NODE_ENV==="test"` 分支（TST-07）。
+见 TST-03、TST-05 ~ TST-07。**缺口仍开放**：无 CI（REL-01）、无组件测试（TST-03）、vector 零测试（TST-06）、无覆盖率门禁（TST-05）、生产路径 `NODE_ENV==="test"` 分支（TST-07）。
 
 ## 10. Maintainability Concerns
 
@@ -1204,7 +701,6 @@ Overall         █████░░░░░  5.3  B
 |---------|-------|---------------|-------------------|
 | StaleDocs | 1 | `version.json`(0.73.0) vs `package.json`(0.1.0) | 统一版本来源 |
 | ConfigDocs | 2 | `.env.example`/`.env.sample` 未记录 `RATE_LIMIT_REDIS_FAIL_OPEN`、`CRAWL4AI_JSCODE_ENABLED` 默认开 | 补齐关键开关文档 |
-| UserDocs | 1 | README 提示复制样例文件，但样例含弱密钥（SEC-01，**已 Resolved**） | 加"必须替换"强提示 |
 
 **正向**：README 的架构图、配置速览、SSRF 排障、健康语义文档质量高且与实现一致（如 `AISSTREAM_API_KEY` 缺失即启动失败、`/healthz/live` vs `/health` 语义）。
 
@@ -1221,7 +717,6 @@ Overall         █████░░░░░  5.3  B
 | Subtype | Count | Affected Data | Recommended Action |
 |---------|-------|---------------|-------------------|
 | Minimization | 1 | `user-news-behavior`（view/click/bookmark 画像写入 Redis） | 确认画像最小化与保留期 |
-| AccessBoundary | 1 | `public-portal` 回退发布（SEC-02，**已 Resolved**） | 显式发布审批 |
 | TelemetryPrivacy | 1 | `.env.example` 泄漏真实个人邮箱 `wei500l@163.com` | 替换为占位符 |
 
 **正向**：组织级数据隔离在 items/knowledge-graph/dashboard/situation-monitor 等查询中一致执行；机器 token 最小权限；无 PII 明文日志的明显证据。
@@ -1239,7 +734,6 @@ Overall         █████░░░░░  5.3  B
 | Subtype | Count | Affected Workflows | Recommended Action |
 |---------|-------|-------------------|-------------------|
 | ErrorState | 1 | 多处 `.catch(() => null)` 静默降级（STAB-04） | 前端提供可恢复的错误/空态 |
-| LoadingState | 1 | 助手/分析无状态守卫（DINT-03，**已 Resolved**） | 防重复提交与状态回退 |
 
 **结论**：该维度因未做浏览器实测而覆盖有限，**无法给出干净结论**。建议后续用 Playwright 补关键工作流（登录、设置保存、战争地图）的可访问性/错误态回归。前端存在 0 个组件渲染测试（TST-03），进一步限制了本维度证据。
 
@@ -1291,12 +785,12 @@ Overall         █████░░░░░  5.3  B
 
 | Subtype | Count | Affected Keys / Files | Recommended Action |
 |---------|-------|-----------------------|-------------------|
-| UnsafeDefault | 4 | `JWT_SECRET`/`NEXTAUTH_SECRET` 占位符、`CRAWL4AI_JSCODE_ENABLED` 默认开、`NODE_ENV` 默认 development | 拒绝已知弱值 + 收紧默认 |
-| SecretConfig | 4 | `SYSTEM_SETTINGS_ENCRYPTION_KEY` 空、`LITELLM_API_KEY` 可选、`VECTOR_INTERNAL_TOKEN=dev-token`、weibo cookie | fail-closed |
+| UnsafeDefault | 2 | `CRAWL4AI_JSCODE_ENABLED` 默认开、`NODE_ENV` 默认 development | 收紧默认 |
+| SecretConfig | 2 | `LITELLM_API_KEY` 可选、`VECTOR_INTERNAL_TOKEN=dev-token` | fail-closed |
 | EnvironmentSeparation | 1 | 大量布尔 `!== "production"` 分支，`NODE_ENV` 未设即走 dev 分支 | 默认生产安全 |
 | SchemaValidation | 1 | ais-relay 无 Zod 校验，`process.env` 直读 + 静默回退 | 集中校验 |
 
-见 SEC-01、SEC-08、SEC-09、SEC-10、SEC-11 及 SEC-04（**2026-08-14 起均为 Resolved**）。**正向**：API/vector 用 `@nestjs/config` + Zod `validate`；`env:check` 脚本覆盖 AIS 相关配置。
+见 STAB-01/02、REL-07、AI-02。**正向**：API/vector 用 `@nestjs/config` + Zod `validate`；`env:check` 脚本覆盖 AIS 相关配置。
 
 ## 19. Observability / Operability Analysis
 
@@ -1328,11 +822,7 @@ Overall         █████░░░░░  5.3  B
 
 | Subtype | Count | Invariants at Risk | Recommended Action |
 |---------|-------|-------------------|-------------------|
-| TransactionBoundary | 2 | 跨库写（DINT-01，**已 Resolved**）、告警冷却（DINT-02，**已 Resolved**） | outbox/事务 |
-| Idempotency | 3 | 助手/分析状态（DINT-03，**已 Resolved**）、摘要邮件（DINT-07，**已 Resolved**）、告警投递（DINT-08，**已 Resolved**） | 条件占用/幂等键 |
-| ConcurrencyConsistency | 2 | KG 边权重（DINT-04，**已 Resolved**）、任务状态（DINT-06，**已 Resolved**） | 行锁/CAS |
 | MigrationSafety | 1 | 无回滚脚本 | 补 down 迁移或回滚手册 |
-| InvariantValidation | 2 | 缺 onDelete（DINT-09，**已 Resolved**）、去重非唯一（DINT-05，**已 Resolved**） | 约束补齐 |
 
 **正向**：MongoOutbox 事务外发 + 租约占用 + 幂等 upsert + 死信补偿；60 个迁移无破坏性操作（仅一次冗余 DROP INDEX）；关键复合唯一约束正确（Article/Membership/CrawlResult/KnowledgeEntity）。
 
@@ -1360,25 +850,18 @@ Overall         █████░░░░░  5.3  B
 
 **Coverage: High** — e2e mock/源码断言/私有方法 spy 审读。
 
-**Inspected evidence**: 审计当日两个 e2e 的 provider 覆盖、~70 个 web 源码断言、54 处私有 spyOn、`vitest.config.ts`。2026-08-14 复核：对应 spec 已删除（`a452f264`）。
+**Inspected evidence**: 仓库现无 `*.spec.ts`/`*.test.ts`；假 e2e / 源码断言套件已删，真实行为测试未重建。
 
-**Exclusions / limits**: 审计当日未跑套件验证 flaky。
+**Exclusions / limits**: 无自动化套件可跑。
 
 ### Confidence Assessment
 
 | Test Area | Real Confidence | Risk | Action |
 |-----------|---------------|------|--------|
-| API 单测（auth/MFA/litellm/queue） | None（套件已删） | 原为真实行为 + 错误路径 | 重建行为测试（当前 `AGENTS.md` 禁止 spec） |
-| API e2e | None | 假 e2e 已删，真实依赖 e2e 仍缺 | Rewrite（testcontainers） |
-| Web 测试（~70 个） | None | 源码文本断言已删 | 行为测试未重建（TST-03） |
-| Web 逻辑单测（utils/store/hooks） | None（套件已删） | 原为纯逻辑 | 重建 |
+| API 单测 | None | 套件已删 | 重建行为测试（当前 `AGENTS.md` 禁止 spec） |
+| API e2e | None | 真实依赖 e2e 仍缺 | Rewrite（testcontainers） |
+| Web 组件 | None | 行为测试未重建（TST-03） | 补组件渲染测试 |
 | model-service.client | None | 零测试 | 补测 |
-
-### Valuable Tests
-（审计当日）API auth/MFA/litellm/queue processor 单测（真实 bcrypt、错误路径、重试语义）；ais-relay 启发式分类测试（真实 fixture）；数据回填脚本测试（游标恢复 + 幂等）。**2026-08-14：上述文件已随 `a452f264` 删除。**
-
-### Suspicious Tests
-~~~70 个 web 源码断言~~、~~54 处私有方法 spyOn~~、~~e2e 全 mock~~ — **Resolved** `a452f264`（删除）。
 
 ### Missing Tests
 model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真实依赖的集成/认证流程。全仓现无任何自动化测试。
@@ -1396,10 +879,9 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 | Subtype | Count | KeepWithAlert | FailFast | Remove |
 |---------|-------|---------------|----------|--------|
 | SilentFallback | 3 | 3（ES/向量/图表静默降级，STAB-01/02/04） | 0 | 0 |
-| SilentCorrection | 1 | 1（`public_portal` 回退组织，SEC-02，**已 Resolved**） | 1 | 0 |
 | EmptyCatch | 0 | 0 | 0 | 0 |
 
-**结论**：全库无空 catch（显著优点）；主要风险是"静默降级无观测"（ES/向量/图表）。公共门户隐式回退（SEC-02）已于 2026-08-13 关闭。见 STAB-01/02/04。
+**结论**：全库无空 catch（显著优点）；主要风险是"静默降级无观测"（ES/向量/图表）。见 STAB-01/02/04。
 
 ## 24. Frontend State Analysis
 
@@ -1415,7 +897,6 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 |---------|-------|-------------------|
 | ComponentSize | 8 | 4000-8200 行组件（news-sources/situation-monitor/llm-gateway/war-map 等，MAINT-01） |
 | StateDuplication | 2 | war-map 归一化 store↔utils 重复（DEP-03）、situation-monitor lib/store 平行 |
-| RequestState | 1 | 助手/分析无状态守卫（DINT-03，**已 Resolved**） |
 
 **正向**：Zustand store 类型良好、防御性 sessionStorage 解析、`create<State>()` 类型化 setter。
 
@@ -1512,11 +993,9 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 |-----------|------------|----------|----------------|
 | Single Responsibility (1.1) | 8+ | High | 4000-8200 行 god 文件/服务 |
 | File Size Limit (1.2) | 20+ | High | 前端面板、crawl/items/dashboard service |
-| Fail-Fast (4.4) | 3 | High | `JWT_SECRET` 占位符（SEC-01，**已 Resolved**）、`LITELLM_API_KEY` 可选、加密密钥缺失仍写明文（SEC-04 生产路径 **已 Resolved**） |
-| Fail on Missing Config (9.2) | 4 | Critical | JWT/NextAuth 占位符（**已 Resolved**）、`LITELLM_API_KEY`、`SYSTEM_SETTINGS_ENCRYPTION_KEY`（生产写入 **已 Resolved**）、`LITELLM_MASTER_KEY` |
+| Fail-Fast (4.4) | 1 | High | `LITELLM_API_KEY` 可选 |
+| Fail on Missing Config (9.2) | 2 | Critical | `LITELLM_API_KEY`、`LITELLM_MASTER_KEY` |
 | Don't Swallow Errors (6.1) | 4 | Medium | ES/向量搜索静默 null/[]、图表 null |
-| Command-Query Separation (3.2) | 0 | Medium | 助手/分析 processor 读改写无占用（DINT-03 **已 Resolved**）；告警投递原子占用（DINT-08 **已 Resolved**） |
-| No Shared Mutable State (5.4) | 0 | Medium | KG 边权重（DINT-04 **已 Resolved**）；告警投递读改写（DINT-08 **已 Resolved**） |
 | Immutability Preference (5.1) | 1 | Medium | `ItemMeta.version` 死字段无乐观锁 |
 | YAGNI (4.2) | 1 | Medium | `supercluster` 死依赖 |
 
@@ -1525,7 +1004,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 - **Fail-Fast 的正面实现**：`AISSTREAM_API_KEY` 缺失即启动失败；`validateSsrfUrl` 在抓取边界拒绝私网；生产异常过滤器 fail-closed。
 - **Don't Swallow Errors**：全库 0 空 catch（正向）；护栏拦截不重试。
 - **Dependency Inversion (2.4)**：MongoOutbox 抽象了跨库一致性；vector-client/model-service 封装外部依赖。
-- **Test Behavior (8.1)**：审计当日 API 单测以真实行为为主；2026-08-14 假测试已删（TST-01/02/04），行为测试未重建（TST-03）。
+- **Test Behavior (8.1)**：行为测试未重建（TST-03）。
 - **Command-Query Separation 正面**：org 写权限在目标组织重推导。
 - **Least Privilege (4.6)**：机器 token 仅 `metrics.read`；actor 不可授予超出自身权限。
 
@@ -1533,61 +1012,47 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 ### Fix Immediately（数据丢失/安全破坏/服务中断）
 
-1. ~~SEC-01 拒绝已知占位符密钥（JWT/NextAuth）。~~ **Resolved** `ef09cf92`
-2. ~~SEC-04 生产缺 `SYSTEM_SETTINGS_ENCRYPTION_KEY` 拒绝写密钥。~~ **Resolved** `c57ffab9`
-3. ~~SEC-02 公共门户未配置 slug 时不再回退发布。~~ **Resolved** `072079ce`
-4. ~~**DINT-01 items 跨库写改 outbox。**~~ **Resolved** `ce2a2cbe`（scheduler 路径 `9ef6982b` 关闭）
-5. ~~SEC-03 内部密钥端点加 timingSafeEqual + 读取审计。~~ **Resolved** `720417f9`（全库密钥最小化返回仍为残余）
+（无仍开放的立即修复项。）
 
 ### Fix Before Stable Release（降低可靠性/正确性/安全风险）
 
-6. REL-01 加 CI（lint/typecheck/build）。
-7. REL-02 容器非 root + cap_drop。
-8. AI-01 护栏覆盖新闻管线。
-9. AI-02 助手按组织额度预算。
-10. ~~DINT-06 抓取任务 pending→queued CAS。~~ **Resolved** `9ef6982b`
-    ~~DINT-07 摘要邮件发送前占用 nextRunAt。~~ **Resolved** `9ef6982b`
-    ~~DINT-08 告警投递原子占用。~~ **Resolved** `9ef6982b`
-11. ~~SEC-08/09/10 关 GraphQL Playground、Bull Board 默认关、限流 fail-closed。~~ **Resolved** `c95cf8a7` / `beba3df5` / `b693ce92`
-12. REL-03/04/05/06/07 Docker 固定 digest、去 root、随机凭据、127.0.0.1 绑定、LiteLLM key。
-13. ~~TST-01/02 删除假 e2e 与源码文本断言。~~ **Resolved** `a452f264`；残余 TST-03 真实组件/行为测试仍缺。
+1. REL-01 加 CI（lint/typecheck/build）。
+2. REL-02 容器非 root + cap_drop。
+3. AI-01 护栏覆盖新闻管线。
+4. AI-02 助手按组织额度预算。
+5. REL-03/04/05/06/07 Docker 固定 digest、去 root、随机凭据、127.0.0.1 绑定、LiteLLM key。
+6. TST-03 真实组件/行为测试。
 
 ### Schedule Later（增加维护成本或限制规模）
 
-14. MAINT-01 拆分 god 文件。
-15. TYPES-01/02/03 收紧类型逃逸。
-16. REL-08 semver/changelog/SBOM/签名。
-17. ~~DINT-09 onDelete 补齐（DINT-05 唯一约束 **已 Resolved**）。~~ **Resolved** `9ef6982b`
-18. DEP-01/02/03 依赖清理与去重。
-19. BAPI-01 补齐分页。
+7. MAINT-01 拆分 god 文件。
+8. TYPES-01/02/03 收紧类型逃逸。
+9. REL-08 semver/changelog/SBOM/签名。
+10. DEP-01/02/03 依赖清理与去重。
+11. BAPI-01 补齐分页。
 
 ### Ignore for Now
 
-- ~~SEC-12/13（版本/Swagger 披露，低危）。~~ **Resolved** `2689c20a` / `8819ce7a`
 - STAB-04、TST-07 等低危项。
 - 引号/import 风格不一致（Prettier 未全量强制）。
 
 ## 32. Quick Wins（低成本高价值，1–2 小时/项）
 
-1. ~~SEC-01 在 `env:check` 增加示例值相等拒绝。~~ **Resolved**
-2. ~~SEC-08/09/10 三个开关默认值修正（各 <1h）。~~ **Resolved**
-3. STAB-01/02 降级路径加 warn + metric。
-4. STAB-03 `kaopu.ts` 改用 `myFetch`。
-5. DEP-01 移除 `supercluster`。
-6. TYPES-01 修 `undefined as unknown as ItemMetaModel`。
-7. REL-04 删除 Dockerfile bake 的 secret。
-8. AI-03 清洗 prompt 加"不可信输入"声明。
-9. REL-06 端口绑定 `127.0.0.1`。
-10. ~~SEC-11 移除 weibo 默认 cookie。~~ **Resolved** `227438a9`
+1. STAB-01/02 降级路径加 warn + metric。
+2. STAB-03 `kaopu.ts` 改用 `myFetch`。
+3. DEP-01 移除 `supercluster`。
+4. TYPES-01 修 `undefined as unknown as ItemMetaModel`。
+5. REL-04 删除 Dockerfile bake 的 secret。
+6. AI-03 清洗 prompt 加"不可信输入"声明。
+7. REL-06 端口绑定 `127.0.0.1`。
 
 ## 33. Long-term Refactor Plan
 
 1. **拆分 god 文件**（动机：不可审查/回归面大；方法：先补行为测试锚定，再逐面板/逐服务抽取子组件/子服务；风险：合并冲突；测试策略：每步抽取后跑 lint/typecheck；仓库现无测试套件）。
-2. **跨库一致性统一到 outbox**（动机：消除孤儿与多处非原子写；方法：复用 MongoOutbox/AuditLogOutbox/CrawlCleanupOutbox 模式；**DINT-01 scheduler 残余已关闭**；风险：延迟增加（cron 1min）需立即投递兜底；测试：故障注入 + 幂等重放测试）。
-3. **类型系统收紧**（动机：消除 99 处 `as unknown as` 与 GraphQL 上下文 any；方法：定义 `GraphQLContext`/`AuthenticatedUser`，边界用运行时校验；风险：一次性改动大；测试：类型检查 + 关键 resolver 单测）。
-4. **前端测试基础设施**（动机：假源码断言已删，行为测试未重建；方法：jsdom + @testing-library/react + Playwright 关键工作流；风险：初期投入大，且与当前 `AGENTS.md`「禁止 spec」冲突，需先修订指南；测试：以真实回归用例验证）。
-5. **发布管线**（动机：无 CI/版本/SBOM；方法：CI 门禁 + changesets + SBOM + cosign；风险：低；测试：CI 即验证）。
+2. **类型系统收紧**（动机：消除 99 处 `as unknown as` 与 GraphQL 上下文 any；方法：定义 `GraphQLContext`/`AuthenticatedUser`，边界用运行时校验；风险：一次性改动大；测试：类型检查 + 关键 resolver 单测）。
+3. **前端测试基础设施**（动机：行为测试未重建；方法：jsdom + @testing-library/react + Playwright 关键工作流；风险：初期投入大，且与当前 `AGENTS.md`「禁止 spec」冲突，需先修订指南；测试：以真实回归用例验证）。
+4. **发布管线**（动机：无 CI/版本/SBOM；方法：CI 门禁 + changesets + SBOM + cosign；风险：低；测试：CI 即验证）。
 
 ---
 
-*本报告由 fuck-my-shit-mountain skill 生成；所有发现均附具体 `file:line` 证据。审计当日未改被审代码。2026-08-14 更新 remediation 状态（SEC-01~SEC-13、DINT-01~DINT-09、TST-01/02/04 Resolved；DINT-01~05 落地于 `ce2a2cbe`；DINT-01 scheduler 残余与 DINT-06~09 落地于 `9ef6982b`；假测试删除于 `a452f264`）。*
+*本报告由 fuck-my-shit-mountain skill 生成；所有发现均附具体 `file:line` 证据。审计当日未改被审代码。2026-08-14 起已关闭 Finding 已从正文删除，仅保留仍开放项。*
