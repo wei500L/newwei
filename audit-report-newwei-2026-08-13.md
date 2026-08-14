@@ -5,7 +5,7 @@
 **Date:** 2026-08-13
 **Reviewer:** opencode (deepseek-v4-pro) — fuck-my-shit-mountain skill
 **Commit:** `beb32ead`（branch `main`）
-**Remediation review:** 2026-08-14 — 对照 `beb32ead..HEAD` 复核。**已解决：SEC-01 ~ SEC-13、DINT-01 ~ DINT-05**（DINT 落地于 `ce2a2cbe`）。残余：`news-source.scheduler.service.ts` 仍有同类事务内 `RawItemModel.create`（未列入 DINT-01 原范围）。
+**Remediation review:** 2026-08-14 — 对照 `beb32ead..HEAD` 复核。**已解决：SEC-01 ~ SEC-13、DINT-01 ~ DINT-05、TST-01/02/04**（DINT 落地于 `ce2a2cbe`；假测试套件删除于 `a452f264`）。残余：`news-source.scheduler.service.ts` 仍有同类事务内 `RawItemModel.create`（未列入 DINT-01 原范围）。
 
 ---
 
@@ -13,7 +13,7 @@
 
 这是一个体量可观、工程底子相当扎实的多租户情报平台（pnpm + Turborepo monorepo：NestJS 11 API + Next.js 15 Web + 向量服务 + AIS relay，Prisma/MySQL + Mongoose/MongoDB + BullMQ/Redis + Qdrant + LiteLLM）。核心安全与一致性基础设施的完成度显著高于同规模项目：认证采用 bcrypt、refresh token 轮换与黑名单、TOTP MFA 与恢复码、按组织隔离的 RBAC、GraphQL 深度/复杂度限制、SSRF 校验器、MongoOutbox 事务外发模式、DataLoader 批量加载、生产环境异常过滤器脱敏、近乎全覆盖的 Docker healthcheck 与启动依赖链。这些都不是"看起来对"，而是有具体实现与单测佐证。
 
-但平台存在两类真实而集中的风险。**第一类是"默认即不安全"的配置面**（审计当日）：`JWT_SECRET`/`NEXTAUTH_SECRET` 在提交的 `.env.example`、`infra/docker/.env.sample` 乃至当前本地 `.env` 中都是 `change_me_please_replace_32_chars`，而校验只检查 `min(16)`，于是这个公开已知的签名密钥能直接通过启动校验——一旦照抄部署即可伪造任意用户 token。同类的还有：系统设置密钥默认不加密（OIDC/TOTP/LLM 密钥明文入库）、Docker "生产"栈显式开启 GraphQL Playground/内省、Bull Board 默认开启且无鉴权、CORS 默认反射任意 Origin、限流默认 fail-open。**2026-08-14 复核：SEC-01 ~ SEC-13 均已落地（见各 Finding 的 Resolved 记录），此类配置面风险已关闭。** **第二类是"虚假的测试信心"**：仓库有 456 个测试文件，但没有 CI、e2e 全部 mock、约 70 个前端测试只是对源码做字符串包含断言、无任何组件渲染测试、覆盖率从未收集。
+但平台存在两类真实而集中的风险。**第一类是"默认即不安全"的配置面**（审计当日）：`JWT_SECRET`/`NEXTAUTH_SECRET` 在提交的 `.env.example`、`infra/docker/.env.sample` 乃至当前本地 `.env` 中都是 `change_me_please_replace_32_chars`，而校验只检查 `min(16)`，于是这个公开已知的签名密钥能直接通过启动校验——一旦照抄部署即可伪造任意用户 token。同类的还有：系统设置密钥默认不加密（OIDC/TOTP/LLM 密钥明文入库）、Docker "生产"栈显式开启 GraphQL Playground/内省、Bull Board 默认开启且无鉴权、CORS 默认反射任意 Origin、限流默认 fail-open。**2026-08-14 复核：SEC-01 ~ SEC-13 均已落地（见各 Finding 的 Resolved 记录），此类配置面风险已关闭。** **第二类是"虚假的测试信心"**（审计当日）：仓库有 456 个测试文件，但没有 CI、e2e 全部 mock、约 70 个前端测试只是对源码做字符串包含断言、无任何组件渲染测试、覆盖率从未收集。**2026-08-14 复核：假 e2e / 源码断言 / 私有 spyOn 套件已删除（TST-01/02/04，`a452f264`）；真实组件测试、覆盖率与 CI 仍缺（TST-03/05/06、REL-01）。**
 
 **2026-08-14 已关闭 DINT-01 ~ DINT-05**（`ce2a2cbe`）：items `create()`/`update()` 改为 MongoOutbox `raw_item` 外发；告警冷却占用与事件/投递同事务；助手/分析 processor 用 `findOneAndUpdate` CAS 占用；知识图谱边 `SELECT ... FOR UPDATE` 后增量；frontier `(runId, urlFingerprint)` 改为唯一约束 + upsert。AI/LLM 侧最突出的仍是护栏只覆盖助手、而处理不可信抓取文本的新闻清洗管线完全无输入审核，且助手无按组织的 token/额度预算。
 
@@ -33,7 +33,7 @@ Release         ████░░░░░░  4.0  C   无 CI、root 容器、
 Overall         █████░░░░░  5.3  B
 ```
 
-每个维度 0.0–10.0，**越高越好（10=干净，0=屎山）**。评分为基于证据的综合判断，非机械扣分；各维度一句话判据见上表，受限覆盖在对应章节说明。**上表为审计当日（`beb32ead`）基线评分，不因后续修复回溯改写。** 2026-08-14 复核后 Security 面风险已显著下降（SEC-01~SEC-13 Resolved）；Stability 面 DINT-01~05 已落地（`ce2a2cbe`）。
+每个维度 0.0–10.0，**越高越好（10=干净，0=屎山）**。评分为基于证据的综合判断，非机械扣分；各维度一句话判据见上表，受限覆盖在对应章节说明。**上表为审计当日（`beb32ead`）基线评分，不因后续修复回溯改写。** 2026-08-14 复核后 Security 面风险已显著下降（SEC-01~SEC-13 Resolved）；Stability 面 DINT-01~05 已落地（`ce2a2cbe`）；假测试套件已删除（TST-01/02/04，`a452f264`）。
 
 ### Finding Statistics
 
@@ -53,13 +53,13 @@ Overall         █████░░░░░  5.3  B
 | Severity | Count | Open Confirmed | Open Suspected | Resolved |
 |----------|-------|----------------|----------------|----------|
 | Critical | 1 | 0 | 0 | 1（SEC-01） |
-| High | 13 | 9 | 0 | 4（SEC-02/03/04、DINT-01） |
-| Medium | 34 | 23 | 1 | 10（SEC-05~10、DINT-02/03/04/05） |
+| High | 13 | 7 | 0 | 6（SEC-02/03/04、DINT-01、TST-01/02） |
+| Medium | 34 | 22 | 1 | 11（SEC-05~10、DINT-02/03/04/05、TST-04） |
 | Low | 8 | 5 | 0 | 3（SEC-11/12/13） |
 | Info | 0 | 0 | 0 | 0 |
-| **Total** | **56** | **37** | **1** | **18** |
+| **Total** | **56** | **34** | **1** | **21** |
 
-**已解决：** SEC-01 ~ SEC-13、DINT-01 ~ DINT-05。**残余：** `news-source.scheduler.service.ts` 仍有事务内 `RawItemModel.create`（DINT-01 原范围外）。
+**已解决：** SEC-01 ~ SEC-13、DINT-01 ~ DINT-05、TST-01/02/04。**残余：** `news-source.scheduler.service.ts` 仍有事务内 `RawItemModel.create`（DINT-01 原范围外）；无真实 e2e/组件测试/CI（TST-03、REL-01）。
 
 ## 2. Project Map
 
@@ -73,7 +73,7 @@ Overall         █████░░░░░  5.3  B
 
 **安全边界**：JWT（issuer/audience/jti 黑名单，每次请求回查 DB profile）、RBAC（按组织，actor 不可授予超出自身权限）、`validateSsrfUrl`、GraphQL 复杂度限制、登录限流。
 
-**测试结构**：API 263 个 `*.spec.ts`（密集于 crawl/system-settings/news-pipeline 等）+ 2 个 e2e；Web 189 个 Vitest spec（node 环境，无组件渲染）；vector 无测试。**无 CI**。
+**测试结构**（审计当日）：API 263 个 `*.spec.ts` + 2 个 e2e；Web 189 个 Vitest spec；vector 无测试。**2026-08-14：全部 `*.spec.ts`/`*.test.ts` 与 Jest/Vitest 工具链已删除（`a452f264`），仓库现以 lint/typecheck + 静态审查为唯一验证；仍无 CI。**
 
 **发布**：Docker Compose 本地栈；`docker-up.js` 有锁文件一致性/Prisma 迁移 id/Redis AOF 完整性预检；无 semver/changelog/SBOM/签名；镜像多按 tag 非 digest。
 
@@ -85,7 +85,7 @@ Overall         █████░░░░░  5.3  B
 | Security | High | guards/auth/rbac/SSRF/CORS/密钥/secrets 扫描、.env* | 未做动态渗透 |
 | Stability | High | catch/timeout/fallback 全库扫描、异常过滤器 | 未做故障注入 |
 | Performance | Medium | DataLoader、分页、索引迁移、N+1 抽样 | 未压测、未看 bundle 拆分细节 |
-| Testing | High | 456 测试文件全量清单、CI 缺失、e2e/单元抽样 | 未跑全量测试套件 |
+| Testing | High | 审计当日 456 测试文件全量清单、CI 缺失、e2e/单元抽样；2026-08-14 复核套件已删 | 审计当日未跑全量测试套件 |
 | Maintainability | High | 全库行数统计、type 逃逸计数、大文件清单 | 未度量圈复杂度 |
 | Design | High | 原则映射（SRP/DRY/fail-fast/类型逃逸） | — |
 | Release | High | Dockerfile/compose/CI/锁文件/版本/SBOM 扫描 | 未构建镜像 |
@@ -113,8 +113,8 @@ Overall         █████░░░░░  5.3  B
 
 1. **护栏仅覆盖助手**（AI-01, High）— 处理不可信抓取文本的新闻清洗管线无输入审核。
 2. **助手无按组织 token/额度预算**（AI-02, High）— 单组织可无限入队 LLM 任务。
-3. **无 CI/CD**（REL-01, High）— 456 个测试文件从不自动运行。
-4. **e2e 全量 mock + 前端测试为源码文本断言**（TST-01/02, High）— 虚假信心。
+3. **无 CI/CD**（REL-01, High）— lint/typecheck 从不自动运行；测试套件已删除。
+4. **无前端组件渲染测试**（TST-03, High）— 假测试已删，行为测试未重建。
 5. **容器以 root 运行**（REL-02, High）— 抓取浏览器进程以 root 跑，被攻破即容器 root。
 6. **多个 4000–8200 行 god 文件**（MAINT-01, High）— 不可审查、回归面大。
 7. **告警投递发送非原子占用**（DINT-08, Medium）— 重复通知。
@@ -131,6 +131,9 @@ Overall         █████░░░░░  5.3  B
 - ~~助手/分析处理器状态回退~~（DINT-03, Medium）— `ce2a2cbe`
 - ~~知识图谱边 weight 丢失更新~~（DINT-04, Medium）— `ce2a2cbe`
 - ~~CrawlFrontierNode 去重仅为非唯一索引~~（DINT-05, Medium）— `ce2a2cbe`
+- ~~e2e 全量 mock~~（TST-01, High）— `a452f264`（假 e2e 已删除；真实 e2e 仍缺）
+- ~~前端源码文本断言测试~~（TST-02, High）— `a452f264`（最小修复「删除」已落地）
+- ~~私有方法 spyOn 实现细节断言~~（TST-04, Medium）— `a452f264`
 
 ## 4. Detailed Findings
 
@@ -718,8 +721,10 @@ Overall         █████░░░░░  5.3  B
 - Severity: High
 - Confidence: High
 - Category: Testing
-- Status: Confirmed
-- Affected area: `apps/api/test/app.e2e-spec.ts:66-143`、`graphql.e2e-spec.ts:152-305`
+- Status: Resolved
+- Resolved in: `a452f264`（2026-08-13）
+- Resolution evidence: 全仓库 `*.spec.ts`/`*.e2e-spec.ts` 与 Jest 工具链已删除，假 e2e 不再提供虚假信心。残余：仍无真实依赖的 e2e（见 TST-03、REL-01）；`AGENTS.md` 现禁止新增测试文件。
+- Affected area: `apps/api/test/app.e2e-spec.ts:66-143`、`graphql.e2e-spec.ts:152-305`（文件已删除）
 - Evidence: 两个 e2e `overrideProvider` 约 20-25 个 provider（Prisma → `$queryRaw: jest.fn()`、MONGO → `{}`、所有队列 → `{add: jest.fn()}`）；"allows login" 测试 mock `AuthService` 返回硬编码 token，仅断言 200。
 - Problem: 只验证 Nest DI + HTTP 路由，不验证真实 bcrypt/JWT/Mongo/MySQL/Redis。
 - Why it matters: 无法发现启动/连接/真实认证问题。
@@ -734,8 +739,10 @@ Overall         █████░░░░░  5.3  B
 - Severity: High
 - Confidence: High
 - Category: Testing
-- Status: Confirmed
-- Affected area: `apps/web/tests/onboarding-flow.spec.ts:15-54`（代表）+ ~69 个
+- Status: Resolved
+- Resolved in: `a452f264`（2026-08-13）
+- Resolution evidence: 最小修复「改为渲染/行为测试**或删除**」已落地——全部 web spec（含 ~70 个源码文本断言）已删除。残余：行为测试未重建（见 TST-03）。
+- Affected area: `apps/web/tests/onboarding-flow.spec.ts:15-54`（代表）+ ~69 个（文件已删除）
 - Evidence: `fs.readFileSync(...).toContain('<OnboardingBoundary>{children}</OnboardingBoundary>')`；27 个文件名带 "wiring"。
 - Problem: 校验源码文本而非行为；改名/提常量即挂，真实回归却通过。
 - Why it matters: 测试价值为负（脆弱且不防回归）。
@@ -751,8 +758,8 @@ Overall         █████░░░░░  5.3  B
 - Confidence: High
 - Category: Testing
 - Status: Confirmed
-- Affected area: `apps/web/vitest.config.ts:11`（`environment:"node"`）
-- Evidence: 189 个 spec 全在 node 环境，无 `@testing-library/react`/`jsdom`/`render(`。
+- Affected area: `apps/web`（`vitest.config.ts` 已随套件删除）；`AGENTS.md` Verification 段
+- Evidence: 2026-08-14 复核：仓库 0 个 `*.spec.ts`/`*.test.ts`；无 `@testing-library/react`/`jsdom`/`render(`；`AGENTS.md` 明确禁止新增测试文件，验证仅限 lint/typecheck。
 - Problem: React 19 + AntD 大型控制台零组件覆盖。
 - Why it matters: 渲染/事件/prop 接线错误完全无保护。
 - Realistic failure scenario: 组件渲染崩溃/事件失效，测试不覆盖。
@@ -766,8 +773,10 @@ Overall         █████░░░░░  5.3  B
 - Severity: Medium
 - Confidence: High
 - Category: Testing
-- Status: Confirmed
-- Affected area: `user-content-subscriptions.service.spec.ts`（20+ 处）等
+- Status: Resolved
+- Resolved in: `a452f264`（2026-08-13）
+- Resolution evidence: 含 54 处 `jest.spyOn(service as any, …)` 的 spec 已全部删除，实现细节断言不再提供虚假信心。残余：公开行为测试未重建。
+- Affected area: `user-content-subscriptions.service.spec.ts`（20+ 处）等（文件已删除）
 - Evidence: `jest.spyOn(service as any, "loadTopicCandidates")` 等替换类自身私有 helper。
 - Problem: 单测退化为"桩之间的接线"，真正私有逻辑不执行。
 - Why it matters: 最易出错的私有逻辑未被验证。
@@ -783,9 +792,9 @@ Overall         █████░░░░░  5.3  B
 - Confidence: High
 - Category: Testing
 - Status: Confirmed
-- Affected area: `apps/api/jest.config.ts:18`、`apps/api/package.json`
-- Evidence: `collectCoverageFrom` 已配但脚本不带 `--coverage`、无 `coverageThreshold`；Web 无覆盖率配置。
-- Problem: 无法知道 263 个测试真正覆盖了什么。
+- Affected area: `apps/api/jest.config.ts`（已删除）、`AGENTS.md` Verification 段
+- Evidence: 审计当日 `collectCoverageFrom` 已配但脚本不带 `--coverage`、无 `coverageThreshold`。2026-08-14 复核：Jest/Vitest 与覆盖率配置随 `a452f264` 删除；仍无覆盖率门禁、无 `pnpm test`。
+- Problem: 无法知道代码覆盖了什么；现已无测试套件可收集覆盖率。
 - Why it matters: 关键模块（如 model-service）零覆盖无人察觉。
 - Realistic failure scenario: 覆盖率持续下降无门禁。
 - Minimal fix: 加 `--coverage` 与阈值门槛，接入 CI。
@@ -799,8 +808,8 @@ Overall         █████░░░░░  5.3  B
 - Confidence: High
 - Category: Testing
 - Status: Confirmed
-- Affected area: `apps/vector/package.json`
-- Evidence: 无 `test` 脚本、0 spec；Turbo `test` 任务对该包静默 no-op。
+- Affected area: `apps/vector/package.json`、`AGENTS.md` Verification 段
+- Evidence: 无 `test` 脚本、0 spec。2026-08-14 复核：全仓测试工具链已删，`AGENTS.md` 禁止新增 spec；vector 鉴权/检索仍无验证。
 - Problem: 整个可部署服务无保护。
 - Why it matters: 向量鉴权/检索核心无验证。
 - Realistic failure scenario: 鉴权/orgId 过滤回归，测试不覆盖。
@@ -815,8 +824,8 @@ Overall         █████░░░░░  5.3  B
 - Confidence: High
 - Category: Testing
 - Status: Confirmed
-- Affected area: `apps/api/src/modules/crawl/crawl-execution.service.ts:1947-1958`
-- Evidence: `sleep(ms)` 在 `NODE_ENV==="test"` 或 `setTimeout._isMockFunction` 时返回 `Promise.resolve()`。
+- Affected area: `apps/api/src/modules/crawl/crawl-execution.service.ts:2009`
+- Evidence: `sleep(ms)` 在 `NODE_ENV==="test"` 时直接 `Promise.resolve()`（2026-08-14 复核：该分支仍在；测试套件已删，此生产路径测试缝仍泄漏）。
 - Problem: 测试缝泄漏进生产路径，节流/退避时序在生产与测试不一致。
 - Why it matters: 节流行为在测试中不可见。
 - Realistic failure scenario: 生产节流 bug 无法被测试捕获。
@@ -833,12 +842,12 @@ Overall         █████░░░░░  5.3  B
 - Status: Confirmed
 - Affected area: 仓库根（`.github/workflows` 不存在）
 - Evidence: `ls .github` 不存在；`.husky/` 仅有 `_` stub，无真实 pre-commit/commit-msg；lint-staged/commitlint 配置未生效。
-- Problem: 456 个测试、lint、typecheck 从不自动运行；任何代码可直接合入 main。
+- Problem: lint/typecheck 从不自动运行；测试套件已删除（`a452f264`）；任何代码可直接合入 main。
 - Why it matters: 无合并门禁，回归无人拦截。
 - Realistic failure scenario: 破坏性变更直接合入 main 无人发现。
-- Minimal fix: 新增 CI（test/lint/typecheck/build 门禁）。
+- Minimal fix: 新增 CI（lint/typecheck/build 门禁）。
 - Better long-term fix: PR 门禁 + 覆盖率 + 依赖漏洞扫描。
-- Regression test suggestion: CI 跑 `pnpm lint && pnpm typecheck && pnpm test`。
+- Regression test suggestion: CI 跑 `pnpm lint && pnpm typecheck`。
 - Estimated effort: 0.5–1 day
 
 ### Finding: REL-02 容器以 root 运行
@@ -1132,13 +1141,13 @@ Overall         █████░░░░░  5.3  B
 
 ## 9. Testing Gaps
 
-**Coverage: High** — 456 测试文件全量清单 + CI 缺失 + 单元/e2e 抽样。
+**Coverage: High** — 审计当日 456 测试文件全量清单 + CI 缺失 + 单元/e2e 抽样。
 
-**Inspected evidence**: 263 API spec + 189 web spec + 2 ais-relay + 2 db；`app.e2e-spec.ts`、`graphql.e2e-spec.ts`、`vitest.config.ts`、`jest.config.ts`。
+**Inspected evidence**: 审计当日 263 API spec + 189 web spec + 2 ais-relay + 2 db；`app.e2e-spec.ts`、`graphql.e2e-spec.ts`、`vitest.config.ts`、`jest.config.ts`。2026-08-14 复核：上述文件均已删除（`a452f264`）。
 
-**Exclusions / limits**: 未跑全量套件。
+**Exclusions / limits**: 审计当日未跑全量套件。
 
-见 TST-01 ~ TST-07。**正向**：API 单测质量高（auth/MFA/litellm/queue processor 均为真实行为与错误路径）；数据回填脚本测试了恢复游标与幂等。**缺口**：无 CI、e2e 全 mock、web 源码断言、无组件测试、vector 零测试、覆盖率从不收集。
+见 TST-01 ~ TST-07。**正向（审计当日）**：API 单测质量高（auth/MFA/litellm/queue processor 均为真实行为与错误路径）；数据回填脚本测试了恢复游标与幂等。**2026-08-14：** TST-01/02/04 已 Resolved（假 e2e / 源码断言 / 私有 spyOn 删除）。**缺口仍开放**：无 CI（REL-01）、无组件测试（TST-03）、vector 零测试（TST-06）、无覆盖率门禁（TST-05）、生产路径 `NODE_ENV==="test"` 分支（TST-07）。
 
 ## 10. Maintainability Concerns
 
@@ -1340,28 +1349,28 @@ Overall         █████░░░░░  5.3  B
 
 **Coverage: High** — e2e mock/源码断言/私有方法 spy 审读。
 
-**Inspected evidence**: 两个 e2e 的 provider 覆盖、~70 个 web 源码断言、54 处私有 spyOn、`vitest.config.ts`。
+**Inspected evidence**: 审计当日两个 e2e 的 provider 覆盖、~70 个 web 源码断言、54 处私有 spyOn、`vitest.config.ts`。2026-08-14 复核：对应 spec 已删除（`a452f264`）。
 
-**Exclusions / limits**: 未跑套件验证 flaky。
+**Exclusions / limits**: 审计当日未跑套件验证 flaky。
 
 ### Confidence Assessment
 
 | Test Area | Real Confidence | Risk | Action |
 |-----------|---------------|------|--------|
-| API 单测（auth/MFA/litellm/queue） | High | 真实行为 + 错误路径 | Keep |
-| API e2e | None | 全 mock，不测真实依赖 | Rewrite（testcontainers） |
-| Web 测试（~70 个） | None | 源码文本断言 | Delete / Rewrite |
-| Web 逻辑单测（utils/store/hooks） | Medium | 纯逻辑 | Keep |
+| API 单测（auth/MFA/litellm/queue） | None（套件已删） | 原为真实行为 + 错误路径 | 重建行为测试（当前 `AGENTS.md` 禁止 spec） |
+| API e2e | None | 假 e2e 已删，真实依赖 e2e 仍缺 | Rewrite（testcontainers） |
+| Web 测试（~70 个） | None | 源码文本断言已删 | 行为测试未重建（TST-03） |
+| Web 逻辑单测（utils/store/hooks） | None（套件已删） | 原为纯逻辑 | 重建 |
 | model-service.client | None | 零测试 | 补测 |
 
 ### Valuable Tests
-API auth/MFA/litellm/queue processor 单测（真实 bcrypt、错误路径、重试语义）；ais-relay 启发式分类测试（真实 fixture）；数据回填脚本测试（游标恢复 + 幂等）。
+（审计当日）API auth/MFA/litellm/queue processor 单测（真实 bcrypt、错误路径、重试语义）；ais-relay 启发式分类测试（真实 fixture）；数据回填脚本测试（游标恢复 + 幂等）。**2026-08-14：上述文件已随 `a452f264` 删除。**
 
 ### Suspicious Tests
-~70 个 web 源码断言（脆弱、防不住回归）；54 处私有方法 spyOn（测桩不测实现）；e2e 全 mock（不测真实系统）。
+~~~70 个 web 源码断言~~、~~54 处私有方法 spyOn~~、~~e2e 全 mock~~ — **Resolved** `a452f264`（删除）。
 
 ### Missing Tests
-model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真实依赖的集成/认证流程。
+model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真实依赖的集成/认证流程。全仓现无任何自动化测试。
 
 ## 23. Fallback / Defensive Code Analysis
 
@@ -1495,8 +1504,8 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 | Fail-Fast (4.4) | 3 | High | `JWT_SECRET` 占位符（SEC-01，**已 Resolved**）、`LITELLM_API_KEY` 可选、加密密钥缺失仍写明文（SEC-04 生产路径 **已 Resolved**） |
 | Fail on Missing Config (9.2) | 4 | Critical | JWT/NextAuth 占位符（**已 Resolved**）、`LITELLM_API_KEY`、`SYSTEM_SETTINGS_ENCRYPTION_KEY`（生产写入 **已 Resolved**）、`LITELLM_MASTER_KEY` |
 | Don't Swallow Errors (6.1) | 4 | Medium | ES/向量搜索静默 null/[]、图表 null |
-| Command-Query Separation (3.2) | 2 | Medium | 助手/分析 processor 读改写无占用 |
-| No Shared Mutable State (5.4) | 2 | Medium | KG 边权重、告警投递读改写 |
+| Command-Query Separation (3.2) | 1 | Medium | 助手/分析 processor 读改写无占用（DINT-03 **已 Resolved**）；告警投递仍非原子（DINT-08） |
+| No Shared Mutable State (5.4) | 1 | Medium | KG 边权重（DINT-04 **已 Resolved**）；告警投递读改写（DINT-08） |
 | Immutability Preference (5.1) | 1 | Medium | `ItemMeta.version` 死字段无乐观锁 |
 | YAGNI (4.2) | 1 | Medium | `supercluster` 死依赖 |
 
@@ -1505,7 +1514,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 - **Fail-Fast 的正面实现**：`AISSTREAM_API_KEY` 缺失即启动失败；`validateSsrfUrl` 在抓取边界拒绝私网；生产异常过滤器 fail-closed。
 - **Don't Swallow Errors**：全库 0 空 catch（正向）；护栏拦截不重试。
 - **Dependency Inversion (2.4)**：MongoOutbox 抽象了跨库一致性；vector-client/model-service 封装外部依赖。
-- **Test Behavior (8.1)**：API 单测以真实行为为主（bcrypt 真 hash、错误路径），少数模块例外。
+- **Test Behavior (8.1)**：审计当日 API 单测以真实行为为主；2026-08-14 假测试已删（TST-01/02/04），行为测试未重建（TST-03）。
 - **Command-Query Separation 正面**：org 写权限在目标组织重推导。
 - **Least Privilege (4.6)**：机器 token 仅 `metrics.read`；actor 不可授予超出自身权限。
 
@@ -1521,14 +1530,14 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 ### Fix Before Stable Release（降低可靠性/正确性/安全风险）
 
-6. REL-01 加 CI（test/lint/typecheck）。
+6. REL-01 加 CI（lint/typecheck/build）。
 7. REL-02 容器非 root + cap_drop。
 8. AI-01 护栏覆盖新闻管线。
 9. AI-02 助手按组织额度预算。
 10. DINT-08 告警投递原子占用（DINT-02/03/04 已 Resolved）。
 11. ~~SEC-08/09/10 关 GraphQL Playground、Bull Board 默认关、限流 fail-closed。~~ **Resolved** `c95cf8a7` / `beba3df5` / `b693ce92`
 12. REL-03/04/05/06/07 Docker 固定 digest、去 root、随机凭据、127.0.0.1 绑定、LiteLLM key。
-13. TST-01/02/03 真实 e2e + 行为化前端测试。
+13. ~~TST-01/02 删除假 e2e 与源码文本断言。~~ **Resolved** `a452f264`；残余 TST-03 真实组件/行为测试仍缺。
 
 ### Schedule Later（增加维护成本或限制规模）
 
@@ -1560,12 +1569,12 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 ## 33. Long-term Refactor Plan
 
-1. **拆分 god 文件**（动机：不可审查/回归面大；方法：先补行为测试锚定，再逐面板/逐服务抽取子组件/子服务；风险：合并冲突；测试策略：每步抽取后跑既有测试）。
+1. **拆分 god 文件**（动机：不可审查/回归面大；方法：先补行为测试锚定，再逐面板/逐服务抽取子组件/子服务；风险：合并冲突；测试策略：每步抽取后跑 lint/typecheck；仓库现无测试套件）。
 2. **跨库一致性统一到 outbox**（动机：消除孤儿与多处非原子写；方法：复用 MongoOutbox/AuditLogOutbox/CrawlCleanupOutbox 模式推广到 alerts/digest，以及 **DINT-01 残余的 scheduler 路径**；风险：延迟增加（cron 1min）需立即投递兜底；测试：故障注入 + 幂等重放测试）。
 3. **类型系统收紧**（动机：消除 99 处 `as unknown as` 与 GraphQL 上下文 any；方法：定义 `GraphQLContext`/`AuthenticatedUser`，边界用运行时校验；风险：一次性改动大；测试：类型检查 + 关键 resolver 单测）。
-4. **前端测试基础设施**（动机：从源码文本断言迁移到行为测试；方法：jsdom + @testing-library/react + Playwright 关键工作流；风险：初期投入大；测试：以真实回归用例验证）。
+4. **前端测试基础设施**（动机：假源码断言已删，行为测试未重建；方法：jsdom + @testing-library/react + Playwright 关键工作流；风险：初期投入大，且与当前 `AGENTS.md`「禁止 spec」冲突，需先修订指南；测试：以真实回归用例验证）。
 5. **发布管线**（动机：无 CI/版本/SBOM；方法：CI 门禁 + changesets + SBOM + cosign；风险：低；测试：CI 即验证）。
 
 ---
 
-*本报告由 fuck-my-shit-mountain skill 生成；所有发现均附具体 `file:line` 证据。未修改任何被审代码。2026-08-14 更新 remediation 状态（SEC-01~SEC-13、DINT-01~DINT-05 Resolved；DINT 落地于 `ce2a2cbe`）。*
+*本报告由 fuck-my-shit-mountain skill 生成；所有发现均附具体 `file:line` 证据。未修改任何被审代码。2026-08-14 更新 remediation 状态（SEC-01~SEC-13、DINT-01~DINT-05、TST-01/02/04 Resolved；DINT 落地于 `ce2a2cbe`；假测试删除于 `a452f264`）。*
