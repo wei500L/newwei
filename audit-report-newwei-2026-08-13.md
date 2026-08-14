@@ -5,7 +5,7 @@
 **Date:** 2026-08-13
 **Reviewer:** opencode (deepseek-v4-pro) — fuck-my-shit-mountain skill
 **Commit:** `beb32ead`（branch `main`）
-**Remediation review:** 2026-08-14 — 对照 `beb32ead..HEAD` 复核。**已解决：SEC-01 ~ SEC-13、DINT-01 ~ DINT-09、TST-01/02/04**（DINT-01~05 落地于 `ce2a2cbe`；DINT-01 残余 scheduler + DINT-06~09 于 2026-08-14 第二轮落地；假测试套件删除于 `a452f264`）。
+**Remediation review:** 2026-08-14 — 对照 `beb32ead..HEAD` 复核。**已解决：SEC-01 ~ SEC-13、DINT-01 ~ DINT-09、TST-01/02/04**（DINT-01~05 落地于 `ce2a2cbe`；DINT-01 残余 scheduler + DINT-06~09 落地于 `9ef6982b`；假测试套件删除于 `a452f264`）。
 
 ---
 
@@ -15,7 +15,7 @@
 
 但平台存在两类真实而集中的风险。**第一类是"默认即不安全"的配置面**（审计当日）：`JWT_SECRET`/`NEXTAUTH_SECRET` 在提交的 `.env.example`、`infra/docker/.env.sample` 乃至当前本地 `.env` 中都是 `change_me_please_replace_32_chars`，而校验只检查 `min(16)`，于是这个公开已知的签名密钥能直接通过启动校验——一旦照抄部署即可伪造任意用户 token。同类的还有：系统设置密钥默认不加密（OIDC/TOTP/LLM 密钥明文入库）、Docker "生产"栈显式开启 GraphQL Playground/内省、Bull Board 默认开启且无鉴权、CORS 默认反射任意 Origin、限流默认 fail-open。**2026-08-14 复核：SEC-01 ~ SEC-13 均已落地（见各 Finding 的 Resolved 记录），此类配置面风险已关闭。** **第二类是"虚假的测试信心"**（审计当日）：仓库有 456 个测试文件，但没有 CI、e2e 全部 mock、约 70 个前端测试只是对源码做字符串包含断言、无任何组件渲染测试、覆盖率从未收集。**2026-08-14 复核：假 e2e / 源码断言 / 私有 spyOn 套件已删除（TST-01/02/04，`a452f264`）；真实组件测试、覆盖率与 CI 仍缺（TST-03/05/06、REL-01）。**
 
-**2026-08-14 已关闭 DINT-01 ~ DINT-09**（`ce2a2cbe` + 第二轮）：items `create()`/`update()` 与 RSS scheduler 改为 MongoOutbox `raw_item` 外发；告警冷却占用与事件/投递同事务；助手/分析 processor 用 `findOneAndUpdate` CAS 占用；知识图谱边 `SELECT ... FOR UPDATE` 后增量；frontier `(runId, urlFingerprint)` 改为唯一约束 + upsert；抓取任务 `pending→queued` CAS；摘要邮件发送前占用 `nextRunAt`；告警投递 `pending→sending` 原子占用；KG 外键 `onDelete: Cascade`。AI/LLM 侧最突出的仍是护栏只覆盖助手、而处理不可信抓取文本的新闻清洗管线完全无输入审核，且助手无按组织的 token/额度预算。
+**2026-08-14 已关闭 DINT-01 ~ DINT-09**（`ce2a2cbe` + `9ef6982b`）：items `create()`/`update()` 与 RSS scheduler 改为 MongoOutbox `raw_item` 外发；告警冷却占用与事件/投递同事务；助手/分析 processor 用 `findOneAndUpdate` CAS 占用；知识图谱边 `SELECT ... FOR UPDATE` 后增量；frontier `(runId, urlFingerprint)` 改为唯一约束 + upsert；抓取任务 `pending→queued` CAS；摘要邮件发送前占用 `nextRunAt`；告警投递 `pending→sending` 原子占用；KG 外键 `onDelete: Cascade`。AI/LLM 侧最突出的仍是护栏只覆盖助手、而处理不可信抓取文本的新闻清洗管线完全无输入审核，且助手无按组织的 token/额度预算。
 
 **亮点**：outbox 事务外发、DataLoader、异常脱敏、SSRF 防护、refresh token 轮换、MFA、组织隔离是本项目值得保留并继续沿用的工程资产。
 
@@ -125,15 +125,15 @@ Overall         █████░░░░░  5.3  B
 - ~~系统设置密钥默认明文入库~~（SEC-04, High）— `c57ffab9`
 - ~~内部端点明文返回全部 OpenAI 密钥~~（SEC-03, High）— `720417f9`（timingSafeEqual + 读取审计；仍返回全库密钥，残余面见该 Finding）
 - ~~Docker 生产栈 GraphQL Playground/内省 + Bull Board 无鉴权 + 限流 fail-open~~（SEC-08/09/10, Medium）
-- ~~MySQL 事务内写 MongoDB~~（DINT-01, High）— `ce2a2cbe`（items `create()`/`update()` 改 `raw_item` outbox；scheduler 残余于 2026-08-14 第二轮关闭）
+- ~~MySQL 事务内写 MongoDB~~（DINT-01, High）— `ce2a2cbe`（items `create()`/`update()` 改 `raw_item` outbox；scheduler 残余于 `9ef6982b` 关闭）
 - ~~告警冷却占用与事件/投递非原子~~（DINT-02, Medium）— `ce2a2cbe`
 - ~~助手/分析处理器状态回退~~（DINT-03, Medium）— `ce2a2cbe`
 - ~~知识图谱边 weight 丢失更新~~（DINT-04, Medium）— `ce2a2cbe`
 - ~~CrawlFrontierNode 去重仅为非唯一索引~~（DINT-05, Medium）— `ce2a2cbe`
-- ~~抓取任务创建入队/状态竞争~~（DINT-06, Medium）— 2026-08-14
-- ~~摘要邮件发送与 nextRunAt 非原子~~（DINT-07, Medium）— 2026-08-14
-- ~~告警投递发送非原子占用~~（DINT-08, Medium）— 2026-08-14
-- ~~知识图谱关系缺 onDelete~~（DINT-09, Medium）— 2026-08-14
+- ~~抓取任务创建入队/状态竞争~~（DINT-06, Medium）— `9ef6982b`
+- ~~摘要邮件发送与 nextRunAt 非原子~~（DINT-07, Medium）— `9ef6982b`
+- ~~告警投递发送非原子占用~~（DINT-08, Medium）— `9ef6982b`
+- ~~知识图谱关系缺 onDelete~~（DINT-09, Medium）— `9ef6982b`
 - ~~e2e 全量 mock~~（TST-01, High）— `a452f264`（假 e2e 已删除；真实 e2e 仍缺）
 - ~~前端源码文本断言测试~~（TST-02, High）— `a452f264`（最小修复「删除」已落地）
 - ~~私有方法 spyOn 实现细节断言~~（TST-04, Medium）— `a452f264`
@@ -394,7 +394,7 @@ Overall         █████░░░░░  5.3  B
 - Confidence: High
 - Category: Stability
 - Status: Resolved
-- Resolved in: `ce2a2cbe`（2026-08-14）
+- Resolved in: `ce2a2cbe`（2026-08-14）；scheduler 残余 `9ef6982b`
 - Resolution evidence: `MongoOutboxType.raw_item` + [`raw-item-outbox.service.ts`](apps/api/src/modules/items/raw-item-outbox.service.ts)；`items.service` `create()`/`update()` 事务内只写 MySQL + outbox，提交后 `deliverNow` 幂等 upsert Mongo。scheduler `enqueueRssSeedPipelineJob` 同样预分配 `rawItemId` + outbox（payload 含 `pipelineJobId`/`sourceId`/`priority`），不再在事务内 `RawItemModel.create`。
 - Affected area: `apps/api/src/modules/items/items.service.ts:1124-1147,3858-3886`
 - Evidence: `create()` 路径在 Prisma `$transaction` 内执行 `tx.itemMeta.create → RawItemModel.create（Mongo）→ tx.itemMeta.update`。
@@ -485,7 +485,7 @@ Overall         █████░░░░░  5.3  B
 - Confidence: High
 - Category: Stability
 - Status: Resolved
-- Resolved in: 2026-08-14
+- Resolved in: `9ef6982b`（2026-08-14）
 - Resolution evidence: `createTask` 与 news-source scheduler 入队后 `updateMany({ where: { id, status: "pending" }, data: { status: "queued" } })`；`createTask` 回读任务再返回。
 - Affected area: `apps/api/src/modules/crawl/crawl-task.service.ts:156-198`
 - Evidence: `crawlTask.create → writeAuditLogBestEffort → enqueueTask → update(status:"queued")` 无事务；入队在状态更新前，快 worker 可能已置 `running`，随后 195 行无条件写回 `queued`。
@@ -503,7 +503,7 @@ Overall         █████░░░░░  5.3  B
 - Confidence: High
 - Category: Stability
 - Status: Resolved
-- Resolved in: 2026-08-14
+- Resolved in: `9ef6982b`（2026-08-14）
 - Resolution evidence: `processDueSchedule` 发送前 `updateMany` CAS 占用 `nextRunAt`；发送失败不再二次推进；空摘要/未验证邮箱路径同样 CAS。
 - Affected area: `apps/api/src/modules/user-digest/user-digest-delivery.service.ts:289-310`
 - Evidence: 先发邮件(294-299)后更新 `nextRunAt/lastSentAt`(301-310)，无条件 `updateMany` 占用。
@@ -521,7 +521,7 @@ Overall         █████░░░░░  5.3  B
 - Confidence: High
 - Category: Stability
 - Status: Resolved
-- Resolved in: 2026-08-14
+- Resolved in: `9ef6982b`（2026-08-14）
 - Resolution evidence: `AlertDeliveryStatus.sending` + `handleDeliveryJob` 在 delay 之后、发送之前 CAS `pending→sending`；重试可回收 `sending`；`reconcileEventStatus` 将 `sending` 视为进行中。
 - Affected area: `apps/api/src/modules/alerts/alerts.service.ts:1996-2086`
 - Evidence: `handleDeliveryJob` 普通读判 `pending` 后发送，再标 `sent`，无租约/锁列。
@@ -539,7 +539,7 @@ Overall         █████░░░░░  5.3  B
 - Confidence: High
 - Category: Stability
 - Status: Resolved
-- Resolved in: 2026-08-14
+- Resolved in: `9ef6982b`（2026-08-14）
 - Resolution evidence: `KnowledgeEntityAlias.entity`、`KnowledgeEdge.fromEntity/toEntity`、`KnowledgeEdgeEvidence.edge/article` 均为 `onDelete: Cascade`；迁移 `20260814141000_knowledge_graph_on_delete_cascade`。
 - Affected area: `packages/db/prisma/schema.prisma:2414,2431,2433,2455,2457`
 - Evidence: `KnowledgeEntityAlias.entity`、`KnowledgeEdge.fromEntity/toEntity`、`KnowledgeEdgeEvidence.edge/article` 无 `onDelete`。
@@ -1138,7 +1138,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 未做故障注入/压测。
 
-见 DINT-01 ~ DINT-09、STAB-01 ~ STAB-04。**DINT-01 ~ DINT-09 已 Resolved**（`ce2a2cbe` + 2026-08-14 第二轮）。**正确措施**：全库 0 个真正空 catch；几乎所有上游客户端带显式超时（Crawl4AI/LiteLLM/vector/akshare/model-service/GDELT/OpenSky）；生产异常过滤器彻底脱敏；outbox 租约占用正确。
+见 DINT-01 ~ DINT-09、STAB-01 ~ STAB-04。**DINT-01 ~ DINT-09 已 Resolved**（`ce2a2cbe` + `9ef6982b`）。**正确措施**：全库 0 个真正空 catch；几乎所有上游客户端带显式超时（Crawl4AI/LiteLLM/vector/akshare/model-service/GDELT/OpenSky）；生产异常过滤器彻底脱敏；outbox 租约占用正确。
 
 ## 8. Performance Concerns
 
@@ -1536,7 +1536,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 1. ~~SEC-01 拒绝已知占位符密钥（JWT/NextAuth）。~~ **Resolved** `ef09cf92`
 2. ~~SEC-04 生产缺 `SYSTEM_SETTINGS_ENCRYPTION_KEY` 拒绝写密钥。~~ **Resolved** `c57ffab9`
 3. ~~SEC-02 公共门户未配置 slug 时不再回退发布。~~ **Resolved** `072079ce`
-4. ~~**DINT-01 items 跨库写改 outbox。**~~ **Resolved** `ce2a2cbe`（scheduler 路径 2026-08-14 第二轮关闭）
+4. ~~**DINT-01 items 跨库写改 outbox。**~~ **Resolved** `ce2a2cbe`（scheduler 路径 `9ef6982b` 关闭）
 5. ~~SEC-03 内部密钥端点加 timingSafeEqual + 读取审计。~~ **Resolved** `720417f9`（全库密钥最小化返回仍为残余）
 
 ### Fix Before Stable Release（降低可靠性/正确性/安全风险）
@@ -1545,7 +1545,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 7. REL-02 容器非 root + cap_drop。
 8. AI-01 护栏覆盖新闻管线。
 9. AI-02 助手按组织额度预算。
-10. ~~DINT-08 告警投递原子占用。~~ **Resolved** 2026-08-14（同轮关闭 DINT-06/07）
+10. ~~DINT-08 告警投递原子占用。~~ **Resolved** `9ef6982b`（同轮关闭 DINT-06/07）
 11. ~~SEC-08/09/10 关 GraphQL Playground、Bull Board 默认关、限流 fail-closed。~~ **Resolved** `c95cf8a7` / `beba3df5` / `b693ce92`
 12. REL-03/04/05/06/07 Docker 固定 digest、去 root、随机凭据、127.0.0.1 绑定、LiteLLM key。
 13. ~~TST-01/02 删除假 e2e 与源码文本断言。~~ **Resolved** `a452f264`；残余 TST-03 真实组件/行为测试仍缺。
@@ -1555,7 +1555,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 14. MAINT-01 拆分 god 文件。
 15. TYPES-01/02/03 收紧类型逃逸。
 16. REL-08 semver/changelog/SBOM/签名。
-17. ~~DINT-09 onDelete 补齐（DINT-05 唯一约束 **已 Resolved**）。~~ **Resolved** 2026-08-14
+17. ~~DINT-09 onDelete 补齐（DINT-05 唯一约束 **已 Resolved**）。~~ **Resolved** `9ef6982b`
 18. DEP-01/02/03 依赖清理与去重。
 19. BAPI-01 补齐分页。
 
@@ -1588,4 +1588,4 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 ---
 
-*本报告由 fuck-my-shit-mountain skill 生成；所有发现均附具体 `file:line` 证据。未修改任何被审代码。2026-08-14 更新 remediation 状态（SEC-01~SEC-13、DINT-01~DINT-09、TST-01/02/04 Resolved；DINT-01~05 落地于 `ce2a2cbe`；DINT-01 scheduler 残余与 DINT-06~09 于第二轮落地；假测试删除于 `a452f264`）。*
+*本报告由 fuck-my-shit-mountain skill 生成；所有发现均附具体 `file:line` 证据。未修改任何被审代码。2026-08-14 更新 remediation 状态（SEC-01~SEC-13、DINT-01~DINT-09、TST-01/02/04 Resolved；DINT-01~05 落地于 `ce2a2cbe`；DINT-01 scheduler 残余与 DINT-06~09 落地于 `9ef6982b`；假测试删除于 `a452f264`）。*
