@@ -5,7 +5,7 @@
 **Date:** 2026-08-13
 **Reviewer:** opencode (deepseek-v4-pro) — fuck-my-shit-mountain skill
 **Commit:** `beb32ead`（branch `main`）
-**Remediation review:** 2026-08-14 — 已关闭项已从本报告删除。下文只保留仍开放的 Finding。本轮关闭 AI-01 ~ AI-05。
+**Remediation review:** 2026-08-14 — 已关闭项已从本报告删除。下文只保留仍开放的 Finding。
 
 ---
 
@@ -13,9 +13,9 @@
 
 这是一个体量可观、工程底子相当扎实的多租户情报平台（pnpm + Turborepo monorepo：NestJS 11 API + Next.js 15 Web + 向量服务 + AIS relay，Prisma/MySQL + Mongoose/MongoDB + BullMQ/Redis + Qdrant + LiteLLM）。核心安全与一致性基础设施的完成度显著高于同规模项目：认证采用 bcrypt、refresh token 轮换与黑名单、TOTP MFA 与恢复码、按组织隔离的 RBAC、GraphQL 深度/复杂度限制、SSRF 校验器、MongoOutbox 事务外发模式、DataLoader 批量加载、生产环境异常过滤器脱敏、近乎全覆盖的 Docker healthcheck 与启动依赖链。这些都不是"看起来对"，而是有具体实现与单测佐证。
 
-仍开放的风险集中在两处：无 CI、无组件/行为测试（REL-01、TST-03/05/06）；发布面仍是 root 容器、滚动 tag 与默认弱凭据（REL-02~08）。AI/LLM 侧新闻管线已附加输入护栏，助手已有按组织提交限流与月度 token 预算。
+仍开放的风险集中在两处：无 CI、无组件/行为测试（REL-01、TST-03/05/06）；发布面仍是 root 容器、滚动 tag 与默认弱凭据（REL-02~08）。
 
-**亮点**：outbox 事务外发、DataLoader、异常脱敏、SSRF 防护、refresh token 轮换、MFA、组织隔离是本项目值得保留并继续沿用的工程资产。
+**亮点**：outbox 事务外发、DataLoader、异常脱敏、SSRF 防护、refresh token 轮换、MFA、组织隔离、新闻管线/助手输入护栏、助手按组织额度是本项目值得保留并继续沿用的工程资产。
 
 ### Score Dashboard
 
@@ -690,7 +690,7 @@ Overall         █████░░░░░  5.3  B
 | ExternalApiCost | 1 | 无 `LITELLM_MASTER_KEY`（REL-07） | fail-closed |
 | CostVisibility | 1 | fallback/降级无 metric（AI-06、STAB-01/02） | 结构化成本/降级 metric |
 
-**正向**：助手历史预算有界（1000 字符/消息、8000 总量、runs clamp 100）；去重 LLM 比较次数有上限（默认 12）；输入截断（`maxInputChars`）；所有重试均指数退避 + jitter 且上限 10s。
+**正向**：助手按组织小时限流 + in-flight + 月度 token 预算；历史预算有界（1000 字符/消息、8000 总量、runs clamp 100）；去重 LLM 比较次数有上限（默认 12）；输入截断（`maxInputChars`）；所有重试均指数退避 + jitter 且上限 10s。
 
 ## 18. Configuration Safety Analysis
 
@@ -757,11 +757,11 @@ Overall         █████░░░░░  5.3  B
 
 | Subtype | Count | Boundary Crossed | Recommended Action |
 |---------|-------|------------------|-------------------|
-| PromptInjection | 0 | 清洗/分类/助手历史已定界（AI-03/04 **已关闭**） | 保持 |
+| PromptInjection | 0 | 清洗/分类/助手历史已定界（正向） | 保持 |
 | ToolAuthorization | 0 | 仅 `web_search_preview`，门控确定性（正向） | 保持 |
 | RAGLeakage | 0 | 向量/ES/Mongo 均按 orgId 过滤（正向） | 保持 |
 | ModelFallback | 1 | 静默 fallback（AI-06） | 显式 + metric |
-| AbuseCost | 0 | 助手按组织额度 + 新闻管线护栏（AI-01/02 **已关闭**） | 保持 |
+| AbuseCost | 0 | 助手按组织额度 + 新闻管线输入护栏（正向） | 保持 |
 
 见 AI-06 ~ AI-07。**正向**：新闻管线不可信路径默认附加 `openai-moderation-pre`；助手入队前按组织限流/并发/月度 token；清洗与历史用 `<untrusted_*>` 定界；护栏拦截走结构化状态码/头字段且不重试。`web_search_preview` 门控确定性（非 prompt 措辞）；LLM 选择的 slug/field 均对照 DB 候选集校验；planner 失败 fail-closed 到 `unsupported`；组织级检索过滤。
 
@@ -942,11 +942,11 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 ### Schedule Later（增加维护成本或限制规模）
 
-7. MAINT-01 拆分 god 文件。
-8. TYPES-01/02/03 收紧类型逃逸。
-9. REL-08 semver/changelog/SBOM/签名。
-10. DEP-01/02/03 依赖清理与去重。
-11. BAPI-01 补齐分页。
+5. MAINT-01 拆分 god 文件。
+6. TYPES-01/02/03 收紧类型逃逸。
+7. REL-08 semver/changelog/SBOM/签名。
+8. DEP-01/02/03 依赖清理与去重。
+9. BAPI-01 补齐分页。
 
 ### Ignore for Now
 
