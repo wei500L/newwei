@@ -668,6 +668,13 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         });
         return;
       }
+      if (
+        eventType === DASHBOARD_STREAM_EVENT_TYPES.spacetimeGeoHeatmapUnavailable
+      ) {
+        invalidateGeoHeatmapQueries(true);
+        markHealthy();
+        return;
+      }
       if (eventType === DASHBOARD_STREAM_EVENT_TYPES.streamError) {
         const errorPayload = isRecord(payload) ? (payload as DashboardStreamErrorPayload) : null;
         const baseMessage =

@@ -1,4 +1,4 @@
-import { DASHBOARD_STREAM_EVENT_TYPES } from "@modular/utils";
+import { createLogger, DASHBOARD_STREAM_EVENT_TYPES } from "@modular/utils";
 import {
   Controller,
   Get,
@@ -21,6 +21,8 @@ import type { AuthenticatedUser } from "../auth/auth.service";
 import { DashboardChartsService } from "./dashboard-charts.service";
 import { DashboardService } from "./dashboard.service";
 /* eslint-enable import/order */
+
+const logger = createLogger({ name: "dashboard-controller" });
 
 function parseWarMapFlightMode(value?: string): "military" | "all" {
   return value?.trim().toLowerCase() === "all" ? "all" : "military";
@@ -428,7 +430,13 @@ export class DashboardController {
         try {
           const geoHeatmapPromise = this.chartsService
             .getSpacetimeGeoHeatmap(range, user.orgId)
-            .catch(() => null);
+            .catch((error: unknown) => {
+              logger.warn(
+                { err: error, orgId: user.orgId },
+                "spacetime geo heatmap stream fetch failed",
+              );
+              return null;
+            });
 
           // Shared promises: the stream and the layers enrichment both need
           // events + news markers; reusing the same promises avoids doubling
@@ -507,6 +515,12 @@ export class DashboardController {
               });
               lastGeoHeatmapFingerprint = geoHeatmapFingerprint;
             }
+          } else if (lastGeoHeatmapFingerprint !== "unavailable") {
+            subscriber.next({
+              type: DASHBOARD_STREAM_EVENT_TYPES.spacetimeGeoHeatmapUnavailable,
+              data: { code: "GEO_HEATMAP_UNAVAILABLE" },
+            });
+            lastGeoHeatmapFingerprint = "unavailable";
           }
         } catch (error) {
           let code: string | undefined;

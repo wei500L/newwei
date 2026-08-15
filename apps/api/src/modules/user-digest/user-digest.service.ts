@@ -1,13 +1,13 @@
 import { ProcessedItemModel } from "@modular/mongo";
-import { normalizeCountryCode } from "@modular/utils";
+import { createLogger, normalizeCountryCode } from "@modular/utils";
 import { Injectable, Optional } from "@nestjs/common";
-import type { FilterQuery } from "mongoose";
 import {
   NewsEventStatus,
   NewsIndicatorFeatureMetric,
   NewsIndicatorScopeType,
   Prisma,
 } from "@prisma/client";
+import type { FilterQuery } from "mongoose";
 
 import { canonicalizeGeoValue } from "../../common/geo-subscription";
 import { toPrismaJsonValue } from "../../common/prisma-json";
@@ -19,6 +19,8 @@ import {
 } from "../user-content-subscriptions/user-content-subscriptions.service";
 
 import { USER_DIGEST_PREFERENCE_KEY } from "./user-digest.constants";
+
+const logger = createLogger({ name: "user-digest" });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DIGEST_RELATED_CANDIDATE_MIN = 200;
@@ -532,7 +534,13 @@ export class UserDigestService {
           createdAtGte: since,
           limit: candidateLimit,
         })
-        .catch(() => null);
+        .catch((error: unknown) => {
+          logger.warn(
+            { err: error, orgId },
+            "digest elasticsearch keyword search failed; falling back to mongo",
+          );
+          return null;
+        });
       if (hits !== null) {
         shouldUseKeywordMongoFallback = false;
         const itemMetaIds = this.dedupeNonEmptyStrings(

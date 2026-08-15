@@ -1,4 +1,5 @@
 import { ProcessedItemModel } from "@modular/mongo";
+import { createLogger } from "@modular/utils";
 import { ForbiddenException, UseGuards } from "@nestjs/common";
 import { Args, Context, Float, Int, Query, Resolver } from "@nestjs/graphql";
 import { NewsEventStatus } from "@prisma/client";
@@ -33,6 +34,7 @@ import {
 } from "../models/news-events.model";
 
 const EVENT_DEDUPE_WINDOW_MS = 5 * 24 * 60 * 60 * 1000;
+const logger = createLogger({ name: "news-events-resolver" });
 
 interface EnrichedEvent {
   row: any;
@@ -62,7 +64,13 @@ export class NewsEventsResolver {
     const user = this.requireUser(req);
     const [status, orgSettings] = await Promise.all([
       this.sourcePolicyService.getSyncStatus(user.orgId),
-      this.newsEventSettings.getSettings(user.orgId).catch(() => null),
+      this.newsEventSettings.getSettings(user.orgId).catch((error: unknown) => {
+        logger.warn(
+          { err: error, orgId: user.orgId },
+          "news event settings lookup failed; using defaults",
+        );
+        return null;
+      }),
     ]);
     return this.toSourcePolicySyncStatusModel(
       status,

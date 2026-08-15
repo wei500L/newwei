@@ -5,7 +5,7 @@
 **Date:** 2026-08-13
 **Reviewer:** opencode (deepseek-v4-pro) — fuck-my-shit-mountain skill
 **Commit:** `beb32ead`（branch `main`）
-**Remediation review:** 2026-08-14 — 下文只保留仍开放的 Finding。续：已关闭 TYPES-01、DEP-01、REL-04、REL-06、REL-07。
+**Remediation review:** 2026-08-15 — 下文只保留仍开放的 Finding。已关闭 TYPES-01、DEP-01、REL-04、REL-06、REL-07、STAB-04、TST-07、TYPES-02、DEP-02、DEP-03。
 
 ---
 
@@ -13,7 +13,7 @@
 
 这是一个体量可观、工程底子相当扎实的多租户情报平台（pnpm + Turborepo monorepo：NestJS 11 API + Next.js 15 Web + 向量服务 + AIS relay，Prisma/MySQL + Mongoose/MongoDB + BullMQ/Redis + Qdrant + LiteLLM）。核心安全与一致性基础设施的完成度显著高于同规模项目：认证采用 bcrypt、refresh token 轮换与黑名单、TOTP MFA 与恢复码、按组织隔离的 RBAC、GraphQL 深度/复杂度限制、SSRF 校验器、MongoOutbox 事务外发模式、DataLoader 批量加载、生产环境异常过滤器脱敏、近乎全覆盖的 Docker healthcheck 与启动依赖链。这些都不是"看起来对"，而是有具体实现与单测佐证。
 
-仍开放的风险集中在两处：无 CI、无组件/行为测试（REL-01、TST-03/05/06）；发布面仍是 root 容器、滚动 tag 与默认弱凭据（REL-02、REL-03、REL-05、REL-08）。
+仍开放的风险集中在两处：无 CI、无组件/行为测试（REL-01、TST-03/05/06）；发布面仍是 root 容器、滚动 tag 与默认弱凭据（REL-02、REL-03、REL-05、REL-08）。2026-08-15 已关闭 STAB-04（静默 catch 打 warn + 热力图 SSE 失败触发 REST 重试）、TST-07（删除生产 `NODE_ENV==="test"` 缝）、TYPES-02（GraphQL 上下文类型化）、DEP-02（three.js 动态 import）、DEP-03（war-map 归一化单源）。
 
 **亮点**：outbox 事务外发、DataLoader、异常脱敏、SSRF 防护、refresh token 轮换、MFA、组织隔离、新闻管线/助手输入护栏、助手按组织额度、LiteLLM fallback 观测、解析失败进 DLQ、ES/向量降级打点是本项目值得保留并继续沿用的工程资产。
 
@@ -35,16 +35,16 @@ Overall         █████░░░░░  5.3  B
 
 ### Finding Statistics
 
-仍开放（2026-08-14 续，已关 TYPES-01/DEP-01/REL-04/REL-06/REL-07）：
+仍开放（2026-08-15 续，已关 TYPES-01/DEP-01/REL-04/REL-06/REL-07/STAB-04/TST-07/TYPES-02/DEP-02/DEP-03）：
 
 | Severity | Open Confirmed | Open Suspected |
 |----------|----------------|----------------|
 | Critical | 0 | 0 |
 | High | 4 | 0 |
-| Medium | 7 | 0 |
-| Low | 5 | 0 |
+| Medium | 6 | 0 |
+| Low | 1 | 0 |
 | Info | 0 | 0 |
-| **Total** | **16** | **0** |
+| **Total** | **11** | **0** |
 
 ## 2. Project Map
 
@@ -106,16 +106,10 @@ Overall         █████░░░░░  5.3  B
 - Severity: Low
 - Confidence: High
 - Category: Stability
-- Status: Confirmed
-- Affected area: `dashboard.controller.ts:431`、`user-digest.service.ts:535`、`news-events.resolver.ts:65`
-- Evidence: `getSpacetimeGeoHeatmap(...).catch(() => null)` 等。
-- Problem: 流式面板/摘要/设置失败无上下文。
-- Why it matters: 用户可见内容无声缺失。
-- Realistic failure scenario: 热力图生成失败 → 面板空白。
-- Minimal fix: 记 warn + 前端降级提示。
-- Better long-term fix: 统一降级响应含错误码。
-- Regression test suggestion: 单测断言失败路径记录日志。
-- Estimated effort: 1 hour
+- Status: Closed (2026-08-15)
+- Affected area: `dashboard.controller.ts`、`user-digest.service.ts`、`news-events.resolver.ts`
+- Evidence: 三处 `.catch` 现记录 `logger.warn`；热力图 SSE 失败发 `spacetime-geo-heatmap-unavailable`，前端 `invalidateQueries` 走 REST，失败则现有 `ChartEmptyState`。
+- Resolution: 不再静默吞掉失败；整条 dashboard SSE 不因热力图失败重连。
 
 ### Finding: TST-03 无前端组件渲染测试
 
@@ -170,16 +164,10 @@ Overall         █████░░░░░  5.3  B
 - Severity: Low
 - Confidence: High
 - Category: Testing
-- Status: Confirmed
-- Affected area: `apps/api/src/modules/crawl/crawl-execution.service.ts:2009`
-- Evidence: `sleep(ms)` 在 `NODE_ENV==="test"` 时直接 `Promise.resolve()`（2026-08-14 复核：该分支仍在；测试套件已删，此生产路径测试缝仍泄漏）。
-- Problem: 测试缝泄漏进生产路径，节流/退避时序在生产与测试不一致。
-- Why it matters: 节流行为在测试中不可见。
-- Realistic failure scenario: 生产节流 bug 无法被测试捕获。
-- Minimal fix: 注入可替换的 timer，而非环境分支。
-- Better long-term fix: 时间抽象注入。
-- Regression test suggestion: 以注入 timer 重写。
-- Estimated effort: 1–2 hours
+- Status: Closed (2026-08-15)
+- Affected area: `apps/api/src/modules/crawl/crawl-execution.service.ts` `sleep()`
+- Evidence: 已删除 `NODE_ENV==="test"` 与 `_isMockFunction` 短路；仅 `ms <= 0` 立即 resolve，其余走 `setTimeout`。
+- Resolution: 生产节流路径不再被测试缝跳过。仓库无测试套件，未引入 timer 注入。
 
 ### Finding: REL-01 无 CI/CD 流水线
 
@@ -282,16 +270,10 @@ Overall         █████░░░░░  5.3  B
 - Severity: Medium
 - Confidence: High
 - Category: Maintainability
-- Status: Confirmed
-- Affected area: `apps/api/src/graphql/graphql.module.ts:131-133,382`、`common/guards/gql-auth.guard.ts:34-39`
-- Evidence: `req?: any; res?: any; extra?: any`、`handleRequest<TUser = any>(err: any, user: any, info: any, ...)`。
-- Problem: 整个 GraphQL 上下文与鉴权路径无类型，错误 user 形状可令 resolver 崩溃。
-- Why it matters: 核心路径失去类型保护。
-- Realistic failure scenario: 错误 user 形状 → resolver 运行时崩溃。
-- Minimal fix: 定义 `GraphQLContext`/`AuthenticatedUser` 类型。
-- Better long-term fix: 全链类型化 + 边界校验。
-- Regression test suggestion: 类型检查覆盖上下文。
-- Estimated effort: 0.5 day
+- Status: Closed (2026-08-15)
+- Affected area: `apps/api/src/graphql/graphql.types.ts`、`graphql.module.ts`、`common/guards/gql-auth.guard.ts`
+- Evidence: 新增 `GraphQLContext` / `GraphqlContextFactoryArgs` / `GraphqlWsExtra`；context 工厂与 subscription `onConnect` 已类型化。`handleRequest` 为兼容 Passport `IAuthGuard` 仍保留基类 `any` 签名，但返回前用 `isAuthenticatedUser` 收窄，错误 user 形状抛 `UnauthorizedException`。
+- Resolution: GraphQL 上下文不再是 `any`；鉴权返回路径有运行时形状校验。
 
 ### Finding: TYPES-03 生产中 99 处 `as unknown as` 双重断言
 
@@ -314,32 +296,20 @@ Overall         █████░░░░░  5.3  B
 - Severity: Low
 - Confidence: High
 - Category: Performance
-- Status: Confirmed
-- Affected area: `apps/web/package.json`、`knowledge-graph-3d.tsx:9-10`
-- Evidence: `three` 仅一处 import。
-- Problem: 大体积依赖仅服务单个 3D 图。
-- Why it matters: 首屏 bundle 增大。
-- Realistic failure scenario: 未拆分 → 首屏加载大。
-- Minimal fix: 动态 import + 按需 chunk 拆分。
-- Better long-term fix: 审视重型可视化依赖的按需加载策略。
-- Regression test suggestion: 验证 chunk 拆分后首屏不含 three。
-- Estimated effort: 0.5 day
+- Status: Closed (2026-08-15)
+- Affected area: `apps/web/app/(app)/dashboard/charts/knowledge-graph-3d.tsx`
+- Evidence: 去掉顶层 `import * as THREE`；scene `useEffect` 内 `await import("three")` + OrbitControls，卸载时 `cancelled` 丢弃未完成 load。父级 `spacetime-viz.tsx` 已 `next/dynamic`。
+- Resolution: three.js 不再进入该组件的同步模块图。
 
 ### Finding: DEP-03 war-map 归一化逻辑 store↔utils 重复
 
 - Severity: Low
 - Confidence: High
 - Category: Maintainability
-- Status: Confirmed
-- Affected area: `apps/web/store/war-map-settings.ts:62-145`
-- Evidence: 本地 `normalizeWarMapSettingsFallback` 重复实现 `@modular/utils` 已有逻辑，另有 `normalizeWarMapSettingsSafe` 包裹但仍保留本地 fallback。
-- Problem: 双源真值漂移。
-- Why it matters: 归一化规则两处不一致。
-- Realistic failure scenario: 只改一处 → 两处行为不同。
-- Minimal fix: 移除本地重复，统一走 utils。
-- Better long-term fix: 单一归一化源。
-- Regression test suggestion: 单测断言两处归一化一致。
-- Estimated effort: 1–2 hours
+- Status: Closed (2026-08-15)
+- Affected area: `apps/web/store/war-map-settings.ts`
+- Evidence: 已删除本地 `normalizeWarMapSettingsFallback`；`normalizeWarMapSettingsSafe` 直接调用 `@modular/utils` 的 `normalizeWarMapSettings`。`user-ui-settings-sync.tsx` 仍从 store re-export 导入。
+- Resolution: 归一化单一来源。
 
 ### Finding: BAPI-01 若干 GraphQL 列表无分页
 
@@ -393,7 +363,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 未做故障注入/压测。
 
-见 STAB-04。**正确措施**：全库 0 个真正空 catch；几乎所有上游客户端带显式超时（Crawl4AI/LiteLLM/vector/akshare/model-service/GDELT/OpenSky，kaopu 源走 `myFetch`）；ES/向量搜索降级打 warn + metric；生产异常过滤器彻底脱敏；outbox 租约占用正确。
+见 STAB-04（已关闭）。**正确措施**：全库 0 个真正空 catch；几乎所有上游客户端带显式超时（Crawl4AI/LiteLLM/vector/akshare/model-service/GDELT/OpenSky，kaopu 源走 `myFetch`）；ES/向量搜索降级打 warn + metric；生产异常过滤器彻底脱敏；outbox 租约占用正确。热力图/摘要/设置失败路径现打 warn。
 
 ## 8. Performance Concerns
 
@@ -403,7 +373,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 未测 bundle 拆分与真实负载。
 
-**正向**：DataLoader 全面用于嵌套字段；items/crawlTasks 有 cursor+total 分页；热路径索引迁移存在。**缺口**：DEP-02（three.js chunk）、BAPI-01（少数列表无分页）。
+**正向**：DataLoader 全面用于嵌套字段；items/crawlTasks 有 cursor+total 分页；热路径索引迁移存在。**缺口**：BAPI-01（少数列表无分页）。DEP-02（three.js chunk）已关闭。
 
 ## 9. Testing Gaps
 
@@ -413,7 +383,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 审计当日未跑全量套件。
 
-见 TST-03、TST-05 ~ TST-07。**缺口仍开放**：无 CI（REL-01）、无组件测试（TST-03）、vector 零测试（TST-06）、无覆盖率门禁（TST-05）、生产路径 `NODE_ENV==="test"` 分支（TST-07）。
+见 TST-03、TST-05、TST-06。**缺口仍开放**：无 CI（REL-01）、无组件测试（TST-03）、vector 零测试（TST-06）、无覆盖率门禁（TST-05）。TST-07 生产 `NODE_ENV==="test"` 分支已关闭。
 
 ## 10. Maintainability Concerns
 
@@ -423,7 +393,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 未度量圈复杂度。
 
-见 MAINT-01、DEP-03。**核心问题**：8 个 4000-8200 行 god 文件（前端面板 + 后端 service）；99 处 `as unknown as` 双重断言；26 处生产 `as any`。**正向**：全库 0 个 TODO/FIXME/HACK；`Record<string, unknown>`（1755 处）为偏好模式。
+见 MAINT-01。**核心问题**：8 个 4000-8200 行 god 文件（前端面板 + 后端 service）；99 处 `as unknown as` 双重断言；26 处生产 `as any`。DEP-03 war-map 归一化重复已关闭。**正向**：全库 0 个 TODO/FIXME/HACK；`Record<string, unknown>`（1755 处）为偏好模式。
 
 ## 11. Design / Principles Concerns
 
@@ -440,10 +410,10 @@ Overall         █████░░░░░  5.3  B
 | Subtype | Count | Critical | High | Medium | Low |
 |---------|-------|----------|------|--------|-----|
 | TypeAssertion（`as any`/`as unknown as`） | 228（99 生产） | 0 | 0 | 1 | 0 |
-| InputBoundary（GraphQL 上下文 any） | 2 | 0 | 0 | 1 | 0 |
+| InputBoundary（GraphQL 上下文 any） | 0 | 0 | 0 | 0 | 0 |
 | StringlyTyped | 少量（`bertopic_primary`） | 0 | 0 | 0 | 1 |
 
-见 TYPES-02、TYPES-03。`@ts-ignore` 0、`@ts-nocheck` 0、`@ts-expect-error` 仅测试中 3 处——这是显著优点。非空断言 `!` 约 1599 处中大部分是 NestJS GraphQL `@Field() prop!:` 惯用写法，非真实风险。TYPES-01（`undefined as unknown as ItemMetaModel`）已于 2026-08-14 关闭。
+见 TYPES-03。GraphQL 上下文 `any`（原 TYPES-02）已关闭。`@ts-ignore` 0、`@ts-nocheck` 0、`@ts-expect-error` 仅测试中 3 处——这是显著优点。非空断言 `!` 约 1599 处中大部分是 NestJS GraphQL `@Field() prop!:` 惯用写法，非真实风险。TYPES-01（`undefined as unknown as ItemMetaModel`）已于 2026-08-14 关闭。
 
 ## 13. Documentation Analysis
 
@@ -491,7 +461,7 @@ Overall         █████░░░░░  5.3  B
 
 | Subtype | Count | Affected Workflows | Recommended Action |
 |---------|-------|-------------------|-------------------|
-| ErrorState | 1 | 多处 `.catch(() => null)` 静默降级（STAB-04） | 前端提供可恢复的错误/空态 |
+| ErrorState | 1 | 热力图 REST 失败已有 ChartEmptyState；SSE 失败现 invalidate REST（原 STAB-04 已关） | 保持 |
 
 **结论**：该维度因未做浏览器实测而覆盖有限，**无法给出干净结论**。建议后续用 Playwright 补关键工作流（登录、设置保存、战争地图）的可访问性/错误态回归。前端存在 0 个组件渲染测试（TST-03），进一步限制了本维度证据。
 
@@ -631,10 +601,10 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 | Subtype | Count | KeepWithAlert | FailFast | Remove |
 |---------|-------|---------------|----------|--------|
-| SilentFallback | 1 | 1（图表/摘要静默降级，STAB-04） | 0 | 0 |
+| SilentFallback | 0 | 0 | 0 | 0 |
 | EmptyCatch | 0 | 0 | 0 | 0 |
 
-**结论**：全库无空 catch（显著优点）；ES/向量降级已打 warn + metric。仍开放的静默降级见 STAB-04。
+**结论**：全库无空 catch（显著优点）；ES/向量降级已打 warn + metric。STAB-04 静默降级已关闭。
 
 ## 24. Frontend State Analysis
 
@@ -649,7 +619,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 | Subtype | Count | Affected Components |
 |---------|-------|-------------------|
 | ComponentSize | 8 | 4000-8200 行组件（news-sources/situation-monitor/llm-gateway/war-map 等，MAINT-01） |
-| StateDuplication | 2 | war-map 归一化 store↔utils 重复（DEP-03）、situation-monitor lib/store 平行 |
+| StateDuplication | 1 | situation-monitor lib/store 平行（DEP-03 war-map 归一化重复已关） |
 
 **正向**：Zustand store 类型良好、防御性 sessionStorage 解析、`create<State>()` 类型化 setter。
 
@@ -690,7 +660,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 | axios（web） | Redundant | — | 与 fetch 客户端并存 | Consolidate |
 | antd/echarts/deck.gl（web） | Healthy | 重 | 深度使用 | 校验 chunk 拆分 |
 
-见 DEP-02。
+见 DEP-02（已关闭：knowledge-graph-3d 动态 import three）。
 
 ## 27. Code Consistency Analysis
 
@@ -747,7 +717,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 | File Size Limit (1.2) | 20+ | High | 前端面板、crawl/items/dashboard service |
 | Fail-Fast (4.4) | 1 | High | `LITELLM_API_KEY` 可选 |
 | Fail on Missing Config (9.2) | 1 | Critical | `LITELLM_API_KEY` |
-| Don't Swallow Errors (6.1) | 1 | Medium | 图表/摘要静默 null（STAB-04） |
+| Don't Swallow Errors (6.1) | 0 | — | 图表/摘要静默 null（STAB-04）已关闭 |
 | Immutability Preference (5.1) | 1 | Medium | `ItemMeta.version` 死字段无乐观锁 |
 
 ### Principles Respected
@@ -775,24 +745,22 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 ### Schedule Later（增加维护成本或限制规模）
 
 5. MAINT-01 拆分 god 文件。
-6. TYPES-02/03 收紧类型逃逸。
+6. TYPES-03 收紧类型逃逸。
 7. REL-08 semver/changelog/SBOM/签名。
-8. DEP-02/03 依赖清理与去重。
-9. BAPI-01 补齐分页。
+8. BAPI-01 补齐分页。
 
 ### Ignore for Now
 
-- STAB-04、TST-07 等低危项。
 - 引号/import 风格不一致（Prettier 未全量强制）。
 
 ## 32. Quick Wins（低成本高价值，1–2 小时/项）
 
-（原 DEP-01、TYPES-01、REL-04、REL-06、REL-07 已于 2026-08-14 关闭。）
+（原 DEP-01、TYPES-01、REL-04、REL-06、REL-07 已于 2026-08-14 关闭；STAB-04、TST-07、TYPES-02、DEP-02、DEP-03 已于 2026-08-15 关闭。）
 
 ## 33. Long-term Refactor Plan
 
 1. **拆分 god 文件**（动机：不可审查/回归面大；方法：先补行为测试锚定，再逐面板/逐服务抽取子组件/子服务；风险：合并冲突；测试策略：每步抽取后跑 lint/typecheck；仓库现无测试套件）。
-2. **类型系统收紧**（动机：消除 99 处 `as unknown as` 与 GraphQL 上下文 any；方法：定义 `GraphQLContext`/`AuthenticatedUser`，边界用运行时校验；风险：一次性改动大；测试：类型检查 + 关键 resolver 单测）。
+2. **类型系统收紧**（动机：消除 99 处 `as unknown as`；GraphQL 上下文 any 已关；方法：边界用运行时校验；风险：一次性改动大；测试：类型检查 + 关键 resolver 静态审查）。
 3. **前端测试基础设施**（动机：行为测试未重建；方法：jsdom + @testing-library/react + Playwright 关键工作流；风险：初期投入大，且与当前 `AGENTS.md`「禁止 spec」冲突，需先修订指南；测试：以真实回归用例验证）。
 4. **发布管线**（动机：无 CI/版本/SBOM；方法：CI 门禁 + changesets + SBOM + cosign；风险：低；测试：CI 即验证）。
 

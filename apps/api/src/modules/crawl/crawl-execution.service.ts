@@ -2006,13 +2006,7 @@ export class CrawlExecutionService {
   }
 
   private sleep(ms: number): Promise<void> {
-    if (ms <= 0 || process.env.NODE_ENV === "test") {
-      return Promise.resolve();
-    }
-    const maybeMockedTimer = setTimeout as unknown as {
-      _isMockFunction?: boolean;
-    };
-    if (maybeMockedTimer._isMockFunction) {
+    if (ms <= 0) {
       return Promise.resolve();
     }
     return new Promise((resolve) => setTimeout(resolve, ms));

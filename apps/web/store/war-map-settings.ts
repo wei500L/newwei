@@ -10,7 +10,7 @@ import {
   type WarMapTimeRangePreset,
   type WarMapViewState,
   WAR_MAP_DEFAULT_LAYER_VISIBILITY,
-  normalizeWarMapSettings as normalizeWarMapSettingsFromUtils,
+  normalizeWarMapSettings,
 } from "@modular/utils";
 import { createWithEqualityFn as create } from "zustand/traditional";
 
@@ -46,102 +46,8 @@ const DEFAULT_SETTINGS: WarMapSettings = {
   aisHighlightCandidates: true,
 };
 
-const WAR_MAP_TIME_RANGE_PRESET_VALUES: readonly WarMapTimeRangePreset[] = [
-  "1h",
-  "6h",
-  "24h",
-  "48h",
-  "7d",
-  "all",
-];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function normalizeWarMapSettingsFallback(payload: unknown): WarMapSettings {
-  if (!isRecord(payload)) {
-    return {
-      layerVisibility: { ...DEFAULT_SETTINGS.layerVisibility },
-      viewState: { ...DEFAULT_SETTINGS.viewState },
-      activePreset: DEFAULT_SETTINGS.activePreset,
-      timeRangePreset: DEFAULT_SETTINGS.timeRangePreset,
-      flightMode: DEFAULT_SETTINGS.flightMode,
-      aisMode: DEFAULT_SETTINGS.aisMode,
-      aisHighlightCandidates: DEFAULT_SETTINGS.aisHighlightCandidates,
-    };
-  }
-
-  const record = payload as Record<string, unknown>;
-  const layerSource = isRecord(record.layerVisibility) ? record.layerVisibility : record;
-  const layerVisibility: WarMapLayerVisibility = { ...WAR_MAP_DEFAULT_LAYER_VISIBILITY };
-  for (const layerId of Object.keys(WAR_MAP_DEFAULT_LAYER_VISIBILITY) as WarMapLayerId[]) {
-    const maybeVisible = layerSource[layerId];
-    if (typeof maybeVisible === "boolean") {
-      layerVisibility[layerId] = maybeVisible;
-    }
-  }
-
-  const nextViewStateSource = isRecord(record.viewState) ? record.viewState : {};
-  const viewState: WarMapViewState = {
-    lat:
-      typeof nextViewStateSource.lat === "number"
-        ? clamp(nextViewStateSource.lat, -90, 90)
-        : DEFAULT_SETTINGS.viewState.lat,
-    lon:
-      typeof nextViewStateSource.lon === "number"
-        ? clamp(nextViewStateSource.lon, -180, 180)
-        : DEFAULT_SETTINGS.viewState.lon,
-    zoom:
-      typeof nextViewStateSource.zoom === "number"
-        ? clamp(nextViewStateSource.zoom, 0.5, 18)
-        : DEFAULT_SETTINGS.viewState.zoom,
-    // Force a flat camera when hydrating fallback state.
-    bearing: DEFAULT_SETTINGS.viewState.bearing,
-    pitch: DEFAULT_SETTINGS.viewState.pitch,
-  };
-
-  const presetCandidates = Object.keys(WAR_MAP_PRESET_VIEW_STATE) as WarMapPreset[];
-  const activePreset =
-    typeof record.activePreset === "string" && presetCandidates.includes(record.activePreset as WarMapPreset)
-      ? (record.activePreset as WarMapPreset)
-      : DEFAULT_SETTINGS.activePreset;
-
-  const timeRangePreset =
-    typeof record.timeRangePreset === "string" &&
-    WAR_MAP_TIME_RANGE_PRESET_VALUES.includes(record.timeRangePreset as WarMapTimeRangePreset)
-      ? (record.timeRangePreset as WarMapTimeRangePreset)
-      : DEFAULT_SETTINGS.timeRangePreset;
-  const flightMode = record.flightMode === "all" ? "all" : DEFAULT_SETTINGS.flightMode;
-  const aisMode =
-    record.aisMode === "all"
-      ? "all"
-      : record.aisMode === "density"
-        ? "density"
-        : record.aisMode === "military"
-          ? "military"
-          : DEFAULT_SETTINGS.aisMode;
-  const aisHighlightCandidates =
-    typeof record.aisHighlightCandidates === "boolean"
-      ? record.aisHighlightCandidates
-      : DEFAULT_SETTINGS.aisHighlightCandidates;
-
-  return {
-    layerVisibility,
-    viewState,
-    activePreset,
-    timeRangePreset,
-    flightMode,
-    aisMode,
-    aisHighlightCandidates,
-  };
-}
-
 export function normalizeWarMapSettingsSafe(payload: unknown): WarMapSettings {
-  if (typeof normalizeWarMapSettingsFromUtils === "function") {
-    return normalizeWarMapSettingsFromUtils(payload);
-  }
-  return normalizeWarMapSettingsFallback(payload);
+  return normalizeWarMapSettings(payload);
 }
 
 export interface WarMapSettingsState {

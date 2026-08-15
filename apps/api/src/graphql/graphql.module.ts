@@ -57,6 +57,13 @@ import { QueueModule } from "../modules/queue/queue.module";
 import { RbacModule } from "../modules/rbac/rbac.module";
 import { SentimentModule } from "../modules/sentiment/sentiment.module";
 
+import {
+  asGraphqlWsExtra,
+  createSyntheticGqlRequest,
+  type GraphQLContext,
+  type GraphqlContextFactoryArgs,
+  type GqlRequest,
+} from "./graphql.types";
 import { GraphqlRateLimitGuard } from "./guards/graphql-rate-limit.guard";
 import { ItemMetaLoader } from "./loaders/item-meta.loader";
 import {
@@ -127,12 +134,6 @@ const CACHEABLE_ROOT_FIELDS = new Set([
   "getEntityImpactGraph",
   "getKnowledgeGraphSubgraph",
 ]);
-
-interface GraphqlContextFactoryArgs {
-  req?: any;
-  res?: any;
-  extra?: any;
-}
 
 class RedisKeyValueCache implements KeyValueCache<string> {
   constructor(private readonly redis: Redis) {}
@@ -352,12 +353,14 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
           csrfPrevention: true,
           playground: cfg.playground,
           introspection: cfg.introspection,
-          context: ({ req, res, extra }: GraphqlContextFactoryArgs) => {
-            const request = req ??
-              extra?.request ?? {
-                headers: extra?.connectionParams ?? {},
-                ip: extra?.socket?.remoteAddress,
-              };
+          context: ({ req, res, extra }: GraphqlContextFactoryArgs): GraphQLContext => {
+            const request: GqlRequest =
+              req ??
+              extra?.request ??
+              createSyntheticGqlRequest(
+                extra?.connectionParams,
+                extra?.socket?.remoteAddress,
+              );
             return {
               req: request,
               res,
@@ -373,15 +376,15 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
             ? {
                 subscriptions: {
                   "graphql-ws": {
-                    onConnect: (context: {
-                      connectionParams?: unknown;
-                      extra: any;
-                    }) => {
-                      const { connectionParams, extra } = context;
-                      extra.request = {
-                        headers: connectionParams ?? {},
-                        ip: extra?.socket?.remoteAddress,
-                      } as { headers: Record<string, unknown>; ip?: string };
+                    onConnect: (context) => {
+                      if (!context.extra || typeof context.extra !== "object") {
+                        return;
+                      }
+                      const extra = asGraphqlWsExtra(context.extra);
+                      extra.request = createSyntheticGqlRequest(
+                        context.connectionParams,
+                        extra.socket?.remoteAddress,
+                      );
                     },
                   },
                 },

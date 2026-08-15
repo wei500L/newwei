@@ -408,6 +408,7 @@ export const DASHBOARD_STREAM_EVENT_TYPES = {
   warMapLayers: "war-map-layers",
   financialCandlestick: "financial-candlestick",
   spacetimeGeoHeatmap: "spacetime-geo-heatmap",
+  spacetimeGeoHeatmapUnavailable: "spacetime-geo-heatmap-unavailable",
   streamError: "stream-error",
   ping: "ping",
 } as const;
