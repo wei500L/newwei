@@ -28,4 +28,4 @@ This repository has no unit/E2E test suites — all `*.spec.ts`/`*.test.ts` file
 
 ## Environment & Ops Tips
 
-Configure secrets by copying `.env.example` to `.env` and `infra/docker/.env.sample` to `infra/docker/.env`, then running `pnpm --filter infra-scripts run env:check`. Avoid committing local overrides; use Docker Compose profiles or `.env.local`. When adding services, extend `infra/docker/docker-compose.yml` and note exposed ports in README and this guide.
+Configure secrets by copying `.env.example` to `.env` and `infra/docker/.env.sample` to `infra/docker/.env`, then running `pnpm --filter infra-scripts run env:check`. Docker Compose publishes ports on `127.0.0.1` by default (`DOCKER_PUBLISH_HOST`); the LiteLLM proxy refuses to start without `LITELLM_MASTER_KEY`. `NEXTAUTH_SECRET` is runtime-only—never pass it as a Docker build ARG. Avoid committing local overrides; use Docker Compose profiles or `.env.local`. When adding services, extend `infra/docker/docker-compose.yml` and note exposed ports in README and this guide.

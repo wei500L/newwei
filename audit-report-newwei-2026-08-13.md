@@ -460,7 +460,7 @@ Overall         █████░░░░░  5.3  B
 | StaleDocs | 1 | `version.json`(0.73.0) vs `package.json`(0.1.0) | 统一版本来源 |
 | ConfigDocs | 2 | `.env.example`/`.env.sample` 未记录 `RATE_LIMIT_REDIS_FAIL_OPEN`、`CRAWL4AI_JSCODE_ENABLED` 默认开 | 补齐关键开关文档 |
 
-**正向**：README 的架构图、配置速览、SSRF 排障、健康语义文档质量高且与实现一致（如 `AISSTREAM_API_KEY` 缺失即启动失败、`/healthz/live` vs `/health` 语义）。
+**正向**：README 的架构图、配置速览、SSRF 排障、健康语义文档质量高且与实现一致（如 `AISSTREAM_API_KEY` 缺失即启动失败、`/healthz/live` vs `/health` 语义）。2026-08-15 已同步操作文档：`NEXTAUTH_SECRET` 仅运行时注入、`DOCKER_PUBLISH_HOST` 默认回环、Docker `LITELLM_MASTER_KEY` fail-closed。
 
 ## 14. Privacy / Data Governance Analysis
 

@@ -194,6 +194,8 @@ flowchart LR
 ```bash
 cp .env.example .env
 cp infra/docker/.env.sample infra/docker/.env
+# 填写 JWT_SECRET、NEXTAUTH_SECRET、AISSTREAM_API_KEY、LITELLM_MASTER_KEY
+# （`openssl rand -hex 32`）。空的 LITELLM_MASTER_KEY 会让 LiteLLM 与 env:check 失败。
 
 pnpm install
 pnpm prepare
@@ -225,6 +227,7 @@ pnpm db:seed
 ```bash
 cp .env.example .env
 cp infra/docker/.env.sample infra/docker/.env
+# 填写 JWT_SECRET、NEXTAUTH_SECRET、AISSTREAM_API_KEY、LITELLM_MASTER_KEY 后再 env:check
 
 pnpm install
 pnpm --filter infra-scripts run env:check
@@ -322,15 +325,16 @@ pnpm dev
 pnpm --filter infra-scripts run env:check
 ```
 
-该检查当前也会覆盖 AIS relay 相关配置，包括 `REALTIME_SIGNALS_AIS_*`、`AISSTREAM_URL`、`AISSTREAM_API_KEY`、`AIS_RELAY_SHARED_SECRET` 与健康阈值类变量。
+该检查当前也会覆盖 AIS relay 相关配置，包括 `REALTIME_SIGNALS_AIS_*`、`AISSTREAM_URL`、`AISSTREAM_API_KEY`、`AIS_RELAY_SHARED_SECRET` 与健康阈值类变量。对 `infra/docker/.env` 还会强制要求非空的 `LITELLM_MASTER_KEY`（Docker LiteLLM 代理缺失即拒绝启动）。
 
 ### 关键配置项速览
 
 - 数据库：`DATABASE_URL`（可选，宿主机优先）、`MYSQL_*`、`MONGO_URI`、`REDIS_*`
-- 登录与会话：`JWT_SECRET`、`NEXTAUTH_SECRET`、`NEXTAUTH_URL`
+- 登录与会话：`JWT_SECRET`、`NEXTAUTH_SECRET`、`NEXTAUTH_URL`。`NEXTAUTH_SECRET` 只在运行时注入（compose `env_file`），不要作为 Docker build ARG，以免进入 `docker history`
 - Web ↔ API：`NEXT_PUBLIC_API_BASE_URL`（浏览器访问 API）、`API_BASE_URL`（服务端访问 API，可选）
 - 抓取：`CRAWL4AI_BASE_URL`、`CRAWL4AI_DASHBOARD_URL`、`CRAWL4AI_SSRF_PROXY_URL`、`CRAWL4AI_*`
-- LLM 网关：`LITELLM_API_BASE`、`LITELLM_API_KEY`、`LITELLM_MODEL`、`LITELLM_EMBEDDING_MODEL`
+- LLM 网关：`LITELLM_API_BASE`、`LITELLM_API_KEY`、`LITELLM_MASTER_KEY`、`LITELLM_MODEL`、`LITELLM_EMBEDDING_MODEL`。Docker 栈中 `LITELLM_MASTER_KEY` 必填（`openssl rand -hex 32`），空值时代理直接退出
+- Docker 端口绑定：`DOCKER_PUBLISH_HOST`（默认 `127.0.0.1`，仅本机可达；需要局域网访问时设为 `0.0.0.0`）
 - 向量：`VECTOR_SERVICE_ENABLED`、`VECTOR_SERVICE_BASE_URL`、`VECTOR_INTERNAL_TOKEN`、`QDRANT_URL`
 - 实时信号：`REALTIME_SIGNALS_AIS_BASE_URL`、`REALTIME_SIGNALS_AIS_SHARED_SECRET`（AIS relay 访问地址与 Bearer 鉴权），`AISSTREAM_API_KEY`、`AIS_RELAY_SHARED_SECRET`、`AIS_RELAY_PORT`、`AISSTREAM_URL`、`AIS_RELAY_HEALTH_NO_MESSAGES_AFTER_CONNECT_MS`、`AIS_RELAY_HEALTH_STALE_MESSAGES_MS`（本仓库内置 `apps/ais-relay` 服务，上游覆盖与降级阈值），`REALTIME_SIGNALS_OPENSKY_BASE_URL`、`REALTIME_SIGNALS_OPENSKY_TOKEN_URL`、`REALTIME_SIGNALS_OPENSKY_CLIENT_ID`、`REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET`（OpenSky 飞行数据源），`REALTIME_SIGNALS_OPENSKY_DAILY_CREDIT_BUDGET`、`REALTIME_SIGNALS_OPENSKY_DAY_INTERVAL_SEC`、`REALTIME_SIGNALS_OPENSKY_NIGHT_INTERVAL_SEC`、`REALTIME_SIGNALS_OPENSKY_DAY_START_HKT`、`REALTIME_SIGNALS_OPENSKY_NIGHT_START_HKT`、`REALTIME_SIGNALS_OPENSKY_WARNING_REMAINING_PCT`、`REALTIME_SIGNALS_OPENSKY_CRITICAL_REMAINING_PCT`（OpenSky credits 预算与香港时间日夜调度），以及 `REALTIME_SIGNALS_ACLED_USERNAME`、`REALTIME_SIGNALS_ACLED_PASSWORD`、`REALTIME_SIGNALS_ACLED_CLIENT_ID`（自动刷新 ACLED token）
 - 助手安全：`ASSISTANT_GUARDRAILS_ENABLED`、`ASSISTANT_GUARDRAILS`
@@ -440,7 +444,7 @@ pnpm docker:logs
 pnpm docker:down
 ```
 
-端口速查（默认）：
+端口速查（默认绑定 `127.0.0.1`，浏览器仍用 `http://localhost:<port>`）：
 
 - `3000`：Web
 - `4000`：API
@@ -457,13 +461,15 @@ pnpm docker:down
 
 说明：
 
+- 发布端口默认只监听回环。需要从其他网卡/局域网访问时，在 `infra/docker/.env` 设置 `DOCKER_PUBLISH_HOST=0.0.0.0`。
+- Docker LiteLLM 代理启动前必须设置 `LITELLM_MASTER_KEY`；空值会直接退出，`env:check` 也会失败。
 - `CRAWL4AI_SSRF_PROXY_PORT` 默认是容器内 `18080`，只供 crawl4ai 容器内浏览器进程访问，不映射到宿主机端口。
 - 本地 `situation-monitor` 如果遇到 `GDELT fallback request failed` 一类报错，当前 API 会只对 `api.gdeltproject.org` 在失败后追加一次 IPv4 请求；这主要用于 Docker/WSL 的网络兼容兜底，不会影响其他外部 provider，详见 [docs/gdelt-ipv4-fallback.md](./docs/gdelt-ipv4-fallback.md)。
 - 更完整的上线/验证手册见 [docs/crawl4ai-ssrf-proxy-deployment.md](./docs/crawl4ai-ssrf-proxy-deployment.md)
 
 ### 生产环境注意事项（建议）
 
-- 将 `.env` 与 `infra/docker/.env` 中的 Secret 改为强随机值（`JWT_SECRET`、`NEXTAUTH_SECRET`、`SYSTEM_SETTINGS_ENCRYPTION_KEY` 等）。`JWT_SECRET`/`NEXTAUTH_SECRET` 必须 ≥32 字符且不得为占位符，否则启动与 `env:check` 会直接失败（fail-fast）。生成方式：`openssl rand -hex 32`
+- 将 `.env` 与 `infra/docker/.env` 中的 Secret 改为强随机值（`JWT_SECRET`、`NEXTAUTH_SECRET`、`LITELLM_MASTER_KEY`、`SYSTEM_SETTINGS_ENCRYPTION_KEY` 等）。`JWT_SECRET`/`NEXTAUTH_SECRET` 必须 ≥32 字符且不得为占位符，否则启动与 `env:check` 会直接失败（fail-fast）。生成方式：`openssl rand -hex 32`。`NEXTAUTH_SECRET` 仅运行时注入，不要作为镜像 build arg
 - 设置 `NODE_ENV=production` 并关闭 `GRAPHQL_PLAYGROUND`、`GRAPHQL_INTROSPECTION`（`SWAGGER_ENABLED` 在生产强制关闭，无需手动配置）
 - 为 MySQL/Mongo/Redis/Qdrant/MinIO 配置持久化卷与备份策略
 - 如需横向扩展 WebSocket，启用 `WS_REDIS_ADAPTER_ENABLED=true`
@@ -495,8 +501,9 @@ pnpm docker:down
 <details>
 <summary>3. LiteLLM 健康检查与鉴权</summary>
 
+- Docker 栈必须配置 `LITELLM_MASTER_KEY`（`infra/docker/.env`）；缺失时代理拒绝启动，`pnpm --filter infra-scripts run env:check` 也会失败
 - 健康检查：`GET http://localhost:4001/health/liveliness`、`GET http://localhost:4001/health/readiness`
-- 如配置 `LITELLM_MASTER_KEY`，访问受保护接口需带 `Authorization: Bearer <key>`
+- 访问受保护接口需带 `Authorization: Bearer <LITELLM_MASTER_KEY>`
 </details>
 
 <details>
