@@ -1,5 +1,6 @@
-import type { UpstreamRequestErrorCode } from "../../common/http/upstream-error-classification";
 import type { RealtimeAisRuntimeDiagnostics } from "@modular/utils";
+
+import type { UpstreamRequestErrorCode } from "../../common/http/upstream-error-classification";
 
 export type RealtimeSignalSource =
   | "opensky"
@@ -421,4 +422,126 @@ export interface RealtimeSignalsRuntimeDiagnostics {
   insight: RealtimeSignalsInsightSnapshot;
   markerReadiness: RealtimeSignalsMarkerReadiness;
   openskyBudget?: RealtimeOpenskyBudgetSummary;
+}
+
+export type RealtimeSignalsSchedulerOrgRunStatus = "completed" | "skipped";
+
+export interface RealtimeSignalsSharedSourceContext {
+  fetch(source: RealtimeSignalSource): Promise<RealtimeSignalFetchResult[]>;
+}
+
+export interface UnrestEventCandidate {
+  id: string;
+  lat: number;
+  lon: number;
+  occurredAt: string;
+  source: "acled" | "gdelt";
+  countryCode?: string;
+  reports: number;
+}
+
+export interface JsonFetchOptions {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: unknown;
+  rawBody?: string;
+  beforeAttempt?: () => Promise<void> | void;
+  maxRetries?: number;
+  shouldRetry?: (error: unknown) => boolean;
+}
+
+export interface JsonFetchError extends Error {
+  body?: string;
+  status?: number;
+  statusText?: string;
+  retryAfterMs?: number;
+  rateLimit?: RealtimeSignalRateLimitDetails;
+}
+
+export interface UnrestFeedFetchResult {
+  events: UnrestEventCandidate[];
+  configured: boolean;
+  error?: string;
+}
+
+export interface OpenSkyStateResponse {
+  time?: unknown;
+  states?: unknown[];
+}
+
+export interface OpenSkyStateVector {
+  icao24: string;
+  callsign?: string;
+  countryName?: string;
+  lastContactAt?: string;
+  lastContactMs: number;
+  longitude?: number;
+  latitude?: number;
+  heading?: number;
+  altitudeFt?: number;
+  groundSpeedKt?: number;
+  raw: unknown[];
+}
+
+export interface AdsbNormalizationResult {
+  snapshot: RealtimeAdsbAircraftSnapshot | null;
+  dropReason?: "invalid_position" | "missing_identity" | "stale_position";
+}
+
+export type OpenSkyCreditScope = "military" | "all";
+
+export interface OpenSkyBudgetReserveResult {
+  allowed: boolean;
+  usedCredits: number;
+  remainingCredits: number;
+}
+
+export interface OpenSkyDiagnosticMessage {
+  code?: string;
+  message?: string;
+  status?: RealtimeSignalRuntimeStatus;
+}
+
+export interface DiagnosticErrorDetails {
+  code: RealtimeSignalErrorCode;
+  kind?: RealtimeOpenskyErrorKind;
+  status?: number;
+  message: string;
+}
+
+export type TransportEntityKind = "aircraft" | "vessel";
+export type TransportSourceScope = "military" | "all" | "candidate";
+
+export interface TransportTelemetryRecord {
+  orgId: string;
+  entityKind: TransportEntityKind;
+  sourceType: "opensky" | "ais";
+  sourceScope: TransportSourceScope;
+  objectKey: string;
+  observedAt: string;
+  sourceUpdatedAt?: string;
+  lat: number;
+  lng: number;
+  geoCell: string;
+  icao24?: string;
+  mmsi?: string;
+  callsign?: string;
+  registration?: string;
+  name?: string;
+  aircraftType?: string;
+  displayCategory?: string;
+  displayCategoryZh?: string;
+  role?: string;
+  roleZh?: string;
+  countryCode?: string;
+  countryName?: string;
+  heading?: number;
+  course?: number;
+  speed?: number;
+  altitudeFt?: number;
+  shipType?: number;
+  shipTypeLabel?: string;
+  shipTypeLabelZh?: string;
+  isMilitaryCandidate: boolean;
+  metadata?: Record<string, unknown>;
 }

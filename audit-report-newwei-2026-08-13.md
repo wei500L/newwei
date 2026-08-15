@@ -5,7 +5,7 @@
 **Date:** 2026-08-13
 **Reviewer:** opencode (deepseek-v4-pro) — fuck-my-shit-mountain skill
 **Commit:** `beb32ead`（branch `main`）
-**Remediation review:** 2026-08-15 — 下文只保留仍开放的 Finding。
+**Remediation review:** 2026-08-15 — 下文只保留仍开放的 Finding。**2026-08-16 High 闭合：** TST-03、REL-01、REL-02、MAINT-01 已修复。
 
 ---
 
@@ -13,7 +13,7 @@
 
 这是一个体量可观、工程底子相当扎实的多租户情报平台（pnpm + Turborepo monorepo：NestJS 11 API + Next.js 15 Web + 向量服务 + AIS relay，Prisma/MySQL + Mongoose/MongoDB + BullMQ/Redis + Qdrant + LiteLLM）。核心安全与一致性基础设施的完成度显著高于同规模项目：认证采用 bcrypt、refresh token 轮换与黑名单、TOTP MFA 与恢复码、按组织隔离的 RBAC、GraphQL 深度/复杂度限制、SSRF 校验器、MongoOutbox 事务外发模式、DataLoader 批量加载、生产环境异常过滤器脱敏、近乎全覆盖的 Docker healthcheck 与启动依赖链。这些都不是"看起来对"，而是有具体实现与单测佐证。
 
-仍开放的风险集中在两处：无 CI、无组件/行为测试（REL-01、TST-03/05/06）；发布面仍是 root 容器、滚动 tag 与默认弱凭据（REL-02、REL-03、REL-05、REL-08）。
+仍开放的风险集中在：覆盖率/vector 测试缺口（TST-05/06）；发布面仍是滚动 tag 与默认弱凭据（REL-03、REL-05、REL-08）。CI、组件测试、非 root 容器与 8 个 god 文件拆分已在 2026-08-16 落地。
 
 **亮点**：outbox 事务外发、DataLoader、异常脱敏、SSRF 防护、refresh token 轮换、MFA、组织隔离、新闻管线/助手输入护栏、助手按组织额度、LiteLLM fallback 观测、解析失败进 DLQ、ES/向量降级打点是本项目值得保留并继续沿用的工程资产。
 
@@ -35,16 +35,16 @@ Overall         █████░░░░░  5.3  B
 
 ### Finding Statistics
 
-仍开放（2026-08-15）：
+仍开放（2026-08-16）：
 
 | Severity | Open Confirmed | Open Suspected |
 |----------|----------------|----------------|
 | Critical | 0 | 0 |
-| High | 4 | 0 |
+| High | 0 | 0 |
 | Medium | 6 | 0 |
 | Low | 1 | 0 |
 | Info | 0 | 0 |
-| **Total** | **11** | **0** |
+| **Total** | **7** | **0** |
 
 ## 2. Project Map
 
@@ -58,7 +58,7 @@ Overall         █████░░░░░  5.3  B
 
 **安全边界**：JWT（issuer/audience/jti 黑名单，每次请求回查 DB profile）、RBAC（按组织，actor 不可授予超出自身权限）、`validateSsrfUrl`、GraphQL 复杂度限制、登录限流。
 
-**测试结构**（审计当日）：API 263 个 `*.spec.ts` + 2 个 e2e；Web 189 个 Vitest spec；vector 无测试。**2026-08-14：全部 `*.spec.ts`/`*.test.ts` 与 Jest/Vitest 工具链已删除（`a452f264`），仓库现以 lint/typecheck + 静态审查为唯一验证；仍无 CI。**
+**测试结构**（审计当日）：API 263 个 `*.spec.ts` + 2 个 e2e；Web 189 个 Vitest spec；vector 无测试。**2026-08-14：全部 `*.spec.ts`/`*.test.ts` 与 Jest/Vitest 工具链已删除（`a452f264`）。2026-08-16：重建 `apps/web` Vitest + Testing Library 组件测试，并新增 GitHub Actions CI（lint/typecheck/web test/build）。API Jest 与 vector 测试仍未恢复。**
 
 **发布**：Docker Compose 本地栈；`docker-up.js` 有锁文件一致性/Prisma 迁移 id/Redis AOF 完整性预检；无 semver/changelog/SBOM/签名；镜像多按 tag 非 digest。
 
@@ -94,10 +94,12 @@ Overall         █████░░░░░  5.3  B
 
 ## 3. Top Risks
 
-1. **无 CI/CD**（REL-01, High）— lint/typecheck 从不自动运行；测试套件已删除。
-2. **无前端组件渲染测试**（TST-03, High）— 假测试已删，行为测试未重建。
-3. **容器以 root 运行**（REL-02, High）— 抓取浏览器进程以 root 跑，被攻破即容器 root。
-4. **多个 4000–8200 行 god 文件**（MAINT-01, High）— 不可审查、回归面大。
+1. **镜像按可变 tag 固定**（REL-03, Medium）— `minio:latest`、`crawl4ai:0` 滚动 tag。
+2. **数据存储默认弱凭据**（REL-05, Medium）— Mongo/MySQL/MinIO 默认口令，Redis/Qdrant/ES 无鉴权。
+3. **无 semver/changelog/SBOM/签名**（REL-08, Medium）— 发布不可追溯。
+4. **生产中 `as unknown as` 双重断言**（TYPES-03, Medium）— 类型系统在边界失效。
+
+已闭合 High：REL-01 CI、TST-03 组件测试、REL-02 非 root 容器、MAINT-01 god 文件拆分。
 
 ## 4. Detailed Findings
 
@@ -106,16 +108,11 @@ Overall         █████░░░░░  5.3  B
 - Severity: High
 - Confidence: High
 - Category: Testing
-- Status: Confirmed
-- Affected area: `apps/web`（`vitest.config.ts` 已随套件删除）；`AGENTS.md` Verification 段
-- Evidence: 2026-08-14 复核：仓库 0 个 `*.spec.ts`/`*.test.ts`；无 `@testing-library/react`/`jsdom`/`render(`；`AGENTS.md` 明确禁止新增测试文件，验证仅限 lint/typecheck。
-- Problem: React 19 + AntD 大型控制台零组件覆盖。
-- Why it matters: 渲染/事件/prop 接线错误完全无保护。
-- Realistic failure scenario: 组件渲染崩溃/事件失效，测试不覆盖。
-- Minimal fix: 增加 jsdom 环境 + 关键页面组件测试。
-- Better long-term fix: 关键工作流（登录后列表/设置保存）组件级测试 + Playwright。
-- Regression test suggestion: 关键工作流组件级测试。
-- Estimated effort: 2–4 days
+- Status: Resolved (2026-08-16)
+- Affected area: `apps/web`；`AGENTS.md` Verification 段
+- Evidence: 已恢复 Vitest + Testing Library + jsdom；`apps/web/vitest.config.ts`；登录页/邮件设置保存/news-sources 权限门控组件测试；`AGENTS.md` 允许 web 行为测试；CI 跑 `pnpm --filter @modular/web test`。
+- Problem: （原）React 19 + AntD 大型控制台零组件覆盖。
+- Resolution: 关键工作流组件级测试已落地；API Jest 不在本项范围。
 
 ### Finding: TST-05 覆盖率配置了但从不收集/无阈值
 
@@ -154,32 +151,20 @@ Overall         █████░░░░░  5.3  B
 - Severity: High
 - Confidence: High
 - Category: Release
-- Status: Confirmed
-- Affected area: 仓库根（`.github/workflows` 不存在）
-- Evidence: `ls .github` 不存在；`.husky/` 仅有 `_` stub，无真实 pre-commit/commit-msg；lint-staged/commitlint 配置未生效。
-- Problem: lint/typecheck 从不自动运行；测试套件已删除（`a452f264`）；任何代码可直接合入 main。
-- Why it matters: 无合并门禁，回归无人拦截。
-- Realistic failure scenario: 破坏性变更直接合入 main 无人发现。
-- Minimal fix: 新增 CI（lint/typecheck/build 门禁）。
-- Better long-term fix: PR 门禁 + 覆盖率 + 依赖漏洞扫描。
-- Regression test suggestion: CI 跑 `pnpm lint && pnpm typecheck`。
-- Estimated effort: 0.5–1 day
+- Status: Resolved (2026-08-16)
+- Affected area: `.github/workflows/ci.yml`
+- Evidence: PR/`main` push 触发 lint、typecheck、web test、build；`turbo.json` 增加 `test` task。Husky 本地 hook 仍未接线（非本项门禁）。
+- Resolution: GitHub Actions 合并门禁已落地。
 
 ### Finding: REL-02 容器以 root 运行
 
 - Severity: High
 - Confidence: High
 - Category: Release
-- Status: Confirmed
-- Affected area: `infra/docker/*.Dockerfile`、`infra/akshare/Dockerfile`、`infra/model-service/Dockerfile`
-- Evidence: 无任何 `USER` 指令。
-- Problem: API/web/vector/ais-relay 及抓取浏览器进程均以 root 跑；无 `read_only`/`cap_drop`/`security_opt`。
-- Why it matters: 任一服务被攻破即容器 root。
-- Realistic failure scenario: crawl4ai 处理恶意网页被利用 → 容器 root。
-- Minimal fix: 加非 root `USER` + `cap_drop: ALL`。
-- Better long-term fix: 最小权限 + 只读根文件系统。
-- Regression test suggestion: CI 断言镜像非 root（`docker inspect`）。
-- Estimated effort: 0.5–1 day
+- Status: Resolved (2026-08-16)
+- Affected area: `infra/docker/*.Dockerfile`、`infra/akshare/Dockerfile`、`infra/model-service/Dockerfile`、`infra/docker/docker-compose.yml`
+- Evidence: 第一方镜像设置 `USER node`/`app`/`crawler`/`redis`；compose 对第一方服务 `cap_drop: ALL` + `no-new-privileges`；crawl4ai version patch 移到构建期，`/tmp` tmpfs。
+- Resolution: 运行时默认非 root；crawl4ai Chromium 若需额外 cap 仅放宽该服务。
 
 ### Finding: REL-03 镜像按可变 tag 固定
 
@@ -234,16 +219,10 @@ Overall         █████░░░░░  5.3  B
 - Severity: High
 - Confidence: High
 - Category: Maintainability
-- Status: Confirmed
-- Affected area: `apps/web/app/(app)/admin/ops/news-sources/news-sources-content.tsx`(8194)、`apps/web/components/settings/llm-gateway-settings-panel.tsx`(7525)、`apps/web/app/(app)/situation-monitor/situation-monitor-content.tsx`(7242)、`apps/api/src/modules/crawl/crawl-execution.service.ts`(7332)、`apps/api/src/modules/items/items.service.ts`(6270)、`dashboard-charts.service.ts`(5934)、`realtime-signals.service.ts`(5908)、`news-pipeline.service.ts`(5561)
-- Evidence: 单文件含 27-65 个 `useState`、26-54 个 memo/callback、12-21 个 effect。
-- Problem: 单文件多职责（SRP 1.1）、远超文件规模阈值（1.2）。
-- Why it matters: 不可审查、合并冲突面大、回归风险高。
-- Realistic failure scenario: 任一文件的小改动引入大范围回归。
-- Minimal fix: 逐文件抽取子组件/子服务（先拆 UI 面板，再拆 service）。
-- Better long-term fix: 建立文件规模门禁（>1000 行告警）。
-- Regression test suggestion: 拆分前先补行为测试锚定。
-- Estimated effort: 每文件 1–3 天
+- Status: Resolved (2026-08-16)
+- Affected area: 原 8 个 god 文件已拆为门面 + 子模块
+- Evidence: 门面行数：`news-sources-content.tsx` 1295、`llm-gateway-settings-panel.tsx` 626、`situation-monitor-content.tsx` 1485、`crawl-execution.service.ts` 718、`items.service.ts` 363、`dashboard-charts.service.ts` 168、`realtime-signals.service.ts` 1328、`news-pipeline.service.ts` 195。公开 API/orgId 过滤保持在门面上。`news-sources-modals.tsx` 仍约 2700 行（原表单一体抽取）。
+- Resolution: 8 个目标文件已拆分；其余 ≥3k 文件不在本项名单。
 
 ### Finding: TYPES-03 生产中 99 处 `as unknown as` 双重断言
 
@@ -333,7 +312,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 审计当日未跑全量套件。
 
-见 TST-03、TST-05、TST-06。**缺口仍开放**：无 CI（REL-01）、无组件测试（TST-03）、vector 零测试（TST-06）、无覆盖率门禁（TST-05）。
+见 TST-05、TST-06。**缺口仍开放**：vector 零测试（TST-06）、无覆盖率门禁（TST-05）。TST-03/REL-01 已闭合。
 
 ## 10. Maintainability Concerns
 
@@ -343,7 +322,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 未度量圈复杂度。
 
-见 MAINT-01。**核心问题**：8 个 4000-8200 行 god 文件（前端面板 + 后端 service）；99 处 `as unknown as` 双重断言；26 处生产 `as any`。**正向**：全库 0 个 TODO/FIXME/HACK；`Record<string, unknown>`（1755 处）为偏好模式。
+见 MAINT-01（已拆分）。**剩余**：99 处 `as unknown as` 双重断言；26 处生产 `as any`；`news-sources-modals.tsx` 仍约 2700 行。**正向**：全库 0 个 TODO/FIXME/HACK；`Record<string, unknown>`（1755 处）为偏好模式。
 
 ## 11. Design / Principles Concerns
 
@@ -412,7 +391,7 @@ Overall         █████░░░░░  5.3  B
 |---------|-------|-------------------|-------------------|
 | ErrorState | 0 | 热力图 REST 失败有 ChartEmptyState；SSE 失败 invalidate REST | 保持 |
 
-**结论**：该维度因未做浏览器实测而覆盖有限，**无法给出干净结论**。建议后续用 Playwright 补关键工作流（登录、设置保存、战争地图）的可访问性/错误态回归。前端存在 0 个组件渲染测试（TST-03），进一步限制了本维度证据。
+**结论**：该维度因未做浏览器实测而覆盖有限，**无法给出干净结论**。建议后续用 Playwright 补关键工作流（登录、设置保存、战争地图）的可访问性/错误态回归。前端已有登录/设置保存/权限门控组件测试（TST-03 已闭合）。
 
 ## 16. Supply Chain / Reproducibility Analysis
 
@@ -532,7 +511,7 @@ Overall         █████░░░░░  5.3  B
 |-----------|---------------|------|--------|
 | API 单测 | None | 套件已删 | 重建行为测试（当前 `AGENTS.md` 禁止 spec） |
 | API e2e | None | 真实依赖 e2e 仍缺 | Rewrite（testcontainers） |
-| Web 组件 | None | 行为测试未重建（TST-03） | 补组件渲染测试 |
+| Web 组件 | Low | 登录/设置保存/权限门控已测（TST-03 闭合） | 扩大关键工作流覆盖 |
 | model-service.client | None | 零测试 | 补测 |
 
 ### Missing Tests
@@ -567,7 +546,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 | Subtype | Count | Affected Components |
 |---------|-------|-------------------|
-| ComponentSize | 8 | 4000-8200 行组件（news-sources/situation-monitor/llm-gateway/war-map 等，MAINT-01） |
+| ComponentSize | 若干 | 拆分后仍有 war-map.tsx / alert-center 等 ≥3k 文件（不在 MAINT-01 名单） |
 | StateDuplication | 1 | situation-monitor lib/store 平行 |
 
 **正向**：Zustand store 类型良好、防御性 sessionStorage 解析、`create<State>()` 类型化 setter。
@@ -652,7 +631,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 **Exclusions / limits**: 未构建镜像。
 
-见 REL-01 ~ REL-03、REL-05、REL-08。**正向**：`docker-up.js` 预检（锁文件一致性/迁移 id/Redis AOF 修复）；近乎全覆盖 healthcheck + `depends_on: service_healthy`；ais-relay 多阶段构建 `pnpm deploy --prod` 精简镜像；NEXTAUTH_SECRET 仅运行时注入；compose 端口默认绑 `127.0.0.1`；LiteLLM 空 master key fail-closed。**缺口**：无 CI、root 容器、可变 tag、默认弱凭据、无版本/SBOM/签名。
+见 REL-03、REL-05、REL-08。**正向**：GitHub Actions CI；第一方容器非 root + `cap_drop: ALL`；`docker-up.js` 预检（锁文件一致性/迁移 id/Redis AOF 修复）；近乎全覆盖 healthcheck + `depends_on: service_healthy`；ais-relay 多阶段构建 `pnpm deploy --prod` 精简镜像；NEXTAUTH_SECRET 仅运行时注入；compose 端口默认绑 `127.0.0.1`；LiteLLM 空 master key fail-closed。**缺口**：可变 tag、默认弱凭据、无版本/SBOM/签名。
 
 ## 30. Principles Compliance
 
@@ -660,8 +639,8 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 | Principle | Violations | Severity | Affected Areas |
 |-----------|------------|----------|----------------|
-| Single Responsibility (1.1) | 8+ | High | 4000-8200 行 god 文件/服务 |
-| File Size Limit (1.2) | 20+ | High | 前端面板、crawl/items/dashboard service |
+| Single Responsibility (1.1) | 若干 | Medium | 其余 ≥3k 文件（非 MAINT-01 名单） |
+| File Size Limit (1.2) | 若干 | Medium | 其余 ≥3k 文件（非本轮 8 个目标） |
 | Fail-Fast (4.4) | 1 | High | `LITELLM_API_KEY` 可选 |
 | Fail on Missing Config (9.2) | 1 | Critical | `LITELLM_API_KEY` |
 | Immutability Preference (5.1) | 1 | Medium | `ItemMeta.version` 死字段无乐观锁 |
@@ -671,7 +650,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 - **Fail-Fast 的正面实现**：`AISSTREAM_API_KEY` 缺失即启动失败；Docker LiteLLM 空 `LITELLM_MASTER_KEY` 拒绝启动；`validateSsrfUrl` 在抓取边界拒绝私网；生产异常过滤器 fail-closed。
 - **Don't Swallow Errors**：全库 0 空 catch（正向）；护栏拦截不重试。
 - **Dependency Inversion (2.4)**：MongoOutbox 抽象了跨库一致性；vector-client/model-service 封装外部依赖。
-- **Test Behavior (8.1)**：行为测试未重建（TST-03）。
+- **Test Behavior (8.1)**：web 组件行为测试已重建（TST-03 闭合）。
 - **Command-Query Separation 正面**：org 写权限在目标组织重推导。
 - **Least Privilege (4.6)**：机器 token 仅 `metrics.read`；actor 不可授予超出自身权限。
 
@@ -683,17 +662,15 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 ### Fix Before Stable Release（降低可靠性/正确性/安全风险）
 
-1. REL-01 加 CI（lint/typecheck/build）。
-2. REL-02 容器非 root + cap_drop。
-3. REL-03/05 Docker 固定 digest、随机凭据。
-4. TST-03 真实组件/行为测试。
+1. REL-03/05 Docker 固定 digest、随机凭据。
+2. TYPES-03 收紧类型逃逸。
+3. REL-08 semver/changelog/SBOM/签名。
+4. BAPI-01 补齐分页。
+5. TST-05/06 覆盖率门禁与 vector 测试。
 
 ### Schedule Later（增加维护成本或限制规模）
 
-5. MAINT-01 拆分 god 文件。
-6. TYPES-03 收紧类型逃逸。
-7. REL-08 semver/changelog/SBOM/签名。
-8. BAPI-01 补齐分页。
+（原 High 项 REL-01/02、TST-03、MAINT-01 已闭合。）
 
 ### Ignore for Now
 
@@ -705,10 +682,10 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 ## 33. Long-term Refactor Plan
 
-1. **拆分 god 文件**（动机：不可审查/回归面大；方法：先补行为测试锚定，再逐面板/逐服务抽取子组件/子服务；风险：合并冲突；测试策略：每步抽取后跑 lint/typecheck；仓库现无测试套件）。
+1. **继续拆其余 ≥3k 文件**（动机：war-map/alert-center/crawl-frontier 仍大；方法：沿用本轮门面+子模块模式）。
 2. **类型系统收紧**（动机：消除 99 处 `as unknown as`；方法：边界用运行时校验；风险：一次性改动大；测试：类型检查 + 关键 resolver 静态审查）。
-3. **前端测试基础设施**（动机：行为测试未重建；方法：jsdom + @testing-library/react + Playwright 关键工作流；风险：初期投入大，且与当前 `AGENTS.md`「禁止 spec」冲突，需先修订指南；测试：以真实回归用例验证）。
-4. **发布管线**（动机：无 CI/版本/SBOM；方法：CI 门禁 + changesets + SBOM + cosign；风险：低；测试：CI 即验证）。
+3. **扩大前端测试**（动机：仅覆盖登录/设置保存/权限门控；方法：Playwright 关键工作流）。
+4. **发布管线补全**（动机：无版本/SBOM；方法：changesets + SBOM + cosign；CI 已有）。
 
 ---
 

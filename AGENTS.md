@@ -18,13 +18,13 @@ This pnpm + Turborepo workspace splits runtime apps under `apps/`: `apps/api` ex
 
 TypeScript strict mode is on; exported symbols need explicit types and enums should beat string unions for shared protocols. Follow ESLint + Prettier defaults (2-space indent, single quotes, semicolons) and let lint-staged auto-fix staged files. React components and Nest providers use PascalCase, hooks/middleware stay camelCase, and `.env` keys remain SCREAMING_SNAKE_CASE. Keep folder names aligned with bounded contexts such as `auth`, `rbac`, or `projects`.
 
-## Code Review & Verification (Static Only)
+## Code Review & Verification
 
-This repository has no unit/E2E test suites — all `*.spec.ts`/`*.test.ts` files and test toolchains (Jest, Vitest, `tsx --test`) have been removed. Agent tools must verify changes through **pure static code review**, never by writing, running, or relying on test suites:
+Verification is `pnpm lint`, `pnpm typecheck`, `pnpm --filter @modular/web test`, plus read-only static review of touched paths. GitHub Actions CI (`.github/workflows/ci.yml`) is the merge gate.
 
-- Do not create test files (`*.spec.ts`, `*.test.ts`, `*.e2e-spec.ts`) or test directories (`__tests__/`, `tests/`, `test/`); do not add test-only dependencies (jest, vitest, ts-jest, supertest, @nestjs/testing, etc.).
-- Verification is limited to `pnpm lint` and `pnpm typecheck`; there is no `pnpm test` command.
-- For every change, conduct a read-only static review of the touched code paths before committing: check types/interfaces and GraphQL schema contracts, trace control flow and error handling, verify `orgId`-scoped authorization on cross-tenant operations, and confirm each finding with `file:line` evidence (adversarial re-verification of claims against the actual code, mirroring the `.workflow/reviews/static-audit.md` workflow).
+- `apps/web` uses Vitest + Testing Library + jsdom for **component/behavior** tests (`*.test.ts` / `*.test.tsx`). Prefer user-visible assertions (render, events, API mocks). Do not add source-text or snapshot-of-implementation tests.
+- Do not restore API Jest / Nest testing / e2e suites unless explicitly requested. Do not add `*.spec.ts`, `*.e2e-spec.ts`, or test-only API dependencies (jest, ts-jest, supertest, `@nestjs/testing`).
+- For every change, statically review types/interfaces and GraphQL schema contracts, control flow and error handling, and `orgId`-scoped authorization on cross-tenant operations. Confirm each finding with `file:line` evidence (adversarial re-verification, mirroring `.workflow/reviews/static-audit.md`).
 
 ## Environment & Ops Tips
 

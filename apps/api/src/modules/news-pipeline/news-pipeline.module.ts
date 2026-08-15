@@ -15,6 +15,11 @@ import { NewsClassifierService } from "./news-classifier.service";
 import { NewsDedupeSettingsService } from "./news-dedupe-settings.service";
 import { NewsExtractionSettingsService } from "./news-extraction-settings.service";
 import { NewsExtractionStageService } from "./news-extraction-stage.service";
+import { NewsPipelineCleanService } from "./news-pipeline-clean.service";
+import { NewsPipelineCrawlBridgeService } from "./news-pipeline-crawl-bridge.service";
+import { NewsPipelineDedupeService } from "./news-pipeline-dedupe.service";
+import { NewsPipelineOutboxService } from "./news-pipeline-outbox.service";
+import { NewsPipelineStagesService } from "./news-pipeline-stages.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import { NewsPipelineService } from "./news-pipeline.service";
 import { NewsPromptConfigService } from "./news-prompt-config.service";
@@ -39,6 +44,11 @@ import { NewsPromptBuilder } from "./news-prompt.builder";
     NewsClassifierService,
     LlmRequestLogService,
     LiteLlmService,
+    NewsPipelineCrawlBridgeService,
+    NewsPipelineCleanService,
+    NewsPipelineDedupeService,
+    NewsPipelineOutboxService,
+    NewsPipelineStagesService,
     NewsPipelineService
   ],
   exports: [

@@ -17,5 +17,13 @@ module.exports = {
         alwaysTryTypes: true
       }
     }
-  }
+  },
+  overrides: [
+    {
+      files: ["**/*.test.ts", "**/*.test.tsx", "test/**/*.ts", "test/**/*.tsx", "vitest.config.ts"],
+      rules: {
+        "import/no-extraneous-dependencies": "off"
+      }
+    }
+  ]
 };

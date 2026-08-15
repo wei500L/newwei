@@ -17,4 +17,5 @@ RUN corepack enable
 WORKDIR /workspace
 
 EXPOSE 3000
+USER node
 CMD ["pnpm", "--filter", "@modular/web", "run", "dev:turbo"]

@@ -8,7 +8,13 @@ import { SystemSettingsModule } from "../system-settings/system-settings.module"
 import { UserNewsBehaviorModule } from "../user-news-behavior/user-news-behavior.module";
 
 import { ItemsElasticsearchService } from "./items-elasticsearch.service";
+import { ItemsGroupingService } from "./items-grouping.service";
+import { ItemsIngestService } from "./items-ingest.service";
+import { ItemsListService } from "./items-list.service";
+import { ItemsReadModelService } from "./items-read-model.service";
 import { ItemsRssTranslationService } from "./items-rss-translation.service";
+import { ItemsSearchQueryService } from "./items-search-query.service";
+import { ItemsSearchService } from "./items-search.service";
 import { ItemsController } from "./items.controller";
 import { ItemsService } from "./items.service";
 import { RawItemOutboxService } from "./raw-item-outbox.service";
@@ -27,6 +33,12 @@ import { SearchReindexService } from "./search-reindex.service";
   ],
   providers: [
     ItemsService,
+    ItemsReadModelService,
+    ItemsIngestService,
+    ItemsListService,
+    ItemsSearchQueryService,
+    ItemsSearchService,
+    ItemsGroupingService,
     RawItemOutboxService,
     ItemsRssTranslationService,
     ItemsElasticsearchService,

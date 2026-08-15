@@ -41,6 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV NODE_ENV=production
 WORKDIR /app
 
-COPY --from=builder /opt/ais-relay /app
+COPY --from=builder --chown=node:node /opt/ais-relay /app
 
+USER node
 CMD ["node", "dist/index.js"]

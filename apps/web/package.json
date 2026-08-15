@@ -13,6 +13,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "i18n:check": "node scripts/i18n-check.js",
     "i18n:extract-defaults": "node scripts/i18n-extract-defaults.js --write",
     "i18n:sync": "node scripts/i18n-sync.js",
@@ -67,6 +69,9 @@
     "@graphql-codegen/typescript-operations": "^4.2.3",
     "@graphql-codegen/typescript-react-apollo": "^4.3.1",
     "@modular/config": "workspace:*",
+    "@testing-library/jest-dom": "^6.10.0",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.4",
     "@types/lodash": "^4.17.23",
     "@types/node": "^20.12.7",
     "@types/react": "^19.0.0",
@@ -76,8 +81,10 @@
     "autoprefixer": "^10.4.23",
     "eslint": "^8.57.0",
     "eslint-config-next": "^15.5.6",
+    "jsdom": "^26.1.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "vitest": "^3.2.7"
   }
 }

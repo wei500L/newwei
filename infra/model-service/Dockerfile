@@ -22,6 +22,12 @@ RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY infra/model-service/main.py ./main.py
 
+RUN groupadd --system app \
+  && useradd --system --gid app --uid 10001 --home-dir /app --no-create-home app \
+  && chown -R app:app /app /opt/venv
+
+USER app
+
 EXPOSE 8090
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8090"]

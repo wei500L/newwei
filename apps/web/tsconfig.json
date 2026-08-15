@@ -24,6 +24,9 @@
       ],
       "@/graphql/*": [
         "./graphql/*"
+      ],
+      "@/test/*": [
+        "./test/*"
       ]
     },
     "incremental": true,

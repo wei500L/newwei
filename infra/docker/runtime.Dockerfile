@@ -63,4 +63,6 @@ RUN corepack enable
 
 WORKDIR /workspace
 
-COPY --from=builder /workspace /workspace
+COPY --from=builder --chown=node:node /workspace /workspace
+
+USER node

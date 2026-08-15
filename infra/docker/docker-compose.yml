@@ -4,6 +4,12 @@ x-json-file-logging: &json-file-logging
     max-size: ${DOCKER_LOG_MAX_SIZE:-10m}
     max-file: ${DOCKER_LOG_MAX_FILE:-3}
 
+x-app-hardening: &app-hardening
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
 services:
   mysql:
     image: mysql:8.4
@@ -49,6 +55,7 @@ services:
       retries: 5
 
   redis:
+    <<: *app-hardening
     build:
       context: ../..
       dockerfile: infra/docker/redis.Dockerfile
@@ -156,6 +163,7 @@ services:
     logging: *json-file-logging
 
   akshare:
+    <<: *app-hardening
     build:
       context: ../..
       dockerfile: infra/akshare/Dockerfile
@@ -182,6 +190,7 @@ services:
       start_period: 20s
 
   model-service:
+    <<: *app-hardening
     build:
       context: ../..
       dockerfile: infra/model-service/Dockerfile
@@ -207,6 +216,7 @@ services:
       start_period: 20s
 
   litellm:
+    <<: *app-hardening
     # Pin the currently verified LiteLLM image digest to avoid drifting to bad upstream releases.
     build:
       context: ../..
@@ -261,6 +271,7 @@ services:
       start_period: 20s
 
   crawl4ai:
+    <<: *app-hardening
     build:
       context: ../..
       dockerfile: infra/docker/crawl4ai.Dockerfile
@@ -269,6 +280,8 @@ services:
     restart: unless-stopped
     working_dir: /app
     shm_size: 1g
+    tmpfs:
+      - /tmp
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -289,39 +302,6 @@ services:
       - sh
       - -lc
       - |
-        if [ -f /app/server.py ]; then
-          python - <<'PY'
-        import pathlib
-        import re
-
-        version = "unknown"
-        try:
-            import crawl4ai.__version__ as version_module
-
-            version = (
-                getattr(version_module, "__version__", None)
-                or getattr(version_module, "VERSION", None)
-                or "unknown"
-            )
-        except Exception:
-            version = "unknown"
-
-        if isinstance(version, str) and version.strip() and version != "unknown":
-            server_path = pathlib.Path("/app/server.py")
-            content = server_path.read_text(encoding="utf-8")
-            updated, count = re.subn(
-                r'^__version__\s*=\s*["\'][^"\']*["\']',
-                f'__version__ = "{version.strip()}"',
-                content,
-                count=1,
-                flags=re.MULTILINE,
-            )
-            if count > 0:
-                server_path.write_text(updated, encoding="utf-8")
-                print(f"[crawl4ai] /health version patched to {version.strip()}")
-        PY
-        fi
-
         if [ -f /opt/modular/crawl4ai-ssrf-proxy.py ]; then
           python /opt/modular/crawl4ai-ssrf-proxy.py &
         fi
@@ -366,6 +346,7 @@ services:
       start_period: 20s
 
   ais-relay:
+    <<: *app-hardening
     build:
       context: ../..
       dockerfile: infra/docker/ais-relay.Dockerfile
@@ -398,6 +379,7 @@ services:
       start_period: 120s
 
   api:
+    <<: *app-hardening
     build:
       context: ../..
       dockerfile: infra/docker/runtime.Dockerfile
@@ -466,6 +448,7 @@ services:
       start_period: 300s
 
   vector:
+    <<: *app-hardening
     build:
       context: ../..
       dockerfile: infra/docker/runtime.Dockerfile
@@ -511,6 +494,7 @@ services:
       start_period: 120s
 
   web:
+    <<: *app-hardening
     build:
       context: ../..
       dockerfile: infra/docker/runtime.Dockerfile

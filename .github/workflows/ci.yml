@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  NEXT_BUILD_SKIP_QUALITY_CHECKS: "true"
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  NEXT_PUBLIC_API_BASE_URL: http://localhost:4000/api
+  NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Web component tests
+        run: pnpm --filter @modular/web test
+
+      - name: Build
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/ais-relay --filter=@modular/api --filter=@modular/vector --filter=@modular/web

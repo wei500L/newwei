@@ -12,10 +12,13 @@
     "lib/**/*.tsx",
     "store/**/*.ts",
     "store/**/*.tsx",
+    "test/**/*.ts",
+    "test/**/*.tsx",
     "types/**/*.ts",
     "types/**/*.tsx",
     "middleware.ts",
-    "next-env.d.ts"
+    "next-env.d.ts",
+    "vitest.config.ts"
   ],
   "exclude": ["node_modules", ".next"]
 }

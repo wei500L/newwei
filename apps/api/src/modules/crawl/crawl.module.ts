@@ -14,7 +14,11 @@ import { StorageModule } from "../storage/storage.module";
 
 import { CrawlActivityService } from "./crawl-activity.service";
 import { CrawlAdaptiveConcurrencyService } from "./crawl-adaptive-concurrency.service";
+import { CrawlAntiBotService } from "./crawl-anti-bot.service";
 import { CrawlCleanupOutboxService } from "./crawl-cleanup-outbox.service";
+import { CrawlConditionalPreflightService } from "./crawl-conditional-preflight.service";
+import { CrawlDetailExpansionService } from "./crawl-detail-expansion.service";
+import { CrawlExecutionResultsService } from "./crawl-execution-results.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlFrontierLlmService } from "./crawl-frontier-llm.service";
 import { CrawlFrontierController } from "./crawl-frontier.controller";
@@ -22,6 +26,8 @@ import { CrawlFrontierService } from "./crawl-frontier.service";
 import { CrawlMediaAssetController } from "./crawl-media-asset.controller";
 import { CrawlMediaAssetService } from "./crawl-media-asset.service";
 import { CrawlMetadataService } from "./crawl-metadata.service";
+import { CrawlOptionsNormalizerService } from "./crawl-options-normalizer.service";
+import { CrawlPublishSignalService } from "./crawl-publish-signal.service";
 import { CrawlQualityMetricsService } from "./crawl-quality-metrics.service";
 import { CrawlQualityTaskSnapshotService } from "./crawl-quality-task-snapshot.service";
 import { CrawlQualityStrategyService } from "./crawl-quality.strategy";
@@ -117,6 +123,12 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlStrategyRuntimeService,
     CrawlTaskService,
     CrawlTaskJanitorService,
+    CrawlOptionsNormalizerService,
+    CrawlExecutionResultsService,
+    CrawlConditionalPreflightService,
+    CrawlPublishSignalService,
+    CrawlAntiBotService,
+    CrawlDetailExpansionService,
     CrawlExecutionService,
     CrawlFrontierLlmService,
     CrawlFrontierService,
