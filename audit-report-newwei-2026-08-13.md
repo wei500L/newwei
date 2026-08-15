@@ -5,7 +5,7 @@
 **Date:** 2026-08-13
 **Reviewer:** opencode (deepseek-v4-pro) — fuck-my-shit-mountain skill
 **Commit:** `beb32ead`（branch `main`）
-**Remediation review:** 2026-08-15 — 下文只保留仍开放的 Finding。**2026-08-16 High 闭合：** TST-03、REL-01、REL-02、MAINT-01 已修复。
+**Remediation review:** 2026-08-16 — 下文只保留仍开放的 Finding。已闭合：TST-03、REL-01、REL-02、MAINT-01。
 
 ---
 
@@ -13,7 +13,7 @@
 
 这是一个体量可观、工程底子相当扎实的多租户情报平台（pnpm + Turborepo monorepo：NestJS 11 API + Next.js 15 Web + 向量服务 + AIS relay，Prisma/MySQL + Mongoose/MongoDB + BullMQ/Redis + Qdrant + LiteLLM）。核心安全与一致性基础设施的完成度显著高于同规模项目：认证采用 bcrypt、refresh token 轮换与黑名单、TOTP MFA 与恢复码、按组织隔离的 RBAC、GraphQL 深度/复杂度限制、SSRF 校验器、MongoOutbox 事务外发模式、DataLoader 批量加载、生产环境异常过滤器脱敏、近乎全覆盖的 Docker healthcheck 与启动依赖链。这些都不是"看起来对"，而是有具体实现与单测佐证。
 
-仍开放的风险集中在：覆盖率/vector 测试缺口（TST-05/06）；发布面仍是滚动 tag 与默认弱凭据（REL-03、REL-05、REL-08）。CI、组件测试、非 root 容器与 8 个 god 文件拆分已在 2026-08-16 落地。
+仍开放的风险集中在：覆盖率/vector 测试缺口（TST-05/06）；发布面滚动 tag 与默认弱凭据（REL-03、REL-05、REL-08）；生产双重断言（TYPES-03）；少数 GraphQL 列表无分页（BAPI-01）。
 
 **亮点**：outbox 事务外发、DataLoader、异常脱敏、SSRF 防护、refresh token 轮换、MFA、组织隔离、新闻管线/助手输入护栏、助手按组织额度、LiteLLM fallback 观测、解析失败进 DLQ、ES/向量降级打点是本项目值得保留并继续沿用的工程资产。
 
@@ -58,9 +58,9 @@ Overall         █████░░░░░  5.3  B
 
 **安全边界**：JWT（issuer/audience/jti 黑名单，每次请求回查 DB profile）、RBAC（按组织，actor 不可授予超出自身权限）、`validateSsrfUrl`、GraphQL 复杂度限制、登录限流。
 
-**测试结构**（审计当日）：API 263 个 `*.spec.ts` + 2 个 e2e；Web 189 个 Vitest spec；vector 无测试。**2026-08-14：全部 `*.spec.ts`/`*.test.ts` 与 Jest/Vitest 工具链已删除（`a452f264`）。2026-08-16：重建 `apps/web` Vitest + Testing Library 组件测试，并新增 GitHub Actions CI（lint/typecheck/web test/build）。API Jest 与 vector 测试仍未恢复。**
+**测试结构**（审计当日）：API 263 个 `*.spec.ts` + 2 个 e2e；Web 189 个 Vitest spec；vector 无测试。**2026-08-14：全部 `*.spec.ts`/`*.test.ts` 与 Jest/Vitest 工具链已删除（`a452f264`）。2026-08-16：重建 `apps/web` Vitest + Testing Library 组件测试 + GitHub Actions CI；API Jest 与 vector 测试仍未恢复，无覆盖率门禁。**
 
-**发布**：Docker Compose 本地栈；`docker-up.js` 有锁文件一致性/Prisma 迁移 id/Redis AOF 完整性预检；无 semver/changelog/SBOM/签名；镜像多按 tag 非 digest。
+**发布**：Docker Compose 本地栈；GitHub Actions CI（lint/typecheck/web test/build）；第一方容器非 root + `cap_drop: ALL`；`docker-up.js` 有锁文件一致性/Prisma 迁移 id/Redis AOF 完整性预检；无 semver/changelog/SBOM/签名；镜像多按 tag 非 digest。
 
 ### Coverage Matrix
 
@@ -70,7 +70,7 @@ Overall         █████░░░░░  5.3  B
 | Security | High | guards/auth/rbac/SSRF/CORS/密钥/secrets 扫描、.env* | 未做动态渗透 |
 | Stability | High | catch/timeout/fallback 全库扫描、异常过滤器 | 未做故障注入 |
 | Performance | Medium | DataLoader、分页、索引迁移、N+1 抽样 | 未压测、未看 bundle 拆分细节 |
-| Testing | High | 审计当日 456 测试文件全量清单、CI 缺失、e2e/单元抽样；2026-08-14 复核套件已删 | 审计当日未跑全量测试套件 |
+| Testing | High | 审计当日 456 测试文件全量清单、e2e/单元抽样；2026-08-14 复核套件已删；2026-08-16 web Vitest + CI 已落地 | 审计当日未跑全量测试套件 |
 | Maintainability | High | 全库行数统计、type 逃逸计数、大文件清单 | 未度量圈复杂度 |
 | Design | High | 原则映射（SRP/DRY/fail-fast/类型逃逸） | — |
 | Release | High | Dockerfile/compose/CI/锁文件/版本/SBOM 扫描 | 未构建镜像 |
@@ -99,20 +99,7 @@ Overall         █████░░░░░  5.3  B
 3. **无 semver/changelog/SBOM/签名**（REL-08, Medium）— 发布不可追溯。
 4. **生产中 `as unknown as` 双重断言**（TYPES-03, Medium）— 类型系统在边界失效。
 
-已闭合 High：REL-01 CI、TST-03 组件测试、REL-02 非 root 容器、MAINT-01 god 文件拆分。
-
 ## 4. Detailed Findings
-
-### Finding: TST-03 无前端组件渲染测试
-
-- Severity: High
-- Confidence: High
-- Category: Testing
-- Status: Resolved (2026-08-16)
-- Affected area: `apps/web`；`AGENTS.md` Verification 段
-- Evidence: 已恢复 Vitest + Testing Library + jsdom；`apps/web/vitest.config.ts`；登录页/邮件设置保存/news-sources 权限门控组件测试；`AGENTS.md` 允许 web 行为测试；CI 跑 `pnpm --filter @modular/web test`。
-- Problem: （原）React 19 + AntD 大型控制台零组件覆盖。
-- Resolution: 关键工作流组件级测试已落地；API Jest 不在本项范围。
 
 ### Finding: TST-05 覆盖率配置了但从不收集/无阈值
 
@@ -121,8 +108,8 @@ Overall         █████░░░░░  5.3  B
 - Category: Testing
 - Status: Confirmed
 - Affected area: `apps/api/jest.config.ts`（已删除）、`AGENTS.md` Verification 段
-- Evidence: 审计当日 `collectCoverageFrom` 已配但脚本不带 `--coverage`、无 `coverageThreshold`。2026-08-14 复核：Jest/Vitest 与覆盖率配置随 `a452f264` 删除；仍无覆盖率门禁、无 `pnpm test`。
-- Problem: 无法知道代码覆盖了什么；现已无测试套件可收集覆盖率。
+- Evidence: 审计当日 `collectCoverageFrom` 已配但脚本不带 `--coverage`、无 `coverageThreshold`。2026-08-16 复核：根目录有 `pnpm test`（转发 web Vitest），CI 跑 web 组件测试，但仍无覆盖率收集与阈值门禁。
+- Problem: 无法知道代码覆盖了什么；web 组件测试已跑，但仍不收集覆盖率、无阈值。
 - Why it matters: 关键模块（如 model-service）零覆盖无人察觉。
 - Realistic failure scenario: 覆盖率持续下降无门禁。
 - Minimal fix: 加 `--coverage` 与阈值门槛，接入 CI。
@@ -137,7 +124,7 @@ Overall         █████░░░░░  5.3  B
 - Category: Testing
 - Status: Confirmed
 - Affected area: `apps/vector/package.json`、`AGENTS.md` Verification 段
-- Evidence: 无 `test` 脚本、0 spec。2026-08-14 复核：全仓测试工具链已删，`AGENTS.md` 禁止新增 spec；vector 鉴权/检索仍无验证。
+- Evidence: 无 `test` 脚本、0 spec。2026-08-16 复核：`AGENTS.md` 仅允许 `apps/web` 组件测试，仍禁止 API/vector spec；vector 鉴权/检索仍无验证。
 - Problem: 整个可部署服务无保护。
 - Why it matters: 向量鉴权/检索核心无验证。
 - Realistic failure scenario: 鉴权/orgId 过滤回归，测试不覆盖。
@@ -145,26 +132,6 @@ Overall         █████░░░░░  5.3  B
 - Better long-term fix: 纳入 CI 与统一测试门槛。
 - Regression test suggestion: internal-auth guard 与 orgId 过滤测试。
 - Estimated effort: 1 day
-
-### Finding: REL-01 无 CI/CD 流水线
-
-- Severity: High
-- Confidence: High
-- Category: Release
-- Status: Resolved (2026-08-16)
-- Affected area: `.github/workflows/ci.yml`
-- Evidence: PR/`main` push 触发 lint、typecheck、web test、build；`turbo.json` 增加 `test` task。Husky 本地 hook 仍未接线（非本项门禁）。
-- Resolution: GitHub Actions 合并门禁已落地。
-
-### Finding: REL-02 容器以 root 运行
-
-- Severity: High
-- Confidence: High
-- Category: Release
-- Status: Resolved (2026-08-16)
-- Affected area: `infra/docker/*.Dockerfile`、`infra/akshare/Dockerfile`、`infra/model-service/Dockerfile`、`infra/docker/docker-compose.yml`
-- Evidence: 第一方镜像设置 `USER node`/`app`/`crawler`/`redis`；compose 对第一方服务 `cap_drop: ALL` + `no-new-privileges`；crawl4ai version patch 移到构建期，`/tmp` tmpfs。
-- Resolution: 运行时默认非 root；crawl4ai Chromium 若需额外 cap 仅放宽该服务。
 
 ### Finding: REL-03 镜像按可变 tag 固定
 
@@ -214,16 +181,6 @@ Overall         █████░░░░░  5.3  B
 - Regression test suggestion: 发布流程自动生成 changelog/SBOM。
 - Estimated effort: 1–2 days
 
-### Finding: MAINT-01 多个 4000–8200 行 god 文件
-
-- Severity: High
-- Confidence: High
-- Category: Maintainability
-- Status: Resolved (2026-08-16)
-- Affected area: 原 8 个 god 文件已拆为门面 + 子模块
-- Evidence: 门面行数：`news-sources-content.tsx` 1295、`llm-gateway-settings-panel.tsx` 626、`situation-monitor-content.tsx` 1485、`crawl-execution.service.ts` 718、`items.service.ts` 363、`dashboard-charts.service.ts` 168、`realtime-signals.service.ts` 1328、`news-pipeline.service.ts` 195。公开 API/orgId 过滤保持在门面上。`news-sources-modals.tsx` 仍约 2700 行（原表单一体抽取）。
-- Resolution: 8 个目标文件已拆分；其余 ≥3k 文件不在本项名单。
-
 ### Finding: TYPES-03 生产中 99 处 `as unknown as` 双重断言
 
 - Severity: Medium
@@ -268,9 +225,9 @@ Overall         █████░░░░░  5.3  B
 
 | Subtype | Count | Affected Areas | Recommended Action |
 |---------|-------|----------------|-------------------|
-| ModuleBoundary | 1 | `crawl-execution.service`(god service) | 拆分服务、抽出仓储边界 |
+| ModuleBoundary | 0 | `crawl-execution.service` 已拆为门面 + 子模块 | 继续约束其余 ≥3k 文件 |
 | BoundaryContract | 1 | vector 服务信任 body `orgId`（共享 token 后） | 向量边界显式契约 + 服务端重推导 |
-| EvolutionRisk | 3 | 4000-8200 行文件、`CRAWL4AI_JSCODE_ENABLED` 默认开 | 抽取扩展点、收紧默认 |
+| EvolutionRisk | 2 | 其余 ≥3k 文件、`CRAWL4AI_JSCODE_ENABLED` 默认开 | 抽取扩展点、收紧默认 |
 
 **正向资产**：MongoOutbox 事务外发、DataLoader、按组织的请求级作用域、分层清晰（module → service → 仓储）在多数模块执行到位；`org`/`rbac`/`org-invite` 的多步写入正确包裹事务。
 
@@ -306,13 +263,13 @@ Overall         █████░░░░░  5.3  B
 
 ## 9. Testing Gaps
 
-**Coverage: High** — 审计当日 456 测试文件全量清单 + CI 缺失 + 单元/e2e 抽样。
+**Coverage: High** — 审计当日 456 测试文件全量清单 + 后续复核。
 
-**Inspected evidence**: 审计当日 263 API spec + 189 web spec + 2 ais-relay + 2 db；`app.e2e-spec.ts`、`graphql.e2e-spec.ts`、`vitest.config.ts`、`jest.config.ts`。2026-08-14 复核：上述文件均已删除（`a452f264`）。
+**Inspected evidence**: 审计当日 263 API spec + 189 web spec + 2 ais-relay + 2 db。2026-08-14 复核：上述文件均已删除（`a452f264`）。2026-08-16：`apps/web` Vitest 组件测试 + GitHub Actions CI 已落地；API Jest / vector 测试仍缺。
 
 **Exclusions / limits**: 审计当日未跑全量套件。
 
-见 TST-05、TST-06。**缺口仍开放**：vector 零测试（TST-06）、无覆盖率门禁（TST-05）。TST-03/REL-01 已闭合。
+见 TST-05、TST-06。**缺口仍开放**：vector 零测试（TST-06）、无覆盖率门禁（TST-05）。
 
 ## 10. Maintainability Concerns
 
@@ -322,7 +279,7 @@ Overall         █████░░░░░  5.3  B
 
 **Exclusions / limits**: 未度量圈复杂度。
 
-见 MAINT-01（已拆分）。**剩余**：99 处 `as unknown as` 双重断言；26 处生产 `as any`；`news-sources-modals.tsx` 仍约 2700 行。**正向**：全库 0 个 TODO/FIXME/HACK；`Record<string, unknown>`（1755 处）为偏好模式。
+**剩余**：99 处 `as unknown as` 双重断言；26 处生产 `as any`；`news-sources-modals.tsx` 仍约 2700 行；`war-map.tsx` / `alert-center` 等 ≥3k 文件。**正向**：原 8 个 god 文件已拆为门面 + 子模块；全库 0 个 TODO/FIXME/HACK；`Record<string, unknown>`（1755 处）为偏好模式。
 
 ## 11. Design / Principles Concerns
 
@@ -391,7 +348,7 @@ Overall         █████░░░░░  5.3  B
 |---------|-------|-------------------|-------------------|
 | ErrorState | 0 | 热力图 REST 失败有 ChartEmptyState；SSE 失败 invalidate REST | 保持 |
 
-**结论**：该维度因未做浏览器实测而覆盖有限，**无法给出干净结论**。建议后续用 Playwright 补关键工作流（登录、设置保存、战争地图）的可访问性/错误态回归。前端已有登录/设置保存/权限门控组件测试（TST-03 已闭合）。
+**结论**：该维度因未做浏览器实测而覆盖有限，**无法给出干净结论**。建议后续用 Playwright 补关键工作流（登录、设置保存、战争地图）的可访问性/错误态回归。前端已有登录/设置保存/权限门控组件测试。
 
 ## 16. Supply Chain / Reproducibility Analysis
 
@@ -501,21 +458,21 @@ Overall         █████░░░░░  5.3  B
 
 **Coverage: High** — e2e mock/源码断言/私有方法 spy 审读。
 
-**Inspected evidence**: 仓库现无 `*.spec.ts`/`*.test.ts`；假 e2e / 源码断言套件已删，真实行为测试未重建。
+**Inspected evidence**: 假 e2e / 源码断言套件已删（`a452f264`）。2026-08-16：`apps/web` 有 Vitest + Testing Library 组件测试；API / vector 仍无 `*.spec.ts`。
 
-**Exclusions / limits**: 无自动化套件可跑。
+**Exclusions / limits**: API 与 vector 无自动化套件可跑。
 
 ### Confidence Assessment
 
 | Test Area | Real Confidence | Risk | Action |
 |-----------|---------------|------|--------|
-| API 单测 | None | 套件已删 | 重建行为测试（当前 `AGENTS.md` 禁止 spec） |
+| API 单测 | None | 套件已删；`AGENTS.md` 仍禁止 API Jest | 重建行为测试需先修订规范 |
 | API e2e | None | 真实依赖 e2e 仍缺 | Rewrite（testcontainers） |
-| Web 组件 | Low | 登录/设置保存/权限门控已测（TST-03 闭合） | 扩大关键工作流覆盖 |
+| Web 组件 | Low | 登录/设置保存/权限门控已测 | 扩大关键工作流覆盖 |
 | model-service.client | None | 零测试 | 补测 |
 
 ### Missing Tests
-model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真实依赖的集成/认证流程。全仓现无任何自动化测试。
+model-service 客户端（circuit breaker/backoff/分类）；真实依赖的集成/认证流程；vector 鉴权/检索。API 与 vector 仍无自动化测试。
 
 ## 23. Fallback / Defensive Code Analysis
 
@@ -546,7 +503,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 | Subtype | Count | Affected Components |
 |---------|-------|-------------------|
-| ComponentSize | 若干 | 拆分后仍有 war-map.tsx / alert-center 等 ≥3k 文件（不在 MAINT-01 名单） |
+| ComponentSize | 若干 | `war-map.tsx` / `alert-center` 等 ≥3k 文件 |
 | StateDuplication | 1 | situation-monitor lib/store 平行 |
 
 **正向**：Zustand store 类型良好、防御性 sessionStorage 解析、`create<State>()` 类型化 setter。
@@ -627,7 +584,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 **Coverage: High** — Dockerfile/compose/CI/锁文件/版本/SBOM 扫描。
 
-**Inspected evidence**: `infra/docker/*`、`.github`（缺失）、`version.json`、`docker-up.js`。
+**Inspected evidence**: `infra/docker/*`、`.github/workflows/ci.yml`、`version.json`、`docker-up.js`。
 
 **Exclusions / limits**: 未构建镜像。
 
@@ -639,7 +596,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 | Principle | Violations | Severity | Affected Areas |
 |-----------|------------|----------|----------------|
-| Single Responsibility (1.1) | 若干 | Medium | 其余 ≥3k 文件（非 MAINT-01 名单） |
+| Single Responsibility (1.1) | 若干 | Medium | 其余 ≥3k 文件 |
 | File Size Limit (1.2) | 若干 | Medium | 其余 ≥3k 文件（非本轮 8 个目标） |
 | Fail-Fast (4.4) | 1 | High | `LITELLM_API_KEY` 可选 |
 | Fail on Missing Config (9.2) | 1 | Critical | `LITELLM_API_KEY` |
@@ -650,7 +607,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 - **Fail-Fast 的正面实现**：`AISSTREAM_API_KEY` 缺失即启动失败；Docker LiteLLM 空 `LITELLM_MASTER_KEY` 拒绝启动；`validateSsrfUrl` 在抓取边界拒绝私网；生产异常过滤器 fail-closed。
 - **Don't Swallow Errors**：全库 0 空 catch（正向）；护栏拦截不重试。
 - **Dependency Inversion (2.4)**：MongoOutbox 抽象了跨库一致性；vector-client/model-service 封装外部依赖。
-- **Test Behavior (8.1)**：web 组件行为测试已重建（TST-03 闭合）。
+- **Test Behavior (8.1)**：web 组件行为测试已重建。
 - **Command-Query Separation 正面**：org 写权限在目标组织重推导。
 - **Least Privilege (4.6)**：机器 token 仅 `metrics.read`；actor 不可授予超出自身权限。
 
@@ -670,7 +627,7 @@ model-service 客户端（circuit breaker/backoff/分类）；组件渲染；真
 
 ### Schedule Later（增加维护成本或限制规模）
 
-（原 High 项 REL-01/02、TST-03、MAINT-01 已闭合。）
+（无仍开放的延后项；其余 ≥3k 文件见第 33 节。）
 
 ### Ignore for Now
 
