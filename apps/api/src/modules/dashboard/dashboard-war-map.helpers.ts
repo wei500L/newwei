@@ -14,6 +14,7 @@ import {
   type WarMapNewsMarker,
   WAR_MAP_LAYER_IDS,
   normalizeCountryCode,
+  asRecord,
 } from '@modular/utils';
 import { AlertSeverity } from '@prisma/client';
 
@@ -1119,7 +1120,7 @@ export class DashboardWarMapSupport {
       lat: vessel.lat,
       lng: vessel.lng,
       timestamp: vessel.observedAt,
-      properties: properties as unknown as Record<string, unknown>,
+      properties: asRecord(properties),
     };
   }
 
@@ -1144,7 +1145,7 @@ export class DashboardWarMapSupport {
       id: zone.id,
       lat: zone.lat,
       lng: zone.lng,
-      properties: properties as unknown as Record<string, unknown>,
+      properties: asRecord(properties),
     };
   }
 
@@ -1175,7 +1176,7 @@ export class DashboardWarMapSupport {
       lat: disruption.lat,
       lng: disruption.lng,
       timestamp: observedAt,
-      properties: properties as unknown as Record<string, unknown>,
+      properties: asRecord(properties),
     };
   }
 
@@ -1592,7 +1593,7 @@ export class DashboardWarMapSupport {
       lat: aircraft.lat,
       lng: aircraft.lng,
       timestamp: aircraft.observedAt,
-      properties: properties as unknown as Record<string, unknown>,
+      properties: asRecord(properties),
     };
   }
 }

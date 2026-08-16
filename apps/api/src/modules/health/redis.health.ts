@@ -84,9 +84,17 @@ export class RedisHealthIndicator extends HealthIndicator {
 
 type ClusterSlotsReply = [number, number, [string, number, string], ...unknown[]][];
 
+function callRedisCluster(redis: Redis, subcommand: "info" | "slots"): Promise<unknown> {
+  const cluster = Reflect.get(redis, "cluster");
+  if (typeof cluster !== "function") {
+    return Promise.reject(new Error("Redis cluster command is unavailable"));
+  }
+  return Reflect.apply(cluster, redis, [subcommand]) as Promise<unknown>;
+}
+
 async function tryGetClusterInfo(redis: Redis, timeoutMs: number): Promise<string | undefined> {
   try {
-    return await withTimeout((redis as unknown as { cluster: (subcommand: "info") => Promise<string> }).cluster("info"), timeoutMs, "Redis CLUSTER INFO timeout");
+    return await withTimeout(callRedisCluster(redis, "info") as Promise<string>, timeoutMs, "Redis CLUSTER INFO timeout");
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message.includes("cluster support disabled") || message.includes("ERR This instance has cluster support disabled")) {
@@ -102,7 +110,7 @@ async function tryGetClusterInfo(redis: Redis, timeoutMs: number): Promise<strin
 async function tryGetClusterSlots(redis: Redis, timeoutMs: number): Promise<{ start: number; end: number }[] | undefined> {
   try {
     const raw = await withTimeout(
-      (redis as unknown as { cluster: (subcommand: "slots") => Promise<ClusterSlotsReply> }).cluster("slots"),
+      callRedisCluster(redis, "slots") as Promise<ClusterSlotsReply>,
       timeoutMs,
       "Redis CLUSTER SLOTS timeout"
     );

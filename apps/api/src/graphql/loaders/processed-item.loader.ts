@@ -1,4 +1,4 @@
-import { ProcessedItemModel } from "@modular/mongo";
+import { asLeanRecords, leanId, ProcessedItemModel } from "@modular/mongo";
 import { Injectable, Scope } from "@nestjs/common";
 import DataLoader from "dataloader";
 import { NestDataLoader } from "nestjs-dataloader";
@@ -26,12 +26,6 @@ export interface ProcessedItemDoc {
   createdAt: Date;
   updatedAt: Date;
 }
-
-type ProcessedItemRecord = Omit<ProcessedItemDoc, "id"> & {
-  _id: { toString(): string };
-  duplicateOf?: { toString(): string } | string | null;
-  summaryEmbeddingDimensions?: number | null;
-};
 
 function statusPriority(status: string): number {
   switch (status) {
@@ -66,66 +60,92 @@ const PROCESSED_ITEM_FULL_PROJECTION: Record<string, 1> = {
   result: 1,
 };
 
-function mapProcessedItemRecord(doc: ProcessedItemRecord): ProcessedItemDoc {
+function mapProcessedItemRecord(doc: Record<string, unknown>): ProcessedItemDoc | null {
+  const id = leanId(doc._id);
+  const itemMetaId = typeof doc.itemMetaId === "string" ? doc.itemMetaId : "";
+  if (!id || !itemMetaId) {
+    return null;
+  }
   const summaryEmbeddingModel =
-    typeof (doc as { summaryEmbeddingModel?: unknown }).summaryEmbeddingModel === "string"
-      ? String((doc as { summaryEmbeddingModel?: unknown }).summaryEmbeddingModel)
-      : null;
+    typeof doc.summaryEmbeddingModel === "string" ? doc.summaryEmbeddingModel : null;
   const summaryEmbeddingDimensions =
-    typeof doc.summaryEmbeddingDimensions === "number" && Number.isFinite(doc.summaryEmbeddingDimensions)
+    typeof doc.summaryEmbeddingDimensions === "number" &&
+    Number.isFinite(doc.summaryEmbeddingDimensions)
       ? doc.summaryEmbeddingDimensions
       : null;
 
-  const errorRaw = (doc as { error?: unknown }).error;
+  const errorRaw = doc.error;
   const error =
     errorRaw && typeof errorRaw === "object" && !Array.isArray(errorRaw)
       ? {
           message:
-            typeof (errorRaw as { message?: unknown }).message === "string"
-              ? String((errorRaw as { message?: unknown }).message)
+            typeof Reflect.get(errorRaw, "message") === "string"
+              ? String(Reflect.get(errorRaw, "message"))
               : "Unknown error",
           name:
-            typeof (errorRaw as { name?: unknown }).name === "string"
-              ? String((errorRaw as { name?: unknown }).name)
+            typeof Reflect.get(errorRaw, "name") === "string"
+              ? String(Reflect.get(errorRaw, "name"))
               : null,
         }
       : null;
 
+  const duplicateOf = doc.duplicateOf;
   return {
-    id: doc._id.toString(),
-    itemMetaId: doc.itemMetaId,
-    status: doc.status,
+    id,
+    itemMetaId,
+    status: typeof doc.status === "string" ? doc.status : "pending",
     error,
-    tags: doc.tags ?? [],
-    result: doc.result ?? undefined,
-    duplicateOf: doc.duplicateOf ? doc.duplicateOf.toString() : null,
+    tags: Array.isArray(doc.tags)
+      ? doc.tags.filter((tag): tag is string => typeof tag === "string")
+      : [],
+    result: isResult(doc.result) ? doc.result : undefined,
+    duplicateOf: duplicateOf ? String(duplicateOf) : null,
     duplicateSimilarity:
       typeof doc.duplicateSimilarity === "number" ? doc.duplicateSimilarity : null,
     summaryEmbeddingModel,
     summaryEmbeddingDimensions,
-    llm: doc.llm ?? undefined,
-    createdAt: doc.createdAt,
-    updatedAt: doc.updatedAt,
+    llm: isLlm(doc.llm) ? doc.llm : undefined,
+    createdAt: doc.createdAt instanceof Date ? doc.createdAt : new Date(0),
+    updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt : new Date(0),
   };
+}
+
+function isResult(
+  value: unknown,
+): value is Record<string, unknown> | string | null {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    (typeof value === "object" && value !== null && !Array.isArray(value))
+  );
+}
+
+function isLlm(value: unknown): value is ProcessedItemDoc["llm"] {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function loadProcessedItems(
   keys: readonly string[],
   projection: Record<string, 1>,
-): Promise<Array<ProcessedItemDoc | null>> {
-  const docs = (await ProcessedItemModel.find(
-    { itemMetaId: { $in: keys as string[] } },
-    projection,
-  )
-    .sort({ createdAt: -1 })
-    .lean()) as unknown as ProcessedItemRecord[];
+): Promise<(ProcessedItemDoc | null)[]> {
+  const docs = asLeanRecords(
+    await ProcessedItemModel.find(
+      { itemMetaId: { $in: keys as string[] } },
+      projection,
+    )
+      .sort({ createdAt: -1 })
+      .lean(),
+  );
   const map = new Map<string, ProcessedItemDoc>();
   docs.forEach((doc) => {
     const candidate = mapProcessedItemRecord(doc);
+    if (!candidate) {
+      return;
+    }
 
-    const existing = map.get(doc.itemMetaId);
+    const existing = map.get(candidate.itemMetaId);
     if (!existing || statusPriority(candidate.status) > statusPriority(existing.status)) {
-      map.set(doc.itemMetaId, candidate);
+      map.set(candidate.itemMetaId, candidate);
     }
   });
   return keys.map((key) => map.get(key as string) ?? null);

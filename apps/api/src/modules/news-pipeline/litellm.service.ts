@@ -1,4 +1,4 @@
-import { createLogger } from "@modular/utils";
+import { createLogger, asRecord } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import axios, {
   AxiosError,
@@ -1194,11 +1194,11 @@ export class LiteLlmService {
           response.headers?.["x-litellm-key-spend"],
         );
         const payloadCost = this.extractHeaderCost(
-          (response.data as unknown as Record<string, unknown>).response_cost,
+          asRecord(response.data).response_cost,
         );
         const usageCost = this.extractHeaderCost(
           response.data.usage
-            ? (response.data.usage as unknown as Record<string, unknown>)
+            ? asRecord(response.data.usage)
                 .response_cost
             : undefined,
         );
@@ -1522,28 +1522,28 @@ export class LiteLlmService {
       const content = extractOpenAiTextFromChoice(choice as unknown);
       const rawMessage =
         choice && typeof choice === "object"
-          ? (choice as unknown as Record<string, unknown>).message
+          ? asRecord(choice).message
           : undefined;
       const role =
         rawMessage &&
         typeof rawMessage === "object" &&
-        typeof (rawMessage as Record<string, unknown>).role === "string"
-          ? ((rawMessage as Record<string, unknown>).role as string)
+        typeof asRecord(rawMessage).role === "string"
+          ? (asRecord(rawMessage).role as string)
           : "assistant";
 
       const messageRecord =
         rawMessage && typeof rawMessage === "object"
-          ? (rawMessage as Record<string, unknown>)
+          ? asRecord(rawMessage)
           : {};
 
       return {
-        ...(choice as unknown as Record<string, unknown>),
+        ...asRecord(choice),
         message: {
           ...messageRecord,
           role,
           content,
         },
-      } as unknown as LiteLlmCompletionChoice;
+      } as LiteLlmCompletionChoice;
     });
 
     return {
@@ -1811,11 +1811,11 @@ export class LiteLlmService {
           response.headers?.["x-litellm-key-spend"],
         );
         const payloadCost = this.extractHeaderCost(
-          (response.data as unknown as Record<string, unknown>).response_cost,
+          asRecord(response.data).response_cost,
         );
         const usageCost = this.extractHeaderCost(
           response.data.usage
-            ? (response.data.usage as unknown as Record<string, unknown>)
+            ? asRecord(response.data.usage)
                 .response_cost
             : undefined,
         );

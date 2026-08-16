@@ -37,7 +37,7 @@ export function normalizeHeadlessModeFormValues<
 >(values: T): T {
   const normalized = { ...values } as T;
   applyHeadlessModeToCrawlOptions(
-    normalized as unknown as Record<string, unknown>,
+    normalized as Record<string, unknown>,
     values.headlessMode,
   );
   delete (normalized as { headlessMode?: unknown }).headlessMode;

@@ -254,24 +254,20 @@ ProcessedItemSchema.index(
   { name: "processed_item_war_map_location_recency" },
 );
 
-ProcessedItemSchema.pre("validate", function (next) {
-  const doc = this as unknown as {
-    status?: string;
-    result?: unknown;
-    error?: unknown;
-  };
-  if (doc.status === "completed" && !doc.result) {
-    next(
-      new Error("ProcessedItem.result is required when status is completed"),
-    );
-    return;
-  }
-  if (doc.status === "failed" && !doc.error) {
-    next(new Error("ProcessedItem.error is required when status is failed"));
-    return;
-  }
-  next();
-});
+ProcessedItemSchema.pre(
+  "validate",
+  function (this: HydratedDocument<InferSchemaType<typeof ProcessedItemSchema>>, next) {
+    if (this.status === "completed" && !this.result) {
+      next(new Error("ProcessedItem.result is required when status is completed"));
+      return;
+    }
+    if (this.status === "failed" && !this.error) {
+      next(new Error("ProcessedItem.error is required when status is failed"));
+      return;
+    }
+    next();
+  },
+);
 
 export const ProcessedItemModel =
   (models.ProcessedItem as Model<ProcessedItem> | undefined) ||

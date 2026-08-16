@@ -387,7 +387,7 @@ export function createDeckMapRuntime(
 
   const handleLoad = () => {
     mapLoaded = true;
-    const projectionAwareMap = map as unknown as {
+    const projectionAwareMap = map as {
       setProjection?: (projection: { type: "mercator" | "globe" }) => void;
     };
     projectionAwareMap.setProjection?.({ type: "mercator" });

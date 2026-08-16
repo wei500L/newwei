@@ -143,7 +143,8 @@ const LOCALE_SETS = [["zh-Hans"], ["zh-Hant"], ["zh"]] as const;
 
 const canUseDisplayNames = () =>
   typeof Intl !== "undefined" &&
-  typeof (Intl as unknown as { DisplayNames?: unknown }).DisplayNames === "function";
+  "DisplayNames" in Intl &&
+  typeof Intl.DisplayNames === "function";
 
 const addLocaleDisplayNames = (locales: readonly string[]) => {
   if (!canUseDisplayNames()) {

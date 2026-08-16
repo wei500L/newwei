@@ -1,3 +1,4 @@
+import { narrowUnknown } from "@modular/utils";
 import {
   BadRequestException,
   Injectable,
@@ -1996,9 +1997,9 @@ export class CrawlFrontierService {
           : undefined;
     const explicitMarkdownFilter =
       isPlainObject(pageRule.markdownFilter)
-        ? (pageRule.markdownFilter as unknown as CrawlTaskOptions["markdownFilter"])
+        ? narrowUnknown<CrawlTaskOptions["markdownFilter"]>(pageRule.markdownFilter)
         : isPlainObject(base.markdownFilter)
-          ? (base.markdownFilter as unknown as CrawlTaskOptions["markdownFilter"])
+          ? narrowUnknown<CrawlTaskOptions["markdownFilter"]>(base.markdownFilter)
           : undefined;
     const explicitLocale =
       typeof pageRule.locale === "string" && pageRule.locale.trim().length > 0

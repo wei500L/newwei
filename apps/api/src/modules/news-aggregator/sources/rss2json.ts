@@ -1,3 +1,4 @@
+import { narrowUnknown } from "@modular/utils"
 import { XMLParser } from "fast-xml-parser"
 
 import type { RSSInfo } from "../news-aggregator.types"
@@ -90,5 +91,5 @@ export async function rss2json(url: string): Promise<RSSInfo | undefined> {
     rss.items.push(obj)
   }
 
-  return rss as unknown as RSSInfo
+  return narrowUnknown<RSSInfo>(rss)
 }

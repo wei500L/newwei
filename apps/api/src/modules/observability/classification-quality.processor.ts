@@ -1,4 +1,4 @@
-import { createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
+import { asRecord, createLogger, ensureTraceId, runWithTraceId } from "@modular/utils";
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Queue, Worker } from "bullmq";
 
@@ -38,7 +38,7 @@ export class ClassificationQualityProcessor
       async (job) => {
         const rawPayload =
           job.data && typeof job.data === "object"
-            ? (job.data as unknown as Record<string, unknown>)
+            ? asRecord(job.data)
             : {};
         const traceIdCandidate =
           typeof rawPayload.traceId === "string" ? rawPayload.traceId : undefined;

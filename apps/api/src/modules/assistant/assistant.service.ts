@@ -345,7 +345,7 @@ export class AssistantService {
         record.output = output;
         record.summary = output.summary;
       } else {
-        const jobType = (job as unknown as { type?: unknown }).type;
+        const jobType = (job as { type?: unknown }).type;
         throw new Error(`Unsupported assistant job type: ${typeof jobType === "string" ? jobType : "unknown"}`);
       }
 
@@ -1505,7 +1505,7 @@ export class AssistantService {
     ]);
 
     const rawPayloadByRef = new Map<string, Record<string, unknown>>();
-    for (const raw of rawItems as unknown as { _id?: unknown; payload?: unknown }[]) {
+    for (const raw of rawItems as { _id?: unknown; payload?: unknown }[]) {
       const idValue = raw?._id;
       const id =
         typeof idValue === "string"
@@ -1523,7 +1523,7 @@ export class AssistantService {
     }
 
     const processedResultByMetaId = new Map<string, Record<string, unknown>>();
-    for (const processed of processedItems as unknown as { itemMetaId?: unknown; result?: unknown }[]) {
+    for (const processed of processedItems as { itemMetaId?: unknown; result?: unknown }[]) {
       const itemMetaId = typeof processed?.itemMetaId === "string" ? processed.itemMetaId : undefined;
       if (!itemMetaId || processedResultByMetaId.has(itemMetaId)) {
         continue;

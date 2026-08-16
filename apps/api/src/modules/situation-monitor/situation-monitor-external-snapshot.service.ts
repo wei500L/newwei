@@ -2,11 +2,11 @@ import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import {
-  Prisma,
   SituationMonitorExternalSnapshotScope,
   SituationMonitorExternalSnapshotStatus,
 } from "@prisma/client";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 
@@ -348,9 +348,9 @@ export class SituationMonitorExternalSnapshotService {
         variantKey: SNAPSHOT_VARIANT_KEY,
         status: payload.status,
         source: SNAPSHOT_SOURCE,
-        payload: payload as unknown as Prisma.InputJsonValue,
-        warnings: payload.warnings as unknown as Prisma.InputJsonValue,
-        diagnostics: payload.diagnostics as unknown as Prisma.InputJsonValue,
+        payload: toPrismaJsonValue(payload),
+        warnings: toPrismaJsonValue(payload.warnings),
+        diagnostics: toPrismaJsonValue(payload.diagnostics),
         generatedAt: new Date(payload.generatedAt),
         expiresAt: new Date(payload.expiresAt),
       },

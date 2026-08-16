@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   baseEnvSchema,
+  isWeakCredential,
   loadAndValidateEnv,
   resolveMysqlConnectionString,
 } from "../../../packages/utils/src";
@@ -75,6 +76,54 @@ for (const target of targets) {
       ) {
         throw new Error(
           "LITELLM_MASTER_KEY is required: the LiteLLM proxy refuses to start without it",
+        );
+      }
+
+      const requiredSecrets: Array<{ key: string; minLength?: number }> = [
+        { key: "MYSQL_PASSWORD" },
+        { key: "MONGO_ROOT_PASSWORD" },
+        { key: "REDIS_PASSWORD" },
+        { key: "QDRANT_API_KEY" },
+        { key: "ELASTICSEARCH_PASSWORD" },
+        { key: "MINIO_ROOT_PASSWORD" },
+        { key: "LITELLM_POSTGRES_PASSWORD" },
+      ];
+      for (const secret of requiredSecrets) {
+        const value = readDotenvValue(target.file, secret.key);
+        if (isWeakCredential(value, { minLength: secret.minLength })) {
+          throw new Error(
+            `${secret.key} must be a strong random secret (openssl rand -hex 24); empty and default values such as secret/minioadmin/litellm are rejected`,
+          );
+        }
+      }
+
+      const minioUser = readDotenvValue(target.file, "MINIO_ROOT_USER");
+      if (!minioUser || minioUser.trim().length < 3 || minioUser.trim().toLowerCase() === "minioadmin") {
+        throw new Error(
+          "MINIO_ROOT_USER must be set and must not be the default minioadmin",
+        );
+      }
+
+      const mongoUri = readDotenvValue(target.file, "MONGO_URI") ?? env.MONGO_URI;
+      if (
+        !mongoUri ||
+        /:(secret|password|changeme|minioadmin)@/i.test(mongoUri)
+      ) {
+        throw new Error(
+          "MONGO_URI must include the generated MONGO_ROOT_PASSWORD (default secrets are rejected)",
+        );
+      }
+
+      const liteLlmDatabaseUrl = readDotenvValue(
+        target.file,
+        "LITELLM_DATABASE_URL",
+      );
+      if (
+        !liteLlmDatabaseUrl ||
+        /:litellm@/i.test(liteLlmDatabaseUrl)
+      ) {
+        throw new Error(
+          "LITELLM_DATABASE_URL must include a non-default LITELLM_POSTGRES_PASSWORD",
         );
       }
     }

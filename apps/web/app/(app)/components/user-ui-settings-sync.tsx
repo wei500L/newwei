@@ -313,7 +313,11 @@ function readCacheEnvelope<T>(key: string): UiCacheEnvelope<T> | null {
   if (!("payload" in parsed)) {
     return null;
   }
-  return parsed as unknown as UiCacheEnvelope<T>;
+  return {
+    version: 1,
+    updatedAt,
+    payload: parsed.payload as T,
+  };
 }
 
 function writeSituationMonitorCache(orgId: string, userId: string) {

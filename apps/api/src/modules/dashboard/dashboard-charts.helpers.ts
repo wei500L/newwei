@@ -917,7 +917,7 @@ export async function loadSharedDashboardQuery<T, TCached = T>(
     DASHBOARD_SHARED_QUERY_TTL_SECONDS,
     async () => {
       const value = await loader();
-      return options?.serialize ? options.serialize(value) : (value as unknown as TCached);
+      return options?.serialize ? options.serialize(value) : (value as TCached);
     },
     {
       lockTtlMs: 5_000,
@@ -925,7 +925,7 @@ export async function loadSharedDashboardQuery<T, TCached = T>(
       maxWaitMs: 5_000,
     },
   );
-  return options?.deserialize ? options.deserialize(cached) : (cached as unknown as T);
+  return options?.deserialize ? options.deserialize(cached) : (cached as T);
 }
 
 export function buildProcessedArticleRangeWhere(

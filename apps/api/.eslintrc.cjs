@@ -23,7 +23,8 @@ module.exports = {
       rules: {
         "@typescript-eslint/consistent-type-imports": "off",
         "@typescript-eslint/no-explicit-any": "off",
-        "@typescript-eslint/no-require-imports": "off"
+        "@typescript-eslint/no-require-imports": "off",
+        "no-restricted-syntax": "off"
       }
     }
   ]

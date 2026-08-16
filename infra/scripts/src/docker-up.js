@@ -725,12 +725,73 @@ const validatePrismaSchemaForDockerUp = (composeBaseArgs, cwd, envFile) => {
   process.exit(result.status ?? 1);
 };
 
+const WEAK_DOCKER_SECRETS = new Set([
+  "secret",
+  "password",
+  "changeme",
+  "minioadmin",
+  "litellm",
+]);
+
+const isWeakDockerSecret = (value, minLength = 12) => {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return true;
+  }
+  if (value.trim().length < minLength) {
+    return true;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (WEAK_DOCKER_SECRETS.has(normalized)) {
+    return true;
+  }
+  return /change[_-]?me/i.test(normalized) || /^dev[_-]/i.test(normalized);
+};
+
+const assertDockerStorageSecrets = (envFile) => {
+  if (!existsSync(envFile)) {
+    logError(`Missing docker env file at ${envFile}`);
+    process.exit(1);
+  }
+  const env = parseDotenv(readFileSync(envFile));
+  const required = [
+    "MYSQL_PASSWORD",
+    "MONGO_ROOT_PASSWORD",
+    "REDIS_PASSWORD",
+    "QDRANT_API_KEY",
+    "ELASTICSEARCH_PASSWORD",
+    "MINIO_ROOT_PASSWORD",
+    "LITELLM_POSTGRES_PASSWORD",
+  ];
+  for (const key of required) {
+    if (isWeakDockerSecret(env[key])) {
+      logError(
+        `${key} must be a strong random secret (openssl rand -hex 24); empty and default values are rejected.`,
+      );
+      process.exit(1);
+    }
+  }
+  const minioUser = typeof env.MINIO_ROOT_USER === "string" ? env.MINIO_ROOT_USER.trim() : "";
+  if (minioUser.length < 3 || minioUser.toLowerCase() === "minioadmin") {
+    logError("MINIO_ROOT_USER must be set and must not be minioadmin.");
+    process.exit(1);
+  }
+  const mongoUri = typeof env.MONGO_URI === "string" ? env.MONGO_URI : "";
+  if (!mongoUri || /:(secret|password|changeme)@/i.test(mongoUri)) {
+    logError("MONGO_URI must include the generated MONGO_ROOT_PASSWORD.");
+    process.exit(1);
+  }
+  log("Docker storage credentials look non-default.");
+};
+
 const main = () => {
   const scriptsDir = path.resolve(__dirname, "..");
   const repoRoot = path.resolve(scriptsDir, "../..");
   const dockerDir = path.resolve(scriptsDir, "../docker");
   const envFile = path.resolve(dockerDir, ".env");
   const composeFile = path.resolve(dockerDir, "docker-compose.yml");
+
+  run(process.execPath, [path.join(__dirname, "check-compose-images.js")], scriptsDir);
+  assertDockerStorageSecrets(envFile);
 
   const userArgs = process.argv.slice(2).filter((arg, index) => {
     if (arg !== "--") return true;

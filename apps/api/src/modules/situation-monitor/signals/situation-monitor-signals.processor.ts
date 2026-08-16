@@ -18,7 +18,6 @@ import {
   removeLegacyTelegramRepeatJobs,
   removeQueuedTelegramPollJobs,
   removeTelegramPollScheduler,
-  TelegramSchedulerJobPayload,
   upsertTelegramPollScheduler,
 } from './situation-monitor-telegram-scheduler';
 
@@ -102,21 +101,12 @@ export class SituationMonitorSignalsProcessor implements OnModuleInit, OnModuleD
       30_000,
     );
 
-    await removeLegacyTelegramRepeatJobs(
-      this.queue as unknown as Queue<TelegramSchedulerJobPayload>,
-    );
+    await removeLegacyTelegramRepeatJobs(this.queue);
     if (telegramScheduler.enabled) {
-      await upsertTelegramPollScheduler(
-        this.queue as unknown as Queue<TelegramSchedulerJobPayload>,
-        telegramScheduler.intervalMs,
-      );
+      await upsertTelegramPollScheduler(this.queue, telegramScheduler.intervalMs);
     } else {
-      await removeTelegramPollScheduler(
-        this.queue as unknown as Queue<TelegramSchedulerJobPayload>,
-      );
-      await removeQueuedTelegramPollJobs(
-        this.queue as unknown as Queue<TelegramSchedulerJobPayload>,
-      );
+      await removeTelegramPollScheduler(this.queue);
+      await removeQueuedTelegramPollJobs(this.queue);
     }
 
     await this.queue.add(

@@ -243,7 +243,7 @@ export class RealtimeTransportPersistenceService {
     const existingByKey = new Map<string, Record<string, unknown>>(
       existingStates.map((state) => [
         String(state.objectKey),
-        state as unknown as Record<string, unknown>,
+        state as Record<string, unknown>,
       ]),
     );
 

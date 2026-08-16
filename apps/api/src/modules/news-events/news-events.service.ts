@@ -1534,9 +1534,9 @@ export class NewsEventsService {
         .select({ summaryEmbedding: 1, summaryEmbeddingModel: 1 })
         .lean()
         .exec();
-      const embedding = (doc as unknown as { summaryEmbedding?: unknown })
+      const embedding = (doc as { summaryEmbedding?: unknown })
         ?.summaryEmbedding;
-      const model = (doc as unknown as { summaryEmbeddingModel?: unknown })
+      const model = (doc as { summaryEmbeddingModel?: unknown })
         ?.summaryEmbeddingModel;
       if (!Array.isArray(embedding) || embedding.length === 0) {
         return null;

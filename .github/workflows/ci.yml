@@ -54,8 +54,21 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Web component tests
-        run: pnpm --filter @modular/web test
+      - name: Web component tests with coverage
+        run: pnpm --filter @modular/web test -- --coverage
+
+      - name: Vector unit tests
+        run: pnpm --filter @modular/vector test
+
+      - name: Compose image pin check
+        run: pnpm --filter @modular/infra-scripts run compose:images:check
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          artifact-name: sbom-cyclonedx.json
 
       - name: Build
         run: pnpm exec turbo run build --env-mode=loose --filter=@modular/ais-relay --filter=@modular/api --filter=@modular/vector --filter=@modular/web

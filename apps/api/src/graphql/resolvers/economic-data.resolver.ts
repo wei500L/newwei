@@ -405,7 +405,7 @@ export class EconomicDataResolver {
     preset: EconomicDashboardRefreshPreset,
   ): Promise<EconomicDataRefreshPresetStatusModel> {
     const summary = await this.akshareService.getRefreshPresetStatus(
-      preset as unknown as EconomicDashboardRefreshPresetValue,
+      preset as EconomicDashboardRefreshPresetValue,
     );
     return {
       ...summary,
@@ -463,10 +463,10 @@ export class EconomicDataResolver {
     const requester = this.requireUser(req);
     await this.actionRateLimit.enforceEconomicDataRefreshPreset(
       requester.orgId,
-      preset as unknown as EconomicDashboardRefreshPresetValue,
+      preset as EconomicDashboardRefreshPresetValue,
     );
     await this.akshareService.triggerDataFetchForPreset(
-      preset as unknown as EconomicDashboardRefreshPresetValue,
+      preset as EconomicDashboardRefreshPresetValue,
       {
         actorId: requester.id,
         orgId: requester.orgId,

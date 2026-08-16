@@ -190,12 +190,7 @@ function LiveNewsVideoTile(props: {
 
     let destroyed = false;
     let handledFailure = false;
-    let hlsInstance: {
-      destroy: () => void;
-      loadSource: (source: string) => void;
-      attachMedia: (media: HTMLMediaElement) => void;
-      on: (event: string, listener: (event: string, data: { fatal?: boolean }) => void) => void;
-    } | null = null;
+    let hlsInstance: { destroy: () => void } | null = null;
 
     const handleFailure = () => {
       if (handledFailure) {
@@ -224,33 +219,23 @@ function LiveNewsVideoTile(props: {
       }
 
       try {
-        const hlsModule = (await import("hls.js")) as unknown as {
-          default: new (config?: Record<string, unknown>) => {
-            destroy: () => void;
-            loadSource: (source: string) => void;
-            attachMedia: (media: HTMLMediaElement) => void;
-            on: (
-              event: string,
-              listener: (event: string, data: { fatal?: boolean }) => void,
-            ) => void;
-          };
-          isSupported: () => boolean;
-          Events: { ERROR: string };
-        };
+        const hlsModule = await import("hls.js");
+        const Hls = hlsModule.default;
 
-        if (destroyed || !hlsModule.isSupported()) {
+        if (destroyed || !Hls.isSupported()) {
           handleFailure();
           return;
         }
 
-        hlsInstance = new hlsModule.default({
+        const instance = new Hls({
           lowLatencyMode: true,
           backBufferLength: 90,
         });
-        hlsInstance.loadSource(hlsUrl);
-        hlsInstance.attachMedia(video);
-        hlsInstance.on(hlsModule.Events.ERROR, (_event, data) => {
-          if (data?.fatal) {
+        hlsInstance = instance;
+        instance.loadSource(hlsUrl);
+        instance.attachMedia(video);
+        instance.on(Hls.Events.ERROR, (_event, data) => {
+          if (data.fatal) {
             handleFailure();
           }
         });

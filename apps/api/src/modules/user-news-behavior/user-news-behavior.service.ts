@@ -1,7 +1,8 @@
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
-import { Prisma, UserNewsBehaviorSignalType } from "@prisma/client";
+import { UserNewsBehaviorSignalType } from "@prisma/client";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 
@@ -16,7 +17,6 @@ import {
   USER_NEWS_BEHAVIOR_DECAY_HALF_LIFE_DAYS,
   USER_NEWS_BEHAVIOR_DIMENSIONS,
   USER_NEWS_BEHAVIOR_HASH_KINDS,
-  USER_NEWS_BEHAVIOR_RETENTION_SECONDS,
   USER_NEWS_BEHAVIOR_PROFILE_CACHE_TTL_SECONDS,
   USER_NEWS_BEHAVIOR_V2_RETENTION_SECONDS,
   USER_NEWS_BEHAVIOR_V2_WINDOW_DAYS,
@@ -755,7 +755,7 @@ export class UserNewsBehaviorService {
           targetRows,
         );
         const computedAt = new Date();
-        const serializedNeighbors = neighbors as unknown as Prisma.InputJsonValue;
+        const serializedNeighbors = toPrismaJsonValue(neighbors);
 
         await this.prisma.userNewsSimilaritySnapshot.upsert({
           where: {

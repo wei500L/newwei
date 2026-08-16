@@ -191,7 +191,7 @@ export class AssistantSafetySettingsService {
   }
 
   private normalizeEnvDefaults(): { enabled: boolean; outputModerationEnabled: boolean } {
-    const cfg = this.env.assistantConfig as unknown as {
+    const cfg = this.env.assistantConfig as {
       guardrailsEnabled?: boolean;
       guardrails?: unknown;
     };

@@ -20,10 +20,10 @@ TypeScript strict mode is on; exported symbols need explicit types and enums sho
 
 ## Code Review & Verification
 
-Verification is `pnpm lint`, `pnpm typecheck`, `pnpm --filter @modular/web test`, plus read-only static review of touched paths. GitHub Actions CI (`.github/workflows/ci.yml`) is the merge gate.
+Verification is `pnpm lint`, `pnpm typecheck`, `pnpm --filter @modular/web test -- --coverage`, `pnpm --filter @modular/vector test`, plus read-only static review of touched paths. GitHub Actions CI (`.github/workflows/ci.yml`) is the merge gate.
 
-- `apps/web` uses Vitest + Testing Library + jsdom for **component/behavior** tests (`*.test.ts` / `*.test.tsx`). Prefer user-visible assertions (render, events, API mocks). Do not add source-text or snapshot-of-implementation tests.
-- Do not restore API Jest / Nest testing / e2e suites unless explicitly requested. Do not add `*.spec.ts`, `*.e2e-spec.ts`, or test-only API dependencies (jest, ts-jest, supertest, `@nestjs/testing`).
+- `apps/web` uses Vitest + Testing Library + jsdom for **component/behavior** tests (`*.test.ts` / `*.test.tsx`). Prefer user-visible assertions (render, events, API mocks). Do not add source-text or snapshot-of-implementation tests. Coverage collection and thresholds are part of the merge gate.
+- `apps/vector` uses Vitest unit tests (`*.test.ts`) for internal-auth and orgId-filtered retrieval. Do not restore API Jest / Nest testing / e2e suites unless explicitly requested. Do not add `*.spec.ts`, `*.e2e-spec.ts`, or test-only API dependencies (jest, ts-jest, supertest, `@nestjs/testing`).
 - For every change, statically review types/interfaces and GraphQL schema contracts, control flow and error handling, and `orgId`-scoped authorization on cross-tenant operations. Confirm each finding with `file:line` evidence (adversarial re-verification, mirroring `.workflow/reviews/static-audit.md`).
 
 ## Environment & Ops Tips

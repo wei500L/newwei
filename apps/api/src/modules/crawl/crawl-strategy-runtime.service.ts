@@ -773,7 +773,7 @@ export class CrawlStrategyRuntimeService {
 
     for (const candidate of inputCandidates) {
       const beforeSnapshot = this.buildCandidateSnapshot(candidate);
-      const targetValue = (candidate as unknown as Record<string, unknown>)[field];
+      const targetValue = Reflect.get(candidate, field);
       const matched = this.evaluateBranch(targetValue, operator, value);
       this.pushTrace(candidate, {
         nodeId: node.id,

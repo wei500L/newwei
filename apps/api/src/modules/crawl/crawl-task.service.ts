@@ -136,7 +136,7 @@ export class CrawlTaskService {
     }
 
     const normalizedOptions = this.executionService.normalizeOptions({
-      ...(normalizedRawOptions as unknown as Partial<CrawlTaskOptions>),
+      ...(normalizedRawOptions as Partial<CrawlTaskOptions>),
       markdownFilter: this.normalizeMarkdownFilter(
         normalizedRawOptions?.markdownFilter,
       ),

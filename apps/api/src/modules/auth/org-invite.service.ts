@@ -10,6 +10,7 @@ import type { Prisma } from "@prisma/client";
 import bcrypt from "bcrypt";
 
 import { hasMembershipPermission, collectMembershipPermissionSet } from "../../common/authz/membership-permissions";
+import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { PrismaService } from "../config/prisma.service";
 import { EmailService } from "../email/email.service";
@@ -70,7 +71,7 @@ export class OrgInviteService {
         firstName: input.firstName?.trim() || null,
         lastName: input.lastName?.trim() || null,
         primaryRoleId: input.primaryRoleId,
-        roleIds: roleIds as unknown as Prisma.InputJsonValue,
+        roleIds: toPrismaJsonValue(roleIds),
         invitedById: actorId,
         tokenHash,
         expiresAt,

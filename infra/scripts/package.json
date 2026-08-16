@@ -9,7 +9,8 @@
     "docker:down": "docker compose --env-file ../docker/.env -f ../docker/docker-compose.yml --profile extras down",
     "docker:logs": "docker compose --env-file ../docker/.env -f ../docker/docker-compose.yml --profile extras logs -f",
     "docker:smoke:ais-relay-startup": "node src/ais-relay-startup-smoke.js",
-    "env:check": "tsx src/check-env.ts"
+    "env:check": "tsx src/check-env.ts",
+    "compose:images:check": "node src/check-compose-images.js"
   },
   "dependencies": {
     "@modular/utils": "workspace:*",

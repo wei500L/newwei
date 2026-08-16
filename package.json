@@ -12,7 +12,7 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "test": "turbo run test --filter=@modular/web",
+    "test": "turbo run test --filter=@modular/web --filter=@modular/vector",
     "codegen": "graphql-codegen --config apps/web/codegen.yml",
     "db:migrate": "pnpm --filter db run migrate",
     "db:seed": "pnpm --filter db run seed",
@@ -31,6 +31,7 @@
     "docker:logs": "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile extras logs -f"
   },
   "devDependencies": {
+    "@changesets/cli": "^3.0.0",
     "@commitlint/cli": "^19.3.0",
     "@commitlint/config-conventional": "^19.2.2",
     "@types/node": "20.12.7",

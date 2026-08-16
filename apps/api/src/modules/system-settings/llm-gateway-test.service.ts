@@ -1226,7 +1226,7 @@ export class LlmGatewayTestService {
             logContext: options?.logContext,
             startedAt: start,
           });
-        const choice = (response.data as unknown as { choices?: unknown[] })
+        const choice = (response.data as { choices?: unknown[] })
           ?.choices?.[0];
         const content = extractOpenAiTextFromChoice(choice);
         const finishReason =

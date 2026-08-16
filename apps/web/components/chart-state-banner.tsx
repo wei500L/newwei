@@ -43,7 +43,7 @@ function isLikelyOfflineError(error: Error | null | undefined): boolean {
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
     return true;
   }
-  const networkError = (error as unknown as { networkError?: unknown }).networkError;
+  const networkError = (error as { networkError?: unknown }).networkError;
   if (networkError) {
     return true;
   }

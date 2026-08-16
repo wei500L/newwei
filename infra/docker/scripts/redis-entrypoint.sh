@@ -165,4 +165,8 @@ else
 fi
 
 info "Starting redis-server"
-exec redis-server --save '' --appendonly yes
+if [ -z "${REDIS_PASSWORD:-}" ]; then
+  error "REDIS_PASSWORD is required; refusing to start Redis without AUTH"
+  exit 1
+fi
+exec redis-server --save '' --appendonly yes --requirepass "$REDIS_PASSWORD"

@@ -22,7 +22,8 @@ module.exports = {
     {
       files: ["**/*.test.ts", "**/*.test.tsx", "test/**/*.ts", "test/**/*.tsx", "vitest.config.ts"],
       rules: {
-        "import/no-extraneous-dependencies": "off"
+        "import/no-extraneous-dependencies": "off",
+        "no-restricted-syntax": "off"
       }
     }
   ]

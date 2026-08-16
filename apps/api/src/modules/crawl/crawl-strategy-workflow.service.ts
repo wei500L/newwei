@@ -1,3 +1,4 @@
+import { asRecord } from '@modular/utils';
 import {
   BadRequestException,
   Injectable,
@@ -246,8 +247,8 @@ export class CrawlStrategyWorkflowService {
       this.getVersion(orgId, input.rightVersionId),
     ]);
     const settingsDiff = this.buildSettingsDiff(
-      left.definition.settings as unknown as Record<string, unknown>,
-      right.definition.settings as unknown as Record<string, unknown>,
+      asRecord(left.definition.settings),
+      asRecord(right.definition.settings),
     );
     const nodesDiff = this.buildNodeDiff(left.definition.nodes, right.definition.nodes);
     const edgesDiff = this.buildEdgeDiff(left.definition.edges, right.definition.edges);

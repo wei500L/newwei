@@ -1,16 +1,16 @@
 "use client";
 
 import { Button } from "antd";
+import { CandlestickChart, GraphChart, LineChart } from "echarts/charts";
+import {
+  AxisPointerComponent,
+  DataZoomComponent,
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+} from "echarts/components";
 import * as echarts from "echarts/core";
-import { install as installCandlestickChart } from "echarts/lib/chart/candlestick/install.js";
-import { install as installGraphChart } from "echarts/lib/chart/graph/install.js";
-import { install as installLineChart } from "echarts/lib/chart/line/install.js";
-import { install as installAxisPointerComponent } from "echarts/lib/component/axisPointer/install.js";
-import { install as installDataZoomComponent } from "echarts/lib/component/dataZoom/install.js";
-import { install as installGridComponent } from "echarts/lib/component/grid/install.js";
-import { install as installLegendComponent } from "echarts/lib/component/legend/install.js";
-import { install as installTooltipComponent } from "echarts/lib/component/tooltip/install.js";
-import { install as installCanvasRenderer } from "echarts/lib/renderer/installCanvasRenderer.js";
+import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -66,16 +66,16 @@ const preinstallRuntimeModules = () => {
   const installers: [string, Installer][] = [
     // These modules back the finance dashboard's hot path and are worth
     // preloading to avoid long-lived skeletons while dynamic chunks resolve.
-    ["renderer:canvas", installCanvasRenderer as unknown as Installer],
-    ["component:grid", installGridComponent as unknown as Installer],
-    ["component:tooltip", installTooltipComponent as unknown as Installer],
-    ["component:axisPointer", installAxisPointerComponent as unknown as Installer],
-    ["component:dataZoom", installDataZoomComponent as unknown as Installer],
-    ["component:legend", installLegendComponent as unknown as Installer],
-    ["chart:line", installLineChart as unknown as Installer],
-    ["chart:candlestick", installCandlestickChart as unknown as Installer],
+    ["renderer:canvas", CanvasRenderer],
+    ["component:grid", GridComponent],
+    ["component:tooltip", TooltipComponent],
+    ["component:axisPointer", AxisPointerComponent],
+    ["component:dataZoom", DataZoomComponent],
+    ["component:legend", LegendComponent],
+    ["chart:line", LineChart],
+    ["chart:candlestick", CandlestickChart],
     // Graph depends on coordinate-system/layout hooks that must exist before init.
-    ["chart:graph", installGraphChart as unknown as Installer],
+    ["chart:graph", GraphChart],
   ];
 
   installers.forEach(([key, installer]) => {

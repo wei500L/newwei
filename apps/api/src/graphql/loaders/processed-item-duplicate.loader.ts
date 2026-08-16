@@ -1,8 +1,8 @@
+import { asLeanRecords, leanId, ProcessedItemModel } from "@modular/mongo";
 import { Injectable, Scope } from "@nestjs/common";
 import DataLoader from "dataloader";
 import { Types } from "mongoose";
 
-import { ProcessedItemModel } from "@modular/mongo";
 
 /**
  * DataLoader for resolving ProcessedItem._id to its ItemMeta id.
@@ -30,16 +30,18 @@ export class ProcessedItemDuplicateLoader {
         return (processedItemIds as string[]).map(() => null);
       }
 
-      const docs = (await ProcessedItemModel.find({
-        _id: { $in: validIds },
-        orgId,
-      })
-        .select({ itemMetaId: 1 })
-        .lean()) as unknown as Array<{ _id: unknown; itemMetaId?: unknown }>;
+      const docs = asLeanRecords(
+        await ProcessedItemModel.find({
+          _id: { $in: validIds },
+          orgId,
+        })
+          .select({ itemMetaId: 1 })
+          .lean(),
+      );
 
       const itemMetaIdByProcessedItemId = new Map<string, string>();
       for (const doc of docs) {
-        const id = String(doc._id ?? "");
+        const id = leanId(doc._id) ?? "";
         const itemMetaId =
           typeof doc.itemMetaId === "string" ? doc.itemMetaId.trim() : "";
         if (id && itemMetaId) {

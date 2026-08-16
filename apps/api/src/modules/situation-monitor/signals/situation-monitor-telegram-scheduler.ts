@@ -14,7 +14,7 @@ export interface TelegramSchedulerJobPayload {
 }
 
 export async function removeLegacyTelegramRepeatJobs(
-  queue: Queue<TelegramSchedulerJobPayload>,
+  queue: Queue,
 ): Promise<void> {
   const repeatableJobs = await queue.getRepeatableJobs(0, -1, true);
   await Promise.all(
@@ -25,7 +25,7 @@ export async function removeLegacyTelegramRepeatJobs(
 }
 
 export async function upsertTelegramPollScheduler(
-  queue: Queue<TelegramSchedulerJobPayload>,
+  queue: Queue,
   intervalMs: number,
 ): Promise<void> {
   await queue.upsertJobScheduler(
@@ -43,13 +43,13 @@ export async function upsertTelegramPollScheduler(
 }
 
 export async function removeTelegramPollScheduler(
-  queue: Queue<TelegramSchedulerJobPayload>,
+  queue: Queue,
 ): Promise<void> {
   await queue.removeJobScheduler(TELEGRAM_POLL_SCHEDULER_ID);
 }
 
 export async function removeQueuedTelegramPollJobs(
-  queue: Queue<TelegramSchedulerJobPayload>,
+  queue: Queue,
 ): Promise<void> {
   const pendingJobs = await queue.getJobs(
     ['wait', 'waiting', 'prioritized', 'delayed'],

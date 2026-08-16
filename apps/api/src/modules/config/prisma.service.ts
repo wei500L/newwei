@@ -76,12 +76,8 @@ export class PrismaService
         );
         const migrationError = new Error(
           "Database schema not initialized; run `pnpm db:migrate` (and `pnpm db:seed`) before starting the API",
+          { cause: error },
         );
-        try {
-          (migrationError as unknown as { cause?: unknown }).cause = error;
-        } catch {
-          // ignore
-        }
         throw migrationError;
       }
 
@@ -101,10 +97,9 @@ export class PrismaService
   }
 
   private ensureKnowledgeGraphDelegates() {
-    const delegates = this as unknown as Record<string, unknown>;
     const missingDelegates = REQUIRED_KNOWLEDGE_GRAPH_DELEGATES.filter(
       (delegate) => {
-        const candidate = delegates[delegate];
+        const candidate = Reflect.get(this, delegate);
         return !candidate || typeof candidate !== "object";
       },
     );

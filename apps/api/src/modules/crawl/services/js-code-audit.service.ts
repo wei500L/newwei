@@ -178,7 +178,7 @@ export class JsCodeAuditService {
       .toArray();
 
     return docs.map((entry) => {
-      const { _id, ...doc } = entry as unknown as { _id?: unknown } & JsCodeAuditLogDocument;
+      const { _id, ...doc } = entry as { _id?: unknown } & JsCodeAuditLogDocument;
       void _id;
       return doc;
     });

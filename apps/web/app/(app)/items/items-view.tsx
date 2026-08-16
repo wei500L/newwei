@@ -1315,7 +1315,7 @@ export function ItemsView({
     const currentSearchParam = currentSearch.length > 0 ? currentSearch : null;
     const currentFiltersFingerprint = fingerprintFilters(
       parseFiltersFromSearchParams(
-        currentParams as unknown as ReadonlyURLSearchParams,
+        currentParams as ReadonlyURLSearchParams,
         initialFilters,
       ),
     );

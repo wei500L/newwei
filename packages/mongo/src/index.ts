@@ -1,4 +1,5 @@
 export * from "./connection";
+export * from "./lean";
 export * from "./url-comparison";
 export * from "./models/raw-item";
 export * from "./models/processed-item";

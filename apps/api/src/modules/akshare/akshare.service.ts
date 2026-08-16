@@ -6,6 +6,7 @@ import {
   ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG,
   ensureTraceId,
   getCurrentTraceId,
+  narrowUnknown,
   type EconomicDashboardRefreshPreset,
 } from "@modular/utils";
 import {
@@ -420,10 +421,24 @@ export class AkshareService implements OnModuleInit {
     if (snapshot.group !== "markets" && snapshot.group !== "fed") {
       return undefined;
     }
-    if (typeof snapshot.bucket !== "string" || !snapshot.bucket.trim()) {
+    const group = snapshot.group === "fed" ? "fed" : "markets";
+    if (
+      snapshot.bucket !== "indices" &&
+      snapshot.bucket !== "sectors" &&
+      snapshot.bucket !== "commodities" &&
+      snapshot.bucket !== "indicators" &&
+      snapshot.bucket !== "money-printer"
+    ) {
       return undefined;
     }
-    return snapshot as unknown as FinancialDataSnapshotMetadata;
+    const bucket = snapshot.bucket;
+    return {
+      group,
+      bucket,
+      symbol: typeof snapshot.symbol === "string" ? snapshot.symbol : undefined,
+      name: typeof snapshot.name === "string" ? snapshot.name : undefined,
+      order: typeof snapshot.order === "number" ? snapshot.order : undefined,
+    };
   }
 
   private parseDataVizMetadata(
@@ -485,7 +500,7 @@ export class AkshareService implements OnModuleInit {
     if (raw && typeof raw === "object" && !Array.isArray(raw)) {
       const providerConfig = raw as Record<string, unknown>;
       if (providerConfig.kind === providerKind) {
-        return providerConfig as unknown as FinancialDataProviderConfig;
+        return narrowUnknown<FinancialDataProviderConfig>(providerConfig);
       }
     }
 
@@ -2267,7 +2282,6 @@ export class AkshareService implements OnModuleInit {
     end: Date,
     granularity?: string,
     pagination?: PaginationInput,
-    options?: { skipGranularityValidation?: boolean },
   ) {
     // Note: granularity validation against the category's coarsest item frequency
     // was removed because bucketing is now applied per-series: each series uses

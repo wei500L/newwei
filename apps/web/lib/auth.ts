@@ -467,7 +467,7 @@ const config: NextAuthConfig = {
     },
     async jwt({ token, user, trigger, session }): Promise<JWT | null> {
       if (user) {
-        const typedUser = user as unknown as BackendLoginResponse & {
+        const typedUser = user as BackendLoginResponse & {
           id: string;
           email: string;
           name: string;
@@ -483,7 +483,7 @@ const config: NextAuthConfig = {
         } satisfies TokenPayload;
       }
 
-      const typedToken = token as unknown as TokenPayload;
+      const typedToken = token as TokenPayload;
 
       if (trigger === "update" && session) {
         const updatedSession = session as Partial<TokenPayload> & {
@@ -517,7 +517,7 @@ const config: NextAuthConfig = {
       return refreshAccessToken(typedToken);
     },
     async session({ session, token }) {
-      const typedToken = token as unknown as TokenPayload;
+      const typedToken = token as TokenPayload;
       return {
         ...session,
         user: {

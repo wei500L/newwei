@@ -1,10 +1,3 @@
-import { ItemReadModelModel, type ItemReadModel } from "@modular/mongo";
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
 import {
   AnalysisSubjectType,
   AnalysisTaskLinkedSubjectType,
@@ -15,6 +8,14 @@ import {
   SavedAnalysisSurface,
   SavedAnalysisVisibility,
 } from ".prisma/client";
+import { ItemReadModelModel, type ItemReadModel } from "@modular/mongo";
+import { narrowUnknown } from "@modular/utils";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { Readable } from "node:stream";
 
 import { ArchiveService } from "../archive/archive.service";
@@ -32,12 +33,12 @@ import type {
   ItemsRankingMode,
 } from "../items/items.service";
 import { ItemsService } from "../items/items.service";
+import { NewsEventsSettingsService } from "../news-events/news-events-settings.service";
 import type {
   NewsEventAuthorityProfile,
   NewsEventSourceClassification,
 } from "../news-events/news-events.service";
 import { NewsEventsService } from "../news-events/news-events.service";
-import { NewsEventsSettingsService } from "../news-events/news-events-settings.service";
 
 const MAX_EXPORT_ROWS = 5000;
 const EVENT_DEDUPE_WINDOW_MS = 5 * 24 * 60 * 60 * 1000;
@@ -202,7 +203,7 @@ export class AnalysisWorkspaceService {
   ) {}
 
   private get analysisPrisma(): AnalysisWorkspacePrismaClient {
-    return this.prisma as unknown as AnalysisWorkspacePrismaClient;
+    return narrowUnknown<AnalysisWorkspacePrismaClient>(this.prisma);
   }
 
   async listViews(
@@ -1309,7 +1310,7 @@ export class AnalysisWorkspaceService {
     await this.assertSubjectReadable(
       orgId,
       userId,
-      subjectType as unknown as AnalysisSubjectType,
+      subjectType as AnalysisSubjectType,
       normalizedSubjectId,
     );
     return { type: subjectType, id: normalizedSubjectId };
@@ -2167,12 +2168,12 @@ export class AnalysisWorkspaceService {
   }
 
   private dedupeEnrichedEvents(rows: EnrichedEventRow[]) {
-    const kept: Array<{
+    const kept: {
       entry: EnrichedEventRow;
       tokens: Set<string>;
       startMs: number;
       lastMs: number;
-    }> = [];
+    }[] = [];
     for (const entry of rows) {
       const tokens = this.buildEventTokenSet(entry.row);
       const startMs = this.safeTimeMs(entry.row.startAt);

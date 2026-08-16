@@ -92,13 +92,7 @@ export class RateLimiterService {
     this.cleanupLimit = readEnvInt('RATE_LIMIT_REDIS_CLEANUP_LIMIT', 100);
     this.cleanupThreshold = readEnvInt('RATE_LIMIT_REDIS_CLEANUP_THRESHOLD', 1_000);
 
-    const redisAny = this.redis as unknown as {
-      defineCommand?: (
-        name: string,
-        definition: { numberOfKeys: number; lua: string }
-      ) => void;
-    };
-    redisAny.defineCommand?.('consumeSlidingWindow', {
+    this.redis.defineCommand('consumeSlidingWindow', {
       numberOfKeys: LUA_KEYS,
       lua: SLIDING_WINDOW_LUA_SCRIPT
     });
@@ -229,21 +223,10 @@ export class RateLimiterService {
     cleanupLimit: number,
     cleanupThreshold: number
   ): Promise<[number, number]> {
-    const redisAny = this.redis as unknown as {
-      consumeSlidingWindow?: (
-        bucketKey: string,
-        sequenceKey: string,
-        now: number,
-        windowMs: number,
-        limit: number,
-        ttlSeconds: number,
-        cleanupLimit: number,
-        cleanupThreshold: number
-      ) => Promise<[number, number]>;
-    };
-
-    if (typeof redisAny.consumeSlidingWindow === 'function') {
-      return redisAny.consumeSlidingWindow(
+    const consume = Reflect.get(this.redis, 'consumeSlidingWindow');
+    if (typeof consume === 'function') {
+      return (await consume.call(
+        this.redis,
         bucketKey,
         sequenceKey,
         now,
@@ -252,7 +235,7 @@ export class RateLimiterService {
         ttlSeconds,
         cleanupLimit,
         cleanupThreshold
-      );
+      )) as [number, number];
     }
 
     return (await this.redis.eval(

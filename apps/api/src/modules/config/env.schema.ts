@@ -945,6 +945,25 @@ export const apiEnvSchema = baseEnvSchema
           "CORS_ORIGIN is required in production: set an explicit comma-separated origin allowlist (e.g. https://console.example.com) before deploying",
       });
     }
+    if (value.ELASTICSEARCH_ENABLED) {
+      const hasApiKey =
+        typeof value.ELASTICSEARCH_API_KEY === "string" &&
+        value.ELASTICSEARCH_API_KEY.trim().length > 0;
+      const hasPassword =
+        typeof value.ELASTICSEARCH_PASSWORD === "string" &&
+        value.ELASTICSEARCH_PASSWORD.trim().length > 0;
+      const hasUsername =
+        typeof value.ELASTICSEARCH_USERNAME === "string" &&
+        value.ELASTICSEARCH_USERNAME.trim().length > 0;
+      if (!hasApiKey && !(hasUsername && hasPassword)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["ELASTICSEARCH_PASSWORD"],
+          message:
+            "ELASTICSEARCH_USERNAME and ELASTICSEARCH_PASSWORD (or ELASTICSEARCH_API_KEY) are required when ELASTICSEARCH_ENABLED=true",
+        });
+      }
+    }
   })
   .transform((value) =>
     value.NODE_ENV === "production"

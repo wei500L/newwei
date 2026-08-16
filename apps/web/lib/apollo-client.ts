@@ -84,7 +84,7 @@ const errorLink = onError(
   ({ graphQLErrors, networkError, operation, response, forward }) => {
     const responseTraceId =
       (
-        networkError as unknown as NetworkErrorWithResponse
+        networkError as NetworkErrorWithResponse
       )?.response?.headers?.get?.("x-trace-id") ??
       (response as Response | undefined)?.headers?.get?.("x-trace-id") ??
       undefined;

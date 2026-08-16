@@ -104,18 +104,12 @@ const RawItemSchema = new Schema(
   }
 );
 
-RawItemSchema.pre("validate", function (next) {
-  const doc = this as unknown as {
-    payload?: { url?: unknown };
-    urlComparableFull?: string | null;
-    urlComparableFullHash?: string | null;
-    urlComparableBase?: string | null;
-  };
-  const url = typeof doc.payload?.url === "string" ? doc.payload.url : "";
+RawItemSchema.pre("validate", function (this: RawItemDocument, next) {
+  const url = typeof this.payload?.url === "string" ? this.payload.url : "";
   const comparable = buildComparableUrlVariants(url);
-  doc.urlComparableFull = comparable?.full ?? null;
-  doc.urlComparableFullHash = comparable?.fullHash ?? null;
-  doc.urlComparableBase = comparable?.base ?? null;
+  Reflect.set(this, "urlComparableFull", comparable?.full ?? null);
+  Reflect.set(this, "urlComparableFullHash", comparable?.fullHash ?? null);
+  Reflect.set(this, "urlComparableBase", comparable?.base ?? null);
   next();
 });
 

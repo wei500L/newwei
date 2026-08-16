@@ -1,3 +1,5 @@
+
+import { narrowUnknown } from "@modular/utils";
 import {
   BadRequestException,
   Injectable,
@@ -12,6 +14,7 @@ import {
 } from "jose";
 import crypto from "node:crypto";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
 import { validateSsrfUrlAsync } from "../../common/validators/ssrf-url.validator";
 import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
@@ -133,7 +136,7 @@ export class OidcAuthService {
           : Prisma.DbNull,
         scopes:
           nextScopes.length > 0
-            ? (nextScopes as unknown as Prisma.InputJsonValue)
+            ? toPrismaJsonValue(nextScopes)
             : Prisma.DbNull,
         buttonLabel: params.buttonLabel?.trim() || null,
         requireEmailVerified: params.requireEmailVerified ?? true,
@@ -149,7 +152,7 @@ export class OidcAuthService {
           : Prisma.DbNull,
         scopes:
           nextScopes.length > 0
-            ? (nextScopes as unknown as Prisma.InputJsonValue)
+            ? toPrismaJsonValue(nextScopes)
             : Prisma.DbNull,
         buttonLabel: params.buttonLabel?.trim() || null,
         requireEmailVerified: params.requireEmailVerified ?? true,
@@ -329,8 +332,12 @@ export class OidcAuthService {
       result.refreshToken,
     );
     const handoffPayload = {
-      accessToken: encryptedAccessToken as unknown as Prisma.JsonValue,
-      refreshToken: encryptedRefreshToken as unknown as Prisma.JsonValue,
+      accessToken: narrowUnknown<Prisma.JsonValue>(
+        toPrismaJsonValue(encryptedAccessToken),
+      ),
+      refreshToken: narrowUnknown<Prisma.JsonValue>(
+        toPrismaJsonValue(encryptedRefreshToken),
+      ),
       expiresIn: result.expiresIn,
       user: result.user,
       organizations: result.organizations,
@@ -342,7 +349,7 @@ export class OidcAuthService {
         type: "sso_handoff",
         userId: user.id,
         orgId: org.id,
-        payload: handoffPayload as unknown as Prisma.InputJsonValue,
+        payload: toPrismaJsonValue(handoffPayload),
         expiresAt: new Date(Date.now() + 5 * 60_000),
       },
     });
@@ -588,7 +595,7 @@ export class OidcAuthService {
           params.requireEmailVerified,
         );
         return payload;
-      } catch (signatureError) {
+      } catch {
         // One refresh attempt for key rotation before failing hard.
         const freshJwks = await this.fetchJwks(jwksUrl);
         await this.cache

@@ -9,7 +9,9 @@
     "build": "rimraf dist && tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "lint": "eslint src --ext .ts",
-    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit"
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@modular/utils": "workspace:*",
@@ -26,6 +28,7 @@
     "@types/node": "^20.12.7",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^3.15.0",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "vitest": "^3.2.7"
   }
 }

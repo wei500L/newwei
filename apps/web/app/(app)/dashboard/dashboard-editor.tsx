@@ -244,7 +244,7 @@ export function DashboardEditor({
                     widgets: widgets.map((widget) => ({
                       id: widget.id.startsWith("temp-") ? undefined : widget.id,
                       title: widget.title,
-                      type: widget.type as unknown as GraphqlDashboardWidgetType,
+                      type: widget.type as GraphqlDashboardWidgetType,
                       dataSource: widget.dataSource,
                       dataConfig: widget.dataConfig ?? {},
                       layoutX: widget.layout.x,

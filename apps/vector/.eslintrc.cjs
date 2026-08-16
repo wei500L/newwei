@@ -16,6 +16,17 @@ module.exports = {
   ignorePatterns: ['dist', 'node_modules'],
   rules: {
     '@typescript-eslint/explicit-function-return-type': 'off'
-  }
+  },
+  overrides: [
+    {
+      files: ['**/*.test.ts'],
+      env: { node: true },
+      rules: {
+        '@typescript-eslint/no-explicit-any': 'off',
+        '@typescript-eslint/consistent-type-imports': 'off',
+        'no-restricted-syntax': 'off'
+      }
+    }
+  ]
 };
 

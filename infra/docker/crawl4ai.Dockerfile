@@ -1,4 +1,4 @@
-ARG CRAWL4AI_IMAGE=unclecode/crawl4ai:0
+ARG CRAWL4AI_IMAGE=unclecode/crawl4ai:0.9.2@sha256:bd36741e7bdd35ddc1a05d9183e1d6d8cefb61dd640d944a25d026b76e917690
 FROM ${CRAWL4AI_IMAGE}
 
 COPY infra/docker/crawl4ai/ssrf_proxy.py /opt/modular/crawl4ai-ssrf-proxy.py

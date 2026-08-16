@@ -697,9 +697,9 @@ export class LlmGatewaySettingsService {
     const record = raw as Partial<StoredSettings> | null;
     const activeIdRaw = this.normalizeString(record?.activeId) ?? null;
     const embeddingActiveIdRaw =
-      this.normalizeString((record as unknown as { embeddingActiveId?: unknown })?.embeddingActiveId) ?? null;
+      this.normalizeString((record as { embeddingActiveId?: unknown })?.embeddingActiveId) ?? null;
     const rerankActiveIdRaw =
-      this.normalizeString((record as unknown as { rerankActiveId?: unknown })?.rerankActiveId) ?? null;
+      this.normalizeString((record as { rerankActiveId?: unknown })?.rerankActiveId) ?? null;
     const embeddingModeRaw = this.normalizeString((record as { embeddingMode?: unknown } | null)?.embeddingMode);
     const rerankModeRaw = this.normalizeString((record as { rerankMode?: unknown } | null)?.rerankMode);
     const embeddingMode: LlmGatewayEmbeddingMode =

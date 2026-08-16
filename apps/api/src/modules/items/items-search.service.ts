@@ -54,7 +54,6 @@ import {
   type ItemListRow,
   type ItemsCursorPayload,
   type LatestProcessedItemSnapshot,
-  type LatestProcessedSnapshotRecord,
   type RssSourceOption,
   type ItemSearchHighlights,
 } from "./items.shared";
@@ -122,7 +121,7 @@ export class ItemsSearchService {
       )
         .sort({ createdAt: -1, _id: -1 })
         .limit(LATEST_PROCESSED_SNAPSHOT_BATCH_SIZE)
-        .lean()) as unknown as LatestProcessedSnapshotRecord[];
+        .lean());
 
       if (batch.length === 0) {
         break;

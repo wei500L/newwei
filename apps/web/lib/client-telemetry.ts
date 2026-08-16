@@ -21,7 +21,7 @@ function normalizeError(message: string, error?: unknown): Error {
   const normalized = new Error(errorMessage);
   if (typeof error === "object" && error !== null) {
     try {
-      (normalized as unknown as { cause?: unknown }).cause = error;
+      (normalized as { cause?: unknown }).cause = error;
     } catch {
       // ignore
     }

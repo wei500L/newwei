@@ -1,4 +1,4 @@
-import { ProcessedItemModel } from "@modular/mongo";
+import { asLeanRecords, leanId, ProcessedItemModel } from "@modular/mongo";
 import { Injectable, Scope } from "@nestjs/common";
 import DataLoader from "dataloader";
 import { NestDataLoader } from "nestjs-dataloader";
@@ -23,11 +23,6 @@ export interface ProcessedItemPreviewDoc {
   createdAt: Date;
   updatedAt: Date;
 }
-
-type ProcessedItemPreviewRecord = Omit<ProcessedItemPreviewDoc, "id"> & {
-  _id: { toString(): string };
-  duplicateOf?: { toString(): string } | string | null;
-};
 
 function statusPriority(status: string): number {
   switch (status) {
@@ -82,32 +77,41 @@ const PROCESSED_ITEM_PREVIEW_PROJECTION: Record<string, 1> = {
 export class ProcessedItemPreviewLoader implements NestDataLoader<string, ProcessedItemPreviewDoc | null> {
   generateDataLoader(): DataLoader<string, ProcessedItemPreviewDoc | null> {
     return new DataLoader(async (keys) => {
-      const docs = (await ProcessedItemModel.find(
-        { itemMetaId: { $in: keys as string[] } },
-        PROCESSED_ITEM_PREVIEW_PROJECTION
-      )
-        .sort({ createdAt: -1 })
-        .lean()) as unknown as ProcessedItemPreviewRecord[];
+      const docs = asLeanRecords(
+        await ProcessedItemModel.find(
+          { itemMetaId: { $in: keys as string[] } },
+          PROCESSED_ITEM_PREVIEW_PROJECTION
+        )
+          .sort({ createdAt: -1 })
+          .lean()
+      );
 
       const map = new Map<string, ProcessedItemPreviewDoc>();
       docs.forEach((doc) => {
+        const itemMetaId = typeof doc.itemMetaId === "string" ? doc.itemMetaId : "";
+        const id = leanId(doc._id);
+        if (!itemMetaId || !id) {
+          return;
+        }
         const candidate: ProcessedItemPreviewDoc = {
-          id: doc._id.toString(),
-          itemMetaId: doc.itemMetaId,
-          status: doc.status,
-          tags: doc.tags ?? [],
-          result: doc.result ?? undefined,
-          duplicateOf: doc.duplicateOf ? doc.duplicateOf.toString() : null,
+          id,
+          itemMetaId,
+          status: typeof doc.status === "string" ? doc.status : "pending",
+          tags: Array.isArray(doc.tags)
+            ? doc.tags.filter((tag): tag is string => typeof tag === "string")
+            : [],
+          result: doc.result as ProcessedItemPreviewDoc["result"],
+          duplicateOf: doc.duplicateOf ? String(doc.duplicateOf) : null,
           duplicateSimilarity:
             typeof doc.duplicateSimilarity === "number" ? doc.duplicateSimilarity : null,
-          llm: doc.llm ?? undefined,
-          createdAt: doc.createdAt,
-          updatedAt: doc.updatedAt
+          llm: doc.llm as ProcessedItemPreviewDoc["llm"],
+          createdAt: doc.createdAt instanceof Date ? doc.createdAt : new Date(0),
+          updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt : new Date(0)
         };
 
-        const existing = map.get(doc.itemMetaId);
+        const existing = map.get(itemMetaId);
         if (!existing || statusPriority(candidate.status) > statusPriority(existing.status)) {
-          map.set(doc.itemMetaId, candidate);
+          map.set(itemMetaId, candidate);
         }
       });
 

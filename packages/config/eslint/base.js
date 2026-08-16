@@ -30,6 +30,13 @@ module.exports = {
     "@typescript-eslint/explicit-module-boundary-types": "off",
     "@typescript-eslint/no-explicit-any": "warn",
     "@typescript-eslint/consistent-type-imports": ["error", { "prefer": "type-imports" }],
+    "no-restricted-syntax": [
+      "error",
+      {
+        selector: "TSAsExpression[expression.type='TSAsExpression']",
+        message: "Do not use `as unknown as`. Use a type guard, Zod parse, or a typed helper."
+      }
+    ],
     "import/order": [
       "error",
       {
@@ -38,5 +45,13 @@ module.exports = {
         "alphabetize": { "order": "asc", "caseInsensitive": true }
       }
     ]
-  }
+  },
+  overrides: [
+    {
+      files: ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx", "**/__tests__/**/*.{ts,tsx}"],
+      rules: {
+        "no-restricted-syntax": "off"
+      }
+    }
+  ]
 };

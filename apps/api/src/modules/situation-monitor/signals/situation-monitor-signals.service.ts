@@ -39,6 +39,7 @@ import {
   SITUATION_MONITOR_OREF_METRICS_CACHE_KEY,
 } from "../signal-metrics.constants";
 
+import { orefDateToUtc as orefDateToUtcShared } from "./oref-date";
 import {
   OREF_POLL_JOB_NAME,
   SITUATION_MONITOR_OREF_ALERTS_CACHE_KEY,
@@ -46,7 +47,6 @@ import {
   SITUATION_MONITOR_TELEGRAM_STATE_CACHE_KEY,
   TELEGRAM_POLL_JOB_NAME,
 } from "./situation-monitor-signals.constants";
-import { orefDateToUtc as orefDateToUtcShared } from "./oref-date";
 import { SituationMonitorSignalsDispatcher } from "./situation-monitor-signals.dispatcher";
 import type {
   SituationOrefAlertsResponse,
@@ -593,25 +593,8 @@ export class SituationMonitorSignalsService
     }
 
     try {
-      const telegramModule = (await import("telegram")) as unknown as {
-        TelegramClient: new (
-          session: unknown,
-          apiId: number,
-          apiHash: string,
-          options: { connectionRetries: number },
-        ) => {
-          connect: () => Promise<unknown>;
-          disconnect: () => Promise<void>;
-          getEntity: (input: string) => Promise<unknown>;
-          getMessages: (
-            entity: unknown,
-            options: { limit: number; minId?: number },
-          ) => Promise<Record<string, unknown>[]>;
-        };
-      };
-      const sessionsModule = (await import("telegram/sessions")) as unknown as {
-        StringSession: new (session: string) => unknown;
-      };
+      const telegramModule = await import("telegram");
+      const sessionsModule = await import("telegram/sessions");
 
       const client = new telegramModule.TelegramClient(
         new sessionsModule.StringSession(session),

@@ -61,7 +61,7 @@ function createFcoseLayoutOptions(animate: boolean): LayoutOptions {
     edgeElasticity: 0.08,
     gravity: 0.18,
     quality: "proof",
-  } as unknown as LayoutOptions;
+  } as LayoutOptions;
 }
 
 function runFcoseLayout(cy: Core, animate: boolean) {

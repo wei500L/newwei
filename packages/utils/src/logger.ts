@@ -1,6 +1,7 @@
 import createPino, { type LevelWithSilent, type Logger as PinoLogger } from "pino";
 
 import { getCurrentTraceId } from "./tracing";
+import { narrowUnknown } from "./unknown";
 
 export interface CreateLoggerOptions {
   name?: string;
@@ -35,9 +36,8 @@ export const createLogger = ({
       debug: log("debug"),
       trace: log("debug"),
       child: () => consoleLogger
-    } as unknown as PinoLogger;
-
-    return consoleLogger;
+    };
+    return narrowUnknown<PinoLogger>(consoleLogger);
   }
 
   const nodeEnv = typeof process !== "undefined" ? process.env?.NODE_ENV : undefined;

@@ -36,12 +36,6 @@ const MAX_MARKDOWN_CHUNKS = 80;
 const DEFAULT_LLM_TRANSLATION_CONCURRENCY = 2;
 const MAX_LLM_TRANSLATION_CONCURRENCY = 20;
 
-interface ProcessedTranslationRecord {
-  itemMetaId: string;
-  result?: unknown;
-  createdAt: Date;
-}
-
 interface RssTranslationFieldsPayload {
   title?: string;
   summary?: string;
@@ -509,7 +503,7 @@ export class ItemsRssTranslationService {
       },
     )
       .sort({ createdAt: -1 })
-      .lean()) as unknown as ProcessedTranslationRecord[];
+      .lean());
 
     const latest = new Map<string, RssTranslationFieldsPayload>();
     for (const record of records) {

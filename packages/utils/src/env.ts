@@ -144,6 +144,8 @@ const DENIED_SECRET_VALUES = new Set([
   "password",
   "changeme",
   "change_me_please_replace_32_chars",
+  "minioadmin",
+  "litellm",
 ]);
 
 const DENIED_SECRET_PATTERNS = [
@@ -152,6 +154,27 @@ const DENIED_SECRET_PATTERNS = [
   /replace[_-]?(me|32[_-]?chars)/i,
   /^dev[_-]/i,
 ];
+
+export const isWeakCredential = (
+  value: string | undefined,
+  options: { minLength?: number; extraDenied?: readonly string[] } = {},
+): boolean => {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return true;
+  }
+  const minLength = options.minLength ?? 12;
+  if (value.trim().length < minLength) {
+    return true;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (DENIED_SECRET_VALUES.has(normalized)) {
+    return true;
+  }
+  if (options.extraDenied?.some((entry) => entry.toLowerCase() === normalized)) {
+    return true;
+  }
+  return DENIED_SECRET_PATTERNS.some((pattern) => pattern.test(normalized));
+};
 
 export const strongSecretSchema = z
   .string()

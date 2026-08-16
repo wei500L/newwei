@@ -8,6 +8,7 @@ import {
   TaskLogModel,
 } from "@modular/mongo";
 import {
+  asRecord,
   createLogger,
   ensureTraceId,
   getCurrentTraceId,
@@ -769,7 +770,7 @@ export class ClassificationQualityService {
       if (processedItemId) {
         sampleItems.set(
           processedItemId,
-          item as unknown as Record<string, unknown>,
+          asRecord(item),
         );
       }
     }

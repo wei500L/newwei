@@ -89,7 +89,7 @@ export class ArchivePreparationSettingsService {
           actorId,
           resource: 'system_settings',
           action: 'archive_preparation_update',
-          metadata: toPrismaJsonValue(settings as unknown as Prisma.InputJsonObject),
+          metadata: toPrismaJsonValue(settings),
         },
       },
       {

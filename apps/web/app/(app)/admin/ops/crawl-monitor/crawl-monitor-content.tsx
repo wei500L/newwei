@@ -103,6 +103,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function isRuntimeProbe(value: unknown): value is Crawl4aiRuntimeProbeState {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.checkedAt === "string" &&
+    typeof value.baseUrl === "string" &&
+    isRecord(value.headless) &&
+    isRecord(value.headed)
+  );
+}
+
 function asNumber(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
@@ -926,8 +938,8 @@ export function CrawlMonitorContent({
       }));
 
       const runtime = await runtimePromise;
-      if (runtime && isRecord(runtime)) {
-        setRuntimeProbe(runtime as unknown as Crawl4aiRuntimeProbeState);
+      if (isRuntimeProbe(runtime)) {
+        setRuntimeProbe(runtime);
       }
 
       messageApi.success(
@@ -950,8 +962,8 @@ export function CrawlMonitorContent({
 
     fetchRuntimeProbeJson()
       .then((payload) => {
-        if (isRecord(payload)) {
-          setRuntimeProbe(payload as unknown as Crawl4aiRuntimeProbeState);
+        if (isRuntimeProbe(payload)) {
+          setRuntimeProbe(payload);
           setRuntimeProbeError(null);
         }
       })

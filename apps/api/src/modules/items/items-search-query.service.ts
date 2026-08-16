@@ -2,7 +2,6 @@ import {
   ItemReadModelModel,
   ProcessedItemModel,
   type MongoConnection,
-  type ProcessedItem,
 } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
 import {
@@ -12,7 +11,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { Types, type PipelineStage, type ProjectionType } from "mongoose";
+import { Types, type PipelineStage } from "mongoose";
 
 import { ItemStatus, PipelineStageStatus } from "../../common/pipeline-status";
 import { CacheService } from "../cache/cache.service";
@@ -849,7 +848,7 @@ export class ItemsSearchQueryService {
       {
         itemMetaId: 1,
         score: { $meta: "textScore" },
-      } as unknown as ProjectionType<ProcessedItem>,
+      } as never,
     )
       .sort({ score: { $meta: "textScore" }, createdAt: -1 })
       .limit(MAX_SEARCH_MATCHES)

@@ -58,12 +58,12 @@ import {
   useUpdateCrawlClientSettingsMutation,
 } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
-import { normalizeHeadlessModeFormValues } from "@/lib/crawl-headless-mode";
-import { getCrawlTasksOpsRefreshDecision } from "@/lib/crawl-ops-refresh";
 import {
   findUnsupportedProxyIssues,
   getCrawlConfigPolicyIssueTranslationKey,
 } from "@/lib/crawl-config-policy";
+import { normalizeHeadlessModeFormValues } from "@/lib/crawl-headless-mode";
+import { getCrawlTasksOpsRefreshDecision } from "@/lib/crawl-ops-refresh";
 import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { formatRealtimeSocketError } from "@/lib/realtime-socket-errors";
@@ -155,6 +155,15 @@ function toCrawlAntiBotModeInput(
   return undefined;
 }
 
+function toGraphqlVirtualScrollInput(
+  value: NonNullable<ReturnType<typeof sanitizeCrawlOptions>["virtualScroll"]>,
+) {
+  return {
+    ...value,
+    scrollBy: value.scrollBy === undefined ? undefined : String(value.scrollBy),
+  };
+}
+
 function toGraphqlCrawlOptionsInput(
   options: ReturnType<typeof sanitizeCrawlOptions>,
 ): CrawlOptionsInput {
@@ -162,12 +171,18 @@ function toGraphqlCrawlOptionsInput(
     ...options,
     antiBotMode: toCrawlAntiBotModeInput(options.antiBotMode),
     waitUntil: toCrawlWaitUntilInput(options.waitUntil),
+    virtualScroll: options.virtualScroll
+      ? toGraphqlVirtualScrollInput(options.virtualScroll)
+      : options.virtualScroll,
     multiUrlConfigs: options.multiUrlConfigs?.map((config) => ({
       ...config,
       options: config.options
         ? {
             ...config.options,
             waitUntil: toCrawlWaitUntilInput(config.options.waitUntil),
+            virtualScroll: config.options.virtualScroll
+              ? toGraphqlVirtualScrollInput(config.options.virtualScroll)
+              : config.options.virtualScroll,
           }
         : config.options,
     })),
