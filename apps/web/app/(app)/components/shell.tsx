@@ -3,7 +3,6 @@
 import { message } from "antd";
 import { usePathname } from "next/navigation";
 import {
-  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -14,14 +13,11 @@ import {
 import { CONTENT_WIDTH_CLASSES } from "@/lib/content-widths";
 
 import { ActionRail } from "./action-rail";
-import {
-  DESKTOP_RAIL_MIN_WIDTH,
-  resolveNavMode,
-  type NavMode,
-} from "./nav-mode";
+import { resolveNavMode, type NavMode } from "./nav-mode";
 import { SystemHealthProvider } from "./system-health-context";
 import { TopNav } from "./top-nav";
 import { NAV_FULL_MIN_WIDTH } from "./top-nav-density";
+import { useViewportWidth, ViewportSizeProvider } from "./use-viewport-width";
 import { UrlStateSync } from "./url-state-sync";
 import { UserUiSettingsSync } from "./user-ui-settings-sync";
 
@@ -93,29 +89,19 @@ function useMainScrollbarClass(): string {
   return "scrollbar-thin scrollbar-thumb-slate-200/80 hover:scrollbar-thumb-slate-300/90 scrollbar-track-transparent";
 }
 
-export function ShellLayout({ children }: PropsWithChildren) {
+function AppShell({ children }: PropsWithChildren) {
   const [, contextHolder] = message.useMessage();
   const pathname = usePathname();
   const containerClass = useContainerClass();
   const contentPaddingClass = useContentPaddingClass();
   const mainScrollbarClass = useMainScrollbarClass();
   const shellContentRef = useRef<HTMLDivElement | null>(null);
-  const [viewportWidth, setViewportWidth] = useState(DESKTOP_RAIL_MIN_WIDTH);
   const [availableRailHeight, setAvailableRailHeight] = useState(0);
   const [railContentHeight, setRailContentHeight] = useState(0);
 
-  const updateViewportWidth = useCallback(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    setViewportWidth(window.innerWidth);
-  }, []);
-
-  useEffect(() => {
-    updateViewportWidth();
-    window.addEventListener("resize", updateViewportWidth);
-    return () => window.removeEventListener("resize", updateViewportWidth);
-  }, [updateViewportWidth]);
+  // 视口宽度来自 Shell 级单一来源（use-viewport-width）——TopNav 密度
+  // 与这里的 navMode 共用同一次 resize 监听，不再各自维护。
+  const viewportWidth = useViewportWidth();
 
   useEffect(() => {
     const shellContent = shellContentRef.current;
@@ -180,7 +166,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
           ref={shellContentRef}
           className="flex flex-1 overflow-hidden pt-[calc(var(--top-nav-height,4rem)+var(--ticker-height,0px))] relative isolate"
         >
-          <div className="relative z-20 h-full shrink-0 min-h-0">
+          <div className="relative z-[var(--z-rail)] h-full shrink-0 min-h-0">
             <ActionRail
               mode={navMode}
               onContentHeightChange={setRailContentHeight}
@@ -188,7 +174,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
           </div>
 
           <main
-            className={`relative z-0 flex-1 overflow-auto ${mainScrollbarClass}`}
+            className={`relative z-[var(--z-content)] flex-1 overflow-auto ${mainScrollbarClass}`}
           >
             <div className={`${containerClass} ${contentPaddingClass}`}>
               {children}
@@ -197,5 +183,13 @@ export function ShellLayout({ children }: PropsWithChildren) {
         </div>
       </SystemHealthProvider>
     </div>
+  );
+}
+
+export function ShellLayout({ children }: PropsWithChildren) {
+  return (
+    <ViewportSizeProvider>
+      <AppShell>{children}</AppShell>
+    </ViewportSizeProvider>
   );
 }
