@@ -140,8 +140,10 @@ describe("contract baseline artifacts", () => {
     expect(matrix.totals.public).toBeGreaterThanOrEqual(20);
 
     // API-01 修复后全库 0 死路由；矩阵生成时 fail-closed 的结果被提交。
+    // （permission 为空但 authenticated=allowed 的行是 @AllowAuthenticated
+    // 端点——仅 JWT 无权限要求，不是死路由。）
     const dead = matrix.rows.filter(
-      (r) => r.anonymous === "denied" && r.permission.length === 0,
+      (r) => r.anonymous === "denied" && r.authenticated === "denied" && r.permission.length === 0,
     );
     expect(dead).toEqual([]);
 
@@ -164,6 +166,7 @@ describe("contract baseline artifacts", () => {
     const snapshot = JSON.parse(
       readFileSync(join(process.cwd(), "tests/contract/openapi.snapshot.json"), "utf8"),
     ) as {
+      openapi: string;
       paths: Record<string, unknown>;
       "x-scan-meta": { endpointCount: number; controllerCount: number };
     };
@@ -171,6 +174,6 @@ describe("contract baseline artifacts", () => {
     expect(snapshot["x-scan-meta"].endpointCount).toBeGreaterThanOrEqual(360);
     expect(snapshot["x-scan-meta"].controllerCount).toBeGreaterThanOrEqual(70);
     // 确定性锚点：版本号固定（非应用版本——那会破坏确定性）。
-    expect(snapshot as { openapi?: string }).openapi.toBe("3.0.3");
+    expect(snapshot.openapi).toBe("3.0.3");
   });
 });
