@@ -15,6 +15,7 @@ import (
 type recordedRequest struct {
 	Method string
 	Path   string
+	Query  string
 	Body   string
 	Header http.Header
 }
@@ -47,7 +48,7 @@ func newStub(t *testing.T, handler http.HandlerFunc) (*recorder, *httptest.Serve
 	rec := &recorder{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		rec.add(recordedRequest{Method: r.Method, Path: r.URL.Path, Body: string(body), Header: r.Header.Clone()})
+		rec.add(recordedRequest{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: string(body), Header: r.Header.Clone()})
 		handler(w, r)
 	}))
 	t.Cleanup(server.Close)
@@ -191,6 +192,9 @@ func TestUpsertSendsDeterministicPointsWithWait(t *testing.T) {
 	upsert := rec.find(http.MethodPut, "/points")
 	if upsert == nil {
 		t.Fatal("expected PUT /collections/{name}/points?wait=true")
+	}
+	if upsert.Query != "wait=true" {
+		t.Errorf("upsert query = %q, want wait=true (synchronous write)", upsert.Query)
 	}
 	var body struct {
 		Points []struct {
