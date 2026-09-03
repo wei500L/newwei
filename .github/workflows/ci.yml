@@ -74,6 +74,17 @@ jobs:
       - name: Vector unit tests
         run: pnpm --filter @modular/vector test
 
+      - name: API unit tests (SEC-01 / API-01 regression + route scanner)
+        run: pnpm --filter @modular/api test
+
+      - name: OpenAPI contract snapshot drift check
+        run: |
+          pnpm --filter @modular/api run contract:openapi:snapshot
+          git diff --exit-code apps/api/tests/contract/openapi.snapshot.json
+
+      - name: Auth matrix drift check (fail-closed)
+        run: pnpm --filter @modular/api run contract:auth-matrix:check
+
       - name: Go tests (api-go gateway + vector-go pilot)
         run: pnpm --filter @modular/api-go --filter @modular/vector-go test
 
@@ -89,3 +100,115 @@ jobs:
 
       - name: Build
         run: pnpm exec turbo run build --env-mode=loose --filter=@modular/ais-relay --filter=@modular/api --filter=@modular/vector --filter=@modular/web --filter=@modular/api-go --filter=@modular/vector-go
+
+  # vector-go 远端集成（任务 F / roadmap M2 余项 3）：真实 Qdrant +
+  # NestJS vector 与 vector-go 的契约差分。本机禁 Docker——验证全部在
+  # GitHub Actions Linux runner 完成。
+  vector-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      qdrant:
+        # 与 infra/docker/docker-compose.yml 的 qdrant 服务同版本。
+        image: qdrant/qdrant:v1.10.1
+        ports:
+          - 6333:6333
+        options: >-
+          --health-cmd "curl -fsS http://localhost:6333/healthz || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      HUSKY: "0"
+      CI: "true"
+      QDRANT_URL: http://localhost:6333
+      QDRANT_API_KEY: ""
+      VECTOR_INTEGRATION: "1"
+      VECTOR_INTEGRATION_TOKEN: integration-internal-token
+      VECTOR_INTERNAL_TOKEN: integration-internal-token
+      VECTOR_COLLECTION_PREFIX: integration_processed
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/vector-go/go.mod
+          cache: false
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+
+      - name: Build vector (NestJS)
+        run: pnpm --filter @modular/vector run build
+
+      - name: Build vector-go binary
+        run: cd apps/vector-go && go build -o /tmp/vector-go-bin ./main.go
+
+      - name: Start NestJS vector + vector-go against real Qdrant
+        run: |
+          # NestJS vector（:4010）
+          PORT=4010 \
+          NODE_ENV=test \
+          QDRANT_URL=http://localhost:6333 \
+          QDRANT_API_KEY= \
+          VECTOR_INTERNAL_TOKEN=integration-internal-token \
+          VECTOR_COLLECTION_PREFIX=integration_processed \
+          node apps/vector/dist/main.js > /tmp/vector-nestjs.log 2>&1 &
+          echo $! > /tmp/vector-nestjs.pid
+
+          # vector-go（:4012）
+          PORT=4012 \
+          NODE_ENV=test \
+          QDRANT_URL=http://localhost:6333 \
+          QDRANT_API_KEY= \
+          VECTOR_INTERNAL_TOKEN=integration-internal-token \
+          VECTOR_COLLECTION_PREFIX=integration_processed \
+          /tmp/vector-go-bin > /tmp/vector-go.log 2>&1 &
+          echo $! > /tmp/vector-go.pid
+
+          # 等待两侧健康（最多 60s）。
+          for i in $(seq 1 60); do
+            nest_ok=$(curl -fsS http://localhost:4010/healthz >/dev/null 2>&1 && echo ok || echo no)
+            go_ok=$(curl -fsS http://localhost:4012/healthz >/dev/null 2>&1 && echo ok || echo no)
+            if [ "$nest_ok" = ok ] && [ "$go_ok" = ok ]; then
+              echo "both vector services healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "vector services failed to become healthy"
+          echo "=== nestjs log ==="; cat /tmp/vector-nestjs.log || true
+          echo "=== go log ==="; cat /tmp/vector-go.log || true
+          exit 1
+
+      - name: Contract diff — NestJS vector vs vector-go (real Qdrant)
+        run: |
+          VECTOR_NESTJS_URL=http://localhost:4010 \
+          VECTOR_GO_URL=http://localhost:4012 \
+          pnpm --filter @modular/vector test -- src/integration/vector-go-diff.test.ts
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          echo "=== nestjs log ==="; cat /tmp/vector-nestjs.log || true
+          echo "=== go log ==="; cat /tmp/vector-go.log || true
+
+      - name: Stop services
+        if: always()
+        run: |
+          kill $(cat /tmp/vector-nestjs.pid) 2>/dev/null || true
+          kill $(cat /tmp/vector-go.pid) 2>/dev/null || true

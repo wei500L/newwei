@@ -235,13 +235,13 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 | Bull Board | Bearer JWT + queue.manage；错误为纯文本非 JSON |
 | CORS | credentials:true，origin 白名单来自 CORS_ORIGIN |
 
-## 7. 保护网快照与差分测试（第一阶段交付）
+## 7. 保护网快照与差分测试（已落地——本轮 M2 交付）
 
-1. **REST**：以 Swagger/OpenAPI 导出为机器可读快照（`/docs` 开启时导出；或由 controller 装饰器静态生成），存 `tests/contract/openapi.snapshot.json`
-2. **GraphQL**：`apps/api/schema.gql`（已在库，2925 行）为冻结快照；CI 增加 `git diff --exit-code apps/api/schema.gql`（构建后）
-3. **鉴权矩阵**：对全部 369 端点生成「匿名 / 无权限 JWT / 有权限 JWT / 错 org」四态断言表（`tests/contract/auth-matrix.json`，由本清单 §1 生成）
-4. **差分测试**：Go 实现上线后，shadow 模式下双发请求比对（忽略 traceId/timestamp 字段）
-5. **WS 事件**：6 namespace 的 connected/event/error 事件名与 payload 形状入 `tests/contract/ws-events.json`
+1. **REST**：✅ `apps/api/tests/contract/openapi.snapshot.json`（OpenAPI 3.0 形快照，**静态装饰器扫描生成**——`apps/api/scripts/generate-openapi-snapshot.ts` + `apps/api/tools/scan-routes.ts`，不启动 Nest 应用不连 DB；370 端点/294 路径；确定性输出双跑同 hash）。CI 漂移门禁：`git diff --exit-code`。有意变更：`pnpm --filter @modular/api run contract:openapi:snapshot` 重新生成并提交。
+2. **GraphQL**：`apps/api/schema.gql`（已在库，2925 行）为冻结快照；CI 增加 `git diff --exit-code apps/api/schema.gql`（构建后）——⚠️ 此项尚未接入 CI（生成依赖 ts-node 链路，待与 openapi 快照同批接入）
+3. **鉴权矩阵**：✅ `apps/api/tests/contract/auth-matrix.{json,md}`（`tools/generate-auth-matrix.ts` 静态生成，含 anonymous/authenticated/permission/platformOnly/orgContext/source/riskNotes 列；**生成时 fail-closed**：任何非公开端点缺权限元数据 → exit 1，与运行时 PermissionsGuard 语义一致）。CI 漂移门禁：`pnpm --filter @modular/api run contract:auth-matrix:check`（重新生成并与基线逐字节比对）。
+4. **差分测试**：✅ shadow 模式基础设施落地（`apps/api-go/internal/shadow`：异步差分执行器，超时/体积/并发/速率四重预算，只读方法白名单，差分忽略 traceId/timestamp 等登记字段）；首个迁移单元 `GET /api/healthz/live` 在 shadow 态。
+5. **WS 事件**：6 namespace 的 connected/event/error 事件名与 payload 形状入 `tests/contract/ws-events.json` —— ⬜ 未做（M5+）
 
 ## 8. 迁移风险登记（勘察结论）
 

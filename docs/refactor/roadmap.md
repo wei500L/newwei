@@ -18,38 +18,44 @@
 | **main CI 首次全绿** | ✅ | GitHub Actions run 33729250187 success |
 | codegen drift CI 门禁 | ✅ | ci.yml |
 
-## M2 契约保护网 + Go 骨架 —— 🔶 进行中（2026-09-03 起步）
+## M2 契约保护网 + Go 骨架 —— 🔶 进行中（2026-09-03 起步；本轮推进四态与契约快照）
 
 | 项 | 状态 |
 |---|---|
 | 3. `apps/api-go/` 骨架：legacyproxy 全量兜底 + 四态路由表 + trace 中间件 + `/__go/healthz` 自省 | ✅ 首版落地（纯标准库；7 组网关行为测试 + 真进程冒烟：路径/查询/头原样代理、go 路由不触达上游、502 fail-safe、trace 透传） |
-| 4. vector Go 重写试点 | ✅ 首版落地（`apps/vector-go/`：3 端点契约等价、30 个行为测试镜像 NestJS 11 用例、常量时间 token 比较；真进程冒烟通过）。**部署切换与 Docker 接线待做**（回滚开关 = vector 服务 baseUrl 配置，见 main.go 头注） |
+| 4. vector Go 重写试点 | ✅ 首版落地（`apps/vector-go/`：3 端点契约等价、30 个行为测试镜像 NestJS 11 用例、常量时间 token 比较；真进程冒烟通过）。**部署切换与 Docker 接线** ✅ 代码落地（vector-go.Dockerfile + compose `go-pilot` profile + CI 真实 Qdrant 集成 job），远端验证待 CI（回滚开关 = vector 服务 baseUrl 配置，见 main.go 头注） |
 | Go 工具链接入 CI（setup-go + build filter + 独立 test 步骤） | ✅ |
-| 1. 契约快照落地：OpenAPI 导出 + schema.gql 冻结 diff 进 CI | ⬜ |
-| 2. 鉴权矩阵生成（369 端点 × 4 态） | ⬜ |
+| 1. 契约快照落地：OpenAPI 导出 + schema.gql 冻结 diff 进 CI | ✅ 本轮（静态装饰器扫描生成，`apps/api/tests/contract/openapi.snapshot.json`，370 端点/294 路径；CI `git diff --exit-code` 漂移门禁；确定性双跑验证同 hash） |
+| 2. 鉴权矩阵生成（370 端点 × 4 态） | ✅ 本轮（`tools/scan-routes.ts` 静态扫描 71 controller/370 端点 → `tests/contract/auth-matrix.{json,md}`；生成时 fail-closed：缺权限元数据即失败；CI 漂移检查） |
+| shadow/canary 四态实现 | ✅ 本轮（shadow：NestJS 响应 + Go 异步差分，超时/体积/并发/速率四预算，只读方法白名单；canary：orgId 稳定哈希分桶，无 token 回 legacy，CANARY_PERCENT 配置；首个迁移单元 `GET /api/healthz/live` 进 shadow 态） |
+| api 首个 Go 单测基座 | ✅ 本轮（apps/api 接入 vitest：SEC-01/API-01 控制器回归测试 + 路由扫描器行为测试，CI 步骤 `pnpm --filter @modular/api test`） |
+| vector-go 远端 Qdrant 集成 | 🔧 代码落地（CI `vector-integration` job：真实 Qdrant v1.10.1 service + NestJS/vector-go 双服务 + `vector-go-diff.test.ts` 契约差分 11 组用例：状态码/错误体/json.Number 精度/collection 命名/UUID 稳定性/orgId filter/空数组/错误输入/trace header）——**远端执行待 CI 首跑** |
 
 余项（按序）：
-1. OpenAPI 快照导出脚本 + CI diff 步骤
-2. 鉴权矩阵生成脚本（读 controller 装饰器元数据 → JSON 断言表）
-3. vector-go 的 Docker/compose 接线（profile `go-pilot`，需 Docker 环境验证）与 shadow 差分联调
-4. 验收：Go 骨架 shadow 模式下 health/public-portal 请求差分 0 失败；vector Go 版通过全部契约用例（单测层已过，联调待部署面）
+1. CI 首跑闭环：OpenAPI 快照 diff、鉴权矩阵 fail-closed、api/vitest、vector-integration 四个门禁全绿
+2. shadow 差分在真实流量的零差异验收（M5 迁移序 2 的 shadow 起步）
+3. 第二个迁移单元（user-settings 只读 GET → shadow）
 
 ## M3 安全修复批次（与 M2 并行，纯 NestJS 侧）
 
-| 项 | 动作 | 回归验证 |
-|---|---|---|
-| SEC-01（P0） | vector-service 设置改平台管理员专用（platformAccess），或全局/per-org 分离 | 非 platform admin 的 settings.manage 持有者 PUT → 403 |
-| SEC-03 | /api/metrics 定位决策（平台级收紧 or org 过滤）+ 实施 | 鉴权矩阵对应行 |
-| API-01 运行时验证 | Docker 栈就绪后：登录→完成引导→刷新不重现 | 手工冒烟清单 |
-| BAPI-01 | **决策冻结**：Go 迁移前不动 schema；列入 GraphQL 迁移序（M5）的版本化演进 | — |
+| 项 | 动作 | 回归验证 | 状态 |
+|---|---|---|---|
+| SEC-01（P0） | vector-service 设置 PUT/DELETE 注入 platformAccess.assertPlatformAdmin（复用 audit-log 模式） | `vector-service-settings.controller.test.ts`：非平台管理员的 settings.manage 持有者 → 403；平台管理员 → 通过；GET 不受影响 | 🔧 代码+测试落地，CI 待跑；网络白名单只登记设计建议（见 bug-ledger §SEC-01） |
+| SEC-03 | /api/metrics 定位决策（平台级收紧 or org 过滤）+ 实施 | 鉴权矩阵对应行 | ⬜ |
+| API-01 运行时验证 | Docker 栈就绪后：登录→完成引导→刷新不重现 | 手工冒烟清单 | 🔧 静态闭环复核完成（本轮），运行时待数据库栈 |
+| BAPI-01 | **决策冻结**：Go 迁移前不动 schema；列入 GraphQL 迁移序（M5）的版本化演进 | — | — |
 
-## M4 前端第一批（App Shell + 代表页）
+## M4 前端第一批（App Shell + 代表页）—— 🔶 本轮起步（FE-批1 子集落地）
 
-1. FE-批1：设计 token 收敛 + AppShell/PageContainer/DataStateBoundary/useUrlState 原语
-2. FE-批2：ActionRail 5 组化 + TopNav 拆分 + 图标去重 + newsnow 宽度特例收敛
-3. FE-批3：alert-center 重构（顺修 FE-01 URL 状态）——代表页试点 1
-4. FE-03：vitest coverage include 改全仓 glob，阈值按真实基线重设
-5. 验收：真实覆盖率报告 + 试点页人工冒烟 + lint/typecheck/test 绿
+| 项 | 状态 |
+|---|---|
+| FE-批1（原语）：PageContainer 宽度档位原语（default/wide/wide-board=1760/article/full + 边距策略）+ 行为测试 | ✅ 本轮 |
+| FE-批2（子集）：newsnow 1760px 特例收敛（12 处硬编码 → NewsnowBoardContainer/PageContainer）+ news-hub 1200px 双重约束修复 + ActionRail 4 组图标语义唯一化 | ✅ 本轮 |
+| FE-批1（其余）：design/tokens.ts 收敛、DataStateBoundary、useUrlState | ⬜ 下轮 |
+| FE-批2（其余）：ActionRail 5 组化 + TopNav 9 职责拆分 | ⬜ 下轮（TopNav 589 行拆分单独一批） |
+| FE-批3：alert-center 重构（顺修 FE-01 URL 状态）——代表页试点 1 | ⬜ |
+| FE-03：vitest coverage include 改全仓 glob，阈值按真实基线重设 | 🔶 部分（include 3→6；全仓阈值待巨型组件拆分批次） |
+| 验收：真实覆盖率报告 + 试点页人工冒烟 + lint/typecheck/test 绿 | lint/typecheck 静态绿（本轮）；test/coverage CI 验证 |
 
 ## M5 Go 迁移推进（只读 → CRUD → GraphQL）
 
@@ -83,7 +89,7 @@
 
 ## 立即可做的下一轮最小任务（M2 余项）
 
-1. OpenAPI 快照导出脚本 + CI diff 步骤
-2. 鉴权矩阵生成脚本（读 controller 装饰器元数据 → JSON 断言表）
-3. vector-go Dockerfile + compose `go-pilot` profile 接线（需 Docker 环境验证）+ shadow 差分联调
-4. api-go 首个真实迁移单元：health/public-portal 只读端点（shadow 模式起步）
+1. CI 首跑闭环：OpenAPI 快照 diff / 鉴权矩阵 fail-closed / api vitest / vector-integration 四门禁全绿后合并节奏回归
+2. shadow 差分真实流量验收（首个单元 /api/healthz/live 0 差异 → canary 起步）
+3. 第二个迁移单元：user-settings 只读 GET（shadow 模式）
+4. FE-批1 剩余原语（design/tokens.ts、DataStateBoundary、useUrlState）与 TopNav 拆分
