@@ -13,6 +13,13 @@ import {
   type AlertRuleTuningSuggestionQuery,
 } from "@/graphql/generated";
 import { renderWithProviders } from "@/test/render";
+import {
+  applyTestNavigationHref,
+  notifyTestNavigation,
+  resetTestNavigation,
+  setTestUrl,
+  testNavigation,
+} from "@/test/url-navigation";
 
 import { AlertCenterContent } from "./alert-center";
 import type { AlertEventItem } from "./alert-center.utils";
@@ -41,14 +48,6 @@ export interface AlertTestSessionState {
   data: { permissions: string[] } | null;
 }
 
-export interface AlertTestNavigationState {
-  pathname: string;
-  params: URLSearchParams;
-  replaceCalls: string[];
-  pushCalls: string[];
-  listeners: Set<() => void>;
-}
-
 export interface AlertTestVirtualizerState {
   enabled: boolean | null;
   count: number | null;
@@ -60,13 +59,11 @@ export const alertTestSession: AlertTestSessionState = {
   data: { permissions: ["alerts.read"] },
 };
 
-export const alertTestNavigation: AlertTestNavigationState = {
-  pathname: "/alerts",
-  params: new URLSearchParams(),
-  replaceCalls: [],
-  pushCalls: [],
-  listeners: new Set<() => void>(),
-};
+/**
+ * 导航状态委托 @/test/url-navigation（与 useUrlState 测试共享同一份
+ * 「URL 变化 → 通知订阅组件」语义）。
+ */
+export const alertTestNavigation = testNavigation;
 
 export const alertTestVirtualizer: AlertTestVirtualizerState = {
   enabled: null,
@@ -74,27 +71,15 @@ export const alertTestVirtualizer: AlertTestVirtualizerState = {
   measureCalls: 0,
 };
 
-export function notifyAlertTestUrlChange(): void {
-  for (const listener of alertTestNavigation.listeners) {
-    listener();
-  }
-}
+export const notifyAlertTestUrlChange = notifyTestNavigation;
 
 /** 模拟 router.replace / router.push：记录调用、更新 URL 并通知订阅组件。 */
 export function applyAlertTestHref(href: string, calls: string[] | null): void {
-  if (calls) {
-    calls.push(href);
-  }
-  const [rawPath, rawQuery = ""] = href.split("?");
-  alertTestNavigation.pathname = rawPath || "/alerts";
-  alertTestNavigation.params = new URLSearchParams(rawQuery);
-  notifyAlertTestUrlChange();
+  applyTestNavigationHref(href, calls);
 }
 
 /** 模拟浏览器 back/forward 或外部导航导致的 URL 变化（不产生历史记录调用）。 */
-export function setAlertTestUrl(href: string): void {
-  applyAlertTestHref(href, null);
-}
+export const setAlertTestUrl = setTestUrl;
 
 export function resetAlertTestState(initialUrl = "/alerts"): void {
   alertTestSession.status = "authenticated";
@@ -102,12 +87,7 @@ export function resetAlertTestState(initialUrl = "/alerts"): void {
   alertTestVirtualizer.enabled = null;
   alertTestVirtualizer.count = null;
   alertTestVirtualizer.measureCalls = 0;
-  const [rawPath, rawQuery = ""] = initialUrl.split("?");
-  alertTestNavigation.pathname = rawPath || "/alerts";
-  alertTestNavigation.params = new URLSearchParams(rawQuery);
-  alertTestNavigation.replaceCalls.length = 0;
-  alertTestNavigation.pushCalls.length = 0;
-  alertTestNavigation.listeners.clear();
+  resetTestNavigation(initialUrl);
 }
 
 const SEVERITY_MAP = {
@@ -308,7 +288,8 @@ export function createAlertApolloMock(options: {
         const limit = variables.limit;
         state.eventsLimits.push(typeof limit === "number" ? limit : -1);
         if (state.eventsHang) {
-          return new Observable<FetchResult>();
+          // 挂起：订阅者永不收到响应
+          return new Observable<FetchResult>(() => () => undefined);
         }
         if (state.eventsError) {
           return respond(() => Promise.reject(state.eventsError));
@@ -398,7 +379,7 @@ export function holdAlertTestMutations(
 /** 触发一次订阅推送（新告警事件到达）。 */
 export function emitAlertTestSubscriptionEvent(state: AlertApolloMockState): void {
   for (const observer of state.activeSubscriptionObservers) {
-    observer.next({
+    observer.next?.({
       data: {
         __typename: "Subscription",
         alertEvents: {
