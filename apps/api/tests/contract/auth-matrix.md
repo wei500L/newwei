@@ -4,379 +4,384 @@
 > 勿手改——重新生成：`pnpm --filter @modular/api run contract:auth-matrix:generate`。
 > 生成时 fail-closed：任何非公开端点缺权限元数据都会失败（与运行时 PermissionsGuard 一致）。
 
-总计：71 controller / 370 endpoint · 公开 30 · 仅认证 19 · 权限门控 321 · handler 内平台校验 7
+**四态语义**（ADR §6.2）：anonymous / auth-no-permission / auth-with-permission 为装饰器可判定；
+**wrongOrg 一律 runtime-required**（org 上下文由每请求 DB membership 重推导，静态不编造结论）。
+**handler 平台校验是启发式**（platformCheckSource=handler-text-scan）：提示运行时行为，
+不是静态保障——运行时强制力由 handler 内 assertPlatformAdmin 提供并以控制器单测锚定。
 
-| Method | Route | Handler | Anonymous | Authenticated | Permission | Platform-only | Org ctx | Risk/Notes |
-|---|---|---|---|---|---|---|---|---|
-| GET | `/api/admin/akshare/status` | status | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/admin/akshare/upgrade` | upgrade | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/akshare/version` | version | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/errors` | list | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/errors/stats` | stats | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/logs/audit` | listAuditLogs | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/logs/errors` | listErrors | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/logs/errors/summary` | summarizeErrors | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/logs/task` | listTaskLogs | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/logs/task/summary` | summarizeTaskLogs | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/analysis/boards` | listBoards | denied | allowed | analysis.read | — | user | — |
-| POST | `/api/analysis/boards` | createBoard | denied | allowed | analysis.write | — | user | — |
-| DELETE | `/api/analysis/boards/:boardId` | archiveBoard | denied | allowed | analysis.write | — | user | — |
-| GET | `/api/analysis/boards/:boardId` | getBoard | denied | allowed | analysis.read | — | user | — |
-| PATCH | `/api/analysis/boards/:boardId` | updateBoard | denied | allowed | analysis.write | — | user | — |
-| POST | `/api/analysis/boards/:boardId/columns` | createColumn | denied | allowed | analysis.write | — | user | — |
-| POST | `/api/analysis/boards/:boardId/columns/reorder` | reorderColumns | denied | allowed | analysis.write | — | user | — |
-| POST | `/api/analysis/boards/:boardId/tasks` | createTask | denied | allowed | analysis.write | — | user | — |
-| DELETE | `/api/analysis/columns/:columnId` | deleteColumn | denied | allowed | analysis.write | — | user | — |
-| PATCH | `/api/analysis/columns/:columnId` | updateColumn | denied | allowed | analysis.write | — | user | — |
-| DELETE | `/api/analysis/comments/:commentId` | deleteComment | denied | allowed | analysis.write | — | user | — |
-| PATCH | `/api/analysis/comments/:commentId` | updateComment | denied | allowed | analysis.write | — | user | — |
-| POST | `/api/analysis/exports/events` | exportEvents | denied | allowed | analysis.write | — | user | — |
-| POST | `/api/analysis/exports/items` | exportItems | denied | allowed | analysis.write | — | user | — |
-| POST | `/api/analysis/exports/search` | exportSearch | denied | allowed | analysis.write | — | user | — |
-| DELETE | `/api/analysis/tasks/:taskId` | deleteTask | denied | allowed | analysis.write | — | user | — |
-| PATCH | `/api/analysis/tasks/:taskId` | updateTask | denied | allowed | analysis.write | — | user | — |
-| POST | `/api/analysis/tasks/:taskId/move` | moveTask | denied | allowed | analysis.write | — | user | — |
-| GET | `/api/analysis/threads/:subjectType/:subjectId` | getThread | denied | allowed | analysis.read | — | user | — |
-| PUT | `/api/analysis/threads/:subjectType/:subjectId` | upsertThread | denied | allowed | analysis.write | — | user | — |
-| POST | `/api/analysis/threads/:subjectType/:subjectId/comments` | createComment | denied | allowed | analysis.write | — | user | — |
-| GET | `/api/analysis/views` | listViews | denied | allowed | analysis.read | — | user | — |
-| POST | `/api/analysis/views` | createView | denied | allowed | analysis.write | — | user | — |
-| DELETE | `/api/analysis/views/:id` | deleteView | denied | allowed | analysis.write | — | user | — |
-| GET | `/api/analysis/views/:id` | getView | denied | allowed | analysis.read | — | user | — |
-| PATCH | `/api/analysis/views/:id` | updateView | denied | allowed | analysis.write | — | user | — |
-| GET | `/api/admin/archive-preparation/status` | getStatus | denied | allowed | settings.manage | — | user | — |
-| DELETE | `/api/system-settings/archive-preparation` | resetSettings | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/archive-preparation` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/archive-preparation` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| DELETE | `/api/system-settings/assistant-quota` | reset | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/assistant-quota` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/assistant-quota` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| DELETE | `/api/system-settings/assistant-safety` | reset | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/assistant-safety` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/assistant-safety` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/assistant-safety/diagnostics` | runDiagnostics | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/assistant-safety/metrics` | getMetrics | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/audit-log` | getRetention | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/audit-log` | updateRetention | denied | allowed | settings.manage | yes | user | platform-admin check in handler body (heuristic) |
-| GET | `/api/system-settings/auth-cache` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/auth-cache` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/auth/admin/invites` | listInvites | denied | allowed | users.write | — | user | — |
-| POST | `/api/auth/admin/invites` | createInvite | denied | allowed | users.write | — | user | — |
-| POST | `/api/auth/admin/invites/:id/resend` | resendInvite | denied | allowed | users.write | — | user | — |
-| POST | `/api/auth/admin/invites/:id/revoke` | revokeInvite | denied | allowed | users.write | — | user | — |
-| GET | `/api/auth/admin/oidc-config` | getOidcConfig | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/auth/admin/oidc-config` | updateOidcConfig | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/auth/admin/registration-applications` | listRegistrationApplications | denied | allowed | — | yes | handler | platform-admin check in handler body (heuristic) |
-| POST | `/api/auth/admin/registration-applications/:id/approve-join` | approveJoinApplication | denied | allowed | users.write | — | user | — |
-| POST | `/api/auth/admin/registration-applications/:id/approve-org` | approveNewOrgApplication | denied | allowed | — | — | handler | — |
-| POST | `/api/auth/admin/registration-applications/:id/reject-join` | rejectJoinApplication | denied | allowed | users.write | — | user | — |
-| POST | `/api/auth/admin/registration-applications/:id/reject-org` | rejectNewOrgApplication | denied | allowed | — | — | handler | — |
-| POST | `/api/auth/avatar/presigned-url` | createAvatarPresignedUrl | denied | allowed | — | — | handler | — |
-| POST | `/api/auth/change-password` | changePassword | denied | allowed | — | — | handler | — |
-| GET | `/api/auth/data-export` | exportUserData | denied | allowed | — | — | handler | — |
-| GET | `/api/auth/invitations/:token` | getInvitation | allowed | allowed | — | — | none | — |
-| POST | `/api/auth/invitations/:token/accept` | acceptInvitation | allowed | allowed | — | — | none | — |
-| POST | `/api/auth/invitations/:token/accept-authenticated` | acceptInvitationAuthenticated | denied | allowed | — | — | handler | — |
-| POST | `/api/auth/login` | login | allowed | allowed | — | — | none | — |
-| POST | `/api/auth/login-with-code` | loginWithCode | allowed | allowed | — | — | none | — |
-| POST | `/api/auth/logout` | logout | denied | allowed | — | — | handler | — |
-| GET | `/api/auth/machine-tokens` | listMachineTokens | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/auth/machine-tokens` | createMachineToken | denied | allowed | settings.manage | — | user | — |
-| DELETE | `/api/auth/machine-tokens/:tokenId` | revokeMachineToken | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/auth/machine-tokens/:tokenId/rotate` | rotateMachineToken | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/auth/me` | profile | denied | allowed | — | — | handler | — |
-| GET | `/api/auth/mfa` | getMfaStatus | denied | allowed | — | — | handler | — |
-| POST | `/api/auth/mfa/disable` | disableMfa | denied | allowed | — | — | handler | — |
-| POST | `/api/auth/mfa/enroll` | beginMfaEnrollment | denied | allowed | — | — | handler | — |
-| POST | `/api/auth/mfa/enrollment/complete` | completeMfaEnrollmentChallenge | allowed | allowed | — | — | none | — |
-| POST | `/api/auth/mfa/enrollment/start` | beginMfaEnrollmentChallenge | allowed | allowed | — | — | none | — |
-| POST | `/api/auth/mfa/recovery/rotate` | rotateRecoveryCodes | denied | allowed | — | — | handler | — |
-| POST | `/api/auth/mfa/verify-enroll` | verifyMfaEnrollment | denied | allowed | — | — | handler | — |
-| POST | `/api/auth/mfa/verify-login` | completeMfaLogin | allowed | allowed | — | — | none | — |
-| GET | `/api/auth/oidc/callback` | handleOidcCallback | allowed | allowed | — | — | none | — |
-| POST | `/api/auth/password/forgot` | requestPasswordReset | allowed | allowed | — | — | none | — |
-| POST | `/api/auth/password/reset` | resetPassword | allowed | allowed | — | — | none | — |
-| PATCH | `/api/auth/profile` | updateProfile | denied | allowed | — | — | handler | — |
-| POST | `/api/auth/refresh` | refresh | allowed | allowed | — | — | none | — |
-| POST | `/api/auth/register/applications` | submitNewOrgApplication | allowed | allowed | — | — | none | — |
-| POST | `/api/auth/register/join-applications` | submitJoinOrgApplication | allowed | allowed | — | — | none | — |
-| POST | `/api/auth/send-login-code` | sendLoginCode | allowed | allowed | — | — | none | — |
-| POST | `/api/auth/send-verification` | sendVerification | denied | allowed | — | — | handler | — |
-| POST | `/api/auth/sso/handoff/exchange` | exchangeHandoffToken | allowed | allowed | — | — | none | — |
-| GET | `/api/auth/sso/oidc/start` | startOidcLogin | allowed | allowed | — | — | none | — |
-| POST | `/api/auth/verify-email` | verifyEmail | denied | allowed | — | — | handler | — |
-| POST | `/api/admin/quality/classification/reports` | createReport | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/quality/classification/reports/:jobId` | reportJob | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/admin/quality/classification/reviews/:reviewId/decision` | reviewDecision | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/admin/quality/classification/reviews/batch` | batchReviewDecision | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/quality/classification/reviews/queue` | reviewQueue | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/admin/quality/classification/sampling/annotations` | submitAnnotations | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/admin/quality/classification/sampling/query` | createSample | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/quality/classification/sources/:sourceId/items` | sourceItems | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/quality/classification/summary` | summary | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/observability/exception-events/client` | report | denied | allowed | — | — | handler | — |
-| GET | `/api/admin/crawl4ai/quality` | getQualitySnapshot | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl4ai/quality/sources/:sourceId` | getSourceQualitySnapshot | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl4ai/queue` | getQueueStats | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/crawl4ai/queue/concurrency` | updateQueueConcurrency | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/admin/crawl4ai/queue/pause` | pauseQueue | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/admin/crawl4ai/queue/resume` | resumeQueue | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/crawl-tasks` | list | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/crawl-tasks` | create | denied | allowed | crawl.write | — | user | — |
-| DELETE | `/api/crawl-tasks/:id` | remove | denied | allowed | crawl.write | — | user | — |
-| GET | `/api/crawl-tasks/:id` | detail | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/crawl-tasks/:id/retry` | retry | denied | allowed | crawl.write | — | user | — |
-| POST | `/api/crawl-tasks/metadata` | extractMetadata | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl-frontier/nodes/:id` | getNode | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/crawl-frontier/nodes/:id/retry` | retryNode | denied | allowed | crawl.write | — | user | — |
-| POST | `/api/admin/crawl-frontier/nodes/retry` | retryNodes | denied | allowed | crawl.write | — | user | — |
-| GET | `/api/admin/crawl-frontier/profiles` | listProfiles | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/crawl-frontier/profiles` | createProfile | denied | allowed | crawl.write | — | user | — |
-| GET | `/api/admin/crawl-frontier/profiles/:id` | getProfile | denied | allowed | crawl.read | — | user | — |
-| PATCH | `/api/admin/crawl-frontier/profiles/:id` | updateProfile | denied | allowed | crawl.write | — | user | — |
-| POST | `/api/admin/crawl-frontier/profiles/:id/rollback/:version` | rollbackProfile | denied | allowed | crawl.write | — | user | — |
-| GET | `/api/admin/crawl-frontier/profiles/:id/versions` | listVersions | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl-frontier/profiles/match` | matchProfile | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/crawl-frontier/profiles/preview` | previewProfile | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl-frontier/runs` | listRuns | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/crawl-frontier/runs` | createRun | denied | allowed | crawl.write | — | user | — |
-| GET | `/api/admin/crawl-frontier/runs/:id` | getRun | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/crawl-frontier/runs/:id/cancel` | cancelRun | denied | allowed | crawl.write | — | user | — |
-| GET | `/api/admin/crawl-frontier/runs/:id/workflow-candidates` | listRunWorkflowCandidates | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl-frontier/runs/:id/workflow-candidates/:candidateId` | getRunWorkflowCandidateExplanation | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl-frontier/runs/:id/workflow-run` | getRunWorkflowRun | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/crawl-frontier/runs/cancel` | cancelRuns | denied | allowed | crawl.write | — | user | — |
-| GET | `/api/crawl-media-assets/:assetId/:mode` | serveAsset | allowed | allowed | — | — | none | — |
-| GET | `/api/admin/crawl-frontier/news-sources/:id/workflow-bridge` | getNewsSourceWorkflowBridge | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl-frontier/profiles/:id/workflow-bridge` | getProfileWorkflowBridge | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl-frontier/workflow-runs/:runId` | getRun | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl-frontier/workflow-runs/:runId/candidates` | listRunCandidates | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl-frontier/workflow-runs/:runId/candidates/:candidateId/explanation` | getCandidateExplanation | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/crawl-frontier/workflow-runs/:runId/replay` | replayRun | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl-frontier/workflow-versions/:versionId` | getVersion | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl-frontier/workflows` | listWorkflows | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/crawl-frontier/workflows` | createWorkflow | denied | allowed | crawl.write | — | user | — |
-| GET | `/api/admin/crawl-frontier/workflows/:id` | getWorkflow | denied | allowed | crawl.read | — | user | — |
-| PATCH | `/api/admin/crawl-frontier/workflows/:id/draft` | updateDraft | denied | allowed | crawl.write | — | user | — |
-| POST | `/api/admin/crawl-frontier/workflows/:id/publish` | publishWorkflow | denied | allowed | crawl.write | — | user | — |
-| POST | `/api/admin/crawl-frontier/workflows/:id/trial-run` | trialRun | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl-frontier/workflows/:id/versions` | listVersions | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/crawl-frontier/workflows/compare` | compareVersions | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl-frontier/workflows/node-schemas` | listNodeSchemas | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/crawl-templates` | list | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/crawl-templates` | create | denied | allowed | crawl.write | — | user | — |
-| DELETE | `/api/admin/crawl-templates/:id` | remove | denied | allowed | crawl.write | — | user | — |
-| PATCH | `/api/admin/crawl-templates/:id` | update | denied | allowed | crawl.write | — | user | — |
-| GET | `/api/dashboard/financial-candlestick` | financialCandlestick | denied | allowed | dashboards.read | — | user | — |
-| GET | `/api/dashboard/sector-heatmap` | sectorHeatmap | denied | allowed | dashboards.read | — | user | — |
-| GET | `/api/dashboard/spacetime/geo-heatmap` | spacetimeGeoHeatmap | denied | allowed | dashboards.read | — | user | — |
-| GET | `/api/dashboard/spacetime/geo-heatmap/articles` | spacetimeGeoHeatmapArticles | denied | allowed | dashboards.read | — | user | — |
-| GET | `/api/dashboard/spacetime/propagation` | spacetimePropagation | denied | allowed | dashboards.read | — | user | — |
-| GET | `/api/dashboard/spacetime/propagation/articles` | spacetimePropagationArticles | denied | allowed | dashboards.read | — | user | — |
-| GET | `/api/dashboard/stats` | stats | denied | allowed | items.read | — | user | — |
-| GET | `/api/dashboard/stream` | dashboardStream | denied | allowed | dashboards.read | — | user | — |
-| GET | `/api/dashboard/war-map/events` | warMapEvents | denied | allowed | dashboards.read | — | user | — |
-| GET | `/api/dashboard/war-map/geojson` | warMapGeoJson | denied | allowed | dashboards.read | — | user | — |
-| GET | `/api/dashboard/war-map/layers` | warMapLayers | denied | allowed | dashboards.read | — | user | — |
-| GET | `/api/dashboard/war-map/news-markers` | warMapNewsMarkers | denied | allowed | dashboards.read | — | user | — |
-| GET | `/api/dashboard/war-map/transport-detail` | warMapTransportDetail | denied | allowed | dashboards.read | — | user | — |
-| GET | `/api/system-settings/email` | getStatus | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/email/auth-code` | updateAuthCodeSettings | denied | allowed | settings.manage | yes | user | platform-admin check in handler body (heuristic) |
-| POST | `/api/system-settings/email/test` | test | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/geo/geocode` | geocode | denied | allowed | items.read | — | user | — |
-| GET | `/api/system-settings/geo/nominatim` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/geo/nominatim` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/geo/nominatim/test` | test | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/healthz` | getHealth | denied | allowed | — | — | handler | — |
-| GET | `/api/healthz/live` | getLiveness | allowed | allowed | — | — | none | — |
-| POST | `/api/internal/observability/exception-events` | report | allowed | allowed | — | — | none | guards: LitellmInternalTokenGuard; public route with token guard (internal endpoint) |
-| GET | `/api/items` | list | denied | allowed | items.read | — | user | — |
-| POST | `/api/items` | create | denied | allowed | items.write | — | user | — |
-| GET | `/api/items/:id` | detail | denied | allowed | items.read | — | user | — |
-| GET | `/api/system-settings/llm-gateways` | list | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/llm-gateways` | create | denied | allowed | settings.manage | — | user | — |
-| DELETE | `/api/system-settings/llm-gateways/:id` | remove | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/llm-gateways/:id` | update | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/llm-gateways/:id/models` | listModels | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/llm-gateways/:id/proxy-health` | proxyHealth | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/llm-gateways/:id/proxy-lb-test` | proxyLoadBalancingTest | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/llm-gateways/:id/proxy-model-info` | proxyModelInfo | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/llm-gateways/:id/test` | test | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/llm-gateways/active` | setActive | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/llm-gateways/embedding-active` | setEmbeddingActive | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/llm-gateways/models-config` | listModelsConfig | denied | allowed | settings.manage | — | user | — |
-| DELETE | `/api/system-settings/llm-gateways/proxy-governance` | resetProxyGovernanceSettings | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/llm-gateways/proxy-governance` | getProxyGovernanceSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/llm-gateways/proxy-governance` | updateProxyGovernanceSettings | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/llm-gateways/proxy-governance/preflight` | preflightProxyGovernanceSettings | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/llm-gateways/proxy-governance/rotate-key` | rotateProxyGovernanceKey | denied | allowed | settings.manage | — | user | — |
-| DELETE | `/api/system-settings/llm-gateways/proxy-load-balancing` | resetProxyLoadBalancingSettings | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/llm-gateways/proxy-load-balancing` | getProxyLoadBalancingSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/llm-gateways/proxy-load-balancing` | updateProxyLoadBalancingSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/llm-gateways/rerank-active` | setRerankActive | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/llm-gateways/test-config` | testConfig | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/llm-logs` | list | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/llm-logs/export` | export | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/llm-logs/summary` | summary | denied | allowed | settings.manage | — | user | — |
-| DELETE | `/api/system-settings/llm-request-logs` | reset | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/llm-request-logs` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/llm-request-logs` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/llm-request-logs/metadata-policy/reset` | resetMetadataPolicy | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/metrics` | scrape | denied | allowed | metrics.read | — | user | — |
-| DELETE | `/api/system-settings/model-service` | reset | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/model-service` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/model-service` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/multi-tenant-schedulers` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/multi-tenant-schedulers` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/news-aggregator/domestic-opinion-index` | getDomesticOpinionIndex | denied | allowed | items.read | — | user | — |
-| GET | `/api/news-aggregator/hottest-analysis` | getHottestAnalysis | denied | allowed | items.read | — | user | — |
-| GET | `/api/news-aggregator/metadata` | getMetadata | allowed | allowed | — | — | none | — |
-| GET | `/api/news-aggregator/recommended` | getRecommendedFeed | denied | allowed | items.read | — | user | — |
-| GET | `/api/news-aggregator/resolve` | resolveByUrl | allowed | allowed | — | — | none | — |
-| GET | `/api/news-aggregator/source` | getSource | allowed | allowed | — | — | none | — |
-| POST | `/api/news-aggregator/sources/batch` | getSourcesBatch | allowed | allowed | — | — | none | — |
-| POST | `/api/news-aggregator/sources/order` | getPersonalizedSourcesOrder | denied | allowed | items.read | — | user | — |
-| GET | `/api/system-settings/news-events/clustering/failures` | listFailures | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/news-events/clustering/failures/:groupId/ignore` | ignoreFailure | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/news-events/clustering/failures/:groupId/llm-backfill` | llmBackfill | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/news-events/clustering/failures/:groupId/vector-backfill` | vectorBackfill | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/news-events/clustering/overview` | getOverview | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/news-events/clustering/readiness` | getReadiness | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/news-indicator/associations` | listAssociations | denied | allowed | dashboards.read | — | user | — |
-| GET | `/api/news-indicator/associations/:id` | getAssociation | denied | allowed | dashboards.read | — | user | — |
-| POST | `/api/news-indicator/refresh` | refresh | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/news-sources` | list | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/news-sources` | create | denied | allowed | crawl.write | — | user | — |
-| DELETE | `/api/admin/news-sources/:id` | remove | denied | allowed | crawl.write | — | user | — |
-| PATCH | `/api/admin/news-sources/:id` | update | denied | allowed | crawl.write | — | user | — |
-| GET | `/api/admin/news-sources/:id/preview` | preview | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/news-sources/:id/run` | run | denied | allowed | crawl.write | — | user | — |
-| POST | `/api/admin/news-sources/:id/schedule` | schedule | denied | allowed | crawl.write | — | user | — |
-| DELETE | `/api/admin/news-sources/batch` | batchDelete | denied | allowed | crawl.write | — | user | — |
-| PATCH | `/api/admin/news-sources/batch/active` | batchUpdateActive | denied | allowed | crawl.write | — | user | — |
-| POST | `/api/admin/news-sources/batch/frequency` | batchUpdateFrequency | denied | allowed | crawl.write | — | user | — |
-| PATCH | `/api/admin/news-sources/batch/group` | batchUpdateGroup | denied | allowed | crawl.write | — | user | — |
-| GET | `/api/admin/news-sources/groups` | listGroups | denied | allowed | crawl.read | — | user | — |
-| GET | `/api/admin/news-sources/opml-presets` | listOpmlPresets | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/news-sources/opml/import` | importOpml | denied | allowed | crawl.write | — | user | — |
-| POST | `/api/admin/news-sources/opml/preview` | previewOpml | denied | allowed | crawl.write | — | user | — |
-| GET | `/api/admin/news-sources/options` | listOptions | denied | allowed | crawl.read | — | user | — |
-| POST | `/api/admin/news-sources/:id/dispatch` | dispatch | denied | allowed | crawl.write | — | user | — |
-| POST | `/api/admin/news-sources/:id/cancel-queued` | cancelQueued | denied | allowed | crawl.write | — | user | — |
-| POST | `/api/admin/news-sources/:id/clear-inflight` | clearInflight | denied | allowed | crawl.write | — | user | — |
-| POST | `/api/admin/news-sources/:id/retry-latest` | retryLatest | denied | allowed | crawl.write | — | user | — |
-| GET | `/api/admin/quality/news-sources` | summary | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/news-source-runtime-secrets` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/news-source-runtime-secrets` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/news-source-scheduler` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/news-source-scheduler` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/newsnow-personalization` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/newsnow-personalization` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/newsnow-personalization/metrics` | getRuntimeMetrics | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/internal/litellm/openai-keys` | getOpenAiKeys | allowed | allowed | — | — | none | guards: LitellmInternalTokenGuard; public route with token guard (internal endpoint) |
-| POST | `/api/internal/litellm/openai-keys/applied` | reportAppliedOpenAiKeys | allowed | allowed | — | — | none | guards: LitellmInternalTokenGuard; public route with token guard (internal endpoint) |
-| GET | `/api/internal/litellm/proxy-load-balancing` | getProxyLoadBalancingSnapshot | allowed | allowed | — | — | none | guards: LitellmInternalTokenGuard; public route with token guard (internal endpoint) |
-| DELETE | `/api/system-settings/openai-keys` | reset | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/openai-keys` | getSettings | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/openai-keys` | appendKeys | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/openai-keys` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| DELETE | `/api/system-settings/openai-keys/key/:fingerprint` | removeKey | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/quality/pipeline` | pipelineSummary | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/admin/quality/pipeline/replay` | replay | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/admin/quality/pipeline/rollback` | rollback | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/quality/pipeline/runs` | runs | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/public-portal/channels/:topic` | getChannel | allowed | allowed | — | — | none | — |
-| GET | `/api/public-portal/home` | getHome | allowed | allowed | — | — | none | — |
-| GET | `/api/public-portal/stories/id/:id` | getStoryById | allowed | allowed | — | — | none | — |
-| GET | `/api/public-portal/stories/slug/:slug` | getStoryBySlug | allowed | allowed | — | — | none | — |
-| GET | `/api/admin/quality/overview` | getOverview | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/rate-limit-policies` | list | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/rate-limit-policies` | create | denied | allowed | settings.manage | — | user | — |
-| DELETE | `/api/system-settings/rate-limit-policies/:feature` | remove | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/rate-limit-policies/:feature` | get | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/rate-limit-policies/:feature` | update | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/rate-limits` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/rate-limits` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/rbac/assign` | assignRole | denied | allowed | roles.write | — | user | — |
-| GET | `/api/rbac/audit-logs` | auditLogs | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/rbac/members` | members | denied | allowed | users.read | — | user | — |
-| GET | `/api/rbac/permissions` | permissions | denied | allowed | permissions.read | — | user | — |
-| GET | `/api/rbac/roles` | roles | denied | allowed | roles.read | — | user | — |
-| POST | `/api/rbac/roles` | createRole | denied | allowed | roles.write | — | user | — |
-| GET | `/api/system-settings/realtime-signals/runtime` | getRuntimeDiagnostics | denied | allowed | settings.manage | — | user | — |
-| DELETE | `/api/system-settings/realtime-signals` | reset | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/realtime-signals` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/realtime-signals` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/rss-diagnostics/backfill-source-id` | backfillSourceId | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/rss-diagnostics/chain` | getChainSummary | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/rss-diagnostics/overview` | getOverview | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/rss-diagnostics/sources` | getSourceDetails | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/rss-translation/metrics` | getMetrics | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/admin/search/reindex` | reindex | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/search/reindex/:jobId` | getReindexJob | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/search-telemetry/summary` | summary | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/search-telemetry` | record | denied | allowed | items.read | — | user | — |
-| GET | `/api/situation-monitor/catalog` | catalog | denied | allowed | items.read | — | user | — |
-| POST | `/api/situation-monitor/feedback` | recordFeedback | denied | allowed | items.write | — | user | — |
-| GET | `/api/situation-monitor/insights` | insights | denied | allowed | items.read | — | user | — |
-| GET | `/api/situation-monitor/live-hls-proxy-config` | liveHlsProxyConfig | denied | allowed | items.read | — | user | — |
-| GET | `/api/situation-monitor/monitors` | listMonitors | denied | allowed | items.read | — | user | — |
-| POST | `/api/situation-monitor/monitors` | createMonitor | denied | allowed | items.read | — | user | — |
-| DELETE | `/api/situation-monitor/monitors/:id` | deleteMonitor | denied | allowed | items.read | — | user | — |
-| PATCH | `/api/situation-monitor/monitors/:id` | updateMonitor | denied | allowed | items.read | — | user | — |
-| POST | `/api/situation-monitor/monitors/preview` | previewMonitor | denied | allowed | items.read | — | user | — |
-| GET | `/api/situation-monitor/oref-alerts` | orefAlerts | denied | allowed | items.read | — | user | — |
-| GET | `/api/situation-monitor/oref-history` | orefHistory | denied | allowed | items.read | — | user | — |
-| POST | `/api/situation-monitor/refresh` | refresh | denied | allowed | items.read | — | user | — |
-| GET | `/api/situation-monitor/refresh-runs/:refreshId` | getRefreshRun | denied | allowed | items.read | — | user | — |
-| GET | `/api/situation-monitor/telegram-feed` | telegramFeed | denied | allowed | items.read | — | user | — |
-| DELETE | `/api/system-settings/situation-monitor` | reset | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/situation-monitor` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/situation-monitor` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/situation-monitor/external-snapshot/refresh` | forceExternalSnapshotRefresh | denied | allowed | settings.manage | — | user | — |
-| DELETE | `/api/system-settings/situation-monitor/telegram-auth` | clearTelegramAuth | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/situation-monitor/telegram-auth/complete` | completeTelegramAuth | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/system-settings/situation-monitor/telegram-auth/start` | startTelegramAuth | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/settings/storage` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PATCH | `/api/admin/settings/storage` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| POST | `/api/admin/settings/storage/test` | testConnection | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/system-settings/security` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/security` | updateSettings | denied | allowed | settings.manage | — | user | — |
-| DELETE | `/api/system-settings/task-logs` | reset | denied | allowed | settings.manage | yes | user | platform-admin check in handler body (heuristic) |
-| GET | `/api/system-settings/task-logs` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/task-logs` | updateSettings | denied | allowed | settings.manage | yes | user | platform-admin check in handler body (heuristic) |
-| GET | `/api/admin/quality/task-logs` | list | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/admin/quality/task-logs/summary` | summary | denied | allowed | settings.manage | — | user | — |
-| GET | `/api/user-content-subscriptions` | list | denied | allowed | items.read | — | user | — |
-| POST | `/api/user-content-subscriptions/batch-delete` | batchDelete | denied | allowed | items.read | — | user | — |
-| POST | `/api/user-content-subscriptions/batch-upsert` | batchUpsert | denied | allowed | items.read | — | user | — |
-| GET | `/api/user-content-subscriptions/catalog` | catalog | denied | allowed | items.read | — | user | — |
-| POST | `/api/user-content-subscriptions/catalog/lookup` | lookup | denied | allowed | items.read | — | user | — |
-| GET | `/api/user-content-subscriptions/recommendations` | recommendations | denied | allowed | items.read | — | user | — |
-| GET | `/api/user-content-subscriptions/related-topics` | relatedTopics | denied | allowed | items.read | — | user | — |
-| GET | `/api/user-digest` | getDigest | denied | allowed | items.read | — | user | — |
-| GET | `/api/user-digest/delivery` | getDelivery | denied | allowed | items.read | — | user | — |
-| PUT | `/api/user-digest/delivery` | updateDelivery | denied | allowed | items.read | — | user | — |
-| GET | `/api/user-digest/preference` | getPreference | denied | allowed | items.read | — | user | — |
-| PUT | `/api/user-digest/preference` | updatePreference | denied | allowed | items.read | — | user | — |
-| POST | `/api/user-news-behavior` | record | denied | allowed | items.read | — | user | — |
-| DELETE | `/api/user-news-behavior/profile` | clearProfile | denied | allowed | items.read | — | user | — |
-| GET | `/api/user-news-behavior/profile` | profile | denied | allowed | items.read | — | user | — |
-| GET | `/api/user-settings/ui/newsnow` | getNewsnowUiSettings | denied | allowed | items.read | — | user | — |
-| PUT | `/api/user-settings/ui/newsnow` | updateNewsnowUiSettings | denied | allowed | items.read | — | user | — |
-| GET | `/api/user-settings/ui/onboarding` | getOnboardingUiSettings | denied | allowed | items.read | — | user | — |
-| PUT | `/api/user-settings/ui/onboarding` | updateOnboardingUiSettings | denied | allowed | items.read | — | user | — |
-| GET | `/api/user-settings/ui/rss-reader` | getRssReaderUiSettings | denied | allowed | items.read | — | user | — |
-| PUT | `/api/user-settings/ui/rss-reader` | updateRssReaderUiSettings | denied | allowed | items.read | — | user | — |
-| GET | `/api/user-settings/ui/situation-monitor` | getSituationMonitorUiSettings | denied | allowed | items.read | — | user | — |
-| PUT | `/api/user-settings/ui/situation-monitor` | updateSituationMonitorUiSettings | denied | allowed | items.read | — | user | — |
-| GET | `/api/user-settings/ui/spacetime-timeline` | getSpacetimeTimelineUiSettings | denied | allowed | items.read | — | user | — |
-| PUT | `/api/user-settings/ui/spacetime-timeline` | updateSpacetimeTimelineUiSettings | denied | allowed | items.read | — | user | — |
-| GET | `/api/user-settings/ui/war-map` | getWarMapUiSettings | denied | allowed | items.read | — | user | — |
-| PUT | `/api/user-settings/ui/war-map` | updateWarMapUiSettings | denied | allowed | items.read | — | user | — |
-| DELETE | `/api/system-settings/vector-service` | reset | denied | allowed | settings.manage | yes | user | platform-admin check in handler body (heuristic) |
-| GET | `/api/system-settings/vector-service` | getSettings | denied | allowed | settings.manage | — | user | — |
-| PUT | `/api/system-settings/vector-service` | updateSettings | denied | allowed | settings.manage | yes | user | platform-admin check in handler body (heuristic) |
-| GET | `/api/system-settings/vector-service/diagnostics` | getDiagnostics | denied | allowed | settings.manage | — | user | — |
+总计：71 controller / 370 endpoint · 公开 30 · 仅认证 19 · 权限门控 321（无权限必 403：321）· handler 平台校验（启发式）7 · wrongOrg 需运行时验证 340
+
+| Method | Route | Handler | Anon | No-perm JWT | With-perm JWT | Wrong-org | Permission | Platform-only | OrgAdmin | PlatformAdmin | CheckSrc | Runtime-needed | Conf | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| GET | `/api/admin/akshare/status` | status | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/akshare/upgrade` | upgrade | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/akshare/version` | version | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/errors` | list | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/errors/stats` | stats | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/logs/audit` | listAuditLogs | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/logs/errors` | listErrors | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/logs/errors/summary` | summarizeErrors | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/logs/task` | listTaskLogs | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/logs/task/summary` | summarizeTaskLogs | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/analysis/boards` | listBoards | denied | denied | allowed | runtime-required | analysis.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/analysis/boards` | createBoard | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/analysis/boards/:boardId` | archiveBoard | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/analysis/boards/:boardId` | getBoard | denied | denied | allowed | runtime-required | analysis.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PATCH | `/api/analysis/boards/:boardId` | updateBoard | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/analysis/boards/:boardId/columns` | createColumn | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/analysis/boards/:boardId/columns/reorder` | reorderColumns | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/analysis/boards/:boardId/tasks` | createTask | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/analysis/columns/:columnId` | deleteColumn | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PATCH | `/api/analysis/columns/:columnId` | updateColumn | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/analysis/comments/:commentId` | deleteComment | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PATCH | `/api/analysis/comments/:commentId` | updateComment | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/analysis/exports/events` | exportEvents | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/analysis/exports/items` | exportItems | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/analysis/exports/search` | exportSearch | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/analysis/tasks/:taskId` | deleteTask | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PATCH | `/api/analysis/tasks/:taskId` | updateTask | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/analysis/tasks/:taskId/move` | moveTask | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/analysis/threads/:subjectType/:subjectId` | getThread | denied | denied | allowed | runtime-required | analysis.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/analysis/threads/:subjectType/:subjectId` | upsertThread | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/analysis/threads/:subjectType/:subjectId/comments` | createComment | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/analysis/views` | listViews | denied | denied | allowed | runtime-required | analysis.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/analysis/views` | createView | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/analysis/views/:id` | deleteView | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/analysis/views/:id` | getView | denied | denied | allowed | runtime-required | analysis.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PATCH | `/api/analysis/views/:id` | updateView | denied | denied | allowed | runtime-required | analysis.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/archive-preparation/status` | getStatus | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/archive-preparation` | resetSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/archive-preparation` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/archive-preparation` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/assistant-quota` | reset | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/assistant-quota` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/assistant-quota` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/assistant-safety` | reset | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/assistant-safety` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/assistant-safety` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/assistant-safety/diagnostics` | runDiagnostics | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/assistant-safety/metrics` | getMetrics | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/audit-log` | getRetention | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/audit-log` | updateRetention | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
+| GET | `/api/system-settings/auth-cache` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/auth-cache` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/auth/admin/invites` | listInvites | denied | denied | allowed | runtime-required | users.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/auth/admin/invites` | createInvite | denied | denied | allowed | runtime-required | users.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/auth/admin/invites/:id/resend` | resendInvite | denied | denied | allowed | runtime-required | users.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/auth/admin/invites/:id/revoke` | revokeInvite | denied | denied | allowed | runtime-required | users.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/auth/admin/oidc-config` | getOidcConfig | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/auth/admin/oidc-config` | updateOidcConfig | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/auth/admin/registration-applications` | listRegistrationApplications | denied | allowed | n/a | runtime-required | — | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
+| POST | `/api/auth/admin/registration-applications/:id/approve-join` | approveJoinApplication | denied | denied | allowed | runtime-required | users.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/auth/admin/registration-applications/:id/approve-org` | approveNewOrgApplication | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| POST | `/api/auth/admin/registration-applications/:id/reject-join` | rejectJoinApplication | denied | denied | allowed | runtime-required | users.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/auth/admin/registration-applications/:id/reject-org` | rejectNewOrgApplication | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| POST | `/api/auth/avatar/presigned-url` | createAvatarPresignedUrl | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| POST | `/api/auth/change-password` | changePassword | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| GET | `/api/auth/data-export` | exportUserData | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| GET | `/api/auth/invitations/:token` | getInvitation | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/auth/invitations/:token/accept` | acceptInvitation | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/auth/invitations/:token/accept-authenticated` | acceptInvitationAuthenticated | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| POST | `/api/auth/login` | login | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/auth/login-with-code` | loginWithCode | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/auth/logout` | logout | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| GET | `/api/auth/machine-tokens` | listMachineTokens | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/auth/machine-tokens` | createMachineToken | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/auth/machine-tokens/:tokenId` | revokeMachineToken | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/auth/machine-tokens/:tokenId/rotate` | rotateMachineToken | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/auth/me` | profile | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| GET | `/api/auth/mfa` | getMfaStatus | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| POST | `/api/auth/mfa/disable` | disableMfa | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| POST | `/api/auth/mfa/enroll` | beginMfaEnrollment | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| POST | `/api/auth/mfa/enrollment/complete` | completeMfaEnrollmentChallenge | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/auth/mfa/enrollment/start` | beginMfaEnrollmentChallenge | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/auth/mfa/recovery/rotate` | rotateRecoveryCodes | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| POST | `/api/auth/mfa/verify-enroll` | verifyMfaEnrollment | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| POST | `/api/auth/mfa/verify-login` | completeMfaLogin | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| GET | `/api/auth/oidc/callback` | handleOidcCallback | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/auth/password/forgot` | requestPasswordReset | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/auth/password/reset` | resetPassword | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| PATCH | `/api/auth/profile` | updateProfile | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| POST | `/api/auth/refresh` | refresh | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/auth/register/applications` | submitNewOrgApplication | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/auth/register/join-applications` | submitJoinOrgApplication | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/auth/send-login-code` | sendLoginCode | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/auth/send-verification` | sendVerification | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| POST | `/api/auth/sso/handoff/exchange` | exchangeHandoffToken | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| GET | `/api/auth/sso/oidc/start` | startOidcLogin | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/auth/verify-email` | verifyEmail | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| POST | `/api/admin/quality/classification/reports` | createReport | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/quality/classification/reports/:jobId` | reportJob | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/quality/classification/reviews/:reviewId/decision` | reviewDecision | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/quality/classification/reviews/batch` | batchReviewDecision | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/quality/classification/reviews/queue` | reviewQueue | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/quality/classification/sampling/annotations` | submitAnnotations | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/quality/classification/sampling/query` | createSample | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/quality/classification/sources/:sourceId/items` | sourceItems | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/quality/classification/summary` | summary | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/observability/exception-events/client` | report | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl4ai/quality` | getQualitySnapshot | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl4ai/quality/sources/:sourceId` | getSourceQualitySnapshot | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl4ai/queue` | getQueueStats | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl4ai/queue/concurrency` | updateQueueConcurrency | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl4ai/queue/pause` | pauseQueue | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl4ai/queue/resume` | resumeQueue | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/crawl-tasks` | list | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/crawl-tasks` | create | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/crawl-tasks/:id` | remove | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/crawl-tasks/:id` | detail | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/crawl-tasks/:id/retry` | retry | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/crawl-tasks/metadata` | extractMetadata | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/nodes/:id` | getNode | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl-frontier/nodes/:id/retry` | retryNode | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl-frontier/nodes/retry` | retryNodes | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/profiles` | listProfiles | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl-frontier/profiles` | createProfile | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/profiles/:id` | getProfile | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PATCH | `/api/admin/crawl-frontier/profiles/:id` | updateProfile | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl-frontier/profiles/:id/rollback/:version` | rollbackProfile | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/profiles/:id/versions` | listVersions | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/profiles/match` | matchProfile | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl-frontier/profiles/preview` | previewProfile | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/runs` | listRuns | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl-frontier/runs` | createRun | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/runs/:id` | getRun | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl-frontier/runs/:id/cancel` | cancelRun | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/runs/:id/workflow-candidates` | listRunWorkflowCandidates | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/runs/:id/workflow-candidates/:candidateId` | getRunWorkflowCandidateExplanation | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/runs/:id/workflow-run` | getRunWorkflowRun | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl-frontier/runs/cancel` | cancelRuns | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/crawl-media-assets/:assetId/:mode` | serveAsset | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| GET | `/api/admin/crawl-frontier/news-sources/:id/workflow-bridge` | getNewsSourceWorkflowBridge | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/profiles/:id/workflow-bridge` | getProfileWorkflowBridge | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/workflow-runs/:runId` | getRun | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/workflow-runs/:runId/candidates` | listRunCandidates | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/workflow-runs/:runId/candidates/:candidateId/explanation` | getCandidateExplanation | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl-frontier/workflow-runs/:runId/replay` | replayRun | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/workflow-versions/:versionId` | getVersion | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/workflows` | listWorkflows | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl-frontier/workflows` | createWorkflow | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/workflows/:id` | getWorkflow | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PATCH | `/api/admin/crawl-frontier/workflows/:id/draft` | updateDraft | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl-frontier/workflows/:id/publish` | publishWorkflow | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl-frontier/workflows/:id/trial-run` | trialRun | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/workflows/:id/versions` | listVersions | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl-frontier/workflows/compare` | compareVersions | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-frontier/workflows/node-schemas` | listNodeSchemas | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/crawl-templates` | list | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/crawl-templates` | create | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/admin/crawl-templates/:id` | remove | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PATCH | `/api/admin/crawl-templates/:id` | update | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/dashboard/financial-candlestick` | financialCandlestick | denied | denied | allowed | runtime-required | dashboards.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/dashboard/sector-heatmap` | sectorHeatmap | denied | denied | allowed | runtime-required | dashboards.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/dashboard/spacetime/geo-heatmap` | spacetimeGeoHeatmap | denied | denied | allowed | runtime-required | dashboards.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/dashboard/spacetime/geo-heatmap/articles` | spacetimeGeoHeatmapArticles | denied | denied | allowed | runtime-required | dashboards.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/dashboard/spacetime/propagation` | spacetimePropagation | denied | denied | allowed | runtime-required | dashboards.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/dashboard/spacetime/propagation/articles` | spacetimePropagationArticles | denied | denied | allowed | runtime-required | dashboards.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/dashboard/stats` | stats | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/dashboard/stream` | dashboardStream | denied | denied | allowed | runtime-required | dashboards.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/dashboard/war-map/events` | warMapEvents | denied | denied | allowed | runtime-required | dashboards.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/dashboard/war-map/geojson` | warMapGeoJson | denied | denied | allowed | runtime-required | dashboards.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/dashboard/war-map/layers` | warMapLayers | denied | denied | allowed | runtime-required | dashboards.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/dashboard/war-map/news-markers` | warMapNewsMarkers | denied | denied | allowed | runtime-required | dashboards.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/dashboard/war-map/transport-detail` | warMapTransportDetail | denied | denied | allowed | runtime-required | dashboards.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/email` | getStatus | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/email/auth-code` | updateAuthCodeSettings | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
+| POST | `/api/system-settings/email/test` | test | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/geo/geocode` | geocode | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/geo/nominatim` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/geo/nominatim` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/geo/nominatim/test` | test | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/healthz` | getHealth | denied | allowed | n/a | runtime-required | — | — | allowed | allowed | — | wrong-org-membership | static | — |
+| GET | `/api/healthz/live` | getLiveness | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/internal/observability/exception-events` | report | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | internal-token-guard | static | guards: LitellmInternalTokenGuard; public route with token guard (internal endpoint) |
+| GET | `/api/items` | list | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/items` | create | denied | denied | allowed | runtime-required | items.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/items/:id` | detail | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/llm-gateways` | list | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/llm-gateways` | create | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/llm-gateways/:id` | remove | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/llm-gateways/:id` | update | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/llm-gateways/:id/models` | listModels | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/llm-gateways/:id/proxy-health` | proxyHealth | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/llm-gateways/:id/proxy-lb-test` | proxyLoadBalancingTest | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/llm-gateways/:id/proxy-model-info` | proxyModelInfo | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/llm-gateways/:id/test` | test | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/llm-gateways/active` | setActive | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/llm-gateways/embedding-active` | setEmbeddingActive | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/llm-gateways/models-config` | listModelsConfig | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/llm-gateways/proxy-governance` | resetProxyGovernanceSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/llm-gateways/proxy-governance` | getProxyGovernanceSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/llm-gateways/proxy-governance` | updateProxyGovernanceSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/llm-gateways/proxy-governance/preflight` | preflightProxyGovernanceSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/llm-gateways/proxy-governance/rotate-key` | rotateProxyGovernanceKey | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/llm-gateways/proxy-load-balancing` | resetProxyLoadBalancingSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/llm-gateways/proxy-load-balancing` | getProxyLoadBalancingSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/llm-gateways/proxy-load-balancing` | updateProxyLoadBalancingSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/llm-gateways/rerank-active` | setRerankActive | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/llm-gateways/test-config` | testConfig | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/llm-logs` | list | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/llm-logs/export` | export | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/llm-logs/summary` | summary | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/llm-request-logs` | reset | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/llm-request-logs` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/llm-request-logs` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/llm-request-logs/metadata-policy/reset` | resetMetadataPolicy | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/metrics` | scrape | denied | denied | allowed | runtime-required | metrics.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/model-service` | reset | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/model-service` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/model-service` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/multi-tenant-schedulers` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/multi-tenant-schedulers` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/news-aggregator/domestic-opinion-index` | getDomesticOpinionIndex | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/news-aggregator/hottest-analysis` | getHottestAnalysis | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/news-aggregator/metadata` | getMetadata | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| GET | `/api/news-aggregator/recommended` | getRecommendedFeed | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/news-aggregator/resolve` | resolveByUrl | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| GET | `/api/news-aggregator/source` | getSource | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/news-aggregator/sources/batch` | getSourcesBatch | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| POST | `/api/news-aggregator/sources/order` | getPersonalizedSourcesOrder | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/news-events/clustering/failures` | listFailures | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/news-events/clustering/failures/:groupId/ignore` | ignoreFailure | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/news-events/clustering/failures/:groupId/llm-backfill` | llmBackfill | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/news-events/clustering/failures/:groupId/vector-backfill` | vectorBackfill | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/news-events/clustering/overview` | getOverview | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/news-events/clustering/readiness` | getReadiness | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/news-indicator/associations` | listAssociations | denied | denied | allowed | runtime-required | dashboards.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/news-indicator/associations/:id` | getAssociation | denied | denied | allowed | runtime-required | dashboards.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/news-indicator/refresh` | refresh | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/news-sources` | list | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/news-sources` | create | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/admin/news-sources/:id` | remove | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PATCH | `/api/admin/news-sources/:id` | update | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/news-sources/:id/preview` | preview | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/news-sources/:id/run` | run | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/news-sources/:id/schedule` | schedule | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/admin/news-sources/batch` | batchDelete | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PATCH | `/api/admin/news-sources/batch/active` | batchUpdateActive | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/news-sources/batch/frequency` | batchUpdateFrequency | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PATCH | `/api/admin/news-sources/batch/group` | batchUpdateGroup | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/news-sources/groups` | listGroups | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/news-sources/opml-presets` | listOpmlPresets | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/news-sources/opml/import` | importOpml | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/news-sources/opml/preview` | previewOpml | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/news-sources/options` | listOptions | denied | denied | allowed | runtime-required | crawl.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/news-sources/:id/dispatch` | dispatch | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/news-sources/:id/cancel-queued` | cancelQueued | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/news-sources/:id/clear-inflight` | clearInflight | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/news-sources/:id/retry-latest` | retryLatest | denied | denied | allowed | runtime-required | crawl.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/quality/news-sources` | summary | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/news-source-runtime-secrets` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/news-source-runtime-secrets` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/news-source-scheduler` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/news-source-scheduler` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/newsnow-personalization` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/newsnow-personalization` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/newsnow-personalization/metrics` | getRuntimeMetrics | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/internal/litellm/openai-keys` | getOpenAiKeys | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | internal-token-guard | static | guards: LitellmInternalTokenGuard; public route with token guard (internal endpoint) |
+| POST | `/api/internal/litellm/openai-keys/applied` | reportAppliedOpenAiKeys | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | internal-token-guard | static | guards: LitellmInternalTokenGuard; public route with token guard (internal endpoint) |
+| GET | `/api/internal/litellm/proxy-load-balancing` | getProxyLoadBalancingSnapshot | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | internal-token-guard | static | guards: LitellmInternalTokenGuard; public route with token guard (internal endpoint) |
+| DELETE | `/api/system-settings/openai-keys` | reset | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/openai-keys` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/openai-keys` | appendKeys | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/openai-keys` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/openai-keys/key/:fingerprint` | removeKey | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/quality/pipeline` | pipelineSummary | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/quality/pipeline/replay` | replay | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/quality/pipeline/rollback` | rollback | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/quality/pipeline/runs` | runs | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/public-portal/channels/:topic` | getChannel | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| GET | `/api/public-portal/home` | getHome | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| GET | `/api/public-portal/stories/id/:id` | getStoryById | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| GET | `/api/public-portal/stories/slug/:slug` | getStoryBySlug | allowed | n/a | n/a | n/a | — | — | allowed | allowed | — | — | static | — |
+| GET | `/api/admin/quality/overview` | getOverview | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/rate-limit-policies` | list | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/rate-limit-policies` | create | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/rate-limit-policies/:feature` | remove | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/rate-limit-policies/:feature` | get | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/rate-limit-policies/:feature` | update | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/rate-limits` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/rate-limits` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/rbac/assign` | assignRole | denied | denied | allowed | runtime-required | roles.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/rbac/audit-logs` | auditLogs | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/rbac/members` | members | denied | denied | allowed | runtime-required | users.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/rbac/permissions` | permissions | denied | denied | allowed | runtime-required | permissions.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/rbac/roles` | roles | denied | denied | allowed | runtime-required | roles.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/rbac/roles` | createRole | denied | denied | allowed | runtime-required | roles.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/realtime-signals/runtime` | getRuntimeDiagnostics | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/realtime-signals` | reset | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/realtime-signals` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/realtime-signals` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/rss-diagnostics/backfill-source-id` | backfillSourceId | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/rss-diagnostics/chain` | getChainSummary | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/rss-diagnostics/overview` | getOverview | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/rss-diagnostics/sources` | getSourceDetails | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/rss-translation/metrics` | getMetrics | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/search/reindex` | reindex | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/search/reindex/:jobId` | getReindexJob | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/search-telemetry/summary` | summary | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/search-telemetry` | record | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/situation-monitor/catalog` | catalog | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/situation-monitor/feedback` | recordFeedback | denied | denied | allowed | runtime-required | items.write | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/situation-monitor/insights` | insights | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/situation-monitor/live-hls-proxy-config` | liveHlsProxyConfig | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/situation-monitor/monitors` | listMonitors | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/situation-monitor/monitors` | createMonitor | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/situation-monitor/monitors/:id` | deleteMonitor | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PATCH | `/api/situation-monitor/monitors/:id` | updateMonitor | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/situation-monitor/monitors/preview` | previewMonitor | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/situation-monitor/oref-alerts` | orefAlerts | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/situation-monitor/oref-history` | orefHistory | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/situation-monitor/refresh` | refresh | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/situation-monitor/refresh-runs/:refreshId` | getRefreshRun | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/situation-monitor/telegram-feed` | telegramFeed | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/situation-monitor` | reset | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/situation-monitor` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/situation-monitor` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/situation-monitor/external-snapshot/refresh` | forceExternalSnapshotRefresh | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/situation-monitor/telegram-auth` | clearTelegramAuth | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/situation-monitor/telegram-auth/complete` | completeTelegramAuth | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/system-settings/situation-monitor/telegram-auth/start` | startTelegramAuth | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/settings/storage` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PATCH | `/api/admin/settings/storage` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/admin/settings/storage/test` | testConnection | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/system-settings/security` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/security` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/task-logs` | reset | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
+| GET | `/api/system-settings/task-logs` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/task-logs` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
+| GET | `/api/admin/quality/task-logs` | list | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/admin/quality/task-logs/summary` | summary | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/user-content-subscriptions` | list | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/user-content-subscriptions/batch-delete` | batchDelete | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/user-content-subscriptions/batch-upsert` | batchUpsert | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/user-content-subscriptions/catalog` | catalog | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/user-content-subscriptions/catalog/lookup` | lookup | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/user-content-subscriptions/recommendations` | recommendations | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/user-content-subscriptions/related-topics` | relatedTopics | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/user-digest` | getDigest | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/user-digest/delivery` | getDelivery | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/user-digest/delivery` | updateDelivery | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/user-digest/preference` | getPreference | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/user-digest/preference` | updatePreference | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| POST | `/api/user-news-behavior` | record | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/user-news-behavior/profile` | clearProfile | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/user-news-behavior/profile` | profile | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/user-settings/ui/newsnow` | getNewsnowUiSettings | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/user-settings/ui/newsnow` | updateNewsnowUiSettings | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/user-settings/ui/onboarding` | getOnboardingUiSettings | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/user-settings/ui/onboarding` | updateOnboardingUiSettings | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/user-settings/ui/rss-reader` | getRssReaderUiSettings | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/user-settings/ui/rss-reader` | updateRssReaderUiSettings | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/user-settings/ui/situation-monitor` | getSituationMonitorUiSettings | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/user-settings/ui/situation-monitor` | updateSituationMonitorUiSettings | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/user-settings/ui/spacetime-timeline` | getSpacetimeTimelineUiSettings | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/user-settings/ui/spacetime-timeline` | updateSpacetimeTimelineUiSettings | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| GET | `/api/user-settings/ui/war-map` | getWarMapUiSettings | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/user-settings/ui/war-map` | updateWarMapUiSettings | denied | denied | allowed | runtime-required | items.read | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/vector-service` | reset | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
+| GET | `/api/system-settings/vector-service` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/vector-service` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
+| GET | `/api/system-settings/vector-service/diagnostics` | getDiagnostics | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
 
 <!-- source anchor: every row carries source in the JSON artifact -->
