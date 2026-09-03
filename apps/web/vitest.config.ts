@@ -24,6 +24,8 @@ export default defineConfig({
         "app/(app)/components/page-container.tsx",
         "app/(app)/components/nav-mode.ts",
         "app/(app)/components/action-rail-routing.ts",
+        "app/(app)/components/navigation-model.ts",
+        "app/(app)/components/top-nav-density.ts",
       ],
       exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
       thresholds: {

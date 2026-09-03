@@ -1,249 +1,35 @@
 "use client";
 
-import {
-  AimOutlined,
-  ApartmentOutlined,
-  AppstoreOutlined,
-  BellOutlined,
-  BookOutlined,
-  ClusterOutlined,
-  DashboardOutlined,
-  EnvironmentOutlined,
-  ExclamationCircleOutlined,
-  FundOutlined,
-  FolderOpenOutlined,
-  GlobalOutlined,
-  HistoryOutlined,
-  ReadOutlined,
-  RobotOutlined,
-  SearchOutlined,
-  SettingOutlined,
-  RadarChartOutlined,
-  TagsOutlined,
-  UserOutlined,
-} from "@ant-design/icons";
 import { Tooltip } from "antd";
-import type { TFunction } from "i18next";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useSession } from "next-auth/react";
-import { useEffect, useMemo } from "react";
+import { Fragment, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { resolveActiveItemKey } from "./action-rail-routing";
 import { estimateRailContentHeight, type NavMode } from "./nav-mode";
-
-export interface ActionItem {
-  key: string;
-  icon: React.ReactNode;
-  label: string;
-  path?: string;
-}
-
-export interface ActionRailNavConfig {
-  mainNavItems: ActionItem[];
-  adminNavItems: ActionItem[];
-}
+import { navItemStateClass } from "./nav-item-state";
+import { useNavigation } from "./use-navigation";
 
 interface ActionRailProps {
   mode: NavMode;
   onContentHeightChange?: (height: number) => void;
 }
 
-// Shared between the desktop ActionRail and the mobile Drawer in TopNav.
-export function buildActionRailNavConfig(
-  t: TFunction,
-  permissions: readonly string[],
-): ActionRailNavConfig {
-  const canManageCrawl =
-    permissions.includes("crawl.read") || permissions.includes("crawl.write");
-  const canUseAssistant =
-    permissions.includes("assistant.read") ||
-    permissions.includes("assistant.run");
-  const canManageAdmin =
-    permissions.includes("settings.manage") ||
-    permissions.includes("org.write") ||
-    permissions.includes("users.write") ||
-    permissions.includes("crawl.read") ||
-    permissions.includes("crawl.write") ||
-    permissions.includes("dashboards.write") ||
-    permissions.includes("alerts.manage");
-  const canViewDashboards = permissions.includes("dashboards.read");
-  const canUseAnalysis = permissions.includes("analysis.read") || permissions.includes("analysis.write");
-
-  const mainNavItems: ActionItem[] = [
-    {
-      key: "/news-hub",
-      icon: <AppstoreOutlined />,
-      label: t("nav.main.newsHub"),
-      path: "/news-hub",
-    },
-    {
-      key: "/today",
-      icon: <ReadOutlined />,
-      label: t("nav.main.today"),
-      path: "/today",
-    },
-    {
-      key: "/newsnow",
-      icon: <GlobalOutlined />,
-      label: t("nav.main.newsnow"),
-      path: "/newsnow",
-    },
-    {
-      key: "/topics",
-      // 图标语义唯一化（FE-批2）：topics 用 Tags（news-hub 占 Appstore）。
-      icon: <TagsOutlined />,
-      label: t("nav.main.topics"),
-      path: "/topics",
-    },
-    {
-      key: "/events",
-      icon: <ClusterOutlined />,
-      label: t("nav.main.events"),
-      path: "/events",
-    },
-    {
-      key: "/events-archive",
-      icon: <HistoryOutlined />,
-      label: t("nav.main.eventsArchive"),
-      path: "/events-archive",
-    },
-    {
-      key: "/rss",
-      icon: <BookOutlined />,
-      label: t("nav.main.rss"),
-      path: "/rss",
-    },
-    {
-      key: "/situation-monitor",
-      icon: <RadarChartOutlined />,
-      label: t("nav.main.situationMonitor"),
-      path: "/situation-monitor",
-    },
-    {
-      key: "/map",
-      // 图标语义唯一化：map 用 Environment（newsnow 占 Global）。
-      icon: <EnvironmentOutlined />,
-      label: t("nav.main.map"),
-      path: "/map",
-    },
-    ...(canViewDashboards
-      ? [
-          {
-            key: "/knowledge-graph",
-            // 图标语义唯一化：knowledge-graph 用 Apartment（events 占 Cluster）。
-            icon: <ApartmentOutlined />,
-            label: t("nav.main.knowledgeGraph"),
-            path: "/knowledge-graph",
-          },
-        ]
-      : []),
-    {
-      key: "/finance",
-      icon: <FundOutlined />,
-      label: t("nav.main.finance"),
-      path: "/finance",
-    },
-    {
-      key: "/alerts",
-      icon: <ExclamationCircleOutlined />,
-      label: t("nav.main.alerts"),
-      path: "/alerts",
-    },
-    {
-      key: "/search",
-      icon: <SearchOutlined />,
-      label: t("nav.main.search"),
-      path: "/search",
-    },
-    ...(canUseAnalysis
-      ? [
-          {
-            key: "/analysis",
-            icon: <FolderOpenOutlined />,
-            label: t("nav.main.analysis"),
-            path: "/analysis",
-          },
-        ]
-      : []),
-  ];
-
-  if (canUseAssistant) {
-    mainNavItems.push({
-      key: "/assistant",
-      icon: <RobotOutlined />,
-      label: t("nav.main.assistant"),
-      path: "/assistant",
-    });
-  }
-
-  mainNavItems.push(
-    {
-      key: "/subscriptions",
-      icon: <BellOutlined />,
-      label: t("nav.main.subscriptions"),
-      path: "/subscriptions",
-    },
-    {
-      key: "/profile",
-      icon: <UserOutlined />,
-      label: t("nav.main.profile"),
-      path: "/profile",
-    },
-  );
-
-  const adminNavItems: ActionItem[] = [];
-  if (canViewDashboards) {
-    adminNavItems.push({
-      key: "/dashboard",
-      icon: <DashboardOutlined />,
-      label: t("nav.dashboard"),
-      path: "/dashboard",
-    });
-  }
-  if (canManageCrawl) {
-    adminNavItems.push({
-      key: "/admin/ops/crawl-tasks",
-      // 图标语义唯一化：crawl-tasks 用 Aim（situation-monitor 占 RadarChart）。
-      icon: <AimOutlined />,
-      label: t("nav.crawlTasks"),
-      path: "/admin/ops/crawl-tasks",
-    });
-  }
-  if (canManageAdmin) {
-    adminNavItems.push({
-      key: "/admin",
-      icon: <SettingOutlined />,
-      label: t("nav.admin"),
-      path: "/admin",
-    });
-  }
-
-  return { mainNavItems, adminNavItems };
-}
-
+/**
+ * 桌面导航 rail。导航数据与权限过滤来自 useNavigation（单一真源），
+ * 与移动 Drawer 共用同一份五组配置；rail 只负责「图标 + 组节奏」的
+ * 桌面呈现——组间用细分隔线，管理组带标题与上边界以示权限分区。
+ */
 export function ActionRail({ mode, onContentHeightChange }: ActionRailProps) {
   const { t } = useTranslation();
-  const pathname = usePathname();
-  const { data: session } = useSession();
-  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const { groups, activeKey } = useNavigation();
 
-  const { mainNavItems, adminNavItems } = useMemo(
-    () => buildActionRailNavConfig(t, permissions),
-    [permissions, t],
-  );
-  const allNavItems = useMemo(
-    () => [...mainNavItems, ...adminNavItems],
-    [adminNavItems, mainNavItems],
-  );
-  const activeKey = useMemo(
-    () => resolveActiveItemKey(pathname, allNavItems),
-    [allNavItems, pathname],
-  );
   const estimatedContentHeight = useMemo(
-    () => estimateRailContentHeight(mainNavItems.length, adminNavItems.length),
-    [adminNavItems.length, mainNavItems.length],
+    () =>
+      estimateRailContentHeight({
+        groupItemCounts: groups.map((group) => group.items.length),
+        hasTitledAdminGroup: groups.some((group) => group.id === "admin"),
+      }),
+    [groups],
   );
 
   useEffect(() => {
@@ -262,77 +48,63 @@ export function ActionRail({ mode, onContentHeightChange }: ActionRailProps) {
   return (
     <aside
       className={`
-        hidden md:flex flex-col h-full px-3 shrink-0 relative z-20 pointer-events-auto min-h-0
+        hidden md:flex flex-col h-full px-3 shrink-0 relative z-[var(--z-rail)] pointer-events-auto min-h-0
         ${isScrollable ? "justify-start" : "justify-center"}
       `}
     >
       <div
         className={`
-        flex flex-col items-center py-4 gap-2 w-[4.5rem]
-        glass-panel rounded-2xl border border-[var(--border)]
-        shadow-[0_10px_30px_rgba(15,23,42,0.08)]
+        flex flex-col items-center py-4 w-[var(--shell-rail-width)]
+        glass-panel rounded-2xl border border-[var(--border)] shadow-panel
         ${scrollableRailClass}
       `}
       >
-        {/* Main Navigation */}
-        <div className="flex flex-col gap-1.5 w-full px-2 pb-4 border-b border-white/5">
-          {mainNavItems.map((item) => {
-            const isActive = item.key === activeKey;
-            return (
-              <Tooltip key={item.key} title={item.label} placement="right">
-                <Link
-                  href={item.path ?? "#"}
-                  aria-label={item.label}
-                  aria-current={isActive ? "page" : undefined}
-                  className={`
-                    w-full h-11 flex items-center justify-center rounded-xl transition-all duration-150 select-none
-                    cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900
-                    active:scale-[0.97]
-                    ${
-                      isActive
-                        ? "bg-[var(--primary)] text-white shadow-sm"
-                        : "text-slate-500 dark:text-slate-400 hover:text-[var(--primary)] hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-700"
-                    }
-                  `}
-                >
-                  <span className="text-lg">{item.icon}</span>
-                </Link>
-              </Tooltip>
-            );
-          })}
-        </div>
-
-        {adminNavItems.length > 0 ? (
-          <div className="flex flex-col gap-1.5 w-full px-2 pt-3">
-            <span className="px-2 text-[10px] uppercase tracking-[0.2em] text-slate-400 whitespace-nowrap">
-              {t("nav.adminGroup")}
-            </span>
-            {adminNavItems.map((item) => {
-              const isActive = item.key === activeKey;
-              return (
-                <Tooltip key={item.key} title={item.label} placement="right">
-                  <Link
-                    href={item.path ?? "#"}
-                    aria-label={item.label}
-                    aria-current={isActive ? "page" : undefined}
-                    className={`
-                      w-full h-11 flex items-center justify-center rounded-xl transition-all duration-150 select-none
-                      cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900
-                      active:scale-[0.97]
-                      ${
-                        isActive
-                          ? "bg-[var(--primary)] text-white shadow-sm"
-                          : "text-slate-500 dark:text-slate-400 hover:text-[var(--primary)] hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-700"
-                      }
-                    `}
-                  >
-                    <span className="text-lg">{item.icon}</span>
-                  </Link>
-                </Tooltip>
-              );
-            })}
-          </div>
-        ) : null}
+        {groups.map((group, index) => {
+          const isAdminGroup = group.id === "admin";
+          return (
+            <Fragment key={group.id}>
+              {index > 0 && !isAdminGroup ? (
+                <div className="rail-group-divider" aria-hidden />
+              ) : null}
+              <section
+                aria-label={t(group.labelKey)}
+                className={`flex flex-col gap-[var(--rail-item-gap)] w-full px-2 ${
+                  isAdminGroup
+                    ? "mt-3 pt-3 border-t border-[var(--nav-divider-soft)]"
+                    : ""
+                }`}
+              >
+                {isAdminGroup ? (
+                  <span className="nav-group-label px-2 whitespace-nowrap">
+                    {t(group.labelKey)}
+                  </span>
+                ) : null}
+                {group.items.map((item) => {
+                  const isActive = item.key === activeKey;
+                  const label = t(item.labelKey);
+                  return (
+                    <Tooltip key={item.key} title={label} placement="right">
+                      <Link
+                        href={item.path}
+                        aria-label={label}
+                        aria-current={isActive ? "page" : undefined}
+                        className={`
+                          nav-item ${navItemStateClass(isActive)}
+                          flex h-[var(--rail-item-size)] w-full items-center justify-center
+                          rounded-[var(--rail-item-radius)] select-none cursor-pointer active:scale-[0.97]
+                        `}
+                      >
+                        <span className="text-lg" aria-hidden>
+                          <item.icon />
+                        </span>
+                      </Link>
+                    </Tooltip>
+                  );
+                })}
+              </section>
+            </Fragment>
+          );
+        })}
       </div>
     </aside>
   );

@@ -10,7 +10,7 @@ import {
   SwapOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { Button, Drawer, Dropdown, Popover, Skeleton } from "antd";
+import { Button, Dropdown, Popover, Skeleton } from "antd";
 import type { MenuProps } from "antd";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
@@ -23,11 +23,10 @@ import { captureClientError } from "@/lib/client-telemetry";
 import { changeLanguage } from "@/lib/i18n-client";
 import { createTraceHeaders } from "@/lib/trace";
 
-import { buildActionRailNavConfig } from "./action-rail";
-import { resolveActiveItemKey } from "./action-rail-routing";
 import { AvatarFallback } from "./avatar-fallback";
 import { CommandBar } from "./command-bar";
 import { LanguageSwitcher } from "./language-switcher";
+import { MobileNavDrawer } from "./mobile-nav-drawer";
 import { NotificationCenter } from "./notification-center";
 import { OrganizationSwitcher } from "./organization-switcher";
 import { SystemDefcon } from "./system-defcon";
@@ -42,7 +41,6 @@ import {
   upgradeDensityMode,
   type TopNavDensityMode,
 } from "./top-nav-density";
-import { navigateDrawerItem } from "./top-nav-drawer-navigation";
 import { UserUiSettingsSyncIndicator } from "./user-ui-settings-sync-indicator";
 
 const formatLabel = (value: string): string =>
@@ -182,18 +180,8 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
     []
   );
 
-  const { mainNavItems, adminNavItems } = useMemo(
-    () => buildActionRailNavConfig(t, permissions),
-    [permissions, t]
-  );
-  const allNavItems = useMemo(
-    () => [...mainNavItems, ...adminNavItems],
-    [adminNavItems, mainNavItems]
-  );
-  const activeKey = useMemo(
-    () => resolveActiveItemKey(pathname, allNavItems),
-    [allNavItems, pathname]
-  );
+  // 导航数据与活跃项改由 MobileNavDrawer 内部的 useNavigation 提供
+  // （与桌面 ActionRail 共用同一份五组模型）。
 
   const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
   const displayEmail = user?.email ?? "";
@@ -313,18 +301,8 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
     t,
   ]);
 
-  const handleDrawerNavigate = useCallback(
-    (path?: string) => {
-      navigateDrawerItem(path, {
-        push: (nextPath) => router.push(nextPath),
-        closeDrawer: () => setMobileNavOpen(false),
-      });
-    },
-    [router],
-  );
-
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 flex flex-col">
+    <div className="fixed top-0 left-0 right-0 z-[var(--z-top-nav)] flex flex-col">
       {/* Ticker Tape Layer */}
       <TickerTape />
 
@@ -514,75 +492,11 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
         </div>
       </header>
 
-      <Drawer
-        id="mobile-navigation-drawer"
-        title={t("nav.menu")}
-        placement="left"
-        width={320}
+      <MobileNavDrawer
         open={mobileNavOpen}
         onClose={() => setMobileNavOpen(false)}
-        destroyOnHidden
         className={drawerClassName}
-      >
-        <nav className="flex flex-col gap-6">
-          <div className="flex flex-col gap-1">
-            {mainNavItems.map((item) => {
-              const isActive = item.key === activeKey;
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => handleDrawerNavigate(item.path)}
-                  aria-label={item.label}
-                  aria-current={isActive ? "page" : undefined}
-                  className={`
-                    flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-all duration-200
-                    ${isActive
-                      ? "bg-[var(--primary)] text-white shadow-sm"
-                      : "text-slate-700 dark:text-slate-300 hover:text-[var(--primary)] hover:bg-slate-50 dark:hover:bg-slate-800"
-                    }
-                  `}
-                >
-                  <span className="text-lg">{item.icon}</span>
-                  <span className="font-medium">{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {adminNavItems.length > 0 ? (
-            <div className="pt-4 border-t border-[var(--border)] flex flex-col gap-2">
-              <span className="px-1 text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                {t("nav.adminGroup")}
-              </span>
-              <div className="flex flex-col gap-1">
-                {adminNavItems.map((item) => {
-                  const isActive = item.key === activeKey;
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => handleDrawerNavigate(item.path)}
-                      aria-label={item.label}
-                      aria-current={isActive ? "page" : undefined}
-                      className={`
-                        flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-all duration-200
-                        ${isActive
-                          ? "bg-[var(--primary)] text-white shadow-sm"
-                          : "text-slate-700 dark:text-slate-300 hover:text-[var(--primary)] hover:bg-slate-50 dark:hover:bg-slate-800"
-                        }
-                      `}
-                    >
-                      <span className="text-lg">{item.icon}</span>
-                      <span className="font-medium">{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </nav>
-      </Drawer>
+      />
     </div>
   );
 }

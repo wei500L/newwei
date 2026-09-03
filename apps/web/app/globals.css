@@ -16,6 +16,29 @@
   --top-nav-height: 4rem; /* h-16 */
   --ticker-height: 2rem; /* h-8, TickerTape height */
 
+  /* ===== App Shell 导航 token（FE-批2 IA 重构）=====
+     分层：primitive（--background/--primary/--secondary/--border）→
+     semantic（nav 状态色）→ component（rail/drawer 尺寸）。
+     值与迁移前一致（hover 面恰为 --secondary：light=slate-100、dark=slate-800），
+     收敛本身零视觉变化。nav-mode.ts 的度量常量与这里的尺寸保持同步。 */
+  --shell-rail-width: 4.5rem;      /* 桌面导航 rail 宽度 */
+  --rail-item-size: 2.75rem;       /* 导航项高（h-11，≥44px 触控目标），rail/drawer 共用 */
+  --rail-item-gap: 0.375rem;       /* rail 组内项间距（gap-1.5） */
+  --rail-item-radius: 0.75rem;     /* 导航项圆角（rounded-xl） */
+  --nav-drawer-width: 20rem;       /* 移动导航 Drawer 宽度（320px） */
+  --nav-item-fg: #64748b;          /* slate-500：rail 次级图标 */
+  --nav-item-strong-fg: #334155;   /* slate-700：drawer 行文字（正文对比度） */
+  --nav-item-hover-fg: var(--primary);
+  --nav-item-hover-bg: var(--secondary);
+  --nav-item-active-bg: var(--primary);
+  --nav-item-active-fg: var(--primary-foreground);
+  --nav-group-label-fg: #94a3b8;   /* slate-400：分组小标题（装饰性小字） */
+  --nav-divider-soft: rgba(148, 163, 184, 0.35); /* 组间细分隔线 */
+  --z-top-nav: 50;                 /* 固定顶部栏 */
+  --z-rail: 20;                    /* 桌面 rail */
+  --z-content: 0;                  /* 主内容区 */
+  --nav-motion-fast: 150ms;        /* 导航项状态过渡 */
+
   --background: #f7f6f2;
   --foreground: #1f2933;
 
@@ -120,6 +143,11 @@
   --auth-card-border: rgba(100, 116, 139, 0.48);
   --auth-card-shadow:
     0 18px 42px rgba(2, 6, 23, 0.56), 0 0 0 1px rgba(148, 163, 184, 0.08);
+
+  /* App Shell 导航（FE-批2）暗色覆盖：尺寸 token 不变，仅状态色换暗色值。
+     hover/active 面引用 --secondary/--primary，随主题自动切换。 */
+  --nav-item-fg: #94a3b8;          /* slate-400 */
+  --nav-item-strong-fg: #cbd5e1;   /* slate-300 */
 }
 
 @layer base {
@@ -207,6 +235,55 @@
       0 12px 28px rgba(15, 23, 42, 0.04),
       0 24px 48px rgba(15, 23, 42, 0.03);
     border-radius: var(--radius-lg);
+  }
+
+  /* ===== App Shell 导航组件类（FE-批2 IA 重构）=====
+     ActionRail 与移动 Drawer 共用的交互状态语义；尺寸/颜色走上方
+     nav token，组件内不再散落任意 Tailwind 状态值。焦点环沿用全局
+     :focus-visible（primary outline），动效时长 --nav-motion-fast，
+     prefers-reduced-motion 由文件末尾的全局规则统一降级。 */
+  .nav-item {
+    transition: all var(--nav-motion-fast) ease;
+  }
+
+  .nav-item--active {
+    background: var(--nav-item-active-bg);
+    color: var(--nav-item-active-fg);
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  }
+
+  .nav-item--idle {
+    color: var(--nav-item-fg);
+  }
+
+  .nav-item--idle:hover {
+    background: var(--nav-item-hover-bg);
+    color: var(--nav-item-hover-fg);
+  }
+
+  .nav-item--idle-strong {
+    color: var(--nav-item-strong-fg);
+  }
+
+  .nav-item--idle-strong:hover {
+    background: var(--nav-item-hover-bg);
+    color: var(--nav-item-hover-fg);
+  }
+
+  /* 分组小标题：rail 管理组标签 + drawer 组标题（装饰性小字，短文案） */
+  .nav-group-label {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--nav-group-label-fg);
+  }
+
+  /* rail 组间细分隔线（克制节奏，不承载语义；管理组边界用边线 + 标题区分） */
+  .rail-group-divider {
+    margin: 8px 0;
+    height: 1px;
+    width: 2rem;
+    background: var(--nav-divider-soft);
   }
 
   .sm-panel-card {
