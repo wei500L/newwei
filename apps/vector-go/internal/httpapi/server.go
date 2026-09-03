@@ -76,7 +76,10 @@ func handleUpsert(client *qdrant.Client) http.HandlerFunc {
 			writeInternalError(w)
 			return
 		}
-		writeJSON(w, http.StatusOK, result)
+		// NestJS @Post 默认 201（契约事实源）——Go 侧对齐，调用方
+		// （packages/vector-client 的 response.ok 检查两者皆可，但契约
+		// 快照以 NestJS 为准）。
+		writeJSON(w, http.StatusCreated, result)
 	}
 }
 
@@ -118,7 +121,8 @@ func handleSearch(client *qdrant.Client) http.HandlerFunc {
 			writeInternalError(w)
 			return
 		}
-		writeJSON(w, http.StatusOK, result)
+		// 同 upsert：NestJS @Post 默认 201。
+		writeJSON(w, http.StatusCreated, result)
 	}
 }
 

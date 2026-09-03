@@ -141,7 +141,6 @@ describe.skipIf(!INTEGRATION_ENABLED)("vector NestJS vs Go contract diff (real Q
 
   it("upsert with invalid body returns identical NestJS-shaped 400", async () => {
     const invalid = [
-      "not-json-will-fail-zod",
       { orgId: "", embeddingModel: MODEL, points: [] },
       { orgId: ORG, embeddingModel: MODEL, points: [{ processedItemId: "" }] },
     ];
@@ -153,10 +152,23 @@ describe.skipIf(!INTEGRATION_ENABLED)("vector NestJS vs Go contract diff (real Q
       });
       expect(result.nestjs.status).toBe(400);
       expect(result.go.status).toBe(400);
-      // 错误体形状（statusCode/message/error）一致；message 文本一致
-      //（'Invalid upsert request'）。
+      // JSON 体无法被 zod/validate 接受时两侧均给出稳定 message。
       expect(result.go.body).toEqual(result.nestjs.body);
     }
+    // 非 JSON 原文：NestJS 由 Express JSON 解析器直接 400（message 为
+    // 解析器原文，Node 版本相关）；Go 返回稳定的 'Invalid upsert request'。
+    // 契约结论：两侧均 400 + 同形状（statusCode/message/error 三键）；
+    // message 文本在该输入下不逐字对齐——已登记为已知差异（部署方
+    // 不应依赖 Express 解析器错误文案）。
+    const malformed = await dualRequest("/v1/upsert", {
+      method: "POST",
+      body: "not-json-will-fail-zod",
+      token: INTERNAL_TOKEN,
+    });
+    expect(malformed.nestjs.status).toBe(400);
+    expect(malformed.go.status).toBe(400);
+    expectNestErrorShape(malformed.nestjs.body);
+    expectNestErrorShape(malformed.go.body);
   });
 
   it("upsert accepts empty points array identically (no Qdrant write)", async () => {
@@ -165,12 +177,12 @@ describe.skipIf(!INTEGRATION_ENABLED)("vector NestJS vs Go contract diff (real Q
       body: { orgId: ORG, embeddingModel: MODEL, points: [] },
       token: INTERNAL_TOKEN,
     });
-    expect(result.nestjs.status).toBe(200);
-    expect(result.go.status).toBe(200);
+    expect(result.nestjs.status).toBe(201);
+    expect(result.go.status).toBe(201);
     // 两侧空 points 均跳过 Qdrant：collection 字段仍返回（命名一致）。
     expect(result.go.body).toEqual(result.nestjs.body);
     expect((result.go.body as { collection: string }).collection).toContain(
-      "processed_item_summary",
+      "integration_processed",
     );
   });
 
@@ -214,15 +226,15 @@ describe.skipIf(!INTEGRATION_ENABLED)("vector NestJS vs Go contract diff (real Q
     const body = { orgId: ORG, embeddingModel: MODEL, points: [point] };
 
     const nestjsResult = await dualRequest("/v1/upsert", { method: "POST", body, token: INTERNAL_TOKEN });
-    expect(nestjsResult.nestjs.status).toBe(200);
-    expect(nestjsResult.go.status).toBe(200);
+    expect(nestjsResult.nestjs.status).toBe(201);
+    expect(nestjsResult.go.status).toBe(201);
 
     const nestjsBody = nestjsResult.nestjs.body as { upserted: number; collection: string };
     const goBody = nestjsResult.go.body as { upserted: number; collection: string };
     expect(goBody.upserted).toBe(nestjsBody.upserted);
     expect(goBody.collection).toBe(nestjsBody.collection);
     // 集合命名：{prefix}_{sha256(model)[:16]}。
-    expect(nestjsBody.collection).toMatch(/^processed_item_summary_[0-9a-f]{16}$/);
+    expect(nestjsBody.collection).toMatch(/^integration_processed_[0-9a-f]{16}$/);
   });
 
   it("search returns identical results for shared data (orgId filter + score ordering)", async () => {
@@ -238,8 +250,8 @@ describe.skipIf(!INTEGRATION_ENABLED)("vector NestJS vs Go contract diff (real Q
         body: { orgId: ORG, embeddingModel: MODEL, points: [point] },
         token: INTERNAL_TOKEN,
       });
-      expect(result.nestjs.status).toBe(200);
-      expect(result.go.status).toBe(200);
+      expect(result.nestjs.status).toBe(201);
+      expect(result.go.status).toBe(201);
     }
 
     const search = await dualRequest("/v1/search", {
@@ -247,8 +259,8 @@ describe.skipIf(!INTEGRATION_ENABLED)("vector NestJS vs Go contract diff (real Q
       body: { orgId: ORG, embeddingModel: MODEL, vector: [1, 0, 0], limit: 10 },
       token: INTERNAL_TOKEN,
     });
-    expect(search.nestjs.status).toBe(200);
-    expect(search.go.status).toBe(200);
+    expect(search.nestjs.status).toBe(201);
+    expect(search.go.status).toBe(201);
 
     const nestjsBody = search.nestjs.body as { collection: string; matches: unknown[] };
     const goBody = search.go.body as { collection: string; matches: unknown[] };
@@ -269,8 +281,8 @@ describe.skipIf(!INTEGRATION_ENABLED)("vector NestJS vs Go contract diff (real Q
       body: { orgId: "org-nonexistent-tenant", embeddingModel: MODEL, vector: [1, 0, 0], limit: 5 },
       token: INTERNAL_TOKEN,
     });
-    expect(result.nestjs.status).toBe(200);
-    expect(result.go.status).toBe(200);
+    expect(result.nestjs.status).toBe(201);
+    expect(result.go.status).toBe(201);
     const nestjsBody = result.nestjs.body as { matches: unknown[] };
     const goBody = result.go.body as { matches: unknown[] };
     expect(nestjsBody.matches).toEqual([]);
@@ -284,8 +296,8 @@ describe.skipIf(!INTEGRATION_ENABLED)("vector NestJS vs Go contract diff (real Q
       body: { orgId: ORG, embeddingModel: MODEL, vector: [1, 0, 0], limit: 9999 },
       token: INTERNAL_TOKEN,
     });
-    expect(oversized.nestjs.status).toBe(200);
-    expect(oversized.go.status).toBe(200);
+    expect(oversized.nestjs.status).toBe(201);
+    expect(oversized.go.status).toBe(201);
 
     const invalid = await dualRequest("/v1/search", {
       method: "POST",
@@ -329,8 +341,8 @@ describe.skipIf(!INTEGRATION_ENABLED)("vector NestJS vs Go contract diff (real Q
       },
       token: INTERNAL_TOKEN,
     });
-    expect(result.nestjs.status).toBe(200);
-    expect(result.go.status).toBe(200);
+    expect(result.nestjs.status).toBe(201);
+    expect(result.go.status).toBe(201);
 
     // 回读校验：search lookback 覆盖该时间戳。
     const search = await dualRequest("/v1/search", {

@@ -68,7 +68,7 @@
 
 ### 1.2 无 REST controller 的模块
 
-org、alerts、vector（org/alerts 为 GraphQL-only；vector 的 REST 面在独立 `apps/vector`：`POST /v1/upsert`、`POST /v1/search`、`GET /healthz`，`InternalAuthGuard` 校验 `x-internal-token`，`apps/vector/src/modules/vector/vector.controller.ts:28-48`；api 侧另有 system-settings/vector-service 管理面）
+org、alerts、vector（org/alerts 为 GraphQL-only；vector 的 REST 面在独立 `apps/vector`：`POST /v1/upsert`、`POST /v1/search`（**成功状态码 201**——NestJS @Post 默认，2026-09-03 远端差分实测确认并同步进 vector-go）、`GET /healthz`，`InternalAuthGuard` 校验 `x-internal-token`，`apps/vector/src/modules/vector/vector.controller.ts:28-48`；api 侧另有 system-settings/vector-service 管理面——PUT/DELETE 自本轮起仅平台管理员，SEC-01）
 
 ### 1.3 rbac（6 个，`modules/rbac/rbac.controller.ts`）
 

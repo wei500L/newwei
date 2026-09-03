@@ -244,6 +244,21 @@ export class QdrantService {
       this.env.qdrantTimeoutMs,
     );
     if (!created.ok) {
+      if (created.status === 409) {
+        // Concurrent creation (another instance/implementation created the
+        // same collection first — TS and Go versions share collection naming
+        // and may run in parallel during the Strangler Fig pilot). The
+        // collection exists now: re-check its vector size instead of failing.
+        const recheck = await fetchJson<QdrantResponse<{
+          config?: { params?: { vectors?: { size?: unknown } } };
+        }>>(url, { method: 'GET', headers: this.qdrantHeaders() }, this.env.qdrantTimeoutMs);
+        const recheckSize = recheck.data?.result?.config?.params?.vectors?.size;
+        if (recheck.ok && typeof recheckSize === 'number' && recheckSize === vectorSize) {
+          const result: EnsureCollectionResult = { name, vectorSize };
+          this.collectionCache.set(name, result);
+          return result;
+        }
+      }
       throw new Error(`Qdrant collection create failed with status ${created.status}`);
     }
 

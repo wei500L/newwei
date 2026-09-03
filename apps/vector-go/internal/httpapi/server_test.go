@@ -107,8 +107,8 @@ func TestHealthzIsPublic(t *testing.T) {
 		t.Fatalf("GET /healthz: %v", err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", response.StatusCode)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (NestJS @Post 默认)", response.StatusCode)
 	}
 	var body map[string]bool
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil || !body["ok"] {
@@ -159,8 +159,8 @@ func TestInternalTokenGuardAccepts(t *testing.T) {
 	response, _ := postJSON(t, api.URL+"/v1/search",
 		map[string]string{"x-internal-token": testToken},
 		map[string]any{"orgId": "org-1", "embeddingModel": "m", "vector": []float64{0.1, 0.2}})
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (guard passed, search executed)", response.StatusCode)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (guard passed, search executed)", response.StatusCode)
 	}
 }
 
@@ -239,8 +239,8 @@ func TestSearchLimitSemantics(t *testing.T) {
 	for _, limit := range []int{1, 8, 500} {
 		response, text := postJSON(t, api.URL+"/v1/search", tokenHeader,
 			map[string]any{"orgId": "org-1", "embeddingModel": "m", "vector": []float64{0.1, 0.2}, "limit": limit})
-		if response.StatusCode != http.StatusOK {
-			t.Fatalf("limit=%d: status = %d, want 200 (%s)", limit, response.StatusCode, text)
+		if response.StatusCode != http.StatusCreated {
+			t.Fatalf("limit=%d: status = %d, want 201 (%s)", limit, response.StatusCode, text)
 		}
 		var sent struct {
 			Limit int `json:"limit"`
@@ -256,8 +256,8 @@ func TestSearchLimitSemantics(t *testing.T) {
 	// 缺省 → 50。
 	response, text := postJSON(t, api.URL+"/v1/search", tokenHeader,
 		map[string]any{"orgId": "org-1", "embeddingModel": "m", "vector": []float64{0.1, 0.2}})
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("no limit: status = %d, want 200 (%s)", response.StatusCode, text)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("no limit: status = %d, want 201 (%s)", response.StatusCode, text)
 	}
 	var sent struct {
 		Limit int `json:"limit"`
@@ -281,8 +281,8 @@ func TestUpsertResponseShape(t *testing.T) {
 				{"processedItemId": "p1", "itemMetaId": "m1", "createdAtMs": 5, "vector": []float64{0.3, 0.4}},
 			},
 		})
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (%s)", response.StatusCode, text)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (%s)", response.StatusCode, text)
 	}
 	var parsed struct {
 		Upserted   int    `json:"upserted"`

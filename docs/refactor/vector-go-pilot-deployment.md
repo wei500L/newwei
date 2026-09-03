@@ -54,8 +54,26 @@ CI `vector-integration` job（`.github/workflows/ci.yml`）：
 | 错误输入 | 非 JSON/空 orgId/空 id/limit=0/维度不一致 |
 | Qdrant 不可用 | 两侧 5xx 行为（由单测层镜像覆盖；集成 job 中 Qdrant 常在，断网场景不在该 job） |
 
-## 5. 尚未验证项（诚实登记）
+## 5. 远端集成发现的真实契约事实（run 33743840248 差分结果）
+
+差分测试不是摆设——首跑就暴露了三个此前单测层未发现的契约事实：
+
+1. **POST 成功状态码是 201 而非 200**：NestJS `@Post` 默认 201（upsert 与 search 都是）。
+   vector-go 此前返回 200——已对齐为 201（调用方 packages/vector-client 的
+   response.ok 检查两者皆可，但契约以 NestJS 为准）。契约清单 §1.2 相应更新。
+2. **并发集合创建的 409 竞态**：两侧共用同一 Qdrant 集合命名，首次 upsert 时
+   两个实现的 ensureCollection 并发创建同一 collection → 后到者收到 409 并
+   抛 500。这是 Strangler Fig 并行部署形态下的**常态**而非异常——两侧实现
+   （TS qdrant.service.ts + Go qdrant/client.go）均已补 409 → 重新 GET 校验
+   维度的处理。
+3. **非 JSON 请求体的 400 message 不逐字对齐**：NestJS 由 Express JSON 解析器
+   直接 400（message 为解析器原文，Node 版本相关）；Go 返回稳定的
+   'Invalid upsert request'。契约结论：两侧均 400 + 同形状（statusCode/
+   message/error 三键）；message 文本差异登记为已知项（部署方不应依赖
+   Express 解析器错误文案）。
+
+## 6. 尚未验证项（诚实登记）
 
 - 本机无 Docker：compose `go-pilot` profile 与 Dockerfile **未经本机构建/启动**
-- CI 首跑前：`vector-integration` job 的运行结果未知（本文件随 PR 提交，CI 结果以 Actions run 为准）
+- CI 首跑后仍有待验证项以最新 Actions run 为准（409/201 修复后的复跑）
 - distroless 镜像在目标部署环境的拉取可达性（`gcr.io/distroless/static-debian12`）——受限网络部署可用 `golang:1.27-alpine` 重打或走内部镜像仓库
