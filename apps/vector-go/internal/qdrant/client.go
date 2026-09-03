@@ -358,7 +358,7 @@ func (c *Client) ensureCollection(ctx context.Context, embeddingModel string, ve
 		if errors.As(err, &createStatusErr) && createStatusErr.status == http.StatusConflict {
 			var existing qdrantResponse[qdrantCollectionInfo]
 			if recheckErr := c.doJSON(ctx, http.MethodGet, endpoint, nil, &existing); recheckErr == nil {
-				if existing.Result != nil && existing.Result.Config != nil && existing.Result.Params != nil &&
+				if existing.Result != nil && existing.Result.Config != nil && existing.Result.Config.Params != nil &&
 					existing.Result.Config.Params.Vectors != nil && existing.Result.Config.Params.Vectors.Size != nil &&
 					*existing.Result.Config.Params.Vectors.Size == vectorSize {
 					result := collectionInfo{name: name, vectorSize: vectorSize}
