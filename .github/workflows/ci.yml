@@ -149,8 +149,8 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter db run prisma:generate
 
-      - name: Build vector (NestJS)
-        run: pnpm --filter @modular/vector run build
+      - name: Build workspace deps (utils) + vector (NestJS)
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/vector --filter=@modular/utils
 
       - name: Build vector-go binary
         run: cd apps/vector-go && go build -o /tmp/vector-go-bin ./main.go
