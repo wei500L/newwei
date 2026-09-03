@@ -18,13 +18,21 @@
 | **main CI 首次全绿** | ✅ | GitHub Actions run 33729250187 success |
 | codegen drift CI 门禁 | ✅ | ci.yml |
 
-## M2 契约保护网 + Go 骨架（下一里程碑，本轮后续任务）
+## M2 契约保护网 + Go 骨架 —— 🔶 进行中（2026-09-03 起步）
 
-1. **契约快照落地**：OpenAPI 导出 + `apps/api/schema.gql` 冻结 diff 进 CI（`tests/contract/`）
-2. **鉴权矩阵生成**：由 api-contract-inventory §1 生成 369 端点 × 4 态断言表；先以 NestJS 自身为被测对象跑通（自证矩阵正确），Go 上线后复用
-3. **`apps/api-go/` 骨架**：cmd/api + platform（httpx/authn/authz/config）+ legacyproxy 全量兜底 + 四态路由表（legacy 默认）；`migrations/README.md` 声明禁改 schema
-4. **vector Go 重写试点**（迁移序 1）：3 端点 + x-internal-token（常量时间比较，顺修 SEC-04）+ orgId 推导（顺修 SEC-02 语义）+ 差分测试 + 回滚开关（env 切换 vector 上游）
-5. 验收：Go 骨架 shadow 模式下 health/public-portal 请求差分 0 失败；vector Go 版通过全部契约用例
+| 项 | 状态 |
+|---|---|
+| 3. `apps/api-go/` 骨架：legacyproxy 全量兜底 + 四态路由表 + trace 中间件 + `/__go/healthz` 自省 | ✅ 首版落地（纯标准库；7 组网关行为测试 + 真进程冒烟：路径/查询/头原样代理、go 路由不触达上游、502 fail-safe、trace 透传） |
+| 4. vector Go 重写试点 | ✅ 首版落地（`apps/vector-go/`：3 端点契约等价、30 个行为测试镜像 NestJS 11 用例、常量时间 token 比较；真进程冒烟通过）。**部署切换与 Docker 接线待做**（回滚开关 = vector 服务 baseUrl 配置，见 main.go 头注） |
+| Go 工具链接入 CI（setup-go + build filter + 独立 test 步骤） | ✅ |
+| 1. 契约快照落地：OpenAPI 导出 + schema.gql 冻结 diff 进 CI | ⬜ |
+| 2. 鉴权矩阵生成（369 端点 × 4 态） | ⬜ |
+
+余项（按序）：
+1. OpenAPI 快照导出脚本 + CI diff 步骤
+2. 鉴权矩阵生成脚本（读 controller 装饰器元数据 → JSON 断言表）
+3. vector-go 的 Docker/compose 接线（profile `go-pilot`，需 Docker 环境验证）与 shadow 差分联调
+4. 验收：Go 骨架 shadow 模式下 health/public-portal 请求差分 0 失败；vector Go 版通过全部契约用例（单测层已过，联调待部署面）
 
 ## M3 安全修复批次（与 M2 并行，纯 NestJS 侧）
 
@@ -73,9 +81,9 @@
 4. 未运行验证的项显式标「未运行」，禁止「应该没问题」
 5. 回滚方式先于实施写进每个 PR 描述
 
-## 立即可做的下一轮最小任务（M2 起步）
+## 立即可做的下一轮最小任务（M2 余项）
 
 1. OpenAPI 快照导出脚本 + CI diff 步骤
 2. 鉴权矩阵生成脚本（读 controller 装饰器元数据 → JSON 断言表）
-3. apps/api-go 骨架（legacyproxy 兜底 + healthz 端点 + Dockerfile）
-4. vector Go 实现契约用例（先写测试）
+3. vector-go Dockerfile + compose `go-pilot` profile 接线（需 Docker 环境验证）+ shadow 差分联调
+4. api-go 首个真实迁移单元：health/public-portal 只读端点（shadow 模式起步）

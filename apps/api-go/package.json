@@ -1,0 +1,11 @@
+{
+  "name": "@modular/api-go",
+  "version": "0.1.0",
+  "private": true,
+  "description": "主后端 Go 网关骨架（Strangler Fig：默认反向代理 apps/api，逐路由迁移）",
+  "scripts": {
+    "build": "go build ./...",
+    "test": "go test ./...",
+    "lint": "go vet ./..."
+  }
+}

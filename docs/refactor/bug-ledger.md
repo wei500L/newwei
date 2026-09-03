@@ -36,9 +36,9 @@
 | BL-09 | P0 | api 32 处潜伏 lint 错误（turbo 取消效应掩盖） | ✅ | 0aef412c |
 | API-01 | P1 | onboarding 端点缺权限元数据，引导状态永不保存 | 🔧 | edf0c8cf |
 | SEC-01 | **P0** | 任意 org 管理员可改**全局** vector 服务配置（token 外泄链） | ⬜ | — |
-| SEC-02 | P1 | vector 服务信任请求体 orgId（跨租户读写前提） | ⬜ | — |
+| SEC-02 | P1 | vector 服务信任请求体 orgId（跨租户读写前提） | 👁 | — |
 | SEC-03 | P2 | /api/metrics 全局数据未按 org 过滤 | ⬜ | — |
-| SEC-04 | P2 | vector 内部 token 非常量时间比较 | ⬜ | — |
+| SEC-04 | P2 | vector 内部 token 非常量时间比较 | ✅ | 见 §4 |
 | BAPI-01 | P2 | GraphQL 列表无分页（全量返回） | ⬜ | — |
 | FE-01 | P2 | alert-center 过滤器不入 URL（与全局模式不一致） | ⬜ | — |
 | FE-02 | P2 | 死代码：zustand store/sidebar.ts | ⬜ | — |
@@ -116,12 +116,12 @@
 - **修复方向**（下轮）：vector 服务配置属于平台级设置——改为平台管理员专用（platformAccess），或全局设置与 per-org 设置分离；同时评估 baseUrl 变更的网络白名单。
 - **回归验证点**：非平台管理员的 settings.manage 持有者 PUT → 403；合法调用方不受影响。
 
-### SEC-02 vector 服务信任请求体 orgId — ⬜ P1【勘察报告】
+### SEC-02 vector 服务信任请求体 orgId — 👁 观察项【勘察报告】
 
 - **流程**：F2。**用户影响**：持内部 token 的调用方可指定任意 orgId 读写该 org 向量（多租户边界依赖上游自觉）。
 - **证据**：`apps/vector/src/modules/vector/vector.controller.ts`（orgId 取自 body，Qdrant filter.must[0]）；audit-report BoundaryContract 项开放中。
-- **修复方向**：与 Go 迁移试点一并处理——Go 版 vector 服务内部署 mTLS 或按调用方身份推导 orgId 的接口约定。
-- **注**：当前唯一调用方 api 服务端推导 orgId，**现实风险 = SEC-01 的后置条件**。
+- **决策记录（2026-09-03）**：Go 试点（apps/vector-go）保持同构——orgId 仍来自请求体，因为该服务的定位是**内部信任边界后的纯执行器**（调用方仅 apps/api，orgId 由其服务端推导）。真正的修复点在 SEC-01（防止外部因素劫持调用链）。若未来出现第二调用方，需引入按调用方身份推导 orgId 的接口约定。
+- **注**：现实风险 = SEC-01 的后置条件；SEC-01 关闭后此项降级为架构约束记录。
 
 ### SEC-03 /api/metrics 未按 org 过滤 — ⬜ P2【勘察报告】
 
@@ -129,10 +129,11 @@
 - **证据**：`modules/observability/` metrics 端点（metrics.read）返回全局聚合。
 - **修复方向**：明确该端点定位（平台级 → 收紧权限；org 级 → 按 orgId 过滤）；迁移保护网中列入鉴权矩阵。
 
-### SEC-04 vector 内部 token 非常量时间比较 — ⬜ P2【勘察报告】
+### SEC-04 vector 内部 token 非常量时间比较 — ✅ 已修复【已复核】
 
 - **证据**：`apps/vector/src/modules/internal-auth/internal-auth.guard.ts:22-29`（`===` 比较）；对照：litellm guard 用 `crypto.timingSafeEqual`（`common/internal-token.ts`）。
-- **修复方向**：对齐 litellm 先例；Go 试点中直接以常量时间比较实现。
+- **修复**：NestJS 版（`internal-auth.guard.ts`）与 Go 试点（`apps/vector-go/internal/httpapi/server.go` 的 `requireInternalToken`，`crypto/subtle.ConstantTimeCompare`）均已改为常量时间比较。**回归验证**：vector 11/11 测试 + vector-go 行为测试全过；lint/typecheck/build 绿。
+- **注**：长度不同的短路（先比 byteLength）是可接受泄漏——token 长度由部署方控制。
 
 ### BAPI-01 GraphQL 列表无分页 — ⬜ P2【已复核】
 

@@ -42,6 +42,15 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      # Go 工具链供 @modular/api-go / @modular/vector-go 的 lint/test/build 脚本使用；
+      # 版本以 apps/api-go/go.mod 为准（apps/vector-go/go.mod 需保持一致）。
+      # 两个 Go 模块均为纯标准库、无 go.sum，无需模块缓存。
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api-go/go.mod
+          cache: false
+
       - name: Install
         run: pnpm install --frozen-lockfile
 
@@ -65,6 +74,9 @@ jobs:
       - name: Vector unit tests
         run: pnpm --filter @modular/vector test
 
+      - name: Go tests (api-go gateway + vector-go pilot)
+        run: pnpm --filter @modular/api-go --filter @modular/vector-go test
+
       - name: Compose image pin check
         run: pnpm --filter @modular/infra-scripts run compose:images:check
 
@@ -76,4 +88,4 @@ jobs:
           artifact-name: sbom-cyclonedx.json
 
       - name: Build
-        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/ais-relay --filter=@modular/api --filter=@modular/vector --filter=@modular/web
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/ais-relay --filter=@modular/api --filter=@modular/vector --filter=@modular/web --filter=@modular/api-go --filter=@modular/vector-go
