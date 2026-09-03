@@ -63,27 +63,27 @@ export interface PublicPortalStoryDetail extends PublicPortalStory {
       };
       limitations?: string | null;
     };
-    sources: Array<{
+    sources: {
       index: number;
       url: string;
       sourceLabel: string | null;
       title: string | null;
       publishedAt: string | null;
-    }>;
+    }[];
   } | null;
-  timeline: Array<{
+  timeline: {
     id: string;
     bucketStart: string;
     title: string | null;
     summary: string | null;
-  }>;
-  referencedArticles: Array<{
+  }[];
+  referencedArticles: {
     id: string;
     url: string;
     sourceLabel: string | null;
     title: string | null;
     publishedAt: string | null;
-  }>;
+  }[];
 }
 
 export interface PublicPortalHomeResponse {

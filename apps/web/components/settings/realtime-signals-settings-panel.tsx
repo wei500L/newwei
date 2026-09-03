@@ -1,5 +1,6 @@
 "use client";
 
+import type { RealtimeAisRuntimeDiagnostics } from "@modular/utils";
 import {
   Alert,
   Button,
@@ -24,7 +25,6 @@ import {
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { RealtimeAisRuntimeDiagnostics } from "@modular/utils";
 
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
@@ -679,11 +679,6 @@ function buildRuntimeFeedbackAlert(
   row: RealtimeSignalRuntimeDiagnosticsSource,
   formatTimestamp: (value?: string) => string,
 ) {
-  const context =
-    row.context && typeof row.context === "object" && !Array.isArray(row.context)
-      ? row.context
-      : undefined;
-
   if (row.source === "ais") {
     return buildAisRuntimeFeedbackAlert(t, row, formatTimestamp);
   }

@@ -8,8 +8,8 @@ import { useCallback, useEffect, useMemo, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
 import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
-import { AnnotationPanel } from "@/components/analysis/annotation-panel";
 import { AnalysisToolbar } from "@/components/analysis/analysis-toolbar";
+import { AnnotationPanel } from "@/components/analysis/annotation-panel";
 import { useTheme } from "@/hooks/use-theme";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";

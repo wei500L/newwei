@@ -898,7 +898,6 @@ export function AccessSettingsContent() {
       description: 'Review join requests for this organization and platform-level org requests.',
       content: (
         <ApplicationsPanel
-          roles={roles}
           applications={applications}
           loading={adminFlowsLoading}
           canManagePlatform={Boolean(session?.user?.globalRoles?.includes('platform_admin'))}
@@ -2155,7 +2154,6 @@ function InvitesPanel({
 }
 
 function ApplicationsPanel({
-  roles,
   applications,
   loading,
   canManagePlatform,
@@ -2164,7 +2162,6 @@ function ApplicationsPanel({
   onApproveOrg,
   onRejectOrg,
 }: {
-  roles: RoleListItem[];
   applications: {
     orgApplications: RegistrationApplicationItem[];
     platformApplications: RegistrationApplicationItem[];

@@ -1,8 +1,14 @@
 import { NetworkStatus } from "@apollo/client";
-import { useMemo } from "react";
 import { useSession } from "next-auth/react";
+import { useMemo } from "react";
 
-import { useDashboardRangeStore } from "@/store/time-range";
+import {
+  type EconomicDataPointModel,
+  type EconomicDataValueType,
+  TimeGranularity,
+  type EconomicSeriesInsightModel,
+  useEconomicDataWithInsightsQuery,
+} from "@/graphql/generated";
 import type { ChartDataState } from "@/lib/chart-data-state";
 import {
   isEconomicQueryRefreshing,
@@ -15,13 +21,7 @@ import {
   timeGranularityToUiGranularity,
   UiTimeGranularity,
 } from "@/lib/time-granularity";
-import {
-  type EconomicSeriesInsightModel,
-  type EconomicDataPointModel,
-  EconomicDataValueType,
-  TimeGranularity,
-  useEconomicDataWithInsightsQuery
-} from "@/graphql/generated";
+import { useDashboardRangeStore } from "@/store/time-range";
 
 export interface EconomicSeriesOptions {
   category: string;

@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { fetchGraphql } from "@/lib/server-graphql";
 
 import { OnboardingPageVisit } from "../components/onboarding-page-visit";
+
 import type { NewsEventListItem } from "./events-content";
 import { EventsContent } from "./events-content";
 

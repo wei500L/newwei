@@ -26,9 +26,7 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { createApiClient } from "@/lib/api-client";
 import { CreateAnalysisTaskButton } from "@/components/analysis/create-analysis-task-button";
-import { captureClientError } from "@/lib/client-telemetry";
 import {
   buildSavedViewPath,
   downloadBlob,
@@ -38,6 +36,8 @@ import {
   type SavedAnalysisVisibility,
   sanitizeAnalysisQueryString,
 } from "@/lib/analysis-workspace";
+import { createApiClient } from "@/lib/api-client";
+import { captureClientError } from "@/lib/client-telemetry";
 
 interface SaveViewFormValues {
   title: string;

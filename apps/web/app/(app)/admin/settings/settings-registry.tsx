@@ -15,9 +15,9 @@ import { ModelServiceSettingsPanel } from "@/components/settings/model-service-s
 import { MultiTenantSchedulerSettingsPanel } from "@/components/settings/multi-tenant-scheduler-settings-panel";
 import { NewsClassificationSettingsPanel } from "@/components/settings/news-classification-settings-panel";
 import { NewsDedupeSettingsPanel } from "@/components/settings/news-dedupe-settings-panel";
-import { NewsExtractionSettingsPanel } from "@/components/settings/news-extraction-settings-panel";
 import { NewsEventSourcePolicySettingsPanel } from "@/components/settings/news-event-source-policy-settings-panel";
 import { NewsEventsSettingsPanel } from "@/components/settings/news-events-settings-panel";
+import { NewsExtractionSettingsPanel } from "@/components/settings/news-extraction-settings-panel";
 import { NewsIndicatorSettingsPanel } from "@/components/settings/news-indicator-settings-panel";
 import { NewsSourceRuntimeSecretsPanel } from "@/components/settings/news-source-runtime-secrets-panel";
 import { NewsSourceSchedulerSettingsPanel } from "@/components/settings/news-source-scheduler-settings-panel";

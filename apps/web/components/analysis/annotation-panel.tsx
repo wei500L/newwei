@@ -24,15 +24,15 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { MarkdownViewer } from "@/components/markdown-viewer";
 import { CreateAnalysisTaskButton } from "@/components/analysis/create-analysis-task-button";
-import { createApiClient } from "@/lib/api-client";
+import { MarkdownViewer } from "@/components/markdown-viewer";
 import {
   formatAnalysisActorName,
   type AnalysisSubjectType,
   type AnalysisTaskLinkedSubjectType,
   type AnalysisThread,
 } from "@/lib/analysis-workspace";
+import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 

@@ -5,7 +5,6 @@ import { Button, Form, Input, Modal, Select, Space, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { createApiClient } from "@/lib/api-client";
 import {
   formatAnalysisActorName,
   type AnalysisBoardDetail,
@@ -14,6 +13,7 @@ import {
   type AnalysisTaskLinkedSubjectType,
   type AnalysisTaskPriority,
 } from "@/lib/analysis-workspace";
+import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 
 interface CreateAnalysisTaskButtonProps {
@@ -38,7 +38,7 @@ interface TaskFormValues {
   assigneeId?: string | null;
 }
 
-const PRIORITY_OPTIONS: Array<{ value: AnalysisTaskPriority; label: string }> = [
+const PRIORITY_OPTIONS: { value: AnalysisTaskPriority; label: string }[] = [
   { value: "low", label: "Low" },
   { value: "normal", label: "Normal" },
   { value: "high", label: "High" },

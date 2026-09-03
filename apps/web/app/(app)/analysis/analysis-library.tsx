@@ -22,13 +22,13 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { createApiClient } from "@/lib/api-client";
 import {
   buildSavedViewHref,
   formatAnalysisActorName,
   type SavedAnalysisSurface,
   type SavedAnalysisView,
 } from "@/lib/analysis-workspace";
+import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 

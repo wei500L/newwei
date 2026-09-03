@@ -26,7 +26,6 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  Avatar,
   Button,
   Checkbox,
   DatePicker,
@@ -52,7 +51,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AnnotationPanel } from "@/components/analysis/annotation-panel";
-import { createApiClient } from "@/lib/api-client";
 import {
   buildAnalysisSubjectHref,
   formatAnalysisActorName,
@@ -64,6 +62,7 @@ import {
   type AnalysisTaskLinkedSubjectType,
   type AnalysisTaskPriority,
 } from "@/lib/analysis-workspace";
+import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
@@ -96,14 +95,14 @@ interface ColumnFormValues {
   isDone?: boolean;
 }
 
-const PRIORITY_OPTIONS: Array<{ value: AnalysisTaskPriority; label: string; color: string }> = [
+const PRIORITY_OPTIONS: { value: AnalysisTaskPriority; label: string; color: string }[] = [
   { value: "low", label: "Low", color: "default" },
   { value: "normal", label: "Normal", color: "blue" },
   { value: "high", label: "High", color: "orange" },
   { value: "urgent", label: "Urgent", color: "red" },
 ];
 
-const SUBJECT_OPTIONS: Array<{ value: AnalysisTaskLinkedSubjectType; label: string }> = [
+const SUBJECT_OPTIONS: { value: AnalysisTaskLinkedSubjectType; label: string }[] = [
   { value: "saved_view", label: "Saved view" },
   { value: "item", label: "Item" },
   { value: "event", label: "Event" },
@@ -399,11 +398,6 @@ export function AnalysisWorkspace() {
       isDone: editingColumn.isDone,
     });
   }, [columnEditForm, editingColumn]);
-
-  const allTasks = useMemo(
-    () => board?.columns.flatMap((column) => column.tasks) ?? [],
-    [board],
-  );
 
   const findTaskColumnId = useCallback(
     (taskId: string) =>

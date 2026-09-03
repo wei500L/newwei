@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 
 import { OnboardingPageVisit } from "../components/onboarding-page-visit";
+
 import { TodayContent } from "./today-content";
 
 export default async function TodayPage() {

@@ -34,10 +34,6 @@ import {
 } from "@/hooks/useEntityImpactGraph";
 import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import {
-  ENTITY_IMPACT_GRAPH_COLORS,
-  ENTITY_IMPACT_GRAPH_DEFAULT_COLOR,
-} from "@/lib/graph-tokens";
-import {
   buildEntityGraphConnectionMap,
   ENTITY_GRAPH_DEFAULT_CATEGORIES,
   filterEntityGraphData,
@@ -50,6 +46,10 @@ import {
   type EntityGraphEdgeType,
   type EntityGraphLabelDensity,
 } from "@/lib/entity-impact-graph";
+import {
+  ENTITY_IMPACT_GRAPH_COLORS,
+  ENTITY_IMPACT_GRAPH_DEFAULT_COLOR,
+} from "@/lib/graph-tokens";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 const { Text } = Typography;

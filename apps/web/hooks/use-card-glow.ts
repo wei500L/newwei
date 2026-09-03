@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, MouseEvent } from 'react';
+import type { MouseEvent } from 'react';
+import { useState, useRef } from 'react';
 
 export function useCardGlow() {
   const ref = useRef<HTMLDivElement>(null);

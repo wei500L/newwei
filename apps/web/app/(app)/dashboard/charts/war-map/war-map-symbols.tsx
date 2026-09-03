@@ -199,13 +199,6 @@ function strokeAttrs(width: number, color: string): string {
   return `stroke="${color}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"`;
 }
 
-function mapStrokePath(path: string, stroke: string, width: number): string {
-  return [
-    `<path d="${path}" ${strokeAttrs(width + 1.15, WHITE)} opacity="0.94" />`,
-    `<path d="${path}" ${strokeAttrs(width, stroke)} />`,
-  ].join("");
-}
-
 function mapStrokeCircle(
   radius: number,
   stroke: string,

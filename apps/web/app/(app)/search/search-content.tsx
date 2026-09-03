@@ -33,8 +33,8 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { ItemsView } from "@/app/(app)/items/items-view";
-import { AnnotationPanel } from "@/components/analysis/annotation-panel";
 import { AnalysisToolbar } from "@/components/analysis/analysis-toolbar";
+import { AnnotationPanel } from "@/components/analysis/annotation-panel";
 import {
   EnhancedSearchBox,
   type SearchSuggestionStatus,

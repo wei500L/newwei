@@ -23,8 +23,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ArticlePublishedTime } from "@/components/article-published-time";
 import { AnnotationPanel } from "@/components/analysis/annotation-panel";
+import { ArticlePublishedTime } from "@/components/article-published-time";
 import { MarkdownViewer } from "@/components/markdown-viewer";
 import {
   useNewsEventBriefQuery,

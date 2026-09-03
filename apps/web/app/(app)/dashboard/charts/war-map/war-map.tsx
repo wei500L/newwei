@@ -603,14 +603,6 @@ function readSummaryString(
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function readSummaryBoolean(
-  summary: Record<string, unknown> | undefined,
-  key: string,
-): boolean | undefined {
-  const value = summary?.[key];
-  return typeof value === "boolean" ? value : undefined;
-}
-
 function readFlightBudgetSummary(summary: Record<string, unknown> | undefined) {
   const degradationLevel = readSummaryString(summary, "degradationLevel");
   return {

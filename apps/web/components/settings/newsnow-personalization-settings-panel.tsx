@@ -99,13 +99,13 @@ interface UserNewsBehaviorProfileResponse {
     events: Record<string, number>;
     domains: Record<string, number>;
   };
-  bands?: Array<{
+  bands?: {
     key: string;
     weight: number;
     positive: Record<string, Record<string, number>>;
     negative: Record<string, Record<string, number>>;
     net: Record<string, Record<string, number>>;
-  }>;
+  }[];
   meta?: {
     legacyFallbackUsed?: boolean;
     decayPolicy?: {

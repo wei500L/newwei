@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { theme } from "antd";
+import { useEffect, useState } from "react";
+
 import { useTheme } from "@/hooks/use-theme";
 
 export interface ChartTheme {

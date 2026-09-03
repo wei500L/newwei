@@ -419,7 +419,7 @@ export function ContentSubscriptionsTab({
         return null;
       }
 
-      const tags: Array<{ key: string; label: string }> = [];
+      const tags: { key: string; label: string }[] = [];
       if (item.kind === "source") {
         if (typeof metadata.sourceId === "string") {
           tags.push({
@@ -450,7 +450,7 @@ export function ContentSubscriptionsTab({
         });
       }
 
-      const links: Array<{ key: string; label: string }> = [];
+      const links: { key: string; label: string }[] = [];
       if (item.kind === "source" && typeof metadata.siteUrl === "string") {
         links.push({
           key: "siteUrl",

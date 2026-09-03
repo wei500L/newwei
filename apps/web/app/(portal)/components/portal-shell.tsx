@@ -298,7 +298,7 @@ export function PortalChannelView(props: {
   );
 }
 
-function BriefSection(props: { title: string; items: Array<{ text: string }> }) {
+function BriefSection(props: { title: string; items: { text: string }[] }) {
   if (props.items.length === 0) {
     return null;
   }
