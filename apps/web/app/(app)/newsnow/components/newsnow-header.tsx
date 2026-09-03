@@ -22,6 +22,7 @@ import {
 } from "../lib/newsnow-header-model";
 import { useNewsnowStore } from "../store/newsnow-store";
 
+import { NewsnowBoardContainer } from "./newsnow-board-container";
 import { NewsnowSearch } from "./newsnow-search";
 
 const controlShellClassName =
@@ -151,7 +152,7 @@ export function NewsnowHeader() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(248,250,252,0.92)_100%)] shadow-[0_8px_24px_-18px_rgba(15,23,42,0.18)] backdrop-blur-md dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(7,10,17,0.96)_0%,rgba(6,9,15,0.94)_100%)] dark:shadow-[0_8px_24px_-18px_rgba(0,0,0,0.9)]">
       {contextHolder}
-      <div className="mx-auto flex w-full max-w-[1760px] flex-col gap-3 px-4 py-3 md:px-6 md:py-4 xl:px-8">
+      <NewsnowBoardContainer spacing="header" className="flex flex-col gap-3">
         <div className="glass-panel rounded-[26px] border border-white/40 px-3 py-2.5 shadow-[0_18px_42px_-30px_rgba(15,23,42,0.72)] dark:border-white/10 dark:bg-white/[0.04] md:px-4">
           <div className="flex items-center gap-3">
             <nav className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
@@ -366,7 +367,7 @@ export function NewsnowHeader() {
             ) : null}
           </div>
         </div>
-      </div>
+      </NewsnowBoardContainer>
 
       <NewsnowSearch
         isOpen={isSearchOpen}

@@ -18,6 +18,8 @@ import {
   useNewsnowRecommended,
 } from '../hooks/use-newsnow-recommended';
 
+import { NewsnowBoardContainer } from './newsnow-board-container';
+
 function formatPublishedAt(value?: number | string | null) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return new Date(value).toLocaleString();
@@ -271,17 +273,17 @@ export function NewsnowRecommendedFeed() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto w-full max-w-[1760px] px-4 pb-8 pt-6 md:px-6 md:pb-9 md:pt-7 xl:px-8">
+      <NewsnowBoardContainer spacing="content">
         <div className="glass-panel rounded-[26px] border border-white/40 px-5 py-5 dark:border-white/10 dark:bg-white/[0.04]">
           <Skeleton active paragraph={{ rows: 8 }} />
         </div>
-      </div>
+      </NewsnowBoardContainer>
     );
   }
 
   if (isError) {
     return (
-      <div className="mx-auto w-full max-w-[1760px] px-4 pb-8 pt-6 md:px-6 md:pb-9 md:pt-7 xl:px-8">
+      <NewsnowBoardContainer spacing="content">
         <Alert
           showIcon
           type="error"
@@ -289,12 +291,12 @@ export function NewsnowRecommendedFeed() {
           description={error instanceof Error ? error.message : '请稍后重试。'}
           action={<Button onClick={() => void refetch()}>重试</Button>}
         />
-      </div>
+      </NewsnowBoardContainer>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1760px] px-4 pb-8 pt-6 md:px-6 md:pb-9 md:pt-7 xl:px-8">
+    <NewsnowBoardContainer spacing="content">
       <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500 dark:text-zinc-500">
@@ -332,6 +334,6 @@ export function NewsnowRecommendedFeed() {
           ))}
         </div>
       )}
-    </div>
+    </NewsnowBoardContainer>
   );
 }

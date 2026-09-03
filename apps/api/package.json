@@ -20,7 +20,12 @@
     "knowledge-graph:reviews:reconcile": "cross-env TS_NODE_PREFER_TS_EXTS=true NODE_PATH=./node_modules node -r ts-node/register/transpile-only -r tsconfig-paths/register ./scripts/reconcile-knowledge-graph-reviews.ts",
     "copy:email-templates": "node ./scripts/copy-email-templates.js",
     "vector:backfill": "cross-env NODE_PATH=./node_modules tsx ./scripts/backfill-vector-index.ts",
-    "fingerprint:backfill": "cross-env NODE_PATH=./node_modules tsx ./scripts/backfill-canonical-url-fingerprints.ts"
+    "fingerprint:backfill": "cross-env NODE_PATH=./node_modules tsx ./scripts/backfill-canonical-url-fingerprints.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "contract:openapi:snapshot": "cross-env NODE_ENV=test TS_NODE_TRANSPILE_ONLY=true NODE_PATH=./node_modules tsx ./scripts/generate-openapi-snapshot.ts",
+    "contract:auth-matrix:generate": "cross-env NODE_ENV=test tsx ./tools/generate-auth-matrix.ts",
+    "contract:auth-matrix:check": "node ./tools/check-auth-matrix.js"
   },
   "dependencies": {
     "@apollo/server": "^4.11.1",
@@ -118,6 +123,7 @@
     "@types/passport-jwt": "^4.0.1",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^3.15.0",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "vitest": "^3.2.7"
   }
 }

@@ -74,6 +74,22 @@ jobs:
       - name: Vector unit tests
         run: pnpm --filter @modular/vector test
 
+      - name: API unit tests (SEC-01 / API-01 regression + route scanner)
+        run: pnpm --filter @modular/api test
+
+      - name: OpenAPI contract snapshot drift check
+        run: |
+          pnpm --filter @modular/api run contract:openapi:snapshot
+          git diff --exit-code apps/api/tests/contract/openapi.snapshot.json
+
+      - name: Auth matrix drift check (fail-closed)
+        run: pnpm --filter @modular/api run contract:auth-matrix:check
+
+      - name: GraphQL SDL drift check
+        run: |
+          pnpm --filter @modular/api run generate:schema
+          git diff --exit-code apps/api/schema.gql
+
       - name: Go tests (api-go gateway + vector-go pilot)
         run: pnpm --filter @modular/api-go --filter @modular/vector-go test
 
@@ -89,3 +105,189 @@ jobs:
 
       - name: Build
         run: pnpm exec turbo run build --env-mode=loose --filter=@modular/ais-relay --filter=@modular/api --filter=@modular/vector --filter=@modular/web --filter=@modular/api-go --filter=@modular/vector-go
+
+  # vector-go 远端集成（任务 F / roadmap M2 余项 3）：真实 Qdrant +
+  # NestJS vector 与 vector-go 的契约差分。本机禁 Docker——验证全部在
+  # GitHub Actions Linux runner 完成。
+  vector-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      qdrant:
+        # 与 infra/docker/docker-compose.yml 的 qdrant 服务同版本。
+        # 注：qdrant 镜像无 shell 工具，health-cmd 无法用 curl/wget——
+        # 就绪等待由「Start services」步骤的宿主侧循环完成。
+        image: qdrant/qdrant:v1.10.1
+        ports:
+          - 6333:6333
+    env:
+      HUSKY: "0"
+      CI: "true"
+      QDRANT_URL: http://localhost:6333
+      QDRANT_API_KEY: ""
+      VECTOR_INTEGRATION: "1"
+      VECTOR_INTEGRATION_TOKEN: integration-internal-token
+      VECTOR_INTERNAL_TOKEN: integration-internal-token
+      VECTOR_COLLECTION_PREFIX: integration_processed
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/vector-go/go.mod
+          cache: false
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+
+      - name: Build workspace deps (utils) + vector (NestJS)
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/vector --filter=@modular/utils
+
+      - name: Build vector-go binary
+        run: cd apps/vector-go && go build -o /tmp/vector-go-bin ./main.go
+
+      - name: Start NestJS vector + vector-go against real Qdrant
+        run: |
+          # Qdrant 就绪等待（服务容器无 health 探针，宿主侧循环探测）。
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:6333/healthz >/dev/null 2>&1; then
+              echo "qdrant healthy"
+              break
+            fi
+            if [ "$i" = 60 ]; then
+              echo "qdrant failed to become healthy"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # NestJS vector（:4010）
+          PORT=4010 \
+          NODE_ENV=test \
+          QDRANT_URL=http://localhost:6333 \
+          QDRANT_API_KEY= \
+          VECTOR_INTERNAL_TOKEN=integration-internal-token \
+          VECTOR_COLLECTION_PREFIX=integration_processed \
+          node apps/vector/dist/main.js > /tmp/vector-nestjs.log 2>&1 &
+          echo $! > /tmp/vector-nestjs.pid
+
+          # vector-go（:4012）
+          PORT=4012 \
+          NODE_ENV=test \
+          QDRANT_URL=http://localhost:6333 \
+          QDRANT_API_KEY= \
+          VECTOR_INTERNAL_TOKEN=integration-internal-token \
+          VECTOR_COLLECTION_PREFIX=integration_processed \
+          /tmp/vector-go-bin > /tmp/vector-go.log 2>&1 &
+          echo $! > /tmp/vector-go.pid
+
+          # 等待两侧健康（最多 60s）。
+          for i in $(seq 1 60); do
+            nest_ok=$(curl -fsS http://localhost:4010/healthz >/dev/null 2>&1 && echo ok || echo no)
+            go_ok=$(curl -fsS http://localhost:4012/healthz >/dev/null 2>&1 && echo ok || echo no)
+            if [ "$nest_ok" = ok ] && [ "$go_ok" = ok ]; then
+              echo "both vector services healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "vector services failed to become healthy"
+          echo "=== nestjs log ==="; cat /tmp/vector-nestjs.log || true
+          echo "=== go log ==="; cat /tmp/vector-go.log || true
+          exit 1
+
+      - name: Contract diff — NestJS vector vs vector-go (real Qdrant)
+        run: |
+          VECTOR_NESTJS_URL=http://localhost:4010 \
+          VECTOR_GO_URL=http://localhost:4012 \
+          pnpm --filter @modular/vector test -- src/integration/vector-go-diff.test.ts
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          echo "=== nestjs log ==="; cat /tmp/vector-nestjs.log || true
+          echo "=== go log ==="; cat /tmp/vector-go.log || true
+
+      - name: Stop services
+        if: always()
+        run: |
+          kill $(cat /tmp/vector-nestjs.pid) 2>/dev/null || true
+          kill $(cat /tmp/vector-go.pid) 2>/dev/null || true
+
+  # 契约基线一次性远端再生成（专用远端生成提交方案）。
+  #
+  # 背景：本仓库约束「生成器不在本机执行」——生成物（OpenAPI 快照 /
+  # 鉴权矩阵 / GraphQL SDL）的更新必须走远端。本 job 仅在 PR 带有
+  # contract-regen label 时运行：检出 PR head → 运行三个生成器 →
+  # 有差异则提交回 PR 分支（触发新一轮完整 CI）。
+  #
+  # ⚠️ 该 label 等价于「跳过漂移门禁一次」——只应由维护者在有意变更
+  # 契约语义时添加，再生成完成后必须移除。平时 verify job 的三个
+  # drift gate 保持 fail-on-drift 语义不变。
+  contract-baseline-regen:
+    if: contains(github.event.pull_request.labels.*.name, 'contract-regen')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      HUSKY: "0"
+      CI: "true"
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+
+      - name: Regenerate contract artifacts
+        run: |
+          pnpm --filter @modular/api run contract:openapi:snapshot
+          pnpm --filter @modular/api run contract:auth-matrix:generate
+          pnpm --filter @modular/api run generate:schema
+
+      - name: Commit regenerated artifacts (if changed)
+        run: |
+          git config user.name "contract-regen[bot]"
+          git config user.email "actions@github.com"
+          if git diff --quiet; then
+            echo "contract artifacts already in sync — nothing to commit"
+            exit 0
+          fi
+          git add apps/api/tests/contract apps/api/schema.gql
+          git commit -m "🔧 chore(contract): 远端再生成契约基线（OpenAPI 快照/鉴权矩阵/GraphQL SDL）"
+          git push origin HEAD:${{ github.head_ref }}
+          echo "committed regenerated artifacts"
+
+      - name: Remind to remove the label
+        run: |
+          echo "::notice::契约基线已再生成并提交。请从 PR 移除 contract-regen label，恢复漂移门禁语义。"

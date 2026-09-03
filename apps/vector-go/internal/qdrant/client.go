@@ -351,6 +351,24 @@ func (c *Client) ensureCollection(ctx context.Context, embeddingModel string, ve
 	}
 	var created qdrantResponse[json.RawMessage]
 	if err := c.doJSON(ctx, http.MethodPut, endpoint, createBody, &created); err != nil {
+		// 409 = 并发创建（另一实例/另一实现先建了同一集合）——集合已存在，
+		// 重新 GET 校验维度即可，不视为失败。两侧实现（TS/Go）共用同一
+		// 集合命名，并行部署时该竞态是常态而非异常。
+		var createStatusErr *httpStatusError
+		if errors.As(err, &createStatusErr) && createStatusErr.status == http.StatusConflict {
+			var existing qdrantResponse[qdrantCollectionInfo]
+			if recheckErr := c.doJSON(ctx, http.MethodGet, endpoint, nil, &existing); recheckErr == nil {
+				if existing.Result != nil && existing.Result.Config != nil && existing.Result.Config.Params != nil &&
+					existing.Result.Config.Params.Vectors != nil && existing.Result.Config.Params.Vectors.Size != nil &&
+					*existing.Result.Config.Params.Vectors.Size == vectorSize {
+					result := collectionInfo{name: name, vectorSize: vectorSize}
+					c.mu.Lock()
+					c.collections[name] = result
+					c.mu.Unlock()
+					return result, nil
+				}
+			}
+		}
 		return collectionInfo{}, fmt.Errorf("qdrant collection create failed: %w", err)
 	}
 

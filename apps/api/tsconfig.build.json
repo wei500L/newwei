@@ -7,5 +7,5 @@
     "rootDir": "src",
     "paths": {}
   },
-  "exclude": ["test", "**/*.spec.ts", "**/*.test.ts"]
+  "exclude": ["test", "tests", "vitest.config.ts", "**/*.spec.ts", "**/*.test.ts", "scripts", "tools"]
 }

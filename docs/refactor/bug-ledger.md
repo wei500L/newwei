@@ -7,7 +7,7 @@
 ## 0. 字段与级别说明
 
 - **严重级别**：P0 阻断发布/门禁失效/数据泄漏 · P1 核心功能受损 · P2 体验/性能/工程化
-- **状态**：✅ 已修复（含回归验证）· 🔧 已修复待运行时验证 · ⬜ 开放 · 👁 观察项
+- **状态**：✅ 已修复（含回归验证）· 🔧 已修复待运行时验证 · 🔶 部分改善 · ⬜ 开放 · 👁 观察项
 
 ## 1. 七条关键用户流程覆盖
 
@@ -35,14 +35,14 @@
 | BL-08 | P1 | RSC 引入 react-i18next 致 build 崩（createContext） | ✅ | b25583e9 |
 | BL-09 | P0 | api 32 处潜伏 lint 错误（turbo 取消效应掩盖） | ✅ | 0aef412c |
 | API-01 | P1 | onboarding 端点缺权限元数据，引导状态永不保存 | 🔧 | edf0c8cf |
-| SEC-01 | **P0** | 任意 org 管理员可改**全局** vector 服务配置（token 外泄链） | ⬜ | — |
+| SEC-01 | **P0** | 任意 org 管理员可改**全局** vector 服务配置（token 外泄链） | 🔧 单元级 CI 已验证；真实登录态未验证 | 本轮（见 §4） |
 | SEC-02 | P1 | vector 服务信任请求体 orgId（跨租户读写前提） | 👁 | — |
 | SEC-03 | P2 | /api/metrics 全局数据未按 org 过滤 | ⬜ | — |
 | SEC-04 | P2 | vector 内部 token 非常量时间比较 | ✅ | 见 §4 |
 | BAPI-01 | P2 | GraphQL 列表无分页（全量返回） | ⬜ | — |
 | FE-01 | P2 | alert-center 过滤器不入 URL（与全局模式不一致） | ⬜ | — |
 | FE-02 | P2 | 死代码：zustand store/sidebar.ts | ⬜ | — |
-| FE-03 | P2 | vitest coverage include 仅覆盖 3 个已测文件（覆盖率数字失真） | ⬜ | — |
+| FE-03 | P2 | vitest coverage include 仅覆盖 3 个已测文件（覆盖率数字失真） | 🔶 | 部分（见 §3） |
 
 ## 3. 已修复条目（详细）
 
@@ -96,7 +96,7 @@
 - **修复**：`0aef412c`（28 import/order + 1 array-type 自动；settings.resolver 两个退化映射改穷尽 switch；socket-error-payloads 删未用导入）。
 - **回归验证**：`pnpm lint` 全绿（仓库首次）+ CI success。
 
-### API-01 onboarding 死路由 — 🔧 已修复待运行时验证【已复核】
+### API-01 onboarding 死路由 — 🔧 已修复（契约测试 CI 已验证；真实用户流程未验证）【已复核】
 
 - **流程**：F7 个性化。**用户影响**：新用户引导完成状态永不保存——每次进入应用重新触发引导（welcome/onboarding-boundary 消费）。
 - **复现**：登录态 `GET/PUT /api/user-settings/ui/onboarding` → 403 `PERMISSION_METADATA_MISSING`（全局 PermissionsGuard fail-closed）。
@@ -104,17 +104,25 @@
 - **根因**：两个 handler 缺 `@Permissions` 装饰器（同 controller 其余 10 个端点均有）。
 - **证据**：`user-ui-settings.controller.ts:110,116`（修复前）；前端 `onboarding-boundary.tsx:67,98`。
 - **修复**：`edf0c8cf` 补 `@Permissions("items.read")`（与 5 组兄弟端点一致）。
-- **回归验证**：lint/typecheck/build 绿；**运行时验证待数据库栈**（登录→完成引导→刷新不重现）。影响面复核：auth 的 3 个 registration-applications 端点实为 @AllowAuthenticated + service assertPlatformAdmin，非死路由。
+- **本轮静态闭环复核（全链路）**：
+  1. 权限元数据 ✅：GET/PUT 均带 `@Permissions("items.read")`（鉴权矩阵生成器 fail-closed 断言全库 0 死路由）。
+  2. 上下文来源 ✅：orgId/userId 均取自 `@CurrentUser()`（JWT orgId claim → membership 重推导），无请求体信任。
+  3. 前后端一致性 ✅：前端 `ONBOARDING_SETTINGS_PATH = "user-settings/ui/onboarding"` + axios baseURL（`/api` 前缀）→ 后端 `@Controller("user-settings/ui")` + 全局前缀；PUT 体 `{ settings: ... }` 与 DTO 唯一字段一致；GET 响应 envelope（version/updatedAt/settings）与前端类型镜像一致。
+  4. 无保存后查询不到的字段差异 ✅：存储键 `ui:onboarding:settings:v1`（per org+user+key 唯一），normalize 白名单四步键（today/events/map/finance）两侧一致。
+  5. 错误吞掉风险 ⚠️（登记，未改）：前端 `persistSettings`/GET 的 catch 只上报 telemetry（captureClientError），无用户可见提示——这正是原 403 长期不可见的原因。属前端 IA 重构（onboarding-boundary 拆分批次）处理项，不在本轮范围强行加 UI。
+- **回归验证**：`user-ui-settings.controller.test.ts` 锚定 controller→service 契约（远端 CI 已验证，4/4，run 33748591315）；鉴权矩阵 CI 断言权限元数据存在（四态语义：无权限 JWT denied / 有权限 allowed / wrongOrg runtime-required）。⚠️ **真实用户流程（登录→完成引导→刷新不重现）未验证**——CI 无数据库栈，需部署环境冒烟。
 
 ## 4. 开放条目（待修复，按优先级排序）
 
-### SEC-01 全局 vector 配置可被任意 org 管理员改写 — ⬜ **P0**【已复核（controller 层）】
+### SEC-01 全局 vector 配置可被任意 org 管理员改写 — 🔧 已修复（单元级 CI 已验证；真实登录态未验证）【已复核】
 
 - **流程**：F1/F2/F6。**用户影响**：跨租户向量数据读写 + 内部 token 外泄（多租户隔离破坏）。
 - **攻击链**：① org-A 管理员（有 settings.manage）`PUT /api/system-settings/vector-service` 改 `baseUrl` 为攻击者服务器（该设置是**全局单例**，非 per-org）→ ② api 的 vector-client 向攻击者服务器发请求，**携带真实 `x-internal-token`**（token 外泄）→ ③ 攻击者用窃取的 token 调真实 vector 服务，配合 SEC-02（body orgId 任意填）读写任意 org 的向量。
 - **证据**：`system-settings/vector-service-settings.controller.ts:33-40`（PUT 仅 `@Permissions("settings.manage")`——per-org 权限写全局设置）；`packages/vector-client/src/client.ts:127-131`（发送 x-internal-token）。
-- **修复方向**（下轮）：vector 服务配置属于平台级设置——改为平台管理员专用（platformAccess），或全局设置与 per-org 设置分离；同时评估 baseUrl 变更的网络白名单。
-- **回归验证点**：非平台管理员的 settings.manage 持有者 PUT → 403；合法调用方不受影响。
+- **修复（本轮）**：PUT 与 DELETE handler 首行注入 `platformAccess.assertPlatformAdmin(user.id)`——复用 audit-log/email/task-log 设置控制器的既有模式（不新建第二套平台管理员判断）。GET 与 GET /diagnostics 保持 `settings.manage` 读取语义（合法内部调用与运维可观测不受影响）。
+- **网络白名单（设计建议，未实施）**：baseUrl 修改后的网络边界加固（SSRF 白名单/私网段拦截）依赖部署拓扑（内网 DNS、服务网格策略各异），凭空硬编码可能破坏内网部署——建议方向：① 部署侧用 NetworkPolicy/egress 白名单限制 api 出口到 vector 服务网段；② 应用侧可选 `VECTOR_SERVICE_ALLOWED_BASE_URLS` 显式允许清单（平台管理员维护）。本轮只登记，不实施。
+- **回归验证**：`vector-service-settings.controller.test.ts`（vitest，CI 执行）覆盖：非平台管理员的 settings.manage 持有者 PUT/DELETE → 403 且 service 未被调用；平台管理员 PUT/DELETE 正常；GET 不做平台校验（读取兼容）。**运行时（真实 DB/登录态）验证仍待远端集成环境**。
+- **状态**：✅ 单元级远端 CI 已验证（run 33748591315：vitest 6/6——非平台管理员 403 / 平台管理员通过 / GET 无平台门禁）。⚠️ **真实数据库登录态冒烟（登录→PUT→403）未验证**（CI 无 DB 栈）。攻击链①（权限入口）已关闭，②的出口（baseUrl 指向）网络层建议见上。
 
 ### SEC-02 vector 服务信任请求体 orgId — 👁 观察项【勘察报告】
 
@@ -150,10 +158,10 @@
 
 - **修复方向**：IA 重构时随 ActionRail 统一导航状态后删除。
 
-### FE-03 vitest coverage include 失真 — ⬜ P2【勘察报告】
+### FE-03 vitest coverage include 失真 — 🔶 部分改善 P2【勘察报告】
 
 - **证据**：vitest.config.ts coverage.include 仅列 3 个已测文件 → 47% 语句覆盖率是「已测文件内部」的数字，非全仓覆盖率。
-- **修复方向**：include 改为业务目录 glob，阈值按真实基线重设（避免假绿）。
+- **本轮**：include 增至 6 个（+page-container.tsx / nav-mode.ts / action-rail-routing.ts——App Shell 第一批的可测原语）。**全仓 glob + 阈值重设仍待 FE-批3+（alert-center 试点时一并做，避免在巨型组件未拆分时用全仓阈值制造红 CI）**。
 
 ## 5. 观察项（非缺陷，迁移决策输入）
 
@@ -166,5 +174,5 @@
 ## 6. 风险与未验证登记
 
 - **BL-04 的 Node 版本前提**：`process.getBuiltinModule` 需 Node ≥20.16。CI 当前 Node 20（latest tag，实际 ≥20.16）已验证通过；若未来 CI 固定到 <20.16 需回退方案。
-- **API-01 / SEC 系列运行时验证**：需 Docker 数据库栈（本机未装 Docker），列入 Docker 可用后的第一优先验证项。
+- **API-01 / SEC 系列真实登录态验证**：SEC-01 单元级与 API-01 契约级测试已由远端 CI 验证（run 33748591315）；**真实数据库登录态冒烟**（登录→PUT vector 配置→403 / 完成引导→刷新不重现）仍需 Docker 数据库栈——CI 无 DB，列为部署环境可用后的第一优先验证项。
 - 基线环境缺口（AISSTREAM_API_KEY 空、infra/docker/.env 缺失）不属代码缺陷，不入本台账。

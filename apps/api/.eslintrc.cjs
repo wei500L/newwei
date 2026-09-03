@@ -13,13 +13,13 @@ module.exports = {
       }
     }
   },
-  ignorePatterns: ["dist", "node_modules"],
+  ignorePatterns: ["dist", "node_modules", "tools/check-auth-matrix.js"],
   rules: {
     "@typescript-eslint/explicit-function-return-type": "off"
   },
   overrides: [
     {
-      files: ["**/*.spec.ts", "**/*.e2e-spec.ts", "**/__tests__/**/*.ts"],
+      files: ["**/*.spec.ts", "**/*.e2e-spec.ts", "**/*.test.ts", "**/__tests__/**/*.ts"],
       rules: {
         "@typescript-eslint/consistent-type-imports": "off",
         "@typescript-eslint/no-explicit-any": "off",

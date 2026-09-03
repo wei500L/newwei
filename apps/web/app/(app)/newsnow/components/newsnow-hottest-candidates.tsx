@@ -22,6 +22,8 @@ import {
 } from '../lib/newsnow-domestic-opinion';
 import { selectTopHottestCandidates } from '../lib/newsnow-hottest-analysis';
 
+import { NewsnowBoardContainer } from './newsnow-board-container';
+
 interface NewsnowHottestCandidatesProps {
   analysis?: NewsnowHottestAnalysisResponse;
   accessState: NewsnowAnalysisAccessState;
@@ -70,7 +72,7 @@ function ProtectedStateCard({
   variant: 'empty' | 'permission';
 }) {
   return (
-    <section className="mx-auto w-full max-w-[1760px] px-4 pt-4 md:px-6 xl:px-8">
+    <NewsnowBoardContainer spacing="section" className="block">
       <div className="glass-panel rounded-[26px] border border-white/10 px-4 py-4 shadow-[0_20px_48px_-32px_rgba(15,23,42,0.65)] md:px-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
@@ -88,7 +90,7 @@ function ProtectedStateCard({
           className="min-h-[220px]"
         />
       </div>
-    </section>
+    </NewsnowBoardContainer>
   );
 }
 
@@ -386,7 +388,7 @@ export function NewsnowHottestCandidates({
   }
 
   return (
-    <section className="mx-auto w-full max-w-[1760px] px-4 pt-4 md:px-6 xl:px-8">
+    <NewsnowBoardContainer spacing="section" className="block">
       <div className="glass-panel rounded-[26px] border border-white/10 px-4 py-4 shadow-[0_20px_48px_-32px_rgba(15,23,42,0.65)] md:px-5">
         <DomesticOpinionPanel
           domesticOpinion={domesticOpinion}
@@ -484,6 +486,6 @@ export function NewsnowHottestCandidates({
           </div>
         )}
       </div>
-    </section>
+    </NewsnowBoardContainer>
   );
 }
