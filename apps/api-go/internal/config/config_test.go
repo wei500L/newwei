@@ -63,11 +63,82 @@ func TestShadowDefaultsGuardResourceBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.ShadowTimeoutMs <= 0 || cfg.ShadowMaxBodyByte <= 0 || cfg.ShadowMaxInflight <= 0 || cfg.ShadowMaxPerMin <= 0 {
+	if cfg.ShadowTimeoutMs <= 0 || cfg.ShadowMaxRequestBodyByte <= 0 || cfg.ShadowMaxInflight <= 0 || cfg.ShadowMaxPerMin <= 0 {
 		t.Errorf("shadow budget defaults must be positive: %+v", cfg)
+	}
+	// 请求体与响应捕获必须是两个独立预算（命名与语义都不共享）。
+	if cfg.ShadowMaxResponseCaptureByte <= 0 {
+		t.Errorf("ShadowMaxResponseCaptureByte default = %d, want positive", cfg.ShadowMaxResponseCaptureByte)
+	}
+	// 差分正文默认不记录（只记 hash）。
+	if cfg.ShadowDebugBodyLog {
+		t.Error("ShadowDebugBodyLog default must be false")
+	}
+	if cfg.ShadowDebugBodyLogMaxBytes <= 0 {
+		t.Errorf("ShadowDebugBodyLogMaxBytes default = %d, want positive", cfg.ShadowDebugBodyLogMaxBytes)
 	}
 	if cfg.CanaryPercent != 0 {
 		t.Errorf("CanaryPercent default = %d, want 0 (canary 必须显式开启)", cfg.CanaryPercent)
+	}
+}
+
+func TestLoadAcceptsIndependentShadowBudgets(t *testing.T) {
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "SHADOW_MAX_REQUEST_BODY_BYTES":
+			return "4096"
+		case "SHADOW_MAX_RESPONSE_CAPTURE_BYTES":
+			return "8192"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.ShadowMaxRequestBodyByte != 4096 {
+		t.Errorf("ShadowMaxRequestBodyByte = %d, want 4096", cfg.ShadowMaxRequestBodyByte)
+	}
+	if cfg.ShadowMaxResponseCaptureByte != 8192 {
+		t.Errorf("ShadowMaxResponseCaptureByte = %d, want 8192", cfg.ShadowMaxResponseCaptureByte)
+	}
+}
+
+func TestLoadRejectsInvalidShadowBudgets(t *testing.T) {
+	for _, key := range []string{"SHADOW_MAX_REQUEST_BODY_BYTES", "SHADOW_MAX_RESPONSE_CAPTURE_BYTES"} {
+		if _, err := Load(func(k string) string {
+			if k == key {
+				return "-1"
+			}
+			return ""
+		}); err == nil {
+			t.Fatalf("Load() should reject %s=-1", key)
+		}
+	}
+}
+
+func TestLoadDebugBodyLogFlag(t *testing.T) {
+	cfg, err := Load(func(key string) string {
+		if key == "SHADOW_DEBUG_BODY_LOG" {
+			return "true"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.ShadowDebugBodyLog {
+		t.Error("SHADOW_DEBUG_BODY_LOG=true must enable debug body logging")
+	}
+
+	for _, raw := range []string{"maybe", "yes-maybe"} {
+		if _, err := Load(func(key string) string {
+			if key == "SHADOW_DEBUG_BODY_LOG" {
+				return raw
+			}
+			return ""
+		}); err == nil {
+			t.Fatalf("Load() should reject SHADOW_DEBUG_BODY_LOG=%q", raw)
+		}
 	}
 }
 

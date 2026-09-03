@@ -1,6 +1,7 @@
 package legacyproxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -263,15 +264,37 @@ func TestLongestPrefixWins(t *testing.T) {
 type fakeDispatcher struct {
 	mu         sync.Mutex
 	observed   int
+	skipped    map[string]int
 	lastLegacy []byte
+	lastStatus int
 	canaryGo   bool
 }
 
-func (d *fakeDispatcher) ObserveShadow(_ *http.Request, _ int, _ http.Header, legacyBody []byte) {
+func (d *fakeDispatcher) ObserveShadow(_ *http.Request, status int, _ http.Header, legacyBody []byte, reason ShadowSkipReason) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if reason != "" {
+		if d.skipped == nil {
+			d.skipped = make(map[string]int)
+		}
+		d.skipped[string(reason)]++
+		return
+	}
 	d.observed++
 	d.lastLegacy = legacyBody
+	d.lastStatus = status
+}
+
+func (d *fakeDispatcher) skipCount(reason ShadowSkipReason) int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.skipped[string(reason)]
+}
+
+func (d *fakeDispatcher) observedCount() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.observed
 }
 
 func (d *fakeDispatcher) CanaryRoute(_ *http.Request) bool {
@@ -416,5 +439,255 @@ func TestRegisterGoHandlerServesNative(t *testing.T) {
 	stub.mu.Unlock()
 	if count != 0 {
 		t.Fatalf("go route must not reach upstream, got %d", count)
+	}
+}
+
+// ---- shadow 有界捕获（bounded capture）测试 ----
+
+// stubHandler 返回可配置响应的上游替身。
+type stubHandler struct {
+	mu          sync.Mutex
+	status      int
+	contentType string
+	body        []byte
+	flushChunks int
+	bodies      []string // 收到的请求体（回显验证用）
+}
+
+func (s *stubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	s.mu.Lock()
+	s.bodies = append(s.bodies, string(body))
+	status, contentType, respBody, chunks := s.status, s.contentType, s.body, s.flushChunks
+	s.mu.Unlock()
+
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	w.WriteHeader(status)
+	if chunks > 1 {
+		// 分块流式写：每块后 Flush（模拟 SSE/渐进响应）。
+		chunkSize := len(respBody) / chunks
+		for i := 0; i < chunks; i++ {
+			start := i * chunkSize
+			end := start + chunkSize
+			if i == chunks-1 {
+				end = len(respBody)
+			}
+			_, _ = w.Write(respBody[start:end])
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}
+		return
+	}
+	_, _ = w.Write(respBody)
+}
+
+func newStubServer(t *testing.T, handler *stubHandler) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server
+}
+
+func waitFor(t *testing.T, condition func() bool, what string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
+// 响应体超过捕获预算：客户端仍收到完整响应（流式透传不受影响），
+// 差分按 response-too-large 记账丢弃。
+func TestShadowResponseOverBudgetStillStreamsFully(t *testing.T) {
+	handler := &stubHandler{
+		status:      http.StatusOK,
+		contentType: "application/json",
+		body:        bytes.Repeat([]byte(`{"chunk":"0123456789"}`), 200), // ~4KB
+	}
+	upstream := newStubServer(t, handler)
+
+	disp := &fakeDispatcher{}
+	gateway, err := New(upstream.URL, DefaultRules())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	gateway.SetShadowBudget(ShadowBudget{MaxRequestBodyByte: 4096, MaxResponseCaptureByte: 1024}) // 捕获预算 1KB
+
+	rec := httptest.NewRecorder()
+	gateway.ServeHTTPWithShadow(rec, httptest.NewRequest(http.MethodGet, "http://gateway/api/healthz/live", nil), disp)
+
+	// 客户端收到完整响应（不受捕获预算影响）。
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if rec.Body.Len() != len(handler.body) {
+		t.Fatalf("client body = %d bytes, want full %d bytes（捕获预算不得截断主响应）", rec.Body.Len(), len(handler.body))
+	}
+	if !bytes.Contains(rec.Body.Bytes(), handler.body[len(handler.body)-20:]) {
+		t.Fatal("client response tail missing — streaming passthrough broken")
+	}
+	// 差分被跳过并按原因记账。
+	waitFor(t, func() bool { return disp.skipCount(ShadowSkipResponseTooLarge) == 1 }, "response-too-large skip")
+	if disp.observedCount() != 0 {
+		t.Fatalf("diff executed despite oversized response (%d)", disp.observedCount())
+	}
+}
+
+// SSE 响应：客户端收到事件流，差分按 streaming-skipped 丢弃。
+func TestShadowSSEResponseSkipsDiffButPassesThrough(t *testing.T) {
+	handler := &stubHandler{
+		status:      http.StatusOK,
+		contentType: "text/event-stream",
+		body:        []byte("data: one\n\ndata: two\n\n"),
+		flushChunks: 2,
+	}
+	upstream := newStubServer(t, handler)
+
+	disp := &fakeDispatcher{}
+	gateway, err := New(upstream.URL, DefaultRules())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	gateway.SetShadowBudget(ShadowBudget{MaxRequestBodyByte: 4096, MaxResponseCaptureByte: 1 << 20})
+
+	rec := httptest.NewRecorder()
+	gateway.ServeHTTPWithShadow(rec, httptest.NewRequest(http.MethodGet, "http://gateway/api/healthz/live", nil), disp)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Errorf("client Content-Type = %q, want text/event-stream", got)
+	}
+	if rec.Body.String() != "data: one\n\ndata: two\n\n" {
+		t.Fatalf("client body = %q, want full SSE stream", rec.Body.String())
+	}
+	waitFor(t, func() bool { return disp.skipCount(ShadowSkipStreaming) == 1 }, "streaming skip")
+	if disp.observedCount() != 0 {
+		t.Fatalf("diff executed on SSE response (%d)", disp.observedCount())
+	}
+}
+
+// 协议升级（WebSocket）请求：不进入差分（无意义且 stdlib 代理不支持），
+// 记 streaming-skipped。
+func TestShadowUpgradeRequestSkipsDiff(t *testing.T) {
+	handler := &stubHandler{status: http.StatusOK, body: []byte(`{}`)}
+	upstream := newStubServer(t, handler)
+
+	disp := &fakeDispatcher{}
+	gateway, err := New(upstream.URL, DefaultRules())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://gateway/api/healthz/live", nil)
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Connection", "Upgrade")
+
+	rec := httptest.NewRecorder()
+	gateway.ServeHTTPWithShadow(rec, req, disp)
+
+	waitFor(t, func() bool { return disp.skipCount(ShadowSkipStreaming) == 1 }, "upgrade skip")
+	if disp.observedCount() != 0 {
+		t.Fatalf("diff executed on upgrade request (%d)", disp.observedCount())
+	}
+}
+
+// 请求体超过差分预算：上游仍收到完整请求体（MultiReader 拼回），
+// 差分按 request-too-large 记账丢弃。
+func TestShadowRequestOverBudgetStillForwardsFullBody(t *testing.T) {
+	handler := &stubHandler{
+		status:      http.StatusOK,
+		contentType: "application/json",
+		body:        []byte(`{"ok":true}`),
+	}
+	upstream := newStubServer(t, handler)
+
+	disp := &fakeDispatcher{}
+	gateway, err := New(upstream.URL, DefaultRules())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	gateway.SetShadowBudget(ShadowBudget{MaxRequestBodyByte: 16, MaxResponseCaptureByte: 1 << 20})
+
+	fullBody := `{"payload":"` + strings.Repeat("x", 200) + `"}`
+	req := httptest.NewRequest(http.MethodGet, "http://gateway/api/healthz/live", strings.NewReader(fullBody))
+	rec := httptest.NewRecorder()
+	gateway.ServeHTTPWithShadow(rec, req, disp)
+
+	// 差分跳过。
+	waitFor(t, func() bool { return disp.skipCount(ShadowSkipRequestTooLarge) == 1 }, "request-too-large skip")
+	// 上游收到完整请求体。
+	handler.mu.Lock()
+	upstreamBody := handler.bodies[0]
+	handler.mu.Unlock()
+	if upstreamBody != fullBody {
+		t.Fatalf("upstream body = %d bytes, want full %d bytes（超预算请求仍需完整转发）", len(upstreamBody), len(fullBody))
+	}
+}
+
+// 预算内的正常响应：差分拿到完整捕获（status + body）。
+func TestShadowSmallResponseCapturedForDiff(t *testing.T) {
+	handler := &stubHandler{
+		status:      http.StatusOK,
+		contentType: "application/json",
+		body:        []byte(`{"upstream":"legacy"}`),
+	}
+	upstream := newStubServer(t, handler)
+
+	disp := &fakeDispatcher{}
+	gateway, err := New(upstream.URL, DefaultRules())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	gateway.SetShadowBudget(ShadowBudget{MaxRequestBodyByte: 4096, MaxResponseCaptureByte: 4096})
+
+	rec := httptest.NewRecorder()
+	gateway.ServeHTTPWithShadow(rec, httptest.NewRequest(http.MethodGet, "http://gateway/api/healthz/live", nil), disp)
+
+	if !strings.Contains(rec.Body.String(), "legacy") {
+		t.Fatalf("client body = %s, want upstream response", rec.Body.String())
+	}
+	waitFor(t, func() bool { return disp.observedCount() == 1 }, "diff observation")
+	disp.mu.Lock()
+	defer disp.mu.Unlock()
+	if string(disp.lastLegacy) != `{"upstream":"legacy"}` {
+		t.Fatalf("captured legacy body = %q, want full upstream body", disp.lastLegacy)
+	}
+	if disp.lastStatus != http.StatusOK {
+		t.Fatalf("captured status = %d, want 200", disp.lastStatus)
+	}
+}
+
+// 客户端响应头透传：上游设置的头（含 Content-Type）原样到达客户端。
+func TestShadowForwardsUpstreamHeaders(t *testing.T) {
+	handler := &stubHandler{
+		status:      http.StatusTeapot,
+		contentType: "application/json",
+		body:        []byte(`{"a":1}`),
+	}
+	upstream := newStubServer(t, handler)
+
+	disp := &fakeDispatcher{}
+	gateway, err := New(upstream.URL, DefaultRules())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	gateway.ServeHTTPWithShadow(rec, httptest.NewRequest(http.MethodGet, "http://gateway/api/healthz/live", nil), disp)
+
+	if rec.Code != http.StatusTeapot {
+		t.Fatalf("client status = %d, want 418（非 200 状态也必须透传）", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Errorf("client Content-Type = %q, want application/json", got)
 	}
 }
