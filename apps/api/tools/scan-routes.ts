@@ -26,6 +26,7 @@ export const GUARDS_METADATA = "__guards__";
 export const CONTROLLER_WATERMARK = "__controller__";
 export const ROUTE_ARGS_METADATA = "__routeArguments__";
 export const PARAMTYPES_METADATA = "design:paramtypes";
+export const HTTP_CODE_METADATA = "__httpCode__";
 export const IS_PUBLIC_KEY = "isPublic";
 export const ALLOW_AUTHENTICATED_KEY = "allowAuthenticated";
 export const PERMISSIONS_KEY = "permissions";
@@ -79,6 +80,8 @@ export interface EndpointInfo {
   /** @Header() 装饰器写入的头（如 Cache-Control）。 */
   headers: Record<string, string>;
   isSse: boolean;
+  /** 显式 @HttpCode 装饰器声明的状态码（无则 null → Nest 按方法默认）。 */
+  httpCode: number | null;
   /** 路径参数（:id 形式来自 handler path 元数据）。 */
   pathParams: string[];
   /** @Param/@Query/@Body 装饰器参数。 */
@@ -250,6 +253,9 @@ export function endpointsFromController(
       }
     }
     const isSse = Reflect.getMetadata(SSE_METADATA, handler) === true;
+    // 显式 @HttpCode 覆盖（无则 null——Nest 按方法默认：POST 201，其余 200）。
+    const httpCodeMeta = Reflect.getMetadata(HTTP_CODE_METADATA, handler);
+    const httpCode = typeof httpCodeMeta === "number" ? httpCodeMeta : null;
 
     // 路由参数（@Param/@Query/@Body）：装饰器把元数据写到类的
     // ROUTE_ARGS_METADATA[methodName] 上（不是 handler 函数上），键形如
@@ -318,6 +324,7 @@ export function endpointsFromController(
       },
       headers,
       isSse,
+      httpCode,
       pathParams: path
         ? [...path.matchAll(/:([A-Za-z0-9_]+)/g)].map((m) => m[1] ?? "")
         : [],

@@ -85,6 +85,11 @@ jobs:
       - name: Auth matrix drift check (fail-closed)
         run: pnpm --filter @modular/api run contract:auth-matrix:check
 
+      - name: GraphQL SDL drift check
+        run: |
+          pnpm --filter @modular/api run generate:schema
+          git diff --exit-code apps/api/schema.gql
+
       - name: Go tests (api-go gateway + vector-go pilot)
         run: pnpm --filter @modular/api-go --filter @modular/vector-go test
 
@@ -222,3 +227,67 @@ jobs:
         run: |
           kill $(cat /tmp/vector-nestjs.pid) 2>/dev/null || true
           kill $(cat /tmp/vector-go.pid) 2>/dev/null || true
+
+  # 契约基线一次性远端再生成（专用远端生成提交方案）。
+  #
+  # 背景：本仓库约束「生成器不在本机执行」——生成物（OpenAPI 快照 /
+  # 鉴权矩阵 / GraphQL SDL）的更新必须走远端。本 job 仅在 PR 带有
+  # contract-regen label 时运行：检出 PR head → 运行三个生成器 →
+  # 有差异则提交回 PR 分支（触发新一轮完整 CI）。
+  #
+  # ⚠️ 该 label 等价于「跳过漂移门禁一次」——只应由维护者在有意变更
+  # 契约语义时添加，再生成完成后必须移除。平时 verify job 的三个
+  # drift gate 保持 fail-on-drift 语义不变。
+  contract-baseline-regen:
+    if: contains(github.event.pull_request.labels.*.name, 'contract-regen')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      HUSKY: "0"
+      CI: "true"
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+
+      - name: Regenerate contract artifacts
+        run: |
+          pnpm --filter @modular/api run contract:openapi:snapshot
+          pnpm --filter @modular/api run contract:auth-matrix:generate
+          pnpm --filter @modular/api run generate:schema
+
+      - name: Commit regenerated artifacts (if changed)
+        run: |
+          git config user.name "contract-regen[bot]"
+          git config user.email "actions@github.com"
+          if git diff --quiet; then
+            echo "contract artifacts already in sync — nothing to commit"
+            exit 0
+          fi
+          git add apps/api/tests/contract apps/api/schema.gql
+          git commit -m "🔧 chore(contract): 远端再生成契约基线（OpenAPI 快照/鉴权矩阵/GraphQL SDL）"
+          git push origin HEAD:${{ github.head_ref }}
+          echo "committed regenerated artifacts"
+
+      - name: Remind to remove the label
+        run: |
+          echo "::notice::契约基线已再生成并提交。请从 PR 移除 contract-regen label，恢复漂移门禁语义。"

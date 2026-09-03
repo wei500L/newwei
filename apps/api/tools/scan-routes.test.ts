@@ -128,38 +128,83 @@ describe("endpointsFromController (decorator metadata semantics)", () => {
 
 // ---- 全量完整性：提交的契约基线（CI 独立步骤重新生成并逐字节比对）----
 describe("contract baseline artifacts", () => {
-  it("auth-matrix baseline covers the full controller surface with no dead routes", () => {
-    const matrix = JSON.parse(
+  interface MatrixRowShape {
+    method: string;
+    route: string;
+    anonymous: string;
+    authenticatedWithoutPermission: string;
+    authenticatedWithPermission: string;
+    wrongOrg: string;
+    permission: string[];
+    ordinaryOrgAdmin: string;
+    platformAdmin: string;
+    platformOnly: boolean;
+    platformCheckSource: string | null;
+    runtimeVerificationRequired: string[];
+    confidence: string;
+    riskNotes: string;
+  }
+
+  function loadMatrix(): {
+    totals: Record<string, number>;
+    rows: MatrixRowShape[];
+  } {
+    return JSON.parse(
       readFileSync(join(process.cwd(), "tests/contract/auth-matrix.json"), "utf8"),
-    ) as {
-      totals: { controllers: number; endpoints: number; public: number };
-      rows: { route: string; anonymous: string; permission: string[] }[];
-    };
+    );
+  }
+
+  it("auth-matrix baseline covers the full controller surface with no dead routes", () => {
+    const matrix = loadMatrix();
     expect(matrix.totals.controllers).toBeGreaterThanOrEqual(70);
     expect(matrix.totals.endpoints).toBeGreaterThanOrEqual(360);
     expect(matrix.totals.public).toBeGreaterThanOrEqual(20);
 
     // API-01 修复后全库 0 死路由；矩阵生成时 fail-closed 的结果被提交。
-    // （permission 为空但 authenticated=allowed 的行是 @AllowAuthenticated
-    // 端点——仅 JWT 无权限要求，不是死路由。）
     const dead = matrix.rows.filter(
-      (r) => r.anonymous === "denied" && r.authenticated === "denied" && r.permission.length === 0,
+      (r) =>
+        r.anonymous === "denied" &&
+        r.authenticatedWithoutPermission === "denied" &&
+        r.authenticatedWithPermission === "denied" &&
+        r.permission.length === 0,
     );
     expect(dead).toEqual([]);
 
-    // 关键语义锚点：onboarding 的权限元数据（API-01）。
+    // 关键语义锚点：onboarding 的权限元数据（API-01）——无权限 JWT 必
+    // denied，有权限 JWT allowed。
     const onboarding = matrix.rows.find(
       (r) => r.route === "/api/user-settings/ui/onboarding",
     );
     expect(onboarding?.permission).toEqual(["items.read"]);
+    expect(onboarding?.authenticatedWithoutPermission).toBe("denied");
+    expect(onboarding?.authenticatedWithPermission).toBe("allowed");
+    expect(onboarding?.wrongOrg).toBe("runtime-required");
+  });
 
-    // SEC-01：vector 服务变更面标注平台管理员。
+  it("auth-matrix expresses the four-state semantics (SEC-01 row included)", () => {
+    const matrix = loadMatrix();
+
+    // SEC-01：vector 服务变更面——普通 org 管理员 denied（启发式）、
+    // 平台管理员 allowed（启发式）、平台校验来源显式标注。
     const vectorPut = matrix.rows.find(
-      (r) =>
-        r.route === "/api/system-settings/vector-service" &&
-        r.method === "PUT",
+      (r) => r.route === "/api/system-settings/vector-service" && r.method === "PUT",
     );
     expect(vectorPut?.riskNotes).toContain("platform-admin");
+    expect(vectorPut?.ordinaryOrgAdmin).toBe("denied");
+    expect(vectorPut?.platformAdmin).toBe("allowed");
+    expect(vectorPut?.platformCheckSource).toBe("handler-text-scan");
+    expect(vectorPut?.confidence).toBe("static+heuristic");
+    expect(vectorPut?.runtimeVerificationRequired ?? []).toContain("platform-admin-gate");
+
+    // @Permissions 端点的无权限 JWT 必须 denied（不是笼统的 authenticated
+    // allowed）——至少 300 个端点表达该区分。
+    expect(matrix.totals.permissionGatedDenyWithoutPermission).toBeGreaterThanOrEqual(300);
+
+    // 非 @Public 端点的 wrongOrg 一律 runtime-required（静态不编造）。
+    const forgedWrongOrg = matrix.rows.filter(
+      (r) => r.anonymous === "denied" && r.wrongOrg !== "runtime-required",
+    );
+    expect(forgedWrongOrg).toEqual([]);
   });
 
   it("openapi snapshot baseline covers 290+ paths deterministically", () => {
@@ -167,7 +212,8 @@ describe("contract baseline artifacts", () => {
       readFileSync(join(process.cwd(), "tests/contract/openapi.snapshot.json"), "utf8"),
     ) as {
       openapi: string;
-      paths: Record<string, unknown>;
+      info: { title: string; completeness: Record<string, string> };
+      paths: Record<string, Record<string, Record<string, unknown>>>;
       "x-scan-meta": { endpointCount: number; controllerCount: number };
     };
     expect(Object.keys(snapshot.paths).length).toBeGreaterThanOrEqual(290);
@@ -175,5 +221,19 @@ describe("contract baseline artifacts", () => {
     expect(snapshot["x-scan-meta"].controllerCount).toBeGreaterThanOrEqual(70);
     // 确定性锚点：版本号固定（非应用版本——那会破坏确定性）。
     expect(snapshot.openapi).toBe("3.0.3");
+    // 能力边界诚实登记：标题与 completeness 明示这是 route/auth 快照，
+    // 不是完整 OpenAPI 契约。
+    expect(snapshot.info.title).toContain("REST route/auth contract snapshot");
+    expect(snapshot.info.completeness.responseSchemas).toContain("unresolved");
+    expect(snapshot.info.completeness.requestSchemas).toContain("names-only");
+
+    // 状态码语义：POST 端点默认 201（Nest @Post 默认，远端差分实测确认）。
+    const login = snapshot.paths["/api/auth/login"]?.post as
+      | { responses?: Record<string, unknown> }
+      | undefined;
+    expect(login?.responses).toHaveProperty("201");
+
+    // GraphQL 端点（POST /graphql 在 api 之外挂载）不在 REST 快照 paths 里。
+    expect(snapshot.paths["/graphql"]).toBeUndefined();
   });
 });
