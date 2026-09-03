@@ -6,6 +6,7 @@ import { renderWithProviders } from "@/test/render";
 
 import { MobileNavDrawer } from "./mobile-nav-drawer";
 import { TopNav } from "./top-nav";
+import { ViewportSizeProvider } from "./use-viewport-width";
 
 const mocks = vi.hoisted(() => ({
   permissions: ["crawl.write"] as string[],
@@ -92,7 +93,11 @@ beforeEach(() => {
 
 describe("TopNav（常驻入口与响应式优先级）", () => {
   it("宽屏：菜单/品牌/命令面板/通知/用户/主题常驻，抓取为主按钮", async () => {
-    renderWithProviders(<TopNav />);
+    renderWithProviders(
+      <ViewportSizeProvider>
+        <TopNav />
+      </ViewportSizeProvider>,
+    );
 
     expect(
       screen.getByRole("button", { name: "Open navigation menu" }),
@@ -109,8 +114,9 @@ describe("TopNav（常驻入口与响应式优先级）", () => {
     await waitFor(() => {
       expect(screen.getByTestId("command-bar-stub")).toBeInTheDocument();
     });
+    // 主按钮带 PlusOutlined 图标（子树参与可访问名），用正则匹配
     expect(
-      screen.getByRole("button", { name: "New Crawl" }),
+      screen.getByRole("button", { name: /new crawl/i }),
     ).toBeInTheDocument();
     // 窄屏搜索兜底入口不在宽屏出现
     expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
@@ -118,15 +124,19 @@ describe("TopNav（常驻入口与响应式优先级）", () => {
 
   it("窄屏：命令面板让位于搜索兜底入口，组织切换保留", async () => {
     setViewportWidth(1024);
-    renderWithProviders(<TopNav />);
+    renderWithProviders(
+      <ViewportSizeProvider>
+        <TopNav />
+      </ViewportSizeProvider>,
+    );
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
     });
     expect(screen.queryByTestId("command-bar-stub")).toBeNull();
-    // 组织切换在窄屏仍可达（Popover 形态）
+    // 组织切换在窄屏仍可达（Popover 形态，断言其触发按钮）
     expect(
-      screen.getByTestId("organization-switcher-stub"),
+      screen.getByRole("button", { name: "Switch organization" }),
     ).toBeInTheDocument();
   });
 

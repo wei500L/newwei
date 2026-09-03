@@ -5,8 +5,8 @@ import Link from "next/link";
 import { Fragment, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { estimateRailContentHeight, type NavMode } from "./nav-mode";
 import { navItemStateClass } from "./nav-item-state";
+import { estimateRailContentHeight, type NavMode } from "./nav-mode";
 import { useNavigation } from "./use-navigation";
 
 interface ActionRailProps {

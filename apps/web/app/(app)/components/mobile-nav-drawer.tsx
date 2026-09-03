@@ -36,7 +36,7 @@ export function MobileNavDrawer({ open, onClose, className }: MobileNavDrawerPro
       id="mobile-navigation-drawer"
       title={t("nav.menu")}
       placement="left"
-      width={320}
+      width="var(--nav-drawer-width)"
       open={open}
       onClose={onClose}
       destroyOnHidden

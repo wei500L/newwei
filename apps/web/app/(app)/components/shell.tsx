@@ -17,8 +17,8 @@ import { resolveNavMode, type NavMode } from "./nav-mode";
 import { SystemHealthProvider } from "./system-health-context";
 import { TopNav } from "./top-nav";
 import { NAV_FULL_MIN_WIDTH } from "./top-nav-density";
-import { useViewportWidth, ViewportSizeProvider } from "./use-viewport-width";
 import { UrlStateSync } from "./url-state-sync";
+import { useViewportWidth, ViewportSizeProvider } from "./use-viewport-width";
 import { UserUiSettingsSync } from "./user-ui-settings-sync";
 
 /**

@@ -18,8 +18,10 @@ import { NAV_FULL_MIN_WIDTH } from "./top-nav-density";
  * ViewportSizeProvider，navMode 与 TopNav 密度都从这里读。
  *
  * SSR 初值取 NAV_FULL_MIN_WIDTH（1700）——与迁移前 TopNav 的 SSR 渲染
- * 一致，且 ≥900（Shell 的 rail 阈值），两侧首帧结构与迁移前完全相同，
- * 挂载后再按真实宽度收敛。
+ * 一致；navMode 首帧也与迁移前相同（两侧初值均落在 rail 档）。唯一的首
+ * 帧差异：Shell 的 systemHealth 启用条件（≥1700）在非 dashboard 页的
+ * SSR 首帧为 true，挂载后按真实宽度收敛（SystemHealthProvider 内有
+ * canManageQueue + 会话 loading 双重门，窄屏无实际请求）。
  */
 const SSR_VIEWPORT_WIDTH = NAV_FULL_MIN_WIDTH;
 
