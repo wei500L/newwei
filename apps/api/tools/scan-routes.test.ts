@@ -1,101 +1,176 @@
+import { Controller, Get, Param, Put, Header } from "@nestjs/common";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { scanControllers } from "./scan-routes";
+import { Permissions } from "../src/common/decorators/permissions.decorator";
+import { Public } from "../src/common/decorators/public.decorator";
 
-const API_ROOT = join(__dirname, "..");
+import { endpointsFromController } from "./scan-routes";
 
-// 契约保护网地基的行为测试：静态扫描器的输出形状与关键语义锚定。
-// 这些断言保护 OpenAPI 快照与鉴权矩阵的共同输入——扫描器自身的回归
-//（路由遗漏/权限归一化错误）会让两份契约基线悄悄失真。
-describe("scanControllers", () => {
-  const result = scanControllers({ apiRoot: API_ROOT });
+// 测试策略：
+//   1. 元数据语义（内联装饰器控制器 + endpointsFromController）——vitest
+//      对本文件的 esbuild 转换带 tsconfigRaw 装饰器配置，装饰器元数据
+//      完整保留，直接锚定扫描器的读取逻辑（path/method/public/
+//      permissions/headers/pathParams/routeParams/fail-closed 暴露）。
+//   2. 全量完整性（提交的契约基线 artifacts）——真实控制器全量加载在
+//      CI 用独立步骤验证（tsx 运行生成器 + 与基线逐字节比对），这里
+//      断言基线内容（controller/endpoint 数量、死路由为零、关键语义）。
+//
+// 为什么不全量扫描也在 vitest 内做：vitest 进程内 require TS 控制器源
+// 经过的转换链路与 tsx 运行时不同，装饰器元数据丢失（实测 0 controller
+// —— CI run 33743071867）。生成器脚本（tsx）与矩阵漂移检查（独立 CI
+// 步骤）已覆盖真实加载路径。
 
-  it("discovers the full controller surface without load errors", () => {
-    expect(result.controllerCount).toBeGreaterThanOrEqual(70);
-    expect(result.endpoints.length).toBeGreaterThanOrEqual(360);
-    expect(result.errors).toEqual([]);
+@Controller("fixture")
+class FixtureController {
+  @Get("live")
+  @Public()
+  live() {
+    return { ok: true };
+  }
+
+  @Get("items/:id")
+  detail(@Param("id") id: string) {
+    return { id };
+  }
+
+  @Put("settings")
+  @Header("Cache-Control", "no-store")
+  @Permissions("items.read")
+  update() {
+    return {};
+  }
+
+  // 无路由装饰器的方法：不进端点清单。
+  helper() {
+    return {};
+  }
+}
+
+@Controller("fixture-missing")
+class MissingMetaController {
+  @Get("dead")
+  dead() {
+    return {};
+  }
+}
+
+const OPTIONS = {
+  name: "FixtureController",
+  classPath: "/virtual/fixture.controller.ts",
+  basePath: "fixture",
+  apiRoot: "/virtual",
+  globalPrefix: "api",
+};
+
+describe("endpointsFromController (decorator metadata semantics)", () => {
+  const endpoints = endpointsFromController(FixtureController, OPTIONS);
+
+  it("collects only route-decorated handlers", () => {
+    expect(endpoints.map((e) => e.handler).sort()).toEqual([
+      "detail",
+      "live",
+      "update",
+    ]);
   });
 
-  it("applies the /api global prefix and leaves admin/queues unprefixed", () => {
-    expect(result.endpoints.some((e) => e.path === "/api/auth/login")).toBe(true);
-    // Bull Board 挂载点不带 /api 前缀（main.ts:62-67 排除规则）。
-    expect(result.endpoints.some((e) => e.path.startsWith("/api/admin/queues"))).toBe(false);
+  it("reads path, method, and applies the /api global prefix", () => {
+    const live = endpoints.find((e) => e.handler === "live");
+    expect(live?.method).toBe("GET");
+    expect(live?.path).toBe("/api/fixture/live");
+
+    const update = endpoints.find((e) => e.handler === "update");
+    expect(update?.method).toBe("PUT");
+    expect(update?.path).toBe("/api/fixture/settings");
   });
 
-  it("reads permission metadata with any/all modes", () => {
-    const onboarding = result.endpoints.find(
-      (e) => e.path === "/api/user-settings/ui/onboarding" && e.method === "PUT",
-    );
-    expect(onboarding?.auth.permissions).toEqual(["items.read"]);
-    expect(onboarding?.auth.permissionsMode).toBe("any");
+  it("marks @Public handlers as public", () => {
+    const live = endpoints.find((e) => e.handler === "live");
+    expect(live?.auth.isPublic).toBe(true);
+    expect(live?.auth.allowAuthenticated).toBe(false);
   });
 
-  it("marks @Public endpoints as public (class or handler level)", () => {
-    const liveness = result.endpoints.find(
-      (e) => e.path === "/api/healthz/live" && e.method === "GET",
-    );
-    expect(liveness?.auth.isPublic).toBe(true);
-
-    const internalKeys = result.endpoints.find(
-      (e) => e.path === "/api/internal/litellm/openai-keys" && e.method === "GET",
-    );
-    // class 级 @Public + 内部 token guard。
-    expect(internalKeys?.auth.isPublic).toBe(true);
-    expect(internalKeys?.auth.guards).toContain("LitellmInternalTokenGuard");
+  it("reads @Permissions with any mode", () => {
+    const update = endpoints.find((e) => e.handler === "update");
+    expect(update?.auth.isPublic).toBe(false);
+    expect(update?.auth.permissions).toEqual(["items.read"]);
+    expect(update?.auth.permissionsMode).toBe("any");
   });
 
-  it("fails closed: no endpoint lacks permission metadata after API-01 fix", () => {
-    const dead = result.endpoints.filter(
-      (e) =>
-        !e.auth.isPublic &&
-        !e.auth.allowAuthenticated &&
-        e.auth.permissions.length === 0,
-    );
-    // API-01 修复后全库 0 个死路由；新增端点缺元数据会破坏此断言。
-    expect(dead).toEqual([]);
+  it("reads @Header response headers", () => {
+    const update = endpoints.find((e) => e.handler === "update");
+    expect(update?.headers["Cache-Control"]).toBe("no-store");
   });
 
-  it("detects the SEC-01 platform-admin gate on vector service mutation", () => {
-    const put = result.endpoints.find(
-      (e) =>
-        e.path === "/api/system-settings/vector-service" &&
-        e.method === "PUT",
-    );
-    const reset = result.endpoints.find(
-      (e) =>
-        e.path === "/api/system-settings/vector-service" &&
-        e.method === "DELETE",
-    );
-    const get = result.endpoints.find(
-      (e) =>
-        e.path === "/api/system-settings/vector-service" &&
-        e.method === "GET",
-    );
-    expect(put?.auth.platformAdminInHandler).toBe(true);
-    expect(reset?.auth.platformAdminInHandler).toBe(true);
-    // 读取端点不带平台校验（保持兼容）。
-    expect(get?.auth.platformAdminInHandler).toBe(false);
-  });
-
-  it("extracts path params and route params", () => {
-    const detail = result.endpoints.find(
-      (e) => e.path === "/api/items/:id" && e.method === "GET",
-    );
+  it("extracts path params from the route and @Param metadata", () => {
+    const detail = endpoints.find((e) => e.handler === "detail");
+    expect(detail?.path).toBe("/api/fixture/items/:id");
     expect(detail?.pathParams).toEqual(["id"]);
-    expect(detail?.routeParams.some((p) => p.kind === "param" && p.name === "id")).toBe(true);
+    expect(
+      detail?.routeParams.some((p) => p.kind === "param" && p.name === "id"),
+    ).toBe(true);
   });
 
-  it("captures @Header response headers (cache-control semantics)", () => {
-    const publicHome = result.endpoints.find(
-      (e) => e.path === "/api/public-portal/home" && e.method === "GET",
+  it("exposes missing permission metadata verbatim (fail-closed input for the matrix generator)", () => {
+    const dead = endpointsFromController(MissingMetaController, {
+      ...OPTIONS,
+      name: "MissingMetaController",
+      basePath: "fixture-missing",
+    });
+    expect(dead).toHaveLength(1);
+    expect(dead[0].auth.isPublic).toBe(false);
+    expect(dead[0].auth.allowAuthenticated).toBe(false);
+    expect(dead[0].auth.permissions).toEqual([]);
+    // 该形状进入 generate-auth-matrix 后触发 fail-closed（exit 1）。
+  });
+});
+
+// ---- 全量完整性：提交的契约基线（CI 独立步骤重新生成并逐字节比对）----
+describe("contract baseline artifacts", () => {
+  it("auth-matrix baseline covers the full controller surface with no dead routes", () => {
+    const matrix = JSON.parse(
+      readFileSync(join(process.cwd(), "tests/contract/auth-matrix.json"), "utf8"),
+    ) as {
+      totals: { controllers: number; endpoints: number; public: number };
+      rows: { route: string; anonymous: string; permission: string[] }[];
+    };
+    expect(matrix.totals.controllers).toBeGreaterThanOrEqual(70);
+    expect(matrix.totals.endpoints).toBeGreaterThanOrEqual(360);
+    expect(matrix.totals.public).toBeGreaterThanOrEqual(20);
+
+    // API-01 修复后全库 0 死路由；矩阵生成时 fail-closed 的结果被提交。
+    const dead = matrix.rows.filter(
+      (r) => r.anonymous === "denied" && r.permission.length === 0,
     );
-    expect(publicHome?.headers["Cache-Control"]).toMatch(/public/);
+    expect(dead).toEqual([]);
+
+    // 关键语义锚点：onboarding 的权限元数据（API-01）。
+    const onboarding = matrix.rows.find(
+      (r) => r.route === "/api/user-settings/ui/onboarding",
+    );
+    expect(onboarding?.permission).toEqual(["items.read"]);
+
+    // SEC-01：vector 服务变更面标注平台管理员。
+    const vectorPut = matrix.rows.find(
+      (r) =>
+        r.route === "/api/system-settings/vector-service" &&
+        r.method === "PUT",
+    );
+    expect(vectorPut?.riskNotes).toContain("platform-admin");
   });
 
-  it("sorts output deterministically", () => {
-    const paths = result.endpoints.map((e) => `${e.method} ${e.path}`);
-    const sorted = [...paths].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-    expect(paths).toEqual(sorted);
+  it("openapi snapshot baseline covers 290+ paths deterministically", () => {
+    const snapshot = JSON.parse(
+      readFileSync(join(process.cwd(), "tests/contract/openapi.snapshot.json"), "utf8"),
+    ) as {
+      paths: Record<string, unknown>;
+      "x-scan-meta": { endpointCount: number; controllerCount: number };
+    };
+    expect(Object.keys(snapshot.paths).length).toBeGreaterThanOrEqual(290);
+    expect(snapshot["x-scan-meta"].endpointCount).toBeGreaterThanOrEqual(360);
+    expect(snapshot["x-scan-meta"].controllerCount).toBeGreaterThanOrEqual(70);
+    // 确定性锚点：版本号固定（非应用版本——那会破坏确定性）。
+    expect(snapshot as { openapi?: string }).openapi.toBe("3.0.3");
   });
 });

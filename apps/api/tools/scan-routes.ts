@@ -184,6 +184,150 @@ function guardNames(value: unknown): string[] {
     .sort();
 }
 
+/**
+ * endpointsFromController 从控制器类（及其装饰器元数据）提取端点清单。
+ *
+ * 与 scanControllers 分离：vitest 的进程内 require 对 TS 源的转换与
+ * tsx 运行时不同（装饰器元数据处理差异），全量扫描在 CI 用独立步骤
+ * （tsx 运行生成器 + 逐字节比对基线）验证；本函数允许测试直接传入
+ * 内联装饰器控制器类来锚定元数据语义。
+ */
+export function endpointsFromController(
+  // 装饰器元数据是 unknown 形状，逐键归一化后使用。
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  target: any,
+  options: {
+    name: string;
+    classPath: string;
+    basePath: string;
+    apiRoot: string;
+    globalPrefix: string;
+  },
+): EndpointInfo[] {
+  const { name, classPath, basePath, apiRoot, globalPrefix } = options;
+  const endpoints: EndpointInfo[] = [];
+
+  // class 级元数据（getAllAndOverride 语义：handler 覆盖 class）。
+  const classPublic = Reflect.getMetadata(IS_PUBLIC_KEY, target) === true;
+  const classAllowAuthenticated =
+    Reflect.getMetadata(ALLOW_AUTHENTICATED_KEY, target) === true;
+  const classPermissions = normalizePermissions(
+    Reflect.getMetadata(PERMISSIONS_KEY, target),
+  );
+  const classGuards = guardNames(Reflect.getMetadata(GUARDS_METADATA, target));
+
+  const prototype = target.prototype;
+  for (const handlerName of Object.getOwnPropertyNames(prototype)) {
+    if (handlerName === "constructor") {
+      continue;
+    }
+    // 用 descriptor 取方法，避免误执行 getter 类属性（如 akshare 的
+    // gatewayBaseUrl）——取值会触发 this.env.xxx 在无依赖环境下的崩溃。
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, handlerName);
+    if (
+      !descriptor ||
+      typeof descriptor.value !== "function" ||
+      // getter/setter 非路由方法，直接跳过。
+      typeof descriptor.get === "function" ||
+      typeof descriptor.set === "function"
+    ) {
+      continue;
+    }
+    const handler = descriptor.value;
+    const methodNumber = Reflect.getMetadata(METHOD_METADATA, handler);
+    if (methodNumber === undefined) {
+      continue; // 非路由方法。
+    }
+    const method = REQUEST_METHOD_NAMES[methodNumber] ?? `UNKNOWN(${methodNumber})`;
+    const handlerPath = String(Reflect.getMetadata(PATH_METADATA, handler) ?? "");
+    const headersMetadata = Reflect.getMetadata(HEADERS_METADATA, handler) as
+      | { name: string; value: string }[]
+      | undefined;
+    const headers: Record<string, string> = {};
+    if (Array.isArray(headersMetadata)) {
+      for (const header of headersMetadata) {
+        headers[header.name] = header.value;
+      }
+    }
+    const isSse = Reflect.getMetadata(SSE_METADATA, handler) === true;
+
+    // 路由参数（@Param/@Query/@Body）：装饰器把元数据写到类的
+    // ROUTE_ARGS_METADATA[methodName] 上（不是 handler 函数上），键形如
+    // "3:0"（paramtype:参数序号），值含 index/data/pipes。
+    const routeArgsAll = Reflect.getMetadata(
+      ROUTE_ARGS_METADATA,
+      target,
+      handlerName,
+    ) as Record<string, { index: number; data?: unknown }> | undefined;
+    const routeParams: RouteParam[] = [];
+    if (routeArgsAll) {
+      const paramtypes = Reflect.getMetadata(
+        PARAMTYPES_METADATA,
+        handler,
+      ) as unknown[] | undefined;
+      const paramTypeNames = (paramtypes ?? []).map((t) =>
+        typeof t === "function" ? (t as { name?: string }).name ?? null : null,
+      );
+      for (const [key, meta] of Object.entries(routeArgsAll)) {
+        const kindNum = Number.parseInt(key.split(":")[0] ?? "", 10);
+        const kind: RouteParam["kind"] | null =
+          kindNum === 3 ? "body" : kindNum === 4 ? "query" : kindNum === 5 ? "param" : null;
+        if (!kind) {
+          continue;
+        }
+        const data = meta.data;
+        routeParams.push({
+          kind,
+          name: typeof data === "string" && data.length > 0 ? data : null,
+          typeName: paramTypeNames[meta.index] ?? null,
+        });
+      }
+      routeParams.sort((a, b) => (a.kind + (a.name ?? "") < b.kind + (b.name ?? "") ? -1 : 1));
+    }
+
+    const handlerPublic =
+      Reflect.getMetadata(IS_PUBLIC_KEY, handler) === true || classPublic;
+    const handlerAllowAuthenticated =
+      Reflect.getMetadata(ALLOW_AUTHENTICATED_KEY, handler) === true ||
+      classAllowAuthenticated;
+    const handlerPermissions =
+      normalizePermissions(Reflect.getMetadata(PERMISSIONS_KEY, handler)) ??
+      classPermissions;
+    const handlerGuards = [
+      ...new Set([
+        ...classGuards,
+        ...guardNames(Reflect.getMetadata(GUARDS_METADATA, handler)),
+      ]),
+    ];
+
+    const path = applyGlobalPrefix(joinPath("", basePath, handlerPath), globalPrefix);
+
+    endpoints.push({
+      method: method === "ALL" ? "ALL" : method,
+      path,
+      controller: name,
+      handler: handlerName,
+      source: sourceRelative(classPath, apiRoot),
+      auth: {
+        isPublic: handlerPublic,
+        allowAuthenticated: handlerAllowAuthenticated && !handlerPublic,
+        permissions: handlerPermissions?.permissions ?? [],
+        permissionsMode: handlerPermissions?.mode ?? null,
+        guards: handlerGuards,
+        platformAdminInHandler: handlerHasPlatformAdminCheck(classPath, handlerName),
+      },
+      headers,
+      isSse,
+      pathParams: path
+        ? [...path.matchAll(/:([A-Za-z0-9_]+)/g)].map((m) => m[1] ?? "")
+        : [],
+      routeParams,
+    });
+  }
+
+  return endpoints;
+}
+
 function sourceRelative(file: string, apiRoot: string): string {
   const rel = relative(apiRoot, file);
   return rel.split(sep).join("/");
@@ -283,129 +427,15 @@ export function scanControllers(options: {
   }
 
   for (const controller of controllers) {
-    // class 级元数据（getAllAndOverride 语义：handler 覆盖 class）。
-    const classPublic = Reflect.getMetadata(IS_PUBLIC_KEY, controller.target) === true;
-    const classAllowAuthenticated =
-      Reflect.getMetadata(ALLOW_AUTHENTICATED_KEY, controller.target) === true;
-    const classPermissions = normalizePermissions(
-      Reflect.getMetadata(PERMISSIONS_KEY, controller.target),
-    );
-    const classGuards = guardNames(Reflect.getMetadata(GUARDS_METADATA, controller.target));
-
-    const prototype = controller.target.prototype;
-    for (const handlerName of Object.getOwnPropertyNames(prototype)) {
-      if (handlerName === "constructor") {
-        continue;
-      }
-      // 用 descriptor 取方法，避免误执行 getter 类属性（如 akshare 的
-      // gatewayBaseUrl）——取值会触发 this.env.xxx 在无依赖环境下的崩溃。
-      const descriptor = Object.getOwnPropertyDescriptor(prototype, handlerName);
-      if (
-        !descriptor ||
-        typeof descriptor.value !== "function" ||
-        // getter/setter 非路由方法，直接跳过。
-        typeof descriptor.get === "function" ||
-        typeof descriptor.set === "function"
-      ) {
-        continue;
-      }
-      const handler = descriptor.value;
-      const methodNumber = Reflect.getMetadata(METHOD_METADATA, handler);
-      if (methodNumber === undefined) {
-        continue; // 非路由方法。
-      }
-      const method = REQUEST_METHOD_NAMES[methodNumber] ?? `UNKNOWN(${methodNumber})`;
-      const handlerPath = String(Reflect.getMetadata(PATH_METADATA, handler) ?? "");
-      const headersMetadata = Reflect.getMetadata(HEADERS_METADATA, handler) as
-        | { name: string; value: string }[]
-        | undefined;
-      const headers: Record<string, string> = {};
-      if (Array.isArray(headersMetadata)) {
-        for (const header of headersMetadata) {
-          headers[header.name] = header.value;
-        }
-      }
-      const isSse = Reflect.getMetadata(SSE_METADATA, handler) === true;
-
-      // 路由参数（@Param/@Query/@Body）：装饰器把元数据写到类的
-      // ROUTE_ARGS_METADATA[methodName] 上（不是 handler 函数上），键形如
-      // "3:0"（paramtype:参数序号），值含 index/data/pipes。
-      const routeArgsAll = Reflect.getMetadata(
-        ROUTE_ARGS_METADATA,
-        controller.target,
-        handlerName,
-      ) as Record<string, { index: number; data?: unknown }> | undefined;
-      const routeParams: RouteParam[] = [];
-      if (routeArgsAll) {
-        const paramtypes = Reflect.getMetadata(
-          PARAMTYPES_METADATA,
-          handler,
-        ) as unknown[] | undefined;
-        const paramTypeNames = (paramtypes ?? []).map((t) =>
-          typeof t === "function" ? (t as { name?: string }).name ?? null : null,
-        );
-        for (const [key, meta] of Object.entries(routeArgsAll)) {
-          const kindNum = Number.parseInt(key.split(":")[0] ?? "", 10);
-          const kind: RouteParam["kind"] | null =
-            kindNum === 3 ? "body" : kindNum === 4 ? "query" : kindNum === 5 ? "param" : null;
-          if (!kind) {
-            continue;
-          }
-          const data = meta.data;
-          routeParams.push({
-            kind,
-            name: typeof data === "string" && data.length > 0 ? data : null,
-            typeName: paramTypeNames[meta.index] ?? null,
-          });
-        }
-        routeParams.sort((a, b) => (a.kind + (a.name ?? "") < b.kind + (b.name ?? "") ? -1 : 1));
-      }
-
-      const handlerPublic =
-        Reflect.getMetadata(IS_PUBLIC_KEY, handler) === true || classPublic;
-      const handlerAllowAuthenticated =
-        Reflect.getMetadata(ALLOW_AUTHENTICATED_KEY, handler) === true ||
-        classAllowAuthenticated;
-      const handlerPermissions =
-        normalizePermissions(Reflect.getMetadata(PERMISSIONS_KEY, handler)) ??
-        classPermissions;
-      const handlerGuards = [
-        ...new Set([
-          ...classGuards,
-          ...guardNames(Reflect.getMetadata(GUARDS_METADATA, handler)),
-        ]),
-      ];
-
-      const path = applyGlobalPrefix(
-        joinPath("", controller.basePath, handlerPath),
+    endpoints.push(
+      ...endpointsFromController(controller.target, {
+        name: controller.name,
+        classPath: controller.classPath,
+        basePath: controller.basePath,
+        apiRoot,
         globalPrefix,
-      );
-
-      endpoints.push({
-        method: method === "ALL" ? "ALL" : method,
-        path,
-        controller: controller.name,
-        handler: handlerName,
-        source: sourceRelative(controller.classPath, apiRoot),
-        auth: {
-          isPublic: handlerPublic,
-          allowAuthenticated: handlerAllowAuthenticated && !handlerPublic,
-          permissions: handlerPermissions?.permissions ?? [],
-          permissionsMode: handlerPermissions?.mode ?? null,
-          guards: handlerGuards,
-          platformAdminInHandler: handlerHasPlatformAdminCheck(
-            controller.classPath,
-            handlerName,
-          ),
-        },
-        headers,
-        isSse,
-        pathParams: path
-          ? [...path.matchAll(/:([A-Za-z0-9_]+)/g)].map((m) => m[1] ?? "")
-          : [],
-        routeParams,
-      });
-    }
+      }),
+    );
   }
 
   endpoints.sort((a, b) => {
