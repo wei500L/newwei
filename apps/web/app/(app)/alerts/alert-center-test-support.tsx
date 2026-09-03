@@ -210,7 +210,7 @@ export interface AlertApolloMockState {
   rejectEventIds: Set<string>;
   /** 非空时所有 mutation 响应被挂起，用于观察分批边界。 */
   mutationGate: { promise: Promise<void>; release: () => void } | null;
-  mutations: Array<{ eventId: string; status: string; note: string | null }>;
+  mutations: { eventId: string; status: string; note: string | null }[];
   /** 按到达顺序记录的 operationName 序列。 */
   operations: string[];
   activeSubscriptionObservers: Set<MockObserver>;
