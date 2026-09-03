@@ -109,11 +109,13 @@ export class UserUiSettingsController {
 
   @Get("onboarding")
   @Header("Cache-Control", "no-store")
+  @Permissions("items.read")
   async getOnboardingUiSettings(@CurrentUser() user: AuthenticatedUser) {
     return this.settings.getOnboardingUiSettings(user.orgId, user.id);
   }
 
   @Put("onboarding")
+  @Permissions("items.read")
   async updateOnboardingUiSettings(
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: UpdateOnboardingUiSettingsDto,
