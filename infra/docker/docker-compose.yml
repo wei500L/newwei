@@ -505,6 +505,35 @@ services:
       retries: 20
       start_period: 120s
 
+  # vector-go：Go 重写试点（Strangler Fig 迁移序 1）。
+  # 独立 go-pilot profile——默认部署不启动该服务，NestJS vector 仍是事实源。
+  # 切换：把 api 的 vector 服务配置（VECTOR_SERVICE_BASE_URL / 系统设置）
+  # 指向 http://vector-go:4010；回滚：指回 http://vector:4010（NestJS 版）。
+  # 健康检查在宿主侧执行（distroless 镜像无 curl）：见 go-pilot 的 CI job。
+  vector-go:
+    <<: *app-hardening
+    profiles: ["go-pilot"]
+    build:
+      context: ../..
+      dockerfile: infra/docker/vector-go.Dockerfile
+      args:
+        GO_IMAGE: ${VECTOR_GO_IMAGE:-golang:1.27}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4010
+      VECTOR_INTERNAL_TOKEN: ${VECTOR_INTERNAL_TOKEN:-dev-token}
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      VECTOR_COLLECTION_PREFIX: ${VECTOR_COLLECTION_PREFIX:-processed_item_summary}
+      VECTOR_QDRANT_TIMEOUT_MS: ${VECTOR_QDRANT_TIMEOUT_MS:-5000}
+    ports:
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:4011:4010"
+    logging: *json-file-logging
+    depends_on:
+      qdrant:
+        condition: service_started
+
   web:
     <<: *app-hardening
     build:
