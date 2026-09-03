@@ -43,6 +43,21 @@ const FLUID_LAYOUT_PATHS = [
 
 const EDGE_TO_EDGE_LAYOUT_PATHS = ["/newsnow"] as const;
 
+/**
+ * 内容宽度白名单（App Shell 第一批收敛点）：页面声明档位，不再各自
+ * 硬编码 max-w。PageContainer（components/page-container.tsx）复用同一
+ * 档位集合；newsnow 的 1760px 特例已收敛为 wide-board 档（页面内部
+ * 容器统一改用 PageContainer）。
+ */
+export const CONTENT_WIDTH_CLASSES = {
+  default: "max-w-[1440px]",
+  wide: "max-w-[1920px]",
+  "wide-board": "max-w-[1760px]",
+  full: "max-w-none",
+} as const;
+
+export type ContentWidth = keyof typeof CONTENT_WIDTH_CLASSES;
+
 function useContainerClass(): string {
   const pathname = usePathname();
   const isAdminHome = pathname === "/admin";

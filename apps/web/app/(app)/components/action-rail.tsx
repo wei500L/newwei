@@ -1,11 +1,14 @@
 "use client";
 
 import {
+  AimOutlined,
+  ApartmentOutlined,
   AppstoreOutlined,
   BellOutlined,
   BookOutlined,
   ClusterOutlined,
   DashboardOutlined,
+  EnvironmentOutlined,
   ExclamationCircleOutlined,
   FundOutlined,
   FolderOpenOutlined,
@@ -16,6 +19,7 @@ import {
   SearchOutlined,
   SettingOutlined,
   RadarChartOutlined,
+  TagsOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import { Tooltip } from "antd";
@@ -88,7 +92,8 @@ export function buildActionRailNavConfig(
     },
     {
       key: "/topics",
-      icon: <AppstoreOutlined />,
+      // 图标语义唯一化（FE-批2）：topics 用 Tags（news-hub 占 Appstore）。
+      icon: <TagsOutlined />,
       label: t("nav.main.topics"),
       path: "/topics",
     },
@@ -118,7 +123,8 @@ export function buildActionRailNavConfig(
     },
     {
       key: "/map",
-      icon: <GlobalOutlined />,
+      // 图标语义唯一化：map 用 Environment（newsnow 占 Global）。
+      icon: <EnvironmentOutlined />,
       label: t("nav.main.map"),
       path: "/map",
     },
@@ -126,7 +132,8 @@ export function buildActionRailNavConfig(
       ? [
           {
             key: "/knowledge-graph",
-            icon: <ClusterOutlined />,
+            // 图标语义唯一化：knowledge-graph 用 Apartment（events 占 Cluster）。
+            icon: <ApartmentOutlined />,
             label: t("nav.main.knowledgeGraph"),
             path: "/knowledge-graph",
           },
@@ -198,7 +205,8 @@ export function buildActionRailNavConfig(
   if (canManageCrawl) {
     adminNavItems.push({
       key: "/admin/ops/crawl-tasks",
-      icon: <RadarChartOutlined />,
+      // 图标语义唯一化：crawl-tasks 用 Aim（situation-monitor 占 RadarChart）。
+      icon: <AimOutlined />,
       label: t("nav.crawlTasks"),
       path: "/admin/ops/crawl-tasks",
     });

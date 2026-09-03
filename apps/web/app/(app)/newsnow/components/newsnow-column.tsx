@@ -4,6 +4,7 @@ import { useMemo } from "react";
 
 import type { NewsnowAnalyzedItem, Source } from "../hooks/use-news-sources";
 
+import { NewsnowBoardContainer } from "./newsnow-board-container";
 import { NewsnowDndGrid } from "./newsnow-dnd-grid";
 
 interface NewsnowColumnProps {
@@ -30,13 +31,13 @@ export function NewsnowColumn({
   }, [sourceIds, sources]);
 
   return (
-    <div className="mx-auto w-full max-w-[1760px] px-4 pb-8 pt-6 md:px-6 md:pb-9 md:pt-7 xl:px-8">
+    <NewsnowBoardContainer spacing="content">
       <NewsnowDndGrid
         columnKey={columnKey}
         sourceIds={sourceIds}
         sourcesMap={sourcesMap}
         analysisBySource={analysisBySource}
       />
-    </div>
+    </NewsnowBoardContainer>
   );
 }

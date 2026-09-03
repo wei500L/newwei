@@ -21,6 +21,9 @@ export default defineConfig({
         "app/(auth)/login/page.tsx",
         "app/(app)/admin/ops/news-sources/news-sources-content.tsx",
         "components/settings/email-settings-panel.tsx",
+        "app/(app)/components/page-container.tsx",
+        "app/(app)/components/nav-mode.ts",
+        "app/(app)/components/action-rail-routing.ts",
       ],
       exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
       thresholds: {

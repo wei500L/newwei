@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { useTheme } from "@/hooks/use-theme";
 
+import { NewsnowBoardContainer } from "../components/newsnow-board-container";
 import { NewsnowColumn } from "../components/newsnow-column";
 import { NewsnowHeader } from "../components/newsnow-header";
 import { NewsnowHottestCandidates } from "../components/newsnow-hottest-candidates";
@@ -25,7 +26,7 @@ import { useNewsnowStore } from "../store/newsnow-store";
 
 function NewsnowAttribution() {
   return (
-    <footer className="mx-auto w-full max-w-[1760px] px-4 pb-7 pt-3 text-center text-xs text-slate-500 dark:text-zinc-500 md:px-6 xl:px-8">
+    <NewsnowBoardContainer spacing="footer" className="text-center text-xs text-slate-500 dark:text-zinc-500">
       <p className="leading-6">
         本页面基于{" "}
         <a
@@ -47,13 +48,13 @@ function NewsnowAttribution() {
         </a>
         。
       </p>
-    </footer>
+    </NewsnowBoardContainer>
   );
 }
 
 function NewsnowSourcesSkeleton() {
   return (
-    <div className="mx-auto w-full max-w-[1760px] px-4 py-6 md:px-6 md:py-7 xl:px-8 relative z-10">
+    <NewsnowBoardContainer spacing="content" className="py-6 md:py-7 relative z-10">
       <div className="grid grid-cols-1 gap-5 md:grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] md:gap-6 xl:gap-7">
         {[...Array(10)].map((_, i) => (
           <div
@@ -64,7 +65,7 @@ function NewsnowSourcesSkeleton() {
           </div>
         ))}
       </div>
-    </div>
+    </NewsnowBoardContainer>
   );
 }
 
@@ -286,7 +287,7 @@ export default function NewsnowColumnPage() {
       <div className="relative z-10">
         <NewsnowHeader />
         {visibleRealtimeUnread > 0 ? (
-          <div className="mx-auto w-full max-w-[1760px] px-4 pt-4 md:px-6 xl:px-8">
+          <NewsnowBoardContainer spacing="section">
             <Alert
               showIcon
               type="info"
@@ -329,10 +330,10 @@ export default function NewsnowColumnPage() {
                 </Space>
               }
             />
-          </div>
+          </NewsnowBoardContainer>
         ) : null}
         {primeFeedbackSummary ? (
-          <div className="mx-auto w-full max-w-[1760px] px-4 pt-4 md:px-6 xl:px-8">
+          <NewsnowBoardContainer spacing="section">
             <Alert
               showIcon
               closable
@@ -359,10 +360,10 @@ export default function NewsnowColumnPage() {
                 ) : undefined
               }
             />
-          </div>
+          </NewsnowBoardContainer>
         ) : null}
         {!realtimeConnected && realtimeConnectionError ? (
-          <div className="mx-auto w-full max-w-[1760px] px-4 pt-4 md:px-6 xl:px-8">
+          <NewsnowBoardContainer spacing="section">
             <Alert
               showIcon
               type="warning"
@@ -370,7 +371,7 @@ export default function NewsnowColumnPage() {
               message={<span className="font-semibold">实时连接不可用</span>}
               description={<span className="opacity-80">{realtimeConnectionError}</span>}
             />
-          </div>
+          </NewsnowBoardContainer>
         ) : null}
         <main>
           {resolvedColumnKey === "hottest" ? (
