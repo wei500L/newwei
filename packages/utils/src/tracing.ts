@@ -2,6 +2,14 @@ interface TraceContext {
   traceId: string;
 }
 
+// Minimal structural stand-in for node:async_hooks.AsyncLocalStorage: the
+// real module must stay a dynamic builtin load (see createAsyncLocalStorage),
+// so we cannot reference its types via a static import either.
+interface TraceStorage {
+  getStore(): TraceContext | undefined;
+  run<T>(store: TraceContext, callback: () => T): T;
+}
+
 const randomHex = (bytes: number): string => {
   if (typeof globalThis !== "undefined" && globalThis.crypto?.getRandomValues) {
     const array = new Uint8Array(bytes);
@@ -25,12 +33,19 @@ const createAsyncLocalStorage = () => {
   }
 
   try {
-    // Avoid bundlers (e.g. Next/Webpack) trying to resolve node builtins for client bundles.
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const dynamicRequire = eval("require") as NodeRequire;
-    // eslint-disable-next-line @typescript-eslint/consistent-type-imports
-    const { AsyncLocalStorage } = dynamicRequire("node:async_hooks") as typeof import("node:async_hooks");
-    return new AsyncLocalStorage<TraceContext>();
+    // process.getBuiltinModule (Node >= 20.16) loads builtins without letting
+    // bundlers statically resolve them. The previous eval("require") trick
+    // broke the web build: webpack refuses any dynamic code evaluation in the
+    // Edge runtime bundle (middleware.ts pulls this module in via lib/auth.ts).
+    const getBuiltinModule = (process as { getBuiltinModule?: (id: string) => unknown })
+      .getBuiltinModule;
+    const asyncHooks = getBuiltinModule?.call(process, "node:async_hooks") as
+      | { AsyncLocalStorage: new () => TraceStorage }
+      | undefined;
+    if (asyncHooks?.AsyncLocalStorage) {
+      return new asyncHooks.AsyncLocalStorage();
+    }
+    return undefined;
   } catch {
     return undefined;
   }

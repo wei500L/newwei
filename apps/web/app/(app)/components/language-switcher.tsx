@@ -3,7 +3,8 @@
 import { Select } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { changeLanguage, resolveLocale, type SupportedLocale } from "@/lib/i18n";
+import { resolveLocale, type SupportedLocale } from "@/lib/i18n";
+import { changeLanguage } from "@/lib/i18n-client";
 
 interface LanguageSwitcherProps {
   compact?: boolean;

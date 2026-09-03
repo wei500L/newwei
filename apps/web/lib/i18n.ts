@@ -1,34 +1,16 @@
-import i18next from "i18next";
-import { initReactI18next } from "react-i18next";
-
+// 本文件必须保持「可在 Server Component 中安全引入」：只包含纯函数、常量与类型。
+// app/layout.tsx（服务端）经由本模块解析语言 Cookie，一旦在此引入
+// react-i18next（模块顶层调用 React.createContext，该 API 在 RSC 环境不存在），
+// `next build` 会在 "Collecting page data" 阶段抛 "createContext is not a
+// function"。i18next 运行时初始化与浏览器语言持久化已拆到 ./i18n-client.ts。
 import dayjs from "@/lib/dayjs";
 
-import en from "./locales/en.json";
-import zh from "./locales/zh.json";
 import { getDefaultTimeZone } from "./time-zone";
 
 export const supportedLocales = ["en-US", "zh-CN"] as const;
 export type SupportedLocale = (typeof supportedLocales)[number];
 
-const STORAGE_KEY = "language";
 export const LANGUAGE_COOKIE_KEY = "language";
-
-function readLanguageCookie(): SupportedLocale | null {
-  if (typeof document === "undefined") {
-    return null;
-  }
-  const segments = document.cookie.split(";").map((segment) => segment.trim());
-  const match = segments.find((segment) =>
-    segment.startsWith(`${LANGUAGE_COOKIE_KEY}=`)
-  );
-  if (!match) {
-    return null;
-  }
-  const rawValue = decodeURIComponent(match.slice(LANGUAGE_COOKIE_KEY.length + 1));
-  return supportedLocales.includes(rawValue as SupportedLocale)
-    ? (rawValue as SupportedLocale)
-    : null;
-}
 
 export function normalizeLocale(locale?: string): SupportedLocale {
   if (!locale) {
@@ -47,59 +29,6 @@ export function normalizeLocale(locale?: string): SupportedLocale {
 export function resolveLocale(locale?: string): SupportedLocale {
   const normalized = normalizeLocale(locale);
   return supportedLocales.includes(normalized) ? normalized : "en-US";
-}
-
-export function getInitialLanguage(): SupportedLocale {
-  if (typeof document !== "undefined") {
-    const htmlLang = document.documentElement.lang;
-    if (htmlLang) {
-      return resolveLocale(htmlLang);
-    }
-  }
-  return "en-US";
-}
-
-export function getStoredLanguage(): SupportedLocale | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (stored && supportedLocales.includes(stored as SupportedLocale)) {
-    return stored as SupportedLocale;
-  }
-  return readLanguageCookie();
-}
-
-export async function changeLanguage(next: SupportedLocale) {
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem(STORAGE_KEY, next);
-  }
-  if (typeof document !== "undefined") {
-    document.cookie = `${LANGUAGE_COOKIE_KEY}=${encodeURIComponent(next)}; path=/; max-age=31536000; samesite=lax`;
-  }
-  await i18next.changeLanguage(next);
-}
-
-export function initI18n() {
-  if (!i18next.isInitialized) {
-    i18next.use(initReactI18next).init({
-      resources: {
-        "en-US": { translation: en },
-        "zh-CN": { translation: zh }
-      },
-      lng: getInitialLanguage(),
-      fallbackLng: "en-US",
-      supportedLngs: supportedLocales,
-      interpolation: {
-        escapeValue: false
-      },
-      returnNull: false,
-      react: {
-        useSuspense: false
-      }
-    });
-  }
-  return i18next;
 }
 
 export { getDefaultTimeZone };

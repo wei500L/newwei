@@ -3,7 +3,7 @@ import { ConfigProvider } from "antd";
 import type { ReactElement, ReactNode } from "react";
 import { I18nextProvider } from "react-i18next";
 
-import { initI18n } from "@/lib/i18n";
+import { initI18n } from "@/lib/i18n-client";
 
 const i18n = initI18n();
 

@@ -26,13 +26,12 @@ import {
 import { getApolloClient } from "@/lib/apollo-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
+import { resolveLocale, type SupportedLocale } from "@/lib/i18n";
 import {
   changeLanguage,
   getStoredLanguage,
-  initI18n,
-  resolveLocale,
-  type SupportedLocale
-} from "@/lib/i18n";
+  initI18n
+} from "@/lib/i18n-client";
 import { classifyRequestError } from "@/lib/request-error";
 
 import { ApolloAuthSync } from "./apollo-auth-sync";

@@ -20,7 +20,7 @@ import { useTranslation } from "react-i18next";
 
 import { useTheme } from "@/hooks/use-theme";
 import { captureClientError } from "@/lib/client-telemetry";
-import { changeLanguage } from "@/lib/i18n";
+import { changeLanguage } from "@/lib/i18n-client";
 import { createTraceHeaders } from "@/lib/trace";
 
 import { buildActionRailNavConfig } from "./action-rail";
