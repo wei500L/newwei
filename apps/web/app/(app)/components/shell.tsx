@@ -11,6 +11,8 @@ import {
   type PropsWithChildren,
 } from "react";
 
+import { CONTENT_WIDTH_CLASSES } from "@/lib/content-widths";
+
 import { ActionRail } from "./action-rail";
 import {
   DESKTOP_RAIL_MIN_WIDTH,
@@ -43,40 +45,32 @@ const FLUID_LAYOUT_PATHS = [
 
 const EDGE_TO_EDGE_LAYOUT_PATHS = ["/newsnow"] as const;
 
-/**
- * 内容宽度白名单（App Shell 第一批收敛点）：页面声明档位，不再各自
- * 硬编码 max-w。PageContainer（components/page-container.tsx）复用同一
- * 档位集合；newsnow 的 1760px 特例已收敛为 wide-board 档（页面内部
- * 容器统一改用 PageContainer）。
- */
-export const CONTENT_WIDTH_CLASSES = {
-  default: "max-w-[1440px]",
-  wide: "max-w-[1920px]",
-  "wide-board": "max-w-[1760px]",
-  full: "max-w-none",
-} as const;
-
-export type ContentWidth = keyof typeof CONTENT_WIDTH_CLASSES;
+// 内容宽度档位的单一真源在 @/lib/content-widths（服务端安全模块）：
+// shell 的页面级容器与 PageContainer 的页内容容器共用同一份类型与
+// class 映射；newsnow 的 1760px 特例是其中的 wide-board 档。
 
 function useContainerClass(): string {
   const pathname = usePathname();
   const isAdminHome = pathname === "/admin";
   if (isAdminHome) {
-    return "w-full max-w-none mx-0";
+    return `w-full ${CONTENT_WIDTH_CLASSES.full} mx-0`;
   }
 
   const isFluid = FLUID_LAYOUT_PATHS.some((path) => pathname?.startsWith(path));
   if (isFluid) {
-    return "w-full max-w-none mx-0";
+    return `w-full ${CONTENT_WIDTH_CLASSES.full} mx-0`;
   }
 
   const isWide = WIDE_LAYOUT_PATHS.some((path) => pathname?.startsWith(path));
   if (isWide) {
-    return "w-full max-w-[1920px] mx-auto";
+    return `w-full ${CONTENT_WIDTH_CLASSES.wide} mx-auto`;
   }
-  return "w-full max-w-[1440px] mx-auto";
+  return `w-full ${CONTENT_WIDTH_CLASSES.default} mx-auto`;
 }
 
+// useContentPaddingClass 是页面级 padding 的唯一所有者：默认页 p-4
+// md:p-6；edge-to-edge 页（newsnow）p-0 由页面内容自管。PageContainer
+// 不产生任何 padding——避免双重边距。
 function useContentPaddingClass(): string {
   const pathname = usePathname();
   const isEdgeToEdge = EDGE_TO_EDGE_LAYOUT_PATHS.some((path) =>
@@ -99,24 +93,12 @@ function useMainScrollbarClass(): string {
   return "scrollbar-thin scrollbar-thumb-slate-200/80 hover:scrollbar-thumb-slate-300/90 scrollbar-track-transparent";
 }
 
-function useMainSurfaceClass(): string {
-  const pathname = usePathname();
-  const isEdgeToEdge = EDGE_TO_EDGE_LAYOUT_PATHS.some((path) =>
-    pathname?.startsWith(path),
-  );
-  if (isEdgeToEdge) {
-    return "";
-  }
-  return "";
-}
-
 export function ShellLayout({ children }: PropsWithChildren) {
   const [, contextHolder] = message.useMessage();
   const pathname = usePathname();
   const containerClass = useContainerClass();
   const contentPaddingClass = useContentPaddingClass();
   const mainScrollbarClass = useMainScrollbarClass();
-  const mainSurfaceClass = useMainSurfaceClass();
   const shellContentRef = useRef<HTMLDivElement | null>(null);
   const [viewportWidth, setViewportWidth] = useState(DESKTOP_RAIL_MIN_WIDTH);
   const [availableRailHeight, setAvailableRailHeight] = useState(0);
@@ -206,7 +188,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
           </div>
 
           <main
-            className={`relative z-0 flex-1 overflow-auto ${mainScrollbarClass} ${mainSurfaceClass}`}
+            className={`relative z-0 flex-1 overflow-auto ${mainScrollbarClass}`}
           >
             <div className={`${containerClass} ${contentPaddingClass}`}>
               {children}

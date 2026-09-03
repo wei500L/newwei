@@ -1,58 +1,39 @@
-"use client";
-
 import type { ReactNode } from "react";
 
+import { CONTENT_WIDTH_CLASSES, type ContentWidth } from "@/lib/content-widths";
+
 /**
- * PageContainer：页面内容容量的统一原语（前端 IA 重构第一批）。
+ * PageContainer：页内内容容量的统一原语（前端 IA 重构第一批）。
  *
- * 职责（FE-批1 范围）：
- *   - 收敛「页面私自介入布局策略」：news-hub 自加 1200px、newsnow 自加
- *     1760px 等特例统一改为声明 contentWidth，宽度白名单只在 shell 与
- *     本组件两处出现。
- *   - 统一页面边距（p-4 md:p-6）与水平居中；edge-to-edge 页面自管 padding。
+ * 职责（收口后）：
+ *   - 宽度档位来自单一真源 @/lib/content-widths（与 shell 共用同一份
+ *     类型与 class 映射），页面不再各自硬编码 max-w。
+ *   - 水平居中（mx-auto w-full）。
  *
- * 非职责：不做数据加载/状态/标题渲染——避免过度设计（IA 文档 PageHeader
- * 等原语留待后续批次）。
+ * 非职责（padding 的唯一所有者是 shell）：
+ *   - 页面级边距由 ShellLayout 统一提供（默认页 p-4 md:p-6；edge-to-edge
+ *     页 p-0 自管）。PageContainer 不加任何 padding——结构上杜绝双重
+ *     边距，需要纵向节奏的页面用 className 叠加。
+ *   - 不做数据加载/状态/标题渲染。
  *
- * 宽度档位（与 shell.tsx 的 useContainerClass 保持一致）：
- *   - default      max-w-[1440px]
- *   - wide         max-w-[1920px]（监控/仪表盘类）
- *   - wide-board   max-w-[1760px]（newsnow 等多栏看板）
- *   - article      max-w-[1200px]（阅读型页面）
- *   - full         max-w-none（fluid 页面）
+ * 服务端组件（无 hooks/无客户端 API）——可同时被 RSC 页面与客户端
+ * 组件导入，不制造客户端组件边界。
  */
-export type PageContentWidth = "default" | "wide" | "wide-board" | "article" | "full";
-
-const WIDTH_CLASSES: Record<PageContentWidth, string> = {
-  default: "max-w-[1440px]",
-  wide: "max-w-[1920px]",
-  "wide-board": "max-w-[1760px]",
-  article: "max-w-[1200px]",
-  full: "max-w-none",
-};
-
 interface PageContainerProps {
   children: ReactNode;
-  /** 内容最大宽度档位（默认 default=1440px）。 */
-  contentWidth?: PageContentWidth;
-  /**
-   * 页面自身边距。fluid/edge-to-edge 页面（shell 已给 p-0）传 "none" 自管；
-   * 其余传 "default"（p-4 md:p-6，与 shell 内容边距一致）。
-   */
-  padding?: "default" | "none";
+  /** 内容最大宽度档位（默认 default=1440px），见 lib/content-widths。 */
+  contentWidth?: ContentWidth;
   className?: string;
 }
 
 export function PageContainer({
   children,
   contentWidth = "default",
-  padding = "default",
   className = "",
 }: PageContainerProps) {
-  const widthClass = WIDTH_CLASSES[contentWidth];
-  const paddingClass = padding === "none" ? "" : "p-4 md:p-6";
+  const widthClass = CONTENT_WIDTH_CLASSES[contentWidth];
   return (
-    <div className={`mx-auto w-full ${widthClass} ${paddingClass} ${className}`.trim()}>
+    <div className={`mx-auto w-full ${widthClass} ${className}`.trim()}>
       {children}
     </div>
   );

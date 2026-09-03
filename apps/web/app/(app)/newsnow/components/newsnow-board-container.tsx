@@ -1,5 +1,3 @@
-"use client";
-
 import type { ReactNode } from "react";
 
 import { PageContainer } from "../../components/page-container";
@@ -9,9 +7,12 @@ import { PageContainer } from "../../components/page-container";
  *
  * 此前 newsnow 页面在 12 处私自硬编码 `max-w-[1760px] px-4 … xl:px-8`，
  * 与 shell 的宽度白名单并行成两套布局策略。收敛后：
- *   - 宽度档位（wide-board=1760px）统一由 PageContainer 提供；
- *   - 本组件只保留 newsnow 特有的边距节奏（px-4 md:px-6 xl:px-8）；
- *   - shell 层维持 edge-to-edge（p-0），由页面内容自管 padding。
+ *   - 宽度档位（wide-board=1760px）统一来自 lib/content-widths（经
+ *     PageContainer）；
+ *   - 本组件只保留 newsnow 特有的边距节奏（px-4 md:px-6 xl:px-8）——
+ *     shell 对 edge-to-edge 页给 p-0，页面内容自管水平边距。
+ * 本模块无客户端 API——不写 "use client"，由消费方（客户端组件）自然
+ * 拉入客户端边界。
  */
 interface NewsnowBoardContainerProps {
   children: ReactNode;
@@ -35,7 +36,6 @@ export function NewsnowBoardContainer({
   return (
     <PageContainer
       contentWidth="wide-board"
-      padding="none"
       className={`px-4 md:px-6 xl:px-8 ${SPACING_CLASSES[spacing]} ${className}`.trim()}
     >
       {children}
