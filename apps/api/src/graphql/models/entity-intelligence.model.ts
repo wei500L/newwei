@@ -7,12 +7,12 @@ import {
   ObjectType,
 } from "@nestjs/graphql";
 
-import { EntitySentimentSnapshotModel } from "./sentiment.model";
 import {
   KnowledgeGraphEdgeModel,
   KnowledgeGraphModel,
   KnowledgeGraphNodeModel,
 } from "./knowledge-graph.model";
+import { EntitySentimentSnapshotModel } from "./sentiment.model";
 
 @InputType()
 export class EntityIntelligenceCardInput {

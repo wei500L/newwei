@@ -6,6 +6,7 @@ import {
   ObjectType,
   registerEnumType,
 } from "@nestjs/graphql";
+
 import { NEWS_EVENT_CLUSTERING_MODES } from "../../modules/news-events/news-events-settings.service";
 
 export enum NewsEventSourcePolicyRevisionOperation {

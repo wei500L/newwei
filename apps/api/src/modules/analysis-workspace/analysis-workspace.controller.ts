@@ -1,3 +1,4 @@
+import { AnalysisSubjectType } from ".prisma/client";
 import {
   Body,
   Controller,
@@ -13,7 +14,6 @@ import {
   StreamableFile,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiProduces, ApiTags } from "@nestjs/swagger";
-import { AnalysisSubjectType } from ".prisma/client";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";

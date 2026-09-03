@@ -6,8 +6,8 @@ import { DatabaseModule } from "../config/database.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
 import { KnowledgeGraphEntityDisambiguationService } from "./knowledge-graph-entity-disambiguation.service";
-import { KnowledgeGraphIntelligenceService } from "./knowledge-graph-intelligence.service";
 import { KnowledgeGraphImpactService } from "./knowledge-graph-impact.service";
+import { KnowledgeGraphIntelligenceService } from "./knowledge-graph-intelligence.service";
 import { KnowledgeGraphQualityService } from "./knowledge-graph-quality.service";
 import { KnowledgeGraphReviewService } from "./knowledge-graph-review.service";
 import { KnowledgeGraphSettingsService } from "./knowledge-graph-settings.service";

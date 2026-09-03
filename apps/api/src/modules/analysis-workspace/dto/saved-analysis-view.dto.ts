@@ -1,4 +1,3 @@
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   AnalysisSubjectType,
   AnalysisTaskLinkedSubjectType,
@@ -6,6 +5,7 @@ import {
   SavedAnalysisSurface,
   SavedAnalysisVisibility,
 } from ".prisma/client";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   IsArray,
   IsBoolean,

@@ -118,7 +118,7 @@ const ITEM_READ_MODEL_PROCESSED_PREVIEW_PROJECTION: Record<string, 1> = {
 async function loadReadModels(
   keys: readonly string[],
   projection: Record<string, 1>,
-): Promise<Array<ItemReadModel | null>> {
+): Promise<(ItemReadModel | null)[]> {
   const docs = (await ItemReadModelModel.find(
     {
       itemMetaId: { $in: keys as string[] },

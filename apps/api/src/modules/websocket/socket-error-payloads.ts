@@ -1,5 +1,4 @@
 import {
-  NotificationSocketErrorCode,
   type NotificationSocketErrorPayload,
   RealtimeSocketErrorCode,
   type RealtimeSocketErrorPayload,

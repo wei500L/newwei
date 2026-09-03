@@ -16,8 +16,7 @@ import {
   StreamableFile,
 } from "@nestjs/common";
 import { ApiProduces, ApiTags } from "@nestjs/swagger";
-import type { Request } from "express";
-import type { Response } from "express";
+import type { Request , Response } from "express";
 
 import { AllowAuthenticated } from "../../common/decorators/allow-authenticated.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -30,6 +29,16 @@ import { StorageService } from "../storage/storage.service";
 import { AuthService } from "./auth.service";
 import type { AuthenticatedUser } from "./auth.service";
 import {
+  AvatarPresignRequestDto,
+  AvatarPresignResponseDto,
+} from "./dto/avatar.dto";
+import { ChangePasswordDto } from "./dto/change-password.dto";
+import {
+  EmailCodeSendResponseDto,
+  SendVerificationDto,
+  VerifyEmailDto,
+} from "./dto/email-verification.dto";
+import {
   AcceptInviteDto,
   ApproveJoinApplicationDto,
   CreateInviteDto,
@@ -38,6 +47,10 @@ import {
   SubmitJoinOrgApplicationDto,
   SubmitNewOrgApplicationDto,
 } from "./dto/identity-admin.dto";
+import { LoginWithCodeDto, SendLoginCodeDto } from "./dto/login-with-code.dto";
+import { LoginDto } from "./dto/login.dto";
+import { LogoutDto } from "./dto/logout.dto";
+import { CreateMachineTokenDto } from "./dto/machine-token.dto";
 import {
   BeginMfaEnrollmentChallengeDto,
   CompleteMfaEnrollmentChallengeDto,
@@ -46,32 +59,18 @@ import {
   VerifyMfaCodeDto,
 } from "./dto/mfa.dto";
 import {
-  AvatarPresignRequestDto,
-  AvatarPresignResponseDto,
-} from "./dto/avatar.dto";
-import {
-  EmailCodeSendResponseDto,
-  SendVerificationDto,
-  VerifyEmailDto,
-} from "./dto/email-verification.dto";
-import { ChangePasswordDto } from "./dto/change-password.dto";
-import { CreateMachineTokenDto } from "./dto/machine-token.dto";
-import { LoginWithCodeDto, SendLoginCodeDto } from "./dto/login-with-code.dto";
-import { LoginDto } from "./dto/login.dto";
-import { LogoutDto } from "./dto/logout.dto";
-import {
   RequestPasswordResetDto,
   ResetPasswordDto,
 } from "./dto/password-reset.dto";
-import { MfaService } from "./mfa.service";
+import { UpdateProfileDto } from "./dto/profile.dto";
+import { RefreshDto } from "./dto/refresh.dto";
 import { MachineTokenService } from "./machine-token.service";
+import { MfaService } from "./mfa.service";
 import { OidcAuthService } from "./oidc-auth.service";
 import { OrgInviteService } from "./org-invite.service";
 import { PasswordResetService } from "./password-reset.service";
 import { PlatformAccessService } from "./platform-access.service";
-import { UpdateProfileDto } from "./dto/profile.dto";
 import { RegistrationApplicationService } from "./registration-application.service";
-import { RefreshDto } from "./dto/refresh.dto";
 import { UserDataExportService } from "./user-data-export.service";
 
 @ApiTags("auth")

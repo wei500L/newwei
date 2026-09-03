@@ -895,15 +895,23 @@ export class SettingsResolver {
   }
 
   private toNewsExtractionProviderIdModel(
-    _value: NewsExtractionProviderId,
+    value: NewsExtractionProviderId,
   ): NewsExtractionProviderIdModel {
-    return NewsExtractionProviderIdModel.llm;
+    // 枚举当前仅有 llm 一个成员；新增 provider 时在此补充映射分支。
+    switch (value) {
+      case NewsExtractionProviderId.llm:
+        return NewsExtractionProviderIdModel.llm;
+    }
   }
 
   private toNewsExtractionProviderId(
-    _value: NewsExtractionProviderIdModel,
+    value: NewsExtractionProviderIdModel,
   ): NewsExtractionProviderId {
-    return NewsExtractionProviderId.llm;
+    // 枚举当前仅有 llm 一个成员；新增 provider 时在此补充映射分支。
+    switch (value) {
+      case NewsExtractionProviderIdModel.llm:
+        return NewsExtractionProviderId.llm;
+    }
   }
 
   private toSourcePolicyModel(

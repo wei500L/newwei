@@ -5,8 +5,8 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
-import { UpdateOnboardingUiSettingsDto } from "./dto/onboarding-ui-settings.dto";
 import { UpdateNewsnowUiSettingsDto } from "./dto/newsnow-ui-settings.dto";
+import { UpdateOnboardingUiSettingsDto } from "./dto/onboarding-ui-settings.dto";
 import { UpdateRssReaderUiSettingsDto } from "./dto/rss-reader-ui-settings.dto";
 import { UpdateSituationMonitorUiSettingsDto } from "./dto/situation-monitor-ui-settings.dto";
 import { UpdateSpacetimeTimelineUiSettingsDto } from "./dto/spacetime-timeline-ui-settings.dto";

@@ -7,9 +7,9 @@ import { z } from "zod";
 import { zodToJsonSchema, type JsonSchema7Type } from "zod-to-json-schema";
 
 import { safeJsonParseFromText } from "../../common/llm-json";
-import type { NewsSignal, NewsSignalEntity } from "../news-signals/news-signal";
 import { LiteLlmService } from "../news-pipeline/litellm.service";
 import type { JsonSchemaResponseFormat } from "../news-pipeline/news-prompt.builder";
+import type { NewsSignal, NewsSignalEntity } from "../news-signals/news-signal";
 import { writeTaskLogBestEffort } from "../observability/task-log.writer";
 import { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
 import { ModelServiceSettingsService } from "../system-settings/model-service-settings.service";
@@ -23,13 +23,13 @@ import {
   type NewsEventClusteringRecoveryJobPayload,
 } from "./news-event-clustering-recovery.constants";
 import {
-  NewsEventsService,
-  type NewsEventAssignmentCandidate,
-} from "./news-events.service";
-import {
   NewsEventsSettingsService,
   type NewsEventSettings,
 } from "./news-events-settings.service";
+import {
+  NewsEventsService,
+  type NewsEventAssignmentCandidate,
+} from "./news-events.service";
 
 const logger = createLogger({ name: "news-event-clustering-recovery" });
 const AUTO_BACKFILL_ACTOR_ID = "system:news-event-clustering-recovery";

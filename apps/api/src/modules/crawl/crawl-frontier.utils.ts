@@ -1,3 +1,4 @@
+import { assertSupportedFrontierProfileConfig } from "./crawl-config-policy";
 import type {
   CrawlFrontierPageType,
   CrawlFreshnessRules,
@@ -18,7 +19,6 @@ import type {
   CrawlSiteProfileConfig,
   CrawlSourceTier,
 } from "./crawl.types";
-import { assertSupportedFrontierProfileConfig } from "./crawl-config-policy";
 import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 
 const ARTICLE_SIGNAL_PATTERN =

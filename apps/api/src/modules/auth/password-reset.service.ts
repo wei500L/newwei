@@ -1,9 +1,9 @@
-import bcrypt from "bcrypt";
 import {
   BadRequestException,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
+import bcrypt from "bcrypt";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { ActionRateLimitService } from "../cache/action-rate-limit.service";

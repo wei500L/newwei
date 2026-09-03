@@ -28,9 +28,9 @@ import { RateLimitConfigService } from "../system-settings/rate-limit-config.ser
 import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
 import { AuthCacheSettingsService } from "./auth-cache-settings.service";
 import { AuthEmailCodeSettingsService } from "./auth-email-code-settings.service";
+import { UpdateProfileDto } from "./dto/profile.dto";
 import { MfaService } from "./mfa.service";
 import { PlatformAccessService } from "./platform-access.service";
-import { UpdateProfileDto } from "./dto/profile.dto";
 import { RefreshTokenBlacklistService } from "./refresh-token-blacklist.service";
 
 export interface JwtPayload {

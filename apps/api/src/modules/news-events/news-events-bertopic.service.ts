@@ -4,11 +4,11 @@ import { Injectable } from "@nestjs/common";
 import { NewsEventAssignmentMethod } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 
-import { buildNewsSignalFromProcessedArticle } from "../news-signals/news-signal";
 import {
   ModelServiceClient,
   type ModelServiceTopicClusteringDocument,
 } from "../model-service/model-service.client";
+import { buildNewsSignalFromProcessedArticle } from "../news-signals/news-signal";
 import { writeTaskLogBestEffort } from "../observability/task-log.writer";
 
 import { NewsEventClusteringFailureService } from "./news-event-clustering-failure.service";

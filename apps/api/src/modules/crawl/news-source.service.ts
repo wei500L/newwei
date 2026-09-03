@@ -13,6 +13,7 @@ import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
+import { assertNoUnsupportedProxy } from "./crawl-config-policy";
 import {
   CrawlMetadataService,
   type CrawlDiscoveryCandidate,
@@ -22,7 +23,6 @@ import {
   type CrawlDiscoveryTimestampSource,
 } from "./crawl-metadata.service";
 import { CrawlStrategyWorkflowService } from "./crawl-strategy-workflow.service";
-import { assertNoUnsupportedProxy } from "./crawl-config-policy";
 import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import {
   deepDiscoveryFailureStateCacheKey,
