@@ -110,14 +110,11 @@ jobs:
     services:
       qdrant:
         # 与 infra/docker/docker-compose.yml 的 qdrant 服务同版本。
+        # 注：qdrant 镜像无 shell 工具，health-cmd 无法用 curl/wget——
+        # 就绪等待由「Start services」步骤的宿主侧循环完成。
         image: qdrant/qdrant:v1.10.1
         ports:
           - 6333:6333
-        options: >-
-          --health-cmd "curl -fsS http://localhost:6333/healthz || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
     env:
       HUSKY: "0"
       CI: "true"
@@ -160,6 +157,19 @@ jobs:
 
       - name: Start NestJS vector + vector-go against real Qdrant
         run: |
+          # Qdrant 就绪等待（服务容器无 health 探针，宿主侧循环探测）。
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:6333/healthz >/dev/null 2>&1; then
+              echo "qdrant healthy"
+              break
+            fi
+            if [ "$i" = 60 ]; then
+              echo "qdrant failed to become healthy"
+              exit 1
+            fi
+            sleep 2
+          done
+
           # NestJS vector（:4010）
           PORT=4010 \
           NODE_ENV=test \
