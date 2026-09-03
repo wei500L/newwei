@@ -17,7 +17,7 @@
     "backfill:processed-article-read-model": "tsx src/scripts/backfill-processed-article-read-model.ts",
     "backfill:processed-article-term-hourly": "tsx src/scripts/backfill-processed-article-term-hourly.ts",
     "backfill:crawl-media-blobs": "tsx src/scripts/backfill-crawl-media-blobs.ts",
-    "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
     "lint": "pnpm run validate:migration-identifiers && eslint src --ext .ts",
     "prisma:generate": "tsx src/scripts/generate.ts"
   },

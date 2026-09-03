@@ -13,7 +13,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test --filter=@modular/web --filter=@modular/vector",
-    "codegen": "graphql-codegen --config apps/web/codegen.yml",
+    "codegen": "pnpm --filter @modular/web run generate",
     "db:migrate": "pnpm --filter db run migrate",
     "db:seed": "pnpm --filter db run seed",
     "mongo:indexes": "pnpm --filter @modular/api run mongo:indexes",

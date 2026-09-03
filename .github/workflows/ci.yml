@@ -48,6 +48,11 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter db run prisma:generate
 
+      - name: GraphQL codegen drift check
+        run: |
+          pnpm --filter @modular/web run generate
+          git diff --exit-code apps/web/graphql/generated.ts
+
       - name: Lint
         run: pnpm lint
 

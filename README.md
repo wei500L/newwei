@@ -265,7 +265,7 @@ pnpm dev
 | `pnpm db:seed`                                             | 根据 `.env` 的 `SEED_*` 初始化组织、角色与管理员账号                                |
 | `pnpm mongo:indexes`                                       | 显式补齐 Mongo 运行时索引（当前包含 `ProcessedItem` 与 `TaskLog` 热路径索引）       |
 | `pnpm docker:up` / `pnpm docker:logs` / `pnpm docker:down` | 本地完整栈（Docker Compose）                                                        |
-| `pnpm codegen`                                             | 运行 GraphQL Code Generator（使用 `apps/web/codegen.yml`）                          |
+| `pnpm codegen`                                             | 运行 GraphQL Code Generator（转发 `apps/web` 的 `generate`，schema 取自 `apps/api/schema.gql` 快照） |
 
 ## 项目结构
 
