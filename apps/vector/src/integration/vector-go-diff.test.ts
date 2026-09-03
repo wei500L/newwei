@@ -290,14 +290,17 @@ describe.skipIf(!INTEGRATION_ENABLED)("vector NestJS vs Go contract diff (real Q
   });
 
   it("search limit clamping and invalid inputs match", async () => {
-    // limit 超 500 → clamp 500（两侧 200）；非法 limit → 400 同形状。
+    // limit 超 500 → zod max(500)/numIntInRange(1,500) 双侧拒绝 → 400 同形。
+    // （服务内 clamp 只作用于 [1,500] 内的值——9999 在校验层就被拒，
+    // 不会进入 clamp 路径；此前注释把「clamp 到 500」写错了，实测纠正。）
     const oversized = await dualRequest("/v1/search", {
       method: "POST",
       body: { orgId: ORG, embeddingModel: MODEL, vector: [1, 0, 0], limit: 9999 },
       token: INTERNAL_TOKEN,
     });
-    expect(oversized.nestjs.status).toBe(201);
-    expect(oversized.go.status).toBe(201);
+    expect(oversized.nestjs.status).toBe(400);
+    expect(oversized.go.status).toBe(400);
+    expect(oversized.go.body).toEqual(oversized.nestjs.body);
 
     const invalid = await dualRequest("/v1/search", {
       method: "POST",
