@@ -109,7 +109,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
           </div>
         ) : null}
 
-        <TopNavActions layout={layout} canStartCrawl={canStartCrawl} />
+        <TopNavActions layout={layout} />
         <TopNavUserMenu layout={layout} />
       </header>
 

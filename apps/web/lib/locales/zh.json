@@ -2059,7 +2059,16 @@
     "commandRunSearch": "搜索全部条目",
     "searchAriaLabel": "搜索新闻条目",
     "openMenu": "打开导航菜单",
-    "menu": "菜单"
+    "menu": "菜单",
+    "theme": {
+      "toLight": "切换到浅色主题",
+      "toDark": "切换到深色主题"
+    },
+    "userMenu": {
+      "label": "打开用户菜单",
+      "freePlan": "免费版",
+      "organizationSection": "组织"
+    }
   },
   "pages": {
     "today": {

@@ -43,7 +43,7 @@ describe("密度档位在基线内降级 / 升级", () => {
 });
 
 describe("resolveTopNavLayout（顶部栏响应式优先级）", () => {
-  it("full：命令面板 + 系统状态 + 主按钮 + 内联语言/组织", () => {
+  it("full：命令面板 + 系统状态 + 主按钮 + 内联语言/组织/主题", () => {
     const layout = resolveTopNavLayout({ densityMode: "full", canStartCrawl: true });
     expect(layout.showCommandBar).toBe(true);
     expect(layout.showSearchEntry).toBe(false);
@@ -51,6 +51,7 @@ describe("resolveTopNavLayout（顶部栏响应式优先级）", () => {
     expect(layout.crawlButton).toBe("primary");
     expect(layout.languageSwitcher).toBe("inline");
     expect(layout.organizationSwitcher).toBe("inline");
+    expect(layout.themeToggle).toBe("inline");
     expect(layout.showSyncIndicator).toBe(true);
   });
 
@@ -62,16 +63,19 @@ describe("resolveTopNavLayout（顶部栏响应式优先级）", () => {
     expect(layout.crawlButton).toBe("compact");
     expect(layout.languageSwitcher).toBe("inline");
     expect(layout.organizationSwitcher).toBe("popover");
+    expect(layout.themeToggle).toBe("inline");
+    expect(layout.showSyncIndicator).toBe(true);
   });
 
-  it("minimal：命令面板让位于搜索兜底入口，抓取与语言收进用户菜单", () => {
+  it("minimal：顶部只留搜索兜底；抓取/语言/组织/主题全部收进用户菜单", () => {
     const layout = resolveTopNavLayout({ densityMode: "minimal", canStartCrawl: true });
     expect(layout.showCommandBar).toBe(false);
     expect(layout.showSearchEntry).toBe(true);
     expect(layout.showSystemStatus).toBe(false);
     expect(layout.crawlButton).toBe("menu");
     expect(layout.languageSwitcher).toBe("menu");
-    expect(layout.organizationSwitcher).toBe("popover");
+    expect(layout.organizationSwitcher).toBe("menu");
+    expect(layout.themeToggle).toBe("menu");
     expect(layout.showSyncIndicator).toBe(false);
   });
 

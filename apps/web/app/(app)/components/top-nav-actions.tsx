@@ -22,21 +22,25 @@ import { UserUiSettingsSyncIndicator } from "./user-ui-settings-sync-indicator";
 
 interface TopNavActionsProps {
   layout: TopNavLayout;
-  canStartCrawl: boolean;
 }
 
 /**
  * 顶部栏右区：系统状态 / 抓取操作 / 通知 / 语言 / 组织 / 同步 / 主题。
  * 各入口的形态（显隐、图标化、收进菜单）由 resolveTopNavLayout 的
- * 密度档位统一推导——本组件只负责呈现，不再自持优先级判断。
+ * 密度档位统一推导——本组件只负责呈现，不再自持优先级或权限判断。
+ * minimal 档组织切换与主题切换收进用户菜单，本区不再渲染对应入口。
  */
-export function TopNavActions({ layout, canStartCrawl }: TopNavActionsProps) {
+export function TopNavActions({ layout }: TopNavActionsProps) {
   const { t } = useTranslation();
   const router = useRouter();
   const { isDark, toggleTheme } = useTheme();
 
   const startNewCrawlLabel = t("nav.newCrawl");
   const newCrawlHref = "/admin/ops/crawl-tasks?new=true";
+  // 主题切换文案单一真源：aria-label 与 title 同值（i18n）。
+  const themeToggleLabel = isDark
+    ? t("nav.theme.toLight")
+    : t("nav.theme.toDark");
 
   const renderOrganizationSwitcher = () => {
     if (layout.organizationSwitcher === "inline") {
@@ -46,9 +50,11 @@ export function TopNavActions({ layout, canStartCrawl }: TopNavActionsProps) {
         </div>
       );
     }
-    // compact：xl 起显示；minimal：常显（窄屏也保留组织切换入口）
-    const visibilityClass =
-      layout.densityMode === "minimal" ? "inline-flex" : "hidden xl:inline-flex";
+    if (layout.organizationSwitcher === "menu") {
+      // minimal：由用户菜单提供组织切换（TopNavUserMenu 的 dropdown 面板）
+      return null;
+    }
+    // compact：xl 起显示 Popover 图标
     return (
       <Popover
         trigger="click"
@@ -63,14 +69,14 @@ export function TopNavActions({ layout, canStartCrawl }: TopNavActionsProps) {
           type="text"
           icon={<SwapOutlined />}
           aria-label={t("orgSwitcher.switch")}
-          className={`${visibilityClass} h-8 w-8 items-center justify-center p-0`}
+          className="hidden xl:inline-flex h-8 w-8 items-center justify-center p-0"
         />
       </Popover>
     );
   };
 
   return (
-    <div className="ml-auto flex min-w-0 max-w-full items-center gap-1 sm:gap-2 md:gap-3">
+    <div className="ml-auto flex max-w-full shrink-0 items-center gap-1 sm:gap-2 md:gap-3">
       {/* 系统状态：full 档 + 2xl 起显示（详细状态文字属最低优先级） */}
       {layout.showSystemStatus ? (
         <div className="hidden 2xl:block">
@@ -81,8 +87,9 @@ export function TopNavActions({ layout, canStartCrawl }: TopNavActionsProps) {
         <div className="mx-1 hidden h-6 w-px bg-[var(--border)] 2xl:block" />
       ) : null}
 
-      {/* 抓取操作：full 主按钮 / compact 图标 / minimal 收进用户菜单 */}
-      {canStartCrawl && layout.crawlButton === "primary" ? (
+      {/* 抓取操作：full 主按钮 / compact 图标 / minimal 收进用户菜单 /
+          无权限时 crawlButton 为 "none"，本区不渲染（权限过滤单一真源） */}
+      {layout.crawlButton === "primary" ? (
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -93,7 +100,7 @@ export function TopNavActions({ layout, canStartCrawl }: TopNavActionsProps) {
           {startNewCrawlLabel}
         </Button>
       ) : null}
-      {canStartCrawl && layout.crawlButton === "compact" ? (
+      {layout.crawlButton === "compact" ? (
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -128,29 +135,28 @@ export function TopNavActions({ layout, canStartCrawl }: TopNavActionsProps) {
 
         {renderOrganizationSwitcher()}
 
-        {/* 同步指示：minimal 档 lg 起、其余档 xl 起（与迁移前一致） */}
+        {/* 同步状态（纯指示）：minimal 档整体退场，full/compact 维持 xl 起 */}
         {layout.showSyncIndicator ? (
           <div className="hidden xl:block">
             <UserUiSettingsSyncIndicator />
           </div>
-        ) : (
-          <div className="hidden lg:block">
-            <UserUiSettingsSyncIndicator />
-          </div>
-        )}
+        ) : null}
       </div>
 
       <div className="mx-1 hidden h-6 w-px bg-[var(--border)] lg:block" />
 
-      <Button
-        type="text"
-        icon={isDark ? <SunOutlined /> : <MoonOutlined />}
-        onClick={toggleTheme}
-        aria-pressed={isDark}
-        aria-label={isDark ? "切换到浅色主题" : "切换到深色主题"}
-        title={isDark ? "切换到浅色主题" : "切换到深色主题"}
-        className="flex items-center rounded-md !text-[var(--foreground)] opacity-70 transition-opacity hover:opacity-100"
-      />
+      {/* 主题切换：minimal 档收进用户菜单（本区不渲染） */}
+      {layout.themeToggle === "inline" ? (
+        <Button
+          type="text"
+          icon={isDark ? <SunOutlined /> : <MoonOutlined />}
+          onClick={toggleTheme}
+          aria-pressed={isDark}
+          aria-label={themeToggleLabel}
+          title={themeToggleLabel}
+          className="flex items-center rounded-md !text-[var(--foreground)] opacity-70 transition-opacity hover:opacity-100"
+        />
+      ) : null}
     </div>
   );
 }

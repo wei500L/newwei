@@ -1,11 +1,10 @@
 "use client";
 
 import { Drawer } from "antd";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useTranslation } from "react-i18next";
 
 import { navItemStateClass } from "./nav-item-state";
-import { navigateDrawerItem } from "./top-nav-drawer-navigation";
 import { useNavigation } from "./use-navigation";
 
 interface MobileNavDrawerProps {
@@ -17,19 +16,14 @@ interface MobileNavDrawerProps {
 
 /**
  * 移动/矮视口导航 Drawer。与桌面 ActionRail 消费同一份五组导航模型
- * （useNavigation），组标题完整展示；点击导航后关闭 Drawer。
+ * （useNavigation），组标题完整展示。
+ *
+ * 路由入口使用 Next.js Link（链接语义：中键/⌘点击新标签页、复制链接
+ * 等浏览器原生能力可用）；点击导航后关闭 Drawer。
  */
 export function MobileNavDrawer({ open, onClose, className }: MobileNavDrawerProps) {
   const { t } = useTranslation();
-  const router = useRouter();
   const { groups, activeKey } = useNavigation();
-
-  const handleNavigate = (path?: string) => {
-    navigateDrawerItem(path, {
-      push: (nextPath) => router.push(nextPath),
-      closeDrawer: onClose,
-    });
-  };
 
   return (
     <Drawer
@@ -54,10 +48,10 @@ export function MobileNavDrawer({ open, onClose, className }: MobileNavDrawerPro
               const isActive = item.key === activeKey;
               const label = t(item.labelKey);
               return (
-                <button
+                <Link
                   key={item.key}
-                  type="button"
-                  onClick={() => handleNavigate(item.path)}
+                  href={item.path}
+                  onClick={onClose}
                   aria-label={label}
                   aria-current={isActive ? "page" : undefined}
                   className={`
@@ -70,7 +64,7 @@ export function MobileNavDrawer({ open, onClose, className }: MobileNavDrawerPro
                     <item.icon />
                   </span>
                   <span className="font-medium truncate">{label}</span>
-                </button>
+                </Link>
               );
             })}
           </section>
