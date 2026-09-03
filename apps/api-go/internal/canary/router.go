@@ -1,18 +1,25 @@
 // Package canary 实现 canary 模式的稳定分流（go-migration-adr §4）。
 //
-// 语义：
-//   - 分流依据是稳定一致的：orgId 的 sha256 前 8 字节（big-endian uint64）
-//     映射到 [0,100) 的桶位；桶位 < percent → go，否则 legacy。
-//   - 有可靠 orgId（Bearer JWT payload 的 orgId claim）时按 orgId 稳定
-//     哈希——同一组织永远进同一实现。
-//   - 无法安全获得 orgId（无 token / 解不出 claim / 机器令牌格式）时
-//     默认回 legacy（fail-safe：未知流量不进新实现）。
-//   - percent=0 等价 legacy；percent=100 等价 go。
-//   - 回滚：percent 调回 0（或路由表规则改回 legacy）——纯配置变更。
+// 信任边界（诚实声明）：当前分流的 orgId 取自 Bearer JWT payload 的
+// orgId claim，**未经验签**——NestJS 侧该 claim 只有在签名验证后才被
+// 信任，且真实 org 上下文由 getUserProfile 从 DB membership 重推导
+// （auth.service.ts:1452-1479：membership 查询 + active 校验）。Go 侧
+// 尚未实现 JWT 验签与 membership 重推导（ADR 迁移序 5），因此：
 //
-// 注意：canary 只读 JWT 的 orgId claim 用于分流，不验签——签名校验仍是
-// NestJS（或 Go handler 内部）的职责。伪造 orgId 只能影响自己这条请求的
-// 分流去向，两个实现共享同一鉴权语义，因此不构成提权。
+//  1. 未验签 claim 不是「可靠 orgId」——伪造 token 可以任选 orgId，
+//     从而选择自己这条请求进哪个实现；
+//  2. Options.AllowUnverifiedIdentity 默认 false：Router 一律回 legacy，
+//     即使 CANARY_PERCENT 被误配为 100——受保护业务路由不可能根据
+//     未验证身份进入 Go；
+//  3. 该开关只允许在「两个实现共享同一鉴权语义、且 shadow 差分已通过」
+//     的场景显式开启，并在 Go 完成真实验签（迁移序 5）后被替换。
+//
+// 分流数学（开关开启后生效）：orgId 的 sha256 前 8 字节（big-endian
+// uint64）映射到 [0,100) 桶位；桶位 < percent → go，否则 legacy。
+// 同一 orgId 恒定同桶；percent 变化只移动边界，不重排组织。
+// percent=0 等价 legacy；100 等价 go。
+//
+// 回滚：percent 调回 0（或路由表规则改回 legacy）——纯配置变更。
 package canary
 
 import (
@@ -23,27 +30,52 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
 )
 
-// Router 按 orgId 稳定分流。
-type Router struct {
-	percent int
+// Options 是 canary 分流器的构造参数。
+type Options struct {
+	Percent int
+	// AllowUnverifiedIdentity 显式承认分流依据是未验签的 orgId claim。
+	// 默认 false：Route() 永远回 legacy（fail-safe，percent 不起作用）。
+	AllowUnverifiedIdentity bool
 }
 
-// NewRouter 构造 canary 分流器。percent 越界视为 0（fail-safe 回 legacy）。
-func NewRouter(percent int) *Router {
+// Router 按稳定哈希分流。
+type Router struct {
+	percent              int
+	allowUnverifiedClaim bool
+}
+
+// NewRouter 构造 canary 分流器。percent 越界 clamp 到 [0,100]。
+func NewRouter(opts Options) *Router {
+	percent := opts.Percent
 	if percent < 0 {
 		percent = 0
 	}
 	if percent > 100 {
 		percent = 100
 	}
-	return &Router{percent: percent}
+	return &Router{
+		percent:              percent,
+		allowUnverifiedClaim: opts.AllowUnverifiedIdentity,
+	}
 }
 
 // Percent 返回当前分流比例。
 func (r *Router) Percent() int { return r.percent }
 
-// Route 决定该请求去哪个实现。无可靠 orgId → legacy。
+// Route 决定该请求去哪个实现。
+//
+// fail-safe 链（任何一环命中都回 legacy）：
+//  1. 未显式开启 AllowUnverifiedIdentity（默认）——未验证身份不得
+//     作为受保护路由的分流依据；
+//  2. percent <= 0；
+//  3. 无法解析 orgId claim（无 token / 非 JWT / mtk_ 机器令牌 / 无
+//     claim / 解析失败）。
+//
+// 只有三者全部通过（且 claim 已知是未验签的——见包注释）才按桶位分流。
 func (r *Router) Route(authorizationHeader string) Mode {
+	if !r.allowUnverifiedClaim {
+		return ModeLegacy
+	}
 	if r.percent <= 0 {
 		return ModeLegacy
 	}
@@ -73,6 +105,8 @@ func Bucket(orgID string) uint64 {
 // orgIDFromBearer 从 Authorization: Bearer 头解析 JWT payload 的 orgId。
 // 返回 (orgId, ok)：token 缺失、格式不对、payload 无 orgId 都返回 ok=false。
 //
+// 注意：解析不等于验证——该函数不做签名校验。返回的 orgId 是客户端
+// 可伪造的声明，只能作为「未验证的分流提示」，不得用于鉴权决策。
 // 机器令牌（mtk_ 前缀）不是 JWT——直接 ok=false（回 legacy）。
 func orgIDFromBearer(header string) (string, bool) {
 	const prefix = "Bearer "
