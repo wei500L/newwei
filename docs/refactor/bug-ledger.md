@@ -41,7 +41,7 @@
 | SEC-04 | P2 | vector 内部 token 非常量时间比较 | ✅ | 见 §4 |
 | BAPI-01 | P2 | GraphQL 列表无分页（全量返回） | ⬜ | — |
 | FE-01 | P2 | alert-center 过滤器不入 URL（与全局模式不一致） | ⬜ | — |
-| FE-02 | P2 | 死代码：zustand store/sidebar.ts | ⬜ | — |
+| FE-02 | P2 | 死代码：zustand store/sidebar.ts | ✅ | 见 §3 |
 | FE-03 | P2 | vitest coverage include 仅覆盖 3 个已测文件（覆盖率数字失真） | 🔶 | 部分（见 §3） |
 
 ## 3. 已修复条目（详细）
@@ -154,9 +154,10 @@
 - **证据**：items/search/events 页过滤器全量 URL 同步；alert-center 自成一套内存态。**用户影响**：告警视图不可分享/不可刷新恢复。
 - **修复方向**：前端 IA 重构第一批（统一 use-url-state 模式）。
 
-### FE-02 死代码 store/sidebar.ts — ⬜ P2【勘察报告】
+### FE-02 死代码 store/sidebar.ts — ✅ P2【已修复（静态验证）】
 
-- **修复方向**：IA 重构时随 ActionRail 统一导航状态后删除。
+- **修复**：FE-批2 IA 重构时删除（`rg "useSidebarStore|SidebarState|store/sidebar"` 全仓零引用——仅自身定义命中；crawl-frontier-console 的 `.sidebar` 为无关 CSS 选择器字符串）。导航状态已由 navigation-model / use-navigation 单一真源承载。
+- **回归防护**：残留引用由 typecheck 拦截（删除文件后任何 import 即编译失败，远端 CI `tsc --noEmit` 必红）。
 
 ### FE-03 vitest coverage include 失真 — 🔶 部分改善 P2【勘察报告】
 

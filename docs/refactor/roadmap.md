@@ -52,13 +52,14 @@
 |---|---|
 | FE-批1（子集）：PageContainer 宽度原语 + 单一真源 lib/content-widths（shell 与 PageContainer 共用；padding 唯一所有者是 shell；服务端安全无 "use client"）+ 行为测试 | ✅ 远端 CI 已验证（组件测试 + lint/typecheck/build） |
 | FE-批2（子集）：newsnow 1760px 特例收敛（12 处硬编码 → NewsnowBoardContainer）+ news-hub 1200px 双重约束修复 + ActionRail 4 组图标语义唯一化 | ✅ 远端 CI 已验证（同上） |
+| FE-批2（主体）：ActionRail 五组化（navigation-model 单一真源 + 权限过滤唯一事实源 + rail/drawer 共用）+ TopNav 589 行九职责拆分（编排层 ~124 行 + 组件/hooks）+ 顶部栏响应式优先级（resolveTopNavLayout 纯函数 + 窄屏搜索兜底入口）+ Shell 视口测量单一来源 + App Shell 导航 token 收敛 | 🔶 代码落地，远端 CI 验证中（PR #3）|
+| FE-02 死 store 删除（store/sidebar.ts） | ✅ 静态验证零引用后删除；残留引用由 typecheck 拦截 |
 | FE-批1（其余）：design/tokens.ts 收敛、DataStateBoundary、useUrlState | ⬜ 后续批次 |
-| FE-批2（其余）：ActionRail 5 组化 + TopNav 9 职责拆分 | ⬜ 后续批次（TopNav 589 行拆分单独一批） |
 | FE-批3：alert-center 重构（顺修 FE-01 URL 状态）——代表页试点 1 | ⬜ |
-| FE-03：vitest coverage include 改全仓 glob，阈值按真实基线重设 | 🔶 部分（include 3→6；全仓阈值待巨型组件拆分批次） |
+| FE-03：vitest coverage include 改全仓 glob，阈值按真实基线重设 | 🔶 部分（include 3→8，+App Shell 导航原语；全仓阈值待巨型组件拆分批次） |
 | 试点页人工冒烟 | ⬜ 未做（本机不启动前端；需部署环境） |
 
-**范围声明**：以上只是 App Shell 的第一小批（宽度原语 + 两个页面的容器收敛 + 图标去重），**不是 App Shell 重构完成**——TopNav 拆分、ActionRail 分组、design token 收敛、代表页试点均未开始。
+**范围声明**：FE-批2 主体 = Shell 导航信息架构重组 + TopNav 拆分。**不是** App Shell 重构全部完成——design/tokens.ts 全站收敛、DataStateBoundary、useUrlState、代表页试点（alert-center/war-map）均未开始；页面级视觉未经人工验收。
 
 ## M5 Go 迁移推进（只读 → CRUD → GraphQL）
 
@@ -69,7 +70,7 @@
 ## M6 前端第二批（巨型组件拆解）
 
 - FE-批4：war-map 重构（试点 2，验证原语够用）→ FE-批5+：task-detail/CreateCrawlTaskDrawer/realtime-signals/crawl-monitor/quality 分批
-- 直接 fetch → 类型化客户端迁移（10 文件）；FE-02 死 store 删除
+- 直接 fetch → 类型化客户端迁移（10 文件）；~~FE-02 死 store 删除~~（✅ 已随 FE-批2 完成）
 
 ## M7 深水区：Auth/Org/RBAC（Go）
 
@@ -94,7 +95,7 @@
 
 1. shadow 差分真实流量验收（首个单元 /api/healthz/live 0 差异——需要 api-go 接入入口代理；当前网关本身未上线路径）
 2. 第二个迁移单元：user-settings 只读 GET（shadow 模式）
-3. FE-批1 剩余原语（design/tokens.ts、DataStateBoundary、useUrlState）与 TopNav 拆分
+3. FE-批1 剩余原语（design/tokens.ts、DataStateBoundary、useUrlState）（TopNav 拆分已随 FE-批2 完成）
 4. canary 激活的前置件（迁移序 5 的 Go JWT 验签 + membership 重推导——在它完成前 canary 保持不激活）
 
 **canary 契约提醒**：路由表没有任何 ModeCanary 条目；CANARY_PERCENT 是预留配置。把业务路由切到 ModeCanary 之前必须先落地可信身份来源——`cmd/api/main_test.go` 的 TestDefaultRulesHaveNoCanaryRoutes 会在有人提前切换时失败。
