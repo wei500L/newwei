@@ -1,588 +1,131 @@
 "use client";
 
-import {
-  GlobalOutlined,
-  LogoutOutlined,
-  MenuOutlined,
-  MoonOutlined,
-  PlusOutlined,
-  SunOutlined,
-  SwapOutlined,
-  UserOutlined,
-} from "@ant-design/icons";
-import { Button, Drawer, Dropdown, Popover, Skeleton } from "antd";
-import type { MenuProps } from "antd";
-import { usePathname, useRouter } from "next/navigation";
-import { signOut, useSession } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-
-import { useTheme } from "@/hooks/use-theme";
-import { captureClientError } from "@/lib/client-telemetry";
-import { changeLanguage } from "@/lib/i18n-client";
-import { createTraceHeaders } from "@/lib/trace";
-
-import { buildActionRailNavConfig } from "./action-rail";
-import { resolveActiveItemKey } from "./action-rail-routing";
-import { AvatarFallback } from "./avatar-fallback";
 import { CommandBar } from "./command-bar";
-import { LanguageSwitcher } from "./language-switcher";
-import { NotificationCenter } from "./notification-center";
-import { OrganizationSwitcher } from "./organization-switcher";
-import { SystemDefcon } from "./system-defcon";
+import { MobileNavDrawer } from "./mobile-nav-drawer";
 import { TickerTape } from "./ticker-tape";
-import {
-  alignDensityModeToBase,
-  downgradeDensityModeForBase,
-  NAV_FULL_MIN_WIDTH,
-  NAV_OVERFLOW_EPSILON,
-  NAV_UPGRADE_SLACK,
-  resolveBaseDensityMode,
-  upgradeDensityMode,
-  type TopNavDensityMode,
-} from "./top-nav-density";
-import { navigateDrawerItem } from "./top-nav-drawer-navigation";
-import { UserUiSettingsSyncIndicator } from "./user-ui-settings-sync-indicator";
-
-const formatLabel = (value: string): string =>
-  value
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+import { TopNavActions } from "./top-nav-actions";
+import { TopNavBrand } from "./top-nav-brand";
+import { isFullWidthViewport, resolveTopNavLayout } from "./top-nav-density";
+import { TopNavUserMenu } from "./top-nav-user-menu";
+import { useTopNavDensity } from "./use-top-nav-density";
+import { useViewportWidth } from "./use-viewport-width";
 
 interface TopNavProps {
+  /** 桌面矮视口 drawer 模式（navMode=drawer）下，菜单按钮在桌面也显示 */
   showDesktopMenuButton?: boolean;
 }
 
-const SSR_SAFE_INITIAL_VIEWPORT_WIDTH = NAV_FULL_MIN_WIDTH;
-
+/**
+ * 顶部栏编排层（FE-批2 拆分后）：只负责分区组合与少量顶层状态
+ * （drawer 开合、密度换算）。各分区的实现：
+ * - 品牌/菜单入口：TopNavBrand
+ * - 右侧操作区（状态/抓取/通知/语言/组织/同步/主题）：TopNavActions
+ * - 用户区（菜单+退出）：TopNavUserMenu
+ * - 移动/矮视口导航：MobileNavDrawer（与 ActionRail 共用导航模型）
+ * - 密度与溢出测量：useTopNavDensity（视口宽度来自 Shell 级单一来源）
+ */
 export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
-  const { t, i18n } = useTranslation();
-  const { isDark, toggleTheme } = useTheme();
-  const router = useRouter();
+  const { i18n } = useTranslation();
   const pathname = usePathname();
   const { data: session, status } = useSession();
-  const [loggingOut, setLoggingOut] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const headerRef = useRef<HTMLElement | null>(null);
-  const [viewportWidth, setViewportWidth] = useState<number>(SSR_SAFE_INITIAL_VIEWPORT_WIDTH);
-  const [densityMode, setDensityMode] = useState<TopNavDensityMode>(() =>
-    resolveBaseDensityMode(SSR_SAFE_INITIAL_VIEWPORT_WIDTH)
-  );
-  const isLoadingSession = status === "loading";
-  const user = session?.user;
-  const permissions = session?.permissions ?? user?.permissions ?? [];
+
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canStartCrawl = permissions.includes("crawl.write");
   const permissionsKey = useMemo(() => permissions.join("|"), [permissions]);
-  const baseDensityMode = useMemo(
-    () => resolveBaseDensityMode(viewportWidth),
-    [viewportWidth]
+
+  // 会影响 header 内容宽度的值都进 key，密度 hook 据此重测溢出。
+  const remeasureKey = [
+    i18n.language,
+    status,
+    permissionsKey,
+    session?.orgId ?? "",
+    pathname ?? "",
+    canStartCrawl,
+  ].join("\u0000");
+
+  const { headerRef, densityMode } = useTopNavDensity({ remeasureKey });
+  const layout = useMemo(
+    () => resolveTopNavLayout({ densityMode, canStartCrawl }),
+    [canStartCrawl, densityMode],
   );
 
+  // 跑马灯属整行次要信息，仅 full 宽屏档显示（≥NAV_FULL_MIN_WIDTH，
+  // 与 Shell 顶部占位同一信号）；compact/minimal 下整个卸载，不发起
+  // 也不维持指标数据请求。
+  const viewportWidth = useViewportWidth();
+  const showTickerTape = isFullWidthViewport(viewportWidth);
+
+  // 路由变化后关闭导航 Drawer。
   useEffect(() => {
     setMobileNavOpen(false);
   }, [pathname]);
 
-  // Close drawer when switching to desktop breakpoint unless desktop drawer mode is enabled.
+  // 回到桌面断点时关闭 Drawer（桌面矮视口 drawer 模式除外）。
   useEffect(() => {
     if (showDesktopMenuButton) {
       return;
     }
     const mediaQuery = window.matchMedia("(min-width: 768px)");
-    const handleChange = (e: MediaQueryListEvent | MediaQueryList) => {
-      if (e.matches) {
+    const handleChange = (event: MediaQueryListEvent | MediaQueryList) => {
+      if (event.matches) {
         setMobileNavOpen(false);
       }
     };
-    // Check initial state
     handleChange(mediaQuery);
-    // Listen for changes
     mediaQuery.addEventListener("change", handleChange);
     return () => mediaQuery.removeEventListener("change", handleChange);
   }, [showDesktopMenuButton]);
 
-  useEffect(() => {
-    const updateViewportWidth = () => setViewportWidth(window.innerWidth);
-    updateViewportWidth();
-    window.addEventListener("resize", updateViewportWidth);
-    return () => window.removeEventListener("resize", updateViewportWidth);
-  }, []);
-
-  useEffect(() => {
-    setDensityMode((current) => alignDensityModeToBase(current, baseDensityMode));
-  }, [baseDensityMode]);
-
-  const checkDensityFit = useCallback(() => {
-    const header = headerRef.current;
-    if (!header) {
-      return;
-    }
-
-    const overflow = header.scrollWidth - header.clientWidth;
-    if (overflow > NAV_OVERFLOW_EPSILON) {
-      setDensityMode((current) => downgradeDensityModeForBase(current, baseDensityMode));
-      return;
-    }
-
-    const slack = header.clientWidth - header.scrollWidth;
-    if (slack >= NAV_UPGRADE_SLACK) {
-      setDensityMode((current) => upgradeDensityMode(current, baseDensityMode));
-    }
-  }, [baseDensityMode]);
-
-  useEffect(() => {
-    const frameId = window.requestAnimationFrame(checkDensityFit);
-    return () => window.cancelAnimationFrame(frameId);
-  }, [
-    canStartCrawl,
-    checkDensityFit,
-    densityMode,
-    i18n.language,
-    isLoadingSession,
-    pathname,
-    permissionsKey,
-    session?.orgId,
-  ]);
-
-  useEffect(() => {
-    const header = headerRef.current;
-    if (!header || typeof ResizeObserver === "undefined") {
-      return;
-    }
-    const observer = new ResizeObserver(() => checkDensityFit());
-    observer.observe(header);
-    return () => observer.disconnect();
-  }, [checkDensityFit]);
-
-  const handleLogout = useCallback(
-    async (logoutAll: boolean) => {
-      setLoggingOut(true);
-      let callbackUrl = "/login";
-      try {
-        const response = await fetch("/api/logout", {
-          method: "POST",
-          headers: createTraceHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({ logoutAll }),
-        });
-
-        if (!response.ok) {
-          callbackUrl = "/login?logoutFailed=1";
-        }
-      } catch (error) {
-        captureClientError("Logout error", error);
-        callbackUrl = "/login?logoutFailed=1";
-      } finally {
-        setLoggingOut(false);
-      }
-
-      await signOut({ callbackUrl });
-    },
-    []
-  );
-
-  const { mainNavItems, adminNavItems } = useMemo(
-    () => buildActionRailNavConfig(t, permissions),
-    [permissions, t]
-  );
-  const allNavItems = useMemo(
-    () => [...mainNavItems, ...adminNavItems],
-    [adminNavItems, mainNavItems]
-  );
-  const activeKey = useMemo(
-    () => resolveActiveItemKey(pathname, allNavItems),
-    [allNavItems, pathname]
-  );
-
-  const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
-  const displayEmail = user?.email ?? "";
-  const displayNameOrEmail = displayName || displayEmail || t("common.notAvailable");
-  const avatarSrc = user?.image ?? user?.avatarUrl ?? undefined;
-  const planTier = user?.planTier?.trim();
-  const subscriptionStatus = user?.subscriptionStatus?.trim();
-  const planLabel = planTier ? formatLabel(planTier) : "Free Plan";
-  const statusLabel = subscriptionStatus ? formatLabel(subscriptionStatus) : null;
-  const planBadgeLabel = statusLabel ? `${planLabel} · ${statusLabel}` : planLabel;
-  const startNewCrawlLabel = t("nav.newCrawl");
-  const brandShortLabel = t("brand.short");
-  const brandFullLabel = t("brand.full");
-  const menuButtonClassName = showDesktopMenuButton ? "" : "md:hidden";
-  const drawerClassName = showDesktopMenuButton ? "" : "md:hidden";
-  const isFullMode = densityMode === "full";
-  const isCompactMode = densityMode === "compact";
-  const isMinimalMode = densityMode === "minimal";
-  const showCommandBar = !isMinimalMode;
-  const showSystemDefcon = isFullMode;
-  const showPrimaryCrawlButton = canStartCrawl && isFullMode;
-  const showCompactCrawlButton = canStartCrawl && isCompactMode;
-  const showInlineLanguage = !isMinimalMode;
-  const showInlineOrganization = isFullMode;
-  const showCompactOrganizationUtility = isCompactMode;
-  const showSyncIndicator = !isMinimalMode;
-  const showMinimalUtilityButtons = isMinimalMode;
-  const commandBarWidthClass = isFullMode ? "max-w-[640px]" : "max-w-[380px]";
-  const headerSpacingClassName = isFullMode
-    ? "gap-2 border-b border-[var(--border)] px-3 sm:gap-3 sm:px-4 lg:gap-4 lg:px-6"
-    : isCompactMode
-      ? "gap-2 border-b border-[var(--border)] px-3 sm:gap-2 sm:px-4 lg:gap-3 lg:px-5"
-      : "gap-1.5 border-b border-[var(--border)] px-2.5 sm:gap-2 sm:px-3";
-
-  const languageMenuItems: MenuProps["items"] = useMemo(
-    () => [
-      {
-        key: "lang-zh",
-        label: t("language.chinese"),
-        onClick: () => void changeLanguage("zh-CN"),
-      },
-      {
-        key: "lang-en",
-        label: t("language.english"),
-        onClick: () => void changeLanguage("en-US"),
-      },
-    ],
-    [t]
-  );
-
-  const userMenuItems: MenuProps["items"] = useMemo(() => {
-    const items: MenuProps["items"] = [
-      {
-        key: "profile-info",
-        label: (
-          <div className="flex flex-col">
-            <span className="font-medium">{displayNameOrEmail}</span>
-            <span className="text-xs text-slate-500">{planBadgeLabel}</span>
-          </div>
-        ),
-        disabled: true,
-        className: "cursor-default opacity-100 hover:bg-transparent"
-      },
-      { type: "divider" },
-      {
-        key: "profile",
-        label: t("nav.profile"),
-        icon: <UserOutlined />,
-        onClick: () => router.push("/profile")
-      }
-    ];
-
-    if (canStartCrawl && isMinimalMode) {
-      items.push({
-        key: "new-crawl",
-        label: startNewCrawlLabel,
-        icon: <PlusOutlined />,
-        onClick: () => router.push("/admin/ops/crawl-tasks?new=true")
-      });
-    }
-
-    if (isMinimalMode) {
-      items.push(
-        {
-          key: "lang-zh",
-          label: t("language.chinese"),
-          icon: <GlobalOutlined />,
-          onClick: () => void changeLanguage("zh-CN"),
-        },
-        {
-          key: "lang-en",
-          label: t("language.english"),
-          icon: <GlobalOutlined />,
-          onClick: () => void changeLanguage("en-US"),
-        }
-      );
-    }
-
-    items.push({
-      key: "logout",
-      label: t("auth.logout"),
-      icon: <LogoutOutlined />,
-      onClick: () => handleLogout(false),
-      disabled: loggingOut
-    });
-
-    return items;
-  }, [
-    canStartCrawl,
-    displayNameOrEmail,
-    handleLogout,
-    isMinimalMode,
-    loggingOut,
-    planBadgeLabel,
-    router,
-    startNewCrawlLabel,
-    t,
-  ]);
-
-  const handleDrawerNavigate = useCallback(
-    (path?: string) => {
-      navigateDrawerItem(path, {
-        push: (nextPath) => router.push(nextPath),
-        closeDrawer: () => setMobileNavOpen(false),
-      });
-    },
-    [router],
-  );
+  const headerSpacingClassName =
+    layout.densityMode === "full"
+      ? "gap-2 border-b border-[var(--border)] px-3 sm:gap-3 sm:px-4 lg:gap-4 lg:px-6"
+      : layout.densityMode === "compact"
+        ? "gap-2 border-b border-[var(--border)] px-3 sm:gap-2 sm:px-4 lg:gap-3 lg:px-5"
+        : "gap-1.5 border-b border-[var(--border)] px-2.5 sm:gap-2 sm:px-3";
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 flex flex-col">
-      {/* Ticker Tape Layer */}
-      <TickerTape />
+    <div className="fixed top-0 left-0 right-0 z-[var(--z-top-nav)] flex flex-col">
+      {/* Ticker Tape Layer（仅 full 宽屏档；隐藏时 Shell 同步收敛占位高度） */}
+      {showTickerTape ? <TickerTape /> : null}
 
       {/* Main Navbar Layer */}
       <header
         ref={headerRef}
         className={`relative flex h-16 shrink-0 items-center ${headerSpacingClassName} glass`}
       >
-        {/* Left: Logo */}
-        <div className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
-          <Button
-            type="text"
-            size="large"
-            icon={<MenuOutlined className="text-lg" aria-hidden />}
-            onClick={() => setMobileNavOpen(true)}
-            className={menuButtonClassName}
-            aria-label={t("nav.openMenu")}
-            aria-expanded={mobileNavOpen}
-            aria-controls="mobile-navigation-drawer"
-          />
-          <span className="flex min-w-0 items-center gap-2 whitespace-nowrap font-serif text-lg font-semibold tracking-tight text-[var(--foreground)]">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--primary)]" />
-            <span className="sm:hidden">{brandShortLabel}</span>
-            <span className="hidden sm:inline">{brandFullLabel}</span>
-          </span>
-        </div>
+        <TopNavBrand
+          onOpenMenu={() => setMobileNavOpen(true)}
+          menuExpanded={mobileNavOpen}
+          showDesktopMenuButton={showDesktopMenuButton}
+          largeTouchTarget={layout.largeTouchTargets}
+        />
 
-        {/* Center: Command Bar (Replaces old nav links) */}
-        {showCommandBar ? (
+        {/* Center: Command Bar（minimal 档让位于搜索兜底入口） */}
+        {layout.showCommandBar ? (
           <div className="hidden min-w-0 flex-1 items-center justify-center px-1 sm:flex md:px-2 lg:px-4">
-            <div className={`w-full ${commandBarWidthClass}`}>
+            <div
+              className={`w-full ${layout.densityMode === "full" ? "max-w-[640px]" : "max-w-[380px]"}`}
+            >
               <CommandBar />
             </div>
           </div>
         ) : null}
 
-        {/* Right: Actions + User */}
-        <div className="ml-auto flex min-w-0 max-w-full items-center gap-1 sm:gap-2 md:gap-3">
-          {showSystemDefcon ? (
-            <div className="hidden 2xl:block">
-              <SystemDefcon />
-            </div>
-          ) : null}
-
-          {showSystemDefcon ? (
-            <div className="mx-1 hidden h-6 w-px bg-[var(--border)] 2xl:block" />
-          ) : null}
-
-          {showPrimaryCrawlButton ? (
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              size="small"
-              onClick={() => router.push("/admin/ops/crawl-tasks?new=true")}
-              className="hidden shadow-none xl:inline-flex"
-            >
-              {startNewCrawlLabel}
-            </Button>
-          ) : null}
-
-          {showCompactCrawlButton ? (
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              size="small"
-              onClick={() => router.push("/admin/ops/crawl-tasks?new=true")}
-              aria-label={startNewCrawlLabel}
-              className="hidden shadow-none xl:inline-flex !px-2"
-            />
-          ) : null}
-
-          <div className="flex min-w-0 items-center gap-1 sm:gap-2">
-            <NotificationCenter />
-
-            {showInlineLanguage ? (
-              <div className="hidden lg:block">
-                <LanguageSwitcher compact={isCompactMode} />
-              </div>
-            ) : null}
-
-            {showInlineOrganization ? (
-              <div className="hidden xl:block">
-                <OrganizationSwitcher
-                  mode="full"
-                  showErrorText={false}
-                />
-              </div>
-            ) : null}
-
-            {showCompactOrganizationUtility ? (
-              <Popover
-                trigger="click"
-                placement="bottomRight"
-                content={
-                  <div className="w-[220px]">
-                    <OrganizationSwitcher mode="compact" showErrorText={false} />
-                  </div>
-                }
-              >
-                <Button
-                  type="text"
-                  icon={<SwapOutlined />}
-                  aria-label={t("orgSwitcher.switch")}
-                  className="hidden xl:inline-flex h-8 w-8 items-center justify-center p-0"
-                />
-              </Popover>
-            ) : null}
-
-            {showSyncIndicator ? (
-              <div className="hidden xl:block">
-                <UserUiSettingsSyncIndicator />
-              </div>
-            ) : null}
-
-            {showMinimalUtilityButtons ? (
-              <>
-                <div className="hidden lg:block">
-                  <UserUiSettingsSyncIndicator />
-                </div>
-
-                <div className="hidden sm:block">
-                  <Dropdown
-                    menu={{ items: languageMenuItems }}
-                    placement="bottomRight"
-                    trigger={["click"]}
-                  >
-                    <Button
-                      type="text"
-                      icon={<GlobalOutlined />}
-                      aria-label={t("language.label")}
-                      className="inline-flex h-8 w-8 items-center justify-center p-0"
-                    />
-                  </Dropdown>
-                </div>
-
-                <Popover
-                  trigger="click"
-                  placement="bottomRight"
-                  content={
-                    <div className="w-[220px]">
-                      <OrganizationSwitcher mode="compact" showErrorText={false} />
-                    </div>
-                  }
-                >
-                  <Button
-                    type="text"
-                    icon={<SwapOutlined />}
-                    aria-label={t("orgSwitcher.switch")}
-                    className="inline-flex h-8 w-8 items-center justify-center p-0"
-                  />
-                </Popover>
-              </>
-            ) : null}
-          </div>
-
-          <div className="mx-1 hidden h-6 w-px bg-[var(--border)] lg:block" />
-
-          <Button
-            type="text"
-            icon={isDark ? <SunOutlined /> : <MoonOutlined />}
-            onClick={toggleTheme}
-            aria-pressed={isDark}
-            aria-label={isDark ? "切换到浅色主题" : "切换到深色主题"}
-            title={isDark ? "切换到浅色主题" : "切换到深色主题"}
-            className="flex items-center rounded-md !text-[var(--foreground)] opacity-70 transition-opacity hover:opacity-100"
-          />
-
-          {isLoadingSession ? (
-            <Skeleton.Avatar active size="default" />
-          ) : (
-              <Dropdown
-                  menu={{ items: userMenuItems }}
-                  placement="bottomRight"
-                  trigger={['click']}
-              >
-                  <div className="cursor-pointer hover:opacity-80 transition-opacity">
-                      <AvatarFallback
-                          size="default"
-                          src={avatarSrc}
-                          name={displayName}
-                          email={displayEmail}
-                          className="bg-[var(--primary)] text-white border border-[var(--border)] font-bold"
-                      />
-                  </div>
-              </Dropdown>
-          )}
-        </div>
+        <TopNavActions layout={layout} />
+        <TopNavUserMenu layout={layout} />
       </header>
 
-      <Drawer
-        id="mobile-navigation-drawer"
-        title={t("nav.menu")}
-        placement="left"
-        width={320}
+      <MobileNavDrawer
         open={mobileNavOpen}
         onClose={() => setMobileNavOpen(false)}
-        destroyOnHidden
-        className={drawerClassName}
-      >
-        <nav className="flex flex-col gap-6">
-          <div className="flex flex-col gap-1">
-            {mainNavItems.map((item) => {
-              const isActive = item.key === activeKey;
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => handleDrawerNavigate(item.path)}
-                  aria-label={item.label}
-                  aria-current={isActive ? "page" : undefined}
-                  className={`
-                    flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-all duration-200
-                    ${isActive
-                      ? "bg-[var(--primary)] text-white shadow-sm"
-                      : "text-slate-700 dark:text-slate-300 hover:text-[var(--primary)] hover:bg-slate-50 dark:hover:bg-slate-800"
-                    }
-                  `}
-                >
-                  <span className="text-lg">{item.icon}</span>
-                  <span className="font-medium">{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {adminNavItems.length > 0 ? (
-            <div className="pt-4 border-t border-[var(--border)] flex flex-col gap-2">
-              <span className="px-1 text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                {t("nav.adminGroup")}
-              </span>
-              <div className="flex flex-col gap-1">
-                {adminNavItems.map((item) => {
-                  const isActive = item.key === activeKey;
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => handleDrawerNavigate(item.path)}
-                      aria-label={item.label}
-                      aria-current={isActive ? "page" : undefined}
-                      className={`
-                        flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-all duration-200
-                        ${isActive
-                          ? "bg-[var(--primary)] text-white shadow-sm"
-                          : "text-slate-700 dark:text-slate-300 hover:text-[var(--primary)] hover:bg-slate-50 dark:hover:bg-slate-800"
-                        }
-                      `}
-                    >
-                      <span className="text-lg">{item.icon}</span>
-                      <span className="font-medium">{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </nav>
-      </Drawer>
+        className={showDesktopMenuButton ? "" : "md:hidden"}
+      />
     </div>
   );
 }

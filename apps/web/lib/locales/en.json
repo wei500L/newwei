@@ -2049,11 +2049,26 @@
       "assistant": "Assistant",
       "analysis": "Analysis"
     },
-    "adminGroup": "Admin",
+    "groups": {
+      "today": "Today & Feeds",
+      "situation": "Events & Situation",
+      "research": "Analysis & Research",
+      "workspace": "My Workspace",
+      "admin": "Admin"
+    },
     "commandRunSearch": "Search all items",
     "searchAriaLabel": "Search news items",
     "openMenu": "Open navigation menu",
-    "menu": "Menu"
+    "menu": "Menu",
+    "theme": {
+      "toLight": "Switch to light theme",
+      "toDark": "Switch to dark theme"
+    },
+    "userMenu": {
+      "label": "Open user menu",
+      "freePlan": "Free Plan",
+      "organizationSection": "Organization"
+    }
   },
   "pages": {
     "today": {

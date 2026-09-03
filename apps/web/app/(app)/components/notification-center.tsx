@@ -63,7 +63,16 @@ const LIVE_NOTIFICATION_TOAST_KEY = "notification-center-live";
 const LIVE_NOTIFICATION_TOAST_FLUSH_MS = 800;
 const LIVE_NOTIFICATION_UNREAD_SYNC_MS = 1200;
 
-export function NotificationCenter() {
+/** 触发按钮触控尺寸：default=32px（full/compact 紧凑档）；large=44px（minimal 触控优先档） */
+export type NotificationCenterTriggerSize = "default" | "large";
+
+export interface NotificationCenterProps {
+  size?: NotificationCenterTriggerSize;
+}
+
+export function NotificationCenter({
+  size = "default",
+}: NotificationCenterProps = {}) {
   const { t, i18n } = useTranslation();
   const { message } = App.useApp();
   const locale = resolveLocale(i18n.language);
@@ -378,7 +387,11 @@ export function NotificationCenter() {
             type="text"
             icon={<BellOutlined />}
             aria-label={t("notifications.title")}
-            className="inline-flex h-8 w-8 items-center justify-center p-0"
+            className={
+              size === "large"
+                ? "inline-flex !h-11 !w-11 items-center justify-center p-0"
+                : "inline-flex h-8 w-8 items-center justify-center p-0"
+            }
           />
         </Badge>
       </span>

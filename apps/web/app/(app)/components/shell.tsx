@@ -3,26 +3,23 @@
 import { message } from "antd";
 import { usePathname } from "next/navigation";
 import {
-  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PropsWithChildren,
 } from "react";
 
 import { CONTENT_WIDTH_CLASSES } from "@/lib/content-widths";
 
 import { ActionRail } from "./action-rail";
-import {
-  DESKTOP_RAIL_MIN_WIDTH,
-  resolveNavMode,
-  type NavMode,
-} from "./nav-mode";
+import { resolveNavMode, type NavMode } from "./nav-mode";
 import { SystemHealthProvider } from "./system-health-context";
 import { TopNav } from "./top-nav";
-import { NAV_FULL_MIN_WIDTH } from "./top-nav-density";
+import { isFullWidthViewport } from "./top-nav-density";
 import { UrlStateSync } from "./url-state-sync";
+import { useViewportWidth, ViewportSizeProvider } from "./use-viewport-width";
 import { UserUiSettingsSync } from "./user-ui-settings-sync";
 
 /**
@@ -93,29 +90,37 @@ function useMainScrollbarClass(): string {
   return "scrollbar-thin scrollbar-thumb-slate-200/80 hover:scrollbar-thumb-slate-300/90 scrollbar-track-transparent";
 }
 
-export function ShellLayout({ children }: PropsWithChildren) {
+/**
+ * Shell 顶部占位的跑马灯高度策略（纯函数，供行为测试）。
+ *
+ * 跑马灯隐藏（非 full 宽屏档）时把 --ticker-height 压为 0：该变量同时
+ * 驱动内容区 pt-[calc(var(--top-nav-height)+var(--ticker-height))] 与
+ * .items-filter-rail 的 sticky max-height——在 Shell 根上一处覆盖，所有
+ * 消费者同步收敛，不留 32px 空白；显示时回落到 :root 的 2rem。
+ * 显示条件与 TopNav 的 TickerTape 条件渲染共用 isFullWidthViewport
+ * （NAV_FULL_MIN_WIDTH 单一语义），两处不会漂移。
+ */
+export function resolveShellTickerStyle(
+  showTickerTape: boolean,
+): CSSProperties {
+  return showTickerTape
+    ? {}
+    : ({ "--ticker-height": "0px" } as CSSProperties);
+}
+
+function AppShell({ children }: PropsWithChildren) {
   const [, contextHolder] = message.useMessage();
   const pathname = usePathname();
   const containerClass = useContainerClass();
   const contentPaddingClass = useContentPaddingClass();
   const mainScrollbarClass = useMainScrollbarClass();
   const shellContentRef = useRef<HTMLDivElement | null>(null);
-  const [viewportWidth, setViewportWidth] = useState(DESKTOP_RAIL_MIN_WIDTH);
   const [availableRailHeight, setAvailableRailHeight] = useState(0);
   const [railContentHeight, setRailContentHeight] = useState(0);
 
-  const updateViewportWidth = useCallback(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    setViewportWidth(window.innerWidth);
-  }, []);
-
-  useEffect(() => {
-    updateViewportWidth();
-    window.addEventListener("resize", updateViewportWidth);
-    return () => window.removeEventListener("resize", updateViewportWidth);
-  }, [updateViewportWidth]);
+  // 视口宽度来自 Shell 级单一来源（use-viewport-width）——TopNav 密度
+  // 与这里的 navMode 共用同一次 resize 监听，不再各自维护。
+  const viewportWidth = useViewportWidth();
 
   useEffect(() => {
     const shellContent = shellContentRef.current;
@@ -158,12 +163,16 @@ export function ShellLayout({ children }: PropsWithChildren) {
       }),
     [availableRailHeight, railContentHeight, viewportWidth],
   );
+  const showTickerTape = isFullWidthViewport(viewportWidth);
   const systemHealthEnabled =
-    pathname?.startsWith("/dashboard") || viewportWidth >= NAV_FULL_MIN_WIDTH;
+    pathname?.startsWith("/dashboard") || showTickerTape;
   const systemHealthRealtimeEnabled = pathname?.startsWith("/dashboard");
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div
+      className="flex flex-col h-screen overflow-hidden"
+      style={resolveShellTickerStyle(showTickerTape)}
+    >
       {contextHolder}
 
       <UrlStateSync />
@@ -180,7 +189,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
           ref={shellContentRef}
           className="flex flex-1 overflow-hidden pt-[calc(var(--top-nav-height,4rem)+var(--ticker-height,0px))] relative isolate"
         >
-          <div className="relative z-20 h-full shrink-0 min-h-0">
+          <div className="relative z-[var(--z-rail)] h-full shrink-0 min-h-0">
             <ActionRail
               mode={navMode}
               onContentHeightChange={setRailContentHeight}
@@ -188,7 +197,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
           </div>
 
           <main
-            className={`relative z-0 flex-1 overflow-auto ${mainScrollbarClass}`}
+            className={`relative z-[var(--z-content)] flex-1 overflow-auto ${mainScrollbarClass}`}
           >
             <div className={`${containerClass} ${contentPaddingClass}`}>
               {children}
@@ -197,5 +206,13 @@ export function ShellLayout({ children }: PropsWithChildren) {
         </div>
       </SystemHealthProvider>
     </div>
+  );
+}
+
+export function ShellLayout({ children }: PropsWithChildren) {
+  return (
+    <ViewportSizeProvider>
+      <AppShell>{children}</AppShell>
+    </ViewportSizeProvider>
   );
 }

@@ -65,7 +65,39 @@
 - **对比度**：正文文字 ≥ 4.5:1（大字 ≥ 3:1）。浅背景上**避免 `text-slate-400/500` 作正文**（≈2.5–4.4:1，不达 AA），用 `text-slate-600+`。
 - 暗色 hover 表面用 `slate-800`（次要）；文字用 `slate-300/200`。
 
-## 7. 反模式速查（PR 自检）
+## 7. App Shell 导航 token（FE-批2）
+
+App Shell（TopNav / ActionRail / 移动 Drawer）的尺寸、状态色与动效已收敛到
+`globals.css` 的 `:root` / `.dark` 中的 `--nav-*` / `--rail-*` / `--shell-*` /
+`--z-*` token；交互状态类在 `@layer utilities` 的 `.nav-item--*` 定义，
+映射函数在 `app/(app)/components/nav-item-state.ts`。
+
+| token | 值 | 用途 |
+|------|-----|------|
+| `--shell-rail-width` | 4.5rem | 桌面 rail 面板宽（`w-[var(--shell-rail-width)]`） |
+| `--rail-item-size` | 2.75rem | 导航项高（≥44px 触控目标），rail 与 drawer 共用 |
+| `--rail-item-gap` / `--rail-item-radius` | 6px / 12px | rail 组内间距 / 项圆角 |
+| `--nav-drawer-width` | 20rem | 移动导航 Drawer 宽 |
+| `--nav-item-fg` / `--nav-item-strong-fg` | slate-500/400 · slate-700/300 | rail 次级图标 / drawer 行文字 |
+| `--nav-item-hover-*` | `--secondary` + `--primary` | hover 面（暗色自动随 `--secondary` 切换） |
+| `--nav-item-active-*` | `--primary` / `--primary-foreground` | active/selected 面 |
+| `--nav-divider-soft` | slate-400/35% | rail 组间细分隔线 |
+| `--z-top-nav` / `--z-rail` / `--z-content` | 50 / 20 / 0 | Shell 层叠顺序 |
+| `--nav-motion-fast` | 150ms | 导航项状态过渡 |
+
+**规则**：
+- 导航导航项状态一律走 `.nav-item--active` / `.nav-item--idle` / `.nav-item--idle-strong`
+  （经 `navItemStateClass(active, emphasis)`），**不要**在组件里重新拼
+  `bg-[var(--primary)] text-white shadow-sm ...` 状态串。
+- rail/drawer 尺寸用上表 token 的任意值类（`h-[var(--rail-item-size)]`），
+  不再写 `h-11` / `w-[4.5rem]` 字面量；`nav-mode.ts` 的度量常量与这些
+  token 值同步（44/6/17/13/32）。
+- 顶部栏高度沿用既有 `--top-nav-height`（4rem）与 `--ticker-height`（2rem），
+  shell 的内容偏移 `pt-[calc(...)]` 是唯一消费方。
+- 焦点环沿用全局 `:focus-visible`（primary outline + 2px offset）；
+  reduced-motion 由文件末尾的全局降级规则覆盖，导航不单独声明。
+
+## 8. 反模式速查（PR 自检）
 
 - ❌ `text-[#hex]` / `bg-[rgba(...)]` / JS 里散落 `rgba()`／`#hex`（改用 token）
 - ❌ `h-[NNpx]` / `rounded-[14px]` / 重复 `shadow-[...]`（改用 `h-viz-*` / `rounded-lg` / `shadow-panel`）

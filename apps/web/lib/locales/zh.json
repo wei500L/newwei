@@ -2049,11 +2049,26 @@
       "assistant": "助手",
       "analysis": "分析"
     },
-    "adminGroup": "管理",
+    "groups": {
+      "today": "今日与信息流",
+      "situation": "事件与态势",
+      "research": "分析与研究",
+      "workspace": "个人工作台",
+      "admin": "管理"
+    },
     "commandRunSearch": "搜索全部条目",
     "searchAriaLabel": "搜索新闻条目",
     "openMenu": "打开导航菜单",
-    "menu": "菜单"
+    "menu": "菜单",
+    "theme": {
+      "toLight": "切换到浅色主题",
+      "toDark": "切换到深色主题"
+    },
+    "userMenu": {
+      "label": "打开用户菜单",
+      "freePlan": "免费版",
+      "organizationSection": "组织"
+    }
   },
   "pages": {
     "today": {
