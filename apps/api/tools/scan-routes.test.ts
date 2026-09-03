@@ -227,11 +227,18 @@ describe("contract baseline artifacts", () => {
     expect(snapshot.info.completeness.responseSchemas).toContain("unresolved");
     expect(snapshot.info.completeness.requestSchemas).toContain("names-only");
 
-    // 状态码语义：POST 端点默认 201（Nest @Post 默认，远端差分实测确认）。
-    const login = snapshot.paths["/api/auth/login"]?.post as
+    // 状态码语义：POST 默认 201（Nest @Post 默认，远端差分实测确认）；
+    // 显式 @HttpCode 覆盖被提取（login 声明 200 → 响应键 200 + 标记）。
+    const itemsCreate = snapshot.paths["/api/items"]?.post as
       | { responses?: Record<string, unknown> }
       | undefined;
-    expect(login?.responses).toHaveProperty("201");
+    expect(itemsCreate?.responses).toHaveProperty("201");
+
+    const login = snapshot.paths["/api/auth/login"]?.post as
+      | { responses?: Record<string, unknown>; "x-http-code-explicit"?: number }
+      | undefined;
+    expect(login?.responses).toHaveProperty("200");
+    expect(login?.["x-http-code-explicit"]).toBe(200);
 
     // GraphQL 端点（POST /graphql 在 api 之外挂载）不在 REST 快照 paths 里。
     expect(snapshot.paths["/graphql"]).toBeUndefined();

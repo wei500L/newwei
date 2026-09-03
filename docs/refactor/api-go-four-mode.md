@@ -16,20 +16,29 @@
 | `/graphql` `/socket.io/` `/docs` `/admin/queues` | legacy | 无 /api 前缀的挂载点分别声明 |
 | `/__go/healthz` | go | 网关自省（路由表 + shadow/canary 状态） |
 
-### shadow（`internal/shadow/runner.go`）
+### shadow（`internal/shadow/runner.go` + `legacyproxy` 捕获层）
 
-- **客户端响应始终来自 NestJS**：网关先代理到上游捕获响应（captureWriter），写回客户端后异步触发差分——主响应不受 Go 侧执行成败/快慢影响。
+- **客户端响应始终来自 NestJS，且保留流式语义**：捕获是「直通 + 有界旁录」——上游写入的每个字节即时转发给客户端（含响应头先达与 Flush 转发），同时最多旁录 `SHADOW_MAX_RESPONSE_CAPTURE_BYTES`（默认 1MiB）用于差分。客户端**不需要**等待捕获完成；SSE（text/event-stream）、协议升级（Upgrade 头）、超预算响应自动停止旁录只透传。差分失败/超限/超时都不影响主响应。
 - **只读白名单**：GET/HEAD/OPTIONS 之外的请求（POST/PUT/PATCH/DELETE）直接跳过差分，**禁止对写请求双发**（`IsShadowableMethod` 双层强制：legacyproxy + shadow runner）。
-- **资源预算**（`Budget`，环境变量可调）：单次超时（`SHADOW_TIMEOUT_MS`，默认 2s）、请求体上限（`SHADOW_MAX_BODY_BYTES`，默认 1MiB）、并发上限（`SHADOW_MAX_INFLIGHT`，默认 16）、每分钟令牌桶（`SHADOW_MAX_PER_MINUTE`，默认 600）。任一超限 → 该次差分直接丢弃（不排队、不阻塞）。
-- **结构化差异记录**：JSON 行（traceId/method/path/两侧状态码与响应体/diffFields）；`/__go/healthz` 暴露 executed/diffs/dropped/inflight 统计。
+- **独立预算**（环境变量可调）：
+  - 单次执行超时 `SHADOW_TIMEOUT_MS`（默认 2s，select 强制中止——executant 不响应 ctx 也不拖槽位）；
+  - 差分可重放的请求体上限 `SHADOW_MAX_REQUEST_BODY_BYTES`（默认 1MiB；超过时已读前缀经 MultiReader 拼回，**请求仍完整转发**，只放弃差分）；
+  - 响应旁录上限 `SHADOW_MAX_RESPONSE_CAPTURE_BYTES`（默认 1MiB；超过即停旁录，主响应完整流式透传）；
+  - 并发上限 `SHADOW_MAX_INFLIGHT`（默认 16）与每分钟令牌桶 `SHADOW_MAX_PER_MINUTE`（默认 600，burst 满额起步）。
+- **分类丢弃统计**（`/__go/healthz` 的 `shadow.dropped`）：`request-too-large` / `response-too-large` / `streaming-skipped` / `concurrency-limit` / `rate-limit` / `timeout`——六类各自计数，不合并。
+- **结构化差异记录（默认不含业务正文）**：JSON 行记录 traceId/method/path/两侧状态码/diffFields/两侧响应体 **sha256 hash**（`legacyBodyHash`/`goBodyHash`）。业务正文默认不进网关日志；显式开启 `SHADOW_DEBUG_BODY_LOG=true` 后才记录截断片段（`SHADOW_DEBUG_BODY_LOG_MAX_BYTES`，默认 2KB）。
 - **差分忽略集**（登记制）：`traceId`/`timestamp`/`snapshotAt`/`now`/`generatedAt`/`requestId`——只忽略这些明确登记的非确定字段；扩展需 `RegisterIgnoredField` 且在 PR 说明理由，不允许用它掩盖真实差异。
 
-### canary（`internal/canary/router.go`）
+### canary（`internal/canary/router.go`）——未激活的分流组件
 
-- **稳定一致的路由依据**：Bearer JWT payload 的 `orgId` claim → `sha256("canary-org:"+orgId)` 前 8 字节 big-endian → `[0,100)` 桶位；桶位 < `CANARY_PERCENT` → go，否则 legacy。同一组织永远进同一实现（比例变化只移动边界，不重排组织）。
-- **fail-safe**：无 token / 非 JWT（mtk_ 机器令牌）/ payload 无 orgId / 解析失败 → 一律 legacy（未知流量不进新实现）。canary 只读 claim 分流不验签——两侧共享同一鉴权语义，伪造 orgId 不构成提权。
-- **比例语义**：`CANARY_PERCENT=0` 等价 legacy（默认）；`100` 等价 go；中间按桶位分流。越界值 clamp。
-- **回滚**：`CANARY_PERCENT=0` 或路由表规则改回 `ModeLegacy`——纯配置变更，无代码回滚。
+- **信任边界（先读这个）**：分流的 orgId 取自 Bearer JWT payload 的 orgId claim，**未经验签**——不是可靠身份。NestJS 侧该 claim 只有签名验证后才被信任，且真实 org 上下文由 getUserProfile 从 DB membership 重推导（auth.service.ts:1452-1479）。伪造 token 可任选 orgId，从而选择自己这条请求进哪个实现。
+- **fail-safe 双层**：
+  1. `Options.AllowUnverifiedIdentity` 默认 **false**——Router 一律回 legacy，即使 `CANARY_PERCENT` 被误配为 100。生产装配（cmd/api/main.go）不开该开关；`TestDispatcherCanaryNeverRoutesUnverifiedIdentityToGo`（cmd/api）在远端 CI 锚定该语义；
+  2. 无法解析身份（无 token / 非 JWT / mtk_ 机器令牌 / 无 orgId claim）→ legacy。
+- **当前没有路由处于 ModeCanary**：`DefaultRules()` 无 canary 条目（`TestDefaultRulesHaveNoCanaryRoutes` 锚定——有人提前切换业务路由到 canary 时测试失败）。`CANARY_PERCENT` 是预留配置，canary 是**待鉴权基础设施接入的分流组件**，不是已激活能力。
+- **分流数学**（开关开启后生效，组件级已测）：orgId → `sha256("canary-org:"+orgId)` 前 8 字节 → `[0,100)` 桶位；桶位 < percent → go。同组织恒同桶；比例变化只移动边界不重排组织；越界 clamp。
+- **激活前置件**（迁移序 5）：Go 侧真实 JWT 验签（对称 secret + issuer/audience + jti 黑名单）与 org membership 重推导——完成后以「已验证 orgId」替换未验签 claim，再评估首个 canary 路由。
+- **回滚**：`CANARY_PERCENT=0` 或路由表规则改回 `ModeLegacy`——纯配置变更。
 - **canary 命中但未注册 handler**：回退 legacy（不 501 客户端）。
 
 ## 2. 首个迁移单元：`GET /api/healthz/live`
@@ -47,6 +56,6 @@
 
 ## 4. 尚未验证项（诚实登记）
 
-- shadow 差分「真实流量 0 差异」验收未做（需要真实流量或集成环境；`/api/healthz/live` 的差分已在 CI 单测层验证等价）
-- canary 真实分流未在真实部署验证（单测层验证了稳定哈希/回退/比例语义）
-- 本机按任务约束未运行 `go test`/`go vet`（vet 误跑过一次见 PR 描述）；全部 Go 测试在远端 CI 执行
+- shadow 差分「真实流量 0 差异」验收未做——api-go 尚未接入入口代理（无生产流量入口），当前只有 CI 单测层对 `/api/healthz/live` 的等价验证
+- canary **未激活**（无 ModeCanary 路由、AllowUnverifiedIdentity 默认关闭）；组件级测试验证了桶位数学/回退/门禁语义，无真实部署分流
+- 本机按任务约束未运行 `go test`/`go vet`/`go build`（vet 在上一轮误跑过一次，见 PR 描述）；全部 Go 测试在远端 CI 执行

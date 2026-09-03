@@ -235,13 +235,14 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 | Bull Board | Bearer JWT + queue.manage；错误为纯文本非 JSON |
 | CORS | credentials:true，origin 白名单来自 CORS_ORIGIN |
 
-## 7. 保护网快照与差分测试（已落地——本轮 M2 交付）
+## 7. 保护网快照与差分测试（已落地；验证状态标注于各项）
 
-1. **REST**：✅ `apps/api/tests/contract/openapi.snapshot.json`（OpenAPI 3.0 形快照，**静态装饰器扫描生成**——`apps/api/scripts/generate-openapi-snapshot.ts` + `apps/api/tools/scan-routes.ts`，不启动 Nest 应用不连 DB；370 端点/294 路径；确定性输出双跑同 hash）。CI 漂移门禁：`git diff --exit-code`。有意变更：`pnpm --filter @modular/api run contract:openapi:snapshot` 重新生成并提交。
-2. **GraphQL**：`apps/api/schema.gql`（已在库，2925 行）为冻结快照；CI 增加 `git diff --exit-code apps/api/schema.gql`（构建后）——⚠️ 此项尚未接入 CI（生成依赖 ts-node 链路，待与 openapi 快照同批接入）
-3. **鉴权矩阵**：✅ `apps/api/tests/contract/auth-matrix.{json,md}`（`tools/generate-auth-matrix.ts` 静态生成，含 anonymous/authenticated/permission/platformOnly/orgContext/source/riskNotes 列；**生成时 fail-closed**：任何非公开端点缺权限元数据 → exit 1，与运行时 PermissionsGuard 语义一致）。CI 漂移门禁：`pnpm --filter @modular/api run contract:auth-matrix:check`（重新生成并与基线逐字节比对）。
-4. **差分测试**：✅ shadow 模式基础设施落地（`apps/api-go/internal/shadow`：异步差分执行器，超时/体积/并发/速率四重预算，只读方法白名单，差分忽略 traceId/timestamp 等登记字段）；首个迁移单元 `GET /api/healthz/live` 在 shadow 态。
-5. **WS 事件**：6 namespace 的 connected/event/error 事件名与 payload 形状入 `tests/contract/ws-events.json` —— ⬜ 未做（M5+）
+1. **REST 路由/鉴权契约快照**：✅ 远端 CI 已验证。`apps/api/tests/contract/openapi.snapshot.json`（OpenAPI 3.0 形，静态装饰器扫描生成——不启动 Nest 不连 DB；370 端点/294 路径；确定性输出）。**能力边界（info.completeness 如实登记）**：覆盖路由/方法/路径参数/鉴权元数据/默认状态码语义（POST=201 + 显式 @HttpCode 提取，`x-http-code-explicit`）；请求体只有 DTO `$ref` 名称（`x-unresolved-schema` 标注，无 components.schemas 字段模型）；响应与错误字段模型**未提取**（`x-response-schema: "unresolved"`，错误形状由本清单 §5 文字锚定）；@All 多方法 handler 跳过并计数。**它是 REST route/auth contract snapshot，不是完整 OpenAPI 契约**。CI 漂移门禁：`git diff --exit-code`。
+2. **GraphQL SDL**：✅ CI 门禁已接入（verify job「GraphQL SDL drift check」：`pnpm --filter @modular/api run generate:schema` + `git diff --exit-code apps/api/schema.gql`）。`schema.gql`（2925 行）为冻结快照。
+3. **鉴权矩阵（四态语义）**：✅ 远端 CI 已验证。`apps/api/tests/contract/auth-matrix.{json,md}`（`tools/generate-auth-matrix.ts` 静态生成）。列语义：`anonymous` / `authenticatedWithoutPermission`（@Permissions 端点必 denied——Guard 语义的静态镜像）/ `authenticatedWithPermission`（allowed）/ `wrongOrg`（**一律 runtime-required**——org 上下文由每请求 DB membership 重推导，静态不编造）/ `ordinaryOrgAdmin` / `platformAdmin` / `platformCheckSource`（handler-text-scan 启发式来源）/ `runtimeVerificationRequired` / `confidence`（static vs static+heuristic）。**handler 平台校验是启发式标注**：提示运行时行为，不是静态保障——运行时强制力由 handler 内 assertPlatformAdmin 提供并以控制器单测锚定。生成时 fail-closed（缺权限元数据 → exit 1）；CI 重新生成逐字节比对。
+4. **差分测试**：✅ 基础设施远端 CI 已验证（直通+有界旁录捕获：客户端流式语义保留、请求体/响应捕获独立预算、SSE/升级跳过、六类分类丢弃统计、差分正文默认只记 sha256 hash）。首个迁移单元 `GET /api/healthz/live` 在 shadow 态（NestJS 仍是响应方）。**真实流量差分数据：无**（网关未接入入口代理）。
+5. **契约基线再生成**：生成器不在开发机执行——有意变更契约语义时给 PR 打 `contract-regen` label，CI `contract-baseline-regen` job 远端运行三个生成器并提交回分支（见 ci.yml；再生成完成后移除 label 恢复漂移门禁）。
+6. **WS 事件**：6 namespace 的 connected/event/error 事件名与 payload 形状入 `tests/contract/ws-events.json` —— ⬜ 未做（M5+）
 
 ## 8. 迁移风险登记（勘察结论）
 
