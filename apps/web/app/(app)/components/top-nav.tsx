@@ -10,9 +10,10 @@ import { MobileNavDrawer } from "./mobile-nav-drawer";
 import { TickerTape } from "./ticker-tape";
 import { TopNavActions } from "./top-nav-actions";
 import { TopNavBrand } from "./top-nav-brand";
-import { resolveTopNavLayout } from "./top-nav-density";
+import { isFullWidthViewport, resolveTopNavLayout } from "./top-nav-density";
 import { TopNavUserMenu } from "./top-nav-user-menu";
 import { useTopNavDensity } from "./use-top-nav-density";
+import { useViewportWidth } from "./use-viewport-width";
 
 interface TopNavProps {
   /** 桌面矮视口 drawer 模式（navMode=drawer）下，菜单按钮在桌面也显示 */
@@ -54,6 +55,12 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
     [canStartCrawl, densityMode],
   );
 
+  // 跑马灯属整行次要信息，仅 full 宽屏档显示（≥NAV_FULL_MIN_WIDTH，
+  // 与 Shell 顶部占位同一信号）；compact/minimal 下整个卸载，不发起
+  // 也不维持指标数据请求。
+  const viewportWidth = useViewportWidth();
+  const showTickerTape = isFullWidthViewport(viewportWidth);
+
   // 路由变化后关闭导航 Drawer。
   useEffect(() => {
     setMobileNavOpen(false);
@@ -84,8 +91,8 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
 
   return (
     <div className="fixed top-0 left-0 right-0 z-[var(--z-top-nav)] flex flex-col">
-      {/* Ticker Tape Layer */}
-      <TickerTape />
+      {/* Ticker Tape Layer（仅 full 宽屏档；隐藏时 Shell 同步收敛占位高度） */}
+      {showTickerTape ? <TickerTape /> : null}
 
       {/* Main Navbar Layer */}
       <header
@@ -96,6 +103,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
           onOpenMenu={() => setMobileNavOpen(true)}
           menuExpanded={mobileNavOpen}
           showDesktopMenuButton={showDesktopMenuButton}
+          largeTouchTarget={layout.largeTouchTargets}
         />
 
         {/* Center: Command Bar（minimal 档让位于搜索兜底入口） */}

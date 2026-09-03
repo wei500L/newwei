@@ -190,7 +190,11 @@ export function TopNavUserMenu({ layout }: TopNavUserMenuProps) {
             type="text"
             aria-label={t("nav.userMenu.label")}
             aria-haspopup="menu"
-            className="flex h-auto items-center justify-center rounded-full !p-0.5"
+            className={
+              layout.largeTouchTargets
+                ? "flex !h-11 !w-11 items-center justify-center rounded-full !p-0"
+                : "flex h-auto items-center justify-center rounded-full !p-0.5"
+            }
           >
             <AvatarFallback
               size="default"

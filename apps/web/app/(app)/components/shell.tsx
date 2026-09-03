@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PropsWithChildren,
 } from "react";
 
@@ -16,7 +17,7 @@ import { ActionRail } from "./action-rail";
 import { resolveNavMode, type NavMode } from "./nav-mode";
 import { SystemHealthProvider } from "./system-health-context";
 import { TopNav } from "./top-nav";
-import { NAV_FULL_MIN_WIDTH } from "./top-nav-density";
+import { isFullWidthViewport } from "./top-nav-density";
 import { UrlStateSync } from "./url-state-sync";
 import { useViewportWidth, ViewportSizeProvider } from "./use-viewport-width";
 import { UserUiSettingsSync } from "./user-ui-settings-sync";
@@ -89,6 +90,24 @@ function useMainScrollbarClass(): string {
   return "scrollbar-thin scrollbar-thumb-slate-200/80 hover:scrollbar-thumb-slate-300/90 scrollbar-track-transparent";
 }
 
+/**
+ * Shell 顶部占位的跑马灯高度策略（纯函数，供行为测试）。
+ *
+ * 跑马灯隐藏（非 full 宽屏档）时把 --ticker-height 压为 0：该变量同时
+ * 驱动内容区 pt-[calc(var(--top-nav-height)+var(--ticker-height))] 与
+ * .items-filter-rail 的 sticky max-height——在 Shell 根上一处覆盖，所有
+ * 消费者同步收敛，不留 32px 空白；显示时回落到 :root 的 2rem。
+ * 显示条件与 TopNav 的 TickerTape 条件渲染共用 isFullWidthViewport
+ * （NAV_FULL_MIN_WIDTH 单一语义），两处不会漂移。
+ */
+export function resolveShellTickerStyle(
+  showTickerTape: boolean,
+): CSSProperties {
+  return showTickerTape
+    ? {}
+    : ({ "--ticker-height": "0px" } as CSSProperties);
+}
+
 function AppShell({ children }: PropsWithChildren) {
   const [, contextHolder] = message.useMessage();
   const pathname = usePathname();
@@ -144,12 +163,16 @@ function AppShell({ children }: PropsWithChildren) {
       }),
     [availableRailHeight, railContentHeight, viewportWidth],
   );
+  const showTickerTape = isFullWidthViewport(viewportWidth);
   const systemHealthEnabled =
-    pathname?.startsWith("/dashboard") || viewportWidth >= NAV_FULL_MIN_WIDTH;
+    pathname?.startsWith("/dashboard") || showTickerTape;
   const systemHealthRealtimeEnabled = pathname?.startsWith("/dashboard");
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div
+      className="flex flex-col h-screen overflow-hidden"
+      style={resolveShellTickerStyle(showTickerTape)}
+    >
       {contextHolder}
 
       <UrlStateSync />

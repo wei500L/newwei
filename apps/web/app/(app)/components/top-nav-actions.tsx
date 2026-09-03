@@ -112,7 +112,8 @@ export function TopNavActions({ layout }: TopNavActionsProps) {
       ) : null}
 
       <div className="flex min-w-0 items-center gap-1 sm:gap-2">
-        {/* 窄屏全局搜索兜底入口（minimal 档命令面板让位） */}
+        {/* 窄屏全局搜索兜底入口（minimal 档命令面板让位）；
+            minimal 档命中区放大到 44px，图标尺寸不变 */}
         {layout.showSearchEntry ? (
           <Tooltip title={t("nav.main.search")}>
             <Button
@@ -120,12 +121,16 @@ export function TopNavActions({ layout }: TopNavActionsProps) {
               icon={<SearchOutlined />}
               onClick={() => router.push("/search")}
               aria-label={t("nav.main.search")}
-              className="inline-flex h-8 w-8 items-center justify-center p-0"
+              className={
+                layout.largeTouchTargets
+                  ? "inline-flex !h-11 !w-11 items-center justify-center p-0"
+                  : "inline-flex h-8 w-8 items-center justify-center p-0"
+              }
             />
           </Tooltip>
         ) : null}
 
-        <NotificationCenter />
+        <NotificationCenter size={layout.largeTouchTargets ? "large" : "default"} />
 
         {layout.languageSwitcher === "inline" ? (
           <div className="hidden lg:block">
@@ -143,7 +148,15 @@ export function TopNavActions({ layout }: TopNavActionsProps) {
         ) : null}
       </div>
 
-      <div className="mx-1 hidden h-6 w-px bg-[var(--border)] lg:block" />
+      {/* 主题分隔线：仅在内联主题按钮存在时渲染——minimal 档主题收进
+          用户菜单后，此处不留孤立 divider */}
+      {layout.themeToggle === "inline" ? (
+        <div
+          aria-hidden
+          data-testid="top-nav-theme-divider"
+          className="mx-1 hidden h-6 w-px bg-[var(--border)] lg:block"
+        />
+      ) : null}
 
       {/* 主题切换：minimal 档收进用户菜单（本区不渲染） */}
       {layout.themeToggle === "inline" ? (

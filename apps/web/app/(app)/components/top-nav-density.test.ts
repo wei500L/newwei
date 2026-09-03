@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   alignDensityModeToBase,
   downgradeDensityModeForBase,
+  isFullWidthViewport,
   NAV_COMPACT_MIN_WIDTH,
   NAV_FULL_MIN_WIDTH,
   resolveBaseDensityMode,
@@ -17,6 +18,16 @@ describe("resolveBaseDensityMode（密度基线边界）", () => {
     expect(resolveBaseDensityMode(NAV_COMPACT_MIN_WIDTH)).toBe("compact");
     expect(resolveBaseDensityMode(NAV_FULL_MIN_WIDTH - 1)).toBe("compact");
     expect(resolveBaseDensityMode(NAV_FULL_MIN_WIDTH)).toBe("full");
+  });
+});
+
+describe("isFullWidthViewport（跑马灯等附属层的单一显示语义）", () => {
+  it("与 full 密度基线同源：1699 以下隐藏，1700 起显示", () => {
+    expect(isFullWidthViewport(0)).toBe(false);
+    expect(isFullWidthViewport(NAV_COMPACT_MIN_WIDTH)).toBe(false);
+    expect(isFullWidthViewport(NAV_FULL_MIN_WIDTH - 1)).toBe(false);
+    expect(isFullWidthViewport(NAV_FULL_MIN_WIDTH)).toBe(true);
+    expect(isFullWidthViewport(2560)).toBe(true);
   });
 });
 
@@ -53,6 +64,7 @@ describe("resolveTopNavLayout（顶部栏响应式优先级）", () => {
     expect(layout.organizationSwitcher).toBe("inline");
     expect(layout.themeToggle).toBe("inline");
     expect(layout.showSyncIndicator).toBe(true);
+    expect(layout.largeTouchTargets).toBe(false);
   });
 
   it("compact：命令面板保留，系统状态收起，抓取降为图标，组织进 Popover", () => {
@@ -65,6 +77,7 @@ describe("resolveTopNavLayout（顶部栏响应式优先级）", () => {
     expect(layout.organizationSwitcher).toBe("popover");
     expect(layout.themeToggle).toBe("inline");
     expect(layout.showSyncIndicator).toBe(true);
+    expect(layout.largeTouchTargets).toBe(false);
   });
 
   it("minimal：顶部只留搜索兜底；抓取/语言/组织/主题全部收进用户菜单", () => {
@@ -77,6 +90,7 @@ describe("resolveTopNavLayout（顶部栏响应式优先级）", () => {
     expect(layout.organizationSwitcher).toBe("menu");
     expect(layout.themeToggle).toBe("menu");
     expect(layout.showSyncIndicator).toBe(false);
+    expect(layout.largeTouchTargets).toBe(true);
   });
 
   it("无抓取权限时任何密度都不出现抓取入口", () => {

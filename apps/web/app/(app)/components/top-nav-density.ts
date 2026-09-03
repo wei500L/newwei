@@ -72,6 +72,17 @@ export const upgradeDensityMode = (
 };
 
 /**
+ * 纯宽屏附属层（跑马灯等整行次要信息）的显示条件。
+ *
+ * 与 full 密度基线同源（NAV_FULL_MIN_WIDTH），不引入第二套断点；但它
+ * 刻意不跟随 header 的溢出降级——跑马灯是 header 之外的独立整行，
+ * Shell 的顶部占位高度依赖同一信号，两处必须始终一致（见 shell.tsx
+ * 的 --ticker-height 覆盖与 TopNav 的条件渲染）。
+ */
+export const isFullWidthViewport = (viewportWidth: number): boolean =>
+  viewportWidth >= NAV_FULL_MIN_WIDTH;
+
+/**
  * 顶部栏响应式优先级（FE-批2）——由密度档位推导各入口的呈现方式。
  *
  * minimal 档顶部栏只保留：菜单、品牌（短名）、搜索、通知、用户菜单。
@@ -108,6 +119,11 @@ export interface TopNavLayout {
   themeToggle: TopNavEntryVariant;
   /** 同步状态指示仅 full/compact（minimal 收起） */
   showSyncIndicator: boolean;
+  /**
+   * minimal 档放大核心入口触控目标（≥44px）：窄屏以触控设备为主，
+   * 命中区优先于紧凑度；full/compact 保持紧凑尺寸（32/40px）。
+   */
+  largeTouchTargets: boolean;
 }
 
 export interface TopNavLayoutInput {
@@ -140,5 +156,6 @@ export function resolveTopNavLayout({
     organizationSwitcher: isFull ? "inline" : isMinimal ? "menu" : "popover",
     themeToggle: isMinimal ? "menu" : "inline",
     showSyncIndicator: !isMinimal,
+    largeTouchTargets: isMinimal,
   };
 }

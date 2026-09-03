@@ -59,8 +59,12 @@ vi.mock("./command-bar", () => ({
   CommandBar: () => <div data-testid="command-bar-stub" />,
 }));
 vi.mock("./notification-center", () => ({
-  NotificationCenter: () => (
-    <button type="button" aria-label="notification-center-stub" />
+  NotificationCenter: ({ size }: { size?: "default" | "large" }) => (
+    <button
+      type="button"
+      aria-label="notification-center-stub"
+      data-size={size ?? "default"}
+    />
   ),
 }));
 vi.mock("./system-defcon", () => ({
@@ -129,6 +133,20 @@ describe("TopNav（常驻入口与响应式优先级）", () => {
     ).toBeInTheDocument();
     // 窄屏搜索兜底入口不在宽屏出现
     expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
+    // 跑马灯仅 full 宽屏档显示
+    expect(screen.getByTestId("ticker-stub")).toBeInTheDocument();
+    // 内联主题按钮存在 → 主题分隔线存在
+    expect(screen.getByTestId("top-nav-theme-divider")).toBeInTheDocument();
+    // full 档保持紧凑触控尺寸（32/40px），不放大
+    expect(
+      screen.getByRole("button", { name: "notification-center-stub" }),
+    ).toHaveAttribute("data-size", "default");
+    expect(
+      screen.getByRole("button", { name: "Open navigation menu" }),
+    ).not.toHaveClass("!h-11");
+    expect(
+      screen.getByRole("button", { name: USER_MENU_BUTTON }),
+    ).not.toHaveClass("!h-11");
   });
 
   it("compact：命令面板/主题/组织/同步保留，系统状态与搜索兜底不出现", async () => {
@@ -155,6 +173,13 @@ describe("TopNav（常驻入口与响应式优先级）", () => {
     expect(
       screen.getByRole("button", { name: /new crawl/i }),
     ).toBeInTheDocument();
+    // 跑马灯在 compact 不显示
+    expect(screen.queryByTestId("ticker-stub")).toBeNull();
+    // compact 档仍有内联主题按钮 → 分隔线保留
+    expect(screen.getByTestId("top-nav-theme-divider")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "notification-center-stub" }),
+    ).toHaveAttribute("data-size", "default");
   });
 
   it("minimal：顶部只保留菜单/品牌/搜索/通知/用户，其余入口不占栏", async () => {
@@ -190,6 +215,24 @@ describe("TopNav（常驻入口与响应式优先级）", () => {
       screen.queryByRole("button", { name: "Switch to dark theme" }),
     ).toBeNull();
     expect(screen.queryByRole("button", { name: /new crawl/i })).toBeNull();
+    // 跑马灯在 minimal 不显示
+    expect(screen.queryByTestId("ticker-stub")).toBeNull();
+    // 主题收进用户菜单后不留孤立分隔线
+    expect(screen.queryByTestId("top-nav-theme-divider")).toBeNull();
+
+    // 触控目标 ≥44px：菜单 / 搜索 / 通知 / 用户（图标尺寸不变）
+    expect(
+      screen.getByRole("button", { name: "Open navigation menu" }),
+    ).toHaveClass("!h-11");
+    const searchButton = screen.getByRole("button", { name: "Search" });
+    expect(searchButton).toHaveClass("!h-11");
+    expect(searchButton).toHaveClass("!w-11");
+    expect(
+      screen.getByRole("button", { name: USER_MENU_BUTTON }),
+    ).toHaveClass("!h-11");
+    expect(
+      screen.getByRole("button", { name: "notification-center-stub" }),
+    ).toHaveAttribute("data-size", "large");
   });
 
   it("minimal：组织/主题/语言/抓取从用户菜单可达，动作仍有效", async () => {

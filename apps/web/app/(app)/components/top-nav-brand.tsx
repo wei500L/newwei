@@ -9,18 +9,21 @@ interface TopNavBrandProps {
   menuExpanded: boolean;
   /** 桌面矮视口 drawer 模式下菜单按钮在桌面也显示 */
   showDesktopMenuButton: boolean;
+  /** minimal 档触控优先：菜单按钮命中区放大到 44px（图标尺寸不变） */
+  largeTouchTarget?: boolean;
 }
 
 /**
  * 顶部栏左区：菜单入口 + 品牌（窄屏短名 / sm 起全名）。
  * 品牌区可收缩（shrink + truncate）：窄屏空间不足时长品牌文案截断
  * 而不是把右侧操作区（搜索/通知/用户）挤出视口；短名在 <sm 视口兜底，
- * 菜单按钮永不被压缩。
+ * 菜单按钮永不被压缩。minimal 档菜单按钮命中区放大到 44px。
  */
 export function TopNavBrand({
   onOpenMenu,
   menuExpanded,
   showDesktopMenuButton,
+  largeTouchTarget = false,
 }: TopNavBrandProps) {
   const { t } = useTranslation();
 
@@ -31,7 +34,9 @@ export function TopNavBrand({
         size="large"
         icon={<MenuOutlined className="text-lg" aria-hidden />}
         onClick={onOpenMenu}
-        className={`shrink-0 ${showDesktopMenuButton ? "" : "md:hidden"}`}
+        className={`shrink-0 ${largeTouchTarget ? "!h-11 !w-11" : ""} ${
+          showDesktopMenuButton ? "" : "md:hidden"
+        }`}
         aria-label={t("nav.openMenu")}
         aria-expanded={menuExpanded}
         aria-controls="mobile-navigation-drawer"
