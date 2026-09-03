@@ -93,7 +93,10 @@ func NewRunner(budget Budget) *Runner {
 		budget.MaxPerMin = 600
 	}
 	return &Runner{
-		budget:   budget,
+		budget: budget,
+		// 令牌桶满额起步（标准 burst 语义）：进程冷启动的前几秒允许立即
+		// 执行差分，随时间按 MaxPerMin 补充。
+		bucket:   float64(budget.MaxPerMin),
 		bucketAt: time.Now(),
 	}
 }
@@ -319,7 +322,7 @@ func diffValues(path string, a, b any, diffs *[]string) {
 	case map[string]any:
 		bm, ok := b.(map[string]any)
 		if !ok {
-			*diffs = append(*diffs, joinPath(path, "(type)"))
+			*diffs = append(*diffs, path+"(type)")
 			return
 		}
 		keys := make([]string, 0, len(av))
@@ -357,11 +360,11 @@ func diffValues(path string, a, b any, diffs *[]string) {
 	case []any:
 		bl, ok := b.([]any)
 		if !ok {
-			*diffs = append(*diffs, joinPath(path, "(type)"))
+			*diffs = append(*diffs, path+"(type)")
 			return
 		}
 		if len(av) != len(bl) {
-			*diffs = append(*diffs, joinPath(path, "(length)"))
+			*diffs = append(*diffs, path+"(length)")
 			return
 		}
 		for i := range av {
@@ -369,7 +372,7 @@ func diffValues(path string, a, b any, diffs *[]string) {
 		}
 	default:
 		if !valuesEqual(a, b) {
-			*diffs = append(*diffs, joinPath(path, "(value)"))
+			*diffs = append(*diffs, path+"(value)")
 		}
 	}
 }

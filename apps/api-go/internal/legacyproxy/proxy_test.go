@@ -56,7 +56,8 @@ func newTestGateway(t *testing.T, legacyURL string, rules []Rule, goHandler GoHa
 }
 
 // newTestGatewayWithShadow 构造带差分分发器的网关（返回 *Gateway 以便
-// 直接调 ServeHTTPWithShadow）。
+// 直接调 ServeHTTPWithShadow）。goHandler 注册到路由表中首个 go/canary
+// 模式规则的前缀（无此类规则时落 /__go/healthz）。
 func newTestGatewayWithShadow(t *testing.T, legacyURL string, rules []Rule, goHandler GoHandler, _ ShadowDispatcher) *Gateway {
 	t.Helper()
 	gateway, err := New(legacyURL, rules)
@@ -64,7 +65,14 @@ func newTestGatewayWithShadow(t *testing.T, legacyURL string, rules []Rule, goHa
 		t.Fatalf("New() error = %v", err)
 	}
 	if goHandler != nil {
-		gateway.SetGoHandler(goHandler)
+		handlerPrefix := "/__go/healthz"
+		for _, rule := range rules {
+			if rule.Mode == ModeGo || rule.Mode == ModeCanary {
+				handlerPrefix = rule.Prefix
+				break
+			}
+		}
+		gateway.RegisterGoHandler(handlerPrefix, goHandler)
 	}
 	return gateway
 }
