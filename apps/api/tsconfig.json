@@ -11,6 +11,6 @@
       "@modular/vector-client": ["../../packages/vector-client/src/index.ts"]
     }
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "tools/**/*.ts"],
   "exclude": ["dist", "node_modules"]
 }
