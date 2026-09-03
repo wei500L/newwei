@@ -107,8 +107,9 @@ func TestHealthzIsPublic(t *testing.T) {
 		t.Fatalf("GET /healthz: %v", err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusCreated {
-		t.Fatalf("status = %d, want 201 (NestJS @Post 默认)", response.StatusCode)
+	// healthz 是 GET 端点：200（201 只适用于 NestJS @Post 的 upsert/search）。
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.StatusCode)
 	}
 	var body map[string]bool
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil || !body["ok"] {
