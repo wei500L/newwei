@@ -23,6 +23,8 @@ const VALID_GEOMETRY_TYPES = new Set(['point', 'path', 'polygon', 'raster']);
 const VALID_LAYER_IDS = new Set<string>(WAR_MAP_LAYER_IDS);
 const UNSUPPORTED_LAYER_IDS = ['dayNight'] as const satisfies readonly WarMapLayerId[];
 
+export type { WarMapLayersResponse } from '@modular/utils';
+
 export const WAR_MAP_UNSUPPORTED_LAYER_IDS = new Set<WarMapLayerId>(UNSUPPORTED_LAYER_IDS);
 export const WAR_MAP_QUERY_KEYS = {
   eventsPrefix: ['dashboard', 'war-map', 'events'] as const,

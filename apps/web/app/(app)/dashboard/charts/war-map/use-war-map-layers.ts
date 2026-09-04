@@ -100,7 +100,7 @@ export function useWarMapLayers(
         hoveredInteractionKey: interaction.hoveredInteractionKey,
         selectedInspectorKey: interaction.selectedInspectorKey,
         highlightedLegendItemKey: interaction.highlightedLegendItemKey,
-        onPointHover: interaction.onPointHover,
+        onPointHover: interaction.handleDeckPointHover,
       }),
     [
       interaction.highlightedLegendItemKey,
@@ -121,7 +121,7 @@ export function useWarMapLayers(
         localClusterBbox,
         flightMode,
         buildSymbolPointLayers,
-        onLayerPointClick: interaction.onLayerPointClick,
+        onLayerPointClick: interaction.handleLayerPointClick,
       }),
     [
       buildSymbolPointLayers,
@@ -132,7 +132,7 @@ export function useWarMapLayers(
       queryZoom,
       t,
       translateTarget,
-      interaction.onLayerPointClick,
+      interaction.handleLayerPointClick,
     ],
   );
 
@@ -145,8 +145,8 @@ export function useWarMapLayers(
         aisHighlightCandidates,
         t,
         buildSymbolPointLayers,
-        onLayerPointClick: interaction.onLayerPointClick,
-        onSelectablePointClick: interaction.onSelectablePointClick,
+        onLayerPointClick: interaction.handleLayerPointClick,
+        onSelectablePointClick: interaction.handleSelectablePointClick,
       }),
     [
       aisHighlightCandidates,
@@ -155,8 +155,8 @@ export function useWarMapLayers(
       layerVisibility.ais,
       layersData,
       t,
-      interaction.onLayerPointClick,
-      interaction.onSelectablePointClick,
+      interaction.handleLayerPointClick,
+      interaction.handleSelectablePointClick,
     ],
   );
 
@@ -168,11 +168,11 @@ export function useWarMapLayers(
     return buildSymbolPointLayers({
       id: "wm-monitors",
       data: points.monitorPoints,
-      onClick: interaction.onMonitorPointClick,
+      onClick: interaction.handleMonitorPointClick,
     });
   }, [
     buildSymbolPointLayers,
-    interaction.onMonitorPointClick,
+    interaction.handleMonitorPointClick,
     layerVisibility.monitors,
     points.monitorPoints,
   ]);
@@ -184,13 +184,13 @@ export function useWarMapLayers(
         rawEventsCount: points.rawEvents.length,
         t,
         buildSymbolPointLayers,
-        onSelectablePointClick: interaction.onSelectablePointClick,
+        onSelectablePointClick: interaction.handleSelectablePointClick,
       }),
     [
       buildSymbolPointLayers,
       points.clusteredEvents,
       points.rawEvents.length,
-      interaction.onSelectablePointClick,
+      interaction.handleSelectablePointClick,
       t,
     ],
   );
@@ -202,13 +202,13 @@ export function useWarMapLayers(
         rawNewsMarkersCount: points.rawNewsMarkers.length,
         t,
         buildSymbolPointLayers,
-        onSelectablePointClick: interaction.onSelectablePointClick,
+        onSelectablePointClick: interaction.handleSelectablePointClick,
       }),
     [
       buildSymbolPointLayers,
       points.clusteredNews,
       points.rawNewsMarkers.length,
-      interaction.onSelectablePointClick,
+      interaction.handleSelectablePointClick,
       t,
     ],
   );

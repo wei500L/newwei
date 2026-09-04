@@ -4,6 +4,7 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
   type Dispatch,
   type RefObject,

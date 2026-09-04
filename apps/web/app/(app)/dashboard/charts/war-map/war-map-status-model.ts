@@ -86,25 +86,9 @@ function readFlightBudgetSummary(summary: Record<string, unknown> | undefined) {
   };
 }
 
-export interface WarMapFlightsSummaryPresentation {
-  flightsReturnedCount;
-  flightsSnapshotCount;
-  flightsRawCount;
-  flightsMaxReturned;
-  flightsTruncated;
-  flightsFreshness;
-  flightsSource;
-  flightsScope;
-  flightsSourceEndpoint;
-  flightsBudget;
-  flightsSourceLabel;
-  flightsScopeLabel;
-  flightsSourceBadgeLabel;
-  flightsCoverageLabel;
-  flightsRawLabel;
-  flightsBudgetReason;
-  flightsTooltipText;
-}
+export type WarMapFlightsSummaryPresentation = ReturnType<
+  typeof buildWarMapFlightsSummaryPresentation
+>;
 
 export interface WarMapFlightsSummaryPresentationParams {
   flightsSummary: Record<string, unknown> | undefined;
@@ -114,7 +98,7 @@ export interface WarMapFlightsSummaryPresentationParams {
 /** 航班摘要展示派生（FE-批4A：从 war-map.tsx 迁移，字段语义不变）。 */
 export function buildWarMapFlightsSummaryPresentation(
   params: WarMapFlightsSummaryPresentationParams,
-): WarMapFlightsSummaryPresentation {
+) {
   const { flightsSummary, t } = params;
 const flightsReturnedCount = readSummaryNumber(
   flightsSummary,
@@ -250,52 +234,9 @@ const flightsTooltipText = [
   };
 }
 
-export interface WarMapAisSummaryPresentation {
-  aisConnected;
-  aisConfigured;
-  aisFreshness;
-  aisSnapshotUpdatedAt;
-  aisSourceEndpoint;
-  aisRelayVesselCount;
-  aisDisruptionsCount;
-  aisDensityCount;
-  aisCandidateCount;
-  aisRenderedVesselCount;
-  aisAllVesselsAvailable;
-  aisMessageCount;
-  aisClientCount;
-  aisDroppedMessages;
-  aisPositionReportsSeen;
-  aisPositionReportsProcessed;
-  aisIgnoredPositionReports;
-  aisParseErrors;
-  aisStatusReasonCode;
-  aisStatusReason;
-  aisViewportVesselCount;
-  aisMaxReturned;
-  aisTruncated;
-  aisBlockedReasonCode;
-  aisBlockedReason;
-  aisResolvedStatusReason;
-  aisResolvedBlockedReason;
-  aisViewportEmptyStateActive;
-  aisViewportEmptyStateLabel;
-  aisViewportEmptyStateHint;
-  aisSnapshotRelative;
-  aisSnapshotExact;
-  aisHasIssue;
-  aisSourceStatusColor;
-  aisSourceStatusLabel;
-  aisPreferredModeLabel;
-  aisEffectiveModeLabel;
-  aisHighlightedCandidateCount;
-  aisTooltipText;
-  aisAllModeDegraded;
-  aisAllModeDegradedLabel;
-  aisPrimaryCountLabel;
-  aisPrimaryCountValue;
-  aisHighlightCountLabel;
-}
+export type WarMapAisSummaryPresentation = ReturnType<
+  typeof buildWarMapAisSummaryPresentation
+>;
 
 export interface WarMapAisSummaryPresentationParams {
   aisSummary: WarMapAisLayerSummary | undefined;
@@ -312,7 +253,7 @@ export interface WarMapAisSummaryPresentationParams {
 /** AIS 摘要展示派生（FE-批4A：从 war-map.tsx 迁移，字段语义不变）。 */
 export function buildWarMapAisSummaryPresentation(
   params: WarMapAisSummaryPresentationParams,
-): WarMapAisSummaryPresentation {
+) {
   const {
     aisSummary,
     layerVisibility,
@@ -748,9 +689,9 @@ export interface WarMapStatusSummaryParams {
     fetching: boolean;
     error: boolean;
     ready: boolean;
-    errorMessage?: string;
-    dataUpdatedAt?: number;
-    sourceUpdatedAt?: string;
+    errorMessage: string | undefined;
+    dataUpdatedAt: number | undefined;
+    sourceUpdatedAt: string | undefined;
     label: string;
     sourceUpdatedLabel: string;
   }[];

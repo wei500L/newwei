@@ -10,6 +10,7 @@ import type {
   WarMapLayoutVariant,
   WarMapTranslateFn,
 } from "./war-map-overlay-model";
+import type { WarMapStatusSummary } from "./war-map-status-model";
 import {
   buildWarMapOverlayLayout,
   buildWarMapOverlayViewModel,
