@@ -43,6 +43,7 @@
 | FE-01 | P2 | alert-center 过滤器不入 URL（与全局模式不一致） | ✅ | PR #4（FE-批3，run 33849497917） |
 | FE-02 | P2 | 死代码：zustand store/sidebar.ts | ✅ | 见 §3 |
 | FE-03 | P2 | vitest coverage include 仅覆盖 3 个已测文件（覆盖率数字失真） | 🔶 | 部分（include 8→22→约 40（Alert Center 9→32），见 §3） |
+| CI-01 | P2 | OpenAPI 快照生成非确定性：同一 SHA 无 API 变更时 resolved schema 可能降级为 x-unresolved-schema | ⬜ | 开放（PR #5 第五轮登记，见 §3） |
 
 ## 3. 已修复条目（详细）
 
@@ -168,6 +169,15 @@
 - **PR #4（FE-批3）**：include 增至 22 个（+useUrlState / url-state-codec / DataStateBoundary / alert-center.tsx / alert-center-url-state / use-alert-center-url-state / alert-chart-options / evidence-utils / 四个 evidence 组件）。阈值不变（lines 35 / functions 3 / statements 35 / branches 30）。
 - **PR #5（FE-批3B）**：Alert Center include 增至 32（+alert-center-actions/data-state/filters/summary/list-model + alert-events-virtualization + alert-event-list/row/toolbar/detail/detail-model/五页签 + use-alert-events-feed/selection/status-actions/batch/detail/virtualization/charts；全站 include 总数约 40）。阈值不变（lines 35 / functions 3 / statements 35 / branches 30）。
 - **仍为「部分改善」**：全仓 glob + 阈值重设待 FE-批4+（巨型组件 war-map/task-detail 等未拆分、无测试，纳入即红 CI）。
+
+### CI-01 OpenAPI 快照生成非确定性 — ⬜ 开放 P2【PR #5 第五轮登记】
+
+- **现象**：PR #5（纯前端，`apps/api` 零改动）的 CI run `33874825439` 首次执行 `contract:openapi:snapshot` 时，`git diff --exit-code apps/api/tests/contract/openapi.snapshot.json` 失败；对同一失败 job 做单次针对性重跑后通过（同 SHA、同代码）。
+- **失败 diff 特征**：多个端点（vector settings 相关路由）新增 `requestBody` 条目且标记 `x-unresolved-schema: true`——即该次运行中 NestJS schema 未被解析，产物降级为 unresolved 占位形状，而非任何代码驱动的契约变化。
+- **根因假设**：`tsx`/`NODE_PATH` 环境下模块加载时序非确定性，导致 schema 解析偶发失败（未验证，需单独排查 `scripts/generate-openapi-snapshot.ts`）。
+- **风险**：契约漂移门禁可能产生**假失败**（或理论上假通过），CI 信号不可靠。
+- **证据**：run 33874825439 首次失败日志（OpenAPI contract snapshot drift check 步骤）与同 SHA 重跑成功；对照点：同一分支早前 run 33870697826 该步骤 success。
+- **状态**：**开放，待后续单独修复**（本轮仅登记，未修改生成器/快照/CI——PR #5 明确禁止触碰）。修复方向建议：生成器内显式等待/校验 schema 解析完成，或将 unresolved 输出视为生成失败而非降级继续。
 
 ## 5. 观察项（非缺陷，迁移决策输入）
 
