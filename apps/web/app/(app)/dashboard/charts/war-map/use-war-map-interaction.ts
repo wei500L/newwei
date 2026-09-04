@@ -11,12 +11,19 @@ import {
 } from "react";
 import { toast } from "sonner";
 
+import { safeHttpUrl } from "@/lib/url";
+
 import type {
   OverlayControlsSection,
   OverlayPanelKey,
   SelectedInspector,
   WarMapTranslateFn,
 } from "./war-map-overlay-model";
+import {
+  resolveWarMapSelectedInspector,
+  type ResolveWarMapSelectedInspectorInput,
+} from "./war-map-selection-model";
+import type { UseWarMapPointsResult } from "./use-war-map-points";
 
 /** Deck picking 回调的最小结构（点位模型字段由调用方决定）。 */
 export interface WarMapDeckPick<TPoint> {
@@ -37,9 +44,16 @@ export interface WarMapLayerClusterZoomTarget {
   lng: number;
 }
 
+/** 选中解析输入（selectedInspectorKey 由本 hook 提供）。 */
+export type WarMapSelectionInput = Omit<
+  ResolveWarMapSelectedInspectorInput,
+  "selectedInspectorKey"
+>;
+
 export interface UseWarMapInteractionOptions {
   t: WarMapTranslateFn;
-  selectedInspector: SelectedInspector | null;
+  /** 点位派生结果（Inspector 内容解析输入）。 */
+  points: UseWarMapPointsResult;
   overlayRailRef: RefObject<HTMLDivElement | null>;
   useDrawerControls: boolean;
   useDesktopInspector: boolean;
@@ -48,6 +62,8 @@ export interface UseWarMapInteractionOptions {
 }
 
 export interface UseWarMapInteractionResult {
+  /** 当前选中对象的 Inspector 解析结果。 */
+  selectedInspector: SelectedInspector | null;
   selectedInspectorKey: string | null;
   setSelectedInspectorKey: Dispatch<SetStateAction<string | null>>;
   hoveredInteractionKey: string | null;
@@ -68,6 +84,8 @@ export interface UseWarMapInteractionResult {
   ) => void;
   closeSelectedInspector: () => void;
   zoomToSelectedInspector: () => void;
+  /** 安全外链打开（新闻原文；非 http(s) 链接弹警告）。 */
+  openNewsLink: (url?: string | null) => void;
   openOverlayPanel: OverlayPanelKey | null;
   setOpenOverlayPanel: Dispatch<SetStateAction<OverlayPanelKey | null>>;
   controlsSection: OverlayControlsSection;
@@ -92,7 +110,8 @@ interface LayerClickPoint {
  * War Map 的交互与选择域（FE-批4A）。
  *
  * 单一所有者职责：
- * - 选中/hover/legend focus 状态与 Inspector 开合（含桌面最小化）；
+ * - 选中/hover/legend focus 状态、选中键 → Inspector 内容解析
+ *   （resolveWarMapSelectedInspector）与 Inspector 开合（含桌面最小化）；
  * - overlay panel 与 controls section 状态；
  * - Escape（先关面板再关 Inspector）与面板外 pointerdown 关闭；
  * - 失效清理：选中键在数据中不再可解析时清空；
@@ -107,7 +126,7 @@ export function useWarMapInteraction(
 ): UseWarMapInteractionResult {
   const {
     t,
-    selectedInspector,
+    points,
     overlayRailRef,
     useDrawerControls,
     useDesktopInspector,
@@ -134,6 +153,28 @@ export function useWarMapInteraction(
     string | null
   >(null);
 
+  // 选中解析输入（memo 保持引用稳定，避免每渲染重算 Inspector 解析）
+  const selectionInput = useMemo<WarMapSelectionInput>(
+    () => ({
+      clusteredEvents: points.clusteredEvents,
+      clusteredNews: points.clusteredNews,
+      rawEvents: points.rawEvents,
+      rawNewsMarkers: points.rawNewsMarkers,
+      transportSelections: points.transportSelections,
+    }),
+    [points],
+  );
+
+  // 选中键 → Inspector 内容解析（选中数据失效时由下方 effect 清理键）
+  const selectedInspector = useMemo<SelectedInspector | null>(
+    () =>
+      resolveWarMapSelectedInspector({
+        ...selectionInput,
+        selectedInspectorKey,
+      }),
+    [selectedInspectorKey, selectionInput],
+  );
+
   const closeSelectedInspector = useCallback(() => {
     setDesktopInspectorMinimized(false);
     setSelectedInspectorKey(null);
@@ -152,6 +193,18 @@ export function useWarMapInteraction(
       essential: true,
     });
   }, [mapRef, selectedInspector]);
+
+  const openNewsLink = useCallback(
+    (url?: string | null) => {
+      const safeUrl = typeof url === "string" ? safeHttpUrl(url) : null;
+      if (!safeUrl) {
+        toast.warning(t("dashboard.charts.warMap.missingNewsUrl"));
+        return;
+      }
+      window.open(safeUrl, "_blank", "noopener,noreferrer");
+    },
+    [t],
+  );
 
   const zoomToLayerCluster = useCallback(
     (point?: WarMapLayerClusterZoomTarget) => {
@@ -310,6 +363,7 @@ export function useWarMapInteraction(
   );
 
   return {
+    selectedInspector,
     selectedInspectorKey,
     setSelectedInspectorKey,
     hoveredInteractionKey,
@@ -325,6 +379,7 @@ export function useWarMapInteraction(
     handleLayerPointClick,
     closeSelectedInspector,
     zoomToSelectedInspector,
+    openNewsLink,
     openOverlayPanel,
     setOpenOverlayPanel,
     controlsSection,
