@@ -170,7 +170,15 @@
 - **PR #5（FE-批3B）**：Alert Center include 增至 32（+alert-center-actions/data-state/filters/summary/list-model + alert-events-virtualization + alert-event-list/row/toolbar/detail/detail-model/五页签 + use-alert-events-feed/selection/status-actions/batch/detail/virtualization/charts；全站 include 总数约 40）。阈值不变（lines 35 / functions 3 / statements 35 / branches 30）。
 - **仍为「部分改善」**：全仓 glob + 阈值重设待 FE-批4+（巨型组件 war-map/task-detail 等未拆分、无测试，纳入即红 CI）。
 
-### CI-01 OpenAPI 快照生成非确定性 — ⬜ 开放 P2【PR #5 第五轮登记】
+### CI-01 OpenAPI 快照生成非确定性 — ⬜ 开放 P2【PR #5 第五轮登记；PR #6 复现一次】
+
+PR #6（FE-批4A，纯前端改动、无 API 变更）再次复现：run 33900456381 的
+OpenAPI snapshot drift check 首跑失败——快照中大量端点凭空出现 `query` 查询
+参数（形如 name:"query", in:"query", schema string），diff 超 2000 行；同一
+SHA 对同一 job 做一次针对性重跑后通过（run 33900456381 rerun, verify ✓）。
+与第五轮的 x-unresolved-schema 降级是同一非确定性缺陷的不同表现
+（decorator 元数据解析顺序不稳定）。按规程未修改快照/生成器/CI；缺陷保持开放，
+证据已保存。
 
 - **现象**：PR #5（纯前端，`apps/api` 零改动）的 CI run `33874825439` 首次执行 `contract:openapi:snapshot` 时，`git diff --exit-code apps/api/tests/contract/openapi.snapshot.json` 失败；对同一失败 job 做单次针对性重跑后通过（同 SHA、同代码）。
 - **失败 diff 特征**：多个端点（vector settings 相关路由）新增 `requestBody` 条目且标记 `x-unresolved-schema: true`——即该次运行中 NestJS schema 未被解析，产物降级为 unresolved 占位形状，而非任何代码驱动的契约变化。

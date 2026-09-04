@@ -71,6 +71,8 @@
 ## M6 前端第二批（巨型组件拆解）
 
 - FE-批4：war-map 重构（试点 2，验证原语够用）→ FE-批5+：task-detail/CreateCrawlTaskDrawer/realtime-signals/crawl-monitor/quality 分批
+  - FE-批4A（PR #6，已完成）：行为保护网（7 个测试文件，URL/查询/数据/地图生命周期/用户交互全覆盖）+ war-map.tsx 4412 → 497 行；拆出容器观测/URL/查询/运行时/交互/点位/图层/状态展示/overlay 组合等 20+ 领域模块（全部 ≤500 行）；三个消费入口与全部行为红线保持；coverage include 48 → 82 项
+  - FE-批4B（待做）：controls-panel（1741）、symbols（1530）、inspector-panel（668）、overlay-model（534）、overlay-rail（329）内部拆分；真实浏览器地图操作/WebGL 性能/视觉验收/320-390px 真机/大数据量压力
 - 直接 fetch → 类型化客户端迁移（10 文件）；~~FE-02 死 store 删除~~（✅ 已随 FE-批2 完成）
 
 ## M7 深水区：Auth/Org/RBAC（Go）
