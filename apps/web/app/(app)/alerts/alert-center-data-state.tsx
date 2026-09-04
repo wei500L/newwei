@@ -14,9 +14,10 @@ import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
  * - refreshing / empty 不在本页接入（notifyOnNetworkStatusChange 未启用）。
  */
 
-export interface TranslateFn {
-  (key: string, options?: Record<string, unknown>): string;
-}
+export type TranslateFn = (
+  key: string,
+  options?: Record<string, unknown>,
+) => string;
 
 export interface BuildAlertDataStateOptions {
   sessionStatus: string;

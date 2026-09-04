@@ -25,6 +25,105 @@ export interface AlertFeedbackMessageApi {
   error: (content: string) => void;
 }
 
+/** 复制 Markdown 的载荷构造（字段与既有输出逐行一致）。 */
+export function buildAlertMarkdownPayload(options: {
+  selectedEvent: AlertEventItem;
+  context: Record<string, unknown> | null;
+  locale: string;
+  t: TranslateFn;
+  formatDateTime: (
+    value: string | number,
+    locale: string,
+    opts: Record<string, unknown>,
+  ) => string;
+  metricProviderLabel: (provider: string | null | undefined) => string;
+  thresholdSummary: string;
+}): string {
+  const { selectedEvent, context, locale, t, formatDateTime, metricProviderLabel, thresholdSummary } =
+    options;
+
+  const markdownLines = [
+    `# ${t("alerts.center.markdown.title")}`,
+    "",
+    `- **ID**: ${selectedEvent.id}`,
+    `- **${t("alerts.center.detail.triggeredAt")}**: ${formatDateTime(
+      selectedEvent.triggeredAt,
+      locale,
+      {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        timeZoneName: "short",
+      },
+    )}`,
+    `- **${t("alerts.center.detail.rule")}**: ${selectedEvent.ruleName ?? t("common.notAvailable")}`,
+    `- **${t("alerts.center.detail.metric", { metric: "" })}**: ${selectedEvent.metricSlug ?? t("common.notAvailable")}`,
+    `- **${t("alerts.center.detail.provider", { provider: "" })}**: ${metricProviderLabel(selectedEvent.metricProvider)}`,
+    `- **${t("alerts.center.detail.status")}**: ${selectedEvent.status}`,
+    `- **${t("alerts.center.detail.metricValue")}**: ${selectedEvent.metricValue}`,
+    `- **${t("alerts.center.detail.threshold")}**: ${thresholdSummary}`,
+    "",
+    `## ${t("alerts.center.detail.message")}`,
+    selectedEvent.message ?? t("alerts.events.triggered"),
+    "",
+    `## ${t("alerts.center.detail.context")}`,
+    "```json",
+    safeJsonStringify(context ?? {}),
+    "```",
+    "",
+    `## ${t("alerts.center.detail.deliveries")}`,
+  ];
+
+  if (selectedEvent.deliveries.length === 0) {
+    markdownLines.push(`- ${t("alerts.center.deliveriesEmpty")}`);
+  } else {
+    selectedEvent.deliveries.forEach((delivery) => {
+      markdownLines.push(
+        `- ${delivery.status} · ${delivery.channelType} · ${delivery.channelName ?? delivery.target ?? t("common.notAvailable")}`,
+      );
+    });
+  }
+
+  return markdownLines.join("\n");
+}
+
+export function createCopyAlertMarkdownHandler(options: {
+  selectedEvent: AlertEventItem | null;
+  context: Record<string, unknown> | null;
+  locale: string;
+  messageApi: AlertFeedbackMessageApi;
+  t: TranslateFn;
+  formatDateTime: (
+    value: string | number,
+    locale: string,
+    opts: Record<string, unknown>,
+  ) => string;
+  metricProviderLabel: (provider: string | null | undefined) => string;
+  thresholdSummary: string;
+}) {
+  const { selectedEvent, messageApi, t } = options;
+  return async () => {
+    if (!selectedEvent) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(
+        buildAlertMarkdownPayload({ ...options, selectedEvent }),
+      );
+      messageApi.success(t("alerts.center.markdown.copied"));
+    } catch (error) {
+      messageApi.error(
+        error instanceof Error
+          ? error.message
+          : t("alerts.center.contextCopyFailed"),
+      );
+    }
+  };
+}
+
 export function createCopyRawContextHandler(
   context: Record<string, unknown> | null,
   { messageApi, t }: { messageApi: AlertFeedbackMessageApi; t: TranslateFn },

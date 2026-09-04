@@ -3,7 +3,7 @@
 import { Button, Space, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { AlertMetricProvider } from "@/graphql/generated";
+import type { AlertMetricProvider } from "@/graphql/generated";
 import { formatDateTime, type resolveLocale } from "@/lib/i18n";
 
 import { buildThresholdSummary, type AlertEventItem } from "./alert-center-list-model";

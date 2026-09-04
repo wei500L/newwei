@@ -20,6 +20,7 @@ import { useChartTheme } from "@/hooks/use-chart-theme";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 import {
+  createCopyAlertMarkdownHandler,
   createCopyRawContextHandler,
   createExportHandlers,
 } from "./alert-center-actions";
@@ -47,12 +48,10 @@ import { AlertEventDetail } from "./alert-event-detail";
 import { CONTEXT_OBJECT_KEYS } from "./alert-event-detail-model";
 import { AlertEventList } from "./alert-event-list";
 import type { AlertExportScope } from "./alert-event-list-toolbar";
-import {
-  safeJsonStringify,
-  toNumber,
-} from "./evidence-utils";
+import { toNumber } from "./evidence-utils";
 import { useAlertCenterUrlState } from "./hooks/use-alert-center-url-state";
 import { useAlertEventDetail } from "./hooks/use-alert-event-detail";
+import { useAlertEventBatch } from "./hooks/use-alert-event-batch";
 import { useAlertEventSelection } from "./hooks/use-alert-event-selection";
 import { useAlertEventStatusActions } from "./hooks/use-alert-event-status-actions";
 import { useAlertEventsFeed } from "./hooks/use-alert-events-feed";
@@ -67,7 +66,6 @@ export function AlertCenterContent() {
   const canManageAlerts = permissions.includes("alerts.manage");
   const [messageApi, messageContext] = message.useMessage();
 
-  const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
   const [bulkNote, setBulkNote] = useState<string>("");
   const [includeRawExport, setIncludeRawExport] = useState<boolean>(false);
   const [exportScope, setExportScope] = useState<AlertExportScope>("selected");
@@ -132,10 +130,6 @@ export function AlertCenterContent() {
   const filteredEvents = useMemo(
     () => filterAlertEvents(sortedEvents, filterStateForQuery, filterWindow),
     [filterStateForQuery, filterWindow, sortedEvents],
-  );
-  const filteredEventIdSet = useMemo(
-    () => new Set(filteredEvents.map((event) => event.id)),
-    [filteredEvents],
   );
 
   const listPageCount = Math.max(
@@ -205,11 +199,6 @@ export function AlertCenterContent() {
     },
   });
 
-  useEffect(() => {
-    const existingIds = new Set(sortedEvents.map((event) => event.id));
-    setSelectedEventIds((prev) => prev.filter((id) => existingIds.has(id)));
-  }, [sortedEvents]);
-
   // 详情域状态（FE-批3B）：replay 懒加载 / feedback note 预填 / tab 重置
   const {
     loadReplay,
@@ -227,6 +216,23 @@ export function AlertCenterContent() {
     feedbackNote,
     setFeedbackNote,
   } = useAlertEventDetail({ selectedEvent, selectedEventId });
+
+  // 批量选择域（FE-批3B）：勾选/全选/隐藏选中清理
+  const {
+    selectedEventIds,
+    selectedEventIdSet,
+    selectedVisibleCount,
+    hiddenSelectedCount,
+    allVisibleSelected,
+    clearHiddenSelection,
+    toggleSelectAllVisible,
+    toggleEventSelection,
+    clearSelection,
+  } = useAlertEventBatch({
+    sortedEvents,
+    filteredEvents,
+    currentPageEvents,
+  });
 
   // 筛选变化后的 page 重置由 useAlertCenterUrlState 的 updateFilters 承载
   // （任何筛选 patch 都将 page 归 1；URL 外部变化时筛选与 page 同源采纳）
@@ -262,22 +268,17 @@ export function AlertCenterContent() {
     const note = bulkNote.trim() ? bulkNote.trim() : null;
     const updated = await executeStatusUpdate(selectedEventIds, status, note);
     if (updated > 0) {
-      setSelectedEventIds([]);
+      clearSelection();
       setBulkNote("");
     }
   };
 
-  const selectedEventIdSet = useMemo(
-    () => new Set(selectedEventIds),
-    [selectedEventIds],
-  );
-  const selectedEventsForBatch = useMemo(
-    () => sortedEvents.filter((event) => selectedEventIdSet.has(event.id)),
-    [selectedEventIdSet, sortedEvents],
-  );
   const exportEvents = useMemo(
-    () => (exportScope === "page" ? currentPageEvents : selectedEventsForBatch),
-    [currentPageEvents, exportScope, selectedEventsForBatch],
+    () =>
+      exportScope === "page"
+        ? currentPageEvents
+        : sortedEvents.filter((event) => selectedEventIdSet.has(event.id)),
+    [currentPageEvents, exportScope, selectedEventIdSet, sortedEvents],
   );
 
   // 导出域（FE-批3B）：scope/includeRaw 语义在 alert-center-actions 保持
@@ -317,51 +318,6 @@ export function AlertCenterContent() {
     selectedIndexInFiltered < filteredEvents.length - 1
       ? filteredEvents[selectedIndexInFiltered + 1]?.id
       : null;
-
-  const selectedInFilterCount = useMemo(
-    () =>
-      selectedEventIds.reduce(
-        (count, eventId) =>
-          filteredEventIdSet.has(eventId) ? count + 1 : count,
-        0,
-      ),
-    [filteredEventIdSet, selectedEventIds],
-  );
-  const selectedVisibleCount = useMemo(
-    () =>
-      currentPageEvents.reduce(
-        (count, event) =>
-          selectedEventIdSet.has(event.id) ? count + 1 : count,
-        0,
-      ),
-    [currentPageEvents, selectedEventIdSet],
-  );
-  const hiddenSelectedCount = Math.max(
-    selectedEventIds.length - selectedInFilterCount,
-    0,
-  );
-  const allVisibleSelected =
-    currentPageEvents.length > 0 &&
-    selectedVisibleCount === currentPageEvents.length;
-
-  const handleSelectAllVisible = (checked: boolean) => {
-    const visibleIds = currentPageEvents.map((event) => event.id);
-    if (checked) {
-      setSelectedEventIds((prev) => [...new Set([...prev, ...visibleIds])]);
-      return;
-    }
-    const visibleSet = new Set(visibleIds);
-    setSelectedEventIds((prev) => prev.filter((id) => !visibleSet.has(id)));
-  };
-
-  const handleToggleEventSelection = (eventId: string, checked: boolean) => {
-    setSelectedEventIds((prev) => {
-      if (checked) {
-        return [...new Set([...prev, eventId])];
-      }
-      return prev.filter((id) => id !== eventId);
-    });
-  };
 
   const handleRefresh = async () => {
     await refetchEvents();
@@ -449,78 +405,17 @@ export function AlertCenterContent() {
     t,
   });
 
-  const handleCopyAlertMarkdown = async () => {
-    if (!selectedEvent) {
-      return;
-    }
+  const handleCopyAlertMarkdown = createCopyAlertMarkdownHandler({
+    selectedEvent,
+    context,
+    locale,
+    messageApi,
+    t,
+    formatDateTime,
+    metricProviderLabel,
+    thresholdSummary,
+  });
 
-    const markdownLines = [
-      `# ${t("alerts.center.markdown.title")}`,
-      "",
-      `- **ID**: ${selectedEvent.id}`,
-      `- **${t("alerts.center.detail.triggeredAt")}**: ${formatDateTime(
-        selectedEvent.triggeredAt,
-        locale,
-        {
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          timeZoneName: "short",
-        },
-      )}`,
-      `- **${t("alerts.center.detail.rule")}**: ${selectedEvent.ruleName ?? t("common.notAvailable")}`,
-      `- **${t("alerts.center.detail.metric", { metric: "" })}**: ${selectedEvent.metricSlug ?? t("common.notAvailable")}`,
-      `- **${t("alerts.center.detail.provider", { provider: "" })}**: ${metricProviderLabel(selectedEvent.metricProvider)}`,
-      `- **${t("alerts.center.detail.status")}**: ${selectedEvent.status}`,
-      `- **${t("alerts.center.detail.metricValue")}**: ${selectedEvent.metricValue}`,
-      `- **${t("alerts.center.detail.threshold")}**: ${thresholdSummary}`,
-      "",
-      `## ${t("alerts.center.detail.message")}`,
-      selectedEvent.message ?? t("alerts.events.triggered"),
-      "",
-      `## ${t("alerts.center.detail.context")}`,
-      "```json",
-      safeJsonStringify(context ?? {}),
-      "```",
-      "",
-      `## ${t("alerts.center.detail.deliveries")}`,
-    ];
-
-    if (selectedEvent.deliveries.length === 0) {
-      markdownLines.push(
-        `- ${t("alerts.center.deliveriesEmpty")}`,
-      );
-    } else {
-      selectedEvent.deliveries.forEach((delivery) => {
-        markdownLines.push(
-          `- ${delivery.status} · ${delivery.channelType} · ${delivery.channelName ?? delivery.target ?? t("common.notAvailable")}`,
-        );
-      });
-    }
-
-    try {
-      await navigator.clipboard.writeText(markdownLines.join("\n"));
-      messageApi.success(
-        t("alerts.center.markdown.copied"),
-      );
-    } catch (error) {
-      messageApi.error(
-        error instanceof Error
-          ? error.message
-          : t("alerts.center.contextCopyFailed"),
-      );
-    }
-  };
-
-
-
-  // 数据状态分派（DataStateBoundary 首个消费方，行为保持）：
-  // - 会话 loading / 无读权限 / 无数据 blockingError → 整页状态
-  // - 有旧数据时刷新失败 → nonBlockingError（内容保留 + 非阻断提示）
-  // - 空态仍由事件列表内的 emptyText 承载（本 PR 不全站替换 loading/error/empty 分支）
   const hasEventsData = sortedEvents.length > 0;
   const dataState: DataStateBoundaryState = buildAlertDataState({
     sessionStatus,
@@ -606,19 +501,15 @@ export function AlertCenterContent() {
             bulkNote={bulkNote}
             batchProgress={batchProgress}
             updatingStatus={updatingStatus}
-            onToggleSelectAllVisible={handleSelectAllVisible}
-            onClearHiddenSelection={() =>
-              setSelectedEventIds((prev) =>
-                prev.filter((id) => filteredEventIdSet.has(id)),
-              )
-            }
+            onToggleSelectAllVisible={toggleSelectAllVisible}
+            onClearHiddenSelection={clearHiddenSelection}
             onSetExportScope={setExportScope}
             onSetIncludeRawExport={setIncludeRawExport}
             onSetBulkNote={setBulkNote}
             onExportCsv={() => void handleExportCsv()}
             onExportJson={() => handleExportJson()}
             onBulkUpdate={(status) => void handleBulkUpdate(status)}
-            onToggleEventSelection={handleToggleEventSelection}
+            onToggleEventSelection={toggleEventSelection}
             onSelectEvent={handleSelectEvent}
             onSetPage={setListPage}
             onSetPageSize={setListPageSize}
@@ -638,8 +529,8 @@ export function AlertCenterContent() {
             onSetDetailTab={setDetailTab}
             expandMessage={expandMessage}
             expandContext={expandContext}
-            onToggleExpandMessage={() => setExpandMessage((prev) => !prev)}
-            onToggleExpandContext={() => setExpandContext((prev) => !prev)}
+            onToggleExpandMessage={toggleExpandMessage}
+            onToggleExpandContext={toggleExpandContext}
             onCopyRawContext={() => void handleCopyRawContext()}
             onCopyAlertMarkdown={() => void handleCopyAlertMarkdown()}
             onSelectEvent={handleSelectEvent}
