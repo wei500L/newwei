@@ -71,7 +71,7 @@
 | 优先 | 文件（行数） | 拆法 |
 |---|---|---|
 | P1 | war-map.tsx 4420 | 图层渲染 / 交互面板 / inspector / 数据装配 四层；图表逻辑下沉 hooks |
-| P1 | alert-center.tsx 4074 → 2851（PR #4 已合并）→ ~495（FE-批3B，PR #5 进行中） | 证据域四组件 + 图表构建器 + URL 状态（FE-01）+ DataStateBoundary 已落地（PR #4）；FE-批3B 完成筛选/列表/工具栏/行/摘要组件、五个详情页签、七个领域 hooks 与 detail-model/actions/data-state 纯模块拆分，根组件收敛为编排层 |
+| P1 | alert-center.tsx 4074 → 2851（PR #4 已合并）→ 495（FE-批3B，PR #5，CI run 33869942074 全绿） | 证据域四组件 + 图表构建器 + URL 状态（FE-01）+ DataStateBoundary 已落地（PR #4）；FE-批3B 完成筛选/列表/工具栏/行/摘要组件、五个详情页签、七个领域 hooks 与 detail-model/actions/data-state 纯模块拆分，根组件收敛为编排层（权限装配/hooks 组合/DataStateBoundary 分派） |
 | P1 | task-detail.tsx 3822 + CreateCrawlTaskDrawer 3147 | 抓取域共抽 crawl-task 原语（表单分步/结果表格/元数据卡） |
 | P2 | realtime-signals 3014 · crawl-monitor 2993 · quality 2875 | 设置面板按 signal 域拆分；监控页用 PageContainer+DataStateBoundary 重排 |
 

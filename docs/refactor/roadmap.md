@@ -56,7 +56,7 @@
 | FE-02 死 store 删除（store/sidebar.ts） | ✅ 静态验证零引用后删除；残留引用由 typecheck 拦截 |
 | FE-批1（其余）：DataStateBoundary、useUrlState | ✅ 已落地（PR #4：use-url-state.ts / url-state-codec.ts / data-state-boundary.tsx，远端 CI 已验证）；design/tokens.ts 收敛仍为后续批次 |
 | FE-批3（FE-批3A）：alert-center 重构（顺修 FE-01 URL 状态）——代表页试点 1 | ✅ 远端 CI 已验证（PR #4 已合并，合并后基线 2851 行）：characterization tests + useUrlState/DataStateBoundary 原语 + URL 十参数契约 + DataStateBoundary 首个消费方 + 证据域/图表构建器拆分；最终 CI run 33857305521，main 合并后 CI run 33858778995（b9669b2b）|
-| FE-批3B：Alert Center 领域拆分收口（列表/详情/数据 hooks） | 🔶 代码落地（PR #5 进行中）：feed/selection/status-actions/batch/detail/virtualization/charts 领域 hooks + filters/summary/list/row/toolbar 组件 + 五个详情页签 + detail-model/actions/data-state 纯模块；alert-center.tsx 2851→495 行 |
+| FE-批3B：Alert Center 领域拆分收口（列表/详情/数据 hooks） | ✅ 远端 CI 已验证（PR #5，run 33869942074）：feed/selection/status-actions/batch/detail/virtualization/charts 七个领域 hooks + filters/summary/list/row/toolbar 组件 + 五个详情页签 + detail-model/actions/data-state 纯模块；alert-center.tsx 2851→495 行，全部模块 < 500 行；web 测试 205→211（+6 保护网） |
 | FE-03：vitest coverage include 改全仓 glob，阈值按真实基线重设 | 🔶 部分（include 3→约 40：App Shell 导航原语 + FE-批3/3B 原语与 Alert Center 全部领域模块；全仓阈值待巨型组件拆分批次） |
 | 试点页人工冒烟 | ⬜ 未做（本机不启动前端；需部署环境） |
 
