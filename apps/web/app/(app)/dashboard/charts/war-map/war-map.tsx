@@ -41,7 +41,6 @@ import {
 import {
   OVERLAY_SURFACE_CLASS_NAME,
   resolveOverlayDensity,
-  type WarMapLayoutVariant,
 } from "./war-map-overlay-model";
 import { useWarMapOverlayPanels } from "./war-map-overlay-panels";
 import type { WarMapProps } from "./war-map-props";

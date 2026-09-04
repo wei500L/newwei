@@ -13,15 +13,6 @@ export function formatWarMapRelativeTimestamp(
   if (value === undefined) {
     return null;
   }
-/** 相对时间戳（短相对格式优先，退化到绝对更新时间）。 */
-export function formatWarMapRelativeTimestamp(
-  value: string | number | Date | undefined,
-  locale: SupportedLocale,
-  base: number,
-): string | null {
-  if (value === undefined) {
-    return null;
-  }
 
   return (
     formatRelativeTime(value, locale, {

@@ -9,7 +9,6 @@ import type {
   WarMapDetailedChainStatus,
   WarMapTranslateFn,
 } from "./war-map-overlay-model";
-import { readSummaryNumber, readSummaryString } from "./war-map-flights-status";
 import {
   formatWarMapRelativeTimestamp,
   getErrorMessage,
