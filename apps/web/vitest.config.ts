@@ -64,6 +64,12 @@ export default defineConfig({
         "app/(app)/alerts/entity-sentiment-evidence.tsx",
         "app/(app)/alerts/entity-association-evidence.tsx",
         "app/(app)/alerts/realtime-signal-evidence.tsx",
+        // FE-批4A：War Map 纯模块（URL 状态 / 查询视口 / 数据 hook）
+        // war-map.tsx 与本轮新增 hooks/model/layer factory 在拆分完成后
+        // 随「扩展 War Map coverage」提交纳入（避免巨型未拆文件拖垮阈值）。
+        "app/(app)/dashboard/charts/war-map/url-state.ts",
+        "app/(app)/dashboard/charts/war-map/query-viewport.ts",
+        "app/(app)/dashboard/charts/war-map/use-war-map-data.ts",
       ],
       exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
       thresholds: {
