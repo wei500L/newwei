@@ -1,11 +1,14 @@
 import type { AlertRuleTuningSuggestionQuery } from "@/graphql/generated";
 
-import type { AlertEventItem } from "./alert-center.utils";
 import type { LocaleCode } from "./alert-center-list-model";
+import type { AlertEventItem } from "./alert-center.utils";
 import type { AlertExportScope } from "./alert-event-list-toolbar";
+import type { useAlertCenterCharts } from "./hooks/use-alert-center-charts";
 import type { useAlertEventBatch } from "./hooks/use-alert-event-batch";
 import type { useAlertEventDetail } from "./hooks/use-alert-event-detail";
 import type { useAlertEventSelection } from "./hooks/use-alert-event-selection";
+
+type ChartsResult = ReturnType<typeof useAlertCenterCharts>;
 
 /**
  * Alert Center 领域契约（第四轮静态收口）。
@@ -102,15 +105,9 @@ export interface AlertEventDetailClipboard {
 
 /** 详情分析模型：相似告警 + 规则趋势（useAlertCenterCharts 切片）。 */
 export interface AlertEventDetailAnalysis {
-  similarAlerts: ReturnType<
-    typeof import("./hooks/use-alert-center-charts").useAlertCenterCharts
-  >["similarAlerts"];
-  ruleTrendAnalysis: ReturnType<
-    typeof import("./hooks/use-alert-center-charts").useAlertCenterCharts
-  >["ruleTrendAnalysis"];
-  ruleTrendOption: ReturnType<
-    typeof import("./hooks/use-alert-center-charts").useAlertCenterCharts
-  >["ruleTrendOption"];
+  similarAlerts: ChartsResult["similarAlerts"];
+  ruleTrendAnalysis: ChartsResult["ruleTrendAnalysis"];
+  ruleTrendOption: ChartsResult["ruleTrendOption"];
 }
 
 /** 详情 replay 控制器：懒加载门禁下的数据与重载命令。 */
@@ -120,9 +117,7 @@ export interface AlertEventDetailReplay {
   replayUnit: ReturnType<typeof useAlertEventDetail>["replayUnit"];
   replayLoading: boolean;
   replayError: Error | undefined;
-  replayOption: ReturnType<
-    typeof import("./hooks/use-alert-center-charts").useAlertCenterCharts
-  >["replayOption"];
+  replayOption: ChartsResult["replayOption"];
   reloadReplay: () => void;
 }
 
