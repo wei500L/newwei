@@ -7,7 +7,6 @@ import {
   ScatterplotLayer,
   TextLayer,
 } from "@deck.gl/layers";
-import type { MapboxOverlay } from "@deck.gl/mapbox";
 import {
   type WarMapAisMode,
   type WarMapEventSeverity,
@@ -25,12 +24,12 @@ import {
 } from "@modular/utils";
 import { useQuery } from "@tanstack/react-query";
 import { Checkbox, Drawer, Grid, Space, Spin, Typography } from "antd";
-import type { Map as MapLibreMap } from "maplibre-gl";
 import { useSession } from "next-auth/react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import {
@@ -46,17 +45,6 @@ import {
   formatUpdatedAt,
   resolveLocale,
 } from "@/lib/i18n";
-import {
-  classifyMapLoadError,
-  type MapLoadErrorPresentation,
-} from "@/lib/map/map-load-error";
-import {
-  createDeckMapRuntime,
-  extractMapBbox,
-  setDeckOverlayProps,
-} from "@/lib/map/map-runtime";
-import { MAP_STYLE_URL } from "@/lib/map/map-style";
-import { useRenderableContainer } from "@/lib/map/use-renderable-container";
 import { formatAisRuntimeReason } from "@/lib/realtime-signals-runtime";
 import { safeHttpUrl } from "@/lib/url";
 import { useWarMapSettingsStore } from "@/store/war-map-settings";
@@ -66,8 +54,13 @@ import {
   type DashboardStreamState,
 } from "../../use-dashboard-stream";
 
+import { useWarMapContainer } from "./use-war-map-container";
 import { useWarMapData } from "./use-war-map-data";
 import { useWarMapQueryState } from "./use-war-map-query-state";
+import {
+  useWarMapRuntime,
+  type WarMapViewportSync,
+} from "./use-war-map-runtime";
 import { useWarMapUrlState } from "./use-war-map-url-state";
 import { getWarMapAisLabel, readWarMapAisProperties } from "./war-map-ais";
 import { isAisViewportEmptyStateActive } from "./war-map-ais-mode";
@@ -786,20 +779,8 @@ export function WarMap({
   const [requestGeoTransport, { loading: submittingGeoTransport }] =
     useRequestGeoTransportMutation();
 
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<MapLibreMap | null>(null);
-  const deckOverlayRef = useRef<MapboxOverlay | null>(null);
   const overlayRailRef = useRef<HTMLDivElement | null>(null);
   const legendDockRef = useRef<HTMLDivElement | null>(null);
-  const syncFromMapRef = useRef(false);
-
-  const [inView, setInView] = useState(false);
-  const [mapReady, setMapReady] = useState(false);
-  const [mapLoadError, setMapLoadError] =
-    useState<MapLoadErrorPresentation | null>(null);
-  const [mapMountNonce, setMapMountNonce] = useState(0);
-  const [wrapperSize, setWrapperSize] = useState({ width: 0, height: 0 });
   const [openOverlayPanel, setOpenOverlayPanel] =
     useState<OverlayPanelKey | null>(null);
   const [controlsSection, setControlsSection] =
@@ -818,10 +799,14 @@ export function WarMap({
   const [hoveredInteractionKey, setHoveredInteractionKey] = useState<
     string | null
   >(null);
-  const hasRenderableMapContainer = useRenderableContainer(
+  // 容器观测域：inView / wrapper 尺寸 / renderable 门禁（单一所有者）
+  const {
+    wrapperRef,
     mapContainerRef,
     inView,
-  );
+    wrapperSize,
+    hasRenderableMapContainer,
+  } = useWarMapContainer();
   const overlayDensity = useMemo(
     () => resolveOverlayDensity(wrapperSize.width, wrapperSize.height),
     [wrapperSize.height, wrapperSize.width],
@@ -865,73 +850,12 @@ export function WarMap({
   );
   const resetLayers = useWarMapSettingsStore((state) => state.resetLayers);
   const effectiveAisMode: WarMapAisMode = aisMode;
-  const viewStateRef = useRef(effectiveViewState);
-
-  useEffect(() => {
-    viewStateRef.current = effectiveViewState;
-  }, [effectiveViewState]);
-
-  useEffect(() => {
-    const root = wrapperRef.current;
-    if (!root) {
-      return;
-    }
-
-    if (typeof IntersectionObserver === "undefined") {
-      setInView(true);
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        setInView(Boolean(entries[0]?.isIntersecting));
-      },
-      { rootMargin: "160px" },
-    );
-
-    observer.observe(root);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const root = wrapperRef.current;
-    if (!root) {
-      return;
-    }
-
-    const updateSize = () => {
-      const nextWidth = root.clientWidth;
-      const nextHeight = root.clientHeight;
-      setWrapperSize((current) =>
-        current.width === nextWidth && current.height === nextHeight
-          ? current
-          : { width: nextWidth, height: nextHeight },
-      );
-    };
-
-    updateSize();
-
-    if (typeof ResizeObserver === "undefined") {
-      return;
-    }
-
-    const observer = new ResizeObserver(() => {
-      updateSize();
-    });
-    observer.observe(root);
-    return () => observer.disconnect();
-  }, []);
 
   const dataEnabled = Boolean(session?.accessToken && inView && urlHydrated);
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken],
   );
-  const retryMapLoad = useCallback(() => {
-    setMapLoadError(null);
-    setMapReady(false);
-    setMapMountNonce((value) => value + 1);
-  }, []);
 
   // 查询状态域：range anchor / effectiveRange / query viewport / 实时回调
   const {
@@ -951,6 +875,23 @@ export function WarMap({
     onEffectiveRangeChange,
     onRealtimeQueryChange,
   });
+
+  // 地图运行时域：MapLibre/Deck 实例创建与销毁、load/error/retry、resize
+  const handleViewportSync = useCallback(
+    (sync: WarMapViewportSync) => {
+      setViewState(sync.viewState);
+      setQueryViewport(sync.viewport);
+    },
+    [setQueryViewport, setViewState],
+  );
+  const { mapRef, mapReady, mapLoadError, retryMapLoad, setOverlayProps } =
+    useWarMapRuntime({
+      mapContainerRef,
+      inView,
+      hasRenderableMapContainer,
+      targetViewState: effectiveViewState,
+      onViewportSync: handleViewportSync,
+    });
 
   const { eventsQuery, newsQuery, layersQuery, monitorsQuery } = useWarMapData({
     apiClient,
@@ -978,109 +919,6 @@ export function WarMap({
     enabled: !streamState && dataEnabled,
   });
   const resolvedStreamState = streamState ?? internalStreamState;
-
-  useEffect(() => {
-    if (
-      !mapContainerRef.current ||
-      !inView ||
-      !hasRenderableMapContainer ||
-      mapRef.current
-    ) {
-      return;
-    }
-
-    const initialViewState = viewStateRef.current;
-    setMapLoadError(null);
-    const syncFromMap = (map: MapLibreMap) => {
-      const center = map.getCenter();
-      syncFromMapRef.current = true;
-      setViewState({
-        lat: center.lat,
-        lon: center.lng,
-        zoom: map.getZoom(),
-        bearing: map.getBearing(),
-        pitch: map.getPitch(),
-      });
-      setQueryViewport({
-        bbox: extractMapBbox(map),
-        zoom: map.getZoom(),
-      });
-      window.setTimeout(() => {
-        syncFromMapRef.current = false;
-      }, 0);
-    };
-
-    const runtime = createDeckMapRuntime({
-      container: mapContainerRef.current,
-      initialViewState,
-      force2D: true,
-      style: MAP_STYLE_URL,
-      onMoveEnd: syncFromMap,
-      onMapReady: (map) => {
-        setMapLoadError(null);
-        setMapReady(true);
-        syncFromMap(map);
-      },
-      onMapError: (_map, detail) => {
-        captureClientError(
-          "War map basemap load failed",
-          detail.error ?? detail,
-        );
-        const presentation = classifyMapLoadError(detail);
-        setMapReady(false);
-        setMapLoadError(presentation);
-        toast.error(
-          `${presentation.title}. ${presentation.rawMessage ?? presentation.description}`,
-        );
-      },
-    });
-
-    mapRef.current = runtime.map;
-    deckOverlayRef.current = runtime.overlay;
-
-    return () => {
-      deckOverlayRef.current = null;
-      mapRef.current = null;
-      runtime.destroy();
-      setMapReady(false);
-    };
-  }, [hasRenderableMapContainer, inView, mapMountNonce, setViewState]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || syncFromMapRef.current) {
-      return;
-    }
-
-    const center = map.getCenter();
-    const changed =
-      Math.abs(center.lat - effectiveViewState.lat) > 0.0005 ||
-      Math.abs(center.lng - effectiveViewState.lon) > 0.0005 ||
-      Math.abs(map.getZoom() - effectiveViewState.zoom) > 0.02 ||
-      Math.abs(map.getBearing() - effectiveViewState.bearing) > 0.1 ||
-      Math.abs(map.getPitch() - effectiveViewState.pitch) > 0.1;
-
-    if (!changed) {
-      return;
-    }
-
-    map.easeTo({
-      center: [effectiveViewState.lon, effectiveViewState.lat],
-      zoom: effectiveViewState.zoom,
-      bearing: effectiveViewState.bearing,
-      pitch: effectiveViewState.pitch,
-      duration: 450,
-      essential: true,
-    });
-  }, [effectiveViewState, mapReady]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !inView || !hasRenderableMapContainer) {
-      return;
-    }
-    map.resize();
-  }, [hasRenderableMapContainer, inView, mapReady]);
 
   const monitorPoints = useMemo(
     () =>
@@ -3004,10 +2842,7 @@ export function WarMap({
   );
 
   useEffect(() => {
-    if (!deckOverlayRef.current) {
-      return;
-    }
-    setDeckOverlayProps(deckOverlayRef.current, {
+    setOverlayProps({
       layers: hasRenderableMapContainer ? deckData.deckLayers : [],
       getTooltip: tooltipGetter,
       getCursor: deckCursorGetter,
@@ -3016,6 +2851,7 @@ export function WarMap({
     deckCursorGetter,
     deckData.deckLayers,
     hasRenderableMapContainer,
+    setOverlayProps,
     tooltipGetter,
   ]);
 
