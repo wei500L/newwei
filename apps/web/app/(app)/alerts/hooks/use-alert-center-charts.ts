@@ -38,7 +38,7 @@ export interface UseAlertCenterChartsOptions {
   selectedEvent: AlertEventItem | null;
   filterWindow: AlertTimeWindow;
   replay: ReplayModel | null;
-  replayPoints: ReplayModel["points"];
+  replayPoints: ReplayModel["points"] | undefined;
   replayUnit: string | null | undefined;
   theme: ChartThemeInputs;
 }
