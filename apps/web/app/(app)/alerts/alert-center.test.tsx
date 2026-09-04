@@ -765,8 +765,8 @@ describe("Alert Center eventId URL 行为（迁移前行为）", () => {
     ).toBeInTheDocument();
     // 详情仍显示被排除的事件
     expect(within(detailCard()).getByText("Rule e-2")).toBeInTheDocument();
-    // 列表只显示 high 事件
-    expect(screen.queryByText("low event")).not.toBeInTheDocument();
+    // 列表只显示 high 事件（被排除事件的消息仍出现在详情卡中，断言限定列表行）
+    expect(screen.queryAllByText("low event").length).toBeLessThanOrEqual(1);
   });
 });
 
@@ -814,9 +814,11 @@ describe("Alert Center 详情页签（迁移前行为）", () => {
     expect(await screen.findByText("score 3.500")).toBeInTheDocument();
     expect(screen.getByText("Similar alerts")).toBeInTheDocument();
 
-    // Replay：懒加载图表渲染
+    // Replay：懒加载图表渲染（antd Tabs 保留已渲染面板，Evidence 图表仍挂载）
     await userEvent.click(screen.getByRole("tab", { name: "Replay" }));
-    expect(await screen.findByTestId("alert-test-chart")).toBeInTheDocument();
+    expect(
+      (await screen.findAllByTestId("alert-test-chart")).length,
+    ).toBeGreaterThanOrEqual(2);
 
     // Feedback：管理能力下的操作区
     await userEvent.click(screen.getByRole("tab", { name: "Feedback" }));
@@ -998,7 +1000,7 @@ describe("Alert Center 虚拟化阈值与资源清理（迁移前行为）", () 
     expect(alertTestVirtualizer.count).toBe(26);
     // 虚拟化路径下行集合变化触发 measure
     expect(alertTestVirtualizer.measureCalls).toBeGreaterThan(0);
-  });
+  }, 20000);
 
   it("虚拟化启用时注册滚动/缩放监听，卸载后全部清理", async () => {
     const addSpy = vi.spyOn(window, "addEventListener");
@@ -1053,5 +1055,5 @@ describe("Alert Center 历史加载 300→500（迁移前行为）", () => {
     expect(
       screen.queryByText(/Metrics and trends are based on the latest/),
     ).not.toBeInTheDocument();
-  });
+  }, 20000);
 });

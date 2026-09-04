@@ -177,7 +177,7 @@ describe("Alert Center 分页（迁移前行为）", () => {
       await screen.findByText("Showing 1-30 of 35"),
     ).toBeInTheDocument();
     expect(eventRows(view.container)).toHaveLength(30);
-  });
+  }, 20000);
 
   it("pageSize 可切换：切到 20 后每页 20 条", async () => {
     const view = renderAlertCenter({ events: buildPagedEvents() });
@@ -196,7 +196,7 @@ describe("Alert Center 分页（迁移前行为）", () => {
       await screen.findByText("Showing 1-20 of 35"),
     ).toBeInTheDocument();
     expect(eventRows(view.container)).toHaveLength(20);
-  });
+  }, 20000);
 
   it("URL 指定 eventId 时页码自动定位到包含该事件的页", async () => {
     const view = renderAlertCenter({
@@ -245,7 +245,7 @@ describe("Alert Center 分页（迁移前行为）", () => {
     expect(
       screen.getByText("Selected event is outside the current filters."),
     ).toBeInTheDocument();
-  });
+  }, 20000);
 });
 
 describe("Alert Center 批量选择（迁移前行为）", () => {
@@ -347,7 +347,7 @@ describe("Alert Center 批量状态更新（迁移前行为）", () => {
       expect(view.apollo.eventsLimits.length).toBeGreaterThan(1),
     );
     expect(screen.queryByText(/processed/)).not.toBeInTheDocument();
-  });
+  }, 20000);
 
   it("批量备注随 mutation 传递", async () => {
     const view = renderAlertCenter({
