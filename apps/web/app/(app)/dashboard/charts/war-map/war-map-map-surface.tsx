@@ -1,7 +1,7 @@
 "use client";
 
-import type { RefObject, ReactNode } from "react";
 import { Space, Spin, Typography } from "antd";
+import type { ReactNode, RefObject } from "react";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 

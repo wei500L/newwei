@@ -9,7 +9,6 @@ import type {
 } from "@modular/utils";
 import { Drawer } from "antd";
 import {
-  useMemo,
   type Dispatch,
   type ReactNode,
   type RefObject,
