@@ -1,20 +1,12 @@
 "use client";
 
-import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import {
   Alert,
-  Badge,
   Button,
   Card,
-  Checkbox,
   Col,
   Input,
-  List,
-  Pagination,
-  Popover,
-  Progress,
   Row,
-  Segmented,
   Space,
   Spin,
   Statistic,
@@ -25,7 +17,7 @@ import {
 } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
@@ -48,7 +40,7 @@ import { classifyRequestError } from "@/lib/request-error";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 
 import { AlertCenterFilters } from "./alert-center-filters";
-import { ALERT_URL_PAGE_SIZES } from "./alert-center-url-state";
+import { buildThresholdSummary } from "./alert-center-list-model";
 import {
   buildAlertExportJson,
   buildAlertExportRows,
@@ -60,19 +52,15 @@ import {
   filterAlertEvents,
   resolveAlertCenterAccess,
   resolveFilterTimeWindow,
-  type AlertEventItem,
   type AlertFilterState,
 } from "./alert-center.utils";
+import { AlertEventList } from "./alert-event-list";
+import type { AlertExportScope } from "./alert-event-list-toolbar";
 import {
   buildReplayOption,
   buildRuleTrendOption,
   buildTrendOption,
 } from "./alert-chart-options";
-import {
-  ALERT_EVENT_ROW_ESTIMATE_PX,
-  shouldUpdateAlertEventsMetric,
-  shouldVirtualizeAlertEvents,
-} from "./alert-events-virtualization";
 import { EconomicAnomalyEvidence } from "./economic-anomaly-evidence";
 import { EntityAssociationEvidence } from "./entity-association-evidence";
 import { EntitySentimentEvidence } from "./entity-sentiment-evidence";
@@ -80,7 +68,6 @@ import {
   DetailRow,
   formatContextValue,
   formatMetricChange,
-  isRecord,
   safeJsonStringify,
   toNumber,
   toStringValue,
@@ -97,17 +84,6 @@ const severityColor: Record<string, string> = {
   high: "red",
 };
 
-const eventStatusBadge: Record<
-  string,
-  "success" | "processing" | "error" | "default"
-> = {
-  delivered: "success",
-  pending: "processing",
-  failed: "error",
-  confirmed: "success",
-  ignored: "default",
-};
-
 const deliveryStatusColor: Record<string, string> = {
   pending: "orange",
   sending: "blue",
@@ -115,56 +91,6 @@ const deliveryStatusColor: Record<string, string> = {
   failed: "red",
 };
 
-
-const buildThresholdSummary = (
-  operator: string | null | undefined,
-  thresholdValue: number | undefined,
-  lower: number | undefined,
-  upper: number | undefined,
-  t: (key: string, options?: Record<string, unknown>) => string,
-) => {
-  if (!operator) {
-    return t("common.notAvailable");
-  }
-  const operatorSymbolMap: Record<string, string> = {
-    gt: ">",
-    gte: ">=",
-    lt: "<",
-    lte: "<=",
-    eq: "=",
-  };
-  if (operator === "outside_range" || operator === "within_range") {
-    if (lower === undefined || upper === undefined) {
-      return t("common.notAvailable");
-    }
-    const range = `${lower} - ${upper}`;
-    return t(
-      operator === "outside_range"
-        ? "alerts.center.threshold.outside"
-        : "alerts.center.threshold.within",
-      {
-        defaultValue: `${operator === "outside_range" ? "Outside" : "Within"} ${range}`,
-        range,
-      },
-    );
-  }
-  if (operator === "change_up_pct" || operator === "change_down_pct") {
-    if (thresholdValue === undefined) {
-      return t("common.notAvailable");
-    }
-    const symbol = operator === "change_up_pct" ? ">=" : "<=";
-    return t("alerts.center.threshold.changePct", {
-      defaultValue: `Change ${symbol} ${thresholdValue}%`,
-      symbol,
-      value: thresholdValue,
-    });
-  }
-  if (thresholdValue === undefined) {
-    return t("common.notAvailable");
-  }
-  const symbol = operatorSymbolMap[operator] ?? operator;
-  return `${symbol} ${thresholdValue}`;
-};
 
 const CONTEXT_OBJECT_KEYS = [
   {
@@ -208,7 +134,6 @@ const CONTEXT_OBJECT_KEYS = [
     defaultLabel: "Statuses",
   },
 ];
-type AlertExportScope = "selected" | "page";
 
 export function AlertCenterContent() {
   const { t, i18n } = useTranslation();
@@ -1808,391 +1733,45 @@ export function AlertCenterContent() {
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={14}>
-          <Card
-            className="content-card"
-            title={t("alerts.center.eventsTitle")}
-            extra={
-              <Button size="small" onClick={() => void refetchEvents()}>
-                {t("common.refresh")}
-              </Button>
+          <AlertEventList
+            currentPageEvents={currentPageEvents}
+            filteredEventsCount={filteredEvents.length}
+            selectedEventId={selectedEventId}
+            selectedEventIdSet={selectedEventIdSet}
+            locale={locale}
+            objectKeyLabels={objectKeyLabels}
+            listPage={listPage}
+            listPageSize={listPageSize}
+            eventsLoading={eventsLoading}
+            canManageAlerts={canManageAlerts}
+            selectedEventIdsCount={selectedEventIds.length}
+            allVisibleSelected={allVisibleSelected}
+            selectedVisibleCount={selectedVisibleCount}
+            hiddenSelectedCount={hiddenSelectedCount}
+            exportScope={exportScope}
+            exportEventsCount={exportEvents.length}
+            includeRawExport={includeRawExport}
+            bulkNote={bulkNote}
+            batchProgress={batchProgress}
+            updatingStatus={updatingStatus}
+            onToggleSelectAllVisible={handleSelectAllVisible}
+            onClearHiddenSelection={() =>
+              setSelectedEventIds((prev) =>
+                prev.filter((id) => filteredEventIdSet.has(id)),
+              )
             }
-          >
-            <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-              <div className="flex w-full flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                <Space wrap size={[8, 8]} className="w-full md:w-auto">
-                  <Checkbox
-                    checked={allVisibleSelected}
-                    indeterminate={
-                      selectedVisibleCount > 0 && !allVisibleSelected
-                    }
-                    onChange={(event) =>
-                      handleSelectAllVisible(event.target.checked)
-                    }
-                  >
-                    {t("alerts.center.batch.selectVisible")}
-                  </Checkbox>
-                  <Typography.Text type="secondary">
-                    {t("alerts.center.batch.selectedCount", {
-                      count: selectedEventIds.length,
-                    })}
-                  </Typography.Text>
-                  {hiddenSelectedCount > 0 ? (
-                    <>
-                      <Tag color="gold">
-                        {t("alerts.center.batch.hiddenSelected", {
-                          count: hiddenSelectedCount,
-                        })}
-                      </Tag>
-                      <Button
-                        type="link"
-                        size="small"
-                        onClick={() =>
-                          setSelectedEventIds((prev) =>
-                            prev.filter((id) => filteredEventIdSet.has(id)),
-                          )
-                        }
-                      >
-                        {t("alerts.center.batch.clearHidden")}
-                      </Button>
-                    </>
-                  ) : null}
-                </Space>
-
-                <Space wrap size={[8, 8]} className="w-full md:w-auto">
-                  <Segmented
-                    size="small"
-                    value={exportScope}
-                    onChange={(value) =>
-                      setExportScope(value as AlertExportScope)
-                    }
-                    options={[
-                      {
-                        label: t("alerts.center.export.scopeSelected"),
-                        value: "selected",
-                      },
-                      {
-                        label: t("alerts.center.export.scopePage"),
-                        value: "page",
-                      },
-                    ]}
-                  />
-                  <Typography.Text type="secondary">
-                    {t("alerts.center.export.scopeCount", {
-                      count: exportEvents.length,
-                    })}
-                  </Typography.Text>
-                  <Checkbox
-                    checked={includeRawExport}
-                    onChange={(event) =>
-                      setIncludeRawExport(event.target.checked)
-                    }
-                  >
-                    {t("alerts.center.export.includeRaw")}
-                  </Checkbox>
-                  {canManageAlerts ? (
-                    <>
-                      <Input
-                        size="small"
-                        style={{ width: 180 }}
-                        value={bulkNote}
-                        onChange={(event) => setBulkNote(event.target.value)}
-                        placeholder={t("alerts.center.batch.notePlaceholder")}
-                      />
-                      <Button
-                        size="small"
-                        type="primary"
-                        loading={updatingStatus || Boolean(batchProgress)}
-                        disabled={selectedEventIds.length === 0}
-                        onClick={() => void handleBulkUpdate("confirmed")}
-                      >
-                        {t("alerts.center.batch.confirm")}
-                      </Button>
-                      <Button
-                        size="small"
-                        loading={updatingStatus || Boolean(batchProgress)}
-                        disabled={selectedEventIds.length === 0}
-                        onClick={() => void handleBulkUpdate("ignored")}
-                      >
-                        {t("alerts.center.batch.ignore")}
-                      </Button>
-                    </>
-                  ) : null}
-
-                  <Button
-                    size="small"
-                    disabled={exportEvents.length === 0}
-                    onClick={() => void handleExportCsv()}
-                  >
-                    {t("alerts.center.export.csv")}
-                  </Button>
-                  <Button
-                    size="small"
-                    disabled={exportEvents.length === 0}
-                    onClick={handleExportJson}
-                  >
-                    {t("alerts.center.export.json")}
-                  </Button>
-                </Space>
-              </div>
-
-              {batchProgress ? (
-                <Progress
-                  percent={Math.round(
-                    (batchProgress.done / Math.max(batchProgress.total, 1)) *
-                      100,
-                  )}
-                  size="small"
-                  status="active"
-                  format={() =>
-                    t("alerts.center.batch.progress", {
-                      done: batchProgress.done,
-                      total: batchProgress.total,
-                    })
-                  }
-                />
-              ) : null}
-
-              <div ref={eventsListRef}>
-                <List
-                  loading={eventsLoading}
-                  dataSource={currentPageEventEntries}
-                  header={
-                    shouldVirtualizeCurrentEvents && eventListTopSpacer > 0 ? (
-                      <div style={{ height: eventListTopSpacer }} />
-                    ) : null
-                  }
-                  footer={
-                    shouldVirtualizeCurrentEvents && eventListBottomSpacer > 0 ? (
-                      <div style={{ height: eventListBottomSpacer }} />
-                    ) : null
-                  }
-                  locale={{
-                    emptyText: (
-                      <ChartEmptyState
-                        className="h-auto py-6"
-                        description={t("alerts.center.emptyEvents")}
-                      />
-                    ),
-                  }}
-                  renderItem={(entry) => {
-                  const event = entry.event;
-                  const isSelected = event.id === selectedEventId;
-                  const eventContext =
-                    event.context && typeof event.context === "object"
-                      ? (event.context as Record<string, unknown>)
-                      : null;
-                  const contextSummary = buildContextSummary(eventContext);
-                  const eventThresholdSummary = buildThresholdSummary(
-                    event.operator,
-                    event.thresholdValue ?? toNumber(eventContext?.threshold),
-                    event.thresholdLower ?? toNumber(eventContext?.lower),
-                    event.thresholdUpper ?? toNumber(eventContext?.upper),
-                    t,
-                  );
-                  const seed = isRecord(eventContext?.seed)
-                    ? (eventContext.seed as Record<string, unknown>)
-                    : null;
-
-                  const eventEvidenceSource =
-                    toStringValue(eventContext?.sourceName) ??
-                    toStringValue(eventContext?.sourceEndpoint) ??
-                    toStringValue(eventContext?.sourceField) ??
-                    toStringValue(eventContext?.sourceFunction) ??
-                    toStringValue(eventContext?.source) ??
-                    (event.metricProvider ===
-                    AlertMetricProvider.EconomicAnomaly
-                      ? (toStringValue(eventContext?.itemName) ??
-                        toStringValue(event.metricSlug))
-                      : null) ??
-                    (event.metricProvider ===
-                    AlertMetricProvider.EntitySentiment
-                      ? (toStringValue(eventContext?.entityName) ??
-                        toStringValue(event.metricSlug))
-                      : null) ??
-                    (event.metricProvider ===
-                    AlertMetricProvider.EntityAssociation
-                      ? (toStringValue(seed?.name) ??
-                        toStringValue(event.metricSlug))
-                      : null) ??
-                    toStringValue(event.metricSlug);
-
-                  const changeLabel =
-                    typeof event.changePercent === "number"
-                      ? `${event.changePercent.toFixed(2)}%`
-                      : t("common.notAvailable");
-
-                  const hoverPreview = (
-                    <Space
-                      direction="vertical"
-                      size={4}
-                      style={{ maxWidth: 320 }}
-                    >
-                      <Typography.Text strong>
-                        {event.ruleName ?? t("common.notAvailable")}
-                      </Typography.Text>
-                      <Typography.Text type="secondary">
-                        {t("alerts.events.metrics", {
-                          value: event.metricValue,
-                          change: changeLabel,
-                        })}
-                      </Typography.Text>
-                      <Typography.Text type="secondary">
-                        {t("alerts.events.evidence", {
-                          source:
-                            eventEvidenceSource ?? t("common.notAvailable"),
-                          threshold: eventThresholdSummary,
-                        })}
-                      </Typography.Text>
-                    </Space>
-                  );
-
-                  return (
-                    <List.Item key={event.id}>
-                      <div className="flex w-full items-start gap-3">
-                        <Checkbox
-                          checked={selectedEventIdSet.has(event.id)}
-                          onChange={(changeEvent) =>
-                            handleToggleEventSelection(
-                              event.id,
-                              changeEvent.target.checked,
-                            )
-                          }
-                          onClick={(changeEvent) =>
-                            changeEvent.stopPropagation()
-                          }
-                        />
-                        <Popover content={hoverPreview} placement="rightTop">
-                          <button
-                            type="button"
-                            className="w-full text-left"
-                            onClick={() => handleSelectEvent(event.id)}
-                          >
-                            <div
-                              className="rounded-lg border p-3 transition-colors"
-                              style={{
-                                borderColor: isSelected ? "#93c5fd" : "#e2e8f0",
-                                background: isSelected
-                                  ? "rgba(239,246,255,0.8)"
-                                  : "#fff",
-                              }}
-                            >
-                              <Space size="small" wrap>
-                                <Badge
-                                  status={
-                                    eventStatusBadge[event.status] ?? "default"
-                                  }
-                                />
-                                <Tag
-                                  color={
-                                    severityColor[event.severity] ?? "blue"
-                                  }
-                                >
-                                  {event.severity}
-                                </Tag>
-                                <Tag>{event.status}</Tag>
-                                <Typography.Text>
-                                  {formatDateTime(event.triggeredAt, locale, {
-                                    year: "numeric",
-                                    month: "2-digit",
-                                    day: "2-digit",
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                    timeZoneName: "short",
-                                  })}
-                                </Typography.Text>
-                              </Space>
-
-                              <Space
-                                direction="vertical"
-                                size={2}
-                                style={{ width: "100%", marginTop: 6 }}
-                              >
-                                <Space size="small" wrap>
-                                  <Typography.Text strong>
-                                    {event.metricValue}
-                                  </Typography.Text>
-                                  <Typography.Text type="secondary">
-                                    {t("alerts.events.evidence", {
-                                      source:
-                                        eventEvidenceSource ??
-                                        t("common.notAvailable"),
-                                      threshold: eventThresholdSummary,
-                                    })}
-                                  </Typography.Text>
-                                </Space>
-                                <Typography.Text type="secondary">
-                                  {t("alerts.center.eventSummary", {
-                                    rule:
-                                      event.ruleName ??
-                                      t("common.notAvailable"),
-                                    metric:
-                                      event.metricSlug ??
-                                      t("common.notAvailable"),
-                                  })}
-                                </Typography.Text>
-                                <Typography.Paragraph
-                                  type="secondary"
-                                  style={{ marginBottom: 0 }}
-                                  ellipsis={{ rows: 2 }}
-                                >
-                                  {event.message ??
-                                    t("alerts.events.triggered")}
-                                </Typography.Paragraph>
-                                {contextSummary.length > 0 ? (
-                                  <Space size={[4, 4]} wrap>
-                                    {contextSummary.map((entry) => (
-                                      <Tag
-                                        key={`${event.id}-${entry.key}`}
-                                        className="text-xs"
-                                      >
-                                        {entry.label}:{" "}
-                                        {formatContextValue(entry.value)}
-                                      </Tag>
-                                    ))}
-                                  </Space>
-                                ) : null}
-                              </Space>
-                            </div>
-                          </button>
-                        </Popover>
-                      </div>
-                    </List.Item>
-                  );
-                  }}
-                />
-              </div>
-
-              {filteredEvents.length > listPageSize ? (
-                <Pagination
-                  size="small"
-                  current={listPage}
-                  pageSize={listPageSize}
-                  total={filteredEvents.length}
-                  showSizeChanger
-                  pageSizeOptions={[...ALERT_URL_PAGE_SIZES]}
-                  onChange={(page, pageSize) => {
-                    if (pageSize !== listPageSize) {
-                      // 用户改 pageSize（优先级 3）：page 重置 1 且清除旧
-                      // eventId；不采纳 antd 传入的 page，避免停留在旧行号
-                      // 对应的页码
-                      setListPageSize(pageSize);
-                      return;
-                    }
-                    // 用户翻页（优先级 2）：分页意图优先，setPage 清除与
-                    // 分页冲突的旧 eventId，页面稳定停留目标页
-                    setListPage(page);
-                  }}
-                  showTotal={(total, range) =>
-                    t("alerts.center.batch.pageSummary", {
-                      start: total === 0 ? 0 : range[0],
-                      end: total === 0 ? 0 : range[1],
-                      total,
-                    })
-                  }
-                />
-              ) : null}
-            </Space>
-          </Card>
+            onSetExportScope={setExportScope}
+            onSetIncludeRawExport={setIncludeRawExport}
+            onSetBulkNote={setBulkNote}
+            onExportCsv={() => void handleExportCsv()}
+            onExportJson={() => handleExportJson()}
+            onBulkUpdate={(status) => void handleBulkUpdate(status)}
+            onToggleEventSelection={handleToggleEventSelection}
+            onSelectEvent={handleSelectEvent}
+            onSetPage={setListPage}
+            onSetPageSize={setListPageSize}
+            onRefresh={() => void refetchEvents()}
+          />
         </Col>
 
         <Col xs={24} xl={10}>
