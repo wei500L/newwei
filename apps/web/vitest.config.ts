@@ -56,6 +56,7 @@ export default defineConfig({
         "app/(app)/alerts/hooks/use-alert-event-status-actions.ts",
         "app/(app)/alerts/hooks/use-alert-event-selection.ts",
         "app/(app)/alerts/hooks/use-alert-event-virtualization.ts",
+        "app/(app)/alerts/alert-events-virtualization.ts",
         "app/(app)/alerts/alert-chart-options.ts",
         "app/(app)/alerts/evidence-utils.tsx",
         "app/(app)/alerts/economic-anomaly-evidence.tsx",
