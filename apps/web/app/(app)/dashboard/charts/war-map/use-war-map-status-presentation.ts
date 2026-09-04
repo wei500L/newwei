@@ -45,7 +45,12 @@ export interface UseWarMapStatusPresentationOptions {
     eventsQuery: WarMapPresentationQueryLike;
     newsQuery: WarMapPresentationQueryLike;
     layersQuery: WarMapPresentationQueryLike;
-    monitorsQuery: { isFetching: boolean; error: unknown; dataUpdatedAt: number };
+    monitorsQuery: {
+      isFetching: boolean;
+      error: unknown;
+      data: unknown;
+      dataUpdatedAt: number;
+    };
     /** layers 查询数据（航班/AIS 摘要来源）。 */
     layersAisSummary: Parameters<typeof buildWarMapAisSummaryPresentation>[0]["aisSummary"];
     flightsSummary: Record<string, unknown> | undefined;

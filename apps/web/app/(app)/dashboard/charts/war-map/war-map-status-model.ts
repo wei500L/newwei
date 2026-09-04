@@ -723,7 +723,18 @@ export interface WarMapStatusSummary {
   hasErroredChain: boolean;
   dataStatusColor: string;
   dataStatusLabel: string;
-  detailedChainStatuses: WarMapDetailedChainStatus[];
+  detailedChainStatuses: Array<
+    WarMapDetailedChainStatus & {
+      fetching: boolean;
+      error: boolean;
+      ready: boolean;
+      errorMessage: string | undefined;
+      dataUpdatedAt: number | undefined;
+      sourceUpdatedAt: string | number | undefined;
+      label: string;
+      sourceUpdatedLabel: string;
+    }
+  >;
   summaryDataLabel: string;
 }
 

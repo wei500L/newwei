@@ -104,7 +104,7 @@ export function useWarMapLayers(
     [
       interaction.highlightedLegendItemKey,
       interaction.hoveredInteractionKey,
-      interaction.onPointHover,
+      interaction.handleDeckPointHover,
       interaction.selectedInspectorKey,
     ],
   );
@@ -250,7 +250,9 @@ export function useWarMapLayers(
 
   useEffect(() => {
     setOverlayProps({
-      layers: hasRenderableContainer ? deckData.deckLayers : [],
+      layers: (hasRenderableContainer
+        ? deckData.deckLayers
+        : []) as MapboxOverlayProps["layers"],
       getTooltip: tooltipGetter,
       getCursor: deckCursorGetter,
     });
