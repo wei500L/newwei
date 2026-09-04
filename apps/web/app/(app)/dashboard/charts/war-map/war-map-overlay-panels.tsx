@@ -16,6 +16,8 @@ import {
 
 import type { SupportedLocale } from "@/lib/i18n";
 
+import type { WarMapAisSummaryPresentation } from "./war-map-ais-status";
+import type { WarMapFlightsSummaryPresentation } from "./war-map-flights-status";
 import {
   WarMapControlsPanel,
   WarMapLegendDock,
@@ -34,8 +36,6 @@ import {
   type WarMapTranslateFn,
 } from "./war-map-overlay-model";
 import { WarMapOverlayRail } from "./war-map-overlay-rail";
-import type { WarMapAisSummaryPresentation } from "./war-map-ais-status";
-import type { WarMapFlightsSummaryPresentation } from "./war-map-flights-status";
 import type {
   WarMapLegendItem,
   WarMapLegendSection,

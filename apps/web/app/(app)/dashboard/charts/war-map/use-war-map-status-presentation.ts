@@ -3,12 +3,14 @@
 import type { WarMapLayerVisibility } from "@modular/utils";
 import { useMemo } from "react";
 
-import type { SupportedLocale } from "@/lib/i18n";
-import { formatDateTime } from "@/lib/i18n";
+import {
+  formatDateTime,
+  type SupportedLocale,
+} from "@/lib/i18n";
 
-import type { WarMapTranslateFn } from "./war-map-overlay-model";
 import { buildWarMapAisSummaryPresentation, type WarMapAisSummaryPresentation } from "./war-map-ais-status";
 import { buildWarMapFlightsSummaryPresentation, type WarMapFlightsSummaryPresentation } from "./war-map-flights-status";
+import type { WarMapTranslateFn } from "./war-map-overlay-model";
 import {
   buildWarMapChainStatuses,
   buildWarMapStatusSummary,
