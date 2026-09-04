@@ -7,9 +7,9 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import type { resolveLocale } from "@/lib/i18n";
 
 import type { AlertEventItem } from "./alert-center-list-model";
-import { useAlertEventVirtualization } from "./hooks/use-alert-event-virtualization";
 import { AlertEventListToolbar, type AlertExportScope } from "./alert-event-list-toolbar";
 import { AlertEventRow } from "./alert-event-row";
+import { useAlertEventVirtualization } from "./hooks/use-alert-event-virtualization";
 import { ALERT_URL_PAGE_SIZES } from "./alert-center-url-state";
 
 /**
