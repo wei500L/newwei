@@ -3,6 +3,7 @@
 import { Button, Input, Space, Spin, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
+import type { AlertRuleTuningSuggestionQuery } from "@/graphql/generated";
 import { formatDateTime, type resolveLocale } from "@/lib/i18n";
 
 import type { AlertEventItem } from "./alert-center-list-model";
@@ -25,18 +26,7 @@ export interface AlertEventFeedbackTabProps {
   updatingStatus: boolean;
   onEventStatusUpdate: (status: "confirmed" | "ignored") => void;
   onQuickConfirm: () => void;
-  tuningData: {
-    alertRuleTuningSuggestion: {
-      reviewedEvents: number;
-      confirmedEvents: number;
-      ignoredEvents: number;
-      falsePositiveRate: number | null;
-      message: string | null;
-      suggestedThresholdValue: number | null;
-      suggestedThresholdLower: number | null;
-      suggestedThresholdUpper: number | null;
-    } | null;
-  } | undefined;
+  tuningData: AlertRuleTuningSuggestionQuery | undefined;
   tuningLoading: boolean;
   tuningError: Error | undefined;
 }

@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 
-import { useAlertEventReplayLazyQuery } from "@/graphql/generated";
+import {
+  useAlertEventReplayLazyQuery,
+  type AlertEventReplayQuery,
+} from "@/graphql/generated";
 
 import type { AlertEventItem } from "../alert-center.utils";
 import { readFeedbackPresetNote } from "../alert-event-detail-model";
@@ -14,8 +17,9 @@ import { readFeedbackPresetNote } from "../alert-event-detail-model";
  *   （eventId 不匹配当前事件时重新加载）；
  * - feedback note 预填：从事件 context.feedback.note 读取，事件清空时置空；
  * - detailTab / expand 状态：selectedEventId 变化时重置（既有行为）。
- * 调用方提供 selection 结果（useAlertEventSelection）。
  */
+
+type ReplayModel = NonNullable<AlertEventReplayQuery["alertEventReplay"]>;
 
 export interface UseAlertEventDetailOptions {
   selectedEvent: AlertEventItem | null;
@@ -24,12 +28,11 @@ export interface UseAlertEventDetailOptions {
 
 export interface UseAlertEventDetailResult {
   loadReplay: ReturnType<typeof useAlertEventReplayLazyQuery>[0];
-  replayData: ReturnType<typeof useAlertEventReplayLazyQuery>[1]["data"];
-  replayLoading: ReturnType<typeof useAlertEventReplayLazyQuery>[1]["loading"];
-  replayError: ReturnType<typeof useAlertEventReplayLazyQuery>[1]["error"];
-  /** 与当前选中事件匹配的 replay（不匹配时 null，既有语义）。 */
-  replay: NonNullable<ReturnType<typeof useAlertEventReplayLazyQuery>[1]["data"]>["alertEventReplay"] | null;
-  replayPoints: NonNullable<ReturnType<typeof useAlertEventReplayLazyQuery>[1]["data"]>["alertEventReplay"]["points"] | null | undefined;
+  replay: ReplayModel | null;
+  replayPoints: ReplayModel["points"];
+  replayUnit: string | null | undefined;
+  replayLoading: boolean;
+  replayError: Error | undefined;
   detailTab: string;
   setDetailTab: (tab: string) => void;
   expandMessage: boolean;
@@ -81,6 +84,7 @@ export function useAlertEventDetail({
       ? replayData.alertEventReplay
       : null;
   const replayPoints = replay?.points;
+  const replayUnit = replay?.unit;
 
   // feedback note 预填（事件 context.feedback.note）
   useEffect(() => {
@@ -96,11 +100,11 @@ export function useAlertEventDetail({
 
   return {
     loadReplay,
-    replayData,
-    replayLoading,
-    replayError,
     replay,
     replayPoints,
+    replayUnit,
+    replayLoading,
+    replayError,
     detailTab,
     setDetailTab,
     expandMessage,

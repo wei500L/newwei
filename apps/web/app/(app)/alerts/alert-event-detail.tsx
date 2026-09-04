@@ -12,6 +12,8 @@ import type {
 import type { resolveLocale } from "@/lib/i18n";
 
 import type { AlertEventItem } from "./alert-center-list-model";
+
+type ReplayModel = NonNullable<AlertEventReplayQuery["alertEventReplay"]>;
 import { AlertEventDeliveriesTab } from "./alert-event-deliveries-tab";
 import { AlertEventEvidenceTab } from "./alert-event-evidence-tab";
 import { AlertEventFeedbackTab } from "./alert-event-feedback-tab";
@@ -55,8 +57,8 @@ export interface AlertEventDetailProps {
     falsePositiveRate: number | null;
   };
   ruleTrendOption: EChartsOption;
-  replay: NonNullable<AlertEventReplayQuery["alertEventReplay"]> | null;
-  replayPoints: NonNullable<AlertEventReplayQuery["alertEventReplay"]>["points"] | null | undefined;
+  replay: ReplayModel | null;
+  replayPoints: ReplayModel["points"];
   replayLoading: boolean;
   replayError: Error | undefined;
   replayOption: EChartsOption;
@@ -67,7 +69,7 @@ export interface AlertEventDetailProps {
   updatingStatus: boolean;
   onEventStatusUpdate: (status: "confirmed" | "ignored") => void;
   onQuickConfirm: () => void;
-  tuningData: { alertRuleTuningSuggestion: NonNullable<AlertRuleTuningSuggestionQuery["alertRuleTuningSuggestion"]> } | undefined;
+  tuningData: AlertRuleTuningSuggestionQuery | undefined;
   tuningLoading: boolean;
   tuningError: Error | undefined;
   echartsTheme: string;

@@ -38,7 +38,7 @@ export interface UseAlertEventsFeedOptions {
   shouldQueryEvents: boolean;
   messageApi: AlertMessageApi;
   /** 深链事件不在数据集时 refetch 失败的提示文案。 */
-  errorMessage: (error: Error) => string;
+  errorMessage: (error: unknown) => string;
 }
 
 export interface UseAlertEventsFeedResult {

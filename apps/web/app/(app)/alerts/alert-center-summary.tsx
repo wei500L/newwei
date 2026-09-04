@@ -1,6 +1,7 @@
 "use client";
 
 import { Alert, Button, Card, Col, Row, Statistic, Typography } from "antd";
+import type { EChartsOption } from "echarts";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
@@ -25,7 +26,7 @@ export interface AlertCenterSummaryProps {
   onLoadMore: () => void;
   stats: AlertStats;
   trendPoints: AlertTrendPoint[];
-  trendOption: unknown;
+  trendOption: EChartsOption;
   echartsTheme: string;
   trendWindowLabel: string;
 }

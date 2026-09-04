@@ -7,6 +7,8 @@ import { useTranslation } from "react-i18next";
 import type { AlertEventReplayQuery } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
+type ReplayModel = NonNullable<AlertEventReplayQuery["alertEventReplay"]>;
+
 import {
   buildAlertStats,
   buildAlertTrend,
@@ -35,8 +37,8 @@ export interface UseAlertCenterChartsOptions {
   sortedEvents: AlertEventItem[];
   selectedEvent: AlertEventItem | null;
   filterWindow: AlertTimeWindow;
-  replay: NonNullable<AlertEventReplayQuery["alertEventReplay"]> | null;
-  replayPoints: NonNullable<AlertEventReplayQuery["alertEventReplay"]>["points"] | null | undefined;
+  replay: ReplayModel | null;
+  replayPoints: ReplayModel["points"];
   replayUnit: string | null | undefined;
   theme: ChartThemeInputs;
 }

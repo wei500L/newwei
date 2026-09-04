@@ -4,13 +4,16 @@ import {
   downloadTextFile,
   formatDateForFilename,
 } from "@/lib/data-export";
+import type { TFunction } from "i18next";
+
+import type { formatDateTime } from "@/lib/i18n";
 
 import {
   buildAlertExportJson,
   buildAlertExportRows,
   type AlertEventItem,
 } from "./alert-center.utils";
-import { safeJsonStringify, type TranslateFn } from "./evidence-utils";
+import { safeJsonStringify } from "./evidence-utils";
 
 /**
  * Alert Center 剪贴板与导出域行为（FE-批3B 从 alert-center.tsx 提取）。
@@ -29,13 +32,9 @@ export interface AlertFeedbackMessageApi {
 export function buildAlertMarkdownPayload(options: {
   selectedEvent: AlertEventItem;
   context: Record<string, unknown> | null;
-  locale: string;
-  t: TranslateFn;
-  formatDateTime: (
-    value: string | number,
-    locale: string,
-    opts: Record<string, unknown>,
-  ) => string;
+  locale: Parameters<typeof formatDateTime>[1];
+  t: TFunction;
+  formatDateTime: typeof formatDateTime;
   metricProviderLabel: (provider: string | null | undefined) => string;
   thresholdSummary: string;
 }): string {
@@ -95,12 +94,8 @@ export function createCopyAlertMarkdownHandler(options: {
   context: Record<string, unknown> | null;
   locale: string;
   messageApi: AlertFeedbackMessageApi;
-  t: TranslateFn;
-  formatDateTime: (
-    value: string | number,
-    locale: string,
-    opts: Record<string, unknown>,
-  ) => string;
+  t: TFunction;
+  formatDateTime: typeof formatDateTime;
   metricProviderLabel: (provider: string | null | undefined) => string;
   thresholdSummary: string;
 }) {
@@ -126,7 +121,7 @@ export function createCopyAlertMarkdownHandler(options: {
 
 export function createCopyRawContextHandler(
   context: Record<string, unknown> | null,
-  { messageApi, t }: { messageApi: AlertFeedbackMessageApi; t: TranslateFn },
+  { messageApi, t }: { messageApi: AlertFeedbackMessageApi; t: TFunction },
 ) {
   return async () => {
     if (!context) {
@@ -149,7 +144,7 @@ export function createExportHandlers(options: {
   getExportEvents: () => AlertEventItem[];
   includeRawExport: boolean;
   messageApi: AlertFeedbackMessageApi;
-  t: TranslateFn;
+  t: TFunction;
 }) {
   const { getExportEvents, includeRawExport, messageApi, t } = options;
 

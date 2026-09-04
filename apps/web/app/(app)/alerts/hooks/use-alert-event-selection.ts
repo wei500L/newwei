@@ -138,12 +138,12 @@ export function useAlertEventSelection({
   );
   const previousEventId =
     selectedIndexInFiltered > 0
-      ? filteredEvents[selectedIndexInFiltered - 1]?.id
+      ? (filteredEvents[selectedIndexInFiltered - 1]?.id ?? null)
       : null;
   const nextEventId =
     selectedIndexInFiltered >= 0 &&
     selectedIndexInFiltered < filteredEvents.length - 1
-      ? filteredEvents[selectedIndexInFiltered + 1]?.id
+      ? (filteredEvents[selectedIndexInFiltered + 1]?.id ?? null)
       : null;
 
   return {

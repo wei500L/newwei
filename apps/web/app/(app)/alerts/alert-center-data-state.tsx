@@ -1,8 +1,9 @@
-import type { ReactNode } from "react";
+import type { TFunction } from "i18next";
 
 import type { DataStateBoundaryState } from "@/components/data-state-boundary";
-import { classifyRequestError } from "@/lib/request-error";
+import type { RequestErrorEmptyState } from "@/lib/request-error-empty-state";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
+import { classifyRequestError } from "@/lib/request-error";
 
 /**
  * Alert Center 数据状态分派（FE-批3B 从 alert-center.tsx 提取）。
@@ -14,11 +15,6 @@ import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
  * - refreshing / empty 不在本页接入（notifyOnNetworkStatusChange 未启用）。
  */
 
-export type TranslateFn = (
-  key: string,
-  options?: Record<string, unknown>,
-) => string;
-
 export interface BuildAlertDataStateOptions {
   sessionStatus: string;
   authenticated: boolean;
@@ -27,7 +23,7 @@ export interface BuildAlertDataStateOptions {
   hasEventsData: boolean;
   onRetry: () => void;
   eventsLoading: boolean;
-  t: TranslateFn;
+  t: TFunction;
 }
 
 /** blockingError 的 errorStateOverride 构造（复用 buildRequestErrorEmptyState）。 */
@@ -35,11 +31,11 @@ export function buildBlockingEventsErrorState(options: {
   error: Error;
   onRetry: () => void;
   eventsLoading: boolean;
-  t: TranslateFn;
-}): ReactNode & { detailText?: string } {
+  t: TFunction;
+}): RequestErrorEmptyState {
   const { error, onRetry, eventsLoading, t } = options;
   const baseState = buildRequestErrorEmptyState({
-    t: options.t,
+    t,
     error,
     onRetry,
     actionLoading: eventsLoading,
@@ -71,7 +67,7 @@ export function buildBlockingEventsErrorState(options: {
         ) : null}
       </div>
     ),
-  } as ReactNode & { detailText?: string };
+  };
 }
 
 /** 页面级 DataStateBoundary 状态分派（单一函数，行为保持）。 */

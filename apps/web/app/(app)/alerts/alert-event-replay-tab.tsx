@@ -10,6 +10,8 @@ import type { AlertEventReplayQuery } from "@/graphql/generated";
 
 import type { AlertEventItem } from "./alert-center-list-model";
 
+type ReplayModel = NonNullable<AlertEventReplayQuery["alertEventReplay"]>;
+
 /**
  * Alert Center 详情 Replay 页签（FE-批3B 从 alert-center.tsx 提取）。
  * 懒加载门禁在编排层（选中 replay tab 且存在事件时才请求）。
@@ -17,8 +19,8 @@ import type { AlertEventItem } from "./alert-center-list-model";
 
 export interface AlertEventReplayTabProps {
   selectedEvent: AlertEventItem;
-  replay: NonNullable<AlertEventReplayQuery["alertEventReplay"]> | null;
-  replayPoints: NonNullable<AlertEventReplayQuery["alertEventReplay"]>["points"] | null | undefined;
+  replay: ReplayModel | null;
+  replayPoints: ReplayModel["points"];
   replayLoading: boolean;
   replayError: Error | undefined;
   replayOption: EChartsOption;
