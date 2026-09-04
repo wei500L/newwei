@@ -60,6 +60,29 @@ vi.mock("@/components/echart", async () => {
   };
 });
 
+// jsdom 无完整 antd token 上下文与真实 CSS 变量；图表主题走确定性替身
+// （Alert Center 仅消费 colors/fontFamily/echartsTheme 三个值）。
+vi.mock("@/hooks/use-chart-theme", () => ({
+  useChartTheme: () => ({
+    echartsTheme: "smart-light",
+    colors: {
+      primary: "#1f3b7b",
+      bullish: "#1b9e77",
+      bearish: "#d95f02",
+      destructive: "#dc2626",
+      accent: "#d97706",
+      background: "transparent",
+      foreground: "#475569",
+      border: "#e2e8f0",
+      grid: "rgba(15, 23, 42, 0.08)",
+      tooltipBg: "#0f172a",
+      tooltipText: "#f8fafc",
+      secondary: "#e2e8f0",
+    },
+    fontFamily: "var(--font-mono), monospace",
+  }),
+}));
+
 vi.mock("@tanstack/react-virtual", async () => {
   const { alertTestVirtualizer } = await import("./alert-center-test-support");
   return {
