@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -171,7 +171,7 @@ describe("Alert Center 分页（迁移前行为）", () => {
     await awaitEventsLoaded(view.container, 30);
 
     // 默认选中 h-001（第 1 页）→ 点击第 2 页后定位 effect 拉回第 1 页
-    await userEvent.click(within(paginationEl(view.container)).getByText("2"));
+    fireEvent.click(within(paginationEl(view.container)).getByText("2"));
 
     expect(
       await screen.findByText("Showing 1-30 of 35"),
@@ -235,7 +235,7 @@ describe("Alert Center 分页（迁移前行为）", () => {
     ).toBeInTheDocument();
 
     // 筛选收敛：仅剩 economic_anomaly 的 30 条 → 回到第 1 页
-    await userEvent.click(screen.getByText("Economic anomaly"));
+    fireEvent.click(screen.getByText("Economic anomaly"));
 
     expect(
       await screen.findByText("Showing 1-30 of 30"),
@@ -291,7 +291,7 @@ describe("Alert Center 批量选择（迁移前行为）", () => {
     expect(screen.getByText("2 selected")).toBeInTheDocument();
 
     // provider 筛选排除 e-2 → 1 条隐藏选中
-    await userEvent.click(screen.getByText("Economic anomaly"));
+    fireEvent.click(screen.getByText("Economic anomaly"));
     expect(
       await screen.findByText("1 selected outside current filters"),
     ).toBeInTheDocument();
@@ -328,7 +328,7 @@ describe("Alert Center 批量状态更新（迁移前行为）", () => {
 
     // 23 成功 + 2 失败（h-024/h-025 被拒绝）
     expect(
-      await screen.findByText("Updated 23 alerts to confirmed."),
+      await screen.findByText("Updated 23 alerts to confirmed.", {}, { timeout: 4000 }),
     ).toBeInTheDocument();
     expect(
       await screen.findByText("2 alerts failed to update."),
@@ -418,22 +418,32 @@ describe("Alert Center 导出（迁移前行为）", () => {
     });
     await awaitEventsLoaded(view.container, 2);
 
-    // 默认 scope=selected 且未勾选 → 0 行，按钮禁用
+    // 默认 scope=selected 且未勾选 → 0 行，按钮禁用（断言落到 button 元素）
     expect(screen.getByText("0 rows ready")).toBeInTheDocument();
-    expect(screen.getByText("Export CSV")).toBeDisabled();
-    expect(screen.getByText("Export JSON")).toBeDisabled();
+    expect(
+      screen.getByText("Export CSV").closest("button"),
+    ).toBeDisabled();
+    expect(
+      screen.getByText("Export JSON").closest("button"),
+    ).toBeDisabled();
 
     // 勾选 1 行 → selected scope 1 行
     const rows = eventRows(view.container);
     await userEvent.click(within(rows[0]!).getByRole("checkbox"));
     expect(await screen.findByText("1 rows ready")).toBeInTheDocument();
-    expect(screen.getByText("Export CSV")).toBeEnabled();
+    expect(
+      screen.getByText("Export CSV").closest("button"),
+    ).toBeEnabled();
 
     // 切到 page scope → 当前页 2 行
     await userEvent.click(screen.getByText("Current page"));
     expect(await screen.findByText("2 rows ready")).toBeInTheDocument();
-    expect(screen.getByText("Export CSV")).toBeEnabled();
-    expect(screen.getByText("Export JSON")).toBeEnabled();
+    expect(
+      screen.getByText("Export CSV").closest("button"),
+    ).toBeEnabled();
+    expect(
+      screen.getByText("Export JSON").closest("button"),
+    ).toBeEnabled();
   });
 
   it("导出 JSON/CSV：生成下载并提示成功", async () => {

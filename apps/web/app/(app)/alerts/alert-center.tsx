@@ -56,8 +56,12 @@ import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { classifyRequestError } from "@/lib/request-error";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
-import { ALERT_LINE_COLORS } from "@/lib/status-tokens";
 
+import {
+  buildReplayOption,
+  buildRuleTrendOption,
+  buildTrendOption,
+} from "./alert-chart-options";
 import {
   buildAlertExportJson,
   buildAlertExportRows,
@@ -941,202 +945,34 @@ export function AlertCenterContent() {
     }
   }, [filteredEvents, listPage, listPageSize, selectedEventId]);
 
-  const replayOption = useMemo<EChartsOption>(() => {
-    if (!replay || !replayPoints || replayPoints.length === 0) {
-      return {};
-    }
+  const replayOption = useMemo<EChartsOption>(
+    () =>
+      buildReplayOption(
+        { replay, replayPoints, replayUnit, selectedEvent },
+        { primary: colors.primary, accent: colors.accent, fontFamily },
+      ),
+    [colors.accent, colors.primary, fontFamily, replay, replayPoints, replayUnit, selectedEvent],
+  );
 
-    const operator = selectedEvent?.operator ?? null;
-    const thresholdValue =
-      typeof selectedEvent?.thresholdValue === "number" &&
-      Number.isFinite(selectedEvent.thresholdValue)
-        ? selectedEvent.thresholdValue
-        : null;
-    const thresholdLower =
-      typeof selectedEvent?.thresholdLower === "number" &&
-      Number.isFinite(selectedEvent.thresholdLower)
-        ? selectedEvent.thresholdLower
-        : null;
-    const thresholdUpper =
-      typeof selectedEvent?.thresholdUpper === "number" &&
-      Number.isFinite(selectedEvent.thresholdUpper)
-        ? selectedEvent.thresholdUpper
-        : null;
+  const trendOption = useMemo<EChartsOption>(
+    () =>
+      buildTrendOption(
+        trendPoints,
+        { primary: colors.primary, accent: colors.accent, fontFamily },
+        t,
+      ),
+    [colors.accent, colors.primary, fontFamily, t, trendPoints],
+  );
 
-    const markLineData: {
-      yAxis: number;
-      lineStyle?: { type?: "dashed"; color?: string };
-      label?: { formatter?: string };
-    }[] = [];
-    if (
-      operator &&
-      ["gt", "gte", "lt", "lte", "eq"].includes(operator) &&
-      thresholdValue !== null
-    ) {
-      markLineData.push({
-        yAxis: thresholdValue,
-        lineStyle: { type: "dashed", color: colors.accent },
-        label: { formatter: `threshold ${thresholdValue}` },
-      });
-    }
-    if (
-      operator &&
-      ["outside_range", "within_range"].includes(operator) &&
-      thresholdLower !== null &&
-      thresholdUpper !== null
-    ) {
-      markLineData.push(
-        {
-          yAxis: thresholdLower,
-          lineStyle: { type: "dashed", color: colors.accent },
-          label: { formatter: `lower ${thresholdLower}` },
-        },
-        {
-          yAxis: thresholdUpper,
-          lineStyle: { type: "dashed", color: colors.accent },
-          label: { formatter: `upper ${thresholdUpper}` },
-        },
-      );
-    }
-
-    return {
-      tooltip: { trigger: "axis" },
-      grid: { top: 20, left: 40, right: 20, bottom: 30, containLabel: true },
-      xAxis: { type: "time" },
-      yAxis: { type: "value", name: replayUnit ?? undefined },
-      series: [
-        {
-          type: "line",
-          smooth: true,
-          showSymbol: false,
-          data: replayPoints.map((point) => [point.timestamp, point.value]),
-          lineStyle: { width: 2, color: colors.primary },
-          areaStyle: { opacity: 0.06, color: colors.primary },
-          ...(markLineData.length > 0
-            ? {
-                markLine: {
-                  symbol: "none",
-                  data: markLineData,
-                },
-              }
-            : {}),
-        },
-      ],
-      textStyle: { fontFamily },
-    };
-  }, [
-    colors.accent,
-    colors.primary,
-    fontFamily,
-    replay,
-    replayPoints,
-    replayUnit,
-    selectedEvent?.operator,
-    selectedEvent?.thresholdLower,
-    selectedEvent?.thresholdUpper,
-    selectedEvent?.thresholdValue,
-  ]);
-
-  const trendOption = useMemo<EChartsOption>(() => {
-    if (trendPoints.length === 0) {
-      return {};
-    }
-
-    return {
-      tooltip: { trigger: "axis" },
-      legend: {
-        data: [
-          t("alerts.center.filters.severity.low"),
-          t("alerts.center.filters.severity.medium"),
-          t("alerts.center.filters.severity.high"),
-        ],
-      },
-      grid: { top: 36, left: 26, right: 14, bottom: 30, containLabel: true },
-      xAxis: {
-        type: "category",
-        data: trendPoints.map((point) => dayjs(point.date).format("MM-DD")),
-      },
-      yAxis: { type: "value", minInterval: 1 },
-      series: [
-        {
-          name: t("alerts.center.filters.severity.low"),
-          type: "line",
-          smooth: true,
-          data: trendPoints.map((point) => point.low),
-          lineStyle: { color: ALERT_LINE_COLORS.low },
-        },
-        {
-          name: t("alerts.center.filters.severity.medium"),
-          type: "line",
-          smooth: true,
-          data: trendPoints.map((point) => point.medium),
-          lineStyle: { color: ALERT_LINE_COLORS.medium },
-        },
-        {
-          name: t("alerts.center.filters.severity.high"),
-          type: "line",
-          smooth: true,
-          data: trendPoints.map((point) => point.high),
-          lineStyle: { color: ALERT_LINE_COLORS.high },
-        },
-      ],
-      textStyle: { fontFamily },
-    };
-  }, [fontFamily, t, trendPoints]);
-
-  const ruleTrendOption = useMemo<EChartsOption>(() => {
-    if (ruleTrendAnalysis.points.length === 0) {
-      return {};
-    }
-
-    return {
-      tooltip: { trigger: "axis" },
-      grid: { top: 30, left: 26, right: 20, bottom: 30, containLabel: true },
-      legend: {
-        data: [
-          t("alerts.center.analysis.triggerFrequency"),
-          t("alerts.center.analysis.falsePositiveTrend"),
-        ],
-      },
-      xAxis: {
-        type: "category",
-        data: ruleTrendAnalysis.points.map((point) =>
-          dayjs(point.date).format("MM-DD"),
-        ),
-      },
-      yAxis: [
-        { type: "value", minInterval: 1 },
-        {
-          type: "value",
-          min: 0,
-          max: 100,
-          axisLabel: { formatter: "{value}%" },
-        },
-      ],
-      series: [
-        {
-          name: t("alerts.center.analysis.triggerFrequency"),
-          type: "bar",
-          barMaxWidth: 24,
-          data: ruleTrendAnalysis.points.map((point) => point.triggers),
-          itemStyle: { color: colors.primary },
-        },
-        {
-          name: t("alerts.center.analysis.falsePositiveTrend"),
-          type: "line",
-          yAxisIndex: 1,
-          smooth: true,
-          data: ruleTrendAnalysis.points.map((point) =>
-            typeof point.falsePositiveRate === "number"
-              ? Number((point.falsePositiveRate * 100).toFixed(2))
-              : null,
-          ),
-          lineStyle: { color: colors.accent },
-        },
-      ],
-      textStyle: { fontFamily },
-    };
-  }, [colors.accent, colors.primary, fontFamily, ruleTrendAnalysis.points, t]);
+  const ruleTrendOption = useMemo<EChartsOption>(
+    () =>
+      buildRuleTrendOption(
+        ruleTrendAnalysis,
+        { primary: colors.primary, accent: colors.accent, fontFamily },
+        t,
+      ),
+    [colors.accent, colors.primary, fontFamily, ruleTrendAnalysis, t],
+  );
 
   const trendWindowLabel = useMemo(() => {
     if (filterWindow.startMs === null || filterWindow.endMs === null) {

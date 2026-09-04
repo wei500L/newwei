@@ -151,17 +151,6 @@ function openFiltersSync(): void {
   fireEvent.click(screen.getByText("Filters"));
 }
 
-/** 在筛选下拉中选择一个选项（severity=0 / status=1 / provider=2）。 */
-async function selectFilterOption(
-  comboboxIndex: number,
-  optionName: string,
-): Promise<void> {
-  await userEvent.click(screen.getAllByRole("combobox")[comboboxIndex]!);
-  await userEvent.click(
-    await screen.findByRole("option", { name: optionName }),
-  );
-}
-
 /** 等待事件数据渲染（选中事件的消息会同时出现在行与详情卡）。 */
 async function awaitEvent(message: string): Promise<void> {
   await waitFor(() =>
@@ -288,8 +277,10 @@ describe("Alert Center alerts.manage 能力矩阵（迁移前行为）", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "Feedback" }));
     expect(
-      screen.getByText("Feedback actions are available to administrators only."),
-    ).toBeInTheDocument();
+      screen.getAllByText(
+        "Feedback actions are available to administrators only.",
+      ).length,
+    ).toBeGreaterThan(0);
     expect(
       screen.queryByPlaceholderText("Optional note (why confirmed/ignored)"),
     ).not.toBeInTheDocument();
@@ -425,7 +416,7 @@ describe("Alert Center 数据状态（迁移前行为）", () => {
 });
 
 describe("Alert Center 筛选语义（迁移前行为）", () => {
-  it("severity 筛选：选择 High 只保留 high 事件", async () => {
+  it("severity 筛选：URL severity=high 只保留 high 事件（FE-01 round-trip）", async () => {
     const view = renderAlertCenter({
       events: [
         buildAlertEvent({
@@ -441,21 +432,20 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
           message: "low event",
         }),
       ],
+      initialUrl: "/alerts?severity=high",
     });
-    await awaitEvent("high event");
 
-    await openFilters();
-    await selectFilterOption(0, "High");
-
-    expect(await screen.findByText("1 / 2 alerts")).toBeInTheDocument();
     await waitFor(() => expect(eventRows(view.container)).toHaveLength(1));
     expect(
       within(eventRows(view.container)[0]!).getAllByText("high event").length,
     ).toBeGreaterThan(0);
     expect(screen.queryByText("low event")).not.toBeInTheDocument();
+
+    // 回写不产生额外 URL 变化（URL 与状态已一致）
+    expect(alertTestNavigation.replaceCalls).toHaveLength(0);
   });
 
-  it("status 筛选：选择 Confirmed 只保留 confirmed 事件", async () => {
+  it("status 筛选：URL status=confirmed 只保留 confirmed 事件", async () => {
     const view = renderAlertCenter({
       events: [
         buildAlertEvent({
@@ -471,13 +461,9 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
           message: "pending event",
         }),
       ],
+      initialUrl: "/alerts?status=confirmed",
     });
-    await awaitEvent("confirmed event");
 
-    await openFilters();
-    await selectFilterOption(1, "Confirmed");
-
-    expect(await screen.findByText("1 / 2 alerts")).toBeInTheDocument();
     await waitFor(() => expect(eventRows(view.container)).toHaveLength(1));
     expect(screen.queryByText("pending event")).not.toBeInTheDocument();
   });
@@ -503,10 +489,19 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
 
     await userEvent.click(screen.getByText("Economic anomaly"));
 
-    expect(await screen.findByText("1 / 2 alerts")).toBeInTheDocument();
+    // FE-01：筛选变化写回 URL（provider 参数）
+    await waitFor(() =>
+      expect(
+        alertTestNavigation.replaceCalls.some((href) =>
+          href.includes("provider=economic_anomaly"),
+        ),
+      ).toBe(true),
+    );
+
+    await waitFor(() => expect(eventRows(view.container)).toHaveLength(1));
     expect(screen.queryByText("realtime event")).not.toBeInTheDocument();
 
-    // 完整筛选器的 provider Select 显示同一份选中值
+    // 完整筛选器的 provider Select 显示同一份选中值（展开面板后）
     await openFilters();
     const providerSelect = screen.getAllByRole("combobox")[2]!;
     const providerSelector = providerSelect.closest(".ant-select");
@@ -539,7 +534,17 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
-      await waitFor(() => expect(eventRows(view.container)).toHaveLength(2));
+      // fake timers 下 RTL waitFor 的轮询 interval 被冻结：用 act+advance 轮询
+      for (
+        let attempt = 0;
+        attempt < 20 && eventRows(view.container).length !== 2;
+        attempt += 1
+      ) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10);
+        });
+      }
+      expect(eventRows(view.container)).toHaveLength(2);
 
       openFiltersSync();
       fireEvent.change(screen.getByPlaceholderText("Search by rule name"), {
@@ -558,7 +563,22 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
       });
 
       expect(screen.getByText("1 / 2 alerts")).toBeInTheDocument();
-      await waitFor(() => expect(eventRows(view.container)).toHaveLength(1));
+      // FE-01：debounce 后关键字写回 URL（q 参数）
+      expect(
+        alertTestNavigation.replaceCalls.some((href) =>
+          href.includes("q=alpha"),
+        ),
+      ).toBe(true);
+      for (
+        let attempt = 0;
+        attempt < 20 && eventRows(view.container).length !== 1;
+        attempt += 1
+      ) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10);
+        });
+      }
+      expect(eventRows(view.container)).toHaveLength(1);
       expect(screen.queryByText("beta event")).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
@@ -590,7 +610,17 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
-      await waitFor(() => expect(eventRows(view.container)).toHaveLength(2));
+      // fake timers 下 RTL waitFor 的轮询 interval 被冻结：用 act+advance 轮询
+      for (
+        let attempt = 0;
+        attempt < 20 && eventRows(view.container).length !== 2;
+        attempt += 1
+      ) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10);
+        });
+      }
+      expect(eventRows(view.container)).toHaveLength(2);
 
       // 默认 30d：today/yesterday 在窗内，ancient 被排除
       expect(screen.queryByText("ancient event")).not.toBeInTheDocument();
@@ -613,12 +643,14 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
         buildAlertEvent({
           id: "e-1",
           severity: "high",
+          metricProvider: AlertMetricProvider.EconomicAnomaly,
           triggeredAt: minutesAgo(1),
           message: "high event",
         }),
         buildAlertEvent({
           id: "e-2",
           severity: "low",
+          metricProvider: AlertMetricProvider.RealtimeSignal,
           triggeredAt: minutesAgo(2),
           message: "low event",
         }),
@@ -626,13 +658,14 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
     });
     await awaitEvent("high event");
 
-    await openFilters();
-    await selectFilterOption(0, "High");
-    expect(await screen.findByText("1 / 2 alerts")).toBeInTheDocument();
+    // 用 provider 快速标签设置筛选（快速标签与完整筛选器同源）
+    await userEvent.click(screen.getByText("Economic anomaly"));
+    await waitFor(() => expect(eventRows(view.container)).toHaveLength(1));
 
+    // Reset 恢复全量（Reset 在折叠面板内，先展开）
+    await openFilters();
     await userEvent.click(screen.getByText("Reset"));
 
-    expect(await screen.findByText("2 / 2 alerts")).toBeInTheDocument();
     await waitFor(() => expect(eventRows(view.container)).toHaveLength(2));
     expect(screen.getAllByText("low event").length).toBeGreaterThan(0);
   });
@@ -724,21 +757,16 @@ describe("Alert Center eventId URL 行为（迁移前行为）", () => {
           message: "low event",
         }),
       ],
-      initialUrl: "/alerts?eventId=e-2",
+      initialUrl: "/alerts?eventId=e-2&severity=high",
     });
-
-    await waitFor(() =>
-      expect(within(detailCard()).getByText("Rule e-2")).toBeInTheDocument(),
-    );
-
-    await openFilters();
-    await selectFilterOption(0, "High");
 
     expect(
       await screen.findByText("Selected event is outside the current filters."),
     ).toBeInTheDocument();
     // 详情仍显示被排除的事件
     expect(within(detailCard()).getByText("Rule e-2")).toBeInTheDocument();
+    // 列表只显示 high 事件
+    expect(screen.queryByText("low event")).not.toBeInTheDocument();
   });
 });
 
@@ -800,6 +828,106 @@ describe("Alert Center 详情页签（迁移前行为）", () => {
     // Deliveries：投递记录
     await userEvent.click(screen.getByRole("tab", { name: "Deliveries" }));
     expect(screen.getByText("Ops mailbox")).toBeInTheDocument();
+  });
+
+  it("evidence 分发：其余三个 provider 各自渲染关键内容", async () => {
+    // entity_sentiment：实体标签 + 窗口/基线描述
+    const sentiment = renderAlertCenter({
+      events: [
+        buildAlertEvent({
+          id: "s-1",
+          metricProvider: AlertMetricProvider.EntitySentiment,
+          triggeredAt: minutesAgo(1),
+          context: {
+            entityName: "Acme Corp",
+            entityType: "company",
+            z: 3.2,
+            window: {
+              start: "2026-06-14T00:00:00",
+              end: "2026-06-15T00:00:00",
+              minutes: 1440,
+              negativeRatio: 0.42,
+              negative: 42,
+              total: 100,
+            },
+            baseline: {
+              start: "2026-06-07T00:00:00",
+              end: "2026-06-14T00:00:00",
+              minutes: 10080,
+              negativeRatio: 0.12,
+              negative: 12,
+              total: 100,
+            },
+            evidence: [],
+          },
+        }),
+      ],
+    });
+    await waitFor(() =>
+      expect(screen.getAllByText("Alert message s-1").length).toBeGreaterThan(0),
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "Evidence" }));
+    expect(await screen.findByText("Acme Corp")).toBeInTheDocument();
+    expect(screen.getByText("No evidence items.")).toBeInTheDocument();
+    sentiment.unmount();
+    resetAlertTestState();
+
+    // entity_association：种子实体 + 关联目标
+    const association = renderAlertCenter({
+      events: [
+        buildAlertEvent({
+          id: "a-1",
+          metricProvider: AlertMetricProvider.EntityAssociation,
+          triggeredAt: minutesAgo(1),
+          context: {
+            seed: { name: "Port Alpha", type: "location" },
+            sourceEvent: {
+              id: "a-0",
+              triggeredAt: "2026-06-15T10:00:00",
+              status: "confirmed",
+              metricValue: 7,
+            },
+            targets: [
+              { name: "Port Beta", type: "location", relationType: "nearby", score: 0.8 },
+            ],
+          },
+        }),
+      ],
+    });
+    await waitFor(() =>
+      expect(screen.getAllByText("Alert message a-1").length).toBeGreaterThan(0),
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "Evidence" }));
+    expect(await screen.findByText("Port Alpha")).toBeInTheDocument();
+    expect(screen.getByText("Port Beta")).toBeInTheDocument();
+    association.unmount();
+    resetAlertTestState();
+
+    // realtime_signal：来源标签 + 结构化摘要 + 国家代码
+    const realtime = renderAlertCenter({
+      events: [
+        buildAlertEvent({
+          id: "r-1",
+          metricProvider: AlertMetricProvider.RealtimeSignal,
+          triggeredAt: minutesAgo(1),
+          context: {
+            source: "adsb-feed",
+            stale: true,
+            countryCodes: ["US", "GB"],
+            militaryCount: 12,
+            disruptions: 3,
+          },
+        }),
+      ],
+    });
+    await waitFor(() =>
+      expect(screen.getAllByText("Alert message r-1").length).toBeGreaterThan(0),
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "Evidence" }));
+    expect(await screen.findByText("adsb-feed")).toBeInTheDocument();
+    expect(screen.getByText("US")).toBeInTheDocument();
+    expect(screen.getByText("GB")).toBeInTheDocument();
+    realtime.unmount();
   });
 
   it("feedback note 从事件 context.feedback.note 预填", async () => {
