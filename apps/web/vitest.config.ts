@@ -34,6 +34,8 @@ export default defineConfig({
         "app/(app)/alerts/alert-center.tsx",
         "app/(app)/alerts/alert-center-url-state.ts",
         "app/(app)/alerts/hooks/use-alert-center-url-state.ts",
+        "app/(app)/alerts/hooks/use-alert-events-feed.ts",
+        "app/(app)/alerts/hooks/use-alert-event-status-actions.ts",
         "app/(app)/alerts/alert-chart-options.ts",
         "app/(app)/alerts/evidence-utils.tsx",
         "app/(app)/alerts/economic-anomaly-evidence.tsx",

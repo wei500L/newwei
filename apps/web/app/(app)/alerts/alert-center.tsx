@@ -1,6 +1,5 @@
 "use client";
 
-import { gql, useApolloClient, useMutation } from "@apollo/client";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import {
   Alert,
@@ -38,14 +37,11 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DataStateBoundary, type DataStateBoundaryState } from "@/components/data-state-boundary";
 import { DashboardChart } from "@/components/echart";
 import {
-  AlertEventsStreamDocument,
   AlertMetricProvider,
   useAlertEventReplayLazyQuery,
-  useAlertEventsQuery,
   useAlertRuleTuningSuggestionQuery,
 } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
-import { createCoalescedRefetchScheduler } from "@/lib/coalesced-refetch";
 import {
   buildCsv,
   downloadCsv,
@@ -96,6 +92,8 @@ import {
   toStringValue,
 } from "./evidence-utils";
 import { useAlertCenterUrlState } from "./hooks/use-alert-center-url-state";
+import { useAlertEventStatusActions } from "./hooks/use-alert-event-status-actions";
+import { useAlertEventsFeed } from "./hooks/use-alert-events-feed";
 import { RealtimeSignalEvidence } from "./realtime-signal-evidence";
 
 const severityColor: Record<string, string> = {
@@ -121,27 +119,6 @@ const deliveryStatusColor: Record<string, string> = {
   sent: "green",
   failed: "red",
 };
-
-const UPDATE_ALERT_EVENT_STATUS = gql`
-  mutation UpdateAlertEventStatus($input: UpdateAlertEventStatusInput!) {
-    updateAlertEventStatus(input: $input) {
-      id
-      status
-    }
-  }
-`;
-
-interface UpdateAlertEventStatusData {
-  updateAlertEventStatus: { id: string; status: string };
-}
-
-interface UpdateAlertEventStatusVariables {
-  input: {
-    eventId: string;
-    status: string;
-    note?: string | null;
-  };
-}
 
 
 const buildThresholdSummary = (
@@ -227,7 +204,6 @@ const STATUS_OPTIONS = [
   "confirmed",
   "ignored",
 ];
-const MAX_EVENTS_LIMIT = 500;
 const CONTEXT_OBJECT_KEYS = [
   {
     key: "countryName",
@@ -275,7 +251,6 @@ type AlertExportScope = "selected" | "page";
 export function AlertCenterContent() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const client = useApolloClient();
   const { data: session, status: sessionStatus } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const { authenticated, canReadAlerts, shouldQueryEvents } =
@@ -283,16 +258,11 @@ export function AlertCenterContent() {
   const canManageAlerts = permissions.includes("alerts.manage");
   const [messageApi, messageContext] = message.useMessage();
 
-  const [eventsLimit, setEventsLimit] = useState(300);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
   const [feedbackNote, setFeedbackNote] = useState<string>("");
   const [bulkNote, setBulkNote] = useState<string>("");
   const [includeRawExport, setIncludeRawExport] = useState<boolean>(false);
-  const [batchProgress, setBatchProgress] = useState<{
-    done: number;
-    total: number;
-  } | null>(null);
   const [detailTab, setDetailTab] = useState<string>("overview");
   const [openFilterPanelKeys, setOpenFilterPanelKeys] = useState<string[]>([]);
   const eventsListRef = useRef<HTMLDivElement | null>(null);
@@ -301,8 +271,22 @@ export function AlertCenterContent() {
   const [expandMessage, setExpandMessage] = useState<boolean>(false);
   const [expandContext, setExpandContext] = useState<boolean>(false);
 
+  // 数据 feed（FE-批3B）：query / 订阅 / coalesced refetch / 排序 / 300→500
+  const {
+    eventsData,
+    eventsError,
+    eventsLoading,
+    refetchEvents,
+    sortedEvents,
+    isLikelySampled,
+    canLoadMoreHistory,
+    eventsLimit,
+    loadMoreEvents,
+    ensureEventLoaded,
+  } = useAlertEventsFeed();
+
   // FE-01：筛选 / 分页 / 关键字 / 日期 / eventId 全部 URL-backed
-  // （eventsLimit、批量选择、备注、导出 scope、展开态、detailTab 仍为
+  // （批量选择、备注、导出 scope、展开态、detailTab 仍为
   // 组件内存态，见 useAlertCenterUrlState 的契约注释）
   const {
     filterState,
@@ -326,52 +310,37 @@ export function AlertCenterContent() {
     { data: replayData, loading: replayLoading, error: replayError },
   ] = useAlertEventReplayLazyQuery();
 
+  const selectedRuleId = useMemo(
+    () =>
+      sortedEvents.find((event) => event.id === selectedEventId)?.ruleId ??
+      null,
+    [selectedEventId, sortedEvents],
+  );
+
   const {
-    data: eventsData,
-    error: eventsError,
-    loading: eventsLoading,
-    refetch: refetchEvents,
-  } = useAlertEventsQuery({
-    variables: { limit: eventsLimit },
-    skip: !shouldQueryEvents,
+    data: tuningData,
+    loading: tuningLoading,
+    error: tuningError,
+    refetch: refetchTuning,
+  } = useAlertRuleTuningSuggestionQuery({
+    variables: { ruleId: selectedRuleId ?? "", windowDays: 30 },
+    skip: !canManageAlerts || !selectedRuleId,
   });
 
-  const [updateEventStatus, { loading: updatingStatus }] = useMutation<
-    UpdateAlertEventStatusData,
-    UpdateAlertEventStatusVariables
-  >(UPDATE_ALERT_EVENT_STATUS);
-
-  useEffect(() => {
-    if (!shouldQueryEvents) {
-      return;
-    }
-    const refetchScheduler = createCoalescedRefetchScheduler(() =>
-      refetchEvents(),
-    );
-    const sub = client
-      .subscribe({
-        query: AlertEventsStreamDocument,
-      })
-      .subscribe({
-        next: () => {
-          refetchScheduler.schedule();
-        },
-      });
-
-    return () => {
-      sub.unsubscribe();
-      refetchScheduler.cancel();
-    };
-  }, [client, refetchEvents, shouldQueryEvents]);
-
-  const sortedEvents = useMemo(() => {
-    const events = eventsData?.alertEvents ?? [];
-    return [...events].sort((a, b) => {
-      const aTime = new Date(a.triggeredAt).getTime();
-      const bTime = new Date(b.triggeredAt).getTime();
-      return bTime - aTime;
-    });
-  }, [eventsData?.alertEvents]);
+  // 状态修改与批量操作（FE-批3B）：20 条分批 + alerts.manage 双重门禁
+  const {
+    updatingStatus,
+    batchProgress,
+    executeStatusUpdate,
+  } = useAlertEventStatusActions({
+    canManageAlerts,
+    refetchAfterSuccess: async () => {
+      await refetchEvents();
+      if (selectedRuleId && canManageAlerts) {
+        await refetchTuning({ ruleId: selectedRuleId, windowDays: 30 });
+      }
+    },
+  });
 
   // rule keyword 的 220ms debounce 由 useAlertCenterUrlState 承载
   // （输入即时值 ruleKeywordInput → 静默后写入 URL q → appliedRuleKeyword）
@@ -399,22 +368,6 @@ export function AlertCenterContent() {
     () => new Set(filteredEvents.map((event) => event.id)),
     [filteredEvents],
   );
-  const selectedRuleId = useMemo(
-    () =>
-      sortedEvents.find((event) => event.id === selectedEventId)?.ruleId ??
-      null,
-    [selectedEventId, sortedEvents],
-  );
-
-  const {
-    data: tuningData,
-    loading: tuningLoading,
-    error: tuningError,
-    refetch: refetchTuning,
-  } = useAlertRuleTuningSuggestionQuery({
-    variables: { ruleId: selectedRuleId ?? "", windowDays: 30 },
-    skip: !canManageAlerts || !selectedRuleId,
-  });
 
   const selectedEvent = useMemo(
     () => sortedEvents.find((event) => event.id === selectedEventId) ?? null,
@@ -503,92 +456,9 @@ export function AlertCenterContent() {
     if (!eventId) {
       return;
     }
-
-    const exists = sortedEvents.some((event) => event.id === eventId);
-    if (!exists) {
-      const nextLimit = Math.max(eventsLimit, 500);
-      setEventsLimit(nextLimit);
-      try {
-        await refetchEvents({ limit: nextLimit });
-      } catch (error) {
-        messageApi.error(
-          error instanceof Error
-            ? error.message
-            : t("common.error.unexpected"),
-        );
-      }
-    }
-
+    // 深链事件不在当前数据集：feed 扩充 limit 至 500 并 refetch（一次性）
+    await ensureEventLoaded(eventId);
     handleSelectEvent(eventId);
-  };
-
-  const executeStatusUpdate = async (
-    eventIds: string[],
-    status: "confirmed" | "ignored",
-    note: string | null,
-  ) => {
-    if (!canManageAlerts || eventIds.length === 0) {
-      return 0;
-    }
-
-    const uniqueIds = [...new Set(eventIds)];
-    const batchSize = 20;
-    let successCount = 0;
-    let failCount = 0;
-    let processed = 0;
-    setBatchProgress({ done: 0, total: uniqueIds.length });
-
-    for (let index = 0; index < uniqueIds.length; index += batchSize) {
-      const currentBatch = uniqueIds.slice(index, index + batchSize);
-      const results = await Promise.allSettled(
-        currentBatch.map((eventId) =>
-          updateEventStatus({
-            variables: {
-              input: {
-                eventId,
-                status,
-                note,
-              },
-            },
-          }),
-        ),
-      );
-      successCount += results.filter(
-        (result) => result.status === "fulfilled",
-      ).length;
-      failCount += results.filter(
-        (result) => result.status === "rejected",
-      ).length;
-      processed += currentBatch.length;
-      setBatchProgress({ done: processed, total: uniqueIds.length });
-    }
-
-    setBatchProgress(null);
-
-    if (successCount > 0) {
-      messageApi.success(
-        t("alerts.center.batch.updateSuccess", {
-          count: successCount,
-          status,
-        }),
-      );
-    }
-    if (failCount > 0) {
-      messageApi.warning(
-        t("alerts.center.batch.updatePartial", {
-          count: failCount,
-        }),
-      );
-    }
-
-    if (successCount > 0) {
-      await refetchEvents();
-      if (selectedRuleId && canManageAlerts) {
-        await refetchTuning({ ruleId: selectedRuleId, windowDays: 30 });
-      }
-    }
-
-    return successCount;
   };
 
   const handleEventStatusUpdate = async (status: "confirmed" | "ignored") => {
@@ -912,17 +782,6 @@ export function AlertCenterContent() {
     if (canManageAlerts && selectedRuleId) {
       await refetchTuning({ ruleId: selectedRuleId, windowDays: 30 });
     }
-  };
-
-  const isLikelySampled = sortedEvents.length >= eventsLimit;
-  const canLoadMoreHistory = eventsLimit < MAX_EVENTS_LIMIT;
-  const handleLoadMoreEvents = async () => {
-    if (!canLoadMoreHistory) {
-      return;
-    }
-    const nextLimit = Math.min(eventsLimit + 200, MAX_EVENTS_LIMIT);
-    setEventsLimit(nextLimit);
-    await refetchEvents({ limit: nextLimit });
   };
 
   // FE-01 分页优先级契约（完整定义见 useAlertCenterUrlState 注释）。
@@ -2091,7 +1950,7 @@ export function AlertCenterContent() {
             canLoadMoreHistory ? (
               <Button
                 size="small"
-                onClick={() => void handleLoadMoreEvents()}
+                onClick={() => void loadMoreEvents()}
                 loading={eventsLoading}
               >
                 {t("alerts.center.sampleWarning.loadMore")}
