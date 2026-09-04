@@ -17,12 +17,12 @@ import {
 import type { SupportedLocale } from "@/lib/i18n";
 
 import type { WarMapAisSummaryPresentation } from "./war-map-ais-status";
-import type { WarMapFlightsSummaryPresentation } from "./war-map-flights-status";
 import {
   WarMapControlsPanel,
   WarMapLegendDock,
   WarMapLegendPanel,
 } from "./war-map-controls-panel";
+import type { WarMapFlightsSummaryPresentation } from "./war-map-flights-status";
 import { WarMapInspectorPanel } from "./war-map-inspector-panel";
 import {
   OVERLAY_SURFACE_CLASS_NAME,

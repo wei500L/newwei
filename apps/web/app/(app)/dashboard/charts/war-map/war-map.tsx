@@ -30,8 +30,8 @@ import { useWarMapStatusPresentation } from "./use-war-map-status-presentation";
 import { useWarMapTransportDetail } from "./use-war-map-transport-detail";
 import { useWarMapUrlState } from "./use-war-map-url-state";
 import { WAR_MAP_UNSUPPORTED_LAYER_IDS } from "./war-map-data";
-import { buildWarMapLoadOverlayState } from "./war-map-load-state";
 import { resolveWarMapContainerClassName } from "./war-map-layout";
+import { buildWarMapLoadOverlayState } from "./war-map-load-state";
 import {
   WarMapMapSurface,
   WarMapPreparingSurface,
