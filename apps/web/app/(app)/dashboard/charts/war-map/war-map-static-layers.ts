@@ -26,7 +26,10 @@ import {
   type DeckPoint,
 } from "./war-map-point-model";
 import { toTransportSelectionKey } from "./war-map-selection-model";
-import { buildWarMapStaticVectorLayers } from "./war-map-static-vector-layers";
+import {
+  buildWarMapStaticVectorLayers,
+  readLayerFeatureCopy,
+} from "./war-map-static-vector-layers";
 import type { BuildWarMapSymbolPointLayersInput } from "./war-map-symbol-layers";
 import {
   coerceHexColor,
@@ -159,8 +162,11 @@ export function buildWarMapStaticLayers(
           isValidLatLng(feature.lat, feature.lng),
       )
       .map((feature) => {
-        const { description, label, properties } =
-          readLayerFeatureCopy(feature);
+        const { description, label, properties } = readLayerFeatureCopy(
+          feature,
+          layerLabel,
+          translateTarget,
+        );
         const flight = readWarMapFlightProperties(properties);
         const symbolKey = flight
           ? ("flight" as const)

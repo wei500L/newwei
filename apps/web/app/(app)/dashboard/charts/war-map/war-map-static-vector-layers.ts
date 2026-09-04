@@ -8,7 +8,7 @@ import {
   isValidDeckCoordinate,
   type DeckCoordinate,
 } from "./war-map-geometry";
-import type { DeckPoint } from "./war-map-point-model";
+import { toRgba, type DeckPoint } from "./war-map-point-model";
 import type { BuildWarMapSymbolPointLayersInput } from "./war-map-symbol-layers";
 
 export interface WarMapStaticVectorLayersOptions {
@@ -103,7 +103,7 @@ function summarizePolygonInput(polygon: unknown): {
 
 
 /** 读取图层要素的本地化文案（name/description）。 */
-function readLayerFeatureCopy(
+export function readLayerFeatureCopy(
   feature: Pick<WarMapLayerFeature, "id" | "properties">,
   layerLabel: string,
   translateTarget?: WarMapTranslateTarget,
@@ -215,7 +215,7 @@ export function buildWarMapStaticVectorLayers(
         );
       }
       if (paths.length > 0) {
-        staticLayers.push(
+        layers.push(
           new PathLayer({
             id: `wm-path-${layerId}`,
             data: paths,
@@ -231,7 +231,7 @@ export function buildWarMapStaticVectorLayers(
         );
       }
       if (pathFallbackPoints.length > 0) {
-        staticLayers.push(
+        layers.push(
           ...buildSymbolPointLayers({
             id: `wm-path-${layerId}-points`,
             data: pathFallbackPoints,
@@ -240,7 +240,7 @@ export function buildWarMapStaticVectorLayers(
           }),
         );
       }
-      continue;
+      return { handled: true, layers };
     }
 
     if (dataset.geometryType === "polygon") {
@@ -323,7 +323,7 @@ export function buildWarMapStaticVectorLayers(
         );
       }
       if (polygons.length > 0) {
-        staticLayers.push(
+        layers.push(
           new PolygonLayer({
             id: `wm-polygon-${layerId}`,
             data: polygons,
@@ -344,7 +344,7 @@ export function buildWarMapStaticVectorLayers(
         );
       }
       if (polygonOutlineFeatures.length > 0) {
-        staticLayers.push(
+        layers.push(
           new PathLayer({
             id: `wm-polygon-${layerId}-fragments`,
             data: polygonOutlineFeatures,
@@ -364,7 +364,7 @@ export function buildWarMapStaticVectorLayers(
         );
       }
       if (polygonFallbackPoints.length > 0) {
-        staticLayers.push(
+        layers.push(
           ...buildSymbolPointLayers({
             id: `wm-polygon-${layerId}-points`,
             data: polygonFallbackPoints,
@@ -373,9 +373,8 @@ export function buildWarMapStaticVectorLayers(
           }),
         );
       }
-      continue;
+      return { handled: true, layers };
     }
-
 
   return { handled: true, layers };
 }
