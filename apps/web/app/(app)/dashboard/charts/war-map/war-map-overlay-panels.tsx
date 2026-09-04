@@ -34,10 +34,8 @@ import {
   type WarMapTranslateFn,
 } from "./war-map-overlay-model";
 import { WarMapOverlayRail } from "./war-map-overlay-rail";
-import type {
-  WarMapAisSummaryPresentation,
-  WarMapFlightsSummaryPresentation,
-} from "./war-map-status-model";
+import type { WarMapAisSummaryPresentation } from "./war-map-ais-status";
+import type { WarMapFlightsSummaryPresentation } from "./war-map-flights-status";
 import type {
   WarMapLegendItem,
   WarMapLegendSection,
