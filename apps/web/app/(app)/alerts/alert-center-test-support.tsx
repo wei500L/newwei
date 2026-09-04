@@ -122,7 +122,8 @@ export function buildAlertEvent(input: AlertTestEventInput): AlertEventItem {
     severity: SEVERITY_MAP[input.severity ?? "high"],
     status: STATUS_MAP[input.status ?? "pending"],
     message: input.message ?? `Alert message ${input.id}`,
-    ruleId: input.ruleId ?? "rule-1",
+    // ruleId 允许显式传 null（tuning 门禁测试）；undefined 才取默认
+    ruleId: input.ruleId !== undefined ? input.ruleId : "rule-1",
     ruleName: input.ruleName ?? `Rule ${input.id}`,
     metricProvider: input.metricProvider ?? AlertMetricProvider.SystemMetric,
     metricSlug: input.metricSlug ?? "metric.test",

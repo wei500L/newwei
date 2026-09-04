@@ -1,6 +1,8 @@
-# PR 描述（草稿——随批次推进更新）
+# PR 描述（历史存档——PR #4 已合并）
 
 ## refactor(web): 拆分 Alert Center 并落地 URL 状态与数据边界
+
+> 状态（FE-批3B 勘误）：PR #4 已合并进 main（合并提交 b9669b2b，main 合并后 CI run 33858778995 success）。本文件为历史描述存档；最终 CI run 33857305521 @ 966b6b0f。批次 D（列表域/详情域拆分）由后续 FE-批3B / PR #5 完成。
 
 FE-批3：Alert Center 领域拆分 + useUrlState + DataStateBoundary（修复 FE-01）。
 
@@ -18,9 +20,9 @@ FE-批3：Alert Center 领域拆分 + useUrlState + DataStateBoundary（修复 F
 - [x] 批次 A：迁移前 characterization tests（生产代码零改动）
 - [x] 批次 B：`useUrlState` 原语 + Alert Center URL codec/组合 hook
 - [x] 批次 C：`DataStateBoundary` 展示原语
-- [ ] 批次 D：Alert Center 领域拆分
-- [ ] FE-03 coverage include 扩充
-- [ ] 文档收口
+- [x] 批次 D（部分）：证据域四组件 + 图表构建器拆出；列表域/详情域拆分由 FE-批3B（PR #5）完成
+- [x] FE-03 coverage include 扩充（8→22；FE-批3B 继续扩至约 40）
+- [x] 文档收口
 
 ## 3. 非变更范围
 
@@ -87,7 +89,8 @@ FE-批3：Alert Center 领域拆分 + useUrlState + DataStateBoundary（修复 F
 
 ## 8. 远端 CI 与 HEAD SHA
 
-（收口时填写）
+- 最终 PR CI：run 33857305521（HEAD 966b6b0f，verify + vector-integration success）
+- main 合并提交：b9669b2b；main 合并后 CI：run 33858778995（verify success / vector-integration success / contract-baseline-regen skipped-push 事件正常跳过）
 
 ## 9. 未验证项
 

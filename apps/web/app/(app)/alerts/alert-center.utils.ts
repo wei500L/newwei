@@ -79,6 +79,16 @@ export interface AlertCenterAccessState {
 
 const PENDING_STATUSES = new Set(["pending", "delivered", "failed"]);
 
+/** 筛选域默认态（filterWindow 派生与筛选重置的单一事实源）。 */
+export const DEFAULT_FILTER_STATE: AlertFilterState = {
+  severities: [],
+  statuses: [],
+  providers: [],
+  ruleKeyword: "",
+  datePreset: "30d",
+  customRangeMs: null,
+};
+
 export function resolveAlertCenterAccess(
   sessionStatus: AlertCenterSessionStatus,
   permissions: readonly string[],
