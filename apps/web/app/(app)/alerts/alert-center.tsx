@@ -217,7 +217,9 @@ export function AlertCenterContent() {
 
   const handleEventStatusUpdate = async (status: "confirmed" | "ignored") => {
     if (!selectedEvent || !canManageAlerts) return;
-    const note = feedbackNote.trim() ? feedbackNote.trim() : null;
+    const note = detail.feedbackNote.trim()
+      ? detail.feedbackNote.trim()
+      : null;
     await executeStatusUpdate([selectedEvent.id], status, note);
   };
 
