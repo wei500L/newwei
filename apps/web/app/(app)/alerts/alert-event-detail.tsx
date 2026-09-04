@@ -12,13 +12,13 @@ import type {
 import type { resolveLocale } from "@/lib/i18n";
 
 import type { AlertEventItem } from "./alert-center-list-model";
-
-type ReplayModel = NonNullable<AlertEventReplayQuery["alertEventReplay"]>;
 import { AlertEventDeliveriesTab } from "./alert-event-deliveries-tab";
 import { AlertEventEvidenceTab } from "./alert-event-evidence-tab";
 import { AlertEventFeedbackTab } from "./alert-event-feedback-tab";
 import { AlertEventOverviewTab } from "./alert-event-overview-tab";
 import { AlertEventReplayTab } from "./alert-event-replay-tab";
+
+type ReplayModel = NonNullable<AlertEventReplayQuery["alertEventReplay"]>;
 
 /**
  * Alert Center 详情域编排（FE-批3B 从 alert-center.tsx 提取）。
