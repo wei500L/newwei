@@ -158,6 +158,12 @@ async function awaitEvent(message: string): Promise<void> {
   );
 }
 
+/** 最近一次 router.replace 的 href（空串表示尚未写入）。 */
+function lastReplaceHref(): string {
+  const calls = alertTestNavigation.replaceCalls;
+  return calls[calls.length - 1] ?? "";
+}
+
 afterEach(() => {
   resetAlertTestState();
 });
@@ -636,6 +642,115 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
       vi.useRealTimers();
     }
   });
+
+  it("自定义时间范围 UI 接线：Custom 激活 RangePicker，区间写入 URL 且 page 重置；清空回退 30d", async () => {
+    vi.useFakeTimers({ now: new Date("2026-06-15T12:00:00") });
+    try {
+      // 36 条：35 条在 2026-06-15（30d 与 custom 06-01..06-15 均可见），
+      // 1 条在 2026-05-20（30d 可见、custom 06-01..06-15 之外）
+      const events = [
+        ...Array.from({ length: 35 }, (_, index) =>
+          buildAlertEvent({
+            id: `h-${String(index + 1).padStart(3, "0")}`,
+            triggeredAt: new Date(
+              new Date("2026-06-15T12:00:00").getTime() -
+                (index + 1) * 60_000,
+            ).toISOString(),
+          }),
+        ),
+        buildAlertEvent({
+          id: "e-may",
+          triggeredAt: "2026-05-20T10:00:00",
+          message: "may event",
+        }),
+      ];
+      const view = renderAlertCenter({
+        events,
+        initialUrl: "/alerts?page=2&foo=bar",
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      for (
+        let attempt = 0;
+        attempt < 20 && eventRows(view.container).length !== 6;
+        attempt += 1
+      ) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10);
+        });
+      }
+      // URL page=2 恢复：第 2 页为 31-36（含 may event）
+      expect(screen.getByText("Showing 31-36 of 36")).toBeInTheDocument();
+
+      openFiltersSync();
+      // Custom 之前 RangePicker 禁用
+      const rangePicker = view.container.querySelector(".ant-picker");
+      expect(rangePicker).not.toBeNull();
+      expect(rangePicker).toHaveClass("ant-picker-disabled");
+
+      // 点击 Custom：RangePicker 立即可用，且不会立即回退到 30d
+      fireEvent.click(screen.getByText("Custom"));
+      expect(rangePicker).not.toHaveClass("ant-picker-disabled");
+      expect(
+        screen.getByText("Custom").closest(".ant-segmented-item"),
+      ).toHaveClass("ant-segmented-item-selected");
+      // Custom 也是筛选变化：page 重置 1（36 条仍在 30d/custom 无日期窗口内）
+      expect(screen.getByText("Showing 1-30 of 36")).toBeInTheDocument();
+
+      // 打开面板选择 2026-06-01 → 2026-06-15（面板默认展示当前月：六月）
+      fireEvent.click(rangePicker!);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      const startCell = document.querySelector('td[title="2026-06-01"]');
+      expect(startCell).not.toBeNull();
+      fireEvent.click(startCell!);
+      const endCell = document.querySelector('td[title="2026-06-15"]');
+      expect(endCell).not.toBeNull();
+      fireEvent.click(endCell!);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      // custom 区间生效：may event 被排除（36 → 35），page 停留 1
+      expect(screen.getByText("Showing 1-30 of 35")).toBeInTheDocument();
+      expect(screen.queryByText("may event")).not.toBeInTheDocument();
+      // 输入框显示所选起止日期（本地时区 YYYY-MM-DD，既有语义不变）
+      const [startInput, endInput] = Array.from(
+        view.container.querySelectorAll<HTMLInputElement>(".ant-picker input"),
+      );
+      expect(startInput).toHaveValue("2026-06-01");
+      expect(endInput).toHaveValue("2026-06-15");
+      // URL：range=custom + from/to；page 重置默认 1（省略）；未知参数保留
+      const rangeHref = lastReplaceHref();
+      expect(rangeHref).toContain("range=custom");
+      expect(rangeHref).toContain("from=2026-06-01");
+      expect(rangeHref).toContain("to=2026-06-15");
+      expect(rangeHref).toContain("foo=bar");
+      expect(rangeHref).not.toContain("page=");
+
+      // 清空日期：回退默认 30d，删除 range/from/to
+      const clearIcon = view.container.querySelector(".ant-picker-clear");
+      expect(clearIcon).not.toBeNull();
+      fireEvent.click(clearIcon!);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByText("Showing 1-30 of 36")).toBeInTheDocument();
+      const clearedHref = lastReplaceHref();
+      expect(clearedHref).not.toContain("range=");
+      expect(clearedHref).not.toContain("from=");
+      expect(clearedHref).not.toContain("to=");
+      expect(clearedHref).not.toContain("page=");
+      expect(clearedHref).toContain("foo=bar");
+      expect(
+        screen.getByText("Last 30 days").closest(".ant-segmented-item"),
+      ).toHaveClass("ant-segmented-item-selected");
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 20000);
 
   it("重置筛选：回到默认全量视图", async () => {
     const view = renderAlertCenter({
