@@ -3,12 +3,12 @@
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useRef, useState } from "react";
 
+import type { AlertEventItem } from "../alert-center.utils";
 import {
   ALERT_EVENT_ROW_ESTIMATE_PX,
   shouldUpdateAlertEventsMetric,
   shouldVirtualizeAlertEvents,
 } from "../alert-events-virtualization";
-import type { AlertEventItem } from "../alert-center.utils";
 
 /**
  * Alert Center 事件列表虚拟化（FE-批3B 从 alert-center.tsx 提取）。
@@ -20,7 +20,7 @@ import type { AlertEventItem } from "../alert-center.utils";
  */
 
 export interface AlertEventListEntry {
-  event: import("../alert-center.utils").AlertEventItem;
+  event: AlertEventItem;
   key: string;
   virtualIndex: number;
 }
@@ -34,7 +34,7 @@ export interface UseAlertEventVirtualizationResult {
 }
 
 export function useAlertEventVirtualization(
-  currentPageEvents: import("../alert-center.utils").AlertEventItem[],
+  currentPageEvents: AlertEventItem[],
 ): UseAlertEventVirtualizationResult {
   const eventsListRef = useRef<HTMLDivElement | null>(null);
   const [eventsListScrollMargin, setEventsListScrollMargin] = useState(0);

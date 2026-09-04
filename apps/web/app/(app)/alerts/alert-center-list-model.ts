@@ -1,5 +1,6 @@
 import type { AlertEventsQuery } from "@/graphql/generated";
 import type { resolveLocale } from "@/lib/i18n";
+
 import type { TranslateFn } from "./evidence-utils";
 
 /**

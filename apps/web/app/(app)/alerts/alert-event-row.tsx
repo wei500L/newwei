@@ -4,20 +4,20 @@ import { Badge, Checkbox, List, Popover, Space, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { AlertMetricProvider } from "@/graphql/generated";
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { formatDateTime, type resolveLocale } from "@/lib/i18n";
 
+import {
+  buildThresholdSummary,
+  type AlertEventItem,
+  type LocaleCode,
+  type TranslateFn,
+} from "./alert-center-list-model";
 import {
   toNumber,
   toStringValue,
   isRecord,
   formatContextValue,
 } from "./evidence-utils";
-import {
-  buildThresholdSummary,
-  type AlertEventItem,
-  type TranslateFn,
-  type LocaleCode,
-} from "./alert-center-list-model";
 
 /**
  * Alert Center 事件行（FE-批3B 从 alert-center.tsx 提取）。

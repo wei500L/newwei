@@ -6,6 +6,7 @@ import {
   Card,
   Col,
   Input,
+  List,
   Row,
   Space,
   Spin,
@@ -54,13 +55,13 @@ import {
   resolveFilterTimeWindow,
   type AlertFilterState,
 } from "./alert-center.utils";
-import { AlertEventList } from "./alert-event-list";
-import type { AlertExportScope } from "./alert-event-list-toolbar";
 import {
   buildReplayOption,
   buildRuleTrendOption,
   buildTrendOption,
 } from "./alert-chart-options";
+import { AlertEventList } from "./alert-event-list";
+import type { AlertExportScope } from "./alert-event-list-toolbar";
 import { EconomicAnomalyEvidence } from "./economic-anomaly-evidence";
 import { EntityAssociationEvidence } from "./entity-association-evidence";
 import { EntitySentimentEvidence } from "./entity-sentiment-evidence";
@@ -686,25 +687,6 @@ export function AlertCenterContent() {
   const visibleAdditionalContext = expandContext
     ? additionalContext
     : additionalContext.slice(0, 6);
-
-  const buildContextSummary = (input: Record<string, unknown> | null) => {
-    if (!input) {
-      return [];
-    }
-    return objectKeyLabels
-      .map((entry) => ({
-        key: entry.key,
-        label: entry.label,
-        value: input[entry.key],
-      }))
-      .filter(
-        (entry) =>
-          entry.value !== null &&
-          entry.value !== undefined &&
-          entry.value !== "",
-      )
-      .slice(0, 3);
-  };
 
   const evidenceWindowMinutes =
     selectedEvent?.changeWindowMin ?? toNumber(context?.windowMinutes);
