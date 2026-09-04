@@ -4,7 +4,6 @@ import { Alert, Button, Card, Space, Tabs } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
-import type { resolveLocale } from "@/lib/i18n";
 
 import type { AlertEventItem } from "./alert-center-list-model";
 import type {
@@ -12,6 +11,7 @@ import type {
   AlertEventDetailClipboard,
   AlertEventDetailFeedback,
   AlertEventDetailNavigation,
+  AlertEventDetailPresentation,
   AlertEventDetailReplay,
   AlertEventDetailTheme,
   AlertEventDetailView,
@@ -38,8 +38,7 @@ export interface AlertEventDetailProps {
   /** filtered 中的序号与全集（filtered-out 提示判定）。 */
   selectedIndexInFiltered: number;
   filteredEvents: AlertEventItem[];
-  locale: ReturnType<typeof resolveLocale>;
-  objectKeyLabels: { key: string; label: string }[];
+  presentation: AlertEventDetailPresentation;
   navigation: AlertEventDetailNavigation;
   view: AlertEventDetailView;
   clipboard: AlertEventDetailClipboard;
@@ -54,12 +53,12 @@ export function AlertEventDetail(props: AlertEventDetailProps) {
     selectedEvent,
     selectedIndexInFiltered,
     filteredEvents,
-    locale,
-    objectKeyLabels,
+    presentation,
     navigation,
     view,
     clipboard,
   } = props;
+  const { locale, objectKeyLabels } = presentation;
   const { t } = useTranslation();
 
   if (!selectedEvent) {

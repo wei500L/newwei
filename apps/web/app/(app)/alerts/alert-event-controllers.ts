@@ -5,7 +5,6 @@ import type { AlertExportScope } from "./alert-event-list-toolbar";
 import type { useAlertEventBatch } from "./hooks/use-alert-event-batch";
 import type { useAlertEventDetail } from "./hooks/use-alert-event-detail";
 import type { useAlertEventSelection } from "./hooks/use-alert-event-selection";
-import type { useAlertEventStatusActions } from "./hooks/use-alert-event-status-actions";
 
 /**
  * Alert Center 领域契约（第四轮静态收口）。
@@ -143,6 +142,12 @@ export interface AlertEventDetailFeedback {
   };
 }
 
+/** 详情页签展示上下文：locale + 本地化对象键标签（跨页签共用）。 */
+export interface AlertEventDetailPresentation {
+  locale: ReturnType<typeof import("@/lib/i18n").resolveLocale>;
+  objectKeyLabels: { key: string; label: string }[];
+}
+
 /** 详情展示主题：图表主题色与字体（useChartTheme 切片）。 */
 export interface AlertEventDetailTheme {
   echartsTheme: string;
@@ -173,22 +178,10 @@ export function buildSelectionController(
 }
 
 /** 由散装状态装配工具栏控制器（批量+导出）。 */
-export function buildToolbarController(input: {
-  canManageAlerts: boolean;
-  bulkNote: string;
-  setBulkNote: (note: string) => void;
-  includeRawExport: boolean;
-  setIncludeRawExport: (checked: boolean) => void;
-  exportScope: AlertExportScope;
-  setExportScope: (scope: AlertExportScope) => void;
-  exportEventsCount: number;
-  exportCsv: () => void;
-  exportJson: () => void;
-  batchProgress: ReturnType<typeof useAlertEventStatusActions>["batchProgress"];
-  updatingStatus: boolean;
-  bulkUpdate: (status: "confirmed" | "ignored") => void;
-}): AlertEventToolbarController {
-  return input;
+export function buildToolbarController(
+  controller: AlertEventToolbarController,
+): AlertEventToolbarController {
+  return controller;
 }
 
 /** 由选择 hook 结果装配详情导航控制器。 */

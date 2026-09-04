@@ -38,6 +38,7 @@ export default defineConfig({
         "app/(app)/alerts/alert-center-filters.tsx",
         "app/(app)/alerts/alert-center-summary.tsx",
         "app/(app)/alerts/alert-center-list-model.ts",
+        "app/(app)/alerts/alert-event-controllers.ts",
         "app/(app)/alerts/alert-event-detail-model.ts",
         "app/(app)/alerts/hooks/use-alert-event-detail.ts",
         "app/(app)/alerts/hooks/use-alert-event-batch.ts",

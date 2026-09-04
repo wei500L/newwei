@@ -44,7 +44,7 @@ const eventStatusBadge: Record<
   ignored: "default",
 };
 
-export interface AlertEventRowContextSummaryEntry {
+interface AlertEventRowContextSummaryEntry {
   key: string;
   label: string;
   value: unknown;
@@ -61,7 +61,7 @@ export interface AlertEventRowProps {
 }
 
 /** 行级 context 摘要（前 3 个对象键），label 已本地化。 */
-export function buildRowContextSummary(
+function buildRowContextSummary(
   eventContext: Record<string, unknown> | null,
   objectKeyLabels: { key: string; label: string }[],
 ): AlertEventRowContextSummaryEntry[] {
@@ -84,7 +84,7 @@ export function buildRowContextSummary(
 }
 
 /** 行级证据来源（provider 特化回退链）。 */
-export function buildRowEvidenceSource(
+function buildRowEvidenceSource(
   event: AlertEventItem,
   eventContext: Record<string, unknown> | null,
 ): string | undefined {

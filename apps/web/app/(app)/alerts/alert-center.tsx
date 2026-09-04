@@ -461,8 +461,7 @@ export function AlertCenterContent() {
             selectedEvent={selectedEvent}
             selectedIndexInFiltered={selectedIndexInFiltered}
             filteredEvents={filteredEvents}
-            locale={locale}
-            objectKeyLabels={objectKeyLabels}
+            presentation={{ locale, objectKeyLabels }}
             navigation={detailNavigation}
             view={detailView}
             clipboard={{
