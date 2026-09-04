@@ -5,6 +5,7 @@ import type {
   WarMapFlightMode,
   WarMapTransportDetail,
 } from "@modular/utils";
+import type { WarMapLayerId, WarMapLayerVisibility, WarMapPreset, WarMapTimeRangePreset } from "@modular/utils";
 import { Drawer } from "antd";
 import {
   type Dispatch,
@@ -15,7 +16,6 @@ import {
 
 import type { SupportedLocale } from "@/lib/i18n";
 
-import type { WarMapLayerId, WarMapLayerVisibility, WarMapPreset, WarMapTimeRangePreset } from "@modular/utils";
 import {
   WarMapControlsPanel,
   WarMapLegendDock,
@@ -34,10 +34,6 @@ import {
   type WarMapTranslateFn,
 } from "./war-map-overlay-model";
 import { WarMapOverlayRail } from "./war-map-overlay-rail";
-import {
-  useWarMapViewOptions,
-  WarMapLayerVisibilityControls,
-} from "./war-map-view-controls";
 import type {
   WarMapAisSummaryPresentation,
   WarMapFlightsSummaryPresentation,
@@ -46,6 +42,10 @@ import type {
   WarMapLegendItem,
   WarMapLegendSection,
 } from "./war-map-symbols";
+import {
+  useWarMapViewOptions,
+  WarMapLayerVisibilityControls,
+} from "./war-map-view-controls";
 
 export interface WarMapTransportPanelPropsInput {
   flightMode: WarMapFlightMode;

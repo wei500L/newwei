@@ -1,5 +1,6 @@
 import { PathLayer, PolygonLayer } from "@deck.gl/layers";
 import type { WarMapLayerFeature, WarMapLayerId, WarMapTranslateTarget } from "@modular/utils";
+import type { WarMapLayerDataset } from "@modular/utils";
 
 import {
   buildSanitizedPathGeometry,
@@ -9,7 +10,6 @@ import {
 } from "./war-map-geometry";
 import type { DeckPoint } from "./war-map-point-model";
 import type { BuildWarMapSymbolPointLayersInput } from "./war-map-symbol-layers";
-import type { WarMapLayerDataset } from "@modular/utils";
 
 export interface WarMapStaticVectorLayersOptions {
   dataset: WarMapLayerDataset;

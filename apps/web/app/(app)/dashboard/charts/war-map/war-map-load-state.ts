@@ -1,5 +1,5 @@
-import type { WarMapTranslateFn } from "./war-map-overlay-model";
 import { getErrorMessage } from "./war-map-format";
+import type { WarMapTranslateFn } from "./war-map-overlay-model";
 
 export interface WarMapLoadOverlayStateParams {
   mapLoadError: {

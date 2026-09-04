@@ -6,8 +6,6 @@ import { useMemo } from "react";
 import type { SupportedLocale } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/i18n";
 
-import type { WarMapLayersResponse } from "./war-map-data";
-
 import type { WarMapTranslateFn } from "./war-map-overlay-model";
 import {
   buildWarMapAisSummaryPresentation,
@@ -46,7 +44,9 @@ export interface UseWarMapStatusPresentationOptions {
   queries: {
     eventsQuery: WarMapPresentationQueryLike;
     newsQuery: WarMapPresentationQueryLike;
-    layersQuery: WarMapPresentationQueryLike;
+    layersQuery: WarMapPresentationQueryLike & {
+      data?: { layers?: Record<string, unknown> } | undefined;
+    };
     monitorsQuery: {
       isFetching: boolean;
       error: unknown;

@@ -45,10 +45,3 @@ export function getErrorMessage(error: unknown): string | undefined {
   return typeof error === "string" ? error : undefined;
 }
 
-interface WarMapUpdatedChainQueryLike {
-  isFetching: boolean;
-  error: unknown;
-  data?: { updatedAt?: string };
-  dataUpdatedAt: number;
-}
-

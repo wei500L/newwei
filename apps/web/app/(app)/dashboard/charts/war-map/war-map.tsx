@@ -44,10 +44,9 @@ import {
   type WarMapLayoutVariant,
 } from "./war-map-overlay-model";
 import { useWarMapOverlayPanels } from "./war-map-overlay-panels";
+import type { WarMapProps } from "./war-map-props";
 import { buildWarMapLoadOverlayState } from "./war-map-status-model";
 import { WarMapAisViewportEmptyBanner } from "./war-map-view-controls";
-
-import type { WarMapProps } from "./war-map-props";
 
 export type { WarMapProps } from "./war-map-props";
 

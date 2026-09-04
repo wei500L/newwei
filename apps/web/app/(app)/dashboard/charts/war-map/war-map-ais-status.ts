@@ -4,9 +4,8 @@ import type { SupportedLocale } from "@/lib/i18n";
 import { formatAisRuntimeReason } from "@/lib/realtime-signals-runtime";
 
 import { isAisViewportEmptyStateActive } from "./war-map-ais-mode";
-import type { WarMapTranslateFn } from "./war-map-overlay-model";
 import { formatWarMapRelativeTimestamp } from "./war-map-format";
-import { readSummaryNumber, readSummaryString } from "./war-map-flights-status";
+import type { WarMapTranslateFn } from "./war-map-overlay-model";
 
 export type WarMapAisSummaryPresentation = ReturnType<
   typeof buildWarMapAisSummaryPresentation

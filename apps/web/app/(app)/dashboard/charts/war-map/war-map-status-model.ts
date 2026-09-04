@@ -1,17 +1,10 @@
 import type {
-  WarMapAisLayerSummary,
   WarMapAisMode,
   WarMapLayerVisibility,
 } from "@modular/utils";
 
-import {
-  formatRelativeTime,
-  formatUpdatedAt,
-  type SupportedLocale,
-} from "@/lib/i18n";
-import { formatAisRuntimeReason } from "@/lib/realtime-signals-runtime";
+import type { SupportedLocale } from "@/lib/i18n";
 
-import { isAisViewportEmptyStateActive } from "./war-map-ais-mode";
 import type {
   WarMapDetailedChainStatus,
   WarMapTranslateFn,
@@ -38,27 +31,6 @@ import {
 } from "./war-map-symbols";
 
 
-  return (
-    formatRelativeTime(value, locale, {
-      base,
-      style: "short",
-    }) || formatUpdatedAt(value, locale)
-  );
-}
-
-export function getErrorMessage(error: unknown): string | undefined {
-  if (!error) {
-    return undefined;
-  }
-  if (error instanceof Error) {
-    const withResponse = error as Error & {
-      response?: { data?: { message?: string; error?: { message?: string } } };
-    };
-    const data = withResponse.response?.data;
-    return data?.error?.message ?? data?.message ?? withResponse.message;
-  }
-  return typeof error === "string" ? error : undefined;
-}
 
 interface WarMapUpdatedChainQueryLike {
   isFetching: boolean;

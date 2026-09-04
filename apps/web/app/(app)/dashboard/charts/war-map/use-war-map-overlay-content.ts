@@ -4,8 +4,10 @@ import type {
   WarMapAisMode,
   WarMapLayerVisibility,
 } from "@modular/utils";
+import { WAR_MAP_LAYER_IDS } from "@modular/utils";
 import { useMemo } from "react";
 
+import { WAR_MAP_UNSUPPORTED_LAYER_IDS } from "./war-map-data";
 import {
   buildWarMapOverlayLayout,
   buildWarMapOverlayViewModel,
@@ -13,8 +15,6 @@ import {
   type WarMapLayoutVariant,
   type WarMapTranslateFn,
 } from "./war-map-overlay-model";
-import { WAR_MAP_LAYER_IDS } from "@modular/utils";
-import { WAR_MAP_UNSUPPORTED_LAYER_IDS } from "./war-map-data";
 import type { WarMapStatusSummary } from "./war-map-status-model";
 import {
   buildWarMapInteractionLegendItems,
