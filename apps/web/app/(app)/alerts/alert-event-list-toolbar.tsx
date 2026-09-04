@@ -13,8 +13,10 @@ import {
 import { useTranslation } from "react-i18next";
 
 import type {
+  AlertEventExportController,
   AlertEventSelectionController,
-  AlertEventToolbarController,
+  AlertEventStatusController,
+  AlertExportScope,
 } from "./alert-event-controllers";
 
 /**
@@ -22,38 +24,41 @@ import type {
  * 第四轮收口：按职责消费领域切片而非平铺字段）。
  *
  * - 选择切片：Select visible、已选计数、筛选外隐藏选中数 + 清理；
- * - 批量/导出控制器：scope 两档（selected/page）、行数、includeRaw
- *   开关、CSV/JSON 按钮、批量备注 + 确认/忽略（仅 alerts.manage）、
+ * - 导出控制器：scope 两档（selected/page）、行数、includeRaw 开关、
+ *   CSV/JSON 按钮；
+ * - 状态修改控制器：批量备注 + 确认/忽略（仅 alerts.manage）、
  *   batch progress 条（20 条分批进度展示）。
  */
 
-export type AlertExportScope = "selected" | "page";
-
 export interface AlertEventListToolbarProps {
   selection: AlertEventSelectionController;
-  toolbar: AlertEventToolbarController;
+  exportController: AlertEventExportController;
+  statusController: AlertEventStatusController;
 }
 
 export function AlertEventListToolbar({
   selection,
-  toolbar,
+  exportController,
+  statusController,
 }: AlertEventListToolbarProps) {
   const { t } = useTranslation();
+  const {
+    exportScope,
+    setExportScope,
+    includeRawExport,
+    setIncludeRawExport,
+    exportEventsCount,
+    exportCsv,
+    exportJson,
+  } = exportController;
   const {
     canManageAlerts,
     bulkNote,
     setBulkNote,
-    includeRawExport,
-    setIncludeRawExport,
-    exportScope,
-    setExportScope,
-    exportEventsCount,
-    exportCsv,
-    exportJson,
     batchProgress,
     updatingStatus,
     bulkUpdate,
-  } = toolbar;
+  } = statusController;
   const {
     selectedEventIdsCount,
     allVisibleSelected,

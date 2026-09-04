@@ -7,10 +7,11 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 
 import { ALERT_URL_PAGE_SIZES } from "./alert-center-url-state";
 import type {
+  AlertEventExportController,
   AlertEventListModel,
   AlertEventPaginationController,
   AlertEventSelectionController,
-  AlertEventToolbarController,
+  AlertEventStatusController,
 } from "./alert-event-controllers";
 import { AlertEventListToolbar } from "./alert-event-list-toolbar";
 import { AlertEventRow } from "./alert-event-row";
@@ -29,7 +30,8 @@ import { useAlertEventVirtualization } from "./hooks/use-alert-event-virtualizat
 export interface AlertEventListProps {
   model: AlertEventListModel;
   selection: AlertEventSelectionController;
-  toolbar: AlertEventToolbarController;
+  exportController: AlertEventExportController;
+  statusController: AlertEventStatusController;
   pagination: AlertEventPaginationController;
   onSelectEvent: (eventId: string) => void;
   onRefresh: () => void;
@@ -38,7 +40,8 @@ export interface AlertEventListProps {
 export function AlertEventList({
   model,
   selection,
-  toolbar,
+  exportController,
+  statusController,
   pagination,
   onSelectEvent,
   onRefresh,
@@ -77,7 +80,11 @@ export function AlertEventList({
       }
     >
       <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-        <AlertEventListToolbar selection={selection} toolbar={toolbar} />
+        <AlertEventListToolbar
+          selection={selection}
+          exportController={exportController}
+          statusController={statusController}
+        />
 
         <div ref={eventsListRef}>
           <List

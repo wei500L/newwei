@@ -5,13 +5,12 @@ import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 
-import type { AlertEventItem } from "./alert-center-list-model";
 import type {
   AlertEventDetailAnalysis,
   AlertEventDetailClipboard,
   AlertEventDetailFeedback,
+  AlertEventDetailModel,
   AlertEventDetailNavigation,
-  AlertEventDetailPresentation,
   AlertEventDetailReplay,
   AlertEventDetailTheme,
   AlertEventDetailView,
@@ -34,11 +33,7 @@ import { AlertEventReplayTab } from "./alert-event-replay-tab";
  */
 
 export interface AlertEventDetailProps {
-  selectedEvent: AlertEventItem | null;
-  /** filtered 中的序号与全集（filtered-out 提示判定）。 */
-  selectedIndexInFiltered: number;
-  filteredEvents: AlertEventItem[];
-  presentation: AlertEventDetailPresentation;
+  model: AlertEventDetailModel;
   navigation: AlertEventDetailNavigation;
   view: AlertEventDetailView;
   clipboard: AlertEventDetailClipboard;
@@ -49,16 +44,8 @@ export interface AlertEventDetailProps {
 }
 
 export function AlertEventDetail(props: AlertEventDetailProps) {
-  const {
-    selectedEvent,
-    selectedIndexInFiltered,
-    filteredEvents,
-    presentation,
-    navigation,
-    view,
-    clipboard,
-  } = props;
-  const { locale, objectKeyLabels } = presentation;
+  const { model, navigation, view, clipboard } = props;
+  const { selectedEvent, isFilteredOut, locale, objectKeyLabels } = model;
   const { t } = useTranslation();
 
   if (!selectedEvent) {
@@ -111,7 +98,7 @@ export function AlertEventDetail(props: AlertEventDetailProps) {
       }
     >
       <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-        {selectedIndexInFiltered === -1 && filteredEvents.length > 0 ? (
+        {isFilteredOut ? (
           <Alert
             type="warning"
             showIcon

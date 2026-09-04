@@ -38,14 +38,15 @@ import {
   buildDetailNavigation,
   buildDetailView,
   buildSelectionController,
-  buildToolbarController,
   type AlertEventDetailFeedback,
   type AlertEventDetailReplay,
+  type AlertEventExportController,
+  type AlertEventStatusController,
+  type AlertExportScope,
 } from "./alert-event-controllers";
 import { AlertEventDetail } from "./alert-event-detail";
 import { CONTEXT_OBJECT_KEYS } from "./alert-event-detail-model";
 import { AlertEventList } from "./alert-event-list";
-import type { AlertExportScope } from "./alert-event-list-toolbar";
 import { toNumber } from "./evidence-utils";
 import { useAlertCenterCharts } from "./hooks/use-alert-center-charts";
 import { useAlertCenterUrlState } from "./hooks/use-alert-center-url-state";
@@ -348,21 +349,23 @@ export function AlertCenterContent() {
     batch,
     selectedEventId,
   );
-  const listToolbar = buildToolbarController({
-    canManageAlerts,
-    bulkNote,
-    setBulkNote,
-    includeRawExport,
-    setIncludeRawExport,
+  const exportController: AlertEventExportController = {
     exportScope,
     setExportScope,
+    includeRawExport,
+    setIncludeRawExport,
     exportEventsCount: exportEvents.length,
     exportCsv: () => void handleExportCsv(),
     exportJson: () => handleExportJson(),
+  };
+  const statusController: AlertEventStatusController = {
+    canManageAlerts,
+    bulkNote,
+    setBulkNote,
     batchProgress,
     updatingStatus,
     bulkUpdate: (status) => void handleBulkUpdate(status),
-  });
+  };
 
   // 详情域领域契约装配（第四轮收口）
   const detailNavigation = buildDetailNavigation(selection, (eventId) =>
@@ -372,7 +375,6 @@ export function AlertCenterContent() {
   const detailReplay: AlertEventDetailReplay = {
     replay: detail.replay,
     replayPoints: detail.replayPoints,
-    replayUnit: detail.replayUnit,
     replayLoading: detail.replayLoading,
     replayError: detail.replayError,
     replayOption,
@@ -446,7 +448,8 @@ export function AlertCenterContent() {
               objectKeyLabels,
             }}
             selection={listSelection}
-            toolbar={listToolbar}
+            exportController={exportController}
+            statusController={statusController}
             pagination={{
               page: listPage,
               pageSize: listPageSize,
@@ -460,10 +463,13 @@ export function AlertCenterContent() {
 
         <Col xs={24} xl={10}>
           <AlertEventDetail
-            selectedEvent={selectedEvent}
-            selectedIndexInFiltered={selectedIndexInFiltered}
-            filteredEvents={filteredEvents}
-            presentation={{ locale, objectKeyLabels }}
+            model={{
+              selectedEvent,
+              isFilteredOut:
+                selectedIndexInFiltered === -1 && filteredEvents.length > 0,
+              locale,
+              objectKeyLabels,
+            }}
             navigation={detailNavigation}
             view={detailView}
             clipboard={{
