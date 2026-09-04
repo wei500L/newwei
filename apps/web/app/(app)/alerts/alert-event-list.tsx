@@ -4,95 +4,59 @@ import { Button, Card, List, Pagination, Space } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
-import type { resolveLocale } from "@/lib/i18n";
 
-import type { AlertEventItem } from "./alert-center-list-model";
+import type {
+  AlertEventListModel,
+  AlertEventPaginationController,
+  AlertEventSelectionController,
+  AlertEventToolbarController,
+} from "./alert-event-controllers";
 import { ALERT_URL_PAGE_SIZES } from "./alert-center-url-state";
-import { AlertEventListToolbar, type AlertExportScope } from "./alert-event-list-toolbar";
+import { AlertEventListToolbar } from "./alert-event-list-toolbar";
 import { AlertEventRow } from "./alert-event-row";
 import { useAlertEventVirtualization } from "./hooks/use-alert-event-virtualization";
 
 /**
- * Alert Center 事件列表域（FE-批3B 从 alert-center.tsx 提取）。
+ * Alert Center 事件列表域（FE-批3B 从 alert-center.tsx 提取，
+ * 第四轮收口：消费领域契约而非平铺字段）。
  *
+ * - 列表展示模型（model）+ 选择/工具栏/分页三个控制器；
  * - 当前页 List + 行渲染（悬浮摘要/context 摘要/threshold 摘要在行组件）；
  * - 25 条虚拟化阈值 + scrollMargin/spacer（useAlertEventVirtualization）；
- * - 工具栏（选择计数/导出 scope/批量操作/进度）在 alert-event-list-toolbar；
  * - 分页：手动分页写入路径（FE-01 优先级 2/3 的 pageSize 与 page 区分）。
  */
 
 export interface AlertEventListProps {
-  currentPageEvents: AlertEventItem[];
-  filteredEventsCount: number;
-  selectedEventId: string | null;
-  selectedEventIdSet: Set<string>;
-  locale: ReturnType<typeof resolveLocale>;
-  objectKeyLabels: { key: string; label: string }[];
-  listPage: number;
-  listPageSize: number;
-  eventsLoading: boolean;
-  canManageAlerts: boolean;
-  selectedEventIdsCount: number;
-  allVisibleSelected: boolean;
-  selectedVisibleCount: number;
-  hiddenSelectedCount: number;
-  exportScope: AlertExportScope;
-  exportEventsCount: number;
-  includeRawExport: boolean;
-  bulkNote: string;
-  batchProgress: { done: number; total: number } | null;
-  updatingStatus: boolean;
-  onToggleSelectAllVisible: (checked: boolean) => void;
-  onClearHiddenSelection: () => void;
-  onSetExportScope: (scope: AlertExportScope) => void;
-  onSetIncludeRawExport: (checked: boolean) => void;
-  onSetBulkNote: (note: string) => void;
-  onExportCsv: () => void;
-  onExportJson: () => void;
-  onBulkUpdate: (status: "confirmed" | "ignored") => void;
-  onToggleEventSelection: (eventId: string, checked: boolean) => void;
+  model: AlertEventListModel;
+  selection: AlertEventSelectionController;
+  toolbar: AlertEventToolbarController;
+  pagination: AlertEventPaginationController;
   onSelectEvent: (eventId: string) => void;
-  onSetPage: (page: number) => void;
-  onSetPageSize: (pageSize: number) => void;
   onRefresh: () => void;
 }
 
 export function AlertEventList({
-  currentPageEvents,
-  filteredEventsCount,
-  selectedEventId,
-  selectedEventIdSet,
-  locale,
-  objectKeyLabels,
-  listPage,
-  listPageSize,
-  eventsLoading,
-  canManageAlerts,
-  selectedEventIdsCount,
-  allVisibleSelected,
-  selectedVisibleCount,
-  hiddenSelectedCount,
-  exportScope,
-  exportEventsCount,
-  includeRawExport,
-  bulkNote,
-  batchProgress,
-  updatingStatus,
-  onToggleSelectAllVisible,
-  onClearHiddenSelection,
-  onSetExportScope,
-  onSetIncludeRawExport,
-  onSetBulkNote,
-  onExportCsv,
-  onExportJson,
-  onBulkUpdate,
-  onToggleEventSelection,
+  model,
+  selection,
+  toolbar,
+  pagination,
   onSelectEvent,
-  onSetPage,
-  onSetPageSize,
   onRefresh,
 }: AlertEventListProps) {
   const { t } = useTranslation();
+  const {
+    currentPageEvents,
+    filteredEventsCount,
+    eventsLoading,
+    locale,
+    objectKeyLabels,
+  } = model;
+  const {
+    page: listPage,
+    pageSize: listPageSize,
+    setPage: onSetPage,
+    setPageSize: onSetPageSize,
+  } = pagination;
 
   const {
     eventsListRef,
@@ -113,27 +77,7 @@ export function AlertEventList({
       }
     >
       <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-        <AlertEventListToolbar
-          canManageAlerts={canManageAlerts}
-          selectedEventIdsCount={selectedEventIdsCount}
-          allVisibleSelected={allVisibleSelected}
-          selectedVisibleCount={selectedVisibleCount}
-          hiddenSelectedCount={hiddenSelectedCount}
-          exportScope={exportScope}
-          exportEventsCount={exportEventsCount}
-          includeRawExport={includeRawExport}
-          bulkNote={bulkNote}
-          batchProgress={batchProgress}
-          updatingStatus={updatingStatus}
-          onToggleSelectAllVisible={onToggleSelectAllVisible}
-          onClearHiddenSelection={onClearHiddenSelection}
-          onSetExportScope={onSetExportScope}
-          onSetIncludeRawExport={onSetIncludeRawExport}
-          onSetBulkNote={onSetBulkNote}
-          onExportCsv={onExportCsv}
-          onExportJson={onExportJson}
-          onBulkUpdate={onBulkUpdate}
-        />
+        <AlertEventListToolbar selection={selection} toolbar={toolbar} />
 
         <div ref={eventsListRef}>
           <List
@@ -160,11 +104,11 @@ export function AlertEventList({
             renderItem={(entry) => (
               <AlertEventRow
                 event={entry.event}
-                isSelected={entry.event.id === selectedEventId}
-                isChecked={selectedEventIdSet.has(entry.event.id)}
+                isSelected={entry.event.id === selection.selectedEventId}
+                isChecked={selection.selectedEventIdSet.has(entry.event.id)}
                 locale={locale}
                 objectKeyLabels={objectKeyLabels}
-                onToggleChecked={onToggleEventSelection}
+                onToggleChecked={selection.toggleEventSelection}
                 onSelectEvent={onSelectEvent}
               />
             )}

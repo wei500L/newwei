@@ -34,6 +34,10 @@ import {
   resolveFilterTimeWindow,
   type AlertFilterState,
 } from "./alert-center.utils";
+import {
+  buildSelectionController,
+  buildToolbarController,
+} from "./alert-event-controllers";
 import { AlertEventDetail } from "./alert-event-detail";
 import { CONTEXT_OBJECT_KEYS } from "./alert-event-detail-model";
 import { AlertEventList } from "./alert-event-list";
@@ -210,21 +214,15 @@ export function AlertCenterContent() {
       : undefined;
 
   // 批量选择域（FE-批3B）：勾选/全选/隐藏选中清理
-  const {
-    selectedEventIds,
-    selectedEventIdSet,
-    selectedVisibleCount,
-    hiddenSelectedCount,
-    allVisibleSelected,
-    clearHiddenSelection,
-    toggleSelectAllVisible,
-    toggleEventSelection,
-    clearSelection,
-  } = useAlertEventBatch({
+  const batch = useAlertEventBatch({
     sortedEvents,
     filteredEvents,
     currentPageEvents,
   });
+  const {
+    selectedEventIds,
+    clearSelection,
+  } = batch;
 
   // 深链事件不在当前数据集：feed 扩充 limit 至 500 并 refetch（一次性）
   const handleOpenEvent = async (eventId: string) => {
@@ -258,8 +256,8 @@ export function AlertCenterContent() {
     () =>
       exportScope === "page"
         ? currentPageEvents
-        : sortedEvents.filter((e) => selectedEventIdSet.has(e.id)),
-    [currentPageEvents, exportScope, selectedEventIdSet, sortedEvents],
+        : sortedEvents.filter((e) => batch.selectedEventIdSet.has(e.id)),
+    [batch.selectedEventIdSet, currentPageEvents, exportScope, sortedEvents],
   );
 
   // 导出域（FE-批3B）：scope/includeRaw 语义在 alert-center-actions 保持
@@ -359,6 +357,27 @@ export function AlertCenterContent() {
     eventsLoading,
     t,
   });
+  // 列表域领域契约装配（第四轮收口）：hook 结果 → 具名控制器
+  const listSelection = buildSelectionController(
+    batch,
+    selectedEventId,
+  );
+  const listToolbar = buildToolbarController({
+    canManageAlerts,
+    bulkNote,
+    setBulkNote,
+    includeRawExport,
+    setIncludeRawExport,
+    exportScope,
+    setExportScope,
+    exportEventsCount: exportEvents.length,
+    exportCsv: () => void handleExportCsv(),
+    exportJson: () => handleExportJson(),
+    batchProgress,
+    updatingStatus,
+    bulkUpdate: (status) => void handleBulkUpdate(status),
+  });
+
   const isContentReady =
     dataState.kind === "ready" || dataState.kind === "nonBlockingError";
 
@@ -409,38 +428,22 @@ export function AlertCenterContent() {
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={14}>
           <AlertEventList
-            currentPageEvents={currentPageEvents}
-            filteredEventsCount={filteredEvents.length}
-            selectedEventId={selectedEventId}
-            selectedEventIdSet={selectedEventIdSet}
-            locale={locale}
-            objectKeyLabels={objectKeyLabels}
-            listPage={listPage}
-            listPageSize={listPageSize}
-            eventsLoading={eventsLoading}
-            canManageAlerts={canManageAlerts}
-            selectedEventIdsCount={selectedEventIds.length}
-            allVisibleSelected={allVisibleSelected}
-            selectedVisibleCount={selectedVisibleCount}
-            hiddenSelectedCount={hiddenSelectedCount}
-            exportScope={exportScope}
-            exportEventsCount={exportEvents.length}
-            includeRawExport={includeRawExport}
-            bulkNote={bulkNote}
-            batchProgress={batchProgress}
-            updatingStatus={updatingStatus}
-            onToggleSelectAllVisible={toggleSelectAllVisible}
-            onClearHiddenSelection={clearHiddenSelection}
-            onSetExportScope={setExportScope}
-            onSetIncludeRawExport={setIncludeRawExport}
-            onSetBulkNote={setBulkNote}
-            onExportCsv={() => void handleExportCsv()}
-            onExportJson={() => handleExportJson()}
-            onBulkUpdate={(status) => void handleBulkUpdate(status)}
-            onToggleEventSelection={toggleEventSelection}
+            model={{
+              currentPageEvents,
+              filteredEventsCount: filteredEvents.length,
+              eventsLoading,
+              locale,
+              objectKeyLabels,
+            }}
+            selection={listSelection}
+            toolbar={listToolbar}
+            pagination={{
+              page: listPage,
+              pageSize: listPageSize,
+              setPage: setListPage,
+              setPageSize: setListPageSize,
+            }}
             onSelectEvent={handleSelectEvent}
-            onSetPage={setListPage}
-            onSetPageSize={setListPageSize}
             onRefresh={() => void refetchEvents()}
           />
         </Col>
