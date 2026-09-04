@@ -31,7 +31,6 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import {
@@ -67,9 +66,9 @@ import {
   type DashboardStreamState,
 } from "../../use-dashboard-stream";
 
-import { BBOX_QUERY_MIN_ZOOM, buildWarMapQueryBbox } from "./query-viewport";
-import { readWarMapUrlState, writeWarMapUrlState } from "./url-state";
 import { useWarMapData } from "./use-war-map-data";
+import { useWarMapQueryState } from "./use-war-map-query-state";
+import { useWarMapUrlState } from "./use-war-map-url-state";
 import { getWarMapAisLabel, readWarMapAisProperties } from "./war-map-ais";
 import { isAisViewportEmptyStateActive } from "./war-map-ais-mode";
 import {
@@ -128,7 +127,6 @@ import {
   type WarMapTransportLegendState,
 } from "./war-map-symbols";
 
-const ALL_TIME_START = new Date("1970-01-01T00:00:00.000Z");
 const WAR_MAP_SYMBOL_KEY_SET = new Set<WarMapSymbolKey>([
   "signal-high",
   "signal-medium",
@@ -318,14 +316,6 @@ const TIME_RANGE_LABELS: Record<WarMapTimeRangePreset, string> = {
   "48h": "48H",
   "7d": "7D",
   all: "All",
-};
-
-const TIME_RANGE_MS: Record<Exclude<WarMapTimeRangePreset, "all">, number> = {
-  "1h": 1 * 60 * 60 * 1000,
-  "6h": 6 * 60 * 60 * 1000,
-  "24h": 24 * 60 * 60 * 1000,
-  "48h": 48 * 60 * 60 * 1000,
-  "7d": 7 * 24 * 60 * 60 * 1000,
 };
 
 const LAYER_LABEL_OVERRIDES: Partial<Record<WarMapLayerId, string>> = {
@@ -803,15 +793,12 @@ export function WarMap({
   const overlayRailRef = useRef<HTMLDivElement | null>(null);
   const legendDockRef = useRef<HTMLDivElement | null>(null);
   const syncFromMapRef = useRef(false);
-  const hasHydratedUrlRef = useRef(false);
 
   const [inView, setInView] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [mapLoadError, setMapLoadError] =
     useState<MapLoadErrorPresentation | null>(null);
   const [mapMountNonce, setMapMountNonce] = useState(0);
-  const [rangeAnchorMs, setRangeAnchorMs] = useState(() => Date.now());
-  const hasActivatedRangeAnchorRef = useRef(false);
   const [wrapperSize, setWrapperSize] = useState({ width: 0, height: 0 });
   const [openOverlayPanel, setOpenOverlayPanel] =
     useState<OverlayPanelKey | null>(null);
@@ -831,9 +818,6 @@ export function WarMap({
   const [hoveredInteractionKey, setHoveredInteractionKey] = useState<
     string | null
   >(null);
-  const [urlHydrated, setUrlHydrated] = useState(
-    () => typeof window === "undefined",
-  );
   const hasRenderableMapContainer = useRenderableContainer(
     mapContainerRef,
     inView,
@@ -848,10 +832,13 @@ export function WarMap({
     screens.lg && overlayDensity !== "minimal",
   );
 
+  // URL 与设置域：hydration 一次 + 防抖写回 + effective 合并（单一所有者）
+  const { urlHydrated, effectiveViewState, effectiveTimeRangePreset } =
+    useWarMapUrlState();
+
   const layerVisibility = useWarMapSettingsStore(
     (state) => state.layerVisibility,
   );
-  const viewState = useWarMapSettingsStore((state) => state.viewState);
   const activePreset = useWarMapSettingsStore((state) => state.activePreset);
   const timeRangePreset = useWarMapSettingsStore(
     (state) => state.timeRangePreset,
@@ -863,9 +850,6 @@ export function WarMap({
   );
   const setLayerVisible = useWarMapSettingsStore(
     (state) => state.setLayerVisible,
-  );
-  const setLayerVisibility = useWarMapSettingsStore(
-    (state) => state.setLayerVisibility,
   );
   const setViewState = useWarMapSettingsStore((state) => state.setViewState);
   const setActivePreset = useWarMapSettingsStore(
@@ -881,35 +865,7 @@ export function WarMap({
   );
   const resetLayers = useWarMapSettingsStore((state) => state.resetLayers);
   const effectiveAisMode: WarMapAisMode = aisMode;
-  const viewStateRef = useRef(viewState);
-  const initialUrlState = useMemo(() => {
-    if (typeof window === "undefined") {
-      return null;
-    }
-    return readWarMapUrlState(new URLSearchParams(window.location.search));
-  }, []);
-  const effectiveViewState = useMemo(
-    () =>
-      !urlHydrated && initialUrlState?.viewState
-        ? {
-            ...viewState,
-            ...initialUrlState.viewState,
-            bearing: 0,
-            pitch: 0,
-          }
-        : viewState,
-    [initialUrlState?.viewState, urlHydrated, viewState],
-  );
-  const effectiveTimeRangePreset =
-    !urlHydrated && initialUrlState?.timeRangePreset
-      ? initialUrlState.timeRangePreset
-      : timeRangePreset;
-  const [queryViewport, setQueryViewport] = useState<{
-    bbox?: [number, number, number, number];
-    zoom: number;
-  }>(() => ({
-    zoom: Number(effectiveViewState.zoom.toFixed(2)),
-  }));
+  const viewStateRef = useRef(effectiveViewState);
 
   useEffect(() => {
     viewStateRef.current = effectiveViewState;
@@ -977,91 +933,24 @@ export function WarMap({
     setMapMountNonce((value) => value + 1);
   }, []);
 
-  const refreshRangeAnchor = useCallback(() => {
-    setRangeAnchorMs(Date.now());
-  }, []);
-
-  useEffect(() => {
-    if (!inView) {
-      return;
-    }
-
-    if (!hasActivatedRangeAnchorRef.current) {
-      hasActivatedRangeAnchorRef.current = true;
-      return;
-    }
-
-    refreshRangeAnchor();
-  }, [effectiveTimeRangePreset, inView, refreshRangeAnchor]);
-
-  useEffect(() => {
-    if (!inView || typeof window === "undefined") {
-      return;
-    }
-    const interval = window.setInterval(() => {
-      refreshRangeAnchor();
-    }, 60_000);
-    return () => window.clearInterval(interval);
-  }, [inView, refreshRangeAnchor]);
-
-  const effectiveRange = useMemo(() => {
-    const end = new Date(rangeAnchorMs);
-    if (effectiveTimeRangePreset === "all") {
-      return { start: ALL_TIME_START, end };
-    }
-    const duration = TIME_RANGE_MS[effectiveTimeRangePreset];
-    return {
-      end,
-      start: new Date(end.getTime() - duration),
-    };
-  }, [effectiveTimeRangePreset, rangeAnchorMs]);
-
-  useEffect(() => {
-    if (!onEffectiveRangeChange) {
-      return;
-    }
-    onEffectiveRangeChange({
-      start: effectiveRange.start,
-      end: effectiveRange.end,
-    });
-  }, [effectiveRange.end, effectiveRange.start, onEffectiveRangeChange]);
-
-  const queryZoom = useMemo(
-    () => Number(queryViewport.zoom.toFixed(2)),
-    [queryViewport.zoom],
-  );
-
-  const queryBbox = useMemo(() => {
-    return buildWarMapQueryBbox(queryViewport.bbox, queryZoom);
-  }, [queryViewport.bbox, queryZoom]);
-  const localClusterBbox = useMemo(
-    () => (queryZoom >= BBOX_QUERY_MIN_ZOOM ? queryViewport.bbox : undefined),
-    [queryViewport.bbox, queryZoom],
-  );
-
-  useEffect(() => {
-    if (!onRealtimeQueryChange) {
-      return;
-    }
-    onRealtimeQueryChange({
-      start: effectiveRange.start,
-      end: effectiveRange.end,
-      bbox: queryBbox,
-      zoom: queryZoom,
-      translateTarget,
-      flightMode,
-      aisMode: effectiveAisMode,
-    });
-  }, [
-    effectiveRange.end,
-    effectiveRange.start,
-    effectiveAisMode,
-    flightMode,
-    onRealtimeQueryChange,
-    queryBbox,
+  // 查询状态域：range anchor / effectiveRange / query viewport / 实时回调
+  const {
+    effectiveRange,
+    queryViewport,
     queryZoom,
+    queryBbox,
+    localClusterBbox,
+    setQueryViewport,
+  } = useWarMapQueryState({
+    effectiveViewState,
+    effectiveTimeRangePreset,
+    inView,
     translateTarget,
-  ]);
+    flightMode,
+    aisMode: effectiveAisMode,
+    onEffectiveRangeChange,
+    onRealtimeQueryChange,
+  });
 
   const { eventsQuery, newsQuery, layersQuery, monitorsQuery } = useWarMapData({
     apiClient,
@@ -1192,78 +1081,6 @@ export function WarMap({
     }
     map.resize();
   }, [hasRenderableMapContainer, inView, mapReady]);
-
-  useEffect(() => {
-    if (hasHydratedUrlRef.current || typeof window === "undefined") {
-      return;
-    }
-
-    const parsed =
-      initialUrlState ??
-      readWarMapUrlState(new URLSearchParams(window.location.search));
-    if (parsed.layerVisibility) {
-      setLayerVisibility(parsed.layerVisibility);
-    }
-    if (parsed.activePreset) {
-      setActivePreset(parsed.activePreset);
-    }
-    if (parsed.timeRangePreset) {
-      setTimeRangePreset(parsed.timeRangePreset);
-    }
-    if (parsed.flightMode) {
-      setFlightMode(parsed.flightMode);
-    }
-    if (parsed.aisMode) {
-      setAisMode(parsed.aisMode);
-    }
-    if (parsed.viewState) {
-      setViewState(parsed.viewState);
-    }
-
-    hasHydratedUrlRef.current = true;
-    setUrlHydrated(true);
-  }, [
-    initialUrlState,
-    setActivePreset,
-    setAisMode,
-    setFlightMode,
-    setLayerVisibility,
-    setTimeRangePreset,
-    setViewState,
-  ]);
-
-  useEffect(() => {
-    if (!hasHydratedUrlRef.current || typeof window === "undefined") {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      const current = new URL(window.location.href);
-      const nextParams = writeWarMapUrlState(current.searchParams, {
-        viewState,
-        activePreset,
-        timeRangePreset,
-        layerVisibility,
-        flightMode,
-        aisMode,
-      });
-      const nextSearch = nextParams.toString();
-      const currentSearch = current.searchParams.toString();
-      if (nextSearch !== currentSearch) {
-        const nextUrl = `${current.pathname}${nextSearch ? `?${nextSearch}` : ""}${current.hash}`;
-        window.history.replaceState(null, "", nextUrl);
-      }
-    }, 300);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    activePreset,
-    aisMode,
-    flightMode,
-    layerVisibility,
-    timeRangePreset,
-    viewState,
-  ]);
 
   const monitorPoints = useMemo(
     () =>
