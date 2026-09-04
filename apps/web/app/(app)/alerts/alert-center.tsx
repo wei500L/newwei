@@ -35,8 +35,12 @@ import {
   type AlertFilterState,
 } from "./alert-center.utils";
 import {
+  buildDetailNavigation,
+  buildDetailView,
   buildSelectionController,
   buildToolbarController,
+  type AlertEventDetailFeedback,
+  type AlertEventDetailReplay,
 } from "./alert-event-controllers";
 import { AlertEventDetail } from "./alert-event-detail";
 import { CONTEXT_OBJECT_KEYS } from "./alert-event-detail-model";
@@ -132,14 +136,7 @@ export function AlertCenterContent() {
   // 选择与分页协调（FE-批3B）：FE-01 优先级契约整体见 hook 注释
   const isEventsDataReady =
     shouldQueryEvents && !eventsLoading && eventsData !== undefined;
-  const {
-    selectedEventId,
-    selectedEvent,
-    handleSelectEvent,
-    selectedIndexInFiltered,
-    previousEventId,
-    nextEventId,
-  } = useAlertEventSelection({
+  const selection = useAlertEventSelection({
     eventParam,
     sortedEvents,
     filteredEvents,
@@ -150,6 +147,8 @@ export function AlertCenterContent() {
     setEventId,
     setPagePreservingEventId,
   });
+  const { selectedEventId, selectedEvent, handleSelectEvent, selectedIndexInFiltered } =
+    selection;
 
   const selectedRuleId = useMemo(
     () =>
@@ -189,26 +188,11 @@ export function AlertCenterContent() {
   });
 
   // 详情域状态（FE-批3B）：replay 懒加载 / feedback note 预填 / tab 重置
-  const {
-    loadReplay,
-    replay,
-    replayPoints,
-    replayUnit,
-    replayLoading,
-    replayError,
-    detailTab,
-    setDetailTab,
-    expandMessage,
-    toggleExpandMessage,
-    expandContext,
-    toggleExpandContext,
-    feedbackNote,
-    setFeedbackNote,
-  } = useAlertEventDetail({ selectedEvent, selectedEventId });
+  const detail = useAlertEventDetail({ selectedEvent, selectedEventId });
 
   const handleReloadReplay = () =>
     selectedEvent
-      ? loadReplay({
+      ? detail.loadReplay({
           variables: { eventId: selectedEvent.id, windowDays: 30 },
         })
       : undefined;
@@ -291,9 +275,9 @@ export function AlertCenterContent() {
     sortedEvents,
     selectedEvent,
     filterWindow,
-    replay,
-    replayPoints,
-    replayUnit,
+    replay: detail.replay,
+    replayPoints: detail.replayPoints,
+    replayUnit: detail.replayUnit,
     theme: { primary: colors.primary, accent: colors.accent, fontFamily },
   });
 
@@ -378,6 +362,30 @@ export function AlertCenterContent() {
     bulkUpdate: (status) => void handleBulkUpdate(status),
   });
 
+  // 详情域领域契约装配（第四轮收口）
+  const detailNavigation = buildDetailNavigation(selection, (eventId) =>
+    void handleOpenEvent(eventId),
+  );
+  const detailView = buildDetailView(detail);
+  const detailReplay: AlertEventDetailReplay = {
+    replay: detail.replay,
+    replayPoints: detail.replayPoints,
+    replayUnit: detail.replayUnit,
+    replayLoading: detail.replayLoading,
+    replayError: detail.replayError,
+    replayOption,
+    reloadReplay: handleReloadReplay,
+  };
+  const detailFeedback: AlertEventDetailFeedback = {
+    canManageAlerts,
+    feedbackNote: detail.feedbackNote,
+    setFeedbackNote: detail.setFeedbackNote,
+    updatingStatus,
+    eventStatusUpdate: (status) => void handleEventStatusUpdate(status),
+    quickConfirm: () => void handleQuickConfirm(),
+    tuning: { data: tuningData, loading: tuningLoading, error: tuningError },
+  };
+
   const isContentReady =
     dataState.kind === "ready" || dataState.kind === "nonBlockingError";
 
@@ -451,44 +459,28 @@ export function AlertCenterContent() {
         <Col xs={24} xl={10}>
           <AlertEventDetail
             selectedEvent={selectedEvent}
-            selectedEventId={selectedEventId}
             selectedIndexInFiltered={selectedIndexInFiltered}
             filteredEvents={filteredEvents}
             locale={locale}
             objectKeyLabels={objectKeyLabels}
-            detailTab={detailTab}
-            onSetDetailTab={setDetailTab}
-            expandMessage={expandMessage}
-            expandContext={expandContext}
-            onToggleExpandMessage={toggleExpandMessage}
-            onToggleExpandContext={toggleExpandContext}
-            onCopyRawContext={() => void handleCopyRawContext()}
-            onCopyAlertMarkdown={() => void handleCopyAlertMarkdown()}
-            onSelectEvent={handleSelectEvent}
-            onOpenEvent={(eventId) => void handleOpenEvent(eventId)}
-            previousEventId={previousEventId}
-            nextEventId={nextEventId}
-            similarAlerts={similarAlerts}
-            ruleTrendAnalysis={ruleTrendAnalysis}
-            ruleTrendOption={ruleTrendOption}
-            replay={replay}
-            replayPoints={replayPoints}
-            replayLoading={replayLoading}
-            replayError={replayError}
-            replayOption={replayOption}
-            onReloadReplay={handleReloadReplay}
-            canManageAlerts={canManageAlerts}
-            feedbackNote={feedbackNote}
-            onSetFeedbackNote={setFeedbackNote}
-            updatingStatus={updatingStatus}
-            onEventStatusUpdate={(status) => void handleEventStatusUpdate(status)}
-            onQuickConfirm={() => void handleQuickConfirm()}
-            tuningData={tuningData}
-            tuningLoading={tuningLoading}
-            tuningError={tuningError}
-            echartsTheme={echartsTheme}
-            colors={{ primary: colors.primary, accent: colors.accent }}
-            fontFamily={fontFamily}
+            navigation={detailNavigation}
+            view={detailView}
+            clipboard={{
+              copyRawContext: () => void handleCopyRawContext(),
+              copyAlertMarkdown: () => void handleCopyAlertMarkdown(),
+            }}
+            analysis={{
+              similarAlerts,
+              ruleTrendAnalysis,
+              ruleTrendOption,
+            }}
+            replay={detailReplay}
+            feedback={detailFeedback}
+            theme={{
+              echartsTheme,
+              colors: { primary: colors.primary, accent: colors.accent },
+              fontFamily,
+            }}
           />
         </Col>
       </Row>

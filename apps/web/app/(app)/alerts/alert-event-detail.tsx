@@ -1,80 +1,52 @@
 "use client";
 
 import { Alert, Button, Card, Space, Tabs } from "antd";
-import type { EChartsOption } from "echarts";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
-import type {
-  AlertEventReplayQuery,
-  AlertRuleTuningSuggestionQuery,
-} from "@/graphql/generated";
 import type { resolveLocale } from "@/lib/i18n";
 
 import type { AlertEventItem } from "./alert-center-list-model";
+import type {
+  AlertEventDetailAnalysis,
+  AlertEventDetailClipboard,
+  AlertEventDetailFeedback,
+  AlertEventDetailNavigation,
+  AlertEventDetailReplay,
+  AlertEventDetailTheme,
+  AlertEventDetailView,
+} from "./alert-event-controllers";
 import { AlertEventDeliveriesTab } from "./alert-event-deliveries-tab";
 import { AlertEventEvidenceTab } from "./alert-event-evidence-tab";
 import { AlertEventFeedbackTab } from "./alert-event-feedback-tab";
 import { AlertEventOverviewTab } from "./alert-event-overview-tab";
 import { AlertEventReplayTab } from "./alert-event-replay-tab";
 
-type ReplayModel = NonNullable<AlertEventReplayQuery["alertEventReplay"]>;
-
 /**
- * Alert Center 详情域编排（FE-批3B 从 alert-center.tsx 提取）。
+ * Alert Center 详情域编排（FE-批3B 从 alert-center.tsx 提取，
+ * 第四轮收口：消费领域契约而非平铺字段）。
  *
  * - 五个页签：overview / evidence / replay / feedback / deliveries；
  * - filtered-out 保留提示（选中事件被当前筛选排除时）；
- * - previous/next 切换与 Copy Markdown 操作（extra 区）；
+ * - previous/next 切换与 Copy Markdown 操作（extra 区，navigation 切片）；
  * - replay 懒加载门禁（detailTab==="replay" 且存在事件）在编排层；
  * - detailTab/expand 状态重置（selectedEventId 变化）在编排层。
  */
 
 export interface AlertEventDetailProps {
   selectedEvent: AlertEventItem | null;
-  selectedEventId: string | null;
+  /** filtered 中的序号与全集（filtered-out 提示判定）。 */
   selectedIndexInFiltered: number;
   filteredEvents: AlertEventItem[];
   locale: ReturnType<typeof resolveLocale>;
   objectKeyLabels: { key: string; label: string }[];
-  detailTab: string;
-  onSetDetailTab: (tab: string) => void;
-  expandMessage: boolean;
-  expandContext: boolean;
-  onToggleExpandMessage: () => void;
-  onToggleExpandContext: () => void;
-  onCopyRawContext: () => void;
-  onCopyAlertMarkdown: () => void;
-  onSelectEvent: (eventId: string) => void;
-  onOpenEvent: (eventId: string) => void;
-  previousEventId: string | null;
-  nextEventId: string | null;
-  similarAlerts: { event: AlertEventItem; reason: "same_rule" | "same_metric" }[];
-  ruleTrendAnalysis: {
-    points: { date: string; triggers: number; falsePositiveRate: number | null }[];
-    totalTriggers: number;
-    averageDailyTriggers: number;
-    falsePositiveRate: number | null;
-  };
-  ruleTrendOption: EChartsOption;
-  replay: ReplayModel | null;
-  replayPoints: ReplayModel["points"] | undefined;
-  replayLoading: boolean;
-  replayError: Error | undefined;
-  replayOption: EChartsOption;
-  onReloadReplay: () => void;
-  canManageAlerts: boolean;
-  feedbackNote: string;
-  onSetFeedbackNote: (note: string) => void;
-  updatingStatus: boolean;
-  onEventStatusUpdate: (status: "confirmed" | "ignored") => void;
-  onQuickConfirm: () => void;
-  tuningData: AlertRuleTuningSuggestionQuery | undefined;
-  tuningLoading: boolean;
-  tuningError: Error | undefined;
-  echartsTheme: string;
-  colors: { primary: string; accent: string };
-  fontFamily: string;
+  navigation: AlertEventDetailNavigation;
+  view: AlertEventDetailView;
+  clipboard: AlertEventDetailClipboard;
+  analysis: AlertEventDetailAnalysis;
+  replay: AlertEventDetailReplay;
+  feedback: AlertEventDetailFeedback;
+  theme: AlertEventDetailTheme;
 }
 
 export function AlertEventDetail(props: AlertEventDetailProps) {
@@ -84,17 +56,9 @@ export function AlertEventDetail(props: AlertEventDetailProps) {
     filteredEvents,
     locale,
     objectKeyLabels,
-    detailTab,
-    onSetDetailTab,
-    expandMessage,
-    expandContext,
-    onToggleExpandMessage,
-    onToggleExpandContext,
-    onCopyRawContext,
-    onCopyAlertMarkdown,
-    previousEventId,
-    nextEventId,
-    onSelectEvent,
+    navigation,
+    view,
+    clipboard,
   } = props;
   const { t } = useTranslation();
 
@@ -120,19 +84,28 @@ export function AlertEventDetail(props: AlertEventDetailProps) {
         <Space wrap>
           <Button
             size="small"
-            onClick={() => previousEventId && onSelectEvent(previousEventId)}
-            disabled={!previousEventId}
+            onClick={() =>
+              navigation.previousEventId &&
+              navigation.selectEvent(navigation.previousEventId)
+            }
+            disabled={!navigation.previousEventId}
           >
             {t("alerts.center.actions.previous")}
           </Button>
           <Button
             size="small"
-            onClick={() => nextEventId && onSelectEvent(nextEventId)}
-            disabled={!nextEventId}
+            onClick={() =>
+              navigation.nextEventId && navigation.selectEvent(navigation.nextEventId)
+            }
+            disabled={!navigation.nextEventId}
           >
             {t("alerts.center.actions.next")}
           </Button>
-          <Button size="small" onClick={onCopyAlertMarkdown} disabled={!selectedEvent}>
+          <Button
+            size="small"
+            onClick={clipboard.copyAlertMarkdown}
+            disabled={!selectedEvent}
+          >
             {t("alerts.center.actions.copyMarkdown")}
           </Button>
         </Space>
@@ -147,8 +120,8 @@ export function AlertEventDetail(props: AlertEventDetailProps) {
           />
         ) : null}
         <Tabs
-          activeKey={detailTab}
-          onChange={onSetDetailTab}
+          activeKey={view.detailTab}
+          onChange={view.setDetailTab}
           items={[
             {
               key: "overview",
@@ -158,11 +131,11 @@ export function AlertEventDetail(props: AlertEventDetailProps) {
                   selectedEvent={selectedEvent}
                   locale={locale}
                   objectKeyLabels={objectKeyLabels}
-                  expandMessage={expandMessage}
-                  expandContext={expandContext}
-                  onToggleExpandMessage={onToggleExpandMessage}
-                  onToggleExpandContext={onToggleExpandContext}
-                  onCopyRawContext={onCopyRawContext}
+                  expandMessage={view.expandMessage}
+                  expandContext={view.expandContext}
+                  onToggleExpandMessage={view.toggleExpandMessage}
+                  onToggleExpandContext={view.toggleExpandContext}
+                  onCopyRawContext={clipboard.copyRawContext}
                 />
               ),
             },
@@ -174,14 +147,14 @@ export function AlertEventDetail(props: AlertEventDetailProps) {
                   selectedEvent={selectedEvent}
                   locale={locale}
                   objectKeyLabels={objectKeyLabels}
-                  similarAlerts={props.similarAlerts}
-                  ruleTrendAnalysis={props.ruleTrendAnalysis}
-                  ruleTrendOption={props.ruleTrendOption}
-                  echartsTheme={props.echartsTheme}
-                  colors={props.colors}
-                  fontFamily={props.fontFamily}
-                  onSelectEvent={onSelectEvent}
-                  onOpenEvent={props.onOpenEvent}
+                  similarAlerts={props.analysis.similarAlerts}
+                  ruleTrendAnalysis={props.analysis.ruleTrendAnalysis}
+                  ruleTrendOption={props.analysis.ruleTrendOption}
+                  echartsTheme={props.theme.echartsTheme}
+                  colors={props.theme.colors}
+                  fontFamily={props.theme.fontFamily}
+                  onSelectEvent={navigation.selectEvent}
+                  onOpenEvent={navigation.openEvent}
                 />
               ),
             },
@@ -191,13 +164,13 @@ export function AlertEventDetail(props: AlertEventDetailProps) {
               children: (
                 <AlertEventReplayTab
                   selectedEvent={selectedEvent}
-                  replay={props.replay}
-                  replayPoints={props.replayPoints}
-                  replayLoading={props.replayLoading}
-                  replayError={props.replayError}
-                  replayOption={props.replayOption}
-                  echartsTheme={props.echartsTheme}
-                  onReloadReplay={props.onReloadReplay}
+                  replay={props.replay.replay}
+                  replayPoints={props.replay.replayPoints}
+                  replayLoading={props.replay.replayLoading}
+                  replayError={props.replay.replayError}
+                  replayOption={props.replay.replayOption}
+                  echartsTheme={props.theme.echartsTheme}
+                  onReloadReplay={props.replay.reloadReplay}
                 />
               ),
             },
@@ -209,15 +182,15 @@ export function AlertEventDetail(props: AlertEventDetailProps) {
                   selectedEvent={selectedEvent}
                   locale={locale}
                   objectKeyLabels={objectKeyLabels}
-                  canManageAlerts={props.canManageAlerts}
-                  feedbackNote={props.feedbackNote}
-                  onSetFeedbackNote={props.onSetFeedbackNote}
-                  updatingStatus={props.updatingStatus}
-                  onEventStatusUpdate={props.onEventStatusUpdate}
-                  onQuickConfirm={props.onQuickConfirm}
-                  tuningData={props.tuningData}
-                  tuningLoading={props.tuningLoading}
-                  tuningError={props.tuningError}
+                  canManageAlerts={props.feedback.canManageAlerts}
+                  feedbackNote={props.feedback.feedbackNote}
+                  onSetFeedbackNote={props.feedback.setFeedbackNote}
+                  updatingStatus={props.feedback.updatingStatus}
+                  onEventStatusUpdate={props.feedback.eventStatusUpdate}
+                  onQuickConfirm={props.feedback.quickConfirm}
+                  tuningData={props.feedback.tuning.data}
+                  tuningLoading={props.feedback.tuning.loading}
+                  tuningError={props.feedback.tuning.error}
                 />
               ),
             },

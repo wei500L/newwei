@@ -5,13 +5,13 @@ import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 
+import { ALERT_URL_PAGE_SIZES } from "./alert-center-url-state";
 import type {
   AlertEventListModel,
   AlertEventPaginationController,
   AlertEventSelectionController,
   AlertEventToolbarController,
 } from "./alert-event-controllers";
-import { ALERT_URL_PAGE_SIZES } from "./alert-center-url-state";
 import { AlertEventListToolbar } from "./alert-event-list-toolbar";
 import { AlertEventRow } from "./alert-event-row";
 import { useAlertEventVirtualization } from "./hooks/use-alert-event-virtualization";
