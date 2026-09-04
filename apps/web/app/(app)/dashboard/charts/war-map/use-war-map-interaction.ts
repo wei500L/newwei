@@ -13,6 +13,7 @@ import { toast } from "sonner";
 
 import { safeHttpUrl } from "@/lib/url";
 
+import type { UseWarMapPointsResult } from "./use-war-map-points";
 import type {
   OverlayControlsSection,
   OverlayPanelKey,
@@ -23,7 +24,6 @@ import {
   resolveWarMapSelectedInspector,
   type ResolveWarMapSelectedInspectorInput,
 } from "./war-map-selection-model";
-import type { UseWarMapPointsResult } from "./use-war-map-points";
 
 /** Deck picking 回调的最小结构（点位模型字段由调用方决定）。 */
 export interface WarMapDeckPick<TPoint> {

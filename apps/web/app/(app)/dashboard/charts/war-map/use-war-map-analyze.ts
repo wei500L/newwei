@@ -4,11 +4,11 @@ import type { WarMapLayerVisibility } from "@modular/utils";
 import { useCallback } from "react";
 import { toast } from "sonner";
 
-import { captureClientError } from "@/lib/client-telemetry";
 import { GeoTransportKind } from "@/graphql/generated";
+import { captureClientError } from "@/lib/client-telemetry";
 
-import type { WarMapTranslateFn } from "./war-map-overlay-model";
 import type { WarMapBbox } from "./query-viewport";
+import type { WarMapTranslateFn } from "./war-map-overlay-model";
 
 export interface UseWarMapAnalyzeOptions {
   t: WarMapTranslateFn;

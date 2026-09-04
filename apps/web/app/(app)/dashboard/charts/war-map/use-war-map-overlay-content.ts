@@ -15,11 +15,6 @@ import {
   buildWarMapOverlayViewModel,
   type OverlayDensity,
 } from "./war-map-overlay-model";
-import type {
-  WarMapAisSummaryPresentation,
-  WarMapFlightsSummaryPresentation,
-  WarMapStatusSummary,
-} from "./war-map-status-model";
 import {
   buildWarMapInteractionLegendItems,
   buildWarMapLegendSections,

@@ -8,6 +8,7 @@ import type {
 } from "@modular/utils";
 import { WAR_MAP_LAYER_IDS } from "@modular/utils";
 
+import type { WarMapBbox } from "./query-viewport";
 import {
   clusterWarMapPoints,
   computeAverageClusterGeometry,
@@ -39,7 +40,6 @@ import {
   getWarMapSymbolAccentColor,
   type WarMapActivePointLayerLegendItem,
 } from "./war-map-symbols";
-import type { WarMapBbox } from "./query-viewport";
 
 export interface WarMapStaticLayersOptions {
   layersData: WarMapLayersResponse["layers"];

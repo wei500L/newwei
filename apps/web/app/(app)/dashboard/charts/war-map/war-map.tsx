@@ -22,7 +22,6 @@ import {
   useDashboardStream,
   type DashboardStreamState,
 } from "../../use-dashboard-stream";
-
 import { useWarMapAnalyzeCurrentView } from "./use-war-map-analyze";
 import { useWarMapContainer } from "./use-war-map-container";
 import { useWarMapData } from "./use-war-map-data";
@@ -42,16 +41,14 @@ import { resolveWarMapContainerClassName } from "./war-map-layout";
 import {
   OVERLAY_SURFACE_CLASS_NAME,
   resolveOverlayDensity,
-  type SelectedInspector,
   type WarMapLayoutVariant,
 } from "./war-map-overlay-model";
+import { buildWarMapTransportPanelProps, useWarMapOverlayPanels } from "./war-map-overlay-panels";
 import {
-  buildWarMapTransportPanelProps,
-  useWarMapOverlayPanels,
   useWarMapViewOptions,
   WarMapAisViewportEmptyBanner,
   WarMapLayerVisibilityControls,
-} from "./war-map-overlay-panels";
+} from "./war-map-view-controls";
 import { buildWarMapLoadOverlayState } from "./war-map-status-model";
 
 
@@ -231,20 +228,10 @@ export function WarMap({
   });
   const {
     selectedInspector,
-    selectedInspectorKey,
-    hoveredInteractionKey,
     focusedLegendItemKey,
     hoveredLegendItemKey,
-    highlightedLegendItemKey,
     updateHoveredLegendItemKey,
     updateFocusedLegendItemKey,
-    handleDeckPointHover,
-    handleSelectablePointClick,
-    handleMonitorPointClick,
-    handleLayerPointClick,
-    closeSelectedInspector,
-    zoomToSelectedInspector,
-    openNewsLink,
     openOverlayPanel,
     setOpenOverlayPanel,
     controlsSection,
@@ -455,6 +442,33 @@ export function WarMap({
       });
     }
   }, []);
+  const transportPanelProps = buildWarMapTransportPanelProps({
+    flightMode,
+    onFlightModeChange: setFlightMode,
+    aisMode,
+    effectiveAisMode,
+    onAisModeChange: setAisMode,
+    aisHighlightCandidates,
+    onAisHighlightCandidatesChange: setAisHighlightCandidates,
+    flightsLayerVisible: layerVisibility.flights,
+    aisLayerVisible: layerVisibility.ais,
+    flightsPresentation,
+    aisPresentation,
+    aisHighlightedCandidateCount,
+    canRunAnalysis,
+    analyzingCurrentView: submittingGeoTransport,
+    onAnalyzeCurrentView: () => {
+      void handleAnalyzeCurrentView();
+    },
+    onOpenLegend: () => {
+      if (standaloneLayout) {
+        scrollLegendDockIntoView();
+        return;
+      }
+      setOpenOverlayPanel("legend");
+    },
+  });
+
   // Overlay 面板组合域：rail / Inspector / Drawer / 桌面面板内容装配
   const panels = useWarMapOverlayPanels({
     t,

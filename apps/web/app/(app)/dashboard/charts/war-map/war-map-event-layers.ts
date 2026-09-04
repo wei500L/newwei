@@ -1,7 +1,6 @@
 import type { WarMapClusterPartition } from "./war-map-clustering";
 import type {
   RenderableWarMapEvent,
-  RenderableWarMapNewsMarker,
   WarMapTranslateFn,
 } from "./war-map-overlay-model";
 import {

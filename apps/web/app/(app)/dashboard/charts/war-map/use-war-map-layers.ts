@@ -7,25 +7,26 @@ import type {
   WarMapTranslateTarget,
 } from "@modular/utils";
 import { useEffect, useMemo } from "react";
+
 import type { SupportedLocale } from "@/lib/i18n";
 
-import type { WarMapLayersResponse } from "./war-map-data";
+import type { WarMapBbox } from "./query-viewport";
+import type { UseWarMapInteractionResult } from "./use-war-map-interaction";
+import type { UseWarMapPointsResult } from "./use-war-map-points";
 import { buildWarMapAisLayers } from "./war-map-ais-layers";
+import type { WarMapLayersResponse } from "./war-map-data";
 import { buildWarMapEventLayers } from "./war-map-event-layers";
 import { buildWarMapNewsLayers } from "./war-map-news-layers";
 import type { WarMapTranslateFn } from "./war-map-overlay-model";
-import type { WarMapBbox } from "./query-viewport";
 import { buildWarMapStaticLayers } from "./war-map-static-layers";
 import {
   createWarMapSymbolLayerBuilder,
 } from "./war-map-symbol-layers";
+import type { WarMapActivePointLayerLegendItem } from "./war-map-symbols";
 import {
   createWarMapCursorGetter,
   createWarMapTooltipGetter,
 } from "./war-map-tooltip";
-import type { UseWarMapInteractionResult } from "./use-war-map-interaction";
-import type { UseWarMapPointsResult } from "./use-war-map-points";
-import type { WarMapActivePointLayerLegendItem } from "./war-map-symbols";
 
 export interface UseWarMapLayersOptions {
   t: WarMapTranslateFn;

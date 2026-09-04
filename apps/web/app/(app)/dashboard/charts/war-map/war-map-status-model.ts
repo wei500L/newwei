@@ -915,7 +915,6 @@ const detailedChainStatuses = chainStatuses.map((status) => {
   };
 });
 
-const hasNonFatalDataError = errors.length > 0 && hasData;
 const summaryDataLabel = !latestQueryUpdatedAt
   ? t("dashboard.charts.warMap.status.waitingData")
   : anyFetching

@@ -1,11 +1,15 @@
 "use client";
 
-import type { WarMapTranslateTarget } from "@modular/utils";
+import type {
+  WarMapEvent,
+  WarMapNewsMarker,
+  WarMapTranslateTarget,
+} from "@modular/utils";
 import { useMemo } from "react";
 
 import type { StoredSituationMonitor } from "@/app/(app)/situation-monitor/types/situation-monitor-monitors";
-import type { WarMapEvent, WarMapNewsMarker } from "@modular/utils";
 
+import type { WarMapBbox } from "./query-viewport";
 import {
   clusterWarMapPoints,
   computeAverageClusterGeometry,
@@ -19,7 +23,6 @@ import type {
   RenderableWarMapNewsMarker,
 } from "./war-map-overlay-model";
 import { isValidLatLng, toRgba, type DeckPoint } from "./war-map-point-model";
-import type { WarMapBbox } from "./query-viewport";
 import { buildWarMapTransportSelections } from "./war-map-transport-points";
 
 export interface UseWarMapPointsOptions {
