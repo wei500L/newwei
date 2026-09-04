@@ -18,19 +18,30 @@ import type { AlertFilterState } from "../alert-center.utils";
  * Alert Center 的 URL-backed 应用状态（FE-01）。
  *
  * 组合层职责（不含展示）：
- * - 把 URL 状态拆成两组 setter：筛选组（severity/status/provider/keyword/
- *   range/from/to，变化时 page 重置为 1）与导航组（page/pageSize/eventId）。
+ * - 把 URL 状态拆成三组 setter：筛选组（severity/status/provider/keyword/
+ *   range/from/to，变化时 page 重置为 1）、用户导航组（page/pageSize）与
+ *   自动导航组（page，保留 eventId）。
  * - rule keyword 的 220ms debounce：输入值（ruleKeywordInput）即时保留
  *   （输入框不抖动），写入 URL 的 q 在静默 220ms 后落盘；过滤计算消费
  *   debounced 值（appliedRuleKeyword）。
  * - URL 状态 → 组件筛选态（AlertFilterState + customRangeMs）的派生。
  *
- * 优先级契约（确定性）：
- * 1. URL eventId 合法（存在于数据中）→ 选中它，page 自动定位到该事件所在页；
- * 2. 筛选变化 → page 收敛为 1（事件定位仍可将其带去所在页）；
- * 3. URL 指定 page → 采纳，仅当超出总页数时收敛到最后一页。
- * （1 与 3 的交互由 alert-center 的选择/分页逻辑仲裁，本 hook 只保证
- *  各自写入时机不冲突。）
+ * 分页优先级契约（确定性，由 alert-center 行为测试锁定）：
+ * 1. 外部进入或浏览器导航带合法 eventId → 一次性定位到该事件所在页
+ *    （alert-center 的定位 effect 排队并消费请求，写入走自动路径）；
+ * 2. 用户明确点击分页器（setPage）→ 用户分页意图优先：URL 清除会与
+ *    分页意图冲突的旧 eventId，页面稳定停留目标页；
+ * 3. 用户明确修改 pageSize（setPageSize）→ page 重置 1 且清除旧 eventId；
+ * 4. 筛选变化（updateFilters）→ page 重置 1，不被旧组件内选中拉回
+ *    （定位是一次性的，不持续监听 page）；
+ * 5. 仅 page、无 eventId 的分享链接按 URL page 打开；
+ * 6. page 超出总页数时由组件收敛到最后一页（自动路径，保留 eventId）；
+ * 7. 未知 query 参数由 useUrlState 原样保留；
+ * 8. 合法 eventId 深链仍可自动定位（见优先级 1）；
+ * 9. 自动定位/收敛与用户分页使用可区分的写入路径（自动路径不调用
+ *    「清除 eventId 的手动分页 setter」），配合 useUrlState 的防循环
+ *    语义，不产生 effect/router 写回循环；
+ * 10. 分页器、默认选中与 URL 状态均为既有能力，不做规避性删除。
  */
 
 const RULE_KEYWORD_DEBOUNCE_MS = 220;
@@ -47,8 +58,16 @@ export interface UseAlertCenterUrlStateResult {
   pageSize: number;
   eventId: string | null;
   updateFilters: (patch: Partial<AlertFilterState>) => void;
+  /** 用户分页写入（优先级 2）：page 优先，清除与分页意图冲突的旧 eventId。 */
   setPage: (page: number) => void;
+  /** 用户 pageSize 写入（优先级 3）：page 重置 1，清除旧 eventId。 */
   setPageSize: (pageSize: number) => void;
+  /**
+   * 自动导航写入（优先级 1/6）：eventId 一次性定位与 page 越界收敛使用，
+   * 只写 page、保留 eventId —— 与用户分页写入路径区分，避免自动定位
+   * 调用「清除 eventId 的手动分页 setter」。
+   */
+  setPagePreservingEventId: (page: number) => void;
   setEventId: (eventId: string | null) => void;
 }
 
@@ -141,16 +160,32 @@ export function useAlertCenterUrlState(): UseAlertCenterUrlStateResult {
     [setUrlState],
   );
 
+  // 用户分页写入（优先级 2）：用户意图优先，清除旧 eventId —— 刷新/分享
+  // 该 URL 不会重新触发旧事件定位，URL 无自相矛盾状态
   const setPage = useCallback(
     (page: number) => {
-      setUrlState((previous) => ({ ...previous, page }));
+      setUrlState((previous) => ({ ...previous, page, eventId: null }));
     },
     [setUrlState],
   );
 
+  // 用户 pageSize 写入（优先级 3）：page 重置 1，同样清除旧 eventId
   const setPageSize = useCallback(
     (pageSize: number) => {
-      setUrlState((previous) => ({ ...previous, pageSize, page: 1 }));
+      setUrlState((previous) => ({
+        ...previous,
+        pageSize,
+        page: 1,
+        eventId: null,
+      }));
+    },
+    [setUrlState],
+  );
+
+  // 自动导航写入（优先级 1/6）：eventId 定位 / page 越界收敛专用
+  const setPagePreservingEventId = useCallback(
+    (page: number) => {
+      setUrlState((previous) => ({ ...previous, page }));
     },
     [setUrlState],
   );
@@ -193,6 +228,7 @@ export function useAlertCenterUrlState(): UseAlertCenterUrlStateResult {
     updateFilters,
     setPage,
     setPageSize,
+    setPagePreservingEventId,
     setEventId,
   };
 }

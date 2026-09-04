@@ -57,6 +57,7 @@ import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { classifyRequestError } from "@/lib/request-error";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 
+import { ALERT_URL_PAGE_SIZES } from "./alert-center-url-state";
 import {
   buildAlertExportJson,
   buildAlertExportRows,
@@ -314,6 +315,7 @@ export function AlertCenterContent() {
     updateFilters,
     setPage: setListPage,
     setPageSize: setListPageSize,
+    setPagePreservingEventId,
     setEventId,
   } = useAlertCenterUrlState();
 
@@ -923,27 +925,56 @@ export function AlertCenterContent() {
     await refetchEvents({ limit: nextLimit });
   };
 
+  // FE-01 分页优先级契约（完整定义见 useAlertCenterUrlState 注释）。
+  //
+  // page 越界收敛（优先级 6）：走自动写路径保留 eventId —— 深链
+  // ?eventId=X&page=99 收敛到最后一页后，下方的事件定位（优先级 1）
+  // 仍可执行，不因收敛丢失 eventId。
   useEffect(() => {
     if (listPage > listPageCount) {
-      setListPage(listPageCount);
+      setPagePreservingEventId(listPageCount);
     }
-  }, [listPage, listPageCount]);
+  }, [listPage, listPageCount, setPagePreservingEventId]);
 
+  // 外部 eventId（深链/分享链接/back-forward/行内点击）→ 一次性定位到该
+  // 事件所在页（优先级 1/8）。eventParam 变化时把定位请求排入 ref，事件
+  // 数据就绪后消费一次；此后不再监听 listPage —— 用户翻页 / 改 pageSize /
+  // 筛选变化（优先级 2-4）不会被旧选中事件拉回。定位写入走自动路径
+  // （保留 eventId），与用户分页的手动写入路径区分。
+  const lastSeenEventParamRef = useRef<string | null>(eventParam);
+  const pendingEventPositionRef = useRef<string | null>(eventParam);
   useEffect(() => {
-    if (!selectedEventId) {
+    if (eventParam !== lastSeenEventParamRef.current) {
+      lastSeenEventParamRef.current = eventParam;
+      pendingEventPositionRef.current = eventParam;
+    }
+    const pending = pendingEventPositionRef.current;
+    if (!pending) {
       return;
     }
-    const index = filteredEvents.findIndex(
-      (event) => event.id === selectedEventId,
-    );
+    const index = filteredEvents.findIndex((event) => event.id === pending);
     if (index < 0) {
+      // 事件不在当前筛选视图：已出现在数据集则放弃本次定位（与
+      // resolveSelectedEventId 的「选中保留、页码不动」语义一致）；
+      // 数据尚未加载（不在 sortedEvents）时保持等待。
+      if (sortedEvents.some((event) => event.id === pending)) {
+        pendingEventPositionRef.current = null;
+      }
       return;
     }
+    pendingEventPositionRef.current = null;
     const targetPage = Math.floor(index / listPageSize) + 1;
     if (targetPage !== listPage) {
-      setListPage(targetPage);
+      setPagePreservingEventId(targetPage);
     }
-  }, [filteredEvents, listPage, listPageSize, selectedEventId]);
+  }, [
+    eventParam,
+    filteredEvents,
+    listPage,
+    listPageSize,
+    setPagePreservingEventId,
+    sortedEvents,
+  ]);
 
   const replayOption = useMemo<EChartsOption>(
     () =>
@@ -2724,11 +2755,17 @@ export function AlertCenterContent() {
                   pageSize={listPageSize}
                   total={filteredEvents.length}
                   showSizeChanger
-                  pageSizeOptions={[20, 50, 100]}
+                  pageSizeOptions={[...ALERT_URL_PAGE_SIZES]}
                   onChange={(page, pageSize) => {
                     if (pageSize !== listPageSize) {
+                      // 用户改 pageSize（优先级 3）：page 重置 1 且清除旧
+                      // eventId；不采纳 antd 传入的 page，避免停留在旧行号
+                      // 对应的页码
                       setListPageSize(pageSize);
+                      return;
                     }
+                    // 用户翻页（优先级 2）：分页意图优先，setPage 清除与
+                    // 分页冲突的旧 eventId，页面稳定停留目标页
                     setListPage(page);
                   }}
                   showTotal={(total, range) =>
