@@ -3,8 +3,9 @@
 import { Alert, Button, Card, Space, Tabs } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { ChartEmptyState } from "@/components/chart-empty-state";
 import type { EChartsOption } from "echarts";
+
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import type {
   AlertEventReplayQuery,
   AlertRuleTuningSuggestionQuery,

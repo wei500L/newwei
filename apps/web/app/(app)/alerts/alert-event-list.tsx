@@ -7,10 +7,10 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import type { resolveLocale } from "@/lib/i18n";
 
 import type { AlertEventItem } from "./alert-center-list-model";
+import { ALERT_URL_PAGE_SIZES } from "./alert-center-url-state";
 import { AlertEventListToolbar, type AlertExportScope } from "./alert-event-list-toolbar";
 import { AlertEventRow } from "./alert-event-row";
 import { useAlertEventVirtualization } from "./hooks/use-alert-event-virtualization";
-import { ALERT_URL_PAGE_SIZES } from "./alert-center-url-state";
 
 /**
  * Alert Center 事件列表域（FE-批3B 从 alert-center.tsx 提取）。

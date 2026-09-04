@@ -33,7 +33,9 @@ export default defineConfig({
         // FE-批3：Alert Center 领域模块（FE-03 include 扩充）
         "app/(app)/alerts/alert-center.tsx",
         "app/(app)/alerts/alert-center-url-state.ts",
+        "app/(app)/alerts/alert-center-data-state.ts",
         "app/(app)/alerts/alert-center-filters.tsx",
+        "app/(app)/alerts/alert-center-summary.tsx",
         "app/(app)/alerts/alert-center-list-model.ts",
         "app/(app)/alerts/alert-event-detail-model.ts",
         "app/(app)/alerts/alert-event-detail.tsx",

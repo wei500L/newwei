@@ -54,11 +54,11 @@ export const CONTEXT_OBJECT_KEYS = [
   },
 ] as const;
 
-export type ContextObjectKeyEntry = {
+export interface ContextObjectKeyEntry {
   key: string;
   labelKey: string;
   defaultLabel: string;
-};
+}
 
 export interface AlertEventDetailModel {
   context: Record<string, unknown> | null;

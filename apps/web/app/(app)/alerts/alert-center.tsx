@@ -1,16 +1,11 @@
 "use client";
 
 import {
-  Alert,
   Button,
-  Card,
   Col,
   Input,
   Row,
   Space,
-  Spin,
-  Statistic,
-  Tabs,
   Typography,
   message,
 } from "antd";
@@ -19,11 +14,9 @@ import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DataStateBoundary, type DataStateBoundaryState } from "@/components/data-state-boundary";
-import { DashboardChart } from "@/components/echart";
+import type { AlertMetricProvider } from "@/graphql/generated";
 import {
-  AlertMetricProvider,
   useAlertEventReplayLazyQuery,
   useAlertRuleTuningSuggestionQuery,
 } from "@/graphql/generated";
@@ -35,13 +28,11 @@ import {
   formatDateForFilename,
 } from "@/lib/data-export";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
-import { classifyRequestError } from "@/lib/request-error";
-import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 
+import { buildAlertDataState } from "./alert-center-data-state";
 import { AlertCenterFilters } from "./alert-center-filters";
 import { buildThresholdSummary } from "./alert-center-list-model";
-import { AlertEventDetail } from "./alert-event-detail";
-import { CONTEXT_OBJECT_KEYS } from "./alert-event-detail-model";
+import { AlertCenterSummary } from "./alert-center-summary";
 import {
   buildAlertExportJson,
   buildAlertExportRows,
@@ -60,35 +51,18 @@ import {
   buildRuleTrendOption,
   buildTrendOption,
 } from "./alert-chart-options";
+import { AlertEventDetail } from "./alert-event-detail";
+import { CONTEXT_OBJECT_KEYS } from "./alert-event-detail-model";
 import { AlertEventList } from "./alert-event-list";
 import type { AlertExportScope } from "./alert-event-list-toolbar";
 import {
-  DetailRow,
-  formatContextValue,
-  formatMetricChange,
   safeJsonStringify,
   toNumber,
-  toStringValue,
 } from "./evidence-utils";
 import { useAlertCenterUrlState } from "./hooks/use-alert-center-url-state";
 import { useAlertEventSelection } from "./hooks/use-alert-event-selection";
 import { useAlertEventStatusActions } from "./hooks/use-alert-event-status-actions";
 import { useAlertEventsFeed } from "./hooks/use-alert-events-feed";
-
-const severityColor: Record<string, string> = {
-  low: "green",
-  medium: "orange",
-  high: "red",
-};
-
-const deliveryStatusColor: Record<string, string> = {
-  pending: "orange",
-  sending: "blue",
-  sent: "green",
-  failed: "red",
-};
-
-
 
 export function AlertCenterContent() {
   const { t, i18n } = useTranslation();
@@ -647,71 +621,25 @@ export function AlertCenterContent() {
     }
   };
 
-  const falsePositivePercent =
-    typeof stats.falsePositiveRate === "number"
-      ? Number((stats.falsePositiveRate * 100).toFixed(1))
-      : null;
 
 
-  const blockingEventsErrorState =
-    eventsError && sortedEvents.length === 0
-      ? (() => {
-          const baseState = buildRequestErrorEmptyState({
-            t,
-            error: eventsError,
-            onRetry: () => {
-              void handleRefresh();
-            },
-            actionLoading: eventsLoading,
-            actionLabelOverride: t("dashboard.actions.retryFetch"),
-            includeDetailText: false,
-          });
-          const errorKind = classifyRequestError(eventsError).kind;
-          const description =
-            errorKind === "permission" || errorKind === "auth"
-              ? t("alerts.center.loadFailed.permission")
-              : errorKind === "network" ||
-                  errorKind === "timeout" ||
-                  errorKind === "service"
-                ? t("alerts.center.loadFailed.service")
-                : t("alerts.center.loadFailed.default");
-
-          return {
-            ...baseState,
-            title: t("alerts.center.loadFailed.title"),
-            description: (
-              <div className="flex flex-col items-center gap-1">
-                <span>{description}</span>
-                {baseState.detailText ? (
-                  <span className="font-mono text-[10px] opacity-80">
-                    {t("alerts.center.loadFailed.detail")}
-                    : {baseState.detailText}
-                  </span>
-                ) : null}
-              </div>
-            ),
-          };
-        })()
-      : null;
-
-  // 数据状态分派（DataStateBoundary 首个消费方）：
+  // 数据状态分派（DataStateBoundary 首个消费方，行为保持）：
   // - 会话 loading / 无读权限 / 无数据 blockingError → 整页状态
-  // - 有旧数据时刷新失败 → nonBlockingError（内容保留 + 非阻断提示，新增语义）
+  // - 有旧数据时刷新失败 → nonBlockingError（内容保留 + 非阻断提示）
   // - 空态仍由事件列表内的 emptyText 承载（本 PR 不全站替换 loading/error/empty 分支）
   const hasEventsData = sortedEvents.length > 0;
-  const dataState: DataStateBoundaryState = sessionStatus === "loading"
-    ? { kind: "initialLoading" }
-    : authenticated && !canReadAlerts
-      ? { kind: "permissionDenied" }
-      : eventsError && !hasEventsData
-        ? {
-            kind: "blockingError",
-            error: eventsError,
-            errorStateOverride: blockingEventsErrorState ?? undefined,
-          }
-        : eventsError && hasEventsData
-          ? { kind: "nonBlockingError", error: eventsError }
-          : { kind: "ready" };
+  const dataState: DataStateBoundaryState = buildAlertDataState({
+    sessionStatus,
+    authenticated,
+    canReadAlerts,
+    eventsError,
+    hasEventsData,
+    onRetry: () => {
+      void handleRefresh();
+    },
+    eventsLoading,
+    t,
+  });
   const isContentReady =
     dataState.kind === "ready" || dataState.kind === "nonBlockingError";
 
@@ -739,72 +667,18 @@ export function AlertCenterContent() {
         retryLabel={t("dashboard.actions.retryFetch")}
       >
 
-      {isLikelySampled ? (
-        <Alert
-          type="warning"
-          showIcon
-          message={t("alerts.center.sampleWarning.message", {
-            count: eventsLimit,
-          })}
-          description={
-            canLoadMoreHistory ? (
-              <Button
-                size="small"
-                onClick={() => void loadMoreEvents()}
-                loading={eventsLoading}
-              >
-                {t("alerts.center.sampleWarning.loadMore")}
-              </Button>
-            ) : (
-              t("alerts.center.sampleWarning.reachLimit")
-            )
-          }
-        />
-      ) : null}
-
-      <Row gutter={[12, 12]}>
-        <Col xs={12} sm={8} xl={4}>
-          <Card size="small" className="content-card">
-            <Statistic
-              title={t("alerts.center.stats.total")}
-              value={stats.total}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} xl={4}>
-          <Card size="small" className="content-card">
-            <Statistic
-              title={t("alerts.center.stats.pending")}
-              value={stats.pending}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} xl={4}>
-          <Card size="small" className="content-card">
-            <Statistic
-              title={t("alerts.center.stats.confirmed")}
-              value={stats.confirmed}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} xl={4}>
-          <Card size="small" className="content-card">
-            <Statistic
-              title={t("alerts.center.stats.ignored")}
-              value={stats.ignored}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8} xl={8}>
-          <Card size="small" className="content-card">
-            <Statistic
-              title={t("alerts.center.stats.falsePositiveRate")}
-              value={falsePositivePercent ?? "--"}
-              suffix={falsePositivePercent !== null ? "%" : undefined}
-            />
-          </Card>
-        </Col>
-      </Row>
+      <AlertCenterSummary
+        isLikelySampled={isLikelySampled}
+        canLoadMoreHistory={canLoadMoreHistory}
+        eventsLimit={eventsLimit}
+        eventsLoading={eventsLoading}
+        onLoadMore={() => void loadMoreEvents()}
+        stats={stats}
+        trendPoints={trendPoints}
+        trendOption={trendOption}
+        echartsTheme={echartsTheme}
+        trendWindowLabel={trendWindowLabel}
+      />
 
       <AlertCenterFilters
         filterState={filterState}
@@ -814,27 +688,6 @@ export function AlertCenterContent() {
         filteredCount={filteredEvents.length}
         totalCount={sortedEvents.length}
       />
-
-      <Card
-        className="content-card"
-        title={t("alerts.center.trend.title")}
-        extra={
-          <Typography.Text type="secondary">{trendWindowLabel}</Typography.Text>
-        }
-      >
-        {trendPoints.length === 0 ? (
-          <ChartEmptyState
-            className="h-auto py-8"
-            description={t("alerts.center.trend.empty")}
-          />
-        ) : (
-          <DashboardChart
-            option={trendOption}
-            theme={echartsTheme}
-            height={280}
-          />
-        )}
-      </Card>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={14}>
