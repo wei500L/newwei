@@ -8,9 +8,8 @@ import {
   Typography,
   message,
 } from "antd";
-import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DataStateBoundary, type DataStateBoundaryState } from "@/components/data-state-boundary";
@@ -29,29 +28,21 @@ import { AlertCenterFilters } from "./alert-center-filters";
 import { buildThresholdSummary } from "./alert-center-list-model";
 import { AlertCenterSummary } from "./alert-center-summary";
 import {
-  buildAlertStats,
-  buildAlertTrend,
-  buildRuleTrendAnalysis,
-  buildSimilarAlerts,
   DEFAULT_FILTER_STATE,
   filterAlertEvents,
   resolveAlertCenterAccess,
   resolveFilterTimeWindow,
   type AlertFilterState,
 } from "./alert-center.utils";
-import {
-  buildReplayOption,
-  buildRuleTrendOption,
-  buildTrendOption,
-} from "./alert-chart-options";
 import { AlertEventDetail } from "./alert-event-detail";
 import { CONTEXT_OBJECT_KEYS } from "./alert-event-detail-model";
 import { AlertEventList } from "./alert-event-list";
 import type { AlertExportScope } from "./alert-event-list-toolbar";
 import { toNumber } from "./evidence-utils";
+import { useAlertEventBatch } from "./hooks/use-alert-event-batch";
+import { useAlertCenterCharts } from "./hooks/use-alert-center-charts";
 import { useAlertCenterUrlState } from "./hooks/use-alert-center-url-state";
 import { useAlertEventDetail } from "./hooks/use-alert-event-detail";
-import { useAlertEventBatch } from "./hooks/use-alert-event-batch";
 import { useAlertEventSelection } from "./hooks/use-alert-event-selection";
 import { useAlertEventStatusActions } from "./hooks/use-alert-event-status-actions";
 import { useAlertEventsFeed } from "./hooks/use-alert-events-feed";
@@ -290,25 +281,6 @@ export function AlertCenterContent() {
       t,
     });
 
-  const stats = useMemo(
-    () => buildAlertStats(filteredEvents),
-    [filteredEvents],
-  );
-  const trendPoints = useMemo(
-    () => buildAlertTrend(filteredEvents, filterWindow),
-    [filterWindow, filteredEvents],
-  );
-
-  const similarAlerts = useMemo(
-    () => buildSimilarAlerts(selectedEvent, sortedEvents, 5),
-    [selectedEvent, sortedEvents],
-  );
-  const ruleTrendAnalysis = useMemo(
-    () =>
-      buildRuleTrendAnalysis(selectedEvent?.ruleId, sortedEvents, filterWindow),
-    [filterWindow, selectedEvent?.ruleId, sortedEvents],
-  );
-
   const previousEventId =
     selectedIndexInFiltered > 0
       ? filteredEvents[selectedIndexInFiltered - 1]?.id
@@ -326,49 +298,26 @@ export function AlertCenterContent() {
     }
   };
 
-  const replayOption = useMemo<EChartsOption>(
-    () =>
-      buildReplayOption(
-        { replay, replayPoints, replayUnit, selectedEvent },
-        { primary: colors.primary, accent: colors.accent, fontFamily },
-      ),
-    [colors.accent, colors.primary, fontFamily, replay, replayPoints, replayUnit, selectedEvent],
-  );
-
-  const trendOption = useMemo<EChartsOption>(
-    () =>
-      buildTrendOption(
-        trendPoints,
-        { primary: colors.primary, accent: colors.accent, fontFamily },
-        t,
-      ),
-    [colors.accent, colors.primary, fontFamily, t, trendPoints],
-  );
-
-  const ruleTrendOption = useMemo<EChartsOption>(
-    () =>
-      buildRuleTrendOption(
-        ruleTrendAnalysis,
-        { primary: colors.primary, accent: colors.accent, fontFamily },
-        t,
-      ),
-    [colors.accent, colors.primary, fontFamily, ruleTrendAnalysis, t],
-  );
-
-  const trendWindowLabel = useMemo(() => {
-    if (filterWindow.startMs === null || filterWindow.endMs === null) {
-      return t("alerts.center.trend.followFilters");
-    }
-    const startLabel = formatDateTime(filterWindow.startMs, locale, {
-      month: "2-digit",
-      day: "2-digit",
-    });
-    const endLabel = formatDateTime(filterWindow.endMs, locale, {
-      month: "2-digit",
-      day: "2-digit",
-    });
-    return `${startLabel} - ${endLabel}`;
-  }, [filterWindow.endMs, filterWindow.startMs, locale, t]);
+  // 图表与统计派生（FE-批3B）：stats/trend/replay option 构建与窗口标签
+  const {
+    stats,
+    trendPoints,
+    similarAlerts,
+    ruleTrendAnalysis,
+    replayOption,
+    trendOption,
+    ruleTrendOption,
+    trendWindowLabel,
+  } = useAlertCenterCharts({
+    filteredEvents,
+    sortedEvents,
+    selectedEvent,
+    filterWindow,
+    replay,
+    replayPoints,
+    replayUnit,
+    theme: { primary: colors.primary, accent: colors.accent, fontFamily },
+  });
 
   const objectKeyLabels = useMemo(
     () =>
@@ -417,15 +366,16 @@ export function AlertCenterContent() {
   });
 
   const hasEventsData = sortedEvents.length > 0;
+  const onRetry = () => {
+    void handleRefresh();
+  };
   const dataState: DataStateBoundaryState = buildAlertDataState({
     sessionStatus,
     authenticated,
     canReadAlerts,
     eventsError,
     hasEventsData,
-    onRetry: () => {
-      void handleRefresh();
-    },
+    onRetry,
     eventsLoading,
     t,
   });
@@ -441,7 +391,7 @@ export function AlertCenterContent() {
           {t("alerts.center.title")}
         </Typography.Title>
         {isContentReady ? (
-          <Button size="small" onClick={() => void handleRefresh()}>
+          <Button size="small" onClick={onRetry}>
             {t("common.refresh")}
           </Button>
         ) : null}
@@ -449,9 +399,7 @@ export function AlertCenterContent() {
 
       <DataStateBoundary
         state={dataState}
-        onRetry={() => {
-          void handleRefresh();
-        }}
+        onRetry={onRetry}
         retrying={eventsLoading}
         retryLabel={t("dashboard.actions.retryFetch")}
       >
