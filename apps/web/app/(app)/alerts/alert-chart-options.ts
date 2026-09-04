@@ -3,6 +3,8 @@ import type { EChartsOption } from "echarts";
 import dayjs from "@/lib/dayjs";
 import { ALERT_LINE_COLORS } from "@/lib/status-tokens";
 
+import type { AlertEventReplayQuery } from "@/graphql/generated";
+
 import type {
   AlertEventItem,
   AlertRuleTrendAnalysis,
@@ -23,7 +25,7 @@ export interface ChartThemeInputs {
 
 export interface ReplayChartInput {
   replay: unknown;
-  replayPoints: { timestamp: unknown; value: number }[] | null | undefined;
+  replayPoints: NonNullable<AlertEventReplayQuery["alertEventReplay"]>["points"] | null | undefined;
   replayUnit: string | null | undefined;
   selectedEvent: AlertEventItem | null;
 }
