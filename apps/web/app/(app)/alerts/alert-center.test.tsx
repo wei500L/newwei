@@ -319,6 +319,26 @@ describe("Alert Center alerts.manage 能力矩阵（迁移前行为）", () => {
 
     expect(view.apollo.operations).toContain("AlertRuleTuningSuggestion");
   });
+
+  it("选中事件无 ruleId：即使有 alerts.manage 也不发起 tuning 查询", async () => {
+    const view = renderAlertCenter({
+      events: [
+        buildAlertEvent({
+          id: "e-1",
+          ruleId: null,
+          message: "ruleless event",
+        }),
+      ],
+      permissions: ["alerts.read", "alerts.manage"],
+    });
+
+    await awaitEvent("ruleless event");
+
+    await userEvent.click(screen.getByRole("tab", { name: "Feedback" }));
+    expect(screen.getByText("Tuning suggestion")).toBeInTheDocument();
+
+    expect(view.apollo.operations).not.toContain("AlertRuleTuningSuggestion");
+  });
 });
 
 describe("Alert Center 数据状态（迁移前行为）", () => {
@@ -1094,6 +1114,138 @@ describe("Alert Center 详情页签（迁移前行为）", () => {
       sourceName: "internal-feed",
     });
     expect(await screen.findByText("Copied.")).toBeInTheDocument();
+  });
+
+  it("复制 Markdown：写剪贴板（含标题/事件字段/上下文/投递）并提示成功", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    renderAlertCenter({
+      events: [
+        buildAlertEvent({
+          id: "e-1",
+          ruleName: "Markdown rule",
+          message: "markdown event",
+          context: { sourceName: "md-feed" },
+        }),
+      ],
+    });
+
+    await awaitEvent("markdown event");
+    await userEvent.click(screen.getByText("Copy Markdown"));
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const payload = writeText.mock.calls[0]![0] as string;
+    expect(payload).toContain("# Alert detail");
+    expect(payload).toContain("- **ID**: e-1");
+    expect(payload).toContain("markdown event");
+    expect(payload).toContain("md-feed");
+    expect(payload).toContain("Ops mailbox");
+    expect(await screen.findByText("Copied as Markdown.")).toBeInTheDocument();
+  });
+
+  it("replay 懒加载：选中 Replay 页签前不发起 replay 查询，选中后发起", async () => {
+    const view = renderAlertCenter({
+      events: [buildAlertEvent({ id: "e-1", message: "replay gated event" })],
+    });
+
+    await awaitEvent("replay gated event");
+    expect(view.apollo.operations).not.toContain("AlertEventReplay");
+
+    await userEvent.click(screen.getByRole("tab", { name: "Replay" }));
+    await waitFor(() =>
+      expect(view.apollo.operations).toContain("AlertEventReplay"),
+    );
+    expect(
+      view.apollo.operations.filter((name) => name === "AlertEventReplay"),
+    ).toHaveLength(1);
+  });
+
+  it("Replay 页签停留时切换事件：对新事件重新发起 replay 查询（tab 随后重置 Overview）", async () => {
+    const view = renderAlertCenter({
+      events: [
+        buildAlertEvent({
+          id: "e-1",
+          triggeredAt: minutesAgo(1),
+          message: "first replay event",
+        }),
+        buildAlertEvent({
+          id: "e-2",
+          triggeredAt: minutesAgo(2),
+          message: "second replay event",
+        }),
+      ],
+    });
+
+    await waitFor(() => expect(eventRows(view.container)).toHaveLength(2));
+    await userEvent.click(screen.getByRole("tab", { name: "Replay" }));
+    await waitFor(() =>
+      expect(
+        view.apollo.operations.filter((name) => name === "AlertEventReplay"),
+      ).toHaveLength(1),
+    );
+
+    // 点击另一行：replay effect 检测 eventId 不匹配 → 重新加载
+    const rows = eventRows(view.container);
+    await userEvent.click(within(rows[1]!).getByRole("button"));
+    await waitFor(() =>
+      expect(
+        view.apollo.operations.filter((name) => name === "AlertEventReplay"),
+      ).toHaveLength(2),
+    );
+    expect(within(detailCard()).getByText("Rule e-2")).toBeInTheDocument();
+  });
+
+  it("详情 previous/next：按筛选顺序切换选中事件（首事件 Next 可用、Previous 禁用）", async () => {
+    renderAlertCenter({
+      events: [
+        buildAlertEvent({
+          id: "e-1",
+          triggeredAt: minutesAgo(1),
+          message: "newest event",
+        }),
+        buildAlertEvent({
+          id: "e-2",
+          triggeredAt: minutesAgo(2),
+          message: "older event",
+        }),
+      ],
+    });
+
+    await awaitEvent("newest event");
+    // 默认选中最新（filtered 首位）：无更早事件可回退
+    expect(screen.getByText("Previous").closest("button")).toBeDisabled();
+    expect(screen.getByText("Next").closest("button")).toBeEnabled();
+
+    await userEvent.click(screen.getByText("Next"));
+    await waitFor(() =>
+      expect(within(detailCard()).getByText("Rule e-2")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Previous").closest("button")).toBeEnabled();
+
+    await userEvent.click(screen.getByText("Previous"));
+    await waitFor(() =>
+      expect(within(detailCard()).getByText("Rule e-1")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Previous").closest("button")).toBeDisabled();
+  });
+
+  it("长消息展开/收起：Overview 消息超过 180 字符出现 Expand 开关", async () => {
+    const longMessage = `prefix ${"x".repeat(200)} suffix`;
+    renderAlertCenter({
+      events: [buildAlertEvent({ id: "e-1", message: longMessage })],
+    });
+
+    await awaitEvent(longMessage);
+
+    await userEvent.click(screen.getByText("Expand"));
+    expect(await screen.findByText("Collapse")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Collapse"));
+    expect(await screen.findByText("Expand")).toBeInTheDocument();
   });
 });
 
