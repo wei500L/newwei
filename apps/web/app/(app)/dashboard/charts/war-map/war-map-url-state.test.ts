@@ -1,10 +1,9 @@
-import { describe, expect, it } from "vitest";
-
 import {
   WAR_MAP_DEFAULT_LAYER_VISIBILITY,
   WAR_MAP_LAYER_IDS,
   type WarMapLayerVisibility,
 } from "@modular/utils";
+import { describe, expect, it } from "vitest";
 
 import {
   mergeWarMapSettingsWithUrlState,

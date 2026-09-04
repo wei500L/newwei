@@ -38,7 +38,7 @@ vi.mock("@/lib/map/map-runtime", async () => {
   const { testMapRuntime } = await import("@/test/component-mock-state");
 
   function createFakeMap() {
-    const handlers = new Map<string, Array<(payload?: unknown) => void>>();
+    const handlers = new Map<string, ((payload?: unknown) => void)[]>();
     return {
       __handlers: handlers,
       on(event: string, handler: (payload?: unknown) => void) {
@@ -247,7 +247,7 @@ function createDesktopMatchMedia(query: string) {
 
 class ControllableIntersectionObserver {
   constructor(
-    callback: (entries: Array<{ isIntersecting: boolean }>) => void,
+    callback: (entries: { isIntersecting: boolean }[]) => void,
   ) {
     warMapIntersectionObservers.push({
       callback,
@@ -803,7 +803,7 @@ describe("WarMap（迁移前 characterization）", () => {
       await activateMap();
 
       const eventsLayer = await waitForDeckLayer("wm-events-symbols-primary");
-      const point = (eventsLayer.props.data as Array<Record<string, unknown>>)[0];
+      const point = (eventsLayer.props.data as Record<string, unknown>[])[0];
       expect(point.selectionKey).toBe("event:e1");
 
       (eventsLayer.props.onClick as (info: unknown) => void)({ object: point });
@@ -833,7 +833,7 @@ describe("WarMap（迁移前 characterization）", () => {
       await activateMap();
 
       const eventsLayer = await waitForDeckLayer("wm-events-symbols-primary");
-      const points = eventsLayer.props.data as Array<Record<string, unknown>>;
+      const points = eventsLayer.props.data as Record<string, unknown>[];
       expect(points).toHaveLength(1);
       const clusterPoint = points[0];
       expect(clusterPoint.isCluster).toBe(true);
@@ -870,7 +870,7 @@ describe("WarMap（迁移前 characterization）", () => {
       expect(getCursor()?.({ isDragging: false })).toBe("grab");
 
       (eventsLayer.props.onHover as (info: unknown) => void)({
-        object: (eventsLayer.props.data as Array<Record<string, unknown>>)[0],
+        object: (eventsLayer.props.data as Record<string, unknown>[])[0],
       });
 
       await waitFor(() => {
@@ -912,11 +912,11 @@ describe("WarMap（迁移前 characterization）", () => {
       await waitFor(() => {
         const muted = findDeckLayer("wm-events-symbols-muted");
         expect(muted).toBeDefined();
-        const mutedData = muted!.props.data as Array<{ label: string }>;
+        const mutedData = muted!.props.data as { label: string }[];
         expect(mutedData.map((point) => point.label)).toEqual(["Event e-low"]);
       });
       const primary = findDeckLayer("wm-events-symbols-primary")!;
-      const primaryData = primary.props.data as Array<{ label: string }>;
+      const primaryData = primary.props.data as { label: string }[];
       expect(primaryData.map((point) => point.label)).toEqual(["Event e-high"]);
     });
 
@@ -983,7 +983,7 @@ describe("WarMap（迁移前 characterization）", () => {
       await activateMap();
 
       const newsLayer = await waitForDeckLayer("wm-news-symbols-primary");
-      const point = (newsLayer.props.data as Array<Record<string, unknown>>)[0];
+      const point = (newsLayer.props.data as Record<string, unknown>[])[0];
       expect(point.selectionKey).toBe("news:n1");
 
       (newsLayer.props.onClick as (info: unknown) => void)({ object: point });
@@ -1006,7 +1006,7 @@ describe("WarMap（迁移前 characterization）", () => {
       await activateMap();
 
       const monitorLayer = await waitForDeckLayer("wm-monitors-symbols-primary");
-      const point = (monitorLayer.props.data as Array<Record<string, unknown>>)[0];
+      const point = (monitorLayer.props.data as Record<string, unknown>[])[0];
       expect(point.interactionKey).toBe("monitor:m1");
 
       (monitorLayer.props.onClick as (info: unknown) => void)({ object: point });
@@ -1051,7 +1051,7 @@ describe("WarMap（迁移前 characterization）", () => {
       await activateMap();
 
       const vesselLayer = await waitForDeckLayer("wm-ais-vessels-symbols-primary");
-      const point = (vesselLayer.props.data as Array<Record<string, unknown>>)[0];
+      const point = (vesselLayer.props.data as Record<string, unknown>[])[0];
       expect(point.selectionKey).toBe("transport:vessel:ais:123456789");
 
       (vesselLayer.props.onClick as (info: unknown) => void)({ object: point });

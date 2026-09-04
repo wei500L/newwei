@@ -222,7 +222,7 @@ export function emitWarMapMapEvent(
     throw new Error("No live war map runtime instance");
   }
   const handlers = latest.map.__handlers as
-    | Map<string, Array<(payload?: unknown) => void>>
+    | Map<string, ((payload?: unknown) => void)[]>
     | undefined;
   const listeners = handlers?.get(eventName) ?? [];
   act(() => {
@@ -246,7 +246,7 @@ export function setWarMapInView(visible: boolean): void {
 /* ------------------------------------------------------------------ */
 
 export interface WarMapIntersectionObserverStub {
-  callback: (entries: Array<{ isIntersecting: boolean }>) => void;
+  callback: (entries: { isIntersecting: boolean }[]) => void;
   disconnect: () => void;
   observe: () => void;
 }

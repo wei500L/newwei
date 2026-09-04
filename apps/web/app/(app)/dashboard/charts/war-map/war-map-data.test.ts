@@ -48,7 +48,7 @@ describe("war map query keys", () => {
 
   it("zoom 以 2 位小数入 key（避免微小抖动产生新 key）", () => {
     expect(
-      buildWarMapEventsQueryKey({ ...BASE_INPUT, zoom: 4.56123 }).[6],
+      buildWarMapEventsQueryKey({ ...BASE_INPUT, zoom: 4.56123 })[6],
     ).toBe(4.56);
   });
 
