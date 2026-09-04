@@ -11,7 +11,6 @@ import {
   Col,
   Collapse,
   DatePicker,
-  Descriptions,
   Divider,
   Input,
   List,
@@ -26,20 +25,17 @@ import {
   Statistic,
   Tag,
   Tabs,
-  Tooltip,
   Typography,
   message,
 } from "antd";
 import type { Dayjs } from "dayjs";
 import type { EChartsOption } from "echarts";
-import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { DataStateBoundary, type DataStateBoundaryState } from "@/components/data-state-boundary";
 import { DashboardChart } from "@/components/echart";
 import {
   AlertEventsStreamDocument,
@@ -60,8 +56,8 @@ import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { classifyRequestError } from "@/lib/request-error";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
-import { ALERT_LINE_COLORS, RANGE_INDICATOR_COLORS } from "@/lib/status-tokens";
 
+import { ALERT_URL_PAGE_SIZES } from "./alert-center-url-state";
 import {
   buildAlertExportJson,
   buildAlertExportRows,
@@ -78,10 +74,29 @@ import {
   type AlertFilterState,
 } from "./alert-center.utils";
 import {
+  buildReplayOption,
+  buildRuleTrendOption,
+  buildTrendOption,
+} from "./alert-chart-options";
+import {
   ALERT_EVENT_ROW_ESTIMATE_PX,
   shouldUpdateAlertEventsMetric,
   shouldVirtualizeAlertEvents,
 } from "./alert-events-virtualization";
+import { EconomicAnomalyEvidence } from "./economic-anomaly-evidence";
+import { EntityAssociationEvidence } from "./entity-association-evidence";
+import { EntitySentimentEvidence } from "./entity-sentiment-evidence";
+import {
+  DetailRow,
+  formatContextValue,
+  formatMetricChange,
+  isRecord,
+  safeJsonStringify,
+  toNumber,
+  toStringValue,
+} from "./evidence-utils";
+import { useAlertCenterUrlState } from "./hooks/use-alert-center-url-state";
+import { RealtimeSignalEvidence } from "./realtime-signal-evidence";
 
 const severityColor: Record<string, string> = {
   low: "green",
@@ -128,8 +143,6 @@ interface UpdateAlertEventStatusVariables {
   };
 }
 
-type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
-type LocaleCode = ReturnType<typeof resolveLocale>;
 
 const buildThresholdSummary = (
   operator: string | null | undefined,
@@ -179,1070 +192,6 @@ const buildThresholdSummary = (
   }
   const symbol = operatorSymbolMap[operator] ?? operator;
   return `${symbol} ${thresholdValue}`;
-};
-
-const formatMetricChange = (
-  value: number | null | undefined,
-  fallback: string,
-) => {
-  if (typeof value !== "number") {
-    return fallback;
-  }
-  return `${value.toFixed(2)}%`;
-};
-
-const toNumber = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
-};
-
-const formatContextValue = (value: unknown): string => {
-  if (value === null || value === undefined) {
-    return "";
-  }
-  if (typeof value === "string") {
-    return value;
-  }
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value.toString() : String(value);
-  }
-  if (typeof value === "boolean") {
-    return value ? "true" : "false";
-  }
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => formatContextValue(item))
-      .filter(Boolean)
-      .join(", ");
-  }
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-};
-
-const toStringValue = (value: unknown): string | undefined => {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value.toString();
-  }
-  return undefined;
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === "object" && !Array.isArray(value);
-
-const safeJsonStringify = (value: unknown): string => {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-};
-
-const formatFixed = (value: unknown, digits = 4): string => {
-  const numberValue = toNumber(value);
-  return typeof numberValue === "number" ? numberValue.toFixed(digits) : "";
-};
-
-const formatPercent = (value: unknown, digits = 1): string => {
-  const numberValue = toNumber(value);
-  return typeof numberValue === "number"
-    ? `${(numberValue * 100).toFixed(digits)}%`
-    : "";
-};
-
-const DetailRow = ({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) => (
-  <div>
-    <Typography.Text type="secondary">{label}</Typography.Text>
-    <div>{children}</div>
-  </div>
-);
-
-const EconomicAnomalyEvidence = ({
-  context,
-  locale,
-  t,
-}: {
-  context: Record<string, unknown> | null;
-  locale: LocaleCode;
-  t: TranslateFn;
-}) => {
-  if (!context) {
-    return (
-      <Typography.Text type="secondary">
-        {t("alerts.center.evidence.empty")}
-      </Typography.Text>
-    );
-  }
-
-  const itemName = toStringValue(context.itemName);
-  const recordedAt =
-    typeof context.recordedAt === "string" ||
-    typeof context.recordedAt === "number"
-      ? context.recordedAt
-      : undefined;
-  const recordedAtLabel = recordedAt
-    ? formatDateTime(recordedAt, locale, {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        timeZoneName: "short",
-      })
-    : "";
-
-  const model = isRecord(context.model) ? context.model : null;
-  const modelKind = toStringValue(model?.kind);
-  const observed = toNumber(context.observed);
-  const expected = toNumber(context.expected);
-  const lower = toNumber(context.lower);
-  const upper = toNumber(context.upper);
-  const sigma = toNumber(context.sigma);
-  const residual = toNumber(context.residual);
-  const score = toNumber(context.score);
-  const fallback = isRecord(context.fallback) ? context.fallback : null;
-  const canRenderCiRange =
-    typeof lower === "number" &&
-    typeof upper === "number" &&
-    typeof observed === "number" &&
-    typeof expected === "number" &&
-    upper > lower;
-  const ciMin = canRenderCiRange ? Math.min(lower, observed, expected) : 0;
-  const ciMax = canRenderCiRange ? Math.max(upper, observed, expected) : 0;
-  const ciSpan = canRenderCiRange ? ciMax - ciMin : 0;
-  const toPercentPosition = (value: number) =>
-    ciSpan > 0
-      ? Math.max(0, Math.min(100, ((value - ciMin) / ciSpan) * 100))
-      : 50;
-
-  const scoreColor =
-    typeof score === "number"
-      ? score >= 3
-        ? "red"
-        : score >= 2
-          ? "orange"
-          : "green"
-      : "default";
-
-  return (
-    <Space direction="vertical" size={8} style={{ width: "100%" }}>
-      <Space size={[6, 6]} wrap>
-        {itemName ? <Tag>{itemName}</Tag> : null}
-        {modelKind ? <Tag color="blue">{modelKind}</Tag> : null}
-        {typeof score === "number" ? (
-          <Tag color={scoreColor}>{`score ${score.toFixed(3)}`}</Tag>
-        ) : null}
-        {recordedAtLabel ? <Tag>{recordedAtLabel}</Tag> : null}
-      </Space>
-
-      {typeof expected === "number" && typeof sigma === "number" ? (
-        <>
-          <Descriptions size="small" bordered column={2}>
-            <Descriptions.Item
-              label={t("alerts.center.evidence.observed")}
-            >
-              {typeof observed === "number"
-                ? observed
-                : t("common.notAvailable")}
-            </Descriptions.Item>
-            <Descriptions.Item
-              label={t("alerts.center.evidence.expected")}
-            >
-              {expected}
-            </Descriptions.Item>
-            <Descriptions.Item
-              label={t("alerts.center.evidence.residual")}
-            >
-              {typeof residual === "number"
-                ? residual
-                : t("common.notAvailable")}
-            </Descriptions.Item>
-            <Descriptions.Item
-              label={t("alerts.center.evidence.sigma")}
-            >
-              {sigma}
-            </Descriptions.Item>
-            <Descriptions.Item
-              label={t("alerts.center.evidence.ci")}
-              span={2}
-            >
-              {typeof lower === "number" && typeof upper === "number"
-                ? `[${lower}, ${upper}]`
-                : t("common.notAvailable")}
-            </Descriptions.Item>
-          </Descriptions>
-          {canRenderCiRange ? (
-            <Card size="small" style={{ marginTop: 8 }}>
-              <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                <Typography.Text type="secondary">
-                  {t("alerts.center.evidence.ciVisualization")}
-                </Typography.Text>
-                <div style={{ position: "relative", height: 22 }}>
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 10,
-                      left: 0,
-                      width: "100%",
-                      height: 3,
-                      borderRadius: 999,
-                      background: RANGE_INDICATOR_COLORS.track,
-                    }}
-                  />
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 8,
-                      left: `${toPercentPosition(lower)}%`,
-                      width: `${Math.max(
-                        2,
-                        toPercentPosition(upper) - toPercentPosition(lower),
-                      )}%`,
-                      height: 7,
-                      borderRadius: 999,
-                      background: RANGE_INDICATOR_COLORS.range,
-                    }}
-                  />
-                  <Tooltip
-                    title={`${t("alerts.center.evidence.expected")}: ${expected}`}
-                  >
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 2,
-                        left: `${toPercentPosition(expected)}%`,
-                        width: 2,
-                        height: 18,
-                        background: RANGE_INDICATOR_COLORS.expected,
-                      }}
-                    />
-                  </Tooltip>
-                  <Tooltip
-                    title={`${t("alerts.center.evidence.observed")}: ${observed}`}
-                  >
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: `${toPercentPosition(observed)}%`,
-                        width: 2,
-                        height: 22,
-                        background: RANGE_INDICATOR_COLORS.observed,
-                      }}
-                    />
-                  </Tooltip>
-                </div>
-                <Space size={[8, 8]} wrap>
-                  <Tag color="blue">{`CI [${lower.toFixed(3)}, ${upper.toFixed(3)}]`}</Tag>
-                  <Tag>{`expected ${expected.toFixed(3)}`}</Tag>
-                  <Tag color="red">{`observed ${observed.toFixed(3)}`}</Tag>
-                </Space>
-              </Space>
-            </Card>
-          ) : null}
-        </>
-      ) : fallback ? (
-        <Alert
-          type="warning"
-          showIcon
-          message={t("alerts.center.evidence.fallback")}
-          description={safeJsonStringify(fallback)}
-        />
-      ) : (
-        <Typography.Text type="secondary">
-          {t("alerts.center.evidence.empty")}
-        </Typography.Text>
-      )}
-    </Space>
-  );
-};
-
-const EntitySentimentEvidence = ({
-  context,
-  locale,
-  t,
-  colors,
-  fontFamily,
-}: {
-  context: Record<string, unknown> | null;
-  locale: LocaleCode;
-  t: TranslateFn;
-  colors: {
-    primary: string;
-    accent: string;
-  };
-  fontFamily: string;
-}) => {
-  const safeContext = context ?? null;
-  const window = isRecord(safeContext?.window) ? safeContext.window : null;
-  const baseline = isRecord(safeContext?.baseline)
-    ? safeContext.baseline
-    : null;
-  const windowNegativeRatio = toNumber(window?.negativeRatio);
-  const baselineNegativeRatio = toNumber(baseline?.negativeRatio);
-  const ratioTrendOption: EChartsOption = (() => {
-    const windowRatio =
-      typeof windowNegativeRatio === "number"
-        ? windowNegativeRatio * 100
-        : null;
-    const baselineRatio =
-      typeof baselineNegativeRatio === "number"
-        ? baselineNegativeRatio * 100
-        : null;
-    if (windowRatio === null && baselineRatio === null) {
-      return {};
-    }
-    return {
-      tooltip: {
-        trigger: "axis",
-        valueFormatter: (value) => `${Number(value).toFixed(1)}%`,
-      },
-      grid: { top: 24, left: 28, right: 20, bottom: 24, containLabel: true },
-      xAxis: {
-        type: "category",
-        data: [
-          t("alerts.center.evidence.window"),
-          t("alerts.center.evidence.baseline"),
-        ],
-      },
-      yAxis: {
-        type: "value",
-        min: 0,
-        max: 100,
-        axisLabel: { formatter: "{value}%" },
-      },
-      series: [
-        {
-          type: "bar",
-          data: [windowRatio ?? 0, baselineRatio ?? 0],
-          itemStyle: {
-            color: ({ dataIndex }: { dataIndex: number }) =>
-              dataIndex === 0 ? colors.accent : colors.primary,
-          },
-          barMaxWidth: 42,
-        },
-      ],
-      textStyle: { fontFamily },
-    };
-  })();
-
-  if (!safeContext) {
-    return (
-      <Typography.Text type="secondary">
-        {t("alerts.center.evidence.empty")}
-      </Typography.Text>
-    );
-  }
-
-  const entityName = toStringValue(safeContext.entityName);
-  const entityType = toStringValue(safeContext.entityType);
-  const minEntityConfidence = toNumber(safeContext.minEntityConfidence);
-  const z = toNumber(safeContext.z);
-
-  const windowStart = toStringValue(window?.start);
-  const windowEnd = toStringValue(window?.end);
-  const baselineStart = toStringValue(baseline?.start);
-  const baselineEnd = toStringValue(baseline?.end);
-
-  const windowMinutes = toNumber(window?.minutes);
-  const baselineMinutes = toNumber(baseline?.minutes);
-
-  const windowTotal = toNumber(window?.total);
-  const windowNegative = toNumber(window?.negative);
-  const baselineTotal = toNumber(baseline?.total);
-  const baselineNegative = toNumber(baseline?.negative);
-
-  const evidenceItems = Array.isArray(safeContext.evidence)
-    ? safeContext.evidence
-    : [];
-
-  const formatWindowLabel = (
-    start: string | undefined,
-    end: string | undefined,
-  ): string => {
-    if (!start || !end) return "";
-    return `${formatDateTime(start, locale, {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZoneName: "short",
-    })} → ${formatDateTime(end, locale, {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZoneName: "short",
-    })}`;
-  };
-
-  return (
-    <Space direction="vertical" size={10} style={{ width: "100%" }}>
-      <Space size={[6, 6]} wrap>
-        {entityName ? <Tag>{entityName}</Tag> : null}
-        {entityType ? <Tag color="blue">{entityType}</Tag> : null}
-        {typeof z === "number" ? (
-          <Tag
-            color={z >= 3 ? "red" : z >= 2 ? "orange" : "green"}
-          >{`z ${z.toFixed(3)}`}</Tag>
-        ) : null}
-        {typeof minEntityConfidence === "number" ? (
-          <Tag>{`minConf ${minEntityConfidence.toFixed(2)}`}</Tag>
-        ) : null}
-      </Space>
-
-      <Descriptions size="small" bordered column={1}>
-        <Descriptions.Item
-          label={t("alerts.center.evidence.window")}
-        >
-          <Space direction="vertical" size={0}>
-            {windowMinutes ? (
-              <Typography.Text type="secondary">{`${windowMinutes} min`}</Typography.Text>
-            ) : null}
-            {windowStart && windowEnd ? (
-              <Typography.Text type="secondary">
-                {formatWindowLabel(windowStart, windowEnd)}
-              </Typography.Text>
-            ) : null}
-            <Typography.Text>
-              {t("alerts.center.evidence.negRatio", {
-                ratio:
-                  formatPercent(windowNegativeRatio, 1) ||
-                  t("common.notAvailable"),
-                neg:
-                  typeof windowNegative === "number"
-                    ? windowNegative
-                    : t("common.notAvailable"),
-                total:
-                  typeof windowTotal === "number"
-                    ? windowTotal
-                    : t("common.notAvailable"),
-              })}
-            </Typography.Text>
-          </Space>
-        </Descriptions.Item>
-        <Descriptions.Item
-          label={t("alerts.center.evidence.baseline")}
-        >
-          <Space direction="vertical" size={0}>
-            {baselineMinutes ? (
-              <Typography.Text type="secondary">{`${baselineMinutes} min`}</Typography.Text>
-            ) : null}
-            {baselineStart && baselineEnd ? (
-              <Typography.Text type="secondary">
-                {formatWindowLabel(baselineStart, baselineEnd)}
-              </Typography.Text>
-            ) : null}
-            <Typography.Text>
-              {t("alerts.center.evidence.negRatio", {
-                ratio:
-                  formatPercent(baselineNegativeRatio, 1) ||
-                  t("common.notAvailable"),
-                neg:
-                  typeof baselineNegative === "number"
-                    ? baselineNegative
-                    : t("common.notAvailable"),
-                total:
-                  typeof baselineTotal === "number"
-                    ? baselineTotal
-                    : t("common.notAvailable"),
-              })}
-            </Typography.Text>
-          </Space>
-        </Descriptions.Item>
-      </Descriptions>
-
-      {Object.keys(ratioTrendOption).length > 0 ? (
-        <Card size="small">
-          <Typography.Text type="secondary">
-            {t("alerts.center.evidence.sentimentCompare")}
-          </Typography.Text>
-          <DashboardChart option={ratioTrendOption} height={200} />
-        </Card>
-      ) : null}
-
-      {evidenceItems.length > 0 ? (
-        <>
-          <Divider style={{ margin: "8px 0" }} />
-          <Typography.Text type="secondary">
-            {t("alerts.center.evidence.evidenceItems")}
-          </Typography.Text>
-          <List
-            size="small"
-            dataSource={evidenceItems}
-            renderItem={(item, index) => {
-              const record = isRecord(item) ? item : null;
-              const itemMetaId = toStringValue(record?.itemMetaId);
-              const title =
-                toStringValue(record?.title) ?? t("common.notAvailable");
-              const source = toStringValue(record?.source);
-              const summary = toStringValue(record?.summary);
-              const publishedAt = toStringValue(record?.publishedAt);
-              const ingestedAt =
-                toStringValue(record?.ingestedAt) ??
-                toStringValue(record?.createdAt);
-              const ingestedLabel = t("items.time.ingested");
-              const formatOptions = {
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-                timeZoneName: "short",
-              } as const;
-              const ingestedText = ingestedAt
-                ? formatDateTime(ingestedAt, locale, formatOptions)
-                : t("common.notAvailable");
-
-              return (
-                <List.Item key={`${itemMetaId ?? "item"}-${index}`}>
-                  <Space
-                    direction="vertical"
-                    size={0}
-                    style={{ width: "100%" }}
-                  >
-                    <Typography.Text>
-                      {itemMetaId ? (
-                        <Link href={`/items/${itemMetaId}`}>{title}</Link>
-                      ) : (
-                        title
-                      )}
-                    </Typography.Text>
-                    <Space size="small" wrap>
-                      {source ? <Tag>{source}</Tag> : null}
-                      <Space direction="vertical" size={0}>
-                        <ArticlePublishedTime
-                          publishedAt={publishedAt}
-                          locale={locale}
-                          formatOptions={formatOptions}
-                          primaryStrong
-                          secondaryStyle={{ fontSize: 12 }}
-                        />
-                        <Typography.Text
-                          type="secondary"
-                          style={{ fontSize: 12 }}
-                        >
-                          {ingestedLabel}: {ingestedText}
-                        </Typography.Text>
-                      </Space>
-                    </Space>
-                    {summary ? (
-                      <Typography.Text type="secondary">
-                        {summary}
-                      </Typography.Text>
-                    ) : null}
-                  </Space>
-                </List.Item>
-              );
-            }}
-          />
-        </>
-      ) : (
-        <Typography.Text type="secondary">
-          {t("alerts.center.evidence.noEvidenceItems")}
-        </Typography.Text>
-      )}
-    </Space>
-  );
-};
-
-const EntityAssociationEvidence = ({
-  context,
-  locale,
-  t,
-  onOpenEvent,
-}: {
-  context: Record<string, unknown> | null;
-  locale: LocaleCode;
-  t: TranslateFn;
-  onOpenEvent: (eventId: string) => void;
-}) => {
-  if (!context) {
-    return (
-      <Typography.Text type="secondary">
-        {t("alerts.center.evidence.empty")}
-      </Typography.Text>
-    );
-  }
-
-  const seed = isRecord(context.seed) ? context.seed : null;
-  const seedName = toStringValue(seed?.name);
-  const seedType = toStringValue(seed?.type);
-
-  const sourceEvent = isRecord(context.sourceEvent)
-    ? context.sourceEvent
-    : null;
-  const sourceEventId = toStringValue(sourceEvent?.id);
-  const sourceEventTriggeredAt = toStringValue(sourceEvent?.triggeredAt);
-  const sourceEventMetricValue = toNumber(sourceEvent?.metricValue);
-  const sourceEventStatus = toStringValue(sourceEvent?.status);
-  const sourceTriggeredLabel = sourceEventTriggeredAt
-    ? formatDateTime(sourceEventTriggeredAt, locale, {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZoneName: "short",
-      })
-    : "";
-
-  const targets = Array.isArray(context.targets) ? context.targets : [];
-
-  return (
-    <Space direction="vertical" size={10} style={{ width: "100%" }}>
-      <Space size={[6, 6]} wrap>
-        {seedName ? <Tag>{seedName}</Tag> : null}
-        {seedType ? <Tag color="blue">{seedType}</Tag> : null}
-      </Space>
-
-      {sourceEventId ? (
-        <Descriptions size="small" bordered column={1}>
-          <Descriptions.Item
-            label={t("alerts.center.evidence.sourceEvent")}
-          >
-            <Space direction="vertical" size={2}>
-              <Space size="small" wrap>
-                <Tag>{sourceEventId}</Tag>
-                {sourceEventStatus ? <Tag>{sourceEventStatus}</Tag> : null}
-                {typeof sourceEventMetricValue === "number" ? (
-                  <Tag>{`metric ${sourceEventMetricValue}`}</Tag>
-                ) : null}
-              </Space>
-              {sourceTriggeredLabel ? (
-                <Typography.Text type="secondary">
-                  {sourceTriggeredLabel}
-                </Typography.Text>
-              ) : null}
-              <Button size="small" onClick={() => onOpenEvent(sourceEventId)}>
-                {t("alerts.center.evidence.openSourceEvent")}
-              </Button>
-            </Space>
-          </Descriptions.Item>
-        </Descriptions>
-      ) : (
-        <Typography.Text type="secondary">
-          {t("alerts.center.evidence.sourceEventMissing")}
-        </Typography.Text>
-      )}
-
-      <Divider style={{ margin: "8px 0" }} />
-      <Typography.Text type="secondary">
-        {t("alerts.center.evidence.targets")}
-      </Typography.Text>
-      <List
-        size="small"
-        dataSource={targets}
-        locale={{
-          emptyText: t("alerts.center.evidence.targetsEmpty"),
-        }}
-        renderItem={(item, index) => {
-          const record = isRecord(item) ? item : null;
-          const name = toStringValue(record?.name) ?? t("common.notAvailable");
-          const type = toStringValue(record?.type);
-          const relationType = toStringValue(record?.relationType);
-          const score = toNumber(record?.score);
-          const weight = toNumber(record?.weight);
-          const confidence = toNumber(record?.confidence);
-          return (
-            <List.Item
-              key={`${toStringValue(record?.entityId) ?? "entity"}-${index}`}
-            >
-              <Space direction="vertical" size={0} style={{ width: "100%" }}>
-                <Space size="small" wrap>
-                  <Typography.Text>{name}</Typography.Text>
-                  {type ? <Tag color="blue">{type}</Tag> : null}
-                  {relationType ? <Tag>{relationType}</Tag> : null}
-                  {typeof score === "number" ? (
-                    <Tag color="orange">{`score ${score.toFixed(3)}`}</Tag>
-                  ) : null}
-                </Space>
-                <Typography.Text type="secondary">
-                  {t("alerts.center.evidence.targetMeta", {
-                    weight: formatFixed(weight, 3) || t("common.notAvailable"),
-                    conf:
-                      formatFixed(confidence, 3) || t("common.notAvailable"),
-                  })}
-                </Typography.Text>
-                {(typeof score === "number" ||
-                  typeof confidence === "number") && (
-                  <Progress
-                    percent={Math.max(
-                      0,
-                      Math.min(
-                        100,
-                        Math.round(((score ?? confidence ?? 0) * 100) / 1),
-                      ),
-                    )}
-                    size="small"
-                    showInfo={false}
-                    strokeColor="#f97316"
-                  />
-                )}
-              </Space>
-            </List.Item>
-          );
-        }}
-      />
-    </Space>
-  );
-};
-
-const RealtimeSignalEvidence = ({
-  context,
-  locale,
-  t,
-}: {
-  context: Record<string, unknown> | null;
-  locale: LocaleCode;
-  t: TranslateFn;
-}) => {
-  if (!context) {
-    return (
-      <Typography.Text type="secondary">
-        {t("alerts.center.evidence.empty")}
-      </Typography.Text>
-    );
-  }
-
-  const source =
-    toStringValue(context.source) ??
-    toStringValue(context.sourceName) ??
-    toStringValue(context.sourceEndpoint) ??
-    toStringValue(context.sourceFunction) ??
-    toStringValue(context.sourceField);
-  const stale = context.stale === true;
-  const latestTimestamp = toStringValue(context.latestTimestamp);
-  const maxStaleMinutes = toNumber(context.maxStaleMinutes);
-  const snapshotFreshness = toStringValue(context.snapshotFreshness);
-  const snapshotRetainedPrevious = context.snapshotRetainedPrevious === true;
-  const snapshotFreshnessLabel = snapshotFreshness
-    ? t(
-        `alerts.center.evidence.realtime.snapshotFreshnessValues.${snapshotFreshness}`,
-        {
-          defaultValue: snapshotFreshness,
-        },
-      )
-    : undefined;
-  const countryCodes = Array.isArray(context.countryCodes)
-    ? context.countryCodes
-        .map((entry) => toStringValue(entry))
-        .filter((entry): entry is string => Boolean(entry))
-    : [];
-
-  const summaryRows = [
-    {
-      key: "militaryCount",
-      label: t("alerts.center.evidence.realtime.militaryCount"),
-      value: toNumber(context.militaryCount),
-    },
-    {
-      key: "currentValidPositionCount",
-      label: t("alerts.center.evidence.realtime.currentValidPositionCount"),
-      value: toNumber(context.currentValidPositionCount),
-    },
-    {
-      key: "snapshotValidPositionCount",
-      label: t("alerts.center.evidence.realtime.snapshotValidPositionCount"),
-      value: toNumber(context.snapshotValidPositionCount),
-    },
-    {
-      key: "droppedStalePositionCount",
-      label: t("alerts.center.evidence.realtime.droppedStalePositionCount"),
-      value: toNumber(context.droppedStalePositionCount),
-    },
-    {
-      key: "disruptions",
-      label: t("alerts.center.evidence.realtime.disruptions"),
-      value: toNumber(context.disruptions),
-    },
-    {
-      key: "outages",
-      label: t("alerts.center.evidence.realtime.outages"),
-      value: toNumber(context.outages),
-    },
-    {
-      key: "unrestCount",
-      label: t("alerts.center.evidence.realtime.unrest"),
-      value: toNumber(context.unrestCount),
-    },
-    {
-      key: "acledCount",
-      label: t("alerts.center.evidence.realtime.acled"),
-      value: toNumber(context.acledCount),
-    },
-    {
-      key: "gdeltCount",
-      label: t("alerts.center.evidence.realtime.gdelt"),
-      value: toNumber(context.gdeltCount),
-    },
-    {
-      key: "dedupeReducedBy",
-      label: t("alerts.center.evidence.realtime.dedupeReducedBy"),
-      value: toNumber(context.dedupeReducedBy),
-    },
-    {
-      key: "defcon",
-      label: t("alerts.center.evidence.realtime.defcon"),
-      value: toNumber(context.defcon),
-    },
-    {
-      key: "adjustedScore",
-      label: t("alerts.center.evidence.realtime.adjustedScore"),
-      value: toNumber(context.adjustedScore),
-    },
-    {
-      key: "openLocations",
-      label: t("alerts.center.evidence.realtime.openLocations"),
-      value: toNumber(context.openLocations),
-    },
-    {
-      key: "activeSpikes",
-      label: t("alerts.center.evidence.realtime.activeSpikes"),
-      value: toNumber(context.activeSpikes),
-    },
-    {
-      key: "avgPop",
-      label: t("alerts.center.evidence.realtime.avgPop"),
-      value: toNumber(context.avgPop),
-    },
-  ].filter((entry) => typeof entry.value === "number");
-
-  const tensions = Array.isArray(context.tensions)
-    ? context.tensions
-        .filter((entry): entry is Record<string, unknown> => isRecord(entry))
-        .slice(0, 5)
-    : [];
-  const leads = Array.isArray(context.leads)
-    ? context.leads
-        .filter((entry): entry is Record<string, unknown> => isRecord(entry))
-        .slice(0, 5)
-    : [];
-  const spikes = Array.isArray(context.spikes)
-    ? context.spikes
-        .filter((entry): entry is Record<string, unknown> => isRecord(entry))
-        .slice(0, 5)
-    : [];
-  const hasStructuredEvidence =
-    summaryRows.length > 0 ||
-    countryCodes.length > 0 ||
-    tensions.length > 0 ||
-    leads.length > 0 ||
-    spikes.length > 0;
-
-  return (
-    <Space direction="vertical" size={10} style={{ width: "100%" }}>
-      <Space size={[6, 6]} wrap>
-        {source ? (
-          <Tag color="blue">
-            {t("alerts.center.evidence.realtime.source")}
-            : {source}
-          </Tag>
-        ) : null}
-        {stale ? (
-          <Tag color="red">
-            {t("alerts.center.evidence.realtime.stale")}
-          </Tag>
-        ) : null}
-        {snapshotFreshness ? (
-          <Tag
-            color={
-              snapshotFreshness === "fresh"
-                ? "green"
-                : snapshotFreshness === "stale"
-                  ? "orange"
-                  : "default"
-            }
-          >
-            {t("alerts.center.evidence.realtime.snapshotFreshness")}
-            : {snapshotFreshnessLabel}
-          </Tag>
-        ) : null}
-        {snapshotRetainedPrevious ? (
-          <Tag color="gold">
-            {t("alerts.center.evidence.realtime.snapshotRetainedPrevious")}
-          </Tag>
-        ) : null}
-        {typeof maxStaleMinutes === "number" ? (
-          <Tag>
-            {t("alerts.center.evidence.realtime.maxStaleMinutes", {
-              minutes: maxStaleMinutes,
-            })}
-          </Tag>
-        ) : null}
-      </Space>
-
-      {latestTimestamp ? (
-        <Typography.Text type="secondary">
-          {t("alerts.center.evidence.realtime.latestTimestamp", {
-            time: formatDateTime(latestTimestamp, locale, {
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-              timeZoneName: "short",
-            }),
-          })}
-        </Typography.Text>
-      ) : null}
-
-      {!hasStructuredEvidence ? (
-        <Typography.Text type="secondary">
-          {t("alerts.center.evidence.realtime.emptyStructured")}
-        </Typography.Text>
-      ) : null}
-
-      {summaryRows.length > 0 ? (
-        <Descriptions size="small" bordered column={2}>
-          {summaryRows.map((entry) => (
-            <Descriptions.Item key={entry.key} label={entry.label}>
-              {entry.value}
-            </Descriptions.Item>
-          ))}
-        </Descriptions>
-      ) : null}
-
-      {countryCodes.length > 0 ? (
-        <div>
-          <Typography.Text type="secondary">
-            {t("alerts.center.evidence.realtime.countryCodes")}
-          </Typography.Text>
-          <div style={{ marginTop: 6 }}>
-            <Space size={[6, 6]} wrap>
-              {countryCodes.map((code) => (
-                <Tag key={code}>{code}</Tag>
-              ))}
-            </Space>
-          </div>
-        </div>
-      ) : null}
-
-      {tensions.length > 0 ? (
-        <>
-          <Divider style={{ margin: "8px 0" }} />
-          <Typography.Text type="secondary">
-            {t("alerts.center.evidence.realtime.tensions")}
-          </Typography.Text>
-          <List
-            size="small"
-            dataSource={tensions}
-            renderItem={(item, index) => {
-              const label =
-                toStringValue(item.label) ??
-                toStringValue(item.id) ??
-                `tension-${index + 1}`;
-              const score = toNumber(item.score);
-              const changePercent = toNumber(item.changePercent);
-              const trend = toStringValue(item.trend);
-              return (
-                <List.Item key={`${label}-${index}`}>
-                  <Space size={[8, 8]} wrap>
-                    <Typography.Text>{label}</Typography.Text>
-                    {typeof score === "number" ? (
-                      <Tag color="orange">{`score ${score.toFixed(2)}`}</Tag>
-                    ) : null}
-                    {typeof changePercent === "number" ? (
-                      <Tag>{`${changePercent.toFixed(2)}%`}</Tag>
-                    ) : null}
-                    {trend ? <Tag color="blue">{trend}</Tag> : null}
-                  </Space>
-                </List.Item>
-              );
-            }}
-          />
-        </>
-      ) : null}
-
-      {leads.length > 0 ? (
-        <>
-          <Divider style={{ margin: "8px 0" }} />
-          <Typography.Text type="secondary">
-            {t("alerts.center.evidence.realtime.leads")}
-          </Typography.Text>
-          <List
-            size="small"
-            dataSource={leads}
-            renderItem={(item, index) => {
-              const title =
-                toStringValue(item.title) ??
-                toStringValue(item.id) ??
-                `lead-${index + 1}`;
-              const shift = toNumber(item.shift);
-              const confidence = toNumber(item.confidence);
-              return (
-                <List.Item key={`${title}-${index}`}>
-                  <Space size={[8, 8]} wrap>
-                    <Typography.Text>{title}</Typography.Text>
-                    {typeof shift === "number" ? (
-                      <Tag color="purple">{`shift ${shift.toFixed(2)}`}</Tag>
-                    ) : null}
-                    {typeof confidence === "number" ? (
-                      <Tag>{`conf ${confidence.toFixed(2)}`}</Tag>
-                    ) : null}
-                  </Space>
-                </List.Item>
-              );
-            }}
-          />
-        </>
-      ) : null}
-
-      {spikes.length > 0 ? (
-        <>
-          <Divider style={{ margin: "8px 0" }} />
-          <Typography.Text type="secondary">
-            {t("alerts.center.evidence.realtime.spikes")}
-          </Typography.Text>
-          <List
-            size="small"
-            dataSource={spikes}
-            renderItem={(item, index) => {
-              const term =
-                toStringValue(item.term) ??
-                toStringValue(item.id) ??
-                `spike-${index + 1}`;
-              const count = toNumber(item.count);
-              const multiplier = toNumber(item.multiplier);
-              return (
-                <List.Item key={`${term}-${index}`}>
-                  <Space size={[8, 8]} wrap>
-                    <Typography.Text>{term}</Typography.Text>
-                    {typeof count === "number" ? (
-                      <Tag>{`count ${count}`}</Tag>
-                    ) : null}
-                    {typeof multiplier === "number" ? (
-                      <Tag color="gold">{`${multiplier.toFixed(2)}x`}</Tag>
-                    ) : null}
-                  </Space>
-                </List.Item>
-              );
-            }}
-          />
-        </>
-      ) : null}
-    </Space>
-  );
 };
 
 const { CheckableTag } = Tag;
@@ -1345,22 +294,30 @@ export function AlertCenterContent() {
     total: number;
   } | null>(null);
   const [detailTab, setDetailTab] = useState<string>("overview");
-  const [filterState, setFilterState] =
-    useState<AlertFilterState>(DEFAULT_FILTER_STATE);
-  const [appliedRuleKeyword, setAppliedRuleKeyword] = useState<string>("");
   const [openFilterPanelKeys, setOpenFilterPanelKeys] = useState<string[]>([]);
-  const [listPage, setListPage] = useState<number>(1);
-  const [listPageSize, setListPageSize] = useState<number>(30);
   const eventsListRef = useRef<HTMLDivElement | null>(null);
   const [eventsListScrollMargin, setEventsListScrollMargin] = useState(0);
   const [exportScope, setExportScope] = useState<AlertExportScope>("selected");
   const [expandMessage, setExpandMessage] = useState<boolean>(false);
   const [expandContext, setExpandContext] = useState<boolean>(false);
 
-  const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const eventParam = searchParams.get("eventId");
+  // FE-01：筛选 / 分页 / 关键字 / 日期 / eventId 全部 URL-backed
+  // （eventsLimit、批量选择、备注、导出 scope、展开态、detailTab 仍为
+  // 组件内存态，见 useAlertCenterUrlState 的契约注释）
+  const {
+    filterState,
+    appliedRuleKeyword,
+    ruleKeywordInput,
+    setRuleKeywordInput,
+    page: listPage,
+    pageSize: listPageSize,
+    eventId: eventParam,
+    updateFilters,
+    setPage: setListPage,
+    setPageSize: setListPageSize,
+    setPagePreservingEventId,
+    setEventId,
+  } = useAlertCenterUrlState();
 
   const { echartsTheme, colors, fontFamily } = useChartTheme();
 
@@ -1416,17 +373,8 @@ export function AlertCenterContent() {
     });
   }, [eventsData?.alertEvents]);
 
-  useEffect(() => {
-    if (!filterState.ruleKeyword.trim()) {
-      setAppliedRuleKeyword("");
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setAppliedRuleKeyword(filterState.ruleKeyword);
-    }, 220);
-    return () => window.clearTimeout(timer);
-  }, [filterState.ruleKeyword]);
-
+  // rule keyword 的 220ms debounce 由 useAlertCenterUrlState 承载
+  // （输入即时值 ruleKeywordInput → 静默后写入 URL q → appliedRuleKeyword）
   const filterStateForQuery = useMemo<AlertFilterState>(
     () => ({
       ...filterState,
@@ -1515,9 +463,8 @@ export function AlertCenterContent() {
     setExpandMessage(false);
   }, [selectedEventId]);
 
-  useEffect(() => {
-    setListPage(1);
-  }, [filterStateForQuery]);
+  // 筛选变化后的 page 重置由 useAlertCenterUrlState 的 updateFilters 承载
+  // （任何筛选 patch 都将 page 归 1；URL 外部变化时筛选与 page 同源采纳）
 
   useEffect(() => {
     if (detailTab !== "replay" || !selectedEvent) {
@@ -1549,10 +496,7 @@ export function AlertCenterContent() {
 
   const handleSelectEvent = (eventId: string) => {
     setSelectedEventId(eventId);
-    const next = new URLSearchParams(searchParams.toString());
-    next.set("eventId", eventId);
-    const nextQuery = next.toString();
-    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+    setEventId(eventId);
   };
 
   const handleOpenEvent = async (eventId: string) => {
@@ -1885,27 +829,25 @@ export function AlertCenterContent() {
     provider: AlertMetricProvider,
     checked: boolean,
   ) => {
-    setFilterState((prev) => ({
-      ...prev,
+    updateFilters({
       providers: checked
-        ? [...new Set([...prev.providers, provider])]
-        : prev.providers.filter((item) => item !== provider),
-    }));
+        ? [...new Set([...filterState.providers, provider])]
+        : filterState.providers.filter((item) => item !== provider),
+    });
   };
 
   const toggleTimeTag = (preset: AlertDatePreset, checked: boolean) => {
     if (checked) {
-      setFilterState((prev) => ({
-        ...prev,
-        datePreset: preset,
-        customRangeMs: preset === "custom" ? prev.customRangeMs : null,
-      }));
+      updateFilters(
+        preset === "custom"
+          ? { datePreset: "custom" }
+          : { datePreset: preset },
+      );
       return;
     }
-    setFilterState((prev) => ({
-      ...prev,
-      datePreset: prev.datePreset === preset ? "today" : prev.datePreset,
-    }));
+    if (filterState.datePreset === preset) {
+      updateFilters({ datePreset: "today" });
+    }
   };
 
   const selectedInFilterCount = useMemo(
@@ -1954,7 +896,15 @@ export function AlertCenterContent() {
   };
 
   const handleResetFilters = () => {
-    setFilterState(DEFAULT_FILTER_STATE);
+    updateFilters({
+      severities: [],
+      statuses: [],
+      providers: [],
+      ruleKeyword: "",
+      datePreset: DEFAULT_FILTER_STATE.datePreset,
+      customRangeMs: null,
+    });
+    setRuleKeywordInput("");
   };
 
   const handleRefresh = async () => {
@@ -1975,224 +925,89 @@ export function AlertCenterContent() {
     await refetchEvents({ limit: nextLimit });
   };
 
+  // FE-01 分页优先级契约（完整定义见 useAlertCenterUrlState 注释）。
+  //
+  // page 越界收敛（优先级 6）：仅在事件查询完成后执行 —— 加载中/未授权时
+  // filteredEvents 为空、listPageCount 恒为 1，此时收敛会把 URL ?page=2
+  // 在数据到达前改写回 1，破坏纯 page 分享链接的恢复。走自动写路径保留
+  // eventId：深链 ?eventId=X&page=99 收敛到最后一页后，下方的事件定位
+  // （优先级 1）仍可执行，不因收敛丢失 eventId。
+  const isEventsDataReady =
+    shouldQueryEvents && !eventsLoading && eventsData !== undefined;
   useEffect(() => {
-    if (listPage > listPageCount) {
-      setListPage(listPageCount);
+    if (isEventsDataReady && listPage > listPageCount) {
+      setPagePreservingEventId(listPageCount);
     }
-  }, [listPage, listPageCount]);
+  }, [isEventsDataReady, listPage, listPageCount, setPagePreservingEventId]);
 
+  // 外部 eventId（深链/分享链接/back-forward/行内点击）→ 一次性定位到该
+  // 事件所在页（优先级 1/8）。eventParam 变化时把定位请求排入 ref，事件
+  // 数据就绪后消费一次；此后不再监听 listPage —— 用户翻页 / 改 pageSize /
+  // 筛选变化（优先级 2-4）不会被旧选中事件拉回。定位写入走自动路径
+  // （保留 eventId），与用户分页的手动写入路径区分。
+  const lastSeenEventParamRef = useRef<string | null>(eventParam);
+  const pendingEventPositionRef = useRef<string | null>(eventParam);
   useEffect(() => {
-    if (!selectedEventId) {
+    if (eventParam !== lastSeenEventParamRef.current) {
+      lastSeenEventParamRef.current = eventParam;
+      pendingEventPositionRef.current = eventParam;
+    }
+    const pending = pendingEventPositionRef.current;
+    if (!pending) {
       return;
     }
-    const index = filteredEvents.findIndex(
-      (event) => event.id === selectedEventId,
-    );
+    const index = filteredEvents.findIndex((event) => event.id === pending);
     if (index < 0) {
+      // 事件不在当前筛选视图：已出现在数据集则放弃本次定位（与
+      // resolveSelectedEventId 的「选中保留、页码不动」语义一致）；
+      // 数据尚未加载（不在 sortedEvents）时保持等待。
+      if (sortedEvents.some((event) => event.id === pending)) {
+        pendingEventPositionRef.current = null;
+      }
       return;
     }
+    pendingEventPositionRef.current = null;
     const targetPage = Math.floor(index / listPageSize) + 1;
     if (targetPage !== listPage) {
-      setListPage(targetPage);
+      setPagePreservingEventId(targetPage);
     }
-  }, [filteredEvents, listPage, listPageSize, selectedEventId]);
-
-  const replayOption = useMemo<EChartsOption>(() => {
-    if (!replay || !replayPoints || replayPoints.length === 0) {
-      return {};
-    }
-
-    const operator = selectedEvent?.operator ?? null;
-    const thresholdValue =
-      typeof selectedEvent?.thresholdValue === "number" &&
-      Number.isFinite(selectedEvent.thresholdValue)
-        ? selectedEvent.thresholdValue
-        : null;
-    const thresholdLower =
-      typeof selectedEvent?.thresholdLower === "number" &&
-      Number.isFinite(selectedEvent.thresholdLower)
-        ? selectedEvent.thresholdLower
-        : null;
-    const thresholdUpper =
-      typeof selectedEvent?.thresholdUpper === "number" &&
-      Number.isFinite(selectedEvent.thresholdUpper)
-        ? selectedEvent.thresholdUpper
-        : null;
-
-    const markLineData: {
-      yAxis: number;
-      lineStyle?: { type?: "dashed"; color?: string };
-      label?: { formatter?: string };
-    }[] = [];
-    if (
-      operator &&
-      ["gt", "gte", "lt", "lte", "eq"].includes(operator) &&
-      thresholdValue !== null
-    ) {
-      markLineData.push({
-        yAxis: thresholdValue,
-        lineStyle: { type: "dashed", color: colors.accent },
-        label: { formatter: `threshold ${thresholdValue}` },
-      });
-    }
-    if (
-      operator &&
-      ["outside_range", "within_range"].includes(operator) &&
-      thresholdLower !== null &&
-      thresholdUpper !== null
-    ) {
-      markLineData.push(
-        {
-          yAxis: thresholdLower,
-          lineStyle: { type: "dashed", color: colors.accent },
-          label: { formatter: `lower ${thresholdLower}` },
-        },
-        {
-          yAxis: thresholdUpper,
-          lineStyle: { type: "dashed", color: colors.accent },
-          label: { formatter: `upper ${thresholdUpper}` },
-        },
-      );
-    }
-
-    return {
-      tooltip: { trigger: "axis" },
-      grid: { top: 20, left: 40, right: 20, bottom: 30, containLabel: true },
-      xAxis: { type: "time" },
-      yAxis: { type: "value", name: replayUnit ?? undefined },
-      series: [
-        {
-          type: "line",
-          smooth: true,
-          showSymbol: false,
-          data: replayPoints.map((point) => [point.timestamp, point.value]),
-          lineStyle: { width: 2, color: colors.primary },
-          areaStyle: { opacity: 0.06, color: colors.primary },
-          ...(markLineData.length > 0
-            ? {
-                markLine: {
-                  symbol: "none",
-                  data: markLineData,
-                },
-              }
-            : {}),
-        },
-      ],
-      textStyle: { fontFamily },
-    };
   }, [
-    colors.accent,
-    colors.primary,
-    fontFamily,
-    replay,
-    replayPoints,
-    replayUnit,
-    selectedEvent?.operator,
-    selectedEvent?.thresholdLower,
-    selectedEvent?.thresholdUpper,
-    selectedEvent?.thresholdValue,
+    eventParam,
+    filteredEvents,
+    listPage,
+    listPageSize,
+    setPagePreservingEventId,
+    sortedEvents,
   ]);
 
-  const trendOption = useMemo<EChartsOption>(() => {
-    if (trendPoints.length === 0) {
-      return {};
-    }
+  const replayOption = useMemo<EChartsOption>(
+    () =>
+      buildReplayOption(
+        { replay, replayPoints, replayUnit, selectedEvent },
+        { primary: colors.primary, accent: colors.accent, fontFamily },
+      ),
+    [colors.accent, colors.primary, fontFamily, replay, replayPoints, replayUnit, selectedEvent],
+  );
 
-    return {
-      tooltip: { trigger: "axis" },
-      legend: {
-        data: [
-          t("alerts.center.filters.severity.low"),
-          t("alerts.center.filters.severity.medium"),
-          t("alerts.center.filters.severity.high"),
-        ],
-      },
-      grid: { top: 36, left: 26, right: 14, bottom: 30, containLabel: true },
-      xAxis: {
-        type: "category",
-        data: trendPoints.map((point) => dayjs(point.date).format("MM-DD")),
-      },
-      yAxis: { type: "value", minInterval: 1 },
-      series: [
-        {
-          name: t("alerts.center.filters.severity.low"),
-          type: "line",
-          smooth: true,
-          data: trendPoints.map((point) => point.low),
-          lineStyle: { color: ALERT_LINE_COLORS.low },
-        },
-        {
-          name: t("alerts.center.filters.severity.medium"),
-          type: "line",
-          smooth: true,
-          data: trendPoints.map((point) => point.medium),
-          lineStyle: { color: ALERT_LINE_COLORS.medium },
-        },
-        {
-          name: t("alerts.center.filters.severity.high"),
-          type: "line",
-          smooth: true,
-          data: trendPoints.map((point) => point.high),
-          lineStyle: { color: ALERT_LINE_COLORS.high },
-        },
-      ],
-      textStyle: { fontFamily },
-    };
-  }, [fontFamily, t, trendPoints]);
+  const trendOption = useMemo<EChartsOption>(
+    () =>
+      buildTrendOption(
+        trendPoints,
+        { primary: colors.primary, accent: colors.accent, fontFamily },
+        t,
+      ),
+    [colors.accent, colors.primary, fontFamily, t, trendPoints],
+  );
 
-  const ruleTrendOption = useMemo<EChartsOption>(() => {
-    if (ruleTrendAnalysis.points.length === 0) {
-      return {};
-    }
-
-    return {
-      tooltip: { trigger: "axis" },
-      grid: { top: 30, left: 26, right: 20, bottom: 30, containLabel: true },
-      legend: {
-        data: [
-          t("alerts.center.analysis.triggerFrequency"),
-          t("alerts.center.analysis.falsePositiveTrend"),
-        ],
-      },
-      xAxis: {
-        type: "category",
-        data: ruleTrendAnalysis.points.map((point) =>
-          dayjs(point.date).format("MM-DD"),
-        ),
-      },
-      yAxis: [
-        { type: "value", minInterval: 1 },
-        {
-          type: "value",
-          min: 0,
-          max: 100,
-          axisLabel: { formatter: "{value}%" },
-        },
-      ],
-      series: [
-        {
-          name: t("alerts.center.analysis.triggerFrequency"),
-          type: "bar",
-          barMaxWidth: 24,
-          data: ruleTrendAnalysis.points.map((point) => point.triggers),
-          itemStyle: { color: colors.primary },
-        },
-        {
-          name: t("alerts.center.analysis.falsePositiveTrend"),
-          type: "line",
-          yAxisIndex: 1,
-          smooth: true,
-          data: ruleTrendAnalysis.points.map((point) =>
-            typeof point.falsePositiveRate === "number"
-              ? Number((point.falsePositiveRate * 100).toFixed(2))
-              : null,
-          ),
-          lineStyle: { color: colors.accent },
-        },
-      ],
-      textStyle: { fontFamily },
-    };
-  }, [colors.accent, colors.primary, fontFamily, ruleTrendAnalysis.points, t]);
+  const ruleTrendOption = useMemo<EChartsOption>(
+    () =>
+      buildRuleTrendOption(
+        ruleTrendAnalysis,
+        { primary: colors.primary, accent: colors.accent, fontFamily },
+        t,
+      ),
+    [colors.accent, colors.primary, fontFamily, ruleTrendAnalysis, t],
+  );
 
   const trendWindowLabel = useMemo(() => {
     if (filterWindow.startMs === null || filterWindow.endMs === null) {
@@ -3220,63 +2035,26 @@ export function AlertCenterContent() {
         })()
       : null;
 
-  if (sessionStatus === "loading") {
-    return (
-      <div className="flex flex-col gap-6">
-        {messageContext}
-
-        <Space align="center" size="middle" wrap>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {t("alerts.center.title")}
-          </Typography.Title>
-        </Space>
-
-        <div className="flex justify-center py-16">
-          <Spin />
-        </div>
-      </div>
-    );
-  }
-
-  if (authenticated && !canReadAlerts) {
-    return (
-      <div className="flex flex-col gap-6">
-        {messageContext}
-
-        <Space align="center" size="middle" wrap>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {t("alerts.center.title")}
-          </Typography.Title>
-        </Space>
-
-        <ChartEmptyState
-          className="h-auto py-10"
-          variant="permission"
-          title={t("common.accessDenied")}
-          description={t("common.accessDeniedDescription")}
-        />
-      </div>
-    );
-  }
-
-  if (blockingEventsErrorState) {
-    return (
-      <div className="flex flex-col gap-6">
-        {messageContext}
-
-        <Space align="center" size="middle" wrap>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {t("alerts.center.title")}
-          </Typography.Title>
-        </Space>
-
-        <ChartEmptyState
-          className="h-auto py-10"
-          {...blockingEventsErrorState}
-        />
-      </div>
-    );
-  }
+  // 数据状态分派（DataStateBoundary 首个消费方）：
+  // - 会话 loading / 无读权限 / 无数据 blockingError → 整页状态
+  // - 有旧数据时刷新失败 → nonBlockingError（内容保留 + 非阻断提示，新增语义）
+  // - 空态仍由事件列表内的 emptyText 承载（本 PR 不全站替换 loading/error/empty 分支）
+  const hasEventsData = sortedEvents.length > 0;
+  const dataState: DataStateBoundaryState = sessionStatus === "loading"
+    ? { kind: "initialLoading" }
+    : authenticated && !canReadAlerts
+      ? { kind: "permissionDenied" }
+      : eventsError && !hasEventsData
+        ? {
+            kind: "blockingError",
+            error: eventsError,
+            errorStateOverride: blockingEventsErrorState ?? undefined,
+          }
+        : eventsError && hasEventsData
+          ? { kind: "nonBlockingError", error: eventsError }
+          : { kind: "ready" };
+  const isContentReady =
+    dataState.kind === "ready" || dataState.kind === "nonBlockingError";
 
   return (
     <div className="flex flex-col gap-6">
@@ -3286,10 +2064,21 @@ export function AlertCenterContent() {
         <Typography.Title level={4} style={{ margin: 0 }}>
           {t("alerts.center.title")}
         </Typography.Title>
-        <Button size="small" onClick={() => void handleRefresh()}>
-          {t("common.refresh")}
-        </Button>
+        {isContentReady ? (
+          <Button size="small" onClick={() => void handleRefresh()}>
+            {t("common.refresh")}
+          </Button>
+        ) : null}
       </Space>
+
+      <DataStateBoundary
+        state={dataState}
+        onRetry={() => {
+          void handleRefresh();
+        }}
+        retrying={eventsLoading}
+        retryLabel={t("dashboard.actions.retryFetch")}
+      >
 
       {isLikelySampled ? (
         <Alert
@@ -3387,12 +2176,7 @@ export function AlertCenterContent() {
                         allowClear
                         style={{ width: "100%" }}
                         value={filterState.severities}
-                        onChange={(value) =>
-                          setFilterState((prev) => ({
-                            ...prev,
-                            severities: value,
-                          }))
-                        }
+                        onChange={(value) => updateFilters({ severities: value })}
                         options={SEVERITY_OPTIONS.map((severity) => ({
                           value: severity,
                           label: t(
@@ -3413,12 +2197,7 @@ export function AlertCenterContent() {
                         allowClear
                         style={{ width: "100%" }}
                         value={filterState.statuses}
-                        onChange={(value) =>
-                          setFilterState((prev) => ({
-                            ...prev,
-                            statuses: value,
-                          }))
-                        }
+                        onChange={(value) => updateFilters({ statuses: value })}
                         options={STATUS_OPTIONS.map((status) => ({
                           value: status,
                           label: t(`alerts.center.filters.status.${status}`, {
@@ -3436,12 +2215,7 @@ export function AlertCenterContent() {
                         allowClear
                         style={{ width: "100%" }}
                         value={filterState.providers}
-                        onChange={(value) =>
-                          setFilterState((prev) => ({
-                            ...prev,
-                            providers: value,
-                          }))
-                        }
+                        onChange={(value) => updateFilters({ providers: value })}
                         options={PROVIDER_FILTER_OPTIONS.map((provider) => ({
                           value: provider,
                           label: t(`alerts.metricProviders.${provider}`, {
@@ -3456,12 +2230,9 @@ export function AlertCenterContent() {
                       </Typography.Text>
                       <Input
                         allowClear
-                        value={filterState.ruleKeyword}
+                        value={ruleKeywordInput}
                         onChange={(event) =>
-                          setFilterState((prev) => ({
-                            ...prev,
-                            ruleKeyword: event.target.value,
-                          }))
+                          setRuleKeywordInput(event.target.value)
                         }
                         placeholder={t(
                           "alerts.center.filters.ruleKeyword.placeholder",
@@ -3501,12 +2272,11 @@ export function AlertCenterContent() {
                           ]}
                           value={filterState.datePreset}
                           onChange={(value) =>
-                            setFilterState((prev) => ({
-                              ...prev,
-                              datePreset: value as AlertDatePreset,
-                              customRangeMs:
-                                value === "custom" ? prev.customRangeMs : null,
-                            }))
+                            updateFilters(
+                              value === "custom"
+                                ? { datePreset: "custom" }
+                                : { datePreset: value as AlertDatePreset },
+                            )
                           }
                         />
                         <DatePicker.RangePicker
@@ -3515,14 +2285,12 @@ export function AlertCenterContent() {
                           disabled={filterState.datePreset !== "custom"}
                           onChange={(values) => {
                             const [start, end] = values ?? [];
-                            setFilterState((prev) => ({
-                              ...prev,
-                              datePreset: "custom",
+                            updateFilters({
                               customRangeMs:
                                 start && end
                                   ? [start.valueOf(), end.valueOf()]
                                   : [null, null],
-                            }));
+                            });
                           }}
                         />
                       </Space>
@@ -3991,10 +2759,18 @@ export function AlertCenterContent() {
                   pageSize={listPageSize}
                   total={filteredEvents.length}
                   showSizeChanger
-                  pageSizeOptions={[20, 50, 100]}
+                  pageSizeOptions={[...ALERT_URL_PAGE_SIZES]}
                   onChange={(page, pageSize) => {
+                    if (pageSize !== listPageSize) {
+                      // 用户改 pageSize（优先级 3）：page 重置 1 且清除旧
+                      // eventId；不采纳 antd 传入的 page，避免停留在旧行号
+                      // 对应的页码
+                      setListPageSize(pageSize);
+                      return;
+                    }
+                    // 用户翻页（优先级 2）：分页意图优先，setPage 清除与
+                    // 分页冲突的旧 eventId，页面稳定停留目标页
                     setListPage(page);
-                    setListPageSize(pageSize);
                   }}
                   showTotal={(total, range) =>
                     t("alerts.center.batch.pageSummary", {
@@ -4069,6 +2845,7 @@ export function AlertCenterContent() {
           </Card>
         </Col>
       </Row>
+      </DataStateBoundary>
     </div>
   );
 }

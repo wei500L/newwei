@@ -40,9 +40,9 @@
 | SEC-03 | P2 | /api/metrics 全局数据未按 org 过滤 | ⬜ | — |
 | SEC-04 | P2 | vector 内部 token 非常量时间比较 | ✅ | 见 §4 |
 | BAPI-01 | P2 | GraphQL 列表无分页（全量返回） | ⬜ | — |
-| FE-01 | P2 | alert-center 过滤器不入 URL（与全局模式不一致） | ⬜ | — |
+| FE-01 | P2 | alert-center 过滤器不入 URL（与全局模式不一致） | ✅ | PR #4（FE-批3，run 33849497917） |
 | FE-02 | P2 | 死代码：zustand store/sidebar.ts | ✅ | 见 §3 |
-| FE-03 | P2 | vitest coverage include 仅覆盖 3 个已测文件（覆盖率数字失真） | 🔶 | 部分（见 §3） |
+| FE-03 | P2 | vitest coverage include 仅覆盖 3 个已测文件（覆盖率数字失真） | 🔶 | 部分（include 8→22，见 §3） |
 
 ## 3. 已修复条目（详细）
 
@@ -149,10 +149,12 @@
 - **证据**：`alerts.resolver.ts:29,49`（alertChannels/alertRules 全量返回）；`news-events.resolver.ts:80-105`（仅 limit 1..100 clamp，无 cursor/offset）。
 - **修复方向**：契约演进（加可选分页参数、默认值保持现状）——属 schema 变更，走版本化并更新契约清单；**Go 迁移前不动**，避免双实现期契约漂移。
 
-### FE-01 alert-center 过滤器不入 URL — ⬜ P2【勘察报告】
+### FE-01 alert-center 过滤器不入 URL — ✅ 已修复（远端 CI 已验证；真实浏览器未人工操作）【已复核】
 
-- **证据**：items/search/events 页过滤器全量 URL 同步；alert-center 自成一套内存态。**用户影响**：告警视图不可分享/不可刷新恢复。
-- **修复方向**：前端 IA 重构第一批（统一 use-url-state 模式）。
+- **证据**：items/search/events 页过滤器全量 URL 同步；alert-center 自成一套内存态（alert-center.tsx 仅 eventId 进 URL，`searchParams.get("eventId")`）。**用户影响**：告警视图不可分享/不可刷新恢复。
+- **修复（PR #4 / FE-批3）**：落地通用 `hooks/use-url-state.ts` + `lib/url-state-codec.ts`（类型安全、codec 注入、无业务耦合）；Alert Center 十参数契约（severity/status/provider/q/range/from/to/page/pageSize/eventId）经 `alerts/alert-center-url-state.ts`（纯 codec）与 `alerts/hooks/use-alert-center-url-state.ts`（组合层，220ms keyword debounce）接入。默认值不写入 URL；非法值安全回退且不改写 URL；未知参数保留；写回 router.replace；筛选变化 page 重置 1；URL eventId 自动定位页码。
+- **回归验证**：URL codec round-trip / 默认省略 / 数组去重排序 / 非法日期反向日期 / 保留未知参数与 eventId / debounce / URL 外部变化（back/forward）/ 无 mount 写入 / 无循环写回 / filter-page-eventId 优先级，均由远端 CI 执行（见 PR #4）；真实浏览器 back/forward 未人工操作。
+- **验证状态**：远端 CI 全绿（run 33849497917 @ 99d1e19b，verify + vector-integration success）——lint/typecheck/组件测试(含 URL round-trip 全矩阵)/契约 drift/build 全部通过；真实浏览器 back/forward 与视觉未人工操作（需部署环境）。
 
 ### FE-02 死代码 store/sidebar.ts — ✅ P2【已修复（静态验证）】
 
@@ -162,7 +164,9 @@
 ### FE-03 vitest coverage include 失真 — 🔶 部分改善 P2【勘察报告】
 
 - **证据**：vitest.config.ts coverage.include 仅列 3 个已测文件 → 47% 语句覆盖率是「已测文件内部」的数字，非全仓覆盖率。
-- **本轮**：include 增至 6 个（+page-container.tsx / nav-mode.ts / action-rail-routing.ts——App Shell 第一批的可测原语）。**全仓 glob + 阈值重设仍待 FE-批3+（alert-center 试点时一并做，避免在巨型组件未拆分时用全仓阈值制造红 CI）**。
+- **本轮（PR #3）**：include 增至 8 个（+page-container.tsx / nav-mode.ts / action-rail-routing.ts / navigation-model.ts / top-nav-density.ts——App Shell 第一批的可测原语）。
+- **PR #4（FE-批3）**：include 增至 22 个（+useUrlState / url-state-codec / DataStateBoundary / alert-center.tsx / alert-center-url-state / use-alert-center-url-state / alert-chart-options / evidence-utils / 四个 evidence 组件）。阈值不变（lines 35 / functions 3 / statements 35 / branches 30）。
+- **仍为「部分改善」**：全仓 glob + 阈值重设待 FE-批4+（巨型组件 war-map/task-detail 等未拆分、无测试，纳入即红 CI）。
 
 ## 5. 观察项（非缺陷，迁移决策输入）
 
