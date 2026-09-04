@@ -21,6 +21,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type RenderResult } from "@testing-library/react";
 import type { ReactElement } from "react";
 
+import { ThemeProvider } from "@/hooks/use-theme";
 import { useWarMapSettingsStore } from "@/store/war-map-settings";
 import {
   resetTestMapRuntimeMock,
@@ -200,7 +201,9 @@ export function renderWarMap(ui: ReactElement = <WarMap />): RenderResult {
     throw new Error("resetWarMapTestState() must run before renderWarMap()");
   }
   return renderWithProviders(
-    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>{ui}</ThemeProvider>
+    </QueryClientProvider>,
   );
 }
 

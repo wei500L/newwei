@@ -538,12 +538,14 @@ describe("WarMap（迁移前 characterization）", () => {
       renderWarMap();
       setWarMapInView(true);
 
+      // 等待防抖写回完成（写回包含 lat 参数即代表已完成 URL 重写）
       await waitFor(
         () => {
-          expect(window.location.search).toContain("preset=mena");
+          expect(window.location.search).toContain("lat=28.0000");
         },
         { timeout: 2500 },
       );
+      expect(window.location.search).toContain("preset=mena");
       expect(window.location.search).not.toContain("aa=");
       expect(window.location.search).toContain("customTab=overview");
     });
