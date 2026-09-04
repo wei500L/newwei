@@ -159,11 +159,7 @@ export interface UseWarMapOverlayPanelsOptions {
     monitorsCount: number;
     onLayerVisible: (layerId: WarMapLayerId, visible: boolean) => void;
   };
-  transport: WarMapTransportPanelPropsInput & {
-    canRunAnalysis: boolean;
-    analyzingCurrentView: boolean;
-    onAnalyzeCurrentView: () => void;
-  };
+  transport: Omit<WarMapTransportPanelPropsInput, "onOpenLegend">;
   inspector: {
     transportDetail:
       | WarMapTransportDetail
