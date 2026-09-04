@@ -73,13 +73,28 @@ describe("parseAlertCenterUrlState", () => {
     expect(stateFrom("/alerts?pageSize=20").pageSize).toBe(20);
   });
 
-  it("非法 custom 日期（格式错/日历错/反向/缺失一端）回退默认 30d", () => {
-    expect(stateFrom("/alerts?range=custom&from=2026/06/01&to=2026-06-30").datePreset).toBe("30d");
-    expect(stateFrom("/alerts?range=custom&from=2026-02-31&to=2026-06-30").datePreset).toBe("30d");
+  it("range=custom 保留瞬态：日期缺失/非法/反向时 from/to 置空（不整体回退 30d）", () => {
+    // 「custom 已选、日期未选」是合法瞬态：若 parse 整体回退 30d，
+    // useUrlState 的 URL 回声采纳会把刚选的 custom 立即弹回 30d
+    const transient = stateFrom("/alerts?range=custom");
+    expect(transient.datePreset).toBe("custom");
+    expect(transient.customFrom).toBeNull();
+    expect(transient.customTo).toBeNull();
     expect(
-      stateFrom("/alerts?range=custom&from=2026-06-30&to=2026-06-01").datePreset,
-    ).toBe("30d");
-    expect(stateFrom("/alerts?range=custom&to=2026-06-30").datePreset).toBe("30d");
+      stateFrom("/alerts?range=custom&from=2026/06/01&to=2026-06-30").datePreset,
+    ).toBe("custom");
+    expect(
+      stateFrom("/alerts?range=custom&from=2026-02-31&to=2026-06-30").datePreset,
+    ).toBe("custom");
+    const reversed = stateFrom(
+      "/alerts?range=custom&from=2026-06-30&to=2026-06-01",
+    );
+    expect(reversed.datePreset).toBe("custom");
+    expect(reversed.customFrom).toBeNull();
+    expect(reversed.customTo).toBeNull();
+    expect(
+      stateFrom("/alerts?range=custom&to=2026-06-30").datePreset,
+    ).toBe("custom");
     // 合法 custom
     const valid = stateFrom("/alerts?range=custom&from=2026-06-01&to=2026-06-30");
     expect(valid.datePreset).toBe("custom");
@@ -136,16 +151,26 @@ describe("serializeAlertCenterUrlState", () => {
     const roundTrip = queryAfter(state);
     const reparsed = parseAlertCenterUrlState(new URLSearchParams(roundTrip));
     expect(reparsed).toEqual(state);
+
+    // custom 无日期瞬态同样 round-trip 稳定（range=custom 不带 from/to）
+    const transient = parseAlertCenterUrlState(
+      new URLSearchParams("range=custom"),
+    );
+    const transientRoundTrip = queryAfter(transient);
+    expect(transientRoundTrip).toBe("range=custom");
+    expect(
+      parseAlertCenterUrlState(new URLSearchParams(transientRoundTrip)),
+    ).toEqual(transient);
   });
 
-  it("非法状态的序列化收敛为合法（range=custom 缺日期 → 写默认）", () => {
+  it("custom 无日期（瞬态）序列化为 range=custom，不写 from/to", () => {
     const query = queryAfter({
       ...DEFAULT_ALERT_CENTER_URL_STATE,
       datePreset: "custom",
       customFrom: null,
       customTo: null,
     });
-    expect(query).toBe("");
+    expect(query).toBe("range=custom");
   });
 });
 

@@ -24,10 +24,17 @@ import type { AlertDatePreset } from "./alert-center.utils";
  * | provider  | 已选 metric provider（重复 key，去重 + 排序）    | 空               |
  * | q         | 规则关键字（组件侧 220ms debounce 后写入）       | 空               |
  * | range     | today / 7d / 30d / custom                   | 30d              |
- * | from / to | custom 起止日期 YYYY-MM-DD（from <= to 才生效） | 空               |
+ * | from / to | custom 起止日期 YYYY-MM-DD（一对合法才写入）     | 空               |
  * | page      | 当前页码（>= 1）                              | 1                |
  * | pageSize  | 20 / 30 / 50 / 100                          | 30               |
  * | eventId   | 当前选中事件                                  | 空               |
+ *
+ * 「custom 已选、日期未选」是合法瞬态：URL 表示为 `range=custom`（不带
+ * from/to），parse 与 serialize 对称保留 —— 若该瞬态在序列化时被收敛回
+ * 30d，useUrlState 的 URL 回声采纳会把刚选的 custom 立即弹回 30d，
+ * RangePicker 将永远无法启用（FE-01 UI 接线缺陷）。日期缺失/非法/反向时
+ * from/to 置空等待选择，不丢弃 custom。清空日期由 updateFilters 显式回退
+ * 30d（删除 range/from/to）。
  *
  * 本文件只做纯转换；与 Next navigation 的对接见 hooks/use-url-state.ts，
  * 组合层见 hooks/use-alert-center-url-state.ts。组件内部状态
@@ -99,7 +106,7 @@ export const DEFAULT_ALERT_CENTER_URL_STATE: AlertCenterUrlState = {
   eventId: null,
 };
 
-/** URL → 状态：非法值安全回退；custom 需 from/to 都合法且 from <= to。 */
+/** URL → 状态：非法值安全回退；custom 的日期仅在一对合法（from<=to）时生效。 */
 export function parseAlertCenterUrlState(
   params: URLSearchParams,
 ): AlertCenterUrlState {
@@ -111,11 +118,8 @@ export function parseAlertCenterUrlState(
     ALERT_URL_DATE_PRESETS,
     ALERT_URL_DEFAULT_DATE_PRESET,
   );
-  // custom 但日期缺失/非法/反向 → 回退默认 30d（不保留无效 custom）
-  const datePreset: AlertDatePreset =
-    parsedPreset === "custom" && !hasCustomRange
-      ? ALERT_URL_DEFAULT_DATE_PRESET
-      : (parsedPreset as AlertDatePreset);
+  // range=custom 始终保留（瞬态可表示）：日期缺失/非法/反向时 from/to 置空
+  const datePreset: AlertDatePreset = parsedPreset as AlertDatePreset;
 
   return {
     severities: parseUrlStringSet(
@@ -141,7 +145,11 @@ export function parseAlertCenterUrlState(
   };
 }
 
-/** 状态 → URL：默认值省略；只增删自己拥有的 key，未知参数保留。 */
+/**
+ * 状态 → URL：默认值省略；只增删自己拥有的 key，未知参数保留。
+ * custom（含无日期瞬态）与 parse 对称：round-trip 值稳定是 useUrlState
+ * 不产生回声改写的前提。
+ */
 export function serializeAlertCenterUrlState(
   state: AlertCenterUrlState,
   params: URLSearchParams,
@@ -150,22 +158,18 @@ export function serializeAlertCenterUrlState(
   serializeUrlStringSet(params, ALERT_URL_KEYS.status, state.statuses);
   serializeUrlStringSet(params, ALERT_URL_KEYS.provider, state.providers);
   serializeUrlValue(params, ALERT_URL_KEYS.keyword, state.ruleKeyword, "");
-  // custom 但日期缺失/非法/反向 → 与 parse 一致收敛为默认 30d
-  // （round-trip 稳定的前提：serialize(parse(url)) 不产生新 URL 写入）
-  const effectivePreset =
-    state.datePreset === "custom" &&
-    !isValidUrlDateRange(state.customFrom, state.customTo)
-      ? ALERT_URL_DEFAULT_DATE_PRESET
-      : state.datePreset;
   serializeUrlValue(
     params,
     ALERT_URL_KEYS.range,
-    effectivePreset,
+    state.datePreset,
     ALERT_URL_DEFAULT_DATE_PRESET,
   );
   params.delete(ALERT_URL_KEYS.from);
   params.delete(ALERT_URL_KEYS.to);
-  if (effectivePreset === "custom") {
+  if (
+    state.datePreset === "custom" &&
+    isValidUrlDateRange(state.customFrom, state.customTo)
+  ) {
     params.set(ALERT_URL_KEYS.from, state.customFrom as string);
     params.set(ALERT_URL_KEYS.to, state.customTo as string);
   }

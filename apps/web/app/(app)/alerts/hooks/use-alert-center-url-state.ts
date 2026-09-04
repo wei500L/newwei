@@ -132,7 +132,8 @@ export function useAlertCenterUrlState(): UseAlertCenterUrlStateResult {
         };
 
         // 显式提供日期区间（RangePicker 语义）：合法对 → custom + 日期；
-        // 清空 → 回退默认 30d（URL 模型不存在「custom 无日期」状态）
+        // 清空 → 显式回退默认 30d。「custom 已选、日期未选」的瞬态由
+        // codec 表示为 range=custom（不带 from/to），round-trip 稳定
         if (patch.customRangeMs !== undefined) {
           const start = patch.customRangeMs?.[0];
           const end = patch.customRangeMs?.[1];
