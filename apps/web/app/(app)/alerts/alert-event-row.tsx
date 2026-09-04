@@ -4,7 +4,7 @@ import { Badge, Checkbox, List, Popover, Space, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { AlertMetricProvider } from "@/graphql/generated";
-import { formatDateTime, type resolveLocale } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/i18n";
 
 import {
   buildThresholdSummary,
