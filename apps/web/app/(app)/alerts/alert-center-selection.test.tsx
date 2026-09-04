@@ -227,6 +227,24 @@ describe("Alert Center 分页与 eventId 优先级（FE-01 契约）", () => {
     expect(alertTestNavigation.replaceCalls).toHaveLength(0);
   }, 20000);
 
+  it("page 超出总页数：数据就绪后收敛到最后一页且保留未知参数（优先级 6）", async () => {
+    const view = renderAlertCenter({
+      events: buildPagedEvents(),
+      // 35 条 / 30 每页 → 2 页：page=5 收敛到第 2 页
+      initialUrl: "/alerts?page=5&foo=bar",
+    });
+
+    expect(
+      await screen.findByText("Showing 31-35 of 35"),
+    ).toBeInTheDocument();
+    expect(eventRows(view.container)).toHaveLength(5);
+    await settleEffects();
+    // 收敛稳定：仍停留在最后一页，不反复写回
+    expect(screen.getByText("Showing 31-35 of 35")).toBeInTheDocument();
+    expect(lastReplaceHref()).toContain("page=2");
+    expect(lastReplaceHref()).toContain("foo=bar");
+  }, 20000);
+
   it("eventId 深链：选中 h-035 并自动定位到第 2 页，URL 状态稳定（优先级 1/8）", async () => {
     const view = renderAlertCenter({
       events: buildPagedEvents(),

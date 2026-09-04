@@ -35,7 +35,8 @@ import type { AlertFilterState } from "../alert-center.utils";
  * 4. 筛选变化（updateFilters）→ page 重置 1，不被旧组件内选中拉回
  *    （定位是一次性的，不持续监听 page）；
  * 5. 仅 page、无 eventId 的分享链接按 URL page 打开；
- * 6. page 超出总页数时由组件收敛到最后一页（自动路径，保留 eventId）；
+ * 6. page 超出总页数时由组件收敛到最后一页（自动路径，保留 eventId；
+ *    仅在事件数据就绪后执行，避免加载期把 URL page 改写回 1）；
  * 7. 未知 query 参数由 useUrlState 原样保留；
  * 8. 合法 eventId 深链仍可自动定位（见优先级 1）；
  * 9. 自动定位/收敛与用户分页使用可区分的写入路径（自动路径不调用

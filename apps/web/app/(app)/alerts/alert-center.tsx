@@ -927,14 +927,18 @@ export function AlertCenterContent() {
 
   // FE-01 分页优先级契约（完整定义见 useAlertCenterUrlState 注释）。
   //
-  // page 越界收敛（优先级 6）：走自动写路径保留 eventId —— 深链
-  // ?eventId=X&page=99 收敛到最后一页后，下方的事件定位（优先级 1）
-  // 仍可执行，不因收敛丢失 eventId。
+  // page 越界收敛（优先级 6）：仅在事件查询完成后执行 —— 加载中/未授权时
+  // filteredEvents 为空、listPageCount 恒为 1，此时收敛会把 URL ?page=2
+  // 在数据到达前改写回 1，破坏纯 page 分享链接的恢复。走自动写路径保留
+  // eventId：深链 ?eventId=X&page=99 收敛到最后一页后，下方的事件定位
+  // （优先级 1）仍可执行，不因收敛丢失 eventId。
+  const isEventsDataReady =
+    shouldQueryEvents && !eventsLoading && eventsData !== undefined;
   useEffect(() => {
-    if (listPage > listPageCount) {
+    if (isEventsDataReady && listPage > listPageCount) {
       setPagePreservingEventId(listPageCount);
     }
-  }, [listPage, listPageCount, setPagePreservingEventId]);
+  }, [isEventsDataReady, listPage, listPageCount, setPagePreservingEventId]);
 
   // 外部 eventId（深链/分享链接/back-forward/行内点击）→ 一次性定位到该
   // 事件所在页（优先级 1/8）。eventParam 变化时把定位请求排入 ref，事件
