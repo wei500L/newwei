@@ -4,6 +4,7 @@ import { Space, Spin, Typography } from "antd";
 import type { ReactNode, RefObject } from "react";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 
 export interface WarMapFatalOverlayState {
   title: string;
@@ -18,8 +19,9 @@ export interface WarMapMapSurfaceProps {
   viewportClassName: string;
   hasFatalOverlay: boolean;
   hasNonFatalDataError: boolean;
-  /** 非致命错误横幅（RequestErrorBanner 组合结果）。 */
-  errorBanner?: ReactNode;
+  error?: unknown;
+  refreshingMapData?: boolean;
+  onRetry?: () => void;
   /** 顶部 overlay rail（含桌面面板）。 */
   rail?: ReactNode;
   /** AIS 视口空态提示条。 */
@@ -45,7 +47,9 @@ export function WarMapMapSurface({
   viewportClassName,
   hasFatalOverlay,
   hasNonFatalDataError,
-  errorBanner,
+  error,
+  refreshingMapData,
+  onRetry,
   rail,
   aisEmptyStateBanner,
   inspector,
@@ -60,7 +64,16 @@ export function WarMapMapSurface({
     <div className={viewportClassName}>
       {!hasFatalOverlay ? (
         <>
-          {hasNonFatalDataError ? errorBanner : null}
+          {hasNonFatalDataError && error !== undefined ? (
+            <div className="absolute left-4 right-4 top-4 z-20">
+              <RequestErrorBanner
+                error={error}
+                showCachedDataHint
+                actionLoading={refreshingMapData}
+                onRetry={onRetry}
+              />
+            </div>
+          ) : null}
           {rail}
         </>
       ) : null}

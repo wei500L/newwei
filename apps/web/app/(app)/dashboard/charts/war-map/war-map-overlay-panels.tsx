@@ -3,8 +3,6 @@
 import type {
   WarMapAisMode,
   WarMapFlightMode,
-  WarMapPreset,
-  WarMapTimeRangePreset,
   WarMapTransportDetail,
 } from "@modular/utils";
 import { Drawer } from "antd";
@@ -17,6 +15,7 @@ import {
 
 import type { SupportedLocale } from "@/lib/i18n";
 
+import type { WarMapLayerId, WarMapLayerVisibility, WarMapPreset, WarMapTimeRangePreset } from "@modular/utils";
 import {
   WarMapControlsPanel,
   WarMapLegendDock,
@@ -35,6 +34,10 @@ import {
   type WarMapTranslateFn,
 } from "./war-map-overlay-model";
 import { WarMapOverlayRail } from "./war-map-overlay-rail";
+import {
+  useWarMapViewOptions,
+  WarMapLayerVisibilityControls,
+} from "./war-map-view-controls";
 import type {
   WarMapAisSummaryPresentation,
   WarMapFlightsSummaryPresentation,
@@ -146,19 +149,23 @@ export interface UseWarMapOverlayPanelsOptions {
     interactionItems: WarMapLegendItem[];
     quickItems: WarMapLegendItem[];
   };
-  view: {
-    presets: { key: WarMapPreset; label: string; active: boolean }[];
-    timeRanges: {
-      key: WarMapTimeRangePreset;
-      label: string;
-      active: boolean;
-    }[];
-    layerVisibilityControls: ReactNode;
+  viewControls: {
+    t: WarMapTranslateFn;
+    activePreset: WarMapPreset;
+    timeRangePreset: WarMapTimeRangePreset;
     onPresetSelect: (preset: WarMapPreset) => void;
     onTimeRangeSelect: (preset: WarMapTimeRangePreset) => void;
     onResetLayers: () => void;
+    displayableLayerIds: WarMapLayerId[];
+    layerVisibility: WarMapLayerVisibility;
+    monitorsCount: number;
+    onLayerVisible: (layerId: WarMapLayerId, visible: boolean) => void;
   };
-  transportPanelProps: ReturnType<typeof buildWarMapTransportPanelProps>;
+  transport: WarMapTransportPanelPropsInput & {
+    canRunAnalysis: boolean;
+    analyzingCurrentView: boolean;
+    onAnalyzeCurrentView: () => void;
+  };
   inspector: {
     transportDetail:
       | WarMapTransportDetail
@@ -207,8 +214,8 @@ export function useWarMapOverlayPanels(
     overlayViewModel,
     overlayLayout,
     legend,
-    view,
-    transportPanelProps,
+    viewControls,
+    transport,
     inspector,
     windowLabel,
     status,
@@ -218,6 +225,30 @@ export function useWarMapOverlayPanels(
     interaction.controlsSection === "overview"
       ? "view"
       : interaction.controlsSection;
+  const transportPanelProps = buildWarMapTransportPanelProps({
+    ...transport,
+    onOpenLegend: () => {
+      if (standaloneLayout) {
+        status.scrollLegendDockIntoView();
+        return;
+      }
+      interaction.setOpenOverlayPanel("legend");
+    },
+  });
+  const { presetOptions, timeRangeOptions } = useWarMapViewOptions({
+    t: viewControls.t,
+    activePreset: viewControls.activePreset,
+    timeRangePreset: viewControls.timeRangePreset,
+  });
+  const layerVisibilityControls = (
+    <WarMapLayerVisibilityControls
+      displayableLayerIds={viewControls.displayableLayerIds}
+      layerVisibility={viewControls.layerVisibility}
+      monitorsCount={viewControls.monitorsCount}
+      onLayerVisible={viewControls.onLayerVisible}
+      t={viewControls.t}
+    />
+  );
   const controlsPanelContent: ReactNode = (
     <WarMapControlsPanel
       layoutVariant={layoutVariant}
@@ -236,12 +267,12 @@ export function useWarMapOverlayPanels(
       legendSections={legend.sections}
       interactionLegendItems={legend.interactionItems}
       view={{
-        presets: view.presets,
-        timeRanges: view.timeRanges,
-        layerVisibilityControls: view.layerVisibilityControls,
-        onPresetSelect: view.onPresetSelect,
-        onTimeRangeSelect: view.onTimeRangeSelect,
-        onResetLayers: view.onResetLayers,
+        presets: presetOptions,
+        timeRanges: timeRangeOptions,
+        layerVisibilityControls,
+        onPresetSelect: viewControls.onPresetSelect,
+        onTimeRangeSelect: viewControls.onTimeRangeSelect,
+        onResetLayers: viewControls.onResetLayers,
       }}
       transport={transportPanelProps}
       activeLegendKey={interaction.focusedLegendItemKey}

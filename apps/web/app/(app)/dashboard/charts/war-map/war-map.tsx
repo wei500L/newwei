@@ -2,8 +2,6 @@
 
 import {
   WAR_MAP_LAYER_IDS,
-  type WarMapAisMode,
-  type WarMapFlightMode,
   type WarMapTranslateTarget,
 } from "@modular/utils";
 import { Grid } from "antd";
@@ -11,17 +9,13 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
-import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useRequestGeoTransportMutation } from "@/graphql/generated";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { createApiClient } from "@/lib/api-client";
 import { resolveLocale } from "@/lib/i18n";
 import { useWarMapSettingsStore } from "@/store/war-map-settings";
 
-import {
-  useDashboardStream,
-  type DashboardStreamState,
-} from "../../use-dashboard-stream";
+import { useDashboardStream } from "../../use-dashboard-stream";
 
 import { useWarMapAnalyzeCurrentView } from "./use-war-map-analyze";
 import { useWarMapContainer } from "./use-war-map-container";
@@ -49,34 +43,13 @@ import {
   resolveOverlayDensity,
   type WarMapLayoutVariant,
 } from "./war-map-overlay-model";
-import {
-  buildWarMapTransportPanelProps,
-  useWarMapOverlayPanels,
-} from "./war-map-overlay-panels";
+import { useWarMapOverlayPanels } from "./war-map-overlay-panels";
 import { buildWarMapLoadOverlayState } from "./war-map-status-model";
-import {
-  useWarMapViewOptions,
-  WarMapAisViewportEmptyBanner,
-  WarMapLayerVisibilityControls,
-} from "./war-map-view-controls";
+import { WarMapAisViewportEmptyBanner } from "./war-map-view-controls";
 
+import type { WarMapProps } from "./war-map-props";
 
-export interface WarMapProps {
-  className?: string;
-  layoutVariant?: WarMapLayoutVariant;
-  translateTarget?: WarMapTranslateTarget;
-  streamState?: DashboardStreamState;
-  onEffectiveRangeChange?: (range: { start: Date; end: Date }) => void;
-  onRealtimeQueryChange?: (query: {
-    start: Date;
-    end: Date;
-    bbox?: string;
-    zoom?: number;
-    translateTarget?: WarMapTranslateTarget;
-    flightMode?: WarMapFlightMode;
-    aisMode?: WarMapAisMode;
-  }) => void;
-}
+export type { WarMapProps } from "./war-map-props";
 
 const DISPLAYABLE_WAR_MAP_LAYER_IDS = WAR_MAP_LAYER_IDS.filter(
   (layerId) => !WAR_MAP_UNSUPPORTED_LAYER_IDS.has(layerId),
@@ -98,6 +71,7 @@ export function WarMap({
   const canRunAnalysis = permissions.includes("analysis.run");
   const [requestGeoTransport, { loading: submittingGeoTransport }] =
     useRequestGeoTransportMutation();
+
 
   const overlayRailRef = useRef<HTMLDivElement | null>(null);
   const legendDockRef = useRef<HTMLDivElement | null>(null);
@@ -143,7 +117,7 @@ export function WarMap({
     (s) => s.setAisHighlightCandidates,
   );
   const resetLayers = useWarMapSettingsStore((s) => s.resetLayers);
-  const effectiveAisMode: WarMapAisMode = aisMode;
+  const effectiveAisMode = aisMode;
 
   const dataEnabled = Boolean(session?.accessToken && inView && urlHydrated);
   const apiClient = useMemo(
@@ -198,7 +172,6 @@ export function WarMap({
     flightMode,
     aisMode: effectiveAisMode,
   });
-  const monitors = monitorsQuery.data ?? [];
   const internalStreamState = useDashboardStream({
     accessToken: session?.accessToken,
     start: effectiveRange.start,
@@ -230,6 +203,7 @@ export function WarMap({
     t,
     points: pointsResult,
     overlayRailRef,
+    legendDockRef,
     useDrawerControls,
     useDesktopInspector,
     mapRef,
@@ -241,7 +215,6 @@ export function WarMap({
     hoveredLegendItemKey,
     updateHoveredLegendItemKey,
     updateFocusedLegendItemKey,
-    setOpenOverlayPanel,
   } = interactionResult;
 
   const transportDetailQuery = useWarMapTransportDetail({
@@ -307,15 +280,6 @@ export function WarMap({
       ]);
     },
   );
-  const hasData =
-    deckData.eventsCount +
-      deckData.newsCount +
-      deckData.eventClustersCount +
-      deckData.newsClustersCount +
-      deckData.staticVisibleCount +
-      (layerVisibility.monitors ? pointsResult.monitorPoints.length : 0) >
-    0;
-
   // 状态展示域：顶部状态摘要、航班/AIS 摘要、运输 legend 状态、窗口标签
   const {
     statusSummary,
@@ -339,35 +303,26 @@ export function WarMap({
       newsQuery,
       layersQuery,
       monitorsQuery,
-      layersAisSummary: layersQuery.data?.layers.ais?.summary,
-      flightsSummary:
-        layersQuery.data?.layers.flights?.summary &&
-        typeof layersQuery.data.layers.flights.summary === "object" &&
-        !Array.isArray(layersQuery.data.layers.flights.summary)
-          ? (layersQuery.data.layers.flights.summary as Record<string, unknown>)
-          : undefined,
     },
   });
 
-  const visibleLayerCount =
-    DISPLAYABLE_WAR_MAP_LAYER_IDS.filter((layerId) => layerVisibility[layerId])
-      .length + (layerVisibility.monitors ? 1 : 0);
   const loadOverlayState = buildWarMapLoadOverlayState({
+    deckCounts: deckData,
+    monitorsVisible: layerVisibility.monitors,
+    monitorPointsCount: pointsResult.monitorPoints.length,
     mapLoadError,
     mapReady,
     anyLoading,
     errors,
-    hasData,
     refreshingMapData,
     retryMapLoad,
-    refreshMapData: () => {
-      void refreshMapData();
-    },
+    refreshMapData: () => void refreshMapData(),
     t,
   });
   const {
     showBootOverlay,
     bootOverlayLabel,
+    hasData,
     fatalOverlay,
     hasFatalOverlay,
     hasNonFatalDataError,
@@ -395,7 +350,6 @@ export function WarMap({
       monitorPointsCount: pointsResult.monitorPoints.length,
     },
     monitorsCount: monitors.length,
-    visibleLayerCount,
     legend: {
       layerVisibility,
       effectiveAisMode,
@@ -404,7 +358,7 @@ export function WarMap({
     },
   });
 
-  // legend focus/hover 键失效清理（依赖 legend 索引，留在编排层）
+  // legend focus/hover 键失效清理（依赖 legend 索引，留在编排层避免依赖环）
   useEffect(() => {
     if (focusedLegendItemKey && !legendItemsByKey.has(focusedLegendItemKey)) {
       updateFocusedLegendItemKey(null);
@@ -420,33 +374,7 @@ export function WarMap({
     updateHoveredLegendItemKey,
   ]);
 
-  const { presetOptions, timeRangeOptions } = useWarMapViewOptions({
-    t,
-    activePreset,
-    timeRangePreset,
-  });
-  const layerVisibilityControls = (
-    <WarMapLayerVisibilityControls
-      displayableLayerIds={DISPLAYABLE_WAR_MAP_LAYER_IDS}
-      layerVisibility={layerVisibility}
-      monitorsCount={pointsResult.monitorPoints.length}
-      onLayerVisible={setLayerVisible}
-      t={t}
-    />
-  );
-  const scrollLegendDockIntoView = useCallback(() => {
-    setOpenOverlayPanel(null);
-
-    if (typeof window !== "undefined") {
-      window.requestAnimationFrame(() => {
-        legendDockRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      });
-    }
-  }, []);
-  const transportPanelProps = buildWarMapTransportPanelProps({
+  const transportInput = {
     flightMode,
     onFlightModeChange: setFlightMode,
     aisMode,
@@ -461,17 +389,8 @@ export function WarMap({
     aisHighlightedCandidateCount,
     canRunAnalysis,
     analyzingCurrentView: submittingGeoTransport,
-    onAnalyzeCurrentView: () => {
-      void handleAnalyzeCurrentView();
-    },
-    onOpenLegend: () => {
-      if (standaloneLayout) {
-        scrollLegendDockIntoView();
-        return;
-      }
-      setOpenOverlayPanel("legend");
-    },
-  });
+    onAnalyzeCurrentView: () => void handleAnalyzeCurrentView(),
+  };
 
   // Overlay 面板组合域：rail / Inspector / Drawer / 桌面面板内容装配
   const panels = useWarMapOverlayPanels({
@@ -491,15 +410,19 @@ export function WarMap({
       interactionItems: interactionLegendItems,
       quickItems: quickLegendItems,
     },
-    view: {
-      presets: presetOptions,
-      timeRanges: timeRangeOptions,
-      layerVisibilityControls,
+    viewControls: {
+      t,
+      activePreset,
+      timeRangePreset,
       onPresetSelect: setActivePreset,
       onTimeRangeSelect: setTimeRangePreset,
       onResetLayers: resetLayers,
+      displayableLayerIds: DISPLAYABLE_WAR_MAP_LAYER_IDS,
+      layerVisibility,
+      monitorsCount: pointsResult.monitorPoints.length,
+      onLayerVisible: setLayerVisible,
     },
-    transportPanelProps,
+    transport: transportInput,
     inspector: {
       transportDetail: transportDetailQuery.data?.detail ?? null,
       transportDetailLoading: transportDetailQuery.isLoading,
@@ -541,18 +464,9 @@ export function WarMap({
           viewportClassName={mapViewportClassName}
           hasFatalOverlay={hasFatalOverlay}
           hasNonFatalDataError={hasNonFatalDataError}
-          errorBanner={
-            <div className="absolute left-4 right-4 top-4 z-20">
-              <RequestErrorBanner
-                error={errors[0]}
-                showCachedDataHint
-                actionLoading={refreshingMapData}
-                onRetry={() => {
-                  void refreshMapData();
-                }}
-              />
-            </div>
-          }
+          error={errors[0]}
+          refreshingMapData={refreshingMapData}
+          onRetry={() => void refreshMapData()}
           rail={panels.overlayRail}
           aisEmptyStateBanner={
             aisPresentation.aisViewportEmptyStateActive &&

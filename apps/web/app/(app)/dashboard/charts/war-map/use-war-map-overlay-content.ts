@@ -13,6 +13,8 @@ import {
   type WarMapLayoutVariant,
   type WarMapTranslateFn,
 } from "./war-map-overlay-model";
+import { WAR_MAP_LAYER_IDS } from "@modular/utils";
+import { WAR_MAP_UNSUPPORTED_LAYER_IDS } from "./war-map-data";
 import type { WarMapStatusSummary } from "./war-map-status-model";
 import {
   buildWarMapInteractionLegendItems,
@@ -37,7 +39,6 @@ export interface UseWarMapOverlayContentOptions {
     monitorPointsCount: number;
   };
   monitorsCount: number;
-  visibleLayerCount: number;
   legend: {
     layerVisibility: WarMapLayerVisibility;
     effectiveAisMode: WarMapAisMode;
@@ -72,9 +73,14 @@ export function useWarMapOverlayContent(
     streamError,
     pointsResult,
     monitorsCount,
-    visibleLayerCount,
     legend,
   } = options;
+
+  const visibleLayerCount =
+    WAR_MAP_LAYER_IDS.filter(
+      (layerId) =>
+        !WAR_MAP_UNSUPPORTED_LAYER_IDS.has(layerId) && legend.layerVisibility[layerId],
+    ).length + (legend.layerVisibility.monitors ? 1 : 0);
 
   const overlayLayout = useMemo(
     () =>

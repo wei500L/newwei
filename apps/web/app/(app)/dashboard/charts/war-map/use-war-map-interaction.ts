@@ -56,6 +56,8 @@ export interface UseWarMapInteractionOptions {
   /** 点位派生结果（Inspector 内容解析输入）。 */
   points: UseWarMapPointsResult;
   overlayRailRef: RefObject<HTMLDivElement | null>;
+  /** standalone legend dock（滚动定位目标）。 */
+  legendDockRef: RefObject<HTMLDivElement | null>;
   useDrawerControls: boolean;
   useDesktopInspector: boolean;
   mapRef: RefObject<MapLibreMap | null>;
@@ -87,6 +89,8 @@ export interface UseWarMapInteractionResult {
   zoomToSelectedInspector: () => void;
   /** 安全外链打开（新闻原文；非 http(s) 链接弹警告）。 */
   openNewsLink: (url?: string | null) => void;
+  /** standalone Legend 按钮滚动定位到 dock。 */
+  scrollLegendDockIntoView: () => void;
   openOverlayPanel: OverlayPanelKey | null;
   setOpenOverlayPanel: Dispatch<SetStateAction<OverlayPanelKey | null>>;
   controlsSection: OverlayControlsSection;
@@ -129,6 +133,7 @@ export function useWarMapInteraction(
     t,
     points,
     overlayRailRef,
+    legendDockRef,
     useDrawerControls,
     useDesktopInspector,
     mapRef,
@@ -194,6 +199,19 @@ export function useWarMapInteraction(
       essential: true,
     });
   }, [mapRef, selectedInspector]);
+
+  const scrollLegendDockIntoView = useCallback(() => {
+    setOpenOverlayPanel(null);
+
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        legendDockRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    }
+  }, [legendDockRef]);
 
   const openNewsLink = useCallback(
     (url?: string | null) => {
@@ -381,6 +399,7 @@ export function useWarMapInteraction(
     closeSelectedInspector,
     zoomToSelectedInspector,
     openNewsLink,
+    scrollLegendDockIntoView,
     openOverlayPanel,
     setOpenOverlayPanel,
     controlsSection,

@@ -6,6 +6,8 @@ import { useMemo } from "react";
 import type { SupportedLocale } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/i18n";
 
+import type { WarMapLayersResponse } from "./war-map-data";
+
 import type { WarMapTranslateFn } from "./war-map-overlay-model";
 import {
   buildWarMapAisSummaryPresentation,
@@ -91,6 +93,15 @@ export function useWarMapStatusPresentation(
     dateStyle: "medium",
   })} - ${formatDateTime(effectiveRange.end, locale, { dateStyle: "medium" })}`;
 
+  const layersData = queries.layersQuery.data?.layers;
+  const flightsSummary =
+    layersData?.flights?.summary &&
+    typeof layersData.flights.summary === "object" &&
+    !Array.isArray(layersData.flights.summary)
+      ? (layersData.flights.summary as Record<string, unknown>)
+      : undefined;
+  const layersAisSummary = layersData?.ais?.summary;
+
   const chainStatuses = buildWarMapChainStatuses({
     eventsQuery: queries.eventsQuery,
     newsQuery: queries.newsQuery,
@@ -109,12 +120,12 @@ export function useWarMapStatusPresentation(
   });
 
   const flightsPresentation = buildWarMapFlightsSummaryPresentation({
-    flightsSummary: queries.flightsSummary,
+    flightsSummary,
     t,
   });
 
   const aisPresentation = buildWarMapAisSummaryPresentation({
-    aisSummary: queries.layersAisSummary,
+    aisSummary: layersAisSummary,
     layerVisibility,
     aisMode,
     effectiveAisMode,
