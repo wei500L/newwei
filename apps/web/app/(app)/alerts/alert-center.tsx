@@ -58,11 +58,6 @@ import { classifyRequestError } from "@/lib/request-error";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 
 import {
-  buildReplayOption,
-  buildRuleTrendOption,
-  buildTrendOption,
-} from "./alert-chart-options";
-import {
   buildAlertExportJson,
   buildAlertExportRows,
   buildAlertStats,
@@ -77,6 +72,11 @@ import {
   type AlertDatePreset,
   type AlertFilterState,
 } from "./alert-center.utils";
+import {
+  buildReplayOption,
+  buildRuleTrendOption,
+  buildTrendOption,
+} from "./alert-chart-options";
 import {
   ALERT_EVENT_ROW_ESTIMATE_PX,
   shouldUpdateAlertEventsMetric,

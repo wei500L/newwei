@@ -55,8 +55,8 @@
 | FE-批2（主体）：ActionRail 五组化（navigation-model 单一真源 + 权限过滤唯一事实源 + rail/drawer 共用）+ TopNav 589 行九职责拆分（编排层 ~124 行 + 组件/hooks）+ 顶部栏响应式优先级（resolveTopNavLayout 纯函数 + 窄屏搜索兜底入口）+ Shell 视口测量单一来源 + App Shell 导航 token 收敛 | 🔶 代码落地，远端 CI 验证中（PR #3）|
 | FE-02 死 store 删除（store/sidebar.ts） | ✅ 静态验证零引用后删除；残留引用由 typecheck 拦截 |
 | FE-批1（其余）：design/tokens.ts 收敛、DataStateBoundary、useUrlState | ⬜ 后续批次 |
-| FE-批3：alert-center 重构（顺修 FE-01 URL 状态）——代表页试点 1 | ⬜ |
-| FE-03：vitest coverage include 改全仓 glob，阈值按真实基线重设 | 🔶 部分（include 3→8，+App Shell 导航原语；全仓阈值待巨型组件拆分批次） |
+| FE-批3：alert-center 重构（顺修 FE-01 URL 状态）——代表页试点 1 | 🔶 代码落地 + 远端 CI 验证（PR #4）：characterization tests（42 用例）+ useUrlState/DataStateBoundary 原语 + URL 十参数契约 + DataStateBoundary 首个消费方 + 证据域/图表构建器拆分（alert-center.tsx 4074→2807 行）；列表域/详情域组件与数据 hooks 拆分未完成 |
+| FE-03：vitest coverage include 改全仓 glob，阈值按真实基线重设 | 🔶 部分（include 3→22：App Shell 导航原语 + FE-批3 原语与 Alert Center 领域模块；全仓阈值待巨型组件拆分批次） |
 | 试点页人工冒烟 | ⬜ 未做（本机不启动前端；需部署环境） |
 
 **范围声明**：FE-批2 主体 = Shell 导航信息架构重组 + TopNav 拆分。**不是** App Shell 重构全部完成——design/tokens.ts 全站收敛、DataStateBoundary、useUrlState、代表页试点（alert-center/war-map）均未开始；页面级视觉未经人工验收。

@@ -1,10 +1,13 @@
 import type { EChartsOption } from "echarts";
 
 import dayjs from "@/lib/dayjs";
-
 import { ALERT_LINE_COLORS } from "@/lib/status-tokens";
 
-import type { AlertEventItem, AlertRuleTrendAnalysis, AlertTrendPoint } from "./alert-center.utils";
+import type {
+  AlertEventItem,
+  AlertRuleTrendAnalysis,
+  AlertTrendPoint,
+} from "./alert-center.utils";
 import type { TranslateFn } from "./evidence-utils";
 
 /**
@@ -20,7 +23,7 @@ export interface ChartThemeInputs {
 
 export interface ReplayChartInput {
   replay: unknown;
-  replayPoints: Array<{ timestamp: unknown; value: number }> | null | undefined;
+  replayPoints: { timestamp: unknown; value: number }[] | null | undefined;
   replayUnit: string | null | undefined;
   selectedEvent: AlertEventItem | null;
 }
