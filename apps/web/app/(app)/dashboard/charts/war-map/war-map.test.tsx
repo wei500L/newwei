@@ -720,7 +720,8 @@ describe("WarMap（迁移前 characterization）", () => {
       await waitFor(() => {
         expect(screen.getByText("Regions")).toBeInTheDocument();
       });
-      expect(screen.getByText("Window")).toBeInTheDocument();
+      // Window 文案同时出现在摘要头与 View 区块标题
+      expect(screen.getAllByText("Window").length).toBeGreaterThan(0);
 
       await userEvent.click(screen.getByRole("button", { name: "MENA" }));
       await waitFor(() => {
@@ -778,12 +779,13 @@ describe("WarMap（迁移前 characterization）", () => {
       renderWarMap(<WarMap layoutVariant="standalone" />);
       await activateMap();
 
-      // legend dock 常驻（standalone 无 Legend 工具按钮、无 quick legend）
+      // legend dock 常驻（standalone 无 Legend 工具按钮、无 quick legend）；
+      // hint 同时出现在 dock 头部与 interaction strip
       expect(
-        screen.getByText(
+        screen.getAllByText(
           "Live symbols stay aligned with the active map layers.",
-        ),
-      ).toBeInTheDocument();
+        ).length,
+      ).toBeGreaterThan(0);
       expect(
         screen.queryByRole("button", { name: "Legend" }),
       ).not.toBeInTheDocument();
