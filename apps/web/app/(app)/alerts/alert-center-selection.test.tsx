@@ -235,12 +235,13 @@ describe("Alert Center 分页（迁移前行为）", () => {
     ).toBeInTheDocument();
 
     // 筛选收敛：仅剩 economic_anomaly 的 30 条 → 回到第 1 页
+    //（30 条 === pageSize 30，分页器不渲染，用行数断言页码收敛）
     fireEvent.click(screen.getByText("Economic anomaly"));
 
+    await waitFor(() => expect(eventRows(view.container)).toHaveLength(30));
     expect(
-      await screen.findByText("Showing 1-30 of 30"),
-    ).toBeInTheDocument();
-    expect(eventRows(view.container)).toHaveLength(30);
+      screen.queryByText("Showing 31-35 of 35"),
+    ).not.toBeInTheDocument();
     // h-035 被筛选排除 → 详情保留 + 排除提示
     expect(
       screen.getByText("Selected event is outside the current filters."),
