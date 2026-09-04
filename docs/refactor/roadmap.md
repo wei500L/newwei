@@ -52,11 +52,12 @@
 |---|---|
 | FE-批1（子集）：PageContainer 宽度原语 + 单一真源 lib/content-widths（shell 与 PageContainer 共用；padding 唯一所有者是 shell；服务端安全无 "use client"）+ 行为测试 | ✅ 远端 CI 已验证（组件测试 + lint/typecheck/build） |
 | FE-批2（子集）：newsnow 1760px 特例收敛（12 处硬编码 → NewsnowBoardContainer）+ news-hub 1200px 双重约束修复 + ActionRail 4 组图标语义唯一化 | ✅ 远端 CI 已验证（同上） |
-| FE-批2（主体）：ActionRail 五组化（navigation-model 单一真源 + 权限过滤唯一事实源 + rail/drawer 共用）+ TopNav 589 行九职责拆分（编排层 ~124 行 + 组件/hooks）+ 顶部栏响应式优先级（resolveTopNavLayout 纯函数 + 窄屏搜索兜底入口）+ Shell 视口测量单一来源 + App Shell 导航 token 收敛 | 🔶 代码落地，远端 CI 验证中（PR #3）|
+| FE-批2（主体）：ActionRail 五组化（navigation-model 单一真源 + 权限过滤唯一事实源 + rail/drawer 共用）+ TopNav 589 行九职责拆分（编排层 ~124 行 + 组件/hooks）+ 顶部栏响应式优先级（resolveTopNavLayout 纯函数 + 窄屏搜索兜底入口）+ Shell 视口测量单一来源 + App Shell 导航 token 收敛 | ✅ 远端 CI 已验证（PR #3 已合并）|
 | FE-02 死 store 删除（store/sidebar.ts） | ✅ 静态验证零引用后删除；残留引用由 typecheck 拦截 |
-| FE-批1（其余）：design/tokens.ts 收敛、DataStateBoundary、useUrlState | ⬜ 后续批次 |
-| FE-批3：alert-center 重构（顺修 FE-01 URL 状态）——代表页试点 1 | 🔶 代码落地 + 远端 CI 验证（PR #4）：characterization tests（42 用例）+ useUrlState/DataStateBoundary 原语 + URL 十参数契约 + DataStateBoundary 首个消费方 + 证据域/图表构建器拆分（alert-center.tsx 4074→2807 行）；列表域/详情域组件与数据 hooks 拆分未完成 |
-| FE-03：vitest coverage include 改全仓 glob，阈值按真实基线重设 | 🔶 部分（include 3→22：App Shell 导航原语 + FE-批3 原语与 Alert Center 领域模块；全仓阈值待巨型组件拆分批次） |
+| FE-批1（其余）：DataStateBoundary、useUrlState | ✅ 已落地（PR #4：use-url-state.ts / url-state-codec.ts / data-state-boundary.tsx，远端 CI 已验证）；design/tokens.ts 收敛仍为后续批次 |
+| FE-批3（FE-批3A）：alert-center 重构（顺修 FE-01 URL 状态）——代表页试点 1 | ✅ 远端 CI 已验证（PR #4 已合并，合并后基线 2851 行）：characterization tests + useUrlState/DataStateBoundary 原语 + URL 十参数契约 + DataStateBoundary 首个消费方 + 证据域/图表构建器拆分；最终 CI run 33857305521，main 合并后 CI run 33858778995（b9669b2b）|
+| FE-批3B：Alert Center 领域拆分收口（列表/详情/数据 hooks） | 🔶 代码落地（PR #5 进行中）：feed/selection/status-actions/batch/detail/virtualization/charts 领域 hooks + filters/summary/list/row/toolbar 组件 + 五个详情页签 + detail-model/actions/data-state 纯模块；alert-center.tsx 2851→495 行 |
+| FE-03：vitest coverage include 改全仓 glob，阈值按真实基线重设 | 🔶 部分（include 3→约 40：App Shell 导航原语 + FE-批3/3B 原语与 Alert Center 全部领域模块；全仓阈值待巨型组件拆分批次） |
 | 试点页人工冒烟 | ⬜ 未做（本机不启动前端；需部署环境） |
 
 **范围声明**：FE-批2 主体 = Shell 导航信息架构重组 + TopNav 拆分。**不是** App Shell 重构全部完成——design/tokens.ts 全站收敛、DataStateBoundary、useUrlState、代表页试点（alert-center/war-map）均未开始；页面级视觉未经人工验收。

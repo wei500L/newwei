@@ -40,6 +40,9 @@ export interface UseAlertEventSelectionResult {
   handleSelectEvent: (eventId: string) => void;
   /** filtered 中的序号（-1 = 被当前筛选排除）。 */
   selectedIndexInFiltered: number;
+  /** filtered 中的前一/后一事件 id（无则为 null）。 */
+  previousEventId: string | null;
+  nextEventId: string | null;
 }
 
 export function useAlertEventSelection({
@@ -133,6 +136,15 @@ export function useAlertEventSelection({
   const selectedIndexInFiltered = filteredEvents.findIndex(
     (event) => event.id === selectedEventId,
   );
+  const previousEventId =
+    selectedIndexInFiltered > 0
+      ? filteredEvents[selectedIndexInFiltered - 1]?.id
+      : null;
+  const nextEventId =
+    selectedIndexInFiltered >= 0 &&
+    selectedIndexInFiltered < filteredEvents.length - 1
+      ? filteredEvents[selectedIndexInFiltered + 1]?.id
+      : null;
 
   return {
     selectedEventId,
@@ -140,5 +152,7 @@ export function useAlertEventSelection({
     setSelectedEventId,
     handleSelectEvent,
     selectedIndexInFiltered,
+    previousEventId,
+    nextEventId,
   };
 }

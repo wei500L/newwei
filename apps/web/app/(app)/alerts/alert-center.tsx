@@ -39,9 +39,9 @@ import { CONTEXT_OBJECT_KEYS } from "./alert-event-detail-model";
 import { AlertEventList } from "./alert-event-list";
 import type { AlertExportScope } from "./alert-event-list-toolbar";
 import { toNumber } from "./evidence-utils";
-import { useAlertEventBatch } from "./hooks/use-alert-event-batch";
 import { useAlertCenterCharts } from "./hooks/use-alert-center-charts";
 import { useAlertCenterUrlState } from "./hooks/use-alert-center-url-state";
+import { useAlertEventBatch } from "./hooks/use-alert-event-batch";
 import { useAlertEventDetail } from "./hooks/use-alert-event-detail";
 import { useAlertEventSelection } from "./hooks/use-alert-event-selection";
 import { useAlertEventStatusActions } from "./hooks/use-alert-event-status-actions";
@@ -133,6 +133,8 @@ export function AlertCenterContent() {
     selectedEvent,
     handleSelectEvent,
     selectedIndexInFiltered,
+    previousEventId,
+    nextEventId,
   } = useAlertEventSelection({
     eventParam,
     sortedEvents,
@@ -232,24 +234,18 @@ export function AlertCenterContent() {
   };
 
   const handleEventStatusUpdate = async (status: "confirmed" | "ignored") => {
-    if (!selectedEvent || !canManageAlerts) {
-      return;
-    }
+    if (!selectedEvent || !canManageAlerts) return;
     const note = feedbackNote.trim() ? feedbackNote.trim() : null;
     await executeStatusUpdate([selectedEvent.id], status, note);
   };
 
   const handleQuickConfirm = async () => {
-    if (!selectedEvent || !canManageAlerts) {
-      return;
-    }
+    if (!selectedEvent || !canManageAlerts) return;
     await executeStatusUpdate([selectedEvent.id], "confirmed", null);
   };
 
   const handleBulkUpdate = async (status: "confirmed" | "ignored") => {
-    if (selectedEventIds.length === 0) {
-      return;
-    }
+    if (selectedEventIds.length === 0) return;
     const note = bulkNote.trim() ? bulkNote.trim() : null;
     const updated = await executeStatusUpdate(selectedEventIds, status, note);
     if (updated > 0) {
@@ -274,16 +270,6 @@ export function AlertCenterContent() {
       messageApi,
       t,
     });
-
-  const previousEventId =
-    selectedIndexInFiltered > 0
-      ? filteredEvents[selectedIndexInFiltered - 1]?.id
-      : null;
-  const nextEventId =
-    selectedIndexInFiltered >= 0 &&
-    selectedIndexInFiltered < filteredEvents.length - 1
-      ? filteredEvents[selectedIndexInFiltered + 1]?.id
-      : null;
 
   const handleRefresh = async () => {
     await refetchEvents();

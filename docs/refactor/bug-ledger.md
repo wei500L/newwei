@@ -42,7 +42,7 @@
 | BAPI-01 | P2 | GraphQL 列表无分页（全量返回） | ⬜ | — |
 | FE-01 | P2 | alert-center 过滤器不入 URL（与全局模式不一致） | ✅ | PR #4（FE-批3，run 33849497917） |
 | FE-02 | P2 | 死代码：zustand store/sidebar.ts | ✅ | 见 §3 |
-| FE-03 | P2 | vitest coverage include 仅覆盖 3 个已测文件（覆盖率数字失真） | 🔶 | 部分（include 8→22，见 §3） |
+| FE-03 | P2 | vitest coverage include 仅覆盖 3 个已测文件（覆盖率数字失真） | 🔶 | 部分（include 8→22→约 40，见 §3） |
 
 ## 3. 已修复条目（详细）
 
@@ -154,7 +154,7 @@
 - **证据**：items/search/events 页过滤器全量 URL 同步；alert-center 自成一套内存态（alert-center.tsx 仅 eventId 进 URL，`searchParams.get("eventId")`）。**用户影响**：告警视图不可分享/不可刷新恢复。
 - **修复（PR #4 / FE-批3）**：落地通用 `hooks/use-url-state.ts` + `lib/url-state-codec.ts`（类型安全、codec 注入、无业务耦合）；Alert Center 十参数契约（severity/status/provider/q/range/from/to/page/pageSize/eventId）经 `alerts/alert-center-url-state.ts`（纯 codec）与 `alerts/hooks/use-alert-center-url-state.ts`（组合层，220ms keyword debounce）接入。默认值不写入 URL；非法值安全回退且不改写 URL；未知参数保留；写回 router.replace；筛选变化 page 重置 1；URL eventId 自动定位页码。
 - **回归验证**：URL codec round-trip / 默认省略 / 数组去重排序 / 非法日期反向日期 / 保留未知参数与 eventId / debounce / URL 外部变化（back/forward）/ 无 mount 写入 / 无循环写回 / filter-page-eventId 优先级，均由远端 CI 执行（见 PR #4）；真实浏览器 back/forward 未人工操作。
-- **验证状态**：远端 CI 全绿（run 33849497917 @ 99d1e19b，verify + vector-integration success）——lint/typecheck/组件测试(含 URL round-trip 全矩阵)/契约 drift/build 全部通过；真实浏览器 back/forward 与视觉未人工操作（需部署环境）。
+- **验证状态**：远端 CI 全绿（最终 run 33857305521 @ 966b6b0f；PR #4 已合并进 main，合并提交 b9669b2b，main 合并后 CI run 33858778995 success）——lint/typecheck/组件测试(含 URL round-trip 全矩阵)/契约 drift/build 全部通过；真实浏览器 back/forward 与视觉未人工操作（需部署环境）。
 
 ### FE-02 死代码 store/sidebar.ts — ✅ P2【已修复（静态验证）】
 
@@ -166,6 +166,7 @@
 - **证据**：vitest.config.ts coverage.include 仅列 3 个已测文件 → 47% 语句覆盖率是「已测文件内部」的数字，非全仓覆盖率。
 - **本轮（PR #3）**：include 增至 8 个（+page-container.tsx / nav-mode.ts / action-rail-routing.ts / navigation-model.ts / top-nav-density.ts——App Shell 第一批的可测原语）。
 - **PR #4（FE-批3）**：include 增至 22 个（+useUrlState / url-state-codec / DataStateBoundary / alert-center.tsx / alert-center-url-state / use-alert-center-url-state / alert-chart-options / evidence-utils / 四个 evidence 组件）。阈值不变（lines 35 / functions 3 / statements 35 / branches 30）。
+- **PR #5（FE-批3B）**：include 增至约 40（+alert-center-filters/summary/actions/data-state/list-model + alert-event-list/row/toolbar/detail/detail-model/五页签 + use-alert-events-feed/selection/status-actions/batch/detail/virtualization/charts）。阈值不变（lines 35 / functions 3 / statements 35 / branches 30）。
 - **仍为「部分改善」**：全仓 glob + 阈值重设待 FE-批4+（巨型组件 war-map/task-detail 等未拆分、无测试，纳入即红 CI）。
 
 ## 5. 观察项（非缺陷，迁移决策输入）
