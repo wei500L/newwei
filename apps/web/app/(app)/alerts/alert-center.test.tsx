@@ -138,7 +138,20 @@ function statCard(title: string): HTMLElement {
   return screen.getByText(title).closest(".ant-card") as HTMLElement;
 }
 
-/** 在 severity 下拉中选择一个选项（第一个 Select 是 severity）。 */
+/**
+ * 展开筛选面板：severity/status/provider Select、关键字输入、时间
+ * Segmented 与 resultCount 都在 Collapse 面板内，默认收起时不在 DOM。
+ */
+async function openFilters(): Promise<void> {
+  await userEvent.click(screen.getByText("Filters"));
+}
+
+/** fake timers 下展开筛选面板（userEvent 依赖真实计时器）。 */
+function openFiltersSync(): void {
+  fireEvent.click(screen.getByText("Filters"));
+}
+
+/** 在筛选下拉中选择一个选项（severity=0 / status=1 / provider=2）。 */
 async function selectFilterOption(
   comboboxIndex: number,
   optionName: string,
@@ -146,6 +159,13 @@ async function selectFilterOption(
   await userEvent.click(screen.getAllByRole("combobox")[comboboxIndex]!);
   await userEvent.click(
     await screen.findByRole("option", { name: optionName }),
+  );
+}
+
+/** 等待事件数据渲染（选中事件的消息会同时出现在行与详情卡）。 */
+async function awaitEvent(message: string): Promise<void> {
+  await waitFor(() =>
+    expect(screen.getAllByText(message).length).toBeGreaterThan(0),
   );
 }
 
@@ -190,7 +210,7 @@ describe("Alert Center 会话与权限门禁（迁移前行为）", () => {
       events: [buildAlertEvent({ id: "e-1", message: "readable event" })],
     });
 
-    expect(await screen.findByText("readable event")).toBeInTheDocument();
+    await awaitEvent("readable event");
     expect(view.apollo.operations).toContain("AlertEvents");
     expect(view.apollo.operations).toContain("AlertEventsStream");
   });
@@ -206,7 +226,7 @@ describe("Alert Center 订阅与 coalesced refetch（迁移前行为）", () => 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
-      expect(screen.getByText("initial event")).toBeInTheDocument();
+      expect(screen.getAllByText("initial event").length).toBeGreaterThan(0);
       const initialQueryCount = view.apollo.eventsLimits.length;
 
       view.apollo.events.push(
@@ -221,7 +241,7 @@ describe("Alert Center 订阅与 coalesced refetch（迁移前行为）", () => 
 
       // 两次订阅事件在 800ms 合并窗口内 → 只触发一次 refetch
       expect(view.apollo.eventsLimits.length).toBe(initialQueryCount + 1);
-      expect(screen.getByText("streamed event")).toBeInTheDocument();
+      expect(screen.getAllByText("streamed event").length).toBeGreaterThan(0);
     } finally {
       vi.useRealTimers();
     }
@@ -261,7 +281,7 @@ describe("Alert Center alerts.manage 能力矩阵（迁移前行为）", () => {
       permissions: ["alerts.read"],
     });
 
-    await screen.findByText("read only event");
+    await awaitEvent("read only event");
 
     expect(screen.queryByText("Batch confirm")).not.toBeInTheDocument();
     expect(screen.queryByText("Batch ignore")).not.toBeInTheDocument();
@@ -285,7 +305,7 @@ describe("Alert Center alerts.manage 能力矩阵（迁移前行为）", () => {
       permissions: ["alerts.read", "alerts.manage"],
     });
 
-    await screen.findByText("managed event");
+    await awaitEvent("managed event");
 
     expect(screen.getByText("Batch confirm")).toBeInTheDocument();
     expect(screen.getByText("Batch ignore")).toBeInTheDocument();
@@ -327,7 +347,7 @@ describe("Alert Center 数据状态（迁移前行为）", () => {
     ];
     await userEvent.click(screen.getByText("Retry fetch"));
 
-    expect(await screen.findByText("recovered event")).toBeInTheDocument();
+    await awaitEvent("recovered event");
     expect(screen.getByText("Trigger History")).toBeInTheDocument();
   });
 
@@ -342,13 +362,15 @@ describe("Alert Center 数据状态（迁移前行为）", () => {
       events: [buildAlertEvent({ id: "e-1", message: "stale but visible" })],
     });
 
-    expect(await screen.findByText("stale but visible")).toBeInTheDocument();
+    await awaitEvent("stale but visible");
 
     // 下一次 refetch 永不返回
     view.apollo.eventsHang = true;
     await userEvent.click(screen.getAllByText("Refresh")[0]!);
 
-    expect(screen.getByText("stale but visible")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("stale but visible").length,
+    ).toBeGreaterThan(0);
     expect(
       screen.queryByText("Unable to load alert history"),
     ).not.toBeInTheDocument();
@@ -376,9 +398,8 @@ describe("Alert Center 数据状态（迁移前行为）", () => {
       ],
     });
 
-    expect(await screen.findByText("one minute ago")).toBeInTheDocument();
+    await waitFor(() => expect(eventRows(view.container)).toHaveLength(3));
     const rows = eventRows(view.container);
-    expect(rows).toHaveLength(3);
     expect(within(rows[0]!).getByText("one minute ago")).toBeInTheDocument();
     expect(within(rows[2]!).getByText("five minutes ago")).toBeInTheDocument();
 
@@ -387,7 +408,7 @@ describe("Alert Center 数据状态（迁移前行为）", () => {
   });
 
   it("统计卡按筛选结果计数", async () => {
-    renderAlertCenter({
+    const view = renderAlertCenter({
       events: [
         buildAlertEvent({ id: "e-1", status: "confirmed", severity: "low" }),
         buildAlertEvent({ id: "e-2", status: "ignored", severity: "medium" }),
@@ -395,7 +416,7 @@ describe("Alert Center 数据状态（迁移前行为）", () => {
       ],
     });
 
-    await screen.findByText("3 / 3 alerts");
+    await waitFor(() => expect(eventRows(view.container)).toHaveLength(3));
     expect(within(statCard("Total alerts")).getByText("3")).toBeInTheDocument();
     expect(within(statCard("Pending")).getByText("1")).toBeInTheDocument();
     expect(within(statCard("Confirmed")).getByText("1")).toBeInTheDocument();
@@ -421,14 +442,16 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
         }),
       ],
     });
-    await screen.findByText("high event");
+    await awaitEvent("high event");
 
+    await openFilters();
     await selectFilterOption(0, "High");
 
     expect(await screen.findByText("1 / 2 alerts")).toBeInTheDocument();
-    const rows = eventRows(view.container);
-    expect(rows).toHaveLength(1);
-    expect(within(rows[0]!).getByText("high event")).toBeInTheDocument();
+    await waitFor(() => expect(eventRows(view.container)).toHaveLength(1));
+    expect(
+      within(eventRows(view.container)[0]!).getAllByText("high event").length,
+    ).toBeGreaterThan(0);
     expect(screen.queryByText("low event")).not.toBeInTheDocument();
   });
 
@@ -449,14 +472,13 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
         }),
       ],
     });
-    await screen.findByText("confirmed event");
+    await awaitEvent("confirmed event");
 
+    await openFilters();
     await selectFilterOption(1, "Confirmed");
 
     expect(await screen.findByText("1 / 2 alerts")).toBeInTheDocument();
-    const rows = eventRows(view.container);
-    expect(rows).toHaveLength(1);
-    expect(within(rows[0]!).getByText("confirmed event")).toBeInTheDocument();
+    await waitFor(() => expect(eventRows(view.container)).toHaveLength(1));
     expect(screen.queryByText("pending event")).not.toBeInTheDocument();
   });
 
@@ -477,7 +499,7 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
         }),
       ],
     });
-    await screen.findByText("economic event");
+    await awaitEvent("economic event");
 
     await userEvent.click(screen.getByText("Economic anomaly"));
 
@@ -485,6 +507,7 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
     expect(screen.queryByText("realtime event")).not.toBeInTheDocument();
 
     // 完整筛选器的 provider Select 显示同一份选中值
+    await openFilters();
     const providerSelect = screen.getAllByRole("combobox")[2]!;
     const providerSelector = providerSelect.closest(".ant-select");
     expect(providerSelector).not.toBeNull();
@@ -497,7 +520,7 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
   it("rule keyword：220ms debounce 后才生效过滤", async () => {
     vi.useFakeTimers();
     try {
-      renderAlertCenter({
+      const view = renderAlertCenter({
         events: [
           buildAlertEvent({
             id: "e-1",
@@ -516,8 +539,9 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
-      expect(screen.getByText("2 / 2 alerts")).toBeInTheDocument();
+      await waitFor(() => expect(eventRows(view.container)).toHaveLength(2));
 
+      openFiltersSync();
       fireEvent.change(screen.getByPlaceholderText("Search by rule name"), {
         target: { value: "alpha" },
       });
@@ -526,14 +550,15 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(100);
       });
-      expect(screen.getByText("2 / 2 alerts")).toBeInTheDocument();
-      expect(screen.getByText("beta event")).toBeInTheDocument();
+      expect(eventRows(view.container)).toHaveLength(2);
+      expect(screen.getAllByText("beta event").length).toBeGreaterThan(0);
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(200);
       });
 
       expect(screen.getByText("1 / 2 alerts")).toBeInTheDocument();
+      await waitFor(() => expect(eventRows(view.container)).toHaveLength(1));
       expect(screen.queryByText("beta event")).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
@@ -543,7 +568,7 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
   it("时间窗口：默认 30d 排除更早事件；Today 进一步收敛", async () => {
     vi.useFakeTimers({ now: new Date("2026-06-15T12:00:00") });
     try {
-      renderAlertCenter({
+      const view = renderAlertCenter({
         events: [
           buildAlertEvent({
             id: "e-today",
@@ -565,24 +590,25 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
+      await waitFor(() => expect(eventRows(view.container)).toHaveLength(2));
 
       // 默认 30d：today/yesterday 在窗内，ancient 被排除
-      expect(screen.getByText("2 / 3 alerts")).toBeInTheDocument();
       expect(screen.queryByText("ancient event")).not.toBeInTheDocument();
 
+      openFiltersSync();
       fireEvent.click(screen.getByText("Today"));
 
       // fake timers 下用同步断言（findByText 的轮询间隔被 fake 会永久挂起）
       expect(screen.getByText("1 / 3 alerts")).toBeInTheDocument();
       expect(screen.queryByText("yesterday event")).not.toBeInTheDocument();
-      expect(screen.getByText("today event")).toBeInTheDocument();
+      expect(screen.getAllByText("today event").length).toBeGreaterThan(0);
     } finally {
       vi.useRealTimers();
     }
   });
 
   it("重置筛选：回到默认全量视图", async () => {
-    renderAlertCenter({
+    const view = renderAlertCenter({
       events: [
         buildAlertEvent({
           id: "e-1",
@@ -598,15 +624,17 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
         }),
       ],
     });
-    await screen.findByText("high event");
+    await awaitEvent("high event");
 
+    await openFilters();
     await selectFilterOption(0, "High");
     expect(await screen.findByText("1 / 2 alerts")).toBeInTheDocument();
 
     await userEvent.click(screen.getByText("Reset"));
 
     expect(await screen.findByText("2 / 2 alerts")).toBeInTheDocument();
-    expect(screen.getByText("low event")).toBeInTheDocument();
+    await waitFor(() => expect(eventRows(view.container)).toHaveLength(2));
+    expect(screen.getAllByText("low event").length).toBeGreaterThan(0);
   });
 });
 
@@ -614,14 +642,15 @@ describe("Alert Center eventId URL 行为（迁移前行为）", () => {
   it("合法 URL eventId 优先选中该事件", async () => {
     renderAlertCenter({
       events: [
-        buildAlertEvent({ id: "e-1", message: "first event" }),
-        buildAlertEvent({ id: "e-2", message: "second event" }),
+        buildAlertEvent({ id: "e-1", triggeredAt: minutesAgo(1), message: "first event" }),
+        buildAlertEvent({ id: "e-2", triggeredAt: minutesAgo(2), message: "second event" }),
       ],
       initialUrl: "/alerts?eventId=e-2",
     });
 
-    await screen.findByText("second event");
-    expect(within(detailCard()).getByText("Rule e-2")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(detailCard()).getByText("Rule e-2")).toBeInTheDocument(),
+    );
   });
 
   it("URL eventId 指向不存在的事件时回退到筛选结果首项", async () => {
@@ -641,8 +670,9 @@ describe("Alert Center eventId URL 行为（迁移前行为）", () => {
       initialUrl: "/alerts?eventId=missing",
     });
 
-    await screen.findByText("first event");
-    expect(within(detailCard()).getByText("Rule e-1")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(detailCard()).getByText("Rule e-1")).toBeInTheDocument(),
+    );
   });
 
   it("点击行写回 eventId 并保留 URL 中的其他参数", async () => {
@@ -662,7 +692,7 @@ describe("Alert Center eventId URL 行为（迁移前行为）", () => {
       initialUrl: "/alerts?eventId=e-1&foo=bar",
     });
 
-    await screen.findByText("second event");
+    await waitFor(() => expect(eventRows(view.container)).toHaveLength(2));
 
     // 首行是 e-2（更新）：点击后 URL eventId 写回 e-2，未知参数 foo 保留
     const rows = eventRows(view.container);
@@ -697,8 +727,11 @@ describe("Alert Center eventId URL 行为（迁移前行为）", () => {
       initialUrl: "/alerts?eventId=e-2",
     });
 
-    await screen.findByText("low event");
+    await waitFor(() =>
+      expect(within(detailCard()).getByText("Rule e-2")).toBeInTheDocument(),
+    );
 
+    await openFilters();
     await selectFilterOption(0, "High");
 
     expect(
@@ -732,7 +765,7 @@ describe("Alert Center 详情页签（迁移前行为）", () => {
       permissions: ["alerts.read", "alerts.manage"],
     });
 
-    expect(await screen.findByText("detailed event")).toBeInTheDocument();
+    await awaitEvent("detailed event");
 
     // 五个页签入口
     for (const label of [
@@ -781,7 +814,7 @@ describe("Alert Center 详情页签（迁移前行为）", () => {
       permissions: ["alerts.read", "alerts.manage"],
     });
 
-    await screen.findByText("feedback event");
+    await awaitEvent("feedback event");
     await userEvent.click(screen.getByRole("tab", { name: "Feedback" }));
 
     expect(screen.getByDisplayValue("preset review note")).toBeInTheDocument();
@@ -804,7 +837,7 @@ describe("Alert Center 详情页签（迁移前行为）", () => {
       ],
     });
 
-    await screen.findByText("context event");
+    await awaitEvent("context event");
     await userEvent.click(screen.getByText("Copy raw"));
 
     expect(writeText).toHaveBeenCalledTimes(1);
@@ -826,17 +859,15 @@ describe("Alert Center 虚拟化阈值与资源清理（迁移前行为）", () 
       );
 
     const small = renderAlertCenter({ events: eventsAt(25) });
-    await screen.findByText("Alert message v-01");
+    await waitFor(() => expect(eventRows(small.container)).toHaveLength(25));
     expect(alertTestVirtualizer.enabled).toBe(false);
     expect(alertTestVirtualizer.count).toBe(25);
-    expect(eventRows(small.container)).toHaveLength(25);
     small.unmount();
 
     const large = renderAlertCenter({ events: eventsAt(26) });
-    await screen.findByText("Alert message v-01");
+    await waitFor(() => expect(eventRows(large.container)).toHaveLength(26));
     expect(alertTestVirtualizer.enabled).toBe(true);
     expect(alertTestVirtualizer.count).toBe(26);
-    expect(eventRows(large.container)).toHaveLength(26);
     // 虚拟化路径下行集合变化触发 measure
     expect(alertTestVirtualizer.measureCalls).toBeGreaterThan(0);
   });
@@ -853,7 +884,7 @@ describe("Alert Center 虚拟化阈值与资源清理（迁移前行为）", () 
         }),
       ),
     });
-    await screen.findByText("Alert message v-01");
+    await waitFor(() => expect(eventRows(view.container)).toHaveLength(26));
 
     const registeredTypes = addSpy.mock.calls
       .map((call) => String(call[0]))

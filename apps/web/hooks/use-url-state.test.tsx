@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -172,7 +172,10 @@ describe("useUrlState 外部 URL 变化", () => {
     expect(screen.getByTestId("probe-state").textContent).toBe("alpha|2");
     testNavigation.replaceCalls.length = 0;
 
-    setTestUrl("/probe?tag=beta");
+    // act 内变更 URL：强制 React flush 采纳 effect
+    act(() => {
+      setTestUrl("/probe?tag=beta");
+    });
     expect(screen.getByTestId("probe-state").textContent).toBe("beta|1");
     expect(testNavigation.replaceCalls).toHaveLength(0);
     unmount();
@@ -182,9 +185,11 @@ describe("useUrlState 外部 URL 变化", () => {
     setTestUrl("/probe?tag=alpha");
     const { unmount } = render(<Probe />);
 
-    for (let index = 0; index < 3; index += 1) {
-      setTestUrl("/probe?tag=alpha");
-    }
+    act(() => {
+      for (let index = 0; index < 3; index += 1) {
+        setTestUrl("/probe?tag=alpha");
+      }
+    });
     expect(testNavigation.replaceCalls).toHaveLength(0);
     expect(screen.getByTestId("probe-state").textContent).toBe("alpha|1");
     unmount();

@@ -145,7 +145,10 @@ describe("useAlertCenterUrlState URL 恢复与写回", () => {
     const { unmount } = render(<Probe />);
     testNavigation.replaceCalls.length = 0;
 
-    setTestUrl("/alerts?severity=low&range=today&page=2");
+    // act 内变更 URL：强制 React flush 采纳 effect
+    act(() => {
+      setTestUrl("/alerts?severity=low&range=today&page=2");
+    });
     expect(screen.getByTestId("probe").textContent).toBe(
       "low||today|2|30|",
     );
@@ -183,7 +186,9 @@ describe("useAlertCenterUrlState rule keyword debounce", () => {
     render(<Probe />);
     expect(screen.getByLabelText("keyword")).toHaveValue("");
 
-    setTestUrl("/alerts?q=shared");
+    act(() => {
+      setTestUrl("/alerts?q=shared");
+    });
     expect(screen.getByLabelText("keyword")).toHaveValue("shared");
     expect(testNavigation.replaceCalls).toHaveLength(0);
   });

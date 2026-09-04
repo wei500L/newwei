@@ -30,12 +30,12 @@ import {
 } from "antd";
 import type { Dayjs } from "dayjs";
 import type { EChartsOption } from "echarts";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { DataStateBoundary, type DataStateBoundaryState } from "@/components/data-state-boundary";
 import { DashboardChart } from "@/components/echart";
 import {
   AlertEventsStreamDocument,
@@ -90,6 +90,7 @@ import {
   toNumber,
   toStringValue,
 } from "./evidence-utils";
+import { useAlertCenterUrlState } from "./hooks/use-alert-center-url-state";
 import { RealtimeSignalEvidence } from "./realtime-signal-evidence";
 
 const severityColor: Record<string, string> = {
@@ -288,22 +289,29 @@ export function AlertCenterContent() {
     total: number;
   } | null>(null);
   const [detailTab, setDetailTab] = useState<string>("overview");
-  const [filterState, setFilterState] =
-    useState<AlertFilterState>(DEFAULT_FILTER_STATE);
-  const [appliedRuleKeyword, setAppliedRuleKeyword] = useState<string>("");
   const [openFilterPanelKeys, setOpenFilterPanelKeys] = useState<string[]>([]);
-  const [listPage, setListPage] = useState<number>(1);
-  const [listPageSize, setListPageSize] = useState<number>(30);
   const eventsListRef = useRef<HTMLDivElement | null>(null);
   const [eventsListScrollMargin, setEventsListScrollMargin] = useState(0);
   const [exportScope, setExportScope] = useState<AlertExportScope>("selected");
   const [expandMessage, setExpandMessage] = useState<boolean>(false);
   const [expandContext, setExpandContext] = useState<boolean>(false);
 
-  const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const eventParam = searchParams.get("eventId");
+  // FE-01：筛选 / 分页 / 关键字 / 日期 / eventId 全部 URL-backed
+  // （eventsLimit、批量选择、备注、导出 scope、展开态、detailTab 仍为
+  // 组件内存态，见 useAlertCenterUrlState 的契约注释）
+  const {
+    filterState,
+    appliedRuleKeyword,
+    ruleKeywordInput,
+    setRuleKeywordInput,
+    page: listPage,
+    pageSize: listPageSize,
+    eventId: eventParam,
+    updateFilters,
+    setPage: setListPage,
+    setPageSize: setListPageSize,
+    setEventId,
+  } = useAlertCenterUrlState();
 
   const { echartsTheme, colors, fontFamily } = useChartTheme();
 
@@ -359,17 +367,8 @@ export function AlertCenterContent() {
     });
   }, [eventsData?.alertEvents]);
 
-  useEffect(() => {
-    if (!filterState.ruleKeyword.trim()) {
-      setAppliedRuleKeyword("");
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setAppliedRuleKeyword(filterState.ruleKeyword);
-    }, 220);
-    return () => window.clearTimeout(timer);
-  }, [filterState.ruleKeyword]);
-
+  // rule keyword 的 220ms debounce 由 useAlertCenterUrlState 承载
+  // （输入即时值 ruleKeywordInput → 静默后写入 URL q → appliedRuleKeyword）
   const filterStateForQuery = useMemo<AlertFilterState>(
     () => ({
       ...filterState,
@@ -458,9 +457,8 @@ export function AlertCenterContent() {
     setExpandMessage(false);
   }, [selectedEventId]);
 
-  useEffect(() => {
-    setListPage(1);
-  }, [filterStateForQuery]);
+  // 筛选变化后的 page 重置由 useAlertCenterUrlState 的 updateFilters 承载
+  // （任何筛选 patch 都将 page 归 1；URL 外部变化时筛选与 page 同源采纳）
 
   useEffect(() => {
     if (detailTab !== "replay" || !selectedEvent) {
@@ -492,10 +490,7 @@ export function AlertCenterContent() {
 
   const handleSelectEvent = (eventId: string) => {
     setSelectedEventId(eventId);
-    const next = new URLSearchParams(searchParams.toString());
-    next.set("eventId", eventId);
-    const nextQuery = next.toString();
-    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+    setEventId(eventId);
   };
 
   const handleOpenEvent = async (eventId: string) => {
@@ -828,27 +823,25 @@ export function AlertCenterContent() {
     provider: AlertMetricProvider,
     checked: boolean,
   ) => {
-    setFilterState((prev) => ({
-      ...prev,
+    updateFilters({
       providers: checked
-        ? [...new Set([...prev.providers, provider])]
-        : prev.providers.filter((item) => item !== provider),
-    }));
+        ? [...new Set([...filterState.providers, provider])]
+        : filterState.providers.filter((item) => item !== provider),
+    });
   };
 
   const toggleTimeTag = (preset: AlertDatePreset, checked: boolean) => {
     if (checked) {
-      setFilterState((prev) => ({
-        ...prev,
-        datePreset: preset,
-        customRangeMs: preset === "custom" ? prev.customRangeMs : null,
-      }));
+      updateFilters(
+        preset === "custom"
+          ? { datePreset: "custom" }
+          : { datePreset: preset },
+      );
       return;
     }
-    setFilterState((prev) => ({
-      ...prev,
-      datePreset: prev.datePreset === preset ? "today" : prev.datePreset,
-    }));
+    if (filterState.datePreset === preset) {
+      updateFilters({ datePreset: "today" });
+    }
   };
 
   const selectedInFilterCount = useMemo(
@@ -897,7 +890,15 @@ export function AlertCenterContent() {
   };
 
   const handleResetFilters = () => {
-    setFilterState(DEFAULT_FILTER_STATE);
+    updateFilters({
+      severities: [],
+      statuses: [],
+      providers: [],
+      ruleKeyword: "",
+      datePreset: DEFAULT_FILTER_STATE.datePreset,
+      customRangeMs: null,
+    });
+    setRuleKeywordInput("");
   };
 
   const handleRefresh = async () => {
@@ -2163,63 +2164,26 @@ export function AlertCenterContent() {
         })()
       : null;
 
-  if (sessionStatus === "loading") {
-    return (
-      <div className="flex flex-col gap-6">
-        {messageContext}
-
-        <Space align="center" size="middle" wrap>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {t("alerts.center.title")}
-          </Typography.Title>
-        </Space>
-
-        <div className="flex justify-center py-16">
-          <Spin />
-        </div>
-      </div>
-    );
-  }
-
-  if (authenticated && !canReadAlerts) {
-    return (
-      <div className="flex flex-col gap-6">
-        {messageContext}
-
-        <Space align="center" size="middle" wrap>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {t("alerts.center.title")}
-          </Typography.Title>
-        </Space>
-
-        <ChartEmptyState
-          className="h-auto py-10"
-          variant="permission"
-          title={t("common.accessDenied")}
-          description={t("common.accessDeniedDescription")}
-        />
-      </div>
-    );
-  }
-
-  if (blockingEventsErrorState) {
-    return (
-      <div className="flex flex-col gap-6">
-        {messageContext}
-
-        <Space align="center" size="middle" wrap>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {t("alerts.center.title")}
-          </Typography.Title>
-        </Space>
-
-        <ChartEmptyState
-          className="h-auto py-10"
-          {...blockingEventsErrorState}
-        />
-      </div>
-    );
-  }
+  // 数据状态分派（DataStateBoundary 首个消费方）：
+  // - 会话 loading / 无读权限 / 无数据 blockingError → 整页状态
+  // - 有旧数据时刷新失败 → nonBlockingError（内容保留 + 非阻断提示，新增语义）
+  // - 空态仍由事件列表内的 emptyText 承载（本 PR 不全站替换 loading/error/empty 分支）
+  const hasEventsData = sortedEvents.length > 0;
+  const dataState: DataStateBoundaryState = sessionStatus === "loading"
+    ? { kind: "initialLoading" }
+    : authenticated && !canReadAlerts
+      ? { kind: "permissionDenied" }
+      : eventsError && !hasEventsData
+        ? {
+            kind: "blockingError",
+            error: eventsError,
+            errorStateOverride: blockingEventsErrorState ?? undefined,
+          }
+        : eventsError && hasEventsData
+          ? { kind: "nonBlockingError", error: eventsError }
+          : { kind: "ready" };
+  const isContentReady =
+    dataState.kind === "ready" || dataState.kind === "nonBlockingError";
 
   return (
     <div className="flex flex-col gap-6">
@@ -2229,10 +2193,21 @@ export function AlertCenterContent() {
         <Typography.Title level={4} style={{ margin: 0 }}>
           {t("alerts.center.title")}
         </Typography.Title>
-        <Button size="small" onClick={() => void handleRefresh()}>
-          {t("common.refresh")}
-        </Button>
+        {isContentReady ? (
+          <Button size="small" onClick={() => void handleRefresh()}>
+            {t("common.refresh")}
+          </Button>
+        ) : null}
       </Space>
+
+      <DataStateBoundary
+        state={dataState}
+        onRetry={() => {
+          void handleRefresh();
+        }}
+        retrying={eventsLoading}
+        retryLabel={t("dashboard.actions.retryFetch")}
+      >
 
       {isLikelySampled ? (
         <Alert
@@ -2330,12 +2305,7 @@ export function AlertCenterContent() {
                         allowClear
                         style={{ width: "100%" }}
                         value={filterState.severities}
-                        onChange={(value) =>
-                          setFilterState((prev) => ({
-                            ...prev,
-                            severities: value,
-                          }))
-                        }
+                        onChange={(value) => updateFilters({ severities: value })}
                         options={SEVERITY_OPTIONS.map((severity) => ({
                           value: severity,
                           label: t(
@@ -2356,12 +2326,7 @@ export function AlertCenterContent() {
                         allowClear
                         style={{ width: "100%" }}
                         value={filterState.statuses}
-                        onChange={(value) =>
-                          setFilterState((prev) => ({
-                            ...prev,
-                            statuses: value,
-                          }))
-                        }
+                        onChange={(value) => updateFilters({ statuses: value })}
                         options={STATUS_OPTIONS.map((status) => ({
                           value: status,
                           label: t(`alerts.center.filters.status.${status}`, {
@@ -2379,12 +2344,7 @@ export function AlertCenterContent() {
                         allowClear
                         style={{ width: "100%" }}
                         value={filterState.providers}
-                        onChange={(value) =>
-                          setFilterState((prev) => ({
-                            ...prev,
-                            providers: value,
-                          }))
-                        }
+                        onChange={(value) => updateFilters({ providers: value })}
                         options={PROVIDER_FILTER_OPTIONS.map((provider) => ({
                           value: provider,
                           label: t(`alerts.metricProviders.${provider}`, {
@@ -2399,12 +2359,9 @@ export function AlertCenterContent() {
                       </Typography.Text>
                       <Input
                         allowClear
-                        value={filterState.ruleKeyword}
+                        value={ruleKeywordInput}
                         onChange={(event) =>
-                          setFilterState((prev) => ({
-                            ...prev,
-                            ruleKeyword: event.target.value,
-                          }))
+                          setRuleKeywordInput(event.target.value)
                         }
                         placeholder={t(
                           "alerts.center.filters.ruleKeyword.placeholder",
@@ -2444,12 +2401,11 @@ export function AlertCenterContent() {
                           ]}
                           value={filterState.datePreset}
                           onChange={(value) =>
-                            setFilterState((prev) => ({
-                              ...prev,
-                              datePreset: value as AlertDatePreset,
-                              customRangeMs:
-                                value === "custom" ? prev.customRangeMs : null,
-                            }))
+                            updateFilters(
+                              value === "custom"
+                                ? { datePreset: "custom" }
+                                : { datePreset: value as AlertDatePreset },
+                            )
                           }
                         />
                         <DatePicker.RangePicker
@@ -2458,14 +2414,12 @@ export function AlertCenterContent() {
                           disabled={filterState.datePreset !== "custom"}
                           onChange={(values) => {
                             const [start, end] = values ?? [];
-                            setFilterState((prev) => ({
-                              ...prev,
-                              datePreset: "custom",
+                            updateFilters({
                               customRangeMs:
                                 start && end
                                   ? [start.valueOf(), end.valueOf()]
                                   : [null, null],
-                            }));
+                            });
                           }}
                         />
                       </Space>
@@ -2936,8 +2890,10 @@ export function AlertCenterContent() {
                   showSizeChanger
                   pageSizeOptions={[20, 50, 100]}
                   onChange={(page, pageSize) => {
+                    if (pageSize !== listPageSize) {
+                      setListPageSize(pageSize);
+                    }
                     setListPage(page);
-                    setListPageSize(pageSize);
                   }}
                   showTotal={(total, range) =>
                     t("alerts.center.batch.pageSummary", {
@@ -3012,6 +2968,7 @@ export function AlertCenterContent() {
           </Card>
         </Col>
       </Row>
+      </DataStateBoundary>
     </div>
   );
 }

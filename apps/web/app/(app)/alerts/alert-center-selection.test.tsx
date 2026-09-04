@@ -133,6 +133,14 @@ function paginationEl(container: HTMLElement): HTMLElement {
   return node;
 }
 
+/** 等待事件数据渲染完成（resultCount 在折叠面板内，不可作为就绪信号）。 */
+async function awaitEventsLoaded(
+  container: HTMLElement,
+  expectedRows: number,
+): Promise<void> {
+  await waitFor(() => expect(eventRows(container)).toHaveLength(expectedRows));
+}
+
 /** 构造 35 条事件：默认按索引降序时间（第一条最新）。 */
 function buildPagedEvents(): ReturnType<typeof buildAlertEvent>[] {
   return Array.from({ length: 35 }, (_, index) =>
@@ -148,27 +156,33 @@ afterEach(() => {
 });
 
 describe("Alert Center 分页（迁移前行为）", () => {
-  it("默认 page=1 pageSize=30：35 条分两页，翻页后显示第 2 页", async () => {
+  it("默认 page=1 pageSize=30：35 条分页器出现，当前页 30 行", async () => {
     const view = renderAlertCenter({ events: buildPagedEvents() });
 
     expect(
       await screen.findByText("Showing 1-30 of 35"),
     ).toBeInTheDocument();
     expect(eventRows(view.container)).toHaveLength(30);
+  });
 
+  it("页码跟随选中事件：点击第 2 页被拉回选中事件所在页", async () => {
+    const view = renderAlertCenter({ events: buildPagedEvents() });
+
+    await awaitEventsLoaded(view.container, 30);
+
+    // 默认选中 h-001（第 1 页）→ 点击第 2 页后定位 effect 拉回第 1 页
     await userEvent.click(within(paginationEl(view.container)).getByText("2"));
 
     expect(
-      await screen.findByText("Showing 31-35 of 35"),
+      await screen.findByText("Showing 1-30 of 35"),
     ).toBeInTheDocument();
-    expect(eventRows(view.container)).toHaveLength(5);
-    expect(screen.getByText("Alert message h-035")).toBeInTheDocument();
+    expect(eventRows(view.container)).toHaveLength(30);
   });
 
   it("pageSize 可切换：切到 20 后每页 20 条", async () => {
     const view = renderAlertCenter({ events: buildPagedEvents() });
 
-    await screen.findByText("Showing 1-30 of 35");
+    await awaitEventsLoaded(view.container, 30);
 
     const sizeChanger = within(
       paginationEl(view.container),
@@ -194,11 +208,13 @@ describe("Alert Center 分页（迁移前行为）", () => {
     expect(
       await screen.findByText("Showing 31-35 of 35"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Alert message h-035")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Alert message h-035").length,
+    ).toBeGreaterThan(0);
     expect(eventRows(view.container)).toHaveLength(5);
   });
 
-  it("筛选变化后页码收敛回第 1 页", async () => {
+  it("筛选排除当前事件后页码收敛回第 1 页", async () => {
     const events = Array.from({ length: 35 }, (_, index) =>
       buildAlertEvent({
         id: `h-${String(index + 1).padStart(3, "0")}`,
@@ -209,11 +225,14 @@ describe("Alert Center 分页（迁移前行为）", () => {
             : AlertMetricProvider.RealtimeSignal,
       }),
     );
-    const view = renderAlertCenter({ events });
-
-    await screen.findByText("Showing 1-30 of 35");
-    await userEvent.click(within(paginationEl(view.container)).getByText("2"));
-    expect(await screen.findByText("Showing 31-35 of 35")).toBeInTheDocument();
+    // URL eventId=h-035（realtime，第 2 页）
+    const view = renderAlertCenter({
+      events,
+      initialUrl: "/alerts?eventId=h-035",
+    });
+    expect(
+      await screen.findByText("Showing 31-35 of 35"),
+    ).toBeInTheDocument();
 
     // 筛选收敛：仅剩 economic_anomaly 的 30 条 → 回到第 1 页
     await userEvent.click(screen.getByText("Economic anomaly"));
@@ -222,6 +241,10 @@ describe("Alert Center 分页（迁移前行为）", () => {
       await screen.findByText("Showing 1-30 of 30"),
     ).toBeInTheDocument();
     expect(eventRows(view.container)).toHaveLength(30);
+    // h-035 被筛选排除 → 详情保留 + 排除提示
+    expect(
+      screen.getByText("Selected event is outside the current filters."),
+    ).toBeInTheDocument();
   });
 });
 
@@ -234,7 +257,7 @@ describe("Alert Center 批量选择（迁移前行为）", () => {
         buildAlertEvent({ id: "e-3", triggeredAt: minutesAgo(3) }),
       ],
     });
-    await screen.findByText("3 / 3 alerts");
+    await awaitEventsLoaded(view.container, 3);
 
     const rows = eventRows(view.container);
     await userEvent.click(within(rows[1]!).getByRole("checkbox"));
@@ -245,7 +268,7 @@ describe("Alert Center 批量选择（迁移前行为）", () => {
   });
 
   it("筛选排除部分选中项：显示隐藏选中数，可一键清理", async () => {
-    renderAlertCenter({
+    const view = renderAlertCenter({
       events: [
         buildAlertEvent({
           id: "e-1",
@@ -261,7 +284,7 @@ describe("Alert Center 批量选择（迁移前行为）", () => {
         }),
       ],
     });
-    await screen.findByText("economic event");
+    await awaitEventsLoaded(view.container, 2);
 
     // 全选两行
     await userEvent.click(screen.getByText("Select visible"));
@@ -290,7 +313,7 @@ describe("Alert Center 批量状态更新（迁移前行为）", () => {
       rejectEventIds: ["h-024", "h-025"],
     });
 
-    await screen.findByText("25 / 25 alerts");
+    await awaitEventsLoaded(view.container, 25);
     await userEvent.click(screen.getByText("Select visible"));
     expect(screen.getByText("25 selected")).toBeInTheDocument();
 
@@ -335,7 +358,7 @@ describe("Alert Center 批量状态更新（迁移前行为）", () => {
       permissions: ["alerts.read", "alerts.manage"],
     });
 
-    await screen.findByText("2 / 2 alerts");
+    await awaitEventsLoaded(view.container, 2);
     await userEvent.click(screen.getByText("Select visible"));
 
     await userEvent.type(
@@ -359,7 +382,7 @@ describe("Alert Center 批量状态更新（迁移前行为）", () => {
       permissions: ["alerts.read", "alerts.manage"],
     });
 
-    await screen.findByText("1 / 1 alerts");
+    await awaitEventsLoaded(view.container, 1);
     await userEvent.click(screen.getByRole("tab", { name: "Feedback" }));
 
     await userEvent.type(
@@ -393,7 +416,7 @@ describe("Alert Center 导出（迁移前行为）", () => {
         buildAlertEvent({ id: "e-2", triggeredAt: minutesAgo(2) }),
       ],
     });
-    await screen.findByText("2 / 2 alerts");
+    await awaitEventsLoaded(view.container, 2);
 
     // 默认 scope=selected 且未勾选 → 0 行，按钮禁用
     expect(screen.getByText("0 rows ready")).toBeInTheDocument();
@@ -432,7 +455,9 @@ describe("Alert Center 导出（迁移前行为）", () => {
       ],
     });
 
-    await screen.findByText("2 / 2 alerts");
+    await waitFor(() =>
+      expect(screen.getByText("Export CSV")).toBeInTheDocument(),
+    );
     await userEvent.click(screen.getByText("Current page"));
     expect(await screen.findByText("2 rows ready")).toBeInTheDocument();
 

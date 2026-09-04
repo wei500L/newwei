@@ -150,18 +150,22 @@ export function serializeAlertCenterUrlState(
   serializeUrlStringSet(params, ALERT_URL_KEYS.status, state.statuses);
   serializeUrlStringSet(params, ALERT_URL_KEYS.provider, state.providers);
   serializeUrlValue(params, ALERT_URL_KEYS.keyword, state.ruleKeyword, "");
+  // custom 但日期缺失/非法/反向 → 与 parse 一致收敛为默认 30d
+  // （round-trip 稳定的前提：serialize(parse(url)) 不产生新 URL 写入）
+  const effectivePreset =
+    state.datePreset === "custom" &&
+    !isValidUrlDateRange(state.customFrom, state.customTo)
+      ? ALERT_URL_DEFAULT_DATE_PRESET
+      : state.datePreset;
   serializeUrlValue(
     params,
     ALERT_URL_KEYS.range,
-    state.datePreset,
+    effectivePreset,
     ALERT_URL_DEFAULT_DATE_PRESET,
   );
   params.delete(ALERT_URL_KEYS.from);
   params.delete(ALERT_URL_KEYS.to);
-  if (
-    state.datePreset === "custom" &&
-    isValidUrlDateRange(state.customFrom, state.customTo)
-  ) {
+  if (effectivePreset === "custom") {
     params.set(ALERT_URL_KEYS.from, state.customFrom as string);
     params.set(ALERT_URL_KEYS.to, state.customTo as string);
   }
