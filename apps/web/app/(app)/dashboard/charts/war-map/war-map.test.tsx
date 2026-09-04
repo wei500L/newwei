@@ -209,6 +209,8 @@ vi.mock("../../use-dashboard-stream", async () => {
 
 import { useWarMapSettingsStore } from "@/store/war-map-settings";
 
+import type { DashboardStreamState } from "../../use-dashboard-stream";
+
 import { WarMap } from "./war-map";
 import {
   buildStandardWarMapResponses,
@@ -277,7 +279,7 @@ function findDeckLayer(
 ): { type: string; props: Record<string, unknown> } | undefined {
   for (let index = warMapTestDeckLayers.instances.length - 1; index >= 0; index -= 1) {
     const instance = warMapTestDeckLayers.instances[index];
-    if (instance.props.id === id) {
+    if (instance && instance.props.id === id) {
       return instance;
     }
   }
@@ -692,7 +694,7 @@ describe("WarMap（迁移前 characterization）", () => {
     });
 
     it("外部 streamState 存在时内部 stream 禁用", async () => {
-      const externalStreamState = {
+      const externalStreamState: DashboardStreamState = {
         connected: true,
         status: "live",
         retryCount: 0,
@@ -803,7 +805,7 @@ describe("WarMap（迁移前 characterization）", () => {
       await activateMap();
 
       const eventsLayer = await waitForDeckLayer("wm-events-symbols-primary");
-      const point = (eventsLayer.props.data as Record<string, unknown>[])[0];
+      const point = (eventsLayer.props.data as Record<string, unknown>[])[0]!;
       expect(point.selectionKey).toBe("event:e1");
 
       (eventsLayer.props.onClick as (info: unknown) => void)({ object: point });
@@ -835,7 +837,7 @@ describe("WarMap（迁移前 characterization）", () => {
       const eventsLayer = await waitForDeckLayer("wm-events-symbols-primary");
       const points = eventsLayer.props.data as Record<string, unknown>[];
       expect(points).toHaveLength(1);
-      const clusterPoint = points[0];
+      const clusterPoint = points[0]!;
       expect(clusterPoint.isCluster).toBe(true);
       expect(clusterPoint.clusterCount).toBe(2);
       expect(String(clusterPoint.selectionKey)).toContain("event-cluster:");
@@ -870,7 +872,7 @@ describe("WarMap（迁移前 characterization）", () => {
       expect(getCursor()?.({ isDragging: false })).toBe("grab");
 
       (eventsLayer.props.onHover as (info: unknown) => void)({
-        object: (eventsLayer.props.data as Record<string, unknown>[])[0],
+        object: (eventsLayer.props.data as Record<string, unknown>[])[0]!,
       });
 
       await waitFor(() => {
@@ -983,7 +985,7 @@ describe("WarMap（迁移前 characterization）", () => {
       await activateMap();
 
       const newsLayer = await waitForDeckLayer("wm-news-symbols-primary");
-      const point = (newsLayer.props.data as Record<string, unknown>[])[0];
+      const point = (newsLayer.props.data as Record<string, unknown>[])[0]!;
       expect(point.selectionKey).toBe("news:n1");
 
       (newsLayer.props.onClick as (info: unknown) => void)({ object: point });
@@ -1006,7 +1008,7 @@ describe("WarMap（迁移前 characterization）", () => {
       await activateMap();
 
       const monitorLayer = await waitForDeckLayer("wm-monitors-symbols-primary");
-      const point = (monitorLayer.props.data as Record<string, unknown>[])[0];
+      const point = (monitorLayer.props.data as Record<string, unknown>[])[0]!;
       expect(point.interactionKey).toBe("monitor:m1");
 
       (monitorLayer.props.onClick as (info: unknown) => void)({ object: point });
@@ -1051,7 +1053,7 @@ describe("WarMap（迁移前 characterization）", () => {
       await activateMap();
 
       const vesselLayer = await waitForDeckLayer("wm-ais-vessels-symbols-primary");
-      const point = (vesselLayer.props.data as Record<string, unknown>[])[0];
+      const point = (vesselLayer.props.data as Record<string, unknown>[])[0]!;
       expect(point.selectionKey).toBe("transport:vessel:ais:123456789");
 
       (vesselLayer.props.onClick as (info: unknown) => void)({ object: point });

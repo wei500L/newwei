@@ -18,9 +18,8 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { RenderResult } from "@testing-library/react";
-import { act } from "@testing-library/react";
-import type { ReactElement, ReactNode } from "react";
+import { act, type RenderResult } from "@testing-library/react";
+import type { ReactElement } from "react";
 
 import { useWarMapSettingsStore } from "@/store/war-map-settings";
 import {
@@ -194,22 +193,15 @@ export function resetWarMapTestState(options?: {
   });
 }
 
-function WarMapTestClientProvider({ children }: { children: ReactNode }) {
-  return (
-    <QueryClientProvider client={warMapQueryClient}>
-      {children}
-    </QueryClientProvider>
-  );
-}
-
 /** 渲染 WarMap（真实 React Query + i18n + antd，mock 运行时与 API）。 */
 export function renderWarMap(ui: ReactElement = <WarMap />): RenderResult {
-  if (!warMapQueryClient) {
+  const queryClient = warMapQueryClient;
+  if (!queryClient) {
     throw new Error("resetWarMapTestState() must run before renderWarMap()");
   }
-  return renderWithProviders(ui, {
-    wrapper: WarMapTestClientProvider,
-  });
+  return renderWithProviders(
+    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
+  );
 }
 
 /** 在最新地图实例上触发一个 maplibre 事件（load/moveend/error）。 */
