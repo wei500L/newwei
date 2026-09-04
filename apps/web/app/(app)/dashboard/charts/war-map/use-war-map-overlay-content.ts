@@ -6,16 +6,14 @@ import type {
 } from "@modular/utils";
 import { useMemo } from "react";
 
-import type {
-  WarMapLayoutVariant,
-  WarMapTranslateFn,
-} from "./war-map-overlay-model";
-import type { WarMapStatusSummary } from "./war-map-status-model";
 import {
   buildWarMapOverlayLayout,
   buildWarMapOverlayViewModel,
   type OverlayDensity,
+  type WarMapLayoutVariant,
+  type WarMapTranslateFn,
 } from "./war-map-overlay-model";
+import type { WarMapStatusSummary } from "./war-map-status-model";
 import {
   buildWarMapInteractionLegendItems,
   buildWarMapLegendSections,
