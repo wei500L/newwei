@@ -13,7 +13,6 @@ import type {
   WarMapDetailedChainStatus,
   WarMapTranslateFn,
 } from "./war-map-overlay-model";
-
 import {
   formatWarMapClusterCountLabel,
   type WarMapTransportLegendState,
