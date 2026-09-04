@@ -1,4 +1,10 @@
-import { WAR_MAP_LAYER_IDS } from "@modular/utils";
+import {
+  WAR_MAP_LAYER_IDS,
+  type WarMapFlightMode,
+  type WarMapLayerFeature,
+  type WarMapLayerVisibility,
+  type WarMapTranslateTarget,
+} from "@modular/utils";
 
 import type { WarMapBbox } from "./query-viewport";
 import {

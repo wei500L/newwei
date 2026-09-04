@@ -1,6 +1,6 @@
 import type { WarMapAisLayerSummary, WarMapAisMode, WarMapLayerVisibility } from "@modular/utils";
 
-import type { SupportedLocale } from "@/lib/i18n";
+import { formatUpdatedAt, type SupportedLocale } from "@/lib/i18n";
 import { formatAisRuntimeReason } from "@/lib/realtime-signals-runtime";
 
 import { isAisViewportEmptyStateActive } from "./war-map-ais-mode";

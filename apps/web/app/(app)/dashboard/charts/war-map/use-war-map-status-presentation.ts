@@ -8,6 +8,8 @@ import {
   type SupportedLocale,
 } from "@/lib/i18n";
 
+import type { WarMapLayersResponse } from "./war-map-data";
+
 import { buildWarMapAisSummaryPresentation, type WarMapAisSummaryPresentation } from "./war-map-ais-status";
 import { buildWarMapFlightsSummaryPresentation, type WarMapFlightsSummaryPresentation } from "./war-map-flights-status";
 import type { WarMapTranslateFn } from "./war-map-overlay-model";
@@ -45,7 +47,7 @@ export interface UseWarMapStatusPresentationOptions {
     eventsQuery: WarMapPresentationQueryLike;
     newsQuery: WarMapPresentationQueryLike;
     layersQuery: WarMapPresentationQueryLike & {
-      data?: { layers?: Record<string, unknown> } | undefined;
+      data?: { layers?: WarMapLayersResponse["layers"] } | undefined;
     };
     monitorsQuery: {
       isFetching: boolean;
