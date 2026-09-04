@@ -1,9 +1,11 @@
 import type { TFunction } from "i18next";
 
 import type { DataStateBoundaryState } from "@/components/data-state-boundary";
-import type { RequestErrorEmptyState } from "@/lib/request-error-empty-state";
-import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 import { classifyRequestError } from "@/lib/request-error";
+import {
+  buildRequestErrorEmptyState,
+  type RequestErrorEmptyState,
+} from "@/lib/request-error-empty-state";
 
 /**
  * Alert Center 数据状态分派（FE-批3B 从 alert-center.tsx 提取）。
