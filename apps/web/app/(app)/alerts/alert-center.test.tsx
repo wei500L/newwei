@@ -744,8 +744,12 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
       expect(clearedHref).not.toContain("to=");
       expect(clearedHref).not.toContain("page=");
       expect(clearedHref).toContain("foo=bar");
+      // Segmented 回到默认 30d（selector 消歧：快速标签区也有
+      // "Last 30 days" 文案的 CheckableTag）
       expect(
-        screen.getByText("Last 30 days").closest(".ant-segmented-item"),
+        screen
+          .getByText("Last 30 days", { selector: ".ant-segmented-item-label" })
+          .closest(".ant-segmented-item"),
       ).toHaveClass("ant-segmented-item-selected");
     } finally {
       vi.useRealTimers();
