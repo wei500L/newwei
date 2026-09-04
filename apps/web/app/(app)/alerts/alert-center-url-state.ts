@@ -1,3 +1,4 @@
+import { AlertMetricProvider } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
 import {
   isValidUrlDateRange,
@@ -11,7 +12,6 @@ import {
   serializeUrlValue,
 } from "@/lib/url-state-codec";
 
-import { AlertMetricProvider } from "@/graphql/generated";
 import type { AlertDatePreset } from "./alert-center.utils";
 
 /**

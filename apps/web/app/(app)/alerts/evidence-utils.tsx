@@ -1,7 +1,7 @@
-import type { ReactNode } from "react";
 import { Typography } from "antd";
+import type { ReactNode } from "react";
 
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { formatDateTime, type resolveLocale } from "@/lib/i18n";
 
 /**
  * Alert Center 证据域共享格式化逻辑（FE-批3 拆分）。

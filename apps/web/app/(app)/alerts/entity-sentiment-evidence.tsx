@@ -10,8 +10,8 @@ import {
 import type { EChartsOption } from "echarts";
 import Link from "next/link";
 
-import { DashboardChart } from "@/components/echart";
 import { ArticlePublishedTime } from "@/components/article-published-time";
+import { DashboardChart } from "@/components/echart";
 import { formatDateTime } from "@/lib/i18n";
 
 import {

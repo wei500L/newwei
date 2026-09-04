@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useUrlState } from "@/hooks/use-url-state";
+import dayjs from "@/lib/dayjs";
 
 import {
+  ALERT_URL_DEFAULT_DATE_PRESET,
   parseAlertCenterUrlState,
   resolveAlertUrlCustomRangeMs,
   serializeAlertCenterUrlState,
@@ -94,23 +96,6 @@ export function useAlertCenterUrlState(): UseAlertCenterUrlStateResult {
   const updateFilters = useCallback(
     (patch: Partial<AlertFilterState>) => {
       setUrlState((previous) => {
-        // customRangeMs 毫秒 → URL from/to 由序列化层完成；这里只在
-        // 变更了日期时清理另一侧的旧值，避免半更新区间被回退到默认 30d
-        const nextCustomFrom =
-          patch.customRangeMs !== undefined
-            ? patch.customRangeMs
-              ? patch.customRangeMs[0]
-              : null
-            : null;
-        const nextCustomTo =
-          patch.customRangeMs !== undefined
-            ? patch.customRangeMs
-              ? patch.customRangeMs[1]
-              : null
-            : null;
-        const hasCustomRange =
-          typeof nextCustomFrom === "number" && typeof nextCustomTo === "number";
-
         const next: AlertCenterUrlState = {
           ...previous,
           severities: patch.severities ?? previous.severities,
@@ -121,18 +106,34 @@ export function useAlertCenterUrlState(): UseAlertCenterUrlStateResult {
               ? patch.ruleKeyword
               : previous.ruleKeyword,
           datePreset: patch.datePreset ?? previous.datePreset,
-          customFrom: null,
-          customTo: null,
+          customFrom: previous.customFrom,
+          customTo: previous.customTo,
           page: 1,
         };
-        if (hasCustomRange) {
-          next.datePreset = "custom";
-          next.customFrom = new Date(nextCustomFrom as number)
-            .toISOString()
-            .slice(0, 10);
-          next.customTo = new Date(nextCustomTo as number)
-            .toISOString()
-            .slice(0, 10);
+
+        // 显式提供日期区间（RangePicker 语义）：合法对 → custom + 日期；
+        // 清空 → 回退默认 30d（URL 模型不存在「custom 无日期」状态）
+        if (patch.customRangeMs !== undefined) {
+          const start = patch.customRangeMs?.[0];
+          const end = patch.customRangeMs?.[1];
+          if (typeof start === "number" && typeof end === "number") {
+            next.datePreset = "custom";
+            next.customFrom = dayjs(start).format("YYYY-MM-DD");
+            next.customTo = dayjs(end).format("YYYY-MM-DD");
+          } else {
+            next.datePreset = ALERT_URL_DEFAULT_DATE_PRESET;
+            next.customFrom = null;
+            next.customTo = null;
+          }
+        }
+
+        // 切换到非 custom 预设 → 清空日期（与组件 Segmented 行为一致）
+        if (
+          patch.datePreset !== undefined &&
+          patch.datePreset !== "custom"
+        ) {
+          next.customFrom = null;
+          next.customTo = null;
         }
         return next;
       });

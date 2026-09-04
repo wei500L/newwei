@@ -14,6 +14,11 @@ import {
 } from "@/graphql/generated";
 import { renderWithProviders } from "@/test/render";
 import {
+  testSessionMock,
+  testVirtualizerMock,
+  type TestSessionMockState,
+} from "@/test/component-mock-state";
+import {
   applyTestNavigationHref,
   notifyTestNavigation,
   resetTestNavigation,
@@ -34,42 +39,25 @@ import type { AlertEventItem } from "./alert-center.utils";
  * - Apollo 走 MockedProvider + 自定义 ApolloLink：query / subscription /
  *   mutation / refetch 全部经过真实 Apollo 客户端执行（loading、缓存、
  *   refetch 语义为真），仅把网络出口替换为受控响应 —— 属于允许的边界 mock。
- * - next/navigation 的 useSearchParams 模拟「URL 变化触发重渲染」：
- *   router.replace / setAlertTestUrl 更新参数并通知订阅组件，用于
- *   验证 URL→state 同步与 back/forward 恢复。
+ * - vi.mock 工厂只允许动态 import 零依赖模块（@/test/component-mock-state
+ *   与 @/test/url-navigation）。工厂会在被测模块加载过程中执行：若工厂
+ *   import 了会（传递地）import 被测模块的文件（如本文件），会形成
+ *   「工厂等模块、模块等工厂」的模块加载死锁，远端 CI 表现为测试步骤
+ *   45 分钟超时挂起（run 33790444855 / 33841300653）。
  * - @tanstack/react-virtual 以确定性 fake virtualizer 替换（jsdom 无法
  *   提供真实滚动几何），仅断言启用阈值与行集合派生，不测 tanstack 本身。
  */
 
-export type AlertTestSessionStatus = "authenticated" | "loading" | "unauthenticated";
+export type AlertTestSessionStatus = TestSessionMockState["status"];
 
-export interface AlertTestSessionState {
-  status: AlertTestSessionStatus;
-  data: { permissions: string[] } | null;
-}
+/** 会话 mock 状态（与 vi.mock 工厂共享同一单例）。 */
+export const alertTestSession = testSessionMock;
 
-export interface AlertTestVirtualizerState {
-  enabled: boolean | null;
-  count: number | null;
-  measureCalls: number;
-}
+/** 虚拟化 mock 状态（与 vi.mock 工厂共享同一单例）。 */
+export const alertTestVirtualizer = testVirtualizerMock;
 
-export const alertTestSession: AlertTestSessionState = {
-  status: "authenticated",
-  data: { permissions: ["alerts.read"] },
-};
-
-/**
- * 导航状态委托 @/test/url-navigation（与 useUrlState 测试共享同一份
- * 「URL 变化 → 通知订阅组件」语义）。
- */
+/** 导航 mock 状态（与 vi.mock 工厂共享同一单例）。 */
 export const alertTestNavigation = testNavigation;
-
-export const alertTestVirtualizer: AlertTestVirtualizerState = {
-  enabled: null,
-  count: null,
-  measureCalls: 0,
-};
 
 export const notifyAlertTestUrlChange = notifyTestNavigation;
 
@@ -82,11 +70,11 @@ export function applyAlertTestHref(href: string, calls: string[] | null): void {
 export const setAlertTestUrl = setTestUrl;
 
 export function resetAlertTestState(initialUrl = "/alerts"): void {
-  alertTestSession.status = "authenticated";
-  alertTestSession.data = { permissions: ["alerts.read"] };
-  alertTestVirtualizer.enabled = null;
-  alertTestVirtualizer.count = null;
-  alertTestVirtualizer.measureCalls = 0;
+  testSessionMock.status = "authenticated";
+  testSessionMock.data = { permissions: ["alerts.read"] };
+  testVirtualizerMock.enabled = null;
+  testVirtualizerMock.count = null;
+  testVirtualizerMock.measureCalls = 0;
   resetTestNavigation(initialUrl);
 }
 
@@ -405,7 +393,7 @@ export interface RenderAlertCenterOptions {
   replay?: NonNullable<AlertEventReplayQuery["alertEventReplay"]> | null;
   tuning?: NonNullable<AlertRuleTuningSuggestionQuery["alertRuleTuningSuggestion"]> | null;
   rejectEventIds?: string[];
-  sessionStatus?: AlertTestSessionStatus;
+  sessionStatus?: TestSessionMockState["status"];
   permissions?: string[];
   initialUrl?: string;
 }

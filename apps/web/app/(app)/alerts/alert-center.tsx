@@ -11,7 +11,6 @@ import {
   Col,
   Collapse,
   DatePicker,
-  Descriptions,
   Divider,
   Input,
   List,
@@ -26,19 +25,16 @@ import {
   Statistic,
   Tag,
   Tabs,
-  Tooltip,
   Typography,
   message,
 } from "antd";
 import type { Dayjs } from "dayjs";
 import type { EChartsOption } from "echarts";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import {
@@ -60,7 +56,7 @@ import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { classifyRequestError } from "@/lib/request-error";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
-import { ALERT_LINE_COLORS, RANGE_INDICATOR_COLORS } from "@/lib/status-tokens";
+import { ALERT_LINE_COLORS } from "@/lib/status-tokens";
 
 import {
   buildAlertExportJson,
@@ -78,6 +74,14 @@ import {
   type AlertFilterState,
 } from "./alert-center.utils";
 import {
+  ALERT_EVENT_ROW_ESTIMATE_PX,
+  shouldUpdateAlertEventsMetric,
+  shouldVirtualizeAlertEvents,
+} from "./alert-events-virtualization";
+import { EconomicAnomalyEvidence } from "./economic-anomaly-evidence";
+import { EntityAssociationEvidence } from "./entity-association-evidence";
+import { EntitySentimentEvidence } from "./entity-sentiment-evidence";
+import {
   DetailRow,
   formatContextValue,
   formatMetricChange,
@@ -85,18 +89,8 @@ import {
   safeJsonStringify,
   toNumber,
   toStringValue,
-  type LocaleCode,
-  type TranslateFn,
 } from "./evidence-utils";
-import { EconomicAnomalyEvidence } from "./economic-anomaly-evidence";
-import { EntitySentimentEvidence } from "./entity-sentiment-evidence";
-import { EntityAssociationEvidence } from "./entity-association-evidence";
 import { RealtimeSignalEvidence } from "./realtime-signal-evidence";
-import {
-  ALERT_EVENT_ROW_ESTIMATE_PX,
-  shouldUpdateAlertEventsMetric,
-  shouldVirtualizeAlertEvents,
-} from "./alert-events-virtualization";
 
 const severityColor: Record<string, string> = {
   low: "green",

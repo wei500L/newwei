@@ -29,7 +29,7 @@ export function RealtimeSignalEvidence({
   context: Record<string, unknown> | null;
   locale: LocaleCode;
   t: TranslateFn;
-}) => {
+}) {
   if (!context) {
     return (
       <Typography.Text type="secondary">

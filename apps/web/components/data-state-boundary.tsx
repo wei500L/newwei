@@ -1,8 +1,8 @@
 "use client";
 
 import { Spin } from "antd";
-import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";

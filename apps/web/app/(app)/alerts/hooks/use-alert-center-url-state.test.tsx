@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -161,9 +161,8 @@ describe("useAlertCenterUrlState rule keyword debounce", () => {
       render(<Probe />);
       const input = screen.getByLabelText("keyword");
 
-      await act(async () => {
-        await userEvent.type(input, "cpi");
-      });
+      // fake timers 下用 fireEvent（userEvent.type 内部依赖真实计时器）
+      fireEvent.change(input, { target: { value: "cpi" } });
       // 输入框即时值
       expect(input).toHaveValue("cpi");
       // URL 尚未写入

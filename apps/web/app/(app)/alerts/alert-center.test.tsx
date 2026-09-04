@@ -13,40 +13,44 @@ import {
   resetAlertTestState,
 } from "./alert-center-test-support";
 
+// ⚠️ vi.mock 工厂只 import 零依赖模块（component-mock-state /
+// url-navigation）：工厂在 alert-center.tsx 加载过程中执行，若 import
+// 了会传递 import 被测模块的文件（如 ./alert-center-test-support），
+// 会形成模块加载死锁（远端 CI 表现为测试 45 分钟挂起）。
 vi.mock("next-auth/react", async () => {
-  const { alertTestSession } = await import("./alert-center-test-support");
+  const { testSessionMock } = await import("@/test/component-mock-state");
   return {
     useSession: () => ({
-      status: alertTestSession.status,
-      data: alertTestSession.data,
+      status: testSessionMock.status,
+      data: testSessionMock.data,
     }),
   };
 });
 
 vi.mock("next/navigation", async () => {
   const React = await import("react");
-  const { alertTestNavigation, applyAlertTestHref } = await import(
-    "./alert-center-test-support"
+  const { applyTestNavigationHref, testNavigation } = await import(
+    "@/test/url-navigation"
   );
   return {
     useRouter: () => ({
       replace: (href: string) =>
-        applyAlertTestHref(href, alertTestNavigation.replaceCalls),
+        applyTestNavigationHref(href, testNavigation.replaceCalls),
       push: (href: string) =>
-        applyAlertTestHref(href, alertTestNavigation.pushCalls),
+        applyTestNavigationHref(href, testNavigation.pushCalls),
       prefetch: () => undefined,
       back: () => undefined,
     }),
-    usePathname: () => alertTestNavigation.pathname,
+    usePathname: () => testNavigation.pathname,
     useSearchParams: () => {
       const [, forceUpdate] = React.useReducer((tick: number) => tick + 1, 0);
       React.useEffect(() => {
-        alertTestNavigation.listeners.add(forceUpdate);
+        testNavigation.listeners.add(forceUpdate);
         return () => {
-          alertTestNavigation.listeners.delete(forceUpdate);
+          testNavigation.listeners.delete(forceUpdate);
         };
       }, [forceUpdate]);
-      return alertTestNavigation.params;
+      return testNavigation.params;
     },
   };
 });
@@ -86,15 +90,15 @@ vi.mock("@/hooks/use-chart-theme", () => ({
 }));
 
 vi.mock("@tanstack/react-virtual", async () => {
-  const { alertTestVirtualizer } = await import("./alert-center-test-support");
+  const { testVirtualizerMock } = await import("@/test/component-mock-state");
   return {
     useWindowVirtualizer: (options: {
       count: number;
       enabled?: boolean;
       estimateSize: () => number;
     }) => {
-      alertTestVirtualizer.enabled = options.enabled ?? true;
-      alertTestVirtualizer.count = options.count;
+      testVirtualizerMock.enabled = options.enabled ?? true;
+      testVirtualizerMock.count = options.count;
       const estimate = options.estimateSize();
       return {
         getVirtualItems: () =>
@@ -106,7 +110,7 @@ vi.mock("@tanstack/react-virtual", async () => {
           })),
         getTotalSize: () => options.count * estimate,
         measure: () => {
-          alertTestVirtualizer.measureCalls += 1;
+          testVirtualizerMock.measureCalls += 1;
         },
       };
     },
@@ -568,7 +572,8 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
 
       fireEvent.click(screen.getByText("Today"));
 
-      expect(await screen.findByText("1 / 3 alerts")).toBeInTheDocument();
+      // fake timers 下用同步断言（findByText 的轮询间隔被 fake 会永久挂起）
+      expect(screen.getByText("1 / 3 alerts")).toBeInTheDocument();
       expect(screen.queryByText("yesterday event")).not.toBeInTheDocument();
       expect(screen.getByText("today event")).toBeInTheDocument();
     } finally {
