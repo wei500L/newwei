@@ -867,7 +867,7 @@ const detailedChainStatuses = chainStatuses.map((status) => {
     text,
     tooltip: tooltipLines.join("\n"),
   };
-});
+}) as WarMapStatusSummary["detailedChainStatuses"];
 
 const summaryDataLabel = !latestQueryUpdatedAt
   ? t("dashboard.charts.warMap.status.waitingData")
