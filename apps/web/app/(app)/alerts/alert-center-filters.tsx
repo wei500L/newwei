@@ -19,8 +19,8 @@ import type { Dayjs } from "dayjs";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import dayjs from "@/lib/dayjs";
 import { AlertMetricProvider } from "@/graphql/generated";
+import dayjs from "@/lib/dayjs";
 
 import {
   DEFAULT_FILTER_STATE,

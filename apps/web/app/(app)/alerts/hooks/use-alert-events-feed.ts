@@ -25,11 +25,11 @@ import type { AlertEventItem } from "../alert-center.utils";
  * （未渲染 context 元素的 useMessage 实例不会真正展示消息）。
  */
 
-export type AlertMessageApi = {
+export interface AlertMessageApi {
   success: (content: string) => void;
   error: (content: string) => void;
   warning: (content: string) => void;
-};
+}
 
 const MAX_EVENTS_LIMIT = 500;
 

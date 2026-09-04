@@ -47,8 +47,8 @@ import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { classifyRequestError } from "@/lib/request-error";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 
-import { ALERT_URL_PAGE_SIZES } from "./alert-center-url-state";
 import { AlertCenterFilters } from "./alert-center-filters";
+import { ALERT_URL_PAGE_SIZES } from "./alert-center-url-state";
 import {
   buildAlertExportJson,
   buildAlertExportRows,
@@ -225,8 +225,6 @@ export function AlertCenterContent() {
   const [bulkNote, setBulkNote] = useState<string>("");
   const [includeRawExport, setIncludeRawExport] = useState<boolean>(false);
   const [detailTab, setDetailTab] = useState<string>("overview");
-  const eventsListRef = useRef<HTMLDivElement | null>(null);
-  const [eventsListScrollMargin, setEventsListScrollMargin] = useState(0);
   const [exportScope, setExportScope] = useState<AlertExportScope>("selected");
   const [expandMessage, setExpandMessage] = useState<boolean>(false);
   const [expandContext, setExpandContext] = useState<boolean>(false);
@@ -474,102 +472,10 @@ export function AlertCenterContent() {
     () => sortedEvents.filter((event) => selectedEventIdSet.has(event.id)),
     [selectedEventIdSet, sortedEvents],
   );
-  const shouldVirtualizeCurrentEvents = shouldVirtualizeAlertEvents(
-    currentPageEvents.length,
-  );
-  const eventVirtualizer = useWindowVirtualizer({
-    count: currentPageEvents.length,
-    estimateSize: () => ALERT_EVENT_ROW_ESTIMATE_PX,
-    overscan: 5,
-    enabled: shouldVirtualizeCurrentEvents,
-    scrollMargin: eventsListScrollMargin,
-  });
-  const virtualEventRows = shouldVirtualizeCurrentEvents
-    ? eventVirtualizer.getVirtualItems()
-    : [];
-  const eventListTopSpacer =
-    virtualEventRows.length > 0
-      ? Math.max(0, virtualEventRows[0]!.start - eventsListScrollMargin)
-      : 0;
-  const eventListBottomSpacer =
-    virtualEventRows.length > 0
-      ? Math.max(
-          0,
-          eventVirtualizer.getTotalSize() -
-            virtualEventRows[virtualEventRows.length - 1]!.end,
-        )
-      : 0;
-  const currentPageEventEntries = shouldVirtualizeCurrentEvents
-    ? virtualEventRows
-        .map((row) => {
-          const event = currentPageEvents[row.index];
-          return event ? { event, key: event.id, virtualIndex: row.index } : null;
-        })
-        .filter(
-          (entry): entry is { event: AlertEventItem; key: string; virtualIndex: number } =>
-            entry !== null,
-        )
-    : currentPageEvents.map((event, index) => ({
-        event,
-        key: event.id,
-        virtualIndex: index,
-      }));
   const exportEvents = useMemo(
     () => (exportScope === "page" ? currentPageEvents : selectedEventsForBatch),
     [currentPageEvents, exportScope, selectedEventsForBatch],
   );
-
-  useEffect(() => {
-    if (!shouldVirtualizeCurrentEvents) {
-      setEventsListScrollMargin(0);
-      return;
-    }
-
-    let frameId: number | null = null;
-    const scheduleUpdate = () => {
-      if (frameId) {
-        window.cancelAnimationFrame(frameId);
-      }
-      frameId = window.requestAnimationFrame(() => {
-        const node = eventsListRef.current;
-        if (!node) {
-          return;
-        }
-        const nextScrollMargin = node.getBoundingClientRect().top + window.scrollY;
-        setEventsListScrollMargin((previous) =>
-          shouldUpdateAlertEventsMetric(previous, nextScrollMargin)
-            ? nextScrollMargin
-            : previous,
-        );
-      });
-    };
-
-    scheduleUpdate();
-    const resizeObserver =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(() => scheduleUpdate());
-    if (eventsListRef.current) {
-      resizeObserver?.observe(eventsListRef.current);
-    }
-    window.addEventListener("resize", scheduleUpdate);
-    window.addEventListener("scroll", scheduleUpdate, { passive: true });
-
-    return () => {
-      if (frameId) {
-        window.cancelAnimationFrame(frameId);
-      }
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", scheduleUpdate);
-      window.removeEventListener("scroll", scheduleUpdate);
-    };
-  }, [currentPageEvents.length, shouldVirtualizeCurrentEvents]);
-
-  useEffect(() => {
-    if (shouldVirtualizeCurrentEvents) {
-      eventVirtualizer.measure();
-    }
-  }, [currentPageEvents.length, eventVirtualizer, shouldVirtualizeCurrentEvents]);
 
   const handleExportCsv = async () => {
     if (exportEvents.length === 0) {
