@@ -1,6 +1,7 @@
 import type { AlertRuleTuningSuggestionQuery } from "@/graphql/generated";
 
 import type { AlertEventItem } from "./alert-center.utils";
+import type { LocaleCode } from "./alert-center-list-model";
 import type { AlertExportScope } from "./alert-event-list-toolbar";
 import type { useAlertEventBatch } from "./hooks/use-alert-event-batch";
 import type { useAlertEventDetail } from "./hooks/use-alert-event-detail";
@@ -29,7 +30,7 @@ export interface AlertEventListModel {
   currentPageEvents: AlertEventItem[];
   filteredEventsCount: number;
   eventsLoading: boolean;
-  locale: ReturnType<typeof import("@/lib/i18n").resolveLocale>;
+  locale: LocaleCode;
   objectKeyLabels: { key: string; label: string }[];
 }
 
@@ -114,9 +115,7 @@ export interface AlertEventDetailAnalysis {
 
 /** 详情 replay 控制器：懒加载门禁下的数据与重载命令。 */
 export interface AlertEventDetailReplay {
-  replay: NonNullable<
-    ReturnType<typeof useAlertEventDetail>["replay"]
-  >;
+  replay: ReturnType<typeof useAlertEventDetail>["replay"];
   replayPoints: ReturnType<typeof useAlertEventDetail>["replayPoints"];
   replayUnit: ReturnType<typeof useAlertEventDetail>["replayUnit"];
   replayLoading: boolean;
@@ -144,7 +143,7 @@ export interface AlertEventDetailFeedback {
 
 /** 详情页签展示上下文：locale + 本地化对象键标签（跨页签共用）。 */
 export interface AlertEventDetailPresentation {
-  locale: ReturnType<typeof import("@/lib/i18n").resolveLocale>;
+  locale: LocaleCode;
   objectKeyLabels: { key: string; label: string }[];
 }
 
