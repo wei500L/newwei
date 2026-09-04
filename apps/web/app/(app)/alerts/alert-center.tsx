@@ -6,12 +6,10 @@ import {
   Card,
   Col,
   Input,
-  List,
   Row,
   Space,
   Spin,
   Statistic,
-  Tag,
   Tabs,
   Typography,
   message,
@@ -42,6 +40,8 @@ import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 
 import { AlertCenterFilters } from "./alert-center-filters";
 import { buildThresholdSummary } from "./alert-center-list-model";
+import { AlertEventDetail } from "./alert-event-detail";
+import { CONTEXT_OBJECT_KEYS } from "./alert-event-detail-model";
 import {
   buildAlertExportJson,
   buildAlertExportRows,
@@ -62,9 +62,6 @@ import {
 } from "./alert-chart-options";
 import { AlertEventList } from "./alert-event-list";
 import type { AlertExportScope } from "./alert-event-list-toolbar";
-import { EconomicAnomalyEvidence } from "./economic-anomaly-evidence";
-import { EntityAssociationEvidence } from "./entity-association-evidence";
-import { EntitySentimentEvidence } from "./entity-sentiment-evidence";
 import {
   DetailRow,
   formatContextValue,
@@ -77,7 +74,6 @@ import { useAlertCenterUrlState } from "./hooks/use-alert-center-url-state";
 import { useAlertEventSelection } from "./hooks/use-alert-event-selection";
 import { useAlertEventStatusActions } from "./hooks/use-alert-event-status-actions";
 import { useAlertEventsFeed } from "./hooks/use-alert-events-feed";
-import { RealtimeSignalEvidence } from "./realtime-signal-evidence";
 
 const severityColor: Record<string, string> = {
   low: "green",
@@ -93,48 +89,6 @@ const deliveryStatusColor: Record<string, string> = {
 };
 
 
-const CONTEXT_OBJECT_KEYS = [
-  {
-    key: "countryName",
-    labelKey: "alerts.center.detail.object.country",
-    defaultLabel: "Country",
-  },
-  {
-    key: "countryCode",
-    labelKey: "alerts.center.detail.object.countryCode",
-    defaultLabel: "Country code",
-  },
-  {
-    key: "resource",
-    labelKey: "alerts.center.detail.object.resource",
-    defaultLabel: "Resource",
-  },
-  {
-    key: "action",
-    labelKey: "alerts.center.detail.object.action",
-    defaultLabel: "Action",
-  },
-  {
-    key: "queueName",
-    labelKey: "alerts.center.detail.object.queue",
-    defaultLabel: "Queue",
-  },
-  {
-    key: "sourceId",
-    labelKey: "alerts.center.detail.object.source",
-    defaultLabel: "Source",
-  },
-  {
-    key: "createdById",
-    labelKey: "alerts.center.detail.object.actor",
-    defaultLabel: "Actor",
-  },
-  {
-    key: "statuses",
-    labelKey: "alerts.center.detail.object.statuses",
-    defaultLabel: "Statuses",
-  },
-];
 
 export function AlertCenterContent() {
   const { t, i18n } = useTranslation();
@@ -579,11 +533,6 @@ export function AlertCenterContent() {
     return `${startLabel} - ${endLabel}`;
   }, [filterWindow.endMs, filterWindow.startMs, locale, t]);
 
-  const context =
-    selectedEvent?.context && typeof selectedEvent.context === "object"
-      ? (selectedEvent.context as Record<string, unknown>)
-      : null;
-  const contextEntries = context ? Object.entries(context) : [];
   const objectKeyLabels = useMemo(
     () =>
       CONTEXT_OBJECT_KEYS.map((entry) => ({
@@ -592,166 +541,18 @@ export function AlertCenterContent() {
       })),
     [t],
   );
-  const objectEntries = objectKeyLabels
-    .map((entry) => ({
-      key: entry.key,
-      label: entry.label,
-      value: context?.[entry.key],
-    }))
-    .filter(
-      (entry) =>
-        entry.value !== null && entry.value !== undefined && entry.value !== "",
-    );
 
-  const excludedContextKeys = new Set([
-    ...objectKeyLabels.map((entry) => entry.key),
-    "feedback",
-    "latest",
-    "previous",
-    "metricSlug",
-    "threshold",
-    "lower",
-    "upper",
-    "changePercent",
-    "windowMinutes",
-    "sourceName",
-    "sourceEndpoint",
-    "sourceFunction",
-    "sourceDocUrl",
-    "sourceField",
-    "unit",
-    "recordedAt",
-    "itemName",
-  ]);
-
-  if (selectedEvent?.metricProvider === AlertMetricProvider.EconomicAnomaly) {
-    [
-      "observed",
-      "expected",
-      "sigma",
-      "residual",
-      "score",
-      "model",
-      "diagnostics",
-      "fallback",
-    ].forEach((key) => excludedContextKeys.add(key));
-  }
-  if (selectedEvent?.metricProvider === AlertMetricProvider.EntitySentiment) {
-    [
-      "entityName",
-      "entityType",
-      "window",
-      "baseline",
-      "z",
-      "minEntityConfidence",
-      "evidence",
-    ].forEach((key) => excludedContextKeys.add(key));
-  }
-  if (selectedEvent?.metricProvider === AlertMetricProvider.EntityAssociation) {
-    [
-      "seed",
-      "sourceEvent",
-      "targets",
-      "minAssociationWeight",
-      "maxTargets",
-    ].forEach((key) => excludedContextKeys.add(key));
-  }
-  if (selectedEvent?.metricProvider === AlertMetricProvider.RealtimeSignal) {
-    [
-      "source",
-      "stale",
-      "latestTimestamp",
-      "maxStaleMinutes",
-      "countryCodes",
-      "militaryCount",
-      "disruptions",
-      "outages",
-      "unrestCount",
-      "acledCount",
-      "gdeltCount",
-      "dedupeReducedBy",
-      "defcon",
-      "adjustedScore",
-      "openLocations",
-      "activeSpikes",
-      "avgPop",
-      "tensions",
-      "leads",
-      "spikes",
-    ].forEach((key) => excludedContextKeys.add(key));
-  }
-
-  const additionalContext = contextEntries.filter(
-    ([key]) => !excludedContextKeys.has(key),
-  );
-  const visibleAdditionalContext = expandContext
-    ? additionalContext
-    : additionalContext.slice(0, 6);
-
-  const evidenceWindowMinutes =
-    selectedEvent?.changeWindowMin ?? toNumber(context?.windowMinutes);
-  const evidenceUnit = toStringValue(context?.unit);
-  const evidencePrevious = toNumber(context?.previous);
-  const evidenceRecordedAt =
-    typeof context?.recordedAt === "string" ||
-    typeof context?.recordedAt === "number"
-      ? context?.recordedAt
-      : undefined;
-  const evidenceRecordedAtLabel = evidenceRecordedAt
-    ? formatDateTime(evidenceRecordedAt, locale, {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        timeZoneName: "short",
-      })
-    : "";
-  const evidenceSource =
-    toStringValue(context?.sourceName) ??
-    toStringValue(context?.sourceEndpoint) ??
-    toStringValue(context?.sourceFunction) ??
-    toStringValue(context?.sourceField) ??
-    toStringValue(context?.source) ??
-    toStringValue(selectedEvent?.metricSlug);
-  const evidenceSourceDoc = toStringValue(context?.sourceDocUrl);
-
-  const feedback =
-    context?.feedback &&
-    typeof context.feedback === "object" &&
-    !Array.isArray(context.feedback)
-      ? (context.feedback as Record<string, unknown>)
+  // 复制 Markdown 需要的最小详情派生（完整派生在 alert-event-detail-model）
+  const context =
+    selectedEvent?.context && typeof selectedEvent.context === "object"
+      ? (selectedEvent.context as Record<string, unknown>)
       : null;
-  const feedbackStatus = toStringValue(feedback?.status);
-  const feedbackUpdatedAt =
-    typeof feedback?.updatedAt === "string" ||
-    typeof feedback?.updatedAt === "number"
-      ? feedback.updatedAt
-      : undefined;
-  const feedbackUpdatedAtLabel = feedbackUpdatedAt
-    ? formatDateTime(feedbackUpdatedAt, locale, {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        timeZoneName: "short",
-      })
-    : "";
-  const feedbackUpdatedById = toStringValue(feedback?.updatedById);
-  const feedbackStoredNote =
-    typeof feedback?.note === "string" ? feedback.note : null;
-
-  const reviewStatus =
-    feedbackStatus === "confirmed" || feedbackStatus === "ignored"
-      ? feedbackStatus
-      : selectedEvent?.status === "confirmed" ||
-          selectedEvent?.status === "ignored"
-        ? selectedEvent.status
-        : null;
-
+  const metricProviderLabel = (
+    provider: AlertMetricProvider | string | null | undefined,
+  ) =>
+    provider
+      ? t(`alerts.metricProviders.${provider}`, { defaultValue: provider })
+      : t("common.notAvailable");
   const thresholdSummary = selectedEvent
     ? buildThresholdSummary(
         selectedEvent.operator,
@@ -761,13 +562,6 @@ export function AlertCenterContent() {
         t,
       )
     : t("common.notAvailable");
-
-  const metricProviderLabel = (
-    provider: AlertMetricProvider | string | null | undefined,
-  ) =>
-    provider
-      ? t(`alerts.metricProviders.${provider}`, { defaultValue: provider })
-      : t("common.notAvailable");
 
   const handleCopyRawContext = async () => {
     if (!context) {
@@ -858,677 +652,6 @@ export function AlertCenterContent() {
       ? Number((stats.falsePositiveRate * 100).toFixed(1))
       : null;
 
-  const detailTabs = selectedEvent
-    ? [
-        {
-          key: "overview",
-          label: t("alerts.center.tabs.overview"),
-          children: (
-            <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-              <DetailRow
-                label={t("alerts.center.detail.rule")}
-              >
-                <Space direction="vertical" size={2}>
-                  <Typography.Text strong>
-                    {selectedEvent.ruleName ?? t("common.notAvailable")}
-                  </Typography.Text>
-                  <Typography.Text type="secondary">
-                    {t("alerts.center.detail.metric", {
-                      metric:
-                        selectedEvent.metricSlug ?? t("common.notAvailable"),
-                    })}
-                  </Typography.Text>
-                  <Typography.Text type="secondary">
-                    {t("alerts.center.detail.provider", {
-                      provider: metricProviderLabel(
-                        selectedEvent.metricProvider,
-                      ),
-                    })}
-                  </Typography.Text>
-                </Space>
-              </DetailRow>
-              <DetailRow
-                label={t("alerts.center.detail.threshold")}
-              >
-                <Space direction="vertical" size={2}>
-                  <Typography.Text>
-                    {t("alerts.center.detail.operator", {
-                      operator:
-                        selectedEvent.operator ?? t("common.notAvailable"),
-                    })}
-                  </Typography.Text>
-                  <Typography.Text type="secondary">
-                    {thresholdSummary}
-                  </Typography.Text>
-                  {evidenceWindowMinutes !== null &&
-                  evidenceWindowMinutes !== undefined ? (
-                    <Typography.Text type="secondary">
-                      {t("alerts.center.detail.window", {
-                        minutes: evidenceWindowMinutes,
-                      })}
-                    </Typography.Text>
-                  ) : null}
-                </Space>
-              </DetailRow>
-              <DetailRow
-                label={t("alerts.center.detail.triggeredAt")}
-              >
-                <Typography.Text>
-                  {formatDateTime(selectedEvent.triggeredAt, locale, {
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                    timeZoneName: "short",
-                  })}
-                </Typography.Text>
-              </DetailRow>
-              <DetailRow
-                label={t("alerts.center.detail.metricValue")}
-              >
-                <Space direction="vertical" size={2}>
-                  <Space size="small" align="baseline">
-                    <Typography.Text strong>
-                      {selectedEvent.metricValue}
-                    </Typography.Text>
-                    {evidenceUnit ? (
-                      <Typography.Text type="secondary">
-                        {evidenceUnit}
-                      </Typography.Text>
-                    ) : null}
-                    <Typography.Text type="secondary">
-                      {t("alerts.center.detail.changePercent", {
-                        value: formatMetricChange(
-                          selectedEvent.changePercent,
-                          t("common.notAvailable"),
-                        ),
-                      })}
-                    </Typography.Text>
-                  </Space>
-                  {evidencePrevious !== undefined ? (
-                    <Typography.Text type="secondary">
-                      {t("alerts.center.detail.previousValue", {
-                        value: evidencePrevious,
-                      })}
-                    </Typography.Text>
-                  ) : null}
-                  {evidenceRecordedAtLabel ? (
-                    <Typography.Text type="secondary">
-                      {t("alerts.center.detail.recordedAt", {
-                        time: evidenceRecordedAtLabel,
-                      })}
-                    </Typography.Text>
-                  ) : null}
-                </Space>
-              </DetailRow>
-              <DetailRow
-                label={t("alerts.center.detail.source")}
-              >
-                {evidenceSource || evidenceSourceDoc ? (
-                  <Space direction="vertical" size={2}>
-                    {evidenceSource ? (
-                      <Typography.Text>{evidenceSource}</Typography.Text>
-                    ) : null}
-                    {evidenceSourceDoc ? (
-                      <Typography.Link
-                        href={evidenceSourceDoc}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {evidenceSourceDoc}
-                      </Typography.Link>
-                    ) : null}
-                  </Space>
-                ) : (
-                  <Typography.Text type="secondary">
-                    {t("common.notAvailable")}
-                  </Typography.Text>
-                )}
-              </DetailRow>
-              <DetailRow
-                label={t("alerts.center.detail.objects")}
-              >
-                {objectEntries.length > 0 ? (
-                  <Space size={[8, 8]} wrap>
-                    {objectEntries.map((entry) => (
-                      <Tag key={entry.key}>
-                        {entry.label}: {formatContextValue(entry.value)}
-                      </Tag>
-                    ))}
-                  </Space>
-                ) : (
-                  <Typography.Text type="secondary">
-                    {t("alerts.center.detail.objectsEmpty")}
-                  </Typography.Text>
-                )}
-              </DetailRow>
-              <DetailRow
-                label={t("alerts.center.detail.status")}
-              >
-                <Space>
-                  <Tag color={severityColor[selectedEvent.severity] ?? "blue"}>
-                    {selectedEvent.severity}
-                  </Tag>
-                  <Tag>{selectedEvent.status}</Tag>
-                </Space>
-              </DetailRow>
-              <DetailRow
-                label={t("alerts.center.detail.message")}
-              >
-                <Typography.Paragraph
-                  style={{ marginBottom: 4 }}
-                  ellipsis={expandMessage ? false : { rows: 3 }}
-                >
-                  {selectedEvent.message ?? t("alerts.events.triggered")}
-                </Typography.Paragraph>
-                {(selectedEvent.message?.length ?? 0) > 180 ? (
-                  <Button
-                    type="link"
-                    size="small"
-                    onClick={() => setExpandMessage((prev) => !prev)}
-                  >
-                    {expandMessage
-                      ? t("alerts.center.actions.collapse")
-                      : t("alerts.center.actions.expand")}
-                  </Button>
-                ) : null}
-              </DetailRow>
-              <DetailRow
-                label={t("alerts.center.detail.context")}
-              >
-                <Space direction="vertical" size={4} style={{ width: "100%" }}>
-                  <Button
-                    size="small"
-                    onClick={() => void handleCopyRawContext()}
-                    disabled={!context}
-                  >
-                    {t("alerts.center.detail.copyRawContext")}
-                  </Button>
-                  {visibleAdditionalContext.length > 0 ? (
-                    visibleAdditionalContext.map(([key, value]) => (
-                      <div key={key} className="flex justify-between gap-4">
-                        <Typography.Text type="secondary">
-                          {key}
-                        </Typography.Text>
-                        <Typography.Text>
-                          {formatContextValue(value)}
-                        </Typography.Text>
-                      </div>
-                    ))
-                  ) : (
-                    <Typography.Text type="secondary">
-                      {t("alerts.center.detail.contextEmpty")}
-                    </Typography.Text>
-                  )}
-                  {additionalContext.length > 6 ? (
-                    <Button
-                      type="link"
-                      size="small"
-                      onClick={() => setExpandContext((prev) => !prev)}
-                    >
-                      {expandContext
-                        ? t("alerts.center.actions.showLessContext")
-                        : t("alerts.center.actions.showAllContext", {
-                            count: additionalContext.length,
-                          })}
-                    </Button>
-                  ) : null}
-                </Space>
-              </DetailRow>
-            </Space>
-          ),
-        },
-        {
-          key: "evidence",
-          label: t("alerts.center.tabs.evidence"),
-          children: (
-            <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-              <DetailRow
-                label={t("alerts.center.detail.evidence")}
-              >
-                {selectedEvent.metricProvider ===
-                AlertMetricProvider.EconomicAnomaly ? (
-                  <EconomicAnomalyEvidence
-                    context={context}
-                    locale={locale}
-                    t={t}
-                  />
-                ) : selectedEvent.metricProvider ===
-                  AlertMetricProvider.EntitySentiment ? (
-                  <EntitySentimentEvidence
-                    context={context}
-                    locale={locale}
-                    t={t}
-                    colors={{ primary: colors.primary, accent: colors.accent }}
-                    fontFamily={fontFamily}
-                  />
-                ) : selectedEvent.metricProvider ===
-                  AlertMetricProvider.EntityAssociation ? (
-                  <EntityAssociationEvidence
-                    context={context}
-                    locale={locale}
-                    t={t}
-                    onOpenEvent={(eventId) => void handleOpenEvent(eventId)}
-                  />
-                ) : selectedEvent.metricProvider ===
-                  AlertMetricProvider.RealtimeSignal ? (
-                  <RealtimeSignalEvidence
-                    context={context}
-                    locale={locale}
-                    t={t}
-                  />
-                ) : (
-                  <Typography.Text type="secondary">
-                    {t("alerts.center.evidence.unsupported")}
-                  </Typography.Text>
-                )}
-              </DetailRow>
-
-              <Card
-                size="small"
-                title={t("alerts.center.analysis.similarTitle")}
-              >
-                {similarAlerts.length === 0 ? (
-                  <Typography.Text type="secondary">
-                    {t("alerts.center.analysis.similarEmpty")}
-                  </Typography.Text>
-                ) : (
-                  <List
-                    size="small"
-                    dataSource={similarAlerts}
-                    renderItem={(item) => (
-                      <List.Item>
-                        <Space
-                          direction="vertical"
-                          size={0}
-                          style={{ width: "100%" }}
-                        >
-                          <Space size="small" wrap>
-                            <Button
-                              type="link"
-                              size="small"
-                              onClick={() => handleSelectEvent(item.event.id)}
-                            >
-                              {item.event.ruleName ?? item.event.id}
-                            </Button>
-                            <Tag color="blue">
-                              {item.reason === "same_rule"
-                                ? t("alerts.center.analysis.sameRule")
-                                : t("alerts.center.analysis.sameMetric")}
-                            </Tag>
-                            <Tag>{item.event.status}</Tag>
-                          </Space>
-                          <Typography.Text type="secondary">
-                            {formatDateTime(item.event.triggeredAt, locale, {
-                              year: "numeric",
-                              month: "2-digit",
-                              day: "2-digit",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              timeZoneName: "short",
-                            })}
-                          </Typography.Text>
-                        </Space>
-                      </List.Item>
-                    )}
-                  />
-                )}
-              </Card>
-
-              <Card
-                size="small"
-                title={t("alerts.center.analysis.ruleTrendTitle")}
-              >
-                <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-                  <Col xs={24} sm={8}>
-                    <Statistic
-                      title={t("alerts.center.analysis.totalTriggers")}
-                      value={ruleTrendAnalysis.totalTriggers}
-                    />
-                  </Col>
-                  <Col xs={24} sm={8}>
-                    <Statistic
-                      title={t("alerts.center.analysis.dailyAverage")}
-                      value={Number(
-                        ruleTrendAnalysis.averageDailyTriggers.toFixed(2),
-                      )}
-                    />
-                  </Col>
-                  <Col xs={24} sm={8}>
-                    <Statistic
-                      title={t("alerts.center.analysis.falsePositiveRate")}
-                      value={
-                        typeof ruleTrendAnalysis.falsePositiveRate === "number"
-                          ? Number(
-                              (
-                                ruleTrendAnalysis.falsePositiveRate * 100
-                              ).toFixed(1),
-                            )
-                          : "--"
-                      }
-                      suffix={
-                        typeof ruleTrendAnalysis.falsePositiveRate === "number"
-                          ? "%"
-                          : undefined
-                      }
-                    />
-                  </Col>
-                </Row>
-                {ruleTrendAnalysis.points.length === 0 ? (
-                  <ChartEmptyState
-                    className="h-auto py-6"
-                    description={t("alerts.center.analysis.ruleTrendEmpty")}
-                  />
-                ) : (
-                  <DashboardChart
-                    option={ruleTrendOption}
-                    theme={echartsTheme}
-                    height={240}
-                  />
-                )}
-              </Card>
-            </Space>
-          ),
-        },
-        {
-          key: "replay",
-          label: t("alerts.center.tabs.replay"),
-          children: (
-            <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-              <Space size="small" wrap>
-                <Button
-                  size="small"
-                  onClick={() =>
-                    selectedEvent
-                      ? loadReplay({
-                          variables: {
-                            eventId: selectedEvent.id,
-                            windowDays: 30,
-                          },
-                        })
-                      : undefined
-                  }
-                  loading={replayLoading}
-                  disabled={!selectedEvent}
-                >
-                  {t("alerts.center.detail.openReplay")}
-                </Button>
-                <Typography.Text type="secondary">
-                  {t("alerts.center.detail.replayHint")}
-                </Typography.Text>
-              </Space>
-              {replayLoading ? (
-                <div className="flex justify-center py-10">
-                  <Spin />
-                </div>
-              ) : replayError ? (
-                <Alert
-                  type="error"
-                  showIcon
-                  message={t("alerts.center.detail.replayError")}
-                  description={replayError.message}
-                />
-              ) : replay ? (
-                replayPoints && replayPoints.length > 0 ? (
-                  <DashboardChart
-                    option={replayOption}
-                    theme={echartsTheme}
-                    height={300}
-                  />
-                ) : (
-                  <ChartEmptyState
-                    className="h-auto py-8"
-                    description={t("alerts.center.detail.replayEmpty")}
-                  />
-                )
-              ) : (
-                <Alert
-                  type="info"
-                  showIcon
-                  message={t("alerts.center.detail.replayUnsupported")}
-                />
-              )}
-            </Space>
-          ),
-        },
-        {
-          key: "feedback",
-          label: t("alerts.center.tabs.feedback"),
-          children: (
-            <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-              <DetailRow
-                label={t("alerts.center.detail.feedback")}
-              >
-                <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                  <Space size="small" wrap>
-                    {reviewStatus ? (
-                      <Tag
-                        color={
-                          reviewStatus === "confirmed" ? "green" : "default"
-                        }
-                      >
-                        {reviewStatus}
-                      </Tag>
-                    ) : (
-                      <Tag>
-                        {t("alerts.center.detail.unreviewed")}
-                      </Tag>
-                    )}
-                    {feedbackUpdatedAtLabel ? (
-                      <Typography.Text type="secondary">
-                        {t("alerts.center.detail.feedbackUpdatedAt", {
-                          time: feedbackUpdatedAtLabel,
-                        })}
-                      </Typography.Text>
-                    ) : null}
-                    {feedbackUpdatedById ? (
-                      <Typography.Text type="secondary">
-                        {t("alerts.center.detail.feedbackUpdatedBy", {
-                          user: feedbackUpdatedById,
-                        })}
-                      </Typography.Text>
-                    ) : null}
-                  </Space>
-
-                  {feedbackStoredNote ? (
-                    <Typography.Text>{feedbackStoredNote}</Typography.Text>
-                  ) : reviewStatus ? (
-                    <Typography.Text type="secondary">
-                      {t("alerts.center.detail.feedbackEmpty")}
-                    </Typography.Text>
-                  ) : (
-                    <Typography.Text type="secondary">
-                      {t("alerts.center.detail.feedbackNotReviewed")}
-                    </Typography.Text>
-                  )}
-
-                  {canManageAlerts ? (
-                    <>
-                      <Input.TextArea
-                        id="alerts-feedback-note"
-                        name="alertsFeedbackNote"
-                        value={feedbackNote}
-                        onChange={(event) =>
-                          setFeedbackNote(event.target.value)
-                        }
-                        rows={2}
-                        placeholder={t(
-                          "alerts.center.detail.feedbackNotePlaceholder",
-                        )}
-                      />
-                      <Space wrap>
-                        <Button
-                          type="primary"
-                          size="small"
-                          loading={updatingStatus}
-                          onClick={() =>
-                            void handleEventStatusUpdate("confirmed")
-                          }
-                        >
-                          {t("alerts.center.detail.confirm")}
-                        </Button>
-                        <Button
-                          size="small"
-                          loading={updatingStatus}
-                          onClick={() =>
-                            void handleEventStatusUpdate("ignored")
-                          }
-                        >
-                          {t("alerts.center.detail.ignore")}
-                        </Button>
-                        <Button
-                          size="small"
-                          loading={updatingStatus}
-                          onClick={() => void handleQuickConfirm()}
-                        >
-                          {t("alerts.center.actions.quickConfirm")}
-                        </Button>
-                      </Space>
-                    </>
-                  ) : (
-                    <Typography.Text type="secondary">
-                      {t("alerts.center.detail.feedbackAdminOnly")}
-                    </Typography.Text>
-                  )}
-                </Space>
-              </DetailRow>
-
-              <DetailRow
-                label={t("alerts.center.detail.tuning")}
-              >
-                {canManageAlerts ? (
-                  tuningLoading ? (
-                    <Spin size="small" />
-                  ) : tuningError ? (
-                    <Typography.Text type="secondary">
-                      {t("alerts.center.detail.tuningError")}
-                    </Typography.Text>
-                  ) : tuningData?.alertRuleTuningSuggestion ? (
-                    <Space direction="vertical" size={2}>
-                      <Typography.Text type="secondary">
-                        {t("alerts.center.detail.tuningStats", {
-                          reviewed:
-                            tuningData.alertRuleTuningSuggestion.reviewedEvents,
-                          confirmed:
-                            tuningData.alertRuleTuningSuggestion
-                              .confirmedEvents,
-                          ignored:
-                            tuningData.alertRuleTuningSuggestion.ignoredEvents,
-                          rate:
-                            typeof tuningData.alertRuleTuningSuggestion
-                              .falsePositiveRate === "number"
-                              ? `${(tuningData.alertRuleTuningSuggestion.falsePositiveRate * 100).toFixed(1)}%`
-                              : t("common.notAvailable"),
-                        })}
-                      </Typography.Text>
-                      {tuningData.alertRuleTuningSuggestion.message ? (
-                        <Typography.Text>
-                          {tuningData.alertRuleTuningSuggestion.message}
-                        </Typography.Text>
-                      ) : (
-                        <Typography.Text type="secondary">
-                          {t("alerts.center.detail.tuningEmpty")}
-                        </Typography.Text>
-                      )}
-                      {typeof tuningData.alertRuleTuningSuggestion
-                        .suggestedThresholdValue === "number" ? (
-                        <Typography.Text type="secondary">
-                          {t("alerts.center.detail.tuningThreshold", {
-                            value:
-                              tuningData.alertRuleTuningSuggestion
-                                .suggestedThresholdValue,
-                          })}
-                        </Typography.Text>
-                      ) : null}
-                      {typeof tuningData.alertRuleTuningSuggestion
-                        .suggestedThresholdLower === "number" ||
-                      typeof tuningData.alertRuleTuningSuggestion
-                        .suggestedThresholdUpper === "number" ? (
-                        <Typography.Text type="secondary">
-                          {t("alerts.center.detail.tuningRange", {
-                            lower:
-                              tuningData.alertRuleTuningSuggestion
-                                .suggestedThresholdLower ??
-                              t("common.notAvailable"),
-                            upper:
-                              tuningData.alertRuleTuningSuggestion
-                                .suggestedThresholdUpper ??
-                              t("common.notAvailable"),
-                          })}
-                        </Typography.Text>
-                      ) : null}
-                    </Space>
-                  ) : (
-                    <Typography.Text type="secondary">
-                      {t("common.notAvailable")}
-                    </Typography.Text>
-                  )
-                ) : (
-                  <Typography.Text type="secondary">
-                    {t("alerts.center.detail.feedbackAdminOnly")}
-                  </Typography.Text>
-                )}
-              </DetailRow>
-            </Space>
-          ),
-        },
-        {
-          key: "deliveries",
-          label: t("alerts.center.tabs.deliveries"),
-          children: (
-            <List
-              size="small"
-              dataSource={selectedEvent.deliveries}
-              locale={{
-                emptyText: t("alerts.center.deliveriesEmpty"),
-              }}
-              renderItem={(delivery) => (
-                <List.Item>
-                  <Space size="small" wrap>
-                    <Tag
-                      color={deliveryStatusColor[delivery.status] ?? "default"}
-                    >
-                      {delivery.status}
-                    </Tag>
-                    <Tag>{delivery.channelType}</Tag>
-                    {delivery.channelName ? (
-                      <Typography.Text>{delivery.channelName}</Typography.Text>
-                    ) : null}
-                    {!delivery.channelName && delivery.target ? (
-                      <Typography.Text>{delivery.target}</Typography.Text>
-                    ) : null}
-                    {delivery.channelName && delivery.target ? (
-                      <Typography.Text type="secondary">
-                        {delivery.target}
-                      </Typography.Text>
-                    ) : null}
-                    <Typography.Text type="secondary">
-                      {delivery.sentAt
-                        ? formatDateTime(delivery.sentAt, locale, {
-                            year: "numeric",
-                            month: "2-digit",
-                            day: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            timeZoneName: "short",
-                          })
-                        : t("common.notAvailable")}
-                    </Typography.Text>
-                    {delivery.error ? (
-                      <Typography.Text type="secondary">
-                        {delivery.error}
-                      </Typography.Text>
-                    ) : null}
-                  </Space>
-                </List.Item>
-              )}
-            />
-          ),
-        },
-      ]
-    : [];
 
   const blockingEventsErrorState =
     eventsError && sortedEvents.length === 0
@@ -1757,63 +880,58 @@ export function AlertCenterContent() {
         </Col>
 
         <Col xs={24} xl={10}>
-          <Card
-            className="content-card"
-            title={t("alerts.center.evidenceTitle")}
-            extra={
-              <Space wrap>
-                <Button
-                  size="small"
-                  onClick={() =>
-                    previousEventId && handleSelectEvent(previousEventId)
-                  }
-                  disabled={!previousEventId}
-                >
-                  {t("alerts.center.actions.previous")}
-                </Button>
-                <Button
-                  size="small"
-                  onClick={() => nextEventId && handleSelectEvent(nextEventId)}
-                  disabled={!nextEventId}
-                >
-                  {t("alerts.center.actions.next")}
-                </Button>
-                <Button
-                  size="small"
-                  onClick={() => void handleCopyAlertMarkdown()}
-                  disabled={!selectedEvent}
-                >
-                  {t("alerts.center.actions.copyMarkdown")}
-                </Button>
-              </Space>
+          <AlertEventDetail
+            selectedEvent={selectedEvent}
+            selectedEventId={selectedEventId}
+            selectedIndexInFiltered={selectedIndexInFiltered}
+            filteredEvents={filteredEvents}
+            locale={locale}
+            objectKeyLabels={objectKeyLabels}
+            detailTab={detailTab}
+            onSetDetailTab={setDetailTab}
+            expandMessage={expandMessage}
+            expandContext={expandContext}
+            onToggleExpandMessage={() => setExpandMessage((prev) => !prev)}
+            onToggleExpandContext={() => setExpandContext((prev) => !prev)}
+            onCopyRawContext={() => void handleCopyRawContext()}
+            onCopyAlertMarkdown={() => void handleCopyAlertMarkdown()}
+            onSelectEvent={handleSelectEvent}
+            onOpenEvent={(eventId) => void handleOpenEvent(eventId)}
+            previousEventId={previousEventId}
+            nextEventId={nextEventId}
+            similarAlerts={similarAlerts}
+            ruleTrendAnalysis={ruleTrendAnalysis}
+            ruleTrendOption={ruleTrendOption}
+            replay={replay}
+            replayPoints={replayPoints}
+            replayLoading={replayLoading}
+            replayError={replayError}
+            replayOption={replayOption}
+            onReloadReplay={() =>
+              selectedEvent
+                ? loadReplay({
+                    variables: {
+                      eventId: selectedEvent.id,
+                      windowDays: 30,
+                    },
+                  })
+                : undefined
             }
-          >
-            {selectedEvent ? (
-              <Space
-                direction="vertical"
-                size="middle"
-                style={{ width: "100%" }}
-              >
-                {selectedIndexInFiltered === -1 && filteredEvents.length > 0 ? (
-                  <Alert
-                    type="warning"
-                    showIcon
-                    message={t("alerts.center.actions.filteredOut")}
-                  />
-                ) : null}
-                <Tabs
-                  activeKey={detailTab}
-                  onChange={setDetailTab}
-                  items={detailTabs}
-                />
-              </Space>
-            ) : (
-              <ChartEmptyState
-                className="h-auto py-6"
-                description={t("alerts.center.selectEvent")}
-              />
-            )}
-          </Card>
+            canManageAlerts={canManageAlerts}
+            feedbackNote={feedbackNote}
+            onSetFeedbackNote={setFeedbackNote}
+            updatingStatus={updatingStatus}
+            onEventStatusUpdate={(status) =>
+              void handleEventStatusUpdate(status)
+            }
+            onQuickConfirm={() => void handleQuickConfirm()}
+            tuningData={tuningData}
+            tuningLoading={tuningLoading}
+            tuningError={tuningError}
+            echartsTheme={echartsTheme}
+            colors={{ primary: colors.primary, accent: colors.accent }}
+            fontFamily={fontFamily}
+          />
         </Col>
       </Row>
       </DataStateBoundary>
