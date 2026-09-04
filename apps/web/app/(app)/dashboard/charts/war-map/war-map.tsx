@@ -1,9 +1,6 @@
 "use client";
 
-import {
-  WAR_MAP_LAYER_IDS,
-  type WarMapTranslateTarget,
-} from "@modular/utils";
+import { WAR_MAP_LAYER_IDS } from "@modular/utils";
 import { Grid } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef } from "react";

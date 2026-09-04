@@ -5,14 +5,14 @@ import type {
 
 import type { SupportedLocale } from "@/lib/i18n";
 
-import type {
-  WarMapDetailedChainStatus,
-  WarMapTranslateFn,
-} from "./war-map-overlay-model";
 import {
   formatWarMapRelativeTimestamp,
   getErrorMessage,
 } from "./war-map-format";
+import type {
+  WarMapDetailedChainStatus,
+  WarMapTranslateFn,
+} from "./war-map-overlay-model";
 
 export { formatWarMapRelativeTimestamp, getErrorMessage } from "./war-map-format";
 
