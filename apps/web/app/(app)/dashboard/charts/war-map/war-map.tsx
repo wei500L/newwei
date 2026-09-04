@@ -183,6 +183,7 @@ export function WarMap({
   const resolvedStreamState = streamState ?? internalStreamState;
 
   // 点位派生域：查询数据 → 点位/聚类/运输选择（不含图层构造）
+  const monitors = monitorsQuery.data ?? [];
   const pointsResult = useWarMapPoints({
     monitors,
     events: eventsQuery.data?.events,
@@ -210,6 +211,7 @@ export function WarMap({
     hoveredLegendItemKey,
     updateHoveredLegendItemKey,
     updateFocusedLegendItemKey,
+    scrollLegendDockIntoView,
   } = interactionResult;
 
   const transportDetailQuery = useWarMapTransportDetail({
@@ -384,7 +386,9 @@ export function WarMap({
     aisHighlightedCandidateCount,
     canRunAnalysis,
     analyzingCurrentView: submittingGeoTransport,
-    onAnalyzeCurrentView: () => void handleAnalyzeCurrentView(),
+    onAnalyzeCurrentView: () => {
+      void handleAnalyzeCurrentView();
+    },
   };
 
   // Overlay 面板组合域：rail / Inspector / Drawer / 桌面面板内容装配

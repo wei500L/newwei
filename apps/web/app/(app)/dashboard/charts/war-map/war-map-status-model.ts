@@ -3,7 +3,7 @@ import type {
   WarMapLayerVisibility,
 } from "@modular/utils";
 
-import type { SupportedLocale } from "@/lib/i18n";
+import { formatUpdatedAt, type SupportedLocale } from "@/lib/i18n";
 
 import {
   formatWarMapRelativeTimestamp,
