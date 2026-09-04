@@ -28,6 +28,7 @@ import { useWarMapContainer } from "./use-war-map-container";
 import { useWarMapData } from "./use-war-map-data";
 import { useWarMapInteraction } from "./use-war-map-interaction";
 import { useWarMapLayers } from "./use-war-map-layers";
+import { useWarMapOverlayContent } from "./use-war-map-overlay-content";
 import { useWarMapPoints } from "./use-war-map-points";
 import { useWarMapQueryState } from "./use-war-map-query-state";
 import {

@@ -126,7 +126,7 @@ export interface WarMapOverlayPanelsInteraction {
   closeSelectedInspector: () => void;
   zoomToSelectedInspector: () => void;
   openNewsLink: (url?: string | null) => void;
-  selectedInspector: SelectedInspector;
+  selectedInspector: SelectedInspector | null;
 }
 
 export interface UseWarMapOverlayPanelsOptions {

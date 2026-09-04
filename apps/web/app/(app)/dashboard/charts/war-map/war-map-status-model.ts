@@ -12,7 +12,10 @@ import {
 import { formatAisRuntimeReason } from "@/lib/realtime-signals-runtime";
 
 import { isAisViewportEmptyStateActive } from "./war-map-ais-mode";
-import type { WarMapTranslateFn } from "./war-map-overlay-model";
+import type {
+  WarMapDetailedChainStatus,
+  WarMapTranslateFn,
+} from "./war-map-overlay-model";
 import {
   formatWarMapClusterCountLabel,
   type WarMapTransportLegendState,
@@ -504,6 +507,7 @@ export interface WarMapChainStatusesParams {
   monitorsQuery: {
     isFetching: boolean;
     error: unknown;
+    data: unknown;
     dataUpdatedAt: number;
   };
   t: WarMapTranslateFn;
@@ -691,7 +695,7 @@ export interface WarMapStatusSummaryParams {
     ready: boolean;
     errorMessage: string | undefined;
     dataUpdatedAt: number | undefined;
-    sourceUpdatedAt: string | undefined;
+    sourceUpdatedAt: string | number | undefined;
     label: string;
     sourceUpdatedLabel: string;
   }[];

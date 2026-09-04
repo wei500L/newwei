@@ -1,5 +1,6 @@
 "use client";
 
+import type { MapboxOverlayProps } from "@deck.gl/mapbox";
 import type {
   WarMapAisMode,
   WarMapFlightMode,
@@ -41,11 +42,9 @@ export interface UseWarMapLayersOptions {
   translateTarget?: WarMapTranslateTarget;
   points: UseWarMapPointsResult;
   interaction: UseWarMapInteractionResult;
-  setOverlayProps: (props: {
-    layers: unknown[];
-    getTooltip: ReturnType<typeof createWarMapTooltipGetter>;
-    getCursor: ReturnType<typeof createWarMapCursorGetter>;
-  }) => void;
+  setOverlayProps: (
+    props: Pick<MapboxOverlayProps, "layers" | "getTooltip" | "getCursor">,
+  ) => void;
   hasRenderableContainer: boolean;
 }
 
