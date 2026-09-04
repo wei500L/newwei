@@ -9,7 +9,7 @@ import { DashboardChart } from "@/components/echart";
 import { AlertMetricProvider } from "@/graphql/generated";
 import { formatDateTime, type resolveLocale } from "@/lib/i18n";
 
-import type { AlertEventItem, TranslateFn } from "./alert-center-list-model";
+import type { AlertEventItem } from "./alert-center-list-model";
 import { buildAlertEventDetailModel } from "./alert-event-detail-model";
 import { EconomicAnomalyEvidence } from "./economic-anomaly-evidence";
 import { EntityAssociationEvidence } from "./entity-association-evidence";

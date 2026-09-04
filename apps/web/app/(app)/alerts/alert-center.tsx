@@ -3,7 +3,6 @@
 import {
   Button,
   Col,
-  Input,
   Row,
   Space,
   Typography,
@@ -16,26 +15,19 @@ import { useTranslation } from "react-i18next";
 
 import { DataStateBoundary, type DataStateBoundaryState } from "@/components/data-state-boundary";
 import type { AlertMetricProvider } from "@/graphql/generated";
-import {
-  useAlertEventReplayLazyQuery,
-  useAlertRuleTuningSuggestionQuery,
-} from "@/graphql/generated";
+import { useAlertRuleTuningSuggestionQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
-import {
-  buildCsv,
-  downloadCsv,
-  downloadTextFile,
-  formatDateForFilename,
-} from "@/lib/data-export";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
+import {
+  createCopyRawContextHandler,
+  createExportHandlers,
+} from "./alert-center-actions";
 import { buildAlertDataState } from "./alert-center-data-state";
 import { AlertCenterFilters } from "./alert-center-filters";
 import { buildThresholdSummary } from "./alert-center-list-model";
 import { AlertCenterSummary } from "./alert-center-summary";
 import {
-  buildAlertExportJson,
-  buildAlertExportRows,
   buildAlertStats,
   buildAlertTrend,
   buildRuleTrendAnalysis,
@@ -60,6 +52,7 @@ import {
   toNumber,
 } from "./evidence-utils";
 import { useAlertCenterUrlState } from "./hooks/use-alert-center-url-state";
+import { useAlertEventDetail } from "./hooks/use-alert-event-detail";
 import { useAlertEventSelection } from "./hooks/use-alert-event-selection";
 import { useAlertEventStatusActions } from "./hooks/use-alert-event-status-actions";
 import { useAlertEventsFeed } from "./hooks/use-alert-events-feed";
@@ -75,13 +68,9 @@ export function AlertCenterContent() {
   const [messageApi, messageContext] = message.useMessage();
 
   const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
-  const [feedbackNote, setFeedbackNote] = useState<string>("");
   const [bulkNote, setBulkNote] = useState<string>("");
   const [includeRawExport, setIncludeRawExport] = useState<boolean>(false);
-  const [detailTab, setDetailTab] = useState<string>("overview");
   const [exportScope, setExportScope] = useState<AlertExportScope>("selected");
-  const [expandMessage, setExpandMessage] = useState<boolean>(false);
-  const [expandContext, setExpandContext] = useState<boolean>(false);
 
   // 数据 feed（FE-批3B）：query / 订阅 / coalesced refetch / 排序 / 300→500。
   // messageApi 来自本组件已渲染的 useMessage 实例（提示真正展示）
@@ -121,11 +110,6 @@ export function AlertCenterContent() {
   } = useAlertCenterUrlState();
 
   const { echartsTheme, colors, fontFamily } = useChartTheme();
-
-  const [
-    loadReplay,
-    { data: replayData, loading: replayLoading, error: replayError },
-  ] = useAlertEventReplayLazyQuery();
 
   // rule keyword 的 220ms debounce 由 useAlertCenterUrlState 承载
   // （输入即时值 ruleKeywordInput → 静默后写入 URL q → appliedRuleKeyword）
@@ -226,61 +210,26 @@ export function AlertCenterContent() {
     setSelectedEventIds((prev) => prev.filter((id) => existingIds.has(id)));
   }, [sortedEvents]);
 
-  useEffect(() => {
-    if (!selectedEvent) {
-      setFeedbackNote("");
-      return;
-    }
-    const eventContext =
-      selectedEvent.context && typeof selectedEvent.context === "object"
-        ? (selectedEvent.context as Record<string, unknown>)
-        : null;
-    const feedback =
-      eventContext?.feedback &&
-      typeof eventContext.feedback === "object" &&
-      !Array.isArray(eventContext.feedback)
-        ? (eventContext.feedback as Record<string, unknown>)
-        : null;
-    const note = typeof feedback?.note === "string" ? feedback.note : "";
-    setFeedbackNote(note);
-  }, [selectedEvent]);
-
-  useEffect(() => {
-    setDetailTab("overview");
-    setExpandContext(false);
-    setExpandMessage(false);
-  }, [selectedEventId]);
+  // 详情域状态（FE-批3B）：replay 懒加载 / feedback note 预填 / tab 重置
+  const {
+    loadReplay,
+    replay,
+    replayPoints,
+    replayUnit,
+    replayLoading,
+    replayError,
+    detailTab,
+    setDetailTab,
+    expandMessage,
+    toggleExpandMessage,
+    expandContext,
+    toggleExpandContext,
+    feedbackNote,
+    setFeedbackNote,
+  } = useAlertEventDetail({ selectedEvent, selectedEventId });
 
   // 筛选变化后的 page 重置由 useAlertCenterUrlState 的 updateFilters 承载
   // （任何筛选 patch 都将 page 归 1；URL 外部变化时筛选与 page 同源采纳）
-
-  useEffect(() => {
-    if (detailTab !== "replay" || !selectedEvent) {
-      return;
-    }
-    if (replayData?.alertEventReplay?.eventId === selectedEvent.id) {
-      return;
-    }
-    loadReplay({
-      variables: {
-        eventId: selectedEvent.id,
-        windowDays: 30,
-      },
-    });
-  }, [
-    detailTab,
-    loadReplay,
-    replayData?.alertEventReplay?.eventId,
-    selectedEvent,
-  ]);
-
-  const replay =
-    replayData?.alertEventReplay &&
-    replayData.alertEventReplay.eventId === selectedEvent?.id
-      ? replayData.alertEventReplay
-      : null;
-  const replayPoints = replay?.points;
-  const replayUnit = replay?.unit;
 
   const handleOpenEvent = async (eventId: string) => {
     if (!eventId) {
@@ -331,56 +280,14 @@ export function AlertCenterContent() {
     [currentPageEvents, exportScope, selectedEventsForBatch],
   );
 
-  const handleExportCsv = async () => {
-    if (exportEvents.length === 0) {
-      return;
-    }
-    try {
-      const rows = buildAlertExportRows(exportEvents, {
-        includeContext: includeRawExport,
-        includeDeliveries: includeRawExport,
-      });
-      const csv = await buildCsv(rows);
-      const filename = `alerts-${formatDateForFilename(new Date())}.csv`;
-      downloadCsv({ csv, filename });
-      messageApi.success(
-        t("alerts.center.export.success"),
-      );
-    } catch (error) {
-      messageApi.error(
-        error instanceof Error
-          ? error.message
-          : t("alerts.center.export.failed"),
-      );
-    }
-  };
-
-  const handleExportJson = () => {
-    if (exportEvents.length === 0) {
-      return;
-    }
-    try {
-      const filename = `alerts-${formatDateForFilename(new Date())}.json`;
-      const payload = JSON.stringify(
-        buildAlertExportJson(exportEvents, {
-          includeContext: includeRawExport,
-          includeDeliveries: includeRawExport,
-        }),
-        null,
-        2,
-      );
-      downloadTextFile(payload, filename, "application/json;charset=utf-8");
-      messageApi.success(
-        t("alerts.center.export.success"),
-      );
-    } catch (error) {
-      messageApi.error(
-        error instanceof Error
-          ? error.message
-          : t("alerts.center.export.failed"),
-      );
-    }
-  };
+  // 导出域（FE-批3B）：scope/includeRaw 语义在 alert-center-actions 保持
+  const { exportCsv: handleExportCsv, exportJson: handleExportJson } =
+    createExportHandlers({
+      getExportEvents: () => exportEvents,
+      includeRawExport,
+      messageApi,
+      t,
+    });
 
   const stats = useMemo(
     () => buildAlertStats(filteredEvents),
@@ -537,23 +444,10 @@ export function AlertCenterContent() {
       )
     : t("common.notAvailable");
 
-  const handleCopyRawContext = async () => {
-    if (!context) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(safeJsonStringify(context));
-      messageApi.success(
-        t("alerts.center.contextCopied"),
-      );
-    } catch (error) {
-      messageApi.error(
-        error instanceof Error
-          ? error.message
-          : t("alerts.center.contextCopyFailed"),
-      );
-    }
-  };
+  const handleCopyRawContext = createCopyRawContextHandler(context, {
+    messageApi,
+    t,
+  });
 
   const handleCopyAlertMarkdown = async () => {
     if (!selectedEvent) {
