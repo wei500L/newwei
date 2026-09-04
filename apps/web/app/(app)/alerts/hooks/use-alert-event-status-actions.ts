@@ -1,9 +1,9 @@
 "use client";
 
 import { gql, useMutation } from "@apollo/client";
-import { message } from "antd";
 import { useState } from "react";
-import { useTranslation } from "react-i18next";
+
+import type { AlertMessageApi } from "./use-alert-events-feed";
 
 /**
  * Alert Center 状态修改与批量操作（FE-批3B 从 alert-center.tsx 提取）。
@@ -14,6 +14,9 @@ import { useTranslation } from "react-i18next";
  * - 任一成功后 refetch 事件（+ tuning）；
  * - `alerts.manage` 双重门禁：无权限时 executeStatusUpdate 直接短路返回，
  *   mutation 路径不可达（即使按钮被绕过渲染）。
+ *
+ * 消息提示与文案由编排层传入（messageApi 必须来自已渲染 context 的
+ * useMessage 实例；t 由编排层的 i18n 上下文提供）。
  */
 
 const UPDATE_ALERT_EVENT_STATUS = gql`
@@ -41,6 +44,11 @@ const STATUS_BATCH_SIZE = 20;
 
 export interface UseAlertEventStatusActionsOptions {
   canManageAlerts: boolean;
+  messageApi: AlertMessageApi;
+  /** 成功提示文案（count/status 已插值）。 */
+  successMessage: (count: number, status: string) => string;
+  /** 部分失败提示文案（count 已插值）。 */
+  partialFailureMessage: (count: number) => string;
   refetchAfterSuccess: () => Promise<void>;
 }
 
@@ -57,10 +65,11 @@ export interface UseAlertEventStatusActionsResult {
 
 export function useAlertEventStatusActions({
   canManageAlerts,
+  messageApi,
+  successMessage,
+  partialFailureMessage,
   refetchAfterSuccess,
 }: UseAlertEventStatusActionsOptions): UseAlertEventStatusActionsResult {
-  const { t } = useTranslation();
-  const [messageApi] = message.useMessage();
   const [batchProgress, setBatchProgress] = useState<{
     done: number;
     total: number;
@@ -114,19 +123,10 @@ export function useAlertEventStatusActions({
     setBatchProgress(null);
 
     if (successCount > 0) {
-      messageApi.success(
-        t("alerts.center.batch.updateSuccess", {
-          count: successCount,
-          status,
-        }),
-      );
+      messageApi.success(successMessage(successCount, status));
     }
     if (failCount > 0) {
-      messageApi.warning(
-        t("alerts.center.batch.updatePartial", {
-          count: failCount,
-        }),
-      );
+      messageApi.warning(partialFailureMessage(failCount));
     }
 
     if (successCount > 0) {

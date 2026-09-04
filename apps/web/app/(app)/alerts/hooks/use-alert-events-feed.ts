@@ -1,15 +1,12 @@
 "use client";
 
 import { useApolloClient } from "@apollo/client";
-import { message } from "antd";
-import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
 
 import { AlertEventsStreamDocument, useAlertEventsQuery } from "@/graphql/generated";
 import { createCoalescedRefetchScheduler } from "@/lib/coalesced-refetch";
 
-import { resolveAlertCenterAccess, type AlertEventItem } from "../alert-center.utils";
+import type { AlertEventItem } from "../alert-center.utils";
 
 /**
  * Alert Center 事件数据 feed（FE-批3B 从 alert-center.tsx 提取）。
@@ -21,9 +18,28 @@ import { resolveAlertCenterAccess, type AlertEventItem } from "../alert-center.u
  * - sampled/load-more 状态（MAX_EVENTS_LIMIT=500，每次 +200）；
  * - refetch 接口（页面刷新 / 批量成功后 / 深链扩充共用）；
  * - 深链 eventId 不在当前数据集时：扩充 limit 至 500 并 refetch（一次性）。
+ *
+ * 会话/权限派生（resolveAlertCenterAccess）留在编排层：DataStateBoundary
+ * 分派同样消费 authenticated/canReadAlerts/shouldQueryEvents，此处只接收
+ * fail-closed 的查询门禁布尔值。消息提示 messageApi 同理由编排层传入
+ * （未渲染 context 元素的 useMessage 实例不会真正展示消息）。
  */
 
+export type AlertMessageApi = {
+  success: (content: string) => void;
+  error: (content: string) => void;
+  warning: (content: string) => void;
+};
+
 const MAX_EVENTS_LIMIT = 500;
+
+export interface UseAlertEventsFeedOptions {
+  /** fail-closed 查询门禁（alerts.read），由编排层派生。 */
+  shouldQueryEvents: boolean;
+  messageApi: AlertMessageApi;
+  /** 深链事件不在数据集时 refetch 失败的提示文案。 */
+  errorMessage: (error: Error) => string;
+}
 
 export interface UseAlertEventsFeedResult {
   eventsData: ReturnType<typeof useAlertEventsQuery>["data"];
@@ -39,16 +55,12 @@ export interface UseAlertEventsFeedResult {
   ensureEventLoaded: (eventId: string) => Promise<void>;
 }
 
-export function useAlertEventsFeed(): UseAlertEventsFeedResult {
-  const { t } = useTranslation();
+export function useAlertEventsFeed({
+  shouldQueryEvents,
+  messageApi,
+  errorMessage,
+}: UseAlertEventsFeedOptions): UseAlertEventsFeedResult {
   const client = useApolloClient();
-  const { data: session, status: sessionStatus } = useSession();
-  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
-  const { shouldQueryEvents } = resolveAlertCenterAccess(
-    sessionStatus,
-    permissions,
-  );
-  const [messageApi] = message.useMessage();
 
   const [eventsLimit, setEventsLimit] = useState(300);
 
@@ -118,7 +130,7 @@ export function useAlertEventsFeed(): UseAlertEventsFeedResult {
         await refetchEvents({ limit: nextLimit });
       } catch (error) {
         messageApi.error(
-          error instanceof Error ? error.message : t("common.error.unexpected"),
+          error instanceof Error ? error.message : errorMessage(error),
         );
       }
     }

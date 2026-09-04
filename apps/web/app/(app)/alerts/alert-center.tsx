@@ -231,7 +231,8 @@ export function AlertCenterContent() {
   const [expandMessage, setExpandMessage] = useState<boolean>(false);
   const [expandContext, setExpandContext] = useState<boolean>(false);
 
-  // 数据 feed（FE-批3B）：query / 订阅 / coalesced refetch / 排序 / 300→500
+  // 数据 feed（FE-批3B）：query / 订阅 / coalesced refetch / 排序 / 300→500。
+  // messageApi 来自本组件已渲染的 useMessage 实例（提示真正展示）
   const {
     eventsData,
     eventsError,
@@ -243,7 +244,11 @@ export function AlertCenterContent() {
     eventsLimit,
     loadMoreEvents,
     ensureEventLoaded,
-  } = useAlertEventsFeed();
+  } = useAlertEventsFeed({
+    shouldQueryEvents,
+    messageApi,
+    errorMessage: () => t("common.error.unexpected"),
+  });
 
   // FE-01：筛选 / 分页 / 关键字 / 日期 / eventId 全部 URL-backed
   // （批量选择、备注、导出 scope、展开态、detailTab 仍为
@@ -351,6 +356,11 @@ export function AlertCenterContent() {
     executeStatusUpdate,
   } = useAlertEventStatusActions({
     canManageAlerts,
+    messageApi,
+    successMessage: (count, status) =>
+      t("alerts.center.batch.updateSuccess", { count, status }),
+    partialFailureMessage: (count) =>
+      t("alerts.center.batch.updatePartial", { count }),
     refetchAfterSuccess: async () => {
       await refetchEvents();
       if (selectedRuleId && canManageAlerts) {
