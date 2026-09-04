@@ -1,9 +1,8 @@
 import type { EChartsOption } from "echarts";
 
+import type { AlertEventReplayQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
 import { ALERT_LINE_COLORS } from "@/lib/status-tokens";
-
-import type { AlertEventReplayQuery } from "@/graphql/generated";
 
 import type {
   AlertEventItem,
