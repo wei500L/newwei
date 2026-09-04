@@ -106,7 +106,7 @@ export function buildReplayOption(
         ...(markLineData.length > 0
           ? {
               markLine: {
-                symbol: "none",
+                symbol: "none" as const,
                 data: markLineData,
               },
             }

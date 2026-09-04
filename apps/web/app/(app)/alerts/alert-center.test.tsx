@@ -469,7 +469,7 @@ describe("Alert Center 筛选语义（迁移前行为）", () => {
   });
 
   it("provider 快速标签与完整筛选器同源：快速标签写入同一筛选状态", async () => {
-    renderAlertCenter({
+    const view = renderAlertCenter({
       events: [
         buildAlertEvent({
           id: "e-1",
