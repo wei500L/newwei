@@ -33,9 +33,11 @@ export default defineConfig({
         // FE-批3：Alert Center 领域模块（FE-03 include 扩充）
         "app/(app)/alerts/alert-center.tsx",
         "app/(app)/alerts/alert-center-url-state.ts",
+        "app/(app)/alerts/alert-center-filters.tsx",
         "app/(app)/alerts/hooks/use-alert-center-url-state.ts",
         "app/(app)/alerts/hooks/use-alert-events-feed.ts",
         "app/(app)/alerts/hooks/use-alert-event-status-actions.ts",
+        "app/(app)/alerts/hooks/use-alert-event-selection.ts",
         "app/(app)/alerts/alert-chart-options.ts",
         "app/(app)/alerts/evidence-utils.tsx",
         "app/(app)/alerts/economic-anomaly-evidence.tsx",

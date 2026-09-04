@@ -8,9 +8,6 @@ import {
   Card,
   Checkbox,
   Col,
-  Collapse,
-  DatePicker,
-  Divider,
   Input,
   List,
   Pagination,
@@ -18,7 +15,6 @@ import {
   Progress,
   Row,
   Segmented,
-  Select,
   Space,
   Spin,
   Statistic,
@@ -27,7 +23,6 @@ import {
   Typography,
   message,
 } from "antd";
-import type { Dayjs } from "dayjs";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -48,12 +43,12 @@ import {
   downloadTextFile,
   formatDateForFilename,
 } from "@/lib/data-export";
-import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { classifyRequestError } from "@/lib/request-error";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 
 import { ALERT_URL_PAGE_SIZES } from "./alert-center-url-state";
+import { AlertCenterFilters } from "./alert-center-filters";
 import {
   buildAlertExportJson,
   buildAlertExportRows,
@@ -61,12 +56,11 @@ import {
   buildAlertTrend,
   buildRuleTrendAnalysis,
   buildSimilarAlerts,
+  DEFAULT_FILTER_STATE,
   filterAlertEvents,
   resolveAlertCenterAccess,
-  resolveSelectedEventId,
   resolveFilterTimeWindow,
   type AlertEventItem,
-  type AlertDatePreset,
   type AlertFilterState,
 } from "./alert-center.utils";
 import {
@@ -92,6 +86,7 @@ import {
   toStringValue,
 } from "./evidence-utils";
 import { useAlertCenterUrlState } from "./hooks/use-alert-center-url-state";
+import { useAlertEventSelection } from "./hooks/use-alert-event-selection";
 import { useAlertEventStatusActions } from "./hooks/use-alert-event-status-actions";
 import { useAlertEventsFeed } from "./hooks/use-alert-events-feed";
 import { RealtimeSignalEvidence } from "./realtime-signal-evidence";
@@ -171,39 +166,6 @@ const buildThresholdSummary = (
   return `${symbol} ${thresholdValue}`;
 };
 
-const { CheckableTag } = Tag;
-
-const DEFAULT_FILTER_STATE: AlertFilterState = {
-  severities: [],
-  statuses: [],
-  providers: [],
-  ruleKeyword: "",
-  datePreset: "30d",
-  customRangeMs: null,
-};
-
-const REALTIME_SIGNAL_PROVIDER = AlertMetricProvider.RealtimeSignal;
-
-const PROVIDER_FILTER_OPTIONS = [
-  AlertMetricProvider.EconomicAnomaly,
-  AlertMetricProvider.EntitySentiment,
-  AlertMetricProvider.EntityAssociation,
-  AlertMetricProvider.EconomicData,
-  AlertMetricProvider.SystemMetric,
-  AlertMetricProvider.SystemEvent,
-  AlertMetricProvider.PipelineJob,
-  AlertMetricProvider.CrawlTask,
-  REALTIME_SIGNAL_PROVIDER,
-];
-
-const SEVERITY_OPTIONS = ["low", "medium", "high"];
-const STATUS_OPTIONS = [
-  "delivered",
-  "pending",
-  "failed",
-  "confirmed",
-  "ignored",
-];
 const CONTEXT_OBJECT_KEYS = [
   {
     key: "countryName",
@@ -258,13 +220,11 @@ export function AlertCenterContent() {
   const canManageAlerts = permissions.includes("alerts.manage");
   const [messageApi, messageContext] = message.useMessage();
 
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
   const [feedbackNote, setFeedbackNote] = useState<string>("");
   const [bulkNote, setBulkNote] = useState<string>("");
   const [includeRawExport, setIncludeRawExport] = useState<boolean>(false);
   const [detailTab, setDetailTab] = useState<string>("overview");
-  const [openFilterPanelKeys, setOpenFilterPanelKeys] = useState<string[]>([]);
   const eventsListRef = useRef<HTMLDivElement | null>(null);
   const [eventsListScrollMargin, setEventsListScrollMargin] = useState(0);
   const [exportScope, setExportScope] = useState<AlertExportScope>("selected");
@@ -310,6 +270,63 @@ export function AlertCenterContent() {
     { data: replayData, loading: replayLoading, error: replayError },
   ] = useAlertEventReplayLazyQuery();
 
+  // rule keyword 的 220ms debounce 由 useAlertCenterUrlState 承载
+  // （输入即时值 ruleKeywordInput → 静默后写入 URL q → appliedRuleKeyword）
+  const filterStateForQuery = useMemo<AlertFilterState>(
+    () => ({
+      ...filterState,
+      ruleKeyword: appliedRuleKeyword,
+    }),
+    [appliedRuleKeyword, filterState],
+  );
+  const filterWindow = useMemo(
+    () =>
+      resolveFilterTimeWindow({
+        ...DEFAULT_FILTER_STATE,
+        datePreset: filterState.datePreset,
+        customRangeMs: filterState.customRangeMs,
+      }),
+    [filterState.customRangeMs, filterState.datePreset],
+  );
+  const filteredEvents = useMemo(
+    () => filterAlertEvents(sortedEvents, filterStateForQuery, filterWindow),
+    [filterStateForQuery, filterWindow, sortedEvents],
+  );
+  const filteredEventIdSet = useMemo(
+    () => new Set(filteredEvents.map((event) => event.id)),
+    [filteredEvents],
+  );
+
+  const listPageCount = Math.max(
+    1,
+    Math.ceil(filteredEvents.length / listPageSize),
+  );
+  const currentPageEvents = useMemo(() => {
+    const start = (listPage - 1) * listPageSize;
+    return filteredEvents.slice(start, start + listPageSize);
+  }, [filteredEvents, listPage, listPageSize]);
+
+  // 选择与分页协调（FE-批3B）：默认选中 / filtered-out 保留 / URL eventId
+  // 协调 / 一次性深链定位 / page 越界收敛（FE-01 优先级契约，见 hook 注释）
+  const isEventsDataReady =
+    shouldQueryEvents && !eventsLoading && eventsData !== undefined;
+  const {
+    selectedEventId,
+    selectedEvent,
+    handleSelectEvent,
+    selectedIndexInFiltered,
+  } = useAlertEventSelection({
+    eventParam,
+    sortedEvents,
+    filteredEvents,
+    listPage,
+    listPageSize,
+    listPageCount,
+    isEventsDataReady,
+    setEventId,
+    setPagePreservingEventId,
+  });
+
   const selectedRuleId = useMemo(
     () =>
       sortedEvents.find((event) => event.id === selectedEventId)?.ruleId ??
@@ -341,50 +358,6 @@ export function AlertCenterContent() {
       }
     },
   });
-
-  // rule keyword 的 220ms debounce 由 useAlertCenterUrlState 承载
-  // （输入即时值 ruleKeywordInput → 静默后写入 URL q → appliedRuleKeyword）
-  const filterStateForQuery = useMemo<AlertFilterState>(
-    () => ({
-      ...filterState,
-      ruleKeyword: appliedRuleKeyword,
-    }),
-    [appliedRuleKeyword, filterState],
-  );
-  const filterWindow = useMemo(
-    () =>
-      resolveFilterTimeWindow({
-        ...DEFAULT_FILTER_STATE,
-        datePreset: filterState.datePreset,
-        customRangeMs: filterState.customRangeMs,
-      }),
-    [filterState.customRangeMs, filterState.datePreset],
-  );
-  const filteredEvents = useMemo(
-    () => filterAlertEvents(sortedEvents, filterStateForQuery, filterWindow),
-    [filterStateForQuery, filterWindow, sortedEvents],
-  );
-  const filteredEventIdSet = useMemo(
-    () => new Set(filteredEvents.map((event) => event.id)),
-    [filteredEvents],
-  );
-
-  const selectedEvent = useMemo(
-    () => sortedEvents.find((event) => event.id === selectedEventId) ?? null,
-    [selectedEventId, sortedEvents],
-  );
-
-  useEffect(() => {
-    const nextSelectedEventId = resolveSelectedEventId({
-      eventParam,
-      selectedEventId,
-      sortedEvents,
-      filteredEvents,
-    });
-    if (nextSelectedEventId !== selectedEventId) {
-      setSelectedEventId(nextSelectedEventId);
-    }
-  }, [eventParam, filteredEvents, selectedEventId, sortedEvents]);
 
   useEffect(() => {
     const existingIds = new Set(sortedEvents.map((event) => event.id));
@@ -447,11 +420,6 @@ export function AlertCenterContent() {
   const replayPoints = replay?.points;
   const replayUnit = replay?.unit;
 
-  const handleSelectEvent = (eventId: string) => {
-    setSelectedEventId(eventId);
-    setEventId(eventId);
-  };
-
   const handleOpenEvent = async (eventId: string) => {
     if (!eventId) {
       return;
@@ -496,14 +464,6 @@ export function AlertCenterContent() {
     () => sortedEvents.filter((event) => selectedEventIdSet.has(event.id)),
     [selectedEventIdSet, sortedEvents],
   );
-  const listPageCount = Math.max(
-    1,
-    Math.ceil(filteredEvents.length / listPageSize),
-  );
-  const currentPageEvents = useMemo(() => {
-    const start = (listPage - 1) * listPageSize;
-    return filteredEvents.slice(start, start + listPageSize);
-  }, [filteredEvents, listPage, listPageSize]);
   const shouldVirtualizeCurrentEvents = shouldVirtualizeAlertEvents(
     currentPageEvents.length,
   );
@@ -671,9 +631,6 @@ export function AlertCenterContent() {
     [filterWindow, selectedEvent?.ruleId, sortedEvents],
   );
 
-  const selectedIndexInFiltered = filteredEvents.findIndex(
-    (event) => event.id === selectedEventId,
-  );
   const previousEventId =
     selectedIndexInFiltered > 0
       ? filteredEvents[selectedIndexInFiltered - 1]?.id
@@ -683,42 +640,6 @@ export function AlertCenterContent() {
     selectedIndexInFiltered < filteredEvents.length - 1
       ? filteredEvents[selectedIndexInFiltered + 1]?.id
       : null;
-
-  const customRangeValue = useMemo<[Dayjs, Dayjs] | null>(() => {
-    if (!filterState.customRangeMs) {
-      return null;
-    }
-    const [start, end] = filterState.customRangeMs;
-    if (typeof start !== "number" || typeof end !== "number") {
-      return null;
-    }
-    return [dayjs(start), dayjs(end)] as [Dayjs, Dayjs];
-  }, [filterState.customRangeMs]);
-
-  const toggleProviderTag = (
-    provider: AlertMetricProvider,
-    checked: boolean,
-  ) => {
-    updateFilters({
-      providers: checked
-        ? [...new Set([...filterState.providers, provider])]
-        : filterState.providers.filter((item) => item !== provider),
-    });
-  };
-
-  const toggleTimeTag = (preset: AlertDatePreset, checked: boolean) => {
-    if (checked) {
-      updateFilters(
-        preset === "custom"
-          ? { datePreset: "custom" }
-          : { datePreset: preset },
-      );
-      return;
-    }
-    if (filterState.datePreset === preset) {
-      updateFilters({ datePreset: "today" });
-    }
-  };
 
   const selectedInFilterCount = useMemo(
     () =>
@@ -765,79 +686,12 @@ export function AlertCenterContent() {
     });
   };
 
-  const handleResetFilters = () => {
-    updateFilters({
-      severities: [],
-      statuses: [],
-      providers: [],
-      ruleKeyword: "",
-      datePreset: DEFAULT_FILTER_STATE.datePreset,
-      customRangeMs: null,
-    });
-    setRuleKeywordInput("");
-  };
-
   const handleRefresh = async () => {
     await refetchEvents();
     if (canManageAlerts && selectedRuleId) {
       await refetchTuning({ ruleId: selectedRuleId, windowDays: 30 });
     }
   };
-
-  // FE-01 分页优先级契约（完整定义见 useAlertCenterUrlState 注释）。
-  //
-  // page 越界收敛（优先级 6）：仅在事件查询完成后执行 —— 加载中/未授权时
-  // filteredEvents 为空、listPageCount 恒为 1，此时收敛会把 URL ?page=2
-  // 在数据到达前改写回 1，破坏纯 page 分享链接的恢复。走自动写路径保留
-  // eventId：深链 ?eventId=X&page=99 收敛到最后一页后，下方的事件定位
-  // （优先级 1）仍可执行，不因收敛丢失 eventId。
-  const isEventsDataReady =
-    shouldQueryEvents && !eventsLoading && eventsData !== undefined;
-  useEffect(() => {
-    if (isEventsDataReady && listPage > listPageCount) {
-      setPagePreservingEventId(listPageCount);
-    }
-  }, [isEventsDataReady, listPage, listPageCount, setPagePreservingEventId]);
-
-  // 外部 eventId（深链/分享链接/back-forward/行内点击）→ 一次性定位到该
-  // 事件所在页（优先级 1/8）。eventParam 变化时把定位请求排入 ref，事件
-  // 数据就绪后消费一次；此后不再监听 listPage —— 用户翻页 / 改 pageSize /
-  // 筛选变化（优先级 2-4）不会被旧选中事件拉回。定位写入走自动路径
-  // （保留 eventId），与用户分页的手动写入路径区分。
-  const lastSeenEventParamRef = useRef<string | null>(eventParam);
-  const pendingEventPositionRef = useRef<string | null>(eventParam);
-  useEffect(() => {
-    if (eventParam !== lastSeenEventParamRef.current) {
-      lastSeenEventParamRef.current = eventParam;
-      pendingEventPositionRef.current = eventParam;
-    }
-    const pending = pendingEventPositionRef.current;
-    if (!pending) {
-      return;
-    }
-    const index = filteredEvents.findIndex((event) => event.id === pending);
-    if (index < 0) {
-      // 事件不在当前筛选视图：已出现在数据集则放弃本次定位（与
-      // resolveSelectedEventId 的「选中保留、页码不动」语义一致）；
-      // 数据尚未加载（不在 sortedEvents）时保持等待。
-      if (sortedEvents.some((event) => event.id === pending)) {
-        pendingEventPositionRef.current = null;
-      }
-      return;
-    }
-    pendingEventPositionRef.current = null;
-    const targetPage = Math.floor(index / listPageSize) + 1;
-    if (targetPage !== listPage) {
-      setPagePreservingEventId(targetPage);
-    }
-  }, [
-    eventParam,
-    filteredEvents,
-    listPage,
-    listPageSize,
-    setPagePreservingEventId,
-    sortedEvents,
-  ]);
 
   const replayOption = useMemo<EChartsOption>(
     () =>
@@ -2006,233 +1860,14 @@ export function AlertCenterContent() {
         </Col>
       </Row>
 
-      <Card className="content-card">
-        <Collapse
-          bordered={false}
-          activeKey={openFilterPanelKeys}
-          onChange={(keys) =>
-            setOpenFilterPanelKeys(
-              Array.isArray(keys) ? keys : keys ? [keys] : [],
-            )
-          }
-          items={[
-            {
-              key: "filters",
-              label: t("alerts.center.filters.title"),
-              children: (
-                <Space
-                  direction="vertical"
-                  size="middle"
-                  style={{ width: "100%" }}
-                >
-                  <Row gutter={[12, 12]}>
-                    <Col xs={24} md={12} xl={8}>
-                      <Typography.Text type="secondary">
-                        {t("alerts.center.filters.severity.label")}
-                      </Typography.Text>
-                      <Select
-                        mode="multiple"
-                        allowClear
-                        style={{ width: "100%" }}
-                        value={filterState.severities}
-                        onChange={(value) => updateFilters({ severities: value })}
-                        options={SEVERITY_OPTIONS.map((severity) => ({
-                          value: severity,
-                          label: t(
-                            `alerts.center.filters.severity.${severity}`,
-                            {
-                              defaultValue: severity,
-                            },
-                          ),
-                        }))}
-                      />
-                    </Col>
-                    <Col xs={24} md={12} xl={8}>
-                      <Typography.Text type="secondary">
-                        {t("alerts.center.filters.status.label")}
-                      </Typography.Text>
-                      <Select
-                        mode="multiple"
-                        allowClear
-                        style={{ width: "100%" }}
-                        value={filterState.statuses}
-                        onChange={(value) => updateFilters({ statuses: value })}
-                        options={STATUS_OPTIONS.map((status) => ({
-                          value: status,
-                          label: t(`alerts.center.filters.status.${status}`, {
-                            defaultValue: status,
-                          }),
-                        }))}
-                      />
-                    </Col>
-                    <Col xs={24} md={12} xl={8}>
-                      <Typography.Text type="secondary">
-                        {t("alerts.center.filters.provider.label")}
-                      </Typography.Text>
-                      <Select
-                        mode="multiple"
-                        allowClear
-                        style={{ width: "100%" }}
-                        value={filterState.providers}
-                        onChange={(value) => updateFilters({ providers: value })}
-                        options={PROVIDER_FILTER_OPTIONS.map((provider) => ({
-                          value: provider,
-                          label: t(`alerts.metricProviders.${provider}`, {
-                            defaultValue: provider,
-                          }),
-                        }))}
-                      />
-                    </Col>
-                    <Col xs={24} md={12} xl={12}>
-                      <Typography.Text type="secondary">
-                        {t("alerts.center.filters.ruleKeyword.label")}
-                      </Typography.Text>
-                      <Input
-                        allowClear
-                        value={ruleKeywordInput}
-                        onChange={(event) =>
-                          setRuleKeywordInput(event.target.value)
-                        }
-                        placeholder={t(
-                          "alerts.center.filters.ruleKeyword.placeholder",
-                        )}
-                      />
-                    </Col>
-                    <Col xs={24} md={12} xl={12}>
-                      <Typography.Text type="secondary">
-                        {t("alerts.center.filters.time.label")}
-                      </Typography.Text>
-                      <Space
-                        direction="vertical"
-                        size={8}
-                        style={{ width: "100%" }}
-                      >
-                        <Segmented
-                          block
-                          options={[
-                            {
-                              label: t("alerts.center.filters.time.today"),
-                              value: "today",
-                            },
-                            {
-                              label: t("alerts.center.filters.time.last7Days"),
-                              value: "7d",
-                            },
-                            {
-                              label: t(
-                                "alerts.center.filters.time.last30Days",
-                              ),
-                              value: "30d",
-                            },
-                            {
-                              label: t("alerts.center.filters.time.custom"),
-                              value: "custom",
-                            },
-                          ]}
-                          value={filterState.datePreset}
-                          onChange={(value) =>
-                            updateFilters(
-                              value === "custom"
-                                ? { datePreset: "custom" }
-                                : { datePreset: value as AlertDatePreset },
-                            )
-                          }
-                        />
-                        <DatePicker.RangePicker
-                          style={{ width: "100%" }}
-                          value={customRangeValue}
-                          disabled={filterState.datePreset !== "custom"}
-                          onChange={(values) => {
-                            const [start, end] = values ?? [];
-                            updateFilters({
-                              customRangeMs:
-                                start && end
-                                  ? [start.valueOf(), end.valueOf()]
-                                  : [null, null],
-                            });
-                          }}
-                        />
-                      </Space>
-                    </Col>
-                  </Row>
-
-                  <Space wrap>
-                    <Button onClick={handleResetFilters}>
-                      {t("common.reset")}
-                    </Button>
-                    <Typography.Text type="secondary">
-                      {t("alerts.center.filters.resultCount", {
-                        count: filteredEvents.length,
-                        total: sortedEvents.length,
-                      })}
-                    </Typography.Text>
-                  </Space>
-                </Space>
-              ),
-            },
-          ]}
-        />
-
-        <Divider style={{ margin: "12px 0" }} />
-
-        <Space wrap size={[8, 8]}>
-          <Typography.Text type="secondary">
-            {t("alerts.center.quickTags.title")}
-          </Typography.Text>
-          <CheckableTag
-            checked={filterState.providers.includes(
-              AlertMetricProvider.EconomicAnomaly,
-            )}
-            onChange={(checked) =>
-              toggleProviderTag(AlertMetricProvider.EconomicAnomaly, checked)
-            }
-          >
-            {t("alerts.center.quickTags.economicAnomaly")}
-          </CheckableTag>
-          <CheckableTag
-            checked={filterState.providers.includes(
-              AlertMetricProvider.EntitySentiment,
-            )}
-            onChange={(checked) =>
-              toggleProviderTag(AlertMetricProvider.EntitySentiment, checked)
-            }
-          >
-            {t("alerts.center.quickTags.entitySentiment")}
-          </CheckableTag>
-          <CheckableTag
-            checked={filterState.providers.includes(
-              AlertMetricProvider.EntityAssociation,
-            )}
-            onChange={(checked) =>
-              toggleProviderTag(AlertMetricProvider.EntityAssociation, checked)
-            }
-          >
-            {t("alerts.center.quickTags.entityAssociation")}
-          </CheckableTag>
-          <CheckableTag
-            checked={filterState.providers.includes(
-              AlertMetricProvider.RealtimeSignal,
-            )}
-            onChange={(checked) =>
-              toggleProviderTag(AlertMetricProvider.RealtimeSignal, checked)
-            }
-          >
-            {t("alerts.center.quickTags.realtimeSignal")}
-          </CheckableTag>
-          <CheckableTag
-            checked={filterState.datePreset === "7d"}
-            onChange={(checked) => toggleTimeTag("7d", checked)}
-          >
-            {t("alerts.center.quickTags.last7Days")}
-          </CheckableTag>
-          <CheckableTag
-            checked={filterState.datePreset === "30d"}
-            onChange={(checked) => toggleTimeTag("30d", checked)}
-          >
-            {t("alerts.center.quickTags.last30Days")}
-          </CheckableTag>
-        </Space>
-      </Card>
+      <AlertCenterFilters
+        filterState={filterState}
+        updateFilters={updateFilters}
+        ruleKeywordInput={ruleKeywordInput}
+        setRuleKeywordInput={setRuleKeywordInput}
+        filteredCount={filteredEvents.length}
+        totalCount={sortedEvents.length}
+      />
 
       <Card
         className="content-card"
