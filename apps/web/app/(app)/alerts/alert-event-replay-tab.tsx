@@ -20,7 +20,7 @@ type ReplayModel = NonNullable<AlertEventReplayQuery["alertEventReplay"]>;
 export interface AlertEventReplayTabProps {
   selectedEvent: AlertEventItem;
   replay: ReplayModel | null;
-  replayPoints: ReplayModel["points"];
+  replayPoints: ReplayModel["points"] | undefined;
   replayLoading: boolean;
   replayError: Error | undefined;
   replayOption: EChartsOption;

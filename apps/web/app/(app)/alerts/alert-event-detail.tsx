@@ -58,7 +58,7 @@ export interface AlertEventDetailProps {
   };
   ruleTrendOption: EChartsOption;
   replay: ReplayModel | null;
-  replayPoints: ReplayModel["points"];
+  replayPoints: ReplayModel["points"] | undefined;
   replayLoading: boolean;
   replayError: Error | undefined;
   replayOption: EChartsOption;

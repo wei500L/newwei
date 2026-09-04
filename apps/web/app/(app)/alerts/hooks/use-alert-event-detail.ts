@@ -29,7 +29,7 @@ export interface UseAlertEventDetailOptions {
 export interface UseAlertEventDetailResult {
   loadReplay: ReturnType<typeof useAlertEventReplayLazyQuery>[0];
   replay: ReplayModel | null;
-  replayPoints: ReplayModel["points"];
+  replayPoints: ReplayModel["points"] | undefined;
   replayUnit: string | null | undefined;
   replayLoading: boolean;
   replayError: Error | undefined;

@@ -1,6 +1,6 @@
-import type { AlertEventsQuery } from "@/graphql/generated";
 import type { resolveLocale } from "@/lib/i18n";
 
+import type { AlertEventItem as UtilsAlertEventItem } from "./alert-center.utils";
 import type { TranslateFn } from "./evidence-utils";
 
 /**
@@ -10,7 +10,7 @@ import type { TranslateFn } from "./evidence-utils";
  * → 展示摘要（跨详情页签与列表行共用，文案 key 不变）。
  */
 
-export type AlertEventItem = AlertEventsQuery["alertEvents"][number];
+export type AlertEventItem = UtilsAlertEventItem;
 export type LocaleCode = ReturnType<typeof resolveLocale>;
 export type { TranslateFn };
 

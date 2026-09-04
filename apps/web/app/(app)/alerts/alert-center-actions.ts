@@ -92,7 +92,7 @@ export function buildAlertMarkdownPayload(options: {
 export function createCopyAlertMarkdownHandler(options: {
   selectedEvent: AlertEventItem | null;
   context: Record<string, unknown> | null;
-  locale: string;
+  locale: Parameters<typeof formatDateTime>[1];
   messageApi: AlertFeedbackMessageApi;
   t: TFunction;
   formatDateTime: typeof formatDateTime;
