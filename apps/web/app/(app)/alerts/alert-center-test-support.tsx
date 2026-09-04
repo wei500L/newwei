@@ -12,12 +12,12 @@ import {
   type AlertEventReplayQuery,
   type AlertRuleTuningSuggestionQuery,
 } from "@/graphql/generated";
-import { renderWithProviders } from "@/test/render";
 import {
   testSessionMock,
   testVirtualizerMock,
   type TestSessionMockState,
 } from "@/test/component-mock-state";
+import { renderWithProviders } from "@/test/render";
 import {
   applyTestNavigationHref,
   notifyTestNavigation,
