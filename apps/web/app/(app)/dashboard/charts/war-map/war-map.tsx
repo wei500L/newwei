@@ -26,7 +26,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Checkbox, Drawer, Grid, Space, Spin, Typography } from "antd";
 import { useSession } from "next-auth/react";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -56,6 +56,7 @@ import {
 
 import { useWarMapContainer } from "./use-war-map-container";
 import { useWarMapData } from "./use-war-map-data";
+import { useWarMapInteraction } from "./use-war-map-interaction";
 import { useWarMapQueryState } from "./use-war-map-query-state";
 import {
   useWarMapRuntime,
@@ -94,16 +95,20 @@ import {
   buildWarMapOverlayLayout,
   buildWarMapOverlayViewModel,
   resolveOverlayDensity,
-  type OverlayControlsSection,
-  type OverlayPanelKey,
   type RenderableWarMapEvent,
   type RenderableWarMapNewsMarker,
-  type RenderableWarMapTransportSelection,
   type SelectedInspector,
   type WarMapLayoutVariant,
   type WarMapSelectableOption,
 } from "./war-map-overlay-model";
 import { WarMapOverlayRail } from "./war-map-overlay-rail";
+import {
+  resolveWarMapSelectedInspector,
+  toClusterSelectionKey,
+  toSingleSelectionKey,
+  toTransportSelectionKey,
+  type WarMapTransportSelectionEntry,
+} from "./war-map-selection-model";
 import {
   buildWarMapInteractionLegendItems,
   buildWarMapLegendSections,
@@ -727,24 +732,6 @@ function resolveDeckPointClusterTextOffset(point: DeckPoint): [number, number] {
   return [0, count >= 100 ? 0.7 : 0.45];
 }
 
-function toClusterSelectionKey(
-  kind: "event" | "news",
-  memberKey: string,
-): string {
-  return `${kind}-cluster:${memberKey}`;
-}
-
-function toSingleSelectionKey(kind: "event" | "news", id: string): string {
-  return `${kind}:${id}`;
-}
-
-function toTransportSelectionKey(
-  kind: "aircraft" | "vessel",
-  objectKey: string,
-): string {
-  return `transport:${kind}:${objectKey}`;
-}
-
 function formatWarMapRelativeTimestamp(
   value: string | number | Date | undefined,
   locale: ReturnType<typeof resolveLocale>,
@@ -781,24 +768,6 @@ export function WarMap({
 
   const overlayRailRef = useRef<HTMLDivElement | null>(null);
   const legendDockRef = useRef<HTMLDivElement | null>(null);
-  const [openOverlayPanel, setOpenOverlayPanel] =
-    useState<OverlayPanelKey | null>(null);
-  const [controlsSection, setControlsSection] =
-    useState<OverlayControlsSection>("view");
-  const [desktopInspectorMinimized, setDesktopInspectorMinimized] =
-    useState(false);
-  const [selectedInspectorKey, setSelectedInspectorKey] = useState<
-    string | null
-  >(null);
-  const [focusedLegendItemKey, setFocusedLegendItemKey] = useState<
-    string | null
-  >(null);
-  const [hoveredLegendItemKey, setHoveredLegendItemKey] = useState<
-    string | null
-  >(null);
-  const [hoveredInteractionKey, setHoveredInteractionKey] = useState<
-    string | null
-  >(null);
   // 容器观测域：inView / wrapper 尺寸 / renderable 门禁（单一所有者）
   const {
     wrapperRef,
@@ -1022,18 +991,9 @@ export function WarMap({
     [localClusterBbox, queryZoom, rawNewsMarkers],
   );
 
-  const transportSelections = useMemo<
-    (RenderableWarMapTransportSelection & {
-      lat: number;
-      lng: number;
-      selectionKey: string;
-    })[]
-  >(() => {
-    const selections: (RenderableWarMapTransportSelection & {
-      lat: number;
-      lng: number;
-      selectionKey: string;
-    })[] = [];
+  const transportSelections = useMemo<WarMapTransportSelectionEntry[]>(
+    () => {
+    const selections: WarMapTransportSelectionEntry[] = [];
     const layers = layersQuery.data?.layers ?? {};
 
     const flightsDataset = layers.flights;
@@ -1141,104 +1101,56 @@ export function WarMap({
     return selections;
   }, [layersQuery.data?.layers]);
 
-  const selectedInspector = useMemo<SelectedInspector | null>(() => {
-    if (!selectedInspectorKey) {
-      return null;
-    }
-
-    const eventCluster = clusteredEvents.clusters.find(
-      (cluster) =>
-        toClusterSelectionKey("event", cluster.memberKey) ===
+  const selectedInspector = useMemo<SelectedInspector | null>(
+    () =>
+      resolveWarMapSelectedInspector({
         selectedInspectorKey,
-    );
-    if (eventCluster) {
-      return {
-        key: selectedInspectorKey,
-        kind: "event-cluster",
-        lat: eventCluster.lat,
-        lng: eventCluster.lng,
-        count: eventCluster.count,
-        zoomTarget: 8,
-        members: eventCluster.members,
-      };
-    }
+        clusteredEvents,
+        clusteredNews,
+        rawEvents,
+        rawNewsMarkers,
+        transportSelections,
+      }),
+    [
+      clusteredEvents,
+      clusteredNews,
+      rawEvents,
+      rawNewsMarkers,
+      transportSelections,
+      selectedInspectorKey,
+    ],
+  );
 
-    const newsCluster = clusteredNews.clusters.find(
-      (cluster) =>
-        toClusterSelectionKey("news", cluster.memberKey) ===
-        selectedInspectorKey,
-    );
-    if (newsCluster) {
-      return {
-        key: selectedInspectorKey,
-        kind: "news-cluster",
-        lat: newsCluster.lat,
-        lng: newsCluster.lng,
-        count: newsCluster.count,
-        zoomTarget: 9,
-        members: newsCluster.members,
-      };
-    }
-
-    const event = rawEvents.find(
-      (entry) =>
-        toSingleSelectionKey("event", entry.id) === selectedInspectorKey,
-    );
-    if (event) {
-      return {
-        key: selectedInspectorKey,
-        kind: "event",
-        lat: event.lat,
-        lng: event.lng,
-        zoomTarget: 7,
-        item: event,
-      };
-    }
-
-    const newsItem = rawNewsMarkers.find(
-      (entry) =>
-        toSingleSelectionKey("news", entry.id) === selectedInspectorKey,
-    );
-    if (newsItem) {
-      return {
-        key: selectedInspectorKey,
-        kind: "news",
-        lat: newsItem.lat,
-        lng: newsItem.lng,
-        zoomTarget: 8,
-        item: newsItem,
-      };
-    }
-
-    const transport = transportSelections.find(
-      (entry) => entry.selectionKey === selectedInspectorKey,
-    );
-    if (transport) {
-      return {
-        key: selectedInspectorKey,
-        kind: transport.transportKind === "aircraft" ? "flight" : "vessel",
-        lat: transport.lat,
-        lng: transport.lng,
-        zoomTarget: 8,
-        item: transport,
-      };
-    }
-
-    return null;
-  }, [
-    clusteredEvents.clusters,
-    clusteredNews.clusters,
-    rawEvents,
-    rawNewsMarkers,
-    transportSelections,
+  // 交互与选择域：选中/hover/legend focus、overlay 面板、Inspector 开合
+  const {
     selectedInspectorKey,
-  ]);
-
-  useEffect(() => {
-    if (selectedInspectorKey && !selectedInspector) {
-      setSelectedInspectorKey(null);
-    }
-  }, [selectedInspector, selectedInspectorKey]);
+    hoveredInteractionKey,
+    focusedLegendItemKey,
+    hoveredLegendItemKey,
+    highlightedLegendItemKey,
+    updateHoveredLegendItemKey,
+    updateFocusedLegendItemKey,
+    handleDeckPointHover,
+    handleSelectablePointClick,
+    handleMonitorPointClick,
+    handleLayerPointClick,
+    closeSelectedInspector,
+    zoomToSelectedInspector,
+    openOverlayPanel,
+    setOpenOverlayPanel,
+    controlsSection,
+    setControlsSection,
+    desktopInspectorMinimized,
+    setDesktopInspectorMinimized,
+  } = useWarMapInteraction({
+    t,
+    selectedInspector,
+    overlayRailRef,
+    useDrawerControls,
+    useDesktopInspector,
+    mapRef,
+    queryZoom,
+  });
 
   const selectedTransport = useMemo(() => {
     if (
@@ -1342,172 +1254,6 @@ export function WarMap({
     requestGeoTransport,
     t,
   ]);
-
-  const closeSelectedInspector = useCallback(() => {
-    setDesktopInspectorMinimized(false);
-    setSelectedInspectorKey(null);
-  }, []);
-
-  const zoomToSelectedInspector = useCallback(() => {
-    const map = mapRef.current;
-    if (!map || !selectedInspector) {
-      return;
-    }
-
-    map.easeTo({
-      center: [selectedInspector.lng, selectedInspector.lat],
-      zoom: Math.min(selectedInspector.zoomTarget, map.getZoom() + 2),
-      duration: 350,
-      essential: true,
-    });
-  }, [selectedInspector]);
-
-  useEffect(() => {
-    if (selectedInspector) {
-      setOpenOverlayPanel(null);
-    }
-    setDesktopInspectorMinimized(false);
-  }, [selectedInspector?.key]);
-
-  useEffect(() => {
-    if (
-      !openOverlayPanel ||
-      useDrawerControls ||
-      typeof document === "undefined"
-    ) {
-      return;
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!target) {
-        return;
-      }
-      if (overlayRailRef.current?.contains(target)) {
-        return;
-      }
-      setOpenOverlayPanel(null);
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [openOverlayPanel, useDrawerControls]);
-
-  useEffect(() => {
-    if (typeof document === "undefined") {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") {
-        return;
-      }
-      if (openOverlayPanel) {
-        setOpenOverlayPanel(null);
-        return;
-      }
-      if (
-        useDesktopInspector &&
-        selectedInspector &&
-        !desktopInspectorMinimized
-      ) {
-        closeSelectedInspector();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [
-    closeSelectedInspector,
-    desktopInspectorMinimized,
-    openOverlayPanel,
-    selectedInspector,
-    useDesktopInspector,
-  ]);
-
-  const zoomToLayerCluster = useCallback(
-    (point?: DeckPoint) => {
-      const map = mapRef.current;
-      if (!map || !point) {
-        return;
-      }
-
-      map.easeTo({
-        center: [point.lng, point.lat],
-        zoom: Math.min(Math.max(5, queryZoom + 2), 10),
-        duration: 350,
-        essential: true,
-      });
-    },
-    [queryZoom],
-  );
-
-  const updateHoveredInteractionKey = useCallback((next: string | null) => {
-    setHoveredInteractionKey((current) => (current === next ? current : next));
-  }, []);
-  const updateHoveredLegendItemKey = useCallback((next: string | null) => {
-    setHoveredLegendItemKey((current) => (current === next ? current : next));
-  }, []);
-  const updateFocusedLegendItemKey = useCallback((next: string | null) => {
-    setFocusedLegendItemKey((current) => (current === next ? current : next));
-  }, []);
-
-  const handleDeckPointHover = useCallback(
-    (info: { object?: DeckPoint }) => {
-      updateHoveredInteractionKey(info.object?.interactionKey ?? null);
-    },
-    [updateHoveredInteractionKey],
-  );
-
-  const handleSelectablePointClick = useCallback(
-    (info: { object?: DeckPoint }) => {
-      const object = info.object;
-      if (!object?.selectionKey) {
-        return;
-      }
-      setSelectedInspectorKey(object.selectionKey);
-    },
-    [],
-  );
-
-  const handleMonitorPointClick = useCallback(
-    (info: { object?: DeckPoint }) => {
-      const object = info.object;
-      if (!object) {
-        return;
-      }
-      const query = (object.query ?? object.label).trim();
-      if (!query) {
-        toast.warning(
-          t("dashboard.charts.warMap.missingMonitorQuery"),
-        );
-        return;
-      }
-      window.open(
-        `/search?q=${encodeURIComponent(query)}`,
-        "_blank",
-        "noopener,noreferrer",
-      );
-    },
-    [t],
-  );
-
-  const handleLayerPointClick = useCallback(
-    (info: { object?: DeckPoint }) => {
-      const object = info.object;
-      if (!object) {
-        return;
-      }
-      if (object.isCluster) {
-        zoomToLayerCluster(object);
-        return;
-      }
-      if (object.selectionKey) {
-        setSelectedInspectorKey(object.selectionKey);
-      }
-    },
-    [zoomToLayerCluster],
-  );
 
   const buildSymbolPointLayers = useCallback(
     ({
@@ -3647,17 +3393,22 @@ export function WarMap({
 
     return items;
   }, [interactionLegendItems, legendSections, quickLegendItems]);
-  const highlightedLegendItemKey =
-    focusedLegendItemKey ?? hoveredLegendItemKey ?? null;
 
+  // legend focus/hover 键失效清理（依赖 legend 索引，留在编排层）
   useEffect(() => {
     if (focusedLegendItemKey && !legendItemsByKey.has(focusedLegendItemKey)) {
-      setFocusedLegendItemKey(null);
+      updateFocusedLegendItemKey(null);
     }
     if (hoveredLegendItemKey && !legendItemsByKey.has(hoveredLegendItemKey)) {
-      setHoveredLegendItemKey(null);
+      updateHoveredLegendItemKey(null);
     }
-  }, [focusedLegendItemKey, hoveredLegendItemKey, legendItemsByKey]);
+  }, [
+    focusedLegendItemKey,
+    hoveredLegendItemKey,
+    legendItemsByKey,
+    updateFocusedLegendItemKey,
+    updateHoveredLegendItemKey,
+  ]);
 
   const presetOptions = useMemo<WarMapSelectableOption<WarMapPreset>[]>(
     () =>
