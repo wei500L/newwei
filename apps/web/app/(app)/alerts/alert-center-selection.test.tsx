@@ -1,10 +1,11 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AlertMetricProvider } from "@/graphql/generated";
 
 import {
+  alertTestNavigation,
   buildAlertEvent,
   holdAlertTestMutations,
   renderAlertCenter,
@@ -151,11 +152,32 @@ function buildPagedEvents(): ReturnType<typeof buildAlertEvent>[] {
   );
 }
 
+/** 最近一次 router.replace 的 href（空串表示尚未写入）。 */
+function lastReplaceHref(): string {
+  const calls = alertTestNavigation.replaceCalls;
+  return calls[calls.length - 1] ?? "";
+}
+
+/** 详情卡（标题 Evidence Details 的 Card）。 */
+function detailCard(): HTMLElement {
+  return screen.getByText("Evidence Details").closest(".ant-card") as HTMLElement;
+}
+
+/**
+ * 等待定位/收敛 effect 完成（拉回缺陷的回归探测：等待一段时间后
+ * 页面内容仍保持当前状态）。
+ */
+async function settleEffects(ms = 50): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  });
+}
+
 afterEach(() => {
   resetAlertTestState();
 });
 
-describe("Alert Center 分页（迁移前行为）", () => {
+describe("Alert Center 分页与 eventId 优先级（FE-01 契约）", () => {
   it("默认 page=1 pageSize=30：35 条分页器出现，当前页 30 行", async () => {
     const view = renderAlertCenter({ events: buildPagedEvents() });
 
@@ -165,18 +187,168 @@ describe("Alert Center 分页（迁移前行为）", () => {
     expect(eventRows(view.container)).toHaveLength(30);
   });
 
-  it("页码跟随选中事件：点击第 2 页被拉回选中事件所在页", async () => {
+  it("用户翻页：点击第 2 页稳定停留在第 2 页，URL 写入 page=2（优先级 2，回归：不再被默认选中事件拉回）", async () => {
     const view = renderAlertCenter({ events: buildPagedEvents() });
 
     await awaitEventsLoaded(view.container, 30);
 
-    // 默认选中 h-001（第 1 页）→ 点击第 2 页后定位 effect 拉回第 1 页
+    // 默认选中 h-001（第 1 页）——用户分页意图必须优先于组件内选中状态
     fireEvent.click(within(paginationEl(view.container)).getByText("2"));
+
+    expect(
+      await screen.findByText("Showing 31-35 of 35"),
+    ).toBeInTheDocument();
+    expect(eventRows(view.container)).toHaveLength(5);
+    // 等待 effect 完成后仍不得返回第一页（旧缺陷：定位 effect 持续
+    // 监听 listPage 并把页面拉回选中事件所在页）
+    await settleEffects();
+    expect(screen.getByText("Showing 31-35 of 35")).toBeInTheDocument();
+    expect(eventRows(view.container)).toHaveLength(5);
+    // URL 出现正确的 page=2，且不携带与分页意图冲突的 eventId
+    expect(lastReplaceHref()).toContain("page=2");
+    expect(lastReplaceHref()).not.toContain("eventId=");
+  }, 20000);
+
+  it("URL page 恢复：?page=2&foo=bar 直接展示第 2 页，未知参数保留且无写回（优先级 5/7/9）", async () => {
+    const view = renderAlertCenter({
+      events: buildPagedEvents(),
+      initialUrl: "/alerts?page=2&foo=bar",
+    });
+
+    expect(
+      await screen.findByText("Showing 31-35 of 35"),
+    ).toBeInTheDocument();
+    expect(eventRows(view.container)).toHaveLength(5);
+    // 不被默认选中事件（第 1 页的 h-001）拉回
+    await settleEffects();
+    expect(screen.getByText("Showing 31-35 of 35")).toBeInTheDocument();
+    expect(eventRows(view.container)).toHaveLength(5);
+    // 无意义 router 写回循环：恢复 URL 不产生任何 replace 调用
+    expect(alertTestNavigation.replaceCalls).toHaveLength(0);
+  }, 20000);
+
+  it("eventId 深链：选中 h-035 并自动定位到第 2 页，URL 状态稳定（优先级 1/8）", async () => {
+    const view = renderAlertCenter({
+      events: buildPagedEvents(),
+      initialUrl: "/alerts?eventId=h-035",
+    });
+
+    // h-035 位于第 2 页（30/页）→ 直接展示第 2 页并选中
+    expect(
+      await screen.findByText("Showing 31-35 of 35"),
+    ).toBeInTheDocument();
+    expect(eventRows(view.container)).toHaveLength(5);
+    expect(
+      within(detailCard()).getByText("Rule h-035"),
+    ).toBeInTheDocument();
+
+    // URL 写回 page=2 + eventId=h-035，且状态稳定（无持续写回循环）
+    expect(lastReplaceHref()).toContain("page=2");
+    expect(lastReplaceHref()).toContain("eventId=h-035");
+    const callCountAfterPosition = alertTestNavigation.replaceCalls.length;
+    await settleEffects();
+    expect(screen.getByText("Showing 31-35 of 35")).toBeInTheDocument();
+    expect(alertTestNavigation.replaceCalls).toHaveLength(
+      callCountAfterPosition,
+    );
+  }, 20000);
+
+  it("eventId 定位后手动翻页：稳定停留在第 1 页，URL 清除冲突 eventId、保留未知参数（优先级 2）", async () => {
+    const view = renderAlertCenter({
+      events: buildPagedEvents(),
+      initialUrl: "/alerts?eventId=h-035&foo=bar",
+    });
+    expect(
+      await screen.findByText("Showing 31-35 of 35"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(paginationEl(view.container)).getByText("1"));
 
     expect(
       await screen.findByText("Showing 1-30 of 35"),
     ).toBeInTheDocument();
+    // 等待 effect 完成后不被 h-035（第 2 页）再次拉回
+    await settleEffects();
+    expect(screen.getByText("Showing 1-30 of 35")).toBeInTheDocument();
     expect(eventRows(view.container)).toHaveLength(30);
+    // URL 不保留会导致刷新后重新强制定位的冲突 eventId；
+    // page 重置默认 1（省略）；未知参数保留
+    const finalHref = lastReplaceHref();
+    expect(finalHref).not.toContain("page=");
+    expect(finalHref).not.toContain("eventId=");
+    expect(finalHref).toContain("foo=bar");
+  }, 20000);
+
+  it("pageSize 切换：page 重置 1 且不被旧选中事件拉回，URL 符合契约（优先级 3）", async () => {
+    const view = renderAlertCenter({
+      events: buildPagedEvents(),
+      // h-035 深链定位到第 2 页；改 pageSize 后旧选中事件不得把页码拉走
+      initialUrl: "/alerts?eventId=h-035",
+    });
+    expect(
+      await screen.findByText("Showing 31-35 of 35"),
+    ).toBeInTheDocument();
+
+    const sizeChanger = within(
+      paginationEl(view.container),
+    ).getByRole("combobox");
+    await userEvent.click(sizeChanger);
+    await userEvent.click(
+      await screen.findByRole("option", { name: "20 / page" }),
+    );
+
+    expect(
+      await screen.findByText("Showing 1-20 of 35"),
+    ).toBeInTheDocument();
+    await settleEffects();
+    // h-035 在 pageSize=20 时位于第 2 页（索引 34）——页面稳定停在第 1 页
+    expect(screen.getByText("Showing 1-20 of 35")).toBeInTheDocument();
+    expect(eventRows(view.container)).toHaveLength(20);
+    // URL：pageSize=20 写入；page 重置默认 1（省略）；eventId 清除
+    const finalHref = lastReplaceHref();
+    expect(finalHref).toContain("pageSize=20");
+    expect(finalHref).not.toContain("page=");
+    expect(finalHref).not.toContain("eventId=");
+  }, 20000);
+
+  it("pageSize 下拉选项与 URL 契约一致：含默认 30，且默认值可重新选择（单一事实源）", async () => {
+    const view = renderAlertCenter({ events: buildPagedEvents() });
+    await awaitEventsLoaded(view.container, 30);
+
+    const sizeChanger = within(
+      paginationEl(view.container),
+    ).getByRole("combobox");
+    await userEvent.click(sizeChanger);
+    // 修复前选项只有 20/50/100：默认 30 存在却无法从下拉重新选择
+    for (const optionName of [
+      "20 / page",
+      "30 / page",
+      "50 / page",
+      "100 / page",
+    ]) {
+      expect(
+        await screen.findByRole("option", { name: optionName }),
+      ).toBeInTheDocument();
+    }
+    await userEvent.click(
+      await screen.findByRole("option", { name: "20 / page" }),
+    );
+    expect(
+      await screen.findByText("Showing 1-20 of 35"),
+    ).toBeInTheDocument();
+
+    // 从 20 重选默认 30：可重新选择，且 URL 回到默认（pageSize 省略）
+    await userEvent.click(
+      within(paginationEl(view.container)).getByRole("combobox"),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "30 / page" }),
+    );
+    expect(
+      await screen.findByText("Showing 1-30 of 35"),
+    ).toBeInTheDocument();
+    await settleEffects();
+    expect(lastReplaceHref()).not.toContain("pageSize=");
   }, 20000);
 
   it("pageSize 可切换：切到 20 后每页 20 条", async () => {

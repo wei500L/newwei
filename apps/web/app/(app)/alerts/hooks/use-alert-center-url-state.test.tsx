@@ -66,6 +66,9 @@ function Probe({ onState }: { onState?: (state: UseAlertCenterUrlStateResult) =>
       <button type="button" onClick={() => state.setPageSize(50)}>
         set-pagesize
       </button>
+      <button type="button" onClick={() => state.setPagePreservingEventId(6)}>
+        set-page-preserve
+      </button>
       <button type="button" onClick={() => state.setEventId("e-7")}>
         set-event
       </button>
@@ -154,6 +157,46 @@ describe("useAlertCenterUrlState URL 恢复与写回", () => {
     );
     expect(testNavigation.replaceCalls).toHaveLength(0);
     unmount();
+  });
+});
+
+describe("useAlertCenterUrlState 写入路径区分（FE-01 分页优先级）", () => {
+  it("手动 setPage 清除 eventId：URL 不再携带会在刷新后重新定位的旧 eventId（优先级 2）", async () => {
+    setTestUrl("/alerts?eventId=e-7&foo=bar");
+    render(<Probe />);
+
+    await userEvent.click(screen.getByText("set-page"));
+
+    const finalCall = lastReplace();
+    expect(finalCall).toContain("page=4");
+    expect(finalCall).not.toContain("eventId=");
+    expect(finalCall).toContain("foo=bar");
+    expect(screen.getByTestId("probe").textContent).toBe("||30d|4|30|");
+  });
+
+  it("手动 setPageSize 清除 eventId 且 page 重置 1（优先级 3）", async () => {
+    setTestUrl("/alerts?eventId=e-7&page=3");
+    render(<Probe />);
+
+    await userEvent.click(screen.getByText("set-pagesize"));
+
+    const finalCall = lastReplace();
+    expect(finalCall).toContain("pageSize=50");
+    expect(finalCall).not.toContain("page=");
+    expect(finalCall).not.toContain("eventId=");
+    expect(screen.getByTestId("probe").textContent).toBe("||30d|1|50|");
+  });
+
+  it("自动路径 setPagePreservingEventId 只写 page、保留 eventId（优先级 1/9：定位不调用清 eventId 的手动 setter）", async () => {
+    setTestUrl("/alerts?eventId=e-7&foo=bar");
+    render(<Probe />);
+
+    await userEvent.click(screen.getByText("set-page-preserve"));
+
+    const finalCall = lastReplace();
+    expect(finalCall).toContain("page=6");
+    expect(finalCall).toContain("eventId=e-7");
+    expect(finalCall).toContain("foo=bar");
   });
 });
 
