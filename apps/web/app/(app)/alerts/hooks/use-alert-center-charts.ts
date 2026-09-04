@@ -1,19 +1,12 @@
 "use client";
 
+import type { EChartsOption } from "echarts";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-
-import type { EChartsOption } from "echarts";
 
 import type { AlertEventReplayQuery } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
-import {
-  buildReplayOption,
-  buildRuleTrendOption,
-  buildTrendOption,
-  type ChartThemeInputs,
-} from "../alert-chart-options";
 import {
   buildAlertStats,
   buildAlertTrend,
@@ -22,6 +15,12 @@ import {
   type AlertEventItem,
   type AlertTimeWindow,
 } from "../alert-center.utils";
+import {
+  buildReplayOption,
+  buildRuleTrendOption,
+  buildTrendOption,
+  type ChartThemeInputs,
+} from "../alert-chart-options";
 
 /**
  * Alert Center 图表与统计派生（FE-批3B 从 alert-center.tsx 提取）。

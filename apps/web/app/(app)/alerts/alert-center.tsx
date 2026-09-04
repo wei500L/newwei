@@ -61,8 +61,7 @@ export function AlertCenterContent() {
   const [includeRawExport, setIncludeRawExport] = useState<boolean>(false);
   const [exportScope, setExportScope] = useState<AlertExportScope>("selected");
 
-  // 数据 feed（FE-批3B）：query / 订阅 / coalesced refetch / 排序 / 300→500。
-  // messageApi 来自本组件已渲染的 useMessage 实例（提示真正展示）
+  // 数据 feed（FE-批3B）：query/订阅/合并 refetch/300→500；messageApi 为已渲染实例
   const {
     eventsData,
     eventsError,
@@ -80,9 +79,7 @@ export function AlertCenterContent() {
     errorMessage: () => t("common.error.unexpected"),
   });
 
-  // FE-01：筛选 / 分页 / 关键字 / 日期 / eventId 全部 URL-backed
-  // （批量选择、备注、导出 scope、展开态、detailTab 仍为
-  // 组件内存态，见 useAlertCenterUrlState 的契约注释）
+  // FE-01：筛选/分页/关键字/日期/eventId URL-backed（内存态清单见 hook 注释）
   const {
     filterState,
     appliedRuleKeyword,
@@ -100,13 +97,9 @@ export function AlertCenterContent() {
 
   const { echartsTheme, colors, fontFamily } = useChartTheme();
 
-  // rule keyword 的 220ms debounce 由 useAlertCenterUrlState 承载
-  // （输入即时值 ruleKeywordInput → 静默后写入 URL q → appliedRuleKeyword）
+  // keyword 过滤消费 debounced 值（220ms debounce 在 useAlertCenterUrlState）
   const filterStateForQuery = useMemo<AlertFilterState>(
-    () => ({
-      ...filterState,
-      ruleKeyword: appliedRuleKeyword,
-    }),
+    () => ({ ...filterState, ruleKeyword: appliedRuleKeyword }),
     [appliedRuleKeyword, filterState],
   );
   const filterWindow = useMemo(
@@ -132,8 +125,7 @@ export function AlertCenterContent() {
     return filteredEvents.slice(start, start + listPageSize);
   }, [filteredEvents, listPage, listPageSize]);
 
-  // 选择与分页协调（FE-批3B）：默认选中 / filtered-out 保留 / URL eventId
-  // 协调 / 一次性深链定位 / page 越界收敛（FE-01 优先级契约，见 hook 注释）
+  // 选择与分页协调（FE-批3B）：FE-01 优先级契约整体见 hook 注释
   const isEventsDataReady =
     shouldQueryEvents && !eventsLoading && eventsData !== undefined;
   const {
@@ -208,6 +200,13 @@ export function AlertCenterContent() {
     setFeedbackNote,
   } = useAlertEventDetail({ selectedEvent, selectedEventId });
 
+  const handleReloadReplay = () =>
+    selectedEvent
+      ? loadReplay({
+          variables: { eventId: selectedEvent.id, windowDays: 30 },
+        })
+      : undefined;
+
   // 批量选择域（FE-批3B）：勾选/全选/隐藏选中清理
   const {
     selectedEventIds,
@@ -225,14 +224,9 @@ export function AlertCenterContent() {
     currentPageEvents,
   });
 
-  // 筛选变化后的 page 重置由 useAlertCenterUrlState 的 updateFilters 承载
-  // （任何筛选 patch 都将 page 归 1；URL 外部变化时筛选与 page 同源采纳）
-
+  // 深链事件不在当前数据集：feed 扩充 limit 至 500 并 refetch（一次性）
   const handleOpenEvent = async (eventId: string) => {
-    if (!eventId) {
-      return;
-    }
-    // 深链事件不在当前数据集：feed 扩充 limit 至 500 并 refetch（一次性）
+    if (!eventId) return;
     await ensureEventLoaded(eventId);
     handleSelectEvent(eventId);
   };
@@ -268,7 +262,7 @@ export function AlertCenterContent() {
     () =>
       exportScope === "page"
         ? currentPageEvents
-        : sortedEvents.filter((event) => selectedEventIdSet.has(event.id)),
+        : sortedEvents.filter((e) => selectedEventIdSet.has(e.id)),
     [currentPageEvents, exportScope, selectedEventIdSet, sortedEvents],
   );
 
@@ -493,23 +487,12 @@ export function AlertCenterContent() {
             replayLoading={replayLoading}
             replayError={replayError}
             replayOption={replayOption}
-            onReloadReplay={() =>
-              selectedEvent
-                ? loadReplay({
-                    variables: {
-                      eventId: selectedEvent.id,
-                      windowDays: 30,
-                    },
-                  })
-                : undefined
-            }
+            onReloadReplay={handleReloadReplay}
             canManageAlerts={canManageAlerts}
             feedbackNote={feedbackNote}
             onSetFeedbackNote={setFeedbackNote}
             updatingStatus={updatingStatus}
-            onEventStatusUpdate={(status) =>
-              void handleEventStatusUpdate(status)
-            }
+            onEventStatusUpdate={(status) => void handleEventStatusUpdate(status)}
             onQuickConfirm={() => void handleQuickConfirm()}
             tuningData={tuningData}
             tuningLoading={tuningLoading}
