@@ -138,7 +138,7 @@ export interface UseWarMapOverlayPanelsOptions {
   standaloneLayout: boolean;
   useDrawerControls: boolean;
   useDesktopInspector: boolean;
-  overlayDensity: import("./war-map-overlay-model").OverlayDensity;
+  overlayDensity: OverlayDensity;
   interaction: WarMapOverlayPanelsInteraction;
   overlayViewModel: WarMapOverlayViewModel;
   overlayLayout: WarMapOverlayLayout;
@@ -162,7 +162,7 @@ export interface UseWarMapOverlayPanelsOptions {
   transportPanelProps: ReturnType<typeof buildWarMapTransportPanelProps>;
   inspector: {
     transportDetail:
-      | import("@modular/utils").WarMapTransportDetail
+      | WarMapTransportDetail
       | null;
     transportDetailLoading: boolean;
   };

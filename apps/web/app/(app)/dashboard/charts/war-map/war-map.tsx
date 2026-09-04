@@ -39,17 +39,24 @@ import { useWarMapUrlState } from "./use-war-map-url-state";
 import { WAR_MAP_UNSUPPORTED_LAYER_IDS } from "./war-map-data";
 import { resolveWarMapContainerClassName } from "./war-map-layout";
 import {
+  WarMapMapSurface,
+  WarMapPreparingSurface,
+} from "./war-map-map-surface";
+import {
   OVERLAY_SURFACE_CLASS_NAME,
   resolveOverlayDensity,
   type WarMapLayoutVariant,
 } from "./war-map-overlay-model";
-import { buildWarMapTransportPanelProps, useWarMapOverlayPanels } from "./war-map-overlay-panels";
+import {
+  buildWarMapTransportPanelProps,
+  useWarMapOverlayPanels,
+} from "./war-map-overlay-panels";
+import { buildWarMapLoadOverlayState } from "./war-map-status-model";
 import {
   useWarMapViewOptions,
   WarMapAisViewportEmptyBanner,
   WarMapLayerVisibilityControls,
 } from "./war-map-view-controls";
-import { buildWarMapLoadOverlayState } from "./war-map-status-model";
 
 
 export interface WarMapProps {
@@ -232,12 +239,7 @@ export function WarMap({
     hoveredLegendItemKey,
     updateHoveredLegendItemKey,
     updateFocusedLegendItemKey,
-    openOverlayPanel,
     setOpenOverlayPanel,
-    controlsSection,
-    setControlsSection,
-    desktopInspectorMinimized,
-    setDesktopInspectorMinimized,
   } = interactionResult;
 
   const transportDetailQuery = useWarMapTransportDetail({

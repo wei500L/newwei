@@ -9,7 +9,6 @@ import {
   type WarMapTimeRangePreset,
 } from "@modular/utils";
 import { Checkbox } from "antd";
-import { useMemo } from "react";
 
 import type { WarMapTranslateFn } from "./war-map-overlay-model";
 import { toLayerLabel } from "./war-map-point-model";
