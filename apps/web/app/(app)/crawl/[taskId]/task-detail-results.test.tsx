@@ -52,6 +52,19 @@ const FULL_PERMISSIONS = [
   "settings.manage",
 ];
 
+/**
+ * 键盘驱动切换 resultLimit：mousedown 开启下拉（Selector onMouseDown →
+ * onToggleOpen），初始 active 为第一项（Latest 10），ArrowDown×2 移动到
+ * Latest 50，Enter 选中。绕开 portal 选项 click 在 jsdom 的不稳定路径。
+ */
+function selectLatest50(): void {
+  const combobox = screen.getByRole("combobox");
+  fireEvent.mouseDown(combobox);
+  fireEvent.keyDown(combobox, { key: "ArrowDown" });
+  fireEvent.keyDown(combobox, { key: "ArrowDown" });
+  fireEvent.keyDown(combobox, { key: "Enter" });
+}
+
 describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables / links）", () => {
   it("resultSearch 与输入框分离：Enter 提交 trim 后的搜索词", async () => {
     const { apollo } = renderCrawlTaskDetail({
@@ -95,8 +108,7 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
     // 清空 → 已提交 search 立即复位；随后切 limit 触发新请求，
     // 其变量应携带 resultSearch: null（若清空未生效会残留 "foo"）
     fireEvent.change(input, { target: { value: "" } });
-    fireEvent.mouseDown(screen.getByRole("combobox"));
-    fireEvent.click(await screen.findByRole("option", { name: "Latest 50" }));
+    selectLatest50();
     await waitFor(() =>
       expect(apollo.taskVariables.at(-1)).toEqual({
         id: "task-1",
@@ -132,9 +144,7 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
     });
 
     await screen.findByPlaceholderText("Enter Search");
-    // rc-select 由 selector mousedown 开合下拉（antd 官方测试配方），选项经 onClick 选中
-    fireEvent.mouseDown(screen.getByRole("combobox"));
-    fireEvent.click(await screen.findByRole("option", { name: "Latest 50" }));
+    selectLatest50();
 
     await waitFor(() =>
       expect(apollo.taskVariables.at(-1)).toEqual({
