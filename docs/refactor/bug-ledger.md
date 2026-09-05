@@ -43,7 +43,9 @@
 | FE-01 | P2 | alert-center 过滤器不入 URL（与全局模式不一致） | ✅ | PR #4（FE-批3，run 33849497917） |
 | FE-02 | P2 | 死代码：zustand store/sidebar.ts | ✅ | 见 §3 |
 | FE-03 | P2 | vitest coverage include 仅覆盖 3 个已测文件（覆盖率数字失真） | 🔶 | 部分（include 8→22→约 40（Alert Center 9→32），见 §3） |
-| CI-01 | P2 | OpenAPI 快照生成非确定性：同一 SHA 无 API 变更时 resolved schema 可能降级为 x-unresolved-schema | ⬜ | 开放（PR #5 第五轮登记，见 §3） |
+| CI-01 | P2 | OpenAPI 快照生成非确定性：同一 SHA 无 API 变更时 resolved schema 可能降级为 x-unresolved-schema | ⬜ | 开放（PR #5 第五轮登记，见 §3；PR #6 第二轮执行到该步骤的 run 均首跑通过，未复现） |
+| WM-RT-01 | P1 | War Map retry 重建后新 Deck overlay 丢失业务图层（FE-批4A 拆分引入，合并前修复） | ✅ | PR #6 第二轮（见 §3） |
+| WM-RT-02 | P1 | War Map standalone 底部 Drawer 点击内部控件即被误关（非 minimal 密度） | ✅ | PR #6 第二轮（见 §3） |
 
 ## 3. 已修复条目（详细）
 
@@ -113,6 +115,21 @@
   5. 错误吞掉风险 ⚠️（登记，未改）：前端 `persistSettings`/GET 的 catch 只上报 telemetry（captureClientError），无用户可见提示——这正是原 403 长期不可见的原因。属前端 IA 重构（onboarding-boundary 拆分批次）处理项，不在本轮范围强行加 UI。
 - **回归验证**：`user-ui-settings.controller.test.ts` 锚定 controller→service 契约（远端 CI 已验证，4/4，run 33748591315）；鉴权矩阵 CI 断言权限元数据存在（四态语义：无权限 JWT denied / 有权限 allowed / wrongOrg runtime-required）。⚠️ **真实用户流程（登录→完成引导→刷新不重现）未验证**——CI 无数据库栈，需部署环境冒烟。
 
+### WM-RT-01 War Map retry 重建后新 overlay 丢失业务图层 — ✅ 已修复（合并前，PR #6 第二轮）【静态审查发现 · 红→绿远端验证】
+
+- **流程**：F4 态势与分析。**用户影响**：地图加载错误点击 Retry 后底图恢复，但业务图层/tooltip/cursor 为空，直到下一次数据、hover 或选中变化才恢复。
+- **触发链（FE-批4A 拆分引入）**：`useWarMapRuntime.setOverlayProps` 在 `deckOverlayRef.current` 为空时直接丢弃 props（旧实现 early return）→ retry（`mapMountNonce` 变化）销毁旧 runtime 并创建新 overlay → `useWarMapLayers` 的 overlay props effect 依赖（deckData/tooltip/cursor/renderable）均未变化、不感知 runtime 世代 → 新 overlay 永远收不到上一份 props。
+- **既有测试盲区**：retry 测试只断言旧实例销毁/新实例创建，不校验新 overlay 的 props。
+- **修复**：`useWarMapRuntime` 成为 overlay props 唯一持有者——`latestOverlayPropsRef` 无论 overlay 是否存在都保存最新 props；runtime 创建 effect 在写入 `deckOverlayRef` 后立即回放。`useWarMapLayers` 不感知 runtime 世代，根组件不暴露 generation 补丁；不可渲染容器传空 layers 的语义不变。
+- **回归验证**：行为级红→绿——红灯测试（retry 后按第二个 overlay 身份断言恢复最后一份 layers/getTooltip/getCursor，不依赖数据/交互变化）先独立提交，远端 run 33945984922 唯一失败即该测试（`expected undefined to be defined`，Lint/Typecheck 均过）；修复后 run 33946342887 全绿。仅 jsdom 行为级验证，未做真实浏览器 Retry 操作。
+
+### WM-RT-02 standalone 底部 Drawer 点击内部控件即被误关 — ✅ 已修复（合并前，PR #6 第二轮）【新行为测试暴露】
+
+- **流程**：F4 态势与分析（`/map` standalone 页）。**用户影响**：非 minimal 密度（如桌面视口）下打开 controls Drawer 后，点击 Drawer 内任何控件（切换 Transport、checkbox 等）都先触发 rail 外 mousedown 误关 Drawer，面板打开后无法操作。
+- **根因**：interaction hook 的「面板外 mousedown 关闭」效应只按 `useDrawerControls`（minimal 密度）豁免；standalone 布局的底部 Drawer 同样渲染在 rail 之外且效应仍激活。embedded 内联面板渲染在 rail 内不受影响——此前无任何 Drawer 内点击的测试覆盖，属 FE-批4A 之前即存在的行为（拆分时原样迁移）。
+- **修复**：hook 选项 `useDrawerControls` 改为 `overlayPanelsInDrawer`（编排层计算 `standaloneLayout || useDrawerControls`）——效应仅在面板以 inline 形式渲染于 rail 内时激活；Drawer 场景关闭语义由 Drawer mask（antd onClose）唯一负责。
+- **回归验证**：新增 standalone「打开完整图例」行为测试（Drawer 内连续点击 → 保持可操作 → 关闭 Drawer + 下一帧 scrollIntoView）在旧实现上远端失败（run 33947812370，找不到 Open full legend 按钮——Drawer 已被误关）；修复后通过。另新增 embedded 回归锁（rail 外 mousedown 关闭 inline 面板）。仅 jsdom 行为级验证。
+
 ## 4. 开放条目（待修复，按优先级排序）
 
 ### SEC-01 全局 vector 配置可被任意 org 管理员改写 — 🔧 已修复（单元级 CI 已验证；真实登录态未验证）【已复核】
@@ -170,7 +187,7 @@
 - **PR #5（FE-批3B）**：Alert Center include 增至 32（+alert-center-actions/data-state/filters/summary/list-model + alert-events-virtualization + alert-event-list/row/toolbar/detail/detail-model/五页签 + use-alert-events-feed/selection/status-actions/batch/detail/virtualization/charts；全站 include 总数约 40）。阈值不变（lines 35 / functions 3 / statements 35 / branches 30）。
 - **仍为「部分改善」**：全仓 glob + 阈值重设待 FE-批4+（巨型组件 war-map/task-detail 等未拆分、无测试，纳入即红 CI）。
 
-### CI-01 OpenAPI 快照生成非确定性 — ⬜ 开放 P2【PR #5 第五轮登记；PR #6 复现一次】
+### CI-01 OpenAPI 快照生成非确定性 — ⬜ 开放 P2【PR #5 第五轮登记；PR #6 两次复现】
 
 PR #6（FE-批4A，纯前端改动、无 API 变更）再次复现：run 33900456381 的
 OpenAPI snapshot drift check 首跑失败——快照中大量端点凭空出现 `query` 查询
@@ -179,6 +196,11 @@ SHA 对同一 job 做一次针对性重跑后通过（run 33900456381 rerun, ver
 与第五轮的 x-unresolved-schema 降级是同一非确定性缺陷的不同表现
 （decorator 元数据解析顺序不稳定）。按规程未修改快照/生成器/CI；缺陷保持开放，
 证据已保存。
+
+PR #6 第二轮（合并前静态收口）观察：本轮各次 CI run 中，未执行到 OpenAPI
+drift 步骤的均为 web 测试步骤先行失败（33945984922 预期红灯、33947812370
+standalone Drawer 缺陷暴露），执行到该步骤的 run 均首跑通过（如 33946342887
+verify success）——CI-01 本轮未复现，无重跑。
 
 - **现象**：PR #5（纯前端，`apps/api` 零改动）的 CI run `33874825439` 首次执行 `contract:openapi:snapshot` 时，`git diff --exit-code apps/api/tests/contract/openapi.snapshot.json` 失败；对同一失败 job 做单次针对性重跑后通过（同 SHA、同代码）。
 - **失败 diff 特征**：多个端点（vector settings 相关路由）新增 `requestBody` 条目且标记 `x-unresolved-schema: true`——即该次运行中 NestJS schema 未被解析，产物降级为 unresolved 占位形状，而非任何代码驱动的契约变化。

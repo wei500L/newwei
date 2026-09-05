@@ -71,7 +71,8 @@
 ## M6 前端第二批（巨型组件拆解）
 
 - FE-批4：war-map 重构（试点 2，验证原语够用）→ FE-批5+：task-detail/CreateCrawlTaskDrawer/realtime-signals/crawl-monitor/quality 分批
-  - FE-批4A（PR #6，已完成）：行为保护网（7 个测试文件，URL/查询/数据/地图生命周期/用户交互全覆盖）+ war-map.tsx 4412 → 497 行；拆出容器观测/URL/查询/运行时/交互/点位/图层/状态展示/overlay 组合等 20+ 领域模块（全部 ≤500 行）；三个消费入口与全部行为红线保持；coverage include 48 → 82 项
+  - FE-批4A（PR #6，已完成）：行为保护网 + war-map.tsx 4412 → 497 行；拆出容器观测/URL/查询/运行时/交互/点位/图层/状态展示/overlay 组合等 20+ 领域模块（全部 ≤500 行）；三个消费入口与全部行为红线保持；coverage include 48 → 82 项
+  - FE-批4A 合并前静态收口（PR #6 第二轮）：修复 WM-RT-01 运行时缺陷（retry 重建后新 Deck overlay 丢失 layers/getTooltip/getCursor——setOverlayProps 在 overlay 缺位时丢弃 props 且重建不回放；改为 runtime 持有最新 props 并在创建 effect 内立即回放；红→绿远端验证 run 33945984922 → 33946342887）；interaction 返回值 24 平铺字段 → 4 领域切片（layerInteraction 7 / legend 6 / inspector 6 / overlayPanel 4，删除 setSelectedInspectorKey/updateHoveredInteractionKey 两个零消费者死字段）；删除 16 输入 → 39 字段平铺输出的 buildWarMapTransportPanelProps（flights 4 / ais 8 / analysis 3 / legend 1 领域对象传递，presentation 整体下传，controls-panel 仅做 transport 类型与字段读取适配）；overlay panels 返回 10 → 4（删除 6 个零消费者死字段）；runtime 同步 guard 零延迟 timeout 与 legend dock RAF 句柄闭环（保存句柄/新调度前取消/卸载取消并复位）；顺带修复 standalone Drawer 误关缺陷（「面板外 mousedown 关闭」效应未豁免 standalone 底部 Drawer——Drawer 内容在 rail 之外，非 minimal 密度下点击 Drawer 内任何控件即被误关；新增行为测试暴露）。war-map.tsx 496 行；War Map 用例 77 → 82（修正此前「96 个用例」的误记——远端 CI 实测 6 个测试文件 77 用例）。**未做**真实浏览器地图操作/WebGL 性能/视觉验收/真机/大数据量压力（仍属 FE-批4B 验证项）
   - FE-批4B（待做）：controls-panel（1741）、symbols（1530）、inspector-panel（668）、overlay-model（534）、overlay-rail（329）内部拆分；真实浏览器地图操作/WebGL 性能/视觉验收/320-390px 真机/大数据量压力
 - 直接 fetch → 类型化客户端迁移（10 文件）；~~FE-02 死 store 删除~~（✅ 已随 FE-批2 完成）
 
