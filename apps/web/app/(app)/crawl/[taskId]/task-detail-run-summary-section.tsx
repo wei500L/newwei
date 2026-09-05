@@ -5,7 +5,7 @@
  * 内存四组字段、最近成功/错误时间与原始配置 JSON。
  */
 
-import { Descriptions, Typography } from "antd";
+import { Descriptions } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { formatDateTime, type SupportedLocale } from "@/lib/i18n";

@@ -3,8 +3,8 @@
  * 纯函数模块：additionalUrls 与 multiUrlConfigs 窄化、覆盖项摘要格式化。
  */
 
-import { shortenScript } from "./task-detail-formatters";
 import type { CrawlTaskConfig } from "./task-detail-config-core-model";
+import { shortenScript } from "./task-detail-formatters";
 import type { TaskDetailTranslate } from "./task-detail-types";
 
 export function buildAdditionalUrls(config: CrawlTaskConfig): string[] {

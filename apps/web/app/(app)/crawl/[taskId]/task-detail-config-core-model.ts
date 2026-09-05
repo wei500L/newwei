@@ -5,11 +5,11 @@
  * JSON 的窄化集中在本模块与同级 model，展示层不重复解析。
  */
 
-import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 import {
   findUnsupportedProxyIssues,
   type CrawlConfigPolicyIssue,
 } from "@/lib/crawl-config-policy";
+import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 
 import type { TaskDetailTranslate } from "./task-detail-types";
 

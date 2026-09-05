@@ -3,8 +3,8 @@
  * 纯函数模块：JS 步骤/等待条件/超时与延迟/信号量/会话与存储态摘要。
  */
 
-import { shortenScript } from "./task-detail-formatters";
 import type { CrawlTaskConfig } from "./task-detail-config-core-model";
+import { shortenScript } from "./task-detail-formatters";
 import type { TaskDetailTranslate } from "./task-detail-types";
 
 export function buildDynamicJsSteps(config: CrawlTaskConfig): string[] {

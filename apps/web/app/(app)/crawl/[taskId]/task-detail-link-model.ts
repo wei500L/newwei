@@ -33,11 +33,11 @@ export interface CrawlLinkOverview {
   lowLinks: NonNullable<
     NonNullable<CrawlTaskDetailResult["linkAnalysis"]>["lowQualityLinks"]
   >;
-  buckets: Array<{
+  buckets: {
     kind: string;
     count: number;
     samples: ScoredLink[];
-  }>;
+  }[];
 }
 
 export function buildLinkOverview(

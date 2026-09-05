@@ -38,6 +38,7 @@ import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { useCrawlTaskDetailQuery } from "./hooks/use-crawl-task-detail-query";
 import { useCrawlTaskLogs } from "./hooks/use-crawl-task-logs";
 import { useCrawlTaskOpsLive } from "./hooks/use-crawl-task-ops-live";
+import { TaskDetailBrowserSection } from "./task-detail-browser-section";
 import {
   classifyTaskLastErrorHeadedIssue,
   findTaskProxyIssues,
@@ -46,6 +47,8 @@ import {
   resolvePipelineJobId,
   buildStrategyViewModel,
 } from "./task-detail-config-core-model";
+import { TaskDetailExpansionSection } from "./task-detail-expansion-section";
+import { TaskDetailFieldsSection } from "./task-detail-fields-section";
 import {
   BACKFILL_BATCH_TIMEOUT_MS,
   formatPolicyIssues,
@@ -53,19 +56,16 @@ import {
   safeParseJson,
   withTimeout,
 } from "./task-detail-formatters";
-import { MediaSection } from "./task-detail-media-section";
-import { StoredMediaSection } from "./task-detail-stored-media-section";
-import { TablesSection } from "./task-detail-tables-section";
-import { TaskDetailStrategyCard } from "./task-detail-strategy-card";
-import { TaskDetailFieldsSection } from "./task-detail-fields-section";
-import { TaskDetailExpansionSection } from "./task-detail-expansion-section";
-import { TaskDetailBrowserSection } from "./task-detail-browser-section";
-import { TaskDetailRuntimeSection } from "./task-detail-runtime-section";
-import { TaskDetailMarkdownSection } from "./task-detail-markdown-section";
-import { TaskDetailRunSummarySection } from "./task-detail-run-summary-section";
-import { TaskDetailTaskLogs } from "./task-detail-task-logs";
-import { TaskDetailMultiUrl } from "./task-detail-multi-url";
 import { TaskDetailLinkOverview } from "./task-detail-link-overview";
+import { TaskDetailMarkdownSection } from "./task-detail-markdown-section";
+import { MediaSection } from "./task-detail-media-section";
+import { TaskDetailMultiUrl } from "./task-detail-multi-url";
+import { TaskDetailRunSummarySection } from "./task-detail-run-summary-section";
+import { TaskDetailRuntimeSection } from "./task-detail-runtime-section";
+import { StoredMediaSection } from "./task-detail-stored-media-section";
+import { TaskDetailStrategyCard } from "./task-detail-strategy-card";
+import { TablesSection } from "./task-detail-tables-section";
+import { TaskDetailTaskLogs } from "./task-detail-task-logs";
 import type {
   BackfillNotice,
   CrawlMediaCollection,
