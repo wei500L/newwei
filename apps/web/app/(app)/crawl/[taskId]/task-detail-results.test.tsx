@@ -1,5 +1,4 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -117,10 +116,16 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
       expect(apollo.taskVariables.at(-1)).toMatchObject({ resultSearch: "foo" }),
     );
 
+    // foo 查询期间（新变量无缓存数据）整页退化为 Spin，返回后输入框
+    // 重新挂载为新节点——等待节点身份更替后再交互，旧节点事件已失效
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Enter Search")).not.toBe(input);
+    });
+    const freshInput = screen.getByPlaceholderText("Enter Search");
+
     // 清空 → 已提交 search 立即复位；随后切 limit 触发新请求，
-    // 其变量应携带 resultSearch: null（若清空未生效会残留 "foo"）。
-    // userEvent.clear 以真实键盘序列驱动（兼容 React value tracker）
-    await userEvent.clear(input);
+    // 其变量应携带 resultSearch: null（若清空未生效会残留 "foo"）
+    fireEvent.change(freshInput, { target: { value: "" } });
     selectLatest50();
     await waitForLimit50Selected();
 
