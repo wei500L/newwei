@@ -1,6 +1,7 @@
 "use client";
 
-import { Button, List, Space, Tag, Typography } from "antd";
+import { List, Space, Tag, Typography } from "antd";
+
 import { formatDateTime } from "@/lib/i18n";
 
 import type { WarMapInspectorContentContext } from "./war-map-inspector-types";

@@ -5,6 +5,7 @@ import type {
   WarMapTransportTrackPoint,
 } from "@modular/utils";
 import { List, Space, Spin, Tag, Typography } from "antd";
+
 import { formatDateTime } from "@/lib/i18n";
 
 import type { WarMapInspectorContentContext } from "./war-map-inspector-types";

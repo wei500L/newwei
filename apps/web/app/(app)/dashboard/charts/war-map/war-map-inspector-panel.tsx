@@ -1,18 +1,20 @@
 "use client";
 
 import {
-  InspectorPanelFrame,
-  InspectorPanelShellHeader,
-} from "./war-map-inspector-shell";
-import type { WarMapInspectorPanelProps } from "./war-map-inspector-types";
-import {
   EventClusterInspectorContent,
   EventInspectorContent,
 } from "./war-map-event-cluster-inspector";
+import type {
+  WarMapInspectorContentContext,
+  WarMapInspectorPanelProps,
+} from "./war-map-inspector-types";
 import { NewsClusterInspectorContent } from "./war-map-news-cluster-inspector";
 import { NewsInspectorContent } from "./war-map-news-inspector";
 import { TransportInspectorContent } from "./war-map-transport-inspector";
-import type { WarMapInspectorContentContext } from "./war-map-inspector-types";
+import {
+  InspectorPanelFrame,
+  InspectorPanelShellHeader,
+} from "./war-map-inspector-shell";
 
 /**
  * Inspector 面板根编排层（FE-批4B：原 667 行拆分后收敛为编排）。
