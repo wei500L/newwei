@@ -6,9 +6,9 @@
  */
 
 import { Descriptions } from "antd";
-import { useTranslation } from "react-i18next";
 
 import type { CrawlTaskConfig } from "./task-detail-config-core-model";
+import type { TaskDetailTranslate } from "./task-detail-types";
 import {
   buildCleanMarkdownSummary,
   buildMarkdownFilterSummary,
@@ -16,13 +16,15 @@ import {
   buildMarkdownSummary,
 } from "./task-detail-markdown-model";
 
-export function TaskDetailMarkdownSection({
-  config,
-}: {
+interface MarkdownSectionProps {
+  t: TaskDetailTranslate;
   config: CrawlTaskConfig;
-}) {
-  const { t } = useTranslation();
+}
 
+export function TaskDetailMarkdownSection({
+  t,
+  config,
+}: MarkdownSectionProps) {
   return (
     <>
       <Descriptions.Item label={t("crawl.detail.fields.markdownGenerator")}>

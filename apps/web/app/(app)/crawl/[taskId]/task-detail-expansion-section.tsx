@@ -8,7 +8,6 @@
  */
 
 import { Alert, Descriptions, Space, Typography } from "antd";
-import { useTranslation } from "react-i18next";
 
 import {
   pageTypeHintLabel,
@@ -24,19 +23,20 @@ import {
   resolveTaskHeadSignalFallbackHint,
 } from "./task-detail-expansion-model";
 import type { TaskLogRecord } from "./task-detail-types";
+import type { TaskDetailTranslate } from "./task-detail-types";
 
 interface ExpansionSectionProps {
+  t: TaskDetailTranslate;
   config: CrawlTaskConfig;
   strategy: StrategyViewModel;
   taskLogs: TaskLogRecord[];
 }
-
 export function TaskDetailExpansionSection({
+  t,
   config,
   strategy,
   taskLogs,
 }: ExpansionSectionProps) {
-  const { t } = useTranslation();
   const { virtualScroll } = strategy;
   const qualitySummary = qualityProfileLabel(strategy.qualityProfileValue, t);
   const pageTypeSummary = pageTypeHintLabel(strategy.pageTypeHintValue, t);

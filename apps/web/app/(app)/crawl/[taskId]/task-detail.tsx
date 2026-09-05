@@ -716,6 +716,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           以函数调用内联为 Fragment，子 Descriptions.Item 才能被识别 */}
       <Descriptions bordered column={1} size="small">
         {TaskDetailFieldsSection({
+          t,
           task,
           config,
           canManage,
@@ -724,14 +725,15 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           onToggleIngest: (checked) => void handleToggleIngestToItems(checked),
         })}
         {TaskDetailExpansionSection({
+          t,
           config,
           strategy: strategyModel,
           taskLogs,
         })}
-        {TaskDetailBrowserSection({ config })}
-        {TaskDetailRuntimeSection({ config })}
-        {TaskDetailMarkdownSection({ config })}
-        {TaskDetailRunSummarySection({ task, config, locale })}
+        {TaskDetailBrowserSection({ t, config })}
+        {TaskDetailRuntimeSection({ t, config })}
+        {TaskDetailMarkdownSection({ t, config })}
+        {TaskDetailRunSummarySection({ t, task, config, locale })}
       </Descriptions>
 
       {canViewTaskLogs ? (

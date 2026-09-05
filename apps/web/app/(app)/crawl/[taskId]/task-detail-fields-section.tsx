@@ -7,12 +7,13 @@
  */
 
 import { Descriptions, Space, Switch, Tag, Typography } from "antd";
-import { useTranslation } from "react-i18next";
 
 import type { CrawlTaskConfig } from "./task-detail-config-core-model";
 import type { CrawlTaskDetailTask } from "./task-detail-types";
+import type { TaskDetailTranslate } from "./task-detail-types";
 
 interface FieldsSectionProps {
+  t: TaskDetailTranslate;
   task: CrawlTaskDetailTask;
   config: CrawlTaskConfig;
   canManage: boolean;
@@ -20,8 +21,8 @@ interface FieldsSectionProps {
   updatingIngest: boolean;
   onToggleIngest: (enabled: boolean) => void;
 }
-
 export function TaskDetailFieldsSection({
+  t,
   task,
   config,
   canManage,
@@ -29,7 +30,6 @@ export function TaskDetailFieldsSection({
   updatingIngest,
   onToggleIngest,
 }: FieldsSectionProps) {
-  const { t } = useTranslation();
   const includeImagesEnabled = Boolean(config?.includeImages);
   const storeMediaEnabled = Boolean(config?.storeMedia);
   const ingestToItemsEnabled = Boolean(config?.ingestToItems);

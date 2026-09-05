@@ -6,26 +6,27 @@
  */
 
 import { Descriptions } from "antd";
-import { useTranslation } from "react-i18next";
 
 import { formatDateTime, type SupportedLocale } from "@/lib/i18n";
 
 import type { CrawlTaskConfig } from "./task-detail-config-core-model";
 import { markdownPreviewStyle } from "./task-detail-formatters";
 import type { CrawlTaskDetailTask } from "./task-detail-types";
+import type { TaskDetailTranslate } from "./task-detail-types";
 
 interface RunSummarySectionProps {
+  t: TaskDetailTranslate;
   task: CrawlTaskDetailTask;
   config: CrawlTaskConfig;
   locale: SupportedLocale;
 }
 
 export function TaskDetailRunSummarySection({
+  t,
   task,
   config,
   locale,
 }: RunSummarySectionProps) {
-  const { t } = useTranslation();
 
   return (
     <>

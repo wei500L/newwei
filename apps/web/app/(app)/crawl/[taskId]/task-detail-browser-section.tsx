@@ -7,7 +7,6 @@
  */
 
 import { Descriptions, Space, Typography } from "antd";
-import { useTranslation } from "react-i18next";
 
 import {
   buildBrowserCookies,
@@ -20,17 +19,21 @@ import {
   resolveUserAgentValue,
 } from "./task-detail-browser-model";
 import type { CrawlTaskConfig } from "./task-detail-config-core-model";
+import type { TaskDetailTranslate } from "./task-detail-types";
 import {
   buildStorageStatePreview,
   resolveSessionIdentifier,
 } from "./task-detail-runtime-model";
 
-export function TaskDetailBrowserSection({
-  config,
-}: {
+interface BrowserSectionProps {
+  t: TaskDetailTranslate;
   config: CrawlTaskConfig;
-}) {
-  const { t } = useTranslation();
+}
+
+export function TaskDetailBrowserSection({
+  t,
+  config,
+}: BrowserSectionProps) {
   const browserHeaders = buildBrowserHeaders(config);
   const browserCookies = buildBrowserCookies(config);
   const managedBrowserProfile = resolveManagedBrowserProfile(config);

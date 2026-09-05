@@ -7,7 +7,6 @@
  */
 
 import { Descriptions, Space, Typography } from "antd";
-import { useTranslation } from "react-i18next";
 
 import {
   buildProxySummary,
@@ -22,13 +21,17 @@ import {
   buildWaitUntilSummary,
   resolveWaitUntilValue,
 } from "./task-detail-runtime-model";
+import type { TaskDetailTranslate } from "./task-detail-types";
+
+interface RuntimeSectionProps {
+  t: TaskDetailTranslate;
+  config: CrawlTaskConfig;
+}
 
 export function TaskDetailRuntimeSection({
+  t,
   config,
-}: {
-  config: CrawlTaskConfig;
-}) {
-  const { t } = useTranslation();
+}: RuntimeSectionProps) {
   const dynamicJsSteps = buildDynamicJsSteps(config);
   const waitCondition = buildWaitCondition(config);
   const waitUntilSummary = buildWaitUntilSummary(
