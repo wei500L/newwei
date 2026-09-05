@@ -712,28 +712,26 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         />
       ) : null}
       <TaskDetailStrategyCard config={config} strategy={strategyModel} />
+      {/* antd Descriptions 以 toArray(children) 读取 Item props：段组件需
+          以函数调用内联为 Fragment，子 Descriptions.Item 才能被识别 */}
       <Descriptions bordered column={1} size="small">
-        <TaskDetailFieldsSection
-          task={task}
-          config={config}
-          canManage={canManage}
-          hasItemsWrite={permissions.includes("items.write")}
-          updatingIngest={updatingIngest}
-          onToggleIngest={(checked) => void handleToggleIngestToItems(checked)}
-        />
-        <TaskDetailExpansionSection
-          config={config}
-          strategy={strategyModel}
-          taskLogs={taskLogs}
-        />
-        <TaskDetailBrowserSection config={config} />
-        <TaskDetailRuntimeSection config={config} />
-        <TaskDetailMarkdownSection config={config} />
-        <TaskDetailRunSummarySection
-          task={task}
-          config={config}
-          locale={locale}
-        />
+        {TaskDetailFieldsSection({
+          task,
+          config,
+          canManage,
+          hasItemsWrite: permissions.includes("items.write"),
+          updatingIngest,
+          onToggleIngest: (checked) => void handleToggleIngestToItems(checked),
+        })}
+        {TaskDetailExpansionSection({
+          config,
+          strategy: strategyModel,
+          taskLogs,
+        })}
+        {TaskDetailBrowserSection({ config })}
+        {TaskDetailRuntimeSection({ config })}
+        {TaskDetailMarkdownSection({ config })}
+        {TaskDetailRunSummarySection({ task, config, locale })}
       </Descriptions>
 
       {canViewTaskLogs ? (
