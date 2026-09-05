@@ -7,12 +7,12 @@ import type {
   WarMapControlsPanelProps,
   WarMapControlsPanelTransportProps,
 } from "./war-map-controls-types";
+import { WarMapLegendDock } from "./war-map-legend-dock";
+import { WarMapLegendPanel } from "./war-map-legend-panel";
 import type {
   WarMapDetailedChainStatus,
   WarMapFeedSummaryCard,
 } from "./war-map-overlay-model";
-import { WarMapLegendDock } from "./war-map-legend-dock";
-import { WarMapLegendPanel } from "./war-map-legend-panel";
 import {
   buildWarMapLegendSections,
   buildWarMapInteractionLegendItems,
