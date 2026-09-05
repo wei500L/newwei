@@ -68,6 +68,7 @@ import type {
   CrawlMediaCollection,
   CrawlResultTable,
   CrawlStoredMediaAsset,
+  TaskLogRecord,
   TaskLogStatus,
 } from "./task-detail-types";
 
