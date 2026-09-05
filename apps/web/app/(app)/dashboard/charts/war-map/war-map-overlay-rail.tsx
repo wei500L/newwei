@@ -7,7 +7,6 @@ import {
 } from "@ant-design/icons";
 import { Button, Tooltip } from "antd";
 
-import { getQuickLegendVisibility } from "./war-map-quick-legend-model";
 import {
   OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME,
   resolveOverlayButtonClassName,
@@ -15,6 +14,7 @@ import {
 import { WarMapOverlayQuickLegend } from "./war-map-overlay-quick-legend";
 import type { WarMapOverlayRailProps } from "./war-map-overlay-rail-types";
 import { WarMapOverlayRailSummary } from "./war-map-overlay-summary";
+import { getQuickLegendVisibility } from "./war-map-quick-legend-model";
 
 /**
  * Overlay rail 薄组合层（FE-批4B：原 330 行单组件拆分）。
