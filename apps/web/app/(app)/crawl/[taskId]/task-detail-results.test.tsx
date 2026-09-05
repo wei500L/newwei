@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -118,8 +119,8 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
 
     // 清空 → 已提交 search 立即复位；随后切 limit 触发新请求，
     // 其变量应携带 resultSearch: null（若清空未生效会残留 "foo"）。
-    // 用 input 事件（React onChange 的主通道）驱动清空
-    fireEvent.input(input, { target: { value: "" } });
+    // userEvent.clear 以真实键盘序列驱动（兼容 React value tracker）
+    await userEvent.clear(input);
     selectLatest50();
     await waitForLimit50Selected();
 
