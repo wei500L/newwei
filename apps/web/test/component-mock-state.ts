@@ -42,3 +42,131 @@ export function resetTestVirtualizerMock(): void {
   testVirtualizerMock.count = null;
   testVirtualizerMock.measureCalls = 0;
 }
+
+/* ------------------------------------------------------------------ */
+/* War Map（FE-批4A）组件级 mock 共享状态                              */
+/* ------------------------------------------------------------------ */
+
+export interface TestDeckLayerRecord {
+  type: string;
+  props: Record<string, unknown>;
+}
+
+export interface TestDeckLayersMockState {
+  instances: TestDeckLayerRecord[];
+}
+
+export const testDeckLayers: TestDeckLayersMockState = {
+  instances: [],
+};
+
+/** fake maplibre map 的受控视口（createDeckMapRuntime mock 读取）。 */
+export interface TestMapRuntimeViewport {
+  lat: number;
+  lng: number;
+  zoom: number;
+  bearing: number;
+  pitch: number;
+}
+
+export interface TestMapRuntimeMockState {
+  createdCount: number;
+  destroyedCount: number;
+  /** 每次创建时的 options（含 onMapReady/onMapError/onMoveEnd 回调）。 */
+  instances: Array<{
+    options: Record<string, unknown>;
+    map: Record<string, unknown>;
+    overlay: Record<string, unknown>;
+    destroyed: boolean;
+  }>;
+  viewport: TestMapRuntimeViewport;
+  bounds: [number, number, number, number];
+  easeToCalls: Array<Record<string, unknown>>;
+  resizeCalls: number;
+  overlayPropsCalls: Array<{
+    overlay: unknown;
+    props: Record<string, unknown>;
+  }>;
+}
+
+export const testMapRuntime: TestMapRuntimeMockState = {
+  createdCount: 0,
+  destroyedCount: 0,
+  instances: [],
+  viewport: { lat: 20, lng: 0, zoom: 1.8, bearing: 0, pitch: 0 },
+  bounds: [-180, -85, 180, 85],
+  easeToCalls: [],
+  resizeCalls: 0,
+  overlayPropsCalls: [],
+};
+
+export function resetTestMapRuntimeMock(options?: {
+  viewport?: TestMapRuntimeViewport;
+  bounds?: [number, number, number, number];
+}): void {
+  testMapRuntime.createdCount = 0;
+  testMapRuntime.destroyedCount = 0;
+  testMapRuntime.instances.length = 0;
+  testMapRuntime.viewport = options?.viewport ?? {
+    lat: 20,
+    lng: 0,
+    zoom: 1.8,
+    bearing: 0,
+    pitch: 0,
+  };
+  testMapRuntime.bounds = options?.bounds ?? [-180, -85, 180, 85];
+  testMapRuntime.easeToCalls.length = 0;
+  testMapRuntime.resizeCalls = 0;
+  testMapRuntime.overlayPropsCalls.length = 0;
+}
+
+export interface TestApiMockState {
+  responses: Record<string, unknown>;
+  calls: Array<{ url: string; params: Record<string, unknown> }>;
+}
+
+export const testApiMock: TestApiMockState = {
+  responses: {},
+  calls: [],
+};
+
+export interface TestGeoTransportMockState {
+  calls: Array<{ variables: unknown }>;
+  loading: boolean;
+}
+
+export const testGeoTransport: TestGeoTransportMockState = {
+  calls: [],
+  loading: false,
+};
+
+export type TestToastKind = "success" | "error" | "warning" | "info";
+
+export interface TestToastMockState {
+  calls: Array<{ kind: TestToastKind; message: string }>;
+}
+
+export const testToasts: TestToastMockState = { calls: [] };
+
+export interface TestTelemetryMockState {
+  errors: Array<{ message: string; error?: unknown }>;
+}
+
+export const testTelemetry: TestTelemetryMockState = { errors: [] };
+
+export interface TestDashboardStreamMockState {
+  options: Array<Record<string, unknown>>;
+  state: {
+    connected: boolean;
+    status: string;
+    retryCount: number;
+    error?: string;
+    lastMessageAt?: number;
+    lastUpdateAt?: number;
+  };
+}
+
+export const testDashboardStream: TestDashboardStreamMockState = {
+  options: [],
+  state: { connected: false, status: "offline", retryCount: 0 },
+};
