@@ -7,7 +7,7 @@ import {
 } from "@ant-design/icons";
 import { Button, Tooltip } from "antd";
 
-import { getQuickLegendVisibility } from "./war-map-legend-model";
+import { getQuickLegendVisibility } from "./war-map-quick-legend-model";
 import {
   OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME,
   resolveOverlayButtonClassName,

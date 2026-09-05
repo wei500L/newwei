@@ -3,7 +3,7 @@
 import { InfoCircleOutlined } from "@ant-design/icons";
 import { Button, Tooltip, Typography } from "antd";
 
-import { selectVisibleQuickLegendItems } from "./war-map-legend-model";
+import { selectVisibleQuickLegendItems } from "./war-map-quick-legend-model";
 import { WarMapLegendSwatch } from "./war-map-legend-swatch";
 import {
   OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME,
