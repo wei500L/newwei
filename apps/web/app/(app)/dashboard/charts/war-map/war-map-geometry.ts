@@ -126,10 +126,6 @@ function splitDeckPathGeometry(path: unknown): {
   return { segments, points };
 }
 
-export function splitDeckPathSegments(path: unknown): DeckCoordinate[][] {
-  return splitDeckPathGeometry(path).segments;
-}
-
 function stripFeatureGeometry(
   feature: WarMapLayerFeature,
 ): Omit<WarMapLayerFeature, 'path' | 'polygon'> {
@@ -165,12 +161,6 @@ function buildPathFeaturesFromSegments(
     id: preserveOriginalId && index === 0 ? feature.id : `${feature.id}-${idPrefix}-${index}`,
     path,
   }));
-}
-
-export function buildSanitizedPathFeatures(
-  feature: WarMapLayerFeature,
-): SanitizedDeckPathFeature[] {
-  return buildSanitizedPathGeometry(feature).pathFeatures;
 }
 
 export function buildSanitizedPathGeometry(

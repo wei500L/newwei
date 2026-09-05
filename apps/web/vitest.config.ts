@@ -88,9 +88,13 @@ export default defineConfig({
         // FE-批4B：符号系统拆分模块（types/color/svg/icons/legend model/swatch）
         "app/(app)/dashboard/charts/war-map/war-map-symbol-types.ts",
         "app/(app)/dashboard/charts/war-map/war-map-symbol-color.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-symbol-svg-primitives.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-symbol-glyphs.ts",
         "app/(app)/dashboard/charts/war-map/war-map-symbol-svg.ts",
         "app/(app)/dashboard/charts/war-map/war-map-symbol-icons.ts",
-        "app/(app)/dashboard/charts/war-map/war-map-legend-model.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-legend-item-model.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-quick-legend-model.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-full-legend-model.ts",
         "app/(app)/dashboard/charts/war-map/war-map-legend-swatch.tsx",
         // FE-批4B：overlay model 拆分模块（theme/types/layout/view-model）
         "app/(app)/dashboard/charts/war-map/war-map-overlay-theme.ts",
