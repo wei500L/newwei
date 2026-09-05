@@ -20,6 +20,12 @@ import { MAP_STYLE_URL } from "@/lib/map/map-style";
 
 import type { WarMapBbox } from "./query-viewport";
 
+/** Deck overlay props 契约（runtime 为唯一持有者并负责重建后回放）。 */
+export type WarMapOverlayProps = Pick<
+  MapboxOverlayProps,
+  "layers" | "getTooltip" | "getCursor"
+>;
+
 /** 地图 moveend/onReady 同步给外部的 view state 与查询视口。 */
 export interface WarMapViewportSync {
   viewState: {
@@ -53,9 +59,7 @@ export interface UseWarMapRuntimeResult {
   /** 销毁当前实例并以新 nonce 重建（错误重试）。 */
   retryMapLoad: () => void;
   /** 更新 Deck overlay props（图层/tooltip/cursor）。 */
-  setOverlayProps: (
-    props: Pick<MapboxOverlayProps, "layers" | "getTooltip" | "getCursor">,
-  ) => void;
+  setOverlayProps: (props: WarMapOverlayProps) => void;
 }
 
 /** 外部视图状态与地图当前状态的差异阈值（低于阈值不 easeTo）。 */
@@ -78,7 +82,12 @@ const EASE_TO_DURATION_MS = 450;
  * - load/error 生命周期：错误分类（classifyMapLoadError）+ telemetry +
  *   toast；retry 销毁旧实例后重建。
  * - moveend/ready 同步：把地图视图写回外部（onViewportSync），并以
- *   syncFromMapRef 守卫外部视图状态回放（easeTo）造成的循环。
+ *   syncFromMapRef 守卫外部视图状态回放（easeTo）造成的循环；guard
+ *   复位的零延迟 timeout 保存句柄（新 moveend 前取消旧句柄，cleanup
+ *   时取消并复位，避免旧 runtime 回调在 retry/卸载后修改 guard）。
+ * - overlay props 的最新值持有与回放：setOverlayProps 无论 overlay
+ *   是否存在都保存最新 props；新 runtime 创建后立即回放，retry 重建
+ *   不依赖数据或交互变化即可恢复图层。
  * - resize（ready/inView/renderable 变化时）与 overlay props 更新入口。
  *
  * 地图实例与 overlay 引用只在本 hook 创建与清空。
@@ -96,6 +105,8 @@ export function useWarMapRuntime(
 
   const mapRef = useRef<MapLibreMap | null>(null);
   const deckOverlayRef = useRef<MapboxOverlay | null>(null);
+  /** 最新 overlay props（overlay 不存在时保存，新 runtime 创建后回放）。 */
+  const latestOverlayPropsRef = useRef<WarMapOverlayProps | null>(null);
   const syncFromMapRef = useRef(false);
   const targetViewStateRef = useRef(targetViewState);
   const [mapReady, setMapReady] = useState(false);
@@ -121,6 +132,10 @@ export function useWarMapRuntime(
 
     const initialViewState = targetViewStateRef.current;
     setMapLoadError(null);
+    // 同步 guard 复位句柄：本 effect 运行期内唯一有效；新 moveend 前
+    // 取消旧句柄，cleanup（retry/卸载）时取消并复位 guard，避免旧
+    // runtime 的回调在实例销毁后修改 syncFromMapRef。
+    let syncGuardResetTimer: number | null = null;
     const syncFromMap = (map: MapLibreMap) => {
       const center = map.getCenter();
       syncFromMapRef.current = true;
@@ -137,7 +152,11 @@ export function useWarMapRuntime(
           zoom: map.getZoom(),
         },
       });
-      window.setTimeout(() => {
+      if (syncGuardResetTimer !== null) {
+        window.clearTimeout(syncGuardResetTimer);
+      }
+      syncGuardResetTimer = window.setTimeout(() => {
+        syncGuardResetTimer = null;
         syncFromMapRef.current = false;
       }, 0);
     };
@@ -167,7 +186,20 @@ export function useWarMapRuntime(
     mapRef.current = runtime.map;
     deckOverlayRef.current = runtime.overlay;
 
+    // retry 重建后立即回放最新 overlay props：新 overlay 不依赖数据、
+    // hover、选中或任何图层依赖变化即可恢复 layers/tooltip/cursor。
+    const latestOverlayProps = latestOverlayPropsRef.current;
+    if (latestOverlayProps) {
+      setDeckOverlayProps(runtime.overlay, latestOverlayProps);
+    }
+
     return () => {
+      if (syncGuardResetTimer !== null) {
+        window.clearTimeout(syncGuardResetTimer);
+        syncGuardResetTimer = null;
+      }
+      // 实例销毁后不再有进行中的地图同步，guard 随之复位
+      syncFromMapRef.current = false;
       deckOverlayRef.current = null;
       mapRef.current = null;
       runtime.destroy();
@@ -223,15 +255,14 @@ export function useWarMapRuntime(
     map.resize();
   }, [hasRenderableMapContainer, inView, mapReady]);
 
-  const setOverlayProps = useCallback(
-    (props: Pick<MapboxOverlayProps, "layers" | "getTooltip" | "getCursor">) => {
-      if (!deckOverlayRef.current) {
-        return;
-      }
+  const setOverlayProps = useCallback((props: WarMapOverlayProps) => {
+    // 最新 props 始终保存（overlay 不存在时也不丢失），新 runtime
+    // 创建后由创建 effect 回放。
+    latestOverlayPropsRef.current = props;
+    if (deckOverlayRef.current) {
       setDeckOverlayProps(deckOverlayRef.current, props);
-    },
-    [],
-  );
+    }
+  }, []);
 
   return {
     mapRef,

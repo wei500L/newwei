@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -694,6 +694,53 @@ describe("WarMap（迁移前 characterization）", () => {
           layerCalls.some(
             (call) =>
               call.params.bbox === "10.00000,20.00000,30.00000,40.00000",
+          ),
+        ).toBe(true);
+      });
+    });
+
+    it("moveend 写回受同步 guard 保护，guard 释放后外部视图变化恢复 easeTo", async () => {
+      renderWarMap();
+      await activateMap();
+      expect(warMapTestRuntime.easeToCalls).toEqual([]);
+
+      warMapTestRuntime.viewport = {
+        lat: 40,
+        lng: -74,
+        zoom: 4.2,
+        bearing: 0,
+        pitch: 0,
+      };
+      warMapTestRuntime.bounds = [10, 20, 30, 40];
+      emitWarMapMapEvent("moveend");
+      // 同一宏任务内紧跟外部视图变化：零延迟复位 timeout 未执行、guard
+      // 仍生效，写回与外部变化都不产生 easeTo 回环
+      act(() => {
+        useWarMapSettingsStore.getState().setViewState({
+          lat: 28,
+          lon: 45,
+          zoom: 4,
+        });
+      });
+      expect(warMapTestRuntime.easeToCalls).toEqual([]);
+
+      // 零延迟复位 timeout 执行后 guard 释放
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      act(() => {
+        useWarMapSettingsStore.getState().setViewState({
+          lat: 30,
+          lon: 50,
+          zoom: 4,
+        });
+      });
+      await waitFor(() => {
+        expect(
+          warMapTestRuntime.easeToCalls.some(
+            (call) =>
+              Array.isArray(call.center) &&
+              (call.center as number[])[0] === 50 &&
+              (call.center as number[])[1] === 30,
           ),
         ).toBe(true);
       });
