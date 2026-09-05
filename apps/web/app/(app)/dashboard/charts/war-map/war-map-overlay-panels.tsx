@@ -255,41 +255,51 @@ export function useWarMapOverlayPanels(
   const overlayRail: ReactNode = (
     <WarMapOverlayRail
       overlayRailRef={overlayRailRef}
-      overlayDensity={overlayDensity}
-      layoutVariant={layoutVariant}
-      overlayTopClassName={overlayLayout.overlayTopClassName}
-      overlayRailWidth={overlayLayout.overlayRailWidth}
-      useDrawerControls={useDrawerControls}
-      summaryStatusCards={overlayViewModel.summaryStatusCards}
-      summaryDataLabel={overlayViewModel.summaryDataLabel}
-      refreshingMapData={status.refreshingMapData}
-      showActionLabels={overlayLayout.showActionLabels}
-      openOverlayPanel={interaction.overlayPanel.openOverlayPanel}
-      quickLegendItems={legend.quickItems}
-      activeLegendKey={interaction.legend.focusedLegendItemKey}
-      highlightedLegendKey={interaction.legend.highlightedLegendItemKey}
-      onRefresh={status.onRefresh}
-      onToggleControls={() => {
-        if (interaction.overlayPanel.controlsSection === "legend") {
-          interaction.overlayPanel.setControlsSection("view");
-        }
-        interaction.overlayPanel.setOpenOverlayPanel((current) =>
-          current === "controls" ? null : "controls",
-        );
+      layout={{
+        density: overlayDensity,
+        variant: layoutVariant,
+        topClassName: overlayLayout.overlayTopClassName,
+        railWidth: overlayLayout.overlayRailWidth,
+        useDrawerControls,
+        showActionLabels: overlayLayout.showActionLabels,
+        openPanel: interaction.overlayPanel.openOverlayPanel,
       }}
-      onToggleLegend={() => {
-        if (standaloneLayout) {
-          interaction.legend.scrollLegendDockIntoView();
-          return;
-        }
-        interaction.overlayPanel.setOpenOverlayPanel((current) =>
-          current === "legend" ? null : "legend",
-        );
+      summary={{
+        statusCards: overlayViewModel.summaryStatusCards,
+        dataLabel: overlayViewModel.summaryDataLabel,
       }}
-      onLegendItemHover={interaction.legend.updateHoveredLegendItemKey}
-      onLegendItemFocus={interaction.legend.updateFocusedLegendItemKey}
-      controlsPanel={desktopControlsPanel}
-      legendPanel={desktopLegendPanel}
+      refreshing={status.refreshingMapData}
+      quickLegend={{
+        items: legend.quickItems,
+        activeKey: interaction.legend.focusedLegendItemKey,
+        highlightedKey: interaction.legend.highlightedLegendItemKey,
+        onItemHover: interaction.legend.updateHoveredLegendItemKey,
+        onItemFocus: interaction.legend.updateFocusedLegendItemKey,
+      }}
+      actions={{
+        onRefresh: status.onRefresh,
+        onToggleControls: () => {
+          if (interaction.overlayPanel.controlsSection === "legend") {
+            interaction.overlayPanel.setControlsSection("view");
+          }
+          interaction.overlayPanel.setOpenOverlayPanel((current) =>
+            current === "controls" ? null : "controls",
+          );
+        },
+        onToggleLegend: () => {
+          if (standaloneLayout) {
+            interaction.legend.scrollLegendDockIntoView();
+            return;
+          }
+          interaction.overlayPanel.setOpenOverlayPanel((current) =>
+            current === "legend" ? null : "legend",
+          );
+        },
+      }}
+      panels={{
+        controls: desktopControlsPanel,
+        legend: desktopLegendPanel,
+      }}
       t={t}
     />
   );

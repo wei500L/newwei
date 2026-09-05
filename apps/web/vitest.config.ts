@@ -92,6 +92,14 @@ export default defineConfig({
         "app/(app)/dashboard/charts/war-map/war-map-symbol-icons.ts",
         "app/(app)/dashboard/charts/war-map/war-map-legend-model.ts",
         "app/(app)/dashboard/charts/war-map/war-map-legend-swatch.tsx",
+        // FE-批4B：overlay model 拆分模块（theme/types/layout/view-model）
+        "app/(app)/dashboard/charts/war-map/war-map-overlay-theme.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-overlay-types.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-overlay-layout.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-overlay-view-model.ts",
+        // FE-批4B：overlay rail 拆分模块（summary/quick legend）
+        "app/(app)/dashboard/charts/war-map/war-map-overlay-summary.tsx",
+        "app/(app)/dashboard/charts/war-map/war-map-overlay-quick-legend.tsx",
         "app/(app)/dashboard/charts/war-map/war-map-static-layers.ts",
         "app/(app)/dashboard/charts/war-map/war-map-static-vector-layers.ts",
         "app/(app)/dashboard/charts/war-map/war-map-ais-layers.ts",

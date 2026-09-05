@@ -4,7 +4,7 @@ import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { WarMapOverlayRail } from "./war-map-overlay-rail";
-import type { WarMapOverlayRailProps } from "./war-map-overlay-rail";
+import type { WarMapOverlayRailProps } from "./war-map-overlay-rail-types";
 import {
   buildWarMapQuickLegendItems,
   type WarMapLegendItem,
@@ -25,7 +25,7 @@ const quickLegendItems: WarMapLegendItem[] = buildWarMapQuickLegendItems({
   effectiveAisMode: "all",
 });
 
-const summaryStatusCards: WarMapOverlayRailProps["summaryStatusCards"] = [
+const summaryStatusCards: WarMapOverlayRailProps["summary"]["statusCards"] = [
   {
     key: "stream",
     label: "Stream",
@@ -46,31 +46,72 @@ const summaryStatusCards: WarMapOverlayRailProps["summaryStatusCards"] = [
   },
 ];
 
-function renderRail(
-  overrides?: Partial<WarMapOverlayRailProps>,
-): ReturnType<typeof render> {
-  const props: WarMapOverlayRailProps = {
+function railProps(overrides?: {
+  openPanel?: WarMapOverlayRailProps["layout"]["openPanel"];
+  layout?: Partial<WarMapOverlayRailProps["layout"]>;
+  quickLegend?: Partial<WarMapOverlayRailProps["quickLegend"]>;
+  onRefresh?: () => void;
+  onToggleControls?: () => void;
+  onToggleLegend?: () => void;
+  onItemFocus?: (key: string | null) => void;
+  onItemHover?: (key: string | null) => void;
+  refreshing?: boolean;
+}): WarMapOverlayRailProps {
+  return {
     overlayRailRef: createRef<HTMLDivElement>(),
-    overlayDensity: "expanded",
-    layoutVariant: "embedded",
-    overlayTopClassName: "top-4",
-    overlayRailWidth: 272,
-    useDrawerControls: false,
-    summaryStatusCards,
-    summaryDataLabel: "data label",
-    refreshingMapData: false,
-    showActionLabels: true,
-    openOverlayPanel: null,
-    quickLegendItems,
-    onRefresh: vi.fn(),
-    onToggleControls: vi.fn(),
-    onToggleLegend: vi.fn(),
-    controlsPanel: <div>controls-panel-slot</div>,
-    legendPanel: <div>legend-panel-slot</div>,
+    layout: {
+      density: "expanded",
+      variant: "embedded",
+      topClassName: "top-4",
+      railWidth: 272,
+      useDrawerControls: false,
+      showActionLabels: true,
+      openPanel: overrides?.openPanel ?? null,
+      ...overrides?.layout,
+    },
+    summary: {
+      statusCards: summaryStatusCards,
+      dataLabel: "data label",
+    },
+    refreshing: overrides?.refreshing ?? false,
+    quickLegend: {
+      items: quickLegendItems,
+      ...overrides?.quickLegend,
+    },
+    actions: {
+      onRefresh: overrides?.onRefresh ?? vi.fn(),
+      onToggleControls: overrides?.onToggleControls ?? vi.fn(),
+      onToggleLegend: overrides?.onToggleLegend ?? vi.fn(),
+    },
+    panels: {
+      controls: <div>controls-panel-slot</div>,
+      legend: <div>legend-panel-slot</div>,
+    },
     t,
-    ...overrides,
   };
-  return render(<WarMapOverlayRail {...props} />);
+}
+
+function renderRail(
+  overrides?: Parameters<typeof railProps>[0],
+): ReturnType<typeof render> {
+  const props = railProps({
+    ...overrides,
+    quickLegend: {
+      ...overrides?.quickLegend,
+      onItemFocus: overrides?.onItemFocus ?? undefined,
+      onItemHover: overrides?.onItemHover ?? undefined,
+    },
+  });
+  // re-apply focus/hover after spread of defaults
+  const full: WarMapOverlayRailProps = {
+    ...props,
+    quickLegend: {
+      ...props.quickLegend,
+      onItemFocus: overrides?.onItemFocus,
+      onItemHover: overrides?.onItemHover,
+    },
+  };
+  return render(<WarMapOverlayRail {...full} />);
 }
 
 describe("WarMapOverlayRail（FE-批4B characterization）", () => {
@@ -95,7 +136,7 @@ describe("WarMapOverlayRail（FE-批4B characterization）", () => {
     const onToggleControls = vi.fn();
     const { rerender } = renderRail({
       onToggleControls,
-      openOverlayPanel: "controls",
+      openPanel: "controls",
     });
     const controlsButton = screen.getByRole("button", {
       name: "⟦dashboard.charts.warMap.overlay.controls⟧",
@@ -104,7 +145,7 @@ describe("WarMapOverlayRail（FE-批4B characterization）", () => {
     await userEvent.click(controlsButton);
     expect(onToggleControls).toHaveBeenCalledTimes(1);
 
-    rerender(<WarMapOverlayRail {...railProps({ openOverlayPanel: null })} />);
+    rerender(<WarMapOverlayRail {...railProps({ openPanel: null })} />);
     expect(
       screen.getByRole("button", {
         name: "⟦dashboard.charts.warMap.overlay.controls⟧",
@@ -120,44 +161,43 @@ describe("WarMapOverlayRail（FE-批4B characterization）", () => {
     expect(
       screen.getByRole("button", { name: "⟦dashboard.charts.warMap.legend.title⟧" }),
     ).toBeInTheDocument();
-    // quick legend 项（expanded 上限 7）+ hidden count 按钮语义
-    const moreButtons = screen.queryAllByRole("button", {
-      name: /\+3 more/,
-    });
-    expect(moreButtons.length).toBeLessThanOrEqual(1);
+    // 8 项 > expanded 上限 7 → hidden 1（+1 more 不应误显示为其它数量）
+    expect(
+      screen.queryByRole("button", { name: "+2 more" }),
+    ).not.toBeInTheDocument();
   });
 
   it("quick legend 项点击触发聚焦，hover/leave 触发 hover 回调", async () => {
-    const onLegendItemFocus = vi.fn();
-    const onLegendItemHover = vi.fn();
-    renderRail({ onLegendItemFocus, onLegendItemHover });
+    const onItemFocus = vi.fn();
+    const onItemHover = vi.fn();
+    renderRail({ onItemFocus, onItemHover });
     const firstItem = screen.getByRole("button", {
       name: /⟦dashboard\.charts\.warMap\.legend\.signalHigh⟧/,
     });
     await userEvent.hover(firstItem);
-    expect(onLegendItemHover).toHaveBeenCalledWith("signal-high");
+    expect(onItemHover).toHaveBeenCalledWith("signal-high");
     await userEvent.unhover(firstItem);
-    expect(onLegendItemHover).toHaveBeenCalledWith(null);
+    expect(onItemHover).toHaveBeenCalledWith(null);
     await userEvent.click(firstItem);
-    expect(onLegendItemFocus).toHaveBeenCalledWith("signal-high");
+    expect(onItemFocus).toHaveBeenCalledWith("signal-high");
   });
 
   it("已有 active 项时点击同项取消聚焦（null）", async () => {
-    const onLegendItemFocus = vi.fn();
+    const onItemFocus = vi.fn();
     renderRail({
-      activeLegendKey: "signal-high",
-      onLegendItemFocus,
+      quickLegend: { activeKey: "signal-high" },
+      onItemFocus,
     });
     await userEvent.click(
       screen.getByRole("button", {
         name: /⟦dashboard\.charts\.warMap\.legend\.signalHigh⟧/,
       }),
     );
-    expect(onLegendItemFocus).toHaveBeenCalledWith(null);
+    expect(onItemFocus).toHaveBeenCalledWith(null);
   });
 
   it("面板打开时 quick legend 隐藏，legend 工具按钮出现", () => {
-    renderRail({ openOverlayPanel: "controls" });
+    renderRail({ openPanel: "controls" });
     expect(
       screen.queryByText(
         "⟦dashboard.charts.warMap.legend.quickLegendCompactHint⟧",
@@ -169,19 +209,19 @@ describe("WarMapOverlayRail（FE-批4B characterization）", () => {
   });
 
   it("activePanel：embedded 桌面无 Drawer 时渲染 controlsPanel 槽位", () => {
-    renderRail({ openOverlayPanel: "controls" });
+    renderRail({ openPanel: "controls" });
     expect(screen.getByText("controls-panel-slot")).toBeInTheDocument();
     expect(screen.queryByText("legend-panel-slot")).not.toBeInTheDocument();
   });
 
   it("activePanel：legend 面板打开时渲染 legendPanel 槽位", () => {
-    renderRail({ openOverlayPanel: "legend" });
+    renderRail({ openPanel: "legend" });
     expect(screen.getByText("legend-panel-slot")).toBeInTheDocument();
     expect(screen.queryByText("controls-panel-slot")).not.toBeInTheDocument();
   });
 
   it("minimal 密度：摘要降级为紧凑 Tag + data 胶囊，quick legend 不展示", () => {
-    renderRail({ overlayDensity: "minimal" });
+    renderRail({ layout: { density: "minimal" } });
     expect(screen.getByText("live")).toBeInTheDocument();
     expect(screen.getByText("data label")).toBeInTheDocument();
     expect(
@@ -192,7 +232,7 @@ describe("WarMapOverlayRail（FE-批4B characterization）", () => {
   });
 
   it("standalone 布局：无 quick legend、无 legend 工具按钮，无 activePanel", () => {
-    renderRail({ layoutVariant: "standalone", openOverlayPanel: "controls" });
+    renderRail({ layout: { variant: "standalone" }, openPanel: "controls" });
     expect(
       screen.queryByText(
         "⟦dashboard.charts.warMap.legend.quickLegendCompactHint⟧",
@@ -205,7 +245,7 @@ describe("WarMapOverlayRail（FE-批4B characterization）", () => {
   });
 
   it("useDrawerControls：面板不由 rail 承载（activePanel 为空）", () => {
-    renderRail({ useDrawerControls: true, openOverlayPanel: "controls" });
+    renderRail({ layout: { useDrawerControls: true }, openPanel: "controls" });
     expect(screen.queryByText("controls-panel-slot")).not.toBeInTheDocument();
   });
 
@@ -230,40 +270,17 @@ describe("WarMapOverlayRail（FE-批4B characterization）", () => {
         label: "extra three",
       },
     ];
-    renderRail({ quickLegendItems: manyItems, onToggleLegend });
+    renderRail({
+      quickLegend: { items: manyItems },
+      onToggleLegend,
+    });
     const moreButton = screen.getByRole("button", { name: "+4 more" });
     await userEvent.click(moreButton);
     expect(onToggleLegend).toHaveBeenCalledTimes(1);
   });
 
   it("refreshing 状态：refresh 按钮显示 loading 语义", () => {
-    renderRail({ refreshingMapData: true });
-    expect(
-      document.querySelector(".ant-btn-loading"),
-    ).not.toBeNull();
+    renderRail({ refreshing: true });
+    expect(document.querySelector(".ant-btn-loading")).not.toBeNull();
   });
 });
-
-function railProps(overrides?: Partial<WarMapOverlayRailProps>) {
-  return {
-    overlayRailRef: createRef<HTMLDivElement>(),
-    overlayDensity: "expanded" as const,
-    layoutVariant: "embedded" as const,
-    overlayTopClassName: "top-4",
-    overlayRailWidth: 272,
-    useDrawerControls: false,
-    summaryStatusCards,
-    summaryDataLabel: "data label",
-    refreshingMapData: false,
-    showActionLabels: true,
-    openOverlayPanel: null,
-    quickLegendItems,
-    onRefresh: vi.fn(),
-    onToggleControls: vi.fn(),
-    onToggleLegend: vi.fn(),
-    controlsPanel: <div>controls-panel-slot</div>,
-    legendPanel: <div>legend-panel-slot</div>,
-    t,
-    ...overrides,
-  };
-}
