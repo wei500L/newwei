@@ -117,8 +117,9 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
     );
 
     // 清空 → 已提交 search 立即复位；随后切 limit 触发新请求，
-    // 其变量应携带 resultSearch: null（若清空未生效会残留 "foo"）
-    fireEvent.change(input, { target: { value: "" } });
+    // 其变量应携带 resultSearch: null（若清空未生效会残留 "foo"）。
+    // 用 input 事件（React onChange 的主通道）驱动清空
+    fireEvent.input(input, { target: { value: "" } });
     selectLatest50();
     await waitForLimit50Selected();
 
