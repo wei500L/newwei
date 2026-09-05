@@ -137,7 +137,7 @@ const overlayViewModel = {
   detailedChainStatuses: [
     { key: "chain-a", color: "green", text: "chain a ok", tooltip: "tt" },
   ],
-});
+};
 
 function panelProps(overrides?: {
   section?: string;
