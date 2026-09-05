@@ -64,7 +64,7 @@ const transport: WarMapControlsPanelTransportProps = {
 const view: WarMapControlsPanelProps["view"] = {
   presets: [
     { key: "global", label: "Global", active: true },
-    { key: "europe", label: "Europe", active: false },
+    { key: "eu", label: "Europe", active: false },
   ],
   timeRanges: [
     { key: "24h", label: "24h", active: true },
@@ -174,7 +174,7 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
   it("view 节：preset 与时间范围按钮触发回调", async () => {
     renderPanel();
     await userEvent.click(screen.getByRole("button", { name: "Europe" }));
-    expect(view.onPresetSelect).toHaveBeenCalledWith("europe");
+    expect(view.onPresetSelect).toHaveBeenCalledWith("eu");
     await userEvent.click(screen.getByRole("button", { name: "7d" }));
     expect(view.onTimeRangeSelect).toHaveBeenCalledWith("7d");
     // 图层可见性槽位渲染
