@@ -19,7 +19,7 @@ import type {
   TaskDetailTranslate,
 } from "../task-detail-types";
 
-export interface UseCrawlTaskActionsOptions {
+interface UseCrawlTaskActionsOptions {
   task: CrawlTaskDetailTask | null;
   canManage: boolean;
   hasItemsWrite: boolean;

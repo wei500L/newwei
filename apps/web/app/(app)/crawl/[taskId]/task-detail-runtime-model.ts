@@ -81,7 +81,7 @@ function toOptionalNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-export interface CrawlRuntimeParams {
+interface CrawlRuntimeParams {
   waitTimeoutMs: number | null;
   pageTimeoutMs: number | null;
   delayBeforeReturnHtmlMs: number | null;

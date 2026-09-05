@@ -16,7 +16,7 @@ export function buildAdditionalUrls(config: CrawlTaskConfig): string[] {
     .filter((entry): entry is string => Boolean(entry));
 }
 
-export interface MultiUrlConfigView {
+interface MultiUrlConfigView {
   name?: string;
   matcher?: {
     matchMode?: string;

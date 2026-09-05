@@ -20,7 +20,7 @@ export function getLinkScore(link: LinkScoreFields): number {
   return link.totalScore ?? link.contextualScore ?? link.intrinsicScore ?? 0;
 }
 
-export interface CrawlLinkOverview {
+interface CrawlLinkOverview {
   stats: {
     totalLinks: number;
     internalLinks: number;

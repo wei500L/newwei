@@ -8675,13 +8675,13 @@
           "picture": "Picture",
           "responsive": "Responsive"
         },
-        "more": "More",
+        "more": "+{{count}} more {{kind}}",
         "storedTitle": "Stored media",
         "unknownMime": "Unknown MIME type",
         "thumbnailAlt": "Thumbnail alt",
         "score": "Score",
         "srcsetVariants": "Srcset variants",
-        "sources": "Sources",
+        "sources": "{{label}} sources ({{count}})",
         "assetUnavailable": "Stored media access link is unavailable.",
         "previewUnavailable": "Preview unavailable",
         "previewLoadFailed": "Preview failed to load"
@@ -8689,9 +8689,9 @@
       "tables": {
         "title": "Tables",
         "releaseNotes": "Release notes",
-        "defaultTitle": "Default title",
-        "source": "Source",
-        "remaining": "Remaining"
+        "defaultTitle": "Table {{id}}",
+        "source": "Source: {{source}}",
+        "remaining": "{{preview}} shown, {{remaining}} more"
       },
       "proxy": {
         "direct": "Direct",
@@ -8851,10 +8851,10 @@
       "latestError": "Latest error",
       "scanFullPageEnabled": "Scan full page enabled",
       "serverDefault": "Server default",
-      "waitTimeoutValue": "Wait timeout value",
+      "waitTimeoutValue": "{{value}} ms",
       "default": "Default",
-      "memoryValue": "Memory value",
-      "percentValue": "Percent value",
+      "memoryValue": "{{value}} MB",
+      "percentValue": "{{value}}%",
       "robotsPolicy": {
         "ignore": "Ignore (always)"
       },
@@ -8863,8 +8863,8 @@
         "noLlmHint": "Crawl stage is deterministic (fetch + clean markdown only). Run LLM summarization and analysis in downstream pipelines."
       },
       "multiUrl": {
-        "patterns": "Patterns",
-        "overrides": "Overrides",
+        "patterns": "Patterns ({{mode}}): {{patterns}}",
+        "overrides": "Overrides: {{overrides}}",
         "additionalOverrides": "+{{count}} other overrides"
       },
       "results": {
@@ -8891,7 +8891,7 @@
     },
     "multiUrl": {
       "title": "Multi URL",
-      "strategyTitle": "Strategy title",
+      "strategyTitle": "Strategy {{index}}",
       "add": "Add",
       "empty": "No Multi URL",
       "fields": {
@@ -8934,13 +8934,13 @@
         "avgIntrinsic": "Avg intrinsic"
       },
       "buckets": "Buckets",
-      "bucketItem": "Bucket item",
+      "bucketItem": "{{kind}} × {{count}}",
       "topLinks": "Top links",
       "emptyScored": "Empty scored",
-      "linkScore": "Link score",
+      "linkScore": "{{domain}} · score {{score}}",
       "lowQuality": "Low quality",
       "emptyLowQuality": "Empty low quality",
-      "intrinsicScore": "Intrinsic score",
+      "intrinsicScore": "{{domain}} · intrinsic {{score}}",
       "description": "Links description",
       "scoreLinks": "Score links",
       "scoreLinksHint": "Score links hint",

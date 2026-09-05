@@ -48,14 +48,14 @@ export function classifyTaskLastErrorHeadedIssue(lastError?: string | null) {
   return classifyHeadedIssue(lastError ?? undefined);
 }
 
-export interface VirtualScrollSummary {
+interface VirtualScrollSummary {
   containerSelector: string;
   scrollCount: number | null;
   waitAfterScrollMs: number | null;
   scrollBy: string | number | null;
 }
 
-export function buildVirtualScrollSummary(
+function buildVirtualScrollSummary(
   config: CrawlTaskConfig,
 ): VirtualScrollSummary | null {
   if (
@@ -98,7 +98,7 @@ export function buildVirtualScrollSummary(
   };
 }
 
-export function resolveQualityProfileValue(config: CrawlTaskConfig): string | null {
+function resolveQualityProfileValue(config: CrawlTaskConfig): string | null {
   if (!config || typeof config.qualityProfile !== "string") {
     return null;
   }
@@ -113,7 +113,7 @@ export function resolveQualityProfileValue(config: CrawlTaskConfig): string | nu
   return null;
 }
 
-export function resolvePageTypeHintValue(config: CrawlTaskConfig): string | null {
+function resolvePageTypeHintValue(config: CrawlTaskConfig): string | null {
   if (!config || typeof config.pageTypeHint !== "string") {
     return null;
   }
@@ -128,7 +128,7 @@ export function resolvePageTypeHintValue(config: CrawlTaskConfig): string | null
   return null;
 }
 
-export function resolveAutoExpandDetailsValue(
+function resolveAutoExpandDetailsValue(
   config: CrawlTaskConfig,
 ): boolean | null {
   return typeof config?.autoExpandDetails === "boolean"

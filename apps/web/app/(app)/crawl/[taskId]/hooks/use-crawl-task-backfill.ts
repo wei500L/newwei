@@ -26,7 +26,7 @@ import type {
   TaskDetailTranslate,
 } from "../task-detail-types";
 
-export interface UseCrawlTaskBackfillOptions {
+interface UseCrawlTaskBackfillOptions {
   task: CrawlTaskDetailTask | null;
   canCreateItem: boolean;
   refetch: () => Promise<unknown>;

@@ -228,6 +228,17 @@ verify success）——CI-01 本轮未复现，无重跑。
 - **证据**：run 33874825439 首次失败日志（OpenAPI contract snapshot drift check 步骤）与同 SHA 重跑成功；对照点：同一分支早前 run 33870697826 该步骤 success。
 - **状态**：**开放，待后续单独修复**（本轮仅登记，未修改生成器/快照/CI——PR #5 明确禁止触碰）。修复方向建议：生成器内显式等待/校验 schema 解析完成，或将 unresolved 输出视为生成失败而非降级继续。
 
+
+### FE-I18N-01：task-detail 域 14 个 i18n 键丢失插值占位符（用户可见数值不显示）
+
+- **现象**：`apps/web/app/(app)/crawl/[taskId]/` 详情页多个字段只显示标签文字，不显示实际数值——内存字段显示字面量「Memory value/内存值」而非「512 MB」、链接分桶 Tag 显示「Bucket item/分桶条目」而非「social × 2」、表格剩余行数、多 URL 模式/覆盖项、媒体来源数、wait timeout 等同。
+- **根因**：`apps/web/lib/locales/{en,zh}.json` 中 14 个键的文案缺少 `{{value}}` 等插值占位符（疑似某次批量翻译/同步工具丢失），组件传入的参数被 i18next 静默丢弃。涉及键：`crawl.detail.memoryValue/percentValue/waitTimeoutValue/multiUrl.patterns/multiUrl.overrides/media.more/media.sources/tables.defaultTitle/tables.source/tables.remaining`、`crawl.links.bucketItem/linkScore/intrinsicScore`、`crawl.multiUrl.strategyTitle`（en+zh 各 14 处）。
+- **发现方式**：FE-批5A characterization tests（批6 静态 i18n 键核对暴露；批1 曾在 presentation 测试中以注释记录该现状）。
+- **修复**：恢复占位符（en/zh 双语，如 `{{value}} MB`、`{{kind}} × {{count}}`、`{{preview}} shown, {{remaining}} more`），并把 presentation/results 中记录缺陷现状的 4 处断言更新为修复后行为（512 MB/768 MB/66%、social × 2、2 shown, 5 more、Picture sources (1)）。
+- **波及**：`crawl.multiUrl.strategyTitle` 同时被 `CreateCrawlTaskDrawer.tsx` 消费——该文件本轮未修改，locale 修复使其策略标题从字面量「Strategy title」恢复为「Strategy {n}」（行为改善，随本条一并生效）。
+- **验证**：远端 CI（jsdom characterization 全绿）；修复措辞为机械恢复（MB/%/ms/× 等数值单位），非重新设计文案。
+- **状态**：✅ 已随 FE-批5A PR #9 修复。
+
 ## 5. 观察项（非缺陷，迁移决策输入）
 
 1. GraphQL Subscription 进程内 PubSub vs WS Redis adapter（水平扩容语义不一致）

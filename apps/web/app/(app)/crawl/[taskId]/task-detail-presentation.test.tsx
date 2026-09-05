@@ -232,9 +232,10 @@ describe("CrawlTaskDetail presentation（加载态 / 头部 / 告警 / 策略 / 
     expect(screen.getByText("beta")).toBeInTheDocument();
     expect(screen.getByText("5 inserted, 2 skipped")).toBeInTheDocument();
     expect(screen.getByText("3 queued, 1 failed")).toBeInTheDocument();
-    // 当前 en 文案模板未内插数值（characterization 记录现状）
-    expect(screen.getAllByText("Memory value").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Percent value").length).toBeGreaterThan(0);
+    // i18n 占位符修复（FE-I18N-01）后内存/效率字段显示具体数值
+    expect(screen.getAllByText("512 MB").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("768 MB").length).toBeGreaterThan(0);
+    expect(screen.getByText("66%")).toBeInTheDocument();
   });
 
   it("原始配置 JSON 以 markdown-preview pre 展示", async () => {

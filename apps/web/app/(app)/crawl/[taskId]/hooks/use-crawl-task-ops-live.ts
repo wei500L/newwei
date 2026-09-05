@@ -19,7 +19,7 @@ const REALTIME_SOCKET_TIMEOUT_MS = 10_000;
 
 export type OpsLiveStatus = "disconnected" | "connecting" | "connected";
 
-export interface UseCrawlTaskOpsLiveOptions {
+interface UseCrawlTaskOpsLiveOptions {
   canView: boolean;
   accessToken?: string;
   taskId: string;
@@ -30,7 +30,7 @@ export interface UseCrawlTaskOpsLiveOptions {
   stopPolling: () => void;
 }
 
-export interface CrawlTaskOpsLiveModel {
+interface CrawlTaskOpsLiveModel {
   status: OpsLiveStatus;
   error: string | null;
 }

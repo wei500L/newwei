@@ -25,7 +25,7 @@ const CREATE_ITEM_FROM_CRAWL_RESULT_MUTATION = gql`
   }
 `;
 
-export interface UseCrawlResultActionsOptions {
+interface UseCrawlResultActionsOptions {
   canCreateItem: boolean;
   message: TaskDetailMessageApi;
   t: TaskDetailTranslate;

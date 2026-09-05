@@ -13,7 +13,7 @@ import {
 import type { CrawlTaskConfig } from "./task-detail-config-core-model";
 import type { TaskDetailTranslate, TaskLogRecord } from "./task-detail-types";
 
-export interface ExpansionQualitySummary {
+interface ExpansionQualitySummary {
   candidateCount: number;
   batchCount: number;
   improvedSuccesses: number;
@@ -25,7 +25,7 @@ export interface ExpansionQualitySummary {
   linkFallbackCandidateCount?: number;
 }
 
-export interface DetailExpansionSummary {
+interface DetailExpansionSummary {
   maxDetailUrls: number | null;
   minRelevanceScore: number | null;
   requireSameDomain: boolean | null;

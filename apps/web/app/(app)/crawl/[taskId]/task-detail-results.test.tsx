@@ -277,8 +277,8 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
       .closest("div")
       ?.querySelector("pre");
     expect(srcsetBlock?.textContent).toContain("a 1x");
-    // 来源列表（Picture/Responsive）
-    expect(screen.getByText("Sources")).toBeInTheDocument();
+    // 来源列表（Picture/Responsive；i18n 修复后带 label 与数量）
+    expect(screen.getByText("Picture sources (1)")).toBeInTheDocument();
     expect(container.querySelector("code")?.textContent).toContain("ps");
   });
 
@@ -360,7 +360,8 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
     expect(screen.getByText("Prices")).toBeInTheDocument();
     expect(screen.getByText("7 × 2")).toBeInTheDocument();
     expect(screen.getByText("Row 1")).toBeInTheDocument();
-    expect(screen.getByText("Remaining")).toBeInTheDocument();
+    // rowCount 7、预览 2 行 → 剩余 5（i18n 占位符修复后显示数值）
+    expect(screen.getByText("2 shown, 5 more")).toBeInTheDocument();
     expect(screen.getByText("Release notes")).toBeInTheDocument();
   });
 
@@ -470,8 +471,8 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
     const lowLinks = within(lowContainer as HTMLElement).getAllByRole("link");
     expect(lowLinks.map((link) => link.textContent)).toEqual(["X", "Z", "Y"]);
 
-    // buckets 聚合 Tag
-    expect(screen.getByText("Bucket item")).toBeInTheDocument();
+    // buckets 聚合 Tag（i18n 占位符修复后显示 kind × count）
+    expect(screen.getByText("social × 2")).toBeInTheDocument();
     expect(screen.getByText("Buckets")).toBeInTheDocument();
   });
 });

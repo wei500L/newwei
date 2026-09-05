@@ -13,25 +13,23 @@ import { useCallback, useEffect, useRef, useState, type Key } from "react";
 
 import type { createApiClient } from "@/lib/api-client";
 
-import type { TaskLogRecord } from "../task-detail-types";
+import type {
+  TaskDetailMessageApi,
+  TaskLogRecord,
+} from "../task-detail-types";
 
 type CrawlApiClient = ReturnType<typeof createApiClient>;
 
-/** 组件需要的 message API 窄化（antd MessageInstance 可赋值）。 */
-export interface TaskLogsMessageApi {
-  error: (content: string) => void;
-}
-
-export interface UseCrawlTaskLogsOptions {
+interface UseCrawlTaskLogsOptions {
   apiClient: CrawlApiClient;
   canView: boolean;
   canViewTaskLogs: boolean;
   authenticated: boolean;
   taskId: string;
-  message: TaskLogsMessageApi;
+  message: TaskDetailMessageApi;
 }
 
-export interface CrawlTaskLogsModel {
+interface CrawlTaskLogsModel {
   logs: TaskLogRecord[];
   loading: boolean;
   error: string | null;

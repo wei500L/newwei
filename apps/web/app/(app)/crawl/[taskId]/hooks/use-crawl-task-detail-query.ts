@@ -13,12 +13,12 @@ import { useCrawlTaskQuery } from "@/graphql/generated";
 
 import type { CrawlTaskDetailTask } from "../task-detail-types";
 
-export interface CrawlTaskDetailQueryOptions {
+interface CrawlTaskDetailQueryOptions {
   taskId: string;
   canView: boolean;
 }
 
-export interface CrawlTaskDetailQueryController {
+interface CrawlTaskDetailQueryController {
   task: CrawlTaskDetailTask | null;
   loading: boolean;
   refetch: ReturnType<typeof useCrawlTaskQuery>["refetch"];
