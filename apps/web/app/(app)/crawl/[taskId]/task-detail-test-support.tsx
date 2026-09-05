@@ -114,7 +114,7 @@ type CrawlTaskLinkAnalysisFixture = NonNullable<
 
 function buildTopLink(link: CrawlTaskDetailLinkInput) {
   return {
-    __typename: "CrawlLinkModel",
+    __typename: "CrawlLinkModel" as const,
     href: link.href,
     text: link.text ?? null,
     title: link.title ?? null,
@@ -128,7 +128,7 @@ function buildTopLink(link: CrawlTaskDetailLinkInput) {
 
 function buildLowQualityLink(link: CrawlTaskDetailLinkInput) {
   return {
-    __typename: "CrawlLinkModel",
+    __typename: "CrawlLinkModel" as const,
     href: link.href,
     text: link.text ?? null,
     title: link.title ?? null,
@@ -154,7 +154,7 @@ function buildLinkAnalysis(
     topLinks: (input.topLinks ?? []).map(buildTopLink),
     lowQualityLinks: (input.lowQualityLinks ?? []).map(buildLowQualityLink),
     buckets: (input.buckets ?? []).map((bucket) => ({
-      __typename: "CrawlLinkBucketModel",
+      __typename: "CrawlLinkBucketModel" as const,
       kind: bucket.kind,
       links: bucket.links.map(buildTopLink),
     })),
