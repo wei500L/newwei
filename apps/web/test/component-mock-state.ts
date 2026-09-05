@@ -208,7 +208,7 @@ export function createCrawlSessionMock(): {
 }
 
 /** antd mock：仅替换 App.useApp 的 message 与 Modal.confirm，其余原样。 */
-export function createCrawlAntdMock(actual: object): Record<string, unknown> {
+export function createCrawlAntdMock(actual: unknown): Record<string, unknown> {
   const moduleExports = actual as Record<string, unknown>;
   const record =
     (kind: TestMessageKind) =>

@@ -44,9 +44,8 @@ vi.mock("@/lib/api-client", async () => {
 });
 
 vi.mock("antd", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("antd")>();
   const { createCrawlAntdMock } = await import("@/test/component-mock-state");
-  return createCrawlAntdMock(actual);
+  return createCrawlAntdMock(await importOriginal());
 });
 
 vi.mock("@/lib/client-telemetry", () => ({
@@ -58,7 +57,9 @@ describe("CrawlTaskDetail access（权限 fail-closed）", () => {
     const { apollo } = renderCrawlTaskDetail({ sessionStatus: "loading" });
 
     expect(screen.getByText("Loading...")).toBeInTheDocument();
-    await act(async () => {});
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(apollo.operations).toEqual([]);
   });
 
@@ -70,7 +71,9 @@ describe("CrawlTaskDetail access（权限 fail-closed）", () => {
 
     expect(screen.getByText("Admin only")).toBeInTheDocument();
     expect(screen.getByText("Admin only description")).toBeInTheDocument();
-    await act(async () => {});
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(apollo.operations).toEqual([]);
     expect(testOpsSocket.namespaces).toEqual([]);
     expect(testTaskLogs.calls).toEqual([]);

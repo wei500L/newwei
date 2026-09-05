@@ -12,8 +12,8 @@ import {
   testTaskLogs,
   type TestSessionMockState,
 } from "@/test/component-mock-state";
-import { resetTestNavigation } from "@/test/url-navigation";
 import { renderWithProviders } from "@/test/render";
+import { resetTestNavigation } from "@/test/url-navigation";
 
 import { CrawlTaskDetail } from "./task-detail";
 
@@ -35,7 +35,7 @@ import { CrawlTaskDetail } from "./task-detail";
 
 export type CrawlTaskDetailResult = Extract<
   NonNullable<CrawlTaskQuery["crawlTask"]>["results"],
-  ReadonlyArray<unknown>
+  readonly unknown[]
 >[number];
 
 export interface CrawlTaskDetailLinkInput {
@@ -60,10 +60,10 @@ export interface CrawlTaskDetailLinkAnalysisInput {
   };
   topLinks?: CrawlTaskDetailLinkInput[];
   lowQualityLinks?: CrawlTaskDetailLinkInput[];
-  buckets?: Array<{
+  buckets?: {
     kind: string;
     links: CrawlTaskDetailLinkInput[];
-  }>;
+  }[];
 }
 
 export interface CrawlTaskDetailResultInput {
@@ -245,17 +245,17 @@ export interface TestCrawlApolloState {
   /** 挂起模式：CrawlTask 请求永不返回（模拟慢 refetch，旧数据保留）。 */
   taskHang: boolean;
   /** 每次 CrawlTask 请求收到的变量（按顺序）。 */
-  taskVariables: Array<Record<string, unknown>>;
-  retryVariables: Array<Record<string, unknown>>;
+  taskVariables: Record<string, unknown>[];
+  retryVariables: Record<string, unknown>[];
   retryError: Error | null;
   /** UpdateCrawlTaskIngestToItems mutation 变量。 */
-  ingestToItemsVariables: Array<Record<string, unknown>>;
+  ingestToItemsVariables: Record<string, unknown>[];
   ingestToItemsError: Error | null;
   /** IngestCrawlTaskResultsToItems 按顺序的批次响应（Error=拒绝，"hang"=永不返回）。 */
-  backfillBatches: Array<CrawlBackfillBatch | Error | "hang">;
-  backfillVariables: Array<Record<string, unknown>>;
+  backfillBatches: (CrawlBackfillBatch | Error | "hang")[];
+  backfillVariables: Record<string, unknown>[];
   /** CreateItemFromCrawlResult（inline gql）变量。 */
-  createItemVariables: Array<Record<string, unknown>>;
+  createItemVariables: Record<string, unknown>[];
   createItemResult: { id: string; title: string; status: string } | null;
   createItemError: Error | null;
   /** CreateItemFromCrawlResult 挂起（观察单行 loading）。 */

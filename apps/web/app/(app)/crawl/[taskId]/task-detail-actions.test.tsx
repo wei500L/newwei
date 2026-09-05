@@ -40,9 +40,8 @@ vi.mock("@/lib/api-client", async () => {
 });
 
 vi.mock("antd", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("antd")>();
   const { createCrawlAntdMock } = await import("@/test/component-mock-state");
-  return createCrawlAntdMock(actual);
+  return createCrawlAntdMock(await importOriginal());
 });
 
 vi.mock("@/lib/client-telemetry", () => ({
@@ -357,7 +356,9 @@ describe("CrawlTaskDetail actions（retry / ingest / backfill / create item）",
     });
     apollo.backfillBatches.push("hang");
 
-    await act(async () => {});
+    await act(async () => {
+      await Promise.resolve();
+    });
     fireEvent.click(screen.getByRole("button", { name: "Backfill to Items" }));
     // Modal.confirm mock 同步记录
     expect(testModalConfirm.calls).toHaveLength(1);
@@ -372,7 +373,9 @@ describe("CrawlTaskDetail actions（retry / ingest / backfill / create item）",
         "Backfill request timed out. Please try again after refreshing the task.",
       ),
     ).toBeInTheDocument();
-    await act(async () => {});
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(container.querySelector(".ant-btn-loading")).toBeNull();
   });
 
@@ -390,7 +393,9 @@ describe("CrawlTaskDetail actions（retry / ingest / backfill / create item）",
       screen.getByText("No crawl results available yet."),
     ).toBeInTheDocument();
     fireEvent.click(backfill);
-    await act(async () => {});
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(testModalConfirm.calls).toEqual([]);
     expect(apollo.backfillVariables).toEqual([]);
   });

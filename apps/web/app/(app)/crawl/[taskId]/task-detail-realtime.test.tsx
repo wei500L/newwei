@@ -43,9 +43,8 @@ vi.mock("@/lib/api-client", async () => {
 });
 
 vi.mock("antd", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("antd")>();
   const { createCrawlAntdMock } = await import("@/test/component-mock-state");
-  return createCrawlAntdMock(actual);
+  return createCrawlAntdMock(await importOriginal());
 });
 
 vi.mock("@/lib/client-telemetry", () => ({
@@ -61,7 +60,9 @@ async function flushAsync(ms = 0): Promise<void> {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
   });
-  await act(async () => {});
+  await act(async () => {
+    await Promise.resolve();
+  });
 }
 
 describe("CrawlTaskDetail realtime（Socket /ops + 合并刷新 + fallback polling）", () => {

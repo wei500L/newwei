@@ -41,22 +41,13 @@ vi.mock("@/lib/api-client", async () => {
 });
 
 vi.mock("antd", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("antd")>();
   const { createCrawlAntdMock } = await import("@/test/component-mock-state");
-  return createCrawlAntdMock(actual);
+  return createCrawlAntdMock(await importOriginal());
 });
 
 vi.mock("@/lib/client-telemetry", () => ({
   captureClientError: () => undefined,
 }));
-
-const FULL_PERMISSIONS = [
-  "crawl.read",
-  "crawl.write",
-  "items.read",
-  "items.write",
-  "settings.manage",
-];
 
 describe("CrawlTaskDetail presentation（加载态 / 头部 / 告警 / 策略 / 配置 / logs）", () => {
   it("query 初始 loading 且无 task：整页 Spin，不渲染详情", async () => {

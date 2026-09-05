@@ -37,9 +37,8 @@ vi.mock("@/lib/api-client", async () => {
 });
 
 vi.mock("antd", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("antd")>();
   const { createCrawlAntdMock } = await import("@/test/component-mock-state");
-  return createCrawlAntdMock(actual);
+  return createCrawlAntdMock(await importOriginal());
 });
 
 vi.mock("@/lib/client-telemetry", () => ({
