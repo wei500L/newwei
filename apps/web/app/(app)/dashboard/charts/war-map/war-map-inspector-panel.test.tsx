@@ -98,7 +98,9 @@ describe("WarMapInspectorPanel（FE-批4B characterization）", () => {
       expect(
         screen.getByText("⟦dashboard.charts.warMap.stats.high⟧"),
       ).toBeInTheDocument();
-      expect(screen.getByText(/Alerts/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/tooltip\.alerts/),
+      ).toBeInTheDocument();
     });
 
     it("zoom/minimize/close 动作触发回调", async () => {
