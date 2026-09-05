@@ -36,38 +36,23 @@ function resolveActiveControlsSection(
 }
 
 export function WarMapControlsPanel({
-  layoutVariant,
-  controlsSection,
-  controlsSectionMeta,
-  controlsTabs,
-  useDrawerControls,
-  overlayPanelMaxHeight,
-  overviewMetricCards,
-  summaryStatusCards,
-  summaryDataLabel,
-  overviewDataTagLabel,
-  windowLabel,
-  feedSummaryCards,
-  detailedChainStatuses,
-  legendSections,
-  interactionLegendItems,
+  header,
   view,
   transport,
-  activeLegendKey,
-  highlightedLegendKey,
-  onLegendItemHover,
-  onLegendItemFocus,
-  onControlsSectionChange,
-  onClose,
+  feeds,
+  legend,
+  layout,
+  actions,
   t,
 }: WarMapControlsPanelProps) {
-  const standaloneLayout = layoutVariant === "standalone";
-  const activeControlsSection = resolveActiveControlsSection(controlsSection);
-  const activeControlsSectionMeta = controlsSectionMeta[activeControlsSection];
+  const standaloneLayout = layout.variant === "standalone";
+  const activeControlsSection = resolveActiveControlsSection(header.section);
+  const activeControlsSectionMeta = header.sectionMeta[activeControlsSection];
   const headerRef = useRef<HTMLDivElement | null>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
   const showCloseButton =
-    (useDrawerControls || standaloneLayout) && typeof onClose === "function";
+    (layout.useDrawerControls || standaloneLayout) &&
+    typeof actions.onClose === "function";
 
   useEffect(() => {
     const headerNode = headerRef.current;
@@ -131,27 +116,27 @@ export function WarMapControlsPanel({
     };
   }, [
     activeControlsSection,
-    controlsTabs,
-    overviewDataTagLabel,
-    overviewMetricCards,
-    summaryDataLabel,
-    summaryStatusCards,
-    windowLabel,
+    header.tabs,
+    header.overviewDataTagLabel,
+    header.overviewMetricCards,
+    header.summaryDataLabel,
+    header.summaryStatusCards,
+    header.windowLabel,
   ]);
 
   let controlsSectionContent: ReactNode;
   switch (activeControlsSection) {
     case "view":
       controlsSectionContent = (
-        <ViewSection view={view} t={t} layoutVariant={layoutVariant} />
+        <ViewSection view={view} t={t} layoutVariant={layout.variant} />
       );
       break;
     case "transport":
       controlsSectionContent = (
         <TransportSection
           transport={transport}
-          legendSections={legendSections}
-          layoutVariant={layoutVariant}
+          legendSections={legend.sections}
+          layoutVariant={layout.variant}
           t={t}
         />
       );
@@ -159,34 +144,24 @@ export function WarMapControlsPanel({
     case "feeds":
       controlsSectionContent = (
         <FeedsSection
-          feedSummaryCards={feedSummaryCards}
-          detailedChainStatuses={detailedChainStatuses}
-          layoutVariant={layoutVariant}
+          feedSummaryCards={feeds.summaryCards}
+          detailedChainStatuses={feeds.detailedChainStatuses}
+          layoutVariant={layout.variant}
         />
       );
       break;
     case "legend":
-      controlsSectionContent = (
-        <LegendSection
-          legendSections={legendSections}
-          interactionLegendItems={interactionLegendItems}
-          activeLegendKey={activeLegendKey}
-          highlightedLegendKey={highlightedLegendKey}
-          onLegendItemHover={onLegendItemHover}
-          onLegendItemFocus={onLegendItemFocus}
-          t={t}
-        />
-      );
+      controlsSectionContent = <LegendSection legend={legend} t={t} />;
       break;
     default:
       controlsSectionContent = (
-        <ViewSection view={view} t={t} layoutVariant={layoutVariant} />
+        <ViewSection view={view} t={t} layoutVariant={layout.variant} />
       );
       break;
   }
   const controlsBodyMaxHeight =
-    !useDrawerControls && !standaloneLayout && headerHeight > 0
-      ? Math.max(112, overlayPanelMaxHeight - headerHeight)
+    !layout.useDrawerControls && !standaloneLayout && headerHeight > 0
+      ? Math.max(112, layout.panelMaxHeight - headerHeight)
       : undefined;
 
   return (
@@ -224,30 +199,30 @@ export function WarMapControlsPanel({
                 extraClassName: "!h-10 !min-w-10 !rounded-full",
               })}
               icon={<CloseOutlined />}
-              onClick={onClose}
+              onClick={actions.onClose}
             />
           ) : null}
         </div>
         {activeControlsSection === "view" ? (
           <ControlsHeaderSummary
-            overviewMetricCards={overviewMetricCards}
-            summaryStatusCards={summaryStatusCards}
-            summaryDataLabel={summaryDataLabel}
-            overviewDataTagLabel={overviewDataTagLabel}
-            windowLabel={windowLabel}
+            overviewMetricCards={header.overviewMetricCards}
+            summaryStatusCards={header.summaryStatusCards}
+            summaryDataLabel={header.summaryDataLabel}
+            overviewDataTagLabel={header.overviewDataTagLabel}
+            windowLabel={header.windowLabel}
             t={t}
           />
         ) : null}
         <div
           className={`rounded-[20px] border border-[var(--border)] bg-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:bg-slate-950/55 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${standaloneLayout ? "p-2.5" : "p-2"} ${OVERLAY_PANEL_TAB_GRID_CLASS_NAME}`}
         >
-          {controlsTabs.map((tab) => {
+          {header.tabs.map((tab) => {
             const isActive = activeControlsSection === tab.key;
             const button = (
               <ControlsChoiceButton
                 active={isActive}
                 align="center"
-                onClick={() => onControlsSectionChange(tab.key)}
+                onClick={() => actions.onSectionChange(tab.key)}
               >
                 {renderControlsTabLabel(tab, isActive)}
               </ControlsChoiceButton>
@@ -282,34 +257,24 @@ export function WarMapControlsPanel({
 }
 
 function LegendSection({
-  legendSections,
-  interactionLegendItems,
-  activeLegendKey,
-  highlightedLegendKey,
-  onLegendItemHover,
-  onLegendItemFocus,
+  legend,
   t,
-}: Pick<
-  WarMapControlsPanelProps,
-  "legendSections" | "interactionLegendItems" | "t"
-> & {
-  activeLegendKey?: string | null;
-  highlightedLegendKey?: string | null;
-  onLegendItemHover?: (itemKey: string | null) => void;
-  onLegendItemFocus?: (itemKey: string | null) => void;
+}: {
+  legend: WarMapControlsPanelProps["legend"];
+  t: WarMapControlsPanelProps["t"];
 }) {
   return (
     <div className="flex w-full flex-col gap-3">
       <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
         {t("dashboard.charts.warMap.legend.title")}
       </Typography.Text>
-      <LegendInteractionStrip items={interactionLegendItems} t={t} />
+      <LegendInteractionStrip items={legend.interactionItems} t={t} />
       <LegendSectionsList
-        legendSections={legendSections}
-        activeLegendKey={activeLegendKey}
-        highlightedLegendKey={highlightedLegendKey}
-        onLegendItemHover={onLegendItemHover}
-        onLegendItemFocus={onLegendItemFocus}
+        legendSections={legend.sections}
+        activeLegendKey={legend.activeLegendKey}
+        highlightedLegendKey={legend.highlightedLegendKey}
+        onLegendItemHover={legend.onLegendItemHover}
+        onLegendItemFocus={legend.onLegendItemFocus}
         t={t}
       />
       <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white/62 px-3 py-2.5 dark:bg-slate-950/48">

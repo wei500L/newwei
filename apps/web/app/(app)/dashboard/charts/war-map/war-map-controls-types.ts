@@ -9,6 +9,7 @@ import type { WarMapAisSummaryPresentation } from "./war-map-ais-status";
 import type { WarMapFlightsSummaryPresentation } from "./war-map-flights-status";
 import type {
   OverlayControlsSection,
+  WarMapControlsSectionMeta,
   WarMapDetailedChainStatus,
   WarMapFeedSummaryCard,
   WarMapLayoutVariant,
@@ -18,10 +19,7 @@ import type {
   WarMapSummaryStatusCard,
   WarMapTranslateFn,
 } from "./war-map-overlay-model";
-import type {
-  WarMapLegendItem,
-  WarMapLegendSection,
-} from "./war-map-symbols";
+import type { WarMapLegendItem, WarMapLegendSection } from "./war-map-symbols";
 
 type FlightMode = "military" | "all";
 type AisMode = "military" | "density" | "all";
@@ -74,36 +72,52 @@ export interface WarMapControlsPanelTransportProps {
   legend: WarMapControlsPanelTransportLegend;
 }
 
-export interface WarMapControlsPanelProps {
-  layoutVariant?: WarMapLayoutVariant;
-  controlsSection: OverlayControlsSection;
-  controlsSectionMeta: Record<
-    OverlayControlsSection,
-    {
-      label: string;
-      description: string;
-    }
-  >;
-  controlsTabs: WarMapOverlayTab[];
-  useDrawerControls: boolean;
-  overlayPanelMaxHeight: number;
+/** Controls 面板头部切片：节元数据、页签与摘要卡。 */
+export interface WarMapControlsPanelHeader {
+  section: OverlayControlsSection;
+  sectionMeta: Record<OverlayControlsSection, WarMapControlsSectionMeta>;
+  tabs: WarMapOverlayTab[];
   overviewMetricCards: WarMapOverviewMetricCard[];
   summaryStatusCards: WarMapSummaryStatusCard[];
   summaryDataLabel: string;
   overviewDataTagLabel: string;
   windowLabel: string;
-  feedSummaryCards: WarMapFeedSummaryCard[];
+}
+
+/** Feeds 节切片。 */
+export interface WarMapControlsPanelFeeds {
+  summaryCards: WarMapFeedSummaryCard[];
   detailedChainStatuses: WarMapDetailedChainStatus[];
-  legendSections: WarMapLegendSection[];
-  interactionLegendItems: WarMapLegendItem[];
+}
+
+/** Legend 节切片：sections + 交互状态条 + 聚焦/悬停契约。 */
+export interface WarMapControlsPanelLegend
+  extends WarMapLegendInteractionProps {
+  sections: WarMapLegendSection[];
+  interactionItems: WarMapLegendItem[];
+}
+
+/** 布局切片。 */
+export interface WarMapControlsPanelLayout {
+  variant?: WarMapLayoutVariant;
+  useDrawerControls: boolean;
+  panelMaxHeight: number;
+}
+
+/** 面板命令切片。 */
+export interface WarMapControlsPanelActions {
+  onSectionChange: (section: OverlayControlsSection) => void;
+  onClose?: () => void;
+}
+
+export interface WarMapControlsPanelProps {
+  header: WarMapControlsPanelHeader;
   view: WarMapControlsPanelViewProps;
   transport: WarMapControlsPanelTransportProps;
-  activeLegendKey?: string | null;
-  highlightedLegendKey?: string | null;
-  onLegendItemHover?: (itemKey: string | null) => void;
-  onLegendItemFocus?: (itemKey: string | null) => void;
-  onControlsSectionChange: (section: OverlayControlsSection) => void;
-  onClose?: () => void;
+  feeds: WarMapControlsPanelFeeds;
+  legend: WarMapControlsPanelLegend;
+  layout: WarMapControlsPanelLayout;
+  actions: WarMapControlsPanelActions;
   t: WarMapTranslateFn;
 }
 

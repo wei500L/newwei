@@ -165,21 +165,16 @@ export function useWarMapOverlayPanels(
   );
   const controlsPanelContent: ReactNode = (
     <WarMapControlsPanel
-      layoutVariant={layoutVariant}
-      controlsSection={activeControlsSection}
-      controlsSectionMeta={overlayViewModel.controlsSectionMeta}
-      controlsTabs={overlayViewModel.controlsTabs}
-      useDrawerControls={useDrawerControls}
-      overlayPanelMaxHeight={overlayLayout.overlayPanelMaxHeight}
-      overviewMetricCards={overlayViewModel.overviewMetricCards}
-      summaryStatusCards={overlayViewModel.summaryStatusCards}
-      summaryDataLabel={overlayViewModel.summaryDataLabel}
-      overviewDataTagLabel={overlayViewModel.overviewDataTagLabel}
-      windowLabel={windowLabel}
-      feedSummaryCards={overlayViewModel.feedSummaryCards}
-      detailedChainStatuses={overlayViewModel.detailedChainStatuses}
-      legendSections={legend.sections}
-      interactionLegendItems={legend.interactionItems}
+      header={{
+        section: activeControlsSection,
+        sectionMeta: overlayViewModel.controlsSectionMeta,
+        tabs: overlayViewModel.controlsTabs,
+        overviewMetricCards: overlayViewModel.overviewMetricCards,
+        summaryStatusCards: overlayViewModel.summaryStatusCards,
+        summaryDataLabel: overlayViewModel.summaryDataLabel,
+        overviewDataTagLabel: overlayViewModel.overviewDataTagLabel,
+        windowLabel,
+      }}
       view={{
         presets: presetOptions,
         timeRanges: timeRangeOptions,
@@ -189,12 +184,27 @@ export function useWarMapOverlayPanels(
         onResetLayers: viewControls.onResetLayers,
       }}
       transport={transportPanelProps}
-      activeLegendKey={interaction.legend.focusedLegendItemKey}
-      highlightedLegendKey={interaction.legend.highlightedLegendItemKey}
-      onLegendItemHover={interaction.legend.updateHoveredLegendItemKey}
-      onLegendItemFocus={interaction.legend.updateFocusedLegendItemKey}
-      onControlsSectionChange={interaction.overlayPanel.setControlsSection}
-      onClose={() => interaction.overlayPanel.setOpenOverlayPanel(null)}
+      feeds={{
+        summaryCards: overlayViewModel.feedSummaryCards,
+        detailedChainStatuses: overlayViewModel.detailedChainStatuses,
+      }}
+      legend={{
+        sections: legend.sections,
+        interactionItems: legend.interactionItems,
+        activeLegendKey: interaction.legend.focusedLegendItemKey,
+        highlightedLegendKey: interaction.legend.highlightedLegendItemKey,
+        onLegendItemHover: interaction.legend.updateHoveredLegendItemKey,
+        onLegendItemFocus: interaction.legend.updateFocusedLegendItemKey,
+      }}
+      layout={{
+        variant: layoutVariant,
+        useDrawerControls,
+        panelMaxHeight: overlayLayout.overlayPanelMaxHeight,
+      }}
+      actions={{
+        onSectionChange: interaction.overlayPanel.setControlsSection,
+        onClose: () => interaction.overlayPanel.setOpenOverlayPanel(null),
+      }}
       t={t}
     />
   );

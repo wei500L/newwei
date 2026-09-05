@@ -11,8 +11,6 @@ export const OVERLAY_SECTION_TITLE_CLASS_NAME =
 export const OVERLAY_STATUS_TAG_CLASS_NAME =
   "!m-0 !rounded-full !px-2.5 !py-0.5 !text-[11px] !font-medium !leading-4";
 export const OVERLAY_NEUTRAL_TAG_CLASS_NAME = `${OVERLAY_STATUS_TAG_CLASS_NAME} !border-[var(--border)] !bg-white/[0.78] !text-slate-700 dark:!border-slate-700/80 dark:!bg-slate-950/[0.68] dark:!text-slate-200`;
-export const OVERLAY_BUTTON_GROUP_CLASS_NAME =
-  "inline-flex flex-wrap gap-1.5 rounded-[18px] border border-[var(--border)] bg-white/[0.55] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:bg-slate-950/[0.55] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]";
 export const OVERLAY_BUTTON_BASE_CLASS_NAME =
   "!h-8 !rounded-full !border !px-3 !text-[11px] !font-medium !leading-none !backdrop-blur-sm !shadow-[0_10px_22px_-20px_rgba(15,23,42,0.45)] transition-[background-color,border-color,color,box-shadow,transform] duration-200";
 export const OVERLAY_BUTTON_NEUTRAL_CLASS_NAME = `${OVERLAY_BUTTON_BASE_CLASS_NAME} !border-[var(--border)] !bg-white/[0.82] !text-slate-700 hover:!border-slate-300/90 hover:!bg-white hover:!text-slate-950 hover:!shadow-[0_14px_26px_-22px_rgba(15,23,42,0.35)] dark:!border-slate-700/80 dark:!bg-slate-950/[0.68] dark:!text-slate-200 dark:hover:!border-slate-500/[0.85] dark:hover:!bg-slate-900 dark:hover:!text-slate-50 dark:hover:!shadow-[0_16px_30px_-24px_rgba(2,6,23,0.82)]`;

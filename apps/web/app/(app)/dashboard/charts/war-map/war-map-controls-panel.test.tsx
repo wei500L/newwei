@@ -88,14 +88,14 @@ const legendSections = buildWarMapLegendSections({
 const interactionLegendItems = buildWarMapInteractionLegendItems({ t });
 
 const overlayViewModel = {
-  controlsSectionMeta: {
+  sectionMeta: {
     overview: { label: "Overview", description: "overview hint" },
     view: { label: "View", description: "view hint" },
     transport: { label: "Transport", description: "transport hint" },
     feeds: { label: "Feeds", description: "feeds hint" },
     legend: { label: "Legend", description: "legend hint" },
   },
-  controlsTabs: [
+  tabs: [
     { key: "view", label: "View" },
     { key: "transport", label: "Transport" },
     { key: "feeds", label: "Feeds" },
@@ -137,38 +137,60 @@ const overlayViewModel = {
   detailedChainStatuses: [
     { key: "chain-a", color: "green", text: "chain a ok", tooltip: "tt" },
   ],
-} as unknown as Pick<
-  WarMapControlsPanelProps,
-  | "controlsSectionMeta"
-  | "controlsTabs"
-  | "overviewMetricCards"
-  | "summaryStatusCards"
-  | "summaryDataLabel"
-  | "overviewDataTagLabel"
-  | "feedSummaryCards"
-  | "detailedChainStatuses"
->;
+});
 
-function panelProps(overrides?: Partial<WarMapControlsPanelProps>): WarMapControlsPanelProps {
+function panelProps(overrides?: {
+  section?: string;
+  layout?: Record<string, unknown>;
+  transport?: typeof transport;
+  legend?: Record<string, unknown>;
+  onSectionChange?: (section: never) => void;
+  onClose?: () => void;
+}): WarMapControlsPanelProps {
   return {
-    layoutVariant: "embedded",
-    controlsSection: "view",
-    useDrawerControls: false,
-    overlayPanelMaxHeight: 520,
-    windowLabel: "7d",
-    legendSections,
-    interactionLegendItems,
+    header: {
+      section: (overrides?.section ?? "view") as never,
+      sectionMeta: overlayViewModel.sectionMeta,
+      tabs: overlayViewModel.tabs,
+      overviewMetricCards: overlayViewModel.overviewMetricCards,
+      summaryStatusCards: overlayViewModel.summaryStatusCards,
+      summaryDataLabel: overlayViewModel.summaryDataLabel,
+      overviewDataTagLabel: overlayViewModel.overviewDataTagLabel,
+      windowLabel: "7d",
+    },
     view,
-    transport,
-    onControlsSectionChange: vi.fn(),
+    transport: overrides?.transport ?? transport,
+    feeds: {
+      summaryCards: overlayViewModel.feedSummaryCards,
+      detailedChainStatuses: overlayViewModel.detailedChainStatuses,
+    },
+    legend: {
+      sections: legendSections,
+      interactionItems: interactionLegendItems,
+      ...(overrides?.legend ?? {}),
+    },
+    layout: {
+      variant: "embedded",
+      useDrawerControls: false,
+      panelMaxHeight: 520,
+      ...(overrides?.layout ?? {}),
+    },
+    actions: {
+      onSectionChange:
+        overrides?.onSectionChange ??
+        (() => {
+          /* 受控组件：默认 no-op */
+        }),
+      onClose: overrides?.onClose,
+    },
     t,
-    ...overlayViewModel,
-    ...overrides,
   };
 }
 
+type PanelOverrides = Parameters<typeof panelProps>[0];
+
 function renderPanel(
-  overrides?: Partial<WarMapControlsPanelProps>,
+  overrides?: PanelOverrides,
 ): ReturnType<typeof render> {
   return render(<WarMapControlsPanel {...panelProps(overrides)} />);
 }
@@ -193,15 +215,15 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
   });
 
   it("页签切换：点击 Transport 页签回调切节命令；受控切到 transport 后渲染分析入口", async () => {
-    const onControlsSectionChange = vi.fn();
-    const { rerender } = renderPanel({ onControlsSectionChange });
+    const onSectionChange = vi.fn();
+    const { rerender } = renderPanel({ onSectionChange });
     await userEvent.click(screen.getByRole("button", { name: "Transport" }));
-    expect(onControlsSectionChange).toHaveBeenCalledWith("transport");
+    expect(onSectionChange).toHaveBeenCalledWith("transport");
 
-    // 受控更新 controlsSection 后 transport 内容出现
+    // 受控更新节后 transport 内容出现
     rerender(
       <WarMapControlsPanel
-        {...panelProps({ controlsSection: "transport" })}
+        {...panelProps({ section: "transport" })}
       />,
     );
     expect(
@@ -212,7 +234,7 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
   });
 
   it("transport 节：AIS 模式按钮切换与航班模式切换", async () => {
-    renderPanel({ controlsSection: "transport" });
+    renderPanel({ section: "transport" });
     await userEvent.click(
       screen.getByRole("button", { name: "⟦dashboard.charts.warMap.stats.aisModeDensity⟧" }),
     );
@@ -224,7 +246,7 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
   });
 
   it("transport 节：AIS reference 区块渲染前四个 ais 项并提供打开完整图例入口", async () => {
-    renderPanel({ controlsSection: "transport" });
+    renderPanel({ section: "transport" });
     const openLegend = screen.getByRole("button", {
       name: "⟦dashboard.charts.warMap.overlay.openFullLegend⟧",
     });
@@ -233,7 +255,7 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
   });
 
   it("transport 节：分析按钮权限门禁与提交", async () => {
-    const { unmount } = renderPanel({ controlsSection: "transport" });
+    const { unmount } = renderPanel({ section: "transport" });
     const analyze = screen.getByRole("button", {
       name: "⟦dashboard.charts.warMap.actions.analyzeCurrentView⟧",
     });
@@ -242,7 +264,7 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
     unmount();
 
     renderPanel({
-      controlsSection: "transport",
+      section: "transport",
       transport: {
         ...transport,
         analysis: {
@@ -261,7 +283,7 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
 
   it("transport 节：AIS 隐藏时显示提示而非模式按钮", () => {
     renderPanel({
-      controlsSection: "transport",
+      section: "transport",
       transport: {
         ...transport,
         ais: { ...transport.ais, visible: false },
@@ -278,7 +300,7 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
   });
 
   it("feeds 节：feed 卡与 chain 状态渲染", () => {
-    renderPanel({ controlsSection: "feeds" });
+    renderPanel({ section: "feeds" });
     expect(screen.getByText("Healthy")).toBeInTheDocument();
     expect(screen.getByText("Refreshing")).toBeInTheDocument();
     expect(screen.getByText("Issues")).toBeInTheDocument();
@@ -286,7 +308,7 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
   });
 
   it("legend 节：section 展开/收起带 aria-expanded 与 aria-controls（a11y 收口）", async () => {
-    renderPanel({ controlsSection: "legend" });
+    renderPanel({ section: "legend" });
     // signals 节默认展开：含 signal-high 项
     expect(
       screen.getByText("⟦dashboard.charts.warMap.legend.signalHigh⟧"),
@@ -308,8 +330,8 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
 
   it("legend 节：聚焦徽标文案经 i18n（不再硬编码 Focus）", () => {
     renderPanel({
-      controlsSection: "legend",
-      activeLegendKey: "signal-high",
+      section: "legend",
+      legend: { activeLegendKey: "signal-high" },
     });
     // t mock 包装 key；真实 en/zh 翻译由 locale 文件提供（Focused/已聚焦）
     expect(
@@ -320,9 +342,8 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
   it("legend 节：聚焦后该项可取消聚焦（active toggle null）", async () => {
     const onLegendItemFocus = vi.fn();
     renderPanel({
-      controlsSection: "legend",
-      activeLegendKey: "signal-high",
-      onLegendItemFocus,
+      section: "legend",
+      legend: { activeLegendKey: "signal-high", onLegendItemFocus },
     });
     await userEvent.click(
       screen.getByRole("button", {
@@ -342,7 +363,7 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
 
   it("useDrawerControls 或 standalone 时渲染关闭按钮", async () => {
     const onClose = vi.fn();
-    renderPanel({ useDrawerControls: true, onClose });
+    renderPanel({ layout: { useDrawerControls: true, variant: "embedded", panelMaxHeight: 520 }, onClose });
     await userEvent.click(screen.getByRole("button", { name: "⟦common.close⟧" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
