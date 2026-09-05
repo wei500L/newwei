@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState, type Key } from "react";
 
-import { createApiClient } from "@/lib/api-client";
+import type { createApiClient } from "@/lib/api-client";
 
 import type { TaskLogRecord } from "../task-detail-types";
 
