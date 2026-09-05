@@ -952,6 +952,28 @@ describe("WarMap（迁移前 characterization）", () => {
       });
     });
 
+    it("standalone legend dock 滚动：卸载取消待执行 RAF", async () => {
+      const { unmount } = renderWarMap(<WarMap layoutVariant="standalone" />);
+      await activateMap();
+
+      await userEvent.click(screen.getByRole("button", { name: "Controls" }));
+      await userEvent.click(screen.getByRole("button", { name: "Transport" }));
+      const openLegendButton = await screen.findByRole("button", {
+        name: "Open full legend",
+      });
+
+      // 同步点击后立刻卸载：RAF 已调度但未执行（无宏任务边界）
+      fireEvent.click(openLegendButton);
+      unmount();
+
+      // 帧回调有机会执行后，已取消的滚动不得发生
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalledWith({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+
     it("事件选中：deck onClick → Inspector 展示 → Esc 关闭", async () => {
       const responses = buildStandardWarMapResponses();
       responses["dashboard/war-map/events"] = {

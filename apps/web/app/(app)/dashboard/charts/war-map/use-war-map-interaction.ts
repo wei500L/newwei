@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type Dispatch,
   type RefObject,
@@ -151,6 +152,9 @@ interface LayerClickPoint {
  * overlayPanel），各消费方只接收所需切片；选中键 setter 与 hover 键
  * 更新器不对外暴露（仅内部 handlers 使用）。
  *
+ * legend dock 滚动定位的 requestAnimationFrame 保存句柄：新调度前
+ * 取消旧句柄，卸载时取消，避免组件销毁后执行滚动回调。
+ *
  * legend focus/hover 键的失效清理依赖 legendItemsByKey（其派生链上游
  * 含图层构造使用的本 hook 状态），由 war-map.tsx 在 legend 索引就绪后
  * 以 legend.updateXxxLegendItemKey(null) 执行，避免循环依赖。
@@ -187,6 +191,8 @@ export function useWarMapInteraction(
   const [hoveredInteractionKey, setHoveredInteractionKey] = useState<
     string | null
   >(null);
+  /** legend dock 滚动定位的待执行 RAF 句柄（新调度前与卸载时取消）。 */
+  const legendDockScrollRafRef = useRef<number | null>(null);
 
   // 选中解析输入（memo 保持引用稳定，避免每渲染重算 Inspector 解析）
   const selectionInput = useMemo<WarMapSelectionInput>(
@@ -232,15 +238,31 @@ export function useWarMapInteraction(
   const scrollLegendDockIntoView = useCallback(() => {
     setOpenOverlayPanel(null);
 
-    if (typeof window !== "undefined") {
-      window.requestAnimationFrame(() => {
-        legendDockRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      });
+    if (typeof window === "undefined") {
+      return;
     }
+    if (legendDockScrollRafRef.current !== null) {
+      window.cancelAnimationFrame(legendDockScrollRafRef.current);
+    }
+    legendDockScrollRafRef.current = window.requestAnimationFrame(() => {
+      legendDockScrollRafRef.current = null;
+      legendDockRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
   }, [legendDockRef]);
+
+  // 卸载时取消待执行的 dock 滚动 RAF
+  useEffect(
+    () => () => {
+      if (legendDockScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(legendDockScrollRafRef.current);
+        legendDockScrollRafRef.current = null;
+      }
+    },
+    [],
+  );
 
   const openNewsLink = useCallback(
     (url?: string | null) => {

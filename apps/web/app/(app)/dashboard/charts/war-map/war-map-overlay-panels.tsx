@@ -105,20 +105,15 @@ export interface UseWarMapOverlayPanelsResult {
   overlayRail: ReactNode;
   inspectorPanel: ReactNode;
   bottomDrawer: ReactNode;
-  controlsPanelContent: ReactNode;
-  legendPanelContent: ReactNode;
   legendDockContent: ReactNode;
-  desktopControlsPanel: ReactNode;
-  desktopLegendPanel: ReactNode;
-  mobileControlsDrawerHeight: string;
-  standaloneControlsDrawerHeight: string;
 }
 
 /**
  * Overlay 面板组合域（FE-批4A）：Controls/Legend/Inspector/Drawer 的
  * 内容装配与桌面包装。编排层传入 view-model、transport 领域对象与
  * 交互切片（legend/inspector/overlay 面板），本 hook 返回可直接放入
- * Map surface 槽位的 ReactNode。
+ * Map surface 槽位的 ReactNode；仅暴露根组件实际消费的四个槽位，
+ * controls/legend 面板内容、桌面包装与抽屉高度为内部装配。
  */
 export function useWarMapOverlayPanels(
   options: UseWarMapOverlayPanelsOptions,
@@ -353,12 +348,6 @@ export function useWarMapOverlayPanels(
     overlayRail,
     inspectorPanel,
     bottomDrawer,
-    controlsPanelContent,
-    legendPanelContent,
     legendDockContent,
-    desktopControlsPanel,
-    desktopLegendPanel,
-    mobileControlsDrawerHeight,
-    standaloneControlsDrawerHeight,
   };
 }
