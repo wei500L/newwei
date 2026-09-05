@@ -1,35 +1,32 @@
 "use client";
 
 import type {
-  WarMapAisMode,
-  WarMapFlightMode,
+  WarMapLayerId,
+  WarMapLayerVisibility,
+  WarMapPreset,
+  WarMapTimeRangePreset,
   WarMapTransportDetail,
 } from "@modular/utils";
-import type { WarMapLayerId, WarMapLayerVisibility, WarMapPreset, WarMapTimeRangePreset } from "@modular/utils";
 import { Drawer } from "antd";
-import {
-  type Dispatch,
-  type ReactNode,
-  type RefObject,
-  type SetStateAction,
-} from "react";
+import { type ReactNode, type RefObject } from "react";
 
 import type { SupportedLocale } from "@/lib/i18n";
 
-import type { WarMapAisSummaryPresentation } from "./war-map-ais-status";
+import type {
+  WarMapInspectorSlice,
+  WarMapLegendInteractionSlice,
+  WarMapOverlayPanelSlice,
+} from "./use-war-map-interaction";
 import {
   WarMapControlsPanel,
+  type WarMapControlsPanelTransportProps,
   WarMapLegendDock,
   WarMapLegendPanel,
 } from "./war-map-controls-panel";
-import type { WarMapFlightsSummaryPresentation } from "./war-map-flights-status";
 import { WarMapInspectorPanel } from "./war-map-inspector-panel";
 import {
   OVERLAY_SURFACE_CLASS_NAME,
-  type OverlayControlsSection,
   type OverlayDensity,
-  type OverlayPanelKey,
-  type SelectedInspector,
   type WarMapLayoutVariant,
   type WarMapOverlayLayout,
   type WarMapOverlayViewModel,
@@ -45,89 +42,20 @@ import {
   WarMapLayerVisibilityControls,
 } from "./war-map-view-controls";
 
-export interface WarMapTransportPanelPropsInput {
-  flightMode: WarMapFlightMode;
-  onFlightModeChange: (mode: WarMapFlightMode) => void;
-  aisMode: WarMapAisMode;
-  effectiveAisMode: WarMapAisMode;
-  onAisModeChange: (mode: WarMapAisMode) => void;
-  aisHighlightCandidates: boolean;
-  onAisHighlightCandidatesChange: (enabled: boolean) => void;
-  flightsLayerVisible: boolean;
-  aisLayerVisible: boolean;
-  flightsPresentation: WarMapFlightsSummaryPresentation;
-  aisPresentation: WarMapAisSummaryPresentation;
-  aisHighlightedCandidateCount: number | undefined;
-  canRunAnalysis: boolean;
-  analyzingCurrentView: boolean;
-  onAnalyzeCurrentView: () => void;
-  onOpenLegend: () => void;
-}
+/**
+ * Controls 面板 transport 契约输入：领域对象（flights/ais/analysis），
+ * legend 打开命令由本 hook 依据布局（standalone dock vs overlay 面板）装配。
+ */
+export type WarMapOverlayPanelsTransportInput = Omit<
+  WarMapControlsPanelTransportProps,
+  "legend"
+>;
 
-/** Controls 面板 transport 区块 props 装配（FE-批4A：字段与迁移前一致）。 */
-export function buildWarMapTransportPanelProps(
-  input: WarMapTransportPanelPropsInput,
-) {
-  const { flightsPresentation: fl, aisPresentation: ais } = input;
-  return {
-    flightMode: input.flightMode,
-    onFlightModeChange: input.onFlightModeChange,
-    flightsLayerVisible: input.flightsLayerVisible,
-    flightsSourceBadgeLabel: fl.flightsSourceBadgeLabel,
-    flightsTooltipText: fl.flightsTooltipText,
-    flightsReturnedCount: fl.flightsReturnedCount,
-    flightsSnapshotCount: fl.flightsSnapshotCount,
-    flightsRawLabel: fl.flightsRawLabel,
-    flightsFreshness: fl.flightsFreshness,
-    flightsTruncated: fl.flightsTruncated,
-    aisLayerVisible: input.aisLayerVisible,
-    aisMode: input.aisMode,
-    aisEffectiveMode: input.effectiveAisMode,
-    onAisModeChange: input.onAisModeChange,
-    aisHighlightCandidates: input.aisHighlightCandidates,
-    onAisHighlightCandidatesChange: input.onAisHighlightCandidatesChange,
-    aisAllModeDegraded: ais.aisAllModeDegraded,
-    aisAllModeDegradedLabel: ais.aisAllModeDegradedLabel,
-    aisTooltipText: ais.aisTooltipText,
-    aisStatusReason: ais.aisResolvedStatusReason ?? null,
-    aisSourceStatusColor: ais.aisSourceStatusColor,
-    aisSourceStatusLabel: ais.aisSourceStatusLabel,
-    aisFreshness: ais.aisFreshness,
-    aisModeLabel: ais.aisEffectiveModeLabel,
-    aisRelayVesselCount: ais.aisRelayVesselCount,
-    aisSnapshotRelative: ais.aisSnapshotRelative,
-    aisSnapshotExact: ais.aisSnapshotExact,
-    aisPrimaryCountValue: ais.aisPrimaryCountValue,
-    aisPrimaryCountLabel: ais.aisPrimaryCountLabel,
-    aisHighlightCountValue: input.aisHighlightedCandidateCount,
-    aisHighlightCountLabel: ais.aisHighlightCountLabel,
-    aisDisruptionsCount: ais.aisDisruptionsCount,
-    aisViewportEmptyStateActive: ais.aisViewportEmptyStateActive,
-    aisViewportEmptyStateLabel: ais.aisViewportEmptyStateLabel,
-    aisViewportEmptyStateHint: ais.aisViewportEmptyStateHint,
-    canAnalyzeCurrentView:
-      input.canRunAnalysis && (input.flightsLayerVisible || input.aisLayerVisible),
-    analyzingCurrentView: input.analyzingCurrentView,
-    onAnalyzeCurrentView: input.onAnalyzeCurrentView,
-    onOpenLegend: input.onOpenLegend,
-  };
-}
-
+/** Overlay 组合层消费的交互切片（legend/inspector/overlay 面板）。 */
 export interface WarMapOverlayPanelsInteraction {
-  focusedLegendItemKey: string | null;
-  highlightedLegendItemKey: string | null;
-  updateHoveredLegendItemKey: (next: string | null) => void;
-  updateFocusedLegendItemKey: (next: string | null) => void;
-  controlsSection: OverlayControlsSection;
-  setControlsSection: (section: OverlayControlsSection) => void;
-  openOverlayPanel: OverlayPanelKey | null;
-  setOpenOverlayPanel: Dispatch<SetStateAction<OverlayPanelKey | null>>;
-  desktopInspectorMinimized: boolean;
-  setDesktopInspectorMinimized: Dispatch<SetStateAction<boolean>>;
-  closeSelectedInspector: () => void;
-  zoomToSelectedInspector: () => void;
-  openNewsLink: (url?: string | null) => void;
-  selectedInspector: SelectedInspector | null;
+  legend: WarMapLegendInteractionSlice;
+  inspector: WarMapInspectorSlice;
+  overlayPanel: WarMapOverlayPanelSlice;
 }
 
 export interface UseWarMapOverlayPanelsOptions {
@@ -159,7 +87,7 @@ export interface UseWarMapOverlayPanelsOptions {
     monitorsCount: number;
     onLayerVisible: (layerId: WarMapLayerId, visible: boolean) => void;
   };
-  transport: Omit<WarMapTransportPanelPropsInput, "onOpenLegend">;
+  transport: WarMapOverlayPanelsTransportInput;
   inspector: {
     transportDetail:
       | WarMapTransportDetail
@@ -170,7 +98,6 @@ export interface UseWarMapOverlayPanelsOptions {
   status: {
     refreshingMapData: boolean;
     onRefresh: () => void;
-    scrollLegendDockIntoView: () => void;
   };
 }
 
@@ -189,8 +116,9 @@ export interface UseWarMapOverlayPanelsResult {
 
 /**
  * Overlay 面板组合域（FE-批4A）：Controls/Legend/Inspector/Drawer 的
- * 内容装配与桌面包装。编排层传入 view-model 与交互回调，本 hook 返回
- * 可直接放入 Map surface 槽位的 ReactNode。
+ * 内容装配与桌面包装。编排层传入 view-model、transport 领域对象与
+ * 交互切片（legend/inspector/overlay 面板），本 hook 返回可直接放入
+ * Map surface 槽位的 ReactNode。
  */
 export function useWarMapOverlayPanels(
   options: UseWarMapOverlayPanelsOptions,
@@ -216,19 +144,23 @@ export function useWarMapOverlayPanels(
   } = options;
 
   const activeControlsSection =
-    interaction.controlsSection === "overview"
+    interaction.overlayPanel.controlsSection === "overview"
       ? "view"
-      : interaction.controlsSection;
-  const transportPanelProps = buildWarMapTransportPanelProps({
+      : interaction.overlayPanel.controlsSection;
+  // transport 领域对象整体下传；legend 打开命令按布局装配：
+  // standalone 滚动定位 dock，embedded/overlay 打开 legend 面板
+  const transportPanelProps: WarMapControlsPanelTransportProps = {
     ...transport,
-    onOpenLegend: () => {
-      if (standaloneLayout) {
-        status.scrollLegendDockIntoView();
-        return;
-      }
-      interaction.setOpenOverlayPanel("legend");
+    legend: {
+      onOpen: () => {
+        if (standaloneLayout) {
+          interaction.legend.scrollLegendDockIntoView();
+          return;
+        }
+        interaction.overlayPanel.setOpenOverlayPanel("legend");
+      },
     },
-  });
+  };
   const { presetOptions, timeRangeOptions } = useWarMapViewOptions({
     t: viewControls.t,
     activePreset: viewControls.activePreset,
@@ -269,12 +201,12 @@ export function useWarMapOverlayPanels(
         onResetLayers: viewControls.onResetLayers,
       }}
       transport={transportPanelProps}
-      activeLegendKey={interaction.focusedLegendItemKey}
-      highlightedLegendKey={interaction.highlightedLegendItemKey}
-      onLegendItemHover={interaction.updateHoveredLegendItemKey}
-      onLegendItemFocus={interaction.updateFocusedLegendItemKey}
-      onControlsSectionChange={interaction.setControlsSection}
-      onClose={() => interaction.setOpenOverlayPanel(null)}
+      activeLegendKey={interaction.legend.focusedLegendItemKey}
+      highlightedLegendKey={interaction.legend.highlightedLegendItemKey}
+      onLegendItemHover={interaction.legend.updateHoveredLegendItemKey}
+      onLegendItemFocus={interaction.legend.updateFocusedLegendItemKey}
+      onControlsSectionChange={interaction.overlayPanel.setControlsSection}
+      onClose={() => interaction.overlayPanel.setOpenOverlayPanel(null)}
       t={t}
     />
   );
@@ -294,11 +226,11 @@ export function useWarMapOverlayPanels(
       legendSections={legend.sections}
       interactionLegendItems={legend.interactionItems}
       summaryDataLabel={overlayViewModel.summaryDataLabel}
-      activeLegendKey={interaction.focusedLegendItemKey}
-      highlightedLegendKey={interaction.highlightedLegendItemKey}
-      onLegendItemHover={interaction.updateHoveredLegendItemKey}
-      onLegendItemFocus={interaction.updateFocusedLegendItemKey}
-      onClose={() => interaction.setOpenOverlayPanel(null)}
+      activeLegendKey={interaction.legend.focusedLegendItemKey}
+      highlightedLegendKey={interaction.legend.highlightedLegendItemKey}
+      onLegendItemHover={interaction.legend.updateHoveredLegendItemKey}
+      onLegendItemFocus={interaction.legend.updateFocusedLegendItemKey}
+      onClose={() => interaction.overlayPanel.setOpenOverlayPanel(null)}
       t={t}
     />
   );
@@ -307,10 +239,10 @@ export function useWarMapOverlayPanels(
       legendSections={legend.sections}
       interactionLegendItems={legend.interactionItems}
       summaryDataLabel={overlayViewModel.summaryDataLabel}
-      activeLegendKey={interaction.focusedLegendItemKey}
-      highlightedLegendKey={interaction.highlightedLegendItemKey}
-      onLegendItemHover={interaction.updateHoveredLegendItemKey}
-      onLegendItemFocus={interaction.updateFocusedLegendItemKey}
+      activeLegendKey={interaction.legend.focusedLegendItemKey}
+      highlightedLegendKey={interaction.legend.highlightedLegendItemKey}
+      onLegendItemHover={interaction.legend.updateHoveredLegendItemKey}
+      onLegendItemFocus={interaction.legend.updateFocusedLegendItemKey}
       t={t}
     />
   );
@@ -337,30 +269,30 @@ export function useWarMapOverlayPanels(
       summaryDataLabel={overlayViewModel.summaryDataLabel}
       refreshingMapData={status.refreshingMapData}
       showActionLabels={overlayLayout.showActionLabels}
-      openOverlayPanel={interaction.openOverlayPanel}
+      openOverlayPanel={interaction.overlayPanel.openOverlayPanel}
       quickLegendItems={legend.quickItems}
-      activeLegendKey={interaction.focusedLegendItemKey}
-      highlightedLegendKey={interaction.highlightedLegendItemKey}
+      activeLegendKey={interaction.legend.focusedLegendItemKey}
+      highlightedLegendKey={interaction.legend.highlightedLegendItemKey}
       onRefresh={status.onRefresh}
       onToggleControls={() => {
-        if (interaction.controlsSection === "legend") {
-          interaction.setControlsSection("view");
+        if (interaction.overlayPanel.controlsSection === "legend") {
+          interaction.overlayPanel.setControlsSection("view");
         }
-        interaction.setOpenOverlayPanel((current) =>
+        interaction.overlayPanel.setOpenOverlayPanel((current) =>
           current === "controls" ? null : "controls",
         );
       }}
       onToggleLegend={() => {
         if (standaloneLayout) {
-          status.scrollLegendDockIntoView();
+          interaction.legend.scrollLegendDockIntoView();
           return;
         }
-        interaction.setOpenOverlayPanel((current) =>
+        interaction.overlayPanel.setOpenOverlayPanel((current) =>
           current === "legend" ? null : "legend",
         );
       }}
-      onLegendItemHover={interaction.updateHoveredLegendItemKey}
-      onLegendItemFocus={interaction.updateFocusedLegendItemKey}
+      onLegendItemHover={interaction.legend.updateHoveredLegendItemKey}
+      onLegendItemFocus={interaction.legend.updateFocusedLegendItemKey}
       controlsPanel={desktopControlsPanel}
       legendPanel={desktopLegendPanel}
       t={t}
@@ -368,19 +300,23 @@ export function useWarMapOverlayPanels(
   );
   const inspectorPanel: ReactNode = (
     <WarMapInspectorPanel
-      selectedInspector={interaction.selectedInspector}
+      selectedInspector={interaction.inspector.selectedInspector}
       transportDetail={inspector.transportDetail}
       transportDetailLoading={inspector.transportDetailLoading}
       useDesktopInspector={useDesktopInspector}
-      desktopInspectorMinimized={interaction.desktopInspectorMinimized}
+      desktopInspectorMinimized={interaction.inspector.desktopInspectorMinimized}
       inspectorPanelWidth={overlayLayout.inspectorPanelWidth}
       inspectorPanelHeight={overlayLayout.inspectorPanelHeight}
       locale={locale}
-      onZoomToSelectedInspector={interaction.zoomToSelectedInspector}
-      onMinimizeInspector={() => interaction.setDesktopInspectorMinimized(true)}
-      onExpandInspector={() => interaction.setDesktopInspectorMinimized(false)}
-      onCloseInspector={interaction.closeSelectedInspector}
-      onOpenNewsLink={interaction.openNewsLink}
+      onZoomToSelectedInspector={interaction.inspector.zoomToSelectedInspector}
+      onMinimizeInspector={() =>
+        interaction.inspector.setDesktopInspectorMinimized(true)
+      }
+      onExpandInspector={() =>
+        interaction.inspector.setDesktopInspectorMinimized(false)
+      }
+      onCloseInspector={interaction.inspector.closeSelectedInspector}
+      onOpenNewsLink={interaction.inspector.openNewsLink}
       t={t}
     />
   );
@@ -391,10 +327,10 @@ export function useWarMapOverlayPanels(
     <Drawer
       open={
         standaloneLayout
-          ? interaction.openOverlayPanel === "controls"
-          : Boolean(interaction.openOverlayPanel)
+          ? interaction.overlayPanel.openOverlayPanel === "controls"
+          : Boolean(interaction.overlayPanel.openOverlayPanel)
       }
-      onClose={() => interaction.setOpenOverlayPanel(null)}
+      onClose={() => interaction.overlayPanel.setOpenOverlayPanel(null)}
       placement="bottom"
       height={
         standaloneLayout
@@ -407,7 +343,7 @@ export function useWarMapOverlayPanels(
       rootStyle={standaloneLayout ? { position: "absolute" } : undefined}
       styles={{ body: { padding: 0 } }}
     >
-      {interaction.openOverlayPanel === "legend" && !standaloneLayout
+      {interaction.overlayPanel.openOverlayPanel === "legend" && !standaloneLayout
         ? legendPanelContent
         : controlsPanelContent}
     </Drawer>

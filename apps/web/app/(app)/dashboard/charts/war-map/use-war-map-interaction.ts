@@ -64,19 +64,15 @@ export interface UseWarMapInteractionOptions {
   queryZoom: number;
 }
 
-export interface UseWarMapInteractionResult {
-  /** 当前选中对象的 Inspector 解析结果。 */
-  selectedInspector: SelectedInspector | null;
-  selectedInspectorKey: string | null;
-  setSelectedInspectorKey: Dispatch<SetStateAction<string | null>>;
+/**
+ * Deck 图层交互切片：图层构造所需的符号高亮键与 hover/点击命令。
+ * useWarMapLayers 的最小交互输入。
+ */
+export interface WarMapLayerInteractionSlice {
   hoveredInteractionKey: string | null;
-  hoveredLegendItemKey: string | null;
-  focusedLegendItemKey: string | null;
+  selectedInspectorKey: string | null;
   /** focus 优先于 hover 的 legend 高亮键。 */
   highlightedLegendItemKey: string | null;
-  updateHoveredInteractionKey: (next: string | null) => void;
-  updateHoveredLegendItemKey: (next: string | null) => void;
-  updateFocusedLegendItemKey: (next: string | null) => void;
   handleDeckPointHover: (info: WarMapDeckPick<HoverableDeckPoint>) => void;
   handleSelectablePointClick: (
     info: WarMapDeckPick<SelectableDeckPoint>,
@@ -85,18 +81,47 @@ export interface UseWarMapInteractionResult {
   handleLayerPointClick: (
     info: WarMapDeckPick<LayerClickPoint & { lat: number; lng: number }>,
   ) => void;
+}
+
+/** legend 焦点切片：focus/hover 键、更新命令与 dock 滚动定位。 */
+export interface WarMapLegendInteractionSlice {
+  focusedLegendItemKey: string | null;
+  hoveredLegendItemKey: string | null;
+  highlightedLegendItemKey: string | null;
+  updateHoveredLegendItemKey: (next: string | null) => void;
+  updateFocusedLegendItemKey: (next: string | null) => void;
+  /** standalone Legend 按钮滚动定位到 dock。 */
+  scrollLegendDockIntoView: () => void;
+}
+
+/** 选中 Inspector 切片：选中内容与开合/缩放/安全外链命令。 */
+export interface WarMapInspectorSlice {
+  selectedInspector: SelectedInspector | null;
+  desktopInspectorMinimized: boolean;
+  setDesktopInspectorMinimized: Dispatch<SetStateAction<boolean>>;
   closeSelectedInspector: () => void;
   zoomToSelectedInspector: () => void;
   /** 安全外链打开（新闻原文；非 http(s) 链接弹警告）。 */
   openNewsLink: (url?: string | null) => void;
-  /** standalone Legend 按钮滚动定位到 dock。 */
-  scrollLegendDockIntoView: () => void;
+}
+
+/** overlay 面板切片：面板开合与 controls section 状态。 */
+export interface WarMapOverlayPanelSlice {
   openOverlayPanel: OverlayPanelKey | null;
   setOpenOverlayPanel: Dispatch<SetStateAction<OverlayPanelKey | null>>;
   controlsSection: OverlayControlsSection;
   setControlsSection: Dispatch<SetStateAction<OverlayControlsSection>>;
-  desktopInspectorMinimized: boolean;
-  setDesktopInspectorMinimized: Dispatch<SetStateAction<boolean>>;
+}
+
+export interface UseWarMapInteractionResult {
+  /** Deck 图层交互（图层构造输入：高亮键 + hover/点击命令）。 */
+  layerInteraction: WarMapLayerInteractionSlice;
+  /** legend focus/hover 状态、命令与 dock 滚动定位。 */
+  legend: WarMapLegendInteractionSlice;
+  /** 选中 Inspector 内容与开合命令。 */
+  inspector: WarMapInspectorSlice;
+  /** overlay 面板与 controls section 状态。 */
+  overlayPanel: WarMapOverlayPanelSlice;
 }
 
 /** 监控点位点击所需字段。 */
@@ -122,9 +147,13 @@ interface LayerClickPoint {
  * - 失效清理：选中键在数据中不再可解析时清空；
  * - deck 点位 hover/点击 handlers（选中、监控搜索跳转、聚类缩放）。
  *
+ * 公共契约按领域切片暴露（layerInteraction / legend / inspector /
+ * overlayPanel），各消费方只接收所需切片；选中键 setter 与 hover 键
+ * 更新器不对外暴露（仅内部 handlers 使用）。
+ *
  * legend focus/hover 键的失效清理依赖 legendItemsByKey（其派生链上游
  * 含图层构造使用的本 hook 状态），由 war-map.tsx 在 legend 索引就绪后
- * 以 updateXxxLegendItemKey(null) 执行，避免循环依赖。
+ * 以 legend.updateXxxLegendItemKey(null) 执行，避免循环依赖。
  */
 export function useWarMapInteraction(
   options: UseWarMapInteractionOptions,
@@ -381,30 +410,41 @@ export function useWarMapInteraction(
     [zoomToLayerCluster],
   );
 
+  // focus 优先于 hover 的 legend 高亮键（派生，非第二事实源）
+  const highlightedLegendItemKey =
+    focusedLegendItemKey ?? hoveredLegendItemKey ?? null;
+
   return {
-    selectedInspector,
-    selectedInspectorKey,
-    setSelectedInspectorKey,
-    hoveredInteractionKey,
-    hoveredLegendItemKey,
-    focusedLegendItemKey,
-    highlightedLegendItemKey: focusedLegendItemKey ?? hoveredLegendItemKey ?? null,
-    updateHoveredInteractionKey,
-    updateHoveredLegendItemKey,
-    updateFocusedLegendItemKey,
-    handleDeckPointHover,
-    handleSelectablePointClick,
-    handleMonitorPointClick,
-    handleLayerPointClick,
-    closeSelectedInspector,
-    zoomToSelectedInspector,
-    openNewsLink,
-    scrollLegendDockIntoView,
-    openOverlayPanel,
-    setOpenOverlayPanel,
-    controlsSection,
-    setControlsSection,
-    desktopInspectorMinimized,
-    setDesktopInspectorMinimized,
+    layerInteraction: {
+      hoveredInteractionKey,
+      selectedInspectorKey,
+      highlightedLegendItemKey,
+      handleDeckPointHover,
+      handleSelectablePointClick,
+      handleMonitorPointClick,
+      handleLayerPointClick,
+    },
+    legend: {
+      focusedLegendItemKey,
+      hoveredLegendItemKey,
+      highlightedLegendItemKey,
+      updateHoveredLegendItemKey,
+      updateFocusedLegendItemKey,
+      scrollLegendDockIntoView,
+    },
+    inspector: {
+      selectedInspector,
+      desktopInspectorMinimized,
+      setDesktopInspectorMinimized,
+      closeSelectedInspector,
+      zoomToSelectedInspector,
+      openNewsLink,
+    },
+    overlayPanel: {
+      openOverlayPanel,
+      setOpenOverlayPanel,
+      controlsSection,
+      setControlsSection,
+    },
   };
 }

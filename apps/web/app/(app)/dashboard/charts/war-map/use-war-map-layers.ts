@@ -12,7 +12,7 @@ import { useEffect, useMemo } from "react";
 import type { SupportedLocale } from "@/lib/i18n";
 
 import type { WarMapBbox } from "./query-viewport";
-import type { UseWarMapInteractionResult } from "./use-war-map-interaction";
+import type { WarMapLayerInteractionSlice } from "./use-war-map-interaction";
 import type { UseWarMapPointsResult } from "./use-war-map-points";
 import { buildWarMapAisLayers } from "./war-map-ais-layers";
 import type { WarMapLayersResponse } from "./war-map-data";
@@ -41,7 +41,8 @@ export interface UseWarMapLayersOptions {
   localClusterBbox?: WarMapBbox;
   translateTarget?: WarMapTranslateTarget;
   points: UseWarMapPointsResult;
-  interaction: UseWarMapInteractionResult;
+  /** Deck 图层交互切片（高亮键 + hover/点击命令）。 */
+  layerInteraction: WarMapLayerInteractionSlice;
   setOverlayProps: (
     props: Pick<MapboxOverlayProps, "layers" | "getTooltip" | "getCursor">,
   ) => void;
@@ -88,7 +89,7 @@ export function useWarMapLayers(
     localClusterBbox,
     translateTarget,
     points,
-    interaction,
+    layerInteraction,
     setOverlayProps,
     hasRenderableContainer,
   } = options;
@@ -96,16 +97,16 @@ export function useWarMapLayers(
   const buildSymbolPointLayers = useMemo(
     () =>
       createWarMapSymbolLayerBuilder({
-        hoveredInteractionKey: interaction.hoveredInteractionKey,
-        selectedInspectorKey: interaction.selectedInspectorKey,
-        highlightedLegendItemKey: interaction.highlightedLegendItemKey,
-        onPointHover: interaction.handleDeckPointHover,
+        hoveredInteractionKey: layerInteraction.hoveredInteractionKey,
+        selectedInspectorKey: layerInteraction.selectedInspectorKey,
+        highlightedLegendItemKey: layerInteraction.highlightedLegendItemKey,
+        onPointHover: layerInteraction.handleDeckPointHover,
       }),
     [
-      interaction.highlightedLegendItemKey,
-      interaction.hoveredInteractionKey,
-      interaction.handleDeckPointHover,
-      interaction.selectedInspectorKey,
+      layerInteraction.highlightedLegendItemKey,
+      layerInteraction.hoveredInteractionKey,
+      layerInteraction.handleDeckPointHover,
+      layerInteraction.selectedInspectorKey,
     ],
   );
 
@@ -120,7 +121,7 @@ export function useWarMapLayers(
         localClusterBbox,
         flightMode,
         buildSymbolPointLayers,
-        onLayerPointClick: interaction.handleLayerPointClick,
+        onLayerPointClick: layerInteraction.handleLayerPointClick,
       }),
     [
       buildSymbolPointLayers,
@@ -131,7 +132,7 @@ export function useWarMapLayers(
       queryZoom,
       t,
       translateTarget,
-      interaction.handleLayerPointClick,
+      layerInteraction.handleLayerPointClick,
     ],
   );
 
@@ -144,8 +145,8 @@ export function useWarMapLayers(
         aisHighlightCandidates,
         t,
         buildSymbolPointLayers,
-        onLayerPointClick: interaction.handleLayerPointClick,
-        onSelectablePointClick: interaction.handleSelectablePointClick,
+        onLayerPointClick: layerInteraction.handleLayerPointClick,
+        onSelectablePointClick: layerInteraction.handleSelectablePointClick,
       }),
     [
       aisHighlightCandidates,
@@ -154,8 +155,8 @@ export function useWarMapLayers(
       layerVisibility.ais,
       layersData,
       t,
-      interaction.handleLayerPointClick,
-      interaction.handleSelectablePointClick,
+      layerInteraction.handleLayerPointClick,
+      layerInteraction.handleSelectablePointClick,
     ],
   );
 
@@ -167,11 +168,11 @@ export function useWarMapLayers(
     return buildSymbolPointLayers({
       id: "wm-monitors",
       data: points.monitorPoints,
-      onClick: interaction.handleMonitorPointClick,
+      onClick: layerInteraction.handleMonitorPointClick,
     });
   }, [
     buildSymbolPointLayers,
-    interaction.handleMonitorPointClick,
+    layerInteraction.handleMonitorPointClick,
     layerVisibility.monitors,
     points.monitorPoints,
   ]);
@@ -183,13 +184,13 @@ export function useWarMapLayers(
         rawEventsCount: points.rawEvents.length,
         t,
         buildSymbolPointLayers,
-        onSelectablePointClick: interaction.handleSelectablePointClick,
+        onSelectablePointClick: layerInteraction.handleSelectablePointClick,
       }),
     [
       buildSymbolPointLayers,
       points.clusteredEvents,
       points.rawEvents.length,
-      interaction.handleSelectablePointClick,
+      layerInteraction.handleSelectablePointClick,
       t,
     ],
   );
@@ -201,13 +202,13 @@ export function useWarMapLayers(
         rawNewsMarkersCount: points.rawNewsMarkers.length,
         t,
         buildSymbolPointLayers,
-        onSelectablePointClick: interaction.handleSelectablePointClick,
+        onSelectablePointClick: layerInteraction.handleSelectablePointClick,
       }),
     [
       buildSymbolPointLayers,
       points.clusteredNews,
       points.rawNewsMarkers.length,
-      interaction.handleSelectablePointClick,
+      layerInteraction.handleSelectablePointClick,
       t,
     ],
   );
@@ -244,8 +245,8 @@ export function useWarMapLayers(
   );
 
   const deckCursorGetter = useMemo(
-    () => createWarMapCursorGetter(interaction.hoveredInteractionKey),
-    [interaction.hoveredInteractionKey],
+    () => createWarMapCursorGetter(layerInteraction.hoveredInteractionKey),
+    [layerInteraction.hoveredInteractionKey],
   );
 
   useEffect(() => {

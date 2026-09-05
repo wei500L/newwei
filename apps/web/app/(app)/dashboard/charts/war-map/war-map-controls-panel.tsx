@@ -14,6 +14,8 @@ import type { WarMapPreset, WarMapTimeRangePreset } from "@modular/utils";
 import { Button, Space, Tag, Tooltip, Typography } from "antd";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import type { WarMapAisSummaryPresentation } from "./war-map-ais-status";
+import type { WarMapFlightsSummaryPresentation } from "./war-map-flights-status";
 import {
   OVERLAY_NEUTRAL_TAG_CLASS_NAME,
   OVERLAY_SECTION_TITLE_CLASS_NAME,
@@ -49,46 +51,43 @@ interface WarMapControlsPanelViewProps {
   onResetLayers: () => void;
 }
 
-interface WarMapControlsPanelTransportProps {
-  flightMode: FlightMode;
-  onFlightModeChange: (mode: FlightMode) => void;
-  flightsLayerVisible: boolean;
-  flightsSourceBadgeLabel: string | null;
-  flightsTooltipText: string | null;
-  flightsReturnedCount?: number;
-  flightsSnapshotCount?: number;
-  flightsRawLabel?: string | null;
-  flightsFreshness?: string;
-  flightsTruncated: boolean;
-  aisLayerVisible: boolean;
-  aisMode: AisMode;
-  aisEffectiveMode: AisMode;
-  onAisModeChange: (mode: AisMode) => void;
-  aisHighlightCandidates: boolean;
-  onAisHighlightCandidatesChange: (enabled: boolean) => void;
-  aisAllModeDegraded: boolean;
-  aisAllModeDegradedLabel: string | null;
-  aisTooltipText: string | null;
-  aisStatusReason: string | null;
-  aisSourceStatusColor: string;
-  aisSourceStatusLabel: string;
-  aisFreshness?: string;
-  aisModeLabel: string;
-  aisRelayVesselCount?: number;
-  aisSnapshotRelative: string | null;
-  aisSnapshotExact: string | null;
-  aisPrimaryCountValue?: number;
-  aisPrimaryCountLabel: string;
-  aisHighlightCountValue?: number;
-  aisHighlightCountLabel?: string;
-  aisDisruptionsCount?: number;
-  aisViewportEmptyStateActive: boolean;
-  aisViewportEmptyStateLabel: string | null;
-  aisViewportEmptyStateHint: string | null;
-  canAnalyzeCurrentView: boolean;
-  analyzingCurrentView: boolean;
-  onAnalyzeCurrentView: () => void;
-  onOpenLegend: () => void;
+/** Transport 航班域：模式、可见性与摘要展示（presentation 整体传递）。 */
+export interface WarMapControlsPanelTransportFlights {
+  mode: FlightMode;
+  visible: boolean;
+  presentation: WarMapFlightsSummaryPresentation;
+  onModeChange: (mode: FlightMode) => void;
+}
+
+/** Transport 区块 AIS 域：模式、可见性、候选高亮与摘要展示。 */
+export interface WarMapControlsPanelTransportAis {
+  mode: AisMode;
+  effectiveMode: AisMode;
+  visible: boolean;
+  highlightCandidates: boolean;
+  highlightedCandidateCount: number | undefined;
+  presentation: WarMapAisSummaryPresentation;
+  onModeChange: (mode: AisMode) => void;
+  onHighlightCandidatesChange: (enabled: boolean) => void;
+}
+
+/** Transport 区块分析域：权限门禁（含图层可见性）与提交。 */
+export interface WarMapControlsPanelTransportAnalysis {
+  allowed: boolean;
+  submitting: boolean;
+  onSubmit: () => void;
+}
+
+/** Transport 区块 legend 域：打开完整图例命令。 */
+export interface WarMapControlsPanelTransportLegend {
+  onOpen: () => void;
+}
+
+export interface WarMapControlsPanelTransportProps {
+  flights: WarMapControlsPanelTransportFlights;
+  ais: WarMapControlsPanelTransportAis;
+  analysis: WarMapControlsPanelTransportAnalysis;
+  legend: WarMapControlsPanelTransportLegend;
 }
 
 export interface WarMapControlsPanelProps {
@@ -754,6 +753,12 @@ function TransportSection({
   const aisReferenceItems = transportLegendItems
     .filter((item) => item.symbolKey.startsWith("ais-"))
     .slice(0, 4);
+  // 领域切片局部别名（presentation 整体读取，不在装配层摊平）
+  const flights = transport.flights;
+  const ais = transport.ais;
+  const flightsPresentation = flights.presentation;
+  const aisPresentation = ais.presentation;
+  const aisStatusReason = aisPresentation.aisResolvedStatusReason ?? null;
   const aisHighlightCandidatesHint = t(
     "dashboard.charts.warMap.overlay.aisHighlightCandidatesHint",
   );
@@ -764,7 +769,7 @@ function TransportSection({
     "dashboard.charts.warMap.overlay.aisAllVesselsHint",
   );
   const aisSectionDescription = t(
-    transport.aisAllModeDegraded
+    aisPresentation.aisAllModeDegraded
       ? "dashboard.charts.warMap.overlay.aisSectionDescriptionUnavailable"
       : "dashboard.charts.warMap.overlay.aisSectionDescription",
   );
@@ -796,43 +801,43 @@ function TransportSection({
             title={t("dashboard.charts.warMap.layerNames.ais")}
             description={aisSectionDescription}
           />
-          {transport.aisLayerVisible ? (
+          {ais.visible ? (
             <>
               <div className={OVERLAY_PANEL_AIS_MODE_GRID_CLASS_NAME}>
                 <ControlsChoiceButton
-                  active={transport.aisMode === "all"}
+                  active={ais.mode === "all"}
                   tooltip={
-                    transport.aisAllModeDegraded
-                      ? transport.aisAllModeDegradedLabel
+                    aisPresentation.aisAllModeDegraded
+                      ? aisPresentation.aisAllModeDegradedLabel
                       : aisAllVesselsHint
                   }
-                  onClick={() => transport.onAisModeChange("all")}
+                  onClick={() => ais.onModeChange("all")}
                 >
                   {t("dashboard.charts.warMap.stats.aisModeAll")}
                 </ControlsChoiceButton>
                 <ControlsChoiceButton
-                  active={transport.aisMode === "military"}
+                  active={ais.mode === "military"}
                   tooltip={aisCandidatesOnlyHint}
-                  onClick={() => transport.onAisModeChange("military")}
+                  onClick={() => ais.onModeChange("military")}
                 >
                   {t("dashboard.charts.warMap.stats.aisModeMilitary")}
                 </ControlsChoiceButton>
                 <ControlsChoiceButton
-                  active={transport.aisMode === "density"}
-                  onClick={() => transport.onAisModeChange("density")}
+                  active={ais.mode === "density"}
+                  onClick={() => ais.onModeChange("density")}
                 >
                   {t("dashboard.charts.warMap.stats.aisModeDensity")}
                 </ControlsChoiceButton>
               </div>
-              {transport.aisAllModeDegraded ? (
+              {aisPresentation.aisAllModeDegraded ? (
                 <div className={OVERLAY_PANEL_MODE_HINT_CLASS_NAME}>
                   <Typography.Text className="block text-inherit">
-                    {transport.aisAllModeDegradedLabel ??
+                    {aisPresentation.aisAllModeDegradedLabel ??
                       aisAllUnavailableInlineHint}
                   </Typography.Text>
                 </div>
               ) : null}
-              {transport.aisMode === "military" ? (
+              {ais.mode === "military" ? (
                 <div className={OVERLAY_PANEL_MODE_HINT_CLASS_NAME}>
                   <Typography.Text className="block text-inherit">
                     {t(
@@ -846,13 +851,13 @@ function TransportSection({
                       tone: "link",
                     })}
                     style={{ padding: 0, height: "auto", marginTop: 8 }}
-                    onClick={() => transport.onAisModeChange("all")}
+                    onClick={() => ais.onModeChange("all")}
                   >
                     {t("dashboard.charts.warMap.overlay.aisShowAllAction")}
                   </Button>
                 </div>
               ) : null}
-              {transport.aisMode === "density" ? (
+              {ais.mode === "density" ? (
                 <div className={OVERLAY_PANEL_MODE_HINT_CLASS_NAME}>
                   <Typography.Text className="block text-inherit">
                     {t(
@@ -866,20 +871,20 @@ function TransportSection({
                       tone: "link",
                     })}
                     style={{ padding: 0, height: "auto", marginTop: 8 }}
-                    onClick={() => transport.onAisModeChange("all")}
+                    onClick={() => ais.onModeChange("all")}
                   >
                     {t("dashboard.charts.warMap.overlay.aisShowAllAction")}
                   </Button>
                 </div>
               ) : null}
-              {transport.aisMode === "all" ? (
+              {ais.mode === "all" ? (
                 <div className="mt-3">
                   <ControlsChoiceButton
-                    active={transport.aisHighlightCandidates}
+                    active={ais.highlightCandidates}
                     tooltip={aisHighlightCandidatesHint}
                     onClick={() =>
-                      transport.onAisHighlightCandidatesChange(
-                        !transport.aisHighlightCandidates,
+                      ais.onHighlightCandidatesChange(
+                        !ais.highlightCandidates,
                       )
                     }
                   >
@@ -890,23 +895,23 @@ function TransportSection({
               <Space size={[8, 8]} wrap className="mt-3">
                 <Tooltip
                   title={
-                    transport.aisTooltipText ? (
+                    aisPresentation.aisTooltipText ? (
                       <span className="whitespace-pre-line">
-                        {transport.aisTooltipText}
+                        {aisPresentation.aisTooltipText}
                       </span>
                     ) : null
                   }
                 >
                   <Tag
-                    color={transport.aisSourceStatusColor}
+                    color={aisPresentation.aisSourceStatusColor}
                     className={OVERLAY_STATUS_TAG_CLASS_NAME}
                   >
                     {t("dashboard.charts.warMap.layerNames.ais")}
-                    : {transport.aisSourceStatusLabel}
+                    : {aisPresentation.aisSourceStatusLabel}
                   </Tag>
                 </Tooltip>
-                {transport.aisStatusReason ? (
-                  <Tooltip title={transport.aisStatusReason}>
+                {aisStatusReason ? (
+                  <Tooltip title={aisStatusReason}>
                     <Tag
                       color="volcano"
                       className={OVERLAY_STATUS_TAG_CLASS_NAME}
@@ -917,82 +922,82 @@ function TransportSection({
                 ) : null}
                 <Tooltip
                   title={
-                    transport.aisTooltipText ? (
+                    aisPresentation.aisTooltipText ? (
                       <span className="whitespace-pre-line">
-                        {transport.aisTooltipText}
+                        {aisPresentation.aisTooltipText}
                       </span>
                     ) : null
                   }
                 >
                   <Tag color="cyan" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
-                    {transport.aisModeLabel}
+                    {aisPresentation.aisEffectiveModeLabel}
                   </Tag>
                 </Tooltip>
-                {transport.aisMode === "all" ? (
+                {ais.mode === "all" ? (
                   <Tooltip title={aisHighlightCandidatesHint}>
                     <Tag
                       color={
-                        transport.aisHighlightCandidates ? "orange" : "default"
+                        ais.highlightCandidates ? "orange" : "default"
                       }
                       className={
-                        transport.aisHighlightCandidates
+                        ais.highlightCandidates
                           ? OVERLAY_STATUS_TAG_CLASS_NAME
                           : OVERLAY_NEUTRAL_TAG_CLASS_NAME
                       }
                     >
-                      {transport.aisHighlightCandidates
+                      {ais.highlightCandidates
                         ? t("dashboard.charts.warMap.stats.aisHighlightOn")
                         : t("dashboard.charts.warMap.stats.aisHighlightOff")}
                     </Tag>
                   </Tooltip>
                 ) : null}
-                {typeof transport.aisRelayVesselCount === "number" ? (
+                {typeof aisPresentation.aisRelayVesselCount === "number" ? (
                   <Tooltip
                     title={
-                      transport.aisTooltipText ? (
+                      aisPresentation.aisTooltipText ? (
                         <span className="whitespace-pre-line">
-                          {transport.aisTooltipText}
+                          {aisPresentation.aisTooltipText}
                         </span>
                       ) : null
                     }
                   >
                     <Tag color="blue" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
                       {t("dashboard.charts.warMap.stats.aisTrackedVessels")}
-                      : {transport.aisRelayVesselCount}
+                      : {aisPresentation.aisRelayVesselCount}
                     </Tag>
                   </Tooltip>
                 ) : null}
-                {transport.aisSnapshotRelative ? (
+                {aisPresentation.aisSnapshotRelative ? (
                   <Tooltip
                     title={
-                      transport.aisSnapshotExact
+                      aisPresentation.aisSnapshotExact
                         ? `${t(
                             "dashboard.charts.warMap.stats.aisSnapshotUpdated",
-                          )}: ${transport.aisSnapshotExact}`
+                          )}: ${aisPresentation.aisSnapshotExact}`
                         : undefined
                     }
                   >
                     <Tag
                       color={
-                        transport.aisFreshness === "stale" ? "gold" : "default"
+                        aisPresentation.aisFreshness === "stale" ? "gold" : "default"
                       }
                       className={
-                        transport.aisFreshness === "stale"
+                        aisPresentation.aisFreshness === "stale"
                           ? OVERLAY_STATUS_TAG_CLASS_NAME
                           : OVERLAY_NEUTRAL_TAG_CLASS_NAME
                       }
                     >
                       {t("dashboard.charts.warMap.stats.aisSnapshotUpdated")}
-                      : {transport.aisSnapshotRelative}
+                      : {aisPresentation.aisSnapshotRelative}
                     </Tag>
                   </Tooltip>
                 ) : null}
-                {typeof transport.aisPrimaryCountValue === "number" ? (
+                {typeof aisPresentation.aisPrimaryCountValue === "number" ? (
                   <Tooltip
                     title={
-                      transport.aisTooltipText ? (
+                      aisPresentation.aisTooltipText ? (
                         <span className="whitespace-pre-line">
-                          {transport.aisTooltipText}
+                          {aisPresentation.aisTooltipText}
                         </span>
                       ) : null
                     }
@@ -1001,18 +1006,18 @@ function TransportSection({
                       color="geekblue"
                       className={OVERLAY_STATUS_TAG_CLASS_NAME}
                     >
-                      {transport.aisPrimaryCountLabel}:{" "}
-                      {transport.aisPrimaryCountValue}
+                      {aisPresentation.aisPrimaryCountLabel}:{" "}
+                      {aisPresentation.aisPrimaryCountValue}
                     </Tag>
                   </Tooltip>
                 ) : null}
-                {typeof transport.aisHighlightCountValue === "number" &&
-                transport.aisHighlightCountLabel ? (
+                {typeof ais.highlightedCandidateCount === "number" &&
+                aisPresentation.aisHighlightCountLabel ? (
                   <Tooltip
                     title={
-                      transport.aisTooltipText ? (
+                      aisPresentation.aisTooltipText ? (
                         <span className="whitespace-pre-line">
-                          {transport.aisTooltipText}
+                          {aisPresentation.aisTooltipText}
                         </span>
                       ) : null
                     }
@@ -1021,17 +1026,17 @@ function TransportSection({
                       color="orange"
                       className={OVERLAY_STATUS_TAG_CLASS_NAME}
                     >
-                      {transport.aisHighlightCountLabel}:{" "}
-                      {transport.aisHighlightCountValue}
+                      {aisPresentation.aisHighlightCountLabel}:{" "}
+                      {ais.highlightedCandidateCount}
                     </Tag>
                   </Tooltip>
                 ) : null}
-                {typeof transport.aisDisruptionsCount === "number" ? (
+                {typeof aisPresentation.aisDisruptionsCount === "number" ? (
                   <Tooltip
                     title={
-                      transport.aisTooltipText ? (
+                      aisPresentation.aisTooltipText ? (
                         <span className="whitespace-pre-line">
-                          {transport.aisTooltipText}
+                          {aisPresentation.aisTooltipText}
                         </span>
                       ) : null
                     }
@@ -1041,13 +1046,13 @@ function TransportSection({
                       className={OVERLAY_STATUS_TAG_CLASS_NAME}
                     >
                       {t("dashboard.charts.warMap.stats.aisDisruptions")}
-                      : {transport.aisDisruptionsCount}
+                      : {aisPresentation.aisDisruptionsCount}
                     </Tag>
                   </Tooltip>
                 ) : null}
-                {transport.aisEffectiveMode === "all" &&
-                transport.aisAllModeDegraded ? (
-                  <Tooltip title={transport.aisAllModeDegradedLabel}>
+                {ais.effectiveMode === "all" &&
+                aisPresentation.aisAllModeDegraded ? (
+                  <Tooltip title={aisPresentation.aisAllModeDegradedLabel}>
                     <Tag
                       color="magenta"
                       className={OVERLAY_STATUS_TAG_CLASS_NAME}
@@ -1056,17 +1061,17 @@ function TransportSection({
                     </Tag>
                   </Tooltip>
                 ) : null}
-                {transport.aisViewportEmptyStateActive &&
-                transport.aisViewportEmptyStateLabel ? (
+                {aisPresentation.aisViewportEmptyStateActive &&
+                aisPresentation.aisViewportEmptyStateLabel ? (
                   <Tag color="gold" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
-                    {transport.aisViewportEmptyStateLabel}
+                    {aisPresentation.aisViewportEmptyStateLabel}
                   </Tag>
                 ) : null}
               </Space>
-              {transport.aisViewportEmptyStateActive &&
-              transport.aisViewportEmptyStateHint ? (
+              {aisPresentation.aisViewportEmptyStateActive &&
+              aisPresentation.aisViewportEmptyStateHint ? (
                 <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  {transport.aisViewportEmptyStateHint}
+                  {aisPresentation.aisViewportEmptyStateHint}
                 </p>
               ) : null}
             </>
@@ -1077,7 +1082,7 @@ function TransportSection({
           )}
           <AisReferenceSection
             items={aisReferenceItems}
-            onOpenLegend={transport.onOpenLegend}
+            onOpenLegend={transport.legend.onOpen}
             t={t}
           />
         </div>
@@ -1089,71 +1094,71 @@ function TransportSection({
           />
           <div className={OVERLAY_PANEL_OPTION_GRID_CLASS_NAME}>
             <ControlsChoiceButton
-              active={transport.flightMode === "military"}
-              onClick={() => transport.onFlightModeChange("military")}
+              active={flights.mode === "military"}
+              onClick={() => flights.onModeChange("military")}
             >
               {t("dashboard.charts.warMap.stats.flightModeMilitary")}
             </ControlsChoiceButton>
             <ControlsChoiceButton
-              active={transport.flightMode === "all"}
-              onClick={() => transport.onFlightModeChange("all")}
+              active={flights.mode === "all"}
+              onClick={() => flights.onModeChange("all")}
             >
               {t("dashboard.charts.warMap.stats.flightModeAll")}
             </ControlsChoiceButton>
           </div>
           <Space size={[8, 8]} wrap className="mt-3">
-            {transport.flightsLayerVisible &&
-            transport.flightsSourceBadgeLabel ? (
+            {flights.visible &&
+            flightsPresentation.flightsSourceBadgeLabel ? (
               <Tooltip
                 title={
-                  transport.flightsTooltipText ? (
+                  flightsPresentation.flightsTooltipText ? (
                     <span className="whitespace-pre-line">
-                      {transport.flightsTooltipText}
+                      {flightsPresentation.flightsTooltipText}
                     </span>
                   ) : null
                 }
               >
                 <Tag color="geekblue" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
-                  {transport.flightsSourceBadgeLabel}
+                  {flightsPresentation.flightsSourceBadgeLabel}
                 </Tag>
               </Tooltip>
             ) : null}
-            {transport.flightsLayerVisible &&
-            typeof transport.flightsReturnedCount === "number" ? (
+            {flights.visible &&
+            typeof flightsPresentation.flightsReturnedCount === "number" ? (
               <Tooltip
                 title={
-                  transport.flightsTooltipText ? (
+                  flightsPresentation.flightsTooltipText ? (
                     <span className="whitespace-pre-line">
-                      {transport.flightsTooltipText}
+                      {flightsPresentation.flightsTooltipText}
                     </span>
                   ) : null
                 }
               >
                 <Tag
                   color={
-                    transport.flightsFreshness === "stale"
+                    flightsPresentation.flightsFreshness === "stale"
                       ? "orange"
-                      : transport.flightsFreshness === "zoom_required"
+                      : flightsPresentation.flightsFreshness === "zoom_required"
                         ? "purple"
-                        : transport.flightsFreshness === "budget_limited"
+                        : flightsPresentation.flightsFreshness === "budget_limited"
                           ? "magenta"
-                          : transport.flightsFreshness === "not_configured"
+                          : flightsPresentation.flightsFreshness === "not_configured"
                             ? "red"
-                            : transport.flightsFreshness === "missing"
+                            : flightsPresentation.flightsFreshness === "missing"
                               ? "default"
-                              : transport.flightsTruncated
+                              : flightsPresentation.flightsTruncated
                                 ? "gold"
                                 : "cyan"
                   }
                   className={OVERLAY_STATUS_TAG_CLASS_NAME}
                 >
                   {t("dashboard.charts.warMap.stats.flights")}
-                  : {transport.flightsReturnedCount}
-                  {typeof transport.flightsSnapshotCount === "number"
-                    ? `/${transport.flightsSnapshotCount}`
+                  : {flightsPresentation.flightsReturnedCount}
+                  {typeof flightsPresentation.flightsSnapshotCount === "number"
+                    ? `/${flightsPresentation.flightsSnapshotCount}`
                     : ""}
-                  {transport.flightsRawLabel
-                    ? ` ${transport.flightsRawLabel}`
+                  {flightsPresentation.flightsRawLabel
+                    ? ` ${flightsPresentation.flightsRawLabel}`
                     : ""}
                 </Tag>
               </Tooltip>
@@ -1168,9 +1173,9 @@ function TransportSection({
       <Button
         type="primary"
         className="!h-11 !rounded-[16px] !px-4 !text-[13px] !font-semibold"
-        loading={transport.analyzingCurrentView}
-        disabled={!transport.canAnalyzeCurrentView}
-        onClick={transport.onAnalyzeCurrentView}
+        loading={transport.analysis.submitting}
+        disabled={!transport.analysis.allowed}
+        onClick={transport.analysis.onSubmit}
       >
         {t("dashboard.charts.warMap.actions.analyzeCurrentView")}
       </Button>

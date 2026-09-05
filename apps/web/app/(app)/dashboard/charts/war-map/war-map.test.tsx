@@ -925,6 +925,33 @@ describe("WarMap（迁移前 characterization）", () => {
       expect(document.querySelector(".ant-drawer")).not.toBeNull();
     });
 
+    it("standalone 打开完整图例：关闭 Drawer 并下一帧滚动 legend dock", async () => {
+      renderWarMap(<WarMap layoutVariant="standalone" />);
+      await activateMap();
+
+      await userEvent.click(screen.getByRole("button", { name: "Controls" }));
+      await userEvent.click(screen.getByRole("button", { name: "Transport" }));
+      const openLegendButton = await screen.findByRole("button", {
+        name: "Open full legend",
+      });
+
+      await userEvent.click(openLegendButton);
+
+      // 点击后关闭 overlay（standalone 下 Drawer 关闭）
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Controls" }),
+        ).toHaveAttribute("aria-expanded", "false");
+      });
+      // 下一帧 scrollIntoView（smooth/start）
+      await waitFor(() => {
+        expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    });
+
     it("事件选中：deck onClick → Inspector 展示 → Esc 关闭", async () => {
       const responses = buildStandardWarMapResponses();
       responses["dashboard/war-map/events"] = {

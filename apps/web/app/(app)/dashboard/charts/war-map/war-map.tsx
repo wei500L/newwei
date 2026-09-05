@@ -205,18 +205,11 @@ export function WarMap({
     mapRef,
     queryZoom,
   });
-  const {
-    selectedInspector,
-    focusedLegendItemKey,
-    hoveredLegendItemKey,
-    updateHoveredLegendItemKey,
-    updateFocusedLegendItemKey,
-    scrollLegendDockIntoView,
-  } = interactionResult;
+  const { legend: legendInteraction } = interactionResult;
 
   const transportDetailQuery = useWarMapTransportDetail({
     apiClient,
-    selectedInspector,
+    selectedInspector: interactionResult.inspector.selectedInspector,
     effectiveRange,
   });
 
@@ -230,11 +223,8 @@ export function WarMap({
   });
 
   // 图层编排域：点位 + 交互 → Deck 图层集合 + overlay props 应用
-  const {
-    deckData,
-    aisHighlightedCandidateCount,
-    activePointLayers,
-  } = useWarMapLayers({
+  const { deckData, aisHighlightedCandidateCount, activePointLayers } =
+    useWarMapLayers({
     t,
     locale,
     flightMode,
@@ -246,7 +236,7 @@ export function WarMap({
     localClusterBbox,
     translateTarget,
     points: pointsResult,
-    interaction: interactionResult,
+    layerInteraction: interactionResult.layerInteraction,
     setOverlayProps,
     hasRenderableContainer: hasRenderableMapContainer,
   });
@@ -295,12 +285,7 @@ export function WarMap({
     aisHighlightedCandidateCount,
     streamState: resolvedStreamState,
     anyFetching,
-    queries: {
-      eventsQuery,
-      newsQuery,
-      layersQuery,
-      monitorsQuery,
-    },
+    queries: { eventsQuery, newsQuery, layersQuery, monitorsQuery },
   });
 
   const loadOverlayState = buildWarMapLoadOverlayState({
@@ -357,37 +342,49 @@ export function WarMap({
 
   // legend focus/hover 键失效清理（依赖 legend 索引，留在编排层避免依赖环）
   useEffect(() => {
-    if (focusedLegendItemKey && !legendItemsByKey.has(focusedLegendItemKey)) {
-      updateFocusedLegendItemKey(null);
+    if (
+      legendInteraction.focusedLegendItemKey &&
+      !legendItemsByKey.has(legendInteraction.focusedLegendItemKey)
+    ) {
+      legendInteraction.updateFocusedLegendItemKey(null);
     }
-    if (hoveredLegendItemKey && !legendItemsByKey.has(hoveredLegendItemKey)) {
-      updateHoveredLegendItemKey(null);
+    if (
+      legendInteraction.hoveredLegendItemKey &&
+      !legendItemsByKey.has(legendInteraction.hoveredLegendItemKey)
+    ) {
+      legendInteraction.updateHoveredLegendItemKey(null);
     }
   }, [
-    focusedLegendItemKey,
-    hoveredLegendItemKey,
+    legendInteraction.focusedLegendItemKey,
+    legendInteraction.hoveredLegendItemKey,
+    legendInteraction.updateFocusedLegendItemKey,
+    legendInteraction.updateHoveredLegendItemKey,
     legendItemsByKey,
-    updateFocusedLegendItemKey,
-    updateHoveredLegendItemKey,
   ]);
 
+  // transport 领域契约：按域传递，presentation 整体下传不在装配层摊平；
+  // analysis.allowed 含 analysis.run 权限与运输图层可见性门禁
   const transportInput = {
-    flightMode,
-    onFlightModeChange: setFlightMode,
-    aisMode,
-    effectiveAisMode,
-    onAisModeChange: setAisMode,
-    aisHighlightCandidates,
-    onAisHighlightCandidatesChange: setAisHighlightCandidates,
-    flightsLayerVisible: layerVisibility.flights,
-    aisLayerVisible: layerVisibility.ais,
-    flightsPresentation,
-    aisPresentation,
-    aisHighlightedCandidateCount,
-    canRunAnalysis,
-    analyzingCurrentView: submittingGeoTransport,
-    onAnalyzeCurrentView: () => {
-      void handleAnalyzeCurrentView();
+    flights: {
+      mode: flightMode,
+      visible: layerVisibility.flights,
+      presentation: flightsPresentation,
+      onModeChange: setFlightMode,
+    },
+    ais: {
+      mode: aisMode,
+      effectiveMode: effectiveAisMode,
+      visible: layerVisibility.ais,
+      highlightCandidates: aisHighlightCandidates,
+      highlightedCandidateCount: aisHighlightedCandidateCount,
+      presentation: aisPresentation,
+      onModeChange: setAisMode,
+      onHighlightCandidatesChange: setAisHighlightCandidates,
+    },
+    analysis: {
+      allowed: canRunAnalysis && (layerVisibility.flights || layerVisibility.ais),
+      submitting: submittingGeoTransport,
+      onSubmit: handleAnalyzeCurrentView,
     },
   };
 
@@ -401,7 +398,11 @@ export function WarMap({
     useDrawerControls,
     useDesktopInspector,
     overlayDensity,
-    interaction: interactionResult,
+    interaction: {
+      legend: interactionResult.legend,
+      inspector: interactionResult.inspector,
+      overlayPanel: interactionResult.overlayPanel,
+    },
     overlayViewModel,
     overlayLayout,
     legend: {
@@ -432,7 +433,6 @@ export function WarMap({
       onRefresh: () => {
         void refreshMapData();
       },
-      scrollLegendDockIntoView,
     },
   });
 
