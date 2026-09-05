@@ -29,7 +29,7 @@ export function TransportInspectorContent({
   kind: "flight" | "vessel";
   item: RenderableWarMapTransportSelection;
   transportDetail: WarMapTransportDetail | null | undefined;
-  transportDetailLoading: boolean;
+  transportDetailLoading: boolean | undefined;
   context: WarMapInspectorContentContext;
 }) {
   const { locale, t } = context;
