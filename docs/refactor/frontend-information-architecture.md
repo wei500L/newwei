@@ -96,7 +96,7 @@ REST     → 单一类型化客户端（现 apiClient）+ TanStack Query（缓�
 | FE-批1 | 设计 token 收敛 + AppShell/PageContainer/DataStateBoundary/useUrlState 原语落地（不动页面） | revert 单 PR |
 | FE-批2 | ActionRail 分组 + TopNav 拆分（9 职责 → 组合式组件）+ 图标去重 + newsnow 宽度特例收敛 | feature flag（新旧 rail 切换）或 revert |
 | FE-批3 | alert-center 重构（拆解 + URL 状态，修 FE-01）——**代表页试点 1** | revert |
-| FE-批4 | war-map 重构——**代表页试点 2**（最大最复杂，验证原语够用） | revert |
+| FE-批4 | war-map 重构——**代表页试点 2**（最大最复杂，验证原语够用）。批4A（PR #6）：核心运行时/图层域拆分（war-map.tsx 4412 → 496）；批4B（PR #7）：面板/符号/Inspector/Overlay 展示域拆分（五个巨型文件全部完成模块化，props 收敛为领域切片，a11y/i18n 收口） | revert |
 | FE-批5+ | 其余巨型组件按 §4 顺序分批；直接 fetch 迁移；FE-02/03 清理 | 逐 PR |
 
 验收：每批 `pnpm lint/typecheck + web test --coverage`（真实全仓覆盖率）+ 目标页人工冒烟清单；批 2 起每批补 1–2 个行为测试（用户可见断言，非源码文本断言）。

@@ -46,6 +46,9 @@
 | CI-01 | P2 | OpenAPI 快照生成非确定性：同一 SHA 无 API 变更时 resolved schema 可能降级为 x-unresolved-schema | ⬜ | 开放（PR #5 第五轮登记，见 §3；PR #6 第二轮执行到该步骤的 run 均首跑通过，未复现） |
 | WM-RT-01 | P1 | War Map retry 重建后新 Deck overlay 丢失业务图层（FE-批4A 拆分引入，合并前修复） | ✅ | PR #6 第二轮（见 §3） |
 | WM-RT-02 | P1 | War Map standalone 底部 Drawer 点击内部控件即被误关（非 minimal 密度） | ✅ | PR #6 第二轮（见 §3） |
+| FE-A11Y-01 | P2 | War Map legend 聚焦徽标硬编码英文 "Focus"（中文界面遗留英文） | ✅ | PR #7（FE-批4B，见 §3） |
+| FE-A11Y-02 | P2 | War Map legend section 折叠按钮缺 aria-expanded/aria-controls | ✅ | PR #7（FE-批4B，见 §3） |
+| FE-DD-01 | P3 | war-map-geometry.ts 两个零消费导出（splitDeckPathSegments/buildSanitizedPathFeatures，批4A 遗留） | 👁 | FE-批5 顺带清理 |
 
 ## 3. 已修复条目（详细）
 
@@ -130,6 +133,14 @@
 - **修复**：hook 选项 `useDrawerControls` 改为 `overlayPanelsInDrawer`（编排层计算 `standaloneLayout || useDrawerControls`）——效应仅在面板以 inline 形式渲染于 rail 内时激活；Drawer 场景关闭语义由 Drawer mask（antd onClose）唯一负责。
 - **回归验证**：新增 standalone「打开完整图例」行为测试（Drawer 内连续点击 → 保持可操作 → 关闭 Drawer + 下一帧 scrollIntoView）在旧实现上远端失败（run 33947812370，找不到 Open full legend 按钮——Drawer 已被误关）；修复后通过。另新增 embedded 回归锁（rail 外 mousedown 关闭 inline 面板）。仅 jsdom 行为级验证。
 
+### FE-A11Y-01 / FE-A11Y-02 War Map legend 聚焦徽标硬编码与折叠按钮缺 aria 状态 — ✅ 已修复【PR #7（FE-批4B）】
+
+- **现象 1（FE-A11Y-01）**：war-map-controls-panel.tsx LegendItemsGrid 的 pinned 徽标 `endAdornment` 硬编码英文 `"Focus"`（原实现第 343 行），中文界面下聚焦徽标遗留英文。
+- **修复 1**：新增 i18n 键 `dashboard.charts.warMap.legend.focusBadge`（en: "Focused" / zh: "已聚焦"），t 全链路传递；组件行为测试锁定徽标经 t() 解析，en/zh 键值配对由独立 locale 测试锁定。
+- **现象 2（FE-A11Y-02）**：legend section 折叠按钮为原生 button 但无 `aria-expanded`/`aria-controls`，展开状态对辅助技术不可表达。
+- **修复 2**：`LegendSectionCard` 折叠按钮补 `aria-expanded`（受控）与 `aria-controls`（`useId()` 前缀 + section key 生成稳定唯一 id，受控区域 `<div id>` 真实渲染）；行为测试断言折叠前后 aria 状态翻转与受控区域存在性。
+- **验证**：仅 jsdom 行为级验证；屏幕阅读器实测未做（部署环境人工验收项）。
+
 ## 4. 开放条目（待修复，按优先级排序）
 
 ### SEC-01 全局 vector 配置可被任意 org 管理员改写 — 🔧 已修复（单元级 CI 已验证；真实登录态未验证）【已复核】
@@ -185,6 +196,7 @@
 - **本轮（PR #3）**：include 增至 8 个（+page-container.tsx / nav-mode.ts / action-rail-routing.ts / navigation-model.ts / top-nav-density.ts——App Shell 第一批的可测原语）。
 - **PR #4（FE-批3）**：include 增至 22 个（+useUrlState / url-state-codec / DataStateBoundary / alert-center.tsx / alert-center-url-state / use-alert-center-url-state / alert-chart-options / evidence-utils / 四个 evidence 组件）。阈值不变（lines 35 / functions 3 / statements 35 / branches 30）。
 - **PR #5（FE-批3B）**：Alert Center include 增至 32（+alert-center-actions/data-state/filters/summary/list-model + alert-events-virtualization + alert-event-list/row/toolbar/detail/detail-model/五页签 + use-alert-events-feed/selection/status-actions/batch/detail/virtualization/charts；全站 include 总数约 40）。阈值不变（lines 35 / functions 3 / statements 35 / branches 30）。
+- **PR #7（FE-批4B）**：include 85 → 113（war-map 35 → 63：新增 symbol-types/color/svg/icons/legend-model/legend-swatch + overlay-theme/types/layout/view-model/summary/quick-legend + controls-types/primitives/header/view-section/transport-controls/ais-reference/feed-controls/legend-sections/legend-panel/legend-dock + inspector-types/shell/四个内容组件）。阈值不变。仍为「部分改善」：全仓 glob + 阈值重设待 FE-批5+（task-detail 等未拆分）。
 - **仍为「部分改善」**：全仓 glob + 阈值重设待 FE-批4+（巨型组件 war-map/task-detail 等未拆分、无测试，纳入即红 CI）。
 
 ### CI-01 OpenAPI 快照生成非确定性 — ⬜ 开放 P2【PR #5 第五轮登记；PR #6 两次复现】
@@ -216,6 +228,8 @@ verify success）——CI-01 本轮未复现，无重跑。
 3. itemPipeline DLQ 在 worker failed 事件中入队（非 BullMQ 原生语义）
 4. 隐藏写入方：news-pipeline-crawl-bridge.service.ts:185-188（结果缺失时同步触发抓取）、CrawlTaskJanitor 直改状态
 5. TopNav 589 行 / ActionRail 3 个重复图标 / newsnow 自加 1760px 宽度特例（IA 重构输入）
+6. war-map-geometry.ts 零消费导出 splitDeckPathSegments/buildSanitizedPathFeatures（FE-DD-01，批4A 遗留；本轮批4B 范围外的死代码清单项，FE-批5 顺带清理）
+7. vector-integration 的 upsert 确定性点 ID 断言偶发 500 vs 201（run 33957774254，真实 Qdrant 环境；同分支纯前端改动后的相邻 run 33957963593 通过，无代码因果，非 CI-01 变体——登记观察待复现规律）
 
 ## 6. 风险与未验证登记
 

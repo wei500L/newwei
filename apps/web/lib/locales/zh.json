@@ -1700,6 +1700,7 @@
           "interactionTitle": "交互",
           "previewHint": "悬停预览，点击固定。",
           "clearFocus": "清除聚焦",
+          "focusBadge": "已聚焦",
           "quickLegendCompactHint": "当前启用的符号提示",
           "moreItems": "还有 {{count}} 项"
         },
