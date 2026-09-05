@@ -1,4 +1,3 @@
-import { ApolloLink, Observable, type FetchResult } from "@apollo/client";
 import { MockedProvider } from "@apollo/client/testing";
 import type { RenderResult } from "@testing-library/react";
 
@@ -15,22 +14,19 @@ import {
 import { renderWithProviders } from "@/test/render";
 import { resetTestNavigation } from "@/test/url-navigation";
 
+import {
+  createCrawlApolloLink,
+  createCrawlApolloState,
+  type TestCrawlApolloState,
+} from "./task-detail-apollo-mock";
 import { CrawlTaskDetail } from "./task-detail";
 
 /**
- * Crawl Task Detail 行为测试共享支撑（FE-批5A 迁移前 characterization tests）。
- *
- * 本文件只被 *.test.tsx 引用，不属于生产代码；vitest coverage.include
- * 为显式清单，不会把它计入覆盖率。
- *
- * 边界设计（沿袭 alert-center-test-support 的既有模式）：
- * - Apollo 走 MockedProvider + 自定义 ApolloLink：query / mutation / refetch
- *   全部经过真实 Apollo 客户端执行（loading、变量、缓存语义为真），仅把
- *   网络出口替换为受控响应。skip 由「无请求到达 link」观察（客户端短路）；
- *   fetchPolicy 不进入 link context，靠静态审查保持。
- * - vi.mock 工厂（next-auth/react、next/navigation、socket.io-client、
- *   @/lib/api-client、antd 的 App.useApp / Modal.confirm）在测试文件里
- *   声明，工厂只动态 import 零依赖模块，避免模块加载死锁。
+ * Crawl Task Detail 行为测试共享支撑（FE-批5A characterization tests）。
+ * 只被 *.test.tsx 引用，不计入 coverage。Apollo 走 MockedProvider + 自定义
+ * ApolloLink（真实客户端执行 query/mutation/refetch，仅替换网络出口）；
+ * vi.mock 工厂在测试文件声明且只 import 零依赖模块，避免加载死锁。
+ * fetchPolicy 不进入 link context，其保持依赖静态审查。
  */
 
 export type CrawlTaskDetailResult = Extract<
@@ -49,15 +45,17 @@ export interface CrawlTaskDetailLinkInput {
   totalScore?: number | null;
 }
 
+export interface CrawlTaskDetailLinkStatsInput {
+  totalLinks: number;
+  internalLinks: number;
+  externalLinks: number;
+  averageIntrinsicScore?: number | null;
+  highQualityLinks?: number | null;
+  lowQualityLinks?: number | null;
+}
+
 export interface CrawlTaskDetailLinkAnalysisInput {
-  stats: {
-    totalLinks: number;
-    internalLinks: number;
-    externalLinks: number;
-    averageIntrinsicScore?: number | null;
-    highQualityLinks?: number | null;
-    lowQualityLinks?: number | null;
-  };
+  stats: CrawlTaskDetailLinkStatsInput;
   topLinks?: CrawlTaskDetailLinkInput[];
   lowQualityLinks?: CrawlTaskDetailLinkInput[];
   buckets?: {
@@ -110,8 +108,57 @@ export interface CrawlTaskDetailTaskInput {
 
 export type CrawlTaskDetailTask = NonNullable<CrawlTaskQuery["crawlTask"]>;
 
-function buildLink(link: CrawlTaskDetailLinkInput) {
-  return { __typename: "CrawlLinkModel", ...link };
+type CrawlTaskLinkAnalysisFixture = NonNullable<
+  CrawlTaskDetailResult["linkAnalysis"]
+>;
+
+function buildTopLink(link: CrawlTaskDetailLinkInput) {
+  return {
+    __typename: "CrawlLinkModel",
+    href: link.href,
+    text: link.text ?? null,
+    title: link.title ?? null,
+    baseDomain: link.baseDomain ?? null,
+    type: link.type ?? null,
+    intrinsicScore: link.intrinsicScore ?? null,
+    contextualScore: link.contextualScore ?? null,
+    totalScore: link.totalScore ?? null,
+  };
+}
+
+function buildLowQualityLink(link: CrawlTaskDetailLinkInput) {
+  return {
+    __typename: "CrawlLinkModel",
+    href: link.href,
+    text: link.text ?? null,
+    title: link.title ?? null,
+    intrinsicScore: link.intrinsicScore ?? null,
+    baseDomain: link.baseDomain ?? null,
+  };
+}
+
+function buildLinkAnalysis(
+  input: CrawlTaskDetailLinkAnalysisInput,
+): CrawlTaskLinkAnalysisFixture {
+  return {
+    __typename: "CrawlLinkAnalysisModel",
+    stats: {
+      __typename: "CrawlLinkStatsModel",
+      totalLinks: input.stats.totalLinks,
+      internalLinks: input.stats.internalLinks,
+      externalLinks: input.stats.externalLinks,
+      averageIntrinsicScore: input.stats.averageIntrinsicScore ?? null,
+      highQualityLinks: input.stats.highQualityLinks ?? null,
+      lowQualityLinks: input.stats.lowQualityLinks ?? null,
+    },
+    topLinks: (input.topLinks ?? []).map(buildTopLink),
+    lowQualityLinks: (input.lowQualityLinks ?? []).map(buildLowQualityLink),
+    buckets: (input.buckets ?? []).map((bucket) => ({
+      __typename: "CrawlLinkBucketModel",
+      kind: bucket.kind,
+      links: bucket.links.map(buildTopLink),
+    })),
+  };
 }
 
 export function buildCrawlTaskDetailTask(
@@ -134,28 +181,7 @@ export function buildCrawlTaskDetailTask(
       mediaAssets: result.mediaAssets ?? null,
       tables: result.tables ?? null,
       linkAnalysis: result.linkAnalysis
-        ? {
-            __typename: "CrawlLinkAnalysisModel",
-            stats: {
-              __typename: "CrawlLinkStatsModel",
-              ...result.linkAnalysis.stats,
-              averageIntrinsicScore:
-                result.linkAnalysis.stats.averageIntrinsicScore ?? null,
-              highQualityLinks:
-                result.linkAnalysis.stats.highQualityLinks ?? null,
-              lowQualityLinks:
-                result.linkAnalysis.stats.lowQualityLinks ?? null,
-            },
-            topLinks: (result.linkAnalysis.topLinks ?? []).map(buildLink),
-            lowQualityLinks: (result.linkAnalysis.lowQualityLinks ?? []).map(
-              buildLink,
-            ),
-            buckets: (result.linkAnalysis.buckets ?? []).map((bucket) => ({
-              __typename: "CrawlLinkBucketModel",
-              kind: bucket.kind,
-              links: bucket.links.map(buildLink),
-            })),
-          }
+        ? buildLinkAnalysis(result.linkAnalysis)
         : null,
     }),
   );
@@ -227,206 +253,6 @@ export function buildTaskLog(input: CrawlTaskLogInput) {
   };
 }
 
-/** Backfill 单批响应（IngestCrawlTaskResultsToItems）。 */
-export interface CrawlBackfillBatch {
-  scanned: number;
-  ingested: number;
-  skippedExisting: number;
-  failed: number;
-  nextCursor?: string | null;
-  hasMore: boolean;
-}
-
-export interface TestCrawlApolloState {
-  /** CrawlTask query 响应（null 模拟 task not found）。 */
-  task: CrawlTaskDetailTask | null;
-  /** 非空时 CrawlTask query 拒绝。 */
-  taskError: Error | null;
-  /** 挂起模式：CrawlTask 请求永不返回（模拟慢 refetch，旧数据保留）。 */
-  taskHang: boolean;
-  /** 每次 CrawlTask 请求收到的变量（按顺序）。 */
-  taskVariables: Record<string, unknown>[];
-  retryVariables: Record<string, unknown>[];
-  retryError: Error | null;
-  /** UpdateCrawlTaskIngestToItems mutation 变量。 */
-  ingestToItemsVariables: Record<string, unknown>[];
-  ingestToItemsError: Error | null;
-  /** IngestCrawlTaskResultsToItems 按顺序的批次响应（Error=拒绝，"hang"=永不返回）。 */
-  backfillBatches: (CrawlBackfillBatch | Error | "hang")[];
-  backfillVariables: Record<string, unknown>[];
-  /** CreateItemFromCrawlResult（inline gql）变量。 */
-  createItemVariables: Record<string, unknown>[];
-  createItemResult: { id: string; title: string; status: string } | null;
-  createItemError: Error | null;
-  /** CreateItemFromCrawlResult 挂起（观察单行 loading）。 */
-  createItemHang: boolean;
-  /** 按到达顺序记录的 operationName（含 polling / refetch 重复请求）。 */
-  operations: string[];
-}
-
-export function createCrawlApolloState(
-  task: CrawlTaskDetailTask | null,
-): TestCrawlApolloState {
-  return {
-    task,
-    taskError: null,
-    taskHang: false,
-    taskVariables: [],
-    retryVariables: [],
-    retryError: null,
-    ingestToItemsVariables: [],
-    ingestToItemsError: null,
-    backfillBatches: [],
-    backfillVariables: [],
-    createItemVariables: [],
-    createItemResult: null,
-    createItemError: null,
-    createItemHang: false,
-    operations: [],
-  };
-}
-
-/** 异步（microtask）发送结果，模拟网络往返。 */
-function respond(
-  produce: () => Record<string, unknown> | Promise<Record<string, unknown>>,
-): Observable<FetchResult> {
-  return new Observable<FetchResult>((observer) => {
-    let active = true;
-    Promise.resolve()
-      .then(produce)
-      .then(
-        (data) => {
-          if (!active) {
-            return;
-          }
-          observer.next({ data: { __typename: "Query", ...data } });
-          observer.complete();
-        },
-        (error: Error) => {
-          if (active) {
-            observer.error(error);
-          }
-        },
-      );
-    return () => {
-      active = false;
-    };
-  });
-}
-
-export function createCrawlApolloLink(
-  state: TestCrawlApolloState,
-): ApolloLink {
-  return new ApolloLink((operation) => {
-    state.operations.push(operation.operationName);
-    const variables = operation.variables as Record<string, unknown>;
-
-    switch (operation.operationName) {
-      case "CrawlTask": {
-        state.taskVariables.push(variables);
-        if (state.taskHang) {
-          return new Observable<FetchResult>(() => () => undefined);
-        }
-        if (state.taskError) {
-          return respond(() => Promise.reject(state.taskError));
-        }
-        return respond(() => ({ crawlTask: state.task }));
-      }
-      case "RetryCrawlTask": {
-        state.retryVariables.push(variables);
-        if (state.retryError) {
-          return respond(() => Promise.reject(state.retryError));
-        }
-        return respond(() => ({
-          retryCrawlTask: {
-            __typename: "CrawlTaskModel",
-            id: String(variables.id),
-            status: CrawlTaskStatus.Queued,
-            lastRunAt: null,
-            lastError: null,
-            runCount: 1,
-          },
-        }));
-      }
-      case "UpdateCrawlTaskIngestToItems": {
-        state.ingestToItemsVariables.push(variables);
-        if (state.ingestToItemsError) {
-          return respond(() => Promise.reject(state.ingestToItemsError));
-        }
-        return respond(() => ({
-          updateCrawlTaskIngestToItems: {
-            __typename: "CrawlTaskModel",
-            id: String(variables.id),
-            config: state.task?.config ?? null,
-          },
-        }));
-      }
-      case "IngestCrawlTaskResultsToItems": {
-        state.backfillVariables.push(variables);
-        const batch = state.backfillBatches.shift();
-        if (batch === "hang") {
-          return new Observable<FetchResult>(() => () => undefined);
-        }
-        if (batch instanceof Error) {
-          return respond(() => Promise.reject(batch));
-        }
-        const resolved: CrawlBackfillBatch =
-          batch ?? {
-            scanned: 0,
-            ingested: 0,
-            skippedExisting: 0,
-            failed: 0,
-            nextCursor: null,
-            hasMore: false,
-          };
-        return respond(() => ({
-          ingestCrawlTaskResultsToItems: {
-            __typename: "CrawlIngestBatchModel",
-            taskId: String(variables.taskId),
-            scanned: resolved.scanned,
-            attempted: resolved.scanned,
-            ingested: resolved.ingested,
-            skippedExisting: resolved.skippedExisting,
-            failed: resolved.failed,
-            nextCursor: resolved.nextCursor ?? null,
-            hasMore: resolved.hasMore,
-          },
-        }));
-      }
-      case "CreateItemFromCrawlResult": {
-        state.createItemVariables.push(variables);
-        if (state.createItemHang) {
-          return new Observable<FetchResult>(() => () => undefined);
-        }
-        if (state.createItemError) {
-          return respond(() => Promise.reject(state.createItemError));
-        }
-        return respond(() => ({
-          createItemFromCrawlResult: state.createItemResult
-            ? {
-                __typename: "ItemModel",
-                ...state.createItemResult,
-              }
-            : {
-                __typename: "ItemModel",
-                id: `item-${String(variables.resultId)}`,
-                title: "Created item",
-                status: "draft",
-              },
-        }));
-      }
-      default:
-        return respond(() =>
-          Promise.reject(
-            new Error(
-              `Unhandled Apollo operation: ${operation.operationName}`,
-            ),
-          ),
-        );
-    }
-  });
-}
-
 /** renderCrawlTaskDetail 选项。 */
 export interface RenderCrawlTaskDetailOptions {
   taskId?: string;
@@ -434,9 +260,7 @@ export interface RenderCrawlTaskDetailOptions {
   permissions?: string[];
   accessToken?: string;
   task?: CrawlTaskDetailTask | null;
-  /** 初始 CrawlTask 请求即挂起（观察首屏 loading）。 */
   taskHang?: boolean;
-  /** 初始 task-logs REST 响应（默认空数组）。 */
   taskLogs?: unknown[] | Error | "hang";
 }
 
@@ -454,8 +278,8 @@ export function renderCrawlTaskDetail(
   if (options.taskLogs !== undefined) {
     testTaskLogs.responses[0] = options.taskLogs;
   }
+  // 非 authenticated（loading/unauthenticated）时 data 为 null，贴近 next-auth 语义
   testSessionMock.status = options.sessionStatus ?? "authenticated";
-  // 非 authenticated（loading/unauthenticated）时 data 为 null，贴近 next-auth 真实语义
   testSessionMock.data =
     options.sessionStatus && options.sessionStatus !== "authenticated"
       ? null
@@ -467,20 +291,16 @@ export function renderCrawlTaskDetail(
         };
 
   const apollo = createCrawlApolloState(
-    options.task === undefined
-      ? buildCrawlTaskDetailTask()
-      : options.task,
+    options.task === undefined ? buildCrawlTaskDetailTask() : options.task,
   );
   apollo.taskHang = options.taskHang ?? false;
   const taskId = options.taskId ?? "task-1";
   const link = createCrawlApolloLink(apollo);
-  const element = (
+  const result = renderWithProviders(
     <MockedProvider link={link}>
       <CrawlTaskDetail taskId={taskId} />
-    </MockedProvider>
+    </MockedProvider>,
   );
-
-  const result = renderWithProviders(element);
   return {
     ...result,
     apollo,
