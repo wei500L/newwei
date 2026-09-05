@@ -14,12 +14,12 @@ import {
 import { renderWithProviders } from "@/test/render";
 import { resetTestNavigation } from "@/test/url-navigation";
 
+import { CrawlTaskDetail } from "./task-detail";
 import {
   createCrawlApolloLink,
   createCrawlApolloState,
   type TestCrawlApolloState,
 } from "./task-detail-apollo-mock";
-import { CrawlTaskDetail } from "./task-detail";
 
 /**
  * Crawl Task Detail 行为测试共享支撑（FE-批5A characterization tests）。
