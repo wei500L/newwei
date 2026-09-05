@@ -2,13 +2,13 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  WarMapControlsPanel,
-  WarMapLegendDock,
-  WarMapLegendPanel,
-  type WarMapControlsPanelProps,
-  type WarMapControlsPanelTransportProps,
-} from "./war-map-controls-panel";
+import { WarMapControlsPanel } from "./war-map-controls-panel";
+import type {
+  WarMapControlsPanelProps,
+  WarMapControlsPanelTransportProps,
+} from "./war-map-controls-types";
+import { WarMapLegendDock } from "./war-map-legend-dock";
+import { WarMapLegendPanel } from "./war-map-legend-panel";
 import {
   buildWarMapLegendSections,
   buildWarMapInteractionLegendItems,
@@ -285,20 +285,36 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
     expect(screen.getByText("chain a ok")).toBeInTheDocument();
   });
 
-  it("legend 节：section 展开收起与聚焦徽标", async () => {
+  it("legend 节：section 展开/收起带 aria-expanded 与 aria-controls（a11y 收口）", async () => {
     renderPanel({ controlsSection: "legend" });
     // signals 节默认展开：含 signal-high 项
     expect(
       screen.getByText("⟦dashboard.charts.warMap.legend.signalHigh⟧"),
     ).toBeInTheDocument();
-    // 折叠 signals 节
+    // 折叠 signals 节：展开按钮携带可访问状态与受控区域 id
     const collapseButton = screen.getByRole("button", {
       name: /⟦dashboard\.charts\.warMap\.legend\.signalsTitle⟧/,
     });
+    expect(collapseButton).toHaveAttribute("aria-expanded", "true");
+    const contentId = collapseButton.getAttribute("aria-controls");
+    expect(contentId).toBeTruthy();
+    expect(document.getElementById(contentId ?? "")).not.toBeNull();
     await userEvent.click(collapseButton);
+    expect(collapseButton).toHaveAttribute("aria-expanded", "false");
     expect(
       screen.queryByText("⟦dashboard.charts.warMap.legend.signalHigh⟧"),
     ).not.toBeInTheDocument();
+  });
+
+  it("legend 节：聚焦徽标文案经 i18n（不再硬编码 Focus）", () => {
+    renderPanel({
+      controlsSection: "legend",
+      activeLegendKey: "signal-high",
+    });
+    // t mock 包装 key；真实 en/zh 翻译由 locale 文件提供（Focused/已聚焦）
+    expect(
+      screen.getByText("⟦dashboard.charts.warMap.legend.focusBadge⟧"),
+    ).toBeInTheDocument();
   });
 
   it("legend 节：聚焦后该项可取消聚焦（active toggle null）", async () => {

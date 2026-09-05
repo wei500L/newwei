@@ -100,6 +100,17 @@ export default defineConfig({
         // FE-批4B：overlay rail 拆分模块（summary/quick legend）
         "app/(app)/dashboard/charts/war-map/war-map-overlay-summary.tsx",
         "app/(app)/dashboard/charts/war-map/war-map-overlay-quick-legend.tsx",
+        // FE-批4B：controls/legend 展示域拆分模块
+        "app/(app)/dashboard/charts/war-map/war-map-controls-types.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-controls-primitives.tsx",
+        "app/(app)/dashboard/charts/war-map/war-map-controls-header.tsx",
+        "app/(app)/dashboard/charts/war-map/war-map-view-section.tsx",
+        "app/(app)/dashboard/charts/war-map/war-map-transport-controls.tsx",
+        "app/(app)/dashboard/charts/war-map/war-map-ais-reference.tsx",
+        "app/(app)/dashboard/charts/war-map/war-map-feed-controls.tsx",
+        "app/(app)/dashboard/charts/war-map/war-map-legend-sections.tsx",
+        "app/(app)/dashboard/charts/war-map/war-map-legend-panel.tsx",
+        "app/(app)/dashboard/charts/war-map/war-map-legend-dock.tsx",
         "app/(app)/dashboard/charts/war-map/war-map-static-layers.ts",
         "app/(app)/dashboard/charts/war-map/war-map-static-vector-layers.ts",
         "app/(app)/dashboard/charts/war-map/war-map-ais-layers.ts",

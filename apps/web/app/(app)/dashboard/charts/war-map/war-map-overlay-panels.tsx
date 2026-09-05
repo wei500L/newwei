@@ -19,10 +19,10 @@ import type {
 } from "./use-war-map-interaction";
 import {
   WarMapControlsPanel,
-  type WarMapControlsPanelTransportProps,
-  WarMapLegendDock,
-  WarMapLegendPanel,
 } from "./war-map-controls-panel";
+import type { WarMapControlsPanelTransportProps } from "./war-map-controls-types";
+import { WarMapLegendDock } from "./war-map-legend-dock";
+import { WarMapLegendPanel } from "./war-map-legend-panel";
 import { WarMapInspectorPanel } from "./war-map-inspector-panel";
 import {
   OVERLAY_SURFACE_CLASS_NAME,

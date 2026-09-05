@@ -1700,6 +1700,7 @@
           "interactionTitle": "Interaction",
           "previewHint": "Hover to preview. Click to pin.",
           "clearFocus": "Clear focus",
+          "focusBadge": "Focused",
           "quickLegendCompactHint": "Active symbol cues",
           "moreItems": "+{{count}} more"
         },
