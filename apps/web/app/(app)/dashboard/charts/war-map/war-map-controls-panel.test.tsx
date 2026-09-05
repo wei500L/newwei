@@ -87,7 +87,39 @@ const legendSections = buildWarMapLegendSections({
 
 const interactionLegendItems = buildWarMapInteractionLegendItems({ t });
 
-const overlayViewModel = {
+const overlayViewModel: {
+  sectionMeta: Record<string, { label: string; description: string }>;
+  tabs: { key: string; label: string }[];
+  overviewMetricCards: {
+    key: string;
+    label: string;
+    value: number;
+    note: string;
+    className: string;
+  }[];
+  summaryStatusCards: {
+    key: string;
+    label: string;
+    value: string;
+    detail: string;
+    dotClassName: string;
+    tagColor: string;
+  }[];
+  summaryDataLabel: string;
+  overviewDataTagLabel: string;
+  feedSummaryCards: {
+    key: string;
+    label: string;
+    value: number;
+    toneClassName: string;
+  }[];
+  detailedChainStatuses: {
+    key: string;
+    color: string;
+    text: string;
+    tooltip: string;
+  }[];
+} = {
   sectionMeta: {
     overview: { label: "Overview", description: "overview hint" },
     view: { label: "View", description: "view hint" },
@@ -144,7 +176,7 @@ function panelProps(overrides?: {
   layout?: Record<string, unknown>;
   transport?: typeof transport;
   legend?: Record<string, unknown>;
-  onSectionChange?: (section: never) => void;
+  onSectionChange?: (section: string) => void;
   onClose?: () => void;
 }): WarMapControlsPanelProps {
   return {
@@ -189,9 +221,7 @@ function panelProps(overrides?: {
 
 type PanelOverrides = Parameters<typeof panelProps>[0];
 
-function renderPanel(
-  overrides?: PanelOverrides,
-): ReturnType<typeof render> {
+function renderPanel(overrides?: PanelOverrides): ReturnType<typeof render> {
   return render(<WarMapControlsPanel {...panelProps(overrides)} />);
 }
 
@@ -221,11 +251,7 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
     expect(onSectionChange).toHaveBeenCalledWith("transport");
 
     // 受控更新节后 transport 内容出现
-    rerender(
-      <WarMapControlsPanel
-        {...panelProps({ section: "transport" })}
-      />,
-    );
+    rerender(<WarMapControlsPanel {...panelProps({ section: "transport" })} />);
     expect(
       screen.getByRole("button", {
         name: "⟦dashboard.charts.warMap.actions.analyzeCurrentView⟧",
@@ -236,11 +262,15 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
   it("transport 节：AIS 模式按钮切换与航班模式切换", async () => {
     renderPanel({ section: "transport" });
     await userEvent.click(
-      screen.getByRole("button", { name: "⟦dashboard.charts.warMap.stats.aisModeDensity⟧" }),
+      screen.getByRole("button", {
+        name: "⟦dashboard.charts.warMap.stats.aisModeDensity⟧",
+      }),
     );
     expect(transport.ais.onModeChange).toHaveBeenCalledWith("density");
     await userEvent.click(
-      screen.getByRole("button", { name: "⟦dashboard.charts.warMap.stats.flightModeMilitary⟧" }),
+      screen.getByRole("button", {
+        name: "⟦dashboard.charts.warMap.stats.flightModeMilitary⟧",
+      }),
     );
     expect(transport.flights.onModeChange).toHaveBeenCalledWith("military");
   });
@@ -363,18 +393,24 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
 
   it("useDrawerControls 或 standalone 时渲染关闭按钮", async () => {
     const onClose = vi.fn();
-    renderPanel({ layout: { useDrawerControls: true, variant: "embedded", panelMaxHeight: 520 }, onClose });
-    await userEvent.click(screen.getByRole("button", { name: "⟦common.close⟧" }));
+    renderPanel({
+      layout: {
+        useDrawerControls: true,
+        variant: "embedded",
+        panelMaxHeight: 520,
+      },
+      onClose,
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: "⟦common.close⟧" }),
+    );
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("卸载后 ResizeObserver 断连、RAF 取消（无泄漏）", () => {
     const observe = vi.fn();
     const disconnect = vi.fn();
-    const cancelAnimationFrame = vi.spyOn(
-      window,
-      "cancelAnimationFrame",
-    );
+    const cancelAnimationFrame = vi.spyOn(window, "cancelAnimationFrame");
     class ControlledResizeObserver {
       observe = observe;
       unobserve = vi.fn();
