@@ -55,14 +55,25 @@ const FULL_PERMISSIONS = [
 /**
  * 键盘驱动切换 resultLimit：mousedown 开启下拉（Selector onMouseDown →
  * onToggleOpen），初始 active 为第一项（Latest 10），ArrowDown×2 移动到
- * Latest 50，Enter 选中。绕开 portal 选项 click 在 jsdom 的不稳定路径。
+ * Latest 50，Enter 选中。rc-select 读 legacy `event.which`，fireEvent
+ * 需显式带 keyCode/which；Enter 选择要求 keyLock 处于初始 false。
  */
 function selectLatest50(): void {
   const combobox = screen.getByRole("combobox");
   fireEvent.mouseDown(combobox);
-  fireEvent.keyDown(combobox, { key: "ArrowDown" });
-  fireEvent.keyDown(combobox, { key: "ArrowDown" });
-  fireEvent.keyDown(combobox, { key: "Enter" });
+  fireEvent.keyDown(combobox, { key: "ArrowDown", keyCode: 40, which: 40 });
+  fireEvent.keyDown(combobox, { key: "ArrowDown", keyCode: 40, which: 40 });
+  fireEvent.keyDown(combobox, { key: "Enter", keyCode: 13, which: 13 });
+}
+
+/** 等待 Select 显示值变为 Latest 50（区分「选择失败」与「查询未更新」）。 */
+async function waitForLimit50Selected(): Promise<void> {
+  await waitFor(() => {
+    const selectedItem = document.querySelector(
+      ".ant-select-selection-item",
+    );
+    expect(selectedItem?.textContent).toContain("Latest 50");
+  });
 }
 
 describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables / links）", () => {
@@ -109,6 +120,8 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
     // 其变量应携带 resultSearch: null（若清空未生效会残留 "foo"）
     fireEvent.change(input, { target: { value: "" } });
     selectLatest50();
+    await waitForLimit50Selected();
+
     await waitFor(() =>
       expect(apollo.taskVariables.at(-1)).toEqual({
         id: "task-1",
@@ -145,6 +158,7 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
 
     await screen.findByPlaceholderText("Enter Search");
     selectLatest50();
+    await waitForLimit50Selected();
 
     await waitFor(() =>
       expect(apollo.taskVariables.at(-1)).toEqual({
