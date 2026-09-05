@@ -205,7 +205,12 @@ export function WarMap({
     mapRef,
     queryZoom,
   });
-  const { legend: legendInteraction } = interactionResult;
+  const {
+    focusedLegendItemKey,
+    hoveredLegendItemKey,
+    updateFocusedLegendItemKey,
+    updateHoveredLegendItemKey,
+  } = interactionResult.legend;
 
   const transportDetailQuery = useWarMapTransportDetail({
     apiClient,
@@ -342,24 +347,18 @@ export function WarMap({
 
   // legend focus/hover 键失效清理（依赖 legend 索引，留在编排层避免依赖环）
   useEffect(() => {
-    if (
-      legendInteraction.focusedLegendItemKey &&
-      !legendItemsByKey.has(legendInteraction.focusedLegendItemKey)
-    ) {
-      legendInteraction.updateFocusedLegendItemKey(null);
+    if (focusedLegendItemKey && !legendItemsByKey.has(focusedLegendItemKey)) {
+      updateFocusedLegendItemKey(null);
     }
-    if (
-      legendInteraction.hoveredLegendItemKey &&
-      !legendItemsByKey.has(legendInteraction.hoveredLegendItemKey)
-    ) {
-      legendInteraction.updateHoveredLegendItemKey(null);
+    if (hoveredLegendItemKey && !legendItemsByKey.has(hoveredLegendItemKey)) {
+      updateHoveredLegendItemKey(null);
     }
   }, [
-    legendInteraction.focusedLegendItemKey,
-    legendInteraction.hoveredLegendItemKey,
-    legendInteraction.updateFocusedLegendItemKey,
-    legendInteraction.updateHoveredLegendItemKey,
+    focusedLegendItemKey,
+    hoveredLegendItemKey,
     legendItemsByKey,
+    updateFocusedLegendItemKey,
+    updateHoveredLegendItemKey,
   ]);
 
   // transport 领域契约：按域传递，presentation 整体下传不在装配层摊平；
