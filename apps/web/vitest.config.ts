@@ -85,6 +85,13 @@ export default defineConfig({
         "app/(app)/dashboard/charts/war-map/war-map-selection-model.ts",
         "app/(app)/dashboard/charts/war-map/war-map-point-model.ts",
         "app/(app)/dashboard/charts/war-map/war-map-symbol-layers.ts",
+        // FE-批4B：符号系统拆分模块（types/color/svg/icons/legend model/swatch）
+        "app/(app)/dashboard/charts/war-map/war-map-symbol-types.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-symbol-color.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-symbol-svg.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-symbol-icons.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-legend-model.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-legend-swatch.tsx",
         "app/(app)/dashboard/charts/war-map/war-map-static-layers.ts",
         "app/(app)/dashboard/charts/war-map/war-map-static-vector-layers.ts",
         "app/(app)/dashboard/charts/war-map/war-map-ais-layers.ts",
