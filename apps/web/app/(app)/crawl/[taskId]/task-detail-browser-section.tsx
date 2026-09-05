@@ -19,11 +19,11 @@ import {
   resolveUserAgentValue,
 } from "./task-detail-browser-model";
 import type { CrawlTaskConfig } from "./task-detail-config-core-model";
-import type { TaskDetailTranslate } from "./task-detail-types";
 import {
   buildStorageStatePreview,
   resolveSessionIdentifier,
 } from "./task-detail-runtime-model";
+import type { TaskDetailTranslate } from "./task-detail-types";
 
 interface BrowserSectionProps {
   t: TaskDetailTranslate;

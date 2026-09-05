@@ -8,13 +8,13 @@
 import { Descriptions } from "antd";
 
 import type { CrawlTaskConfig } from "./task-detail-config-core-model";
-import type { TaskDetailTranslate } from "./task-detail-types";
 import {
   buildCleanMarkdownSummary,
   buildMarkdownFilterSummary,
   buildMarkdownStrategySummary,
   buildMarkdownSummary,
 } from "./task-detail-markdown-model";
+import type { TaskDetailTranslate } from "./task-detail-types";
 
 interface MarkdownSectionProps {
   t: TaskDetailTranslate;
