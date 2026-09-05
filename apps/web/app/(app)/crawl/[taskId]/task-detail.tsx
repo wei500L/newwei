@@ -1,6 +1,6 @@
 "use client";
 
-import { SearchOutlined, WarningOutlined } from "@ant-design/icons";
+import { SearchOutlined } from "@ant-design/icons";
 import { gql, type FetchResult, useMutation } from "@apollo/client";
 import {
   Alert,
@@ -20,7 +20,6 @@ import {
   Tag,
   Tooltip,
   Typography,
-  Grid,
 } from "antd";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -31,7 +30,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -46,11 +44,7 @@ import {
   type CrawlTaskStatus,
 } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
-import { captureClientError } from "@/lib/client-telemetry";
-import {
-  findUnsupportedProxyIssues,
-  getCrawlConfigPolicyIssueTranslationKey,
-} from "@/lib/crawl-config-policy";
+import { findUnsupportedProxyIssues } from "@/lib/crawl-config-policy";
 import { getCrawlTaskDetailOpsRefreshDecision } from "@/lib/crawl-ops-refresh";
 import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 import {
@@ -61,6 +55,26 @@ import {
 import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { formatRealtimeSocketError } from "@/lib/realtime-socket-errors";
+
+import {
+  BACKFILL_BATCH_TIMEOUT_MS,
+  formatPolicyIssues,
+  markdownPreviewStyle,
+  safeParseJson,
+  shortenScript,
+  withTimeout,
+} from "./task-detail-formatters";
+import { MediaSection } from "./task-detail-media-section";
+import { StoredMediaSection } from "./task-detail-stored-media-section";
+import { TablesSection } from "./task-detail-tables-section";
+import type {
+  BackfillNotice,
+  CrawlMediaCollection,
+  CrawlResultTable,
+  CrawlStoredMediaAsset,
+  TaskLogRecord,
+  TaskLogStatus,
+} from "./task-detail-types";
 
 const REALTIME_SOCKET_TIMEOUT_MS = 10_000;
 
@@ -81,22 +95,6 @@ const itemStatusColors: Record<string, string> = {
   failed: "red",
   duplicate: "purple",
 };
-
-type TaskLogStatus = "pending" | "processing" | "completed" | "failed";
-
-interface TaskLogRecord {
-  id: string;
-  queue: string;
-  jobId: string;
-  orgId: string;
-  stage: string;
-  status: TaskLogStatus;
-  message?: string | null;
-  data?: unknown;
-  error?: unknown;
-  createdAt: string | null;
-  updatedAt: string | null;
-}
 
 interface ExpansionQualitySummary {
   candidateCount: number;
@@ -135,114 +133,6 @@ const limitOptions = [
   },
 ];
 
-const BACKFILL_BATCH_TIMEOUT_MS = 15_000;
-
-const markdownPreviewStyle: CSSProperties = {
-  maxWidth: "100%",
-  overflowX: "auto",
-  whiteSpace: "pre-wrap",
-  overflowWrap: "anywhere",
-  wordBreak: "break-word",
-};
-
-interface BackfillNotice {
-  type: "info" | "success" | "warning" | "error";
-  message: string;
-  description?: string;
-}
-
-async function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  timeoutMessage: string,
-): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<T>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error(timeoutMessage));
-    }, timeoutMs);
-  });
-
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    if (timeoutId !== undefined) {
-      clearTimeout(timeoutId);
-    }
-  }
-}
-
-interface CrawlMediaSource {
-  src?: string;
-  srcset?: string;
-  type?: string;
-  media?: string;
-  sizes?: string;
-}
-
-interface CrawlMediaItem {
-  src?: string;
-  alt?: string;
-  title?: string;
-  desc?: string;
-  type?: string;
-  format?: string;
-  width?: number;
-  height?: number;
-  score?: number;
-  poster?: string;
-  sizes?: string;
-  srcset?: string[];
-  pictureSources?: CrawlMediaSource[];
-  responsiveSources?: CrawlMediaSource[];
-}
-
-type CrawlMediaCollection = Record<string, CrawlMediaItem[]>;
-
-interface CrawlStoredMediaAsset {
-  id: string;
-  kind: string;
-  sourceUrl: string;
-  bytes: number;
-  contentType?: string;
-  storageProvider?: "mysql" | "s3";
-  storageKey?: string;
-  previewUrl?: string;
-  downloadUrl?: string;
-  width?: number;
-  height?: number;
-  alt?: string;
-  title?: string;
-  desc?: string;
-  poster?: string;
-  format?: string;
-}
-
-type CrawlResultTableRecord = Record<string, string | number | boolean | null>;
-type CrawlResultTablePreviewRow = CrawlResultTableRecord & { key: string };
-
-interface CrawlResultTable {
-  id: string;
-  caption?: string;
-  headers: string[];
-  rows: (string | number | boolean | null)[][];
-  rowCount: number;
-  columnCount: number;
-  source?: string;
-  metadata?: Record<string, unknown>;
-  dataFrame?: {
-    columns: string[];
-    rows: CrawlResultTableRecord[];
-  };
-}
-
-const mediaDocsUrl =
-  "https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/core/link-media.md";
-const tableDocsUrl =
-  "https://github.com/unclecode/crawl4ai/blob/main/docs/blog/release-v0.7.3.md";
-const shortenScript = (value: string) =>
-  value.length > 160 ? `${value.slice(0, 157)}…` : value;
-
 const CREATE_ITEM_FROM_CRAWL_RESULT_MUTATION = gql`
   mutation CreateItemFromCrawlResult($resultId: String!) {
     createItemFromCrawlResult(resultId: $resultId) {
@@ -252,543 +142,6 @@ const CREATE_ITEM_FROM_CRAWL_RESULT_MUTATION = gql`
     }
   }
 `;
-
-function safeParseJson<T>(input?: string | null): T | null {
-  if (!input) {
-    return null;
-  }
-  try {
-    return JSON.parse(input) as T;
-  } catch {
-    return null;
-  }
-}
-
-function formatPolicyIssues(
-  issues: ReturnType<typeof findUnsupportedProxyIssues>,
-  t: ReturnType<typeof useTranslation>["t"],
-) {
-  return issues
-    .map(
-      (issue) =>
-        `${issue.path}: ${t(getCrawlConfigPolicyIssueTranslationKey(issue.code), {
-          defaultValue: issue.code,
-        })}`,
-    )
-    .join(" ");
-}
-
-function resolveStoredMediaUrl(value?: string) {
-  if (!value) {
-    return undefined;
-  }
-  if (/^(https?:\/\/|data:|blob:)/i.test(value)) {
-    return value;
-  }
-  const normalized = value.startsWith("/") ? value : `/${value}`;
-  if (normalized.startsWith("/api/")) {
-    return `${env.apiRoot}${normalized}`;
-  }
-  return `${env.apiBaseUrl}${normalized}`;
-}
-
-function MediaSection({ media }: { media: CrawlMediaCollection | null }) {
-  const { t } = useTranslation();
-  if (!media) {
-    return null;
-  }
-  const entries = Object.entries(media).filter(
-    ([, items]) => Array.isArray(items) && items.length > 0,
-  );
-  if (!entries.length) {
-    return null;
-  }
-  return (
-    <Card
-      size="small"
-      title={t("crawl.detail.media.title")}
-      style={{ marginTop: 12 }}
-      extra={
-        <Typography.Link href={mediaDocsUrl} target="_blank" rel="noreferrer">
-          {t("common.docs")}
-        </Typography.Link>
-      }
-    >
-      <Space direction="vertical" size="large" style={{ width: "100%" }}>
-        {entries.map(([kind, items]) => {
-          const preview = items.slice(0, 4);
-          const remaining = Math.max(0, items.length - preview.length);
-          return (
-            <div key={kind}>
-              <Typography.Text strong style={{ textTransform: "capitalize" }}>
-                {kind} ({items.length})
-              </Typography.Text>
-              <List
-                size="small"
-                split={false}
-                style={{ marginTop: 8 }}
-                dataSource={preview}
-                renderItem={(item, index) => (
-                  <List.Item key={`${kind}-${index}-${item.src ?? "media"}`}>
-                    <Space align="start">
-                      {renderMediaPreview(kind, item, t)}
-                      <Space direction="vertical" size={4}>
-                        <Typography.Link href={item.src} target="_blank">
-                          {item.src ?? t("crawl.detail.media.viewAsset")}
-                        </Typography.Link>
-                        {item.alt || item.title ? (
-                          <Typography.Text strong>
-                            {item.alt ?? item.title}
-                          </Typography.Text>
-                        ) : null}
-                        {item.desc ? (
-                          <Typography.Paragraph style={{ marginBottom: 4 }}>
-                            {item.desc}
-                          </Typography.Paragraph>
-                        ) : null}
-                        <Typography.Text type="secondary">
-                          {[
-                            item.type,
-                            item.format,
-                            formatDimensions(item),
-                            formatScore(item, t),
-                          ]
-                            .filter(Boolean)
-                            .join(" • ")}
-                        </Typography.Text>
-                        {item.srcset ? renderSrcset(item.srcset, t) : null}
-                        {renderSourceList(
-                          t("crawl.detail.media.sourceTypes.picture"),
-                          item.pictureSources,
-                          t,
-                        )}
-                        {renderSourceList(
-                          t("crawl.detail.media.sourceTypes.responsive"),
-                          item.responsiveSources,
-                          t,
-                        )}
-                      </Space>
-                    </Space>
-                  </List.Item>
-                )}
-              />
-              {remaining > 0 ? (
-                <Typography.Text type="secondary">
-                  {t("crawl.detail.media.more", { count: remaining, kind })}
-                </Typography.Text>
-              ) : null}
-            </div>
-          );
-        })}
-      </Space>
-    </Card>
-  );
-}
-
-function StoredMediaSection({
-  assets,
-}: {
-  assets: CrawlStoredMediaAsset[] | null;
-}) {
-  const { t } = useTranslation();
-  if (!assets || assets.length === 0) {
-    return null;
-  }
-  return (
-    <Card
-      size="small"
-      title={t("crawl.detail.media.storedTitle")}
-      style={{ marginTop: 12 }}
-    >
-      <List
-        size="small"
-        split={false}
-        dataSource={assets}
-        renderItem={(asset) => {
-          const sourceHref = /^https?:\/\//i.test(asset.sourceUrl)
-            ? asset.sourceUrl
-            : undefined;
-          const previewHref = resolveStoredMediaUrl(asset.previewUrl);
-          const downloadHref = resolveStoredMediaUrl(
-            asset.downloadUrl ?? asset.previewUrl,
-          );
-          const missingStoredAccess = !previewHref && !downloadHref;
-          return (
-            <List.Item key={`${asset.id}-${asset.sourceUrl}`}>
-              <Space align="start">
-                <StoredMediaPreview asset={asset} previewUrl={previewHref} />
-                <Space direction="vertical" size={4}>
-                  <Typography.Text strong>
-                    {asset.title ?? asset.alt ?? asset.kind}
-                  </Typography.Text>
-                  <Typography.Text type="secondary">
-                    {(
-                      asset.contentType ?? t("crawl.detail.media.unknownMime")
-                    ).toUpperCase()}{" "}
-                    • {formatBytes(asset.bytes)}
-                  </Typography.Text>
-                  <Typography.Paragraph style={{ marginBottom: 4 }}>
-                    {asset.desc ?? asset.sourceUrl}
-                  </Typography.Paragraph>
-                  {missingStoredAccess ? (
-                    <Typography.Text type="danger">
-                      {t("crawl.detail.media.assetUnavailable")}
-                    </Typography.Text>
-                  ) : null}
-                  <Space size="small">
-                    {sourceHref ? (
-                      <Typography.Link
-                        href={sourceHref}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {t("common.source")}
-                      </Typography.Link>
-                    ) : null}
-                    {downloadHref ? (
-                      <Typography.Link
-                        href={downloadHref}
-                        download={`${asset.kind}-${asset.id}`}
-                        rel="noreferrer"
-                      >
-                        {t("common.download")}
-                      </Typography.Link>
-                    ) : null}
-                  </Space>
-                </Space>
-              </Space>
-            </List.Item>
-          );
-        }}
-      />
-    </Card>
-  );
-}
-
-function buildTableRecords(table: CrawlResultTable): CrawlResultTableRecord[] {
-  if (table.dataFrame?.rows?.length) {
-    return table.dataFrame.rows;
-  }
-  return table.rows.map((row) =>
-    table.headers.reduce<CrawlResultTableRecord>((acc, header, index) => {
-      acc[header] = row[index] ?? null;
-      return acc;
-    }, {}),
-  );
-}
-
-function TablesSection({ tables }: { tables: CrawlResultTable[] | null }) {
-  const { t } = useTranslation();
-  const screens = Grid.useBreakpoint();
-  if (!tables || !tables.length) {
-    return null;
-  }
-  return (
-    <Card
-      size="small"
-      title={t("crawl.detail.tables.title")}
-      style={{ marginTop: 12 }}
-      extra={
-        <Typography.Link href={tableDocsUrl} target="_blank" rel="noreferrer">
-          {t("crawl.detail.tables.releaseNotes")}
-        </Typography.Link>
-      }
-    >
-      <Space direction="vertical" size="large" style={{ width: "100%" }}>
-        {tables.map((table) => {
-          const columns = (table.dataFrame?.columns ?? table.headers).map(
-            (header) => ({
-              title: header,
-              dataIndex: header,
-              key: header,
-              ellipsis: true,
-            }),
-          );
-          const records = buildTableRecords(table);
-          const previewRows: CrawlResultTablePreviewRow[] = records
-            .slice(0, 5)
-            .map((record, index) => ({
-              key: `${table.id}-${index}`,
-              ...record,
-            }));
-          const remaining = Math.max(0, table.rowCount - previewRows.length);
-          return (
-            <div key={table.id}>
-              <Space direction="vertical" size={4} style={{ width: "100%" }}>
-                <Space wrap>
-                  <Typography.Text strong>
-                    {table.caption ||
-                      t("crawl.detail.tables.defaultTitle", { id: table.id })}
-                  </Typography.Text>
-                  <Tag>
-                    {table.rowCount} × {table.columnCount}
-                  </Tag>
-                  {table.source && (
-                    <Typography.Text type="secondary">
-                      {t("crawl.detail.tables.source", {
-                        source: table.source,
-                      })}
-                    </Typography.Text>
-                  )}
-                </Space>
-                {table.metadata && (
-                  <Typography.Text type="secondary">
-                    {JSON.stringify(table.metadata)}
-                  </Typography.Text>
-                )}
-              </Space>
-              {!screens.md ? (
-                <List
-                  dataSource={previewRows}
-                  size="small"
-                  style={{ marginTop: 8 }}
-                  renderItem={(item, i) => (
-                    <List.Item>
-                      <List.Item.Meta
-                        title={`${t("common.row")} ${i + 1}`}
-                        description={
-                          <Space direction="vertical" size={0}>
-                            {columns.slice(0, 3).map((col) => (
-                              <div key={col.key}>
-                                <Typography.Text
-                                  type="secondary"
-                                  style={{ fontSize: 12 }}
-                                >
-                                  {col.title}:
-                                </Typography.Text>{" "}
-                                <Typography.Text style={{ fontSize: 12 }}>
-                                  {String(item[col.dataIndex] ?? "")}
-                                </Typography.Text>
-                              </div>
-                            ))}
-                          </Space>
-                        }
-                      />
-                    </List.Item>
-                  )}
-                />
-              ) : (
-                <Table
-                  columns={columns}
-                  dataSource={previewRows}
-                  size="small"
-                  pagination={false}
-                  style={{ marginTop: 8 }}
-                  scroll={{ x: true }}
-                />
-              )}
-              {remaining > 0 && (
-                <Typography.Text type="secondary">
-                  {t("crawl.detail.tables.remaining", {
-                    preview: previewRows.length,
-                    remaining,
-                  })}
-                </Typography.Text>
-              )}
-            </div>
-          );
-        })}
-      </Space>
-    </Card>
-  );
-}
-
-function renderMediaPreview(
-  kind: string,
-  item: CrawlMediaItem,
-  t: (key: string, options?: Record<string, unknown>) => string,
-) {
-  if (!item.src) {
-    return null;
-  }
-  const normalized = kind.toLowerCase();
-  if (normalized.includes("image")) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={item.src}
-        alt={item.alt || item.title || t("crawl.detail.media.thumbnailAlt")}
-        style={{
-          width: 96,
-          height: 96,
-          objectFit: "cover",
-          borderRadius: 8,
-          border: "1px solid var(--ant-color-border-secondary)",
-        }}
-        loading="lazy"
-      />
-    );
-  }
-  if (normalized.includes("video")) {
-    return (
-      <video
-        src={item.src}
-        poster={item.poster}
-        controls
-        style={{ width: 160, borderRadius: 8 }}
-      />
-    );
-  }
-  if (normalized.includes("audio")) {
-    return <audio src={item.src} controls style={{ minWidth: 160 }} />;
-  }
-  return null;
-}
-
-function StoredMediaPreview({
-  asset,
-  previewUrl,
-}: {
-  asset: CrawlStoredMediaAsset;
-  previewUrl?: string;
-}) {
-  const { t } = useTranslation();
-  const [previewFailed, setPreviewFailed] = useState(false);
-  if (previewUrl && !previewFailed && asset.contentType?.startsWith("image/")) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={previewUrl}
-        alt={asset.alt ?? asset.title ?? asset.kind}
-        style={{
-          width: 96,
-          height: 96,
-          objectFit: "cover",
-          borderRadius: 8,
-          border: "1px solid var(--ant-color-border-secondary)",
-        }}
-        loading="lazy"
-        onError={() => {
-          setPreviewFailed(true);
-          captureClientError("Failed to load stored crawl image preview", {
-            assetId: asset.id,
-            sourceUrl: asset.sourceUrl,
-            storageProvider: asset.storageProvider,
-          });
-        }}
-      />
-    );
-  }
-  if (previewUrl && !previewFailed && asset.contentType?.startsWith("video/")) {
-    return (
-      <video
-        src={previewUrl}
-        controls
-        style={{ width: 160, borderRadius: 8 }}
-        preload="metadata"
-        onError={() => {
-          setPreviewFailed(true);
-          captureClientError("Failed to load stored crawl video preview", {
-            assetId: asset.id,
-            sourceUrl: asset.sourceUrl,
-            storageProvider: asset.storageProvider,
-          });
-        }}
-      />
-    );
-  }
-  return (
-    <Space direction="vertical" size={4} align="center">
-      <div className="media-thumb" style={{ width: 80, height: 80 }}>
-        {asset.kind.slice(0, 2).toUpperCase()}
-      </div>
-      {previewFailed ? (
-        <Space size={4} align="center">
-          <WarningOutlined style={{ color: "var(--ant-color-error)" }} />
-          <Typography.Text type="danger">
-            {t("crawl.detail.media.previewLoadFailed")}
-          </Typography.Text>
-        </Space>
-      ) : (
-        <Typography.Text type="secondary">
-          {t("crawl.detail.media.previewUnavailable")}
-        </Typography.Text>
-      )}
-    </Space>
-  );
-}
-
-function formatBytes(bytes: number) {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return "0 B";
-  }
-  const units = ["B", "KB", "MB", "GB"];
-  let size = bytes;
-  let unitIndex = 0;
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-  const precision = size >= 10 || unitIndex === 0 ? 0 : 1;
-  return `${size.toFixed(precision)} ${units[unitIndex]}`;
-}
-
-function formatDimensions(item: CrawlMediaItem) {
-  if (item.width && item.height) {
-    return `${item.width}×${item.height}px`;
-  }
-  return undefined;
-}
-
-function formatScore(
-  item: CrawlMediaItem,
-  t: (key: string, options?: Record<string, unknown>) => string,
-) {
-  if (typeof item.score === "number") {
-    return t("crawl.detail.media.score", { score: item.score.toFixed(2) });
-  }
-  return undefined;
-}
-
-function renderSrcset(
-  srcset: string[],
-  t: (key: string, options?: Record<string, unknown>) => string,
-) {
-  return (
-    <div>
-      <Typography.Text type="secondary">
-        {t("crawl.detail.media.srcsetVariants")}
-      </Typography.Text>
-      <pre
-        style={{
-          background: "var(--ant-color-fill-alter)",
-          padding: 8,
-          borderRadius: 4,
-          maxWidth: 520,
-          whiteSpace: "pre-wrap",
-        }}
-      >
-        {srcset.join("\n")}
-      </pre>
-    </div>
-  );
-}
-
-function renderSourceList(
-  label: string,
-  sources: CrawlMediaSource[] | undefined,
-  t: (key: string, options?: Record<string, unknown>) => string,
-) {
-  if (!sources || sources.length === 0) {
-    return null;
-  }
-  return (
-    <div>
-      <Typography.Text type="secondary">
-        {t("crawl.detail.media.sources", { label, count: sources.length })}
-      </Typography.Text>
-      <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
-        {sources.slice(0, 4).map((source, index) => (
-          <li key={`${label}-${index}`}>
-            <code>{source.srcset ?? source.src}</code>
-            {source.type ? ` • ${source.type}` : ""}
-            {source.media ? ` • ${source.media}` : ""}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
 
 export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const { t, i18n } = useTranslation();
