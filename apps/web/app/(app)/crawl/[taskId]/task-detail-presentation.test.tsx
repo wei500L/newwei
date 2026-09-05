@@ -271,7 +271,10 @@ describe("CrawlTaskDetail presentation（加载态 / 头部 / 告警 / 策略 / 
     expect(
       screen.getByRole("link", { name: "https://a.com/1" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Patterns")).toBeInTheDocument();
+    // i18n 占位符修复（FE-I18N-01）后模式行显示 mode 与 patterns
+    expect(
+      screen.getByText("Patterns (glob): news/*"),
+    ).toBeInTheDocument();
   });
 
   it("Task logs：表格行、展开 data/error JSON、刷新后清理失效 expanded keys", async () => {
