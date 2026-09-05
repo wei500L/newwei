@@ -6,7 +6,7 @@ import {
   OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME,
   OVERLAY_STATUS_TAG_CLASS_NAME,
 } from "./war-map-overlay-model";
-import type { WarMapSummaryStatusCard, WarMapTranslateFn } from "./war-map-overlay-model";
+import type { WarMapSummaryStatusCard } from "./war-map-overlay-model";
 
 /**
  * Overlay rail 状态摘要（FE-批4B：自 war-map-overlay-rail.tsx 拆出）。
@@ -16,12 +16,10 @@ export function WarMapOverlayRailSummary({
   density,
   statusCards,
   dataLabel,
-  t,
 }: {
   density: "expanded" | "compact" | "minimal";
   statusCards: WarMapSummaryStatusCard[];
   dataLabel: string;
-  t: WarMapTranslateFn;
 }) {
   const streamStatus = statusCards.find((card) => card.key === "stream");
   const dataStatus = statusCards.find((card) => card.key === "data");

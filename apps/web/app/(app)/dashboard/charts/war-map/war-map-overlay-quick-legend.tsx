@@ -3,15 +3,15 @@
 import { InfoCircleOutlined } from "@ant-design/icons";
 import { Button, Tooltip, Typography } from "antd";
 
+import { selectVisibleQuickLegendItems } from "./war-map-legend-model";
+import { WarMapLegendSwatch } from "./war-map-legend-swatch";
+import type { OverlayDensity } from "./war-map-symbol-types";
 import {
   OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME,
   resolveOverlayButtonClassName,
   type WarMapTranslateFn,
 } from "./war-map-overlay-model";
 import type { WarMapOverlayRailQuickLegend } from "./war-map-overlay-rail-types";
-import { WarMapLegendSwatch } from "./war-map-legend-swatch";
-import { selectVisibleQuickLegendItems } from "./war-map-legend-model";
-import type { OverlayDensity } from "./war-map-symbol-types";
 
 /**
  * Rail quick legend（FE-批4B：自 war-map-overlay-rail.tsx 拆出）。

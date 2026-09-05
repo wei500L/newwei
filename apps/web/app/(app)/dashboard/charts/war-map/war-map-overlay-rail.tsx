@@ -7,14 +7,14 @@ import {
 } from "@ant-design/icons";
 import { Button, Tooltip } from "antd";
 
+import { getQuickLegendVisibility } from "./war-map-legend-model";
 import {
+  OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME,
   resolveOverlayButtonClassName,
-  type WarMapTranslateFn,
 } from "./war-map-overlay-model";
-import { WarMapOverlayRailSummary } from "./war-map-overlay-summary";
 import { WarMapOverlayQuickLegend } from "./war-map-overlay-quick-legend";
 import type { WarMapOverlayRailProps } from "./war-map-overlay-rail-types";
-import { getQuickLegendVisibility } from "./war-map-legend-model";
+import { WarMapOverlayRailSummary } from "./war-map-overlay-summary";
 
 /**
  * Overlay rail 薄组合层（FE-批4B：原 330 行单组件拆分）。
@@ -76,7 +76,6 @@ export function WarMapOverlayRail({
           density={density}
           statusCards={summary.statusCards}
           dataLabel={summary.dataLabel}
-          t={t}
         />
         {showQuickLegend ? (
           <WarMapOverlayQuickLegend
@@ -88,7 +87,7 @@ export function WarMapOverlayRail({
           />
         ) : null}
         <div
-          className={`flex w-full items-center justify-end gap-2 rounded-2xl border border-[var(--border)] bg-white/[0.88] shadow-xl backdrop-blur transition-all duration-200 hover:bg-white/[0.95] pointer-events-auto px-2 py-2 dark:bg-slate-950/[0.72] dark:shadow-[0_20px_48px_-30px_rgba(2,6,23,0.88)] dark:hover:bg-slate-950/[0.82]`}
+          className={`${OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME} pointer-events-auto flex w-full items-center justify-end gap-2 px-2 py-2`}
         >
           <Tooltip title={t("dashboard.actions.fetchLatest")}>
             <Button
