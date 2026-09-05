@@ -4,7 +4,7 @@
  * 画布常量、渲染目标与调色板类型、data URL 转换、SVG open tag、stroke
  * helper 与 circular/plate/state 标记：纯字符串生成，不依赖 React。
  */
-import { mixHex, withAlpha } from "./war-map-symbol-color";
+import { withAlpha } from "./war-map-symbol-color";
 import type { WarMapSymbolState } from "./war-map-symbol-types";
 
 export const SYMBOL_GRID_SIZE = 24;
