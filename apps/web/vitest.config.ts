@@ -88,6 +88,8 @@ export default defineConfig({
         // FE-批4B：符号系统拆分模块（types/color/svg/icons/legend model/swatch）
         "app/(app)/dashboard/charts/war-map/war-map-symbol-types.ts",
         "app/(app)/dashboard/charts/war-map/war-map-symbol-color.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-symbol-svg-primitives.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-symbol-glyphs.ts",
         "app/(app)/dashboard/charts/war-map/war-map-symbol-svg.ts",
         "app/(app)/dashboard/charts/war-map/war-map-symbol-icons.ts",
         "app/(app)/dashboard/charts/war-map/war-map-legend-model.ts",

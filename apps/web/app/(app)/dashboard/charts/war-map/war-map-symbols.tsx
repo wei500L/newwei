@@ -10,7 +10,9 @@
  * 拆分去向：
  * - 类型：war-map-symbol-types.ts
  * - 颜色归一化（唯一事实源）：war-map-symbol-color.ts
- * - SVG builder（无 React）：war-map-symbol-svg.ts
+ * - SVG 基础原语（无 React）：war-map-symbol-svg-primitives.ts
+ * - SVG glyph 构建器（无 React）：war-map-symbol-glyphs.ts
+ * - SVG 公共装配（无 React）：war-map-symbol-svg.ts
  * - palette/deck icon 缓存（唯一所有者）：war-map-symbol-icons.ts
  * - legend 模型计算（无 React）：war-map-legend-model.ts
  * - swatch 组件：war-map-legend-swatch.tsx
