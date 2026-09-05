@@ -48,7 +48,7 @@
 | WM-RT-02 | P1 | War Map standalone 底部 Drawer 点击内部控件即被误关（非 minimal 密度） | ✅ | PR #6 第二轮（见 §3） |
 | FE-A11Y-01 | P2 | War Map legend 聚焦徽标硬编码英文 "Focus"（中文界面遗留英文） | ✅ | PR #7（FE-批4B，见 §3） |
 | FE-A11Y-02 | P2 | War Map legend section 折叠按钮缺 aria-expanded/aria-controls | ✅ | PR #7（FE-批4B，见 §3） |
-| FE-DD-01 | P3 | war-map-geometry.ts 两个零消费导出（splitDeckPathSegments/buildSanitizedPathFeatures，批4A 遗留） | 👁 | FE-批5 顺带清理 |
+| FE-DD-01 | P3 | war-map-geometry.ts 两个零消费导出（splitDeckPathSegments/buildSanitizedPathFeatures，批4A 遗留） | ✅ | FE-批4B 合并后收口 PR（见 §3） |
 
 ## 3. 已修复条目（详细）
 
@@ -141,6 +141,12 @@
 - **修复 2**：`LegendSectionCard` 折叠按钮补 `aria-expanded`（受控）与 `aria-controls`（`useId()` 前缀 + section key 生成稳定唯一 id，受控区域 `<div id>` 真实渲染）；行为测试断言折叠前后 aria 状态翻转与受控区域存在性。
 - **验证**：仅 jsdom 行为级验证；屏幕阅读器实测未做（部署环境人工验收项）。
 
+### FE-DD-01 war-map-geometry.ts 两个零消费导出 — ✅ 已处理【FE-批4B 合并后收口 PR】
+
+- **证据（静态引用审查）**：`rg` 全仓核对 `splitDeckPathSegments` / `buildSanitizedPathFeatures`——除定义处（war-map-geometry.ts 原第 129/170 行）外零命中：无生产调用、无测试调用、无 re-export（全仓无 `export *`）、无动态名称引用；唯一 import 该模块的生产文件 war-map-static-vector-layers.ts 实际消费的是 `buildSanitizedPathGeometry` / `buildSanitizedPolygonResult` / `isValidDeckCoordinate` / `DeckCoordinate`。两者均为对内部实现的一行投影包装（`.segments` / `.pathFeatures`）。
+- **处理**：删除两个包装导出（war-map-geometry.ts 277 → 267 行）；底层实现 `splitDeckPathGeometry` / `buildSanitizedPathGeometry` 保持不动（前者仍被模块内两处调用，后者仍被 static-vector-layers 消费）；无死类型或死 import 随之产生（DeckCoordinate / SanitizedDeckPathFeature / WarMapLayerFeature 均仍有消费者）；polygon/path 消毒行为不变。
+- **验证方式**：仅静态引用审查 + 远端 CI（lint/typecheck/web 测试/构建）；无运行时行为变化（删除的是零调用代码，不属可运行验证范畴）。
+
 ## 4. 开放条目（待修复，按优先级排序）
 
 ### SEC-01 全局 vector 配置可被任意 org 管理员改写 — 🔧 已修复（单元级 CI 已验证；真实登录态未验证）【已复核】
@@ -196,7 +202,8 @@
 - **本轮（PR #3）**：include 增至 8 个（+page-container.tsx / nav-mode.ts / action-rail-routing.ts / navigation-model.ts / top-nav-density.ts——App Shell 第一批的可测原语）。
 - **PR #4（FE-批3）**：include 增至 22 个（+useUrlState / url-state-codec / DataStateBoundary / alert-center.tsx / alert-center-url-state / use-alert-center-url-state / alert-chart-options / evidence-utils / 四个 evidence 组件）。阈值不变（lines 35 / functions 3 / statements 35 / branches 30）。
 - **PR #5（FE-批3B）**：Alert Center include 增至 32（+alert-center-actions/data-state/filters/summary/list-model + alert-events-virtualization + alert-event-list/row/toolbar/detail/detail-model/五页签 + use-alert-events-feed/selection/status-actions/batch/detail/virtualization/charts；全站 include 总数约 40）。阈值不变（lines 35 / functions 3 / statements 35 / branches 30）。
-- **PR #7（FE-批4B）**：include 85 → 113（war-map 35 → 63：新增 symbol-types/color/svg/icons/legend-model/legend-swatch + overlay-theme/types/layout/view-model/summary/quick-legend + controls-types/primitives/header/view-section/transport-controls/ais-reference/feed-controls/legend-sections/legend-panel/legend-dock + inspector-types/shell/四个内容组件）。阈值不变。仍为「部分改善」：全仓 glob + 阈值重设待 FE-批5+（task-detail 等未拆分）。
+- **PR #7（FE-批4B）**：include 79 → 107（war-map 35 → 63：新增 symbol-types/color/svg/icons/legend-model/legend-swatch + overlay-theme/types/layout/view-model/summary/quick-legend + controls-types/primitives/header/view-section/transport-controls/ais-reference/feed-controls/legend-sections/legend-panel/legend-dock + inspector-types/shell/四个内容组件）。阈值不变。**勘误（合并后收口 PR）**：此前登记为「85 → 113」，与合并后 main 实测不符（实际 107，逐条清点核对 db21bf1f）；war-map 35 → 63 一致。
+- **FE-批4B 合并后收口 PR**：include 107 → 111（war-map 63 → 67：symbol-svg 拆分补入 svg-primitives/glyphs 两模块，legend-model 拆分补入 item/quick/full 三模块并移除旧条目）。阈值不变（lines 35 / functions 3 / statements 35 / branches 30）。仍为「部分改善」：全仓 glob + 阈值重设待 FE-批5+（task-detail 等未拆分）。
 - **仍为「部分改善」**：全仓 glob + 阈值重设待 FE-批4+（巨型组件 war-map/task-detail 等未拆分、无测试，纳入即红 CI）。
 
 ### CI-01 OpenAPI 快照生成非确定性 — ⬜ 开放 P2【PR #5 第五轮登记；PR #6 两次复现】
@@ -228,7 +235,7 @@ verify success）——CI-01 本轮未复现，无重跑。
 3. itemPipeline DLQ 在 worker failed 事件中入队（非 BullMQ 原生语义）
 4. 隐藏写入方：news-pipeline-crawl-bridge.service.ts:185-188（结果缺失时同步触发抓取）、CrawlTaskJanitor 直改状态
 5. TopNav 589 行 / ActionRail 3 个重复图标 / newsnow 自加 1760px 宽度特例（IA 重构输入）
-6. war-map-geometry.ts 零消费导出 splitDeckPathSegments/buildSanitizedPathFeatures（FE-DD-01，批4A 遗留；本轮批4B 范围外的死代码清单项，FE-批5 顺带清理）
+6. ~~war-map-geometry.ts 零消费导出 splitDeckPathSegments/buildSanitizedPathFeatures（FE-DD-01，批4A 遗留）~~ ✅ 已随 FE-批4B 合并后收口 PR 删除（FE-DD-01，见 §3）
 7. vector-integration 的 upsert 确定性点 ID 断言偶发 500 vs 201（run 33957774254，真实 Qdrant 环境；同分支纯前端改动后的相邻 run 33957963593 通过，无代码因果，非 CI-01 变体——登记观察待复现规律）
 
 ## 6. 风险与未验证登记
