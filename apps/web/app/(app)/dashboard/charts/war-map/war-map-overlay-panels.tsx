@@ -17,13 +17,11 @@ import type {
   WarMapLegendInteractionSlice,
   WarMapOverlayPanelSlice,
 } from "./use-war-map-interaction";
-import {
-  WarMapControlsPanel,
-} from "./war-map-controls-panel";
+import { WarMapControlsPanel } from "./war-map-controls-panel";
 import type { WarMapControlsPanelTransportProps } from "./war-map-controls-types";
+import { WarMapInspectorPanel } from "./war-map-inspector-panel";
 import { WarMapLegendDock } from "./war-map-legend-dock";
 import { WarMapLegendPanel } from "./war-map-legend-panel";
-import { WarMapInspectorPanel } from "./war-map-inspector-panel";
 import {
   OVERLAY_SURFACE_CLASS_NAME,
   type OverlayDensity,
@@ -33,10 +31,7 @@ import {
   type WarMapTranslateFn,
 } from "./war-map-overlay-model";
 import { WarMapOverlayRail } from "./war-map-overlay-rail";
-import type {
-  WarMapLegendItem,
-  WarMapLegendSection,
-} from "./war-map-symbols";
+import type { WarMapLegendItem, WarMapLegendSection } from "./war-map-symbols";
 import {
   useWarMapViewOptions,
   WarMapLayerVisibilityControls,
@@ -89,9 +84,7 @@ export interface UseWarMapOverlayPanelsOptions {
   };
   transport: WarMapOverlayPanelsTransportInput;
   inspector: {
-    transportDetail:
-      | WarMapTransportDetail
-      | null;
+    transportDetail: WarMapTransportDetail | null;
     transportDetailLoading: boolean;
   };
   windowLabel: string;
@@ -309,7 +302,9 @@ export function useWarMapOverlayPanels(
       transportDetail={inspector.transportDetail}
       transportDetailLoading={inspector.transportDetailLoading}
       useDesktopInspector={useDesktopInspector}
-      desktopInspectorMinimized={interaction.inspector.desktopInspectorMinimized}
+      desktopInspectorMinimized={
+        interaction.inspector.desktopInspectorMinimized
+      }
       inspectorPanelWidth={overlayLayout.inspectorPanelWidth}
       inspectorPanelHeight={overlayLayout.inspectorPanelHeight}
       locale={locale}
@@ -348,7 +343,8 @@ export function useWarMapOverlayPanels(
       rootStyle={standaloneLayout ? { position: "absolute" } : undefined}
       styles={{ body: { padding: 0 } }}
     >
-      {interaction.overlayPanel.openOverlayPanel === "legend" && !standaloneLayout
+      {interaction.overlayPanel.openOverlayPanel === "legend" &&
+      !standaloneLayout
         ? legendPanelContent
         : controlsPanelContent}
     </Drawer>

@@ -12,14 +12,17 @@ import {
 } from "./war-map-controls-primitives";
 import type { WarMapControlsPanelProps } from "./war-map-controls-types";
 import { FeedsSection } from "./war-map-feed-controls";
-import { LegendSectionsList, LegendInteractionStrip } from "./war-map-legend-sections";
-import { TransportSection } from "./war-map-transport-controls";
-import { ViewSection } from "./war-map-view-section";
+import {
+  LegendInteractionStrip,
+  LegendSectionsList,
+} from "./war-map-legend-sections";
 import {
   OVERLAY_SECTION_TITLE_CLASS_NAME,
   resolveOverlayButtonClassName,
   type OverlayControlsSection,
 } from "./war-map-overlay-model";
+import { TransportSection } from "./war-map-transport-controls";
+import { ViewSection } from "./war-map-view-section";
 
 /**
  * Controls 面板根编排层（FE-批4B：原 1746 行拆分后收敛为编排）。

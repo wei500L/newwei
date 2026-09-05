@@ -2,8 +2,8 @@
  * Controls 面板领域契约（FE-批4B：自 war-map-controls-panel.tsx 拆出）。
  * 纯类型叶子模块：无 React 组件、无 "use client"。
  */
-import type { ReactNode } from "react";
 import type { WarMapPreset, WarMapTimeRangePreset } from "@modular/utils";
+import type { ReactNode } from "react";
 
 import type { WarMapAisSummaryPresentation } from "./war-map-ais-status";
 import type { WarMapFlightsSummaryPresentation } from "./war-map-flights-status";

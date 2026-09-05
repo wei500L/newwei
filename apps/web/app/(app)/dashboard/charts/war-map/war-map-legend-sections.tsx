@@ -1,14 +1,19 @@
 "use client";
 
-import { DownOutlined, PushpinOutlined, RightOutlined } from "@ant-design/icons";
+import {
+  DownOutlined,
+  PushpinOutlined,
+  RightOutlined,
+} from "@ant-design/icons";
 import { Tooltip, Typography } from "antd";
 import { useEffect, useId, useState } from "react";
 
-import type {
-  WarMapLegendInteractionProps,
-} from "./war-map-controls-types";
-import { OVERLAY_SECTION_TITLE_CLASS_NAME, type WarMapTranslateFn } from "./war-map-overlay-model";
+import type { WarMapLegendInteractionProps } from "./war-map-controls-types";
 import { WarMapLegendSwatch } from "./war-map-legend-swatch";
+import {
+  OVERLAY_SECTION_TITLE_CLASS_NAME,
+  type WarMapTranslateFn,
+} from "./war-map-overlay-model";
 import type {
   WarMapLegendItem,
   WarMapLegendSection,

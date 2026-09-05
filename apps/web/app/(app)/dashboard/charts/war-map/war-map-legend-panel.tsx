@@ -3,11 +3,11 @@
 import { CloseOutlined } from "@ant-design/icons";
 import { Button, Typography } from "antd";
 
+import type { WarMapLegendPanelProps } from "./war-map-controls-types";
 import {
   LegendInteractionStrip,
   LegendSectionsList,
 } from "./war-map-legend-sections";
-import type { WarMapLegendPanelProps } from "./war-map-controls-types";
 import { resolveOverlayButtonClassName } from "./war-map-overlay-model";
 
 /**

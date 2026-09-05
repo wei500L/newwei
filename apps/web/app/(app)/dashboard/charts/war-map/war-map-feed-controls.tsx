@@ -2,15 +2,13 @@
 
 import { Tag, Tooltip, Typography } from "antd";
 
+import { OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME } from "./war-map-controls-primitives";
 import {
-  OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME,
-} from "./war-map-controls-primitives";
-import type {
-  WarMapDetailedChainStatus,
-  WarMapFeedSummaryCard,
-  WarMapLayoutVariant,
+  OVERLAY_STATUS_TAG_CLASS_NAME,
+  type WarMapDetailedChainStatus,
+  type WarMapFeedSummaryCard,
+  type WarMapLayoutVariant,
 } from "./war-map-overlay-model";
-import { OVERLAY_STATUS_TAG_CLASS_NAME } from "./war-map-overlay-model";
 
 /**
  * Feeds 节（FE-批4B：自 war-map-controls-panel.tsx 拆出）。

@@ -1,6 +1,6 @@
 "use client";
 
-import { Tooltip, Typography } from "antd";
+import { Tooltip } from "antd";
 
 import {
   OVERLAY_PANEL_CHIP_CLASS_NAME,
