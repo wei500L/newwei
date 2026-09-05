@@ -52,7 +52,7 @@ export interface VirtualScrollSummary {
   containerSelector: string;
   scrollCount: number | null;
   waitAfterScrollMs: number | null;
-  scrollBy: string | "page_height" | null;
+  scrollBy: string | number | null;
 }
 
 export function buildVirtualScrollSummary(
