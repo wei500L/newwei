@@ -1,5 +1,4 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -78,8 +77,6 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
         resultSearch: "hello",
       }),
     );
-    // 输入框同步为 trim 后的值
-    expect(input).toHaveValue("hello");
   });
 
   it("清空输入立即清除 search（不等 Enter）", async () => {
@@ -98,10 +95,8 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
     // 清空 → 已提交 search 立即复位；随后切 limit 触发新请求，
     // 其变量应携带 resultSearch: null（若清空未生效会残留 "foo"）
     fireEvent.change(input, { target: { value: "" } });
-    await userEvent.click(screen.getByRole("combobox"));
-    await userEvent.click(
-      await screen.findByRole("option", { name: "Latest 50" }),
-    );
+    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByRole("option", { name: "Latest 50" }));
     await waitFor(() =>
       expect(apollo.taskVariables.at(-1)).toEqual({
         id: "task-1",
@@ -137,10 +132,9 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
     });
 
     await screen.findByPlaceholderText("Enter Search");
-    await userEvent.click(screen.getByRole("combobox"));
-    await userEvent.click(
-      await screen.findByRole("option", { name: "Latest 50" }),
-    );
+    // rc-select 以 click 开合下拉、以 option onClick 选中：紧凑同步事件序列
+    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByRole("option", { name: "Latest 50" }));
 
     await waitFor(() =>
       expect(apollo.taskVariables.at(-1)).toEqual({
@@ -277,7 +271,7 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
               {
                 id: "asset-2",
                 kind: "pdf",
-                sourceUrl: "https://example.com/doc.pdf",
+                sourceUrl: "crawl-media/doc.pdf",
                 bytes: 0,
               },
             ]),

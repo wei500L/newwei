@@ -254,7 +254,7 @@ export function createCrawlAntdMock(actual: unknown): Record<string, unknown> {
   };
 }
 
-/** socket.io-client mock：io() 返回记录监听器的受控 socket。 */
+/** socket.io-client mock：io() 记录 namespace/options 并返回受控 socket。 */
 export function createCrawlIoMock(): {
   io: (
     namespace: string,
@@ -262,8 +262,11 @@ export function createCrawlIoMock(): {
   ) => ReturnType<typeof createCrawlTestSocket>;
 } {
   return {
-    io: (namespace: string, options?: Record<string, unknown>) =>
-      createCrawlTestSocket(namespace, options ?? {}),
+    io: (namespace: string, options?: Record<string, unknown>) => {
+      testOpsSocket.namespaces.push(namespace);
+      testOpsSocket.options.push(options ?? {});
+      return createCrawlTestSocket(namespace, options ?? {});
+    },
   };
 }
 

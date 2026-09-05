@@ -92,7 +92,8 @@ describe("CrawlTaskDetail presentation（加载态 / 头部 / 告警 / 策略 / 
     });
     expect(await screen.findByText("Latest error")).toBeInTheDocument();
     expect(failed.container.querySelector(".ant-alert-error")).not.toBeNull();
-    expect(screen.getByText("boom")).toBeInTheDocument();
+    // 告警描述与 Last error 字段值两处出现
+    expect(screen.getAllByText("boom")).toHaveLength(2);
     failed.unmount();
 
     const completed = renderCrawlTaskDetail({
@@ -163,16 +164,16 @@ describe("CrawlTaskDetail presentation（加载态 / 头部 / 告警 / 策略 / 
       }),
     });
     expect(await screen.findByText("Crawl strategy")).toBeInTheDocument();
+    // 五个策略文案同时呈现在策略 Tag 与 Descriptions 字段（label 或值）
     for (const tag of [
       "Scan full page",
       "Virtual scroll",
+      "Balanced",
+      "List page",
       "Auto expand details",
     ]) {
-      expect(screen.getByText(tag)).toBeInTheDocument();
+      expect(screen.getAllByText(tag)).toHaveLength(2);
     }
-    // qualityProfile / pageTypeHint 摘要同时呈现在策略 Tag 与 Descriptions 字段
-    expect(screen.getAllByText("Balanced")).toHaveLength(2);
-    expect(screen.getAllByText("List page")).toHaveLength(2);
     expect(
       screen.getByText(
         "Crawl stage is deterministic (fetch + clean markdown only). Run LLM summarization and analysis in downstream pipelines.",
@@ -330,7 +331,12 @@ describe("CrawlTaskDetail presentation（加载态 / 头部 / 告警 / 策略 / 
 
   it("taskId 变化：清空 expanded keys 并按新 jobId 重新请求 logs", async () => {
     const logs = [
-      buildTaskLog({ id: "log-1", stage: "fetch", message: "fetched ok" }),
+      buildTaskLog({
+        id: "log-1",
+        stage: "fetch",
+        message: "fetched ok",
+        data: { stage: "done" },
+      }),
     ];
     const { container, rerenderTaskId } = renderCrawlTaskDetail({
       permissions: ["crawl.read", "settings.manage"],

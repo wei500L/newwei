@@ -125,7 +125,11 @@ describe("CrawlTaskDetail realtime（Socket /ops + 合并刷新 + fallback polli
       emitCrawlSocketEvent("disconnect", "transport close");
     });
     await flushAsync(0);
-    expect(screen.getByText("Disconnected")).toBeInTheDocument();
+    // 非客户端主动断开：错误优先于状态展示（Tag 显示 Error + 告警）
+    expect(screen.getByText("Error")).toBeInTheDocument();
+    expect(
+      screen.getByText("Realtime updates unavailable"),
+    ).toBeInTheDocument();
 
     act(() => {
       emitCrawlSocketEvent("connect");
