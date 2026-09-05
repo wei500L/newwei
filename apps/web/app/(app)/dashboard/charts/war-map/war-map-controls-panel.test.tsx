@@ -7,6 +7,10 @@ import type {
   WarMapControlsPanelProps,
   WarMapControlsPanelTransportProps,
 } from "./war-map-controls-types";
+import type {
+  WarMapDetailedChainStatus,
+  WarMapFeedSummaryCard,
+} from "./war-map-overlay-model";
 import { WarMapLegendDock } from "./war-map-legend-dock";
 import { WarMapLegendPanel } from "./war-map-legend-panel";
 import {
@@ -87,38 +91,17 @@ const legendSections = buildWarMapLegendSections({
 
 const interactionLegendItems = buildWarMapInteractionLegendItems({ t });
 
-const overlayViewModel: {
-  sectionMeta: Record<string, { label: string; description: string }>;
-  tabs: { key: string; label: string }[];
-  overviewMetricCards: {
-    key: string;
-    label: string;
-    value: number;
-    note: string;
-    className: string;
-  }[];
-  summaryStatusCards: {
-    key: string;
-    label: string;
-    value: string;
-    detail: string;
-    dotClassName: string;
-    tagColor: string;
-  }[];
-  summaryDataLabel: string;
-  overviewDataTagLabel: string;
-  feedSummaryCards: {
-    key: string;
-    label: string;
-    value: number;
-    toneClassName: string;
-  }[];
-  detailedChainStatuses: {
-    key: string;
-    color: string;
-    text: string;
-    tooltip: string;
-  }[];
+const overlayViewModel: Pick<
+  WarMapControlsPanelProps["header"],
+  | "sectionMeta"
+  | "tabs"
+  | "overviewMetricCards"
+  | "summaryStatusCards"
+  | "summaryDataLabel"
+  | "overviewDataTagLabel"
+> & {
+  feedSummaryCards: WarMapFeedSummaryCard[];
+  detailedChainStatuses: WarMapDetailedChainStatus[];
 } = {
   sectionMeta: {
     overview: { label: "Overview", description: "overview hint" },
