@@ -111,6 +111,13 @@ export default defineConfig({
         "app/(app)/dashboard/charts/war-map/war-map-legend-sections.tsx",
         "app/(app)/dashboard/charts/war-map/war-map-legend-panel.tsx",
         "app/(app)/dashboard/charts/war-map/war-map-legend-dock.tsx",
+        // FE-批4B：inspector 展示域拆分模块
+        "app/(app)/dashboard/charts/war-map/war-map-inspector-types.ts",
+        "app/(app)/dashboard/charts/war-map/war-map-inspector-shell.tsx",
+        "app/(app)/dashboard/charts/war-map/war-map-event-cluster-inspector.tsx",
+        "app/(app)/dashboard/charts/war-map/war-map-news-cluster-inspector.tsx",
+        "app/(app)/dashboard/charts/war-map/war-map-news-inspector.tsx",
+        "app/(app)/dashboard/charts/war-map/war-map-transport-inspector.tsx",
         "app/(app)/dashboard/charts/war-map/war-map-static-layers.ts",
         "app/(app)/dashboard/charts/war-map/war-map-static-vector-layers.ts",
         "app/(app)/dashboard/charts/war-map/war-map-ais-layers.ts",

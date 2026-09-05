@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { WarMapInspectorPanel } from "./war-map-inspector-panel";
-import type { WarMapInspectorPanelProps } from "./war-map-inspector-panel";
+import type { WarMapInspectorPanelProps } from "./war-map-inspector-types";
 import type { SelectedInspector } from "./war-map-overlay-model";
 
 const t = ((key: string, options?: Record<string, unknown>) => {
@@ -21,10 +21,10 @@ const t = ((key: string, options?: Record<string, unknown>) => {
 
 const onOpenNewsLink = vi.fn();
 const baseActions = {
-  onZoomToSelectedInspector: vi.fn(),
-  onMinimizeInspector: vi.fn(),
-  onExpandInspector: vi.fn(),
-  onCloseInspector: vi.fn(),
+  onZoom: vi.fn(),
+  onMinimize: vi.fn(),
+  onExpand: vi.fn(),
+  onClose: vi.fn(),
   onOpenNewsLink,
 };
 
@@ -63,13 +63,15 @@ function renderInspector(
     selectedInspector,
     transportDetail: null,
     transportDetailLoading: false,
-    useDesktopInspector: true,
-    desktopInspectorMinimized: false,
-    inspectorPanelWidth: 360,
-    inspectorPanelHeight: 320,
+    layout: {
+      useDesktopInspector: true,
+      minimized: false,
+      width: 360,
+      height: 320,
+    },
     locale: "en-US",
     t,
-    ...baseActions,
+    actions: baseActions,
     ...overrides,
   };
   return render(<WarMapInspectorPanel {...props} />);
@@ -98,43 +100,57 @@ describe("WarMapInspectorPanel（FE-批4B characterization）", () => {
       expect(
         screen.getByText("⟦dashboard.charts.warMap.stats.high⟧"),
       ).toBeInTheDocument();
-      expect(
-        screen.getByText(/tooltip\.alerts/),
-      ).toBeInTheDocument();
+      expect(screen.getByText(/tooltip\.alerts/)).toBeInTheDocument();
     });
 
     it("zoom/minimize/close 动作触发回调", async () => {
       renderInspector(selection);
       await userEvent.click(
-        screen.getByRole("button", { name: /⟦dashboard\.charts\.warMap\.panel\.zoomIn⟧/ }),
+        screen.getByRole("button", {
+          name: /⟦dashboard\.charts\.warMap\.panel\.zoomIn⟧/,
+        }),
       );
-      expect(baseActions.onZoomToSelectedInspector).toHaveBeenCalledTimes(1);
+      expect(baseActions.onZoom).toHaveBeenCalledTimes(1);
       await userEvent.click(
         screen.getByRole("button", { name: "⟦common.minimize⟧" }),
       );
-      expect(baseActions.onMinimizeInspector).toHaveBeenCalledTimes(1);
+      expect(baseActions.onMinimize).toHaveBeenCalledTimes(1);
       await userEvent.click(
         screen.getByRole("button", { name: "⟦common.close⟧" }),
       );
-      expect(baseActions.onCloseInspector).toHaveBeenCalledTimes(1);
+      expect(baseActions.onClose).toHaveBeenCalledTimes(1);
     });
 
     it("desktop minimized：折叠条展示并触发 expand/close", async () => {
-      renderInspector(selection, { desktopInspectorMinimized: true });
+      renderInspector(selection, {
+        layout: {
+          useDesktopInspector: true,
+          minimized: true,
+          width: 360,
+          height: 320,
+        },
+      });
       await userEvent.click(
         screen.getByRole("button", {
           name: "⟦dashboard.charts.warMap.overlay.expandInspector⟧",
         }),
       );
-      expect(baseActions.onExpandInspector).toHaveBeenCalledTimes(1);
+      expect(baseActions.onExpand).toHaveBeenCalledTimes(1);
       await userEvent.click(
         screen.getByRole("button", { name: "⟦common.close⟧" }),
       );
-      expect(baseActions.onCloseInspector).toHaveBeenCalledTimes(1);
+      expect(baseActions.onClose).toHaveBeenCalledTimes(1);
     });
 
     it("mobile：以全宽 Drawer 呈现；Esc 触发 onClose 语义", async () => {
-      renderInspector(selection, { useDesktopInspector: false });
+      renderInspector(selection, {
+        layout: {
+          useDesktopInspector: false,
+          minimized: false,
+          width: 360,
+          height: 320,
+        },
+      });
       expect(document.querySelector(".ant-drawer")).not.toBeNull();
       // mobile 下内容全量渲染（Drawer 承载），zoom 入口仍在
       expect(
@@ -148,7 +164,7 @@ describe("WarMapInspectorPanel（FE-批4B characterization）", () => {
       ) as HTMLElement | null;
       if (drawerClose) {
         await userEvent.click(drawerClose);
-        expect(baseActions.onCloseInspector).toHaveBeenCalledTimes(1);
+        expect(baseActions.onClose).toHaveBeenCalledTimes(1);
       }
     });
   });
@@ -295,8 +311,12 @@ describe("WarMapInspectorPanel（FE-批4B characterization）", () => {
       expect(screen.getByText("Tanker")).toBeInTheDocument();
       expect(screen.getByText("MMSI 123456789")).toBeInTheDocument();
       expect(screen.getByText("12 kn")).toBeInTheDocument();
-      expect(screen.getByText("⟦dashboard.charts.warMap.tooltip.heading⟧: 90°")).toBeInTheDocument();
-      expect(screen.getByText("⟦dashboard.charts.warMap.tooltip.course⟧: 88°")).toBeInTheDocument();
+      expect(
+        screen.getByText("⟦dashboard.charts.warMap.tooltip.heading⟧: 90°"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("⟦dashboard.charts.warMap.tooltip.course⟧: 88°"),
+      ).toBeInTheDocument();
     });
 
     it("transport detail loading：轨迹区显示 Spin 而非轨迹列表", () => {

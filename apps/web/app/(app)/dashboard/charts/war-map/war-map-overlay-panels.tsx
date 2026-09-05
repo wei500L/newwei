@@ -301,22 +301,22 @@ export function useWarMapOverlayPanels(
       selectedInspector={interaction.inspector.selectedInspector}
       transportDetail={inspector.transportDetail}
       transportDetailLoading={inspector.transportDetailLoading}
-      useDesktopInspector={useDesktopInspector}
-      desktopInspectorMinimized={
-        interaction.inspector.desktopInspectorMinimized
-      }
-      inspectorPanelWidth={overlayLayout.inspectorPanelWidth}
-      inspectorPanelHeight={overlayLayout.inspectorPanelHeight}
+      layout={{
+        useDesktopInspector,
+        minimized: interaction.inspector.desktopInspectorMinimized,
+        width: overlayLayout.inspectorPanelWidth,
+        height: overlayLayout.inspectorPanelHeight,
+      }}
       locale={locale}
-      onZoomToSelectedInspector={interaction.inspector.zoomToSelectedInspector}
-      onMinimizeInspector={() =>
-        interaction.inspector.setDesktopInspectorMinimized(true)
-      }
-      onExpandInspector={() =>
-        interaction.inspector.setDesktopInspectorMinimized(false)
-      }
-      onCloseInspector={interaction.inspector.closeSelectedInspector}
-      onOpenNewsLink={interaction.inspector.openNewsLink}
+      actions={{
+        onZoom: interaction.inspector.zoomToSelectedInspector,
+        onMinimize: () =>
+          interaction.inspector.setDesktopInspectorMinimized(true),
+        onExpand: () =>
+          interaction.inspector.setDesktopInspectorMinimized(false),
+        onClose: interaction.inspector.closeSelectedInspector,
+        onOpenNewsLink: interaction.inspector.openNewsLink,
+      }}
       t={t}
     />
   );
