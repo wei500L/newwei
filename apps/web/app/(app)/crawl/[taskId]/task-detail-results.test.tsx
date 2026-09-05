@@ -95,7 +95,7 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
     // 清空 → 已提交 search 立即复位；随后切 limit 触发新请求，
     // 其变量应携带 resultSearch: null（若清空未生效会残留 "foo"）
     fireEvent.change(input, { target: { value: "" } });
-    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.mouseDown(screen.getByRole("combobox"));
     fireEvent.click(await screen.findByRole("option", { name: "Latest 50" }));
     await waitFor(() =>
       expect(apollo.taskVariables.at(-1)).toEqual({
@@ -132,8 +132,8 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
     });
 
     await screen.findByPlaceholderText("Enter Search");
-    // rc-select 以 click 开合下拉、以 option onClick 选中：紧凑同步事件序列
-    fireEvent.click(screen.getByRole("combobox"));
+    // rc-select 由 selector mousedown 开合下拉（antd 官方测试配方），选项经 onClick 选中
+    fireEvent.mouseDown(screen.getByRole("combobox"));
     fireEvent.click(await screen.findByRole("option", { name: "Latest 50" }));
 
     await waitFor(() =>

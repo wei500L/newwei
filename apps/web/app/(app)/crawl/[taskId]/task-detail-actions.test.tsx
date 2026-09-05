@@ -487,8 +487,10 @@ describe("CrawlTaskDetail actions（retry / ingest / backfill / create item）",
       ]),
     );
     expect(testNavigation.pushCalls).toEqual([]);
-    // finally 清理行级 loading
-    const button = screen.getByRole("button", { name: "Send to Items" });
-    expect(button.className).not.toContain("ant-btn-loading");
+    // finally 清理行级 loading（等渲染提交，loading 前缀从可访问名消失）
+    await waitFor(() => {
+      const button = screen.getByRole("button", { name: "Send to Items" });
+      expect(button.className).not.toContain("ant-btn-loading");
+    });
   });
 });
