@@ -12,6 +12,19 @@ export type TaskDetailTranslate = (
   options?: Record<string, unknown>,
 ) => string;
 
+/** 组件需要的 message API 窄化（antd MessageInstance 可赋值）。 */
+export interface TaskDetailMessageApi {
+  success: (content: string | { key?: string; content: string }) => void;
+  error: (content: string | { key?: string; content: string }) => void;
+  info: (content: string | { key?: string; content: string }) => void;
+  warning: (content: string | { key?: string; content: string }) => void;
+  loading: (config: {
+    key: string;
+    duration?: number;
+    content: string;
+  }) => void;
+}
+
 export type CrawlTaskDetailTask = NonNullable<CrawlTaskQuery["crawlTask"]>;
 
 export type CrawlTaskDetailResult = NonNullable<
