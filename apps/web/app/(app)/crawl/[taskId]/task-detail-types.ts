@@ -1,13 +1,22 @@
 /**
  * Crawl Task Detail 领域类型（FE-批5A：自 task-detail.tsx 拆出）。
- * 纯类型模块：无 React、无 "use client"、无运行时依赖。
+ * 纯类型模块：无 React、无 "use client"；任务与结果类型直接从
+ * generated query 派生，不复制 GraphQL DTO。
  */
+
+import type { CrawlTaskQuery } from "@/graphql/generated";
 
 /** 窄化翻译函数签名（TFunction 可赋值；模型层避免依赖 react-i18next）。 */
 export type TaskDetailTranslate = (
   key: string,
   options?: Record<string, unknown>,
 ) => string;
+
+export type CrawlTaskDetailTask = NonNullable<CrawlTaskQuery["crawlTask"]>;
+
+export type CrawlTaskDetailResult = NonNullable<
+  CrawlTaskDetailTask["results"]
+>[number];
 
 export type TaskLogStatus = "pending" | "processing" | "completed" | "failed";
 

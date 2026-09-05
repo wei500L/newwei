@@ -26,17 +26,13 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   useCallback,
-  useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { io, type Socket } from "socket.io-client";
 
 import {
-  useCrawlTaskQuery,
   useIngestCrawlTaskResultsToItemsMutation,
   useRetryCrawlTaskMutation,
   useUpdateCrawlTaskIngestToItemsMutation,
@@ -45,17 +41,17 @@ import {
 } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
 import { findUnsupportedProxyIssues } from "@/lib/crawl-config-policy";
-import { getCrawlTaskDetailOpsRefreshDecision } from "@/lib/crawl-ops-refresh";
 import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 import {
   parseExpansionHeadSignalSummary,
   resolveHeadSignalFallbackHint,
   type ExpansionHeadSignalSummary,
 } from "@/lib/crawl-task-head-signal";
-import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
-import { formatRealtimeSocketError } from "@/lib/realtime-socket-errors";
 
+import { useCrawlTaskDetailQuery } from "./hooks/use-crawl-task-detail-query";
+import { useCrawlTaskLogs } from "./hooks/use-crawl-task-logs";
+import { useCrawlTaskOpsLive } from "./hooks/use-crawl-task-ops-live";
 import {
   BACKFILL_BATCH_TIMEOUT_MS,
   formatPolicyIssues,
@@ -72,11 +68,8 @@ import type {
   CrawlMediaCollection,
   CrawlResultTable,
   CrawlStoredMediaAsset,
-  TaskLogRecord,
   TaskLogStatus,
 } from "./task-detail-types";
-
-const REALTIME_SOCKET_TIMEOUT_MS = 10_000;
 
 const statusColors: Record<CrawlTaskStatus, string> = {
   pending: "gold",
@@ -157,39 +150,38 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const canCreateItem = canView && permissions.includes("items.write");
   const canViewItems =
     permissions.includes("items.read") || permissions.includes("items.write");
-  const [resultLimit, setResultLimit] = useState(20);
-  const [resultSearch, setResultSearch] = useState<string>();
-  const [resultSearchInput, setResultSearchInput] = useState("");
+  const {
+    task,
+    loading,
+    refetch,
+    startPolling,
+    stopPolling,
+    limit: resultLimit,
+    searchInput: resultSearchInput,
+    setLimit: setResultLimit,
+    changeSearchInput,
+    submitSearchInput,
+  } = useCrawlTaskDetailQuery({ taskId, canView });
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken],
   );
-  const taskLogsLoadingRef = useRef(false);
-  const [taskLogs, setTaskLogs] = useState<TaskLogRecord[]>([]);
-  const [expandedTaskLogKeys, setExpandedTaskLogKeys] = useState<string[]>([]);
-  const [taskLogsLoading, setTaskLogsLoading] = useState(false);
-  const [taskLogsError, setTaskLogsError] = useState<string | null>(null);
-  const opsSocketRef = useRef<Socket | null>(null);
-  const opsSocketBootstrappingRef = useRef(false);
-  const opsRefreshTimerRef = useRef<number | null>(null);
-  const pendingOpsRefreshRef = useRef({ task: false });
-  const [opsLiveStatus, setOpsLiveStatus] = useState<
-    "disconnected" | "connecting" | "connected"
-  >("disconnected");
-  const [opsLiveError, setOpsLiveError] = useState<string | null>(null);
-
-  const { data, loading, refetch, startPolling, stopPolling } =
-    useCrawlTaskQuery({
-      variables: {
-        id: taskId,
-        resultLimit,
-        resultSearch: resultSearch ?? null,
-      },
-      fetchPolicy: "cache-and-network",
-      nextFetchPolicy: "cache-first",
-      skip: !canView,
-    });
+  const {
+    logs: taskLogs,
+    loading: taskLogsLoading,
+    error: taskLogsError,
+    expandedKeys: expandedTaskLogKeys,
+    reload: loadTaskLogs,
+    onExpandedRowsChange,
+  } = useCrawlTaskLogs({
+    apiClient,
+    canView,
+    canViewTaskLogs,
+    authenticated: status === "authenticated",
+    taskId,
+    message,
+  });
 
   const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
   const [updateIngestToItems, { loading: updatingIngest }] =
@@ -207,102 +199,12 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     createItemFromCrawlResult: { id: string; title: string; status: string };
   }>(CREATE_ITEM_FROM_CRAWL_RESULT_MUTATION);
 
-  const loadTaskLogs = useCallback(
-    async (options?: { silent?: boolean }) => {
-      if (!canViewTaskLogs) {
-        return;
-      }
-      if (taskLogsLoadingRef.current) {
-        return;
-      }
-      const silent = options?.silent === true;
-      taskLogsLoadingRef.current = true;
-      if (!silent) {
-        setTaskLogsLoading(true);
-        setTaskLogsError(null);
-      }
-      try {
-        const res = await apiClient.get<TaskLogRecord[]>(
-          "admin/quality/task-logs",
-          {
-            params: {
-              queue: "crawl4ai",
-              jobId: taskId,
-              limit: 100,
-            },
-          },
-        );
-        setTaskLogs(Array.isArray(res.data) ? res.data : []);
-        setTaskLogsError(null);
-      } catch (error: unknown) {
-        const reason = error instanceof Error ? error.message : String(error);
-        if (!silent) {
-          setTaskLogsError(reason);
-          message.error(reason);
-        }
-      } finally {
-        if (!silent) {
-          setTaskLogsLoading(false);
-        }
-        taskLogsLoadingRef.current = false;
-      }
-    },
-    [apiClient, canViewTaskLogs, message, taskId],
-  );
-
-  const currentTaskStatus = data?.crawlTask?.status;
+  const currentTaskStatus = task?.status;
   const shouldTrackInFlightTask =
     currentTaskStatus === "pending" ||
     currentTaskStatus === "queued" ||
     currentTaskStatus === "running";
 
-  useEffect(() => {
-    if (!canView) {
-      stopPolling();
-      return;
-    }
-    if (
-      opsSocketBootstrappingRef.current ||
-      opsLiveStatus === "connected" ||
-      opsLiveStatus === "connecting"
-    ) {
-      stopPolling();
-      return;
-    }
-    if (shouldTrackInFlightTask) {
-      startPolling(3000);
-      return;
-    }
-    stopPolling();
-  }, [
-    canView,
-    opsLiveStatus,
-    shouldTrackInFlightTask,
-    startPolling,
-    stopPolling,
-  ]);
-
-  useEffect(() => {
-    if (!canViewTaskLogs || !canView || status !== "authenticated") {
-      return;
-    }
-    void loadTaskLogs();
-  }, [canView, canViewTaskLogs, loadTaskLogs, status]);
-
-  useEffect(() => {
-    setExpandedTaskLogKeys((current) => {
-      const next = current.filter((key) =>
-        taskLogs.some((log) => log.id === key),
-      );
-      return next.length === current.length ? current : next;
-    });
-  }, [taskLogs]);
-
-  useEffect(() => {
-    setExpandedTaskLogKeys([]);
-  }, [taskId]);
-
-  const task = data?.crawlTask ?? null;
   const config = useMemo(() => {
     if (!task?.config) {
       return null;
@@ -340,169 +242,16 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       : null;
   }, [config]);
 
-  const scheduleOpsRefresh = useCallback(
-    (options?: { task?: boolean }) => {
-      if (!canView) {
-        return;
-      }
-      pendingOpsRefreshRef.current.task =
-        pendingOpsRefreshRef.current.task || options?.task !== false;
-      if (opsRefreshTimerRef.current) {
-        return;
-      }
-      opsRefreshTimerRef.current = window.setTimeout(() => {
-        opsRefreshTimerRef.current = null;
-        const pending = pendingOpsRefreshRef.current;
-        pendingOpsRefreshRef.current = { task: false };
-        if (pending.task) {
-          void refetch();
-        }
-      }, 700);
-    },
-    [canView, refetch],
-  );
-
-  useEffect(() => {
-    if (!canView || !session?.accessToken) {
-      opsSocketBootstrappingRef.current = false;
-      setOpsLiveStatus("disconnected");
-      setOpsLiveError(null);
-      return;
-    }
-
-    opsSocketBootstrappingRef.current = true;
-    setOpsLiveStatus("connecting");
-    setOpsLiveError(null);
-    let hasConnectedOnce = false;
-    const socket = io(`${env.apiRoot}/ops`, {
-      auth: { token: session.accessToken },
-      transports: ["websocket"],
-      withCredentials: true,
-      autoConnect: false,
-      timeout: REALTIME_SOCKET_TIMEOUT_MS,
-    });
-    opsSocketRef.current = socket;
-    const connectTimer = window.setTimeout(() => {
-      socket.connect();
-    }, 0);
-
-    const handleConnect = () => {
-      opsSocketBootstrappingRef.current = false;
-      setOpsLiveStatus("connected");
-      setOpsLiveError(null);
-      if (hasConnectedOnce) {
-        scheduleOpsRefresh({ task: true });
-        return;
-      }
-      hasConnectedOnce = true;
-    };
-    const getLocalizedError = (
-      payload:
-        | { code?: string; message?: string; retryAfterMs?: number }
-        | undefined,
-      fallbackKind: "socket" | "connect",
-    ) =>
-      formatRealtimeSocketError(payload, t, {
-        keyPrefix: "crawl.liveUpdates.connectionError",
-        fallbackKind,
-        defaults: {
-          unauthorized: "Crawl realtime access expired. Please sign in again.",
-          tooManyConnections:
-            "Crawl realtime connections are at capacity. Please try again later.",
-          tooManyConnectionAttempts:
-            "Too many crawl realtime connection attempts. Please try again later.",
-          rateLimitExceeded:
-            "Crawl realtime connection attempts are too frequent. Please try again later.",
-          tooManyFailedAttempts:
-            "Too many failed crawl realtime sign-in attempts. Please try again later.",
-          timeout: "Connecting to crawl realtime timed out. Please try again.",
-          network:
-            "Unable to connect to crawl realtime. Please check the network and try again.",
-          connect:
-            "Unable to connect to crawl realtime right now. Please try again later.",
-          socket:
-            "Crawl realtime connection is unstable. Please try again later.",
-        },
-      });
-    const handleDisconnect = (reason: string) => {
-      opsSocketBootstrappingRef.current = false;
-      setOpsLiveStatus("disconnected");
-      if (reason === "io client disconnect") {
-        setOpsLiveError(null);
-        return;
-      }
-      setOpsLiveError((currentError) =>
-        currentError ?? getLocalizedError({ message: reason }, "socket"),
-      );
-    };
-    const handleConnectError = (
-      error: { code?: string; message?: string; retryAfterMs?: number },
-    ) => {
-      opsSocketBootstrappingRef.current = false;
-      setOpsLiveStatus("disconnected");
-      setOpsLiveError(getLocalizedError(error, "connect"));
-    };
-    const handleServerError = (payload: unknown) => {
-      const candidate =
-        payload && typeof payload === "object" && !Array.isArray(payload)
-          ? (payload as {
-              code?: string;
-              message?: string;
-              retryAfterMs?: number;
-            })
-          : undefined;
-      opsSocketBootstrappingRef.current = false;
-      setOpsLiveStatus("disconnected");
-      setOpsLiveError(getLocalizedError(candidate, "socket"));
-    };
-    const handleEvent = (payload: unknown) => {
-      const refreshDecision = getCrawlTaskDetailOpsRefreshDecision(payload, {
-        taskId,
-        pipelineJobId,
-      });
-      if (!refreshDecision) {
-        return;
-      }
-      scheduleOpsRefresh(refreshDecision);
-    };
-
-    socket.on("connect", handleConnect);
-    socket.on("disconnect", handleDisconnect);
-    socket.on("connect_error", handleConnectError);
-    socket.on("ops:error", handleServerError);
-    socket.on("ops:event", handleEvent);
-
-    return () => {
-      window.clearTimeout(connectTimer);
-      socket.off("connect", handleConnect);
-      socket.off("disconnect", handleDisconnect);
-      socket.off("connect_error", handleConnectError);
-      socket.off("ops:error", handleServerError);
-      socket.off("ops:event", handleEvent);
-      socket.disconnect();
-      if (opsSocketRef.current === socket) {
-        opsSocketRef.current = null;
-      }
-      opsSocketBootstrappingRef.current = false;
-    };
-  }, [
+  const { status: opsLiveStatus, error: opsLiveError } = useCrawlTaskOpsLive({
     canView,
-    pipelineJobId,
-    scheduleOpsRefresh,
-    session?.accessToken,
+    accessToken: session?.accessToken,
     taskId,
-    t,
-  ]);
-
-  useEffect(() => {
-    return () => {
-      if (opsRefreshTimerRef.current) {
-        window.clearTimeout(opsRefreshTimerRef.current);
-        opsRefreshTimerRef.current = null;
-      }
-      pendingOpsRefreshRef.current = { task: false };
-    };
-  }, []);
+    pipelineJobId,
+    shouldTrackInFlightTask,
+    refetch,
+    startPolling,
+    stopPolling,
+  });
 
   const virtualScrollSummary = useMemo(() => {
     if (
@@ -2785,8 +2534,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             locale={{ emptyText: t("common.empty") }}
             expandable={{
               expandedRowKeys: expandedTaskLogKeys,
-              onExpandedRowsChange: (expandedRows) =>
-                setExpandedTaskLogKeys(expandedRows.map((key) => String(key))),
+              onExpandedRowsChange,
               expandRowByClick: true,
               rowExpandable: (record) => Boolean(record.data || record.error),
               expandedRowRender: (record) => (
@@ -2987,27 +2735,13 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                 placeholder={t("crawl.detail.results.searchPlaceholder")}
                 allowClear
                 value={resultSearchInput}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setResultSearchInput(value);
-                  if (!value) {
-                    setResultSearch(undefined);
-                  }
-                }}
-                onPressEnter={() => {
-                  const nextValue = resultSearchInput.trim();
-                  setResultSearch(nextValue || undefined);
-                  setResultSearchInput(nextValue);
-                }}
+                onChange={(event) => changeSearchInput(event.target.value)}
+                onPressEnter={() => submitSearchInput()}
               />
               <Button
                 icon={<SearchOutlined />}
                 aria-label={t("crawl.detail.results.searchPlaceholder")}
-                onClick={() => {
-                  const nextValue = resultSearchInput.trim();
-                  setResultSearch(nextValue || undefined);
-                  setResultSearchInput(nextValue);
-                }}
+                onClick={() => submitSearchInput()}
               />
             </Space.Compact>
             <Select
