@@ -440,6 +440,86 @@ describe("WarMap（迁移前 characterization）", () => {
       expect(warMapTestRuntime.instances[1]?.destroyed).toBe(false);
     });
 
+    it("retry 后新 overlay 立即恢复最后一份 layers/getTooltip/getCursor", async () => {
+      const responses = buildStandardWarMapResponses();
+      responses["dashboard/war-map/events"] = {
+        events: [buildWarMapEventFixture({ id: "e1", lat: 35, lng: 105 })],
+        updatedAt: "2026-01-05T00:00:00Z",
+      };
+      resetWarMapTestState({ responses });
+      renderWarMap();
+      await activateMap();
+
+      // 首个 runtime：业务图层与 tooltip/cursor 已应用到第一个 overlay
+      await waitForDeckLayer("wm-events-symbols-primary");
+      const firstOverlay = warMapTestRuntime.instances[0]!.overlay;
+      await waitFor(() => {
+        const applied = warMapTestRuntime.overlayPropsCalls.filter(
+          (call) => call.overlay === firstOverlay,
+        );
+        expect(applied.length).toBeGreaterThan(0);
+        const last = applied.at(-1)!.props as {
+          layers?: { id?: string }[];
+          getTooltip?: unknown;
+          getCursor?: unknown;
+        };
+        expect(last.layers?.map((layer) => layer.id)).toContain(
+          "wm-events-symbols-primary",
+        );
+        expect(typeof last.getTooltip).toBe("function");
+        expect(typeof last.getCursor).toBe("function");
+      });
+
+      // retry 前最后一份有效 props 与调用水位
+      const lastCallBeforeRetry = warMapTestRuntime.overlayPropsCalls.at(-1)!;
+      const propsBeforeRetry = lastCallBeforeRetry.props as {
+        layers: { id?: string }[];
+        getTooltip: unknown;
+        getCursor: unknown;
+      };
+      const layerIdsBeforeRetry = propsBeforeRetry.layers.map(
+        (layer) => layer.id,
+      );
+      const callsBeforeRetry = warMapTestRuntime.overlayPropsCalls.length;
+
+      // 触发地图错误 → Retry：不改变查询数据、hover、选中或任何图层依赖
+      emitWarMapMapEvent("error", { error: new Error("boom") });
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Retry" }),
+        ).toBeInTheDocument();
+      });
+      await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+      await waitFor(() => {
+        expect(warMapTestRuntime.createdCount).toBe(2);
+      });
+      expect(warMapTestRuntime.destroyedCount).toBe(1);
+      expect(warMapTestRuntime.instances[0]?.destroyed).toBe(true);
+      expect(warMapTestRuntime.instances[1]?.destroyed).toBe(false);
+
+      // 针对第二个 overlay 断言：不等待 load/数据/交互变化，立即收到
+      // retry 前最后一份有效 overlay props（layers/getTooltip/getCursor）
+      const secondOverlay = warMapTestRuntime.instances[1]!.overlay;
+      const secondOverlayCall = warMapTestRuntime.overlayPropsCalls
+        .slice(callsBeforeRetry)
+        .find((call) => call.overlay === secondOverlay);
+      expect(secondOverlayCall).toBeDefined();
+      const secondOverlayProps = secondOverlayCall!.props as {
+        layers?: { id?: string }[];
+        getTooltip?: unknown;
+        getCursor?: unknown;
+      };
+      expect(secondOverlayProps.layers?.map((layer) => layer.id)).toEqual(
+        layerIdsBeforeRetry,
+      );
+      expect(secondOverlayProps.layers?.map((layer) => layer.id)).toContain(
+        "wm-events-symbols-primary",
+      );
+      expect(typeof secondOverlayProps.getTooltip).toBe("function");
+      expect(typeof secondOverlayProps.getCursor).toBe("function");
+    });
+
     it("卸载时销毁地图与 overlay（无实例泄漏）", async () => {
       const { unmount } = renderWarMap();
       await activateMap();
