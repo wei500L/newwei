@@ -346,7 +346,7 @@ describe("CrawlTaskDetail presentation（加载态 / 头部 / 告警 / 策略 / 
     queueTaskLogsResponse(logs);
     rerenderTaskId("task-2");
     await waitFor(() => expect(testTaskLogs.calls)).toHaveLength(2);
-    expect(testTaskLogs.calls[1].params).toEqual({
+    expect(testTaskLogs.calls[1]!.params).toEqual({
       queue: "crawl4ai",
       jobId: "task-2",
       limit: 100,

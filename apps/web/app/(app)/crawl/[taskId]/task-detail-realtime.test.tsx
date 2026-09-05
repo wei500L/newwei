@@ -75,7 +75,7 @@ describe("CrawlTaskDetail realtime（Socket /ops + 合并刷新 + fallback polli
     renderCrawlTaskDetail({ accessToken: "token-1" });
 
     expect(testOpsSocket.namespaces).toEqual(["http://localhost:4000/ops"]);
-    expect(testOpsSocket.options[0]).toMatchObject({
+    expect(testOpsSocket.options[0]!).toMatchObject({
       auth: { token: "token-1" },
       transports: ["websocket"],
       withCredentials: true,
@@ -83,12 +83,12 @@ describe("CrawlTaskDetail realtime（Socket /ops + 合并刷新 + fallback polli
       timeout: 10_000,
     });
     // 零延迟 timer 尚未触发时不得 connect
-    expect(testOpsSocket.instances[0].connectCalls).toBe(0);
+    expect(testOpsSocket.instances[0]!.connectCalls).toBe(0);
     await flushAsync(0);
-    expect(testOpsSocket.instances[0].connectCalls).toBe(1);
+    expect(testOpsSocket.instances[0]!.connectCalls).toBe(1);
     // 5 类监听：connect/disconnect/connect_error/ops:error/ops:event
     expect(
-      testOpsSocket.instances[0].listeners.map((listener) => listener.event),
+      testOpsSocket.instances[0]!.listeners.map((listener) => listener.event),
     ).toEqual(
       expect.arrayContaining([
         "connect",
@@ -329,10 +329,10 @@ describe("CrawlTaskDetail realtime（Socket /ops + 合并刷新 + fallback polli
 
     await flushAsync(1_000);
     expect(crawlTaskRequestCount(view)).toBe(initial);
-    expect(testOpsSocket.instances[0].destroyed).toBe(true);
-    expect(testOpsSocket.instances[0].listeners).toEqual([]);
+    expect(testOpsSocket.instances[0]!.destroyed).toBe(true);
+    expect(testOpsSocket.instances[0]!.listeners).toEqual([]);
     expect(
-      testOpsSocket.instances[0].offCalls.map((call) => call.event),
+      testOpsSocket.instances[0]!.offCalls.map((call) => call.event),
     ).toEqual(
       expect.arrayContaining([
         "connect",
@@ -361,8 +361,8 @@ describe("CrawlTaskDetail realtime（Socket /ops + 合并刷新 + fallback polli
     await flushAsync(0);
 
     expect(testOpsSocket.instances).toHaveLength(2);
-    expect(testOpsSocket.instances[0].destroyed).toBe(true);
-    expect(testOpsSocket.instances[0].listeners).toEqual([]);
-    expect(testOpsSocket.namespaces[1]).toBe("http://localhost:4000/ops");
+    expect(testOpsSocket.instances[0]!.destroyed).toBe(true);
+    expect(testOpsSocket.instances[0]!.listeners).toEqual([]);
+    expect(testOpsSocket.namespaces[1]!).toBe("http://localhost:4000/ops");
   });
 });

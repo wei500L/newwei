@@ -183,7 +183,7 @@ describe("CrawlTaskDetail access（权限 fail-closed）", () => {
 
     expect(await screen.findByText("Task logs")).toBeInTheDocument();
     await waitFor(() => expect(testTaskLogs.calls).toHaveLength(1));
-    expect(testTaskLogs.calls[0]).toEqual({
+    expect(testTaskLogs.calls[0]!).toEqual({
       url: "admin/quality/task-logs",
       params: { queue: "crawl4ai", jobId: "task-1", limit: 100 },
     });

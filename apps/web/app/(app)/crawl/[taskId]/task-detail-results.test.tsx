@@ -62,7 +62,7 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
 
     const input = await screen.findByPlaceholderText("Enter Search");
     await waitFor(() =>
-      expect(apollo.taskVariables[0]).toEqual({
+      expect(apollo.taskVariables[0]!).toEqual({
         id: "task-1",
         resultLimit: 20,
         resultSearch: null,

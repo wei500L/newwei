@@ -69,11 +69,11 @@ function backfillMessageCalls(kind: "success" | "error" | "info" | "warning" | "
 async function confirmAndRunBackfill(): Promise<void> {
   fireEvent.click(screen.getByRole("button", { name: "Backfill to Items" }));
   await waitFor(() => expect(testModalConfirm.calls).toHaveLength(1));
-  expect(testModalConfirm.calls[0].title).toBe(
+  expect(testModalConfirm.calls[0]!.title).toBe(
     "Send missing results to Items?",
   );
   await act(async () => {
-    await testModalConfirm.calls[0].onOk?.();
+    await testModalConfirm.calls[0]!.onOk?.();
   });
 }
 
@@ -363,7 +363,7 @@ describe("CrawlTaskDetail actions（retry / ingest / backfill / create item）",
     // Modal.confirm mock 同步记录
     expect(testModalConfirm.calls).toHaveLength(1);
     await act(async () => {
-      void testModalConfirm.calls[0].onOk?.();
+      void testModalConfirm.calls[0]!.onOk?.();
       await vi.advanceTimersByTimeAsync(15_000);
     });
 
@@ -463,12 +463,12 @@ describe("CrawlTaskDetail actions（retry / ingest / backfill / create item）",
     });
     expect(buttons).toHaveLength(2);
     apollo.createItemHang = true;
-    fireEvent.click(buttons[0]);
+    fireEvent.click(buttons[0]!);
 
     await waitFor(() =>
-      expect(buttons[0].className).toContain("ant-btn-loading"),
+      expect(buttons[0]!.className).toContain("ant-btn-loading"),
     );
-    expect(buttons[1].className).not.toContain("ant-btn-loading");
+    expect(buttons[1]!.className).not.toContain("ant-btn-loading");
   });
 
   it("create item 失败：错误消息，不跳转", async () => {
