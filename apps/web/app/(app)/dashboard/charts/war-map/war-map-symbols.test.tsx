@@ -44,10 +44,7 @@ const EN_T = ((key: string, options?: Record<string, unknown>) => {
   return `⟦${key}⟧`;
 }) as never;
 
-/** 以 key 的稳定子串断言翻译链路命中，而非组件内部实现。 */
-function expectKeyLabel(label: string, key: string) {
-  expect(label).toBe(`⟦${key}⟧`);
-}
+/** EN_T：将 key 包装为 ⟦key⟧ 以断言翻译链路命中，而非组件内部实现。 */
 
 describe("War Map symbols（FE-批4B characterization）", () => {
   describe("deck icon 与 SVG 确定性", () => {
@@ -211,25 +208,27 @@ describe("War Map symbols（FE-批4B characterization）", () => {
       expect(minimal.hiddenCount).toBe(items.length);
     });
 
-    it("transport 项目优先：无 flight 时以低优先级项替换出 flight", () => {
+    it("transport 项目优先：flight 出现在可见列表且总数不超过上限", () => {
+      // 8 项 > compact 上限 6；flight 位居列表尾部（低优先级段），
+      // 选择器以可移除项（signal-low 等）替换出 flight
       const items = [
         "signal-high",
         "signal-medium",
         "signal-low",
         "news-geocoded",
         "monitor",
+        "ais-vessel-generic",
+        "ais-disruption",
+        "flight",
       ].map((key) => ({ key, symbolKey: key as never, label: key }));
       const { visibleItems, hiddenCount } = selectVisibleQuickLegendItems({
         density: "compact",
-        items: [
-          ...items,
-          { key: "flight", symbolKey: "flight" as never, label: "flight" },
-        ],
+        items,
       });
       const keys = visibleItems.map((item) => item.key);
       expect(keys).toContain("flight");
       expect(visibleItems).toHaveLength(6);
-      expect(hiddenCount).toBe(1);
+      expect(hiddenCount).toBe(2);
     });
 
     it("ais 主项缺席时以可移除项替换补位", () => {
@@ -294,9 +293,9 @@ describe("War Map symbols（FE-批4B characterization）", () => {
   describe("label 与 i18n 链路", () => {
     it("全部 symbol key 的 label 经 t() 解析（无裸 key）", () => {
       for (const symbolKey of ALL_SYMBOL_KEYS) {
-        expectKeyLabel(
-          resolveWarMapLegendLabel(symbolKey, EN_T),
-          expect.stringContaining("dashboard.charts.warMap.legend."),
+        const label = resolveWarMapLegendLabel(symbolKey, EN_T);
+        expect(label).toMatch(
+          /^⟦dashboard\.charts\.warMap\.legend\.\w+⟧$/,
         );
       }
     });

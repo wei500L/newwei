@@ -149,10 +149,8 @@ const overlayViewModel = {
   | "detailedChainStatuses"
 >;
 
-function renderPanel(
-  overrides?: Partial<WarMapControlsPanelProps>,
-): ReturnType<typeof render> {
-  const props: WarMapControlsPanelProps = {
+function panelProps(overrides?: Partial<WarMapControlsPanelProps>): WarMapControlsPanelProps {
+  return {
     layoutVariant: "embedded",
     controlsSection: "view",
     useDrawerControls: false,
@@ -167,7 +165,12 @@ function renderPanel(
     ...overlayViewModel,
     ...overrides,
   };
-  return render(<WarMapControlsPanel {...props} />);
+}
+
+function renderPanel(
+  overrides?: Partial<WarMapControlsPanelProps>,
+): ReturnType<typeof render> {
+  return render(<WarMapControlsPanel {...panelProps(overrides)} />);
 }
 
 describe("WarMapControlsPanel（FE-批4B characterization）", () => {
@@ -189,12 +192,18 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
     expect(view.onResetLayers).toHaveBeenCalledTimes(1);
   });
 
-  it("页签切换：view → transport → feeds，onControlsSectionChange 收到 key", async () => {
+  it("页签切换：点击 Transport 页签回调切节命令；受控切到 transport 后渲染分析入口", async () => {
     const onControlsSectionChange = vi.fn();
-    renderPanel({ onControlsSectionChange });
+    const { rerender } = renderPanel({ onControlsSectionChange });
     await userEvent.click(screen.getByRole("button", { name: "Transport" }));
     expect(onControlsSectionChange).toHaveBeenCalledWith("transport");
-    // transport 内容出现（页面切到 transport 节）
+
+    // 受控更新 controlsSection 后 transport 内容出现
+    rerender(
+      <WarMapControlsPanel
+        {...panelProps({ controlsSection: "transport" })}
+      />,
+    );
     expect(
       screen.getByRole("button", {
         name: "⟦dashboard.charts.warMap.actions.analyzeCurrentView⟧",
@@ -224,12 +233,13 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
   });
 
   it("transport 节：分析按钮权限门禁与提交", async () => {
-    renderPanel({ controlsSection: "transport" });
+    const { unmount } = renderPanel({ controlsSection: "transport" });
     const analyze = screen.getByRole("button", {
       name: "⟦dashboard.charts.warMap.actions.analyzeCurrentView⟧",
     });
     await userEvent.click(analyze);
     expect(transport.analysis.onSubmit).toHaveBeenCalledTimes(1);
+    unmount();
 
     renderPanel({
       controlsSection: "transport",
@@ -306,9 +316,11 @@ describe("WarMapControlsPanel（FE-批4B characterization）", () => {
     expect(onLegendItemFocus).toHaveBeenCalledWith(null);
   });
 
-  it("header summary：windowLabel 与指标卡渲染（view 节）", () => {
+  it("header summary：window 胶囊与指标卡渲染（view 节）", () => {
     renderPanel();
-    expect(screen.getByText("7d")).toBeInTheDocument();
+    // window 胶囊内 7d 与指标卡数值 12（时间范围按钮的 7d 属于 View 节选项，
+    // header 胶囊同样包含 7d，用 getAllByText 锁定至少出现）
+    expect(screen.getAllByText("7d").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("12")).toBeInTheDocument();
   });
 

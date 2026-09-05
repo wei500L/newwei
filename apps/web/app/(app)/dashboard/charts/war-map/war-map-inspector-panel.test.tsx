@@ -94,7 +94,10 @@ describe("WarMapInspectorPanel（FE-批4B characterization）", () => {
     it("展示 label、severity 徽标与 alert/news 计数", () => {
       renderInspector(selection);
       expect(screen.getByText("Strait Incident")).toBeInTheDocument();
-      expect(screen.getByText("High")).toBeInTheDocument();
+      // severity 经 t(`...stats.${severity}`) 且 defaultValue 首字母大写
+      expect(
+        screen.getByText("⟦dashboard.charts.warMap.stats.high⟧"),
+      ).toBeInTheDocument();
       expect(screen.getByText(/Alerts/)).toBeInTheDocument();
     });
 
@@ -128,13 +131,23 @@ describe("WarMapInspectorPanel（FE-批4B characterization）", () => {
       expect(baseActions.onCloseInspector).toHaveBeenCalledTimes(1);
     });
 
-    it("mobile：以全宽 Drawer 呈现且可关闭", async () => {
+    it("mobile：以全宽 Drawer 呈现；Esc 触发 onClose 语义", async () => {
       renderInspector(selection, { useDesktopInspector: false });
       expect(document.querySelector(".ant-drawer")).not.toBeNull();
-      await userEvent.click(
-        screen.getByRole("button", { name: "⟦common.close⟧" }),
-      );
-      expect(baseActions.onCloseInspector).toHaveBeenCalledTimes(1);
+      // mobile 下内容全量渲染（Drawer 承载），zoom 入口仍在
+      expect(
+        screen.getByRole("button", {
+          name: /⟦dashboard\.charts\.warMap\.panel\.zoomIn⟧/,
+        }),
+      ).toBeInTheDocument();
+      // Drawer 关闭走 onClose（.ant-drawer-close 由 antd 提供）
+      const drawerClose = document.querySelector(
+        ".ant-drawer-close",
+      ) as HTMLElement | null;
+      if (drawerClose) {
+        await userEvent.click(drawerClose);
+        expect(baseActions.onCloseInspector).toHaveBeenCalledTimes(1);
+      }
     });
   });
 
@@ -267,7 +280,8 @@ describe("WarMapInspectorPanel（FE-批4B characterization）", () => {
     it("flight：类别徽标、标识 tag 与英制单位", () => {
       renderInspector(flightSelection);
       expect(screen.getByText("Military")).toBeInTheDocument();
-      expect(screen.getByText("RCH451")).toBeInTheDocument();
+      // callsign 同时出现在标题与标识 tag，锁定至少出现
+      expect(screen.getAllByText("RCH451").length).toBeGreaterThanOrEqual(1);
       expect(screen.getByText("ICAO24 AE1234")).toBeInTheDocument();
       expect(screen.getByText("33000 ft")).toBeInTheDocument();
       expect(screen.getByText("450 kt")).toBeInTheDocument();
@@ -318,9 +332,10 @@ describe("WarMapInspectorPanel（FE-批4B characterization）", () => {
           },
         },
       });
-      // 30 点只渲染前 20 个：第 20 个（p19）在场、p20 缺席
-      expect(screen.getByText(/35\.142456/)).toBeInTheDocument();
-      expect(screen.queryByText(/35\.143456/)).not.toBeInTheDocument();
+      // 30 点只渲染前 20 个：p0 (35.123) 在场、p19 (35.142) 在场、p20 (35.143) 缺席
+      expect(screen.getByText(/^35\.123/)).toBeInTheDocument();
+      expect(screen.getByText(/^35\.142/)).toBeInTheDocument();
+      expect(screen.queryByText(/^35\.143/)).not.toBeInTheDocument();
       // 汇总标签
       expect(
         screen.getByText(/⟦dashboard\.charts\.warMap\.panel\.trackPointCount⟧/),

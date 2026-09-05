@@ -97,18 +97,18 @@ describe("WarMapOverlayRail（FE-批4B characterization）", () => {
       onToggleControls,
       openOverlayPanel: "controls",
     });
-    const controlsButton = screen.getByRole("button", { name: "Controls" });
+    const controlsButton = screen.getByRole("button", {
+      name: "⟦dashboard.charts.warMap.overlay.controls⟧",
+    });
     expect(controlsButton).toHaveAttribute("aria-expanded", "true");
     await userEvent.click(controlsButton);
     expect(onToggleControls).toHaveBeenCalledTimes(1);
 
-    rerender(
-      <WarMapOverlayRail
-        {...railProps({ openOverlayPanel: null })}
-      />,
-    );
+    rerender(<WarMapOverlayRail {...railProps({ openOverlayPanel: null })} />);
     expect(
-      screen.getByRole("button", { name: "Controls" }),
+      screen.getByRole("button", {
+        name: "⟦dashboard.charts.warMap.overlay.controls⟧",
+      }),
     ).toHaveAttribute("aria-expanded", "false");
   });
 
@@ -211,7 +211,7 @@ describe("WarMapOverlayRail（FE-批4B characterization）", () => {
 
   it("hidden count > 0 时显示 more 按钮并触发 onToggleLegend", async () => {
     const onToggleLegend = vi.fn();
-    // 10 项 > expanded 上限 7 → hidden 3
+    // 基础 8 项 + 3 附加项 = 11 项 > expanded 上限 7 → hidden 4
     const manyItems: WarMapLegendItem[] = [
       ...quickLegendItems,
       {
@@ -231,7 +231,7 @@ describe("WarMapOverlayRail（FE-批4B characterization）", () => {
       },
     ];
     renderRail({ quickLegendItems: manyItems, onToggleLegend });
-    const moreButton = screen.getByRole("button", { name: "+3 more" });
+    const moreButton = screen.getByRole("button", { name: "+4 more" });
     await userEvent.click(moreButton);
     expect(onToggleLegend).toHaveBeenCalledTimes(1);
   });
