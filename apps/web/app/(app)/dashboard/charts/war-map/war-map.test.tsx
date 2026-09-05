@@ -925,6 +925,25 @@ describe("WarMap（迁移前 characterization）", () => {
       expect(document.querySelector(".ant-drawer")).not.toBeNull();
     });
 
+    it("embedded 面板：rail 外 mousedown 关闭 controls 面板", async () => {
+      renderWarMap();
+      await activateMap();
+
+      fireEvent.click(screen.getByRole("button", { name: "Controls" }));
+      await waitFor(() => {
+        expect(screen.getByText("Regions")).toBeInTheDocument();
+      });
+
+      // rail 外区域 mousedown（Drawer 场景由 mask 负责，此处锁 inline 语义）
+      fireEvent.mouseDown(document.body);
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Controls" }),
+        ).toHaveAttribute("aria-expanded", "false");
+      });
+    });
+
     it("standalone 打开完整图例：关闭 Drawer 并下一帧滚动 legend dock", async () => {
       renderWarMap(<WarMap layoutVariant="standalone" />);
       await activateMap();

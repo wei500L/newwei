@@ -200,7 +200,7 @@ export function WarMap({
     points: pointsResult,
     overlayRailRef,
     legendDockRef,
-    useDrawerControls,
+    overlayPanelsInDrawer: standaloneLayout || useDrawerControls,
     useDesktopInspector,
     mapRef,
     queryZoom,

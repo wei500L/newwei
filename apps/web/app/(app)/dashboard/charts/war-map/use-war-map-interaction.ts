@@ -59,7 +59,12 @@ export interface UseWarMapInteractionOptions {
   overlayRailRef: RefObject<HTMLDivElement | null>;
   /** standalone legend dock（滚动定位目标）。 */
   legendDockRef: RefObject<HTMLDivElement | null>;
-  useDrawerControls: boolean;
+  /**
+   * overlay 面板是否以底部 Drawer 呈现（standalone 布局或 minimal
+   * 密度）。Drawer 内容在 rail 之外，其关闭由 Drawer mask 负责，
+   * rail 外 mousedown 不应误关 Drawer 内的面板。
+   */
+  overlayPanelsInDrawer: boolean;
   useDesktopInspector: boolean;
   mapRef: RefObject<MapLibreMap | null>;
   queryZoom: number;
@@ -167,7 +172,7 @@ export function useWarMapInteraction(
     points,
     overlayRailRef,
     legendDockRef,
-    useDrawerControls,
+    overlayPanelsInDrawer,
     useDesktopInspector,
     mapRef,
     queryZoom,
@@ -308,11 +313,13 @@ export function useWarMapInteraction(
     setDesktopInspectorMinimized(false);
   }, [selectedInspector?.key]);
 
-  // 桌面面板打开时，点击面板外区域关闭
+  // 桌面 inline 面板打开时，点击 rail 外区域关闭（overlay 面板以
+  // Drawer 呈现时豁免：Drawer 内容在 rail 之外，关闭由 Drawer mask
+  // 负责，rail 外 mousedown 不得误关 Drawer 内的面板）
   useEffect(() => {
     if (
       !openOverlayPanel ||
-      useDrawerControls ||
+      overlayPanelsInDrawer ||
       typeof document === "undefined"
     ) {
       return;
@@ -331,7 +338,7 @@ export function useWarMapInteraction(
 
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [openOverlayPanel, overlayRailRef, useDrawerControls]);
+  }, [openOverlayPanel, overlayPanelsInDrawer, overlayRailRef]);
 
   // Escape：优先关闭 overlay 面板，其次关闭桌面 Inspector
   useEffect(() => {
