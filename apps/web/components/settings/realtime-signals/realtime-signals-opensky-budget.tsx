@@ -13,15 +13,15 @@ import {
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import type {
-  RealtimeOpenskyBudgetSummary,
-  RealtimeSignalsSettingsResponse,
-} from "./realtime-signals-types";
 import {
   buildOpenskyBudgetView,
   formatPercentValue,
   openskyBudgetDegradationColor,
 } from "./realtime-signals-runtime-model";
+import type {
+  RealtimeOpenskyBudgetSummary,
+  RealtimeSignalsSettingsResponse,
+} from "./realtime-signals-types";
 
 export interface RealtimeSignalsOpenskyBudgetProps {
   openskyBudget: RealtimeOpenskyBudgetSummary | undefined;

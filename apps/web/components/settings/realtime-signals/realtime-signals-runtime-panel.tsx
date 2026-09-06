@@ -14,15 +14,15 @@ import {
 } from "antd";
 import { useTranslation } from "react-i18next";
 
+import { RealtimeSignalsMarkerReadiness, RealtimeSignalsInsights } from "./realtime-signals-marker-readiness";
+import { RealtimeSignalsOpenskyBudgetPanel } from "./realtime-signals-opensky-budget";
+import { runtimeStatusColor, runtimeStatusLabel } from "./realtime-signals-runtime-model";
+import { RealtimeSignalsSourceCard } from "./realtime-signals-source-card";
 import type {
   RealtimeSignalSourceKey,
   RealtimeSignalsSettingsResponse,
   RealtimeSignalsRuntimeDiagnosticsResponse,
 } from "./realtime-signals-types";
-import { RealtimeSignalsMarkerReadiness, RealtimeSignalsInsights } from "./realtime-signals-marker-readiness";
-import { RealtimeSignalsOpenskyBudgetPanel } from "./realtime-signals-opensky-budget";
-import { runtimeStatusColor, runtimeStatusLabel } from "./realtime-signals-runtime-model";
-import { RealtimeSignalsSourceCard } from "./realtime-signals-source-card";
 
 export interface RealtimeSignalsRuntimePanelProps {
   diagnostics: RealtimeSignalsRuntimeDiagnosticsResponse | null;

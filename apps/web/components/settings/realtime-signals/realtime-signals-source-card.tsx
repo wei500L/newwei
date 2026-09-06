@@ -15,7 +15,6 @@ import {
   formatRealtimeSignalErrorCode,
 } from "@/lib/realtime-signals-runtime";
 
-import type { RealtimeSignalRuntimeDiagnosticsSource } from "./realtime-signals-types";
 import {
   buildRuntimeFeedbackAlert,
   extractAisDiagnosticsView,
@@ -26,6 +25,7 @@ import {
   runtimeStatusLabel,
   summarizeRuntimeContext,
 } from "./realtime-signals-runtime-model";
+import type { RealtimeSignalRuntimeDiagnosticsSource } from "./realtime-signals-types";
 
 export interface RealtimeSignalsSourceCardProps {
   row: RealtimeSignalRuntimeDiagnosticsSource;
