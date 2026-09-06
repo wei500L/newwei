@@ -274,7 +274,10 @@ describe("CreateCrawlTaskDrawer（公共入口与三步流程）", () => {
     const form = document.querySelector("form");
     fireEvent.submit(form!);
 
-    await act(async () => {});
+    // 等待微任务链落定后确认门禁拦截（非空 async 体）
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(onSubmit).not.toHaveBeenCalled();
   });
 

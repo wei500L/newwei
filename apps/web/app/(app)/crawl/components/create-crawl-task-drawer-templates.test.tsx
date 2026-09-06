@@ -237,7 +237,9 @@ describe("CreateCrawlTaskDrawer（模板行为）", () => {
 
     // 用户主动切换到 forum——不再被 defaultTemplateKey 回写
     fireEvent.click(screen.getByText("Forum"));
-    await act(async () => {});
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(templateCard("Forum")).toHaveClass("border-primary");
     expect(handle.form.getFieldValue("scanFullPage")).toBe(true);
@@ -247,7 +249,9 @@ describe("CreateCrawlTaskDrawer（模板行为）", () => {
 
     // 再切换到 social——用户选择持续优先
     fireEvent.click(screen.getByText("Social Media"));
-    await act(async () => {});
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(templateCard("Social Media")).toHaveClass("border-primary");
     expect(handle.form.getFieldValue("headlessMode")).toBe("headed");
