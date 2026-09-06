@@ -54,6 +54,9 @@
 | FE-SUBMIT-01 | P2 | Create Drawer loading 期间 Enter/表单 submit 仍可重复触发 onSubmit | ✅ | FE-批5B（见 §3） |
 | FE-I18N-02 | P2 | Create Drawer 域 3 个 i18n 键缺失/丢插值占位符（reutersCf×2、jsStep 序号） | ✅ | FE-批5B（见 §3） |
 | FE-TPL-02 | P3 | Create Drawer proxy 告警分支不可达：undefined 键被 hasOwn 计入，恒为 error 级 | ⬜ | 开放（FE-批5B 登记，见 §4） |
+| FE-RT-01 | P1 | realtime-signals 初始 GET 失败后以 EMPTY_SETTINGS 填充表单并允许保存——默认值可覆盖未知持久化配置 | ✅ | FE-批6A（见 §3） |
+| FE-RT-02 | P2 | realtime-signals Save/Reset 无 handler 层互斥：表单 submit 路径可重复 PUT，PUT 与 DELETE 可并发 | ✅ | FE-批6A（见 §3） |
+| FE-RT-03 | P2 | realtime-signals diagnostics 加载失败污染 settings 域：错误横幅挂在整个页面，与设置加载失败无法区分 | ✅ | FE-批6A（见 §3） |
 
 ## 3. 已修复条目（详细）
 
@@ -151,6 +154,48 @@
 - **证据（静态引用审查）**：`rg` 全仓核对 `splitDeckPathSegments` / `buildSanitizedPathFeatures`——除定义处（war-map-geometry.ts 原第 129/170 行）外零命中：无生产调用、无测试调用、无 re-export（全仓无 `export *`）、无动态名称引用；唯一 import 该模块的生产文件 war-map-static-vector-layers.ts 实际消费的是 `buildSanitizedPathGeometry` / `buildSanitizedPolygonResult` / `isValidDeckCoordinate` / `DeckCoordinate`。两者均为对内部实现的一行投影包装（`.segments` / `.pathFeatures`）。
 - **处理**：删除两个包装导出（war-map-geometry.ts 277 → 267 行）；底层实现 `splitDeckPathGeometry` / `buildSanitizedPathGeometry` 保持不动（前者仍被模块内两处调用，后者仍被 static-vector-layers 消费）；无死类型或死 import 随之产生（DeckCoordinate / SanitizedDeckPathFeature / WarMapLayerFeature 均仍有消费者）；polygon/path 消毒行为不变。
 - **验证方式**：仅静态引用审查 + 远端 CI（lint/typecheck/web 测试/构建）；无运行时行为变化（删除的是零调用代码，不属可运行验证范畴）。
+
+### FE-RT-01：realtime-signals 初始 GET 失败后以 EMPTY_SETTINGS 填充表单并允许保存 — ✅ 已修复【FE-批6A 静态审查发现】
+
+- **现象**：面板初始 `GET system-settings/realtime-signals` 失败（网络错误/5xx）时，
+  旧实现 catch 分支执行 `setSettings(EMPTY_SETTINGS)` + `form.setFieldsValue(toFormValues(EMPTY_SETTINGS))`——
+  用户看到的是一份完整、可编辑、带默认值的「配置」，Save 按钮可用。用户保存即以
+  默认值 PUT 覆盖服务器上未知的持久化配置（或对 env 配置产生一次无意义写入）。
+- **根因**：`loadSettings` 的 catch 分支把「加载失败」与「加载成功但字段缺省」混同，
+  EMPTY_SETTINGS 同时承担「安全补全默认值」与「失败兜底」两个职责。
+- **修复**：`use-realtime-signals-settings.ts` 引入三态 `loadState`
+  （initialLoading / blockingError / ready）：settings 为 null 且 GET 失败 →
+  blockingError，根编排层不渲染 Form（Save/Reset 不可达），提供 Retry；Retry 成功
+  后以真实响应初始化表单。EMPTY_SETTINGS 仅经 `mergeSettingsDefaults` 用于成功响应
+  字段补全。已有真实数据后的刷新失败保留旧数据 + 非阻断警告（不满足阻断条件）。
+- **验证**：远端 jsdom（初始 GET 失败 → 无 Save/Reset、出现 Retry；Retry 成功 →
+  表单出现）；真实浏览器/真实后端未验证。
+
+### FE-RT-02：realtime-signals Save/Reset 无 handler 层互斥 — ✅ 已修复【FE-批6A 静态审查发现】
+
+- **现象**：旧实现仅靠按钮 loading/disabled 防重复。Form 的 onFinish 直连
+  `handleSubmit`——表单 submit 事件（Enter/编程式 submit）不经过按钮，saving 期间
+  可再发一次 PUT（与 FE-SUBMIT-01 同类）；Reset 按钮仅 `disabled={saving}`，
+  saving 期间 Modal 已弹出时确认仍可触发 DELETE 与 PUT 并发。快速双击在 loading
+  状态提交前亦可产生两次 PUT。
+- **修复**：`useRealtimeSignalsOperationGate`（useRef + state）：同一时刻最多一个
+  save/reset 操作；`save`/`reset` 入口先 `begin`（占用失败直接 return），
+  finally 中 `end` 释放；确认弹窗取消路径同样释放门禁（否则 Reset 永久锁死）。
+- **验证**：远端 jsdom（挂起 PUT 期间连点三次 submit → 仅一次 PUT）；
+  Save/Reset 并发与真实网络条件未验证。
+
+### FE-RT-03：realtime-signals diagnostics 加载失败污染 settings 域 — ✅ 已修复【FE-批6A 静态审查发现】
+
+- **现象**：旧实现两个数据域共享一个页面级渲染树：diagnostics GET 失败只显示错误
+  Alert（可接受），但错误横幅与 settings 的 errorMessage 渲染在同一层级，且
+  diagnostics 与 settings 初次加载失败都表现为「页面顶部一条 Alert」——用户无法
+  区分「配置加载失败（不能保存）」与「运行时诊断加载失败（可以继续保存）」；
+  diagnostics 的刷新按钮也无法从视觉上与设置表单状态解耦。
+- **修复**：`use-realtime-signals-diagnostics.ts` 独立状态域（loading/error/
+  diagnostics），错误 Alert 连同独立 Retry 收敛进 runtime 诊断 Card 内部；settings
+  表单照常渲染。初始并行加载保持（两个 hook 各自挂载即发起）。
+- **验证**：远端 jsdom（diagnostics GET 拒绝 → 表单仍在、诊断区错误可见）；
+  真实浏览器未验证。
 
 ## 4. 开放条目（待修复，按优先级排序）
 

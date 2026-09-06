@@ -73,7 +73,8 @@
 | P1 | war-map.tsx 4420 | 图层渲染 / 交互面板 / inspector / 数据装配 四层；图表逻辑下沉 hooks |
 | P1 | alert-center.tsx 4074 → 2851（PR #4 已合并）→ ~490（FE-批3B，PR #5） | 证据域四组件 + 图表构建器 + URL 状态（FE-01）+ DataStateBoundary 已落地（PR #4）；FE-批3B 完成筛选/列表/工具栏/行/摘要组件、五个详情页签、七个领域 hooks 与 detail-model/actions/data-state 纯模块拆分，根组件收敛为编排层（权限装配/hooks 组合/DataStateBoundary 分派）；第四轮收口补领域契约层（List/Toolbar/Detail 33/19/39 → 6/2/11 具名 model/controller，见 alert-event-controllers.ts） |
 | P1 | task-detail.tsx 3822 + CreateCrawlTaskDrawer 3147 | 抓取域共抽 crawl-task 原语（表单分步/结果表格/元数据卡） |
-| P2 | realtime-signals 3014 · crawl-monitor 2993 · quality 2875 | 设置面板按 signal 域拆分；监控页用 PageContainer+DataStateBoundary 重排 |
+| P2 | realtime-signals 3014 → 240 编排层（FE-批6A，PR #13）：设置/诊断双状态域 hooks + 三层信息架构（overview 摘要 → runtime 诊断卡 → 配置表单各领域 section）；顺修 FE-RT-01/02/03 | ✅ 远端 CI 已验证（真实浏览器未验证） |
+| P2 | crawl-monitor 2993 · quality 2875 | 后续批次（FE-批6B+） |
 
 规则：每批拆解**先建测试再动文件**（现有 3 文件 5 用例基础太薄，FE-03 先修 coverage include）；纯移动不改逻辑；一批一 PR 可回滚。
 
@@ -99,6 +100,7 @@ REST     → 单一类型化客户端（现 apiClient）+ TanStack Query（缓�
 | FE-批4 | war-map 重构——**代表页试点 2**（最大最复杂，验证原语够用）。批4A（PR #6）：核心运行时/图层域拆分（war-map.tsx 4412 → 496）；批4B（PR #7）：面板/符号/Inspector/Overlay 展示域拆分（五个巨型文件全部完成模块化，props 收敛为领域切片，a11y/i18n 收口）；批4B 合并后收口（follow-up PR）：勘误 PR #7「全部新模块 ≤500 行」（合并时 symbol-svg 591 / legend-model 576 超限）并续拆为五个纯模块 + 公共装配（最大 376 行），FE-DD-01 死导出清理，验收文档修正 | revert |
 | FE-批5 | crawl task-detail 重构——**代表页试点 3**（3822 行 → 281 行编排层）。批5A（PR #9）：先建 61 例 characterization 保护网（旧实现远端跑绿），再拆媒体/表格、查询/实时/日志 hooks、config models、操作/回填/结果域；全部新增生产模块 ≤500 行；两个消费入口共用同一 CrawlTaskDetail；权限/GraphQL/Socket/polling/logs/backfill/results 契约由保护网锁定。CreateCrawlTaskDrawer（3147 行）留批5B | revert |
 | FE-批5B | CreateCrawlTaskDrawer 拆分（3147 行 → 134 行编排层 + 24 领域模块，全部 ≤500 行）。FE-TEST-01 mock 边界收口；保护网先行（68 例旧实现远端跑绿）；消费入口/Props/Form 契约锁定；8 处 as any 清零；FE-TPL-01/A11Y-03/SUBMIT-01/I18N-02 修复。realtime-signals/crawl-monitor/quality 未开始 | revert |
+| FE-批6A | realtime-signals 设置与诊断面板拆分（3009 行 → 240 行编排层 + 17 领域模块，全部 ≤500 行）。本轮以功能修复为核心（不先建 characterization）：FE-RT-01（初始 GET 失败以 EMPTY_SETTINGS 伪装服务器状态、可保存覆盖未知配置 → 三态 loadState 阻断 + Retry）、FE-RT-02（Save/Reset 无 handler 层互斥 → 操作门禁）、FE-RT-03（diagnostics 失败污染 settings 域 → 独立状态域 + 诊断区独立 Retry）；secret touched/omit/null 语义、API 路径/权限（settings.manage）、保存/重置/诊断展示契约全部保持；最小关键测试 2 例（阻断/Retry、secret 语义 + 单次 PUT + diagnostics 隔离）；crawl-monitor/quality 未开始（FE-批6B+） | revert |
 | FE-批5+ | 其余巨型组件（CreateCrawlTaskDrawer/realtime-signals/crawl-monitor/quality 等）按 §4 顺序分批；直接 fetch 迁移；FE-02/03 清理 | 逐 PR |
 
 验收：每批 `pnpm lint/typecheck + web test --coverage`（真实全仓覆盖率）+ 目标页人工冒烟清单；批 2 起每批补 1–2 个行为测试（用户可见断言，非源码文本断言）。
