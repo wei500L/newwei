@@ -7647,7 +7647,9 @@
         "loadFailed": "Failed to load realtime signals settings",
         "saveFailed": "Failed to save realtime signals settings",
         "badRequest": "Invalid input",
-        "resetFailed": "Failed to reset realtime signals settings"
+        "resetFailed": "Failed to reset realtime signals settings",
+        "loadFailedTitle": "Failed to load realtime signals settings",
+        "loadFailedDescription": "The saved configuration could not be loaded from the server. To avoid overwriting unknown settings with defaults, editing stays unavailable until the real configuration is loaded."
       },
       "modal": {
         "resetTitle": "Reset realtime signals settings",
