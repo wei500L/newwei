@@ -52,11 +52,11 @@ env:
   MYSQL_USER: root
   MYSQL_PASSWORD: secret
   MYSQL_DB: app
-  # --- NestJS apps/api 启动 env（NODE_ENV=production + CI=true 时 .env 文件被
-  #     忽略，全部来自本处；语义镜像 compose api 服务）。以下凭据仅作用于
-  #     本次 ephemeral CI 栈，随 runner 销毁。 ---
-  NODE_ENV: production
-  PORT: "4000"
+  # --- NestJS apps/api 启动 env（NODE_ENV=production 只在启动步骤注入——
+  #     不能放 job 级：会让 pnpm install 跳过 devDependencies，根包 prepare
+  #     的 husky 随之缺失而 install 失败。CI=true 时 .env 文件被忽略，全部
+  #     来自本处；语义镜像 compose api 服务）。以下凭据仅作用于本次
+  #     ephemeral CI 栈，随 runner 销毁。 ---
   MONGO_URI: mongodb://127.0.0.1:27017/app
   REDIS_HOST: 127.0.0.1
   REDIS_PORT: "6379"
@@ -159,8 +159,10 @@ jobs:
       - name: Start real NestJS api (:4000)
         run: |
           # 与 compose api 服务同一启动命令（pnpm --filter @modular/api run start
-          # = node dist/main.js，含 NODE_PATH 语义）；env 来自本 job。
-          pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          # = node dist/main.js，含 NODE_PATH 语义）；NODE_ENV=production 只在
+          # 本步骤注入（compose 同款运行态），env 其余来自 job env。
+          NODE_ENV=production PORT=4000 \
+            pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
           echo $! > /tmp/api-nestjs.pid
           for i in $(seq 1 90); do
             if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
