@@ -1,5 +1,6 @@
-// Package usersettings 是第二个真实业务迁移单元（Go-批2A）：
-// GET /api/user-settings/ui/onboarding 的 MySQL 只读查询与 normalization。
+// Package usersettings 是 user-settings 只读 GET 端点的 MySQL 查询与
+// normalization（Go-批2A：GET /api/user-settings/ui/onboarding；Go-批2B：
+// rss-reader 与 spacetime-timeline——三个确定性只读端点）。
 //
 // 契约对齐（NestJS UserSettingsService.getOnboardingUiSettings，
 // apps/api/src/modules/user-settings/user-settings.service.ts:1251-1273）：
@@ -12,7 +13,7 @@
 //     一致（DATETIME(3) 毫秒精度 → 固定毫秒位数的 UTC 格式）。
 //
 // 信任边界：本包不做鉴权——orgId/userId 由调用方（legacy-approved
-// shadow identity 门禁，见 cmd/api 的 onboarding shadow 接线）传入，
+// shadow identity 门禁，见 cmd/api 的 user-settings shadow 接线）传入，
 // 且只用于本次只读查询。
 //
 // 回滚：路由表单条规则改回 ModeLegacy，无数据迁移耦合。
@@ -22,9 +23,6 @@ import (
 	"encoding/json"
 	"time"
 )
-
-// OnboardingKey 是 onboarding 设置在 UserSetting 表中的固定存储 key。
-const OnboardingKey = "ui:onboarding:settings:v1"
 
 // onboardingStepKeys 与 NestJS ONBOARDING_STEP_KEYS 一一对应。
 var onboardingStepKeys = [4]string{"today", "events", "map", "finance"}
