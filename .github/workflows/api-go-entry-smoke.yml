@@ -1,0 +1,567 @@
+# Go-批2C：api-go 真实入口链的远端真实栈 smoke（手动触发）。
+#
+# 与普通 CI（ci.yml）的区别：这不是单元/集成测试，而是把已迁移的
+# Go Shadow 单元第一次放进「真实入口链」运行——
+#
+#   客户端 → api-go 容器 :4020 → NestJS apps/api :4000（真实进程）
+#                                   ↘ Go Shadow → 真实 MySQL（真实迁移后的 schema）
+#
+# 真实性约束（Go-批2C 任务书）：
+#   - 真实 MySQL/Redis/Mongo service 容器（与 docker-compose 同版本线）；
+#   - 真实 prisma migrate deploy（不是内存库/fixture）；
+#   - 真实 NestJS 进程（node apps/api/dist/main.js，非 fake upstream）；
+#   - 真实 api-go Docker 镜像（infra/docker/api-go.Dockerfile 构建，非 go run）；
+#   - 仓库既有 seed 机制创建可登录 org+admin；
+#   - 通过 api-go 入口调用真实 NestJS 登录端点获得其签发的 JWT（不手工伪造）；
+#   - 三个 user-settings PUT 经 api-go 代理由 NestJS 单写并真实持久化；
+#   - 四个 GET 经 api-go 入口执行（Go Shadow 真实读取主库并差分）；
+#   - /__go/healthz 前后指标断言：executed 精确增量、diffs/dropped 零增量、
+#     inflight 归零、userSettingsShadow.database=configured。
+#
+# 重型真实栈（4 个容器 + 全量 install/build）——不进 push/synchronize 的
+# 普通 CI。
+#
+# 触发方式：
+#   1. workflow_dispatch（主路径）：workflow 文件在默认分支注册后，
+#      `gh workflow run api-go-entry-smoke.yml --ref <branch>` 手动触发。
+#   2. pull_request types:[labeled] + label `api-go-entry-smoke`（PR 期间
+#      的路径）：GitHub 平台限制——workflow_dispatch 只能触发默认分支上
+#      已存在的 workflow 文件（API 对分支独有文件返回 404，见
+#      docs.github.com/en/actions/using-workflows/events-that-trigger-workflows）。
+#      PR 合并前用 label 手动触发（与 ci.yml 的 go-modules-regen /
+#      contract-baseline-regen label 门禁同一模式）；合并后走主路径。
+#      运行完成后移除 label——避免歧义。普通 push/synchronize 不触发。
+name: api-go-entry-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-entry-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  # --- 真实 MySQL（与 compose / ci.yml 的 api-go-user-settings-integration 同版本线） ---
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  # --- NestJS apps/api 启动 env（NODE_ENV=production 只在启动步骤注入——
+  #     不能放 job 级：会让 pnpm install 跳过 devDependencies，根包 prepare
+  #     的 husky 随之缺失而 install 失败。CI=true 时 .env 文件被忽略，全部
+  #     来自本处；语义镜像 compose api 服务）。以下凭据仅作用于本次
+  #     ephemeral CI 栈，随 runner 销毁。 ---
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  SMTP_USER: api-go-smoke@example.com
+  SMTP_PASS: api-go-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://localhost:11235
+  CORS_ORIGIN: http://localhost:3000
+  # 关闭可选外呼模块（ELASTICSEARCH/VECTOR/MODEL_SERVICE 默认即 false）；
+  # AKSHARE_ENABLED=false 只停 HTTP 网关调用（catalog 同步走 MySQL+Redis，
+  # 均已就绪）；SCHEDULE_ENABLED=false 关闭全部 @Cron 调度，降低噪音。
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  # --- seed（复用 packages/db 既有 seed：org + admin 用户 + 角色/membership/
+  #     permission 全套，可真实登录）。密码仅用于本次 ephemeral 栈。 ---
+  SEED_ORG_SLUG: api-go-smoke-org
+  SEED_ORG_NAME: api-go Smoke Org
+  SEED_ADMIN_EMAIL: api-go-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoSmoke#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-entry-smoke:
+    # 手动触发双路径（见文件头注释）：workflow_dispatch 直接进入；
+    # PR 期间靠 label `api-go-entry-smoke` 显式进入（label 添加是维护者
+    # 的手动动作，与 regen job 同一模式；普通 push/synchronize 事件
+    # 因 types:[labeled] 根本不会启动本 workflow）。
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-entry-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      mysql:
+        # 与 infra/docker/docker-compose.yml 的 mysql 服务同版本。
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        # 与 compose 的 redis 服务同版本线（REDIS_IMAGE 默认 redis:7.2）。
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        # 与 compose 的 mongo 服务同版本。
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+
+      - name: Real database migration (prisma migrate deploy)
+        run: pnpm --filter db run migrate
+
+      - name: Build NestJS api (dist/main.js)
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+
+      - name: Start real NestJS api (:4000)
+        run: |
+          # 与 compose api 服务同一启动命令（pnpm --filter @modular/api run start
+          # = node dist/main.js，含 NODE_PATH 语义）；NODE_ENV=production 只在
+          # 本步骤注入（compose 同款运行态），env 其余来自 job env。
+          NODE_ENV=production PORT=4000 \
+            pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs api healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "nestjs api failed to become healthy"
+          tail -100 /tmp/api-nestjs.log || true
+          exit 1
+
+      - name: Seed loginable org + admin (existing seed mechanism)
+        run: pnpm --filter db run seed
+
+      - name: Build api-go production image (infra/docker/api-go.Dockerfile)
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-entry-smoke:ci .
+
+      - name: Start api-go container (:4020, healthcheck subcommand)
+        run: |
+          # healthcheck 命令来自镜像内置的 exec 形式 HEALTHCHECK 指令
+          # （distroless 无 shell——字符串形式 health-cmd 会经 /bin/sh 执行
+          # 而失败）；这里只覆盖探测节奏加速等待。
+          docker run -d --name api-go-smoke \
+            --add-host=host.docker.internal:host-gateway \
+            --health-interval 5s \
+            --health-timeout 3s \
+            --health-retries 20 \
+            --health-start-period 5s \
+            -p 127.0.0.1:4020:4020 \
+            -e PORT=4020 \
+            -e LEGACY_API_URL=http://host.docker.internal:4000 \
+            -e DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app \
+            -e CANARY_PERCENT=0 \
+            -e SHADOW_DEBUG_BODY_LOG=false \
+            api-go-entry-smoke:ci
+          # 等待容器 healthcheck 真实通过（/api-go healthcheck → /__go/healthz，
+          # Go 原生路由——不产生 shadow 执行，不污染基线）。
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' api-go-smoke 2>/dev/null || echo starting)
+            echo "api-go container health: $status"
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            if [ "$status" = "unhealthy" ]; then
+              docker logs api-go-smoke || true
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "api-go container failed to become healthy"
+          docker logs api-go-smoke || true
+          exit 1
+
+      # ---- 以下 smoke 步骤全部经 api-go 入口（:4020）完成 ----
+
+      - name: Smoke 0/6 — baseline shadow stats (/__go/healthz)
+        run: |
+          cat > /tmp/smoke_baseline.py <<'PY'
+          import json
+          import urllib.request
+
+          with urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=10) as resp:
+              doc = json.load(resp)
+          assert doc.get("ok") is True, doc
+          assert doc.get("userSettingsShadow", {}).get("database") == "configured", doc
+          with open("/tmp/shadow-baseline.json", "w") as f:
+              json.dump(doc["shadow"], f)
+          print("userSettingsShadow.database: configured")
+          print("baseline shadow:", json.dumps(doc["shadow"], sort_keys=True))
+          PY
+          python3 /tmp/smoke_baseline.py
+
+      - name: Smoke 1/6 — real login via api-go (NestJS-issued JWT)
+        run: |
+          cat > /tmp/smoke_login.py <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          TRACE = "5f1e2d3c4b5a69788697a5b4c3d2e1f0"
+          body = json.dumps({
+              "email": os.environ["SEED_ADMIN_EMAIL"],
+              "password": os.environ["SEED_ADMIN_PASSWORD"],
+          }).encode()
+          req = urllib.request.Request(
+              "http://127.0.0.1:4020/api/auth/login",
+              data=body,
+              method="POST",
+              headers={"content-type": "application/json", "x-trace-id": TRACE},
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=15) as resp:
+                  status, headers, payload = resp.status, resp.headers, resp.read()
+          except urllib.error.HTTPError as err:
+              raise SystemExit(f"login via api-go returned {err.code}: {err.read()[:500]!r}")
+          assert status == 200, status
+          # trace header 在入口链保持一致（api-go TraceMiddleware 回写同值）。
+          assert headers.get("x-trace-id") == TRACE, dict(headers)
+          doc = json.loads(payload)
+          token = doc.get("accessToken") or ""
+          assert token.count(".") == 2 and len(token) > 40, "login response missing JWT accessToken"
+          # JWT 只写入临时文件供后续步骤使用，不回显（不进日志）。
+          with open("/tmp/smoke-jwt", "w") as f:
+              f.write(token)
+          print(f"login ok via api-go -> NestJS: tokenType={doc.get('tokenType')} "
+                f"expiresIn={doc.get('expiresIn')} (JWT saved to tmp, not echoed)")
+          print(f"trace header propagated: x-trace-id={headers.get('x-trace-id')}")
+          PY
+          python3 /tmp/smoke_login.py
+
+      - name: Smoke 2/6 — three user-settings PUTs via api-go (NestJS single-writer)
+        run: |
+          cat > /tmp/smoke_put.py <<'PY'
+          import json
+          import urllib.error
+          import urllib.request
+
+          TRACE = "5f1e2d3c4b5a69788697a5b4c3d2e1f0"
+          token = open("/tmp/smoke-jwt").read().strip()
+
+          # 三个端点各写入与默认值不同的确定性 settings（每个端点独立 payload，
+          # 后续 GET 断言各自读回自己的 key——证明无跨 key 串读）。
+          # expected 是 NestJS normalization 之后的期望值（如 RSS 语言过滤
+          # 统一大写）——PUT 响应即 GET 形状，按 normalized 值断言。
+          PUTS = {
+              "/api/user-settings/ui/onboarding": {
+                  "settings": {
+                      "completed": True,
+                      "dismissed": True,
+                      "checklist": {"today": True, "events": True, "map": True, "finance": False},
+                      "completedTours": {"today": True},
+                  },
+                  "expected": {
+                      "completed": True,
+                      "dismissed": True,
+                      "checklist": {"today": True, "events": True, "map": True, "finance": False},
+                      "completedTours": {"today": True},
+                  },
+              },
+              "/api/user-settings/ui/rss-reader": {
+                  "settings": {
+                      "selectedSourceIds": ["src-alpha", "src-beta"],
+                      "sourceLanguageFilters": ["en", "ZH"],
+                      "translationEnabled": True,
+                      "translationProvider": "llm",
+                      "targetLanguage": "en-US",
+                      "showOriginalContent": True,
+                  },
+                  "expected": {
+                      "selectedSourceIds": ["src-alpha", "src-beta"],
+                      "sourceLanguageFilters": ["EN", "ZH"],
+                      "translationEnabled": True,
+                      "translationProvider": "llm",
+                      "targetLanguage": "en-US",
+                      "showOriginalContent": True,
+                  },
+              },
+              "/api/user-settings/ui/spacetime-timeline": {
+                  "settings": {
+                      "authoritativeLock": False,
+                      "requireCorroborated": False,
+                      "sourceType": "mixed",
+                      "sortBy": "latest",
+                      "minHeatScore": 3.5,
+                      "minCredibilityScore": 72,
+                      "timelineGranularity": "week",
+                      "speed": 4,
+                      "syncStatusAutoRefresh": False,
+                  },
+                  "expected": {
+                      "authoritativeLock": False,
+                      "requireCorroborated": False,
+                      "sourceType": "mixed",
+                      "sortBy": "latest",
+                      "minHeatScore": 3.5,
+                      "minCredibilityScore": 72,
+                      "timelineGranularity": "week",
+                      "speed": 4,
+                      "syncStatusAutoRefresh": False,
+                  },
+              },
+          }
+
+          for path, payload in PUTS.items():
+              # 请求体只含 settings——expected 是本脚本的断言期望值，
+              # 不得混入请求（forbidNonWhitelisted 会拒绝多余属性）。
+              req = urllib.request.Request(
+                  f"http://127.0.0.1:4020{path}",
+                  data=json.dumps({"settings": payload["settings"]}).encode(),
+                  method="PUT",
+                  headers={
+                      "authorization": f"Bearer {token}",
+                      "content-type": "application/json",
+                      "x-trace-id": TRACE,
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=15) as resp:
+                      status, headers, body = resp.status, resp.headers, resp.read()
+              except urllib.error.HTTPError as err:
+                  raise SystemExit(f"PUT {path} via api-go returned {err.code}: {err.read()[:500]!r}")
+              assert status == 200, (path, status)
+              assert headers.get("x-trace-id") == TRACE, (path, dict(headers))
+              # PUT 响应体 = GET 形状（NestJS update 后回读）；按 normalized
+              # 期望值断言回显。
+              doc = json.loads(body)
+              assert doc.get("version") == 1, (path, doc)
+              assert doc.get("settings") == payload["expected"], (
+                  f"{path}: PUT echo mismatch\n  got:      {json.dumps(doc.get('settings'), sort_keys=True)}\n"
+                  f"  expected: {json.dumps(payload['expected'], sort_keys=True)}")
+              print(f"PUT {path} -> 200 (NestJS 响应回显 settings 一致, trace header ok)")
+          PY
+          python3 /tmp/smoke_put.py
+
+      - name: Smoke 3/6 — PUTs did not trigger shadow execution
+        run: |
+          cat > /tmp/smoke_put_no_shadow.py <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          DROPPED_KEYS = ("request-too-large", "response-too-large", "streaming-skipped",
+                          "concurrency-limit", "rate-limit", "timeout")
+          baseline = json.load(open("/tmp/shadow-baseline.json"))
+
+          def stats():
+              with urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=10) as resp:
+                  return json.load(resp)["shadow"]
+
+          # PUT 差分是异步禁止的——给一个短暂宽限后断言 executed 零增量。
+          deadline = time.time() + 5
+          while time.time() < deadline:
+              now = stats()
+              if now["inflight"] == 0:
+                  break
+              time.sleep(0.2)
+          assert now["executed"] == baseline["executed"], (
+              f"PUT must not execute shadow: executed {baseline['executed']} -> {now['executed']}")
+          assert now["diffs"] == baseline["diffs"], (
+              f"diffs changed after PUTs: {baseline['diffs']} -> {now['diffs']}")
+          assert now["inflight"] == 0, now
+          for key in DROPPED_KEYS:
+              assert now["dropped"][key] == baseline["dropped"][key], (key, now["dropped"])
+          print(f"PUT phase: shadow executed unchanged at {now['executed']}, "
+                f"diffs {now['diffs']}, inflight 0, dropped all unchanged")
+          PY
+          python3 /tmp/smoke_put_no_shadow.py
+
+      - name: Smoke 4/6 — settings really persisted in MySQL
+        run: |
+          set -euo pipefail
+          MYSQL_CID=$(docker ps -q -f ancestor=mysql:8.4 | head -n1)
+          test -n "$MYSQL_CID"
+          for key in ui:onboarding:settings:v1 ui:rss-reader:settings:v1 ui:spacetime-timeline:settings:v1; do
+            count=$(docker exec "$MYSQL_CID" mysql -uroot -psecret -N -e \
+              "SELECT COUNT(*) FROM app.UserSetting WHERE \`key\`='${key}'" 2>/dev/null)
+            echo "UserSetting key=${key} rows=${count}"
+            test "$count" = "1"
+          done
+          echo "three settings rows persisted by NestJS (single-writer) in real MySQL"
+
+      - name: Smoke 5/6 — four GETs via api-go (contract + trace header + data readback)
+        run: |
+          cat > /tmp/smoke_get.py <<'PY'
+          import json
+          import urllib.error
+          import urllib.request
+
+          TRACE = "5f1e2d3c4b5a69788697a5b4c3d2e1f0"
+          token = open("/tmp/smoke-jwt").read().strip()
+
+          EXPECTED = {
+              "/api/user-settings/ui/onboarding": {
+                  "completed": True,
+                  "dismissed": True,
+                  "checklist": {"today": True, "events": True, "map": True, "finance": False},
+                  "completedTours": {"today": True},
+              },
+              "/api/user-settings/ui/rss-reader": {
+                  "selectedSourceIds": ["src-alpha", "src-beta"],
+                  "sourceLanguageFilters": ["EN", "ZH"],
+                  "translationEnabled": True,
+                  "translationProvider": "llm",
+                  "targetLanguage": "en-US",
+                  "showOriginalContent": True,
+              },
+              "/api/user-settings/ui/spacetime-timeline": {
+                  "authoritativeLock": False,
+                  "requireCorroborated": False,
+                  "sourceType": "mixed",
+                  "sortBy": "latest",
+                  "minHeatScore": 3.5,
+                  "minCredibilityScore": 72,
+                  "timelineGranularity": "week",
+                  "speed": 4,
+                  "syncStatusAutoRefresh": False,
+              },
+          }
+
+          def get(path, auth):
+              headers = {"x-trace-id": TRACE}
+              if auth:
+                  headers["authorization"] = f"Bearer {token}"
+              req = urllib.request.Request(f"http://127.0.0.1:4020{path}", headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=15) as resp:
+                      return resp.status, resp.headers, resp.read()
+              except urllib.error.HTTPError as err:
+                  raise SystemExit(f"GET {path} via api-go returned {err.code}: {err.read()[:500]!r}")
+
+          # GET 1：公开探针（无鉴权）。
+          status, headers, body = get("/api/healthz/live", auth=False)
+          assert status == 200, status
+          assert headers.get("x-trace-id") == TRACE, dict(headers)
+          assert json.loads(body) == {"status": "ok"}, body
+          print("GET /api/healthz/live -> 200, body {\"status\":\"ok\"}, trace header ok")
+
+          # GET 2-4：三个 user-settings 只读 GET（鉴权 + Cache-Control + 数据读回）。
+          for path, expected in EXPECTED.items():
+              status, headers, body = get(path, auth=True)
+              assert status == 200, (path, status)
+              cache_control = (headers.get("cache-control") or "").lower()
+              assert "no-store" in cache_control, (path, dict(headers))
+              assert headers.get("x-trace-id") == TRACE, (path, dict(headers))
+              doc = json.loads(body)
+              assert doc.get("version") == 1, (path, doc)
+              assert doc.get("settings") == expected, (
+                  f"{path}: settings mismatch (跨 key/user/org 串读或 normalization 漂移)\n"
+                  f"  got:      {json.dumps(doc.get('settings'), sort_keys=True)}\n"
+                  f"  expected: {json.dumps(expected, sort_keys=True)}")
+              assert isinstance(doc.get("updatedAt", {}).get("settings"), str) and doc["updatedAt"]["settings"], doc
+              print(f"GET {path} -> 200, cache-control=no-store, trace header ok, settings match own key")
+          PY
+          python3 /tmp/smoke_get.py
+
+      - name: Smoke 6/6 — final shadow metrics (executed +4 / diffs 0 / dropped 0 / inflight 0)
+        run: |
+          cat > /tmp/smoke_final.py <<'PY'
+          import json
+          import sys
+          import time
+          import urllib.request
+
+          DROPPED_KEYS = ("request-too-large", "response-too-large", "streaming-skipped",
+                          "concurrency-limit", "rate-limit", "timeout")
+          baseline = json.load(open("/tmp/shadow-baseline.json"))
+          want_executed = baseline["executed"] + 4
+
+          def health():
+              with urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=10) as resp:
+                  return json.load(resp)
+
+          # shadow 执行是异步的——轮询到 executed 达到基线+4 且 inflight 归零。
+          deadline = time.time() + 30
+          doc = health()
+          while time.time() < deadline:
+              now = doc["shadow"]
+              if now["executed"] >= want_executed and now["inflight"] == 0:
+                  break
+              time.sleep(1)
+              doc = health()
+          now = doc["shadow"]
+
+          assert now["executed"] == want_executed, (
+              f"executed {baseline['executed']} -> {now['executed']}, want exactly +4 ({want_executed})")
+          assert now["diffs"] == baseline["diffs"], (
+              f"diffs {baseline['diffs']} -> {now['diffs']} (shadow diff detected!)")
+          assert now["inflight"] == 0, f"inflight {now['inflight']} != 0"
+          for key in DROPPED_KEYS:
+              assert now["dropped"][key] == baseline["dropped"][key], (
+                  f"dropped[{key}] {baseline['dropped'][key]} -> {now['dropped'][key]}")
+          assert sum(now["dropped"].values()) == sum(baseline["dropped"].values()), now["dropped"]
+          assert doc.get("userSettingsShadow", {}).get("database") == "configured", doc
+
+          print("=== api-go entry smoke: SHADOW METRICS (before -> after) ===")
+          print(f"executed: {baseline['executed']} -> {now['executed']} "
+                f"(delta +{now['executed'] - baseline['executed']}, expect 4)")
+          print(f"diffs:    {baseline['diffs']} -> {now['diffs']} (delta 0)")
+          print(f"inflight: {baseline['inflight']} -> {now['inflight']} (back to 0)")
+          print(f"dropped:  {json.dumps(now['dropped'], sort_keys=True)} "
+                f"(all categories unchanged, total {sum(now['dropped'].values())})")
+          print("userSettingsShadow.database: configured")
+          print("api-go entry smoke: ALL ASSERTIONS PASSED")
+          PY
+          python3 /tmp/smoke_final.py
+
+      - name: Dump service logs on failure (hash/status/category only by design)
+        if: failure()
+        run: |
+          echo "=== api-go container log (shadow-diff 记录默认只含 hash/状态/分类，SHADOW_DEBUG_BODY_LOG=false) ==="
+          docker logs api-go-smoke 2>&1 | tail -200 || true
+          echo "=== nestjs api log (tail) ==="
+          tail -150 /tmp/api-nestjs.log || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f api-go-smoke >/dev/null 2>&1 || true
+          kill $(cat /tmp/api-nestjs.pid) 2>/dev/null || true
+          pkill -f "dist/main.js" 2>/dev/null || true

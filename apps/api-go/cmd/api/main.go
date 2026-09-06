@@ -24,6 +24,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -44,9 +45,41 @@ import (
 )
 
 func main() {
+	// healthcheck 子命令：容器内健康探测（distroless 无 curl/wget——
+	// 生产镜像用同一二进制自探活，见 infra/docker/api-go.Dockerfile）。
+	// 仅当 argv[1] 恰为 "healthcheck" 时进入；其余 argv 保持原启动语义。
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(runHealthcheck())
+	}
 	if err := run(); err != nil {
 		log.Fatalf("api-go: %v", err)
 	}
+}
+
+// runHealthcheck 以短超时 GET 本进程监听地址上的 /__go/healthz（网关
+// Go 原生自省端点——不经过 legacy 代理，也不产生 shadow 执行，不会
+// 污染差分指标）。返回值即进程退出码：2xx → 0；其他状态码、连接
+// 失败或超时 → 1。不读取/输出环境变量、DSN、token 或响应正文——
+// 失败时只报状态码这一类通用事实。
+func runHealthcheck() int {
+	port := "4020"
+	if raw := strings.TrimSpace(os.Getenv("PORT")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
+			port = raw
+		}
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + port + "/__go/healthz")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "api-go healthcheck: request failed")
+		return 1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		fmt.Fprintf(os.Stderr, "api-go healthcheck: unexpected status %d\n", resp.StatusCode)
+		return 1
+	}
+	return 0
 }
 
 // dispatcher 装配 shadow runner 与 canary router，实现网关的旁路接口。

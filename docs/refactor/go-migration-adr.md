@@ -88,6 +88,25 @@ ui/onboarding` 起步（迁移序 2 的首个真实业务端点，从 MySQL 主�
 （同一 repository 的固定 `SettingKey` 查询与同一身份门禁）。其余三个
 user-settings GET（situation-monitor/war-map/newsnow）与全部 PUT 仍 legacy。
 
+### 4.2 入口链与部署形态（Go-批2C）
+
+api-go 自批2C 起具备真实可运行的入口链，但**默认部署仍 Web → NestJS 直连**：
+
+- 生产镜像：`infra/docker/api-go.Dockerfile`（多阶段、`-mod=readonly -trimpath`、
+  distroless static nonroot；内置 `/api-go healthcheck` 子命令作 exec 形式
+  HEALTHCHECK——distroless 无 shell，字符串形式 health-cmd 不可用）。
+- Compose：独立 `api-go-pilot` profile 的 `api-go` 服务（:4020，依赖 `api`/
+  `mysql` healthy，`DATABASE_URL` 与 NestJS 同源 `MYSQL_*`，`CANARY_PERCENT=0`）。
+  默认 `up` 不启动——legacy 行为零变化。
+- 切换：服务端 `API_BASE_URL=http://api-go:4020`（运行期）；浏览器端
+  `NEXT_PUBLIC_API_BASE_URL` 构建期内联（需重建 web）。web 启动等待已改为
+  探测最终配置的 API base（不再硬编码 `http://api:4000`）。回滚 = 指回
+  `http://api:4000`，无数据耦合。
+- 验证分层：普通 CI 只验证静态/单元/MySQL 集成；手动 `api-go-entry-smoke`
+  workflow 完成**远端真实栈运行验证**（真实 MySQL+migration+真实 NestJS+
+  api-go 容器+真实登录 JWT+Shadow 指标增量断言）；**生产/预发布真实流量
+  验证未完成**。canary/go 接管（§4 后两态）在迁移序 5 完成前保持禁止。
+
 ## 5. 队列/cron/outbox 边界（红线）
 
 - 全部 BullMQ 队列、21 个 @Cron/@Interval、3 套 MongoOutbox 的**写入权在最终阶段前仅属 NestJS**——Go 侧提前双写会制造消息重复/顺序破坏
