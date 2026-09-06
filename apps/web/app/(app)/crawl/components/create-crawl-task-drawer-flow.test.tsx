@@ -9,6 +9,12 @@ import {
   renderCreateCrawlTaskDrawer,
 } from "./create-crawl-task-drawer-test-support";
 
+/** 巨型表单树（153 个 Form.Item 常驻挂载）在 jsdom 中单测渲染需 2-7s：
+ *  提升本文件用例/钩子超时，避免默认 5s 误杀（误杀会污染 act 环境并
+ *  级联拖垮后续用例的渲染）。 */
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
+
 /**
  * FE-批5B characterization tests —— 8.1 公共入口与三步流程。
  * 在旧生产实现上锁定行为；拆分后必须保持。

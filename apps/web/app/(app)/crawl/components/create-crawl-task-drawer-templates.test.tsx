@@ -1,7 +1,13 @@
 import { act, fireEvent, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { renderCreateCrawlTaskDrawer } from "./create-crawl-task-drawer-test-support";
+
+/** 巨型表单树（153 个 Form.Item 常驻挂载）在 jsdom 中单测渲染需 2-7s：
+ *  提升本文件用例/钩子超时，避免默认 5s 误杀（误杀会污染 act 环境并
+ *  级联拖垮后续用例的渲染）。 */
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
 
 /**
  * FE-批5B characterization tests —— 8.2 模板行为。
