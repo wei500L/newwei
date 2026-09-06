@@ -44,6 +44,33 @@ export interface CreateCrawlTaskDrawerHandle {
   closeCalls: () => number;
 }
 
+export interface CreateCrawlTaskFormFieldsHandle {
+  /** 领域直测 harness 持有的 Form 实例。 */
+  form: FormInstance<CreateCrawlTaskFormValues>;
+}
+
+/**
+ * 领域组件直测 harness：在裸 Form 中挂载单个高级配置领域 section。
+ * 不经过 Drawer 外壳与其余领域字段——全树（153 个 Form.Item 常驻挂载）
+ * 在 jsdom 中单渲染需 2-7s，领域直测将其降至百毫秒级。
+ * setFieldsValue/getFieldValue/validateFields 均作用于表单 store，
+ * 不要求其余字段挂载。
+ */
+export function renderCreateCrawlTaskFormFields(
+  children: ReactNode,
+): CreateCrawlTaskFormFieldsHandle {
+  const handle = {} as CreateCrawlTaskFormFieldsHandle;
+
+  function FormFieldsHarness() {
+    const [form] = Form.useForm<CreateCrawlTaskFormValues>();
+    handle.form = form;
+    return <Form layout="vertical" form={form}>{children}</Form>;
+  }
+
+  renderWithProviders(<FormFieldsHarness />);
+  return handle;
+}
+
 export function renderCreateCrawlTaskDrawer(
   options: RenderCreateCrawlTaskDrawerOptions = {},
 ): CreateCrawlTaskDrawerHandle {

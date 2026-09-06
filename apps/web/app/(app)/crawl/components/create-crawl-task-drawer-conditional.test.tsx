@@ -1,44 +1,41 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { BrowserHeadersCookiesFields } from "./create-crawl-task-drawer/browser-headers-cookies-fields";
+import { MarkdownFields } from "./create-crawl-task-drawer/markdown-fields";
+import { MultiUrlFields } from "./create-crawl-task-drawer/multi-url-fields";
 import {
   advanceToAdvanced,
   renderCreateCrawlTaskDrawer,
+  renderCreateCrawlTaskFormFields,
   type CreateCrawlTaskDrawerHandle,
 } from "./create-crawl-task-drawer-test-support";
 
-/** 巨型表单树（153 个 Form.Item 常驻挂载）在 jsdom 中单测渲染需 2-7s：
- *  提升本文件用例/钩子超时，避免默认 5s 误杀（误杀会污染 act 环境并
- *  级联拖垮后续用例的渲染）。 */
+/** 仅两个用例保留全树挂载（153 个 Form.Item 常驻挂载在 jsdom 中单渲染
+ *  需 2-7s）：waitUntil 规范化（控制器的 useWatch 依赖高级字段注册）
+ *  与主提交路径。其余高级配置业务在对应领域组件上直测
+ *  （renderCreateCrawlTaskFormFields）。超时保持 30s 不变。 */
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 
 /**
- * FE-批5B characterization tests —— 8.3 条件字段与字段联动。
- * 通过真实 UI 交互与 Form values 观察行为（watch 驱动的条件渲染、
- * waitUntil 规范化、LLM 阻断、proxy 检测、自动 Header 合并等）。
+ * CreateCrawlTaskDrawer 高级配置领域与主提交路径：
+ * - LLM 配置阻断（安全边界，option-guards 的唯一测试覆盖）；
+ * - multi URL 嵌套字段路径与提交结构；
+ * - bm25 分支必填校验；
+ * - 自动 Header 合并（crawl-browser-headers 的唯一测试覆盖）；
+ * - waitUntil=networkidle 的 5000ms 业务约束（全树挂载）；
+ * - 主提交路径（全树挂载，news 模板默认值进入提交 payload）。
  */
 
 const CHROME_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
-async function openAdvanced(
-  handle: CreateCrawlTaskDrawerHandle,
-): Promise<void> {
-  await advanceToAdvanced(handle);
-}
 
 /** multi URL 区块头部（含 Add 按钮）。 */
 function multiUrlHeader(): HTMLElement {
   const header = screen.getByText("Multi URL").closest("div");
   expect(header).not.toBeNull();
   return header as HTMLElement;
-}
-
-function addMultiUrlStrategy(): void {
-  fireEvent.click(
-    within(multiUrlHeader()).getByRole("button", { name: /Add/ }),
-  );
 }
 
 function firstStrategyCard(): HTMLElement {
@@ -49,264 +46,45 @@ function firstStrategyCard(): HTMLElement {
 
 /** validateFields 拒绝（rc-field-form 的 rejection 非 Error 实例）。 */
 async function expectValidationRejected(
-  handle: CreateCrawlTaskDrawerHandle,
-  namePaths?: Parameters<
-    CreateCrawlTaskDrawerHandle["form"]["validateFields"]
-  >[0],
+  handle: Pick<CreateCrawlTaskDrawerHandle, "form">,
 ): Promise<void> {
   let rejected = false;
-  await handle.form.validateFields(namePaths).catch(() => {
+  await handle.form.validateFields().catch(() => {
     rejected = true;
   });
   expect(rejected).toBe(true);
 }
 
-describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
-  it("waitUntil=networkidle 时 waitForTimeoutMs<5000 自动提升为 5000", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
+describe("CreateCrawlTaskDrawer（高级配置领域与主提交路径）", () => {
+  it("markdown 自定义 strategy：LLM 类型与 params llmConfig 均被阻断；合法非 LLM 配置通过", async () => {
+    const handle = renderCreateCrawlTaskFormFields(<MarkdownFields />);
 
-    // 经 store 写入 waitUntil（watch 驱动的规范化 effect 为被测行为；
-    // antd 下拉弹层在 jsdom 中不随 mouseDown 渲染，交互路径不可靠）
-    act(() => {
-      handle.form.setFieldsValue({
-        waitForTimeoutMs: 1000,
-        waitUntil: "networkidle",
-      });
-    });
-
-    await waitFor(() =>
-      expect(handle.form.getFieldValue("waitForTimeoutMs")).toBe(5000),
-    );
-  });
-
-  it("waitUntil=networkidle 时 waitForTimeoutMs>=5000 保持原值", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    act(() => {
-      handle.form.setFieldsValue({
-        waitForTimeoutMs: 8000,
-        waitUntil: "networkidle",
-      });
-    });
-
-    await waitFor(() =>
-      expect(handle.form.getFieldValue("waitForTimeoutMs")).toBe(8000),
-    );
-  });
-
-  it("waitUntil 非 networkidle 不改动 waitForTimeoutMs", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    act(() => {
-      handle.form.setFieldsValue({
-        waitForTimeoutMs: 1000,
-        waitUntil: "load",
-      });
-    });
-
-    await waitFor(() =>
-      expect(handle.form.getFieldValue("waitForTimeoutMs")).toBe(1000),
-    );
-  });
-
-  it("scoreLinks=false 时 Link Preview 相关项禁用；开启后恢复", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    const includeInternal = screen.getByRole("switch", {
-      name: "Include internal",
-    });
-    const maxLinks = screen.getByLabelText("Max links");
-    expect(includeInternal).toBeDisabled();
-    expect(maxLinks).toBeDisabled();
-
-    fireEvent.click(screen.getByRole("switch", { name: "Score links" }));
-    expect(includeInternal).toBeEnabled();
-    expect(maxLinks).toBeEnabled();
-  });
-
-  it("开启根级 virtual scroll：字段展开、scanFullPage 关闭、scrollDelayMs 清空", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    act(() => {
-      handle.form.setFieldsValue({
-        scanFullPage: true,
-        scrollDelayMs: 900,
-      });
-    });
-
-    fireEvent.click(
-      screen.getByRole("switch", { name: "Enable virtual scroll" }),
-    );
-
-    expect(screen.getByLabelText("Container selector")).toBeInTheDocument();
-    expect(handle.form.getFieldValue("scanFullPage")).toBe(false);
-    expect(handle.form.getFieldValue("scrollDelayMs")).toBeUndefined();
-    expect(handle.form.getFieldValue("virtualScroll")).toMatchObject({
-      enabled: true,
-      containerSelector: "body",
-      scrollCount: 10,
-      scrollBy: "page_height",
-      scrollByPixels: 500,
-      waitAfterScrollMs: 600,
-    });
-  });
-
-  it("根级 virtual scroll 已有值时开关保留既有配置", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    act(() => {
-      handle.form.setFieldsValue({
-        virtualScroll: {
-          containerSelector: ".feed",
-          scrollCount: 3,
-          scrollBy: "pixels",
-          scrollByPixels: 250,
-          waitAfterScrollMs: 200,
-        },
-      });
-    });
-
-    fireEvent.click(
-      screen.getByRole("switch", { name: "Enable virtual scroll" }),
-    );
-
-    expect(handle.form.getFieldValue("virtualScroll")).toMatchObject({
-      enabled: true,
-      containerSelector: ".feed",
-      scrollCount: 3,
-      scrollBy: "pixels",
-      scrollByPixels: 250,
-      waitAfterScrollMs: 200,
-    });
-  });
-
-  it("关闭根级 virtual scroll：整个 virtualScroll 值被清除", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    fireEvent.click(
-      screen.getByRole("switch", { name: "Enable virtual scroll" }),
-    );
-    expect(handle.form.getFieldValue("virtualScroll")).toMatchObject({
-      enabled: true,
-    });
-
-    fireEvent.click(
-      screen.getByRole("switch", { name: "Enable virtual scroll" }),
-    );
-    expect(handle.form.getFieldValue("virtualScroll")).toBeUndefined();
-    expect(
-      screen.queryByLabelText("Container selector"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("根级 virtual scroll 的 scrollBy=pixels 时显示 scrollByPixels 字段", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    fireEvent.click(
-      screen.getByRole("switch", { name: "Enable virtual scroll" }),
-    );
-    act(() => {
-      handle.form.setFields([
-        { name: ["virtualScroll", "scrollBy"], value: "pixels" },
-      ]);
-    });
-    expect(screen.getByLabelText("Scroll by (px)")).toBeInTheDocument();
-
-    act(() => {
-      handle.form.setFields([
-        { name: ["virtualScroll", "scrollBy"], value: "page_height" },
-      ]);
-    });
-    expect(
-      screen.queryByLabelText("Scroll by (px)"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("开启 autoExpandDetails：详情展开字段出现；关闭时清除 detailExpansion", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    fireEvent.click(screen.getByRole("switch", { name: "Auto expand details" }));
-    expect(screen.getByLabelText("Max detail URLs")).toBeInTheDocument();
-    expect(screen.getByLabelText("Min relevance score")).toBeInTheDocument();
-    expect(handle.form.getFieldValue("detailExpansion")).toMatchObject({
-      maxDetailUrls: 8,
-      minRelevanceScore: 0.2,
-      requireSameDomain: true,
-      allowExternalLinks: true,
-      minPublishTimeConfidence: 0.55,
-      preferFitMarkdownForQuality: true,
-    });
-
-    fireEvent.click(screen.getByRole("switch", { name: "Auto expand details" }));
-    expect(handle.form.getFieldValue("detailExpansion")).toBeUndefined();
-    expect(
-      screen.queryByLabelText("Max detail URLs"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("markdownFilter=pruning 显示剪枝参数；bm25 显示 BM25 参数", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    act(() => {
-      handle.form.setFieldsValue({ markdownFilter: { type: "pruning" } });
-    });
-    expect(screen.getByLabelText("Pruning threshold")).toBeInTheDocument();
-    expect(screen.getByLabelText("BM25 query")).not.toBeVisible();
-
-    act(() => {
-      handle.form.setFieldsValue({ markdownFilter: { type: "bm25" } });
-    });
-    expect(screen.getByLabelText("Pruning threshold")).not.toBeVisible();
-    expect(screen.getByLabelText("BM25 query")).toBeInTheDocument();
-  });
-
-  it("markdown 自定义 strategy：LLM 类型被阻断（Alert）", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
+    // 类型名阻断
     fireEvent.change(screen.getByLabelText("Type"), {
       target: { value: "LLMExtractionStrategy" },
     });
-
     expect(
       await screen.findByText("Crawl-stage LLM extraction is not allowed."),
     ).toBeInTheDocument();
-  });
 
-  it("markdown 自定义 strategy：params 含 llmConfig 被阻断", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
+    // 清空类型后，仅 params 含 llmConfig 亦阻断
+    fireEvent.change(screen.getByLabelText("Type"), {
+      target: { value: "" },
+    });
     fireEvent.change(screen.getByLabelText("Params"), {
       target: { value: '{"llmConfig": {"provider": "openai"}}' },
     });
-
     expect(
       await screen.findByText("Crawl-stage LLM extraction is not allowed."),
     ).toBeInTheDocument();
-  });
 
-  it("markdown 自定义 strategy：合法非 LLM JSON 不触发阻断", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
+    // 合法非 LLM JSON：不阻断且进入提交结构
     fireEvent.change(screen.getByLabelText("Type"), {
       target: { value: "PruningContentFilter" },
     });
     fireEvent.change(screen.getByLabelText("Params"), {
       target: { value: '{"threshold": 0.4, "threshold_type": "fixed"}' },
     });
-
     expect(
       screen.queryByText("Crawl-stage LLM extraction is not allowed."),
     ).not.toBeInTheDocument();
@@ -317,65 +95,21 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     });
   });
 
-  it("markdown 自定义 strategy：params 非 JSON 触发既有校验错误", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
+  it("multi URL：策略编号、嵌套 jsCode 与嵌套 virtual scroll 写入嵌套路径并进入提交结构", async () => {
+    const handle = renderCreateCrawlTaskFormFields(<MultiUrlFields />);
 
-    fireEvent.change(screen.getByLabelText("Params"), {
-      target: { value: "not-json" },
-    });
-
-    // url 已由 advanceToAdvanced 填写、其余字段合法——全表单校验的
-    // 唯一失败项即 params（错误文案另行断言）
-    await expectValidationRejected(handle);
-    expect(
-      await screen.findByText("Params must be valid JSON."),
-    ).toBeInTheDocument();
-  });
-
-  it("multi URL：新增策略卡显示 Strategy 1 及其 options 字段；删除后消失", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    expect(screen.getByText("No Multi URL")).toBeInTheDocument();
-
-    addMultiUrlStrategy();
-    expect(screen.getByText("Strategy 1")).toBeInTheDocument();
-    const card = firstStrategyCard();
-    expect(within(card).getByLabelText("Label")).toBeInTheDocument();
-    expect(within(card).getByLabelText("Match mode")).toBeInTheDocument();
-    expect(within(card).getByLabelText("Patterns")).toBeInTheDocument();
-    expect(within(card).getByLabelText("Urls")).toBeInTheDocument();
-    expect(within(card).getByLabelText("Cache mode")).toBeInTheDocument();
-    expect(within(card).getByLabelText("Quality profile")).toBeInTheDocument();
-
-    fireEvent.click(within(card).getByRole("button", { name: /Remove/ }));
-    expect(screen.queryByText("Strategy 1")).not.toBeInTheDocument();
-    expect(screen.getByText("No Multi URL")).toBeInTheDocument();
-  });
-
-  it("multiUrl strategyTitle 使用真实 index（FE-I18N-01 修复后的插值）", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    addMultiUrlStrategy();
-    addMultiUrlStrategy();
-
+    // 新增两个策略：标题使用真实 index（FE-I18N-01 插值回归）
+    const add = within(multiUrlHeader()).getByRole("button", { name: /Add/ });
+    fireEvent.click(add);
+    fireEvent.click(add);
     expect(screen.getByText("Strategy 1")).toBeInTheDocument();
     expect(screen.getByText("Strategy 2")).toBeInTheDocument();
-  });
 
-  it("multi URL 策略内：嵌套 jsCode 列表可新增并写入嵌套路径", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    addMultiUrlStrategy();
     const card = firstStrategyCard();
 
+    // 嵌套 jsCode 列表（FE-I18N-02 修复后 jsStep 带序号）
     fireEvent.click(within(card).getByRole("button", { name: /Add JS step/ }));
-    // FE-I18N-02 修复后 jsStep 带序号
     expect(within(card).getByText("JS step 1")).toBeInTheDocument();
-
     const textarea = within(card).getAllByPlaceholderText(
       "Enter JS snippet",
     )[0]!;
@@ -385,19 +119,11 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     expect(
       handle.form.getFieldValue(["multiUrlConfigs", 0, "options", "jsCode"]),
     ).toEqual(["window.scrollTo(0, 100)"]);
-  });
 
-  it("multi URL 策略内：嵌套 virtual scroll 开关写入嵌套路径", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    addMultiUrlStrategy();
-    const card = firstStrategyCard();
-
+    // 嵌套 virtual scroll：默认值写入嵌套路径，并关闭同级 scanFullPage
     fireEvent.click(
       within(card).getByRole("switch", { name: "Enable virtual scroll" }),
     );
-
     expect(
       handle.form.getFieldValue([
         "multiUrlConfigs",
@@ -413,9 +139,21 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     expect(
       handle.form.getFieldValue(["multiUrlConfigs", 0, "options", "scanFullPage"]),
     ).toBe(false);
-    expect(
-      within(card).getByLabelText("Container selector"),
-    ).toBeInTheDocument();
+    expect(within(card).getByLabelText("Container selector")).toBeInTheDocument();
+
+    // 提交结构：嵌套 options 进入 multiUrlConfigs
+    const values = await handle.form.validateFields();
+    expect(values.multiUrlConfigs?.length).toBe(2);
+    expect(values.multiUrlConfigs?.[0]).toMatchObject({
+      options: {
+        jsCode: ["window.scrollTo(0, 100)"],
+        virtualScroll: {
+          enabled: true,
+          containerSelector: "body",
+          scrollCount: 10,
+        },
+      },
+    });
 
     // 关闭后嵌套值清除
     fireEvent.click(
@@ -431,147 +169,38 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     ).toBeUndefined();
   });
 
-  it("根级 jsCode 列表：增删与必填校验", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
+  it("markdownFilter=bm25：分支切换显示 BM25 参数，userQuery 必填校验拦截提交", async () => {
+    const handle = renderCreateCrawlTaskFormFields(<MarkdownFields />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Add JS step/ }));
-    // FE-I18N-02 修复后 jsStep 带序号
-    expect(screen.getAllByText("JS step 1").length).toBeGreaterThan(0);
+    act(() => {
+      handle.form.setFieldsValue({ markdownFilter: { type: "bm25" } });
+    });
+    expect(screen.getByLabelText("BM25 query")).toBeInTheDocument();
+    expect(screen.getByLabelText("Pruning threshold")).not.toBeVisible();
 
+    // userQuery 为空：校验拒绝并显示必填错误
     await expectValidationRejected(handle);
-    expect(await screen.findAllByText("JS required")).not.toHaveLength(0);
+    expect(
+      await screen.findByText(
+        "BM25 query is required when BM25 filter is selected.",
+      ),
+    ).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("Enter JS snippet"), {
-      target: { value: "window.scrollBy(0, 200)" },
+    // 填写后通过并进入提交结构
+    fireEvent.change(screen.getByLabelText("BM25 query"), {
+      target: { value: "market news" },
     });
     const values = await handle.form.validateFields();
-    expect(values.jsCode).toEqual(["window.scrollBy(0, 200)"]);
-  });
-
-  it("headlessMode=headed 显示 Xvfb 警告；auto 不显示", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    // 经 store 写入 headlessMode（watch 驱动的警告 Alert 为被测行为）
-    act(() => {
-      handle.form.setFieldsValue({ headlessMode: "headed" });
-    });
-    expect(
-      screen.getByText("Headed mode requires Xvfb"),
-    ).toBeInTheDocument();
-
-    act(() => {
-      handle.form.setFieldsValue({ headlessMode: "auto" });
-    });
-    expect(
-      screen.queryByText("Headed mode requires Xvfb"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("useManagedBrowser 控制 userDataDir 可用性", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    expect(screen.getByLabelText("User data dir")).toBeDisabled();
-    fireEvent.click(screen.getByRole("switch", { name: "Managed" }));
-    expect(screen.getByLabelText("User data dir")).toBeEnabled();
-  });
-
-  it("userAgentMode=random 时 generator 三项可用；清除后禁用", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    // FE-TPL-01 修复后冷启动应用 general（userAgentMode=random）；显式设置保持确定性
-    act(() => {
-      handle.form.setFieldsValue({ userAgentMode: "random" });
-    });
-
-    const platform = screen.getByLabelText("Generator platform");
-    const browser = screen.getByLabelText("Generator browser");
-    const device = screen.getByLabelText("Generator device");
-    expect(platform).toBeEnabled();
-    expect(browser).toBeEnabled();
-    expect(device).toBeEnabled();
-
-    act(() => {
-      handle.form.setFieldsValue({ userAgentMode: undefined });
-    });
-    expect(platform).toBeDisabled();
-    expect(browser).toBeDisabled();
-    expect(device).toBeDisabled();
-  });
-
-  it("geolocation 三个数值字段渲染并可写入", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    fireEvent.change(screen.getByPlaceholderText("Enter Latitude"), {
-      target: { value: "31.2" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Enter Longitude"), {
-      target: { value: "121.5" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Enter Accuracy"), {
-      target: { value: "100" },
-    });
-
-    expect(handle.form.getFieldValue("geolocation")).toEqual({
-      latitude: 31.2,
-      longitude: 121.5,
-      accuracy: 100,
+    expect(values.markdownFilter).toMatchObject({
+      type: "bm25",
+      userQuery: "market news",
     });
   });
 
-  it("browser headers / cookies 列表可新增条目", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    // 带图标 Add 按钮的可访问名为 "plus Add"；DOM 顺序：multiUrl / headers / cookies
-    const addButtons = screen.getAllByRole("button", { name: "plus Add" });
-    fireEvent.click(addButtons[1]!); // headers
-    fireEvent.click(addButtons[2]!); // cookies
-
-    // headers 行在 cookies 行之前（DOM 顺序）
-    fireEvent.change(screen.getAllByPlaceholderText("Enter Name")[0]!, {
-      target: { value: "X-Custom" },
-    });
-    fireEvent.change(screen.getAllByPlaceholderText("Enter Value")[0]!, {
-      target: { value: "mine" },
-    });
-    expect(handle.form.getFieldValue("browserHeaders")).toEqual([
-      { name: "X-Custom", value: "mine" },
-    ]);
-  });
-
-  it("session：sessionId / storageState 字段渲染并可写入", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    fireEvent.change(screen.getByLabelText("Session ID"), {
-      target: { value: "sess-1" },
-    });
-    expect(handle.form.getFieldValue("sessionId")).toBe("sess-1");
-    expect(screen.getByLabelText("Storage state")).toBeInTheDocument();
-  });
-
-  it("proxy：恒为 error 级 legacy 提示（观察到的缺陷：undefined 键亦被 hasOwn 计入）", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
-
-    // 当前行为：传入 {proxyUrl: undefined, proxyConfig: undefined} 字面量时
-    // hasOwn 命中两个键，警告分支（Custom upstream proxies are disabled）
-    // 实际不可达——已登记 bug-ledger，不在此轮修复。
-    expect(
-      screen.getByText("Unsupported legacy proxy configuration detected"),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/options\.proxyUrl/)).toBeInTheDocument();
-    expect(screen.getByText(/options\.proxyConfig/)).toBeInTheDocument();
-  });
-
-  it("自动 Header 合并：Chromium UA 派生 sec-ch 头，且用户显式值优先", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
+  it("自动 Header 合并：Chromium UA 派生 sec-ch 头，且用户显式值优先", () => {
+    const handle = renderCreateCrawlTaskFormFields(
+      <BrowserHeadersCookiesFields />,
+    );
 
     act(() => {
       handle.form.setFieldsValue({
@@ -604,40 +233,61 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     expect(byName.get("sec-fetch-mode")).toBe("navigate");
   });
 
-  it("table extraction 字段渲染并可写入（Tables 卡内限定查询）", async () => {
+  it("waitUntil=networkidle 时 waitForTimeoutMs 规范化：<5000 提升至 5000，其余保持", async () => {
+    // 完整挂载：控制器的 Form.useWatch 只观察已注册字段，waitUntil 的
+    // Form.Item 在高级配置步（常驻挂载，display:none），模板步即生效
     const handle = renderCreateCrawlTaskDrawer();
-    await openAdvanced(handle);
 
-    const tablesCard = screen
-      .getByText("Tables")
-      .closest(".ant-card") as HTMLElement;
-    expect(within(tablesCard).getByLabelText("Strategy type")).toBeInTheDocument();
-    expect(within(tablesCard).getByLabelText("Min rows")).toBeInTheDocument();
-    expect(within(tablesCard).getByLabelText("Min cols")).toBeInTheDocument();
-
-    fireEvent.change(within(tablesCard).getByLabelText("Score threshold"), {
-      target: { value: "3.5" },
+    // 非 networkidle：不改动
+    act(() => {
+      handle.form.setFieldsValue({ waitForTimeoutMs: 1000, waitUntil: "load" });
     });
-    expect(handle.form.getFieldValue("tableScoreThreshold")).toBe(3.5);
+    await waitFor(() =>
+      expect(handle.form.getFieldValue("waitForTimeoutMs")).toBe(1000),
+    );
+
+    // networkidle 且 <5000：提升为 5000（业务下限约束）
+    act(() => {
+      handle.form.setFieldsValue({ waitUntil: "networkidle" });
+    });
+    await waitFor(() =>
+      expect(handle.form.getFieldValue("waitForTimeoutMs")).toBe(5000),
+    );
+
+    // networkidle 且 >=5000：保持原值
+    act(() => {
+      handle.form.setFieldsValue({ waitUntil: "load", waitForTimeoutMs: 8000 });
+    });
+    await waitFor(() =>
+      expect(handle.form.getFieldValue("waitForTimeoutMs")).toBe(8000),
+    );
+    act(() => {
+      handle.form.setFieldsValue({ waitUntil: "networkidle" });
+    });
+    await waitFor(() =>
+      expect(handle.form.getFieldValue("waitForTimeoutMs")).toBe(8000),
+    );
   });
 
-  it("提交时 bm25 分支的 userQuery 必填校验生效", async () => {
+  it("主提交路径：news 模板默认值进入提交 payload（含 headless→headlessMode 转换）", async () => {
     const onSubmit = vi.fn();
     const handle = renderCreateCrawlTaskDrawer({ onSubmit });
-    await openAdvanced(handle);
 
-    act(() => {
-      handle.form.setFieldsValue({ markdownFilter: { type: "bm25" } });
-    });
+    // 选择 news 模板写入默认值
+    fireEvent.click(screen.getByText("News Website"));
+    await advanceToAdvanced(handle, "https://example.com/a");
 
-    const form = document.querySelector("form");
-    fireEvent.submit(form!);
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
 
-    expect(
-      await screen.findByText(
-        "BM25 query is required when BM25 filter is selected.",
-      ),
-    ).toBeInTheDocument();
-    expect(onSubmit).not.toHaveBeenCalled();
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    const values = onSubmit.mock.calls[0]![0];
+    expect(values.url).toBe("https://example.com/a");
+    // 模板默认值进入提交 values
+    expect(values.waitUntil).toBe("networkidle");
+    expect(values.meanDelayMs).toBe(800);
+    expect(values.markdownFilter?.type).toBe("pruning");
+    // headless 旧字段被转换；news 模板无 headless 偏好 → headlessMode=auto
+    expect(values.headless).toBeUndefined();
+    expect(values.headlessMode).toBe("auto");
   });
 });

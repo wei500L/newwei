@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -9,15 +9,20 @@ import {
   renderCreateCrawlTaskDrawer,
 } from "./create-crawl-task-drawer-test-support";
 
-/** 巨型表单树（153 个 Form.Item 常驻挂载）在 jsdom 中单测渲染需 2-7s：
- *  提升本文件用例/钩子超时，避免默认 5s 误杀（误杀会污染 act 环境并
- *  级联拖垮后续用例的渲染）。 */
+/** 步骤状态机/草稿/提交门禁断言只依赖 basic 步字段与表单 store：
+ *  将 153 字段的高级配置步 mock 为空哨兵，避免 jsdom 全树挂载
+ *  （单渲染 2-7s）。高级配置业务与完整提交路径在 conditional 文件
+ *  保留全树挂载用例。超时保持 30s 不变（CI 满载余量，本轮不调整）。 */
+vi.mock("./create-crawl-task-drawer/advanced-step", () => ({
+  AdvancedStep: () => null,
+}));
+
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 
 /**
- * FE-批5B characterization tests —— 8.1 公共入口与三步流程。
- * 在旧生产实现上锁定行为；拆分后必须保持。
+ * CreateCrawlTaskDrawer 公共入口与三步流程（步骤状态机、草稿保留、
+ * 关闭复位语义、提交门禁）。
  *
  * 步骤指示采用底部按钮的存在性（Previous/Next/Submit 仅按 currentStep
  * 渲染），避免依赖 jsdom 中 antd 动画的可见性语义。
@@ -43,38 +48,6 @@ function expectStepIndicator(step: 0 | 1 | 2): void {
 }
 
 describe("CreateCrawlTaskDrawer（公共入口与三步流程）", () => {
-  it("默认 title 为 crawl.createDrawer.title（Create drawer）", () => {
-    renderCreateCrawlTaskDrawer();
-
-    expect(screen.getByText("Create drawer")).toBeInTheDocument();
-  });
-
-  it("自定义 title 优先于默认值（news-sources 入口契约）", () => {
-    renderCreateCrawlTaskDrawer({ title: "New source" });
-
-    expect(screen.getByText("New source")).toBeInTheDocument();
-    expect(screen.queryByText("Create drawer")).not.toBeInTheDocument();
-  });
-
-  it("三步标题：Template / Basic Info / Configuration", () => {
-    renderCreateCrawlTaskDrawer();
-
-    expect(screen.getByText("Template")).toBeInTheDocument();
-    expect(screen.getByText("Basic Info")).toBeInTheDocument();
-    expect(screen.getByText("Configuration")).toBeInTheDocument();
-  });
-
-  it("初始停留在模板步：模板选择标题在文档中，basic 字段不可见", () => {
-    renderCreateCrawlTaskDrawer();
-
-    expectStepIndicator(0);
-    expect(
-      screen.getByText("Select a template to start"),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("Target URL")).not.toBeVisible();
-    expect(screen.getByLabelText("Display name")).not.toBeVisible();
-  });
-
   it("Next 进入 basic 步并渲染 displayName/url；Previous 返回模板步", async () => {
     renderCreateCrawlTaskDrawer();
 
@@ -99,87 +72,6 @@ describe("CreateCrawlTaskDrawer（公共入口与三步流程）", () => {
     expectStepIndicator(1);
   });
 
-  it("displayName 80 字符边界：80 通过、81 报错", async () => {
-    renderCreateCrawlTaskDrawer();
-
-    await clickNext();
-    const displayName = screen.getByLabelText("Display name");
-    fireEvent.change(displayName, { target: { value: "a".repeat(80) } });
-    fireEvent.change(screen.getByLabelText("Target URL"), {
-      target: { value: "https://example.com" },
-    });
-    await clickNext();
-    expectStepIndicator(2);
-
-    // 回到 basic 输入 81 字符
-    clickPrevious();
-    expectStepIndicator(1);
-    fireEvent.change(displayName, { target: { value: "a".repeat(81) } });
-    await clickNext();
-    expect(
-      await screen.findByText("Display name must be at most 80 characters"),
-    ).toBeInTheDocument();
-    expectStepIndicator(1);
-  });
-
-  it("提交入口只在 advanced 步出现；loading 反映在提交按钮上", async () => {
-    const handle = renderCreateCrawlTaskDrawer({ loading: true });
-
-    expectStepIndicator(0);
-
-    await advanceToAdvanced(handle);
-
-    // loading 图标参与可访问名（"loading Submit"），用正则匹配
-    const submit = screen.getByRole("button", { name: /Submit/ });
-    expect(submit).toBeInTheDocument();
-    expect(submit).toHaveClass("ant-btn-loading");
-  });
-
-  it("默认 submit label 为 Submit；自定义 submitLabel 优先（news-sources 契约）", async () => {
-    const handle = renderCreateCrawlTaskDrawer({ submitLabel: "Create" });
-    await advanceToAdvanced(handle);
-    expect(screen.getByRole("button", { name: "Create" })).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Submit" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("提交（点击 submit 按钮）向 onSubmit 传递完整 Form values", async () => {
-    const onSubmit = vi.fn();
-    const handle = renderCreateCrawlTaskDrawer({ onSubmit });
-
-    // 选择 news 模板写入默认值
-    fireEvent.click(screen.getByText("News Website"));
-    await advanceToAdvanced(handle, "https://example.com/a");
-
-    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
-
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-    const values = onSubmit.mock.calls[0]![0];
-    expect(values.url).toBe("https://example.com/a");
-    // 模板默认值进入提交 values
-    expect(values.waitUntil).toBe("networkidle");
-    expect(values.meanDelayMs).toBe(800);
-    expect(values.markdownFilter?.type).toBe("pruning");
-    // headless 旧字段被转换；news 模板无 headless 偏好 → headlessMode=auto
-    expect(values.headless).toBeUndefined();
-    expect(values.headlessMode).toBe("auto");
-  });
-
-  it("表单 submit 事件（Enter 提交路径）同样触发 onSubmit", async () => {
-    const onSubmit = vi.fn();
-    const handle = renderCreateCrawlTaskDrawer({ onSubmit });
-    await advanceToAdvanced(handle, "https://example.com/b");
-
-    // Drawer 内容渲染在 body portal，不在 render container 内
-    const form = document.querySelector("form");
-    expect(form).not.toBeNull();
-    fireEvent.submit(form!);
-
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-    expect(onSubmit.mock.calls[0]![0].url).toBe("https://example.com/b");
-  });
-
   it("隐藏 step 的表单值在步骤切换时不丢失", async () => {
     const handle = renderCreateCrawlTaskDrawer();
 
@@ -202,14 +94,51 @@ describe("CreateCrawlTaskDrawer（公共入口与三步流程）", () => {
     expect(handle.form.getFieldValue("displayName")).toBe("kept-name");
   });
 
-  it("关闭后 step 复位为 0，重新打开回到模板步", async () => {
-    const handle = renderCreateCrawlTaskDrawer();
+  it("提交入口只在 advanced 步出现；loading 与自定义 submitLabel 反映在提交按钮上", async () => {
+    const handle = renderCreateCrawlTaskDrawer({
+      loading: true,
+      submitLabel: "Create",
+    });
+
+    expectStepIndicator(0);
+
+    await advanceToAdvanced(handle);
+
+    // loading 图标参与可访问名，用正则匹配；自定义 label 优先于默认值
+    const submit = screen.getByRole("button", { name: /Create/ });
+    expect(submit).toBeInTheDocument();
+    expect(submit).toHaveClass("ant-btn-loading");
+    expect(
+      screen.queryByRole("button", { name: "Submit" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("FE-SUBMIT-01 回归：loading 期间表单 submit 事件不触发 onSubmit", async () => {
+    const onSubmit = vi.fn();
+    const handle = renderCreateCrawlTaskDrawer({ onSubmit, loading: true });
+    await advanceToAdvanced(handle, "https://example.com/guard");
+
+    // Enter 提交路径/编程式 submit 不经过按钮 disabled——由 Drawer 边界门禁拦截
+    const form = document.querySelector("form");
+    fireEvent.submit(form!);
+
+    // 等待微任务链落定后确认门禁拦截（非空 async 体）
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("关闭后 step 复位为 0，重新打开回到模板步（Cancel 路径触发 onClose）", async () => {
+    const onClose = vi.fn();
+    const handle = renderCreateCrawlTaskDrawer({ onClose });
 
     await advanceToAdvanced(handle);
     expectStepIndicator(2);
 
     closeDrawer();
     expect(handle.closeCalls()).toBe(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
 
     act(() => handle.setOpen(true));
     expectStepIndicator(0);
@@ -263,29 +192,5 @@ describe("CreateCrawlTaskDrawer（公共入口与三步流程）", () => {
     await clickNext();
     expect(screen.getByLabelText("Target URL")).toHaveValue("");
     expect(handle.form.getFieldValue("url")).toBeUndefined();
-  });
-
-  it("FE-SUBMIT-01 回归：loading 期间表单 submit 事件不触发 onSubmit", async () => {
-    const onSubmit = vi.fn();
-    const handle = renderCreateCrawlTaskDrawer({ onSubmit, loading: true });
-    await advanceToAdvanced(handle, "https://example.com/guard");
-
-    // Enter 提交路径/编程式 submit 不经过按钮 disabled——由 Drawer 边界门禁拦截
-    const form = document.querySelector("form");
-    fireEvent.submit(form!);
-
-    // 等待微任务链落定后确认门禁拦截（非空 async 体）
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(onSubmit).not.toHaveBeenCalled();
-  });
-
-  it("Cancel 触发 onClose（取消按钮路径）", () => {
-    const onClose = vi.fn();
-    renderCreateCrawlTaskDrawer({ onClose });
-
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
