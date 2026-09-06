@@ -57,11 +57,17 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter db run prisma:generate
 
-      # api-go 自 Go-批2A 起引入 go-sql-driver/mysql（唯一第三方依赖）。
-      # go.sum 由远端生成（本机禁跑 go 工具链）：lint（go vet）/test/build
-      # 前统一 tidy——幂等，仅依赖变化时改写。
-      - name: Go modules (api-go go.sum)
-        run: cd apps/api-go && go mod tidy
+      # api-go 模块文件漂移门禁：go.sum 必须是 tracked file（仅 git diff
+      # 发现不了未跟踪的 go.sum），且远端 go mod tidy 后 go.mod/go.sum
+      # 零漂移（tidy 同时按 go.sum 校验 module proxy 校验和）。依赖清单
+      # 的更新走 go-modules-regen label 通道远端生成提交。此步骤先于
+      # Lint/Go tests/Build——后续 go 命令依赖 go.sum 就位。
+      - name: Go modules drift gate (api-go go.mod/go.sum)
+        run: |
+          cd apps/api-go
+          git ls-files --error-unmatch go.sum
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
 
       - name: GraphQL codegen drift check
         run: |
@@ -285,8 +291,8 @@ jobs:
           go-version-file: apps/api-go/go.mod
           cache: false
 
-      - name: Go modules (api-go go.sum)
-        run: cd apps/api-go && go mod tidy
+      - name: Go modules (download with committed go.sum)
+        run: cd apps/api-go && go mod download
 
       - name: MySQL integration tests (onboarding repository)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/ -run TestOnboardingMySQLIntegration -v
