@@ -436,7 +436,8 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     await openAdvanced(handle);
 
     fireEvent.click(screen.getByRole("button", { name: /Add JS step/ }));
-    expect(screen.getAllByText("JS step").length).toBeGreaterThan(0);
+    // FE-I18N-02 修复后 jsStep 带序号
+    expect(screen.getAllByText("JS step 1").length).toBeGreaterThan(0);
 
     await expectValidationRejected(handle);
     expect(await screen.findAllByText("JS required")).not.toHaveLength(0);
