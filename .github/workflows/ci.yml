@@ -57,6 +57,12 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter db run prisma:generate
 
+      # api-go 自 Go-批2A 起引入 go-sql-driver/mysql（唯一第三方依赖）。
+      # go.sum 由远端生成（本机禁跑 go 工具链）：lint（go vet）/test/build
+      # 前统一 tidy——幂等，仅依赖变化时改写。
+      - name: Go modules (api-go go.sum)
+        run: cd apps/api-go && go mod tidy
+
       - name: GraphQL codegen drift check
         run: |
           pnpm --filter @modular/web run generate
@@ -108,12 +114,7 @@ jobs:
           git diff --exit-code apps/api/schema.gql
 
       - name: Go tests (api-go gateway + vector-go pilot)
-        run: |
-          # api-go 自 Go-批2A 起引入 go-sql-driver/mysql（唯一第三方依赖，
-          # user-settings onboarding shadow 只读查询用）。go.sum 由远端
-          # 生成（本机禁跑 go 工具链）：tidy 幂等，仅首次/版本变化时改写。
-          cd apps/api-go && go mod tidy
-          cd ../.. && pnpm --filter @modular/api-go --filter @modular/vector-go test
+        run: pnpm --filter @modular/api-go --filter @modular/vector-go test
 
       - name: Compose image pin check
         run: pnpm --filter @modular/infra-scripts run compose:images:check
@@ -284,13 +285,11 @@ jobs:
           go-version-file: apps/api-go/go.mod
           cache: false
 
-      - name: Go module download
-        run: cd apps/api-go && go mod download
+      - name: Go modules (api-go go.sum)
+        run: cd apps/api-go && go mod tidy
+
       - name: MySQL integration tests (onboarding repository)
-        run: |
-          cd apps/api-go
-          go mod tidy
-          go test -tags=integration -count=1 ./internal/usersettings/ -run TestOnboardingMySQLIntegration -v
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/ -run TestOnboardingMySQLIntegration -v
 
   # 契约基线一次性远端再生成（专用远端生成提交方案）。
   #

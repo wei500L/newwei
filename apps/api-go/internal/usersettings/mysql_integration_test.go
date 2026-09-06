@@ -36,18 +36,19 @@ func integrationDatabaseURL(t *testing.T) string {
 
 // createIntegrationTable 建 Prisma migration 同构的最小表（列名/类型/
 // 唯一键一致；省略 FK 约束——测试库没有 Org/User 行）。
-const createIntegrationTable = `
-CREATE TABLE IF NOT EXISTS UserSetting (
-    id VARCHAR(191) NOT NULL,
-    orgId VARCHAR(191) NOT NULL,
-    userId VARCHAR(191) NOT NULL,
-    \`key\` VARCHAR(191) NOT NULL,
-    value JSON NOT NULL,
-    createdAt DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    updatedAt DATETIME(3) NOT NULL,
-    UNIQUE INDEX UserSetting_orgId_userId_key_key (orgId, userId, \`key\`),
-    PRIMARY KEY (id)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+// key 是 MySQL 保留字，需反引号转义——因此用普通字符串（Go 原始字符串
+// 无法内嵌反引号）。
+const createIntegrationTable = "CREATE TABLE IF NOT EXISTS UserSetting (" +
+	"id VARCHAR(191) NOT NULL," +
+	"orgId VARCHAR(191) NOT NULL," +
+	"userId VARCHAR(191) NOT NULL," +
+	"`key` VARCHAR(191) NOT NULL," +
+	"value JSON NOT NULL," +
+	"createdAt DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)," +
+	"updatedAt DATETIME(3) NOT NULL," +
+	"UNIQUE INDEX UserSetting_orgId_userId_key_key (orgId, userId, `key`)," +
+	"PRIMARY KEY (id)" +
+	") DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
 
 func TestOnboardingMySQLIntegration(t *testing.T) {
 	databaseURL := integrationDatabaseURL(t)
@@ -93,8 +94,7 @@ func TestOnboardingMySQLIntegration(t *testing.T) {
 
 	// 2. 插入一条 onboarding JSON 后查询。
 	insertedAt := time.Date(2026, 9, 3, 8, 30, 15, 123000000, time.UTC)
-	const insert = `INSERT INTO UserSetting (id, orgId, userId, \`key\`, value, updatedAt)
-	                VALUES (?, ?, ?, ?, ?, ?)`
+	const insert = "INSERT INTO UserSetting (id, orgId, userId, `key`, value, updatedAt) VALUES (?, ?, ?, ?, ?, ?)"
 	storedJSON := `{"completed":false,"dismissed":true,"checklist":{"today":true,"events":false,"map":false,"finance":false},"completedTours":{"today":true}}`
 	if _, err := db.ExecContext(ctx, insert, "us-it-1", orgID, userID, OnboardingKey, storedJSON, insertedAt); err != nil {
 		t.Fatalf("insert: %v", err)
