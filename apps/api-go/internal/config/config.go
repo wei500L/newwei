@@ -24,6 +24,12 @@ type Config struct {
 	Port         int
 	LegacyAPIURL string // NestJS apps/api 的基址（含协议，不含路径）
 
+	// DatabaseURL 是 Prisma 同名环境变量（mysql://user:pass@host:port/db）。
+	// 仅供 user-settings onboarding shadow 的 MySQL 只读查询使用；为空
+	// 时该 shadow 单元跳过执行，网关照常启动并代理全部请求（非阻断）。
+	// 值本身不进入日志/healthz/错误文本。
+	DatabaseURL string
+
 	// shadow 差分执行的资源边界（防放大攻击/雪崩）。请求体与响应捕获是
 	// 两个独立预算——请求体决定「差分能否重放请求」，响应捕获决定
 	// 「差分能否拿到完整 legacy 响应」；两者任一超限只丢弃差分，不影响
@@ -80,6 +86,10 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, fmt.Sprintf("LEGACY_API_URL must be an absolute URL, got %q", legacy))
 	}
 	cfg.LegacyAPIURL = legacy
+
+	// 只读取原文，不做解析（解析在 usersettings.OpenMySQLFromURL，错误
+	// 不阻断启动）。空值合法：数据库能力整体不启用。
+	cfg.DatabaseURL = strings.TrimSpace(getenv("DATABASE_URL"))
 
 	if raw := strings.TrimSpace(getenv("SHADOW_TIMEOUT_MS")); raw != "" {
 		value, err := strconv.Atoi(raw)

@@ -66,6 +66,25 @@ apps/api-go/
 - **go**：全量；NestJS 对应路由保留 ≥2 个发布周期后摘除
 - 回滚 = 路由表改回 legacy（配置变更，无代码回滚）；canary 期任一契约差分失败自动回切
 
+### 4.1 shadow 期的身份信任边界（Go-批2A 确立）
+
+Go 在完成迁移序 5（JWT 验签 + membership 重推导 + RBAC）之前，**不存在
+Go 侧可信身份**。受保护业务端点进入 shadow 的唯一合法身份来源是
+**legacy-approved shadow identity**（临时信任委托）：
+
+1. 同一请求先由 NestJS 执行（JWT 验签、jti 黑名单、membership、权限全部
+   由 NestJS 判定）；
+2. 只有 NestJS 返回 HTTP 200，才允许从（未验签的）Bearer JWT payload
+   读取 `sub`/`orgId`，且只用于本次只读差分查询；
+3. `permissions` claim 一律不读取、不信任；NestJS 非 200（401/403/404/5xx）
+   → Go 零执行、零数据库查询。
+
+这不是「Go 已验证身份」，更不是 canary-ready identity。shadow 单元表
+（`cmd/api/main.go` 的 `shadowUnits`）以 `RequireLegacyOK` 声明该前提；
+路由表被误切 ModeCanary/ModeGo 时状态契约测试失败（先落地 Go Auth/RBAC）。
+首个适用单元：`GET /api/user-settings/ui/onboarding`（迁移序 2 起步的
+第二个真实业务端点——从 MySQL 主数据库真实读取，进入 shadow 差分）。
+
 ## 5. 队列/cron/outbox 边界（红线）
 
 - 全部 BullMQ 队列、21 个 @Cron/@Interval、3 套 MongoOutbox 的**写入权在最终阶段前仅属 NestJS**——Go 侧提前双写会制造消息重复/顺序破坏

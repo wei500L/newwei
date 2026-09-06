@@ -4,7 +4,8 @@
 // http://localhost:4000）。已迁移路由按四态路由表分流：
 //
 //	legacy — 反向代理（当前事实源）
-//	shadow — NestJS 响应 + Go 实现异步差分（首个单元：/api/healthz/live）
+//	shadow — NestJS 响应 + Go 实现异步差分（/api/healthz/live、
+//	         /api/user-settings/ui/onboarding）
 //	canary — 已验证身份的稳定哈希小比例真实流量切 Go（CANARY_PERCENT）
 //	go     — Go 原生 handler（当前仅 /__go/healthz 自省）
 //
@@ -20,12 +21,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -35,6 +38,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
+	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
+	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
 )
 
 func main() {
@@ -47,6 +52,24 @@ func main() {
 type dispatcher struct {
 	shadowRunner *shadow.Runner
 	canaryRouter *canary.Router
+	// shadowUnits 是显式的 shadow 路由分发表（替代逐路由硬编码 if）。
+	// 每个单元声明：精确 path、允许的 method、是否要求 legacy 200、
+	// executant。两个单元的规模——刻意不做成注册框架。
+	shadowUnits []shadowUnit
+}
+
+// shadowUnit 是一个 shadow 差分单元的接线声明。
+type shadowUnit struct {
+	// Path 精确匹配（不做前缀匹配——/api/user-settings/ui/onboarding-x
+	// 不得误入）。
+	Path string
+	// Methods 允许进入差分的方法白名单（写方法绝不双发；双层强制之一）。
+	Methods map[string]bool
+	// RequireLegacyOK 要求 NestJS 返回 200 才执行（legacy-approved
+	// shadow identity 的前提；公开探针不需要）。
+	RequireLegacyOK bool
+	// Executant Go 侧差分执行者。
+	Executant shadow.Executant
 }
 
 // ObserveShadow 实现网关的差分观察接口。reason 非空时主链路已判定无法
@@ -60,19 +83,30 @@ func (d *dispatcher) ObserveShadow(r *http.Request, legacyStatus int, legacyHead
 		return
 	}
 
-	// 差分可执行：只有注册进 shadow 态的路由会到达这里；按路由分发
-	// 对应的 Go 实现（health live 是真实端点行为，无假数据）。
-	if r.URL.Path != "/api/healthz/live" {
+	// 差分可执行：按 shadow 单元表精确分发（path + method + legacy 语义
+	// 全部匹配才执行，否则静默跳过——该路由不在 shadow 单元表里）。
+	for _, unit := range d.shadowUnits {
+		if r.URL.Path != unit.Path {
+			continue
+		}
+		if !unit.Methods[strings.ToUpper(r.Method)] {
+			return
+		}
+		if unit.RequireLegacyOK && legacyStatus != http.StatusOK {
+			// legacy 未认可身份（401/403/404/5xx 等）→ Go 零执行、零
+			// 数据库查询。
+			return
+		}
+		d.shadowRunner.ObserveResult(
+			httpx.TraceIDFromContext(r.Context()),
+			r,
+			legacyStatus,
+			legacyHeader,
+			legacyBody,
+			unit.Executant,
+		)
 		return
 	}
-	d.shadowRunner.ObserveResult(
-		httpx.TraceIDFromContext(r.Context()),
-		r,
-		legacyStatus,
-		legacyHeader,
-		legacyBody,
-		healthLiveExecutant{},
-	)
 }
 
 // CanaryRoute 实现网关的 canary 分流接口。
@@ -100,6 +134,64 @@ func (healthLiveExecutant) Execute(_ context.Context, _ *http.Request, _ []byte)
 	}
 }
 
+// onboardingExecutant 是 GET /api/user-settings/ui/onboarding 的 Go
+// shadow 差分执行者（Go-批2A）。
+//
+// 信任边界：身份来自 legacy-approved shadow identity——只有 legacy 已
+// 返回 200 时才允许从（未验签的）Bearer JWT payload 读取 sub/orgId，
+// 并只用于本次只读查询。这不是「Go 已验证身份」：Go 尚未完成 JWT 验签、
+// jti blacklist、membership 重推导与 RBAC。permissions claim 不读取。
+// 任何失败（payload 解析、数据库不可达、JSON 异常）都只返回通用错误
+// Result（503 + 通用错误体），由 runner 记入差分——不影响客户端已收到
+// 的 NestJS 响应。token/orgId/userId 不进入任何日志或差分正文。
+type onboardingExecutant struct {
+	repo usersettings.Repository
+}
+
+func (e onboardingExecutant) Execute(ctx context.Context, r *http.Request, _ []byte) *shadow.Result {
+	if e.repo == nil {
+		// 未配置数据库：跳过（零查询），以通用错误 Result 记入差分缺失
+		// ——不影响客户端。
+		return shadowErrorResult()
+	}
+	identity := shadowidentity.LegacyApprovedIdentity(r, http.StatusOK)
+	if identity == nil {
+		// dispatcher 已在 legacy 非 200 时拦截；这里的 nil 只可能来自
+		// token 缺失/损坏——同样零数据库查询。
+		return shadowErrorResult()
+	}
+
+	record, err := e.repo.FindOnboarding(ctx, identity.OrgID, identity.UserID)
+	if err != nil {
+		// 详细错误只进服务端日志（repo 已保证不含凭据），差分结果只给
+		// 通用错误体。
+		log.Printf("shadow: onboarding query failed: %v", err)
+		return shadowErrorResult()
+	}
+
+	response := usersettings.BuildOnboardingResponse(record)
+	body, err := json.Marshal(response)
+	if err != nil {
+		return shadowErrorResult()
+	}
+	body = append(body, '\n')
+	return &shadow.Result{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "Cache-Control": []string{"no-store"}},
+		Body:       body,
+	}
+}
+
+// shadowErrorResult 是 Go 侧执行失败的通用差分结果（不含任何身份/凭据/
+// 业务数据；进入差分记录成为「执行缺失」信号）。
+func shadowErrorResult() *shadow.Result {
+	return &shadow.Result{
+		StatusCode: http.StatusServiceUnavailable,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       []byte(`{"statusCode":503,"message":"user-settings shadow execution unavailable"}` + "\n"),
+	}
+}
+
 func run() error {
 	cfg, err := config.LoadFromOS()
 	if err != nil {
@@ -115,7 +207,42 @@ func run() error {
 		MaxResponseCaptureByte: cfg.ShadowMaxResponseCaptureByte,
 	})
 
+	// onboarding shadow 的数据库能力（非阻断）：无 DATABASE_URL 时不配置，
+	// 网关照常启动代理；差分执行时发现未配置即跳过（不查询、不失败上抛）。
+	var onboardingRepo usersettings.Repository
+	onboardingDBStatus := "unconfigured"
+	if cfg.DatabaseURL != "" {
+		db, err := usersettings.OpenMySQLFromURL(cfg.DatabaseURL)
+		if err != nil {
+			// DSN 无效不阻断启动：网关继续纯代理，shadow 单元执行时跳过。
+			log.Printf("api-go: onboarding shadow database not initialized (invalid DATABASE_URL): %v", err)
+			onboardingDBStatus = "invalid"
+		} else {
+			// sql.Open 是惰性初始化：只代表 DSN 成功解析为 driver 配置，
+			// 不证明数据库可连接。连接性由真实查询按需建立（失败只影响
+			// shadow 差分，不影响 legacy 响应）——不引入启动 Ping/探针/
+			// 重试，数据库连通性也不是网关的存活条件。
+			onboardingRepo = usersettings.NewMySQLRepository(db)
+			onboardingDBStatus = "configured"
+		}
+	}
+	onboardingExec := onboardingExecutant{repo: onboardingRepo}
+
 	disp := &dispatcher{
+		shadowUnits: []shadowUnit{
+			{
+				Path:            "/api/healthz/live",
+				Methods:         map[string]bool{http.MethodGet: true},
+				RequireLegacyOK: false, // 公开探针：无需 legacy 认可身份
+				Executant:       healthLiveExecutant{},
+			},
+			{
+				Path:            "/api/user-settings/ui/onboarding",
+				Methods:         map[string]bool{http.MethodGet: true},
+				RequireLegacyOK: true, // 受保护端点：legacy 200 是身份前提
+				Executant:       onboardingExec,
+			},
+		},
 		shadowRunner: shadow.NewRunner(shadow.Budget{
 			TimeoutMs:            cfg.ShadowTimeoutMs,
 			MaxRequestBodyByte:   cfg.ShadowMaxRequestBodyByte,
@@ -131,6 +258,9 @@ func run() error {
 	}
 
 	// /__go/healthz：网关存活探针 + 路由表与 shadow/canary 状态自省。
+	// onboarding shadow 状态只报配置类别（unconfigured/invalid/configured
+	// ——configured 表示 DSN 已解析为 driver 配置，不承诺可连接），不含
+	// DSN/host/凭据/数据库错误详情。
 	gateway.SetGoHandler(func(w http.ResponseWriter, _ *http.Request) {
 		routes := make([]map[string]string, 0, len(gateway.Rules()))
 		for _, rule := range gateway.Rules() {
@@ -141,6 +271,9 @@ func run() error {
 			"routes": routes,
 			"shadow": disp.shadowRunner.Stats(),
 			"canary": map[string]int{"percent": disp.canaryRouter.Percent()},
+			"onboardingShadow": map[string]string{
+				"database": onboardingDBStatus,
+			},
 		})
 	})
 

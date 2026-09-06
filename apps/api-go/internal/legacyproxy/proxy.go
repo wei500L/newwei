@@ -53,8 +53,11 @@ type Rule struct {
 
 // DefaultRules 是当前的路由表。
 //
-// 首个迁移单元（迁移序 2）：GET /api/healthz/live —— shadow 模式起步
-// （NestJS 响应仍是事实源，Go 实现进入差分管道验证）。
+// 迁移单元：
+//   - 序 2：GET /api/healthz/live —— shadow（公开探针，首个单元）；
+//   - 序 3（Go-批2A）：GET /api/user-settings/ui/onboarding —— shadow。
+//     精确路径规则：PUT 等写方法命中同前缀时由 serveShadow 的只读方法
+//     红线纯代理到 NestJS，绝不双发（见 isReadonlyMethod）。
 //
 // 注意三个无 /api 前缀的挂载点（契约清单 §0）：/graphql、/socket.io、
 // /admin/queues（Bull Board）。代理层必须与 REST 前缀分别声明。
@@ -62,6 +65,7 @@ func DefaultRules() []Rule {
 	return []Rule{
 		{Prefix: "/api/", Mode: ModeLegacy},
 		{Prefix: "/api/healthz/live", Mode: ModeShadow},
+		{Prefix: "/api/user-settings/ui/onboarding", Mode: ModeShadow},
 		{Prefix: "/graphql", Mode: ModeLegacy},
 		{Prefix: "/socket.io/", Mode: ModeLegacy},
 		{Prefix: "/docs", Mode: ModeLegacy},
